@@ -1,8 +1,6 @@
 ---
 # DNS Deploy Role - Default Variables
-
-# Deployment mode selection
-dns_mode: "simple"  # Options: "simple" or "advanced"
+# Unbound-only DNS with split-horizon views and ad blocking
 
 # Clean install options
 dns_clean_install: false  # Set to true to remove existing DNS configs
@@ -13,79 +11,42 @@ dns_local_domain: "home.example.com"
 dns_local_domain_punycode: "home.example.com"  # Same if no special chars
 dns_local_ip: "{{ ansible_default_ipv4.address }}"
 
-# Pi-hole v6 configuration
-dns_pihole_config_dir: /etc/pihole
-dns_pihole_dnsmasq_dir: /etc/dnsmasq.d
-dns_pihole_ftl_port: 4711
-dns_pihole_web_interface: false  # Security: disabled by default
-dns_pihole_web_password: ""      # Not needed when interface disabled
-# To set Pi-hole web password (preferred method):
-# pihole -a -p
-# Or generate hash manually:
-# echo -n "password" | sha256sum | awk '{print $1}' | sha256sum | awk '{print $1}'
-
-# Pi-hole upstream DNS (computed based on mode)
-# Simple Mode: Unbound as recursive resolver
-# Advanced Mode: Unbound handles split-DNS
-dns_pihole_upstream_dns:
-  - "127.0.0.1#5335"
-
 # Unbound configuration
-# Unbound is always installed as upstream resolver (required for both modes)
-# Simple Mode: Pure recursive resolver, no local data
-# Advanced Mode: Handles split-DNS with view-based responses
-dns_unbound_port: 5335
 dns_unbound_config_dir: /etc/unbound/unbound.conf.d
+dns_unbound_blocklist_dir: /var/lib/unbound
 
-# Unbound upstream servers
-dns_unbound_upstream:
-  - { addr: "1.1.1.1", name: "cloudflare" }
-  - { addr: "1.0.0.1", name: "cloudflare" }
-  - { addr: "8.8.8.8", name: "google" }
-  - { addr: "8.8.4.4", name: "google" }
-
-# Custom DNS entries (Simple Mode only)
-# For services NOT behind Traefik that need specific DNS names
-dns_custom_entries:
-  - { name: "router.{{ dns_local_domain }}", ip: "192.168.178.1" }
-  - { name: "proxmox.{{ dns_local_domain }}", ip: "192.168.178.5" }
-  - { name: "pihole.{{ dns_local_domain }}", ip: "{{ dns_local_ip }}" }
-
-# dnsmasq TTL settings (global)
-dns_dnsmasq_local_ttl: 86400
-dns_remove_legacy_dnsmasq: true
-
-# Firewall configuration
-dns_firewall_enable: false  # Set to true to configure firewall rules (WARNING: can lock you out!)
-
-# System resolver configuration
-dns_configure_local_resolver: true  # Set to false to skip /etc/resolv.conf changes
-
-# Split-DNS configuration (Advanced Mode only)
-dns_split_lan_network: "192.168.178.0/24"
-dns_split_tailscale_network: "100.64.0.0/10"
+# Split-DNS Configuration
+dns_split_lan_network: "192.168.0.0/16"        # Default LAN network range
+dns_split_tailscale_network: "100.64.0.0/10"   # Default Tailscale network range
 dns_split_lan_ip: "{{ ansible_default_ipv4.address }}"
-dns_split_tailscale_ip: ""  # Must be provided for advanced mode
+dns_split_tailscale_ip: ""  # MUST be set if using split-DNS
+dns_split_tailscale_ipv6: ""  # Optional IPv6 address
 
-# Services requiring explicit DNS (Advanced Mode)
-# Most services use wildcard; only list exceptions that need different IPs
-# Service-specific entries take precedence over wildcard in Unbound
-dns_split_services:
-  - { name: "router", lan_ip: "192.168.178.1", tailscale_ip: "192.168.178.1" }
-  - { name: "proxmox", lan_ip: "192.168.178.5", tailscale_ip: "192.168.178.5" }
+# Service overrides for split-DNS
+# Each service can have different IPs for LAN vs Tailscale clients
+dns_split_services: []
+#  - name: "router"
+#    lan_ip: "192.168.1.1"
+#    tailscale_ip: "192.168.1.1"
+#  - name: "nas"
+#    lan_ip: "192.168.1.10"
+#    tailscale_ip: "192.168.1.10"
 
-# Ad blocking configuration
+# Blocklist Configuration
 dns_blocklists_enabled: true
-
 dns_blocklists:
   - "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
   - "https://someonewhocares.org/hosts/zero/hosts"
-  - "https://s3.amazonaws.com/lists.disconnect.me/simple_tracking.txt"
-  - "https://s3.amazonaws.com/lists.disconnect.me/simple_ad.txt"
+  - "https://raw.githubusercontent.com/AdguardTeam/AdguardSDNSFilter/master/Filters/filter.txt"
 
-dns_whitelist_domains:
-  - github.com
-  - raw.githubusercontent.com
-  - registry.npmjs.org
-  - pypi.org
-  - files.pythonhosted.org
+# Allowlist - domains that should never be blocked
+dns_allowlist:
+  - "github.com"
+  - "githubusercontent.com"
+  - "*.github.io"
+
+# Firewall configuration (optional)
+dns_firewall_enable: false  # Set to true to configure UFW rules
+
+# Local resolver configuration
+dns_update_resolv_conf: true  # Update /etc/resolv.conf to use local DNS
