@@ -11,7 +11,14 @@ dns_local_domain: "home.example.com"
 dns_local_domain_punycode: "home.example.com"  # Same if no special chars
 dns_local_ip: "{{ ansible_default_ipv4.address }}"
 
+# DNS Mode Configuration
+# - 'simple': Single IP for all clients (basic setup with Unbound only on port 53)
+# - 'advanced': Split-DNS with different IPs per network (Unbound with split-horizon views)
+# - 'unbound_only': DEPRECATED - Legacy alias that maps to 'advanced' mode
+dns_mode: "simple"
+
 # Unbound configuration
+dns_unbound_port: 53  # Port for Unbound DNS server (53 for simple mode, custom for advanced)
 dns_unbound_config_dir: /etc/unbound/unbound.conf.d
 dns_unbound_blocklist_dir: /var/lib/unbound
 
