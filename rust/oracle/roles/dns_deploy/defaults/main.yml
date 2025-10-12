@@ -50,3 +50,19 @@ dns_firewall_enable: false  # Set to true to configure UFW rules
 
 # Local resolver configuration
 dns_update_resolv_conf: true  # Update /etc/resolv.conf to use local DNS
+
+# DDNS Configuration
+dns_ddns_enabled: false                          # Opt-in feature
+dns_ddns_provider: "gandi"                       # Currently only Gandi supported
+dns_ddns_domain: "CHANGEME"                      # Base domain (e.g., "example.com")
+dns_ddns_subdomain: "home"                       # Subdomain to update
+dns_ddns_update_wildcard: true                   # Also update *.subdomain
+dns_ddns_ttl: 300                                # DNS TTL in seconds
+dns_ddns_interval: "5min"                        # Update interval
+dns_ddns_log_dir: "/var/log/ddns"                # Log directory
+dns_ddns_config_dir: "/etc/ddns"                 # Config directory
+dns_ddns_script_path: "/usr/local/bin/ddns-update.sh"  # Script location
+dns_ddns_api_token: "CHANGEME"                   # Gandi API token (from secrets)
+dns_ddns_ipv4_enabled: true                      # Update IPv4 (A records)
+dns_ddns_ipv6_enabled: true                      # Update IPv6 (AAAA records)
+dns_ddns_log_max_size_mb: 10                     # Log rotation size
