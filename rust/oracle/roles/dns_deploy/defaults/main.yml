@@ -60,7 +60,7 @@ dns_update_resolv_conf: true  # Update /etc/resolv.conf to use local DNS
 dns_resolver_nameservers:
   - "127.0.0.1"               # Unbound listens locally
   - "{{ dns_split_lan_ip }}"  # Host LAN IP as fallback
-dns_resolver_search_domains: []  # Optional search domains (e.g., ["home.xn--wersdrfer-47a.de"])
+dns_resolver_search_domains: []  # Optional search domains (e.g., ["home.example.com"])
 dns_resolver_options:
   - "edns0"
   - "trust-ad"
