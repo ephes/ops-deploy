@@ -80,3 +80,12 @@ dns_ddns_api_token: "CHANGEME"                   # Gandi API token (from secrets
 dns_ddns_ipv4_enabled: true                      # Update IPv4 (A records)
 dns_ddns_ipv6_enabled: true                      # Update IPv6 (AAAA records)
 dns_ddns_log_max_size_mb: 10                     # Log rotation size
+
+# Forward Zones Configuration
+# Forward specific domains to designated upstream DNS servers
+# Useful for local domains (e.g., fritz.box) that need resolution by a local router
+dns_forward_zones: []
+#  - name: "fritz.box"                    # Domain to forward
+#    forward_addrs:                       # List of upstream DNS servers
+#      - "192.168.178.1"
+#    forward_first: false                 # Try forward first, then resolve locally on failure
