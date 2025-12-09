@@ -1,0 +1,31 @@
+---
+# Disable until explicitly enabled by caller
+metrics_endpoint_enabled: false
+
+# Service/user
+metrics_endpoint_user: metrics
+metrics_endpoint_group: "{{ metrics_endpoint_user }}"
+metrics_endpoint_service_name: metrics-endpoint
+
+# Network / auth
+metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+metrics_endpoint_port: 9100
+metrics_endpoint_path: "/.well-known/health"
+metrics_endpoint_script_timeout: 10
+metrics_endpoint_auth_user: "CHANGE_ME"
+metrics_endpoint_auth_password: "CHANGE_ME"
+
+# Paths
+metrics_endpoint_script_path: "/usr/local/bin/mail-metrics.sh"
+metrics_endpoint_server_path: "/usr/local/bin/metrics_httpd.py"
+metrics_endpoint_htpasswd_dir: "/etc/metrics-endpoint"
+metrics_endpoint_htpasswd_path: "{{ metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+# Metrics collection tuning
+metrics_endpoint_vmail_path: "/mnt/cryptdata/vmail"
+metrics_endpoint_queue_path: "/var/spool/postfix"
+metrics_endpoint_services:
+  - postfix
+  - dovecot
+  - rspamd
+metrics_endpoint_extra_metrics: []
