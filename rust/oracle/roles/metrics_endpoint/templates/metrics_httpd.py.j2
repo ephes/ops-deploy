@@ -5,7 +5,7 @@ import http.server
 import socketserver
 import subprocess
 import sys
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class MetricsHandler(http.server.BaseHTTPRequestHandler):
@@ -54,7 +54,7 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), fmt % args))
 
-    def _check_auth(self, header: str, cfg: dict) -> Tuple[bool, str]:
+    def _check_auth(self, header: Optional[str], cfg: dict) -> Tuple[bool, str]:
         if not header or not header.startswith("Basic "):
             return False, "missing"
         try:
