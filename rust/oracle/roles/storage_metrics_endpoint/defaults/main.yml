@@ -1,0 +1,40 @@
+---
+# storage_metrics_endpoint - Default Variables
+#
+# Exposes storage metrics (from nyxmon_storage_exporter) as an authenticated HTTP
+# endpoint. A systemd timer runs the exporter periodically and writes JSON to a
+# file; an HTTP server reads that file and adds staleness metadata.
+#
+# This design avoids needing root/SSH access from Nyxmon - only HTTP over
+# Tailscale with basic auth is required.
+
+storage_metrics_endpoint_enabled: false
+
+# Service/user (same as metrics_endpoint pattern)
+storage_metrics_endpoint_user: metrics
+storage_metrics_endpoint_group: "{{ storage_metrics_endpoint_user }}"
+storage_metrics_endpoint_service_name: storage-metrics-endpoint
+
+# Network / auth
+storage_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+storage_metrics_endpoint_port: 9101
+storage_metrics_endpoint_path: "/.well-known/storage"
+storage_metrics_endpoint_auth_user: "CHANGE_ME"
+storage_metrics_endpoint_auth_password: "CHANGE_ME"
+
+# Paths
+storage_metrics_endpoint_data_dir: "/var/lib/storage-metrics"
+storage_metrics_endpoint_json_path: "{{ storage_metrics_endpoint_data_dir }}/storage.json"
+storage_metrics_endpoint_server_path: "/usr/local/bin/storage_metrics_httpd.py"
+storage_metrics_endpoint_htpasswd_dir: "/etc/storage-metrics-endpoint"
+storage_metrics_endpoint_htpasswd_path: "{{ storage_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+# Exporter script (from nyxmon_storage_exporter role)
+storage_metrics_endpoint_exporter_path: "/usr/local/bin/nyxmon-storage-metrics"
+
+# Timer configuration
+storage_metrics_endpoint_timer_interval: 300  # seconds between metrics collection
+storage_metrics_endpoint_timer_name: storage-metrics-collector
+
+# Script timeout (for HTTP 504 on stale data)
+storage_metrics_endpoint_script_timeout: 10

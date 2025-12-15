@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Minimal authenticated HTTP server for storage metrics.
+
+Reads pre-generated JSON from a file (written by a systemd timer) and adds
+staleness metadata at request time. This design achieves privilege separation:
+- Root timer runs the exporter and writes JSON to a file
+- Unprivileged HTTP server reads that file and serves it
+
+Meta fields added:
+- meta.generated_at: ISO timestamp from file mtime
+- meta.generated_at_epoch: Unix timestamp from file mtime
+- meta.served_at_epoch: Unix timestamp when served
+- meta.age_seconds: Difference (staleness indicator)
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import http.server
+import json
+import os
+import socketserver
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Optional, Tuple
+
+
+class StorageMetricsHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "storage-metrics-httpd/0.1"
+    protocol_version = "HTTP/1.1"
+
+    def do_GET(self) -> None:  # noqa: N802
+        cfg = self.server.cfg  # type: ignore[attr-defined]
+        if self.path != cfg["path"]:
+            self.send_error(404, "Not found")
+            return
+
+        auth_header = self.headers.get("Authorization")
+        ok, message = self._check_auth(auth_header, cfg)
+        if not ok:
+            self.send_response(401, "Unauthorized")
+            self.send_header("WWW-Authenticate", 'Basic realm="storage-metrics"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        json_path = cfg["json_path"]
+
+        # Check if the metrics file exists
+        if not os.path.isfile(json_path):
+            self.send_error(503, "Metrics file not found - timer may not have run yet")
+            return
+
+        try:
+            # Get file modification time for staleness calculation
+            stat = os.stat(json_path)
+            generated_at_epoch = int(stat.st_mtime)
+            served_at_epoch = int(datetime.now(tz=timezone.utc).timestamp())
+            age_seconds = served_at_epoch - generated_at_epoch
+
+            # Read the JSON file
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+        except json.JSONDecodeError as e:
+            self.send_error(502, f"Invalid JSON in metrics file: {e}")
+            return
+        except OSError as e:
+            self.send_error(503, f"Cannot read metrics file: {e}")
+            return
+
+        # Add meta fields
+        generated_at = datetime.fromtimestamp(generated_at_epoch, tz=timezone.utc).isoformat()
+        data["meta"] = {
+            "generated_at": generated_at,
+            "generated_at_epoch": generated_at_epoch,
+            "served_at_epoch": served_at_epoch,
+            "age_seconds": age_seconds,
+        }
+
+        payload = json.dumps(data, sort_keys=True).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        sys.stderr.write(
+            "%s - - [%s] %s\n"
+            % (self.client_address[0], self.log_date_time_string(), fmt % args)
+        )
+
+    def _check_auth(self, header: Optional[str], cfg: dict) -> Tuple[bool, str]:
+        if not header or not header.startswith("Basic "):
+            return False, "missing"
+        try:
+            decoded = base64.b64decode(header.split()[1]).decode("utf-8")
+            user, password = decoded.split(":", 1)
+        except Exception:
+            return False, "malformed"
+
+        result = subprocess.run(
+            ["htpasswd", "-vb", cfg["htpasswd_file"], user, password],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0, result.stderr
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Authenticated HTTP server for storage metrics"
+    )
+    parser.add_argument("--bind", default="127.0.0.1", help="Bind address")
+    parser.add_argument("--port", type=int, default=9101, help="Listen port")
+    parser.add_argument(
+        "--path", default="/.well-known/storage", help="Health endpoint path"
+    )
+    parser.add_argument(
+        "--json-path",
+        default="{{ storage_metrics_endpoint_json_path }}",
+        help="Path to metrics JSON file",
+    )
+    parser.add_argument(
+        "--htpasswd-file",
+        default="{{ storage_metrics_endpoint_htpasswd_path }}",
+        help="htpasswd file for authentication",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    handler = StorageMetricsHandler
+
+    class ConfiguredTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
+
+    httpd = ConfiguredTCPServer((args.bind, args.port), handler)
+    httpd.cfg = {  # type: ignore[attr-defined]
+        "path": args.path,
+        "json_path": args.json_path,
+        "htpasswd_file": args.htpasswd_file,
+    }
+    with httpd:
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
