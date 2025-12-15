@@ -128,8 +128,10 @@ class StorageMetricsHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return False, "malformed"
 
+        # Use htpasswd -vi (stdin-based) to avoid exposing password in process argv
         result = subprocess.run(
-            ["htpasswd", "-vb", cfg["htpasswd_file"], user, password],
+            ["htpasswd", "-vi", cfg["htpasswd_file"], user],
+            input=password,
             capture_output=True,
             text=True,
         )
