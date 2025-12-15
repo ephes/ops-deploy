@@ -33,7 +33,7 @@ class StorageMetricsHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         cfg = self.server.cfg  # type: ignore[attr-defined]
         if self.path != cfg["path"]:
-            self.send_error(404, "Not found")
+            self._send_json_error(404, "not_found", "Endpoint not found")
             return
 
         auth_header = self.headers.get("Authorization")
@@ -49,11 +49,16 @@ class StorageMetricsHandler(http.server.BaseHTTPRequestHandler):
 
         # Check if the metrics file exists
         if not os.path.isfile(json_path):
-            self.send_error(503, "Metrics file not found - timer may not have run yet")
+            self._send_json_error(
+                503,
+                "metrics_file_missing",
+                "Metrics file not found - timer may not have run yet",
+            )
             return
 
         try:
             # Get file modification time for staleness calculation
+            # Note: generated_at_epoch is derived from file mtime, not from data in the JSON
             stat = os.stat(json_path)
             generated_at_epoch = int(stat.st_mtime)
             served_at_epoch = int(datetime.now(tz=timezone.utc).timestamp())
@@ -64,13 +69,22 @@ class StorageMetricsHandler(http.server.BaseHTTPRequestHandler):
                 data = json.load(f)
 
         except json.JSONDecodeError as e:
-            self.send_error(502, f"Invalid JSON in metrics file: {e}")
+            self._send_json_error(
+                502,
+                "invalid_json",
+                f"Invalid JSON in metrics file: {e}",
+            )
             return
         except OSError as e:
-            self.send_error(503, f"Cannot read metrics file: {e}")
+            self._send_json_error(
+                503,
+                "read_error",
+                f"Cannot read metrics file: {e}",
+            )
             return
 
         # Add meta fields
+        # generated_at_epoch is based on file mtime (when collector last wrote the file)
         generated_at = datetime.fromtimestamp(generated_at_epoch, tz=timezone.utc).isoformat()
         data["meta"] = {
             "generated_at": generated_at,
@@ -81,6 +95,19 @@ class StorageMetricsHandler(http.server.BaseHTTPRequestHandler):
 
         payload = json.dumps(data, sort_keys=True).encode()
         self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_json_error(self, status: int, error_type: str, message: str) -> None:
+        """Send an error response as JSON instead of HTML."""
+        payload = json.dumps({
+            "error": True,
+            "error_type": error_type,
+            "message": message,
+        }).encode()
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
