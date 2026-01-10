@@ -22,6 +22,11 @@ storage_metrics_endpoint_path: "/.well-known/storage"
 storage_metrics_endpoint_auth_user: "CHANGE_ME"
 storage_metrics_endpoint_auth_password: "CHANGE_ME"
 
+# Packages (system Python + htpasswd)
+storage_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+
 # Paths
 storage_metrics_endpoint_data_dir: "/var/lib/storage-metrics"
 storage_metrics_endpoint_json_path: "{{ storage_metrics_endpoint_data_dir }}/storage.json"

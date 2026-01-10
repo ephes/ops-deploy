@@ -15,6 +15,12 @@ metrics_endpoint_script_timeout: 10
 metrics_endpoint_auth_user: "CHANGE_ME"
 metrics_endpoint_auth_password: "CHANGE_ME"
 
+# Packages (system Python + htpasswd + ACL support)
+metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+  - acl
+
 # Paths
 metrics_endpoint_script_path: "/usr/local/bin/mail-metrics.sh"
 metrics_endpoint_server_path: "/usr/local/bin/metrics_httpd.py"
