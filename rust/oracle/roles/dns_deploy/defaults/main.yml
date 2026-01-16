@@ -25,6 +25,8 @@ dns_unbound_blocklist_dir: /var/lib/unbound
 # Split-DNS Configuration
 dns_split_lan_network: "192.168.0.0/16"        # Default LAN network range
 dns_split_tailscale_network: "100.64.0.0/10"   # Default Tailscale network range
+dns_split_lan_ipv6_networks: []                # Optional LAN IPv6 ranges (e.g., ["fdxx:...::/64"])
+dns_split_tailscale_ipv6_networks: []          # Optional Tailscale IPv6 ranges (e.g., ["fdxx:...::/48"])
 dns_split_lan_ip: "{{ ansible_default_ipv4.address }}"
 dns_split_tailscale_ip: ""  # MUST be set if using split-DNS
 dns_split_tailscale_ipv6: ""  # Optional IPv6 address
