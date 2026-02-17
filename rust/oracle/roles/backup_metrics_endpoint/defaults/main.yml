@@ -1,0 +1,81 @@
+---
+# backup_metrics_endpoint - Default Variables
+#
+# Exposes Fractal backup metrics as an authenticated HTTP
+# endpoint. A systemd timer runs the exporter periodically and writes JSON to a
+# file; an HTTP server reads that file and adds staleness metadata.
+#
+# This design avoids needing root/SSH access from Nyxmon - only HTTP over
+# Tailscale with basic auth is required.
+
+backup_metrics_endpoint_enabled: false
+
+# Service/user (same as metrics_endpoint pattern)
+backup_metrics_endpoint_user: metrics
+backup_metrics_endpoint_group: "{{ backup_metrics_endpoint_user }}"
+backup_metrics_endpoint_service_name: backup-metrics-endpoint
+
+# Network / auth
+backup_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+backup_metrics_endpoint_port: 9103
+backup_metrics_endpoint_path: "/.well-known/backup"
+backup_metrics_endpoint_auth_user: "CHANGE_ME"
+backup_metrics_endpoint_auth_password: "CHANGE_ME"
+
+# Packages (system Python + htpasswd)
+backup_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+
+# Paths
+backup_metrics_endpoint_data_dir: "/var/lib/backup-metrics"
+backup_metrics_endpoint_json_path: "{{ backup_metrics_endpoint_data_dir }}/backup.json"
+backup_metrics_endpoint_server_path: "/usr/local/bin/backup_metrics_httpd.py"
+backup_metrics_endpoint_exporter_path: "/usr/local/bin/backup_metrics_exporter.py"
+backup_metrics_endpoint_htpasswd_dir: "/etc/backup-metrics-endpoint"
+backup_metrics_endpoint_htpasswd_path: "{{ backup_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+# Timer configuration
+backup_metrics_endpoint_timer_interval: 300  # seconds between metrics collection
+backup_metrics_endpoint_timer_name: backup-metrics-collector
+
+# Script timeout (for HTTP 504 on stale data)
+backup_metrics_endpoint_script_timeout: 10
+
+# Command timeouts used by the exporter
+backup_metrics_endpoint_systemctl_timeout: 10
+backup_metrics_endpoint_zfs_timeout: 20
+
+# Backup jobs to inspect via systemd
+backup_metrics_endpoint_units:
+  - id: sanoid
+    timer: sanoid-ops-library.timer
+    service: sanoid-ops-library.service
+    required: true
+  - id: syncoid_local
+    timer: zfs-syncoid-replication.timer
+    service: zfs-syncoid-replication.service
+    required: true
+  - id: syncoid_usb
+    timer: zfs-usb-replication.timer
+    service: zfs-usb-replication.service
+    required: false
+
+# Replica datasets that should receive fresh syncoid snapshots.
+# These are typically targets of fractal_syncoid_jobs.
+backup_metrics_endpoint_local_datasets:
+  - tank/replica/fast/general
+  - tank/replica/fast/timemachine
+
+# USB backup configuration
+backup_metrics_endpoint_usb_enabled: false
+backup_metrics_endpoint_usb_pool: vault
+backup_metrics_endpoint_usb_device: ""
+
+# USB datasets that should receive fresh snapshots when USB pool is imported.
+backup_metrics_endpoint_usb_datasets:
+  - vault/replica/fast/general
+  - vault/replica/fast/timemachine
+  - vault/photos
+  - vault/videos
+  - vault/backups
