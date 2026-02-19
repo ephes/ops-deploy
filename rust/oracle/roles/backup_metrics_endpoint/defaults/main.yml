@@ -38,13 +38,18 @@ backup_metrics_endpoint_htpasswd_path: "{{ backup_metrics_endpoint_htpasswd_dir 
 # Timer configuration
 backup_metrics_endpoint_timer_interval: 300  # seconds between metrics collection
 backup_metrics_endpoint_timer_name: backup-metrics-collector
+backup_metrics_endpoint_timer_on_boot_sec: 30
+backup_metrics_endpoint_timer_accuracy_sec: 10
+backup_metrics_endpoint_timer_randomized_delay_sec: 15
 
 # Script timeout (for HTTP 504 on stale data)
 backup_metrics_endpoint_script_timeout: 10
 
 # Command timeouts used by the exporter
 backup_metrics_endpoint_systemctl_timeout: 10
-backup_metrics_endpoint_zfs_timeout: 20
+backup_metrics_endpoint_zfs_timeout: 45
+backup_metrics_endpoint_zfs_retries: 1
+backup_metrics_endpoint_zfs_retry_delay: 2
 
 # Backup jobs to inspect via systemd
 backup_metrics_endpoint_units:
