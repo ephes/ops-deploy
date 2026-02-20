@@ -51,6 +51,15 @@ backup_metrics_endpoint_zfs_timeout: 45
 backup_metrics_endpoint_zfs_retries: 1
 backup_metrics_endpoint_zfs_retry_delay: 2
 
+# Quiet-hours behavior for local snapshot probes.
+# When enabled, the exporter can reuse cached local snapshot metadata from the
+# previous JSON file instead of issuing fresh `zfs list` calls.
+backup_metrics_endpoint_quiet_hours_enabled: false
+backup_metrics_endpoint_quiet_hours_start: "06:00"
+backup_metrics_endpoint_quiet_hours_end: "22:00"
+backup_metrics_endpoint_quiet_hours_skip_local_snapshot_probes: true
+backup_metrics_endpoint_cache_json_path: "{{ backup_metrics_endpoint_json_path }}"
+
 # Backup jobs to inspect via systemd
 backup_metrics_endpoint_units:
   - id: sanoid
