@@ -1,0 +1,77 @@
+---
+# Identity
+openclaw_service_name: openclaw
+openclaw_container_name: openclaw-gateway
+
+# User (system user, auto UID — bind mounts chowned to container uid 1000)
+openclaw_user: openclaw
+openclaw_group: openclaw
+openclaw_home: "/home/{{ openclaw_user }}"
+openclaw_site_dir: "{{ openclaw_home }}/site"
+openclaw_data_dir: "{{ openclaw_home }}/data"
+openclaw_log_dir: "{{ openclaw_home }}/logs"
+openclaw_build_dir: "{{ openclaw_home }}/build/openclaw"
+
+# Source & build (no prebuilt image — clone repo and docker build on-host)
+openclaw_repo_url: "https://github.com/openclaw/openclaw.git"
+openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.2.21"
+openclaw_image_name: "openclaw"
+openclaw_image_tag: "{{ openclaw_version }}"
+openclaw_force_rebuild: false
+
+# Networking
+openclaw_bind_host: "127.0.0.1"
+openclaw_host_port: 18789
+openclaw_container_port: 18789
+
+# Gateway mode
+openclaw_gateway_token: ""  # REQUIRED — gateway authentication token
+openclaw_restart_policy: unless-stopped
+openclaw_mem_limit: "2g"
+openclaw_cpus: "1.0"
+openclaw_pids_limit: 256
+openclaw_node_max_old_space_size: 1536
+
+# AI provider (Anthropic)
+openclaw_anthropic_api_key: ""  # REQUIRED — Anthropic API key
+
+# Telegram channel
+openclaw_telegram_enabled: false
+openclaw_telegram_bot_token: ""
+openclaw_telegram_dm_policy: allowlist  # allowlist | open
+openclaw_telegram_allow_from: []  # numeric Telegram user IDs
+
+# System prompt for AI replies
+openclaw_reply_system_prompt: "You are a concise assistant."
+
+# Full config override (rendered as openclaw.json).
+# When set, this dict is rendered directly — individual openclaw_telegram_*
+# variables are ignored.
+openclaw_gateway_config: {}
+
+# Config behavior: only seed openclaw.json if absent. Set true to overwrite.
+openclaw_force_config: false
+
+# Extra env for overrides
+openclaw_extra_env: {}
+
+# Traefik reverse proxy
+openclaw_traefik_enabled: false
+openclaw_traefik_config_path: "/etc/traefik/dynamic/openclaw.yml"
+openclaw_traefik_host: ""  # REQUIRED when traefik enabled
+openclaw_traefik_entrypoints:
+  - web-secure
+openclaw_traefik_cert_resolver: ""
+openclaw_traefik_ip_allowlist: []  # e.g. ["100.64.0.0/10", "fd7a:115c:a1e0::/48"] for Tailscale-only
+
+# Feature flags
+openclaw_install_docker: true
+openclaw_manage_user: true
+openclaw_healthcheck_enabled: true
+
+# Health check
+openclaw_healthcheck_retries: 6
+openclaw_healthcheck_delay: 5
+
+# Log rotation
+openclaw_logrotate_days: 7
