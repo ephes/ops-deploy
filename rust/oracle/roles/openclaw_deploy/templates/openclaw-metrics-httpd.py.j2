@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Authenticated HTTP endpoint for OpenClaw metrics JSON."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import http.server
+import json
+import os
+import socketserver
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Optional, Tuple
+
+
+class OpenClawMetricsHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "openclaw-metrics-httpd/0.1"
+    protocol_version = "HTTP/1.1"
+
+    def do_GET(self) -> None:  # noqa: N802
+        cfg = self.server.cfg  # type: ignore[attr-defined]
+        if self.path != cfg["path"]:
+            self._send_json_error(404, "not_found", "Endpoint not found")
+            return
+
+        auth_header = self.headers.get("Authorization")
+        ok, _message = self._check_auth(auth_header, cfg)
+        if not ok:
+            self.send_response(401, "Unauthorized")
+            self.send_header("WWW-Authenticate", 'Basic realm="openclaw-metrics"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        json_path = cfg["json_path"]
+        if not os.path.isfile(json_path):
+            self._send_json_error(
+                503,
+                "metrics_file_missing",
+                "Metrics file not found - collector timer may not have run yet",
+            )
+            return
+
+        try:
+            stat = os.stat(json_path)
+            generated_at_epoch = int(stat.st_mtime)
+            served_at_epoch = int(datetime.now(tz=timezone.utc).timestamp())
+            age_seconds = served_at_epoch - generated_at_epoch
+
+            with open(json_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except json.JSONDecodeError as err:
+            self._send_json_error(502, "invalid_json", f"Invalid JSON in metrics file: {err}")
+            return
+        except OSError as err:
+            self._send_json_error(503, "read_error", f"Cannot read metrics file: {err}")
+            return
+
+        generated_at = datetime.fromtimestamp(
+            generated_at_epoch, tz=timezone.utc
+        ).isoformat()
+        data["meta"] = {
+            "generated_at": generated_at,
+            "generated_at_epoch": generated_at_epoch,
+            "served_at_epoch": served_at_epoch,
+            "age_seconds": age_seconds,
+        }
+
+        payload = json.dumps(data, sort_keys=True).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_json_error(self, status: int, error_type: str, message: str) -> None:
+        payload = json.dumps(
+            {
+                "error": True,
+                "error_type": error_type,
+                "message": message,
+            }
+        ).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        sys.stderr.write(
+            "%s - - [%s] %s\n"
+            % (self.client_address[0], self.log_date_time_string(), fmt % args)
+        )
+
+    def _check_auth(self, header: Optional[str], cfg: dict) -> Tuple[bool, str]:
+        if not header or not header.startswith("Basic "):
+            return False, "missing"
+        try:
+            decoded = base64.b64decode(header.split()[1]).decode("utf-8")
+            user, password = decoded.split(":", 1)
+        except Exception:
+            return False, "malformed"
+
+        result = subprocess.run(
+            ["htpasswd", "-vi", cfg["htpasswd_file"], user],
+            input=password,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0, result.stderr
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Authenticated HTTP server for OpenClaw metrics"
+    )
+    parser.add_argument("--bind", default="127.0.0.1", help="Bind address")
+    parser.add_argument("--port", type=int, default=9104, help="Listen port")
+    parser.add_argument(
+        "--path", default="/.well-known/openclaw-health", help="Endpoint path"
+    )
+    parser.add_argument(
+        "--json-path",
+        default="{{ openclaw_metrics_endpoint_json_path }}",
+        help="Path to collector JSON file",
+    )
+    parser.add_argument(
+        "--htpasswd-file",
+        default="{{ openclaw_metrics_endpoint_htpasswd_path }}",
+        help="htpasswd file for authentication",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    handler = OpenClawMetricsHandler
+
+    class ConfiguredTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
+
+    httpd = ConfiguredTCPServer((args.bind, args.port), handler)
+    httpd.cfg = {  # type: ignore[attr-defined]
+        "path": args.path,
+        "json_path": args.json_path,
+        "htpasswd_file": args.htpasswd_file,
+    }
+    with httpd:
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

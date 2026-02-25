@@ -75,3 +75,31 @@ openclaw_healthcheck_delay: 5
 
 # Log rotation
 openclaw_logrotate_days: 7
+
+# Nyxmon/OpenClaw metrics endpoint (json-metrics compatible)
+openclaw_metrics_endpoint_enabled: false
+openclaw_metrics_endpoint_user: metrics
+openclaw_metrics_endpoint_group: "{{ openclaw_metrics_endpoint_user }}"
+openclaw_metrics_endpoint_service_name: openclaw-metrics-endpoint
+openclaw_metrics_endpoint_timer_name: openclaw-metrics-collector
+openclaw_metrics_endpoint_bind: "127.0.0.1"
+openclaw_metrics_endpoint_port: 9104
+openclaw_metrics_endpoint_path: "/.well-known/openclaw-health"
+openclaw_metrics_endpoint_auth_user: "CHANGEME"
+openclaw_metrics_endpoint_auth_password: "CHANGEME"
+openclaw_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+openclaw_metrics_endpoint_data_dir: "/var/lib/openclaw-metrics"
+openclaw_metrics_endpoint_json_path: "{{ openclaw_metrics_endpoint_data_dir }}/openclaw-health.json"
+openclaw_metrics_endpoint_server_path: "/usr/local/bin/openclaw_metrics_httpd.py"
+openclaw_metrics_endpoint_collector_path: "/usr/local/bin/openclaw_metrics_collector.py"
+openclaw_metrics_endpoint_htpasswd_dir: "/etc/openclaw-metrics-endpoint"
+openclaw_metrics_endpoint_htpasswd_path: "{{ openclaw_metrics_endpoint_htpasswd_dir }}/htpasswd"
+openclaw_metrics_endpoint_container_name: "{{ openclaw_container_name }}"
+openclaw_metrics_endpoint_command_timeout: 20
+openclaw_metrics_endpoint_timer_interval: 120
+openclaw_metrics_endpoint_timer_on_boot_sec: 30
+openclaw_metrics_endpoint_timer_accuracy_sec: 10
+openclaw_metrics_endpoint_timer_randomized_delay_sec: 15
+openclaw_metrics_endpoint_remove_data_on_disable: false
