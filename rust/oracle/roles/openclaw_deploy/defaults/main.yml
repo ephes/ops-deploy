@@ -31,6 +31,18 @@ openclaw_mem_limit: "2g"
 openclaw_cpus: "1.0"
 openclaw_pids_limit: 256
 openclaw_node_max_old_space_size: 1536
+openclaw_gateway_config_mode: "0600"
+
+# Gateway hardening
+openclaw_gateway_trusted_proxies:
+  - "127.0.0.1"
+  - "::1"
+openclaw_gateway_allow_real_ip_fallback: false
+openclaw_gateway_auth_rate_limit_enabled: true
+openclaw_gateway_auth_rate_limit_max_attempts: 10
+openclaw_gateway_auth_rate_limit_window_ms: 60000
+openclaw_gateway_auth_rate_limit_lockout_ms: 300000
+openclaw_gateway_auth_rate_limit_exempt_loopback: true
 
 # AI provider credentials
 openclaw_anthropic_api_key: ""  # REQUIRED — Anthropic API key
