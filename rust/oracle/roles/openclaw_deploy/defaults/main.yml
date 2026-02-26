@@ -103,3 +103,40 @@ openclaw_metrics_endpoint_timer_on_boot_sec: 30
 openclaw_metrics_endpoint_timer_accuracy_sec: 10
 openclaw_metrics_endpoint_timer_randomized_delay_sec: 15
 openclaw_metrics_endpoint_remove_data_on_disable: false
+
+# Weeknotes/todo automation
+openclaw_weeknotes_enabled: false
+openclaw_weeknotes_tz: "Europe/Berlin"
+openclaw_weeknotes_skill_name: weeknotes-md
+openclaw_weeknotes_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_weeknotes_dir: "{{ openclaw_data_dir }}/weeknotes"
+openclaw_weeknotes_container_dir: "/home/node/.openclaw/weeknotes"
+openclaw_weeknotes_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_weeknotes_backend: "local"  # local | s3
+openclaw_weeknotes_command_skill_names:
+  - todo
+  - note
+  - snooze
+openclaw_weeknotes_snapshot_max_count: 200
+openclaw_weeknotes_snapshot_max_days: 14
+openclaw_weeknotes_lock_timeout: 5
+openclaw_weeknotes_max_payload_length: 500
+openclaw_weeknotes_rate_limit_writes: 10
+openclaw_weeknotes_rate_limit_window_secs: 600
+openclaw_weeknotes_reminder_cron: "0 9 * * 1-5"
+openclaw_weeknotes_reminder_command: "/todo reminder"
+
+# Weeknotes S3 backend settings (used when openclaw_weeknotes_backend=s3)
+openclaw_weeknotes_s3_endpoint: ""
+openclaw_weeknotes_s3_region: "us-east-1"
+openclaw_weeknotes_s3_bucket: ""
+openclaw_weeknotes_s3_prefix: ""
+openclaw_weeknotes_s3_access_key: ""
+openclaw_weeknotes_s3_secret_key: ""
+openclaw_weeknotes_s3_note_key_format: "%Y-%m-%d.md"
+openclaw_weeknotes_s3_todo_list_mode: "current_note"  # current_note | daily_notes
+openclaw_weeknotes_s3_todo_list_key_regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}\\.md$"
+openclaw_weeknotes_s3_todo_cache_refresh_secs: 120
+openclaw_weeknotes_s3_mc_alias: "weeknotes"
+openclaw_weeknotes_s3_mc_host_path: "/usr/local/bin/mc"
+openclaw_weeknotes_s3_mc_container_path: "/usr/local/bin/mc"
