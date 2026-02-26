@@ -32,8 +32,9 @@ openclaw_cpus: "1.0"
 openclaw_pids_limit: 256
 openclaw_node_max_old_space_size: 1536
 
-# AI provider (Anthropic)
+# AI provider credentials
 openclaw_anthropic_api_key: ""  # REQUIRED — Anthropic API key
+openclaw_openai_api_key: ""  # OPTIONAL — OpenAI API key (provider `openai`)
 
 # Telegram channel
 openclaw_telegram_enabled: false
