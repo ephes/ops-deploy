@@ -51,6 +51,10 @@ openclaw_openrouter_api_key: ""  # OPTIONAL — OpenRouter API key (provider `op
 openclaw_ollama_api_key: ""  # OPTIONAL — Ollama API key (provider `ollama`)
 openclaw_ollama_base_url: ""  # OPTIONAL — Ollama base URL (e.g. http://127.0.0.1:11434)
 
+# Agent model policy (optional; when primary is set, role patches agents.defaults.model)
+openclaw_agent_model_primary: ""
+openclaw_agent_model_fallbacks: []
+
 # Telegram channel
 openclaw_telegram_enabled: false
 openclaw_telegram_bot_token: ""
