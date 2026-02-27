@@ -93,3 +93,13 @@ backup_metrics_endpoint_usb_datasets:
   - vault/photos
   - vault/videos
   - vault/backups
+
+# Optional file-backup freshness checks (for archive workflows not represented by ZFS snapshots)
+# Each entry supports:
+# - id (string, required)
+# - path (string, required)
+# - glob (string, optional, default "*.tar.*")
+# - max_age_hours (number, optional, default 48)
+# - required (bool, optional, default true)
+# - enabled (bool, optional, default true)
+backup_metrics_endpoint_file_backups: []
