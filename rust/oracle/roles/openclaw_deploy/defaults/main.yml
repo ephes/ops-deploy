@@ -134,6 +134,31 @@ openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds: 5
 openclaw_metrics_endpoint_synthetic_canary_state_path: "{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json"
 openclaw_metrics_endpoint_synthetic_canary_output_max_chars: 256
 
+# IMAP read-only mail skill
+openclaw_imap_enabled: false
+openclaw_imap_host: ""
+openclaw_imap_port: 993
+openclaw_imap_tls_mode: "imaps"  # imaps | starttls
+openclaw_imap_default_mailbox: "INBOX"
+openclaw_imap_account_map: {}
+openclaw_imap_secret_source: {}
+openclaw_imap_default_account: ""
+openclaw_imap_skill_name: "mail-imap"
+openclaw_imap_command_skill_name: "mail"
+openclaw_imap_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_imap_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_imap_credentials_path: "{{ openclaw_data_dir }}/credentials/imap_accounts.json"
+openclaw_imap_container_credentials_path: "/home/node/.openclaw/credentials/imap_accounts.json"
+openclaw_imap_connect_timeout_seconds: 10
+openclaw_imap_command_timeout_seconds: 15
+openclaw_imap_default_limit: 10
+openclaw_imap_max_limit: 25
+openclaw_imap_header_max_chars: 240
+openclaw_imap_subject_max_chars: 240
+openclaw_imap_read_fetch_bytes: 4096
+openclaw_imap_read_snippet_chars: 800
+openclaw_imap_search_query_max_chars: 200
+
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
 openclaw_weeknotes_tz: "Europe/Berlin"
