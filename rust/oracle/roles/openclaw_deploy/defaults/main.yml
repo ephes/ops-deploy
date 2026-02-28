@@ -158,6 +158,23 @@ openclaw_imap_read_fetch_bytes: 4096
 openclaw_imap_read_snippet_chars: 800
 openclaw_imap_search_query_max_chars: 200
 
+# SMTP send mail skill (phase-2, per-account sender credentials)
+openclaw_smtp_enabled: false
+openclaw_smtp_host: ""
+openclaw_smtp_port: 587
+openclaw_smtp_tls_mode: "starttls"  # starttls | smtps
+openclaw_smtp_account_map: {}
+openclaw_smtp_default_account: ""
+openclaw_smtp_credentials_path: "{{ openclaw_data_dir }}/credentials/smtp_accounts.json"
+openclaw_smtp_container_credentials_path: "/home/node/.openclaw/credentials/smtp_accounts.json"
+openclaw_smtp_connect_timeout_seconds: 10
+openclaw_smtp_command_timeout_seconds: 15
+openclaw_smtp_max_recipients: 10
+openclaw_smtp_address_max_chars: 254
+openclaw_smtp_from_name_max_chars: 120
+openclaw_smtp_subject_max_chars: 240
+openclaw_smtp_body_max_chars: 4000
+
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
 openclaw_weeknotes_tz: "Europe/Berlin"
