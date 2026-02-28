@@ -141,7 +141,6 @@ openclaw_imap_port: 993
 openclaw_imap_tls_mode: "imaps"  # imaps | starttls
 openclaw_imap_default_mailbox: "INBOX"
 openclaw_imap_account_map: {}
-openclaw_imap_secret_source: {}
 openclaw_imap_default_account: ""
 openclaw_imap_skill_name: "mail-imap"
 openclaw_imap_command_skill_name: "mail"
