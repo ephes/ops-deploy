@@ -175,6 +175,26 @@ openclaw_smtp_from_name_max_chars: 120
 openclaw_smtp_subject_max_chars: 240
 openclaw_smtp_body_max_chars: 4000
 
+# Home Assistant read-only skill
+openclaw_homeassistant_enabled: false
+openclaw_homeassistant_base_url: ""
+openclaw_homeassistant_token: ""
+openclaw_homeassistant_skill_name: "homeassistant-read"
+openclaw_homeassistant_command_skill_name: "homeassistant"
+openclaw_homeassistant_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_homeassistant_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_homeassistant_credentials_path: "{{ openclaw_data_dir }}/credentials/homeassistant.json"
+openclaw_homeassistant_container_credentials_path: "/home/node/.openclaw/credentials/homeassistant.json"
+openclaw_homeassistant_allow_domains: []
+openclaw_homeassistant_allow_entities: []
+openclaw_homeassistant_request_timeout_seconds: 8
+openclaw_homeassistant_default_limit: 10
+openclaw_homeassistant_max_limit: 25
+openclaw_homeassistant_state_max_chars: 200
+openclaw_homeassistant_friendly_name_max_chars: 120
+openclaw_homeassistant_attribute_max_items: 8
+openclaw_homeassistant_attribute_value_max_chars: 120
+
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
 openclaw_weeknotes_tz: "Europe/Berlin"
