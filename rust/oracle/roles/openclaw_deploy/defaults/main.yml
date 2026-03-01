@@ -197,6 +197,25 @@ openclaw_homeassistant_friendly_name_max_chars: 120
 openclaw_homeassistant_attribute_max_items: 8
 openclaw_homeassistant_attribute_value_max_chars: 120
 
+# Calendar skill (CalDAV read + guarded create)
+openclaw_calendar_enabled: false
+openclaw_calendar_timezone: "Europe/Berlin"
+openclaw_calendar_skill_name: "calendar-caldav"
+openclaw_calendar_command_skill_name: "calendar"
+openclaw_calendar_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_calendar_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_calendar_credentials_path: "{{ openclaw_data_dir }}/credentials/calendar_accounts.json"
+openclaw_calendar_container_credentials_path: "/home/node/.openclaw/credentials/calendar_accounts.json"
+openclaw_calendar_account_map: {}
+openclaw_calendar_default_account: ""
+openclaw_calendar_map: {}
+openclaw_calendar_default_duration_minutes: 60
+openclaw_calendar_request_timeout_seconds: 10
+openclaw_calendar_default_limit: 10
+openclaw_calendar_max_limit: 25
+openclaw_calendar_title_max_chars: 180
+openclaw_calendar_location_max_chars: 140
+
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
 openclaw_weeknotes_tz: "Europe/Berlin"
