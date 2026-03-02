@@ -222,6 +222,35 @@ openclaw_calendar_container_health_state_path: "/home/node/.openclaw/credentials
 openclaw_calendar_auth_failure_window_seconds: 3600
 openclaw_calendar_auth_failure_threshold: 3
 
+# Paperless skill (read-only search/get/latest + Telegram delivery fallback)
+openclaw_paperless_enabled: false
+openclaw_paperless_base_url: ""
+openclaw_paperless_token: ""
+openclaw_paperless_skill_name: "paperless-read"
+openclaw_paperless_command_skill_name: "paperless"
+openclaw_paperless_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_paperless_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_paperless_credentials_path: "{{ openclaw_data_dir }}/credentials/paperless.json"
+openclaw_paperless_container_credentials_path: "/home/node/.openclaw/credentials/paperless.json"
+openclaw_paperless_health_state_path: "{{ openclaw_data_dir }}/credentials/paperless_health_state.json"
+openclaw_paperless_container_health_state_path: "/home/node/.openclaw/credentials/paperless_health_state.json"
+openclaw_paperless_search_timeout_seconds: 10
+openclaw_paperless_download_timeout_seconds: 60
+openclaw_paperless_delivery_timeout_seconds: 30
+openclaw_paperless_default_limit: 5
+openclaw_paperless_max_limit: 10
+openclaw_paperless_latest_default_days: 7
+openclaw_paperless_latest_max_days: 365
+openclaw_paperless_title_max_chars: 120
+openclaw_paperless_correspondent_max_chars: 80
+openclaw_paperless_max_download_bytes: 52428800  # 50 MB hard cap
+openclaw_paperless_download_chunk_bytes: 65536
+openclaw_paperless_downloads_dir: "{{ openclaw_data_dir }}/workspace/.paperless-downloads"
+openclaw_paperless_container_downloads_dir: "/home/node/.openclaw/workspace/.paperless-downloads"
+openclaw_paperless_delivery_channel: "telegram"
+openclaw_paperless_auth_failure_window_seconds: 3600
+openclaw_paperless_auth_failure_threshold: 3
+
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
 openclaw_weeknotes_tz: "Europe/Berlin"
