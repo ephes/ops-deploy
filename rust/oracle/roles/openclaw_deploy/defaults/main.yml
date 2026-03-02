@@ -211,10 +211,16 @@ openclaw_calendar_default_account: ""
 openclaw_calendar_map: {}
 openclaw_calendar_default_duration_minutes: 60
 openclaw_calendar_request_timeout_seconds: 10
+openclaw_calendar_read_parallelism: 4
+openclaw_calendar_read_aggregate_timeout_seconds: 20
 openclaw_calendar_default_limit: 10
 openclaw_calendar_max_limit: 25
 openclaw_calendar_title_max_chars: 180
 openclaw_calendar_location_max_chars: 140
+openclaw_calendar_health_state_path: "{{ openclaw_data_dir }}/credentials/calendar_health_state.json"
+openclaw_calendar_container_health_state_path: "/home/node/.openclaw/credentials/calendar_health_state.json"
+openclaw_calendar_auth_failure_window_seconds: 3600
+openclaw_calendar_auth_failure_threshold: 3
 
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
