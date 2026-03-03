@@ -247,6 +247,9 @@ openclaw_paperless_max_download_bytes: 52428800  # 50 MB hard cap
 openclaw_paperless_download_chunk_bytes: 65536
 openclaw_paperless_downloads_dir: "{{ openclaw_data_dir }}/workspace/.paperless-downloads"
 openclaw_paperless_container_downloads_dir: "/home/node/.openclaw/workspace/.paperless-downloads"
+openclaw_paperless_session_state_path: "{{ openclaw_data_dir }}/agents/main/sessions/sessions.json"
+openclaw_paperless_container_session_state_path: "/home/node/.openclaw/agents/main/sessions/sessions.json"
+openclaw_paperless_session_target_max_age_seconds: 180
 openclaw_paperless_delivery_channel: "telegram"
 openclaw_paperless_auth_failure_window_seconds: 3600
 openclaw_paperless_auth_failure_threshold: 3
