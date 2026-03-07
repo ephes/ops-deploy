@@ -1,0 +1,64 @@
+---
+# logyard_deploy defaults
+
+logyard_enabled: false
+
+logyard_user: logyard
+logyard_group: "{{ logyard_user }}"
+logyard_home: "/opt/apps/logyard"
+logyard_site_path: "{{ logyard_home }}/site"
+
+logyard_deploy_method: rsync
+logyard_source_path: ""
+logyard_git_repo: "https://github.com/ephes/logyard.git"
+logyard_git_version: "main"
+logyard_rsync_excludes:
+  - ".git/"
+  - ".venv/"
+  - "__pycache__/"
+  - "*.pyc"
+
+logyard_service_name: "logyard"
+logyard_compose_path: "{{ logyard_home }}/docker-compose.yml"
+logyard_env_dir: "/etc/logyard"
+logyard_config_path: "{{ logyard_env_dir }}/loki-config.yml"
+
+logyard_docker_network_name: "graphyard-monitoring"
+logyard_loki_image: "grafana/loki:3.5.11"
+logyard_loki_container_name: "logyard-loki"
+logyard_loki_host_port: 3101
+logyard_loki_http_port: 3100
+logyard_loki_data_dir: "/var/lib/logyard/loki"
+logyard_loki_data_owner: "10001"
+logyard_loki_data_group: "10001"
+logyard_loki_schema_from: "2024-01-01"
+logyard_loki_index_prefix: "logyard_index_"
+logyard_retention_period: "336h"
+logyard_volume_enabled: true
+logyard_query_cache_max_size_mb: 100
+
+logyard_grafana_enabled: true
+logyard_grafana_container_name: "graphyard-grafana"
+logyard_grafana_datasource_name: "Logyard Loki"
+logyard_grafana_datasource_uid: "logyard-loki"
+logyard_grafana_datasource_is_default: false
+logyard_grafana_datasource_path: "/opt/apps/graphyard/site/deploy/grafana/provisioning/datasources/logyard.yaml"
+logyard_grafana_dashboards_root: "/opt/apps/graphyard/site/deploy/grafana/dashboards"
+logyard_grafana_dashboard_source_dir: "{{ logyard_site_path }}/deploy/grafana/dashboards/logyard"
+logyard_grafana_dashboard_target_dir: "{{ logyard_grafana_dashboards_root }}/logyard"
+
+logyard_health_enabled: true
+logyard_health_service_name: "logyard-health-endpoint"
+logyard_health_bind_host: "127.0.0.1"
+logyard_health_port: 9105
+logyard_health_path: "/.well-known/logyard"
+logyard_health_script_path: "/usr/local/bin/logyard_health_httpd.py"
+logyard_health_selector: '{host="macmini",source_type="journald"}'
+logyard_health_warning_window_seconds: 900
+logyard_health_critical_window_seconds: 3600
+logyard_health_timeout_seconds: 10
+
+logyard_ready_url: "http://127.0.0.1:{{ logyard_loki_host_port }}/ready"
+logyard_healthcheck_enabled: true
+logyard_healthcheck_retries: 18
+logyard_healthcheck_delay_seconds: 5
