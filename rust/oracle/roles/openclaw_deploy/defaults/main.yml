@@ -255,6 +255,24 @@ openclaw_paperless_delivery_channel: "telegram"
 openclaw_paperless_auth_failure_window_seconds: 3600
 openclaw_paperless_auth_failure_threshold: 3
 
+# OpsGate skill (submit explicit investigator-only tickets; approval remains in OpsGate)
+openclaw_opsgate_enabled: false
+openclaw_opsgate_submit_base_url: ""
+openclaw_opsgate_approval_base_url: ""
+openclaw_opsgate_submit_token: ""
+openclaw_opsgate_skill_name: "opsgate-submit"
+openclaw_opsgate_command_skill_name: "opsgate"
+openclaw_opsgate_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_opsgate_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_opsgate_credentials_path: "{{ openclaw_data_dir }}/credentials/opsgate_submit.json"
+openclaw_opsgate_container_credentials_path: "/home/node/.openclaw/credentials/opsgate_submit.json"
+openclaw_opsgate_submit_timeout_seconds: 10
+openclaw_opsgate_ticket_expires_seconds: 14400
+openclaw_opsgate_title_max_chars: 120
+openclaw_opsgate_summary_max_chars: 240
+openclaw_opsgate_request_max_chars: 4000
+openclaw_opsgate_task_ref_max_chars: 120
+
 # Weeknotes/todo automation
 openclaw_weeknotes_enabled: false
 openclaw_weeknotes_tz: "Europe/Berlin"
