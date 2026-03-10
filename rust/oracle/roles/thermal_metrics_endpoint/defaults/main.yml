@@ -1,0 +1,35 @@
+---
+# thermal_metrics_endpoint - Default Variables
+#
+# Exposes bounded thermal metrics from thermal_metrics_exporter as an
+# authenticated cached HTTP endpoint.
+
+thermal_metrics_endpoint_enabled: false
+
+thermal_metrics_endpoint_user: metrics
+thermal_metrics_endpoint_group: "{{ thermal_metrics_endpoint_user }}"
+thermal_metrics_endpoint_service_name: thermal-metrics-endpoint
+
+thermal_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+thermal_metrics_endpoint_port: 9104
+thermal_metrics_endpoint_path: "/.well-known/thermal"
+thermal_metrics_endpoint_auth_user: "CHANGE_ME"
+thermal_metrics_endpoint_auth_password: "CHANGE_ME"
+
+thermal_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+
+thermal_metrics_endpoint_data_dir: "/var/lib/thermal-metrics"
+thermal_metrics_endpoint_json_path: "{{ thermal_metrics_endpoint_data_dir }}/thermal.json"
+thermal_metrics_endpoint_server_path: "/usr/local/bin/thermal_metrics_httpd.py"
+thermal_metrics_endpoint_htpasswd_dir: "/etc/thermal-metrics-endpoint"
+thermal_metrics_endpoint_htpasswd_path: "{{ thermal_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+thermal_metrics_endpoint_exporter_path: "/usr/local/bin/thermal-metrics-exporter"
+
+thermal_metrics_endpoint_timer_interval: 300
+thermal_metrics_endpoint_timer_name: thermal-metrics-collector
+thermal_metrics_endpoint_timer_on_boot_sec: 30
+thermal_metrics_endpoint_timer_accuracy_sec: 10
+thermal_metrics_endpoint_timer_randomized_delay_sec: 30
