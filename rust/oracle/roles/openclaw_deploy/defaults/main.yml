@@ -72,6 +72,10 @@ openclaw_gateway_config: {}
 # Config behavior: only seed openclaw.json if absent. Set true to overwrite.
 openclaw_force_config: false
 
+# Managed session-state refresh
+openclaw_session_state_path: "{{ openclaw_data_dir }}/agents/main/sessions/sessions.json"
+openclaw_managed_skills_manifest_path: "{{ openclaw_data_dir }}/managed-skills-manifest.json"
+
 # Extra env for overrides
 openclaw_extra_env: {}
 
@@ -117,7 +121,7 @@ openclaw_metrics_endpoint_collector_path: "/usr/local/bin/openclaw_metrics_colle
 openclaw_metrics_endpoint_htpasswd_dir: "/etc/openclaw-metrics-endpoint"
 openclaw_metrics_endpoint_htpasswd_path: "{{ openclaw_metrics_endpoint_htpasswd_dir }}/htpasswd"
 openclaw_metrics_endpoint_container_name: "{{ openclaw_container_name }}"
-openclaw_metrics_endpoint_command_timeout: 20
+openclaw_metrics_endpoint_command_timeout: 45
 openclaw_metrics_endpoint_timer_interval: 120
 openclaw_metrics_endpoint_timer_on_boot_sec: 30
 openclaw_metrics_endpoint_timer_accuracy_sec: 10
