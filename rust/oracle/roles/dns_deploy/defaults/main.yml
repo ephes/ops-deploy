@@ -91,3 +91,12 @@ dns_forward_zones: []
 #    forward_addrs:                       # List of upstream DNS servers
 #      - "192.168.178.1"
 #    forward_first: false                 # Try forward first, then resolve locally on failure
+
+# Local DNS records
+# Authoritative records served directly by Unbound before forwarded zones.
+# Useful for critical infrastructure names inside forwarded zones when upstream
+# DHCP/router registration is missing or unstable.
+dns_local_records: []
+#  - name: "macmini.fritz.box"
+#    type: "A"
+#    value: "192.168.178.94"
