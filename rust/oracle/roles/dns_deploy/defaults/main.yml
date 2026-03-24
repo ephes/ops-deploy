@@ -21,6 +21,9 @@ dns_mode: "simple"
 dns_unbound_port: 53  # Port for Unbound DNS server (53 for simple mode, custom for advanced)
 dns_unbound_config_dir: /etc/unbound/unbound.conf.d
 dns_unbound_blocklist_dir: /var/lib/unbound
+dns_unbound_serve_expired: false            # Serve stale cache entries during upstream outages
+dns_unbound_serve_expired_ttl: 86400        # Maximum age of stale entries to serve (seconds)
+dns_unbound_serve_expired_reply_ttl: 30     # TTL sent to clients for stale replies (seconds)
 
 # Split-DNS Configuration
 dns_split_lan_network: "192.168.0.0/16"        # Default LAN network range
