@@ -24,6 +24,12 @@ dns_unbound_blocklist_dir: /var/lib/unbound
 dns_unbound_serve_expired: false            # Serve stale cache entries during upstream outages
 dns_unbound_serve_expired_ttl: 86400        # Maximum age of stale entries to serve (seconds)
 dns_unbound_serve_expired_reply_ttl: 30     # TTL sent to clients for stale replies (seconds)
+dns_unbound_serve_expired_ttl_reset: false  # Reset stale TTL after failed refresh attempts
+dns_unbound_serve_expired_client_timeout: 0 # Optional RFC 8767 stale-answer delay in milliseconds
+dns_unbound_prefetch: false                 # Refresh hot cache entries before they expire
+dns_unbound_prefetch_key: false             # Prefetch DNSKEY records to reduce DNSSEC lookup latency
+dns_unbound_num_queries_per_thread: 0       # Override Unbound recursion queue depth (0 keeps package default)
+dns_unbound_disable_distro_resolvconf_integration: true  # Keep Ubuntu's resolvconf hooks from conflicting
 
 # Split-DNS Configuration
 dns_split_lan_network: "192.168.0.0/16"        # Default LAN network range
@@ -49,7 +55,7 @@ dns_blocklists_enabled: true
 dns_blocklists:
   - "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
   - "https://someonewhocares.org/hosts/zero/hosts"
-  - "https://raw.githubusercontent.com/AdguardTeam/AdguardSDNSFilter/master/Filters/filter.txt"
+  - "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
 
 # Allowlist - domains that should never be blocked
 dns_allowlist:
