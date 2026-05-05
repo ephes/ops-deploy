@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""Run host-local apt maintenance and record durable JSON state."""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+HOST_ID = {{ os_apt_maintenance_host_id | to_json }}
+STATE_DIR = Path({{ os_apt_maintenance_state_dir | to_json }})
+STATE_FILE = Path({{ os_apt_maintenance_state_file | to_json }})
+LOCK_FILE = Path({{ os_apt_maintenance_lock_file | to_json }})
+APT_GET = {{ os_apt_maintenance_apt_get_path | to_json }}
+SYSTEMCTL = {{ os_apt_maintenance_systemctl_path | to_json }}
+COMMAND_TIMEOUT = {{ os_apt_maintenance_command_timeout | int }}
+FRESHNESS_MAX_AGE_SECONDS = {{ os_apt_maintenance_freshness_max_age_seconds | int }}
+AUTO_REBOOT = {{ 'True' if os_apt_maintenance_auto_reboot | bool else 'False' }}
+
+STEPS = [
+    {
+        "id": "update_cache",
+        "enabled": {{ 'True' if os_apt_maintenance_update_cache | bool else 'False' }},
+        "argv": [APT_GET, "-o", "Dpkg::Lock::Timeout=300", "update"],
+    },
+    {
+        "id": "dist_upgrade",
+        "enabled": {{ 'True' if os_apt_maintenance_dist_upgrade | bool else 'False' }},
+        "argv": [
+            APT_GET,
+            "-o",
+            "Dpkg::Lock::Timeout=300",
+            "-o",
+            "Dpkg::Options::=--force-confold",
+            "-y",
+            "dist-upgrade",
+        ],
+    },
+    {
+        "id": "autoremove",
+        "enabled": {{ 'True' if os_apt_maintenance_autoremove | bool else 'False' }},
+        "argv": [APT_GET, "-o", "Dpkg::Lock::Timeout=300", "-y", "autoremove"],
+    },
+    {
+        "id": "autoclean",
+        "enabled": {{ 'True' if os_apt_maintenance_autoclean | bool else 'False' }},
+        "argv": [APT_GET, "-o", "Dpkg::Lock::Timeout=300", "-y", "autoclean"],
+    },
+]
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso_now() -> str:
+    return utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def epoch_now() -> int:
+    return int(utc_now().timestamp())
+
+
+def read_previous_state() -> dict[str, Any]:
+    try:
+        with STATE_FILE.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            return data
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+
+
+def base_state(previous: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "host_id": HOST_ID,
+        "hostname": socket.gethostname(),
+        "generated_at": iso_now(),
+        "generated_epoch": epoch_now(),
+        "freshness_max_age_seconds": FRESHNESS_MAX_AGE_SECONDS,
+        "last_run_started_at": previous.get("last_run_started_at"),
+        "last_run_started_epoch": previous.get("last_run_started_epoch"),
+        "last_run_finished_at": previous.get("last_run_finished_at"),
+        "last_run_finished_epoch": previous.get("last_run_finished_epoch"),
+        "last_success_at": previous.get("last_success_at"),
+        "last_success_epoch": previous.get("last_success_epoch"),
+        "last_exit_code": previous.get("last_exit_code"),
+        "last_status": previous.get("last_status", "never_run"),
+        "last_error": previous.get("last_error"),
+        "last_skipped_at": previous.get("last_skipped_at"),
+        "last_skipped_epoch": previous.get("last_skipped_epoch"),
+        "last_skipped_reason": previous.get("last_skipped_reason"),
+        "reboot_required": Path("/var/run/reboot-required").exists(),
+        "auto_reboot_enabled": AUTO_REBOOT,
+        "auto_reboot_attempted": False,
+        "auto_reboot_result": None,
+        "steps": previous.get("steps", {}),
+        "summary": {
+            "last_run_ok": previous.get("last_status") == "success",
+            "reboot_required": Path("/var/run/reboot-required").exists(),
+        },
+    }
+
+
+def init_state() -> int:
+    previous = read_previous_state()
+    if STATE_FILE.exists():
+        return 0
+    state = base_state(previous)
+    state["last_status"] = "never_run"
+    state["last_error"] = "apt maintenance has not run yet"
+    state["steps"] = {step["id"]: {"enabled": step["enabled"], "attempted": False} for step in STEPS}
+    atomic_write_json(STATE_FILE, state)
+    return 0
+
+
+def run_command(argv: list[str]) -> dict[str, Any]:
+    started = time.monotonic()
+    started_at = iso_now()
+    result: dict[str, Any] = {
+        "attempted": True,
+        "started_at": started_at,
+        "finished_at": None,
+        "duration_seconds": None,
+        "exit_code": None,
+        "status": "failed",
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "error": None,
+    }
+    env = os.environ.copy()
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    try:
+        completed = subprocess.run(
+            argv,
+            text=True,
+            capture_output=True,
+            timeout=COMMAND_TIMEOUT,
+            env=env,
+            check=False,
+        )
+        result["exit_code"] = completed.returncode
+        result["status"] = "success" if completed.returncode == 0 else "failed"
+        result["stdout_tail"] = completed.stdout[-4000:]
+        result["stderr_tail"] = completed.stderr[-4000:]
+    except subprocess.TimeoutExpired as exc:
+        result["exit_code"] = 124
+        result["status"] = "failed"
+        result["error"] = f"command timed out after {COMMAND_TIMEOUT} seconds"
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        result["stdout_tail"] = stdout[-4000:] if isinstance(stdout, str) else ""
+        result["stderr_tail"] = stderr[-4000:] if isinstance(stderr, str) else ""
+    except OSError as exc:
+        result["exit_code"] = 127
+        result["status"] = "failed"
+        result["error"] = str(exc)
+    finally:
+        result["finished_at"] = iso_now()
+        result["duration_seconds"] = round(time.monotonic() - started, 3)
+    return result
+
+
+def acquire_lock() -> Any:
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handle = LOCK_FILE.open("w", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def run_maintenance() -> int:
+    previous = read_previous_state()
+    lock_handle = acquire_lock()
+    if lock_handle is None:
+        state = base_state(previous)
+        now = iso_now()
+        now_epoch = epoch_now()
+        state.update(
+            {
+                "generated_at": now,
+                "generated_epoch": now_epoch,
+                "last_skipped_at": now,
+                "last_skipped_epoch": now_epoch,
+                "last_skipped_reason": "another os apt maintenance run is already active",
+            }
+        )
+        atomic_write_json(STATE_FILE, state)
+        return 75
+
+    try:
+        run_started_at = iso_now()
+        run_started_epoch = epoch_now()
+        state = base_state(previous)
+        state.update(
+            {
+                "last_run_started_at": run_started_at,
+                "last_run_started_epoch": run_started_epoch,
+                "last_run_finished_at": None,
+                "last_run_finished_epoch": None,
+                "last_exit_code": None,
+                "last_status": "running",
+                "last_error": None,
+                "steps": {},
+            }
+        )
+        atomic_write_json(STATE_FILE, state)
+
+        first_error = None
+        exit_code = 0
+        for step in STEPS:
+            step_id = step["id"]
+            if not step["enabled"]:
+                state["steps"][step_id] = {"enabled": False, "attempted": False, "status": "skipped"}
+                atomic_write_json(STATE_FILE, state)
+                continue
+            result = run_command(step["argv"])
+            result["enabled"] = True
+            state["steps"][step_id] = result
+            atomic_write_json(STATE_FILE, state)
+            if result["status"] != "success":
+                exit_code = int(result["exit_code"] or 1)
+                first_error = result.get("error") or f"{step_id} failed with exit code {exit_code}"
+                break
+
+        reboot_required = Path("/var/run/reboot-required").exists()
+        finished_at = iso_now()
+        finished_epoch = epoch_now()
+        status = "success" if exit_code == 0 else "failed"
+
+        state.update(
+            {
+                "generated_at": finished_at,
+                "generated_epoch": finished_epoch,
+                "last_run_finished_at": finished_at,
+                "last_run_finished_epoch": finished_epoch,
+                "last_exit_code": exit_code,
+                "last_status": status,
+                "last_error": first_error,
+                "reboot_required": reboot_required,
+                "summary": {
+                    "last_run_ok": status == "success",
+                    "reboot_required": reboot_required,
+                },
+            }
+        )
+        if status == "success":
+            state["last_success_at"] = finished_at
+            state["last_success_epoch"] = finished_epoch
+
+        if status == "success" and reboot_required and AUTO_REBOOT:
+            state["auto_reboot_attempted"] = True
+            reboot_result = run_command([SYSTEMCTL, "reboot"])
+            state["auto_reboot_result"] = reboot_result
+            if reboot_result["status"] != "success":
+                state["last_status"] = "failed"
+                state["last_exit_code"] = int(reboot_result["exit_code"] or 1)
+                state["last_error"] = reboot_result.get("error") or "automatic reboot command failed"
+                exit_code = int(state["last_exit_code"])
+
+        atomic_write_json(STATE_FILE, state)
+        return exit_code
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run apt maintenance and write state JSON")
+    parser.add_argument("--init-state", action="store_true", help="Create placeholder state and exit")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.init_state:
+        return init_state()
+    return run_maintenance()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

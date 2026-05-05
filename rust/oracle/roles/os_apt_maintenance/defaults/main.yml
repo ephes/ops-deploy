@@ -1,0 +1,58 @@
+---
+# os_apt_maintenance - host-local apt update timer with durable state.
+
+os_apt_maintenance_enabled: true
+
+# Host/state identity.
+os_apt_maintenance_host_id: "{{ inventory_hostname }}"
+os_apt_maintenance_state_dir: /var/lib/os-apt-maintenance
+os_apt_maintenance_state_file: "{{ os_apt_maintenance_state_dir }}/state.json"
+os_apt_maintenance_lock_file: /run/os-apt-maintenance.lock
+os_apt_maintenance_script_path: /usr/local/sbin/os-apt-maintenance
+
+# Apt actions. Automatic reboot is intentionally disabled by default.
+os_apt_maintenance_update_cache: true
+os_apt_maintenance_dist_upgrade: true
+os_apt_maintenance_autoremove: true
+os_apt_maintenance_autoclean: true
+os_apt_maintenance_auto_reboot: false
+os_apt_maintenance_apt_get_path: /usr/bin/apt-get
+os_apt_maintenance_systemctl_path: /usr/bin/systemctl
+os_apt_maintenance_command_timeout: 7200
+os_apt_maintenance_freshness_max_age_seconds: 1209600  # 14 days
+
+# Timer cadence. Persistent=true lets hosts catch up after downtime.
+os_apt_maintenance_service_name: os-apt-maintenance
+os_apt_maintenance_timer_on_calendar: "*-*-* 04:00:00"
+os_apt_maintenance_timer_randomized_delay_sec: 2h
+os_apt_maintenance_timer_accuracy_sec: 1h
+os_apt_maintenance_timer_persistent: true
+os_apt_maintenance_timer_enabled: true
+os_apt_maintenance_timer_state: started
+os_apt_maintenance_run_on_deploy: false
+os_apt_maintenance_run_on_first_deploy: false
+
+# Optional authenticated HTTP endpoint for Nyxmon/json-metrics checks.
+os_apt_maintenance_endpoint_enabled: false
+os_apt_maintenance_endpoint_user: metrics
+os_apt_maintenance_endpoint_group: "{{ os_apt_maintenance_endpoint_user }}"
+os_apt_maintenance_endpoint_service_name: os-apt-maintenance-endpoint
+os_apt_maintenance_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+os_apt_maintenance_endpoint_port: 9106
+os_apt_maintenance_endpoint_path: "/.well-known/os-apt-maintenance"
+os_apt_maintenance_endpoint_auth_user: CHANGE_ME
+os_apt_maintenance_endpoint_auth_password: CHANGE_ME
+os_apt_maintenance_endpoint_server_path: /usr/local/bin/os_apt_maintenance_httpd.py
+os_apt_maintenance_endpoint_htpasswd_dir: /etc/os-apt-maintenance-endpoint
+os_apt_maintenance_endpoint_htpasswd_path: "{{ os_apt_maintenance_endpoint_htpasswd_dir }}/htpasswd"
+os_apt_maintenance_endpoint_timeout: 10
+os_apt_maintenance_endpoint_state_max_age_seconds: 1296000  # 15 days
+os_apt_maintenance_endpoint_ip_allow:
+  - 100.64.0.0/10
+
+os_apt_maintenance_packages:
+  - python3
+
+os_apt_maintenance_endpoint_packages:
+  - python3
+  - apache2-utils
