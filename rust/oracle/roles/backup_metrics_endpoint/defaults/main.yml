@@ -38,6 +38,7 @@ backup_metrics_endpoint_htpasswd_path: "{{ backup_metrics_endpoint_htpasswd_dir 
 # Timer configuration
 backup_metrics_endpoint_timer_interval: 300  # seconds between metrics collection
 backup_metrics_endpoint_timer_name: backup-metrics-collector
+# Historical name; used as the initial delay after timer activation.
 backup_metrics_endpoint_timer_on_boot_sec: 30
 backup_metrics_endpoint_timer_accuracy_sec: 10
 backup_metrics_endpoint_timer_randomized_delay_sec: 15

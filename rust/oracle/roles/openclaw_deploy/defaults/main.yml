@@ -125,6 +125,7 @@ openclaw_metrics_endpoint_htpasswd_path: "{{ openclaw_metrics_endpoint_htpasswd_
 openclaw_metrics_endpoint_container_name: "{{ openclaw_container_name }}"
 openclaw_metrics_endpoint_command_timeout: 45
 openclaw_metrics_endpoint_timer_interval: 120
+# Historical name; used as the initial delay after timer activation.
 openclaw_metrics_endpoint_timer_on_boot_sec: 30
 openclaw_metrics_endpoint_timer_accuracy_sec: 10
 openclaw_metrics_endpoint_timer_randomized_delay_sec: 15

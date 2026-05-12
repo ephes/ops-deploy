@@ -61,7 +61,8 @@ class AptMaintenanceHandler(http.server.BaseHTTPRequestHandler):
             last_success_age_seconds = max(0, served_at_epoch - last_success_epoch)
 
         last_status = data.get("last_status")
-        reboot_required = bool(data.get("reboot_required"))
+        state_reboot_required = bool(data.get("reboot_required"))
+        reboot_required = os.path.exists("/var/run/reboot-required")
         state_file_fresh = age_seconds <= STATE_MAX_AGE_SECONDS
         last_success_fresh = (
             last_success_age_seconds is not None
@@ -77,7 +78,9 @@ class AptMaintenanceHandler(http.server.BaseHTTPRequestHandler):
             "age_seconds": age_seconds,
             "state_file_fresh": state_file_fresh,
             "state_max_age_seconds": STATE_MAX_AGE_SECONDS,
+            "state_reboot_required": state_reboot_required,
         }
+        data["reboot_required"] = reboot_required
         data["summary"] = {
             "last_run_ok": last_run_ok,
             "currently_running": currently_running,
