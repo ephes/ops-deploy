@@ -1,0 +1,38 @@
+---
+# tailscale_metrics_endpoint - Default Variables
+#
+# Exposes cached Tailscale login/key-expiry status as an authenticated
+# JSON endpoint for Nyxmon json-metrics checks.
+
+tailscale_metrics_endpoint_enabled: false
+
+tailscale_metrics_endpoint_user: metrics
+tailscale_metrics_endpoint_group: "{{ tailscale_metrics_endpoint_user }}"
+tailscale_metrics_endpoint_service_name: tailscale-metrics-endpoint
+
+tailscale_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+tailscale_metrics_endpoint_port: 9107
+tailscale_metrics_endpoint_path: "/.well-known/tailscale"
+tailscale_metrics_endpoint_auth_user: "CHANGE_ME"
+tailscale_metrics_endpoint_auth_password: "CHANGE_ME"
+
+tailscale_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+
+tailscale_metrics_endpoint_data_dir: "/var/lib/tailscale-metrics"
+tailscale_metrics_endpoint_json_path: "{{ tailscale_metrics_endpoint_data_dir }}/tailscale.json"
+tailscale_metrics_endpoint_exporter_path: "/usr/local/bin/tailscale-metrics-exporter"
+tailscale_metrics_endpoint_server_path: "/usr/local/bin/tailscale_metrics_httpd.py"
+tailscale_metrics_endpoint_htpasswd_dir: "/etc/tailscale-metrics-endpoint"
+tailscale_metrics_endpoint_htpasswd_path: "{{ tailscale_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+tailscale_metrics_endpoint_tailscale_bin: "/usr/bin/tailscale"
+tailscale_metrics_endpoint_warning_days: 45
+tailscale_metrics_endpoint_critical_days: 14
+
+tailscale_metrics_endpoint_timer_interval: 300
+tailscale_metrics_endpoint_timer_name: tailscale-metrics-collector
+tailscale_metrics_endpoint_timer_on_boot_sec: 45
+tailscale_metrics_endpoint_timer_accuracy_sec: 10
+tailscale_metrics_endpoint_timer_randomized_delay_sec: 30
