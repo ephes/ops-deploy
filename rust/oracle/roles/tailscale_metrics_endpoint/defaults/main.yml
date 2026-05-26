@@ -28,8 +28,8 @@ tailscale_metrics_endpoint_htpasswd_dir: "/etc/tailscale-metrics-endpoint"
 tailscale_metrics_endpoint_htpasswd_path: "{{ tailscale_metrics_endpoint_htpasswd_dir }}/htpasswd"
 
 tailscale_metrics_endpoint_tailscale_bin: "/usr/bin/tailscale"
-tailscale_metrics_endpoint_warning_days: 45
-tailscale_metrics_endpoint_critical_days: 14
+tailscale_metrics_endpoint_warning_days: 3
+tailscale_metrics_endpoint_critical_days: 1
 
 tailscale_metrics_endpoint_timer_interval: 300
 tailscale_metrics_endpoint_timer_name: tailscale-metrics-collector
