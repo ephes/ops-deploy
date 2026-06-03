@@ -140,6 +140,8 @@ openclaw_metrics_endpoint_synthetic_canary_timeout: 45
 openclaw_metrics_endpoint_synthetic_canary_max_attempts: 2
 openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds: 5
 openclaw_metrics_endpoint_synthetic_canary_state_path: "{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json"
+openclaw_metrics_endpoint_synthetic_canary_sessions_dir: "{{ openclaw_data_dir }}/agents/main/sessions"
+openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds: 86400
 openclaw_metrics_endpoint_synthetic_canary_output_max_chars: 256
 
 # IMAP read-only mail skill
