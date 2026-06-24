@@ -14,7 +14,7 @@ openclaw_build_dir: "{{ openclaw_home }}/build/openclaw"
 
 # Source & build (no prebuilt image — clone repo and docker build on-host)
 openclaw_repo_url: "https://github.com/openclaw/openclaw.git"
-openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.5.7"
+openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.6.10"
 openclaw_git_depth: 1
 openclaw_git_single_branch: true
 openclaw_image_name: "openclaw"
