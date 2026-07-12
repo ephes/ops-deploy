@@ -86,6 +86,12 @@ backup_metrics_endpoint_local_datasets:
 backup_metrics_endpoint_usb_enabled: false
 backup_metrics_endpoint_usb_pool: vault
 backup_metrics_endpoint_usb_device: ""
+backup_metrics_endpoint_usb_replication_status_path: "/var/lib/zfs-usb-replication/status.json"
+backup_metrics_endpoint_usb_capacity_warning_ratio: 0.90
+backup_metrics_endpoint_usb_capacity_critical_ratio: 0.95
+# Set >0 to require a successful USB replication within this many hours.
+backup_metrics_endpoint_usb_protection_max_age_hours: 0
+backup_metrics_endpoint_usb_health_module_path: "/usr/local/bin/backup_metrics_usb_health.py"
 
 # USB datasets that should receive fresh snapshots when USB pool is imported.
 backup_metrics_endpoint_usb_datasets:
