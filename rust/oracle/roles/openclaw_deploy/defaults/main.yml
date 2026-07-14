@@ -14,7 +14,7 @@ openclaw_build_dir: "{{ openclaw_home }}/build/openclaw"
 
 # Source & build (no prebuilt image — clone repo and docker build on-host)
 openclaw_repo_url: "https://github.com/openclaw/openclaw.git"
-openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.6.10"
+openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.6.11"
 openclaw_git_depth: 1
 openclaw_git_single_branch: true
 openclaw_image_name: "openclaw"
@@ -56,6 +56,11 @@ openclaw_ollama_base_url: ""  # OPTIONAL — Ollama base URL (e.g. http://127.0.
 # Agent model policy (optional; when primary is set, role patches agents.defaults.model)
 openclaw_agent_model_primary: ""
 openclaw_agent_model_fallbacks: []
+openclaw_openai_auth_order: []  # Optional ordered canonical OpenAI auth profiles, e.g. ["openai:default"]
+openclaw_codex_plugin_enabled: false  # Install and enable the official Codex app-server runtime plugin
+openclaw_codex_plugin_id: "codex"
+openclaw_codex_plugin_package: "@openclaw/codex"
+openclaw_codex_plugin_version: "{{ openclaw_version | regex_replace('^v', '') }}"
 
 # Telegram channel
 openclaw_telegram_enabled: false
