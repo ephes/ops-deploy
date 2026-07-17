@@ -14,7 +14,7 @@ openclaw_build_dir: "{{ openclaw_home }}/build/openclaw"
 
 # Source & build (no prebuilt image — clone repo and docker build on-host)
 openclaw_repo_url: "https://github.com/openclaw/openclaw.git"
-openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.6.11"
+openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.7.1"
 openclaw_git_depth: 1
 openclaw_git_single_branch: true
 openclaw_image_name: "openclaw"
@@ -78,6 +78,7 @@ openclaw_session_dm_scope: main  # main | per-peer | per-channel-peer | per-acco
 openclaw_agent_workspace_dir: "{{ openclaw_data_dir }}/workspace"
 openclaw_reply_system_prompt: ""  # Empty preserves the existing workspace SOUL.md
 openclaw_user_profile: ""  # Empty preserves the existing workspace USER.md
+openclaw_workspace_skills: []  # Controller-local files deployed under workspace/skills/<name>
 
 # Full config override (rendered as openclaw.json).
 # When set, this dict is rendered directly — individual openclaw_telegram_*
@@ -316,7 +317,7 @@ openclaw_weeknotes_command_skill_names:
 openclaw_weeknotes_snapshot_max_count: 200
 openclaw_weeknotes_snapshot_max_days: 14
 openclaw_weeknotes_lock_timeout: 5
-openclaw_weeknotes_max_payload_length: 500
+openclaw_weeknotes_max_payload_length: 4000
 openclaw_weeknotes_rate_limit_writes: 10
 openclaw_weeknotes_rate_limit_window_secs: 600
 openclaw_weeknotes_reminder_cron: "0 9 * * 1-5"
