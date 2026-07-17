@@ -67,9 +67,17 @@ openclaw_telegram_enabled: false
 openclaw_telegram_bot_token: ""
 openclaw_telegram_dm_policy: allowlist  # allowlist | open
 openclaw_telegram_allow_from: []  # numeric Telegram user IDs
+openclaw_telegram_streaming_mode: partial  # off | partial | block | progress
+openclaw_telegram_streaming_preview_tool_progress: true
+openclaw_telegram_streaming_preview_command_text: raw  # raw | status
 
-# System prompt for AI replies
-openclaw_reply_system_prompt: "You are a concise assistant."
+# Direct-message session isolation. Use per-channel-peer for shared bot inboxes.
+openclaw_session_dm_scope: main  # main | per-peer | per-channel-peer | per-account-channel-peer
+
+# Managed agent workspace guidance
+openclaw_agent_workspace_dir: "{{ openclaw_data_dir }}/workspace"
+openclaw_reply_system_prompt: ""  # Empty preserves the existing workspace SOUL.md
+openclaw_user_profile: ""  # Empty preserves the existing workspace USER.md
 
 # Full config override (rendered as openclaw.json).
 # When set, this dict is rendered directly — individual openclaw_telegram_*
