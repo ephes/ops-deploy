@@ -58,6 +58,17 @@ logyard_health_warning_window_seconds: 900
 logyard_health_critical_window_seconds: 3600
 logyard_health_timeout_seconds: 10
 
+# Systemd units reported under `$.units.<id>` in the health payload, so a dead log
+# producer is detected directly instead of being inferred from ingest going quiet.
+# Each entry is {id, unit}: `id` is the payload key and must not contain a dot,
+# because monitoring check paths are dot-delimited. Empty by default; set it per
+# host (the producer is not necessarily colocated with the Logyard server), e.g.
+#   logyard_health_units:
+#     - id: vector
+#       unit: vector.service
+logyard_health_units: []
+logyard_health_systemctl_timeout_seconds: 5
+
 logyard_ready_url: "http://127.0.0.1:{{ logyard_loki_host_port }}/ready"
 logyard_healthcheck_enabled: true
 logyard_healthcheck_retries: 18
