@@ -46,6 +46,12 @@ openclaw_gateway_auth_rate_limit_window_ms: 60000
 openclaw_gateway_auth_rate_limit_lockout_ms: 300000
 openclaw_gateway_auth_rate_limit_exempt_loopback: true
 
+# Gateway HTTP endpoints
+# OpenAI-compatible Chat Completions surface (gateway.http.endpoints.chatCompletions).
+# Disabled by default upstream; the flag is written explicitly in both states so an
+# explicit false always overrides a stale true already present in a supplied config.
+openclaw_gateway_http_chat_completions_enabled: false
+
 # AI provider credentials
 openclaw_anthropic_api_key: ""  # REQUIRED — Anthropic API key
 openclaw_openai_api_key: ""  # OPTIONAL — OpenAI API key (provider `openai`)
