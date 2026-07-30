@@ -1,0 +1,146 @@
+---
+# dns_metrics_endpoint - Default Variables
+#
+# Exposes authoritative-DNS health as an authenticated HTTP endpoint. A systemd
+# timer runs the collector periodically and writes JSON to a file; an HTTP
+# server reads that file and adds staleness metadata.
+#
+# This design avoids needing root/SSH access from Nyxmon - only HTTP over
+# Tailscale with basic auth is required.
+#
+# The collector probes every advertised nameserver endpoint individually
+# (each address x each transport), requires an authoritative answer with
+# recursion disabled, compares SOA serials across nameservers, and asserts that
+# no nameserver recurses for foreign names.
+#
+# All addresses/zones below are RFC 5737 / RFC 3849 documentation placeholders.
+# Supply the real values from your control repository.
+
+dns_metrics_endpoint_enabled: false
+
+# Service/user (same as metrics_endpoint pattern)
+dns_metrics_endpoint_user: metrics
+dns_metrics_endpoint_group: "{{ dns_metrics_endpoint_user }}"
+dns_metrics_endpoint_service_name: dns-metrics-endpoint
+
+# Network / auth
+dns_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+dns_metrics_endpoint_port: 9107
+# Per-connection socket timeout for the endpoint, so one stalled or keep-alive
+# client cannot occupy a handler thread indefinitely.
+dns_metrics_endpoint_request_timeout: 15
+dns_metrics_endpoint_path: "/.well-known/dns"
+dns_metrics_endpoint_auth_user: "CHANGE_ME"
+dns_metrics_endpoint_auth_password: "CHANGE_ME"
+
+# Packages (system Python + htpasswd + dig)
+# On Debian/Ubuntu the dig binary ships in bind9-dnsutils (older releases:
+# dnsutils). Override the whole list for other distributions.
+dns_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+  - bind9-dnsutils
+
+# Paths
+dns_metrics_endpoint_data_dir: "/var/lib/dns-metrics"
+dns_metrics_endpoint_json_path: "{{ dns_metrics_endpoint_data_dir }}/dns.json"
+dns_metrics_endpoint_server_path: "/usr/local/bin/dns_metrics_httpd.py"
+dns_metrics_endpoint_collector_path: "/usr/local/bin/dns_metrics_collector.py"
+dns_metrics_endpoint_htpasswd_dir: "/etc/dns-metrics-endpoint"
+dns_metrics_endpoint_htpasswd_path: "{{ dns_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+# Timer configuration
+dns_metrics_endpoint_timer_interval: 300  # seconds between collections
+dns_metrics_endpoint_timer_name: dns-metrics-collector
+# Used as the initial delay after timer activation.
+dns_metrics_endpoint_timer_on_boot_sec: 30
+dns_metrics_endpoint_timer_accuracy_sec: 10
+dns_metrics_endpoint_timer_randomized_delay_sec: 15
+
+# Nameservers to probe. Each entry supports:
+# - id (string, required)   - dot-free identifier, used in JSON paths
+# - label (string, optional) - human/DNS name, for debugging output only
+# - role (string, optional)  - free-form, e.g. primary/secondary
+# - ipv4 (string, optional)  - omit or leave empty to skip the IPv4 endpoints
+# - ipv6 (string, optional)  - omit or leave empty to skip the IPv6 endpoints
+# - families (list, optional)  - subset of dns_metrics_endpoint_families
+# - transports (list, optional) - subset of dns_metrics_endpoint_transports
+#
+# `families`/`transports` per entry narrow the matrix for one nameserver only
+# (the global lists narrow it for all of them). Use them only for a known
+# limitation of the *collector's* vantage point, e.g. a home ISP that cannot
+# reach one provider's prefix over TCP/IPv6 - never to quiet a real fault.
+# Excluded cells are reported `skipped` with a `skip_reason` and counted in
+# `summary.endpoints_skipped`, and the matching `summary.*_tested` flag goes
+# false, so lost coverage stays visible instead of rotting quietly.
+#
+# Probing by address (not by delegation) is deliberate: the check must work
+# before and independently of registrar glue.
+dns_metrics_endpoint_nameservers:
+  - id: ns1
+    label: ns1.example.com
+    role: primary
+    ipv4: "192.0.2.53"
+    ipv6: "2001:db8:1::53"
+  - id: ns2
+    label: ns2.example.com
+    role: secondary
+    ipv4: "198.51.100.53"
+    ipv6: "2001:db8:2::53"
+
+# Zones whose SOA serial must agree across all nameservers.
+# Only list zones every configured nameserver is expected to be authoritative
+# for - a zone served by the primary alone will always report out of sync.
+dns_metrics_endpoint_zones:
+  - "example.com"
+
+# Address families and transports to exercise.
+# TCP is mandatory for authoritative servers (RFC 7766), not an optimisation:
+# a TCP-only failure is invisible to a UDP probe and still breaks real
+# resolvers. Leave both transports enabled unless you have a reason not to.
+dns_metrics_endpoint_families:
+  - ipv4
+  - ipv6
+dns_metrics_endpoint_transports:
+  - udp
+  - tcp
+
+# Matrix cells this vantage point provably cannot reach even though the nameserver
+# is healthy from elsewhere -- e.g. a broken TCP path between this host's ISP and
+# one nameserver's IPv6 prefix. Each entry is {id, reason}, where id is
+# "<nameserver-id>-<family>-<transport>" (e.g. "ns2-ipv6-tcp").
+#
+# These are reported skipped and excluded from the verdict, but counted and named
+# in summary.vantage_point_limitations* so the blind spot stays visible. A check
+# that is permanently red gets ignored, which costs more than a known, surfaced
+# gap -- but each entry must be re-verified from an independent host periodically.
+# Empty by default: never hide a failure you have not proven is a path problem.
+dns_metrics_endpoint_vantage_point_limitations: []
+
+# Open-resolver regression check: a name none of the nameservers is
+# authoritative for. The response must be REFUSED.
+dns_metrics_endpoint_foreign_name: "example.net"
+dns_metrics_endpoint_foreign_qtype: "A"
+dns_metrics_endpoint_open_resolver_transport: udp
+
+# dig tuning. Worst case per query is dig_timeout * dig_tries seconds.
+dns_metrics_endpoint_dig_timeout: 3
+dns_metrics_endpoint_dig_tries: 2
+# Hard subprocess guard, must exceed dig_timeout * dig_tries.
+dns_metrics_endpoint_dig_subprocess_timeout: 15
+# Queries run concurrently; the matrix is
+# nameservers x families x transports x zones (+ one probe per nameserver
+# address for the open-resolver check).
+dns_metrics_endpoint_max_workers: 8
+
+# IPv6 capability detection.
+# The collector opens an unconnected UDP socket and calls connect() towards this
+# address to ask the kernel for a route and a source address. connect() on a UDP
+# socket sends no packets - nothing is transmitted to this address. A global
+# unicast source address (2000::/3) means the collector itself has usable IPv6;
+# link-local, ULA (Tailscale included) and failures mean it does not, and IPv6
+# endpoint results are then reported as skipped rather than failed.
+dns_metrics_endpoint_ipv6_probe_address: "2001:4860:4860::8888"
+
+# Script timeout (for HTTP 504 on stale data)
+dns_metrics_endpoint_script_timeout: 10
