@@ -42,14 +42,35 @@ REBOOT_REQUIRED_FLAG = Path("/var/run/reboot-required")
 
 
 def _installed_kernel_versions() -> list[str]:
-    """Versions of every installed linux-image package, newest last."""
-    result = run_command(
-        ["dpkg-query", "-W", "-f", "${Package} ${Status}\n", "linux-image-*"]
-    )
-    if result["status"] != "success":
+    """Versions of every installed linux-image package, newest last.
+
+    This deliberately does not go through run_command(): that helper is for
+    the recorded apt steps and keeps only a 4000-character *tail* of stdout
+    under ``stdout_tail``. A host that has been upgraded across several
+    releases lists dozens of removed-but-not-purged kernels, so the lines that
+    matter can fall outside such a tail - and reading a key the helper never
+    sets silently yields no kernels at all, which is exactly the "confident no
+    signal" this function exists to prevent.
+    """
+    try:
+        completed = subprocess.run(
+            ["dpkg-query", "-W", "-f", "${Package} ${Status}\n", "linux-image-*"],
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
         return []
+    if completed.returncode != 0:
+        return []
+    return _parse_installed_kernel_versions(completed.stdout or "")
+
+
+def _parse_installed_kernel_versions(dpkg_output: str) -> list[str]:
+    """Parse ``dpkg-query -W -f '${Package} ${Status}\n'`` output."""
     versions = []
-    for line in (result.get("stdout") or "").splitlines():
+    for line in dpkg_output.splitlines():
         parts = line.split()
         if len(parts) < 4 or parts[-1] != "installed":
             continue

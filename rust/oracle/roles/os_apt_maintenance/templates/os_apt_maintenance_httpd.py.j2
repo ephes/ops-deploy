@@ -16,6 +16,41 @@ from typing import Optional, Tuple
 
 FRESHNESS_MAX_AGE_SECONDS = {{ os_apt_maintenance_freshness_max_age_seconds | int }}
 STATE_MAX_AGE_SECONDS = {{ os_apt_maintenance_endpoint_state_max_age_seconds | int }}
+REBOOT_REQUIRED_FLAG = "/var/run/reboot-required"
+
+
+def reboot_state(state: dict, *, flag_present: bool, running_release: str) -> dict:
+    """Reboot state served to monitoring: live marker plus persisted kernel signal.
+
+    The marker file is re-read on every request so a reboot clears it at once.
+    The kernel comparison is only evaluated by the maintenance run and lands in
+    the state file as ``reboot_required_details``; it is served as long as the
+    host is still running the kernel that run observed. Once ``uname -r``
+    changes the persisted signal is obsolete and is dropped until the next run
+    re-evaluates it - so a reboot into the new kernel clears it immediately,
+    while a reboot back into the old kernel does not.
+
+    Serving only the live marker here would silently discard the kernel signal
+    on every host the marker file can never appear on, which is the false
+    negative the kernel comparison exists to close.
+    """
+    reasons = []
+    details: dict = {"flag_present": flag_present}
+    if flag_present:
+        reasons.append("reboot_required_flag")
+    persisted = state.get("reboot_required_details")
+    if (
+        isinstance(persisted, dict)
+        and "stale_kernel" in (persisted.get("reasons") or [])
+        and persisted.get("running_kernel") == running_release
+    ):
+        reasons.append("stale_kernel")
+        for key in ("running_kernel", "running_kernel_version", "newest_installed_kernel"):
+            if key in persisted:
+                details[key] = persisted[key]
+    details["required"] = bool(reasons)
+    details["reasons"] = reasons
+    return details
 
 
 class AptMaintenanceHandler(http.server.BaseHTTPRequestHandler):
@@ -62,7 +97,12 @@ class AptMaintenanceHandler(http.server.BaseHTTPRequestHandler):
 
         last_status = data.get("last_status")
         state_reboot_required = bool(data.get("reboot_required"))
-        reboot_required = os.path.exists("/var/run/reboot-required")
+        reboot_details = reboot_state(
+            data,
+            flag_present=os.path.exists(REBOOT_REQUIRED_FLAG),
+            running_release=os.uname().release,
+        )
+        reboot_required = reboot_details["required"]
         state_file_fresh = age_seconds <= STATE_MAX_AGE_SECONDS
         last_success_fresh = (
             last_success_age_seconds is not None
@@ -81,6 +121,7 @@ class AptMaintenanceHandler(http.server.BaseHTTPRequestHandler):
             "state_reboot_required": state_reboot_required,
         }
         data["reboot_required"] = reboot_required
+        data["reboot_required_details"] = reboot_details
         data["summary"] = {
             "last_run_ok": last_run_ok,
             "currently_running": currently_running,
