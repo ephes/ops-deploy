@@ -7,6 +7,7 @@ import fcntl
 import grp
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -35,6 +36,84 @@ AUTO_REBOOT = {{ 'True' if os_apt_maintenance_auto_reboot | bool else 'False' }}
 # final group and mode itself, on every write, success or failure.
 STATE_FILE_GROUP = {{ (os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root') | to_json }}
 STATE_FILE_MODE = {{ '0o640' if os_apt_maintenance_endpoint_enabled | bool else '0o644' }}
+
+
+REBOOT_REQUIRED_FLAG = Path("/var/run/reboot-required")
+
+
+def _installed_kernel_versions() -> list[str]:
+    """Versions of every installed linux-image package, newest last."""
+    result = run_command(
+        ["dpkg-query", "-W", "-f", "${Package} ${Status}\n", "linux-image-*"]
+    )
+    if result["status"] != "success":
+        return []
+    versions = []
+    for line in (result.get("stdout") or "").splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[-1] != "installed":
+            continue
+        match = re.search(r"(\d+\.\d+\.\d+-\d+)", parts[0])
+        if match:
+            versions.append(match.group(1))
+    return sorted(set(versions), key=_version_key)
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) for part in re.split(r"[.-]", version) if part.isdigit())
+
+
+def stale_kernel() -> dict[str, Any] | None:
+    """Report a kernel newer than the running one being installed.
+
+    The /var/run/reboot-required flag is created by Ubuntu's
+    update-notifier-common. Debian never creates it, and Ubuntu hosts without
+    that package do not either - so relying on it alone reports a confident
+    "no reboot needed" on hosts that are running a kernel several releases
+    behind the installed one. That is a false negative indistinguishable from
+    healthy, which is worse than no check at all.
+
+    Comparing the running kernel with the newest installed one needs no extra
+    package and behaves the same on Debian and Ubuntu.
+    """
+    try:
+        running_release = os.uname().release
+    except Exception:
+        return None
+    match = re.search(r"(\d+\.\d+\.\d+-\d+)", running_release)
+    if not match:
+        return None
+    running = match.group(1)
+    installed = _installed_kernel_versions()
+    if not installed:
+        return None
+    newest = installed[-1]
+    if _version_key(newest) <= _version_key(running):
+        return None
+    return {
+        "running_kernel": running_release,
+        "running_kernel_version": running,
+        "newest_installed_kernel": newest,
+    }
+
+
+def reboot_required_details() -> dict[str, Any]:
+    """Reboot state with the reason, from all available signals."""
+    flag = REBOOT_REQUIRED_FLAG.exists()
+    kernel = stale_kernel()
+    reasons = []
+    if flag:
+        reasons.append("reboot_required_flag")
+    if kernel is not None:
+        reasons.append("stale_kernel")
+    details: dict[str, Any] = {
+        "required": bool(flag or kernel),
+        "reasons": reasons,
+        "flag_present": flag,
+    }
+    if kernel is not None:
+        details.update(kernel)
+    return details
 
 STEPS = [
     {
@@ -150,14 +229,15 @@ def base_state(previous: dict[str, Any]) -> dict[str, Any]:
         "last_skipped_at": previous.get("last_skipped_at"),
         "last_skipped_epoch": previous.get("last_skipped_epoch"),
         "last_skipped_reason": previous.get("last_skipped_reason"),
-        "reboot_required": Path("/var/run/reboot-required").exists(),
+        "reboot_required": reboot_required_details()["required"],
+        "reboot_required_details": reboot_required_details(),
         "auto_reboot_enabled": AUTO_REBOOT,
         "auto_reboot_attempted": False,
         "auto_reboot_result": None,
         "steps": previous.get("steps", {}),
         "summary": {
             "last_run_ok": previous.get("last_status") == "success",
-            "reboot_required": Path("/var/run/reboot-required").exists(),
+            "reboot_required": reboot_required_details()["required"],
         },
     }
 
@@ -288,7 +368,8 @@ def run_maintenance() -> int:
                 first_error = result.get("error") or f"{step_id} failed with exit code {exit_code}"
                 break
 
-        reboot_required = Path("/var/run/reboot-required").exists()
+        reboot_details = reboot_required_details()
+        reboot_required = reboot_details["required"]
         finished_at = iso_now()
         finished_epoch = epoch_now()
         status = "success" if exit_code == 0 else "failed"
@@ -303,6 +384,7 @@ def run_maintenance() -> int:
                 "last_status": status,
                 "last_error": first_error,
                 "reboot_required": reboot_required,
+                "reboot_required_details": reboot_details,
                 "summary": {
                     "last_run_ok": status == "success",
                     "reboot_required": reboot_required,
