@@ -43,5 +43,11 @@ tailscale_metrics_endpoint_critical_days: 1
 tailscale_metrics_endpoint_timer_interval: 300
 tailscale_metrics_endpoint_timer_name: tailscale-metrics-collector
 tailscale_metrics_endpoint_timer_on_boot_sec: 45
+# Wall-clock backstop for the collector timer. Monotonic-only triggers
+# (OnBootSec=/OnUnitActiveSec=) can leave the timer parked as
+# `active (elapsed)` with no next elapse, which freezes the payload while the
+# endpoint keeps serving it. Keep this at or below the freshness budget the
+# Nyxmon staleness rule enforces.
+tailscale_metrics_endpoint_timer_on_calendar: "*:0/5"
 tailscale_metrics_endpoint_timer_accuracy_sec: 10
 tailscale_metrics_endpoint_timer_randomized_delay_sec: 30

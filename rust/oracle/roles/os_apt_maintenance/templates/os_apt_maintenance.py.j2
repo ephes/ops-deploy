@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import grp
 import json
 import os
 import socket
@@ -25,6 +26,15 @@ SYSTEMCTL = {{ os_apt_maintenance_systemctl_path | to_json }}
 COMMAND_TIMEOUT = {{ os_apt_maintenance_command_timeout | int }}
 FRESHNESS_MAX_AGE_SECONDS = {{ os_apt_maintenance_freshness_max_age_seconds | int }}
 AUTO_REBOOT = {{ 'True' if os_apt_maintenance_auto_reboot | bool else 'False' }}
+
+# The monitoring endpoint runs as an unprivileged user and only ever reads this
+# file.  systemd skips ExecStartPost= when ExecStart= exits non-zero, so the
+# unit alone cannot guarantee the state file stays readable after a failed apt
+# run - and an unreadable state file makes the endpoint answer 503, which hides
+# the very failure the run just recorded.  The writer therefore stamps the
+# final group and mode itself, on every write, success or failure.
+STATE_FILE_GROUP = {{ (os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root') | to_json }}
+STATE_FILE_MODE = {{ '0o640' if os_apt_maintenance_endpoint_enabled | bool else '0o644' }}
 
 STEPS = [
     {
@@ -81,6 +91,27 @@ def read_previous_state() -> dict[str, Any]:
     return {}
 
 
+def apply_state_file_permissions(fileno: int) -> None:
+    """Stamp the monitoring-readable group and mode onto an open state fd.
+
+    Best effort: a permission problem here must never abort an apt run, but it
+    must also never be silently skipped the way ExecStartPost= is after a
+    failed ExecStart=.
+    """
+    try:
+        os.fchmod(fileno, STATE_FILE_MODE)
+    except OSError:
+        pass
+    try:
+        gid = grp.getgrnam(STATE_FILE_GROUP).gr_gid
+    except KeyError:
+        return
+    try:
+        os.fchown(fileno, -1, gid)
+    except OSError:
+        pass
+
+
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
@@ -90,6 +121,7 @@ def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
+            apply_state_file_permissions(handle.fileno())
         os.replace(tmp_name, path)
     finally:
         try:
