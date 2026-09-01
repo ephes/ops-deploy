@@ -13,6 +13,9 @@ tailscale_metrics_endpoint_service_name: tailscale-metrics-endpoint
 tailscale_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
 tailscale_metrics_endpoint_port: 9107
 tailscale_metrics_endpoint_path: "/.well-known/tailscale"
+tailscale_metrics_endpoint_ip_address_allow:
+  - localhost
+  - 100.64.0.0/10
 tailscale_metrics_endpoint_auth_user: "CHANGE_ME"
 tailscale_metrics_endpoint_auth_password: "CHANGE_ME"
 
@@ -28,6 +31,12 @@ tailscale_metrics_endpoint_htpasswd_dir: "/etc/tailscale-metrics-endpoint"
 tailscale_metrics_endpoint_htpasswd_path: "{{ tailscale_metrics_endpoint_htpasswd_dir }}/htpasswd"
 
 tailscale_metrics_endpoint_tailscale_bin: "/usr/bin/tailscale"
+tailscale_metrics_endpoint_ip_bin: "/usr/sbin/ip"
+tailscale_metrics_endpoint_bpftool_bin: "/usr/sbin/bpftool"
+tailscale_metrics_endpoint_require_effective_ip_filter: false
+tailscale_metrics_endpoint_default_route_interface: ""
+tailscale_metrics_endpoint_require_default_ipv4_route: false
+tailscale_metrics_endpoint_require_self_online: false
 tailscale_metrics_endpoint_warning_days: 3
 tailscale_metrics_endpoint_critical_days: 1
 
