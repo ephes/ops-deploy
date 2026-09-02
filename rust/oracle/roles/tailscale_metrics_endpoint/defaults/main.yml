@@ -37,6 +37,9 @@ tailscale_metrics_endpoint_require_effective_ip_filter: false
 tailscale_metrics_endpoint_default_route_interface: ""
 tailscale_metrics_endpoint_require_default_ipv4_route: false
 tailscale_metrics_endpoint_require_self_online: false
+tailscale_metrics_endpoint_mdstat_path: /proc/mdstat
+tailscale_metrics_endpoint_require_mdraid_healthy: false
+tailscale_metrics_endpoint_required_mdraid_arrays: []
 tailscale_metrics_endpoint_warning_days: 3
 tailscale_metrics_endpoint_critical_days: 1
 
