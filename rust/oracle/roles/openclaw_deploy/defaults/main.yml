@@ -67,6 +67,22 @@ openclaw_codex_plugin_enabled: false  # Install and enable the official Codex ap
 openclaw_codex_plugin_id: "codex"
 openclaw_codex_plugin_package: "@openclaw/codex"
 openclaw_codex_plugin_version: "{{ openclaw_version | regex_replace('^v', '') }}"
+openclaw_upgrade_migrations_enabled: true
+
+# Audio transcription (optional OpenAI-compatible endpoint)
+# The API key is exposed to OpenClaw under a dedicated environment name and
+# referenced from the agent auth store; it is never written into openclaw.json.
+# Set managed=true to make this role own the audio enable/disable lifecycle.
+openclaw_audio_transcription_managed: false
+openclaw_audio_transcription_enabled: false
+openclaw_audio_transcription_base_url: ""
+openclaw_audio_transcription_allow_private_network: false
+openclaw_audio_transcription_provider: "senseaudio"
+openclaw_audio_transcription_model: "gpt-4o-mini-transcribe"
+openclaw_audio_transcription_profile_id: "senseaudio:audio"
+openclaw_audio_transcription_api_key: ""
+openclaw_audio_transcription_api_key_env: "OPENCLAW_AUDIO_TRANSCRIPTION_API_KEY"
+openclaw_audio_transcription_timeout_seconds: 120
 
 # Telegram channel
 openclaw_telegram_enabled: false
@@ -115,7 +131,7 @@ openclaw_install_docker: true
 openclaw_manage_user: true
 openclaw_healthcheck_enabled: true
 
-# Health check
+# Health check (gateway RPC readiness plus configured channel readiness)
 openclaw_healthcheck_retries: 6
 openclaw_healthcheck_delay: 5
 
