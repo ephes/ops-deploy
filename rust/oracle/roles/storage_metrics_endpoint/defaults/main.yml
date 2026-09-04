@@ -41,6 +41,9 @@ storage_metrics_endpoint_exporter_path: "/usr/local/bin/nyxmon-storage-metrics"
 storage_metrics_endpoint_timer_interval: 300  # seconds between metrics collection
 storage_metrics_endpoint_timer_name: storage-metrics-collector
 storage_metrics_endpoint_timer_on_boot_sec: 30
+# Wall-clock backstop for a timer activated after its monotonic boot anchor.
+# Keep this at or below the endpoint freshness budget.
+storage_metrics_endpoint_timer_on_calendar: "*:0/5"
 storage_metrics_endpoint_timer_accuracy_sec: 10
 storage_metrics_endpoint_timer_randomized_delay_sec: 30
 

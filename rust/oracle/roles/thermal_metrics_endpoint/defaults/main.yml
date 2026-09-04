@@ -31,5 +31,8 @@ thermal_metrics_endpoint_exporter_path: "/usr/local/bin/thermal-metrics-exporter
 thermal_metrics_endpoint_timer_interval: 300
 thermal_metrics_endpoint_timer_name: thermal-metrics-collector
 thermal_metrics_endpoint_timer_on_boot_sec: 30
+# Wall-clock backstop for a timer activated after its monotonic boot anchor.
+# Keep this at or below the endpoint freshness budget.
+thermal_metrics_endpoint_timer_on_calendar: "*:0/5"
 thermal_metrics_endpoint_timer_accuracy_sec: 10
 thermal_metrics_endpoint_timer_randomized_delay_sec: 30
