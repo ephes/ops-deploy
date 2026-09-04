@@ -67,6 +67,10 @@ openclaw_codex_plugin_enabled: false  # Install and enable the official Codex ap
 openclaw_codex_plugin_id: "codex"
 openclaw_codex_plugin_package: "@openclaw/codex"
 openclaw_codex_plugin_version: "{{ openclaw_version | regex_replace('^v', '') }}"
+# Exact-version backport for upstream commit 26e5c2858a. Disable management when
+# production advances beyond the affected @openclaw/codex 2026.9.1 package.
+openclaw_codex_v2026_9_1_registration_backport_managed: false
+openclaw_codex_v2026_9_1_registration_backport_enabled: true
 openclaw_upgrade_migrations_enabled: true
 
 # Audio transcription (optional OpenAI-compatible endpoint)
