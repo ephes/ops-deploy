@@ -1,0 +1,34 @@
+---
+ops_library_documentation_category: deployment
+static_site_service_name: static-site
+static_site_user: "{{ static_site_service_name }}"
+static_site_group: "{{ static_site_user }}"
+
+static_site_source_path: ""
+static_site_path: "/srv/static-sites/{{ static_site_service_name }}"
+static_site_required_files:
+  - index.html
+  - report.md
+  - snapshot.json
+static_site_restrict_to_required_files: false
+static_site_rsync_delete: true
+
+static_site_python_path: /usr/bin/python3
+static_site_server_path: "/usr/local/libexec/{{ static_site_service_name }}-httpd.py"
+static_site_bind_host: 127.0.0.1
+static_site_port: 10061
+static_site_healthcheck_contains: ""
+
+static_site_systemd_unit_name: "{{ static_site_service_name }}"
+static_site_systemd_unit_path: "/etc/systemd/system/{{ static_site_systemd_unit_name }}.service"
+
+static_site_traefik_enabled: true
+static_site_host: static.example.com
+static_site_traefik_entrypoints:
+  - web-secure
+static_site_traefik_http_entrypoint: web
+static_site_traefik_cert_resolver: ""
+static_site_traefik_config_path: "/etc/traefik/dynamic/{{ static_site_service_name }}.yml"
+static_site_verify_public: false
+static_site_public_healthcheck_retries: 20
+static_site_public_healthcheck_delay: 3
