@@ -71,6 +71,9 @@ openclaw_codex_plugin_version: "{{ openclaw_version | regex_replace('^v', '') }}
 # production advances beyond the affected @openclaw/codex 2026.9.1 package.
 openclaw_codex_v2026_9_1_registration_backport_managed: false
 openclaw_codex_v2026_9_1_registration_backport_enabled: true
+# Managed extension for v2026.9.1's generic empty-heartbeat retry prompts.
+openclaw_heartbeat_recovery_managed: false
+openclaw_heartbeat_recovery_enabled: true
 openclaw_upgrade_migrations_enabled: true
 
 # Audio transcription (optional OpenAI-compatible endpoint)
@@ -85,7 +88,7 @@ openclaw_audio_transcription_provider: "senseaudio"
 openclaw_audio_transcription_model: "gpt-4o-mini-transcribe"
 openclaw_audio_transcription_profile_id: "senseaudio:audio"
 openclaw_audio_transcription_api_key: ""
-openclaw_audio_transcription_api_key_env: "OPENCLAW_AUDIO_TRANSCRIPTION_API_KEY"
+openclaw_audio_transcription_api_key_env: "OPENCLAW_AUDIO_TRANSCRIPTION_API_KEY"  # pragma: allowlist secret (env name)
 openclaw_audio_transcription_timeout_seconds: 120
 
 # Telegram channel
@@ -152,7 +155,7 @@ openclaw_metrics_endpoint_bind: "127.0.0.1"
 openclaw_metrics_endpoint_port: 9104
 openclaw_metrics_endpoint_path: "/.well-known/openclaw-health"
 openclaw_metrics_endpoint_auth_user: "CHANGEME"
-openclaw_metrics_endpoint_auth_password: "CHANGEME"
+openclaw_metrics_endpoint_auth_password: "CHANGEME"  # pragma: allowlist secret (placeholder)
 openclaw_metrics_endpoint_packages:
   - python3
   - apache2-utils
