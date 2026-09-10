@@ -25,6 +25,7 @@ LOCK_FILE = Path({{ os_apt_maintenance_lock_file | to_json }})
 APT_GET = {{ os_apt_maintenance_apt_get_path | to_json }}
 SYSTEMCTL = {{ os_apt_maintenance_systemctl_path | to_json }}
 COMMAND_TIMEOUT = {{ os_apt_maintenance_command_timeout | int }}
+REFRESH_COMMAND_TIMEOUT = {{ os_apt_maintenance_refresh_command_timeout | int }}
 FRESHNESS_MAX_AGE_SECONDS = {{ os_apt_maintenance_freshness_max_age_seconds | int }}
 AUTO_REBOOT = {{ 'True' if os_apt_maintenance_auto_reboot | bool else 'False' }}
 
@@ -275,7 +276,16 @@ def init_state() -> int:
     return 0
 
 
-def run_command(argv: list[str]) -> dict[str, Any]:
+def run_command(argv: list[str], timeout: int | None = None) -> dict[str, Any]:
+    """Run one recorded apt step.
+
+    ``timeout`` defaults to the full maintenance budget. The index-only refresh
+    passes a much shorter one: an `apt-get update` that has not finished in
+    minutes is a network or mirror problem, and inheriting the two-hour upgrade
+    budget would let a daily timer sit blocked well into the next day's run.
+    """
+    if timeout is None:
+        timeout = COMMAND_TIMEOUT
     started = time.monotonic()
     started_at = iso_now()
     result: dict[str, Any] = {
@@ -296,7 +306,7 @@ def run_command(argv: list[str]) -> dict[str, Any]:
             argv,
             text=True,
             capture_output=True,
-            timeout=COMMAND_TIMEOUT,
+            timeout=timeout,
             env=env,
             check=False,
         )
@@ -307,7 +317,7 @@ def run_command(argv: list[str]) -> dict[str, Any]:
     except subprocess.TimeoutExpired as exc:
         result["exit_code"] = 124
         result["status"] = "failed"
-        result["error"] = f"command timed out after {COMMAND_TIMEOUT} seconds"
+        result["error"] = f"command timed out after {timeout} seconds"
         stdout = exc.stdout or ""
         stderr = exc.stderr or ""
         result["stdout_tail"] = stdout[-4000:] if isinstance(stdout, str) else ""
@@ -435,9 +445,54 @@ def run_maintenance() -> int:
             lock_handle.close()
 
 
+def run_refresh() -> int:
+    """Refresh apt indexes only, without changing a single installed package.
+
+    This deliberately does not write STATE_FILE. ``last_success_at`` there means
+    "a full maintenance run succeeded" and feeds the 14-day freshness check; if
+    index refreshes stamped it too, that check would stay green on a host whose
+    weekly upgrade run had been failing for a month. Refresh health is observed
+    through the apt index age that software_live already reports, and through
+    this unit's own systemd result.
+    """
+    lock_handle = acquire_lock()
+    if lock_handle is None:
+        # A maintenance run holds the lock and refreshes the indexes itself as
+        # its first step, so stepping aside is the correct outcome here, not a
+        # failure worth waking anyone for.
+        print(
+            "os-apt-maintenance holds the lock; skipping index refresh",
+            file=sys.stderr,
+        )
+        return 0
+    try:
+        result = run_command([APT_GET, "update"], timeout=REFRESH_COMMAND_TIMEOUT)
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+    if result["status"] == "success":
+        print(f"apt-get update succeeded in {result['duration_seconds']}s")
+        return 0
+
+    detail = (result.get("error") or result["stderr_tail"] or result["stdout_tail"]).strip()
+    print(
+        f"apt-get update failed (exit {result['exit_code']}): {detail}",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run apt maintenance and write state JSON")
     parser.add_argument("--init-state", action="store_true", help="Create placeholder state and exit")
+    parser.add_argument(
+        "--refresh-only",
+        action="store_true",
+        help="Run apt-get update only; do not upgrade, remove or write state",
+    )
     return parser.parse_args()
 
 
@@ -445,6 +500,8 @@ def main() -> int:
     args = parse_args()
     if args.init_state:
         return init_state()
+    if args.refresh_only:
+        return run_refresh()
     return run_maintenance()
 
 

@@ -32,6 +32,28 @@ os_apt_maintenance_timer_state: started
 os_apt_maintenance_run_on_deploy: false
 os_apt_maintenance_run_on_first_deploy: false
 
+# Daily index-only refresh.
+#
+# The maintenance timer above installs upgrades and therefore runs on a slow,
+# jittered cadence (weekly in ops-control). Monitoring is stricter: the
+# software_live apt check warns when the newest security InRelease is older
+# than 48 hours, because "0 pending security updates" computed from week-old
+# indexes is not evidence of anything. A weekly upgrade timer alone can never
+# hold a 48-hour budget, so index freshness gets its own lightweight timer.
+#
+# This runs `apt-get update` and nothing else: no dist-upgrade, no autoremove,
+# no autoclean, no reboot. It shares the maintenance lock file, so it can never
+# run concurrently with a real upgrade.
+os_apt_maintenance_refresh_enabled: true
+os_apt_maintenance_refresh_service_name: os-apt-maintenance-refresh
+os_apt_maintenance_refresh_timer_on_calendar: "*-*-* 06:00:00"
+os_apt_maintenance_refresh_timer_randomized_delay_sec: 1h
+os_apt_maintenance_refresh_timer_accuracy_sec: 10m
+os_apt_maintenance_refresh_timer_persistent: true
+os_apt_maintenance_refresh_timer_enabled: true
+os_apt_maintenance_refresh_timer_state: started
+os_apt_maintenance_refresh_command_timeout: 900
+
 # Optional authenticated HTTP endpoint for Nyxmon/json-metrics checks.
 os_apt_maintenance_endpoint_enabled: false
 os_apt_maintenance_endpoint_user: metrics
