@@ -43,11 +43,18 @@ def numeric_version(value: str) -> tuple[int, ...]:
 
 
 def lifecycle_date(value: Any) -> date | None:
-    if value is False or value is None:
+    if isinstance(value, bool) or value is None:
         return None
     if not isinstance(value, str):
         raise TypeError("invalid lifecycle date")
     return date.fromisoformat(value)
+
+
+def lifecycle_ended(value: Any, today: date, *, true_means_ended: bool) -> bool:
+    if isinstance(value, bool):
+        return value is true_means_ended
+    end = lifecycle_date(value)
+    return end is not None and today >= end
 
 
 def cache_variant(cache_path: Path | None, name: str) -> Path | None:
@@ -199,15 +206,24 @@ def lifecycle_upstream(
             cycles = json.loads(response.read(1024 * 1024))
         if not isinstance(cycles, list) or not cycles:
             raise ValueError("empty lifecycle response")
+        valid_cycles = []
         for cycle in cycles:
-            if not isinstance(cycle, dict) or not isinstance(cycle.get("cycle"), str):
-                raise TypeError("invalid lifecycle response")
-            lifecycle_date(cycle.get("eol"))
-            if cycle.get("support") is not None:
-                lifecycle_date(cycle.get("support"))
+            try:
+                if not isinstance(cycle, dict) or not isinstance(
+                    cycle.get("cycle"), str
+                ):
+                    raise TypeError("invalid lifecycle response")
+                lifecycle_date(cycle.get("eol"))
+                if cycle.get("support") is not None:
+                    lifecycle_date(cycle.get("support"))
+            except (TypeError, ValueError):
+                continue
+            valid_cycles.append(cycle)
+        if not valid_cycles:
+            raise ValueError("lifecycle response has no valid cycles")
         result = {
             "product": product,
-            "cycles": cycles,
+            "cycles": valid_cycles,
             "checked_at_epoch": now,
         }
         if path:
@@ -356,17 +372,17 @@ def observe_os(
             return result
         current = lifecycle_cycle(latest, cycle)
         today = datetime.fromtimestamp(now, UTC).date()
-        support_end = lifecycle_date(current.get("support"))
-        eol = lifecycle_date(current.get("eol"))
         result["lifecycle"] = {
             "latest_release": current.get("latest"),
             "support_end": current.get("support"),
             "eol": current.get("eol"),
             "newest_cycle": latest["cycles"][0].get("cycle"),
         }
-        if eol is not None and today >= eol:
+        if lifecycle_ended(current.get("eol"), today, true_means_ended=True):
             result["issues"].append("cycle_eol")
-        elif support_end is not None and today >= support_end:
+        elif lifecycle_ended(
+            current.get("support"), today, true_means_ended=False
+        ):
             result["issues"].append("standard_support_ended")
         result["status"] = "warning" if result["issues"] else "ok"
     except Exception as exc:  # noqa: BLE001 - observation boundaries fail closed
@@ -493,14 +509,13 @@ def observe_postgresql(
             return result
         current = lifecycle_cycle(latest, major)
         today = datetime.fromtimestamp(now, UTC).date()
-        eol = lifecycle_date(current.get("eol"))
         upstream_minor = current.get("latest")
         result["lifecycle"] = {
             "latest_minor": upstream_minor,
             "eol": current.get("eol"),
             "newest_major": latest["cycles"][0].get("cycle"),
         }
-        if eol is not None and today >= eol:
+        if lifecycle_ended(current.get("eol"), today, true_means_ended=True):
             result["issues"].append("cycle_eol")
         if not isinstance(upstream_minor, str):
             raise TypeError("missing PostgreSQL minor release")
