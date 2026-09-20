@@ -13,7 +13,9 @@ import math
 import os
 import platform
 import re
+import stat
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -380,9 +382,7 @@ def observe_os(
         }
         if lifecycle_ended(current.get("eol"), today, true_means_ended=True):
             result["issues"].append("cycle_eol")
-        elif lifecycle_ended(
-            current.get("support"), today, true_means_ended=False
-        ):
+        elif lifecycle_ended(current.get("support"), today, true_means_ended=False):
             result["issues"].append("standard_support_ended")
         result["status"] = "warning" if result["issues"] else "ok"
     except Exception as exc:  # noqa: BLE001 - observation boundaries fail closed
@@ -761,15 +761,146 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # Do not log request headers, credentials or arbitrary paths.
 
 
+def inventory_projection(data: dict[str, Any]) -> dict[str, Any]:
+    """Allowlisted metadata only; never copy paths, credentials or arbitrary fields."""
+    if (
+        not isinstance(data.get("schema_version"), int)
+        or isinstance(data.get("schema_version"), bool)
+    ) or data["schema_version"] != SCHEMA_VERSION:
+        raise ValueError("unsupported source schema")
+    host = data.get("host")
+    observed = data.get("generated_at_epoch")
+    if not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", host):
+        raise ValueError("invalid source identity")
+    if (
+        not isinstance(observed, (int, float))
+        or isinstance(observed, bool)
+        or not math.isfinite(observed)
+        or observed <= 0
+    ):
+        raise ValueError("invalid source time")
+
+    def text(value: Any) -> str | None:
+        return value[:160] if isinstance(value, str) and value else None
+
+    checks = {}
+    for name in ("os", "postgresql", "traefik"):
+        item = data.get(name)
+        if not isinstance(item, dict) or item.get("status") not in (
+            "ok",
+            "warning",
+            "unknown",
+        ):
+            raise ValueError("invalid source check")
+        if not isinstance(item.get("observed"), bool):
+            raise ValueError("invalid observation flag")
+        expected = True if name == "os" else item.get("expected")
+        if not isinstance(expected, bool):
+            raise ValueError("invalid expectation flag")
+        issues = item.get("issues", [])
+        if not isinstance(issues, list) or any(not isinstance(i, str) for i in issues):
+            raise ValueError("invalid source issues")
+        installed = item.get("installed", {})
+        running = item.get("running", {})
+        upstream = item.get("upstream", {})
+        checks[name] = {
+            "status": item["status"],
+            "observed": item["observed"],
+            "expected": expected,
+            "installed_version": text(
+                item.get("cycle")
+                if name == "os"
+                else None
+                if name == "postgresql"
+                else installed.get("version")
+                if isinstance(installed, dict)
+                else None
+            ),
+            "running_version": text(
+                item.get("server_version")
+                if name == "postgresql"
+                else running.get("version")
+                if isinstance(running, dict)
+                else None
+            ),
+            "upstream_version": text(upstream.get("version"))
+            if name == "traefik" and isinstance(upstream, dict)
+            else None,
+            "issues": [i[:160] for i in issues[:20]],
+            "issues_truncated": len(issues) > 20,
+        }
+    apt = data.get("apt")
+    if (
+        not isinstance(apt, dict)
+        or apt.get("status") not in ("ok", "unknown")
+        or not isinstance(apt.get("indexes_fresh"), bool)
+    ):
+        raise ValueError("invalid APT evidence")
+    count = apt.get("pending_security_count")
+    if (
+        count is not None
+        and ((not isinstance(count, int) or isinstance(count, bool)) or count < 0)
+    ) or (apt["status"] == "ok" and count is None):
+        raise ValueError("invalid security count")
+    return {
+        "schema_version": 1,
+        "source": f"software-live/{SCHEMA_VERSION}",
+        "host": host,
+        "observed_at_epoch": observed,
+        "max_age_seconds": MAX_REPORT_AGE,
+        "checks": checks,
+        "apt": {
+            "status": apt["status"],
+            "indexes_fresh": apt["indexes_fresh"],
+            "pending_security_count": count,
+        },
+    }
+
+
+def export_inventory(source: Path, output: Path, group_name: str) -> None:
+    """Copy only the observation projection into a root-owned reader directory."""
+    import grp
+
+    parent = output.parent.lstat()
+    if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022:
+        raise ValueError("unsafe export directory")
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        st = os.fstat(stream.fileno())
+        if (
+            not stat.S_ISREG(st.st_mode)
+            or st.st_uid != 0
+            or st.st_nlink != 1
+            or st.st_mode & 0o022
+        ):
+            raise ValueError("unsafe source file")
+        raw = stream.read(1024 * 1024 + 1)
+    if len(raw) > 1024 * 1024:
+        raise ValueError("source too large")
+    projection = inventory_projection(json.loads(raw))
+    atomic_json(output, projection, grp.getgrnam(group_name).gr_gid)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["collect", "serve", "validate"])
+    parser.add_argument(
+        "mode", choices=["collect", "serve", "validate", "export-inventory"]
+    )
     parser.add_argument("--config", type=Path)
     parser.add_argument("--config-json")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--group")
     args = parser.parse_args()
+    if args.mode == "export-inventory":
+        try:
+            if not args.config or not args.output or not args.group:
+                raise ValueError("export paths and group required")
+            export_inventory(args.config, args.output, args.group)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            print("inventory export failed: " + type(exc).__name__, file=sys.stderr)
+            raise SystemExit(1) from None
+        return
     config = json.loads(
         args.config_json if args.config_json else args.config.read_text()
     )

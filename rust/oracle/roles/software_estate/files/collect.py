@@ -7,12 +7,14 @@ import argparse
 import email.parser
 import hashlib
 import json
+import math
 import os
 import platform
 import plistlib
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import time
@@ -274,7 +276,110 @@ def media_version(kind):
         os.close(fd)
 
 
-def application(spec, pkg_rows, package_status="ok"):
+HEALTH_EXPORT = Path("/var/lib/software-estate-observations/software-health.json")
+
+
+def software_health(expected_host):
+    """Read an allowlisted local projection; no network, privilege or command."""
+    parent = HEALTH_EXPORT.parent.lstat()
+    if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022:
+        raise ValueError("unsafe_health_directory")
+    fd = os.open(HEALTH_EXPORT, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        st = os.fstat(stream.fileno())
+        if (
+            not stat.S_ISREG(st.st_mode)
+            or st.st_uid != 0
+            or st.st_nlink != 1
+            or st.st_mode & 0o022
+        ):
+            raise ValueError("unsafe_health_file")
+        raw = stream.read(65537)
+    if len(raw) > 65536:
+        raise ValueError("health_size_limit")
+    data = json.loads(raw)
+    if not isinstance(data, dict) or set(data) != {
+        "schema_version",
+        "source",
+        "host",
+        "observed_at_epoch",
+        "max_age_seconds",
+        "checks",
+        "apt",
+    }:
+        raise ValueError("invalid_health_schema")
+    if (
+        (
+            not isinstance(data["schema_version"], int)
+            or isinstance(data["schema_version"], bool)
+        )
+        or data["schema_version"] != 1
+        or data["source"] != "software-live/2"
+        or not expected_host
+        or data["host"] != expected_host
+    ):
+        raise ValueError("health_identity_mismatch")
+    observed = data["observed_at_epoch"]
+    if (
+        type(observed) not in (int, float)
+        or not math.isfinite(observed)
+        or not 0 <= time.time() - observed <= 1800
+    ):
+        raise ValueError("health_source_stale_or_future")
+    if (
+        not isinstance(data["max_age_seconds"], int)
+        or isinstance(data["max_age_seconds"], bool)
+    ) or data["max_age_seconds"] != 1800:
+        raise ValueError("invalid_health_freshness")
+    checks = data["checks"]
+    if not isinstance(checks, dict) or set(checks) != {"os", "postgresql", "traefik"}:
+        raise ValueError("invalid_health_checks")
+    for item in checks.values():
+        if not isinstance(item, dict) or set(item) != {
+            "status",
+            "observed",
+            "expected",
+            "installed_version",
+            "running_version",
+            "upstream_version",
+            "issues",
+            "issues_truncated",
+        }:
+            raise ValueError("invalid_health_check")
+        if item["status"] not in ("ok", "warning", "unknown") or any(
+            not isinstance(item[k], bool)
+            for k in ("observed", "expected", "issues_truncated")
+        ):
+            raise ValueError("invalid_health_verdict")
+        for key in ("installed_version", "running_version", "upstream_version"):
+            if item[key] is not None and (
+                not isinstance(item[key], str) or len(item[key]) > 160
+            ):
+                raise ValueError("invalid_health_version")
+        if (
+            not isinstance(item["issues"], list)
+            or len(item["issues"]) > 20
+            or any(not isinstance(i, str) or len(i) > 160 for i in item["issues"])
+        ):
+            raise ValueError("invalid_health_issues")
+    apt = data["apt"]
+    if (
+        not isinstance(apt, dict)
+        or set(apt) != {"status", "indexes_fresh", "pending_security_count"}
+        or apt["status"] not in ("ok", "unknown")
+        or not isinstance(apt["indexes_fresh"], bool)
+    ):
+        raise ValueError("invalid_health_apt")
+    count = apt["pending_security_count"]
+    if (
+        count is not None
+        and ((not isinstance(count, int) or isinstance(count, bool)) or count < 0)
+    ) or (apt["status"] == "ok" and count is None):
+        raise ValueError("invalid_health_security_count")
+    return data
+
+
+def application(spec, pkg_rows, package_status="ok", host=None):
     result = {
         "id": spec["id"],
         "coverage": [],
@@ -359,6 +464,14 @@ def application(spec, pkg_rows, package_status="ok"):
             result["git" if field == "path" else "python"] = observation
             if observation["status"] != "ok":
                 result["coverage"].append(f"{field}:unreadable_or_missing")
+    if "software_health" in spec:
+        if not isinstance(spec["software_health"], bool):
+            raise ValueError("software_health must be boolean")
+        if spec["software_health"]:
+            observation = category(lambda: software_health(host))
+            result["software_health"] = observation
+            if observation["status"] != "ok":
+                result["coverage"].append("software_health:unavailable")
     if spec.get("version_probe"):
         observation = category(lambda: media_version(spec["version_probe"]))
         if observation["status"] == "ok":
@@ -488,6 +601,7 @@ def collect(policy):
                 spec,
                 observations["packages"]["items"],
                 observations["packages"]["status"],
+                host=policy["host"],
             )
         )
         apps.append({"id": spec["id"], **item})
