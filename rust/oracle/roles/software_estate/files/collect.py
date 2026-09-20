@@ -432,6 +432,8 @@ def validate_policy(policy):
         raise TypeError("policy object required")
     if not isinstance(policy.get("host"), str) or not policy["host"]:
         raise ValueError("host required")
+    if not isinstance(policy.get("preserve_partial_applications", False), bool):
+        raise ValueError("preserve_partial_applications must be a boolean")
     applications = policy.get("applications", [])
     if not isinstance(applications, list):
         raise ValueError("applications must be a list")
