@@ -379,7 +379,25 @@ def software_health(expected_host):
     return data
 
 
-def application(spec, pkg_rows, package_status="ok", host=None):
+def related_unit_names(spec):
+    names = spec.get("related_units", [])
+    if (
+        not isinstance(names, list)
+        or len(names) > 32
+        or any(
+            not isinstance(name, str)
+            or len(name) > 200
+            or not re.fullmatch(r"[a-zA-Z0-9_.@-]+\.service", name)
+            for name in names
+        )
+        or len(set(names)) != len(names)
+        or spec.get("unit") in names
+    ):
+        raise ValueError("invalid related units")
+    return names
+
+
+def application(spec, pkg_rows, package_status="ok", host=None, unit_observation=None):
     result = {
         "id": spec["id"],
         "coverage": [],
@@ -403,6 +421,36 @@ def application(spec, pkg_rows, package_status="ok", host=None):
             "absent" if props.get("LoadState") == "not-found" else "installed"
         )
         result["runtime"] = props.get("ActiveState", "unknown")
+    names = related_unit_names(spec)
+    if names:
+        # Bind only the already-collected unit inventory; no additional commands.
+        observation = unit_observation or {"status": "unsupported", "items": []}
+        status = observation["status"]
+        states = (
+            {row["name"]: row["state"] for row in observation["items"]}
+            if status == "ok"
+            else {}
+        )
+        result["related_units"] = {
+            "status": status,
+            "items": [
+                {
+                    "name": name,
+                    "state": states.get(name, "not-observed")
+                    if status == "ok"
+                    else "unknown",
+                }
+                for name in names
+            ],
+        }
+        if status != "ok":
+            result["coverage"].append("related_units:host_probe_unavailable")
+        else:
+            result["coverage"].extend(
+                f"related_units:{name}:not_observed"
+                for name in names
+                if name not in states
+            )
     if spec.get("packages"):
         if package_status != "ok":
             result["coverage"].append("packages:host_probe_unavailable")
@@ -561,6 +609,7 @@ def validate_policy(policy):
         if app["id"] in identifiers:
             raise ValueError("duplicate application id")
         identifiers.add(app["id"])
+        related_unit_names(app)
 
 
 def collect(policy):
@@ -602,6 +651,7 @@ def collect(policy):
                 observations["packages"]["items"],
                 observations["packages"]["status"],
                 host=policy["host"],
+                unit_observation=observations["services"],
             )
         )
         apps.append({"id": spec["id"], **item})
