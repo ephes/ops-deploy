@@ -18,6 +18,8 @@ import stat
 import subprocess
 import tempfile
 import time
+from os import fstat as artifact_stat
+from os import read as artifact_read
 from pathlib import Path
 from xml.parsers.expat import ExpatError
 
@@ -222,8 +224,103 @@ def git_checkout(root):
     return {"commit": commit, "dirty": dirty}
 
 
+ARTIFACT_ROOT = "/opt"
+
+
+def artifact_metadata(relative):
+    """Read bounded public release metadata through pinned, trusted directories."""
+    parts = Path(relative).parts
+    if (
+        not parts
+        or Path(relative).is_absolute()
+        or any(p in (".", "..") for p in parts)
+    ):
+        raise ValueError("invalid artifact path")
+    directory = os.open(ARTIFACT_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts[:-1]:
+            st = artifact_stat(directory)
+            if st.st_uid != 0 or st.st_mode & 0o022:
+                raise ValueError("untrusted artifact directory")
+            child = os.open(
+                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory
+            )
+            os.close(directory)
+            directory = child
+        st = artifact_stat(directory)
+        if st.st_uid != 0 or st.st_mode & 0o022:
+            raise ValueError("untrusted artifact directory")
+        fd = os.open(
+            parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
+        )
+        try:
+            st = artifact_stat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022:
+                raise ValueError("untrusted artifact file")
+            if st.st_size > 16384:
+                raise ValueError("oversized artifact metadata")
+            content = bytearray()
+            while len(content) <= 16384:
+                block = artifact_read(fd, 16385 - len(content))
+                if not block:
+                    return content.decode("utf-8")
+                content.extend(block)
+            raise ValueError("oversized artifact metadata")
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)
+
+
+def web_artifact_version(kind):
+    if platform.system() != "Linux":
+        raise ValueError("unsupported probe")
+    if kind == "snappymail":
+        source = "snappymail/index.php"
+        metadata = artifact_metadata(source)
+        definitions = re.findall(
+            r"\bdefine\s*\(\s*(['\"])APP_VERSION\1", metadata, re.IGNORECASE
+        )
+        matches = re.findall(
+            r"^[ \t]*define\('APP_VERSION', '([0-9]+\.[0-9]+\.[0-9]+)'\);[ \t]*$",
+            metadata,
+            re.MULTILINE,
+        )
+        if (
+            len(matches) != 1
+            or len(definitions) != 1
+            or re.search(r"\bconst\s+APP_VERSION\b", metadata, re.IGNORECASE)
+        ):
+            raise ValueError("ambiguous or missing artifact version")
+        version = matches[0]
+        # Read only the version-selected public entry point, never execute PHP.
+        entry = f"snappymail/snappymail/v/{version}/include.php"
+    elif kind == "postfixadmin":
+        source = "postfixadmin/.installed_version"
+        version = artifact_metadata(source).strip()
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+            raise ValueError("invalid artifact version")
+        entry = "postfixadmin/public/index.php"
+    else:
+        raise ValueError("unsupported probe")
+    if not artifact_metadata(entry).strip():
+        raise ValueError("empty artifact entry point")
+    return {
+        "presence": "installed",
+        "installed_version": version,
+        "running_version": None,
+        "version_source": {
+            "kind": "artifact-metadata",
+            "path": str(Path(ARTIFACT_ROOT) / source),
+            "entry_point": str(Path(ARTIFACT_ROOT) / entry),
+        },
+    }
+
+
 def media_version(kind):
     # Dedicated known probes only; no arbitrary executable paths from policy.
+    if kind in ("snappymail", "postfixadmin"):
+        return web_artifact_version(kind)
     if kind != "navidrome" or platform.system() != "Linux":
         raise ValueError("unsupported probe")
     path = "/opt/navidrome/navidrome"
@@ -436,9 +533,11 @@ def application(spec, pkg_rows, package_status="ok", host=None, unit_observation
             "items": [
                 {
                     "name": name,
-                    "state": states.get(name, "not-observed")
-                    if status == "ok"
-                    else "unknown",
+                    "state": (
+                        states.get(name, "not-observed")
+                        if status == "ok"
+                        else "unknown"
+                    ),
                 }
                 for name in names
             ],
@@ -526,6 +625,10 @@ def application(spec, pkg_rows, package_status="ok", host=None, unit_observation
             result.update(observation["items"])
         else:
             result["coverage"].append("installed_version:unknown")
+            if spec["version_probe"] in ("snappymail", "postfixadmin"):
+                result["version_probe_error"] = observation.get(
+                    "error", observation["status"]
+                )
     return result
 
 
@@ -619,9 +722,9 @@ def collect(policy):
     observations = {
         "packages": category(packages if is_linux else mac_packages),
         "services": category(units if is_linux else mac_jobs),
-        "containers": category(containers)
-        if is_linux
-        else {"status": "unsupported", "items": []},
+        "containers": (
+            category(containers) if is_linux else {"status": "unsupported", "items": []}
+        ),
     }
     gaps = [
         "dependency_graph:partial",
@@ -675,9 +778,9 @@ def collect(policy):
             json.dumps(policy, sort_keys=True).encode()
         ).hexdigest(),
         "platform": platform.system(),
-        "os_version": platform.mac_ver()[0]
-        if not is_linux
-        else release.get("VERSION_ID"),
+        "os_version": (
+            platform.mac_ver()[0] if not is_linux else release.get("VERSION_ID")
+        ),
         "kernel_release": platform.release(),
         "os_release": release,
         "categories": observations,
