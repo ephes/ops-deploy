@@ -86,6 +86,9 @@ backup_metrics_endpoint_local_datasets:
 backup_metrics_endpoint_usb_enabled: false
 backup_metrics_endpoint_usb_pool: vault
 backup_metrics_endpoint_usb_device: ""
+# Rotating offsite drives; any present drive counts as device_present. When
+# empty, backup_metrics_endpoint_usb_device is used.
+backup_metrics_endpoint_usb_devices: []
 backup_metrics_endpoint_usb_replication_status_path: "/var/lib/zfs-usb-replication/status.json"
 backup_metrics_endpoint_usb_capacity_warning_ratio: 0.90
 backup_metrics_endpoint_usb_capacity_critical_ratio: 0.95
