@@ -75,6 +75,10 @@ openclaw_codex_v2026_9_1_registration_backport_enabled: true
 openclaw_heartbeat_recovery_managed: false
 openclaw_heartbeat_recovery_enabled: true
 openclaw_upgrade_migrations_enabled: true
+# v2026.9.7+: when the target image differs from the running gateway, stop the
+# gateway and run the official entrypoint's Doctor repair with the new image
+# before any role CLI task (plugin install, secrets apply) opens the state.
+openclaw_doctor_activation_enabled: true
 
 # Audio transcription (optional OpenAI-compatible endpoint)
 # The API key is exposed to OpenClaw under a dedicated environment name and
