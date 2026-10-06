@@ -12,6 +12,9 @@ static_site_required_files:
   - snapshot.json
 static_site_restrict_to_required_files: false
 static_site_rsync_delete: true
+# Private publication: content readable only by root and the service group
+# (directories 0750, files 0640) instead of world-readable 0755/0644.
+static_site_private: false
 
 static_site_python_path: /usr/bin/python3
 static_site_server_path: "/usr/local/libexec/{{ static_site_service_name }}-httpd.py"
@@ -28,6 +31,9 @@ static_site_traefik_entrypoints:
   - web-secure
 static_site_traefik_http_entrypoint: web
 static_site_traefik_cert_resolver: ""
+# When non-empty, an ipAllowList with exactly these CIDR ranges guards both the
+# HTTPS and the HTTP-redirect router; other sources get 403 before any redirect.
+static_site_traefik_allowed_networks: []
 static_site_traefik_config_path: "/etc/traefik/dynamic/{{ static_site_service_name }}.yml"
 static_site_verify_public: false
 static_site_public_healthcheck_retries: 20
