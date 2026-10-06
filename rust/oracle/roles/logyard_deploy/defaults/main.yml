@@ -13,6 +13,7 @@ logyard_source_path: ""
 logyard_git_repo: "https://github.com/ephes/logyard.git"
 logyard_git_version: "main"
 logyard_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git/"
   - ".venv/"
   - "__pycache__/"
