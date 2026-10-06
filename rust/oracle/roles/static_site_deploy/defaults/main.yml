@@ -4,17 +4,8 @@ static_site_service_name: static-site
 static_site_user: "{{ static_site_service_name }}"
 static_site_group: "{{ static_site_user }}"
 
-# controller: rsync static_site_source_path from the Ansible controller.
-# external: another role or job (for example static_site_git_refresh) owns the
-# document content; this role only provisions, serves, and routes it.
-static_site_content_source: controller
 static_site_source_path: ""
 static_site_path: "/srv/static-sites/{{ static_site_service_name }}"
-# Document root owner and mode. Controller mode requires root ownership; an
-# external writer owns the root and uses a setgid mode so files inherit the
-# service group.
-static_site_path_owner: root
-static_site_path_mode: "0755"
 static_site_required_files:
   - index.html
   - report.md
@@ -37,12 +28,6 @@ static_site_traefik_entrypoints:
   - web-secure
 static_site_traefik_http_entrypoint: web
 static_site_traefik_cert_resolver: ""
-# Optional Traefik ipAllowList source ranges (CIDR). Empty keeps the routes
-# open to every client; non-empty puts the allowlist on the HTTPS router (other
-# sources get 403 Forbidden) and on this role's HTTP redirect router. With
-# traefik_deploy's entrypoint-level HTTP->HTTPS redirect (the default), plain
-# HTTP is redirected before this router runs; the HTTPS allowlist still applies.
-static_site_allowed_networks: []
 static_site_traefik_config_path: "/etc/traefik/dynamic/{{ static_site_service_name }}.yml"
 static_site_verify_public: false
 static_site_public_healthcheck_retries: 20
