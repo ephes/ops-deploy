@@ -62,6 +62,7 @@ openclaw_ollama_base_url: ""  # OPTIONAL — Ollama base URL (e.g. http://127.0.
 # Agent model policy (optional; when primary is set, role patches agents.defaults.model)
 openclaw_agent_model_primary: ""
 openclaw_agent_model_fallbacks: []
+openclaw_agent_thinking_default: ""  # Optional reasoning level; empty preserves runtime setting
 openclaw_openai_auth_order: []  # Optional ordered canonical OpenAI auth profiles, e.g. ["openai:default"]
 openclaw_codex_plugin_enabled: false  # Install and enable the official Codex app-server runtime plugin
 openclaw_codex_plugin_id: "codex"
