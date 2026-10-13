@@ -22,6 +22,7 @@ openclaw_image_tag: "{{ openclaw_version }}"
 openclaw_force_rebuild: false
 
 # Networking
+openclaw_network_mode: bridge  # host forces a loopback-only Gateway listener
 openclaw_bind_host: "127.0.0.1"
 openclaw_host_port: 18789
 openclaw_container_port: 18789
@@ -144,6 +145,7 @@ openclaw_manage_user: true
 openclaw_healthcheck_enabled: true
 
 # Health check (gateway RPC readiness plus configured channel readiness)
+openclaw_startup_timeout: 300  # Entry-point Doctor may finish before the listener opens
 openclaw_healthcheck_retries: 6
 openclaw_healthcheck_delay: 5
 
