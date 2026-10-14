@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
+  `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
+  `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and
+  `traefik_remove` roles. Static config, unit, certificate list and log
+  rotation are byte-identical to the role's (parity tests against the
+  vendored templates). Deploy, restore and remove refuse transaction-managed
+  hosts before any change, as the role's guard does. The static config and
+  certificate list are validated before anything is written, a new binary
+  must report its version before Traefik restarts, and Traefik restarts only
+  on a real change (also a new binary, which the role leaves running old).
+  A release checksum is required. Fake connector tests and
+  `tests/smoke/test_traefik_smoke.py`; see [Traefik](traefik.md). PyYAML is
+  now a runtime dependency (certificate list validation).
+- The vendored-template check accepts templates in role subdirectories
+  (`<role>__<dir>__<file>`).
+
 - `ops_deploy.infra` (outside the size-capped layer): `deploy_postgres_install`
   and `deploy_redis_install`, ports of the `postgres_install` and
   `redis_install` roles. `pg_hba.conf`, the `conf.d` drop-in, `redis.conf` and

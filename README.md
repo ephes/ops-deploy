@@ -12,7 +12,8 @@ references, the `sync_tree` and `secret_file` operations, deploy helpers
 (users, systemd, uv/Django, Traefik, health checks), an in-process test
 harness, two toy services, the nyxmon and fastdeploy services and host-level
 base deploys (hostname, unit masks, headless mode, authorized keys, uv,
-Node.js, shell basics) and the shared host services PostgreSQL and Redis.
+Node.js, shell basics) and the shared host services PostgreSQL, Redis and
+Traefik (deploy, backup, restore, remove).
 
 ## Requirements
 

@@ -91,6 +91,16 @@ role. Redis (installed if missing): password on, twice, unauthenticated
 the server started gets a restart and a stored key survives it. Redis is left
 without a password.
 
+`test_traefik_smoke.py` runs [Traefik](../traefik.md) on the VM. It saves the
+VM's own Traefik first and puts it back afterwards. Install of 3.7.13 over
+the VM's 3.7.14, upgrade to 3.7.14 (install, version check, restart), a third
+run without change or restart; the running binary, static config and unit
+match the rendered role output; HTTP redirects to HTTPS, metrics answer on
+the dashboard entrypoint, and a stand-in `lighttpd.service` ends up masked
+and stopped. Then a backup with ACME state, a restore over a damaged store,
+and a removal that keeps routes and certificates, run twice (the second
+without change).
+
 `test_secret_file_smoke.py` exercises `secret_file`'s failure handling on a
 real host:
 

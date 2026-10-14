@@ -1,0 +1,81 @@
+# Traefik static configuration
+# This file configures the core Traefik settings
+
+[global]
+  checkNewVersion = true
+  sendAnonymousUsage = false
+
+{% if traefik_dashboard_enabled %}
+[api]
+  dashboard = {{ traefik_dashboard_enabled | lower }}
+  debug = false
+{% endif %}
+
+[log]
+  level = "{{ traefik_log_level }}"
+  filePath = "{{ traefik_log_dir }}/traefik.log"
+  format = "{{ traefik_log_format }}"
+
+[accessLog]
+  filePath = "{{ traefik_log_dir }}/access.log"
+  format = "{{ traefik_log_format }}"
+  bufferingSize = 100
+
+[providers.file]
+  directory = "{{ traefik_dynamic_dir }}"
+  watch = true
+
+[entryPoints]
+  [entryPoints.web]
+{% if 'web' in traefik_alias_policy | default({}) %}
+    http.aliasHeadersStrategy = "{{ traefik_alias_policy['web'] }}"
+{% endif %}
+    address = ":{{ traefik_http_port }}"
+{% if traefik_http_redirect_to_https %}
+    [entryPoints.web.http.redirections.entryPoint]
+      to = "web-secure"
+      scheme = "https"
+      permanent = true
+{% endif %}
+
+  [entryPoints.web-secure]
+{% if 'web-secure' in traefik_alias_policy | default({}) %}
+    http.aliasHeadersStrategy = "{{ traefik_alias_policy['web-secure'] }}"
+{% endif %}
+    address = ":{{ traefik_https_port }}"
+
+{% if traefik_dashboard_enabled %}
+  # Dashboard/API entrypoint (moved from default 8080 to avoid UniFi conflict)
+  [entryPoints.traefik]
+{% if 'traefik' in traefik_alias_policy | default({}) %}
+    http.aliasHeadersStrategy = "{{ traefik_alias_policy['traefik'] }}"
+{% endif %}
+    address = ":{{ traefik_dashboard_port }}"
+{% elif traefik_metrics_enabled %}
+  # Metrics-only entrypoint. Prometheus metrics default to the "traefik"
+  # entrypoint, and when nothing defines it Traefik creates it implicitly on
+  # :8080 on every interface - which put /metrics on the public internet on a
+  # host with the dashboard disabled. Define it explicitly and bind it.
+  [entryPoints.traefik]
+{% if 'traefik' in traefik_alias_policy | default({}) %}
+    http.aliasHeadersStrategy = "{{ traefik_alias_policy['traefik'] }}"
+{% endif %}
+    address = "{{ traefik_metrics_bind_address }}:{{ traefik_metrics_port }}"
+{% endif %}
+
+[certificatesResolvers.letsencrypt.acme]
+  email = "{{ traefik_letsencrypt_email }}"
+  storage = "{{ traefik_acme_storage }}"
+  keyType = "EC256"
+  [certificatesResolvers.letsencrypt.acme.httpChallenge]
+    entryPoint = "web"
+
+{% if traefik_metrics_enabled %}
+# Optional: Enable metrics
+[metrics]
+  [metrics.prometheus]
+    entryPoint = "traefik"
+    addEntryPointsLabels = true
+    addServicesLabels = true
+    buckets = [0.1,0.3,1.2,5.0]
+{% endif %}

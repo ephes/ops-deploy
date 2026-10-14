@@ -134,7 +134,8 @@ OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
 @pytest.mark.parametrize("vendored", sorted(VENDORED.glob("*.j2")), ids=lambda p: p.name)
 def test_vendored_templates_match_ops_library(vendored: Path) -> None:
     assert OPS_LIBRARY is not None
-    role, template = vendored.name.split("__", 1)
-    source = Path(OPS_LIBRARY) / "roles" / role / "templates" / template
+    # ``<role>__<path below templates/ with / as __>``
+    role, *template = vendored.name.split("__")
+    source = Path(OPS_LIBRARY, "roles", role, "templates", *template)
 
     assert vendored.read_text() == source.read_text(), f"{source} changed; re-vendor and re-check parity"

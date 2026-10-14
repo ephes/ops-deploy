@@ -1,0 +1,7 @@
+# Managed by Ansible - File provider certificates
+tls:
+  certificates:
+{% for cert in traefik_file_certificates %}
+    - certFile: "{{ cert.cert_file }}"
+      keyFile: "{{ cert.key_file }}"
+{% endfor %}
