@@ -1,0 +1,17 @@
+# Managed by Ansible (postgres_install role)
+
+{% if postgres_install_listen_addresses is string %}
+{% set _listen_value = postgres_install_listen_addresses %}
+{% else %}
+{% set _listen_value = postgres_install_listen_addresses | join(',') %}
+{% endif %}
+listen_addresses = '{{ _listen_value }}'
+port = {{ postgres_install_port }}
+
+{% for key, value in postgres_install_config_overrides | dictsort %}
+{%   if value is string %}
+{{ key }} = '{{ value | replace("'", "''") }}'
+{%   else %}
+{{ key }} = {{ value }}
+{%   endif %}
+{% endfor %}

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `ops_deploy.infra` (outside the size-capped layer): `deploy_postgres_install`
+  and `deploy_redis_install`, ports of the `postgres_install` and
+  `redis_install` roles. `pg_hba.conf`, the `conf.d` drop-in, `redis.conf` and
+  the PGDG `.sources` file are byte-identical to what the roles write (parity
+  tests against the vendored templates and macmini's files). Databases go
+  through `postgres_database`, which never drops or recreates; `redis.conf`
+  (it may hold `requirepass`) is written with `secret_file` and the old file
+  kept as a backup like the role's; a server that answers without its
+  password or started before its current `redis.conf` is restarted. Fake
+  connector tests and `tests/smoke/test_infra_smoke.py`; see
+  [PostgreSQL and Redis](infra.md).
+- `postgres_database`: while the server is not installed or not running at
+  planning time (the same deploy sets it up) the plan treats the role and
+  database as new instead of failing; new `port` (cluster) and `enabled`
+  arguments; psql now always passes `-p`.
+
 - Base deploys in `ops_deploy.base` (outside the size-capped layer), ported
   from the ops-library base roles: `hostname`, `headless_mode`,
   `systemd_unit_masks`, `ssh_authorized_keys` (whole file, byte-identical to

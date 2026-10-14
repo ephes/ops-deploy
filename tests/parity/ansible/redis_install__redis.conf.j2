@@ -1,0 +1,45 @@
+# Managed by Ansible (redis_install role)
+
+port {{ redis_install_port }}
+tcp-backlog {{ redis_install_tcp_backlog }}
+timeout {{ redis_install_timeout }}
+tcp-keepalive {{ redis_install_tcp_keepalive }}
+
+bind {{ redis_install_bind_addresses | join(' ') }}
+
+protected-mode {{ 'yes' if redis_install_protected_mode else 'no' }}
+daemonize no
+supervised {{ redis_install_supervised_mode }}
+databases {{ redis_install_databases }}
+
+{% if redis_install_requirepass_enabled %}
+requirepass {{ redis_install_password }}
+{% else %}
+# requirepass disabled
+{% endif %}
+
+dir {{ redis_install_data_dir }}
+
+{% set _redis_maxmemory_string = redis_install_maxmemory | string %}
+{% if _redis_maxmemory_string not in ['0','0b','0B'] %}
+maxmemory {{ redis_install_maxmemory }}
+maxmemory-policy {{ redis_install_maxmemory_policy }}
+{% else %}
+# maxmemory unlimited
+{% endif %}
+
+{% if redis_install_save_rules | length > 0 %}
+{% for rule in redis_install_save_rules %}
+save {{ rule }}
+{% endfor %}
+{% else %}
+save ""
+{% endif %}
+
+appendonly {{ 'yes' if redis_install_appendonly else 'no' }}
+appendfilename "{{ redis_install_appendfilename }}"
+appendfsync {{ redis_install_appendfsync }}
+
+loglevel {{ redis_install_loglevel }}
+logfile "{{ redis_install_logfile }}"
+stop-writes-on-bgsave-error {{ 'yes' if redis_install_stop_writes_on_bgsave_error else 'no' }}

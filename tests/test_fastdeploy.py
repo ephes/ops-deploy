@@ -149,9 +149,8 @@ def test_first_run_installs_everything(cfg: FastdeployConfig, secrets: SecretVal
     run = deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
 
     commands = run.executed_commands
-    create_db = (
-        'runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -c \'CREATE DATABASE "fastdeploy" OWNER "fastdeploy"\''
-    )
+    psql = "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -p 5432"
+    create_db = f'{psql} -c \'CREATE DATABASE "fastdeploy" OWNER "fastdeploy"\''
     assert create_db in commands
     assert "useradd -d /home/deploy -s /bin/bash -g deploy -G fastdeploy -c 'Deployment Service Account' -m deploy" in (
         commands
@@ -263,7 +262,7 @@ def test_postgres_password_rotation_updates_role_and_env(cfg: FastdeployConfig, 
         "Deploy fastdeploy | Write .env.shell",
         *ALWAYS,
     ]
-    sql = next(s for c, s in run.stdin if c == "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1")
+    sql = next(s for c, s in run.stdin if c == "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -p 5432")
     assert sql.startswith('ALTER ROLE "fastdeploy" WITH LOGIN PASSWORD \'SCRAM-SHA-256$4096:')
     assert "rotated-fixture-pg-password" not in sql
     assert "rotated-fixture-pg-password" not in run.all_text()

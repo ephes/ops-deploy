@@ -64,15 +64,20 @@ and only then moved over the rule; a rule that does not parse is removed and
 the installed one stays. No change when content, owner and mode already match.
 `name` may only use letters, digits, `_` and `-`.
 
-## `postgres_database(name, *, owner, password, admin_user="postgres", service="postgresql")`
+## `postgres_database(name, *, owner, password, admin_user="postgres", service="postgresql", port=5432, enabled=True)`
 
 Replaces the database part of `postgres_install` (`postgres_install_users`
-and `postgres_install_databases`): `service` enabled and running, login role
+and `postgres_install_databases`): `service` running (and enabled unless
+`enabled=False`), login role
 `owner` with `password` (a `SecretStr`), database `name` owned by it, and its
 `public` schema owned by it. Other role attributes are left alone. All SQL runs
-as `admin_user` through `runuser ... psql` (peer auth), and the server must
-already be installed: installing and configuring PostgreSQL stays with the
-Ansible role for now.
+as `admin_user` through `runuser ... psql -p <port>` (peer auth; the port
+selects the cluster), and the server must be running by the time the
+operations run: either already, or set up by
+[`deploy_postgres_install`](../infra.md) earlier in the same deploy. While it
+is not installed or not running at planning time, the probe reads as empty and
+role and database are planned as new; a `CREATE` of something that does exist
+then fails instead of changing it.
 
 The password never leaves the controller. PostgreSQL accepts a pre-hashed
 SCRAM-SHA-256 verifier, so the helper computes one (random salt, 4096
@@ -230,8 +235,9 @@ roles. The Traefik YAML is checked by `tests/test_traefik_parity.py`.
 5. **One start on the first deploy.** `service_rollout` starts a new service
    once. The roles start it and then restart it from a handler.
    `always_restart=True` restarts even then.
-6. **PostgreSQL install not managed.** `postgres_database` manages the role,
+6. **PostgreSQL install separate.** `postgres_database` manages the role,
    database and schema owner only; the roles also install and configure the
-   server through their `postgres_install` dependency. A changed password is
+   server through their `postgres_install` dependency, which is
+   [`deploy_postgres_install`](../infra.md) here. A changed password is
    set as a SCRAM verifier computed on the controller (the role sends the
    password).

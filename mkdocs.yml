@@ -21,6 +21,7 @@ nav:
       - Testing deploys: concepts/testing.md
       - Smoke target: concepts/smoke.md
   - Base deploys: base.md
+  - PostgreSQL and Redis: infra.md
   - Services:
       - toy: services/toy.md
       - toyweb: services/toyweb.md

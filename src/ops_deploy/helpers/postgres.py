@@ -87,14 +87,15 @@ def parse_state(lines: list[str] | None) -> DatabaseState:
     )
 
 
-def _psql(admin_user: str, database: str | None = None) -> str:
-    argv = ["runuser", "-u", admin_user, "--", "psql", "-XAtq", "-v", "ON_ERROR_STOP=1"]
+def _psql(admin_user: str, database: str | None = None, port: int = 5432) -> str:
+    # The port picks the cluster (Debian's pg_wrapper), not just the socket.
+    argv = ["runuser", "-u", admin_user, "--", "psql", "-XAtq", "-v", "ON_ERROR_STOP=1", "-p", str(port)]
     if database is not None:
         argv += ["-d", database]
     return shlex.join(argv)
 
 
-def state_command(name: str, owner: str, admin_user: str) -> str:
+def state_command(name: str, owner: str, admin_user: str, port: int = 5432) -> str:
     """Read-only probe; prints ``role|``, ``db|`` and ``schema|`` lines. No secret material."""
 
     role = (
@@ -106,20 +107,25 @@ def state_command(name: str, owner: str, admin_user: str) -> str:
     db = f"select 'db|' || pg_get_userbyid(datdba) from pg_database where datname = '{name}'"
     schema = "select 'schema|' || pg_get_userbyid(nspowner) from pg_namespace where nspname = 'public'"
     # The schema query needs the database; it fails harmlessly while that is missing.
+    # A server not installed or not running yet (the same deploy sets it up)
+    # reads as empty: everything is planned as new, and a CREATE of something
+    # that does exist fails at execution instead of changing it.
     return (
-        f"{_psql(admin_user)} -c {shlex.quote(role)} -c {shlex.quote(db)} && "
-        f"{{ {_psql(admin_user, name)} -c {shlex.quote(schema)} 2>/dev/null || true; }}"
+        f"{{ {_psql(admin_user, port=port)} -c {shlex.quote(role)} -c {shlex.quote(db)} && "
+        f"{{ {_psql(admin_user, name, port)} -c {shlex.quote(schema)} 2>/dev/null || true; }}; }} 2>/dev/null || true"
     )
 
 
-def _probe(name: str, owner: str, admin_user: str) -> DatabaseState:
-    output = host.get_fact(Command, command=state_command(name, owner, admin_user))
+def _probe(name: str, owner: str, admin_user: str, port: int) -> DatabaseState:
+    output = host.get_fact(Command, command=state_command(name, owner, admin_user, port))
     return parse_state((output or "").splitlines())
 
 
 @operation()
-def _role(database: str, owner: str, password: SecretStr, admin_user: str) -> Generator[StringCommand, None, None]:
-    state = _probe(database, owner, admin_user)
+def _role(
+    database: str, owner: str, password: SecretStr, admin_user: str, port: int
+) -> Generator[StringCommand, None, None]:
+    state = _probe(database, owner, admin_user, port)
     secret = password.get_secret_value()
     matches = state.role_exists and password_matches(secret, state.password_salt, state.password_digest)
     if state.can_login and matches:
@@ -129,22 +135,26 @@ def _role(database: str, owner: str, password: SecretStr, admin_user: str) -> Ge
     verb = "ALTER" if state.role_exists else "CREATE"
     # The verifier rides on stdin; the command line names nothing secret.
     sql = f"{verb} ROLE \"{owner}\" WITH LOGIN PASSWORD '{verifier}';"
-    yield StringCommand(_psql(admin_user), _stdin=sql, _get_pty=False, _shell_executable="sh")
+    yield StringCommand(_psql(admin_user, port=port), _stdin=sql, _get_pty=False, _shell_executable="sh")
 
 
 @operation()
-def _database(database: str, owner: str, admin_user: str) -> Generator[StringCommand, None, None]:
-    state = _probe(database, owner, admin_user)
+def _database(database: str, owner: str, admin_user: str, port: int) -> Generator[StringCommand, None, None]:
+    state = _probe(database, owner, admin_user, port)
     if state.database_owner == owner and state.schema_owner == owner:
         host.noop(f"PostgreSQL database {database} is up to date")
         return
     if state.database_owner is None:
-        yield StringCommand(_psql(admin_user), "-c", shlex.quote(f'CREATE DATABASE "{database}" OWNER "{owner}"'))
+        yield StringCommand(
+            _psql(admin_user, port=port), "-c", shlex.quote(f'CREATE DATABASE "{database}" OWNER "{owner}"')
+        )
     elif state.database_owner != owner:
-        yield StringCommand(_psql(admin_user), "-c", shlex.quote(f'ALTER DATABASE "{database}" OWNER TO "{owner}"'))
+        yield StringCommand(
+            _psql(admin_user, port=port), "-c", shlex.quote(f'ALTER DATABASE "{database}" OWNER TO "{owner}"')
+        )
     if state.schema_owner != owner:
         alter = f'ALTER SCHEMA public OWNER TO "{owner}"'
-        yield StringCommand(_psql(admin_user, database), "-c", shlex.quote(alter))
+        yield StringCommand(_psql(admin_user, database, port), "-c", shlex.quote(alter))
 
 
 @dataclass(frozen=True)
@@ -161,13 +171,17 @@ def postgres_database(
     password: SecretStr,
     admin_user: str = "postgres",
     service: str = "postgresql",
+    port: int = 5432,
+    enabled: bool = True,
 ) -> PostgresDatabase:
     """Ensure login role ``owner`` with ``password`` and database ``name`` owned by it.
 
     Like ``postgres_install``: ``service`` is enabled and running, the role
     has ``LOGIN`` (other attributes are left alone), the database and its
-    ``public`` schema belong to ``owner``. The server must already be
-    installed; the probe fails otherwise.
+    ``public`` schema belong to ``owner``. ``port`` selects the cluster;
+    ``enabled=False`` leaves the service disabled. The server must be running
+    when the operations run; while it is not installed or not running yet
+    (the same deploy sets it up) the plan treats everything as new.
     """
 
     for value in (name, owner, admin_user):
@@ -175,9 +189,16 @@ def postgres_database(
             raise OperationValueError(f"not a plain PostgreSQL identifier: {value!r}")
     if not password.get_secret_value() or not password.get_secret_value().isascii():
         raise OperationValueError("the PostgreSQL password must be non-empty ASCII")
-    service_op = systemd.service(name=f"Ensure {service} is running", service=service, running=True, enabled=True)
+    service_op = systemd.service(name=f"Ensure {service} is running", service=service, running=True, enabled=enabled)
     role = _role(
-        name=f"Ensure PostgreSQL role {owner}", database=name, owner=owner, password=password, admin_user=admin_user
+        name=f"Ensure PostgreSQL role {owner}",
+        database=name,
+        owner=owner,
+        password=password,
+        admin_user=admin_user,
+        port=port,
     )
-    database = _database(name=f"Ensure PostgreSQL database {name}", database=name, owner=owner, admin_user=admin_user)
+    database = _database(
+        name=f"Ensure PostgreSQL database {name}", database=name, owner=owner, admin_user=admin_user, port=port
+    )
     return PostgresDatabase(service=service_op, role=role, database=database)

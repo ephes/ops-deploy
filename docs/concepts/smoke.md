@@ -82,6 +82,15 @@ the registered service and runner survive, and leaks (also in
 `/var/log/postgresql`). The first run installs Node.js from NodeSource and
 builds the frontend.
 
+`test_infra_smoke.py` runs [PostgreSQL and Redis](../infra.md) on the VM.
+PostgreSQL: twice with a throwaway database, owner and `pg_trgm` (second run
+without mutating change; files equal the rendered role output), a table row
+written as the owner over TCP survives, and a password change alters only the
+role. Redis (installed if missing): password on, twice, unauthenticated
+`PING` refused, `redis.conf` `root:redis 0640`; a `redis.conf` touched after
+the server started gets a restart and a stored key survives it. Redis is left
+without a password.
+
 `test_secret_file_smoke.py` exercises `secret_file`'s failure handling on a
 real host:
 

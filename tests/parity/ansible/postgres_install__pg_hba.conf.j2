@@ -1,0 +1,17 @@
+# Managed by Ansible (postgres_install role)
+# See pg_hba.conf(5) for format details
+
+{% for rule in postgres_install_pg_hba_rules %}
+{% if rule.comment is defined %}
+# {{ rule.comment }}
+{% endif %}
+{% set parts = [rule.type, rule.database, rule.user] %}
+{% if rule.type != 'local' %}
+{%   set _ = parts.append(rule.address | default('0.0.0.0/0')) %}
+{% endif %}
+{% set _ = parts.append(rule.auth_method) %}
+{% if rule.auth_options is defined %}
+{%   set _ = parts.append(rule.auth_options) %}
+{% endif %}
+{{ (parts | join(' ')) ~ '\n' }}
+{% endfor %}

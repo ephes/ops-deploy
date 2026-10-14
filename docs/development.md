@@ -36,8 +36,8 @@ layer and exits non-zero above the cap. A code line is a physical line holding
 at least one Python token other than a comment, outside a docstring (the first
 string statement of a module, class or function). Blank lines, comments and
 docstrings are free, since the rendered documentation is built from them. Only
-`*.py` files count; Jinja templates do not. Services (`services/`) and the
-host-level base deploys (`base/`) are deploys, not part of the shared layer, and do not
+`*.py` files count; Jinja templates do not. Services (`services/`), the
+host-level base deploys (`base/`) and the shared host services (`infra/`) are deploys, not part of the shared layer, and do not
 count.
 
 CI runs it on every push, and `tests/test_size_cap.py` also fails the suite

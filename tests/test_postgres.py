@@ -80,13 +80,13 @@ def test_new_role_and_database() -> None:
 
     assert run.changed_ops == ["Ensure PostgreSQL role app", "Ensure PostgreSQL database app"]
     ((command, sql),) = run.stdin
-    assert command == "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1"
+    assert command == "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -p 5432"
     assert sql.startswith('CREATE ROLE "app" WITH LOGIN PASSWORD \'SCRAM-SHA-256$4096:')
     assert PASSWORD not in sql
     assert PASSWORD not in run.all_text()
     assert run.executed_commands[-2:] == [
-        'runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -c \'CREATE DATABASE "app" OWNER "app"\'',
-        "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -d app -c 'ALTER SCHEMA public OWNER TO \"app\"'",
+        'runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -p 5432 -c \'CREATE DATABASE "app" OWNER "app"\'',
+        "runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -p 5432 -d app -c 'ALTER SCHEMA public OWNER TO \"app\"'",
     ]
 
 
