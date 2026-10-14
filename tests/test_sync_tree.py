@@ -1,13 +1,16 @@
+import os
 import shlex
+import shutil
+import subprocess
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from pyinfra.api import deploy
 
 from ops_deploy.core.rsync import RsyncError, RsyncResult
 from ops_deploy.ops import sync_tree
-from ops_deploy.ops.sync_tree import MANDATORY_EXCLUDES
+from ops_deploy.ops.sync_tree import MANDATORY_EXCLUDES, rsync_argv
 from ops_deploy.testing import RecordingRsyncRunner, run_deploy_fake
 
 HOST_DATA = {"ssh_hostname": "app.example.invalid", "ssh_user": "deploy"}
@@ -69,7 +72,7 @@ def test_change_runs_real_rsync_once(source: Path) -> None:
     assert run.function_calls == ["_run_rsync"]
     assert _real_runs(rsync) == [
         [
-            "rsync", "-rlt", "--omit-dir-times", "--delete", "--no-owner", "--no-group",
+            "rsync", "-rl", "--checksum", "--omit-dir-times", "--delete", "--no-owner", "--no-group",
             *(f"--exclude={pattern}" for pattern in MANDATORY_EXCLUDES),
             "-e", "ssh", f"{source}/", "deploy@app.example.invalid:/srv/app/",
         ]
@@ -235,3 +238,26 @@ def test_missing_source_is_rejected(tmp_path: Path) -> None:
 
     assert not run.succeeded
     assert "not a directory" in str(run.error)
+
+
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="needs rsync")
+def test_time_only_difference_itemizes_nothing(tmp_path: Path) -> None:
+    """Real rsync: same content with other mtimes (a fresh clone) is no change; new content is."""
+
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    for root in (src, dest):
+        (root / "pkg").mkdir(parents=True)
+        (root / "pkg" / "app.py").write_text("x = 1\n")
+    os.utime(dest / "pkg" / "app.py", (0, 0))
+
+    def dry_run() -> list[str]:
+        argv = rsync_argv(src, PurePosixPath("/unused"), "unused", dry_run=True)
+        # Same flags, local destination instead of ``-e ssh ... host:dest/``.
+        local = [*argv[: argv.index("-e")], f"{src}/", f"{dest}/"]
+        return subprocess.run(local, check=True, capture_output=True, text=True).stdout.splitlines()
+
+    assert dry_run() == []
+    (src / "pkg" / "app.py").write_text("x = 2\n")
+    (line,) = dry_run()
+    assert line.startswith(">fc"), line
+    assert line.endswith(" pkg/app.py"), line

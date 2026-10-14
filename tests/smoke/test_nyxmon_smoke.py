@@ -39,6 +39,7 @@ class Deployed:
     secrets: SecretValues
     first: SshRun
     second: SshRun
+    fresh_clone: SshRun
 
 
 @pytest.fixture(scope="module")
@@ -68,9 +69,13 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
             "opsgate_submit_token": f"smoke-opsgate-{secrets.token_hex(16)}",
         },
     )
+    # The same commit exported again with fresh mtimes (``tar -m``), as a new clone has.
+    fresh = tmp_path_factory.mktemp("nyxmon-fresh")
+    subprocess.run(["tar", "-x", "-m", "-C", str(fresh)], input=archive.stdout, check=True)
     runs = []
-    for label in ("first", "second"):
-        run = run_deploy_ssh(deploy_nyxmon, cfg, values, host_name=smoke_host.name, host_data=smoke_host.host_data)
+    fresh_cfg = cfg.model_copy(update={"source_path": fresh})
+    for label, config in (("first", cfg), ("second", cfg), ("fresh clone", fresh_cfg)):
+        run = run_deploy_ssh(deploy_nyxmon, config, values, host_name=smoke_host.name, host_data=smoke_host.host_data)
         TIMINGS[f"nyxmon {label} run"] = run.seconds
         assert run.succeeded, (label, run.error, [op for op in run.ops if not op.succeeded])
         runs.append(run)
@@ -81,6 +86,10 @@ def test_second_run_has_no_mutating_changes(deployed: Deployed) -> None:
     assert any(name.endswith("| Write .env") for name in deployed.first.changed_ops)
     assert deployed.second.mutating_changed_ops == []
     assert all(op.succeeded for op in deployed.second.ops if op.read_only)
+
+
+def test_fresh_clone_of_unchanged_code_is_a_noop(deployed: Deployed) -> None:
+    assert deployed.fresh_clone.mutating_changed_ops == []
 
 
 def test_both_units_run(smoke_host: SmokeHost, deployed: Deployed) -> None:

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `sync_tree` compares files by checksum and no longer syncs times
+  (`-rl --checksum` instead of `-rlt`): a fresh clone of unchanged code is a
+  no-op. Real-rsync test for time-only differences; the nyxmon smoke deploys
+  from a fresh export and expects no mutating change.
 - `nyxmon` service: port of the `nyxmon_deploy` role (rsync method) with
   `NyxmonConfig`, byte-identical env and unit files (parity tests against the
   vendored role templates), host-state `persistent_excludes`, SQLite privacy

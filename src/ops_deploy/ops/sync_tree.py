@@ -56,7 +56,10 @@ def rsync_argv(
     # Directory times are left alone: the app writing into a synced directory
     # (``__pycache__``, a database) would otherwise show up as a change on every
     # next run and retrigger everything gated on the sync.
-    argv = ["rsync", "-rlt", "--omit-dir-times"]
+    # Content decides, not times: a fresh clone of unchanged code (new mtimes)
+    # must be a no-op, so files are compared by checksum and times are not
+    # synced at all (``-t`` would itemize every time-only difference).
+    argv = ["rsync", "-rl", "--checksum", "--omit-dir-times"]
     if delete:
         argv.append("--delete")
     argv += ["--no-owner", "--no-group"]

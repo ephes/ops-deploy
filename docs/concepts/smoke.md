@@ -66,6 +66,8 @@ must leave it in a state the next run can deploy over.
 committed `HEAD` of a nyxmon checkout (`NYXMON_SOURCE`, else
 `$PROJECTS_ROOT/nyxmon`; skipped without one) and checks convergence, both
 units, private database and env files, migrations, the Traefik auth and leaks.
+A third run from a fresh export of the same commit (new mtimes) must change
+nothing.
 
 `test_secret_file_smoke.py` exercises `secret_file`'s failure handling on a
 real host:

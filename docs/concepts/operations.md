@@ -33,10 +33,16 @@ changed = sync_tree(
   asked once and execution acts on exactly what was planned.
 - **Ownership is never preserved** (`--no-owner --no-group`). With `user` the
   files get `--chown=user:group`; without it they belong to the SSH user.
-- **Directory times are not synced** (`--omit-dir-times`). The app writing
-  into a synced directory (a `__pycache__`, a database) changes the
-  directory's mtime; with times synced, every later deploy would see that as
-  a change and rerun everything gated on the sync. The smoke test caught this.
+- **Content decides, not times** (`-rl --checksum`, no `-t`). Files are
+  compared by checksum and their times are not synced, so a fresh clone of
+  unchanged code (every file with a new mtime) is a no-op, and a time-only
+  difference produces no itemized line. Directory times are left alone too
+  (`--omit-dir-times`): the app writing into a synced directory (a
+  `__pycache__`, a database) would otherwise show up as a change. The checksum
+  costs nothing measurable on the nyxmon tree (118 files, three syncs): 0.65 s
+  for the dry runs against macmini over LAN versus 0.69 s comparing times, and
+  0.30 s versus 0.32 s on the smoke VM. Ansible's `synchronize` compares times,
+  so the first Ansible run from another clone resyncs (and restarts) once.
 - **Excludes.** `MANDATORY_EXCLUDES` (`.git`, `.venv`, `__pycache__`,
   `.ops-deploy-*`, `.pyinfra-*`) always apply, followed by `excludes`.
   Excluded paths on the host are not deleted by `--delete`, which is how state
