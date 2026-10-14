@@ -155,7 +155,7 @@ def test_templates_match_golden_files(template: str) -> None:
 
 def test_source_path_must_exist_and_is_not_echoed(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="source_path is not a directory") as excinfo:
-        ToyConfig(source_path=tmp_path / "hunter2-CHANGEME")
+        ToyConfig(source_path=tmp_path / "hunter2-missing")
     assert "hunter2" not in str(excinfo.value)
     assert "hunter2" not in repr(excinfo.value)
 

@@ -60,10 +60,18 @@ class BaseServiceConfig(BaseModel):
             raise ValueError("site_path must not be '/'")
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_placeholders_in_input(cls, data: Any) -> Any:
+        # Runs before field validation: a field error would otherwise put a
+        # placeholder-bearing mapping key into the error location verbatim.
+        _raise_on_placeholder(data)
+        return data
+
     @model_validator(mode="after")
     def _reject_placeholders(self) -> BaseServiceConfig:
-        for location in _placeholder_locations(self):
-            raise ValueError(f"{location} still contains the placeholder {PLACEHOLDER_MARKER!r}")
+        # Also covers defaults, which never pass through the input check.
+        _raise_on_placeholder(self)
         return self
 
     @model_validator(mode="after")
@@ -73,6 +81,11 @@ class BaseServiceConfig(BaseModel):
                 f"{type(self).__name__} requires a secrets file providing {', '.join(self.required_secret_keys)}"
             )
         return self
+
+
+def _raise_on_placeholder(value: Any) -> None:
+    for location in _placeholder_locations(value):
+        raise ValueError(f"{location} still contains the placeholder {PLACEHOLDER_MARKER!r}")
 
 
 def _placeholder_locations(value: Any, path: str = "") -> Iterator[str]:
