@@ -29,6 +29,7 @@ src/ops_deploy/
   helpers/            system_user, systemd, uv/Django, Traefik, read-only checks
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
+  services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
 ```

@@ -23,4 +23,5 @@ nav:
   - Services:
       - toy: services/toy.md
       - toyweb: services/toyweb.md
+      - nyxmon: services/nyxmon.md
   - Changelog: changelog.md

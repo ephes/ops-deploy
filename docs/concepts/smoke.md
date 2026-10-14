@@ -62,6 +62,11 @@ must leave it in a state the next run can deploy over.
 - neither secret is in `/tmp`, `/var/tmp`, `/dev/shm`, `/root` or the
   service home (outside `.env`); the route holds only the bcrypt hash.
 
+`test_nyxmon_smoke.py` deploys [nyxmon](../services/nyxmon.md) twice from the
+committed `HEAD` of a nyxmon checkout (`NYXMON_SOURCE`, else
+`$PROJECTS_ROOT/nyxmon`; skipped without one) and checks convergence, both
+units, private database and env files, migrations, the Traefik auth and leaks.
+
 `test_secret_file_smoke.py` exercises `secret_file`'s failure handling on a
 real host:
 
@@ -90,4 +95,6 @@ Measured on an Apple silicon Mac (2026-10-14):
 | toyweb first run, fresh VM (user, uv sync, migrate, Traefik) | 8.0 s |
 | toyweb first run, deployed VM (new secrets) | 3.6-5.6 s |
 | toyweb second run (converged) | 0.3-0.4 s |
+| nyxmon first run, fresh service (uv downloads Python 3.13) | 11.8 s |
+| nyxmon second run (converged) | 0.8 s |
 | `just smoke`, VM running | 10-12 s |

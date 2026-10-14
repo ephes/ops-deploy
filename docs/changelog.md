@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `nyxmon` service: port of the `nyxmon_deploy` role (rsync method) with
+  `NyxmonConfig`, byte-identical env and unit files (parity tests against the
+  vendored role templates), host-state `persistent_excludes`, SQLite privacy
+  (umask drop-ins, `0600` database), an OpsGate live-environment check, fake
+  connector scenarios and a smoke test (`NYXMON_SOURCE`).
 - Deploy helpers in `ops_deploy.helpers`: `system_user`, `systemd_unit`,
   `service_rollout` (daemon-reload and restart only on change; optional
   unconditional restart), `uv_sync` and `django_manage` (run as the service

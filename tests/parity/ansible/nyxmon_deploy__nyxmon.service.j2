@@ -1,0 +1,36 @@
+[Unit]
+Description=Nyxmon Django Application
+After=network.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ nyxmon_user }}
+Group={{ nyxmon_group }}
+WorkingDirectory={{ nyxmon_django_path }}
+EnvironmentFile={{ nyxmon_site_path }}/.env
+
+ExecStart={{ nyxmon_venv_bin }}/granian \
+    --workers {{ nyxmon_workers }} \
+    --interface wsgi \
+    --host {{ nyxmon_app_host }} \
+    --port {{ nyxmon_app_port }} \
+    --access-log \
+    config.wsgi_proxy:application
+
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Need access to /home/nyxmon
+ProtectHome=false
+ReadWritePaths={{ nyxmon_home }} {{ nyxmon_cache_dir }}
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
