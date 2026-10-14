@@ -65,10 +65,13 @@ def _sanitized(exc: ValidationError) -> ConfigValidationError:
             "loc": tuple(_redact_loc(part) for part in error["loc"]),
             "type": error["type"],
         }
-        # Only a ValueError raised by a validator carries its exception in
-        # ctx["error"]; a PydanticCustomError named "value_error" does not.
-        if error["type"] == "value_error" and isinstance(error.get("ctx", {}).get("error"), ValueError):
-            entry["msg"] = error["msg"]
+        # The message is rebuilt from the ValueError itself, never taken from
+        # pydantic's formatted message, which a custom error controls. The
+        # ValueError text is covered by the "validators never interpolate
+        # values" rule.
+        cause = error.get("ctx", {}).get("error")
+        if error["type"] == "value_error" and isinstance(cause, ValueError):
+            entry["msg"] = f"Value error, {cause}"
         errors.append(entry)
     return ConfigValidationError(exc.title, errors)
 

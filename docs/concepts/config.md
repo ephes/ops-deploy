@@ -49,7 +49,8 @@ cfg = NyxmonConfig(secrets=SecretRef("secrets/prod/nyxmon.yml"))
   `ops_deploy.core.ConfigValidationError` (a `ValueError`), never pydantic's
   `ValidationError`. It carries no input values. Each entry in `.errors` has
   `loc` (segments containing `CHANGEME` become `<key>`) and `type`. `value_error`
-  entries also have `msg`. All other messages and all error context are
+  entries raised by a validator's `ValueError` also have `msg`, built from that
+  exception's text. All other messages and all error context are
   dropped, because they can embed input (a custom error can reuse any type name). Caller options (`strict=`, `context=`) are honoured.
 - **Validator messages must not include values**: `value_error` messages are
   shown verbatim, so validators in this package never put the

@@ -265,3 +265,20 @@ def test_strict_python_validation_accepts_paths(site_path: PurePosixPath | None)
     data = {} if site_path is None else {"site_path": site_path}
     cfg = ExampleConfig.model_validate(data, strict=True)
     assert cfg.site_path == (site_path or PurePosixPath("/home/example/site"))
+
+
+def test_custom_value_error_with_forged_cause_uses_cause_text_only() -> None:
+    from pydantic import field_validator
+    from pydantic_core import PydanticCustomError
+
+    class Forged(Port):
+        @field_validator("port")
+        @classmethod
+        def _reject(cls, value: int) -> int:
+            raise PydanticCustomError(
+                "value_error", "rejected {pattern}", {"error": ValueError("invalid port"), "pattern": "s3cret-4711"}
+            )
+
+    with pytest.raises(ConfigValidationError, match="port: Value error, invalid port") as excinfo:
+        Forged(port=1)
+    assert "s3cret" not in str(excinfo.value) + repr(excinfo.value.errors)
