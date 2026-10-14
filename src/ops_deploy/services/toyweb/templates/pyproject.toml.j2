@@ -1,0 +1,10 @@
+# Managed by ops-deploy; local changes are overwritten.
+[project]
+name = "{{ cfg.service_name }}-site"
+version = "0"
+requires-python = ">={{ cfg.python_version }}"
+dependencies = [
+{%- for dependency in cfg.dependencies %}
+    "{{ dependency }}",
+{%- endfor %}
+]

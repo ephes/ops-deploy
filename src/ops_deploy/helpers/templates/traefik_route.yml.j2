@@ -1,0 +1,103 @@
+{%- macro middlewares(auth) %}
+      middlewares:
+{%- if auth %}
+        - {{ route.name }}-auth
+{%- endif %}
+{%- if route.redirect %}
+        - {{ route.name }}-redirect
+{%- endif %}
+        - {{ route.name }}-headers
+        - {{ route.name }}-gzip
+{%- for middleware in route.middlewares %}
+        - {{ middleware }}
+{%- endfor %}
+      service: {{ route.name }}
+{%- if route.cert_resolver %}
+      tls:
+        certResolver: {{ route.cert_resolver }}
+{%- else %}
+      tls: {}
+{%- endif %}
+{%- endmacro -%}
+# Traefik configuration for {{ route.title }}
+# Managed by ops-deploy - do not edit manually
+{%- if auth_hash %}
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+{%- endif %}
+
+http:
+  routers:
+{%- if auth_hash %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    {{ route.name }}-int:
+      rule: "Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+{{- middlewares(false) }}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    {{ route.name }}-ext:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+{{- middlewares(true) }}
+{%- else %}
+    {{ route.name }}-secure:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+        - web-secure
+{{- middlewares(false) }}
+{%- endif %}
+
+    # Plain HTTP; the static config redirects the web entrypoint to web-secure.
+    {{ route.name }}-http:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+        - web
+      service: {{ route.name }}
+
+  middlewares:
+{%- if auth_hash %}
+    {{ route.name }}-auth:
+      basicAuth:
+        users:
+          - "{{ route.basic_auth.user }}:{{ auth_hash }}"
+        removeHeader: true
+{%- endif %}
+{%- if route.redirect %}
+
+    {{ route.name }}-redirect:
+      redirectRegex:
+        regex: "{{ route.redirect.regex }}"
+        replacement: "{{ route.redirect.replacement }}"
+        permanent: {{ route.redirect.permanent | lower }}
+{%- endif %}
+
+    {{ route.name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: {{ route.frame_options }}
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    {{ route.name }}-gzip:
+      compress: {}
+
+  services:
+    {{ route.name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ route.app_host }}:{{ route.app_port }}"
+{%- if route.health_check %}
+        healthCheck:
+          path: {{ route.health_check.path }}
+          interval: {{ route.health_check.interval }}
+          timeout: {{ route.health_check.timeout }}
+{%- endif %}

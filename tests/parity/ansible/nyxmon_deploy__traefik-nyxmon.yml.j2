@@ -1,0 +1,108 @@
+# Traefik configuration for Nyxmon
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+{% if nyxmon_basic_auth_enabled %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    nyxmon-int:
+      rule: "Host(`{{ nyxmon_traefik_host }}`) && ({% for range in nyxmon_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - nyxmon-headers
+        - nyxmon-gzip
+{% for middleware in nyxmon_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: nyxmon
+{% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    nyxmon-ext:
+      rule: "Host(`{{ nyxmon_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - nyxmon-auth
+        - nyxmon-headers
+        - nyxmon-gzip
+{% for middleware in nyxmon_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: nyxmon
+{% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Single router without authentication (legacy mode)
+    nyxmon-secure:
+      rule: "Host(`{{ nyxmon_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - nyxmon-headers
+        - nyxmon-gzip
+{% for middleware in nyxmon_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: nyxmon
+{% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP to HTTPS redirect (handled by static config entrypoint redirect)
+    # This router exists on :80 (web) entrypoint
+    # Traefik's static config automatically redirects to web-secure (see /etc/traefik/traefik.toml)
+    nyxmon-http:
+      rule: "Host(`{{ nyxmon_traefik_host }}`)"
+      entryPoints:
+        - web
+      service: nyxmon
+
+  middlewares:
+{% if nyxmon_basic_auth_enabled %}
+    nyxmon-auth:
+      basicAuth:
+        users:
+          - "{{ nyxmon_basic_auth_user }}:{{ nyxmon_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    nyxmon-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    nyxmon-gzip:
+      compress: {}
+
+  services:
+    nyxmon:
+      loadBalancer:
+        servers:
+          - url: "http://{{ nyxmon_app_host }}:{{ nyxmon_app_port }}"

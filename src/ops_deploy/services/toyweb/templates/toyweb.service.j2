@@ -1,0 +1,21 @@
+[Unit]
+Description={{ cfg.service_name }} (ops-deploy toy web service)
+After=network.target
+
+[Service]
+Type=exec
+User={{ cfg.user }}
+Group={{ cfg.user }}
+WorkingDirectory={{ cfg.app_path }}
+EnvironmentFile={{ cfg.env_path }}
+ExecStart={{ cfg.venv_path }}/bin/granian --interface wsgi --host 127.0.0.1 --port {{ cfg.app_port }} config.wsgi:application
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ cfg.home }}
+
+[Install]
+WantedBy=multi-user.target

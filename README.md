@@ -8,8 +8,9 @@ in a separate private repository, which builds a config, decrypts its secrets
 on the controller and calls a deploy function from here.
 
 Status: foundation. It contains the configuration base class, secret
-references, the `sync_tree` and `secret_file` operations, an in-process test
-harness and a toy service. Real services follow.
+references, the `sync_tree` and `secret_file` operations, deploy helpers
+(users, systemd, uv/Django, Traefik, health checks), an in-process test
+harness and two toy services. Real services follow.
 
 ## Requirements
 

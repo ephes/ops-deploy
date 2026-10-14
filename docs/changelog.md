@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Deploy helpers in `ops_deploy.helpers`: `system_user`, `systemd_unit`,
+  `service_rollout` (daemon-reload and restart only on change; optional
+  unconditional restart), `uv_sync` and `django_manage` (run as the service
+  user via `runuser`, gated with `when_changed`), `traefik_route` with
+  `TraefikRoute`/`BasicAuth` (controller-side bcrypt in `htpasswd -B` format,
+  reusing a deployed hash that still matches), and the read-only checks
+  `wait_port` and `http_check`.
+- Test harness: `OpResult.read_only` and `FakeRun.mutating_changed_ops`, so a
+  converged second run can be asserted while ignoring read-only checks.
+- `toyweb` service: a toy uv/Django app that uses every helper, with
+  deploy-level scenarios.
+- Parity tests against the nyxmon and fastdeploy Traefik role templates.
+- New dependency `bcrypt`; new dev dependencies `pyyaml`, `types-pyyaml`.
+
 ## 0.1.0 (unreleased)
 
 - Project skeleton: uv, ruff, mypy (strict), pytest, mkdocs, GitHub Actions CI.

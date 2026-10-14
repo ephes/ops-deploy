@@ -26,7 +26,9 @@ src/ops_deploy/
   core/templates.py   Jinja2 rendering of package templates
   ops/sync_tree.py    sync_tree: rsync a controller directory to the host
   ops/secret_file.py  secret_file: install a secret via stdin, temp file, rename
+  helpers/            system_user, systemd, uv/Django, Traefik, read-only checks
   services/toy/       toy service exercising the pieces above
+  services/toyweb/    toy uv/Django service using every helper
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
 ```

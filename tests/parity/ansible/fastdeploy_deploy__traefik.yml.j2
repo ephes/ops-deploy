@@ -1,0 +1,120 @@
+# Traefik configuration for FastDeploy
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+{% if fastdeploy_basic_auth_enabled %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    {{ fastdeploy_service_name }}-int:
+      rule: "Host(`{{ fastdeploy_traefik_host }}`) && ({% for range in fastdeploy_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - {{ fastdeploy_service_name }}-redirect
+        - {{ fastdeploy_service_name }}-headers
+        - {{ fastdeploy_service_name }}-gzip
+{% for middleware in fastdeploy_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ fastdeploy_service_name }}
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    {{ fastdeploy_service_name }}-ext:
+      rule: "Host(`{{ fastdeploy_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - {{ fastdeploy_service_name }}-auth
+        - {{ fastdeploy_service_name }}-redirect
+        - {{ fastdeploy_service_name }}-headers
+        - {{ fastdeploy_service_name }}-gzip
+{% for middleware in fastdeploy_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ fastdeploy_service_name }}
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Single router without authentication (legacy mode)
+    {{ fastdeploy_service_name }}-secure:
+      rule: "Host(`{{ fastdeploy_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - {{ fastdeploy_service_name }}-redirect
+        - {{ fastdeploy_service_name }}-headers
+        - {{ fastdeploy_service_name }}-gzip
+{% for middleware in fastdeploy_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ fastdeploy_service_name }}
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP to HTTPS redirect (handled by static config entrypoint redirect)
+    # This router exists on :80 (web) entrypoint
+    # Traefik's static config automatically redirects to web-secure (see /etc/traefik/traefik.toml)
+    {{ fastdeploy_service_name }}-http:
+      rule: "Host(`{{ fastdeploy_traefik_host }}`)"
+      entryPoints:
+        - web
+      service: {{ fastdeploy_service_name }}
+
+  middlewares:
+{% if fastdeploy_basic_auth_enabled %}
+    {{ fastdeploy_service_name }}-auth:
+      basicAuth:
+        users:
+          - "{{ fastdeploy_basic_auth_user }}:{{ fastdeploy_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    # Redirect / to /static/index.html (FastDeploy frontend)
+    {{ fastdeploy_service_name }}-redirect:
+      redirectRegex:
+        regex: "^(https?://[^/]+)/$"
+        replacement: "${1}/static/index.html"
+        permanent: false
+
+    {{ fastdeploy_service_name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    {{ fastdeploy_service_name }}-gzip:
+      compress: {}
+
+  services:
+    {{ fastdeploy_service_name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ fastdeploy_app_host }}:{{ fastdeploy_app_port }}"
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 3s

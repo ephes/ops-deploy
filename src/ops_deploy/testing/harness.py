@@ -34,6 +34,7 @@ from pyinfra.api.operations import run_ops
 from pyinfra.connectors.fake import FakeConnector
 
 from ops_deploy.core.rsync import RsyncResult
+from ops_deploy.helpers.checks import is_read_only
 
 EventKind = Literal["fact", "shell", "put", "function"]
 Phase = Literal["plan", "execute"]
@@ -66,6 +67,8 @@ class OpResult:
     succeeded: bool
     # pyinfra's string form of the op arguments, printed for unnamed ops.
     args: tuple[str, ...] = ()
+    # Tagged with ``ops_deploy.helpers.mark_read_only`` (health checks).
+    read_only: bool = False
 
 
 @dataclass
@@ -119,6 +122,12 @@ class FakeRun:
     @property
     def changed_ops(self) -> list[str]:
         return [op.name for op in self.ops if op.changed]
+
+    @property
+    def mutating_changed_ops(self) -> list[str]:
+        """Changed ops minus read-only checks; empty on a converged second run."""
+
+        return [op.name for op in self.ops if op.changed and not op.read_only]
 
     def op(self, name: str) -> OpResult:
         matches = [op for op in self.ops if op.name == name]
@@ -300,6 +309,7 @@ def _collect_ops(state: State) -> list[OpResult]:
                 changed=complete and meta.did_change(),
                 succeeded=complete and meta.did_succeed(),
                 args=tuple(op_meta.args),
+                read_only=is_read_only(state, op_hash),
             )
         )
     return results
