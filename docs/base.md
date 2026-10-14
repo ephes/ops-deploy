@@ -79,7 +79,8 @@ file lives in `/etc/systemd/system`; masking is for packaged units.
 | `entries` | required, at least one | `AuthorizedKey(key, comment="", key_options="")`, each on one line |
 
 Owns the **whole** `~/.ssh/authorized_keys` file: keys not in `entries` are
-removed. The content is byte-identical to the role's template (including its
+removed. An empty key list (or a blank key) is refused when the config is
+built, so the deploy can never write a file without keys. The content is byte-identical to the role's template (including its
 `# Managed by Ansible` header), so switching tools rewrites nothing. The file
 is installed with [`secret_file`](concepts/operations.md) (stdin, temp file,
 rename) although keys are public: the rename means an interrupted run never

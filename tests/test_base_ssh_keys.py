@@ -83,3 +83,13 @@ def test_non_root_user_defaults() -> None:
 def test_rejects_empty_or_multiline_entries(entries: tuple[dict[str, str], ...]) -> None:
     with pytest.raises(ValidationError):
         SshAuthorizedKeysConfig.model_validate({"entries": entries})
+
+
+def test_empty_key_set_is_refused_before_anything_is_written() -> None:
+    # Lockout guard: the deploy owns the whole file, so an empty key list
+    # (or one of blank keys) must never reach the host.
+    for entries in ((), ({"key": "   "},)):
+        with pytest.raises(ValidationError):
+            SshAuthorizedKeysConfig.model_validate({"user": "root", "entries": entries})
+    with pytest.raises(ValidationError):
+        SshAuthorizedKeysConfig(entries=())
