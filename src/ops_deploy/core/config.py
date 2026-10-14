@@ -60,6 +60,19 @@ class BaseServiceConfig(BaseModel):
             raise ValueError("site_path must not be '/'")
         return value
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        # Defaults never pass through the input check, and an invalid default
+        # fails field validation before the after-validator runs; reject
+        # placeholder defaults when the class is defined instead.
+        super().__pydantic_init_subclass__(**kwargs)
+        for name, info in cls.model_fields.items():
+            default = info.get_default(call_default_factory=True)
+            for location in _placeholder_locations(default, name):
+                raise TypeError(
+                    f"{cls.__name__}: default of {location} contains the placeholder {PLACEHOLDER_MARKER!r}"
+                )
+
     @model_validator(mode="before")
     @classmethod
     def _reject_placeholders_in_input(cls, data: Any) -> Any:

@@ -106,3 +106,23 @@ def test_required_secret_keys_need_a_secret_ref() -> None:
         NeedsSecrets()
     cfg = NeedsSecrets(secrets=SecretRef("secrets/prod/example.yml"))
     assert str(cfg.secrets) == "secrets/prod/example.yml"
+
+
+@pytest.mark.parametrize(
+    "default",
+    [{"hunter2-CHANGEME": None}, {"ok": "CHANGEME"}, ["CHANGEME"]],
+)
+def test_placeholder_defaults_are_rejected_at_class_definition(default: object) -> None:
+    with pytest.raises(TypeError, match="contains the placeholder") as excinfo:
+
+        class Bad(ExampleConfig):
+            extra_data: object = Field(default_factory=lambda: default)
+
+    assert "hunter2" not in str(excinfo.value)
+
+
+def test_placeholder_default_scalar_rejected_at_class_definition() -> None:
+    with pytest.raises(TypeError, match="default of greeting contains the placeholder"):
+
+        class Bad(ExampleConfig):
+            greeting: str = "CHANGEME"

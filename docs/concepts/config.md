@@ -40,6 +40,8 @@ cfg = NyxmonConfig(secrets=SecretRef("secrets/prod/nyxmon.yml"))
   dict keys and values, lists, and nested models. The error names the location
   (for example `route.aliases[1]`, or `env[<key>]` when a mapping key holds
   the marker) but never echoes the value.
+- **Placeholder defaults fail at class definition**: a subclass whose field
+  default contains `CHANGEME` raises `TypeError` on import.
 - **Validation errors do not include input values**: pydantic's input echo is
   off (`hide_input_in_errors`), and validators in this package never put the
   value into their message. Subclass validators must follow the same rule
