@@ -116,9 +116,49 @@ def test_placeholder_defaults_are_rejected_at_class_definition(default: object) 
     with pytest.raises(TypeError, match="contains the placeholder") as excinfo:
 
         class Bad(ExampleConfig):
-            extra_data: object = Field(default_factory=lambda: default)
+            extra_data: object = default
 
     assert "hunter2" not in str(excinfo.value)
+
+
+def test_factory_default_using_validated_data_is_supported() -> None:
+    class Derived(ExampleConfig):
+        derived_user: str = Field(default_factory=lambda data: data["user"])
+
+    assert Derived().derived_user == "example"
+
+
+@pytest.mark.parametrize(
+    "generated", [{"hunter2-CHANGEME": None}, {"hunter2-CHANGEME": "v"}, {"k": "hunter2-CHANGEME"}]
+)
+def test_factory_generated_placeholders_never_leak(generated: dict[str, object]) -> None:
+    state: dict[str, object] = {}
+
+    class Late(ExampleConfig):
+        env: dict[str, str] = Field(default_factory=lambda: dict(state))  # type: ignore[arg-type]
+
+    state.update(generated)
+    with pytest.raises(ValidationError) as excinfo:
+        Late()
+    assert "hunter2" not in str(excinfo.value)
+    assert "hunter2" not in repr(excinfo.value)
+    assert all(error["input"] is None for error in excinfo.value.errors())
+
+
+@pytest.mark.parametrize("entry", ["model_validate", "model_validate_json", "model_validate_strings"])
+def test_all_validation_entry_points_are_sanitized(entry: str) -> None:
+    payload: object = {"env": {"hunter2-CHANGEME": "x"}, "site_path": "relative-s3cret"}
+    if entry == "model_validate_json":
+        import json
+
+        payload = json.dumps(payload)
+    elif entry == "model_validate_strings":
+        payload = {"site_path": "relative-s3cret"}
+    with pytest.raises(ValidationError) as excinfo:
+        getattr(ExampleConfig, entry)(payload)
+    text = str(excinfo.value) + repr(excinfo.value) + repr(excinfo.value.errors())
+    assert "hunter2" not in text
+    assert "s3cret" not in text
 
 
 def test_placeholder_default_scalar_rejected_at_class_definition() -> None:

@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from pathlib import PurePath, PurePosixPath
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
+from pydantic_core import InitErrorDetails
 
 from ops_deploy.core.secrets import SecretRef
 
@@ -60,15 +61,43 @@ class BaseServiceConfig(BaseModel):
             raise ValueError("site_path must not be '/'")
         return value
 
+    def __init__(self, /, **data: Any) -> None:
+        try:
+            super().__init__(**data)
+        except ValidationError as exc:
+            raise _sanitized(exc) from None
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> Self:
+        try:
+            return super().model_validate(obj, *args, **kwargs)
+        except ValidationError as exc:
+            raise _sanitized(exc) from None
+
+    @classmethod
+    def model_validate_json(cls, json_data: Any, *args: Any, **kwargs: Any) -> Self:
+        try:
+            return super().model_validate_json(json_data, *args, **kwargs)
+        except ValidationError as exc:
+            raise _sanitized(exc) from None
+
+    @classmethod
+    def model_validate_strings(cls, obj: Any, *args: Any, **kwargs: Any) -> Self:
+        try:
+            return super().model_validate_strings(obj, *args, **kwargs)
+        except ValidationError as exc:
+            raise _sanitized(exc) from None
+
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        # Defaults never pass through the input check, and an invalid default
-        # fails field validation before the after-validator runs; reject
-        # placeholder defaults when the class is defined instead.
+        # Fail early on literal placeholder defaults. Factories are not called
+        # here (they may need validated data); their output is checked by the
+        # after-validator, and any error they cause is sanitized.
         super().__pydantic_init_subclass__(**kwargs)
         for name, info in cls.model_fields.items():
-            default = info.get_default(call_default_factory=True)
-            for location in _placeholder_locations(default, name):
+            if info.default_factory is not None:
+                continue
+            for location in _placeholder_locations(info.default, name):
                 raise TypeError(
                     f"{cls.__name__}: default of {location} contains the placeholder {PLACEHOLDER_MARKER!r}"
                 )
@@ -94,6 +123,33 @@ class BaseServiceConfig(BaseModel):
                 f"{type(self).__name__} requires a secrets file providing {', '.join(self.required_secret_keys)}"
             )
         return self
+
+
+def _sanitized(exc: ValidationError) -> ValidationError:
+    """Rebuild ``exc`` without input values and with placeholder-bearing locations redacted.
+
+    This is the structural guarantee behind "errors never echo a secret":
+    whatever path produced the error (input, defaults, factories, nested
+    models), the raised error carries no input and no marker-bearing key.
+    """
+
+    details: list[InitErrorDetails] = []
+    for error in exc.errors(include_url=False):
+        detail: InitErrorDetails = {
+            "type": error["type"],
+            "loc": tuple(_redact_loc(part) for part in error["loc"]),
+            "input": None,
+        }
+        if "ctx" in error:
+            detail["ctx"] = error["ctx"]
+        details.append(detail)
+    return ValidationError.from_exception_data(exc.title, details, hide_input=True)
+
+
+def _redact_loc(part: str | int) -> str | int:
+    if isinstance(part, str) and PLACEHOLDER_MARKER in part:
+        return "<key>"
+    return part
 
 
 def _raise_on_placeholder(value: Any) -> None:

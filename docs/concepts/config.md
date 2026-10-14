@@ -40,15 +40,21 @@ cfg = NyxmonConfig(secrets=SecretRef("secrets/prod/nyxmon.yml"))
   dict keys and values, lists, and nested models. The error names the location
   (for example `route.aliases[1]`, or `env[<key>]` when a mapping key holds
   the marker) but never echoes the value.
-- **Placeholder defaults fail at class definition**: a subclass whose field
-  default contains `CHANGEME` raises `TypeError` on import.
+- **Placeholder defaults fail at class definition**: a subclass whose literal
+  field default contains `CHANGEME` raises `TypeError` on import. Default
+  factories are not called there (they may take validated data); their output
+  is checked at instantiation.
+- **Errors are sanitized structurally**: every `ValidationError` raised by a
+  config (constructor, `model_validate`, `model_validate_json`,
+  `model_validate_strings`) is rebuilt with no input values (`errors()` reports
+  `input=None`) and with any location segment containing `CHANGEME` replaced by
+  `<key>`.
 - **Validation errors do not include input values**: pydantic's input echo is
   off (`hide_input_in_errors`), and validators in this package never put the
   value into their message. Subclass validators must follow the same rule
   (`raise ValueError("source_path is not a directory")`, not
   `f"{value} is not a directory"`), so a mistyped secret cannot leak through
-  `str()`/`repr()` of the error. `ValidationError.errors()` still carries the
-  raw input by pydantic design; do not log it.
+  `str()`/`repr()` of the error.
 - **`required_secret_keys`** lists the keys the secret file must provide. The
   config only checks that a `SecretRef` exists; key presence is checked after
   decryption with `SecretValues.require(cfg.required_secret_keys)`.
