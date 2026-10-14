@@ -4,7 +4,8 @@
 
 - Project skeleton: uv, ruff, mypy (strict), pytest, mkdocs, GitHub Actions CI.
   pyinfra pinned to `3.10.*`, Python 3.12+.
-- `BaseServiceConfig` with `CHANGEME` rejection, `ServiceName` and `UnixUser`
+- `BaseServiceConfig` with `CHANGEME` rejection (input, defaults and
+  validated values), sanitized `ConfigValidationError`, `ServiceName` and `UnixUser`
   field types, and `required_secret_keys`.
 - `SecretRef`, `SecretValues` (redacted, unpicklable) and the `SecretStore`
   protocol.

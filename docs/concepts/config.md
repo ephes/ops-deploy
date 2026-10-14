@@ -44,13 +44,16 @@ cfg = NyxmonConfig(secrets=SecretRef("secrets/prod/nyxmon.yml"))
   field default contains `CHANGEME` raises `TypeError` on import. Default
   factories are not called there (they may take validated data); their output
   is checked at instantiation.
-- **Errors are sanitized structurally**: every `ValidationError` raised by a
-  config (constructor, `model_validate`, `model_validate_json`,
-  `model_validate_strings`) is rebuilt with no input values (`errors()` reports
-  `input=None`) and with any location segment containing `CHANGEME` replaced by
-  `<key>`.
-- **Validation errors do not include input values**: pydantic's input echo is
-  off (`hide_input_in_errors`), and validators in this package never put the
+- **Errors are sanitized structurally**: constructing a config or calling
+  `model_validate`, `model_validate_json` or `model_validate_strings` raises
+  `ops_deploy.core.ConfigValidationError` (a `ValueError`), never pydantic's
+  `ValidationError`. It carries no input values. Each entry in `.errors` has
+  `loc` (segments containing `CHANGEME` become `<key>`) and `type`. `value_error`
+  entries also have `msg`. Other entries keep only safe context keys (`pattern`
+  and numeric or length limits), because pydantic messages for other error
+  types can embed input. Caller options (`strict=`, `context=`) are honoured.
+- **Validator messages must not include values**: `value_error` messages are
+  shown verbatim, so validators in this package never put the
   value into their message. Subclass validators must follow the same rule
   (`raise ValueError("source_path is not a directory")`, not
   `f"{value} is not a directory"`), so a mistyped secret cannot leak through

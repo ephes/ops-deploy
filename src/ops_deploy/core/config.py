@@ -12,7 +12,7 @@ from pathlib import PurePath, PurePosixPath
 from typing import Annotated, Any, ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
-from pydantic_core import InitErrorDetails
+from pydantic._internal._model_construction import ModelMetaclass
 
 from ops_deploy.core.secrets import SecretRef
 
@@ -27,7 +27,60 @@ ServiceName = Annotated[str, Field(pattern=SERVICE_NAME_PATTERN)]
 UnixUser = Annotated[str, Field(pattern=UNIX_USER_PATTERN)]
 
 
-class BaseServiceConfig(BaseModel):
+class ConfigValidationError(ValueError):
+    """A config failed validation; carries no input values.
+
+    Raised instead of pydantic's ``ValidationError`` by every
+    :class:`BaseServiceConfig` entry point. ``errors`` lists one dict per
+    problem with ``loc`` (segments containing the placeholder marker replaced
+    by ``<key>``), ``type`` and, for ``value_error`` only, ``msg`` (validators
+    must not interpolate values). Other pydantic messages and context may embed
+    input, so only a whitelist of context keys (limits, patterns) is kept.
+    """
+
+    def __init__(self, title: str, errors: list[dict[str, Any]]) -> None:
+        self.title = title
+        self.errors = errors
+        lines = [f"{len(errors)} validation error(s) for {title}"]
+        for error in errors:
+            loc = ".".join(str(part) for part in error["loc"]) or "<root>"
+            detail = error.get("msg") or error["type"]
+            extra = ", ".join(f"{key}={value!r}" for key, value in error.get("ctx", {}).items())
+            lines.append(f"  {loc}: {detail}" + (f" ({extra})" if extra else ""))
+        super().__init__("\n".join(lines))
+
+
+_SAFE_CTX_KEYS = frozenset({"pattern", "ge", "gt", "le", "lt", "min_length", "max_length", "multiple_of"})
+
+
+def _sanitized(exc: ValidationError) -> ConfigValidationError:
+    errors: list[dict[str, Any]] = []
+    for error in exc.errors(include_url=False, include_input=False, include_context=True):
+        entry: dict[str, Any] = {
+            "loc": tuple(_redact_loc(part) for part in error["loc"]),
+            "type": error["type"],
+        }
+        if error["type"] == "value_error":
+            entry["msg"] = error["msg"]
+        ctx = {key: value for key, value in error.get("ctx", {}).items() if key in _SAFE_CTX_KEYS}
+        if ctx:
+            entry["ctx"] = ctx
+        errors.append(entry)
+    return ConfigValidationError(exc.title, errors)
+
+
+class _SanitizingMeta(ModelMetaclass):
+    # Wraps ``Config(...)`` without overriding ``__init__``: a custom
+    # ``__init__`` would make pydantic route model_validate through it and
+    # drop strict/context options.
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().__call__(*args, **kwargs)
+        except ValidationError as exc:
+            raise _sanitized(exc) from None
+
+
+class BaseServiceConfig(BaseModel, metaclass=_SanitizingMeta):
     """Base class for all service configurations.
 
     - unknown keys are rejected (typos fail instead of being ignored),
@@ -50,6 +103,12 @@ class BaseServiceConfig(BaseModel):
     site_path: PurePosixPath
     secrets: SecretRef | None = None
 
+    @field_validator("site_path", mode="before")
+    @classmethod
+    def _site_path_from_path(cls, value: Any) -> Any:
+        # JSON/strings mode rejects path instances, including validated defaults.
+        return str(value) if isinstance(value, PurePath) else value
+
     @field_validator("site_path")
     @classmethod
     def _site_path_absolute(cls, value: PurePosixPath) -> PurePosixPath:
@@ -60,12 +119,6 @@ class BaseServiceConfig(BaseModel):
         if value == PurePosixPath("/"):
             raise ValueError("site_path must not be '/'")
         return value
-
-    def __init__(self, /, **data: Any) -> None:
-        try:
-            super().__init__(**data)
-        except ValidationError as exc:
-            raise _sanitized(exc) from None
 
     @classmethod
     def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> Self:
@@ -123,27 +176,6 @@ class BaseServiceConfig(BaseModel):
                 f"{type(self).__name__} requires a secrets file providing {', '.join(self.required_secret_keys)}"
             )
         return self
-
-
-def _sanitized(exc: ValidationError) -> ValidationError:
-    """Rebuild ``exc`` without input values and with placeholder-bearing locations redacted.
-
-    This is the structural guarantee behind "errors never echo a secret":
-    whatever path produced the error (input, defaults, factories, nested
-    models), the raised error carries no input and no marker-bearing key.
-    """
-
-    details: list[InitErrorDetails] = []
-    for error in exc.errors(include_url=False):
-        detail: InitErrorDetails = {
-            "type": error["type"],
-            "loc": tuple(_redact_loc(part) for part in error["loc"]),
-            "input": None,
-        }
-        if "ctx" in error:
-            detail["ctx"] = error["ctx"]
-        details.append(detail)
-    return ValidationError.from_exception_data(exc.title, details, hide_input=True)
 
 
 def _redact_loc(part: str | int) -> str | int:

@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
 
+from ops_deploy.core import ConfigValidationError
 from ops_deploy.core.rsync import RsyncError, RsyncResult
 from ops_deploy.core.templates import render
 from ops_deploy.services.toy import ToyConfig, deploy_toy
@@ -154,12 +154,12 @@ def test_templates_match_golden_files(template: str) -> None:
 
 
 def test_source_path_must_exist_and_is_not_echoed(tmp_path: Path) -> None:
-    with pytest.raises(ValidationError, match="source_path is not a directory") as excinfo:
+    with pytest.raises(ConfigValidationError, match="source_path is not a directory") as excinfo:
         ToyConfig(source_path=tmp_path / "hunter2-missing")
     assert "hunter2" not in str(excinfo.value)
     assert "hunter2" not in repr(excinfo.value)
 
 
 def test_toy_config_rejects_placeholder_greeting() -> None:
-    with pytest.raises(ValidationError, match="greeting still contains the placeholder"):
+    with pytest.raises(ConfigValidationError, match="greeting still contains the placeholder"):
         ToyConfig(greeting="CHANGEME")
