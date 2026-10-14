@@ -242,3 +242,25 @@ def test_pattern_context_is_kept() -> None:
 def test_text_entry_points_accept_path_defaults(entry: str) -> None:
     payload = "{}" if entry == "model_validate_json" else {}
     assert getattr(ExampleConfig, entry)(payload).site_path == PurePosixPath("/home/example/site")
+
+
+def test_custom_error_context_is_dropped() -> None:
+    from pydantic import field_validator
+    from pydantic_core import PydanticCustomError
+
+    class Custom(Port):
+        @field_validator("port")
+        @classmethod
+        def _reject(cls, value: int) -> int:
+            raise PydanticCustomError("port_rejected", "rejected", {"pattern": f"s3cret-{value}"})
+
+    with pytest.raises(ConfigValidationError) as excinfo:
+        Custom(port=4711)
+    assert "s3cret" not in str(excinfo.value) + repr(excinfo.value.errors)
+
+
+@pytest.mark.parametrize("site_path", [None, PurePosixPath("/srv/strict")])
+def test_strict_python_validation_accepts_paths(site_path: PurePosixPath | None) -> None:
+    data = {} if site_path is None else {"site_path": site_path}
+    cfg = ExampleConfig.model_validate(data, strict=True)
+    assert cfg.site_path == (site_path or PurePosixPath("/home/example/site"))

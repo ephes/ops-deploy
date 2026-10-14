@@ -11,7 +11,16 @@ from collections.abc import Iterator, Mapping
 from pathlib import PurePath, PurePosixPath
 from typing import Annotated, Any, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic._internal._model_construction import ModelMetaclass
 
 from ops_deploy.core.secrets import SecretRef
@@ -50,7 +59,20 @@ class ConfigValidationError(ValueError):
         super().__init__("\n".join(lines))
 
 
-_SAFE_CTX_KEYS = frozenset({"pattern", "ge", "gt", "le", "lt", "min_length", "max_length", "multiple_of"})
+# Context kept only for pydantic's built-in constraint errors, whose context is
+# the constraint, never the input. Custom error types keep no context.
+_SAFE_CTX: dict[str, frozenset[str]] = {
+    "string_pattern_mismatch": frozenset({"pattern"}),
+    "greater_than": frozenset({"gt"}),
+    "greater_than_equal": frozenset({"ge"}),
+    "less_than": frozenset({"lt"}),
+    "less_than_equal": frozenset({"le"}),
+    "multiple_of": frozenset({"multiple_of"}),
+    "string_too_short": frozenset({"min_length"}),
+    "string_too_long": frozenset({"max_length"}),
+    "too_short": frozenset({"min_length"}),
+    "too_long": frozenset({"max_length"}),
+}
 
 
 def _sanitized(exc: ValidationError) -> ConfigValidationError:
@@ -62,7 +84,8 @@ def _sanitized(exc: ValidationError) -> ConfigValidationError:
         }
         if error["type"] == "value_error":
             entry["msg"] = error["msg"]
-        ctx = {key: value for key, value in error.get("ctx", {}).items() if key in _SAFE_CTX_KEYS}
+        allowed = _SAFE_CTX.get(error["type"], frozenset())
+        ctx = {key: value for key, value in error.get("ctx", {}).items() if key in allowed}
         if ctx:
             entry["ctx"] = ctx
         errors.append(entry)
@@ -105,9 +128,11 @@ class BaseServiceConfig(BaseModel, metaclass=_SanitizingMeta):
 
     @field_validator("site_path", mode="before")
     @classmethod
-    def _site_path_from_path(cls, value: Any) -> Any:
+    def _site_path_from_path(cls, value: Any, info: ValidationInfo) -> Any:
         # JSON/strings mode rejects path instances, including validated defaults.
-        return str(value) if isinstance(value, PurePath) else value
+        if info.mode != "python" and isinstance(value, PurePath):
+            return str(value)
+        return value
 
     @field_validator("site_path")
     @classmethod
