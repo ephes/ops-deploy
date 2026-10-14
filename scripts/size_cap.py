@@ -24,9 +24,18 @@ DEFAULT_CAP = 1500
 _SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
 
-def docstring_spans(tree: ast.Module) -> list[tuple[tuple[int, int], tuple[int, int]]]:
-    """(start, end) positions of module, class and function docstring expressions."""
+def docstring_spans(source: str) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    """(start, end) positions of module, class and function docstring expressions.
 
+    In characters, like ``tokenize``; ``ast`` column offsets count UTF-8 bytes.
+    """
+
+    lines = io.StringIO(source).readlines()  # the lines tokenize sees
+
+    def position(line: int, byte_offset: int) -> tuple[int, int]:
+        return line, len(lines[line - 1].encode()[:byte_offset].decode())
+
+    tree = ast.parse(source)
     spans: list[tuple[tuple[int, int], tuple[int, int]]] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
@@ -36,13 +45,13 @@ def docstring_spans(tree: ast.Module) -> list[tuple[tuple[int, int], tuple[int, 
                 and isinstance(first.value, ast.Constant)
                 and isinstance(first.value.value, str)
             ):
-                end = (first.end_lineno or first.lineno, first.end_col_offset or 0)
-                spans.append(((first.lineno, first.col_offset), end))
+                end = position(first.end_lineno or first.lineno, first.end_col_offset or 0)
+                spans.append((position(first.lineno, first.col_offset), end))
     return spans
 
 
 def code_lines(source: str) -> int:
-    spans = docstring_spans(ast.parse(source))
+    spans = docstring_spans(source)
     lines: set[int] = set()
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         # Every token of a docstring expression (parentheses, concatenated parts) is documentation.
