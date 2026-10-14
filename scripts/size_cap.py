@@ -24,8 +24,10 @@ DEFAULT_CAP = 1500
 _SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
 
-def docstring_lines(tree: ast.Module) -> set[int]:
-    lines: set[int] = set()
+def docstring_starts(tree: ast.Module) -> set[tuple[int, int]]:
+    """Start positions of docstring tokens (module, class and function)."""
+
+    starts: set[tuple[int, int]] = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
@@ -34,16 +36,21 @@ def docstring_lines(tree: ast.Module) -> set[int]:
                 and isinstance(first.value, ast.Constant)
                 and isinstance(first.value.value, str)
             ):
-                lines.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
-    return lines
+                starts.add((first.lineno, first.col_offset))
+    return starts
 
 
 def code_lines(source: str) -> int:
+    docstrings = docstring_starts(ast.parse(source))
     lines: set[int] = set()
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        if token.type not in _SKIP:
-            lines.update(range(token.start[0], token.end[0] + 1))
-    return len(lines - docstring_lines(ast.parse(source)))
+        if token.type in _SKIP or (token.type == tokenize.STRING and token.start in docstrings):
+            continue
+        # A docstring statement's NEWLINE or ``;`` alone does not make a line code.
+        if token.type == tokenize.OP and token.string == ";" and token.start[0] not in lines:
+            continue
+        lines.update(range(token.start[0], token.end[0] + 1))
+    return len(lines)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -42,6 +42,11 @@ class A:
     assert size_cap.code_lines(source) == 6
 
 
+def test_code_after_a_docstring_on_the_same_line_counts(size_cap: ModuleType) -> None:
+    assert size_cap.code_lines('def f():\n    """docs"""; return 1\n') == 2
+    assert size_cap.code_lines('def f(): """docs"""; return 1\n') == 1
+
+
 def test_current_tree_is_under_the_cap(size_cap: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
     assert size_cap.main([]) == 0
     assert "total" in capsys.readouterr().out

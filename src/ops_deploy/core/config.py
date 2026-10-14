@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import PurePath, PurePosixPath
-from typing import Annotated, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Self
 
 from pydantic import (
     BaseModel,
@@ -84,7 +84,25 @@ def _sanitizing() -> Iterator[None]:
         raise _sanitized(exc) from None
 
 
-class BaseServiceConfig(BaseModel):
+if TYPE_CHECKING:
+    from pydantic import BaseModel as _SanitizingModel
+else:
+
+    class _SanitizingMeta(type(BaseModel)):
+        # pydantic's model metaclass, reached through the public ``BaseModel``
+        # rather than its private module; hidden from mypy, which cannot
+        # follow a dynamic metaclass. Wraps ``Config(...)`` without overriding
+        # ``__init__``: a custom ``__init__`` would make pydantic route
+        # model_validate through it and drop strict/context options.
+        def __call__(cls, *args, **kwargs):
+            with _sanitizing():
+                return super().__call__(*args, **kwargs)
+
+    class _SanitizingModel(BaseModel, metaclass=_SanitizingMeta):
+        pass
+
+
+class BaseServiceConfig(_SanitizingModel):
     """Base class for all service configurations.
 
     - unknown keys are rejected (typos fail instead of being ignored),
@@ -125,15 +143,6 @@ class BaseServiceConfig(BaseModel):
         if value == PurePosixPath("/"):
             raise ValueError("site_path must not be '/'")
         return value
-
-    def __init__(self, /, **data: Any) -> None:
-        with _sanitizing():
-            super().__init__(**data)
-
-    # Marks this ``__init__`` as pydantic's own, so ``model_validate`` keeps
-    # validating directly (with its strict/context options) instead of
-    # routing through ``__init__``.
-    __init__.__pydantic_base_init__ = True  # type: ignore[attr-defined]
 
     @classmethod
     def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> Self:
