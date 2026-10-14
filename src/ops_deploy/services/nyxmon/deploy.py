@@ -209,8 +209,12 @@ def _sqlite_private(cfg: NyxmonConfig) -> OperationMeta:
         name="Restrict SQLite database and sidecars",
         commands=[
             f"test -f {site}/db.sqlite3 || {{ echo 'nyxmon database is missing' >&2; exit 1; }}",
-            f"{files_} -exec chown -h {owner} {{}} + -exec chmod 0600 {{}} +",
-            f'test -z "$({exposed})"',
+            # Only files that need it, one at a time: a journal SQLite removes
+            # between find and chown counts as done (the role's recursive
+            # chown fails on exactly that race).
+            f'{exposed} | while read -r f; do {{ chown -h {owner} "$f" && chmod 0600 "$f"; }} 2>/dev/null '
+            '|| ! test -e "$f" || exit 1; done',
+            f'test -z "$({exposed} 2>/dev/null)"',
         ],
         _if=lambda: bool(pending),
     )

@@ -165,8 +165,8 @@ def test_django_sync_protects_host_state(cfg: NyxmonConfig, secrets: SecretValue
     django = next(call for call in rsync.calls if "--dry-run" not in call and f"{SITE}/" in call[-1])
     assert "--delete" in django
     assert django[-2].endswith("/src/django/")
-    protected = ("db.sqlite3*", "*.sqlite3", "cache", ".env*", "/.env.shell", "media/", "staticfiles/")
-    protected += ("/src/", "/venv")
+    protected: tuple[str, ...] = ("db.sqlite3*", "*.sqlite3", "cache", ".env*", "/.env.shell", "media/")
+    protected += ("staticfiles/", "/src/", "/venv")
     for pattern in (*protected, "/pyproject.toml", "/uv.lock", "/README.md", ".vault_password"):
         assert f"--exclude={pattern}" in django
 
@@ -241,7 +241,8 @@ def test_exposed_database_is_restricted(cfg: NyxmonConfig, secrets: SecretValues
     run = deploy(cfg, secrets, responses)
 
     assert run.mutating_changed_ops == ["Deploy nyxmon | Restrict SQLite database and sidecars"]
-    assert any("-exec chown -h nyxmon:nyxmon {} + -exec chmod 0600 {} +" in c for c in run.executed_commands)
+    fix = next(c for c in run.executed_commands if "chown -h nyxmon:nyxmon" in c)
+    assert '|| ! test -e "$f" || exit 1' in fix  # a vanished journal is not a failure
 
 
 def test_opsgate_disabled_skips_token_and_check(tmp_path: Path) -> None:
