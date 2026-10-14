@@ -38,9 +38,15 @@ cfg = NyxmonConfig(secrets=SecretRef("secrets/prod/nyxmon.yml"))
 - **Configs are immutable** after validation (`frozen=True`).
 - **`CHANGEME` is rejected anywhere**: in strings, paths, `SecretStr` values,
   dict keys and values, lists, and nested models. The error names the location
-  (for example `route.aliases[1]`) but never echoes the value.
-- **Validation errors never include input values** (`hide_input_in_errors`), so
-  a mistyped secret cannot leak through an error message.
+  (for example `route.aliases[1]`, or `env[<key>]` when a mapping key holds
+  the marker) but never echoes the value.
+- **Validation errors do not include input values**: pydantic's input echo is
+  off (`hide_input_in_errors`), and validators in this package never put the
+  value into their message. Subclass validators must follow the same rule
+  (`raise ValueError("source_path is not a directory")`, not
+  `f"{value} is not a directory"`), so a mistyped secret cannot leak through
+  `str()`/`repr()` of the error. `ValidationError.errors()` still carries the
+  raw input by pydantic design; do not log it.
 - **`required_secret_keys`** lists the keys the secret file must provide. The
   config only checks that a `SecretRef` exists; key presence is checked after
   decryption with `SecretValues.require(cfg.required_secret_keys)`.

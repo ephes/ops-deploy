@@ -40,7 +40,7 @@ class ToyConfig(BaseServiceConfig):
     @classmethod
     def _source_is_directory(cls, value: Path | None) -> Path | None:
         if value is not None and not value.is_dir():
-            raise ValueError(f"source_path {value} is not a directory")
+            raise ValueError("source_path is not a directory")
         return value
 
     @property

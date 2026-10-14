@@ -49,7 +49,7 @@ def test_config_is_frozen() -> None:
         ({"greeting": "CHANGEME"}, "greeting"),
         ({"route": {"host": "app.example.org", "aliases": ["ok", "CHANGEME.example.org"]}}, r"route\.aliases\[1\]"),
         ({"env": {"API_TOKEN": "prefix-CHANGEME"}}, r"env\.API_TOKEN"),
-        ({"env": {"CHANGEME": "value"}}, r"env\.CHANGEME"),
+        ({"env": {"CHANGEME": "value"}}, r"env\[<key>\]"),
         ({"password": "CHANGEME"}, "password"),
         ({"site_path": "/srv/CHANGEME"}, "site_path"),
         ({"secrets": "secrets/prod/CHANGEME.yml"}, r"secrets\.path"),
@@ -64,6 +64,13 @@ def test_placeholders_are_rejected_everywhere(kwargs: dict[str, object], locatio
 def test_placeholder_error_does_not_echo_secret_value(password: str | SecretStr) -> None:
     with pytest.raises(ValidationError) as excinfo:
         ExampleConfig(password=password)
+    assert "hunter2" not in str(excinfo.value)
+    assert "hunter2" not in repr(excinfo.value)
+
+
+def test_placeholder_mapping_key_is_not_echoed() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        ExampleConfig(env={"hunter2-CHANGEME": "value"})
     assert "hunter2" not in str(excinfo.value)
     assert "hunter2" not in repr(excinfo.value)
 
