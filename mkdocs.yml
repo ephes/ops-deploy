@@ -16,6 +16,7 @@ nav:
   - Concepts:
       - Service configuration: concepts/config.md
       - Secrets: concepts/secrets.md
+      - Operations: concepts/operations.md
       - Testing deploys: concepts/testing.md
   - Services:
       - toy: services/toy.md

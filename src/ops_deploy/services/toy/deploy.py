@@ -7,25 +7,24 @@ files, and a restart gated on changes. It writes no secrets.
 
 from __future__ import annotations
 
-from collections.abc import Generator, Sequence
 from io import StringIO
 from pathlib import Path, PurePosixPath
 
 from pydantic import Field, field_validator
-from pyinfra import host
-from pyinfra.api import FunctionCommand, deploy, operation
+from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files, systemd
 from pyinfra.operations.util import any_changed
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
-from ops_deploy.core.rsync import RsyncRunner, run_checked, subprocess_rsync_runner
+from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.templates import render
+from ops_deploy.ops import sync_tree
 
 TEMPLATE_PACKAGE = "ops_deploy.services.toy"
 
-# Never transferred, whatever the source tree contains.
-MANDATORY_EXCLUDES = (".git", ".venv", "__pycache__", ".env")
+# Local environment files never reach the host (on top of sync_tree's own excludes).
+SOURCE_EXCLUDES = (".env",)
 
 
 class ToyConfig(BaseServiceConfig):
@@ -52,44 +51,6 @@ class ToyConfig(BaseServiceConfig):
         return self.site_path / "toy.conf"
 
 
-def rsync_argv(cfg: ToyConfig, remote: str, *, dry_run: bool) -> list[str]:
-    """Build the rsync command line; ``remote`` is ``user@host``."""
-
-    assert cfg.source_path is not None
-    argv = ["rsync", "-rlt", "--delete", "--no-owner", "--no-group", f"--chown={cfg.user}:{cfg.user}"]
-    if dry_run:
-        argv += ["--dry-run", "--itemize-changes", "--out-format=%i %n%L"]
-    argv += [f"--exclude={pattern}" for pattern in MANDATORY_EXCLUDES]
-    argv += ["-e", "ssh", f"{cfg.source_path}/", f"{remote}:{cfg.site_path / 'app'}/"]
-    return argv
-
-
-def _remote_for_current_host() -> str:
-    hostname = host.data.get("ssh_hostname") or host.name
-    user = host.data.get("ssh_user") or "root"
-    return f"{user}@{hostname}"
-
-
-def _run_rsync(runner: RsyncRunner, argv: Sequence[str]) -> None:
-    run_checked(runner, argv)
-
-
-@operation()
-def push_source(cfg: ToyConfig, runner: RsyncRunner) -> Generator[FunctionCommand, None, None]:
-    """Sync ``cfg.source_path`` to ``<site_path>/app`` if rsync reports changes.
-
-    The dry run happens at plan time so the operation reports no change (and
-    yields nothing) when the trees already match.
-    """
-
-    remote = _remote_for_current_host()
-    plan = run_checked(runner, rsync_argv(cfg, remote, dry_run=True))
-    if not plan.itemized_lines:
-        host.noop(f"{cfg.site_path / 'app'} is up to date")
-        return
-    yield FunctionCommand(_run_rsync, (runner, rsync_argv(cfg, remote, dry_run=False)), {})
-
-
 @deploy("Deploy toy service")
 def deploy_toy(cfg: ToyConfig, rsync: RsyncRunner = subprocess_rsync_runner) -> None:
     files.directory(
@@ -102,7 +63,17 @@ def deploy_toy(cfg: ToyConfig, rsync: RsyncRunner = subprocess_rsync_runner) -> 
 
     changes: list[OperationMeta] = []
     if cfg.source_path is not None:
-        changes.append(push_source(name="Sync source", cfg=cfg, runner=rsync))
+        changes.append(
+            sync_tree(
+                name="Sync source",
+                src=cfg.source_path,
+                dest=cfg.site_path / "app",
+                user=cfg.user,
+                group=cfg.user,
+                excludes=SOURCE_EXCLUDES,
+                runner=rsync,
+            )
+        )
 
     changes.append(
         files.put(

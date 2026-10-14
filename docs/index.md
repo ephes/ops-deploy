@@ -24,6 +24,8 @@ src/ops_deploy/
   core/secrets.py     SecretRef, SecretValues, SecretStore protocol
   core/rsync.py       injectable controller-side rsync runner
   core/templates.py   Jinja2 rendering of package templates
+  ops/sync_tree.py    sync_tree: rsync a controller directory to the host
+  ops/secret_file.py  secret_file: install a secret via stdin, temp file, rename
   services/toy/       toy service exercising the pieces above
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s

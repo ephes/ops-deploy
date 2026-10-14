@@ -50,8 +50,11 @@ Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
 Helpers: `executed_commands` (non-fact shell commands while executing),
 `fact_commands`, `function_calls`, `uploads` (every `(path, content)` in order,
 including repeated uploads to one path), `uploaded_paths`, `upload(path)`, `ops` / `changed_ops` / `op(name)`
-(per-operation `changed` and `succeeded`), and `all_text()` for secret-leak
-assertions.
+(per-operation `changed`, `succeeded` and pyinfra's argument strings `args`),
+`stdin` (every `(masked command, stdin text)` pair, as pyinfra sends it), and
+`all_text()` for secret-leak assertions. `all_text()` covers events, op names,
+op arguments and uploads but not `stdin`, which is where secrets are meant to
+travel.
 
 ## Controller-side rsync
 
@@ -71,9 +74,13 @@ content, and `systemctl show` output for the unit. `tests/test_toy.py`
 
 ## Notes on pyinfra behaviour
 
-- An operation's body runs at plan time **and** again at execution time. A
-  plan-time side effect such as the rsync dry run therefore runs twice per
-  deploy; keep such work cheap and read-only.
+- An operation's body runs at plan time **and** again at execution time.
+  `sync_tree` caches its dry run per host and operation so rsync is asked once;
+  any other plan-time side effect must be cheap and read-only.
+- `_stdin` is written line by line with a newline appended to each line and
+  encoded as text, so it is not byte-exact. `secret_file` sends base64.
+- Operations called with positional arguments are not typed by pyinfra's
+  `PyinfraOperation.__call__`; call custom operations with keywords.
 - `files.put` also manages the parent directory, so it emits a directory check
   and `mkdir -p` for the parent.
 - The harness patches pyinfra classes for the duration of a run and serialises

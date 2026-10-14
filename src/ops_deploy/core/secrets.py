@@ -101,3 +101,36 @@ class SecretStore(Protocol):
     """Controller-side secret loader, implemented in the private repository."""
 
     def load(self, ref: SecretRef) -> SecretValues: ...
+
+
+class SecretContent:
+    """File content that must only reach a host through ``secret_file``.
+
+    ``repr``/``str`` never show the content, so the value is safe in pyinfra's
+    operation argument list and in logs. Instances refuse to be pickled.
+    """
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: str | bytes) -> None:
+        self._data = data.encode() if isinstance(data, str) else bytes(data)
+
+    def reveal(self) -> bytes:
+        return self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, SecretContent) and other._data == self._data
+
+    def __hash__(self) -> int:
+        return hash(self._data)
+
+    def __repr__(self) -> str:
+        return "SecretContent(<redacted>)"
+
+    __str__ = __repr__
+
+    def __reduce__(self) -> NoReturn:
+        raise TypeError("SecretContent must not be pickled")

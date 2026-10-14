@@ -8,7 +8,8 @@ in a separate private repository, which builds a config, decrypts its secrets
 on the controller and calls a deploy function from here.
 
 Status: foundation. It contains the configuration base class, secret
-references, an in-process test harness and a toy service. Real services follow.
+references, the `sync_tree` and `secret_file` operations, an in-process test
+harness and a toy service. Real services follow.
 
 ## Requirements
 

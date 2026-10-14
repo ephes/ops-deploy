@@ -22,5 +22,23 @@ def test_no_sudo_global_argument(path: Path) -> None:
     assert offenders == []
 
 
+REVEAL_ALLOWED = {PACKAGE / "core" / "secrets.py", PACKAGE / "ops" / "secret_file.py"}
+
+
+@pytest.mark.parametrize("path", SOURCES, ids=lambda p: str(p.relative_to(PACKAGE)))
+def test_secret_content_is_only_revealed_by_secret_file(path: Path) -> None:
+    # Secret bytes reach a host only through secret_file (stdin, 0600 temp, rename),
+    # never through files.put/files.template or a command line.
+    if path in REVEAL_ALLOWED:
+        return
+    tree = ast.parse(path.read_text(), filename=str(path))
+    offenders = [
+        f"{path.name}:{node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr == "reveal"
+    ]
+    assert offenders == []
+
+
 def test_sources_were_found() -> None:
     assert len(SOURCES) > 5

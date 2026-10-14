@@ -64,6 +64,8 @@ class OpResult:
     name: str
     changed: bool
     succeeded: bool
+    # pyinfra's string form of the op arguments, printed for unnamed ops.
+    args: tuple[str, ...] = ()
 
 
 @dataclass
@@ -72,6 +74,7 @@ class FakeRun:
 
     events: list[RecordedEvent] = field(default_factory=list)
     uploads: list[tuple[str, bytes]] = field(default_factory=list)
+    stdin: list[tuple[str, str]] = field(default_factory=list)
     ops: list[OpResult] = field(default_factory=list)
     error: PyinfraError | None = None
 
@@ -124,9 +127,15 @@ class FakeRun:
         return matches[0]
 
     def all_text(self) -> str:
-        """Every recorded command, path, callback name and upload, for leak checks."""
+        """Every recorded command, path, callback name, op name and argument and
+        upload, for leak checks.
+
+        Command stdin (:attr:`stdin`) is deliberately excluded: it is the
+        channel secrets are meant to travel on.
+        """
 
         parts = [event.value for event in self.events]
+        parts.extend(text for op in self.ops for text in (op.name, *op.args))
         parts.extend(content.decode("utf-8", errors="replace") for _, content in self.uploads)
         return "\n".join(parts)
 
@@ -214,6 +223,9 @@ def _recording(run: FakeRun) -> Iterator[list[Phase]]:
         text = command if isinstance(command, str) else command.get_masked_value()
         kind: EventKind = "fact" if fact_depth[0] else "shell"
         run.events.append(RecordedEvent(phase[0], kind, text))
+        stdin = kw.get("_stdin")
+        if stdin is not None:
+            run.stdin.append((text, _read_stdin(stdin)))
         return original_shell(self, command, *a, **kw)
 
     def put_file(self: FakeConnector, filename_or_io: Any, remote_filename: str, *a: Any, **kw: Any) -> Any:
@@ -246,6 +258,15 @@ def _recording(run: FakeRun) -> Iterator[list[Phase]]:
         pyinfra_facts._get_fact = original_get_fact
 
 
+def _read_stdin(stdin: Any) -> str:
+    """What pyinfra's ``write_stdin`` sends: every line, newline-terminated."""
+
+    if hasattr(stdin, "readlines"):
+        raise TypeError("the harness only records str or line-list stdin")
+    lines = [stdin] if isinstance(stdin, str) else list(stdin)
+    return "".join(line if line.endswith("\n") else f"{line}\n" for line in lines)
+
+
 def _read_upload(filename_or_io: Any) -> bytes:
     if isinstance(filename_or_io, (str, Path)):
         return Path(filename_or_io).read_bytes()
@@ -270,13 +291,15 @@ def _collect_ops(state: State) -> list[OpResult]:
         except KeyError:
             continue
         meta = op_data.operation_meta
-        name = ", ".join(sorted(state.get_op_meta(op_hash).names))
+        op_meta = state.get_op_meta(op_hash)
+        name = ", ".join(sorted(op_meta.names))
         complete = meta.is_complete()
         results.append(
             OpResult(
                 name=name,
                 changed=complete and meta.did_change(),
                 succeeded=complete and meta.did_succeed(),
+                args=tuple(op_meta.args),
             )
         )
     return results
