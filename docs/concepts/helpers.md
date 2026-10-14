@@ -46,9 +46,13 @@ owned by `user:group` with `mode`. Replaces `tasks/user.yml`.
 
 - The home directory is created by the directory step, not by `useradd`
   (`-M`), so the same code path covers new and existing users.
-- If the user already exists with a different home, pyinfra runs
-  `usermod -d` without `-m`, so files are never moved. The Ansible roles
-  leave such a user unchanged instead.
+- An existing user is not modified, as in the roles: its home, shell and
+  primary group stay as they are. The only change is adding it to `group`
+  (`usermod -a -G`) if it is in neither its primary nor its supplementary
+  groups. Any difference from the wanted home, shell or primary group is
+  logged as a pyinfra warning (`existing user app has home '/srv/app',
+  wanted '/home/app'; left unchanged`), so drift shows up without being
+  "fixed" behind the operator's back.
 
 ## `systemd_unit(name, content, *, unit_dir=/etc/systemd/system)`
 
@@ -173,3 +177,24 @@ op_hash)` lets a runner tell them apart. In tests, `OpResult.read_only` and
 `FakeRun.mutating_changed_ops` exclude them, so "the second run changes
 nothing" is checked as `run.mutating_changed_ops == []`. Use
 `mark_read_only(meta)` for any other custom check that changes nothing.
+
+## Parity differences from the Ansible roles
+
+Known, intended differences. Everything else is meant to behave like the
+roles. The Traefik YAML is checked by `tests/test_traefik_parity.py`.
+
+1. **Traefik file comments.** The generated route matches the nyxmon and
+   fastdeploy templates line for line except for comments. The first
+   ops-deploy run over an Ansible-deployed route therefore rewrites it once
+   and restarts Traefik once. Use `renderer=` for a byte-identical file.
+2. **Stable basic-auth hash.** The roles re-hash the password on every run, so
+   their route file (and Traefik) changes on every deploy. Here a still-valid
+   deployed hash is reused.
+3. **uv/Django change reporting.** When `uv_sync` or `django_manage` run,
+   pyinfra counts them as changed. The roles parse uv/`manage.py` output
+   instead. The `when_changed` gates keep a no-op deploy free of them.
+4. **Traefik restart only if running.** The route's restart only restarts a
+   running Traefik. The roles' handler would also start a stopped one.
+5. **One start on the first deploy.** `service_rollout` starts a new service
+   once. The roles start it and then restart it from a handler.
+   `always_restart=True` restarts even then.

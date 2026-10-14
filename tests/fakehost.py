@@ -21,11 +21,13 @@ def stat(path: str, *, user: str = "root", group: str | None = None, mode: str =
 
 
 def file(path: str, content: str, *, user: str = "root", mode: str = "-rw-r--r--") -> dict[str, Any]:
-    """A regular file with ``content`` (stat, sha1 and ``FileContents``)."""
+    """A regular file with ``content`` (stat, sha1, sha256 and ``FileContents``)."""
 
     digest = hashlib.sha1(content.encode()).hexdigest()
+    sha256 = hashlib.sha256(content.encode()).hexdigest()
     return {
         f"sha1sum {path} ": [f"{digest}  {path}"],
+        f"sha256sum {path} ": [f"{sha256}  {path}"],
         f"cat {path}": content.splitlines(),
         **stat(path, user=user, mode=mode),
     }

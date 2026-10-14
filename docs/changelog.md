@@ -11,8 +11,10 @@
   `wait_port` and `http_check`.
 - Test harness: `OpResult.read_only` and `FakeRun.mutating_changed_ops`, so a
   converged second run can be asserted while ignoring read-only checks.
-- `toyweb` service: a toy uv/Django app that uses every helper, with
-  deploy-level scenarios.
+- `system_user` leaves an existing user's home, shell and primary group
+  unchanged, as the roles do, and logs a warning on any difference.
+- `toyweb` service: a toy uv/Django app that uses every helper plus
+  `sync_tree` and `secret_file`, with deploy-level scenarios.
 - Parity tests against the nyxmon and fastdeploy Traefik role templates.
 - New dependency `bcrypt`; new dev dependencies `pyyaml`, `types-pyyaml`.
 

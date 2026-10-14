@@ -10,14 +10,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from pyinfra import host, logger
 from pyinfra.api.operation import OperationMeta
+from pyinfra.facts.server import Users
 from pyinfra.operations import files, server
 
 
 @dataclass(frozen=True)
 class SystemUser:
     group: OperationMeta
-    user: OperationMeta
+    # None when the user already existed and was already in ``group``.
+    user: OperationMeta | None
     directories: tuple[OperationMeta, ...]
 
 
@@ -33,22 +36,40 @@ def system_user(
     """Ensure ``group`` (default: ``user``), the system user and its directories.
 
     ``home`` is created owned by the user; ``directories`` are created after
-    it, in order, with the same owner and ``mode``. An existing user keeps
-    its home contents: the home directory is never moved.
+    it, in order, with the same owner and ``mode``.
+
+    Like the roles' ``user.yml``, an existing user is never modified apart
+    from being added to ``group``: its home, shell and primary group stay as
+    they are. A difference is logged as a warning so drift is visible.
     """
 
     group = group or user
     group_op = server.group(name=f"Ensure group {group}", group=group, system=True)
-    user_op = server.user(
-        name=f"Ensure user {user}",
-        user=user,
-        group=group,
-        home=str(home),
-        shell=shell,
-        system=True,
-        ensure_home=False,
-        create_home=False,
-    )
+    existing = host.get_fact(Users).get(user)
+    user_op: OperationMeta | None = None
+    if existing is None:
+        user_op = server.user(
+            name=f"Ensure user {user}",
+            user=user,
+            group=group,
+            home=str(home),
+            shell=shell,
+            system=True,
+            ensure_home=False,
+            create_home=False,
+        )
+    else:
+        wanted = {"home": str(home), "shell": shell, "group": group}
+        for key, value in wanted.items():
+            if existing.get(key) != value:
+                logger.warning(
+                    f"{host.name}: existing user {user} has {key} {existing.get(key)!r}, "
+                    f"wanted {value!r}; left unchanged"
+                )
+        if group != existing.get("group") and group not in existing.get("groups", []):
+            user_op = server.user(
+                name=f"Add {user} to group {group}", user=user, groups=[group], append=True, ensure_home=False
+            )
     dirs = tuple(
         files.directory(
             name=f"Ensure directory {path}",

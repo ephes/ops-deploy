@@ -1,5 +1,7 @@
 """Deploy-level scenarios for the toyweb service (all P1.4 helpers together)."""
 
+import base64
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -8,11 +10,14 @@ from ops_deploy.core import SecretRef, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.helpers.traefik import hash_password, render_route
 from ops_deploy.services.toyweb import ToywebConfig, deploy_toyweb
-from ops_deploy.services.toyweb.deploy import TEMPLATE_PACKAGE, traefik_config
-from ops_deploy.testing import FakeRun, run_deploy_fake
+from ops_deploy.services.toyweb.deploy import TEMPLATE_PACKAGE, render_env, traefik_config
+from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 
 PASSWORD = "toyweb-fixture-password"
+SECRET_KEY = "toyweb-fixture-django-key"
+ENV = "/home/toyweb/site/.env"
+ITEMIZED_CHANGE = [">f.st...... views.py"]
 ROUTE = "/etc/traefik/dynamic/toyweb.yml"
 UNIT = "/etc/systemd/system/toyweb.service"
 UV_SYNC = (
@@ -29,7 +34,7 @@ def cfg() -> ToywebConfig:
 @pytest.fixture
 def secrets(cfg: ToywebConfig) -> SecretValues:
     assert cfg.secrets is not None
-    return SecretValues(cfg.secrets, {"basic_auth_password": PASSWORD})
+    return SecretValues(cfg.secrets, {"basic_auth_password": PASSWORD, "django_secret_key": SECRET_KEY})
 
 
 # Hashed once per test session: bcrypt is deliberately slow-ish.
@@ -41,7 +46,7 @@ def converged(cfg: ToywebConfig, secrets: SecretValues, **drift: str) -> dict[st
 
     content = {
         "pyproject": render(TEMPLATE_PACKAGE, "pyproject.toml.j2", cfg=cfg),
-        "env": render(TEMPLATE_PACKAGE, "toyweb.env.j2", cfg=cfg),
+        "env": render_env(cfg, secrets).reveal().decode(),
         "unit": render(TEMPLATE_PACKAGE, "toyweb.service.j2", cfg=cfg),
         "route": render_route(traefik_config(cfg, secrets), _HASH),
     }
@@ -52,7 +57,7 @@ def converged(cfg: ToywebConfig, secrets: SecretValues, **drift: str) -> dict[st
     responses.update(fakehost.directory("/etc/systemd/system"))
     responses.update(fakehost.directory("/etc/traefik/dynamic"))
     responses.update(fakehost.file("/home/toyweb/site/pyproject.toml", content["pyproject"], user="toyweb"))
-    responses.update(fakehost.file("/home/toyweb/site/.env", content["env"], user="toyweb", mode="-rw-------"))
+    responses.update(fakehost.file(ENV, content["env"], user="toyweb", mode="-rw-------"))
     responses.update(fakehost.file(UNIT, content["unit"]))
     responses.update(fakehost.file(ROUTE, content["route"]))
     responses.update(fakehost.venv("/home/toyweb/site/.venv"))
@@ -61,8 +66,19 @@ def converged(cfg: ToywebConfig, secrets: SecretValues, **drift: str) -> dict[st
     return responses
 
 
-def deploy(cfg: ToywebConfig, secrets: SecretValues, responses: dict[str, Any] | None = None) -> FakeRun:
-    run = run_deploy_fake(deploy_toyweb, cfg, secrets, responses=responses or dict(fakehost.LINUX))
+def deploy(
+    cfg: ToywebConfig,
+    secrets: SecretValues,
+    responses: dict[str, Any] | None = None,
+    rsync: RecordingRsyncRunner | None = None,
+) -> FakeRun:
+    run = run_deploy_fake(
+        deploy_toyweb,
+        cfg,
+        secrets,
+        rsync=rsync or RecordingRsyncRunner(),
+        responses=responses or dict(fakehost.LINUX),
+    )
     assert run.succeeded, run.error
     return run
 
@@ -76,12 +92,9 @@ def test_first_run_installs_everything_and_starts_once(cfg: ToywebConfig, secret
     assert commands.index(UV_SYNC) < commands.index("systemctl start toyweb.service")
     assert commands.index("systemctl daemon-reload") < commands.index("systemctl start toyweb.service")
     assert "systemctl restart toyweb.service" not in commands
-    assert run.uploaded_paths == [
-        "/home/toyweb/site/pyproject.toml",
-        "/home/toyweb/site/.env",
-        UNIT,
-        ROUTE,
-    ]
+    # The .env goes over stdin via secret_file, never as an upload.
+    assert run.uploaded_paths == ["/home/toyweb/site/pyproject.toml", UNIT, ROUTE]
+    assert len(run.stdin) == 1
     assert [op for op in run.ops if op.read_only] == [
         run.op("Deploy toyweb service | Wait for port 127.0.0.1:10098"),
         run.op("Deploy toyweb service | Check http://127.0.0.1:10098/"),
@@ -104,7 +117,7 @@ def test_dependency_change_syncs_migrates_and_restarts(cfg: ToywebConfig, secret
     run = deploy(cfg, secrets, converged(cfg, secrets, pyproject="[project]\nname = 'old'\n"))
 
     assert run.mutating_changed_ops == [
-        "Deploy toyweb service | Write /home/toyweb/site/pyproject.toml",
+        "Deploy toyweb service | Write pyproject.toml",
         "Deploy toyweb service | uv sync /home/toyweb/site",
         "Deploy toyweb service | manage.py migrate --noinput",
         "Deploy toyweb service | manage.py collectstatic --noinput",
@@ -117,7 +130,7 @@ def test_env_change_restarts_without_sync(cfg: ToywebConfig, secrets: SecretValu
     run = deploy(cfg, secrets, converged(cfg, secrets, env="STALE=1\n"))
 
     assert run.mutating_changed_ops == [
-        "Deploy toyweb service | Write /home/toyweb/site/.env",
+        "Deploy toyweb service | Write .env",
         "Deploy toyweb service | Restart toyweb.service",
     ]
 
@@ -143,7 +156,9 @@ def test_missing_venv_forces_sync_even_without_changes(cfg: ToywebConfig, secret
 
 def test_password_change_rewrites_route_and_restarts_traefik(cfg: ToywebConfig, secrets: SecretValues) -> None:
     assert cfg.secrets is not None
-    rotated = SecretValues(cfg.secrets, {"basic_auth_password": "rotated-fixture-password"})
+    rotated = SecretValues(
+        cfg.secrets, {"basic_auth_password": "rotated-fixture-password", "django_secret_key": SECRET_KEY}
+    )
 
     run = deploy(cfg, rotated, converged(cfg, secrets))
 
@@ -162,6 +177,7 @@ def test_password_never_recorded(cfg: ToywebConfig, secrets: SecretValues, scena
     run = deploy(cfg, secrets, responses)
 
     assert PASSWORD not in run.all_text()
+    assert SECRET_KEY not in run.all_text()
     assert PASSWORD not in repr([op for op in run.ops])
 
 
@@ -175,6 +191,53 @@ def test_service_name_with_underscore_deploys() -> None:
     cfg = ToywebConfig(service_name="toy_web", secrets=SecretRef("secrets/toyweb.yml"))
     assert cfg.secrets is not None
 
-    run = deploy(cfg, SecretValues(cfg.secrets, {"basic_auth_password": PASSWORD}))
+    run = deploy(cfg, SecretValues(cfg.secrets, {"basic_auth_password": PASSWORD, "django_secret_key": SECRET_KEY}))
 
     assert "/etc/traefik/dynamic/toy_web.yml" in run.uploaded_paths
+
+
+def test_source_change_migrates_and_restarts_without_uv_sync(
+    cfg: ToywebConfig, secrets: SecretValues, tmp_path: Path
+) -> None:
+    (tmp_path / "views.py").write_text("x = 1\n")
+    with_source = cfg.model_copy(update={"source_path": tmp_path})
+    rsync = RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE})
+
+    run = deploy(with_source, secrets, converged(cfg, secrets), rsync=rsync)
+
+    assert run.mutating_changed_ops == [
+        "Deploy toyweb service | Sync source",
+        "Deploy toyweb service | manage.py migrate --noinput",
+        "Deploy toyweb service | manage.py collectstatic --noinput",
+        "Deploy toyweb service | Restart toyweb.service",
+    ]
+    real_sync = rsync.calls[-1]
+    assert "--delete" in real_sync
+    assert any("/home/toyweb/site/app/" in arg for arg in real_sync)
+    for pattern in ("/db.sqlite3", "/db.sqlite3-*", "/media/", ".env"):
+        assert f"--exclude={pattern}" in real_sync
+
+
+def test_unchanged_source_is_a_noop(cfg: ToywebConfig, secrets: SecretValues, tmp_path: Path) -> None:
+    with_source = cfg.model_copy(update={"source_path": tmp_path})
+
+    run = deploy(with_source, secrets, converged(cfg, secrets))
+
+    assert run.mutating_changed_ops == []
+
+
+def test_secret_key_rides_on_stdin_only(cfg: ToywebConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets)
+
+    ((command, payload),) = run.stdin
+    assert SECRET_KEY not in command
+    assert SECRET_KEY.encode() in base64.b64decode("".join(payload.split()))
+
+
+@pytest.mark.parametrize("key", ["has space", "quote'd", "back\\slash", 'dq"x'])
+def test_unsafe_secret_key_is_rejected(cfg: ToywebConfig, key: str) -> None:
+    assert cfg.secrets is not None
+    values = SecretValues(cfg.secrets, {"basic_auth_password": PASSWORD, "django_secret_key": key})
+    with pytest.raises(ValueError, match="django_secret_key must be") as excinfo:
+        run_deploy_fake(deploy_toyweb, cfg, values, responses=dict(fakehost.LINUX))
+    assert key not in str(excinfo.value)

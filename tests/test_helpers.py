@@ -2,6 +2,7 @@
 
 import http.server
 import io
+import logging
 import shlex
 import shutil
 import socket
@@ -245,6 +246,35 @@ def test_system_user_is_a_noop_when_present() -> None:
     result = run(lambda: system_user("app", home=HOME, directories=[SITE]), responses)
 
     assert result.executed_commands == []
+
+
+def test_existing_user_with_other_home_is_left_unchanged_with_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    responses = {
+        **fakehost.system_account("app", "/srv/app", shell="/usr/sbin/nologin"),
+        **fakehost.directory("/home/app", user="app"),
+    }
+
+    with caplog.at_level(logging.WARNING, logger="pyinfra"):
+        result = run(lambda: system_user("app", home=HOME), responses)
+
+    assert result.executed_commands == []
+    assert not any("usermod" in command for command in result.executed_commands)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("existing user app has home '/srv/app', wanted '/home/app'" in m for m in messages)
+    assert any("has shell '/usr/sbin/nologin', wanted '/bin/bash'" in m for m in messages)
+
+
+def test_existing_user_is_only_added_to_a_missing_group() -> None:
+    responses = {
+        **fakehost.system_account("app", "/home/app"),
+        "cat /etc/group": ["root:x:0:", "app:x:999:", "web:x:998:"],
+        **fakehost.directory("/home/app", user="app"),
+    }
+
+    result = run(lambda: system_user("app", home=HOME, group="web"), responses)
+
+    assert [c for c in result.executed_commands if c.startswith("usermod")] == ["usermod -a -G web app"]
+    assert "chown app:app /home/app" not in result.executed_commands
 
 
 # --- uv / django ------------------------------------------------------------
