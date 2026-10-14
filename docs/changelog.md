@@ -7,7 +7,9 @@
   [development](development.md#size-cap-on-the-shared-layer).
 - `BaseServiceConfig` no longer imports pydantic's private
   `ModelMetaclass`; `Config(...)` and the `model_validate*` methods still
-  raise `ConfigValidationError`.
+  raise `ConfigValidationError`. Constructor calls on config classes are
+  now type-checked against the field types (previously typed `Any`), so
+  pass `SecretRef(...)` rather than a plain string in typed code.
 - `systemd_unit` drops its unused `unit_dir` argument.
 
 - `fastdeploy` service: port of the `fastdeploy_deploy` role (rsync method)
