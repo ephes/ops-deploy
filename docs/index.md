@@ -27,6 +27,7 @@ src/ops_deploy/
   ops/sync_tree.py    sync_tree: rsync a controller directory to the host
   ops/secret_file.py  secret_file (install a secret via stdin, temp file, rename), secret_stdin
   helpers/            system_user, sudoers, systemd, uv/Django, Traefik, PostgreSQL, read-only checks
+  base/               host-level deploys: hostname, unit masks, headless mode, authorized keys, uv, Node.js, shell basics
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)

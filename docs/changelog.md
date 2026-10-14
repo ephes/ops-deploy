@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Base deploys in `ops_deploy.base` (outside the size-capped layer), ported
+  from the ops-library base roles: `hostname`, `headless_mode`,
+  `systemd_unit_masks`, `ssh_authorized_keys` (whole file, byte-identical to
+  the role's template, installed atomically), `uv_install` and
+  `shell_basics` (pinned, checksum-verified downloads renamed into place),
+  `nodejs_install` (NodeSource line, apt pin, read-only version check).
+  Fake connector tests for each and `tests/smoke/test_base_smoke.py` (two
+  runs per deploy, the second without change); see [base deploys](base.md).
+
 - Size cap: `just size-cap` (`scripts/size_cap.py`, also a CI step and a
   test) fails when helpers + ops + core exceed 1,500 code lines; see
   [development](development.md#size-cap-on-the-shared-layer).

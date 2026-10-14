@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Any
 
 LINUX: dict[str, Any] = {
@@ -10,13 +11,16 @@ LINUX: dict[str, Any] = {
     "command -v useradd": ["/usr/sbin/useradd"],
     "command -v usermod": ["/usr/sbin/usermod"],
     "command -v groupadd": ["/usr/sbin/groupadd"],
+    "command -v curl": ["/usr/bin/curl"],
 }
 
 
-def stat(path: str, *, user: str = "root", group: str | None = None, mode: str = "-rw-r--r--") -> dict[str, Any]:
+def stat(
+    path: str, *, user: str = "root", group: str | None = None, mode: str = "-rw-r--r--", mtime: int = 0
+) -> dict[str, Any]:
     """``File``/``Directory`` fact: ``path`` exists with this owner and mode."""
 
-    line = f"user={user} group={group or user} mode={mode} atime=0 mtime=0 ctime=0 size=10 '{path}'"
+    line = f"user={user} group={group or user} mode={mode} atime=0 mtime={mtime} ctime=0 size=10 '{path}'"
     return {f"test -e {path} ||": [line]}
 
 
@@ -31,6 +35,13 @@ def file(path: str, content: str, *, user: str = "root", mode: str = "-rw-r--r--
         f"cat {path}": content.splitlines(),
         **stat(path, user=user, mode=mode),
     }
+
+
+def symlink(path: str, target: str) -> dict[str, Any]:
+    """``Link`` fact: ``path`` is a symlink to ``target``."""
+
+    line = f"user=root group=root mode=lrwxrwxrwx atime=0 mtime=0 ctime=0 size=10 '{path}' -> '{target}'"
+    return {f"test -e {path} ||": [line]}
 
 
 def directory(path: str, *, user: str = "root", mode: str = "drwxr-xr-x") -> dict[str, Any]:
@@ -52,6 +63,18 @@ def service(unit: str, *, running: bool = True, enabled: bool = True) -> dict[st
         f"--property SubState {unit}": [f"Id={unit}", f"SubState={'running' if running else 'dead'}"],
         f"--property UnitFileState {unit}": [f"Id={unit}", f"UnitFileState={'enabled' if enabled else 'disabled'}"],
     }
+
+
+def apt_cache_fresh() -> dict[str, Any]:
+    """``apt.update(cache_time=...)`` finds a cache refreshed just now."""
+
+    return stat("/var/lib/apt/periodic/update-success-stamp", mtime=int(time.time()))
+
+
+def deb_installed(*packages: str) -> dict[str, Any]:
+    """``DebPackages`` fact listing ``packages`` as installed."""
+
+    return {"dpkg -l": [f"ii  {name}  1.0  all  {name}" for name in packages]}
 
 
 def venv(path: str) -> dict[str, Any]:

@@ -10,7 +10,9 @@ on the controller and calls a deploy function from here.
 Status: foundation. It contains the configuration base class, secret
 references, the `sync_tree` and `secret_file` operations, deploy helpers
 (users, systemd, uv/Django, Traefik, health checks), an in-process test
-harness and two toy services. Real services follow.
+harness, two toy services, the nyxmon and fastdeploy services and host-level
+base deploys (hostname, unit masks, headless mode, authorized keys, uv,
+Node.js, shell basics).
 
 ## Requirements
 

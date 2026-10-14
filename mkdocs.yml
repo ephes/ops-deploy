@@ -20,6 +20,7 @@ nav:
       - Deploy helpers: concepts/helpers.md
       - Testing deploys: concepts/testing.md
       - Smoke target: concepts/smoke.md
+  - Base deploys: base.md
   - Services:
       - toy: services/toy.md
       - toyweb: services/toyweb.md

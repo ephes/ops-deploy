@@ -1,0 +1,4 @@
+# Managed by Ansible - local.ops_library.ssh_authorized_keys_manage
+{% for entry in ssh_authorized_keys_manage_entries -%}
+{{ (entry.key_options | default('') | trim ~ ' ') if (entry.key_options | default('') | trim) else '' }}{{ entry.key | string | trim }}{{ (' ' ~ (entry.comment | default('') | trim)) if (entry.comment | default('') | trim) else '' }}
+{% endfor %}
