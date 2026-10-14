@@ -1,6 +1,7 @@
 import re
 from collections.abc import Callable
 
+import pytest
 from pyinfra.api import FunctionCommand, deploy, operation
 from pyinfra.api.command import FunctionCommand as CommandClass
 from pyinfra.connectors.fake import FakeConnector
@@ -77,9 +78,25 @@ def test_records_upload_content() -> None:
 
     run = run_deploy_fake(upload)
 
-    assert run.uploads == {"/etc/x.conf": b"content\n"}
+    assert run.uploads == [("/etc/x.conf", b"content\n")]
     assert ("put", "/etc/x.conf") in [(event.kind, event.value) for event in run.executed]
     assert "content" in run.all_text()
+
+
+def test_records_every_upload_to_the_same_path() -> None:
+    from io import StringIO
+
+    @deploy("Twice")
+    def twice() -> None:
+        files.put(name="First", src=StringIO("first-secret\n"), dest="/etc/x.conf")
+        files.put(name="Second", src=StringIO("second\n"), dest="/etc/x.conf")
+
+    run = run_deploy_fake(twice)
+
+    assert run.uploads == [("/etc/x.conf", b"first-secret\n"), ("/etc/x.conf", b"second\n")]
+    assert "first-secret" in run.all_text()
+    with pytest.raises(KeyError, match="exactly one upload"):
+        run.upload("/etc/x.conf")
 
 
 def test_failing_command_is_reported_not_raised() -> None:

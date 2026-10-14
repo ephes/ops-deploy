@@ -71,7 +71,7 @@ class FakeRun:
     """Everything recorded during one :func:`run_deploy_fake` call."""
 
     events: list[RecordedEvent] = field(default_factory=list)
-    uploads: dict[str, bytes] = field(default_factory=dict)
+    uploads: list[tuple[str, bytes]] = field(default_factory=list)
     ops: list[OpResult] = field(default_factory=list)
     error: PyinfraError | None = None
 
@@ -102,6 +102,18 @@ class FakeRun:
         return [event.value for event in self.executed if event.kind == "function"]
 
     @property
+    def uploaded_paths(self) -> list[str]:
+        return [path for path, _ in self.uploads]
+
+    def upload(self, path: str) -> bytes:
+        """Content of the single upload to ``path``."""
+
+        matches = [content for remote, content in self.uploads if remote == path]
+        if len(matches) != 1:
+            raise KeyError(f"expected exactly one upload to {path!r}, found {len(matches)}")
+        return matches[0]
+
+    @property
     def changed_ops(self) -> list[str]:
         return [op.name for op in self.ops if op.changed]
 
@@ -115,7 +127,7 @@ class FakeRun:
         """Every recorded command, path, callback name and upload, for leak checks."""
 
         parts = [event.value for event in self.events]
-        parts.extend(content.decode("utf-8", errors="replace") for content in self.uploads.values())
+        parts.extend(content.decode("utf-8", errors="replace") for _, content in self.uploads)
         return "\n".join(parts)
 
 
@@ -206,7 +218,7 @@ def _recording(run: FakeRun) -> Iterator[list[Phase]]:
 
     def put_file(self: FakeConnector, filename_or_io: Any, remote_filename: str, *a: Any, **kw: Any) -> Any:
         run.events.append(RecordedEvent(phase[0], "put", remote_filename))
-        run.uploads[remote_filename] = _read_upload(filename_or_io)
+        run.uploads.append((remote_filename, _read_upload(filename_or_io)))
         return original_put(self, filename_or_io, remote_filename, *a, **kw)
 
     def execute(self: FunctionCommand, *a: Any, **kw: Any) -> Any:
@@ -237,7 +249,9 @@ def _recording(run: FakeRun) -> Iterator[list[Phase]]:
 def _read_upload(filename_or_io: Any) -> bytes:
     if isinstance(filename_or_io, (str, Path)):
         return Path(filename_or_io).read_bytes()
+    # Read from the start, as pyinfra's connectors do, then restore the cursor.
     position = filename_or_io.tell()
+    filename_or_io.seek(0)
     content = filename_or_io.read()
     filename_or_io.seek(position)
     if isinstance(content, str):

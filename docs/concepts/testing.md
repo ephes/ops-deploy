@@ -48,7 +48,8 @@ Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
 `fact` events appear in both phases.
 
 Helpers: `executed_commands` (non-fact shell commands while executing),
-`fact_commands`, `function_calls`, `uploads`, `ops` / `changed_ops` / `op(name)`
+`fact_commands`, `function_calls`, `uploads` (every `(path, content)` in order,
+including repeated uploads to one path), `uploaded_paths`, `upload(path)`, `ops` / `changed_ops` / `op(name)`
 (per-operation `changed` and `succeeded`), and `all_text()` for secret-leak
 assertions.
 

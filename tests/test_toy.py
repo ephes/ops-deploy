@@ -70,7 +70,8 @@ def test_first_run_creates_everything_and_starts_service(cfg: ToyConfig) -> None
     assert "chown toy:toy /home/toy/site" in commands
     assert "systemctl daemon-reload" in commands
     assert "systemctl enable toy.service" in commands
-    assert set(run.uploads) == {"/home/toy/site/toy.conf", "/etc/systemd/system/toy.service"}
+    assert run.uploaded_paths == ["/home/toy/site/toy.conf", "/etc/systemd/system/toy.service"]
+    assert run.upload("/home/toy/site/toy.conf") == render(TEMPLATE_PACKAGE, "toy.conf.j2", cfg=cfg).encode()
     assert run.function_calls == ["_run_rsync"]
     real_syncs = [argv for argv in rsync.calls if "--dry-run" not in argv]
     assert real_syncs == [
@@ -90,7 +91,7 @@ def test_noop_run_changes_nothing(cfg: ToyConfig) -> None:
     assert run.succeeded, run.error
     assert run.changed_ops == []
     assert run.executed_commands == []
-    assert run.uploads == {}
+    assert run.uploads == []
     assert run.function_calls == []
     assert all("--dry-run" in argv for argv in rsync.calls)
 
@@ -112,7 +113,8 @@ def test_config_drift_rewrites_config_and_restarts(cfg: ToyConfig) -> None:
     run = run_deploy_fake(deploy_toy, cfg, rsync=RecordingRsyncRunner(), responses=responses, host_data=HOST_DATA)
 
     assert run.changed_ops == ["Deploy toy service | Write config", "Deploy toy service | Restart service"]
-    assert list(run.uploads) == ["/home/toy/site/toy.conf"]
+    assert run.uploaded_paths == ["/home/toy/site/toy.conf"]
+    assert run.upload("/home/toy/site/toy.conf") == render(TEMPLATE_PACKAGE, "toy.conf.j2", cfg=cfg).encode()
     assert "systemctl daemon-reload" not in run.executed_commands
     assert run.executed_commands[-1] == "systemctl restart toy.service"
 

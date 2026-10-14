@@ -39,6 +39,8 @@ cfg = NyxmonConfig(secrets=SecretRef("secrets/prod/nyxmon.yml"))
 - **`CHANGEME` is rejected anywhere**: in strings, paths, `SecretStr` values,
   dict keys and values, lists, and nested models. The error names the location
   (for example `route.aliases[1]`) but never echoes the value.
+- **Validation errors never include input values** (`hide_input_in_errors`), so
+  a mistyped secret cannot leak through an error message.
 - **`required_secret_keys`** lists the keys the secret file must provide. The
   config only checks that a `SecretRef` exists; key presence is checked after
   decryption with `SecretValues.require(cfg.required_secret_keys)`.

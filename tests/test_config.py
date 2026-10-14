@@ -60,10 +60,18 @@ def test_placeholders_are_rejected_everywhere(kwargs: dict[str, object], locatio
         ExampleConfig(**kwargs)
 
 
-def test_placeholder_error_does_not_echo_secret_value() -> None:
+@pytest.mark.parametrize("password", ["hunter2-CHANGEME", SecretStr("hunter2-CHANGEME")])
+def test_placeholder_error_does_not_echo_secret_value(password: str | SecretStr) -> None:
     with pytest.raises(ValidationError) as excinfo:
-        ExampleConfig(password=SecretStr("hunter2-CHANGEME"))
+        ExampleConfig(password=password)
     assert "hunter2" not in str(excinfo.value)
+    assert "hunter2" not in repr(excinfo.value)
+
+
+def test_field_errors_do_not_echo_input() -> None:
+    with pytest.raises(ValidationError, match="site_path") as excinfo:
+        ExampleConfig(site_path=PurePosixPath("relative-s3cret"))
+    assert "s3cret" not in str(excinfo.value)
 
 
 @pytest.mark.parametrize("site_path", ["relative/site", "/", "/home/../etc"])

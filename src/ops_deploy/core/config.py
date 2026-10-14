@@ -39,7 +39,8 @@ class BaseServiceConfig(BaseModel):
     ``required_secret_keys``; the private side checks them after decryption.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
+    # hide_input_in_errors: a ValidationError must never echo a (secret) value.
+    model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True, hide_input_in_errors=True)
 
     required_secret_keys: ClassVar[tuple[str, ...]] = ()
 
