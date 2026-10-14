@@ -1,0 +1,12 @@
+[Unit]
+Description=toy (ops-deploy toy service)
+After=network.target
+
+[Service]
+User=toy
+WorkingDirectory=/home/toy/site
+ExecStart=/usr/bin/python3 -m http.server 10123 --bind 127.0.0.1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

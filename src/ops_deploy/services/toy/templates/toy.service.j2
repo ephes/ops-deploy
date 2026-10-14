@@ -1,0 +1,12 @@
+[Unit]
+Description={{ cfg.service_name }} (ops-deploy toy service)
+After=network.target
+
+[Service]
+User={{ cfg.user }}
+WorkingDirectory={{ cfg.site_path }}
+ExecStart=/usr/bin/python3 -m http.server {{ cfg.app_port }} --bind 127.0.0.1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

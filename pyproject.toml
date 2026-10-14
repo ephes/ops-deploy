@@ -1,0 +1,57 @@
+[project]
+name = "ops-deploy"
+version = "0.1.0"
+description = "Typed pyinfra deploys for self-hosted services"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Jochen Wersdörfer", email = "jochen@wersdoerfer.de" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "jinja2>=3.1",
+    "pydantic>=2.9",
+    "pyinfra==3.10.*",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mkdocs-material>=9.7.7",
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PT", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pyinfra.api.MaskString".msg = "Deprecated in pyinfra 3.10; use pyinfra.api.hiddenvalue.HiddenValue."
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["ops_deploy", "tests"]
+plugins = ["pydantic.mypy"]
+# pyinfra ships type hints but leaves parts of its API unannotated.
+untyped_calls_exclude = ["pyinfra"]
+
+[[tool.mypy.overrides]]
+# pyinfra re-exports its public API without ``__all__``.
+module = ["pyinfra", "pyinfra.*"]
+implicit_reexport = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+filterwarnings = ["error::DeprecationWarning:ops_deploy.*"]

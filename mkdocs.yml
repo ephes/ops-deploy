@@ -1,0 +1,22 @@
+site_name: ops-deploy
+site_description: Typed pyinfra deploys for self-hosted services
+repo_url: https://github.com/ephes/ops-deploy
+theme:
+  name: material
+  features:
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
+nav:
+  - Home: index.md
+  - Development: development.md
+  - Concepts:
+      - Service configuration: concepts/config.md
+      - Secrets: concepts/secrets.md
+      - Testing deploys: concepts/testing.md
+  - Services:
+      - toy: services/toy.md
+  - Changelog: changelog.md

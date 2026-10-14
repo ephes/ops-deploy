@@ -1,0 +1,36 @@
+# ops-deploy
+
+`ops-deploy` is a Python package (`ops_deploy`) of typed
+[pyinfra](https://pyinfra.com) deploys for self-hosted services.
+
+It is the public half of the setup:
+
+| Here (public) | Private repository |
+|---|---|
+| Service config classes (`BaseServiceConfig` subclasses) | Inventory (hosts, groups, connection data) |
+| Deploy functions, templates, custom operations | SOPS-encrypted secret files and their decryption |
+| `SecretRef` (a *path* to an encrypted file) | The `SecretStore` that turns a `SecretRef` into values |
+| Test harness and tests | Entry points that wire a service to a host |
+
+A deploy is a function `deploy_<service>(cfg, ...)` decorated with pyinfra's
+`@deploy`. The private side validates the config, loads secrets on the
+controller (so a bad key fails before any SSH connection), and runs the deploy.
+
+## Layout
+
+```
+src/ops_deploy/
+  core/config.py      BaseServiceConfig, ServiceName, UnixUser
+  core/secrets.py     SecretRef, SecretValues, SecretStore protocol
+  core/rsync.py       injectable controller-side rsync runner
+  core/templates.py   Jinja2 rendering of package templates
+  services/toy/       toy service exercising the pieces above
+  testing/harness.py  run_deploy_fake(): in-process runs against @fake
+tests/                pytest, no network, well under 10 s
+```
+
+## Versions
+
+- Python 3.12 or newer on the controller.
+- pyinfra pinned to `3.10.*`. pyinfra 3.10 deprecates `MaskString`; use
+  `pyinfra.api.hiddenvalue.HiddenValue` (ruff bans the old name here).
