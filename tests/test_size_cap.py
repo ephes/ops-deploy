@@ -47,6 +47,11 @@ def test_code_after_a_docstring_on_the_same_line_counts(size_cap: ModuleType) ->
     assert size_cap.code_lines('def f(): """docs"""; return 1\n') == 1
 
 
+def test_parenthesized_and_concatenated_docstrings_are_free(size_cap: ModuleType) -> None:
+    assert size_cap.code_lines('"""a""" """b"""\n') == 0
+    assert size_cap.code_lines('(\n    "a"\n    "b"\n)\nx = 1\n') == 1
+
+
 def test_current_tree_is_under_the_cap(size_cap: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
     assert size_cap.main([]) == 0
     assert "total" in capsys.readouterr().out

@@ -24,10 +24,10 @@ DEFAULT_CAP = 1500
 _SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
 
-def docstring_starts(tree: ast.Module) -> set[tuple[int, int]]:
-    """Start positions of docstring tokens (module, class and function)."""
+def docstring_spans(tree: ast.Module) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    """(start, end) positions of module, class and function docstring expressions."""
 
-    starts: set[tuple[int, int]] = set()
+    spans: list[tuple[tuple[int, int], tuple[int, int]]] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
@@ -36,15 +36,17 @@ def docstring_starts(tree: ast.Module) -> set[tuple[int, int]]:
                 and isinstance(first.value, ast.Constant)
                 and isinstance(first.value.value, str)
             ):
-                starts.add((first.lineno, first.col_offset))
-    return starts
+                end = (first.end_lineno or first.lineno, first.end_col_offset or 0)
+                spans.append(((first.lineno, first.col_offset), end))
+    return spans
 
 
 def code_lines(source: str) -> int:
-    docstrings = docstring_starts(ast.parse(source))
+    spans = docstring_spans(ast.parse(source))
     lines: set[int] = set()
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        if token.type in _SKIP or (token.type == tokenize.STRING and token.start in docstrings):
+        # Every token of a docstring expression (parentheses, concatenated parts) is documentation.
+        if token.type in _SKIP or any(start <= token.start < end for start, end in spans):
             continue
         # A docstring statement's NEWLINE or ``;`` alone does not make a line code.
         if token.type == tokenize.OP and token.string == ";" and token.start[0] not in lines:
