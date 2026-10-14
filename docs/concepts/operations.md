@@ -33,12 +33,19 @@ changed = sync_tree(
   asked once and execution acts on exactly what was planned.
 - **Ownership is never preserved** (`--no-owner --no-group`). With `user` the
   files get `--chown=user:group`; without it they belong to the SSH user.
+- **Directory times are not synced** (`--omit-dir-times`). The app writing
+  into a synced directory (a `__pycache__`, a database) changes the
+  directory's mtime; with times synced, every later deploy would see that as
+  a change and rerun everything gated on the sync. The smoke test caught this.
 - **Excludes.** `MANDATORY_EXCLUDES` (`.git`, `.venv`, `__pycache__`,
   `.ops-deploy-*`, `.pyinfra-*`) always apply, followed by `excludes`.
   Excluded paths on the host are not deleted by `--delete`, which is how state
   markers and data directories survive a sync.
 - **Target.** `user@host` comes from host data `ssh_user` (default `root`) and
-  `ssh_hostname` (default the inventory name); `ssh_port` adds `-p`.
+  `ssh_hostname` (default the inventory name); `ssh_port` adds `-p`,
+  `ssh_key` adds `-i <key> -o IdentitiesOnly=yes`, and `ssh_known_hosts_file`
+  and `ssh_strict_host_key_checking` add the matching `-o` options (the keys
+  pyinfra's ssh connector reads).
 - A failed dry run raises `RsyncError` while planning, before anything
   changes. A failed real run fails the operation.
 

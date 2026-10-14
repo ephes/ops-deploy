@@ -72,18 +72,40 @@ class OpResult:
 
 
 @dataclass
-class FakeRun:
-    """Everything recorded during one :func:`run_deploy_fake` call."""
+class DeployRun:
+    """Per-operation outcome of one deploy run, on any connector."""
 
-    events: list[RecordedEvent] = field(default_factory=list)
-    uploads: list[tuple[str, bytes]] = field(default_factory=list)
-    stdin: list[tuple[str, str]] = field(default_factory=list)
     ops: list[OpResult] = field(default_factory=list)
     error: PyinfraError | None = None
 
     @property
     def succeeded(self) -> bool:
         return self.error is None and all(op.succeeded for op in self.ops)
+
+    @property
+    def changed_ops(self) -> list[str]:
+        return [op.name for op in self.ops if op.changed]
+
+    @property
+    def mutating_changed_ops(self) -> list[str]:
+        """Changed ops minus read-only checks; empty on a converged second run."""
+
+        return [op.name for op in self.ops if op.changed and not op.read_only]
+
+    def op(self, name: str) -> OpResult:
+        matches = [op for op in self.ops if op.name == name]
+        if len(matches) != 1:
+            raise KeyError(f"expected exactly one op named {name!r}, found {len(matches)}")
+        return matches[0]
+
+
+@dataclass
+class FakeRun(DeployRun):
+    """Everything recorded during one :func:`run_deploy_fake` call."""
+
+    events: list[RecordedEvent] = field(default_factory=list)
+    uploads: list[tuple[str, bytes]] = field(default_factory=list)
+    stdin: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def executed(self) -> list[RecordedEvent]:
@@ -117,22 +139,6 @@ class FakeRun:
         matches = [content for remote, content in self.uploads if remote == path]
         if len(matches) != 1:
             raise KeyError(f"expected exactly one upload to {path!r}, found {len(matches)}")
-        return matches[0]
-
-    @property
-    def changed_ops(self) -> list[str]:
-        return [op.name for op in self.ops if op.changed]
-
-    @property
-    def mutating_changed_ops(self) -> list[str]:
-        """Changed ops minus read-only checks; empty on a converged second run."""
-
-        return [op.name for op in self.ops if op.changed and not op.read_only]
-
-    def op(self, name: str) -> OpResult:
-        matches = [op for op in self.ops if op.name == name]
-        if len(matches) != 1:
-            raise KeyError(f"expected exactly one op named {name!r}, found {len(matches)}")
         return matches[0]
 
     def all_text(self) -> str:
@@ -212,7 +218,7 @@ def run_deploy_fake(
         except PyinfraError as exc:
             run.error = exc
         finally:
-            run.ops = _collect_ops(state)
+            run.ops = collect_ops(state, FAKE_HOST)
             disconnect_all(state)
 
     return run
@@ -291,8 +297,10 @@ def _read_upload(filename_or_io: Any) -> bytes:
     raise TypeError(f"cannot read upload source {type(filename_or_io).__name__}")
 
 
-def _collect_ops(state: State) -> list[OpResult]:
-    host = state.inventory.get_host(FAKE_HOST)
+def collect_ops(state: State, host_name: str) -> list[OpResult]:
+    """Per-operation results for ``host_name`` after ``run_ops``, in op order."""
+
+    host = state.inventory.get_host(host_name)
     results = []
     for op_hash in state.get_op_order():
         try:

@@ -53,7 +53,10 @@ def rsync_argv(
     root on the host; without it they belong to the SSH user.
     """
 
-    argv = ["rsync", "-rlt"]
+    # Directory times are left alone: the app writing into a synced directory
+    # (``__pycache__``, a database) would otherwise show up as a change on every
+    # next run and retrigger everything gated on the sync.
+    argv = ["rsync", "-rlt", "--omit-dir-times"]
     if delete:
         argv.append("--delete")
     argv += ["--no-owner", "--no-group"]
@@ -73,6 +76,17 @@ def _ssh_target() -> tuple[str, list[str]]:
     port = host.data.get("ssh_port")
     if port:
         ssh_command += ["-p", str(int(port))]
+    # The same host data keys pyinfra's ssh connector reads, so rsync reaches
+    # the host the way the connector does.
+    key = host.data.get("ssh_key")
+    if key:
+        ssh_command += ["-i", str(key), "-o", "IdentitiesOnly=yes"]
+    known_hosts = host.data.get("ssh_known_hosts_file")
+    if known_hosts:
+        ssh_command += ["-o", f"UserKnownHostsFile={known_hosts}"]
+    strict = host.data.get("ssh_strict_host_key_checking")
+    if strict:
+        ssh_command += ["-o", f"StrictHostKeyChecking={strict}"]
     return f"{ssh_user}@{hostname}", ssh_command
 
 

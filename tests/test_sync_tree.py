@@ -1,3 +1,4 @@
+import shlex
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -68,7 +69,7 @@ def test_change_runs_real_rsync_once(source: Path) -> None:
     assert run.function_calls == ["_run_rsync"]
     assert _real_runs(rsync) == [
         [
-            "rsync", "-rlt", "--delete", "--no-owner", "--no-group",
+            "rsync", "-rlt", "--omit-dir-times", "--delete", "--no-owner", "--no-group",
             *(f"--exclude={pattern}" for pattern in MANDATORY_EXCLUDES),
             "-e", "ssh", f"{source}/", "deploy@app.example.invalid:/srv/app/",
         ]
@@ -163,6 +164,31 @@ def test_ssh_port_from_host_data(source: Path) -> None:
 
     argv = rsync.calls[0]
     assert argv[argv.index("-e") + 1] == "ssh -p 2222"
+
+
+def test_ssh_key_and_host_key_options_from_host_data(source: Path) -> None:
+    rsync = RecordingRsyncRunner()
+    host_data = {
+        **HOST_DATA,
+        "ssh_key": "/keys/id ed25519",
+        "ssh_known_hosts_file": "/keys/known_hosts",
+        "ssh_strict_host_key_checking": "yes",
+    }
+
+    run_deploy_fake(sync_deploy, source, rsync, host_data=host_data)
+
+    argv = rsync.calls[0]
+    assert shlex.split(argv[argv.index("-e") + 1]) == [
+        "ssh",
+        "-i",
+        "/keys/id ed25519",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "UserKnownHostsFile=/keys/known_hosts",
+        "-o",
+        "StrictHostKeyChecking=yes",
+    ]
 
 
 def test_failed_dry_run_aborts(source: Path) -> None:

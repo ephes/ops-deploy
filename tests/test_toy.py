@@ -76,7 +76,7 @@ def test_first_run_creates_everything_and_starts_service(cfg: ToyConfig) -> None
     real_syncs = [argv for argv in rsync.calls if "--dry-run" not in argv]
     assert real_syncs == [
         [
-            "rsync", "-rlt", "--delete", "--no-owner", "--no-group", "--chown=toy:toy",
+            "rsync", "-rlt", "--omit-dir-times", "--delete", "--no-owner", "--no-group", "--chown=toy:toy",
             "--exclude=.git", "--exclude=.venv", "--exclude=__pycache__", "--exclude=.ops-deploy-*",
             "--exclude=.pyinfra-*", "--exclude=.env",
             "-e", "ssh", f"{cfg.source_path}/", "deploy@toy.example.invalid:/home/toy/site/app/",

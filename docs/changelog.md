@@ -48,3 +48,15 @@
 - Harness: `FakeRun.stdin` records command stdin (excluded from `all_text()`),
   and `OpResult.args` records pyinfra's operation argument strings (included
   in `all_text()`).
+- Smoke target: `smoke/vm.sh` and `just smoke-up`/`smoke`/`smoke-ssh`/`smoke-down`
+  manage a local lima Ubuntu 24.04 VM with root SSH (pinned host key), uv and
+  Traefik. `just smoke` deploys toyweb twice over pyinfra's ssh connector
+  (second run: no mutating changes) and runs `secret_file` fault and leak
+  tests on the VM.
+- `ops_deploy.testing.run_deploy_ssh` and `SshRun`; `DeployRun` is the shared
+  base of `FakeRun` and `SshRun` (`succeeded`, `changed_ops`,
+  `mutating_changed_ops`, `op`).
+- `sync_tree` passes `--omit-dir-times`: an app writing into a synced
+  directory no longer makes every later deploy resync and restart. It also
+  passes `ssh_key`, `ssh_known_hosts_file` and `ssh_strict_host_key_checking`
+  from host data to rsync's ssh.

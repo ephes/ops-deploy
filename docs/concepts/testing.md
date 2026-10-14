@@ -58,6 +58,14 @@ including repeated uploads to one path), `uploaded_paths`, `upload(path)`, `ops`
 op arguments and uploads but not `stdin`, which is where secrets are meant to
 travel.
 
+## Real hosts: `run_deploy_ssh`
+
+`run_deploy_ssh(deploy_fn, *args, host_name=..., host_data=..., **kwargs)`
+runs the deploy over pyinfra's ssh connector and returns an `SshRun`: the
+same `ops`, `error`, `succeeded`, `changed_ops`, `mutating_changed_ops` and
+`op()` as `FakeRun` (both are `DeployRun`s), plus `seconds`. `host_data`
+holds the ssh connector keys; see [Smoke target](smoke.md).
+
 ## Controller-side rsync
 
 `@fake` cannot see commands the controller runs itself. Code that needs rsync

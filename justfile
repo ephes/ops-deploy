@@ -35,3 +35,26 @@ docs-serve:
 
 # Everything CI runs
 check: lint typecheck test docs
+
+# Create/start and provision the lima smoke VM (idempotent)
+smoke-up:
+    smoke/vm.sh up
+
+# Deploy toyweb to the smoke VM twice and run the secret_file fault tests
+smoke *args: smoke-up
+    #!/usr/bin/env bash
+    set -euo pipefail
+    settings="$(smoke/vm.sh env)"
+    set -a
+    eval "$settings"
+    set +a
+    test -n "${SMOKE_SSH_HOST:-}"
+    uv run --locked pytest tests/smoke {{args}}
+
+# Root shell on the smoke VM (or run a command there)
+smoke-ssh *args:
+    smoke/vm.sh ssh {{args}}
+
+# Delete the smoke VM and its SSH key
+smoke-down:
+    smoke/vm.sh down
