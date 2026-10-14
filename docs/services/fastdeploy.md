@@ -1,0 +1,172 @@
+# fastdeploy
+
+Port of the `fastdeploy_deploy` Ansible role (rsync method only): the
+FastDeploy API (uvicorn) with its Vue frontend, on PostgreSQL, behind Traefik
+with basic auth. FastDeploy keeps deploying *other* services with Ansible;
+this only replaces the deploy of FastDeploy itself from a local checkout.
+
+```python
+from ops_deploy.services.fastdeploy import FastdeployConfig, deploy_fastdeploy
+
+cfg = FastdeployConfig(
+    source_path=Path("~/projects/fastdeploy").expanduser(), secrets=SecretRef("secrets/prod/fastdeploy.yml")
+)
+deploy_fastdeploy(cfg, store.load(cfg.secrets))
+```
+
+ops-control registers it with secrets from two SOPS files (see its
+`docs/PYINFRA.md`).
+
+## Secrets
+
+| Key | Required | Used for |
+|---|---|---|
+| `secret_key` | yes | `.env` (`SECRET_KEY`, signs tokens) |
+| `postgres_password` | yes | `.env` (`DATABASE_URL`, unencoded as in the role) and the database role (as a SCRAM verifier); only `A-Z a-z 0-9 . _ ~ -` |
+| `initial_user_name` | yes | initial FastDeploy user and the rollout check (stdin only) |
+| `initial_user_password_hash` | yes | initial user's bcrypt hash (stdin only) |
+| `basic_auth_password` | yes | Traefik route (bcrypt hash only) |
+| `basic_auth_user` | no | Traefik user; falls back to `basic_auth_user` in the config |
+
+Values must be single lines; `CHANGEME` is refused. Errors name keys, never
+values. The user name, the hash and the rollout request reach the host on a
+command's stdin (`secret_stdin`), the env files through `secret_file`.
+
+## Configuration (`FastdeployConfig`)
+
+Defaults follow the role's `defaults/main.yml`.
+
+| Field | Default | Notes |
+|---|---|---|
+| `source_path` | required | FastDeploy checkout; must contain `commands.py`, `pyproject.toml`, `uv.lock`, `src/deploy`, `frontend/package.json` |
+| `service_name`, `user`, `deploy_user` | `fastdeploy`, `fastdeploy`, `deploy` | `deploy` runs registered services' `deploy.sh` via sudo |
+| `site_path` | `/home/fastdeploy/site` | home is `/home/<user>`, services in `<site>/services` |
+| `source_excludes` | the role's `fastdeploy_rsync_excludes` | never shipped |
+| `persistent_excludes` | see below | host-side state the sync never deletes |
+| `environment` | `production` | `DEPLOY_ENV` |
+| `python_version` | `3.14` | `uv sync --frozen --python` |
+| `nodejs_version` | `24` | NodeSource major installed when `node` is missing or older |
+| `app_host`, `app_port` | `127.0.0.1`, `9999` | uvicorn |
+| `forwarded_allow_ips` | `("127.0.0.1",)` | literal addresses only |
+| `restart_on_failure`, `restart_sec` | `true`, `5` | unit `Restart=` |
+| `api_url`, `websocket_url` | `https://deploy.example.com`, `wss://.../deployments/ws` | `.env` and the frontend build |
+| `postgres_database`, `postgres_user`, `postgres_host`, `postgres_port` | `fastdeploy`, `fastdeploy`, `localhost`, `5432` | host only `localhost` or `127.0.0.1`, port only `5432`: the deploy manages the local cluster |
+| `legacy_service_tokens_accepted_until` | `""` | ISO 8601 with offset; empty: not rendered |
+| `service_token_max_expire_days`, `service_token_retention_days` | `None` | positive days; `None`: not rendered |
+| `legacy_token_users` | `()` | temporary users for legacy service tokens |
+| `create_initial_user`, `sync_services` | `true`, `true` | |
+| `rollout_validation` and `rollout_validation_*` | `true`, `/users/me`, initial user, 300 s, 15 x 2 s | |
+| `traefik_host`, `traefik_cert_resolver`, `traefik_middlewares`, `internal_ip_ranges`, `basic_auth_user` | role defaults | |
+
+### Host-side state (`persistent_excludes`)
+
+`/.env.shell`, `/bin/`, `/logs/`, `/services/` (where
+`fastdeploy_register_service` writes registrations) and `/db.sqlite3` (left by
+early deploys). Together with the source excludes (`.env`, `venv`,
+`databases`, `frontend/node_modules`, `frontend/dist`, ...) and `sync_tree`'s
+own (`.git`, `.venv`, ...) nothing the host keeps in the site tree is deleted.
+Unlike the role's `synchronize` (no `--delete`), files removed from the source
+are removed from the host.
+
+## What the deploy does
+
+1. Checks secrets and renders both env files (fails before any operation).
+2. `postgres_database`: `postgresql` enabled and running, login role
+   `fastdeploy` with the password, database `fastdeploy` and its `public`
+   schema owned by it.
+3. Groups and users `deploy` (also in group `fastdeploy`) and `fastdeploy`,
+   `/home/fastdeploy` and `site`, `site/bin`, `site/logs`, `site/services`
+   (`0755`), and `/etc/sudoers.d/fastdeploy` through `sudoers_file`
+   (`fastdeploy` may run `services/*/deploy.sh` as `deploy`).
+4. `sync_tree`: the checkout to `site/`, owned by the service user.
+5. `.env` (systemd format) and `.env.shell` (double-quoted for `sh`) through
+   `secret_file`, `0600`.
+6. `uv sync --frozen --python 3.14` if the source changed, the venv is missing,
+   or its interpreter is another Python version (probed as the service user).
+7. Node.js from NodeSource if `node` is missing or too old; then `npm ci` (or
+   `npm install` without a lockfile) and `npm run build` with `NODE_ENV` and
+   the `VITE_*` URLs if the build inputs changed (see below).
+8. Initial user and legacy token users that do not exist yet
+   (`commands.py createuser`, the role's `ensure_token_user.py`);
+   `commands.py syncservices` if the source or the dependencies changed.
+9. Unit file, Traefik route (dual router, basic auth, `/` redirected to
+   `/static/index.html`), then `service_rollout(always_restart=True)`.
+10. Read-only checks: the port, then a token minted with FastDeploy's own
+    `create_access_token` must get the user back from `/users/me`.
+
+### Frontend build stamp
+
+The role builds the frontend on every deploy. Here the controller hashes the
+build inputs (every file under `frontend/` except `node_modules`, `dist` and
+`.DS_Store`, plus the build environment) and compares the digest with
+`frontend/dist/.ops-deploy-build`, written after each build. A changed source
+file, lockfile or URL triggers a build; nothing else does. The role's build
+empties `dist/`, so the first ops-deploy run after an Ansible deploy builds
+once.
+
+### Users in the database
+
+Which users exist is read as SHA-256 digests of the names (`psql` as
+`postgres`), so the initial user's name never shows in pyinfra's output. Only
+missing users are created; the role runs `createuser` on every deploy and
+relies on the duplicate-key error. Both commands' output is judged on the
+host and withheld, because `createuser` can print the password hash.
+
+### Rollout check
+
+`files/rollout_check.py` runs with FastDeploy's interpreter as the service
+user: it mints the token and makes the request in one process, so the token
+never appears on a command line, in output or on the controller. Only the last
+line of its output (the verdict or the exception) is shown. It retries until
+it gets HTTP 200 with the right user name; the role's list of accepted interim
+status codes is not needed.
+
+## Parity with the role
+
+`tests/test_fastdeploy_parity.py` renders the vendored role templates
+(`tests/parity/ansible/fastdeploy_deploy__*`) the way Ansible does and requires
+**byte-identical** `.env`, `.env.shell`, unit and sudoers files, so Ansible and
+ops-deploy can take turns without rewriting them. With `OPS_LIBRARY_PATH` set
+it also checks the vendored `ensure_token_user.py` against ops-library. The
+Traefik route differs in comments only (see
+[helpers](../concepts/helpers.md#parity-differences-from-the-ansible-roles)).
+
+Differences, all intended:
+
+- **Restart**: unconditional, as in the role (owner decision); the build,
+  `uv sync`, `syncservices` and user creation are change-gated instead of
+  running on every deploy. A converged run changes nothing but the restart.
+- **Ownership**: the role chowns the whole site tree after every sync; here
+  the sync sets the owner of what it transfers (`--chown`).
+- **Deletion**: the sync deletes files that are gone from the source
+  (protected host state aside); the role never deletes.
+- **Node.js**: when an upgrade is needed, `nodesource.list` is replaced
+  rather than extended with a second line.
+- **PostgreSQL**: the role pulls in `postgres_install` (repository, packages,
+  `conf.d`, `pg_hba.conf`). Here PostgreSQL must already be installed; only
+  the role, database and schema owner are managed.
+
+Not ported (production uses none of them): the git deploy method,
+`fastdeploy_install_uv` (uv must be at `/usr/local/bin/uv`), switching off
+Traefik or basic auth, `fastdeploy_rollout_restart_enabled: false` and
+`fastdeploy_build_frontend: false`.
+
+## Tests
+
+- `tests/test_fastdeploy.py` (fake connector): first run, converged second run
+  (only the restart), code change (sync, `uv sync`, `syncservices`, no build),
+  frontend and build-URL changes (build), old Node.js, secret and database
+  password rotation, role without login or with a non-SCRAM password, wrong
+  owners, missing initial and legacy users, unit and sudoers drift, protected
+  host state, leak checks (no secret in commands, op names/args or uploads),
+  validation.
+- `tests/test_postgres.py`: `postgres_database` and `sudoers_file`.
+- `tests/smoke/test_fastdeploy_smoke.py` (`just smoke`, needs
+  `FASTDEPLOY_SOURCE` or `PROJECTS_ROOT`): a real deploy of the committed
+  `HEAD`, a converged rerun and a fresh-export rerun (only the restart), the
+  initial user logs in, the database role logs in with its password, a
+  registered service and runner survive, the sudoers rule allows exactly the
+  deploy scripts, Traefik answers 401 without auth, no secret outside its files
+  (including the PostgreSQL logs).
+- Ansible coexistence (deploy, backup, restore, remove taking turns with this
+  deploy) runs from ops-control: `just smoke-fastdeploy-coexistence`.

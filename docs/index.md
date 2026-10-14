@@ -25,11 +25,12 @@ src/ops_deploy/
   core/rsync.py       injectable controller-side rsync runner
   core/templates.py   Jinja2 rendering of package templates
   ops/sync_tree.py    sync_tree: rsync a controller directory to the host
-  ops/secret_file.py  secret_file: install a secret via stdin, temp file, rename
-  helpers/            system_user, systemd, uv/Django, Traefik, read-only checks
+  ops/secret_file.py  secret_file (install a secret via stdin, temp file, rename), secret_stdin
+  helpers/            system_user, sudoers, systemd, uv/Django, Traefik, PostgreSQL, read-only checks
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
+  services/fastdeploy/ fastdeploy (port of the fastdeploy_deploy role)
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
 ```

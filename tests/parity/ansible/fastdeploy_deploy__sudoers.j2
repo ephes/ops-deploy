@@ -1,0 +1,6 @@
+# Sudoers configuration for FastDeploy service execution
+# Allows fastdeploy user to run deploy scripts as deploy user
+# Managed by Ansible - do not edit manually
+
+# Allow fastdeploy user to execute deploy.sh scripts as deploy user
+{{ fastdeploy_user }} ALL=(deploy) NOPASSWD: {{ fastdeploy_services_path }}/*/deploy.sh *

@@ -37,9 +37,12 @@ of the test suite that touches a network or a host.
     `smoke-up` refreshes it.
 - `smoke/provision.sh` (run as root on every `smoke-up`) installs what a
   service deploy expects to find, pinned to what macmini runs: rsync and
-  python3, uv 0.13.0 in `/usr/local/bin`, and Traefik 3.7.14 as
-  `traefik.service` with the file provider on `/etc/traefik/dynamic` and the
-  `web-secure` entry point on `:443` (Traefik's default certificate).
+  python3, `build-essential` (some wheels, such as asyncpg for Python 3.14,
+  do not exist for arm64 and are built from source, as macmini can), uv
+  0.13.0 in `/usr/local/bin`, Traefik 3.7.14 as `traefik.service` with the
+  file provider on `/etc/traefik/dynamic` and the `web-secure` entry point on
+  `:443` (Traefik's default certificate), and PostgreSQL 17 from the PGDG
+  repository (in the repository file `postgres_install` writes).
 
 The VM is meant to stay up between runs and is shared by later slices; a test
 must leave it in a state the next run can deploy over.
@@ -68,6 +71,16 @@ committed `HEAD` of a nyxmon checkout (`NYXMON_SOURCE`, else
 units, private database and env files, migrations, the Traefik auth and leaks.
 A third run from a fresh export of the same commit (new mtimes) must change
 nothing.
+
+`test_fastdeploy_smoke.py` deploys [fastdeploy](../services/fastdeploy.md)
+from the committed `HEAD` of a FastDeploy checkout (`FASTDEPLOY_SOURCE`, else
+`$PROJECTS_ROOT/fastdeploy`; skipped without one), adds a registered service
+and a runner directory, deploys again and once more from a fresh export.
+Both reruns may only restart the service. It checks the initial user's login,
+the database role's password login, the sudoers rule, the Traefik auth, that
+the registered service and runner survive, and leaks (also in
+`/var/log/postgresql`). The first run installs Node.js from NodeSource and
+builds the frontend.
 
 `test_secret_file_smoke.py` exercises `secret_file`'s failure handling on a
 real host:
@@ -99,4 +112,6 @@ Measured on an Apple silicon Mac (2026-10-14):
 | toyweb second run (converged) | 0.3-0.4 s |
 | nyxmon first run, fresh service (uv downloads Python 3.13) | 11.8 s |
 | nyxmon second run (converged) | 0.8 s |
+| fastdeploy first run, fresh service (Node.js, uv builds asyncpg, npm build) | 53.6 s |
+| fastdeploy second run (converged apart from the restart) | 2.2 s |
 | `just smoke`, VM running | 10-12 s |

@@ -128,3 +128,21 @@ def secret_file(
         _get_pty=False,
         _shell_executable="sh",
     )
+
+
+@operation()
+def secret_stdin(command: str, content: SecretContent) -> Generator[StringCommand, None, None]:
+    """Run ``command`` with a secret on its standard input.
+
+    For programs that read a secret themselves (a password hash for a
+    management command, SQL with a password verifier). The secret is never on
+    a command line or in the operation's arguments. pyinfra writes stdin line
+    by line, so ``content`` must be text; the command's output must not echo it.
+
+    + command: shell command (``sh``); its exit status decides success
+    + content: the stdin text, wrapped in ``SecretContent``
+    """
+
+    if not isinstance(content, SecretContent):
+        raise OperationValueError("secret_stdin content must be a SecretContent")
+    yield StringCommand(command, _stdin=content.reveal().decode(), _get_pty=False, _shell_executable="sh")

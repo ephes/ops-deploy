@@ -6,14 +6,16 @@ on change (``when_changed=...``, ``restart_when=...``).
 """
 
 from ops_deploy.helpers.checks import http_check, is_read_only, mark_read_only, wait_port
+from ops_deploy.helpers.postgres import PostgresDatabase, postgres_database
 from ops_deploy.helpers.python import django_manage, uv_sync
 from ops_deploy.helpers.systemd import Rollout, service_rollout, systemd_unit
 from ops_deploy.helpers.traefik import BasicAuth, HealthCheck, RedirectRegex, TraefikRoute, traefik_route
-from ops_deploy.helpers.users import SystemUser, system_user
+from ops_deploy.helpers.users import SystemUser, sudoers_file, system_user
 
 __all__ = [
     "BasicAuth",
     "HealthCheck",
+    "PostgresDatabase",
     "RedirectRegex",
     "Rollout",
     "SystemUser",
@@ -22,7 +24,9 @@ __all__ = [
     "http_check",
     "is_read_only",
     "mark_read_only",
+    "postgres_database",
     "service_rollout",
+    "sudoers_file",
     "system_user",
     "systemd_unit",
     "traefik_route",

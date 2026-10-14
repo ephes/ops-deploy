@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `fastdeploy` service: port of the `fastdeploy_deploy` role (rsync method)
+  with `FastdeployConfig`, byte-identical env, unit and sudoers files (parity
+  tests against the vendored role templates), host-state
+  `persistent_excludes` (registered services, env files, venv, build output),
+  NodeSource Node.js, a frontend build gated on a digest of its inputs, change
+  -gated `uv sync`/`syncservices`, initial and legacy token users created only
+  when missing, the role's unconditional restart and a token-minting auth
+  check; fake connector scenarios and a smoke test (`FASTDEPLOY_SOURCE`).
+- `postgres_database` helper: login role, database and schema owner; the
+  password goes to PostgreSQL as a SCRAM verifier computed on the controller.
+- `sudoers_file` helper: sudoers drop-in validated with `visudo` before it
+  replaces the installed rule.
+- `secret_stdin` operation: run a command with a secret on stdin.
+- Smoke VM: PostgreSQL 17 from PGDG and `build-essential` (asyncpg has no
+  wheel for Python 3.14 on arm64).
+
 - `sync_tree` compares files by checksum and no longer syncs times
   (`-rl --checksum` instead of `-rlt`): a fresh clone of unchanged code is a
   no-op. Real-rsync test for time-only differences; the nyxmon smoke deploys

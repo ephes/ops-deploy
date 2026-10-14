@@ -1,0 +1,30 @@
+[Unit]
+Description=FastDeploy Service
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=exec
+User={{ cfg.user }}
+Group={{ cfg.user }}
+WorkingDirectory={{ cfg.site_path }}
+Environment="PATH={{ cfg.venv_bin }}:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile={{ cfg.site_path }}/.env
+ExecStart={{ cfg.venv_bin }}/python -m uvicorn deploy.entrypoints.fastapi_app:app --port {{ cfg.app_port }} --host {{ cfg.app_host }} --proxy-headers --forwarded-allow-ips {{ cfg.forwarded_allow_ips | join(',') }}
+{% if cfg.restart_on_failure -%}
+Restart=always
+RestartSec={{ cfg.restart_sec }}
+{%- else -%}
+Restart=no
+{%- endif %}
+
+# Security settings (simplified for compatibility)
+# NoNewPrivileges disabled to allow subprocess to use sudo -u deploy
+# The subprocess needs to switch from fastdeploy user to deploy user
+NoNewPrivileges=false
+# PrivateTmp disabled to allow subprocess with sudo to access config files
+# The subprocess runs as 'deploy' user and needs to read config files created by 'fastdeploy' user
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

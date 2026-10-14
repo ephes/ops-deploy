@@ -54,6 +54,38 @@ owned by `user:group` with `mode`. Replaces `tasks/user.yml`.
   wanted '/home/app'; left unchanged`), so drift shows up without being
   "fixed" behind the operator's back.
 
+## `sudoers_file(name, content)`
+
+Installs `/etc/sudoers.d/<name>` as `root:root 0440`, like the roles'
+`template` with `validate: visudo -cf %s`. The content is uploaded to
+`/etc/sudoers.d/.ops-deploy-<name>` first (sudo skips drop-ins whose name
+contains a dot, so the staged copy is never live), checked with `visudo -cqf`
+and only then moved over the rule; a rule that does not parse is removed and
+the installed one stays. No change when content, owner and mode already match.
+`name` may only use letters, digits, `_` and `-`.
+
+## `postgres_database(name, *, owner, password, admin_user="postgres", service="postgresql")`
+
+Replaces the database part of `postgres_install` (`postgres_install_users`
+and `postgres_install_databases`): `service` enabled and running, login role
+`owner` with `password` (a `SecretStr`), database `name` owned by it, and its
+`public` schema owned by it. Other role attributes are left alone. All SQL runs
+as `admin_user` through `runuser ... psql` (peer auth), and the server must
+already be installed: installing and configuring PostgreSQL stays with the
+Ansible role for now.
+
+The password never leaves the controller. PostgreSQL accepts a pre-hashed
+SCRAM-SHA-256 verifier, so the helper computes one (random salt, 4096
+iterations) and sends `CREATE/ALTER ROLE ... PASSWORD '<verifier>'` on
+`psql`'s stdin. To decide whether the role needs it, the probe reports the
+stored verifier's iteration count and salt plus a SHA-256 of the whole
+verifier (never the verifier itself); the controller recomputes the verifier
+with that salt and compares. A role with the right password and `LOGIN`
+changes nothing. Passwords must be ASCII (PostgreSQL's SASLprep is the
+identity there). Identifiers must be plain lowercase names.
+
+Returns `PostgresDatabase(service, role, database)`.
+
 ## `systemd_unit(name, content, *, unit_dir=/etc/systemd/system)`
 
 Writes `<name>.service` (or `name` as is, if it already ends in a unit type
@@ -198,3 +230,8 @@ roles. The Traefik YAML is checked by `tests/test_traefik_parity.py`.
 5. **One start on the first deploy.** `service_rollout` starts a new service
    once. The roles start it and then restart it from a handler.
    `always_restart=True` restarts even then.
+6. **PostgreSQL install not managed.** `postgres_database` manages the role,
+   database and schema owner only; the roles also install and configure the
+   server through their `postgres_install` dependency. A changed password is
+   set as a SCRAM verifier computed on the controller (the role sends the
+   password).

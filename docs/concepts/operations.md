@@ -126,3 +126,28 @@ dropped connection, failing `write`, `fchmod`, `fsync` and `rename`, failing
 post-commit steps, leftovers (including ones owned by the target user inside
 and a symlinked one), a swapped staging directory, symlinked directories and a
 symlinked destination.
+
+## `secret_stdin`
+
+Runs a command with a secret on its standard input, for programs that read a
+secret themselves (a management command reading a password hash, SQL carrying
+a password verifier).
+
+```python
+from ops_deploy.core import SecretContent
+from ops_deploy.ops import secret_stdin
+
+secret_stdin(
+    name="Create admin user",
+    command="cd /home/app/site && runuser -u app -- sh -c 'IFS= read -r HASH; ...'",
+    content=SecretContent(f"{password_hash}\n"),
+)
+```
+
+The secret is in neither the command line nor the operation's arguments
+(`SecretContent` prints as `<redacted>`). pyinfra writes stdin line by line,
+so the content must be text. The command runs with `_get_pty=False` (a pty
+would echo stdin) and `sh`. It always runs and counts as a change: gate it on
+a fact, or tag a check with `mark_read_only`. Its output must not echo the
+secret, since pyinfra prints the output of a failing command; judge the output
+on the host and print a fixed message instead, as the fastdeploy deploy does.
