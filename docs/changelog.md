@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Size cap: `just size-cap` (`scripts/size_cap.py`, also a CI step and a
+  test) fails when helpers + ops + core exceed 1,500 code lines; see
+  [development](development.md#size-cap-on-the-shared-layer).
+- `BaseServiceConfig` no longer imports pydantic's private
+  `ModelMetaclass`; `Config(...)` and the `model_validate*` methods still
+  raise `ConfigValidationError`.
+- `systemd_unit` drops its unused `unit_dir` argument.
+
 - `fastdeploy` service: port of the `fastdeploy_deploy` role (rsync method)
   with `FastdeployConfig`, byte-identical env, unit and sudoers files (parity
   tests against the vendored role templates), host-state

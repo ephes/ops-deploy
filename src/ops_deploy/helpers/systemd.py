@@ -32,14 +32,14 @@ def unit_name(name: str) -> str:
     return unit
 
 
-def systemd_unit(name: str, content: str, *, unit_dir: PurePosixPath = UNIT_DIR) -> OperationMeta:
+def systemd_unit(name: str, content: str) -> OperationMeta:
     """Install a unit file as ``root:root 0644``; changed only if the content differs."""
 
     unit = unit_name(name)
     return files.put(
         name=f"Install systemd unit {unit}",
         src=StringIO(content),
-        dest=str(unit_dir / unit),
+        dest=str(UNIT_DIR / unit),
         user="root",
         group="root",
         mode="0644",

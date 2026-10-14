@@ -86,7 +86,7 @@ identity there). Identifiers must be plain lowercase names.
 
 Returns `PostgresDatabase(service, role, database)`.
 
-## `systemd_unit(name, content, *, unit_dir=/etc/systemd/system)`
+## `systemd_unit(name, content)`
 
 Writes `<name>.service` (or `name` as is, if it already ends in a unit type
 such as `.timer`) as `root:root 0644`. It reports a change only if the content

@@ -8,6 +8,7 @@ is unit-testable without a host.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import PurePath, PurePosixPath
 from typing import Annotated, Any, ClassVar, Self
 
@@ -21,7 +22,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic._internal._model_construction import ModelMetaclass
 
 from ops_deploy.core.secrets import SecretRef
 
@@ -76,18 +76,15 @@ def _sanitized(exc: ValidationError) -> ConfigValidationError:
     return ConfigValidationError(exc.title, errors)
 
 
-class _SanitizingMeta(ModelMetaclass):
-    # Wraps ``Config(...)`` without overriding ``__init__``: a custom
-    # ``__init__`` would make pydantic route model_validate through it and
-    # drop strict/context options.
-    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
-        try:
-            return super().__call__(*args, **kwargs)
-        except ValidationError as exc:
-            raise _sanitized(exc) from None
+@contextmanager
+def _sanitizing() -> Iterator[None]:
+    try:
+        yield
+    except ValidationError as exc:
+        raise _sanitized(exc) from None
 
 
-class BaseServiceConfig(BaseModel, metaclass=_SanitizingMeta):
+class BaseServiceConfig(BaseModel):
     """Base class for all service configurations.
 
     - unknown keys are rejected (typos fail instead of being ignored),
@@ -129,26 +126,29 @@ class BaseServiceConfig(BaseModel, metaclass=_SanitizingMeta):
             raise ValueError("site_path must not be '/'")
         return value
 
+    def __init__(self, /, **data: Any) -> None:
+        with _sanitizing():
+            super().__init__(**data)
+
+    # Marks this ``__init__`` as pydantic's own, so ``model_validate`` keeps
+    # validating directly (with its strict/context options) instead of
+    # routing through ``__init__``.
+    __init__.__pydantic_base_init__ = True  # type: ignore[attr-defined]
+
     @classmethod
     def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> Self:
-        try:
+        with _sanitizing():
             return super().model_validate(obj, *args, **kwargs)
-        except ValidationError as exc:
-            raise _sanitized(exc) from None
 
     @classmethod
     def model_validate_json(cls, json_data: Any, *args: Any, **kwargs: Any) -> Self:
-        try:
+        with _sanitizing():
             return super().model_validate_json(json_data, *args, **kwargs)
-        except ValidationError as exc:
-            raise _sanitized(exc) from None
 
     @classmethod
     def model_validate_strings(cls, obj: Any, *args: Any, **kwargs: Any) -> Self:
-        try:
+        with _sanitizing():
             return super().model_validate_strings(obj, *args, **kwargs)
-        except ValidationError as exc:
-            raise _sanitized(exc) from None
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -203,12 +203,8 @@ def _placeholder_locations(value: Any, path: str = "") -> Iterator[str]:
 
     label = path or "<root>"
     if isinstance(value, SecretStr):
-        if PLACEHOLDER_MARKER in value.get_secret_value():
-            yield label
-    elif isinstance(value, str):
-        if PLACEHOLDER_MARKER in value:
-            yield label
-    elif isinstance(value, PurePath):
+        value = value.get_secret_value()
+    if isinstance(value, (str, PurePath)):
         if PLACEHOLDER_MARKER in str(value):
             yield label
     elif isinstance(value, BaseModel):

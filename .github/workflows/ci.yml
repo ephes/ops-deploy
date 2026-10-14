@@ -24,4 +24,5 @@ jobs:
       - run: just lint
       - run: just typecheck
       - run: just test
+      - run: just size-cap
       - run: just docs

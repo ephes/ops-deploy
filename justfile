@@ -33,8 +33,12 @@ docs:
 docs-serve:
     uv run --locked mkdocs serve
 
+# Check the code-line cap on helpers + ops + core (docs/development.md)
+size-cap:
+    uv run --locked python scripts/size_cap.py
+
 # Everything CI runs
-check: lint typecheck test docs
+check: lint typecheck test size-cap docs
 
 # Create/start and provision the lima smoke VM (idempotent)
 smoke-up:

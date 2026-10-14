@@ -112,12 +112,6 @@ def state_command(name: str, owner: str, admin_user: str) -> str:
     )
 
 
-def _check_identifiers(*names: str) -> None:
-    for value in names:
-        if not _IDENTIFIER.match(value):
-            raise OperationValueError(f"not a plain PostgreSQL identifier: {value!r}")
-
-
 def _probe(name: str, owner: str, admin_user: str) -> DatabaseState:
     output = host.get_fact(Command, command=state_command(name, owner, admin_user))
     return parse_state((output or "").splitlines())
@@ -176,7 +170,9 @@ def postgres_database(
     installed; the probe fails otherwise.
     """
 
-    _check_identifiers(name, owner, admin_user)
+    for value in (name, owner, admin_user):
+        if not _IDENTIFIER.match(value):
+            raise OperationValueError(f"not a plain PostgreSQL identifier: {value!r}")
     if not password.get_secret_value() or not password.get_secret_value().isascii():
         raise OperationValueError("the PostgreSQL password must be non-empty ASCII")
     service_op = systemd.service(name=f"Ensure {service} is running", service=service, running=True, enabled=True)
