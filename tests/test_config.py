@@ -233,8 +233,8 @@ def test_discriminated_union_tag_is_not_echoed() -> None:
     assert "hunter2" not in text
 
 
-def test_pattern_context_is_kept() -> None:
-    with pytest.raises(ConfigValidationError, match=r"string_pattern_mismatch \(pattern="):
+def test_builtin_errors_report_type_only() -> None:
+    with pytest.raises(ConfigValidationError, match=r"service_name: string_pattern_mismatch$"):
         ExampleConfig(service_name="Bad Name")
 
 
@@ -244,7 +244,8 @@ def test_text_entry_points_accept_path_defaults(entry: str) -> None:
     assert getattr(ExampleConfig, entry)(payload).site_path == PurePosixPath("/home/example/site")
 
 
-def test_custom_error_context_is_dropped() -> None:
+@pytest.mark.parametrize("error_type", ["port_rejected", "string_pattern_mismatch", "value_error"])
+def test_custom_error_context_is_dropped(error_type: str) -> None:
     from pydantic import field_validator
     from pydantic_core import PydanticCustomError
 
@@ -252,7 +253,7 @@ def test_custom_error_context_is_dropped() -> None:
         @field_validator("port")
         @classmethod
         def _reject(cls, value: int) -> int:
-            raise PydanticCustomError("port_rejected", "rejected", {"pattern": f"s3cret-{value}"})
+            raise PydanticCustomError(error_type, "rejected {pattern}", {"pattern": f"s3cret-{value}"})
 
     with pytest.raises(ConfigValidationError) as excinfo:
         Custom(port=4711)

@@ -43,8 +43,8 @@ class ConfigValidationError(ValueError):
     :class:`BaseServiceConfig` entry point. ``errors`` lists one dict per
     problem with ``loc`` (segments containing the placeholder marker replaced
     by ``<key>``), ``type`` and, for ``value_error`` only, ``msg`` (validators
-    must not interpolate values). Other pydantic messages and context may embed
-    input, so only a whitelist of context keys (limits, patterns) is kept.
+    must not interpolate values). Other messages and all error context are
+    dropped: they may embed input, and a custom error can reuse any type name.
     """
 
     def __init__(self, title: str, errors: list[dict[str, Any]]) -> None:
@@ -54,25 +54,8 @@ class ConfigValidationError(ValueError):
         for error in errors:
             loc = ".".join(str(part) for part in error["loc"]) or "<root>"
             detail = error.get("msg") or error["type"]
-            extra = ", ".join(f"{key}={value!r}" for key, value in error.get("ctx", {}).items())
-            lines.append(f"  {loc}: {detail}" + (f" ({extra})" if extra else ""))
+            lines.append(f"  {loc}: {detail}")
         super().__init__("\n".join(lines))
-
-
-# Context kept only for pydantic's built-in constraint errors, whose context is
-# the constraint, never the input. Custom error types keep no context.
-_SAFE_CTX: dict[str, frozenset[str]] = {
-    "string_pattern_mismatch": frozenset({"pattern"}),
-    "greater_than": frozenset({"gt"}),
-    "greater_than_equal": frozenset({"ge"}),
-    "less_than": frozenset({"lt"}),
-    "less_than_equal": frozenset({"le"}),
-    "multiple_of": frozenset({"multiple_of"}),
-    "string_too_short": frozenset({"min_length"}),
-    "string_too_long": frozenset({"max_length"}),
-    "too_short": frozenset({"min_length"}),
-    "too_long": frozenset({"max_length"}),
-}
 
 
 def _sanitized(exc: ValidationError) -> ConfigValidationError:
@@ -82,12 +65,10 @@ def _sanitized(exc: ValidationError) -> ConfigValidationError:
             "loc": tuple(_redact_loc(part) for part in error["loc"]),
             "type": error["type"],
         }
-        if error["type"] == "value_error":
+        # Only a ValueError raised by a validator carries its exception in
+        # ctx["error"]; a PydanticCustomError named "value_error" does not.
+        if error["type"] == "value_error" and isinstance(error.get("ctx", {}).get("error"), ValueError):
             entry["msg"] = error["msg"]
-        allowed = _SAFE_CTX.get(error["type"], frozenset())
-        ctx = {key: value for key, value in error.get("ctx", {}).items() if key in allowed}
-        if ctx:
-            entry["ctx"] = ctx
         errors.append(entry)
     return ConfigValidationError(exc.title, errors)
 
