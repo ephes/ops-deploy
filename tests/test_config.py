@@ -69,10 +69,11 @@ def test_placeholder_error_does_not_echo_secret_value(password: str | SecretStr)
     assert "hunter2" not in repr(excinfo.value)
 
 
+@pytest.mark.parametrize("key", ["hunter2-CHANGEME", b"hunter2-CHANGEME"])
 @pytest.mark.parametrize("value", ["value", None, 3])
-def test_placeholder_mapping_key_is_not_echoed(value: object) -> None:
+def test_placeholder_mapping_key_is_not_echoed(key: str | bytes, value: object) -> None:
     with pytest.raises(ValidationError, match=r"env\[<key>\] still contains the placeholder") as excinfo:
-        ExampleConfig(env={"hunter2-CHANGEME": value})
+        ExampleConfig(env={key: value})
     assert "hunter2" not in str(excinfo.value)
     assert "hunter2" not in repr(excinfo.value)
 

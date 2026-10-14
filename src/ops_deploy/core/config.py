@@ -106,7 +106,8 @@ def _placeholder_locations(value: Any, path: str = "") -> Iterator[str]:
             yield from _placeholder_locations(getattr(value, name), _join(path, name))
     elif isinstance(value, Mapping):
         for key, item in value.items():
-            if isinstance(key, str) and PLACEHOLDER_MARKER in key:
+            text_key = key.decode("utf-8", errors="replace") if isinstance(key, (bytes, bytearray)) else key
+            if isinstance(text_key, str) and PLACEHOLDER_MARKER in text_key:
                 # The key itself may be a mistyped secret: do not echo it.
                 yield f"{label}[<key>]"
             yield from _placeholder_locations(item, _join(path, str(key)))
