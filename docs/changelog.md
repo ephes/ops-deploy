@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `ops_deploy.services.heis`: `deploy_heis`, a port of the `heis_deploy`
+  role (rsync method). `.env`, unit, launcher, fish config and the Traefik
+  route (TLS rule, canonical redirect) are byte-identical to the role's
+  (parity tests against the vendored templates, including production's
+  shape). The Wagtail content reconcilers follow the role's switches
+  (production: off) and run only when the source, dependencies or schema
+  changed; the SQLite database and media are never shipped or deleted. Fake
+  connector, parity and smoke tests; see [heis](services/heis.md).
+
 - `ops_deploy.services.archive`: `deploy_archive`, a port of the
   `archive_deploy` role (rsync method) plus the steps ops-control's
   `deploy-archive.yml` runs around it (MinIO bucket and service account,
