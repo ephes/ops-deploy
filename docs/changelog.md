@@ -35,6 +35,16 @@
   `public_health_check` checks `/health` through Traefik on the host. Fake
   connector, parity and smoke tests; see [delve](services/delve.md).
 
+- `ops_deploy.services.recorder`: `deploy_recorder`, port of the
+  `recorder_deploy` role plus the controller build (`npm ci`, `npm run build`,
+  `go build` for linux/`goarch`) and the external-URL smoke gate of
+  ops-control's recorder playbook. Env file, unit and Traefik route are
+  byte-identical to the role's (parity tests against the vendored
+  templates); recorder restarts only when the binary, env file or unit
+  changed, and Traefik is never restarted (the role's reload is a no-op).
+  Fake connector tests and `tests/smoke/test_recorder_smoke.py`; see
+  [recorder](services/recorder.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and
