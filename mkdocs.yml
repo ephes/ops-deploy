@@ -33,4 +33,5 @@ nav:
       - delve: services/delve.md
       - recorder: services/recorder.md
       - static_site: services/static_site.md
+      - marina: services/marina.md
   - Changelog: changelog.md

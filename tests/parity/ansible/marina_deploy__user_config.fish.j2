@@ -1,0 +1,8 @@
+alias bat="batcat"
+alias fd="fdfind"
+
+set -x PATH $PATH {{ marina_home }}/.local/bin
+set -x PATH $PATH {{ marina_site_path }}/venv/bin
+set -x VIRTUAL_ENV "{{ marina_site_path }}/venv"
+set -x DJANGO_SETTINGS_MODULE "{{ marina_django_settings_module }}"
+cd {{ marina_site_path }}
