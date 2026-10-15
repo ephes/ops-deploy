@@ -1,0 +1,104 @@
+# Traefik configuration for the work app
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+{% if work_app_basic_auth_enabled %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    work-app-int:
+      rule: "Host(`{{ work_app_traefik_host }}`) && ({% for range in work_app_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+{% if work_app_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ work_app_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    work-app-ext:
+      rule: "Host(`{{ work_app_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - work-app-auth
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+{% if work_app_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ work_app_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Single router without authentication
+    work-app-secure:
+      rule: "Host(`{{ work_app_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+{% if work_app_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ work_app_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP -> HTTPS redirect
+    work-app-http:
+      rule: "Host(`{{ work_app_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - work-app-redirect
+      service: work-app
+
+  middlewares:
+{% if work_app_basic_auth_enabled %}
+    work-app-auth:
+      basicAuth:
+        users:
+          - "{{ work_app_basic_auth_user }}:{{ work_app_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    work-app-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    work-app-gzip:
+      compress: {}
+
+    work-app-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    work-app:
+      loadBalancer:
+        servers:
+          - url: "http://{{ work_app_app_host }}:{{ work_app_app_port }}"
