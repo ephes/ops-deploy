@@ -261,3 +261,34 @@ def test_time_only_difference_itemizes_nothing(tmp_path: Path) -> None:
     (line,) = dry_run()
     assert line.startswith(">fc"), line
     assert line.endswith(" pkg/app.py"), line
+
+
+def test_chmod_enforces_modes_on_existing_files() -> None:
+    argv = rsync_argv(Path("/src"), PurePosixPath("/dest"), "root@h", chmod="D0750,F0640", dry_run=True)
+
+    assert "--perms" in argv
+    assert "--chmod=D0750,F0640" in argv
+    assert "--perms" not in rsync_argv(Path("/src"), PurePosixPath("/dest"), "root@h", dry_run=True)
+
+
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="needs rsync")
+def test_mode_only_difference_itemizes_with_chmod(tmp_path: Path) -> None:
+    """Real rsync: a file with another mode than ``--chmod`` demands is a change, a matching one is not."""
+
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    for root in (src, dest):
+        root.mkdir()
+        (root / "index.html").write_text("<p>x</p>\n")
+    (src / "index.html").chmod(0o600)
+    (dest / "index.html").chmod(0o644)
+
+    def dry_run(chmod: str) -> list[str]:
+        argv = rsync_argv(src, PurePosixPath("/unused"), "unused", chmod=chmod, dry_run=True)
+        local = [*argv[: argv.index("-e")], f"{src}/", f"{dest}/"]
+        return subprocess.run(local, check=True, capture_output=True, text=True).stdout.splitlines()
+
+    assert dry_run("D0755,F0644") == []
+    lines = dry_run("D0750,F0640")
+    (line,) = [line for line in lines if line.endswith(" index.html")]
+    assert line.startswith(".f"), line
+    assert "p" in line.split()[0], line

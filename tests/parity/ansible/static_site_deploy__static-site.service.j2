@@ -1,0 +1,37 @@
+[Unit]
+Description=Read-only static site {{ static_site_service_name }}
+After=network.target
+
+[Service]
+Type=simple
+User={{ static_site_user }}
+Group={{ static_site_group }}
+ExecStart={{ static_site_python_path }} {{ static_site_server_path }}
+Restart=on-failure
+RestartSec=2
+UMask=0027
+TasksMax=128
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths={{ static_site_path }}
+
+[Install]
+WantedBy=multi-user.target

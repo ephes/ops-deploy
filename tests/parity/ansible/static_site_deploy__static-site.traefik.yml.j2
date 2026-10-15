@@ -1,0 +1,65 @@
+# Managed by Ansible - static site {{ static_site_service_name }}
+
+http:
+  routers:
+    {{ static_site_service_name }}-secure:
+      rule: "Host(`{{ static_site_host }}`)"
+      entryPoints:
+{% for entrypoint in static_site_traefik_entrypoints %}
+        - {{ entrypoint }}
+{% endfor %}
+      middlewares:
+{% if static_site_traefik_allowed_networks | length > 0 %}
+        - {{ static_site_service_name }}-allowlist
+{% endif %}
+        - {{ static_site_service_name }}-headers
+        - {{ static_site_service_name }}-compress
+      service: {{ static_site_service_name }}
+{% if static_site_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ static_site_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    {{ static_site_service_name }}-http:
+      rule: "Host(`{{ static_site_host }}`)"
+      entryPoints:
+        - {{ static_site_traefik_http_entrypoint }}
+      middlewares:
+{% if static_site_traefik_allowed_networks | length > 0 %}
+        - {{ static_site_service_name }}-allowlist
+{% endif %}
+        - {{ static_site_service_name }}-redirect
+      service: noop@internal
+
+  middlewares:
+{% if static_site_traefik_allowed_networks | length > 0 %}
+    {{ static_site_service_name }}-allowlist:
+      ipAllowList:
+        sourceRange: {{ static_site_traefik_allowed_networks | to_json }}
+
+{% endif %}
+    {{ static_site_service_name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        referrerPolicy: no-referrer
+        customResponseHeaders:
+          Cache-Control: no-cache
+
+    {{ static_site_service_name }}-compress:
+      compress: {}
+
+    {{ static_site_service_name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    {{ static_site_service_name }}:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://{{ static_site_bind_host }}:{{ static_site_port }}"

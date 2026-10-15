@@ -44,6 +44,7 @@ def rsync_argv(
     group: str | None = None,
     excludes: Sequence[str] = (),
     delete: bool = True,
+    chmod: str | None = None,
     dry_run: bool,
 ) -> list[str]:
     """Build the rsync command line; ``remote`` is ``user@host``.
@@ -65,6 +66,10 @@ def rsync_argv(
     argv += ["--no-owner", "--no-group"]
     if user is not None:
         argv.append(f"--chown={user}:{group or user}")
+    if chmod is not None:
+        # ``--perms`` makes the modes apply to existing files too, and shows
+        # a mode difference as an itemized change.
+        argv += ["--perms", f"--chmod={chmod}"]
     if dry_run:
         argv += DRY_RUN_FLAGS
     argv += [f"--exclude={pattern}" for pattern in (*MANDATORY_EXCLUDES, *excludes)]
@@ -113,6 +118,7 @@ def sync_tree(
     group: str | None = None,
     excludes: Sequence[str] = (),
     delete: bool = True,
+    chmod: str | None = None,
     runner: RsyncRunner = subprocess_rsync_runner,
 ) -> Generator[FunctionCommand, None, None]:
     """Make ``dest`` on the host mirror the controller directory ``src``.
@@ -122,6 +128,7 @@ def sync_tree(
     + user/group: owner of the transferred files (``--chown``); needs root
     + excludes: extra rsync exclude patterns, added to ``MANDATORY_EXCLUDES``
     + delete: remove remote files missing from ``src`` (excluded paths are kept)
+    + chmod: rsync ``--chmod`` modes (for example ``D0755,F0644``), enforced on existing files too
     + runner: controller-side rsync runner; tests inject a recorder
     """
 
@@ -146,6 +153,7 @@ def sync_tree(
             group=group,
             excludes=excludes,
             delete=delete,
+            chmod=chmod,
             dry_run=dry_run,
         )
 

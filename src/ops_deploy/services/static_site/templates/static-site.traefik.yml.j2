@@ -1,0 +1,54 @@
+# Managed by Ansible - static site {{ cfg.service_name }}
+
+http:
+  routers:
+    {{ cfg.service_name }}-secure:
+      rule: "Host(`{{ cfg.traefik_host }}`)"
+      entryPoints:
+{% for entrypoint in cfg.traefik_entrypoints %}        - {{ entrypoint }}
+{% endfor %}      middlewares:
+{% if cfg.traefik_allowed_networks %}        - {{ cfg.service_name }}-allowlist
+{% endif %}        - {{ cfg.service_name }}-headers
+        - {{ cfg.service_name }}-compress
+      service: {{ cfg.service_name }}
+{% if cfg.traefik_cert_resolver %}      tls:
+        certResolver: {{ cfg.traefik_cert_resolver }}
+{% else %}      tls: {}
+{% endif %}
+    {{ cfg.service_name }}-http:
+      rule: "Host(`{{ cfg.traefik_host }}`)"
+      entryPoints:
+        - {{ cfg.traefik_http_entrypoint }}
+      middlewares:
+{% if cfg.traefik_allowed_networks %}        - {{ cfg.service_name }}-allowlist
+{% endif %}        - {{ cfg.service_name }}-redirect
+      service: noop@internal
+
+  middlewares:
+{% if cfg.traefik_allowed_networks %}    {{ cfg.service_name }}-allowlist:
+      ipAllowList:
+        sourceRange: {{ cfg.allowed_networks_json }}
+
+{% endif %}    {{ cfg.service_name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        referrerPolicy: no-referrer
+        customResponseHeaders:
+          Cache-Control: no-cache
+
+    {{ cfg.service_name }}-compress:
+      compress: {}
+
+    {{ cfg.service_name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    {{ cfg.service_name }}:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://{{ cfg.bind_host }}:{{ cfg.port }}"
