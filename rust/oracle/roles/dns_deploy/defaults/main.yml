@@ -78,7 +78,10 @@ dns_resolver_options:
 
 # DDNS Configuration
 dns_ddns_enabled: false                          # Opt-in feature
-dns_ddns_provider: "gandi"                       # Backend: "gandi" (see README for adding others)
+dns_ddns_provider: "gandi"                       # Backend: "gandi" or "rfc2136"
+# Write several providers in one run (e.g. ["gandi", "rfc2136"] while a zone's
+# delegation moves). Empty = [dns_ddns_provider]. The first one names the run.
+dns_ddns_providers: []
 dns_ddns_domain: "CHANGEME"                      # Zone (e.g., "example.com"; IDN allowed)
 dns_ddns_subdomain: "home"                       # Subdomain to update
 dns_ddns_update_wildcard: true                   # Also update *.subdomain
@@ -101,6 +104,14 @@ dns_ddns_log_max_size_mb: 10                     # Log rotation size
 dns_ddns_api_token: "CHANGEME"                   # Gandi PAT or legacy API key (from secrets)
 dns_ddns_gandi_auth_scheme: "bearer"             # "bearer" (PAT) or "apikey" (legacy API key)
 dns_ddns_gandi_api_base: "https://api.gandi.net/v5/livedns"
+
+# RFC 2136 backend (nsupdate + TSIG against the zone's primary)
+dns_ddns_rfc2136_server: "CHANGEME"             # Primary's address (or name)
+dns_ddns_rfc2136_port: 53
+dns_ddns_rfc2136_key_name: "CHANGEME"           # TSIG key name
+dns_ddns_rfc2136_key_algorithm: "hmac-sha256"
+dns_ddns_rfc2136_key_secret: "CHANGEME"         # base64 TSIG secret (from secrets)
+dns_ddns_rfc2136_update_zone: ""                # Zone to UPDATE; empty = found via SOA
 
 # Optional authenticated status endpoint (for a Nyxmon json-metrics check)
 dns_ddns_status_endpoint_enabled: false
