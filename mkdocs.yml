@@ -28,4 +28,5 @@ nav:
       - toyweb: services/toyweb.md
       - nyxmon: services/nyxmon.md
       - fastdeploy: services/fastdeploy.md
+      - chesslab: services/chesslab.md
   - Changelog: changelog.md

@@ -1,0 +1,108 @@
+# Managed by Ansible - Chesslab Traefik configuration
+
+http:
+  routers:
+{% if chesslab_basic_auth_enabled %}
+    chesslab-int:
+      rule: "Host(`{{ chesslab_traefik_host }}`) && ({% for range in chesslab_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - chesslab-headers
+        - chesslab-gzip
+{% for middleware in chesslab_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: chesslab
+{% if chesslab_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ chesslab_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    chesslab-ext:
+      rule: "Host(`{{ chesslab_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - chesslab-auth
+        - chesslab-headers
+        - chesslab-gzip
+{% for middleware in chesslab_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: chesslab
+{% if chesslab_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ chesslab_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    chesslab-secure:
+      rule: "Host(`{{ chesslab_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - chesslab-headers
+        - chesslab-gzip
+{% for middleware in chesslab_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: chesslab
+{% if chesslab_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ chesslab_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    chesslab-http:
+      rule: "Host(`{{ chesslab_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - chesslab-redirect
+      service: chesslab
+
+  middlewares:
+{% if chesslab_basic_auth_enabled %}
+    chesslab-auth:
+      basicAuth:
+        users:
+          - "{{ chesslab_basic_auth_user }}:{{ chesslab_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    chesslab-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ chesslab_traefik_host }}"
+
+    chesslab-gzip:
+      compress: {}
+
+    chesslab-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    chesslab:
+      loadBalancer:
+        servers:
+          - url: "http://{{ chesslab_app_host }}:{{ chesslab_app_port }}"
