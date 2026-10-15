@@ -12,7 +12,9 @@ else is refused and logged; there is no interactive shell.
 Allowed commands are executed directly (no shell), with a fixed PATH, so the
 quoting of the original string cannot smuggle extra commands through. The few
 redirections the runners use (``< file``, ``> file``) are done by the guard
-itself, on files it opens without following symlinks.
+itself, on files it opens without following symlinks. Uploads (``scp -t``, the
+rsync receiver) run as the unprivileged owner of their target, so the sender
+cannot create root-owned, setuid or device files.
 """
 
 from __future__ import annotations
@@ -138,6 +140,7 @@ class Policy:
         for root, owner in policy.path_roots:
             _require(_is_safe_path(root) and root.count("/") >= 2, f"invalid path root: {root!r}")
             _require(_SAFE_OWNER_RE.match(owner), f"invalid owner for {root}: {owner!r}")
+            _require(not owner.startswith("root:"), f"uploads into {root} must not run as root")
         for template in policy.temp_dirs:
             _require(_TEMP_TEMPLATE_RE.match(template), f"invalid temp dir template: {template!r}")
         for snapshot in policy.sqlite_snapshots:
@@ -242,16 +245,32 @@ def _lstat_or_none(path: str, lstat, what: str):
         raise Refused(f"{what} not checkable: {path!r}: {exc.strerror}") from exc
 
 
-def _require_plain_file_or_absent(path: str, lstat, what: str) -> None:
+def _require_plain_file_or_absent(path: str, lstat, what: str, owner: str | None = None) -> None:
     """A path scp may read or write: missing, or a regular file with one link.
 
     Uses lstat, so a symlink, device, FIFO, socket or directory is refused.
+    With `owner`, an existing file must belong to that user.
     """
     st = _lstat_or_none(path, lstat, what)
     if st is None:
         return
     _require(stat.S_ISREG(st.st_mode), f"{what} is not a regular file: {path!r}")
     _require(st.st_nlink == 1, f"{what} has other hard links: {path!r}")
+    if owner is not None:
+        _require(st.st_uid in _user_uids((owner,), include_self=False), f"{what} does not belong to {owner}: {path!r}")
+
+
+def _require_private_dir(path: str, lstat) -> None:
+    """A directory of the guard's own user with no group/other access (fresh mktemp -d).
+
+    Nobody else can put a symlink into it, and in a sticky /tmp nobody else can
+    replace it.
+    """
+    st = _lstat_or_none(path, lstat, "directory")
+    _require(
+        st is not None and stat.S_ISDIR(st.st_mode) and st.st_uid == os.geteuid() and not st.st_mode & 0o077,
+        f"not a private directory: {path!r}",
+    )
 
 
 def _split_in_dir(path: str, is_dir) -> tuple[str, str]:
@@ -365,31 +384,46 @@ def _check_sqlite(policy: Policy, user: str, args: list[str]) -> None:
     raise Refused(f"sqlite3 call not allowed for {user!r}")
 
 
-def _check_scp(policy: Policy, args: list[str], realpath, lstat) -> None:
+def _check_scp(policy: Policy, args: list[str], realpath, lstat) -> str | None:
+    """Check scp -f/-t; return the user an upload runs as (None: download, as root)."""
     _require(len(args) == 3 and args[1] in ("-f", "-t"), "unexpected scp arguments")
     mode, path = args[1], args[2]
     _require(_is_safe_path(path), f"unsafe scp path: {path!r}")
     if mode == "-f":
-        if _is_temp_dump(policy, path, ("dump",)) or (policy.private_media_paths and _PRIVATE_ARCHIVE_RE.match(path)):
+        if _is_temp_dump(policy, path, ("dump",)):
+            # Written by pg_dump as postgres.
+            _require_plain_file_or_absent(path, lstat, "scp source", owner="postgres")
+            return None
+        if policy.private_media_paths and _PRIVATE_ARCHIVE_RE.match(path):
+            _require_private_dir(path.rpartition("/")[0], lstat)
             _require_plain_file_or_absent(path, lstat, "scp source")
-            return
+            return None
         if path not in policy.read_files:
             _require_in_roots(policy, path, realpath)
         _require_plain_file_or_absent(realpath(path), lstat, "scp source")
-        return
-    # Upload: onto a new path or an existing plain file, never through a symlink.
-    if not _is_temp_dump(policy, path, ("restore",)):
-        _require(path.endswith(_UPLOAD_SUFFIXES), f"scp upload target not allowed: {path!r}")
-        _require_in_roots(policy, path, realpath)
+        return None
+    # Upload: onto a new path or an existing plain file, never through a symlink,
+    # and as the target's owner (the scp sink takes the file mode from the sender).
+    if _is_temp_dump(policy, path, ("restore",)):
+        # Read by pg_restore as postgres.
+        _require_plain_file_or_absent(path, lstat, "scp target", owner="postgres")
+        return "postgres"
+    _require(path.endswith(_UPLOAD_SUFFIXES), f"scp upload target not allowed: {path!r}")
+    _root, owner = _require_in_roots(policy, path, realpath)
     _require_plain_file_or_absent(path, lstat, "scp target")
+    return owner.split(":", 1)[0]
 
 
-def _check_rsync(policy: Policy, args: list[str], realpath) -> None:
+def _check_rsync(policy: Policy, args: list[str], realpath) -> str | None:
+    """Check an rsync server call; return the user a receiver runs as (None: sender, as root)."""
     _require(len(args) >= 5 and args[-2] == ".", "unexpected rsync arguments")
     _require(tuple(args[1:-2]) in RSYNC_SERVER_ARGS, "unexpected rsync options")
     path = args[-1]
     _require(path.endswith("/"), "rsync path must be a directory with a trailing slash")
-    _require_in_roots(policy, path.rstrip("/"), realpath)
+    _root, owner = _require_in_roots(policy, path.rstrip("/"), realpath)
+    # The receiver runs as the root's owner: -o/-g are ignored, setuid bits
+    # and devices cannot be created as root.
+    return None if args[2] == "--sender" else owner.split(":", 1)[0]
 
 
 def _check_chown(policy: Policy, args: list[str], realpath, lstat) -> None:
@@ -398,8 +432,7 @@ def _check_chown(policy: Policy, args: list[str], realpath, lstat) -> None:
         if snapshot is not None:
             # Hand a fresh snapshot temp dir (root's, from mktemp) to the service user.
             _require(args[1] == snapshot.owner, f"owner {args[1]!r} not allowed for {args[2]!r}")
-            st = _lstat_or_none(args[2], lstat, "chown target")
-            _require(st is not None and stat.S_ISDIR(st.st_mode), f"chown target is not a directory: {args[2]!r}")
+            _require_private_dir(args[2], lstat)
             return
     if len(args) == 4 and args[1] == "-R":
         owner, path = args[2], args[3]
@@ -423,6 +456,10 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
         _require(_SAFE_NAME_RE.match(root_name) and _is_safe_path(parent), "unexpected tar arguments")
         _require(f"{parent}/{root_name}" in policy.private_media_paths, "tar source not allowed")
         _require(_PRIVATE_ARCHIVE_RE.match(archive), f"tar archive path not allowed: {archive!r}")
+        # Only into root's own fresh mktemp dir: nobody else can have put a
+        # symlink there for tar to write through.
+        _require_private_dir(archive.rpartition("/")[0], lstat)
+        _require_plain_file_or_absent(archive, lstat, "tar archive")
         return Decision(argv=args, umask=0o077)
 
     cat_match = _CAT_TO_FILE_RE.match(command)
@@ -465,12 +502,12 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
         return Decision(argv=args)
 
     if tool == "scp":
-        _check_scp(policy, args, realpath, lstat)
-        return Decision(argv=args)
+        user = _check_scp(policy, args, realpath, lstat)
+        return Decision(argv=args if user is None else ["runuser", "-u", user, "--", *args])
 
     if tool == "rsync":
-        _check_rsync(policy, args, realpath)
-        return Decision(argv=args)
+        user = _check_rsync(policy, args, realpath)
+        return Decision(argv=args if user is None else ["runuser", "-u", user, "--", *args])
 
     if tool == "rm":
         if args[1:2] == ["-f"] and len(args) == 3 and _is_temp_dump(policy, args[2], ("dump", "restore")):
@@ -516,11 +553,7 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
         _require(len(args) == 2, "unexpected sha256sum arguments")
         directory, name = _split_in_dir(args[1], policy.private_temp_dir)
         _require(name.endswith(".dump"), f"sha256sum target not allowed: {args[1]!r}")
-        st = _lstat_or_none(directory, lstat, "sha256sum directory")
-        _require(
-            st is not None and stat.S_ISDIR(st.st_mode) and st.st_uid == os.geteuid() and not st.st_mode & 0o077,
-            f"not a private directory: {directory!r}",
-        )
+        _require_private_dir(directory, lstat)
         _require_plain_file_or_absent(args[1], lstat, "sha256sum target")
         return Decision(argv=args)
 
@@ -558,9 +591,10 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
         return Decision(argv=args)
 
     if tool == "mkdir":
+        # As the root's owner, like the uploads that fill the directory.
         _require(len(args) == 3 and args[1] == "-p", "unexpected mkdir arguments")
-        _require_in_roots(policy, args[2], realpath)
-        return Decision(argv=args)
+        _root, owner = _require_in_roots(policy, args[2], realpath)
+        return Decision(argv=["runuser", "-u", owner.split(":", 1)[0], "--", *args])
 
     if tool == "chmod":
         _require(len(args) == 3 and args[1] in _CHMOD_MODES, "unexpected chmod arguments")
@@ -579,11 +613,11 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
     raise Refused(f"command not allowed: {tool!r}")
 
 
-def _owner_uids(owners: tuple[str, ...]) -> set[int]:
-    uids = {os.geteuid()}
-    for owner in owners:
+def _user_uids(users: tuple[str, ...], include_self: bool = True) -> set[int]:
+    uids = {os.geteuid()} if include_self else set()
+    for user in users:
         try:
-            uids.add(pwd.getpwnam(owner).pw_uid)
+            uids.add(pwd.getpwnam(user).pw_uid)
         except KeyError:
             pass
     return uids
@@ -594,7 +628,7 @@ def open_redirect(redirect: Redirect, create: bool) -> int:
     dir_fd = os.open(redirect.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         st = os.fstat(dir_fd)
-        _require(st.st_uid in _owner_uids(redirect.owners), f"unexpected owner of {redirect.directory!r}")
+        _require(st.st_uid in _user_uids(redirect.owners), f"unexpected owner of {redirect.directory!r}")
         _require(not st.st_mode & 0o077, f"{redirect.directory!r} is accessible to others")
         if create:
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
