@@ -82,6 +82,15 @@ the registered service and runner survive, and leaks (also in
 `/var/log/postgresql`). The first run installs Node.js from NodeSource and
 builds the frontend.
 
+`test_nyxmon_lifecycle_smoke.py` and `test_fastdeploy_lifecycle_smoke.py`
+deploy the service again (the deploy tests' fixtures) and then back it up,
+lose and restore data, and remove it twice (the second run without change)
+before deploying it once more. The FastDeploy test also checks that a
+restore from a broken archive rolls back to its safety backup. A nyxmon
+backup creates `/opt/backups` as `0700` (as the role does); the FastDeploy
+test sets it to `0755`, as on macmini, because `pg_dump` writes there as
+`postgres`.
+
 `test_delve_smoke.py` builds [delve](../services/delve.md) from the Delve
 backend source (`DELVE_SOURCE_PATH`, else
 `$PROJECTS_ROOT/podcast/apps/delve-backend`; skipped without one; needs Go)

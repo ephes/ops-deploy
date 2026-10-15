@@ -151,6 +151,77 @@ Not ported (production uses none of them): the git deploy method,
 Traefik or basic auth, `fastdeploy_rollout_restart_enabled: false` and
 `fastdeploy_build_frontend: false`.
 
+## Backup, restore and removal
+
+`ops_deploy.services.fastdeploy` also ports `fastdeploy_backup`,
+`fastdeploy_restore` and `fastdeploy_remove`. Backups and snapshot
+directories written by either tool restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_fastdeploy_backup(cfg, secrets)` | `FastdeployBackupConfig(host_name=...)` | `fastdeploy_backup` |
+| `deploy_fastdeploy_restore(cfg, secrets)` | `FastdeployRestoreConfig(host_name=...)` | `fastdeploy_restore` |
+| `deploy_fastdeploy_remove(cfg)` | `FastdeployRemoveConfig(confirm=True)` | `fastdeploy_remove` |
+
+`secrets` may carry `postgres_password`; ops-control passes the service's
+password, as the playbooks do. Backup and restore run one bash script on the
+host (`files/lifecycle.sh`), and the password reaches it on stdin only. The
+backup exports it as `PGPASSWORD` for `pg_dump`. The restore writes it to a
+private passfile (`mktemp -d` as `postgres`, removed afterwards). A password
+with a line break is refused before anything runs.
+
+**Backup.** It needs the site directory, `.env` and `services/`, and also the
+runner root and the workspace when `require_runner_root` or
+`include_workspace` is set. It creates
+`/opt/backups/fastdeploy/<prefix>-<timestamp>/` as `root:postgres 0750`, with
+`database/` as `postgres:postgres` (parent directories it creates get the
+same owner and mode, as with Ansible's `file`). It checks free space (the
+services, runners and workspace times 1.5) and reads FastDeploy's version
+as `fastdeploy`. Then:
+
+- `pg_dump --clean --if-exists --no-owner` runs as `postgres`;
+- the services, the deploy runners (without `.config/sops/age/keys.txt`) and
+  optionally the workspace are copied with `rsync -a --delete`;
+- the env file, the unit, the Traefik route and `/etc/sudoers.d/fastdeploy_*`
+  are copied (`0640`, rules `0440`), plus the journal when `include_logs` is
+  set;
+- the backup writes the role's `metadata.yml` (service and runner counts) and
+  `manifest.sha256`, packs `.tar.gz` or `.tar.zst` and fetches it into
+  `~/backups/fastdeploy` (`0700`).
+
+**Restore.** It follows the role and `restore_pilot_internal`:
+
+- **Validate.** `latest` is the newest `.tar.gz`/`.tar.zst` under the root,
+  skipping `pre-restore-*` safety backups while others exist. A name is
+  tried as given, below the root, and with each suffix; a directory is used
+  as a snapshot. An archive is unpacked into
+  `/tmp/fastdeploy-restore/fastdeploy-restore-<timestamp>`. The metadata and
+  `manifest.sha256` are required.
+- **Safety backup.** A full backup with prefix `pre-restore`, not fetched.
+- **Restore.** Stop the service, `dropdb`/`createdb --owner=fastdeploy` and
+  replay the dump as `fastdeploy` (`SET ROLE`). Sync `services/`, the runners
+  and (when backed up) the workspace with `--delete` and fix their owners.
+  Put back the env file (`0600`), units, the Traefik route and sudoers rules,
+  then reload, enable and start.
+- **Verify.** The service is active and `/docs` answers 200. The service
+  table counts as many rows as the metadata recorded, when that count is
+  above zero.
+
+If any phase fails, the safety backup is restored and verified the same way,
+and the run still fails (the role's `rescue`). The unpacked archive is
+always removed. `dry_run` stops after validation.
+
+**Removal.** It needs `confirm`. It stops and disables the unit and removes
+the unit file, the route and `/etc/sudoers.d/fastdeploy_*`. It drops the
+`fastdeploy` database and role, ends the processes of `fastdeploy` and
+`deploy`, and removes both homes, users and groups. Failures there do not
+stop the removal, as with the role's `ignore_errors`. Like the role, it
+keeps the deploy role's own `/etc/sudoers.d/fastdeploy` rule. It only acts
+on what exists, so a second run changes nothing. One difference from the
+role: the database is dropped with `dropdb`. The role uses
+`community.postgresql`, which needs `python3-psycopg2` on the host and fails
+(ignored) without it.
+
 ## Tests
 
 - `tests/test_fastdeploy.py` (fake connector): first run, converged second run
@@ -168,5 +239,16 @@ Traefik or basic auth, `fastdeploy_rollout_restart_enabled: false` and
   registered service and runner survive, the sudoers rule allows exactly the
   deploy scripts, Traefik answers 401 without auth, no secret outside its files
   (including the PostgreSQL logs).
-- Ansible coexistence (deploy, backup, restore, remove taking turns with this
-  deploy) runs from ops-control: `just smoke-fastdeploy-coexistence`.
+- `tests/test_fastdeploy_lifecycle.py` (fake connector): the password only
+  on stdin, backup and restore settings (the safety backup's overrides),
+  archive names, a password with a line break refused, removal order, a
+  second removal without change, the confirmation.
+- `tests/smoke/test_fastdeploy_lifecycle_smoke.py`: a backup with a marker
+  table, the registered service and the runner. The restore after losing the
+  marker and the registration brings both back and passes the service count
+  check. A broken archive (no env file) fails the restore, which rolls back to
+  its safety backup. Removal twice (the second without change), then a fresh
+  deploy.
+- Ansible coexistence runs from ops-control: `just smoke-fastdeploy-coexistence`.
+  Deploys take turns with this deploy, and backup, restore and removal run
+  across the tools.
