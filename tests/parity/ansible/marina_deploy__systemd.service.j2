@@ -1,0 +1,21 @@
+[Unit]
+Description=Marina web application
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+WorkingDirectory={{ marina_site_path }}
+User={{ marina_user }}
+Environment="DJANGO_SETTINGS_MODULE={{ marina_django_settings_module }}"
+ExecStart={{ marina_site_path }}/gunicorn.sh
+{% if marina_systemd_hardening | default(false) | bool %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ marina_site_path }} {{ marina_cache_dir }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

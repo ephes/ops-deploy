@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `ops_deploy.services.marina`: `deploy_marina`, a port of the `marina_deploy`
+  role (rsync method, uv). `.env`, `gunicorn.sh`, unit, fish config and Traefik
+  route are byte-identical to the role's (parity tests against the vendored
+  templates). The source sync never deletes, as in the role, so the database,
+  media and collected static files stay. Migrations, `collectstatic` and
+  `ensure_superuser` run only when something needs them, so a converged deploy
+  changes nothing; the admin account travels on stdin only. Fake connector tests
+  and `tests/smoke/test_marina_smoke.py`; see [marina](services/marina.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and
