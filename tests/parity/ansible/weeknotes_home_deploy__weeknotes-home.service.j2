@@ -1,0 +1,28 @@
+# Managed by Ansible - weeknotes.home systemd service
+
+[Unit]
+Description=weeknotes.home Django application
+After=network.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ weeknotes_home_user }}
+Group={{ weeknotes_home_group }}
+WorkingDirectory={{ weeknotes_home_service_path }}
+EnvironmentFile={{ weeknotes_home_env_path }}
+ExecStart={{ weeknotes_home_venv_bin }}/gunicorn \
+  --workers {{ weeknotes_home_gunicorn_workers }} \
+  --timeout {{ weeknotes_home_gunicorn_timeout }} \
+  --bind {{ weeknotes_home_app_host }}:{{ weeknotes_home_app_port }} \
+  {{ weeknotes_home_wsgi_module }}
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ weeknotes_home_home }} {{ weeknotes_home_cache_dir }} {{ weeknotes_home_static_root }}
+
+[Install]
+WantedBy=multi-user.target

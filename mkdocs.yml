@@ -28,4 +28,5 @@ nav:
       - toyweb: services/toyweb.md
       - nyxmon: services/nyxmon.md
       - fastdeploy: services/fastdeploy.md
+      - weeknotes_home: services/weeknotes_home.md
   - Changelog: changelog.md

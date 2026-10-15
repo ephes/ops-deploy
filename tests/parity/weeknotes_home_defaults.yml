@@ -1,0 +1,1 @@
+weeknotes_home_database_url: postgres://{{ weeknotes_home_postgres_user | urlencode | replace('/', '%2F') }}:{{ weeknotes_home_postgres_password | urlencode | replace('/', '%2F') }}@{{ weeknotes_home_postgres_host }}:{{ weeknotes_home_postgres_port }}/{{ weeknotes_home_postgres_database | urlencode | replace('/', '%2F') }}

@@ -1,0 +1,110 @@
+# Managed by Ansible - weeknotes.home Traefik configuration
+
+http:
+  routers:
+{% if weeknotes_home_basic_auth_enabled | bool %}
+    {{ weeknotes_home_service_name }}-int:
+      rule: "Host(`{{ weeknotes_home_traefik_host }}`) && ({% for range in weeknotes_home_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in weeknotes_home_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 120
+      middlewares:
+        - {{ weeknotes_home_service_name }}-headers
+        - {{ weeknotes_home_service_name }}-gzip
+{% for middleware in weeknotes_home_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ weeknotes_home_service_name }}
+{% if weeknotes_home_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ weeknotes_home_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    {{ weeknotes_home_service_name }}-ext:
+      rule: "Host(`{{ weeknotes_home_traefik_host }}`)"
+      entryPoints:
+{% for ep in weeknotes_home_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - {{ weeknotes_home_service_name }}-auth
+        - {{ weeknotes_home_service_name }}-headers
+        - {{ weeknotes_home_service_name }}-gzip
+{% for middleware in weeknotes_home_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ weeknotes_home_service_name }}
+{% if weeknotes_home_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ weeknotes_home_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    {{ weeknotes_home_service_name }}-secure:
+      rule: "Host(`{{ weeknotes_home_traefik_host }}`)"
+      entryPoints:
+{% for ep in weeknotes_home_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - {{ weeknotes_home_service_name }}-headers
+        - {{ weeknotes_home_service_name }}-gzip
+{% for middleware in weeknotes_home_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ weeknotes_home_service_name }}
+{% if weeknotes_home_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ weeknotes_home_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    {{ weeknotes_home_service_name }}-http:
+      rule: "Host(`{{ weeknotes_home_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - {{ weeknotes_home_service_name }}-redirect
+      service: noop@internal
+
+  middlewares:
+{% if weeknotes_home_basic_auth_enabled | bool %}
+    {{ weeknotes_home_service_name }}-auth:
+      basicAuth:
+        users:
+          - "{{ weeknotes_home_basic_auth_user }}:{{ weeknotes_home_basic_auth_password_hash }}"
+        removeHeader: {{ weeknotes_home_basic_auth_remove_header | bool }}
+{% endif %}
+
+    {{ weeknotes_home_service_name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ weeknotes_home_traefik_host }}"
+
+    {{ weeknotes_home_service_name }}-gzip:
+      compress: {}
+
+    {{ weeknotes_home_service_name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    {{ weeknotes_home_service_name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ weeknotes_home_app_host }}:{{ weeknotes_home_app_port }}"

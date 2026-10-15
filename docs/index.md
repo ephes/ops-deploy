@@ -34,6 +34,7 @@ src/ops_deploy/
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
   services/fastdeploy/ fastdeploy (port of the fastdeploy_deploy role)
+  services/weeknotes_home/ weeknotes.home (port of the weeknotes_home_deploy role)
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
 ```
