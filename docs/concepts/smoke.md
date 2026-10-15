@@ -91,6 +91,12 @@ binary over the running one (install and restart only). It checks the unit
 and the disabled collector timer, owners and modes, `/health` through
 Traefik, and leaks.
 
+`test_weeknotes_home_smoke.py` deploys [weeknotes_home](../services/weeknotes_home.md)
+from the committed `HEAD` of a daybook checkout (`DAYBOOK_SOURCE`, else
+`$PROJECTS_ROOT/daybook`; skipped without one) after resetting its earlier
+state on the VM. Its operations wiring runs against small stand-ins for
+Echoport, FastDeploy and Nyxmon (`tests/smoke/weeknotes_home_stubs.py`).
+
 `test_infra_smoke.py` runs [PostgreSQL and Redis](../infra.md) on the VM.
 PostgreSQL: twice with a throwaway database, owner and `pg_trgm` (second run
 without mutating change; files equal the rendered role output), a table row

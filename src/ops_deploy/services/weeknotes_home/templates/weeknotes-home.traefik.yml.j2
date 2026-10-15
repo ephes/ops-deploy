@@ -1,0 +1,86 @@
+# Managed by Ansible - weeknotes.home Traefik configuration
+
+http:
+  routers:
+    {{ route.name }}-int:
+      rule: "Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 120
+      middlewares:
+        - {{ route.name }}-headers
+        - {{ route.name }}-gzip
+{% for middleware in route.middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ route.name }}
+{% if route.cert_resolver %}
+      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    {{ route.name }}-ext:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+{% for ep in entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - {{ route.name }}-auth
+        - {{ route.name }}-headers
+        - {{ route.name }}-gzip
+{% for middleware in route.middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ route.name }}
+{% if route.cert_resolver %}
+      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    {{ route.name }}-http:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - {{ route.name }}-redirect
+      service: noop@internal
+
+  middlewares:
+    {{ route.name }}-auth:
+      basicAuth:
+        users:
+          - "{{ route.basic_auth.user }}:{{ auth_hash }}"
+        removeHeader: True
+
+    {{ route.name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ route.host }}"
+
+    {{ route.name }}-gzip:
+      compress: {}
+
+    {{ route.name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    {{ route.name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ route.app_host }}:{{ route.app_port }}"

@@ -81,6 +81,19 @@
   connector tests and `tests/smoke/test_opaq_app_smoke.py`; see
   [opaq_app](services/opaq_app.md).
 
+- `ops_deploy.services.weeknotes_home`: `deploy_weeknotes_home`, a port of the
+  `weeknotes_home_deploy` role (rsync method) and of the FastDeploy service
+  row, Echoport backup target (with its FastDeploy service token, issued only
+  when the stored one is unusable and piped, never written) and Nyxmon check
+  upserts in ops-control's `deploy-weeknotes-home.yml`. Env file, unit and
+  Traefik route are byte-identical to the role's (parity tests against the
+  vendored templates). Like the playbook, it checks the app port before any
+  change. Migrations and `collectstatic` run only when needed, and
+  `src/daybook.egg-info` is not removed by the sync, so a converged deploy
+  changes nothing (the role restarts the service on every run). Fake
+  connector tests and `tests/smoke/test_weeknotes_home_smoke.py`; see
+  [weeknotes_home](services/weeknotes_home.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and

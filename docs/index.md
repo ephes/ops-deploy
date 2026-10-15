@@ -36,6 +36,7 @@ src/ops_deploy/
   services/opaq_app/  opaq_app (port of the opaq_app_deploy role)
   services/fastdeploy/ fastdeploy (port of the fastdeploy_deploy role)
   services/delve/     delve (port of the delve_deploy role)
+  services/weeknotes_home/ weeknotes.home (port of the weeknotes_home_deploy role)
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
 ```
