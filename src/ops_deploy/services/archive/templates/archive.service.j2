@@ -1,0 +1,22 @@
+[Unit]
+Description=Archive Django application
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ archive_user }}
+Group={{ archive_group }}
+WorkingDirectory={{ archive_django_path }}
+EnvironmentFile={{ archive_env_path }}
+ExecStart={{ archive_venv_bin }}/gunicorn config.wsgi:application --bind {{ archive_app_host }}:{{ archive_app_port }} --workers {{ archive_workers }}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ archive_home }} {{ archive_site_path }}
+
+[Install]
+WantedBy=multi-user.target

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `ops_deploy.services.archive`: `deploy_archive`, a port of the
+  `archive_deploy` role (rsync method) plus the steps ops-control's
+  `deploy-archive.yml` runs around it (MinIO bucket and service account,
+  local media migration, Echoport backup target). Ships the role's templates
+  unchanged, so env files, units and the Traefik route are byte-identical.
+  migrate/collectstatic, the admin account, MinIO and Echoport are probed
+  read-only and written only when they differ; credentials travel on stdin
+  only. Fake connector, parity and smoke tests; see
+  [archive](services/archive.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and
