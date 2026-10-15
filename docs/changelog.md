@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `ops_deploy.services.static_site`: `deploy_static_site`, port of the
+  `static_site_deploy` role. Controller-side source validation (regular files
+  only, no symlinks, optional exact file allowlist), rsync publish, hardened
+  loopback HTTP server unit and Traefik route; server script, unit and route
+  are byte-identical to the role's (parity tests against the vendored
+  templates). The service restarts only when the server script or unit
+  changed; Traefik is never restarted. Fake connector tests and
+  `tests/smoke/test_static_site_smoke.py`; see
+  [static_site](services/static_site.md).
+
+- `sync_tree` takes `chmod` (rsync `--perms --chmod=...`): modes are enforced
+  on existing files too and a mode-only difference counts as a change. Used
+  for the static site's `D0755,F0644` / private `D0750,F0640` publication.
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and
