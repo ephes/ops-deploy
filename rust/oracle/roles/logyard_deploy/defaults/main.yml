@@ -14,7 +14,8 @@ logyard_git_repo: "https://github.com/ephes/logyard.git"
 logyard_git_version: "main"
 logyard_rsync_excludes:
   - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
-  - ".git/"
+  # No trailing slash: in a git worktree `.git` is a file, not a directory.
+  - ".git"
   - ".venv/"
   - "__pycache__/"
   - "*.pyc"
