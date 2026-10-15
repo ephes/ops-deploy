@@ -146,3 +146,33 @@ Differences from the role, on purpose:
   not ported; it is off in every inventory.
 - Whether to back up is decided from the file before the run, so on a fresh
   host the package's default `redis.conf` is not kept.
+
+## docker_install
+
+`deploy_docker_install(cfg)`: Docker Engine, CLI, containerd, buildx and the
+Compose plugin from Docker's apt repository (Ubuntu only, like the role). Fields
+follow the role (`repo_url`, `repo_suite` (`None`: the release codename),
+`repo_components`, `repo_key_url`, `repo_keyring_path`, `prerequisite_packages`,
+`packages`, `remove_conflicting_packages` and its list, `service_name`,
+`enable_service`/`start_service`/`manage_service`, `users`, `configure_daemon`
+with `daemon_config_path`/`daemon_config`, `verify`, `verify_docker_info`).
+
+Steps: prerequisites (including `python3-debian`, which only Ansible needs, so an
+Ansible run afterwards finds them), conflicting distribution packages purged,
+the key (downloaded once) and `docker.sources` (with `Architectures:`, byte for
+byte what `deb822_repository` writes), `apt update` when the file changed,
+packages, `daemon.json` as `to_nice_json` (restarting Docker when it changed),
+the `docker` group and its members, the service, then read-only checks
+(`docker --version`, `docker compose version`, the unit, `docker info`).
+Containers, images, volumes and networks are never touched.
+
+## vector_apt_install
+
+`deploy_vector_apt_install(cfg)`: the key is downloaded once to
+`repo_key_tmp`, converted with `gpg --dearmor` into `repo_keyring_path` (when
+the key was just downloaded or the keyring is missing), `vector.list` holds the
+role's single line, and the unpinned package comes from the `vector-0`
+channel. Fields are the role's (`package_name`, `repo_url`, `repo_channel`,
+`repo_version`, `repo_key_url`, `repo_key_tmp`, `repo_keyring_path`,
+`repo_list_file`).
+

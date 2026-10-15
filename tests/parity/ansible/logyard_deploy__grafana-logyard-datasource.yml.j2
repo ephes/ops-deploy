@@ -1,0 +1,12 @@
+apiVersion: 1
+
+datasources:
+  - name: {{ logyard_grafana_datasource_name }}
+    uid: {{ logyard_grafana_datasource_uid }}
+    type: loki
+    access: proxy
+    url: http://{{ logyard_loki_container_name }}:{{ logyard_loki_http_port }}
+    isDefault: {{ logyard_grafana_datasource_is_default | ternary('true', 'false') }}
+    editable: true
+    jsonData:
+      maxLines: 1000

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `ops_deploy.services.logyard`: `deploy_logyard`, `deploy_logyard_core`,
+  `deploy_logyard_ingress` and `deploy_logyard_vector`, ports of the
+  `logyard_deploy`, `logyard_ingress_deploy` and `logyard_vector_deploy` roles
+  and the playbook steps around them (Nyxmon checks upsert). Templates shipped
+  unchanged, files byte-identical to the roles'; Grafana is restarted only
+  when its datasource, dashboards or network changed. See
+  [logyard](services/logyard.md).
+
+- `ops_deploy.infra`: `deploy_docker_install` and `deploy_vector_apt_install`,
+  ports of the `docker_install` and `vector_apt_install` roles (the repository
+  files are the ones the roles write). See [infra](infra.md).
+
 - `ops_deploy.services.archive`: `deploy_archive`, a port of the
   `archive_deploy` role (rsync method) plus the steps ops-control's
   `deploy-archive.yml` runs around it (MinIO bucket and service account,

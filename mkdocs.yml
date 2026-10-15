@@ -32,4 +32,5 @@ nav:
       - chesslab: services/chesslab.md
       - delve: services/delve.md
       - recorder: services/recorder.md
+      - logyard: services/logyard.md
   - Changelog: changelog.md

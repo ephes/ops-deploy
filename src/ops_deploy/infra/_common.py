@@ -21,7 +21,13 @@ def codename() -> str:
 
 
 def deb822_sources(
-    *, name: str, uris: str, suites: tuple[str, ...], components: tuple[str, ...], signed_by: str
+    *,
+    name: str,
+    uris: str,
+    suites: tuple[str, ...],
+    components: tuple[str, ...],
+    signed_by: str,
+    architectures: tuple[str, ...] = (),
 ) -> str:
     """The ``.sources`` text ``deb822_repository`` writes for these arguments.
 
@@ -31,6 +37,7 @@ def deb822_sources(
     """
 
     fields = (
+        *((("Architectures", " ".join(architectures)),) if architectures else ()),
         ("Components", " ".join(components)),
         ("Enabled", "yes"),
         ("X-Repolib-Name", name),
@@ -57,6 +64,7 @@ def apt_repository(
     suites: tuple[str, ...],
     components: tuple[str, ...],
     dearmor: bool = False,
+    architectures: tuple[str, ...] = (),
 ) -> OperationMeta:
     """Signing key (downloaded once, like ``get_url`` without a checksum) and sources file.
 
@@ -87,7 +95,9 @@ def apt_repository(
                 f"&& chmod 0644 {tmp} && mv -f {tmp} {shlex.quote(keyring)}"
             ],
         )
-    content = deb822_sources(name=name, uris=uris, suites=suites, components=components, signed_by=keyring)
+    content = deb822_sources(
+        name=name, uris=uris, suites=suites, components=components, signed_by=keyring, architectures=architectures
+    )
     return files.put(
         name=f"Configure {name} apt repository",
         src=StringIO(content),
