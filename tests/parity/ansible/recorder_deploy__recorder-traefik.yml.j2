@@ -1,0 +1,37 @@
+# Managed by Ansible (recorder_deploy) - Traefik dynamic config for recorder
+# HTTP->HTTPS redirect is handled globally by the `web` entrypoint.
+http:
+  routers:
+    recorder:
+      rule: "Host(`{{ recorder_traefik_host }}`)"
+      service: recorder
+      entryPoints:
+{% for ep in recorder_traefik_entrypoints %}
+        - "{{ ep }}"
+{% endfor %}
+{% if recorder_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ recorder_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+      middlewares:
+        - recorder-headers
+
+  middlewares:
+    recorder-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
+  services:
+    recorder:
+      loadBalancer:
+        servers:
+          - url: "http://{{ recorder_listen_address }}:{{ recorder_port }}"
