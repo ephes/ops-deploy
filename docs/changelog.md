@@ -68,6 +68,19 @@
   changes nothing; the admin account travels on stdin only. Fake connector tests
   and `tests/smoke/test_marina_smoke.py`; see [marina](services/marina.md).
 
+- `ops_deploy.services.opaq_app`: `deploy_opaq_app`, port of the
+  `opaq_app_deploy` role together with the steps of `deploy-opaq-app.yml`
+  around it (the guard against taking over a name a static page routes, the
+  login and allowlist checks, the Echoport backup target and the Nyxmon
+  health check) and the playbook's port preflight (nothing but opaq-app
+  may listen on the app port). Environment file, unit and Traefik route are byte-identical
+  to the role's (parity tests against the vendored templates); the route is
+  written without a Traefik restart, as the role does. The database lives
+  outside the synced tree and is never touched by a sync. The Echoport and
+  Nyxmon entries are probed first and written only when they differ. Fake
+  connector tests and `tests/smoke/test_opaq_app_smoke.py`; see
+  [opaq_app](services/opaq_app.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and

@@ -1,0 +1,10 @@
+# Opaq app environment - managed by Ansible, do not edit
+DJANGO_SETTINGS_MODULE=opaq_app.settings
+DJANGO_SECRET_KEY={{ opaq_app_secret_key }}
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS={{ ([opaq_app_traefik_host] if opaq_app_traefik_host else []) | union(['127.0.0.1']) | join(',') }}
+DJANGO_CSRF_TRUSTED_ORIGINS={{ ('https://' ~ opaq_app_traefik_host) if opaq_app_traefik_host else '' }}
+OPAQ_DATABASE_PATH={{ opaq_app_database_path }}
+DJANGO_STATIC_ROOT={{ opaq_app_static_root }}
+OPAQ_UPLOAD_TOKEN_SHA256={{ opaq_app_upload_token_sha256 }}
+PYTHONPATH={{ opaq_app_site_path }}/src:{{ opaq_app_app_dir }}

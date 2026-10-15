@@ -34,4 +34,5 @@ nav:
       - recorder: services/recorder.md
       - static_site: services/static_site.md
       - marina: services/marina.md
+      - opaq_app: services/opaq_app.md
   - Changelog: changelog.md

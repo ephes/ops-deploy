@@ -1,0 +1,26 @@
+# Opaq app - managed by Ansible, do not edit
+[Unit]
+Description=Opaq app (company cash page behind a login)
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User={{ opaq_app_user }}
+Group={{ opaq_app_group }}
+WorkingDirectory={{ opaq_app_app_dir }}
+EnvironmentFile={{ opaq_app_env_file }}
+UMask=0077
+ExecStart={{ opaq_app_venv_bin }}/gunicorn --workers {{ opaq_app_workers }} --bind {{ opaq_app_app_host }}:{{ opaq_app_app_port }} --forwarded-allow-ips 127.0.0.1 --access-logfile - opaq_app.wsgi:application
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths={{ opaq_app_data_path }}
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
