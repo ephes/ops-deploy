@@ -29,4 +29,5 @@ nav:
       - nyxmon: services/nyxmon.md
       - fastdeploy: services/fastdeploy.md
       - archive: services/archive.md
+      - opaq_app: services/opaq_app.md
   - Changelog: changelog.md

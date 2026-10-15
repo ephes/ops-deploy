@@ -33,6 +33,7 @@ src/ops_deploy/
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
+  services/opaq_app/  opaq_app (port of the opaq_app_deploy role)
   services/fastdeploy/ fastdeploy (port of the fastdeploy_deploy role)
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
