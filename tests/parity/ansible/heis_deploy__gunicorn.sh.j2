@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+
+cd {{ heis_site_path }}
+{{ heis_venv_bin }}/gunicorn \
+  -w {{ heis_gunicorn_workers }} \
+  --access-logfile - \
+  --error-logfile - \
+  --access-logformat '%({x-forwarded-for}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"' \
+  -b 127.0.0.1:{{ heis_app_port }} \
+  -t {{ heis_gunicorn_timeout }} \
+  config.wsgi

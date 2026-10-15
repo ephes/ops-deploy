@@ -1,0 +1,14 @@
+[Unit]
+Description=Heis web application
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+WorkingDirectory={{ cfg.site_path }}
+User={{ cfg.user }}
+Environment="DJANGO_SETTINGS_MODULE={{ cfg.django_settings_module }}"
+ExecStart={{ cfg.site_path }}/gunicorn.sh
+
+[Install]
+WantedBy=multi-user.target
