@@ -26,6 +26,24 @@
     when a vendored role file or a mirrored role changes in ops-library
     (digests in `tests/parity/ops_library_roles.json`). See
     [Testing](concepts/testing.md#drift-from-ops-library).
+- echoport and archive no longer use the MinIO root credentials, following
+  ops-control's `deploy-echoport.yml` and `deploy-archive.yml`.
+  `EchoportConfig.minio_account` (`MinioAccount`, default `echoport-retention`)
+  ports `minio_deploy`'s `backup_account` include: the policy
+  `backup-echoport-retention` (the role's template, vendored for parity:
+  list, read and delete in the whole bucket, no writes) and the user
+  `bk-<sha256(name)[:17]>` are created or updated through root's MinIO admin
+  alias `local` (required: `mc admin info local` must succeed first), only
+  when a probe finds them missing or different; the cleanup user's `mc` alias
+  then uses that account (`minio_access_key` is refused with an account,
+  `minio_secret_key` needs 32 to 40 characters). archive's `MinioBootstrap`
+  drops `root_env_file` for `admin_alias` (`local`): probe and bootstrap make
+  their admin calls through it after the same required check, the app secret
+  and the app's alias (JSON for `mc alias import` into a temporary mc
+  configuration) reach the bootstrap and the media migration on stdin, and
+  `minio_root_user`/`minio_root_password` are refused. No script puts
+  credentials into `MC_HOST_*` any more. `minio_deploy` joins the roles
+  `tests/test_ops_library_drift.py` watches.
 - Commands no longer depend on the SSH user's login shell. Root's on macmini
   and staging is fish, which halves backslash pairs inside single quotes, so
   the weeknotes_home env loader (`python -c` with a regex) crashed live with

@@ -2,7 +2,8 @@
 
 Port of the ``archive_deploy`` Ansible role (rsync method) together with the
 playbook steps around it in ops-control's ``deploy-archive.yml``: the MinIO
-media bucket and service account, the one-time move of a local media tree
+media bucket and service account (through root's MinIO admin alias on the
+host, never the MinIO root credentials), the one-time move of a local media tree
 into MinIO, and the Echoport backup target. The role's templates are shipped
 unchanged and rendered the way Ansible renders them, so env files, units and
 the Traefik route are byte-identical (``tests/test_archive_parity.py``) and
@@ -38,6 +39,7 @@ from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import (
     TraefikRoute,
     http_check,
+    mark_read_only,
     service_rollout,
     system_user,
     systemd_unit,
@@ -91,14 +93,14 @@ class _Part(BaseModel):
 class MinioBootstrap(_Part):
     """The playbook's MinIO bucket/service-account step (S3 backend only).
 
-    Needs the secrets ``minio_root_user`` and ``minio_root_password``. The
-    read-only probe logs in with the root credentials in ``root_env_file``
-    (MinIO's own environment file) instead, so it needs no secret.
+    Bucket, policy and user are managed through ``admin_alias``, root's MinIO
+    admin alias on the host (``minio_host_alias`` of the MinIO deploy), as
+    ``deploy-archive.yml`` does: the MinIO root credentials are never needed.
     """
 
     policy_name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")] = "archive-media-rw"
     mc: PurePosixPath = PurePosixPath("/usr/local/bin/mc")
-    root_env_file: PurePosixPath = PurePosixPath("/etc/default/minio")
+    admin_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "local"
 
 
 class EchoportTarget(_Part):
@@ -237,8 +239,6 @@ def resolve(cfg: ArchiveConfig, secrets: SecretValues) -> ArchiveConfig:
             missing.append("media_storage_secret_access_key")
         if missing:
             raise ValueError(f"S3 media storage needs {', '.join(missing)}")
-        if resolved.minio is not None:
-            secrets.require(("minio_root_user", "minio_root_password"))
     return resolved
 
 
@@ -246,8 +246,15 @@ def check_secrets(secrets: SecretValues) -> None:
     """The role's asserts, naming keys only."""
 
     secrets.require(ArchiveConfig.required_secret_keys)
+    # The media secret reaches the MinIO scripts as one line on stdin (the
+    # playbook's CR/LF assert); every other value is held to the same rule.
     if any("\n" in value or "\r" in value for value in secrets.values()):
         raise ValueError("secret values must be single lines")
+    # The MinIO step uses root's admin alias on the host; the root credentials
+    # must never travel from the controller.
+    shipped = [key for key in ("minio_root_user", "minio_root_password") if key in secrets]
+    if shipped:
+        raise ValueError(f"the MinIO root credentials are not used, do not pass them: {', '.join(shipped)}")
     weak = [
         key
         for key in ("django_secret_key", "api_token", "summary_api_key")
@@ -380,23 +387,45 @@ def _python_changed(cfg: ArchiveConfig) -> OperationMeta:
 # -- playbook pre_tasks: MinIO --------------------------------------------------
 
 
+def _app_alias(cfg: ArchiveConfig, secrets: SecretValues) -> str:
+    """The app's ``mc`` alias as one line of JSON (the playbook's ``archive_media_app_alias``)."""
+
+    alias = {
+        "url": cfg.media_storage_endpoint_url,
+        "accessKey": cfg.media_storage_access_key_id,
+        "secretKey": secrets["media_storage_secret_access_key"],
+        "api": "s3v4",
+        "path": "auto",
+    }
+    return json.dumps(alias)
+
+
 def _minio(cfg: ArchiveConfig, secrets: SecretValues, env: OperationMeta) -> None:
     assert cfg.minio is not None
     minio = cfg.minio
-    common = (minio.mc, cfg.media_storage_endpoint_url, cfg.media_storage_bucket_name)
+    mc, admin, bucket = minio.mc, minio.admin_alias, cfg.media_storage_bucket_name
     # The script answers "ok" or "bootstrap:<reason>"; only a crash is a failure.
-    check = _bash(MINIO_PROBE, "minio-probe", *common, minio.policy_name, minio.root_env_file, cfg.env_path)
+    args = (mc, admin, cfg.media_storage_endpoint_url, bucket, minio.policy_name, cfg.env_path)
+    check = _bash(MINIO_PROBE, "minio-probe", *args)
     state = probe(check, name="MinIO media bucket and service account")
-    credentials = (
-        secrets["minio_root_user"],
-        secrets["minio_root_password"],
-        cfg.media_storage_access_key_id,
-        secrets["media_storage_secret_access_key"],
+    missing = shlex.quote(
+        f"mc admin info {admin} failed: the admin alias is not configured for root on this host "
+        "or MinIO is unreachable. Run the MinIO deploy (minio_bootstrap_with_mc) first."
+    )
+    mark_read_only(
+        server.shell(
+            name=f"Require the MinIO admin alias {admin} of root",
+            commands=[
+                f"{shlex.join([str(mc), 'admin', 'info', admin])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"
+            ],
+        )
     )
     secret_stdin(
         name="Ensure MinIO media bucket and service account",
-        command=_bash(MINIO_BOOTSTRAP, "minio-bootstrap", *common, minio.policy_name),
-        content=SecretContent("".join(f"{value}\n" for value in credentials)),
+        command=_bash(
+            MINIO_BOOTSTRAP, "minio-bootstrap", mc, admin, bucket, cfg.media_storage_access_key_id, minio.policy_name
+        ),
+        content=SecretContent(f"{secrets['media_storage_secret_access_key']}\n{_app_alias(cfg, secrets)}\n"),
         # New app credentials in .env: the account may need them too.
         _if=lambda: (state or "").strip() != "ok" or env.did_change(),
     )
@@ -406,16 +435,15 @@ def _minio(cfg: ArchiveConfig, secrets: SecretValues, env: OperationMeta) -> Non
 
 def _media_migration(cfg: ArchiveConfig, secrets: SecretValues) -> None:
     mc = cfg.minio.mc if cfg.minio is not None else PurePosixPath("/usr/local/bin/mc")
-    common = (mc, cfg.media_storage_endpoint_url, cfg.media_storage_bucket_name, cfg.media_location)
+    common = (mc, cfg.media_storage_bucket_name, cfg.media_location)
     check = _bash(MEDIA_MIGRATE, "media-migrate", *common, "probe")
     state = probe(check, name="local archive-media migration")
     if state is not None and state.strip() != "archive_media_pending":
         return
-    credentials = (cfg.media_storage_access_key_id, secrets["media_storage_secret_access_key"])
     secret_stdin(
         name="Migrate local archive-media into MinIO",
         command=_bash(MEDIA_MIGRATE, "media-migrate", *common),
-        content=SecretContent("".join(f"{value}\n" for value in credentials)),
+        content=SecretContent(f"{_app_alias(cfg, secrets)}\n"),
     )
     if state is None:
         verify_probe(check, name="local archive-media migration")

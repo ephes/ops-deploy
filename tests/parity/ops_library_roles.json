@@ -5,6 +5,7 @@
     "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
     "fastdeploy_restore": "95a3e5e43ea2b9f68aed59d2d1ff5e45da378eb8ed036e0435d18cd0eebeed9d",
+    "minio_deploy": "a84d46cc024bc21926750133a321e1f449644d5c44b7d698ac75d6e548740964",
     "nyxmon_backup": "7412a272ae90c029d9ddca3232abaaa88649826208641cdea9de5fa42b4dcc18",
     "nyxmon_deploy": "7b5b492fbac5dd040b518aa0cfbca5572721ab62659b541ec4a083f36dfbc381",
     "nyxmon_remove": "012e52c4aaa7cd5681c334addfe4ed082bc06485442821fa839e0f46fd19514b",

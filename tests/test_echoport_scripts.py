@@ -188,3 +188,79 @@ def test_mc_alias_probe_prints_only_a_digest() -> None:
         result = probe(text, status)
         assert result.returncode != 0
         assert result.stdout == ""
+
+
+FAKE_MC = """#!/bin/sh
+# mc admin {policy,user} info --json ALIAS NAME: the file $FAKE_MC_DIR/<policy|user>.json, else an error.
+[ "$1 $3 $4 $5" = "admin info --json local" ] || { echo "unexpected: $*" >&2; exit 2; }
+file="$FAKE_MC_DIR/$2.json"
+[ -f "$file" ] || { echo '{"status": "error"}'; exit 1; }
+cat "$file"
+"""
+
+
+@pytest.fixture
+def fake_mc(tmp_path: Path) -> Path:
+    binary = tmp_path / "mc"
+    binary.write_text(FAKE_MC)
+    binary.chmod(0o755)
+    return tmp_path
+
+
+def account(root: Path, mode: str, *, policy: Any = None, user: Any = None) -> subprocess.CompletedProcess[str]:
+    for name, value in (("policy", policy), ("user", user)):
+        path = root / f"{name}.json"
+        path.unlink(missing_ok=True)
+        if value is not None:
+            # mc indents its JSON.
+            path.write_text(json.dumps(value, indent=1))
+    spec = echoport.MinioAccount()
+    argv = [str(root / "mc"), "local", spec.policy, spec.user, echoport.render_policy(spec)]
+    env = {"PATH": os.environ["PATH"], "FAKE_MC_DIR": str(root)}
+    return subprocess.run(
+        [sys.executable, "-I", "-c", echoport.MINIO_ACCOUNT, mode, *argv], env=env, capture_output=True, text=True
+    )
+
+
+def stored_policy() -> dict[str, Any]:
+    # How MinIO hands the document back: actions reordered, a lone resource as a string.
+    document = json.loads(echoport.render_policy(echoport.MinioAccount()))
+    for statement in document["Statement"]:
+        statement["Action"] = sorted(statement["Action"], reverse=True)
+    document["Statement"][0]["Resource"] = "arn:aws:s3:::backups"
+    return {"status": "success", "policy": "backup-echoport-retention", "policyInfo": {"Policy": document}}
+
+
+GOOD_USER = {"status": "success", "policyName": "backup-echoport-retention", "userStatus": "enabled"}
+
+
+def test_account_probe_states(fake_mc: Path) -> None:
+    def state(**files: Any) -> str:
+        result = account(fake_mc, "probe", **files)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    assert state() == "policy=missing user=missing"
+    assert state(policy=stored_policy(), user=GOOD_USER) == "policy=ok user=attached"
+    other = stored_policy()
+    other["policyInfo"]["Policy"]["Statement"][2]["Action"].append("s3:PutObject")
+    assert state(policy=other, user=GOOD_USER) == "policy=differs user=attached"
+    two = {**GOOD_USER, "policyName": "readwrite,backup-echoport-retention"}
+    assert state(policy=stored_policy(), user=two) == "policy=ok user=attached"
+    assert state(policy=stored_policy(), user={**GOOD_USER, "policyName": ""}) == "policy=ok user=unattached"
+
+
+def test_account_verify_is_the_roles_last_assert(fake_mc: Path) -> None:
+    assert account(fake_mc, "verify", policy=stored_policy(), user=GOOD_USER).returncode == 0
+    for user, reason in (
+        (None, "is missing"),
+        ({**GOOD_USER, "policyName": "readwrite,backup-echoport-retention"}, "not exactly"),
+        ({**GOOD_USER, "memberOf": [{"name": "admins"}]}, "belongs to a group"),
+        ({**GOOD_USER, "userStatus": "disabled"}, "not enabled"),
+    ):
+        result = account(fake_mc, "verify", policy=stored_policy(), user=user)
+        assert result.returncode != 0
+        assert reason in result.stderr
+    result = account(fake_mc, "verify", user=GOOD_USER)
+    assert result.returncode != 0
+    assert "policy backup-echoport-retention is missing" in result.stderr

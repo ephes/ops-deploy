@@ -11,10 +11,12 @@ on one host without churn. The crontab entries use Ansible's own format
 
 Unlike the role, steps that would change nothing are skipped: migrate and
 collectstatic run when code, dependencies or the env file changed (or while a
-migration is pending), and the admin account, the cleanup user's ``mc`` alias,
-the crontab and the Nyxmon check are probed first (read-only) and written only
-when they differ from what this deploy would set. ``db.sqlite3*`` is never
-touched. Credentials reach the host on stdin only.
+migration is pending), and the admin account, the scoped MinIO account, the
+cleanup user's ``mc`` alias, the crontab and the Nyxmon check are probed first
+(read-only) and written only when they differ from what this deploy would set.
+``db.sqlite3*`` is never touched. Credentials reach the host on stdin only; the
+MinIO root credentials never do (the account is managed through root's MinIO
+admin alias on the host).
 """
 
 from __future__ import annotations
@@ -60,6 +62,7 @@ ADMIN_PROBE = (FILES / "admin_probe.py").read_text()
 MC_ALIAS_PROBE = (FILES / "mc_alias_probe.py").read_text()
 CRON_EDIT = (FILES / "cron_edit.py").read_text()
 NYXMON_CHECK = (FILES / "nyxmon_check.py").read_text()
+MINIO_ACCOUNT = (FILES / "minio_account.py").read_text()
 
 # Never transferred, and protected from --delete (the role's rsync options).
 SOURCE_EXCLUDES = (
@@ -118,6 +121,39 @@ class NyxmonCheck(_Part):
     service_name: Annotated[str, Field(pattern=r"^[A-Za-z0-9 ._-]+$")] = "echoport"
     user: UnixUser = "nyxmon"
     db_path: PurePosixPath = PurePosixPath("/home/nyxmon/site/db.sqlite3")
+
+
+class MinioAccount(_Part):
+    """The playbook's scoped MinIO account for the cleanup user's ``mc`` alias.
+
+    Port of ``minio_deploy``'s ``tasks_from: backup_account`` as
+    ``deploy-echoport.yml`` includes it: a user that may list, read and delete
+    in the whole bucket, never write or use the admin API, with the policy
+    ``backup-<name>``. It is created or updated through root's MinIO admin
+    alias on the host; the MinIO root credentials are never needed. The secret
+    is ``minio_secret_key``; the user name is derived from ``name`` (MinIO
+    allows 20 characters), as the playbook's ``backup_minio_account_user``.
+    """
+
+    name: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")] = "echoport-retention"
+    bucket: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]{2,62}$")] = "backups"
+    allow_put: bool = False
+    allow_delete: bool = True
+    # ``minio_host_alias`` of the MinIO deploy (root's mc configuration).
+    admin_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "local"
+    policy_dir: PurePosixPath = PurePosixPath("/etc/minio/policies")
+
+    @property
+    def user(self) -> str:
+        return "bk-" + hashlib.sha256(self.name.encode()).hexdigest()[:17]
+
+    @property
+    def policy(self) -> str:
+        return f"backup-{self.name}"
+
+    @property
+    def policy_path(self) -> PurePosixPath:
+        return self.policy_dir / f"{self.policy}.json"
 
 
 class EchoportConfig(BaseServiceConfig):
@@ -183,12 +219,14 @@ class EchoportConfig(BaseServiceConfig):
     cleanup_enabled: bool = True
     cleanup_hour: Annotated[str, Field(pattern=r"^[0-9*/,-]+$")] = "3"
     # The cleanup cron job deletes expired archives through ``mc`` as the
-    # service user, so that user needs its own alias (credentials: the secrets
-    # ``minio_access_key`` and ``minio_secret_key``).
+    # service user, so that user needs its own alias (credentials: the
+    # ``minio_account`` user and the secret ``minio_secret_key``, or without an
+    # account the secrets ``minio_access_key`` and ``minio_secret_key``).
     minio_mc_path: PurePosixPath = PurePosixPath("/usr/local/bin/mc")
     minio_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "minio"
     minio_url: Annotated[str, Field(pattern=r"^(https?://[^\s'\"$`\\]+)?$")] = ""
     minio_verify_bucket: Annotated[str, Field(pattern=r"^[a-z0-9.-]*$")] = "backups"
+    minio_account: MinioAccount | None = None
 
     staging_db_refresh_enabled: bool = False
     staging_db_refresh_hour: Annotated[str, Field(pattern=r"^[0-9*/,-]+$")] = "2"
@@ -213,6 +251,8 @@ class EchoportConfig(BaseServiceConfig):
             raise ValueError("site_path must be below home")
         if self.cleanup_enabled and not (self.minio_alias and self.minio_url):
             raise ValueError("cleanup_enabled requires minio_url")
+        if self.minio_account is not None and not self.cleanup_enabled:
+            raise ValueError("minio_account is the cleanup alias's account; it requires cleanup_enabled")
         for extra in self.rsync_additional_paths:
             if not (self.source_path / extra).is_dir():
                 raise ValueError(f"missing path for rsync deployment: {extra}")
@@ -249,13 +289,20 @@ def check_secrets(cfg: EchoportConfig, secrets: SecretValues) -> None:
     secrets.require(cfg.required_secret_keys)
     if cfg.basic_auth_enabled and cfg.traefik_enabled:
         secrets.require(("basic_auth_password",))
-    if cfg.cleanup_enabled:
+    if cfg.minio_account is not None:
+        secrets.require(("minio_secret_key",))
+        if "minio_access_key" in secrets:
+            raise ValueError("minio_access_key is the minio_account user, derived from its name; do not pass it")
+    elif cfg.cleanup_enabled:
         secrets.require(("minio_access_key", "minio_secret_key"))
     if any("\n" in value or "\r" in value for value in secrets.values()):
         raise ValueError("secret values must be single lines")
+    # The role's backup_account input check (the value is never printed).
+    if cfg.minio_account is not None and not 32 <= len(secrets["minio_secret_key"]) <= 40:
+        raise ValueError("minio_secret_key must be 32 to 40 characters for the MinIO account")
     placeholders = {"CHANGEME", DEV_SECRET_KEY}
     watched = ["django_secret_key"]
-    if cfg.cleanup_enabled:
+    if cfg.cleanup_enabled or cfg.minio_account is not None:
         watched.append("minio_secret_key")
     if cfg.basic_auth_enabled and cfg.traefik_enabled:
         watched.append("basic_auth_password")
@@ -276,6 +323,9 @@ def _templates() -> jinja2.Environment:
         autoescape=False,
     )
     env.filters["quote"] = shlex.quote
+    # Ansible's filters in the policy template of ``minio_deploy``.
+    env.filters["to_json"] = json.dumps
+    env.filters["bool"] = bool
     return env
 
 
@@ -327,6 +377,22 @@ def render_env(cfg: EchoportConfig, secrets: SecretValues) -> SecretContent:
     """``.env`` (the role's ``echoport.env.j2``)."""
 
     return SecretContent(render_role("echoport.env.j2", cfg, secrets))
+
+
+def render_policy(account: MinioAccount) -> str:
+    """The account's policy (``minio_deploy``'s ``backup-account-policy.json.j2``, whole bucket)."""
+
+    return (
+        _templates()
+        .get_template("backup-account-policy.json.j2")
+        .render(
+            minio_backup_account_bucket=account.bucket,
+            minio_backup_account_prefixes=[account.name],
+            minio_backup_account_whole_bucket=True,
+            minio_backup_account_allow_put=account.allow_put,
+            minio_backup_account_allow_delete=account.allow_delete,
+        )
+    )
 
 
 def traefik_config(cfg: EchoportConfig, secrets: SecretValues) -> TraefikRoute:
@@ -535,24 +601,112 @@ def _mc(cfg: EchoportConfig, *args: str) -> str:
     return _as_user(cfg.user, cfg.home, {}, [str(cfg.minio_mc_path), *args])
 
 
-def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
-    """The cleanup user's ``mc`` alias: set when it differs, then prove the bucket is reachable."""
+def _alias_wanted(cfg: EchoportConfig, secrets: SecretValues) -> dict[str, str]:
+    """The cleanup user's alias as ``mc alias import`` reads it."""
 
-    wanted = {
+    access = cfg.minio_account.user if cfg.minio_account is not None else secrets["minio_access_key"]
+    return {
         "url": cfg.minio_url,
-        "accessKey": secrets["minio_access_key"],
+        "accessKey": access,
         "secretKey": secrets["minio_secret_key"],
         "api": "s3v4",
         "path": "auto",
     }
-    digest = hashlib.sha256("\n".join((cfg.minio_url, wanted["accessKey"], wanted["secretKey"])).encode()).hexdigest()
+
+
+def _alias_digest(wanted: dict[str, str]) -> str:
+    return hashlib.sha256("\n".join((wanted["url"], wanted["accessKey"], wanted["secretKey"])).encode()).hexdigest()
+
+
+def _alias_check(cfg: EchoportConfig) -> str:
+    """Strict probe: a digest of the cleanup user's stored alias, or ``none``."""
+
     # mc reports a missing alias as JSON, which the probe reads as "none"; any
     # other failure of mc fails the probe.
     listing = (
         f"out=$( {_mc(cfg, '--json', 'alias', 'list', cfg.minio_alias)} ); rc=$?; "
         f'printf \'%s\\n\' "$out" | python3 -I -c {shlex.quote(MC_ALIAS_PROBE)} "$rc"'
     )
-    check = when_present([cfg.home], listing, otherwise="none")
+    return when_present([cfg.home], listing, otherwise="none")
+
+
+def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
+    """The playbook's ``backup_account`` include: the cleanup alias's own MinIO account.
+
+    Like the role, everything goes through root's admin alias and the secret
+    reaches ``mc`` on stdin. Unlike it, the policy is created and the user
+    upserted only when the probe finds them missing or different: the secret
+    counts as current when the cleanup user's alias already holds it and lists
+    the bucket with it.
+    """
+
+    account = cfg.minio_account
+    assert account is not None
+    mc, admin = str(cfg.minio_mc_path), account.admin_alias
+    document = render_policy(account)
+
+    def script(mode: str) -> str:
+        args = [mode, mc, admin, account.policy, account.user, document]
+        return shlex.join(["python3", "-I", "-c", MINIO_ACCOUNT, *args])
+
+    state = probe(script("probe"), name=f"MinIO account {account.name}")
+    found = dict(part.partition("=")[::2] for part in (state or "").split())
+    stored = (probe(_alias_check(cfg), name="mc alias of the cleanup user") or "").strip()
+    listing = f"{_mc(cfg, 'ls', f'{cfg.minio_alias}/{account.bucket}')} >/dev/null && echo ok"
+    login = _probe(when_present([cfg.home], listing, otherwise="no")).strip()
+    current = found.get("user") in ("attached", "unattached") and stored == _alias_digest(_alias_wanted(cfg, secrets))
+    current = current and login == "ok"
+
+    missing = shlex.quote(
+        f"mc admin info {admin} failed: the admin alias is not configured for root on this host "
+        "or MinIO is unreachable. Deploy MinIO with minio_bootstrap_with_mc first."
+    )
+    mark_read_only(
+        server.shell(
+            name=f"Require the MinIO admin alias {admin} of root",
+            commands=[f"{shlex.join([mc, 'admin', 'info', admin])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"],
+        )
+    )
+    files.directory(
+        name="Create MinIO policy directory", path=str(account.policy_dir), user="root", group="root", mode="0750"
+    )
+    policy_file = files.put(
+        name=f"Install MinIO policy {account.policy}",
+        src=StringIO(document),
+        dest=str(account.policy_path),
+        user="root",
+        group="root",
+        mode="0640",
+    )
+    server.shell(
+        name=f"Create or update MinIO policy {account.policy}",
+        commands=[shlex.join([mc, "admin", "policy", "create", admin, account.policy, str(account.policy_path)])],
+        _if=lambda: policy_file.did_change() or found.get("policy") != "ok",
+    )
+    failed = shlex.quote(
+        f"mc admin user add for {account.user} failed; mc output is withheld (it can quote the secret)"
+    )
+    add = shlex.join([mc, "admin", "user", "add", admin])
+    secret_stdin(
+        name=f"Create or update MinIO user of {account.name}",
+        # ``mc admin user add`` is an upsert; it reads the user and the secret from stdin.
+        command=f"{add} >/dev/null 2>&1 || {{ echo {failed} >&2; exit 1; }}",
+        content=SecretContent(f"{account.user}\n{secrets['minio_secret_key']}\n"),
+        _if=lambda: not current,
+    )
+    server.shell(
+        name=f"Attach MinIO policy {account.policy}",
+        commands=[shlex.join([mc, "admin", "policy", "attach", admin, account.policy, "--user", account.user])],
+        _if=lambda: found.get("user") != "attached",
+    )
+    mark_read_only(server.shell(name=f"Verify MinIO account {account.name}", commands=[script("verify")]))
+
+
+def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
+    """The cleanup user's ``mc`` alias: set when it differs, then prove the bucket is reachable."""
+
+    wanted = _alias_wanted(cfg, secrets)
+    check = _alias_check(cfg)
     found = probe(check, name="mc alias of the cleanup user")
     stored = (found or "").strip()
     # ``alias import`` opens its file itself; the user cannot reopen the
@@ -571,7 +725,7 @@ def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
         # Not ``alias set``, which would put the credentials in the host's process list.
         command=script,
         content=SecretContent(json.dumps(wanted)),
-        _if=lambda: stored != digest,
+        _if=lambda: stored != _alias_digest(wanted),
     )
     if found is None:
         verify_probe(check, name="mc alias of the cleanup user")
@@ -722,6 +876,8 @@ def deploy_echoport(cfg: EchoportConfig, secrets: SecretValues, rsync: RsyncRunn
     check_secrets(cfg, secrets)
     env_content = render_env(cfg, secrets)
     route = traefik_config(cfg, secrets) if cfg.traefik_enabled else None
+    if cfg.minio_account is not None:
+        _minio_account(cfg, secrets)
 
     system_user(cfg.user, group=cfg.group, home=cfg.home, directories=[cfg.site_path, cfg.cache_dir, cfg.logs_dir])
 

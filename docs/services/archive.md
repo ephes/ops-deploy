@@ -21,7 +21,7 @@ cfg = ArchiveConfig(
 deploy_archive(cfg, store.load(cfg.secrets))
 ```
 
-ops-control registers it with secrets from two SOPS files (see its
+ops-control registers it with secrets from `secrets/prod/archive.yml` (see its
 `docs/PYINFRA.md`).
 
 ## Secrets
@@ -33,7 +33,11 @@ ops-control registers it with secrets from two SOPS files (see its
 | `admin_email` | no (empty) | admin account |
 | `transcription_api_key` | no (the summary key) | `.env` |
 | `media_storage_secret_access_key` | with S3 storage | `.env`, MinIO account (stdin only) |
-| `minio_root_user`, `minio_root_password` | with S3 storage and `minio` | MinIO bootstrap (stdin only) |
+
+The MinIO root credentials are not used: the bucket, policy and account are
+managed through root's MinIO admin alias on the host (`MinioBootstrap.admin_alias`,
+`local`), as `deploy-archive.yml` does. `minio_root_user` and
+`minio_root_password` are refused if passed.
 
 These keys of the secrets file override the config when present, as the
 playbook's `archive_secrets.<key> | default(...)` does: `summary_api_base`,
@@ -41,7 +45,9 @@ playbook's `archive_secrets.<key> | default(...)` does: `summary_api_base`,
 `media_storage_*` settings (backend, location, bucket, endpoint, region,
 access key id, addressing style). They are validated like config fields.
 
-Values must be single lines; `CHANGEME` is refused. Errors name keys, never values.
+Values must be single lines (this includes the playbook's assert that the
+media secret has no CR or LF: it reaches the MinIO scripts as one line on
+stdin); `CHANGEME` is refused. Errors name keys, never values.
 
 ## Configuration (`ArchiveConfig`)
 
@@ -62,7 +68,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `media_storage_backend` | `FileSystemStorage` | or `storages.backends.s3.S3Storage` (needs bucket, endpoint, access key and the secret) |
 | `media_storage_location` | `<site>/archive-media` | also the local tree the S3 migration reads; a normalized absolute path of letters, digits, `._-/` (inside the site it becomes a sync exclude) |
 | `traefik_host`, `traefik_entrypoints`, `traefik_cert_resolver`, `traefik_middlewares` | role defaults | |
-| `minio` | `None` | `MinioBootstrap(policy_name, mc, root_env_file)`: the playbook's bucket and service-account step |
+| `minio` | `None` | `MinioBootstrap(policy_name, mc, admin_alias)`: the playbook's bucket and service-account step, through root's admin alias (`local`) |
 | `echoport` | `None` | `EchoportTarget(name, schedule, update_schedule, user, site_path)`: the playbook's backup target |
 
 ## What the deploy does
@@ -75,17 +81,21 @@ Defaults follow the role's `defaults/main.yml`.
 3. `.env` (systemd format) and `.env.shell` (double-quoted) through
    `secret_file`, `0600`. Written before the MinIO step (the role writes them
    later) so a new app secret also reruns the MinIO bootstrap.
-4. With S3 storage and `minio`: a read-only probe (root credentials from
-   MinIO's `/etc/default/minio`, the app's from `.env`, parsed and never
-   sourced) checks the bucket, private anonymous access, the policy document,
-   the account's only policy and that the app can list the bucket. Only if
-   something differs, or `.env` changed, the playbook's bootstrap script runs
-   with all credentials on stdin. `mc` gets credentials only through
-   `MC_HOST_<alias>` in its environment (and the app secret on stdin for
-   `admin user add`), never as arguments; besides the built-in policies the
-   playbook detaches, any other policy attached to the account is detached.
+4. With S3 storage and `minio`: a read-only check that `mc admin info local`
+   succeeds (the playbook's "Require the MinIO admin alias of root"; the
+   deploy fails here, before any MinIO change, without it). A read-only probe
+   (admin calls through `local`, the app's credentials from `.env`, parsed
+   and never sourced) checks the bucket, private anonymous access, the policy
+   document, the account's only policy and that the app can list the bucket.
+   Only if something differs, or `.env` changed, the playbook's bootstrap
+   script runs through `local`, with the app secret and the app's alias
+   (JSON for `mc alias import` into a temporary mc configuration) on stdin,
+   as the playbook passes them. No credential is ever an `mc` argument or in
+   its environment; besides the built-in policies the playbook detaches, any
+   other policy attached to the account is detached.
 5. With S3 storage: the playbook's local media migration (`mc mirror` and the
-   `.minio-migrated` marker), only when the local tree has files newer than
+   `.minio-migrated` marker, the app's alias imported from stdin into a
+   temporary mc configuration), only when the local tree has files newer than
    the marker.
 6. `sync_tree` of the checkout to `site/` (with `--delete`, owned by the
    service user).
@@ -139,7 +149,8 @@ Not ported: the git deploy method, `archive_traefik_enabled: false`, and the
 - `tests/test_archive.py` (fake connector): first run, converged second run
   (filesystem and S3), code change, `.env` rotation, admin password rotation,
   worker unit change, route drift, retired units, MinIO probe verdicts and app
-  secret rotation, pending media migration, Echoport upsert and missing
+  secret rotation, a missing admin alias of root, refused MinIO root
+  credentials and CR/LF in the media secret, pending media migration, Echoport upsert and missing
   Echoport, settings from the secrets file, validation, leak checks.
 - `tests/test_archive_parity.py`: byte parity with the role's templates.
 - `tests/smoke/test_archive_smoke.py` (`just smoke`, needs `ARCHIVE_SOURCE` or

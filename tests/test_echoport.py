@@ -13,13 +13,14 @@ from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.secrets import MissingSecretKeysError
 from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
-from ops_deploy.services.echoport import EchoportConfig, NyxmonCheck, deploy_echoport
+from ops_deploy.services.echoport import EchoportConfig, MinioAccount, NyxmonCheck, deploy_echoport
 from ops_deploy.services.echoport.deploy import (
     _django_hash,
     admin_current,
     check_secrets,
     nyxmon_checks,
     render_env,
+    render_policy,
     render_role,
     render_route,
     traefik_config,
@@ -42,9 +43,16 @@ SECRET_VALUES = {
     "admin_password": "echoport-fixture-admin-password",
     "admin_email": "admin@example.invalid",
     "basic_auth_password": "echoport-fixture-basic-pw",
-    "minio_access_key": "echoport-fixture-minio-user",
     "minio_secret_key": "echoport-fixture-minio-secret-0123",
 }
+# The MinIO account of the cleanup alias (deploy-echoport.yml's echoport-retention).
+ACCOUNT = MinioAccount()
+ACCOUNT_USER = "bk-" + hashlib.sha256(b"echoport-retention").hexdigest()[:17]
+POLICY_FILE = "/etc/minio/policies/backup-echoport-retention.json"
+ACCOUNT_PROBE = " probe /usr/local/bin/mc local backup-echoport-retention "
+ACCOUNT_LOGIN = "/usr/local/bin/mc ls minio/backups >/dev/null && echo ok"
+# Without an account: the alias takes both credentials from the secrets.
+ROOT_STYLE = {**SECRET_VALUES, "minio_access_key": "echoport-fixture-minio-user"}
 UV_SYNC = (
     f"cd {SITE} && runuser -u echoport -- env HOME={HOME} UV_PROJECT_ENVIRONMENT={SITE}/.venv "
     "/usr/local/bin/uv sync --frozen --no-dev --no-default-groups --python 3.13"
@@ -64,6 +72,8 @@ CRONS = {
     "staging": "Echoport staging DB refresh",
 }
 READ_ONLY = [
+    "Deploy echoport | Require the MinIO admin alias local of root",
+    "Deploy echoport | Verify MinIO account echoport-retention",
     "Deploy echoport | Verify the cleanup user can reach the MinIO bucket",
     "Deploy echoport | Check Echoport listens only on 127.0.0.1:10018",
 ]
@@ -90,6 +100,7 @@ def make_cfg(tmp_path: Path, **overrides: Any) -> EchoportConfig:
         "staging_db_refresh_enabled": True,
         "staging_db_refresh_targets": ("homepage-production-db",),
         "nyxmon": NyxmonCheck(),
+        "minio_account": ACCOUNT,
         **overrides,
     }
     return EchoportConfig(**fields)
@@ -102,7 +113,8 @@ def cfg(tmp_path: Path) -> EchoportConfig:
 
 def values(cfg: EchoportConfig, **changes: str) -> SecretValues:
     assert cfg.secrets is not None
-    return SecretValues(cfg.secrets, {**SECRET_VALUES, **changes})
+    base = SECRET_VALUES if cfg.minio_account is not None else ROOT_STYLE
+    return SecretValues(cfg.secrets, {**base, **changes})
 
 
 def route_text(cfg: EchoportConfig, secrets: SecretValues) -> str:
@@ -120,15 +132,18 @@ def converged(cfg: EchoportConfig, secrets: SecretValues, **drift: str) -> dict[
         f"{SITE}/pyproject.toml": (cfg.source_path / "pyproject.toml").read_text(),
         f"{SITE}/uv.lock": (cfg.source_path / "uv.lock").read_text(),
     }
+    if cfg.minio_account is not None:
+        content[POLICY_FILE] = render_policy(cfg.minio_account)
     content.update(drift)
     responses: dict[str, Any] = {**fakehost.LINUX, **fakehost.system_account("echoport", HOME)}
     for path in (HOME, SITE, f"{SITE}/cache", f"{HOME}/logs", f"{SITE}/src", f"{SITE}/src/backups"):
         responses.update(fakehost.directory(path, user="echoport"))
     for path in ("/etc/systemd/system", "/etc/traefik/dynamic"):
         responses.update(fakehost.directory(path))
+    responses.update(fakehost.directory("/etc/minio/policies", mode="drwxr-x---"))
     for path, text in content.items():
         owner = "echoport" if path.startswith(SITE) else "root"
-        mode = {f"{SITE}/.env": "-rw-------", REFRESH: "-rwxr-x---"}.get(path, "-rw-r--r--")
+        mode = {f"{SITE}/.env": "-rw-------", REFRESH: "-rwxr-x---", POLICY_FILE: "-rw-r-----"}.get(path, "-rw-r--r--")
         responses.update(fakehost.file(path, text, user=owner, mode=mode))
     for log in ("scheduler", "cleanup", "staging-db-refresh"):
         responses.update(fakehost.file(f"{HOME}/logs/{log}.log", "", user="echoport", mode="-rw-r-----"))
@@ -145,11 +160,10 @@ def converged(cfg: EchoportConfig, secrets: SecretValues, **drift: str) -> dict[
     ]
     for name in CRONS.values():
         responses[f'"name":"{name}"'] = ["unchanged"]
-    wanted = json.dumps(
-        {"url": cfg.minio_url, "accessKey": secrets["minio_access_key"], "secretKey": secrets["minio_secret_key"]}
-    )
-    del wanted
-    responses[MC_PROBE] = [digest("\n".join((cfg.minio_url, secrets["minio_access_key"], secrets["minio_secret_key"])))]
+    access = ACCOUNT_USER if cfg.minio_account is not None else secrets["minio_access_key"]
+    responses[MC_PROBE] = [digest("\n".join((cfg.minio_url, access, secrets["minio_secret_key"])))]
+    responses[ACCOUNT_PROBE] = ["policy=ok user=attached"]
+    responses[ACCOUNT_LOGIN] = ["ok"]
     responses[NYXMON_DB_PROBE] = ["present"]
     responses[NYXMON_CHECK_PROBE] = ["changed=false"]
     return responses
@@ -172,6 +186,10 @@ def changed_names(run: FakeRun) -> set[str]:
     return {name.removeprefix("Deploy echoport | ") for name in run.mutating_changed_ops}
 
 
+def cron_edits(run: FakeRun) -> list[str]:
+    return [c for c in run.executed_commands if c.startswith("python3 -I -c ") and '"job"' in shlex.split(c)[-1]]
+
+
 def test_first_run_installs_everything(cfg: EchoportConfig) -> None:
     secrets = values(cfg)
     run = deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
@@ -188,16 +206,29 @@ def test_first_run_installs_everything(cfg: EchoportConfig) -> None:
     # Like the role's django_manage: python manage.py in the site root as the service user.
     assert migrate.startswith(f"cd {SITE} && runuser -u echoport -- env HOME={HOME} DJANGO_SETTINGS_MODULE=")
     assert f"exec {SITE}/.venv/bin/python manage.py migrate --noinput" in migrate
-    # The env file, admin credentials and mc alias only travel on stdin.
-    assert len(run.stdin) == 3
+    # The env file, admin credentials, MinIO account and mc alias only travel on stdin.
+    assert len(run.stdin) == 4
     stdin = dict(run.stdin)
+    user_add = next(c for c in commands if "admin user add local" in c)
+    assert stdin[user_add] == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
+    # The account first, through root's admin alias, before anything else.
+    account_ops = [
+        "/usr/local/bin/mc admin info local",
+        "/usr/local/bin/mc admin policy create local backup-echoport-retention " + POLICY_FILE,
+        user_add,
+        f"/usr/local/bin/mc admin policy attach local backup-echoport-retention --user {ACCOUNT_USER}",
+    ]
+    positions = [next(i for i, c in enumerate(commands) if c.startswith(op)) for op in account_ops]
+    assert positions == sorted(positions)
+    assert positions[-1] < commands.index("useradd -d /home/echoport -s /bin/bash -g echoport -r -M echoport")
+    assert run.upload(POLICY_FILE).decode() == render_policy(ACCOUNT)
     assert stdin[admin] == (
         f"{SECRET_VALUES['admin_username']}\n{SECRET_VALUES['admin_email']}\n{SECRET_VALUES['admin_password']}\n"
     )
     alias = next(c for c in commands if "alias import minio" in c)
     assert json.loads(stdin[alias]) == {
         "url": "http://127.0.0.1:9001",
-        "accessKey": SECRET_VALUES["minio_access_key"],
+        "accessKey": ACCOUNT_USER,
         "secretKey": SECRET_VALUES["minio_secret_key"],
         "api": "s3v4",
         "path": "auto",
@@ -362,7 +393,7 @@ def test_cron_drift_rewrites_only_that_entry(cfg: EchoportConfig, job: str) -> N
     run = deploy(cfg, secrets, responses)
 
     assert changed_names(run) == {f"Cron job {CRONS[job]}: present"}
-    [command] = [c for c in run.executed_commands if c.startswith("python3 -I -c ")]
+    [command] = cron_edits(run)
     params = json.loads(shlex.split(command)[-1])
     assert params["apply"] is True
     assert params["name"] == CRONS[job]
@@ -376,7 +407,7 @@ def test_cron_jobs_match_the_roles_commands(cfg: EchoportConfig) -> None:
         responses[f'"name":"{name}"'] = ["pending"]
     run = deploy(cfg, secrets, responses)
 
-    jobs = [json.loads(shlex.split(c)[-1]) for c in run.executed_commands if c.startswith("python3 -I -c ")]
+    jobs = [json.loads(shlex.split(c)[-1]) for c in cron_edits(run)]
     by_name = {job["name"]: job for job in jobs}
     scheduled = by_name[CRONS["scheduled"]]
     assert (scheduled["minute"], scheduled["hour"]) == ("*/5", "*")
@@ -394,7 +425,12 @@ def test_cron_jobs_match_the_roles_commands(cfg: EchoportConfig) -> None:
 
 def test_disabled_jobs_are_removed_not_added(tmp_path: Path) -> None:
     cfg = make_cfg(
-        tmp_path, scheduler_enabled=False, cleanup_enabled=False, minio_url="", staging_db_refresh_enabled=False
+        tmp_path,
+        scheduler_enabled=False,
+        cleanup_enabled=False,
+        minio_url="",
+        staging_db_refresh_enabled=False,
+        minio_account=None,
     )
     secrets = values(cfg)
     responses = converged(cfg, secrets)
@@ -406,7 +442,7 @@ def test_disabled_jobs_are_removed_not_added(tmp_path: Path) -> None:
         f"Cron job {name}: absent" for name in CRONS.values()
     }
     assert not any(path.endswith(".log") or path == REFRESH for path in run.uploaded_paths)
-    assert not any("alias import" in c for c in run.executed_commands)
+    assert not any("alias import" in c or "mc admin" in c for c in run.executed_commands)
 
 
 def test_missing_log_files_and_staging_script_are_created(cfg: EchoportConfig) -> None:
@@ -423,13 +459,19 @@ def test_missing_log_files_and_staging_script_are_created(cfg: EchoportConfig) -
     assert run.upload(REFRESH).decode() == render_role("staging-db-refresh.sh.j2", cfg, secrets)
 
 
-def test_mc_alias_is_set_when_it_differs(cfg: EchoportConfig) -> None:
+@pytest.mark.parametrize("account", [True, False], ids=["scoped account", "secrets only"])
+def test_mc_alias_is_set_when_it_differs(tmp_path: Path, account: bool) -> None:
+    cfg = make_cfg(tmp_path, minio_account=ACCOUNT if account else None)
     secrets = values(cfg)
     for stored in (["none"], [digest("other")], []):
         run = deploy(cfg, secrets, {**converged(cfg, secrets), MC_PROBE: stored})
 
-        assert changed_names(run) == {"Configure mc alias for the cleanup user"}
-        command, stdin = run.stdin[0]
+        # An alias without the secret does not prove the account holds it: upserted too.
+        expected = {"Configure mc alias for the cleanup user"}
+        if account:
+            expected.add("Create or update MinIO user of echoport-retention")
+        assert changed_names(run) == expected
+        command, stdin = run.stdin[-1]
         # mc reads a private file the service user owns, not the root-owned stdin pipe.
         assert command.endswith(
             f'runuser -u echoport -- env HOME={HOME} /usr/local/bin/mc alias import minio "$d/alias.json"'
@@ -443,11 +485,11 @@ def test_mc_alias_is_set_when_it_differs(cfg: EchoportConfig) -> None:
 
 def test_unreachable_bucket_fails_the_deploy(cfg: EchoportConfig) -> None:
     secrets = values(cfg)
-    responses = {**converged(cfg, secrets), "mc ls minio/backups": {"success": False}}
+    responses = {**converged(cfg, secrets), "mc ls minio/backups >/dev/null": {"success": False}}
     run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
-    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[0]
+    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[2]
 
 
 def test_pending_migration_runs_without_a_code_change(cfg: EchoportConfig) -> None:
@@ -539,7 +581,7 @@ def test_a_listener_check_failure_fails_the_deploy(cfg: EchoportConfig) -> None:
     run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
-    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[1]
+    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[3]
 
 
 def test_secrets_never_recorded(cfg: EchoportConfig) -> None:
@@ -548,6 +590,7 @@ def test_secrets_never_recorded(cfg: EchoportConfig) -> None:
     run = deploy(cfg, secrets, responses, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
 
     text = run.all_text()
+    assert ACCOUNT_USER in text
     for key, value in SECRET_VALUES.items():
         if key not in ("admin_username", "admin_email", "fastdeploy_base_url"):
             assert value not in text, key
@@ -598,7 +641,6 @@ def test_missing_and_placeholder_secrets_are_refused(cfg: EchoportConfig) -> Non
     for change in (
         {"django_secret_key": "CHANGEME"},
         {"django_secret_key": "development-secret-key-change-in-production"},
-        {"minio_secret_key": "CHANGEME"},
         {"basic_auth_password": "CHANGEME"},
     ):
         with pytest.raises(ValueError, match=f"placeholders: {next(iter(change))}"):
@@ -608,7 +650,7 @@ def test_missing_and_placeholder_secrets_are_refused(cfg: EchoportConfig) -> Non
 
 
 def test_without_cleanup_and_basic_auth_those_secrets_are_not_required(tmp_path: Path) -> None:
-    cfg = make_cfg(tmp_path, cleanup_enabled=False, basic_auth_enabled=False, minio_url="")
+    cfg = make_cfg(tmp_path, cleanup_enabled=False, basic_auth_enabled=False, minio_url="", minio_account=None)
     keys = {
         k: v
         for k, v in SECRET_VALUES.items()
@@ -644,3 +686,106 @@ def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: EchoportC
     assert verify.changed
     assert verify.read_only
     assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)
+
+
+# -- the scoped MinIO account (deploy-echoport.yml's backup_account include) ----
+
+
+ACCOUNT_STEPS = {
+    "policy": "Create or update MinIO policy backup-echoport-retention",
+    "user": "Create or update MinIO user of echoport-retention",
+    "attach": "Attach MinIO policy backup-echoport-retention",
+}
+
+
+@pytest.mark.parametrize(
+    ("state", "steps"),
+    [
+        ("policy=differs user=attached", {"policy"}),
+        ("policy=missing user=attached", {"policy"}),
+        ("policy=ok user=unattached", {"attach"}),
+        ("policy=ok user=missing", {"user", "attach"}),
+        ("policy=missing user=missing", {"policy", "user", "attach"}),
+    ],
+)
+def test_account_steps_run_only_for_what_differs(cfg: EchoportConfig, state: str, steps: set[str]) -> None:
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, {**converged(cfg, secrets), ACCOUNT_PROBE: [state]})
+
+    assert changed_names(run) == {ACCOUNT_STEPS[step] for step in steps}
+    assert all("minio-root" not in c and "MINIO_ROOT" not in c for c in run.executed_commands)
+
+
+def test_policy_file_drift_reinstalls_and_recreates_the_policy(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{POLICY_FILE: "{}\n"}))
+
+    assert changed_names(run) == {"Install MinIO policy backup-echoport-retention", ACCOUNT_STEPS["policy"]}
+    assert run.upload(POLICY_FILE).decode() == render_policy(ACCOUNT)
+
+
+def test_a_secret_the_alias_cannot_log_in_with_is_upserted(cfg: EchoportConfig) -> None:
+    # The alias holds the configured secret but MinIO refuses it (changed by hand).
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, {**converged(cfg, secrets), ACCOUNT_LOGIN: []})
+
+    assert changed_names(run) == {ACCOUNT_STEPS["user"]}
+    [(command, stdin)] = run.stdin
+    assert command.startswith("/usr/local/bin/mc admin user add local >/dev/null 2>&1 || ")
+    assert stdin == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
+
+
+def test_secret_rotation_upserts_the_user_then_the_alias(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    rotated = values(cfg, minio_secret_key="echoport-fixture-minio-rotated-0123")
+    run = deploy(cfg, rotated, converged(cfg, secrets))
+
+    assert changed_names(run) == {ACCOUNT_STEPS["user"], "Configure mc alias for the cleanup user"}
+    commands = run.executed_commands
+    user_add = next(i for i, c in enumerate(commands) if "admin user add local" in c)
+    alias = next(i for i, c in enumerate(commands) if "alias import minio" in c)
+    assert user_add < alias
+
+
+def test_without_root_admin_alias_nothing_changes_on_minio(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    responses = {
+        **converged(cfg, secrets),
+        "/usr/local/bin/mc admin info local": {"success": False},
+        ACCOUNT_PROBE: ["policy=missing user=missing"],
+    }
+    run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[0]
+    assert not any("mc admin policy" in c or "mc admin user" in c for c in run.executed_commands)
+    assert run.stdin == []
+
+
+def test_an_account_that_fails_verification_fails_the_deploy(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    responses = {**converged(cfg, secrets), " verify /usr/local/bin/mc local backup-": {"success": False}}
+    run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[1]
+
+
+def test_a_failing_account_probe_runs_every_account_step(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, {**converged(cfg, secrets), ACCOUNT_PROBE: [FAILED]})
+
+    assert changed_names(run) == set(ACCOUNT_STEPS.values())
+    assert run.op(READ_ONLY[1]).changed
+
+
+def test_account_secrets_follow_the_roles_input_check(cfg: EchoportConfig) -> None:
+    check_secrets(cfg, values(cfg))
+    for short in ("x" * 31, "x" * 41):
+        with pytest.raises(ValueError, match="32 to 40 characters"):
+            check_secrets(cfg, values(cfg, minio_secret_key=short))
+    # The access key is the derived account user; root credentials cannot slip in.
+    with pytest.raises(ValueError, match="minio_access_key"):
+        check_secrets(cfg, values(cfg, minio_access_key="minio-root-user"))
+    with pytest.raises(ConfigValidationError, match="requires cleanup_enabled"):
+        make_cfg(cfg.source_path.parent / "other", cleanup_enabled=False)

@@ -1,19 +1,11 @@
 # Port of "Migrate local archive-media tree into MinIO when needed"
-# (deploy-archive.yml). bash -c <this> media-migrate MC ENDPOINT BUCKET LOCAL_DIR [probe]
+# (deploy-archive.yml). bash -c <this> media-migrate MC BUCKET LOCAL_DIR [probe]
 # With "probe" it only prints the state (missing, empty, migrated or pending)
-# and needs no credentials. Otherwise standard input holds the app access key
-# and secret key (one per line).
+# and needs no credentials. Otherwise standard input holds the app's mc alias
+# as JSON (one line), so no credential is on the deploy's command line.
 set -euo pipefail
-mc="$1" endpoint="$2" bucket="$3" local_dir="$4" mode="${5:-migrate}"
+mc="$1" bucket="$2" local_dir="$3" mode="${4:-migrate}"
 marker="${local_dir}/.minio-migrated"
-# Credentials reach mc through MC_HOST_<alias> (its environment, readable
-# only by root), never through its arguments.
-mc_host() {
-  local creds
-  creds="$(MC_USER="$2" MC_SECRET="$3" python3 -c 'import os, urllib.parse as u
-print(":".join(u.quote(os.environ[k], safe="") for k in ("MC_USER", "MC_SECRET")))')"
-  export "MC_HOST_$1=${endpoint%%://*}://${creds}@${endpoint#*://}"
-}
 
 if [[ ! -d "$local_dir" ]]; then
   echo "archive_media_local_dir_missing"
@@ -33,12 +25,11 @@ if [[ "$mode" == probe ]]; then
   exit 0
 fi
 
-IFS= read -r app_key
-IFS= read -r app_secret
+IFS= read -r app_alias
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 export MC_CONFIG_DIR="$tmpdir"
-mc_host archive_app "$app_key" "$app_secret"
-"$mc" mirror --exclude '.minio-migrated' "${local_dir}/" "archive_app/${bucket}/" >/dev/null
+printf '%s\n' "$app_alias" | "$mc" alias import archive-app >/dev/null
+"$mc" mirror --exclude '.minio-migrated' "${local_dir}/" "archive-app/${bucket}/" >/dev/null
 touch "$marker"
 echo "archive_media_migrated_files=${file_count}"

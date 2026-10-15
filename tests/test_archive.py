@@ -1,6 +1,7 @@
 """Deploy-level scenarios for archive against the fake connector."""
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -25,9 +26,17 @@ SECRET_VALUES = {
 }
 S3_SECRETS = {
     "media_storage_secret_access_key": "archive-fixture-s3-secret-0123",
-    "minio_root_user": "archive-fixture-minio-root",
-    "minio_root_password": "archive-fixture-minio-root-password",
 }
+APP_ALIAS = json.dumps(
+    {
+        "url": "http://127.0.0.1:9001",
+        "accessKey": "archive-media",
+        "secretKey": S3_SECRETS["media_storage_secret_access_key"],
+        "api": "s3v4",
+        "path": "auto",
+    }
+)
+ADMIN_CHECK = "/usr/local/bin/mc admin info local >/dev/null ||"
 UNITS = {
     "archive": "/etc/systemd/system/archive.service",
     "archive-metadata-worker": "/etc/systemd/system/archive-metadata-worker.service",
@@ -195,6 +204,9 @@ def test_s3_second_run_changes_nothing_mutating(tmp_path: Path) -> None:
 
     assert run.mutating_changed_ops == []
     assert run.stdin == []
+    # Root's admin alias is required on every run, as the playbook asserts it.
+    assert run.changed_ops == ["Deploy archive | Require the MinIO admin alias local of root", *READ_ONLY]
+    assert run.executed_commands[0].startswith(ADMIN_CHECK)
     # The probes ran, read-only, with no secret on their command lines.
     facts = "\n".join(run.fact_commands)
     for probe in (MINIO_PROBE, MEDIA_PROBE, ECHOPORT_PROBE, ADMIN_PROBE):
@@ -278,11 +290,12 @@ def test_minio_bootstrap_runs_when_the_probe_disagrees(tmp_path: Path, verdict: 
 
     assert changed_names(run) == {"Ensure MinIO media bucket and service account"}
     command, stdin = run.stdin[0]
-    assert "minio-bootstrap /usr/local/bin/mc http://127.0.0.1:9001 archive-media archive-media-rw" in command
-    assert stdin == (
-        f"{S3_SECRETS['minio_root_user']}\n{S3_SECRETS['minio_root_password']}\n"
-        f"archive-media\n{S3_SECRETS['media_storage_secret_access_key']}\n"
-    )
+    # Root's admin alias, the bucket, the app user and its policy; no credential.
+    assert command.endswith("minio-bootstrap /usr/local/bin/mc local archive-media archive-media archive-media-rw")
+    # The playbook's stdin: the app secret, then the app's alias as JSON.
+    assert stdin == f"{S3_SECRETS['media_storage_secret_access_key']}\n{APP_ALIAS}\n"
+    commands = run.executed_commands
+    assert commands.index(next(c for c in commands if c.startswith(ADMIN_CHECK))) < commands.index(command)
 
 
 def test_new_app_credentials_rerun_the_minio_bootstrap(tmp_path: Path) -> None:
@@ -305,8 +318,8 @@ def test_pending_local_media_is_mirrored_into_minio(tmp_path: Path) -> None:
 
     assert changed_names(run) == {"Migrate local archive-media into MinIO"}
     command, stdin = run.stdin[0]
-    assert command.endswith(f"media-migrate /usr/local/bin/mc http://127.0.0.1:9001 archive-media {SITE}/archive-media")
-    assert stdin == f"archive-media\n{S3_SECRETS['media_storage_secret_access_key']}\n"
+    assert command.endswith(f"media-migrate /usr/local/bin/mc archive-media {SITE}/archive-media")
+    assert stdin == f"{APP_ALIAS}\n"
 
 
 def test_echoport_target_is_upserted_when_pending(tmp_path: Path) -> None:
@@ -374,15 +387,45 @@ def test_weak_or_placeholder_secrets_are_refused(cfg: ArchiveConfig) -> None:
             run_deploy_fake(deploy_archive, cfg, values(cfg, **change), rsync=RecordingRsyncRunner())
 
 
-def test_s3_needs_its_settings_and_minio_credentials(tmp_path: Path) -> None:
+def test_s3_needs_its_settings_but_no_minio_root_credentials(tmp_path: Path) -> None:
     cfg = s3_cfg(tmp_path)
     with pytest.raises(ValueError, match="media_storage_secret_access_key"):
         resolve(cfg, values(cfg, media_storage_secret_access_key=""))
     assert cfg.secrets is not None
-    with pytest.raises(KeyError):
-        resolve(cfg, SecretValues(cfg.secrets, {**SECRET_VALUES, "media_storage_secret_access_key": "x" * 30}))
+    resolve(cfg, SecretValues(cfg.secrets, {**SECRET_VALUES, "media_storage_secret_access_key": "x" * 30}))
     with pytest.raises(ValueError, match="media_storage_bucket_name"):
         resolve(make_cfg(tmp_path / "b", media_storage_backend="storages.backends.s3.S3Storage"), values(cfg))
+
+
+@pytest.mark.parametrize("key", ["minio_root_user", "minio_root_password"])
+def test_minio_root_credentials_are_refused(tmp_path: Path, key: str) -> None:
+    # deploy-archive.yml no longer loads secrets/prod/minio.yml.
+    cfg = s3_cfg(tmp_path)
+    with pytest.raises(ValueError, match=f"do not pass them: {key}"):
+        run_deploy_fake(deploy_archive, cfg, values(cfg, **{key: "minio-root-value"}), rsync=RecordingRsyncRunner())
+
+
+@pytest.mark.parametrize("value", ["secret\rtail-0123456789", "secret\ntail-0123456789"])
+def test_a_media_secret_with_cr_or_lf_is_refused(tmp_path: Path, value: str) -> None:
+    # The playbook's assert: the secret reaches the bootstrap as one line on stdin.
+    cfg = s3_cfg(tmp_path)
+    with pytest.raises(ValueError, match="single lines"):
+        run_deploy_fake(
+            deploy_archive, cfg, values(cfg, media_storage_secret_access_key=value), rsync=RecordingRsyncRunner()
+        )
+
+
+def test_without_root_admin_alias_minio_is_not_touched(tmp_path: Path) -> None:
+    cfg = s3_cfg(tmp_path)
+    secrets = values(cfg)
+    responses = {**converged(cfg, secrets), MINIO_PROBE: ["bootstrap:admin"], ADMIN_CHECK: {"success": False}}
+    run = run_deploy_fake(deploy_archive, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert next(op.name for op in run.ops if not op.succeeded) == (
+        "Deploy archive | Require the MinIO admin alias local of root"
+    )
+    assert run.stdin == []
 
 
 def test_config_rejects_bad_values(tmp_path: Path) -> None:
@@ -431,8 +474,15 @@ def test_mc_never_gets_credentials_as_arguments() -> None:
     for script in (MINIO_BOOTSTRAP, MINIO_PROBE, MEDIA_MIGRATE):
         assert "alias set" not in script
         assert '"$app_secret" >' not in script
-        # The URL-encoding helper gets the credentials through its environment.
-        assert 'MC_USER="$2" MC_SECRET="$3" python3 -c' in script
+        # No credentials in mc's environment either: aliases come from stdin
+        # (``alias import``), admin calls use root's configured admin alias.
+        assert "MC_HOST" not in script
+        # Nor in any helper's environment: python reads .env itself.
+        assert not re.search(r"[A-Z_]+=\"\$app_secret\"", script)
+        assert "alias import" in script
+        assert "/etc/default/minio" not in script
+        assert "MINIO_ROOT" not in script
+    assert 'printf \'%s\\n%s\\n\' "$user" "$app_secret" | "$mc" admin user add "$admin"' in MINIO_BOOTSTRAP
 
 
 def test_media_location_must_be_a_literal_path(tmp_path: Path) -> None:

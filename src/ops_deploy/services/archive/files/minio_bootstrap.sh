@@ -1,25 +1,19 @@
 # Port of "Ensure Archive media bucket and service account exist in MinIO"
-# (deploy-archive.yml). bash -c <this> minio-bootstrap MC ENDPOINT BUCKET POLICY;
-# standard input: root user, root password, app access key, app secret key
-# (one per line), so no credential is on the deploy's command line.
+# (deploy-archive.yml). bash -c <this> minio-bootstrap MC ADMIN BUCKET USER POLICY;
+# standard input: the app secret key, then the app's mc alias as JSON (one per
+# line), so no credential is on the deploy's command line. Bucket, policy and
+# user are managed through ADMIN, root's MinIO admin alias (the MinIO deploy
+# configured it); the MinIO root credentials are never handled here.
 set -euo pipefail
-mc="$1" endpoint="$2" bucket="$3" policy="$4"
-IFS= read -r root_user
-IFS= read -r root_password
-IFS= read -r app_key
+mc="$1" admin="$2" bucket="$3" user="$4" policy="$5"
 IFS= read -r app_secret
+IFS= read -r app_alias
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
-export MC_CONFIG_DIR="$tmpdir"
 policy_file="$tmpdir/archive-media-policy.json"
-# Credentials reach mc through MC_HOST_<alias> (its environment, readable
-# only by root), never through its arguments.
-mc_host() {
-  local creds
-  creds="$(MC_USER="$2" MC_SECRET="$3" python3 -c 'import os, urllib.parse as u
-print(":".join(u.quote(os.environ[k], safe="") for k in ("MC_USER", "MC_SECRET")))')"
-  export "MC_HOST_$1=${endpoint%%://*}://${creds}@${endpoint#*://}"
-}
+# The app's alias lives in a private, temporary mc configuration.
+app_mc() { MC_CONFIG_DIR="$tmpdir/mc" "$mc" "$@"; }
+add_user() { printf '%s\n%s\n' "$user" "$app_secret" | "$mc" admin user add "$admin" >/dev/null; }
 cat >"$policy_file" <<JSON
 {
   "Version": "2012-10-17",
@@ -52,40 +46,38 @@ cat >"$policy_file" <<JSON
 }
 JSON
 
-mc_host archive_root "$root_user" "$root_password"
-
-if "$mc" ls "archive_root/$bucket" >/dev/null 2>&1; then
+if "$mc" ls "$admin/$bucket" >/dev/null 2>&1; then
   echo "archive_media_bucket_exists"
 else
-  "$mc" mb "archive_root/$bucket" >/dev/null
+  "$mc" mb "$admin/$bucket" >/dev/null
   echo "archive_media_bucket_created"
 fi
-"$mc" anonymous set private "archive_root/$bucket" >/dev/null
+"$mc" anonymous set private "$admin/$bucket" >/dev/null
 
-"$mc" admin policy detach archive_root "$policy" --user "$app_key" >/dev/null 2>&1 || true
-"$mc" admin policy remove archive_root "$policy" >/dev/null 2>&1 || true
-"$mc" admin policy create archive_root "$policy" "$policy_file" >/dev/null
+"$mc" admin policy detach "$admin" "$policy" --user "$user" >/dev/null 2>&1 || true
+"$mc" admin policy remove "$admin" "$policy" >/dev/null 2>&1 || true
+"$mc" admin policy create "$admin" "$policy" "$policy_file" >/dev/null
 
-if ! "$mc" admin user info archive_root "$app_key" >/dev/null 2>&1; then
+if ! "$mc" admin user info "$admin" "$user" >/dev/null 2>&1; then
   echo "archive_media_user_created"
-  printf '%s\n' "$app_secret" | "$mc" admin user add archive_root "$app_key" >/dev/null
+  add_user
 fi
 
 # Only this policy stays attached (the playbook detaches the built-in ones;
 # any other attachment is removed too, so the probe can converge).
-attached="$("$mc" admin user info --json archive_root "$app_key" \
+attached="$("$mc" admin user info --json "$admin" "$user" \
   | python3 -c 'import json, sys; print("\n".join(p for p in (json.load(sys.stdin).get("policyName") or "").split(",") if p))')"
 while IFS= read -r other; do
   [[ -z "$other" || "$other" == "$policy" ]] && continue
-  "$mc" admin policy detach archive_root "$other" --user "$app_key" >/dev/null
+  "$mc" admin policy detach "$admin" "$other" --user "$user" >/dev/null
 done <<<"$attached"
-"$mc" admin policy attach archive_root "$policy" --user "$app_key" >/dev/null
+"$mc" admin policy attach "$admin" "$policy" --user "$user" >/dev/null
 
-mc_host archive_app "$app_key" "$app_secret"
-if ! "$mc" ls "archive_app/$bucket" >/dev/null 2>&1; then
-  "$mc" admin user remove archive_root "$app_key" >/dev/null 2>&1 || true
-  printf '%s\n' "$app_secret" | "$mc" admin user add archive_root "$app_key" >/dev/null
-  "$mc" admin policy attach archive_root "$policy" --user "$app_key" >/dev/null
+printf '%s\n' "$app_alias" | app_mc alias import archive-app >/dev/null
+if ! app_mc ls "archive-app/$bucket" >/dev/null 2>&1; then
+  "$mc" admin user remove "$admin" "$user" >/dev/null 2>&1 || true
+  add_user
+  "$mc" admin policy attach "$admin" "$policy" --user "$user" >/dev/null
   echo "archive_media_user_recreated"
 fi
-"$mc" ls "archive_app/$bucket" >/dev/null
+app_mc ls "archive-app/$bucket" >/dev/null

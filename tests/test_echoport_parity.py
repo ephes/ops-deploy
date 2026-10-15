@@ -7,6 +7,8 @@ with the variables ``deploy-echoport.yml`` passes, the way Ansible's
 ``template`` module does, and compares with what the deploy writes.
 """
 
+import hashlib
+import json
 import shlex
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,14 @@ import pytest
 from ops_deploy.core import SecretRef, SecretValues
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.echoport import EchoportConfig
-from ops_deploy.services.echoport.deploy import render_env, render_role, render_route, traefik_config
+from ops_deploy.services.echoport.deploy import (
+    MinioAccount,
+    render_env,
+    render_policy,
+    render_role,
+    render_route,
+    traefik_config,
+)
 from tests.echoport_fixtures import make_source
 
 VENDORED = Path(__file__).parent / "parity" / "ansible"
@@ -180,8 +189,46 @@ def test_route_is_byte_identical(tmp_path: Path, overrides: dict[str, Any], role
         assert f'"admin:{auth_hash}"' in expected
 
 
+@pytest.mark.parametrize(
+    ("allow_put", "allow_delete"), [(False, True), (True, False), (False, False)], ids=["retention", "put", "read"]
+)
+def test_account_policy_is_byte_identical(allow_put: bool, allow_delete: bool) -> None:
+    # deploy-echoport.yml's include of minio_deploy's backup_account (whole
+    # bucket), rendered with Ansible's to_json and bool filters.
+    account = MinioAccount(allow_put=allow_put, allow_delete=allow_delete)
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(VENDORED),
+        undefined=jinja2.StrictUndefined,
+        trim_blocks=True,
+        keep_trailing_newline=True,
+    )
+    env.filters["to_json"] = json.dumps
+    env.filters["bool"] = lambda value: value if isinstance(value, bool) else str(value).lower() in ("1", "true", "yes")
+    expected = env.get_template("minio_deploy__backup-account-policy.json.j2").render(
+        minio_backup_account_bucket="backups",
+        minio_backup_account_prefixes=["echoport-retention"],
+        minio_backup_account_whole_bucket="true",
+        minio_backup_account_allow_put=allow_put,
+        minio_backup_account_allow_delete=allow_delete,
+    )
+
+    assert render_policy(account) == expected
+    statements = json.loads(expected)["Statement"]
+    assert statements[1] == {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": ["arn:aws:s3:::backups"]}
+    actions = ["s3:GetObject", *(["s3:PutObject"] if allow_put else []), *(["s3:DeleteObject"] if allow_delete else [])]
+    assert statements[2] == {"Effect": "Allow", "Action": actions, "Resource": ["arn:aws:s3:::backups/*"]}
+
+
+def test_account_user_is_the_playbooks_derived_name() -> None:
+    # backup_minio_account_user: "bk-{{ (backup_minio_account_target | hash('sha256'))[:17] }}"
+    assert MinioAccount().user == "bk-" + hashlib.sha256(b"echoport-retention").hexdigest()[:17]
+    assert len(MinioAccount().user) == 20
+    assert MinioAccount().policy == "backup-echoport-retention"
+
+
 def test_packaged_templates_are_the_role_templates() -> None:
     packaged = sorted(PACKAGED.glob("*.j2"))
-    assert len(packaged) == 4
+    assert len(packaged) == 5
     for template in packaged:
-        assert template.read_text() == (VENDORED / f"echoport_deploy__{template.name}").read_text()
+        role = "minio_deploy" if template.name == "backup-account-policy.json.j2" else "echoport_deploy"
+        assert template.read_text() == (VENDORED / f"{role}__{template.name}").read_text()

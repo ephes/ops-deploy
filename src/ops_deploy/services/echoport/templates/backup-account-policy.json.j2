@@ -1,0 +1,49 @@
+{% set object_actions = ['s3:GetObject']
+   + (['s3:PutObject'] if minio_backup_account_allow_put | bool else [])
+   + (['s3:DeleteObject'] if minio_backup_account_allow_delete | bool else []) %}
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketLocation"],
+      "Resource": ["arn:aws:s3:::{{ minio_backup_account_bucket }}"]
+    },
+{% if minio_backup_account_whole_bucket | bool %}
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::{{ minio_backup_account_bucket }}"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": {{ object_actions | to_json }},
+      "Resource": ["arn:aws:s3:::{{ minio_backup_account_bucket }}/*"]
+    }
+{% else %}
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::{{ minio_backup_account_bucket }}"],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+{% for prefix in minio_backup_account_prefixes %}
+            "{{ prefix }}/*"{{ "," if not loop.last }}
+{% endfor %}
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": {{ object_actions | to_json }},
+      "Resource": [
+{% for prefix in minio_backup_account_prefixes %}
+        "arn:aws:s3:::{{ minio_backup_account_bucket }}/{{ prefix }}/*"{{ "," if not loop.last }}
+{% endfor %}
+      ]
+    }
+{% endif %}
+  ]
+}
