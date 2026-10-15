@@ -3,7 +3,9 @@
 Deploys FastDeploy (``test_fastdeploy_smoke``'s fixture, with a registered
 service and a runner), backs it up with a marker table, loses the marker and
 the registered service, and restores the archive. A broken archive (no env
-file) then fails the restore, which rolls back to its safety backup. Finally
+file) then fails the restore, which rolls back to its safety backup. An older
+archive with retired entries and blanket sudoers rules restores without
+them. Finally
 FastDeploy is removed twice (the second run changes nothing) and deployed again.
 """
 
@@ -49,6 +51,9 @@ class Cycle:
     stage_left: str
     runner_marker: str
     restored_services: str
+    retired_restore: SshRun
+    retired_left: str
+    sudoers_after_retired_restore: str
     failed_restore: SshRun
     marker_after_rollback: str
     remove: SshRun
@@ -88,9 +93,38 @@ def cycle(smoke_host: SmokeHost, deployed: Deployed, tmp_path_factory: pytest.Te
     runner_marker = smoke_host.out(f"cat {RUNNER}/marker")
     restored_services = smoke_host.out(f"{PSQL} -c 'SELECT COUNT(*) FROM service'")
 
+    name = archive.name.removesuffix(".tar.gz")
+    # An older archive: retired services and runners (fastdeploy-self,
+    # apt_upgrade_*), the wildcard rule and a register rule granting ALL.
+    # Only the narrow rule may come back.
+    narrow = f"deploy ALL=(root) NOPASSWD: {REGISTERED}/deploy.sh --config *"
+    edit = (
+        "mkdir -p services/fastdeploy-self deploy_runners/apt_upgrade_local; "
+        "touch deploy_runners/fastdeploy-self-playbook.yml; "
+        f"printf '%s\\n' 'fastdeploy ALL=(deploy) NOPASSWD: {SITE}/services/*/deploy.sh *' > sudoers/fastdeploy; "
+        "printf '%s\\n' 'deploy ALL=(root) NOPASSWD: ALL' > sudoers/fastdeploy_apt_upgrade_local; "
+        f"printf '%s\\n' '# narrow' {shlex.quote(narrow)} > sudoers/fastdeploy_smoke-registered"
+    )
+    smoke_host.run(
+        f"set -e; tmp=$(mktemp -d); tar -C $tmp -xzf {ROOT}/{name}.tar.gz; "
+        f"mv $tmp/{name} $tmp/retired-{name}; cd $tmp/retired-{name}; {edit}; "
+        "find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256; "
+        f"tar -C $tmp -czf {ROOT}/retired-{name}.tar.gz retired-{name}; rm -rf $tmp"
+    )
+    retired_cfg = restore_cfg.model_copy(update={"archive": f"retired-{name}.tar.gz"})
+    retired_restore = run(smoke_host, "retired restore", deploy_fastdeploy_restore, retired_cfg, secrets)
+    retired_left = smoke_host.out(
+        f"cd / && ls -d {SITE}/services/fastdeploy-self /home/deploy/runners/apt_upgrade_local "
+        "/home/deploy/runners/fastdeploy-self-playbook.yml 2>/dev/null || true"
+    )
+    sudoers_after_retired_restore = smoke_host.out(
+        "cd /etc/sudoers.d && for f in fastdeploy fastdeploy_apt_upgrade_local fastdeploy_smoke-registered; do "
+        "if [ -e $f ]; then stat -c '%n %a %U %G' $f; else echo \"$f absent\"; fi; done; visudo -cq && echo valid"
+    )
+    smoke_host.run(f"rm -f {ROOT}/retired-{name}.tar.gz")
+
     # An archive without the env file: the restore fails after dropping the
     # database and rolls back to the safety backup it took first.
-    name = archive.name.removesuffix(".tar.gz")
     smoke_host.run(
         f"set -e; tmp=$(mktemp -d); tar -C $tmp -xzf {ROOT}/{name}.tar.gz; "
         f"mv $tmp/{name} $tmp/broken-{name}; rm $tmp/broken-{name}/config/fastdeploy.env; "
@@ -116,6 +150,9 @@ def cycle(smoke_host: SmokeHost, deployed: Deployed, tmp_path_factory: pytest.Te
         stage_left,
         runner_marker,
         restored_services,
+        retired_restore,
+        retired_left,
+        sudoers_after_retired_restore,
         failed_restore,
         marker_after_rollback,
         remove,
@@ -156,6 +193,16 @@ def test_restore_brings_database_and_registrations_back(smoke_host: SmokeHost, c
 def test_restore_passed_the_service_count_check(cycle: Cycle) -> None:
     # The metadata counts one registered service; the restore checks the table against it.
     assert cycle.restored_services == "1"
+
+
+def test_restore_leaves_out_what_the_privilege_reduction_retired(cycle: Cycle) -> None:
+    assert cycle.retired_left == ""
+    assert cycle.sudoers_after_retired_restore.splitlines() == [
+        "fastdeploy absent",
+        "fastdeploy_apt_upgrade_local absent",
+        "fastdeploy_smoke-registered 440 root root",
+        "valid",
+    ]
 
 
 def test_failed_restore_rolls_back_to_the_safety_backup(smoke_host: SmokeHost, cycle: Cycle) -> None:

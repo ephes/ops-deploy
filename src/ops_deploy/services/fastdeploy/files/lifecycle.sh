@@ -25,6 +25,14 @@ pgpass_line() {
     printf '*:*:*:*:%s\n' "$escaped"
 }
 
+# in_list WORD ITEMS...: whether WORD is one of ITEMS.
+in_list() {
+    local word=$1 item
+    shift
+    for item in "$@"; do [ "$item" = "$word" ] && return 0; done
+    return 1
+}
+
 # Non-hidden entries of one type directly below a directory (Ansible's find).
 count_dirs() {
     if [ -d "$1" ]; then find "$1" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l; else echo 0; fi
@@ -278,9 +286,17 @@ restore_phase() {
         [ "$include" = 1 ] || continue
         ensure_dir "$owner" "$group" 0755 "$dest"
     done
+    # What the FastDeploy privilege reduction retired stays out, even when an
+    # older snapshot has it (top-level entries of services and runners).
+    local retired=() entry excludes
+    for entry in "${R_RETIRED_ENTRIES[@]}"; do retired+=("--exclude=/$entry"); done
     for item in "${items[@]}"; do
         IFS=: read -r name dest owner group include <<<"$item"
-        if [ "$include" = 1 ] && [ -e "$snapshot/$name" ]; then rsync -a --delete "$snapshot/$name/" "$dest/"; fi
+        excludes=()
+        case $name in services | deploy_runners) excludes=("${retired[@]}") ;; esac
+        if [ "$include" = 1 ] && [ -e "$snapshot/$name" ]; then
+            rsync -a --delete "${excludes[@]}" "$snapshot/$name/" "$dest/"
+        fi
     done
     for item in "${items[@]}"; do
         IFS=: read -r name dest owner group include <<<"$item"
@@ -298,10 +314,23 @@ restore_phase() {
     if [ -n "$R_TRAEFIK" ] && [ -e "$snapshot/traefik/$(basename "$R_TRAEFIK")" ]; then
         copy_file root root 0644 "$snapshot/traefik/$(basename "$R_TRAEFIK")" "$R_TRAEFIK"
     fi
+    # Never the retired sudoers files, and only files the role's
+    # sudoers_blanket_check.py passes (no blanket ALL, only narrow script rules).
     if [ -d "$snapshot/sudoers" ]; then
         find "$snapshot/sudoers" -mindepth 1 -maxdepth 1 -type f ! -name '.*' -print0 |
             while IFS= read -r -d '' path; do
-                copy_file root root 0440 "$path" "/etc/sudoers.d/$(basename "$path")"
+                local base verdict
+                base=$(basename "$path")
+                if in_list "$base" "${R_RETIRED_SUDOERS[@]}"; then
+                    echo "Not restoring $base: retired"
+                    continue
+                fi
+                verdict=$(/usr/bin/python3 -I -c "$R_SUDOERS_CHECK" "$path")
+                if [ -n "$verdict" ]; then
+                    echo "Not restoring $base: it grants unrestricted sudo (ALL)"
+                    continue
+                fi
+                copy_file root root 0440 "$path" "/etc/sudoers.d/$base"
             done
     fi
     systemctl daemon-reload

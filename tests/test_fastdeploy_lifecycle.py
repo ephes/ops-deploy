@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shlex
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +42,10 @@ def settings(script: str) -> dict[str, str]:
     for line in script.splitlines():
         name, sep, value = line.partition("=")
         if sep and name.isidentifier() and name.isupper():
-            values[name] = value if value.startswith("(") else (shlex.split(value) or [""])[0]
+            try:
+                values[name] = value if value.startswith("(") else (shlex.split(value) or [""])[0]
+            except ValueError:  # the first line of a multi-line value (R_SUDOERS_CHECK)
+                continue
     return values
 
 
@@ -105,6 +110,94 @@ def test_restore_runs_with_a_safety_backup_and_rollback() -> None:
         assert f"{function}()" in script
     assert script.rstrip().endswith("fd_restore")
     assert result.changed_ops == ["FastDeploy restore | Restore FastDeploy"]
+
+
+def _bash_44() -> bool:
+    bash = shutil.which("bash")
+    if bash is None or not Path("/usr/bin/python3").exists():
+        return False
+    version = subprocess.run([bash, "-c", 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"'], capture_output=True)
+    major, minor = (int(part) for part in version.stdout.split())
+    return (major, minor) >= (4, 4)
+
+
+NARROW = "deploy ALL=(root) NOPASSWD: /home/fastdeploy/site/services/nyxmon/deploy.sh --config *\n"
+SNAPSHOT_SUDOERS = {
+    # Retired by name, whatever they hold.
+    "fastdeploy": "fastdeploy ALL=(deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *\n",
+    "fastdeploy_fastdeploy-self": NARROW,
+    "fastdeploy_self_deploy_users": NARROW,
+    # Older fastdeploy_register_service files: blanket ALL, also behind a continuation.
+    "fastdeploy_old": "# Managed by Ansible\ndeploy ALL=(root) NOPASSWD: ALL\n",
+    "fastdeploy_split": "deploy ALL=(root) \\\n    NOPASSWD: ALL\n",
+    "fastdeploy_nyxmon": f"# Managed by Ansible\n\n{NARROW}",
+}
+
+
+@pytest.mark.skipif(not _bash_44(), reason="needs bash 4.4+ and /usr/bin/python3")
+def test_restore_skips_retired_entries_and_blanket_sudoers(tmp_path: Path) -> None:
+    result = run_deploy_fake(
+        deploy_fastdeploy_restore, FastdeployRestoreConfig(host_name="macmini"), SECRETS, responses=TIME
+    )
+    script, _ = body(result)
+    snapshot, host = tmp_path / "snapshot", tmp_path / "host"
+    for directory in (
+        "services/nyxmon",
+        "services/fastdeploy-self",
+        "services/apt_upgrade_local",
+        "deploy_runners/nyxmon",
+        "deploy_runners/apt_upgrade_staging",
+        "sudoers",
+        "config",
+        "systemd",
+    ):
+        (snapshot / directory).mkdir(parents=True)
+    (snapshot / "deploy_runners" / "fastdeploy-self-playbook.yml").write_text("- hosts: all\n")
+    (snapshot / "config" / "fastdeploy.env").write_text("X=1\n")
+    for name, text in SNAPSHOT_SUDOERS.items():
+        (snapshot / "sudoers" / name).write_text(text)
+    # Present on the host: an rsync --delete leaves excluded entries alone, as in the role.
+    (host / "services" / "fastdeploy-self").mkdir(parents=True)
+    copied = tmp_path / "copied"
+    # restore_phase alone, with everything that needs root or a database stubbed.
+    run = "\n".join(
+        [
+            script.rstrip().removesuffix("fd_restore"),
+            f"copy_file() {{ printf '%s\\n' \"$5\" >> {shlex.quote(str(copied))}; }}",
+            'ensure_dir() { mkdir -p "$4"; }',
+            "chown_tree() { :; }",
+            "restore_database() { :; }",
+            "systemctl() { :; }",
+            f"snapshot={shlex.quote(str(snapshot))} includes_workspace=0",
+            f"R_SERVICES={shlex.quote(str(host / 'services'))} R_RUNNERS={shlex.quote(str(host / 'runners'))}",
+            f"R_ENV={shlex.quote(str(host / '.env'))} R_TRAEFIK=''",
+            "restore_phase",
+        ]
+    )
+
+    done = subprocess.run(["bash", "-c", run], input="\n", capture_output=True, text=True)
+
+    assert done.returncode == 0, done.stderr
+    assert sorted(p.name for p in (host / "services").iterdir()) == ["fastdeploy-self", "nyxmon"]
+    assert sorted(p.name for p in (host / "runners").iterdir()) == ["nyxmon"]
+    assert copied.read_text().splitlines() == [str(host / ".env"), "/etc/sudoers.d/fastdeploy_nyxmon"]
+    for name in ("fastdeploy", "fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users"):
+        assert f"Not restoring {name}: retired" in done.stdout
+    for name in ("fastdeploy_old", "fastdeploy_split"):
+        assert f"Not restoring {name}: it grants unrestricted sudo (ALL)" in done.stdout
+
+
+def test_restore_ships_the_retired_lists_and_the_roles_check() -> None:
+    result = run_deploy_fake(
+        deploy_fastdeploy_restore, FastdeployRestoreConfig(host_name="macmini"), SECRETS, responses=TIME
+    )
+
+    values = settings(body(result)[0])
+    assert values["R_RETIRED_ENTRIES"] == (
+        "(fastdeploy-self fastdeploy-self-playbook.yml apt_upgrade_local apt_upgrade_staging)"
+    )
+    assert values["R_RETIRED_SUDOERS"] == "(fastdeploy fastdeploy_fastdeploy-self fastdeploy_self_deploy_users)"
+    assert "def restorable(text: str) -> bool:" in body(result)[0]
 
 
 @pytest.mark.parametrize("archive", ["../x.tar.gz", "/opt/../etc", "a b"])

@@ -12,13 +12,14 @@ from __future__ import annotations
 import shlex
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files, server
 
+from ops_deploy.base._common import AbsolutePath
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
@@ -51,6 +52,8 @@ Url = Annotated[str, Field(pattern=r"^(https?://[^\s'\"$`\\]+)?$")]
 EXTRA_DIRS = ("src/nyxmon", "src/nyxboard")
 SOURCE_FILES = ("pyproject.toml", "uv.lock", "README.md")
 SQLITE_PRIVACY = "[Service]\nUMask=0077\n"
+# The role's drop-in that selects the Rust agent (nyxmon_agent_impl: rust).
+AGENT_DROPIN = "agent-impl.conf"
 # Development values the role refuses (CHANGEME is refused everywhere).
 PLACEHOLDERS = {
     "django_secret_key": "development-secret-key-change-in-production",
@@ -113,6 +116,13 @@ class NyxmonConfig(BaseServiceConfig):
     notify_warning_repeat_interval_seconds: Interval = 86400
     processing_lease_seconds: int = Field(default=900, ge=30)
     check_batch_size: Count = 5
+    # The role's nyxmon_agent_impl. Only the Python agent (the venv's
+    # start-agent) is ported; the Rust agent install and switch
+    # (agent_rust.yml) are not, so "rust" is refused.
+    agent_impl: Literal["python"] = "python"
+    # The role's nyxmon_agent_rust_install_root: a monitor running a binary
+    # from below it fails the agent check.
+    agent_rust_install_root: AbsolutePath = "/opt/nyxmon-agent"
     # Empty disables the OpsGate producer; otherwise the secret opsgate_submit_token is required.
     opsgate_submit_base_url: Url = ""
     opsgate_approval_base_url: Url = ""  # empty: same as the submit URL
@@ -220,6 +230,32 @@ def _sqlite_private(cfg: NyxmonConfig) -> OperationMeta:
     )
 
 
+def _agent_check(cfg: NyxmonConfig) -> OperationMeta:
+    """The monitor runs the venv's start-agent, no Rust agent (the role's agent_verify.yml)."""
+
+    unit = shlex.quote(cfg.monitor_service_name)
+    start_agent = f"{cfg.venv_path}/bin/start-agent"
+    rust = f"{cfg.agent_rust_install_root.rstrip('/')}/"
+    # The venv interpreter is a symlink to a uv-managed Python, so the Python
+    # agent is identified by its argv, a Rust agent by /proc/<pid>/exe.
+    live = (
+        f'[ "$(systemctl is-active {unit})" = active ] || exit 1; '
+        f"pid=$(systemctl show --property=MainPID --value {unit}); "
+        '[ "${pid:-0}" -gt 0 ] || exit 1; '
+        f'case "$(readlink "/proc/$pid/exe")" in {shlex.quote(rust)}*) exit 1;; esac; '
+        f"tr '\\0' '\\n' < \"/proc/$pid/cmdline\" | grep -qxF {shlex.quote(start_agent)}"
+    )
+    script = (
+        f"for i in $(seq 1 10); do ( {live} ) && exit 0; sleep 3; done; "
+        f'echo "{cfg.monitor_service_name} does not run {start_agent} (agent_impl python)" >&2; exit 1'
+    )
+    return mark_read_only(
+        server.shell(
+            name=f"Check {cfg.monitor_service_name} runs the Python agent", commands=[f"sh -c {shlex.quote(script)}"]
+        )
+    )
+
+
 def _opsgate_check(cfg: NyxmonConfig) -> OperationMeta:
     """The monitor runs with the rendered OpsGate URLs (the role's validate_opsgate_smoke.yml)."""
 
@@ -319,7 +355,9 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
             when_changed=[deps, *code],
         )
 
-    traefik_route(traefik_config(cfg, secrets))
+    # Traefik's file provider watches the dynamic directory; like the role
+    # (ops-library 2.31.47), no Traefik restart.
+    traefik_route(traefik_config(cfg, secrets), restart="none")
     for name, template in (
         (cfg.service_name, "nyxmon.service.j2"),
         (cfg.monitor_service_name, "nyxmon-monitor.service.j2"),
@@ -335,11 +373,20 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
             group="root",
             mode="0644",
         )
-        service_rollout(name, units=[unit, dropin], restart_when=[deps, env, *code])
+        units = [unit, dropin]
+        if name == cfg.monitor_service_name:
+            # The role's agent_rust.yml with impl python: the Rust drop-in goes.
+            units.append(
+                files.file(
+                    name=f"Select the Python agent for {name}", path=f"{dropin_dir}/{AGENT_DROPIN}", present=False
+                )
+            )
+        service_rollout(name, units=units, restart_when=[deps, env, *code])
     _sqlite_private(cfg)
 
     wait_port(cfg.app_port, host=cfg.app_host)
     # Production settings redirect plain HTTP (301); with require_login, pages redirect to the login (302).
     http_check(f"http://{cfg.app_host}:{cfg.app_port}/", status=(200, 301, 302), host_header=cfg.traefik_host)
+    _agent_check(cfg)
     if cfg.opsgate_enabled:
         _opsgate_check(cfg)

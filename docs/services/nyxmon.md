@@ -47,6 +47,8 @@ Defaults follow the role's `defaults/main.yml`.
 | `opsgate_approval_base_url` | `""` | empty: the submit URL |
 | `opsgate_ticket_expires_seconds`, `opsgate_submit_timeout_seconds`, `opsgate_submit_include_warnings` | `14400`, `10`, `false` | |
 | `traefik_host`, `traefik_cert_resolver`, `traefik_middlewares`, `internal_ip_ranges` | role defaults | |
+| `agent_impl` | `python` | the role's `nyxmon_agent_impl`; only `python` is accepted (see below) |
+| `agent_rust_install_root` | `/opt/nyxmon-agent` | a monitor running a binary from below it fails the agent check |
 
 ### Host-side state (`persistent_excludes`)
 
@@ -69,14 +71,21 @@ root-anchored excludes, so the database survives `--delete`.
 5. `uv sync --frozen --no-dev --no-default-groups --python 3.13` if the source
    changed or the venv is missing; `site/venv` symlink to `.venv`.
 6. `migrate` and `collectstatic` if the sync ran or the source changed.
-7. Traefik route (dual router, basic auth).
+7. Traefik route (dual router, basic auth). Traefik is not restarted: its
+   file provider watches `/etc/traefik/dynamic` and loads the change itself
+   (as the role since ops-library 2.31.47).
 8. For each unit: unit file, `sqlite-privacy.conf` drop-in (`UMask=0077`),
    `service_rollout` (daemon-reload on unit/drop-in change; restart on code,
-   dependency or `.env` change).
+   dependency or `.env` change). For `nyxmon-monitor` the role's Rust agent
+   drop-in `agent-impl.conf` is removed (the role's `nyxmon_agent_impl:
+   python`); removing it reloads systemd and restarts the monitor.
 9. Database and sidecars `0600 nyxmon:nyxmon` (only when a file is exposed or
    the database is new; fails if `db.sqlite3` is missing).
-10. Read-only checks: port, HTTP (200/301/302), and with OpsGate enabled, that
-    `nyxmon-monitor`'s live environment carries the rendered OpsGate URLs.
+10. Read-only checks: port, HTTP (200/301/302), that `nyxmon-monitor` is
+    active and runs the venv's `start-agent`, not a binary below
+    `agent_rust_install_root` (the role's `agent_verify.yml`, 10 tries 3 s
+    apart), and with OpsGate enabled, that its live environment carries the
+    rendered OpsGate URLs.
 
 ## Parity with the role
 
@@ -94,6 +103,18 @@ auth or the monitor, `nyxmon_service_restart_on_change: false`, and the
 `uv_install` role (uv must already be at `/usr/local/bin/uv`). A Python
 version change is left to `uv sync --python` on the next dependency change;
 the role removes a mismatched venv on every run.
+
+### Rust agent (`nyxmon_agent_impl`)
+
+ops-library 2.32.0 lets the role install a pinned Rust agent release
+(`nyxmon_agent_rust_version`, `_sha256`, below `/opt/nyxmon-agent`), select it
+with the drop-in `agent-impl.conf` (`nyxmon_agent_impl: rust`), verify the
+running agent and prune old versions. Only the Python side is ported: the
+drop-in is removed and the running agent is checked. `agent_impl` accepts only
+`python`, and ops-control refuses a host whose inventory says otherwise, so
+a switch to Rust stays with Ansible. A pinned Rust version is neither
+installed nor pruned here; a binary the role installed stays where it is,
+unused, as with the role's impl `python`.
 
 ## Backup, restore and removal
 
@@ -162,12 +183,14 @@ second run changes nothing.
 
 - `tests/test_nyxmon.py` (fake connector): first run, converged second run
   (no mutating change), code change, lockfile change, `.env` secret rotation,
-  basic-auth rotation, monitor unit change, missing drop-in, exposed database,
-  OpsGate disabled, leak checks (no secret in commands, op names/args or
+  basic-auth rotation (no Traefik restart), monitor unit change, missing
+  drop-in, a Rust agent drop-in (removed, monitor restarted), the agent check,
+  `agent_impl: rust` refused, exposed database, OpsGate disabled, leak checks (no secret in commands, op names/args or
   uploads; env files only on stdin), validation.
 - `tests/smoke/test_nyxmon_smoke.py` (`just smoke`, needs `NYXMON_SOURCE` or
   `PROJECTS_ROOT`): two real deploys of the committed `HEAD` of a nyxmon
-  checkout; second run converged, units active with `UMask=0077`, database and
+  checkout over a Rust agent drop-in (removed; every run's agent check
+  passes); second run converged, units active with `UMask=0077`, database and
   env files private, migrations applied, Traefik 401 without auth, no secret
   outside its files.
 - `tests/test_nyxmon_lifecycle.py` (fake connector): backup settings,

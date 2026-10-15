@@ -1,7 +1,7 @@
 """FastDeploy: the FastAPI deploy platform with its Vue frontend, on PostgreSQL.
 
-Port of the ``fastdeploy_deploy`` Ansible role, rsync method only. The env,
-unit and sudoers files are byte-identical to the role's
+Port of the ``fastdeploy_deploy`` Ansible role, rsync method only. The env
+and unit files are byte-identical to the role's
 (``tests/test_fastdeploy_parity.py``), so Ansible and ops-deploy can take turns
 on one host. Host-side state in the site directory (registered services,
 env files, the venv, the built frontend) survives every sync
@@ -40,7 +40,6 @@ from ops_deploy.helpers import (
     mark_read_only,
     postgres_database,
     service_rollout,
-    sudoers_file,
     systemd_unit,
     traefik_route,
     uv_sync,
@@ -85,7 +84,8 @@ class FastdeployConfig(BaseServiceConfig):
 
     service_name: ServiceName = "fastdeploy"
     user: UnixUser = "fastdeploy"
-    # Runs the registered services' deploy.sh through sudo (SUDO_USER, sudoers).
+    # Runs the registered services' deploy.sh through sudo (SUDO_USER); each
+    # registered service installs its own narrow sudoers rule.
     deploy_user: UnixUser = "deploy"
     site_path: PurePosixPath = PurePosixPath("/home/fastdeploy/site")
     # A FastDeploy checkout, synced to the site root as a whole.
@@ -437,7 +437,7 @@ def _rollout_check(cfg: FastdeployConfig, secrets: SecretValues) -> OperationMet
 
 
 def _accounts(cfg: FastdeployConfig) -> None:
-    """The role's user.yml: deploy and service users, directories and the sudoers rule."""
+    """The role's user.yml: deploy and service users, directories; the retired sudoers rule goes."""
 
     for group in (cfg.deploy_user, cfg.user):
         server.group(name=f"Ensure group {group}", group=group)
@@ -466,7 +466,10 @@ def _accounts(cfg: FastdeployConfig) -> None:
     )
     for path in (cfg.home, cfg.site_path, cfg.site_path / "bin", cfg.site_path / "logs", cfg.services_path):
         files.directory(name=f"Ensure directory {path}", path=str(path), user=cfg.user, group=cfg.user, mode="0755")
-    sudoers_file(cfg.service_name, render(TEMPLATE_PACKAGE, "sudoers.j2", cfg=cfg))
+    # The old wildcard rule (``<user> ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *``)
+    # let FastDeploy run any script it writes into its own services directory;
+    # like the role (ops-library 2.35.0), remove it.
+    files.file(name="Remove the retired wildcard sudoers rule", path="/etc/sudoers.d/fastdeploy", present=False)
 
 
 @deploy("Deploy fastdeploy")
@@ -512,7 +515,9 @@ def deploy_fastdeploy(
     _initialize(cfg, secrets, [code, deps])
 
     unit = systemd_unit(cfg.service_name, render(TEMPLATE_PACKAGE, "fastdeploy.service.j2", cfg=cfg))
-    traefik_route(route)
+    # Traefik's file provider watches the dynamic directory; like the role
+    # (ops-library 2.31.47), no Traefik restart.
+    traefik_route(route, restart="none")
     # Every deploy is a rollout: the restart is unconditional, as in the role.
     service_rollout(cfg.service_name, units=[unit], always_restart=True)
     if cfg.rollout_validation:

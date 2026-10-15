@@ -12,7 +12,10 @@ and snapshot directories.
 Backup and restore run on the host as one bash script (``files/lifecycle.sh``),
 which keeps the roles' structure: a restore takes a safety backup first, and
 when restoring or verifying fails it restores that safety backup, verifies it
-and still fails; the extracted archive is always removed. The database
+and still fails; the extracted archive is always removed. Like the role
+(ops-library 2.35.0), a restore never brings back what the FastDeploy
+privilege reduction retired (``retired_entries``, ``retired_sudoers``) or a
+sudoers file the role's ``sudoers_blanket_check.py`` rejects. The database
 password reaches the script on stdin only. Removal is planned from what the
 host has, so a second run changes nothing.
 """
@@ -44,11 +47,14 @@ from ops_deploy.services._lifecycle import (
 )
 
 LIFECYCLE = Path(__file__).parent / "files" / "lifecycle.sh"
+# The fastdeploy_restore role's check (vendored): prints the sudoers files a restore must not copy back.
+SUDOERS_CHECK = Path(__file__).parent / "files" / "sudoers_blanket_check.py"
 Prefix = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
 Hostname = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
 Identifier = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]{0,62}$")]
 Option = Annotated[str, Field(pattern=r"^-[A-Za-z0-9=_-]+$")]
 Glob = Annotated[str, Field(pattern=r"^[A-Za-z0-9._*?-]+$")]
+Entry = Annotated[str, Field(pattern=r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")]
 Url = Annotated[str, Field(pattern=r"^https?://[A-Za-z0-9.:/_-]+$")]
 # ``latest``, a name below the search root (``.tar.gz``/``.tar.zst`` may be left
 # out) or an absolute path; an archive or a snapshot directory.
@@ -127,6 +133,16 @@ class FastdeployRestoreConfig(RoleConfig):
     http_check_delay: int = Field(default=2, ge=0)
     service_count_check: bool = True
     psql_binary: Annotated[str, Field(pattern=r"^[A-Za-z0-9._/-]+$")] = "psql"
+    # Retired by the FastDeploy privilege reduction (ops-library 2.35.0): never
+    # restored from an older snapshot. Top-level entries of the services and
+    # runner directories, and sudoers file names.
+    retired_entries: tuple[Entry, ...] = (
+        "fastdeploy-self",
+        "fastdeploy-self-playbook.yml",
+        "apt_upgrade_local",
+        "apt_upgrade_staging",
+    )
+    retired_sudoers: tuple[Entry, ...] = ("fastdeploy", "fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users")
 
     @field_validator("archive")
     @classmethod
@@ -284,6 +300,9 @@ def deploy_fastdeploy_restore(cfg: FastdeployRestoreConfig, secrets: SecretValue
         "R_HTTP_DELAY": str(cfg.http_check_delay),
         "R_SERVICE_COUNT_CHECK": flag(cfg.service_count_check),
         "R_PSQL": cfg.psql_binary,
+        "R_RETIRED_ENTRIES": cfg.retired_entries,
+        "R_RETIRED_SUDOERS": cfg.retired_sudoers,
+        "R_SUDOERS_CHECK": SUDOERS_CHECK.read_text(),
     }
     label = " (dry run)" if cfg.dry_run else ""
     _run(f"Restore FastDeploy{label}", values, "fd_restore", password)

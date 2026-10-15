@@ -94,7 +94,6 @@ def converged(cfg: FastdeployConfig, secrets: SecretValues, **drift: str) -> dic
         f"{SITE}/.env.shell": render_env(cfg, secrets, shell=True).reveal().decode(),
         UNIT: render(TEMPLATE_PACKAGE, "fastdeploy.service.j2", cfg=cfg),
         ROUTE: render_route(traefik_config(cfg, secrets), _HASH),
-        SUDOERS: render(TEMPLATE_PACKAGE, "sudoers.j2", cfg=cfg),
         STAMP: f"{frontend_digest(cfg)}\n",
     }
     content.update(drift)
@@ -119,8 +118,6 @@ def converged(cfg: FastdeployConfig, secrets: SecretValues, **drift: str) -> dic
         mode = "-rw-r--r--"
         if path.endswith((".env", ".env.shell")):
             mode = "-rw-------"
-        elif path == SUDOERS:
-            mode = "-r--r-----"
         responses.update(fakehost.file(path, text, user=owner, mode=mode))
     responses.update(fakehost.venv(f"{SITE}/.venv"))
     for unit in ("fastdeploy.service", "traefik.service", "postgresql.service"):
@@ -346,11 +343,9 @@ def test_rollout_check_request_rides_on_stdin(cfg: FastdeployConfig, secrets: Se
 def test_basic_auth_rotation_only_touches_traefik(cfg: FastdeployConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, values(cfg, basic_auth_password="rotated-fixture-password"), converged(cfg, secrets))
 
-    assert run.mutating_changed_ops == [
-        "Deploy fastdeploy | Write Traefik route fastdeploy",
-        "Deploy fastdeploy | Restart Traefik for fastdeploy",
-        *ALWAYS,
-    ]
+    # Traefik's file provider loads the new route; no restart (ops-library 2.31.47).
+    assert run.mutating_changed_ops == ["Deploy fastdeploy | Write Traefik route fastdeploy", *ALWAYS]
+    assert not any("traefik" in command for command in run.executed_commands if command.startswith("systemctl"))
 
 
 def test_unit_change_reloads_systemd(cfg: FastdeployConfig, secrets: SecretValues) -> None:
@@ -363,19 +358,23 @@ def test_unit_change_reloads_systemd(cfg: FastdeployConfig, secrets: SecretValue
     ]
 
 
-def test_sudoers_rule_is_validated_before_it_goes_live(cfg: FastdeployConfig, secrets: SecretValues) -> None:
-    run = deploy(cfg, secrets, converged(cfg, secrets, **{SUDOERS: "# stale\n"}))
+def test_retired_wildcard_sudoers_rule_is_removed(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    rule = "fastdeploy ALL=(deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *\n"
+    responses = {**converged(cfg, secrets), **fakehost.file(SUDOERS, rule, mode="-r--r-----")}
 
-    assert run.mutating_changed_ops == ["Deploy fastdeploy | Install sudoers rule fastdeploy", *ALWAYS]
-    staged = "/etc/sudoers.d/.ops-deploy-fastdeploy"
-    assert (
-        run.upload(staged)
-        .decode()
-        .endswith("fastdeploy ALL=(deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *\n")
-    )
-    assert f"visudo -cqf {staged} && mv -f {staged} {SUDOERS} || {{ rm -f {staged}; exit 1; }}" in (
-        run.executed_commands
-    )
+    run = deploy(cfg, secrets, responses)
+
+    # Like fastdeploy_deploy 2.35.0: each registered service brings its own narrow rule.
+    assert run.mutating_changed_ops == ["Deploy fastdeploy | Remove the retired wildcard sudoers rule", *ALWAYS]
+    assert f"rm -f {SUDOERS}" in run.executed_commands
+
+
+def test_no_sudoers_rule_is_installed(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    for responses in (first_host(), converged(cfg, secrets)):
+        run = deploy(cfg, secrets, responses)
+
+        assert not any(path.startswith("/etc/sudoers.d") for path in run.uploaded_paths)
+        assert not any("visudo" in command or "sudoers" in command for command in run.executed_commands)
 
 
 def test_sync_protects_host_state(cfg: FastdeployConfig, secrets: SecretValues) -> None:

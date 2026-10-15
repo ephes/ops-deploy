@@ -28,6 +28,8 @@ SITE = "/home/fastdeploy/site"
 # Registered-service state the deploy must leave alone (fastdeploy_register_service writes it).
 REGISTERED = f"{SITE}/services/smoke-registered"
 RUNNER = "/home/deploy/runners/smoke-registered"
+# The wildcard rule older deploys installed; fastdeploy_deploy 2.35.0 removes it.
+RETIRED_SUDOERS = "/etc/sudoers.d/fastdeploy"
 ALWAYS = ["Deploy fastdeploy | Restart fastdeploy.service"]
 
 
@@ -94,7 +96,9 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
         "systemctl stop fastdeploy 2>/dev/null; "
         "runuser -u postgres -- psql -XAtq -c 'DROP DATABASE IF EXISTS fastdeploy' "
         "-c 'DROP ROLE IF EXISTS fastdeploy'; "
-        f"rm -f {SITE}/frontend/dist/.ops-deploy-build; true"
+        f"rm -f {SITE}/frontend/dist/.ops-deploy-build; "
+        f"printf 'fastdeploy ALL=(deploy) NOPASSWD: {SITE}/services/*/deploy.sh *\\n' > {RETIRED_SUDOERS}; "
+        f"chmod 0440 {RETIRED_SUDOERS}; true"
     )
     fresh = tmp_path_factory.mktemp("fastdeploy-fresh")
     subprocess.run(["tar", "-x", "-m", "-C", str(fresh)], input=archive.stdout, check=True)
@@ -114,6 +118,7 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
 
 def test_reruns_only_restart(deployed: Deployed) -> None:
     assert "Deploy fastdeploy | Build frontend" in deployed.first.changed_ops
+    assert "Deploy fastdeploy | Remove the retired wildcard sudoers rule" in deployed.first.changed_ops
     assert deployed.second.mutating_changed_ops == ALWAYS
     assert deployed.fresh_clone.mutating_changed_ops == ALWAYS
     for run in (deployed.second, deployed.fresh_clone):
@@ -152,11 +157,15 @@ def test_legacy_token_user_exists(smoke_host: SmokeHost, deployed: Deployed) -> 
 def test_registered_services_and_runners_survive(smoke_host: SmokeHost, deployed: Deployed) -> None:
     assert smoke_host.out(f"cat {REGISTERED}/deploy.sh") == "#!/bin/sh\necho deployed"
     assert smoke_host.out(f"cat {RUNNER}/marker") == "runner"
-    # The sudoers rule lets FastDeploy run a registered deploy.sh as deploy (checked, not run).
-    check = f"runuser -u fastdeploy -- sudo -n -l -u deploy {REGISTERED}/deploy.sh --dry"
-    assert smoke_host.out(check) == f"{REGISTERED}/deploy.sh --dry"
-    assert smoke_host.out("stat -c '%a %U %G' /etc/sudoers.d/fastdeploy") == "440 root root"
-    assert smoke_host.out("ls -A /etc/sudoers.d | grep -c '^\\.ops-deploy' || true") == "0"
+
+
+def test_the_retired_wildcard_sudoers_rule_is_gone(smoke_host: SmokeHost, deployed: Deployed) -> None:
+    assert smoke_host.out(f"test -e {RETIRED_SUDOERS} && echo present || echo absent") == "absent"
+    # Without a service's own rule FastDeploy cannot run its deploy.sh as deploy.
+    check = (
+        f"runuser -u fastdeploy -- sudo -n -l -u deploy {REGISTERED}/deploy.sh --dry >/dev/null 2>&1 && echo allowed"
+    )
+    assert smoke_host.out(f"{check} || echo refused") == "refused"
 
 
 def test_env_files_are_private(smoke_host: SmokeHost, deployed: Deployed) -> None:
@@ -181,3 +190,29 @@ def test_no_secret_on_disk_outside_its_files(smoke_host: SmokeHost, deployed: De
             input=f"{value}\n",
         )
         assert found.stdout.strip() == "", key
+
+
+def test_route_change_is_loaded_without_a_traefik_restart(smoke_host: SmokeHost, deployed: Deployed) -> None:
+    # Runs last: it rotates the basic auth password and then deploys the original one again.
+    pid = smoke_host.out("systemctl show --property=MainPID --value traefik")
+    rotated = SecretValues(deployed.secrets.ref, {**deployed.secrets, "basic_auth_password": "smoke-rotated-pw"})
+    # The credentials reach curl on stdin (-K -), never on a command line.
+    curl = (
+        "printf 'user = \"admin:smoke-rotated-pw\"\\n' | "
+        f"curl -ks -o /dev/null -w '%{{http_code}}' -K - --resolve {HOST}:443:127.0.0.1 https://{HOST}/docs"
+    )
+    try:
+        run = run_deploy_ssh(
+            deploy_fastdeploy, deployed.cfg, rotated, host_name=smoke_host.name, host_data=smoke_host.host_data
+        )
+        assert run.succeeded, run.error
+        assert "Deploy fastdeploy | Write Traefik route fastdeploy" in run.changed_ops
+        assert not any("Traefik" in name and "Restart" in name for name in run.changed_ops)
+        # Traefik's file provider picks the new route up by itself.
+        script = f'for i in $(seq 1 20); do c=$({curl}); [ "$c" = 200 ] && echo 200 && exit 0; sleep 1; done; echo "$c"'
+        assert smoke_host.run("bash -s", input=script).stdout.strip() == "200"
+        assert smoke_host.out("systemctl show --property=MainPID --value traefik") == pid
+    finally:
+        run_deploy_ssh(
+            deploy_fastdeploy, deployed.cfg, deployed.secrets, host_name=smoke_host.name, host_data=smoke_host.host_data
+        )

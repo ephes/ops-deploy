@@ -1,6 +1,7 @@
 """Deploy-level scenarios for nyxmon against the fake connector."""
 
 import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -108,8 +109,10 @@ def deploy(
 READ_ONLY = [
     "Deploy nyxmon | Wait for port 127.0.0.1:10017",
     "Deploy nyxmon | Check http://127.0.0.1:10017/",
+    "Deploy nyxmon | Check nyxmon-monitor runs the Python agent",
     "Deploy nyxmon | Check nyxmon-monitor OpsGate settings",
 ]
+AGENT_DROPIN = "/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf"
 
 
 def test_first_run_installs_everything(cfg: NyxmonConfig, secrets: SecretValues) -> None:
@@ -201,10 +204,47 @@ def test_secret_rotation_rewrites_env_and_restarts_both(cfg: NyxmonConfig, secre
 def test_basic_auth_rotation_only_touches_traefik(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, values(cfg, basic_auth_password="rotated-fixture-password"), converged(cfg, secrets))
 
+    # Traefik's file provider loads the new route; no restart (ops-library 2.31.47).
+    assert run.mutating_changed_ops == ["Deploy nyxmon | Write Traefik route nyxmon"]
+    assert not any("traefik" in command for command in run.executed_commands if command.startswith("systemctl"))
+
+
+def test_rust_agent_dropin_is_removed_and_the_monitor_restarted(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    dropin = "[Service]\nExecStart=\nExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent --db x\n"
+    responses = {**converged(cfg, secrets), **fakehost.file(AGENT_DROPIN, dropin)}
+
+    run = deploy(cfg, secrets, responses)
+
+    # The role's agent_rust.yml with nyxmon_agent_impl: python.
     assert run.mutating_changed_ops == [
-        "Deploy nyxmon | Write Traefik route nyxmon",
-        "Deploy nyxmon | Restart Traefik for nyxmon",
+        "Deploy nyxmon | Select the Python agent for nyxmon-monitor",
+        "Deploy nyxmon | Reload systemd for nyxmon-monitor.service",
+        "Deploy nyxmon | Restart nyxmon-monitor.service",
     ]
+    assert f"rm -f {AGENT_DROPIN}" in run.executed_commands
+
+
+def test_agent_check_wants_the_venv_start_agent(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+
+    check = next(c for c in run.executed_commands if "start-agent" in c and "MainPID" in c)
+    assert f"grep -qxF {SITE}/.venv/bin/start-agent" in check
+    assert "/opt/nyxmon-agent/*) exit 1" in check
+
+
+@pytest.mark.parametrize("entry", ["model_validate_json", "model_validate_strings"])
+def test_agent_defaults_validate_from_text(tmp_path: Path, entry: str) -> None:
+    data = {"source_path": str(make_source(tmp_path)), "secrets": {"path": "secrets/prod/nyxmon.yml"}}
+    text = json.dumps(data) if entry == "model_validate_json" else data
+
+    cfg = getattr(NyxmonConfig, entry)(text)
+
+    assert (cfg.agent_impl, cfg.agent_rust_install_root) == ("python", "/opt/nyxmon-agent")
+
+
+def test_rust_agent_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="agent_impl"):
+        NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("x.yml"), agent_impl="rust")
 
 
 def test_basic_auth_user_from_secrets_wins(cfg: NyxmonConfig, secrets: SecretValues) -> None:
@@ -252,7 +292,7 @@ def test_opsgate_disabled_skips_token_and_check(tmp_path: Path) -> None:
 
     run = deploy(cfg, secrets)
 
-    assert READ_ONLY[2] not in [op.name for op in run.ops]
+    assert READ_ONLY[-1] not in [op.name for op in run.ops]
     assert "OPSGATE" not in render_env(cfg, secrets, shell=False).reveal().decode()
 
 

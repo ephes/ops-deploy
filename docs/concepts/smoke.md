@@ -89,16 +89,19 @@ from the committed `HEAD` of a FastDeploy checkout (`FASTDEPLOY_SOURCE`, else
 `$PROJECTS_ROOT/fastdeploy`; skipped without one), adds a registered service
 and a runner directory, deploys again and once more from a fresh export.
 Both reruns may only restart the service. It checks the initial user's login,
-the database role's password login, the sudoers rule, the Traefik auth, that
-the registered service and runner survive, and leaks (also in
-`/var/log/postgresql`). The first run installs Node.js from NodeSource and
-builds the frontend.
+the database role's password login, that the retired wildcard sudoers rule
+seeded before the first run is gone, the Traefik auth, that the registered
+service and runner survive, and leaks (also in `/var/log/postgresql`). The
+first run installs Node.js from NodeSource and builds the frontend. Last it
+rotates the basic auth password and checks that Traefik serves the new route
+without a restart.
 
 `test_nyxmon_lifecycle_smoke.py` and `test_fastdeploy_lifecycle_smoke.py`
 deploy the service again (the deploy tests' fixtures) and then back it up,
 lose and restore data, and remove it twice (the second run without change)
-before deploying it once more. The FastDeploy test also checks that a
-restore from a broken archive rolls back to its safety backup. A nyxmon
+before deploying it once more. The FastDeploy test also restores an archive
+with retired services, runners and blanket sudoers rules (they stay out) and
+checks that a restore from a broken archive rolls back to its safety backup. A nyxmon
 backup creates `/opt/backups` as `0700` (as the role does); the FastDeploy
 test sets it to `0755`, as on macmini, because `pg_dump` writes there as
 `postgres`.

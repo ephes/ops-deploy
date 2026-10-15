@@ -1,0 +1,18 @@
+{
+  "ops_library": "fd6b4cf1",
+  "roles": {
+    "fastdeploy_backup": "26b1ed9faa815701a9a75b6c2f711e056d85a7b290ae4d4b1dab05b9e7805297",
+    "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",
+    "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
+    "fastdeploy_restore": "95a3e5e43ea2b9f68aed59d2d1ff5e45da378eb8ed036e0435d18cd0eebeed9d",
+    "nyxmon_backup": "7412a272ae90c029d9ddca3232abaaa88649826208641cdea9de5fa42b4dcc18",
+    "nyxmon_deploy": "7b5b492fbac5dd040b518aa0cfbca5572721ab62659b541ec4a083f36dfbc381",
+    "nyxmon_remove": "012e52c4aaa7cd5681c334addfe4ed082bc06485442821fa839e0f46fd19514b",
+    "nyxmon_restore": "fb2057559d9a42938a6ca2e080115f3809a09de2c4785467429594eb3039c9bf",
+    "work_app_backup": "517acddf9c779c6e0ab1e41e58837b0cd4a604a4355e8d8d0405e5a699063739",
+    "work_app_deploy": "7ccde64149021c2e0fcdfb1f7b2ab36a8d617cba775a5270b81a3e064bedd1b0",
+    "work_app_remove": "ece2d5b7f6e76e891cde94de494e47990a9970596e356764450550e9e94f12cd",
+    "work_app_restore": "8e77e479699afb7bec18e1101deca212df9cd44996bb8a86a7dd0f42be669c96",
+    "work_app_shared": "42f3d908d13a05139b07b1c89e0a50cb21d710d331cb9b667b5868d6b12e0879"
+  }
+}

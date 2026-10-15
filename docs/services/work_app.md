@@ -183,7 +183,10 @@ work`) and `.env`, restore the unit and the Traefik config when they differ
 (`daemon-reload`, `reload traefik`), fix ownership of the static files, run
 `check --deploy` and `showmigrations` when `.env` exists, check
 `PRAGMA integrity_check`, restart work-app and check its login page. The
-safety snapshot and staging directory are removed after a success. `dry_run`
+staging directory is removed after a success. The pre-restore copy (database
+and `.env` included) is kept and its path reported, as the role does since
+ops-library a811bc16; nothing prunes these copies, so delete old ones by hand.
+`safe_snapshot_delete=True` deletes it after a success instead. `dry_run`
 stops after the checks. `restore_env`, `rebuild_static`, `verify_http` and the
 other role switches are config fields too.
 

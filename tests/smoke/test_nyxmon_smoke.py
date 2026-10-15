@@ -23,6 +23,7 @@ from tests.smoke.conftest import TIMINGS, SmokeHost
 HOST = "nyxmon.example.invalid"
 SITE = "/home/nyxmon/site"
 OPSGATE = "http://192.0.2.10:8711"
+AGENT_DROPIN = "/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf"
 
 
 def nyxmon_checkout() -> Path | None:
@@ -72,6 +73,11 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
     # The same commit exported again with fresh mtimes (``tar -m``), as a new clone has.
     fresh = tmp_path_factory.mktemp("nyxmon-fresh")
     subprocess.run(["tar", "-x", "-m", "-C", str(fresh)], input=archive.stdout, check=True)
+    # A Rust agent selection left by the role (nyxmon_agent_impl: rust); impl python removes it.
+    smoke_host.run(
+        f"install -d -m 0755 {AGENT_DROPIN.rsplit('/', 1)[0]} && "
+        f"printf '[Service]\\nExecStart=\\nExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent\\n' > {AGENT_DROPIN}"
+    )
     runs = []
     fresh_cfg = cfg.model_copy(update={"source_path": fresh})
     for label, config in (("first", cfg), ("second", cfg), ("fresh clone", fresh_cfg)):
@@ -80,6 +86,13 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
         assert run.succeeded, (label, run.error, [op for op in run.ops if not op.succeeded])
         runs.append(run)
     return Deployed(cfg, values, *runs)
+
+
+def test_the_python_agent_runs(smoke_host: SmokeHost, deployed: Deployed) -> None:
+    assert "Deploy nyxmon | Select the Python agent for nyxmon-monitor" in deployed.first.changed_ops
+    assert smoke_host.out(f"test -e {AGENT_DROPIN} && echo present || echo absent") == "absent"
+    for run in (deployed.first, deployed.second, deployed.fresh_clone):
+        assert run.op("Deploy nyxmon | Check nyxmon-monitor runs the Python agent").succeeded
 
 
 def test_second_run_has_no_mutating_changes(deployed: Deployed) -> None:

@@ -76,8 +76,10 @@ are removed from the host.
    schema owned by it.
 3. Groups and users `deploy` (also in group `fastdeploy`) and `fastdeploy`,
    `/home/fastdeploy` and `site`, `site/bin`, `site/logs`, `site/services`
-   (`0755`), and `/etc/sudoers.d/fastdeploy` through `sudoers_file`
-   (`fastdeploy` may run `services/*/deploy.sh` as `deploy`).
+   (`0755`). The retired wildcard rule `/etc/sudoers.d/fastdeploy`
+   (`fastdeploy` could run any `services/*/deploy.sh` as `deploy`) is removed,
+   as `fastdeploy_deploy` does since ops-library 2.35.0; each registered
+   service installs its own narrow rule for its script.
 4. `sync_tree`: the checkout to `site/`, owned by the service user.
 5. `.env` (systemd format) and `.env.shell` (double-quoted for `sh`) through
    `secret_file`, `0600`.
@@ -91,6 +93,9 @@ are removed from the host.
    `commands.py syncservices` if the source or the dependencies changed.
 9. Unit file, Traefik route (dual router, basic auth, `/` redirected to
    `/static/index.html`), then `service_rollout(always_restart=True)`.
+   Traefik is not restarted: its file provider watches
+   `/etc/traefik/dynamic` and loads a changed route itself (the role since
+   ops-library 2.31.47; it used to restart Traefik on every run).
 10. Read-only checks: the port, then a token minted with FastDeploy's own
     `create_access_token` must get the user back from `/users/me`.
 
@@ -125,9 +130,12 @@ status codes is not needed.
 
 `tests/test_fastdeploy_parity.py` renders the vendored role templates
 (`tests/parity/ansible/fastdeploy_deploy__*`) the way Ansible does and requires
-**byte-identical** `.env`, `.env.shell`, unit and sudoers files, so Ansible and
-ops-deploy can take turns without rewriting them. With `OPS_LIBRARY_PATH` set
-it also checks the vendored `ensure_token_user.py` against ops-library. The
+**byte-identical** `.env`, `.env.shell` and unit files, so Ansible and
+ops-deploy can take turns without rewriting them. With `OPS_LIBRARY_PATH` set,
+`tests/test_ops_library_drift.py` also checks the vendored
+`ensure_token_user.py` and `sudoers_blanket_check.py` and the digests of the
+`fastdeploy_*` roles against ops-library (see
+[Testing](../concepts/testing.md#drift-from-ops-library)). The
 Traefik route differs in comments only (see
 [helpers](../concepts/helpers.md#parity-differences-from-the-ansible-roles)).
 
@@ -202,7 +210,20 @@ as `fastdeploy`. Then:
   replay the dump as `fastdeploy` (`SET ROLE`). Sync `services/`, the runners
   and (when backed up) the workspace with `--delete` and fix their owners.
   Put back the env file (`0600`), units, the Traefik route and sudoers rules,
-  then reload, enable and start.
+  then reload, enable and start. Like the role since ops-library 2.35.0, what
+  the FastDeploy privilege reduction retired stays out even when the archive
+  has it: the top-level entries `retired_entries` (`fastdeploy-self`,
+  `fastdeploy-self-playbook.yml`, `apt_upgrade_local`, `apt_upgrade_staging`)
+  are excluded from the services and runner syncs, the sudoers files
+  `retired_sudoers` (`fastdeploy`, `fastdeploy_fastdeploy-self`,
+  `fastdeploy_self_deploy_users`) are not copied back, and any other sudoers
+  file is restored only when the role's `files/sudoers_blanket_check.py`
+  (vendored) passes it: nothing but blank lines, comments and narrow
+  `<user> ALL=(<runas>) NOPASSWD:[NOSETENV:] <script>[ *| --config *]` rules
+  for scripts below `/home/fastdeploy/site/services/`, `/home/deploy/runners/`
+  or `/usr/local/libexec/`. An older register rule `deploy ALL=(root)
+  NOPASSWD: ALL` is skipped (rerun that service's register playbook). Each
+  skipped file is named in the output.
 - **Verify.** The service is active and `/docs` answers 200. The service
   table counts as many rows as the metadata recorded, when that count is
   above zero.
@@ -216,7 +237,8 @@ the unit file, the route and `/etc/sudoers.d/fastdeploy_*`. It drops the
 `fastdeploy` database and role, ends the processes of `fastdeploy` and
 `deploy`, and removes both homes, users and groups. Failures there do not
 stop the removal, as with the role's `ignore_errors`. Like the role, it
-keeps the deploy role's own `/etc/sudoers.d/fastdeploy` rule. It only acts
+leaves `/etc/sudoers.d/fastdeploy` (outside `fastdeploy_*`) alone; the deploy
+removes that retired rule. It only acts
 on what exists, so a second run changes nothing. One difference from the
 role: the database is dropped with `dropdb`. The role uses
 `community.postgresql`, which needs `python3-psycopg2` on the host and fails
@@ -228,26 +250,33 @@ role: the database is dropped with `dropdb`. The role uses
   (only the restart), code change (sync, `uv sync`, `syncservices`, no build),
   frontend and build-URL changes (build), old Node.js, secret and database
   password rotation, role without login or with a non-SCRAM password, wrong
-  owners, missing initial and legacy users, unit and sudoers drift, protected
-  host state, leak checks (no secret in commands, op names/args or uploads),
+  owners, missing initial and legacy users, unit drift, the retired wildcard
+  sudoers rule removed and no sudoers rule installed, basic-auth rotation
+  without a Traefik restart, protected host state, leak checks (no secret in commands, op names/args or uploads),
   validation.
-- `tests/test_postgres.py`: `postgres_database` and `sudoers_file`.
+- `tests/test_postgres.py`: `postgres_database` and `sudoers_file` (no longer
+  used by this deploy).
 - `tests/smoke/test_fastdeploy_smoke.py` (`just smoke`, needs
   `FASTDEPLOY_SOURCE` or `PROJECTS_ROOT`): a real deploy of the committed
   `HEAD`, a converged rerun and a fresh-export rerun (only the restart), the
   initial user logs in, the database role logs in with its password, a
-  registered service and runner survive, the sudoers rule allows exactly the
-  deploy scripts, Traefik answers 401 without auth, no secret outside its files
-  (including the PostgreSQL logs).
+  registered service and runner survive, a pre-seeded retired wildcard rule is
+  removed and FastDeploy cannot run a registered `deploy.sh` without that
+  service's own rule, Traefik answers 401 without auth, no secret outside its
+  files (including the PostgreSQL logs). Last, a basic-auth rotation is
+  served by Traefik within seconds without a Traefik restart (same PID).
 - `tests/test_fastdeploy_lifecycle.py` (fake connector): the password only
-  on stdin, backup and restore settings (the safety backup's overrides),
-  archive names, a password with a line break refused, removal order, a
+  on stdin, backup and restore settings (the safety backup's overrides, the
+  retired lists, the vendored check), the restore phase run through local bash
+  on a snapshot with retired entries and blanket rules, archive names, a password with a line break refused, removal order, a
   second removal without change, the confirmation.
 - `tests/smoke/test_fastdeploy_lifecycle_smoke.py`: a backup with a marker
   table, the registered service and the runner. The restore after losing the
   marker and the registration brings both back and passes the service count
-  check. A broken archive (no env file) fails the restore, which rolls back to
-  its safety backup. Removal twice (the second without change), then a fresh
+  check. An archive with retired services and runners, the wildcard rule and
+  a `deploy ALL=(root) NOPASSWD: ALL` rule restores without them and with the
+  narrow rule (`visudo -c` passes). A broken archive (no env file) fails the
+  restore, which rolls back to its safety backup. Removal twice (the second without change), then a fresh
   deploy.
 - Ansible coexistence runs from ops-control: `just smoke-fastdeploy-coexistence`.
   Deploys take turns with this deploy, and backup, restore and removal run

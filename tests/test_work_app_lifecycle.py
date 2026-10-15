@@ -203,7 +203,9 @@ def test_restore_of_the_latest_archive_runs_the_roles_sequence() -> None:
     restart = commands.index("systemctl restart work-app.service")
     assert commands.index(expected[-1]) < restart
     assert commands[-2:] == [
-        "rm -rf /home/work/site.pre-restore-20261015T120000",
+        "if [ -d /home/work/site.pre-restore-20261015T120000 ]; then echo 'Pre-restore copy of /home/work/site "
+        "(database and .env included) kept at /home/work/site.pre-restore-20261015T120000. Nothing removes it; "
+        "prune it by hand once the restored Work app is confirmed.'; fi",
         f"rm -rf {staging}",
     ]
     assert "chown -R work:work /home/work/site/staticfiles" in commands
@@ -226,6 +228,19 @@ def test_dry_run_unpacks_and_checks_but_changes_nothing_else() -> None:
     assert any("sha256sum -c" in c for c in commands)
     assert not any("systemctl" in c or "install" in c for c in commands)
     assert commands[-1] == "rm -rf /tmp/work-app-restore"
+
+
+def test_the_pre_restore_copy_is_kept_unless_deletion_is_asked_for() -> None:
+    snapshot = "/home/work/site.pre-restore-20261015T120000"
+
+    # work_app_restore_safe_snapshot_delete defaults to false (ops-library a811bc16).
+    assert WorkAppRestoreConfig().safe_snapshot_delete is False
+    kept = restore(cfg_restore())
+    assert f"rm -rf {snapshot}" not in kept.executed_commands
+    assert "work_app restore | Report the kept pre-restore copy " + snapshot in kept.changed_ops
+    assert "work_app restore | Report the kept pre-restore copy " + snapshot not in kept.mutating_changed_ops
+    deleted = restore(cfg_restore(safe_snapshot_delete=True))
+    assert f"rm -rf {snapshot}" in deleted.executed_commands
 
 
 def test_cleanup_and_snapshot_flags() -> None:

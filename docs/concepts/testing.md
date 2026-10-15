@@ -100,6 +100,31 @@ output for files and directories, `sha1sum` output matching the rendered
 content, and `systemctl show` output for the unit. `tests/test_toy.py`
 (`converged_host`) is the reference.
 
+## Drift from ops-library
+
+The ports follow ops-library's roles, which keep changing. Parity tests
+compare rendered files with the vendored role templates
+(`tests/parity/ansible`), but a role can also change what it does (remove a
+file, stop restarting Traefik, skip entries on restore) without touching a
+template. With `OPS_LIBRARY_PATH` set to a checkout of ops-library's main
+branch:
+
+- `test_traefik_parity.py -k vendored` fails when a vendored template differs
+  from the role's or is gone;
+- `tests/test_ops_library_drift.py` fails when a role file vendored under
+  `services/*/files` (`ensure_token_user.py`, `sudoers_blanket_check.py`, the
+  delve StoreKit certificates) differs or is gone, and when a role a port
+  mirrors changed since it was last checked:
+  `tests/parity/ops_library_roles.json` records the ops-library commit and a
+  digest of each role's `defaults`, `files`, `handlers`, `tasks`,
+  `templates` and `vars`. It covers the `fastdeploy_*`, `nyxmon_*` and
+  `work_app_*` roles so far.
+
+After a role change, port it (or document why not), print the new digests
+with `uv run python -m tests.test_ops_library_drift <ops-library>` and update
+the manifest and its commit. Without `OPS_LIBRARY_PATH` these tests are
+skipped (CI has no ops-library checkout); a stale checkout fails them.
+
 ## Notes on pyinfra behaviour
 
 - An operation's body runs at plan time **and** again at execution time.

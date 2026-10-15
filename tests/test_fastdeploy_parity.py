@@ -1,12 +1,12 @@
 """fastdeploy files are byte-identical to the fastdeploy_deploy role's output.
 
 The role templates are vendored under ``tests/parity/ansible`` (checked against
-ops-library by ``test_traefik_parity.test_vendored_templates_match_ops_library``)
+ops-library by ``test_traefik_parity.test_vendored_templates_match_ops_library``;
+the vendored ``files/`` by ``test_ops_library_drift``)
 and rendered the way Ansible's ``template`` module does. Identical bytes mean
 switching the host between Ansible and ops-deploy rewrites none of them.
 """
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ import pytest
 from ops_deploy.core import SecretRef, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.services.fastdeploy import FastdeployConfig
-from ops_deploy.services.fastdeploy.deploy import FILES, TEMPLATE_PACKAGE, render_env
+from ops_deploy.services.fastdeploy.deploy import TEMPLATE_PACKAGE, render_env
 from tests.fastdeploy_fixtures import make_source
 
 VENDORED = Path(__file__).parent / "parity" / "ansible"
@@ -112,10 +112,10 @@ def test_env_matches_role(source: Path, overrides: dict[str, Any], shell: bool) 
 
 
 @pytest.mark.parametrize("overrides", CONFIGS)
-@pytest.mark.parametrize("template", ["fastdeploy.service.j2", "sudoers.j2"])
-def test_unit_and_sudoers_match_role(source: Path, overrides: dict[str, Any], template: str) -> None:
+def test_unit_matches_role(source: Path, overrides: dict[str, Any]) -> None:
     cfg, secrets = make(source, **overrides)
 
+    template = "fastdeploy.service.j2"
     assert render(TEMPLATE_PACKAGE, template, cfg=cfg) == render_ansible(template, role_vars(cfg, secrets))
 
 
@@ -125,14 +125,3 @@ def test_shell_env_quotes_what_the_role_quotes(source: Path) -> None:
     shell = render_env(cfg, secrets, shell=True).reveal().decode()
 
     assert 'SECRET_KEY="k\\$y\\`with\\"quotes\\\\and(parens)&amp;#"' in shell.splitlines()
-
-
-OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
-
-
-@pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
-def test_vendored_token_user_script_matches_ops_library() -> None:
-    assert OPS_LIBRARY is not None
-    role = Path(OPS_LIBRARY) / "roles" / "fastdeploy_deploy" / "files" / "ensure_token_user.py"
-
-    assert (FILES / "ensure_token_user.py").read_text() == role.read_text()

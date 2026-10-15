@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Ports caught up with ops-library main (fd6b4cf1), ops-control main and the
+  live hosts:
+  - `fastdeploy`: the deploy removes the retired wildcard rule
+    `/etc/sudoers.d/fastdeploy` instead of installing it (`fastdeploy_deploy`
+    2.35.0); `templates/sudoers.j2` and its vendored role template are gone.
+    The restore never brings back retired services and runners
+    (`fastdeploy-self`, `fastdeploy-self-playbook.yml`, `apt_upgrade_local`,
+    `apt_upgrade_staging`) or retired sudoers files, and restores another
+    sudoers file only when the role's `sudoers_blanket_check.py` (vendored
+    under `files/`) passes it, so no `deploy ALL=(root) NOPASSWD: ALL` rule
+    comes back from an older archive (`fastdeploy_restore` 2.35.0).
+  - `fastdeploy` and `nyxmon`: a changed Traefik route no longer restarts
+    Traefik (ops-library 2.31.47); its file provider loads the change.
+  - `nyxmon`: `agent_impl` (only `python`) mirrors the role's
+    `nyxmon_agent_impl`: the Rust agent drop-in `agent-impl.conf` is removed
+    and a read-only check proves the monitor runs the venv's `start-agent`
+    (the role's `agent_verify.yml`). Installing and selecting the Rust agent
+    is not ported.
+  - `work_app` restore: `safe_snapshot_delete` defaults to `False`; the
+    pre-restore copy is kept and its path reported (ops-library a811bc16).
+  - `tests/test_ops_library_drift.py`: with `OPS_LIBRARY_PATH` set, fails
+    when a vendored role file or a mirrored role changes in ops-library
+    (digests in `tests/parity/ops_library_roles.json`). See
+    [Testing](concepts/testing.md#drift-from-ops-library).
 - Commands no longer depend on the SSH user's login shell. Root's on macmini
   and staging is fish, which halves backslash pairs inside single quotes, so
   the weeknotes_home env loader (`python -c` with a regex) crashed live with

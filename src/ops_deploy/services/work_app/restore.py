@@ -26,7 +26,7 @@ from pyinfra.api import DeployError, deploy
 from pyinfra.operations import server
 
 from ops_deploy.base._common import AbsolutePath, output
-from ops_deploy.helpers import http_check
+from ops_deploy.helpers import http_check, mark_read_only
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.services.work_app._lifecycle import SLUG, WorkAppPaths
 
@@ -47,7 +47,9 @@ class WorkAppRestoreConfig(WorkAppPaths):
     staging_dir: AbsolutePath = "/tmp/work-app-restore"
     safe_snapshot_prefix: str = Field(default="pre-restore", pattern=r"^[A-Za-z0-9._-]+$")
     create_safe_snapshot: bool = True
-    safe_snapshot_delete: bool = True
+    # Like the role (ops-library a811bc16): the pre-restore copy of the site
+    # (database and .env included) is kept after a success too; True deletes it.
+    safe_snapshot_delete: bool = False
     reload_traefik: bool = True
     reload_systemd: bool = True
     verify_http: bool = True
@@ -270,6 +272,17 @@ def deploy_work_app_restore(cfg: WorkAppRestoreConfig) -> None:
         _http_check(cfg, url)
     if snapshot and cfg.safe_snapshot_delete:
         server.shell(name="Remove the safety snapshot", commands=[f"rm -rf {shlex.quote(snapshot)}"])
+    elif snapshot:
+        kept = (
+            f"Pre-restore copy of {cfg.site_path} (database and .env included) kept at {snapshot}. "
+            "Nothing removes it; prune it by hand once the restored Work app is confirmed."
+        )
+        mark_read_only(
+            server.shell(
+                name=f"Report the kept pre-restore copy {snapshot}",
+                commands=[f"if [ -d {shlex.quote(snapshot)} ]; then echo {shlex.quote(kept)}; fi"],
+            )
+        )
     cleanup()
 
 
