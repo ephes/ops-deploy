@@ -1,0 +1,84 @@
+# Traefik configuration for the work app
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    work-app-int:
+      rule: "Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+{% if route.cert_resolver %}
+      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    work-app-ext:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - work-app-auth
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+{% if route.cert_resolver %}
+      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # HTTP -> HTTPS redirect
+    work-app-http:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - work-app-redirect
+      service: work-app
+
+  middlewares:
+    work-app-auth:
+      basicAuth:
+        users:
+          - "{{ route.basic_auth.user }}:{{ auth_hash }}"
+        removeHeader: true
+
+    work-app-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    work-app-gzip:
+      compress: {}
+
+    work-app-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    work-app:
+      loadBalancer:
+        servers:
+          - url: "http://{{ route.app_host }}:{{ route.app_port }}"

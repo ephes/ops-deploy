@@ -27,6 +27,17 @@
   ports of the `docker_install` and `vector_apt_install` roles (the repository
   files are the ones the roles write). See [infra](infra.md).
 
+- `ops_deploy.services.work_app`: `deploy_work_app`, a port of the
+  `work_app_deploy` role (rsync method) and of the port preflight, Echoport
+  backup target and Nyxmon health check in ops-control's
+  `deploy-work-app.yml`. `.env`, unit and Traefik route are byte-identical to
+  the role's (parity tests against the vendored templates). `src/` and
+  `ledger/` are synced with `--delete` inside each, the SQLite database,
+  `.env`, venv and static files never are. Migrations, `collectstatic` and the
+  upserts run only when needed (the upserts probe read-only first), so a
+  converged deploy changes nothing. Fake connector tests and
+  `tests/smoke/test_work_app_smoke.py`; see [work_app](services/work_app.md).
+
 - `ops_deploy.services.archive`: `deploy_archive`, a port of the
   `archive_deploy` role (rsync method) plus the steps ops-control's
   `deploy-archive.yml` runs around it (MinIO bucket and service account,

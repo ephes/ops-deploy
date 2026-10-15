@@ -97,6 +97,13 @@ from the committed `HEAD` of a daybook checkout (`DAYBOOK_SOURCE`, else
 state on the VM. Its operations wiring runs against small stand-ins for
 Echoport, FastDeploy and Nyxmon (`tests/smoke/weeknotes_home_stubs.py`).
 
+`test_work_app_smoke.py` deploys [work_app](../services/work_app.md) from the
+committed `HEAD` of a work-ledger checkout (`WORK_LEDGER_SOURCE`, else
+`$PROJECTS_ROOT/work-ledger`; skipped without one) twice and once from a fresh
+export; the reruns must have no mutating change. It checks the service,
+modes and owners, the Traefik route, leaks, and that the port preflight
+refuses another listener.
+
 `test_infra_smoke.py` runs [PostgreSQL and Redis](../infra.md) on the VM.
 PostgreSQL: twice with a throwaway database, owner and `pg_trgm` (second run
 without mutating change; files equal the rendered role output), a table row

@@ -1,0 +1,27 @@
+# Work app systemd service
+# Managed by Ansible - do not edit manually
+
+[Unit]
+Description=Work app (agent work ledger)
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+WorkingDirectory={{ cfg.site_path }}
+User={{ cfg.user }}
+Group={{ cfg.group }}
+Environment="DJANGO_SETTINGS_MODULE={{ cfg.django_settings_module }}"
+EnvironmentFile={{ cfg.env_path }}
+ExecStart={{ cfg.venv_bin }}/gunicorn --workers {{ cfg.workers }} --bind {{ cfg.app_host }}:{{ cfg.app_port }} --access-logfile - {{ cfg.wsgi_module }}
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Note: ProtectHome not used because the service runs from {{ cfg.home }}
+ReadWritePaths={{ cfg.site_path }}
+
+[Install]
+WantedBy=multi-user.target
