@@ -37,10 +37,10 @@ def file(path: str, content: str, *, user: str = "root", mode: str = "-rw-r--r--
     }
 
 
-def symlink(path: str, target: str) -> dict[str, Any]:
+def symlink(path: str, target: str, *, user: str = "root") -> dict[str, Any]:
     """``Link`` fact: ``path`` is a symlink to ``target``."""
 
-    line = f"user=root group=root mode=lrwxrwxrwx atime=0 mtime=0 ctime=0 size=10 '{path}' -> '{target}'"
+    line = f"user={user} group={user} mode=lrwxrwxrwx atime=0 mtime=0 ctime=0 size=10 '{path}' -> '{target}'"
     return {f"test -e {path} ||": [line]}
 
 

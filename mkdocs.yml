@@ -31,4 +31,5 @@ nav:
       - archive: services/archive.md
       - chesslab: services/chesslab.md
       - delve: services/delve.md
+      - echoport: services/echoport.md
   - Changelog: changelog.md

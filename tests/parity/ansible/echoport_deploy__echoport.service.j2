@@ -1,0 +1,36 @@
+[Unit]
+Description=Echoport Backup Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ echoport_user }}
+Group={{ echoport_group }}
+WorkingDirectory={{ echoport_site_path }}
+EnvironmentFile={{ echoport_site_path }}/.env
+
+ExecStart={{ echoport_venv_bin }}/granian \
+    --workers {{ echoport_workers }} \
+    --interface wsgi \
+    --host {{ echoport_app_host }} \
+    --port {{ echoport_app_port }} \
+    --access-log \
+    config.wsgi:application
+
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Need access to /home/echoport
+ProtectHome=false
+ReadWritePaths={{ echoport_home }} {{ echoport_cache_dir }}
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

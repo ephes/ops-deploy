@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `ops_deploy.services.echoport`: `deploy_echoport`, a port of the
+  `echoport_deploy` role (rsync method, uv) plus the steps ops-control's
+  `deploy-echoport.yml` runs around it (loopback listener check, Nyxmon
+  health check upsert). Ships the role's templates unchanged, so the env file,
+  unit, Traefik route and staging refresh script are byte-identical. The
+  service user's crontab is edited in Ansible's `cron` format, so the two
+  tools never add a second copy of a job. migrate runs when code changed or a
+  migration is pending; the admin account, the cleanup user's `mc` alias
+  (credentials on stdin, not the role's `mc alias set` arguments), the
+  crontab and the Nyxmon check are probed read-only and written only when
+  they differ. Fake connector, parity, host script and smoke tests; see
+  [echoport](services/echoport.md).
+
 - `ops_deploy.services.archive`: `deploy_archive`, a port of the
   `archive_deploy` role (rsync method) plus the steps ops-control's
   `deploy-archive.yml` runs around it (MinIO bucket and service account,
