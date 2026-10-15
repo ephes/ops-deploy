@@ -51,6 +51,12 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
     checkout = marina_checkout()
     if checkout is None or not (checkout / ".git").exists():
         pytest.skip("no marina checkout (set MARINA_SOURCE or PROJECTS_ROOT)")
+    # Start from nothing: marina has no remove deploy and a coexistence smoke may have run before.
+    smoke_host.run(
+        "systemctl disable --now marina 2>/dev/null; "
+        "rm -f /etc/systemd/system/marina.service /etc/traefik/dynamic/marina*.yml; "
+        "systemctl daemon-reload; userdel -r marina 2>/dev/null; rm -rf /home/marina; true"
+    )
     source = tmp_path_factory.mktemp("marina")
     archive = subprocess.run(["git", "-C", str(checkout), "archive", "HEAD"], check=True, capture_output=True)
     subprocess.run(["tar", "-x", "-C", str(source)], input=archive.stdout, check=True)
