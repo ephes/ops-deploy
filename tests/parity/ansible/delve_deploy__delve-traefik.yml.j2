@@ -1,0 +1,37 @@
+# Managed by Ansible (delve_deploy) - Traefik dynamic config for delve
+# HTTP->HTTPS redirect is handled globally by the `web` entrypoint.
+http:
+  routers:
+    delve:
+      rule: "Host(`{{ delve_traefik_host }}`)"
+      service: delve
+      entryPoints:
+{% for ep in delve_traefik_entrypoints %}
+        - "{{ ep }}"
+{% endfor %}
+{% if delve_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ delve_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+      middlewares:
+        - delve-headers
+
+  middlewares:
+    delve-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
+  services:
+    delve:
+      loadBalancer:
+        servers:
+          - url: "http://{{ delve_listen_address }}:{{ delve_port }}"

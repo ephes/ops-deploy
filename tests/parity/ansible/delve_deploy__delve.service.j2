@@ -1,0 +1,29 @@
+# Managed by Ansible (delve_deploy). Do not edit on the host.
+[Unit]
+Description=Delve backend service (delved)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ delve_user }}
+Group={{ delve_group }}
+WorkingDirectory={{ delve_data_dir }}
+EnvironmentFile={{ delve_env_path }}
+ExecStart={{ delve_bin_path }}
+Restart=always
+RestartSec=5s
+LimitNOFILE={{ delve_systemd_nofile }}
+
+# Hardening — the service writes only its SQLite database under the data dir.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ delve_data_dir }}
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

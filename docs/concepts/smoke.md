@@ -82,6 +82,15 @@ the registered service and runner survive, and leaks (also in
 `/var/log/postgresql`). The first run installs Node.js from NodeSource and
 builds the frontend.
 
+`test_delve_smoke.py` builds [delve](../services/delve.md) from the Delve
+backend source (`DELVE_SOURCE_PATH`, else
+`$PROJECTS_ROOT/podcast/apps/delve-backend`; skipped without one; needs Go)
+for the VM's architecture and deploys it four times: first, converged, a
+second build of the same source (identical bytes, no change) and a changed
+binary over the running one (install and restart only). It checks the unit
+and the disabled collector timer, owners and modes, `/health` through
+Traefik, and leaks.
+
 `test_infra_smoke.py` runs [PostgreSQL and Redis](../infra.md) on the VM.
 PostgreSQL: twice with a throwaway database, owner and `pg_trgm` (second run
 without mutating change; files equal the rendered role output), a table row
@@ -133,4 +142,5 @@ Measured on an Apple silicon Mac (2026-10-14):
 | nyxmon second run (converged) | 0.8 s |
 | fastdeploy first run, fresh service (Node.js, uv builds asyncpg, npm build) | 53.6 s |
 | fastdeploy second run (converged apart from the restart) | 2.2 s |
+| delve first run / second run / changed binary (2026-10-15) | 1.5 s / 0.4 s / 1.5 s |
 | `just smoke`, VM running | 10-12 s |

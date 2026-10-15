@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `ops_deploy.services.delve`: `deploy_delve` and `build_delved`, a port of
+  the `delve_deploy` role (the Delve backend Go binary behind Traefik, plus
+  the Discovery collector oneshot and timer). The binary is cross-compiled on
+  the controller as the playbook does; reproducible builds keep an unchanged
+  checkout a no-op. A new binary is staged next to the old one and renamed
+  in, since writing into the running executable fails. Env file, units and
+  route are byte-identical to the role's; Traefik picks the route up through
+  its file watcher (the role's reload handler is a no-op). Optional
+  `public_health_check` checks `/health` through Traefik on the host. Fake
+  connector, parity and smoke tests; see [delve](services/delve.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and

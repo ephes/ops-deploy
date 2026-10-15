@@ -1,0 +1,25 @@
+# Managed by Ansible (delve_deploy). Do not edit on the host.
+[Unit]
+Description=Delve Discovery reviewed RSS collector oneshot
+Documentation=https://github.com/ephes/podcast
+After=network-online.target {{ delve_service_name }}.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ delve_user }}
+Group={{ delve_group }}
+WorkingDirectory={{ delve_data_dir }}
+EnvironmentFile={{ delve_env_path }}
+ExecStart={{ delve_bin_path }} discovery collect --due --concurrency {{ delve_discovery_collector_concurrency }}
+TimeoutStartSec=35min
+
+# Hardening — the collector writes only through the Delve SQLite DB under data dir.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ delve_data_dir }}
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
