@@ -35,3 +35,11 @@ metrics_endpoint_services:
   - dovecot
   - rspamd
 metrics_endpoint_extra_metrics: []
+
+# Probe state files exported as top-level sections, e.g.
+#   - { name: mailgun_relay, path: /var/lib/mailgun-relay-probe/state }
+# Each file holds key=value lines with last_status and last_run (epoch
+# seconds), as written by mail_monitoring's relay probe. The endpoint emits
+# {"<name>": {"last_status": N, "last_run": N, "age_seconds": N}}; a missing
+# or malformed file omits the section, so json-metrics rules on it fail.
+metrics_endpoint_probe_states: []
