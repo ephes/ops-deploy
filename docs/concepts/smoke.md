@@ -96,7 +96,8 @@ committed `HEAD` of a work-ledger checkout (`WORK_LEDGER_SOURCE`, else
 `$PROJECTS_ROOT/work-ledger`; skipped without one) twice and once from a fresh
 export; the reruns must have no mutating change. It checks the service,
 modes and owners, the Traefik route, leaks, and that the port preflight
-refuses another listener.
+refuses another listener. It then backs the app up, deletes its data,
+restores it, and removes it twice (the second removal changes nothing).
 
 `test_infra_smoke.py` runs [PostgreSQL and Redis](../infra.md) on the VM.
 PostgreSQL: twice with a throwaway database, owner and `pg_trgm` (second run

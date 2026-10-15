@@ -10,14 +10,26 @@ from __future__ import annotations
 
 import os
 import secrets
+import shlex
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
-from ops_deploy.services.work_app import WorkAppConfig, deploy_work_app
+from ops_deploy.services.work_app import (
+    WorkAppBackupConfig,
+    WorkAppConfig,
+    WorkAppRemoveConfig,
+    WorkAppRestoreConfig,
+    deploy_work_app,
+    deploy_work_app_backup,
+    deploy_work_app_remove,
+    deploy_work_app_restore,
+)
 from ops_deploy.testing import SshRun, run_deploy_ssh
 from tests.smoke.conftest import TIMINGS, SmokeHost
 
@@ -170,3 +182,75 @@ def test_files_newer_than_the_service_restart_it(smoke_host: SmokeHost, deployed
         deploy_work_app, deployed.cfg, deployed.secrets, host_name=smoke_host.name, host_data=smoke_host.host_data
     )
     assert again.mutating_changed_ops == []
+
+
+# -- backup, restore, remove (last: the removal deletes everything) -----------------
+
+
+def _django(smoke_host: SmokeHost, script: str) -> str:
+    shell = f"set -a; . ./.env; set +a; exec .venv/bin/python manage.py shell -c {shlex.quote(script)}"
+    out = smoke_host.out(f"cd {SITE} && runuser -u work -- sh -c {shlex.quote(shell)}")
+    return out.splitlines()[-1] if out else ""
+
+
+USERS = (
+    "from django.contrib.auth import get_user_model; "
+    "print(sorted(get_user_model().objects.values_list('username', flat=True)))"
+)
+
+
+def test_backup_restore_and_remove(smoke_host: SmokeHost, deployed: Deployed, tmp_path: Path) -> None:
+    def run(deploy: Callable[..., Any], cfg: object) -> SshRun:
+        result = run_deploy_ssh(deploy, cfg, host_name=smoke_host.name, host_data=smoke_host.host_data)
+        assert result.succeeded, (result.error, [op for op in result.ops if not op.succeeded])
+        return result
+
+    # The roles need the sqlite3 CLI on the host (macmini has it); the VM does not.
+    smoke_host.run(
+        "command -v sqlite3 >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive "
+        "apt-get install -y -qq sqlite3; }"
+    )
+    _django(
+        smoke_host,
+        "from django.contrib.auth import get_user_model; get_user_model().objects.create_user('smoke-marker')",
+    )
+    local = tmp_path / "backups"
+    backup_cfg = WorkAppBackupConfig(local_dir=local, ops_library_version="smoke")
+    run(deploy_work_app_backup, backup_cfg)
+    (archive,) = local.glob("manual-*.tar.gz")
+    assert archive.stat().st_size > 0
+    listing = smoke_host.out(f"tar -tzf /opt/backups/work_app/{archive.name}")
+    for member in ("metadata.yml", "manifest.sha256", "database/db.sqlite3", "env/.env", "configs/work-app.service"):
+        assert f"{archive.name.removesuffix('.tar.gz')}/{member}" in listing
+    assert smoke_host.out(f"stat -c '%a %U' /opt/backups/work_app/{archive.name}") == "600 root"
+
+    # The data changes after the backup; the restore must bring the backed-up state back.
+    _django(
+        smoke_host,
+        "from django.contrib.auth import get_user_model; get_user_model().objects.all().delete()",
+    )
+    assert _django(smoke_host, USERS) == "[]"
+    restore = run(deploy_work_app_restore, WorkAppRestoreConfig(ops_library_version="smoke"))
+    assert any(name.endswith("| Restart work-app") for name in restore.changed_ops)
+    assert _django(smoke_host, USERS) == "['smoke-marker']"
+    assert smoke_host.out("systemctl is-active work-app") == "active"
+    assert smoke_host.out(f"stat -c '%a %U %G' {SITE}/db.sqlite3") == "600 work work"
+    assert smoke_host.out("ls -d /home/work/site.pre-restore-* 2>/dev/null || true") == ""
+    assert smoke_host.out("ls -d /tmp/work-app-restore 2>/dev/null || true") == ""
+    # A deploy over the restored state has nothing to do.
+    again = run_deploy_ssh(
+        deploy_work_app, deployed.cfg, deployed.secrets, host_name=smoke_host.name, host_data=smoke_host.host_data
+    )
+    assert again.succeeded
+    assert again.mutating_changed_ops == []
+
+    removal = WorkAppRemoveConfig(confirm=True, auto_confirm=True)
+    run(deploy_work_app_remove, removal)
+    assert smoke_host.out("systemctl is-active work-app || true") in {"inactive", "unknown"}
+    assert (
+        smoke_host.out("ls /etc/systemd/system/work-app.service /etc/traefik/dynamic/work-app.yml 2>&1 | wc -l") == "2"
+    )
+    assert smoke_host.out("id work 2>&1 | grep -c 'no such user' || true") == "1"
+    assert smoke_host.out("test -e /home/work && echo present || echo gone") == "gone"
+    second = run(deploy_work_app_remove, removal)
+    assert second.mutating_changed_ops == []

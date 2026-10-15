@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `ops_deploy.services.work_app`: `deploy_work_app_backup`,
+  `deploy_work_app_restore` and `deploy_work_app_remove`, ports of the
+  `work_app_backup`, `work_app_restore` and `work_app_remove` roles. The
+  archive layout and `metadata.yml` match the roles', so either tool restores
+  the other's archives. Restore checks the archive (slug, metadata, version)
+  from its listing before it changes anything. Fake connector and smoke
+  tests; see [work_app](services/work_app.md).
+
 - `ops_deploy.services.work_app`: `deploy_work_app`, a port of the
   `work_app_deploy` role (rsync method) and of the port preflight, Echoport
   backup target and Nyxmon health check in ops-control's

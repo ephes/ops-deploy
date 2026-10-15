@@ -125,6 +125,85 @@ Differences:
 - Not ported: switching off Traefik or basic auth, other deploy methods, other
   source directories or files, `work_app_uv_path`.
 
+## Backup, restore and remove
+
+`deploy_work_app_backup`, `deploy_work_app_restore` and
+`deploy_work_app_remove` port the `work_app_backup`, `work_app_restore` and
+`work_app_remove` roles (configs `WorkAppBackupConfig`, `WorkAppRestoreConfig`,
+`WorkAppRemoveConfig`). They take no secrets; all three share the paths of the
+deploy (`user`, `group`, `home`, `site_path`, `database_path`, `service_name`,
+`traefik_config_path`) with the same defaults, so pass the values the deploy
+used. Either tool restores the other's archives and removes the other's
+deploy.
+
+```python
+run(deploy_work_app_backup, WorkAppBackupConfig(ops_library_version="2.31.40"))
+run(deploy_work_app_restore, WorkAppRestoreConfig(ops_library_version="2.31.40"))
+run(deploy_work_app_remove, WorkAppRemoveConfig(confirm=True))
+```
+
+### Backup
+
+Writes `<root>/<prefix>-<timestamp>/` (default root `/opt/backups/work_app`,
+prefix `manual`, timestamp the host's local `%Y%m%dT%H%M%S`) with
+`database/db.sqlite3`, `static/`, `env/.env`, `configs/work-app.service`,
+`configs/traefik.yml`, `metadata.yml` and `manifest.sha256`, packs it as
+`<dir>.tar.gz` and fetches the archive to `~/backups/work_app` (`0700`) on the
+controller. Directories are `0700 root`, copied files `0600 root`.
+
+- The database is copied with `sqlite3 .backup` (up to `sqlite_retries`
+  attempts, 2 s apart) while the service runs; if that fails, or with
+  `force_stop`, the service is stopped for a plain copy and started again
+  however the copy ends. `metadata.yml` records `sqlite_mode` (`hot`,
+  `offline` or `missing`).
+- `include_static`, `include_env`, `include_systemd`, `include_traefik`,
+  `manifest`, `create_archive`, `fetch_local` switch the parts as the role's
+  variables do. A part whose source is missing is skipped.
+- `ops_library_version` is written to `metadata.yml` and compared by restore.
+  Ansible writes the `version` of the installed collection's `galaxy.yml`, or
+  `unknown` when the collection copy has none; pass the same value so the two
+  tools accept each other's archives. `inventory_name` (default `macmini`) is
+  the `host` field.
+- Differences: the archive is packed with `umask 077` (it holds `.env`); only
+  `tar.gz`.
+
+### Restore
+
+Selects the newest `*.tar.gz` under `root` (`archive: latest`), an archive
+name below `root` or an absolute path. While planning, from the archive's
+listing and `metadata.yml` (nothing is unpacked yet), it refuses before any
+change: a missing archive, no payload directory, unreadable metadata, another
+slug, a missing `slug`/`timestamp`/`host`, and an `ops_library_version`
+different from the config's (unless `allow_version_mismatch`). Then, as the
+role does: reset and fill `/tmp/work-app-restore` (`0700`), check
+`manifest.sha256`, stop work-app (a failing stop aborts), copy the site to
+`<site>.pre-restore-<timestamp>`, restore static files (`rsync --delete`),
+remove stale `-wal`/`-shm`/`-journal` files, restore the database (`0600
+work`) and `.env`, restore the unit and the Traefik config when they differ
+(`daemon-reload`, `reload traefik`), fix ownership of the static files, run
+`check --deploy` and `showmigrations` when `.env` exists, check
+`PRAGMA integrity_check`, restart work-app and check its login page. The
+safety snapshot and staging directory are removed after a success. `dry_run`
+stops after the checks. `restore_env`, `rebuild_static`, `verify_http` and the
+other role switches are config fields too.
+
+Difference: when a step fails after work-app was stopped, the staging
+directory (`0700`, root-only) and the safety snapshot stay; the role removes
+the staging directory in an `always` block. The next restore resets it.
+
+### Remove
+
+Destructive by default, like the role: requires `confirm`, then stops and
+disables work-app, removes the unit (and reloads systemd), the Traefik config,
+the database files, the home directory and the user and group. Keeping the
+database means keeping home and user (`remove_database=False` together with
+`remove_home` or `remove_user` is refused). `remove_home` removes the home directory itself
+when the user is kept or already gone (`userdel -r` takes it otherwise, and
+the removal fails if it is still there). Where the role pauses for
+ENTER before deleting a database, this asks on the controller's terminal
+before the first change; without a terminal it refuses unless
+`auto_confirm`. A second run finds nothing left and changes nothing.
+
 ## Tests
 
 - `tests/test_work_app.py` (fake connector): first run, converged second run
@@ -138,5 +217,14 @@ Differences:
   fresh export; second and fresh runs converged; service active and answering,
   modes and owners, Traefik route, no secret on disk outside its files; the
   port preflight refuses another listener. The wiring is off on the VM.
-- Ansible coexistence (deploys taking turns, data kept) runs from
-  ops-control: `just smoke-work-app-coexistence`.
+- `tests/test_work_app_lifecycle.py` (fake connector): the backup layout,
+  metadata and archive; the offline fallback and the optional parts; the
+  restore sequence, the plan-time refusals (slug, fields, version, missing
+  archive), dry run, flags and failure; remove with every flag combination,
+  the refusals and an already removed app.
+- `tests/smoke/test_work_app_smoke.py` also runs a backup, deletes the data,
+  restores it (data back, snapshot and staging removed, a deploy over it has
+  nothing to do) and removes the app twice (the second run changes nothing).
+  The VM needs the `sqlite3` CLI (installed by the test; macmini has it).
+- Ansible coexistence (deploys, backups, restores and removals taken across
+  the tools, data kept) runs from ops-control: `just smoke-work-app-coexistence`.
