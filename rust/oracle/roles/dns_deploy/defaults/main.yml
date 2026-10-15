@@ -78,19 +78,40 @@ dns_resolver_options:
 
 # DDNS Configuration
 dns_ddns_enabled: false                          # Opt-in feature
-dns_ddns_provider: "gandi"                       # Currently only Gandi supported
-dns_ddns_domain: "CHANGEME"                      # Base domain (e.g., "example.com")
+dns_ddns_provider: "gandi"                       # Backend: "gandi" (see README for adding others)
+dns_ddns_domain: "CHANGEME"                      # Zone (e.g., "example.com"; IDN allowed)
 dns_ddns_subdomain: "home"                       # Subdomain to update
 dns_ddns_update_wildcard: true                   # Also update *.subdomain
 dns_ddns_ttl: 300                                # DNS TTL in seconds
 dns_ddns_interval: "5min"                        # Update interval
 dns_ddns_log_dir: "/var/log/ddns"                # Log directory
-dns_ddns_config_dir: "/etc/ddns"                 # Config directory
-dns_ddns_script_path: "/usr/local/bin/ddns-update.sh"  # Script location
-dns_ddns_api_token: "CHANGEME"                   # Gandi API token (from secrets)
+dns_ddns_config_dir: "/etc/ddns"                 # Config directory (config.json, credentials.env)
+dns_ddns_script_path: "/usr/local/bin/ddns-update"  # Updater (Python, stdlib only)
+dns_ddns_legacy_script_path: "/usr/local/bin/ddns-update.sh"  # Removed on deploy
+dns_ddns_state_dir: "/var/lib/ddns"             # Dedicated state dir (basename must contain "ddns")
+dns_ddns_status_path: "{{ dns_ddns_state_dir }}/status.json"  # Status JSON written by every run
 dns_ddns_ipv4_enabled: true                      # Update IPv4 (A records)
 dns_ddns_ipv6_enabled: true                      # Update IPv6 (AAAA records)
+dns_ddns_ipv4_source_url: "https://ipv4.icanhazip.com"
+dns_ddns_ipv6_source_url: "https://ipv6.icanhazip.com"
+dns_ddns_verify_nameservers: []                  # Empty = the zone's NS records
 dns_ddns_log_max_size_mb: 10                     # Log rotation size
+
+# Gandi LiveDNS backend
+dns_ddns_api_token: "CHANGEME"                   # Gandi PAT or legacy API key (from secrets)
+dns_ddns_gandi_auth_scheme: "bearer"             # "bearer" (PAT) or "apikey" (legacy API key)
+dns_ddns_gandi_api_base: "https://api.gandi.net/v5/livedns"
+
+# Optional authenticated status endpoint (for a Nyxmon json-metrics check)
+dns_ddns_status_endpoint_enabled: false
+dns_ddns_status_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+dns_ddns_status_endpoint_port: 9112
+dns_ddns_status_endpoint_path: "/.well-known/ddns"
+dns_ddns_status_endpoint_auth_user: "CHANGE_ME"
+dns_ddns_status_endpoint_auth_password: "CHANGE_ME"
+dns_ddns_status_endpoint_server_path: "/usr/local/bin/ddns_status_httpd.py"
+dns_ddns_status_endpoint_htpasswd_dir: "/etc/ddns-status-endpoint"
+dns_ddns_status_endpoint_htpasswd_path: "{{ dns_ddns_status_endpoint_htpasswd_dir }}/htpasswd"
 
 # Forward Zones Configuration
 # Forward specific domains to designated upstream DNS servers
