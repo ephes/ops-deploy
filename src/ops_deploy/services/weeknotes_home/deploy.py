@@ -33,7 +33,6 @@ from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.files import FileContents
-from pyinfra.facts.server import Command
 from pyinfra.operations import files, server
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
@@ -51,6 +50,7 @@ from ops_deploy.helpers import (
     traefik_route,
     uv_sync,
 )
+from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
@@ -97,22 +97,6 @@ Line = Annotated[str, Field(pattern=r"^[^\r\n]*$")]
 Identifier = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]{0,62}$")]
 TargetName = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")]
 Url = Annotated[str, Field(pattern=r"^https?://[^\s\"'\\$`]+$")]
-
-# Reads KEY="value" lines of the env file (the escapes the template applies),
-# then replaces itself by the given command, so secrets never reach a command
-# line. Run with the venv's interpreter.
-ENV_LOADER = """
-import os, re, sys
-env = dict(os.environ)
-for line in open(sys.argv[1]):
-    key, sep, value = line.rstrip("\\n").partition("=")
-    if not sep or not key or key.startswith("#"):
-        continue
-    if len(value) >= 2 and value[0] == value[-1] == '"':
-        value = re.sub(r'\\\\(["\\\\])', r'\\1', value[1:-1])
-    env[key] = value
-os.execve(sys.executable, [sys.executable, *sys.argv[2:]], env)
-"""
 
 
 class WeeknotesHomeConfig(BaseServiceConfig):
@@ -231,6 +215,12 @@ class WeeknotesHomeConfig(BaseServiceConfig):
     @property
     def env_path(self) -> PurePosixPath:
         return self.site_path / ".env.weeknotes-home"
+
+    @property
+    def env_exec_path(self) -> PurePosixPath:
+        """files/env_exec.py on the host: runs a program with the env file loaded."""
+
+        return self.home / "env-exec.py"
 
     @property
     def venv_path(self) -> PurePosixPath:
@@ -416,8 +406,16 @@ def _site_manage(cfg: WeeknotesHomeConfig, *argv: str) -> str:
     """``manage.py <argv>`` in the service directory as the service user, with the env file loaded."""
 
     python = str(cfg.venv_bin / "python")
-    command = [python, "-c", ENV_LOADER, str(cfg.env_path), str(cfg.service_path / "manage.py"), *argv]
+    # ``-I``: the helper imports only the standard library, never from its directory.
+    command = [python, "-I", str(cfg.env_exec_path), str(cfg.env_path), str(cfg.service_path / "manage.py"), *argv]
     return f"cd {shlex.quote(str(cfg.service_path))} && {_as_user(cfg.user, cfg.home, {}, command)}"
+
+
+def _site_probe(cfg: WeeknotesHomeConfig, command: str) -> str:
+    """``command`` (a ``manage.py`` probe) once the site can run it, else ``pending`` (before a first deploy)."""
+
+    needed = (cfg.venv_bin / "python", cfg.service_path / "manage.py", cfg.env_path, cfg.env_exec_path)
+    return when_present(needed, command, otherwise="pending")
 
 
 def _port_preflight(cfg: WeeknotesHomeConfig) -> OperationMeta:
@@ -447,21 +445,21 @@ def _port_preflight(cfg: WeeknotesHomeConfig) -> OperationMeta:
     )
 
 
-def _migrations_current(cfg: WeeknotesHomeConfig) -> bool:
+def _migrations_probe(cfg: WeeknotesHomeConfig) -> str:
     """``migrate --check`` (read-only), with the settings the service itself runs with."""
 
-    probe = f"{_site_manage(cfg, 'migrate', '--check')} >/dev/null 2>&1 && echo current || true"
-    return host.get_fact(Command, command=probe) == "current"
+    return _site_probe(cfg, migrations_state(_site_manage(cfg, "migrate", "--check", "--plan")))
 
 
-def _static_current(cfg: WeeknotesHomeConfig) -> bool:
+def _static_probe(cfg: WeeknotesHomeConfig) -> str:
     """``collectstatic --dry-run`` (read-only) copies nothing: the role's own "changed" test."""
 
-    dry_run = f"{_site_manage(cfg, 'collectstatic', '--noinput', '--dry-run')} 2>/dev/null"
-    return (
-        host.get_fact(Command, command=f"{dry_run} | grep -q '^0 static files copied' && echo current || true")
-        == "current"
+    dry_run = _site_manage(cfg, "collectstatic", "--noinput", "--dry-run")
+    check = (
+        f"out=$( {dry_run} ) || exit 1; "
+        "if printf '%s\\n' \"$out\" | grep -q '^0 static files copied'; then echo current; else echo pending; fi"
     )
+    return _site_probe(cfg, check)
 
 
 def _django(cfg: WeeknotesHomeConfig, triggers: list[OperationMeta]) -> list[OperationMeta]:
@@ -477,20 +475,26 @@ def _django(cfg: WeeknotesHomeConfig, triggers: list[OperationMeta]) -> list[Ope
 
     migrated: list[OperationMeta] = []
     if cfg.run_migrations:
-        pending = not _migrations_current(cfg)
+        migrations_check = _migrations_probe(cfg)
+        migrations = probe(migrations_check, name="weeknotes-home migrations")
         migrate = server.shell(
             name="Run weeknotes-home migrations",
             commands=[_site_manage(cfg, "migrate", "--noinput")],
-            _if=lambda: pending or any(meta.did_change() for meta in triggers),
+            _if=lambda: migrations != "current" or any(meta.did_change() for meta in triggers),
         )
         migrated.append(migrate)
+        if migrations is None:
+            verify_probe(migrations_check, name="weeknotes-home migrations", expect="current")
     if cfg.collectstatic:
-        stale = not _static_current(cfg)
+        static_check = _static_probe(cfg)
+        static = probe(static_check, name="weeknotes-home static files")
         server.shell(
             name="Collect weeknotes-home static files",
             commands=[_site_manage(cfg, "collectstatic", "--noinput")],
-            _if=lambda: stale or any(meta.did_change() for meta in triggers),
+            _if=lambda: static != "current" or any(meta.did_change() for meta in triggers),
         )
+        if static is None:
+            verify_probe(static_check, name="weeknotes-home static files", expect="current")
     return migrated
 
 
@@ -527,8 +531,8 @@ def _fastdeploy_service_row(cfg: WeeknotesHomeConfig) -> None:
         raise ValueError(f"{cfg.fastdeploy_service_config} is not valid JSON") from None
     name = cfg.echoport_fastdeploy_service
     query = f"select data::text from service where name = {_sql_literal(name)}"
-    probe = f"{shlex.join(['runuser', '-u', 'postgres', '--', 'psql', '-XAtq', '-d', FASTDEPLOY_DB, '-c', query])}"
-    stored = host.get_fact(Command, command=f"{probe} 2>/dev/null || true")
+    query_row = shlex.join(["runuser", "-u", "postgres", "--", "psql", "-XAtq", "-d", FASTDEPLOY_DB, "-c", query])
+    stored = probe(query_row, name="FastDeploy service row")
     try:
         if stored and json.loads(stored) == wanted:
             return
@@ -545,6 +549,8 @@ def _fastdeploy_service_row(cfg: WeeknotesHomeConfig) -> None:
         command=_psql(FASTDEPLOY_DB),
         content=SecretContent(sql),
     )
+    if stored is None:
+        verify_probe(query_row, name="FastDeploy service row")
 
 
 def _echoport_shell(cfg: WeeknotesHomeConfig, mode: str) -> str:
@@ -580,9 +586,10 @@ def _token_and_target(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
     a command line. The FastDeploy user name arrives on stdin.
     """
 
-    manage = shlex.quote(str(ECHOPORT_SITE / "manage.py"))
-    probe = f"{{ test -f {manage} && {_echoport_shell(cfg, 'check')}; }} 2>/dev/null | tail -n 1 || true"
-    if (host.get_fact(Command, command=probe) or "").strip() == "unchanged":
+    # Without Echoport the guard before this step fails the run.
+    check = when_present([ECHOPORT_SITE / "manage.py"], last_line(_echoport_shell(cfg, "check")), otherwise="missing")
+    state = probe(check, name="Echoport backup target")
+    if (state or "").strip() == "unchanged":
         return
     # FastDeploy's own CLI is called in-process with the user read from stdin,
     # so the name is in no process's arguments (``commands.py --user`` would put it there).
@@ -614,6 +621,8 @@ def _token_and_target(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
         command=f"sh -c {shlex.quote(script)}",
         content=_stdin_lines(secrets["fastdeploy_token_user"]),
     )
+    if state is None:
+        verify_probe(check, name="Echoport backup target", expect="unchanged")
 
 
 def _nyxmon(cfg: WeeknotesHomeConfig, mode: str) -> str:
@@ -628,12 +637,14 @@ def _nyxmon(cfg: WeeknotesHomeConfig, mode: str) -> str:
 
 
 def _nyxmon_checks(cfg: WeeknotesHomeConfig) -> None:
-    state = host.get_fact(
-        Command, command=f"{{ test -f {shlex.quote(str(NYXMON_DB))} && {_nyxmon(cfg, 'check')}; }} 2>/dev/null || true"
-    )
+    # Without Nyxmon the guard before this step fails the run.
+    check = when_present([NYXMON_DB], last_line(_nyxmon(cfg, "check")), otherwise="missing")
+    state = probe(check, name="Nyxmon checks")
     if (state or "").strip() == "changed=false":
         return
     server.shell(name="Upsert Nyxmon checks", commands=[_nyxmon(cfg, "apply")])
+    if state is None:
+        verify_probe(check, name="Nyxmon checks", expect="changed=false")
 
 
 def _operations_wiring(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
@@ -701,6 +712,14 @@ def deploy_weeknotes_home(
         mode="0600",
         user=cfg.user,
         group=cfg.group,
+    )
+    files.put(
+        name=f"Install {cfg.env_exec_path}",
+        src=str(FILES / "env_exec.py"),
+        dest=str(cfg.env_exec_path),
+        user="root",
+        group="root",
+        mode="0644",
     )
     migrated = _django(cfg, [code, deps, env])
 

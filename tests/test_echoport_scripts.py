@@ -175,11 +175,16 @@ def test_nyxmon_check_is_created_then_unchanged_then_updated(tmp_path: Path) -> 
 def test_mc_alias_probe_prints_only_a_digest() -> None:
     stored = {"status": "success", "alias": "minio", "URL": "http://m:9001", "accessKey": "ak", "secretKey": "sk"}
 
-    def probe(text: str) -> str:
-        return subprocess.run(
-            [sys.executable, "-I", "-c", echoport.MC_ALIAS_PROBE], input=text, capture_output=True, text=True
-        ).stdout.strip()
+    missing = {"status": "error", "error": {"message": "No such alias `minio` found."}}
 
-    assert probe(json.dumps(stored)) == hashlib.sha256(b"http://m:9001\nak\nsk").hexdigest()
-    assert probe("") == "none"
-    assert probe("not json") == "none"
+    def probe(text: str, status: int = 0) -> subprocess.CompletedProcess[str]:
+        argv = [sys.executable, "-I", "-c", echoport.MC_ALIAS_PROBE, str(status)]
+        return subprocess.run(argv, input=text, capture_output=True, text=True)
+
+    assert probe(json.dumps(stored)).stdout.strip() == hashlib.sha256(b"http://m:9001\nak\nsk").hexdigest()
+    assert probe(json.dumps(missing), 1).stdout.strip() == "none"
+    # Anything else is an error for the strict probe, not "no alias".
+    for text, status in (("", 0), ("", 2), ("not json", 1), (json.dumps({"status": "error"}), 1)):
+        result = probe(text, status)
+        assert result.returncode != 0
+        assert result.stdout == ""

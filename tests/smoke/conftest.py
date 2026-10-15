@@ -6,9 +6,11 @@ settings for the local lima VM. Everything else in the suite stays offline.
 
 from __future__ import annotations
 
+import base64
+import logging
 import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -65,9 +67,20 @@ class SmokeHost:
             command,
         ]
 
-    def run(self, command: str, *, input: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-        """Run ``command`` through the host's shell; output is captured as text."""
+    def run(
+        self, command: str, *, input: str | None = None, check: bool = True, login_shell: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        """Run ``command`` with ``sh`` on the host; output is captured as text.
 
+        Root's login shell on the VM is fish, as on macmini, so ``command``
+        travels base64-encoded and ``sh`` evaluates it: the checks mean the
+        same whatever the login shell. ``login_shell=True`` hands ``command``
+        to the login shell as it is, as pyinfra's connector does.
+        """
+
+        if not login_shell:
+            encoded = base64.b64encode(command.encode()).decode()
+            command = f"""exec sh -c 'eval "$(printf %s {encoded} | base64 -d)"'"""
         result = subprocess.run(
             self.ssh_argv(command), input=input, text=True, capture_output=True, check=False, timeout=120
         )
@@ -104,3 +117,32 @@ def smoke_host() -> SmokeHost:
         key=env["SMOKE_SSH_KEY"],
         known_hosts=env["SMOKE_SSH_KNOWN_HOSTS"],
     )
+
+
+class _FailedProbes(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if "probe failed:" in message:
+            self.messages.append(message)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def no_failed_probes() -> Iterator[None]:
+    """No strict probe (``ops_deploy.helpers.probes``) may fail in a smoke run.
+
+    A failed probe does not fail its deploy when the step it gates and the
+    probe after it succeed, so the warning it logs is checked here.
+    """
+
+    handler = _FailedProbes()
+    logger = logging.getLogger("pyinfra")
+    logger.addHandler(handler)
+    try:
+        yield
+    finally:
+        logger.removeHandler(handler)
+    assert handler.messages == []

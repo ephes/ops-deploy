@@ -215,6 +215,45 @@ op_hash)` lets a runner tell them apart. In tests, `OpResult.read_only` and
 nothing" is checked as `run.mutating_changed_ops == []`. Use
 `mark_read_only(meta)` for any other custom check that changes nothing.
 
+## Strict probes: `ops_deploy.helpers.probes`
+
+A deploy decides while planning whether a step is needed by asking the host
+(`migrate --check`, a wiring script in check mode, a database query). A probe
+written as `... 2>/dev/null || true` turns every failure (a broken venv, a
+crashed script, a command the login shell mangled) into an answer such as
+"not current". Probes that run application code or tools use these helpers
+instead:
+
+```python
+check = when_present([venv_python, manage_py, env_file], migrations_state(plan), otherwise="pending")
+state = probe(check, name="app migrations")  # "current", "pending" or None
+migrate = server.shell(..., _if=lambda: state != "current" or code.did_change())
+if state is None:
+    verify_probe(check, name="app migrations", expect="current")
+```
+
+- `probe(command, *, name)` runs the command in a subshell while planning and
+  returns its stdout, or `None` when it exited non-zero (logged as a warning).
+  A failure is not fatal while planning: the step it gates is how a
+  half-finished earlier run repairs itself (a sync that died before
+  `uv sync`), so the caller runs the step.
+- `verify_probe(command, *, name, expect=None)` is a read-only operation
+  ("Probe again: <name>") placed after that step: the probe must now succeed
+  (and print `expect` last), else the deploy fails with the probe's error
+  output. A probe that is broken for its own reasons can no longer pass as a
+  change that is needed on every run.
+- `when_present(paths, command, *, otherwise)`: states that are normal before a
+  first deploy (no venv, no database yet) are answers, not failures.
+- `migrations_state(plan)` wraps `manage.py migrate --check --plan`
+  (`current`/`pending`; an exit without Django's "Planned operations:" line
+  is an error), `uv_sync_state(check)` wraps `uv sync --check` (exit 1 is
+  `pending`, anything else non-zero an error), `last_line(command)` prints the
+  last stdout line of a check-mode script and fails with it.
+
+Absence probes, whose failure is itself the answer (no file, no container, a
+missing binary's version), keep the plain `2>/dev/null || true` form (for
+example `ops_deploy.base._common.output`).
+
 ## Parity differences from the Ansible roles
 
 Known, intended differences. Everything else is meant to behave like the

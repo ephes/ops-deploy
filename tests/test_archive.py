@@ -444,4 +444,4 @@ def test_media_location_must_be_a_literal_path(tmp_path: Path) -> None:
 def test_venv_version_is_probed_as_the_service_user(cfg: ArchiveConfig) -> None:
     run = deploy(cfg, values(cfg))
     probe = next(c for c in run.fact_commands if "sys.version_info" in c)
-    assert probe.startswith(f"cd {SITE} && runuser -u archive -- ")
+    assert f"; then cd {SITE} && runuser -u archive -- " in probe

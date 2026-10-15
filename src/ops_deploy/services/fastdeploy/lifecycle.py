@@ -31,6 +31,7 @@ from pyinfra.operations import files, python, server, systemd
 from ops_deploy.base._common import AbsolutePath, RoleConfig, output
 from ops_deploy.core.config import ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.helpers.probes import probe
 from ops_deploy.ops import secret_stdin
 from ops_deploy.services._lifecycle import (
     flag,
@@ -289,8 +290,11 @@ def deploy_fastdeploy_restore(cfg: FastdeployRestoreConfig, secrets: SecretValue
 
 
 def _sql_exists(query: str) -> bool:
+    """Whether ``query`` returns 1; also when it fails (then the drop is attempted, errors ignored)."""
+
     command = f"runuser -u postgres -- psql -tAc {shlex.quote(query)}"
-    return output(f"command -v psql >/dev/null && cd / && {command}").strip() == "1"
+    found = probe(f"command -v psql >/dev/null || exit 0; cd / && {command}", name="FastDeploy database objects")
+    return found is None or found.strip() == "1"
 
 
 @deploy("Remove FastDeploy")

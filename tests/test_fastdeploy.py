@@ -11,6 +11,7 @@ import pytest
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.helpers.postgres import scram_verifier, state_command
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password, render_route
 from ops_deploy.services.fastdeploy import FastdeployConfig, deploy_fastdeploy
 from ops_deploy.services.fastdeploy.deploy import (
@@ -461,3 +462,12 @@ def test_role_validations(tmp_path: Path, overrides: dict[str, Any]) -> None:
         FastdeployConfig(
             source_path=make_source(tmp_path), secrets=SecretRef("secrets/prod/fastdeploy.yml"), **overrides
         )
+
+
+def test_a_failing_users_probe_creates_the_users_and_probes_again(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), USERS_FACT: [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert "Deploy fastdeploy | Create initial FastDeploy user" in run.changed_ops
+    assert run.op("Deploy fastdeploy | Probe again: FastDeploy users").read_only

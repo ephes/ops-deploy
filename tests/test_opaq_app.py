@@ -8,6 +8,7 @@ import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.templates import render
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.services.opaq_app import EchoportTarget, NyxmonCheck, OpaqAppConfig, deploy_opaq_app
 from ops_deploy.services.opaq_app.deploy import (
     TEMPLATE_PACKAGE,
@@ -99,8 +100,8 @@ def converged(cfg: OpaqAppConfig, secrets: SecretValues, **drift: str) -> dict[A
     responses.update(fakehost.file(DB, "", user="opaq-app", mode="-rw-------"))
     responses.update(fakehost.venv(f"{HOME}/venv"))
     responses["sys.version_info"] = ["3.14"]
-    responses[UV_CHECK] = ["ok"]
-    responses[MIGRATE_CHECK] = ["ok"]
+    responses[UV_CHECK] = ["current"]
+    responses[MIGRATE_CHECK] = ["current"]
     for unit in ("opaq-app.service", "traefik.service"):
         responses.update(fakehost.service(unit))
     responses["echo installed"] = ["installed"]
@@ -514,3 +515,17 @@ def test_migration_probe_writes_no_bytecode(cfg: OpaqAppConfig, secrets: SecretV
     probe = next(event.value for event in run.events if MIGRATE_CHECK in event.value)
     assert "PYTHONDONTWRITEBYTECODE=1" in probe
     assert "umask 077" in probe
+
+
+def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: OpaqAppConfig, secrets: SecretValues) -> None:
+    # The probe crashed (not "pending"): the step runs, then the probe must pass.
+    responses = {**converged(cfg, secrets), MIGRATE_CHECK: [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.succeeded
+    assert "Deploy opaq_app service | manage.py migrate and collectstatic" in run.mutating_changed_ops
+    verify = run.op("Deploy opaq_app service | Probe again: opaq_app migrations")
+    assert verify.changed
+    assert verify.read_only
+    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)

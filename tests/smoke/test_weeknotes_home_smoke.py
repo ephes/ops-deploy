@@ -18,9 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from pyinfra.api.command import StringCommand
+from pyinfra.connectors.util import make_unix_command
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.weeknotes_home import WeeknotesHomeConfig, deploy_weeknotes_home
+from ops_deploy.services.weeknotes_home.deploy import _site_manage
 from ops_deploy.testing import SshRun, run_deploy_ssh
 from tests.smoke.conftest import TIMINGS, SmokeHost
 from tests.smoke.weeknotes_home_stubs import reset_script, setup_script, teardown_script
@@ -76,8 +79,9 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
     values = SecretValues(
         ref,
         {
-            # `$` and a backtick: the env file must survive systemd and the loader.
-            "django_secret_key": f"smoke-key-{secrets.token_hex(24)}$`x",
+            # `$`, a backtick, quotes and backslash pairs: the env file must
+            # survive systemd and the loader (env_exec.py, run through fish).
+            "django_secret_key": f"smoke-key-{secrets.token_hex(24)}$`x\"y\\\\z'\\",
             "postgres_password": f"smoke-pg-{secrets.token_hex(12)}",
             "api_token": f"smoke-api-{secrets.token_hex(24)}",
             "basic_auth_password": f"smoke-pw-{secrets.token_hex(12)}",
@@ -149,9 +153,23 @@ def test_fresh_clone_of_unchanged_code_is_a_noop(deployed: Deployed) -> None:
 def test_code_change_restarts_once_and_keeps_data(smoke_host: SmokeHost, deployed: Deployed) -> None:
     changed = deployed.code_change.mutating_changed_ops
     assert any(name.endswith("| Sync daybook source") for name in changed)
+    # The gated Django steps ran (through root's fish login shell) and succeeded.
+    assert any(name.endswith("| Run weeknotes-home migrations") for name in changed)
+    assert any(name.endswith("| Collect weeknotes-home static files") for name in changed)
     assert any(name.endswith("| Restart weeknotes-home.service") for name in changed)
     assert smoke_host.out(f"{PSQL} -c 'select note from smoke_marker'") == "kept"
     assert smoke_host.out(f"cat {SITE}/cache/weeknotes-home/marker {SITE}/static/weeknotes-home/marker") == "kept\nkept"
+
+
+def test_manage_commands_see_the_env_file_values(smoke_host: SmokeHost, deployed: Deployed) -> None:
+    assert smoke_host.out("getent passwd root | cut -d: -f7") == "/usr/bin/fish"
+    probe = "import os, sys; sys.stdout.write(os.environ['DJANGO_SECRET_KEY'])"
+    # Sent as pyinfra sends it: ``sh -c '...'`` through root's fish login shell.
+    command = make_unix_command(
+        StringCommand(_site_manage(deployed.cfg, "shell", "--verbosity", "0", "-c", probe))
+    ).get_raw_value()
+    result = smoke_host.run(command, login_shell=True)
+    assert result.stdout == deployed.secrets["django_secret_key"]
 
 
 def test_service_runs_and_is_healthy(smoke_host: SmokeHost, deployed: Deployed) -> None:

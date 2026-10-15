@@ -14,6 +14,17 @@ as_postgres() {
     runuser -u "$PG_ADMIN" -- "$@"
 }
 
+# The pgpass(5) line for password $1, "\" and ":" escaped. The backslash comes
+# from printf, not from this source: the script reaches the host inline, and a
+# fish login shell halves backslash pairs inside single quotes.
+pgpass_line() {
+    local bs escaped
+    bs=$(printf '\134')
+    escaped=${1//"$bs"/"$bs$bs"}
+    escaped=${escaped//:/"$bs":}
+    printf '*:*:*:*:%s\n' "$escaped"
+}
+
 # Non-hidden entries of one type directly below a directory (Ansible's find).
 count_dirs() {
     if [ -d "$1" ]; then find "$1" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l; else echo 0; fi
@@ -242,9 +253,7 @@ restore_database() {
     local passfile_env=()
     if [ -n "$PGPW" ]; then
         pgpass_dir=$(as_postgres mktemp -d /tmp/fastdeploy_restore-pgpass-XXXXXXXXXX)
-        local escaped=${PGPW//\\/\\\\}
-        escaped=${escaped//:/\\:}
-        as_postgres sh -c 'umask 077; cat > "$1"' _ "$pgpass_dir/pgpass" <<<"*:*:*:*:$escaped"
+        pgpass_line "$PGPW" | as_postgres sh -c 'umask 077; cat > "$1"' _ "$pgpass_dir/pgpass"
         passfile_env=(env "PGPASSFILE=$pgpass_dir/pgpass")
     fi
     as_postgres "${passfile_env[@]}" bash -c \

@@ -73,13 +73,25 @@ Defaults follow the role's `defaults/main.yml`.
 6. Cache and static directories.
 7. `uv sync --frozen --group weeknotes-home --python 3.14` if the source
    changed or the venv is missing.
-8. The env file through `secret_file`, `0600`.
+8. The env file through `secret_file`, `0600`, and the env loader
+   `files/env_exec.py` as `/home/weeknotes-home/env-exec.py` (`root:root`,
+   `0644`). Every `manage.py` call runs
+   `python -I env-exec.py <env file> manage.py ...`: it reads the env file
+   (undoing the template's escapes) and replaces itself by `manage.py`, so no
+   secret is on a command line. It is a file, not `python -c <source>`,
+   because its regex needs backslash pairs, which root's fish login shell
+   would halve on the way (the first live deploy failed on exactly that).
 9. `migrate --noinput` if the source, dependencies or env file changed or a
-   read-only `migrate --check` finds unapplied migrations (so a failed run is
-   retried); `collectstatic --noinput` likewise, with `collectstatic
-   --dry-run` (read-only) in place of `migrate --check`. Both read the env
-   file themselves (a small loader replaces the process), so no secret is on
-   a command line.
+   read-only `migrate --check --plan` finds unapplied migrations (so a failed
+   run is retried); `collectstatic --noinput` likewise, with `collectstatic
+   --dry-run` (read-only). Both probes are strict
+   ([strict probes](../concepts/helpers.md#strict-probes-ops_deployhelpersprobes)):
+   before the venv, `manage.py`, env file and loader exist they answer
+   "pending"; an error is not read as "pending" but runs the step and then
+   the probe again ("Probe again: ..."), which fails the deploy if it still
+   fails.
+   On a host deployed by Ansible (no loader yet) the first run therefore runs
+   both once and restarts the service once; Ansible leaves the loader alone.
 10. Unit file and `service_rollout`: restart on code, dependency or env
     change, and when migrations run (a retry after a failed run must not leave old code on the new schema; the role restarts on neither).
 11. Traefik route with the role's own template (dual router, the HTTP router
@@ -105,6 +117,8 @@ Defaults follow the role's `defaults/main.yml`.
     - Nyxmon checks ("local health" and "backup freshness") by direct SQLite
       upsert as the `nyxmon` user, after a read-only check pass, same SQL as
       the playbook.
+    - The service-row query and both check passes are strict probes: an
+      error applies and probes again instead of passing as "differs".
 
 ## Parity with the role and playbook
 
@@ -145,13 +159,19 @@ Differences:
   rotation, basic-auth rotation, pending migrations and collectstatic,
   wiring drift and opt-out, token issue through a pipe, missing dependencies,
   port collision, shell syntax of the generated scripts, leak checks (no
-  secret in commands, op names/args or uploads), validation.
+  secret in commands, op names/args or uploads), validation, failing probes
+  (the step runs, then "Probe again").
+- `tests/test_remote_shell_execution.py`: the `manage.py` command, sent as
+  pyinfra sends it through bash and through fish, starts `manage.py` with an
+  env value full of quotes, backslash pairs, `$` and backticks intact.
 - `tests/smoke/test_weeknotes_home_smoke.py` (`just smoke`, needs
   `DAYBOOK_SOURCE` or `PROJECTS_ROOT`; resets weeknotes-home on a lima VM):
   the port preflight refuses another listener, then real deploys of the
   committed `HEAD`: second and fresh-export runs have no mutating change, a
-  code change restarts once, and a row in the database and files in cache and
-  static survive. The service is healthy, the env file private, the database
+  code change runs migrations and `collectstatic` and restarts once, and a
+  row in the database and files in cache and static survive; root's login
+  shell is fish and `manage.py`, run as pyinfra sends it, sees a secret key
+  with quotes and backslash pairs exactly. The service is healthy, the env file private, the database
   owned by the role, the Traefik route requires basic auth. The wiring runs
   against stand-ins for Echoport, FastDeploy and Nyxmon (their real
   interfaces: `manage.py shell -c`, `commands.py issueservicetoken`, the

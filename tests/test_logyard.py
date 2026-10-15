@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from ops_deploy.core import ConfigValidationError
 from ops_deploy.core.secrets import MissingSecretKeysError, SecretValues
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.services.logyard import (
     GrafanaWiring,
     HealthEndpoint,
@@ -445,10 +446,11 @@ def test_missing_nyxmon_database_skips_the_checks(cfg: LogyardConfig) -> None:
 def test_nyxmon_probe_script_runs_isolated_as_the_nyxmon_user(cfg: LogyardConfig) -> None:
     run = deploy(cfg, converged(cfg))
 
-    probes = [c for c in run.fact_commands if c.startswith("runuser -u nyxmon")]
+    probes = [c for c in run.fact_commands if c.startswith("( runuser -u nyxmon")]
     assert probes
     assert "python3 -I -c" in probes[0]
-    assert probes[0].rstrip().endswith("probe 2>/dev/null || true")
+    # Strict: a failing probe is reported, not read as "not current".
+    assert probes[0].rstrip().endswith(" probe ) || { echo; echo ops-deploy-probe-failed; }")
 
 
 # -- secrets and config -----------------------------------------------------------------
@@ -532,3 +534,12 @@ def test_relative_source_path_is_made_absolute(source: Path, monkeypatch: pytest
     cfg = core_config(source, source_path=Path("logyard"))
 
     assert cfg.source_path == source
+
+
+def test_a_failing_nyxmon_probe_upserts_and_probes_again(cfg: LogyardConfig) -> None:
+    responses = {**converged(cfg), "runuser -u nyxmon": [FAILED]}
+
+    run = deploy(cfg, responses)
+
+    assert any(name.endswith("| Upsert Nyxmon Logyard json-metrics checks") for name in run.mutating_changed_ops)
+    assert any(name.endswith("| Probe again: Nyxmon Logyard checks") for name in run.changed_ops)

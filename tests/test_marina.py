@@ -8,6 +8,7 @@ import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.secrets import MissingSecretKeysError
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.services.marina import MarinaConfig, deploy_marina
 from ops_deploy.services.marina.deploy import (
     _admin_stamp,
@@ -372,3 +373,17 @@ def test_hardening_is_rendered_only_when_enabled(cfg: MarinaConfig, secrets: Sec
 
 def test_route_file_is_named_after_the_user(cfg: MarinaConfig) -> None:
     assert str(traefik_config(cfg).path) == ROUTE
+
+
+def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: MarinaConfig, secrets: SecretValues) -> None:
+    # The probe crashed (not "pending"): the step runs, then the probe must pass.
+    responses = {**converged(cfg, secrets), "migrate --check": [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.succeeded
+    assert "Deploy marina | Run marina migrations" in run.mutating_changed_ops
+    verify = run.op("Deploy marina | Probe again: marina migrations")
+    assert verify.changed
+    assert verify.read_only
+    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)

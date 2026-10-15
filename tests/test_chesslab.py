@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.chesslab import ChesslabConfig, deploy_chesslab
 from ops_deploy.services.chesslab.deploy import (
@@ -49,8 +50,8 @@ READ_ONLY = [
     "Deploy chesslab | Check chesslab database",
     "Deploy chesslab | Check http://127.0.0.1:10019/healthz",
 ]
-ECHOPORT_PROBE = "test -f /home/echoport/site/manage.py &&"
-NYXMON_PROBE = "test -f /home/nyxmon/site/manage.py &&"
+ECHOPORT_PROBE = "if test -e /home/echoport/site/manage.py; then"
+NYXMON_PROBE = "if test -e /home/nyxmon/site/manage.py; then"
 
 
 @pytest.fixture
@@ -370,3 +371,17 @@ def test_user_names_never_reach_a_command_line(cfg: ChesslabConfig, secrets: Sec
     assert ensure
     assert not any("--username" in c for c in ensure)
     assert all("CHESSLAB_DEPLOY_USERNAME" in c for c in ensure)
+
+
+def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    # The probe crashed (not "pending"): the step runs, then the probe must pass.
+    responses = {**converged(cfg, secrets), "django migrate --check": [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.succeeded
+    assert "Deploy chesslab | Run chesslab migrations" in run.mutating_changed_ops
+    verify = run.op("Deploy chesslab | Probe again: chesslab migrations")
+    assert verify.changed
+    assert verify.read_only
+    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)

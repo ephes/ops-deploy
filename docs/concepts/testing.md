@@ -33,6 +33,24 @@ Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
   An exception raised while planning (for example a failed rsync dry run)
   propagates.
 
+### Login-shell safety
+
+sshd runs every command through the SSH user's login shell; root's on
+macmini and staging is fish. pyinfra sends `sh -c '<command>'`, and inside
+single quotes fish (unlike sh and bash) reads `\\` and `\'` as escapes, so
+a backslash pair reaches `sh` halved. `run_deploy_fake` therefore builds the
+exact line the SSH connector would send for every command (`wire_command`:
+`_env`, `_chdir`, the shell wrapper) and raises `AssertionError` if any is
+`fish_unsafe`, including the commands of operations an `_if` gate skipped
+(they are generated once more with the gate ignored). Ship such payloads as a
+file (`files.put`) or on stdin instead.
+
+`tests/test_remote_shell_execution.py` checks `fish_unsafe` against real bash
+and fish, and runs generated commands (the weeknotes_home `manage.py` wrapper
+with a tricky env file, the `secret_file` installer, the FastDeploy restore's
+pgpass line, the probe helpers) through both shells against temporary files.
+The fish cases are skipped where fish is not installed.
+
 ## What gets recorded
 
 `FakeRun.events` is the ordered list of `RecordedEvent(phase, kind, value)`:

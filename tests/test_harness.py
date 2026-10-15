@@ -158,3 +158,21 @@ def test_recording_rsync_runner_matches_in_order() -> None:
         ["rsync", "-a", "src/", "dest/"],
         ["rsync", "-r"],
     ]
+
+
+@pytest.mark.parametrize("gate", [lambda: True, lambda: False])
+def test_commands_a_fish_login_shell_would_alter_fail_the_run(gate: Callable[[], bool]) -> None:
+    @deploy("Fish")
+    def fish_deploy() -> None:
+        server.shell(name="Pair", commands=["printf %s 'a\\\\b'"], _if=gate)
+
+    with pytest.raises(AssertionError, match="fish login shell"):
+        run_deploy_fake(fish_deploy)
+
+
+def test_single_backslashes_are_fish_safe() -> None:
+    @deploy("Fish")
+    def fish_deploy() -> None:
+        server.shell(name="Single", commands=["printf '%s\\n' x"], _if=lambda: False)
+
+    assert run_deploy_fake(fish_deploy).succeeded

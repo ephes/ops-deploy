@@ -20,6 +20,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - uses: extractions/setup-just@v3
+      # fish: tests/test_remote_shell_execution.py runs commands through it (root's login shell on the hosts).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fish
       - run: uv sync --locked
       - run: just lint
       - run: just typecheck

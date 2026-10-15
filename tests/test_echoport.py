@@ -11,6 +11,7 @@ import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.secrets import MissingSecretKeysError
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.echoport import EchoportConfig, NyxmonCheck, deploy_echoport
 from ops_deploy.services.echoport.deploy import (
@@ -628,3 +629,18 @@ def test_admin_current() -> None:
     other_hasher = f"{digest('admin')} {digest('')} 11 argon2$argon2id$v=19 {digest('x')}"
     assert not admin_current(other_hasher, "admin", "", "pw")
     assert not admin_current("", "admin", "", "pw")
+
+
+def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: EchoportConfig) -> None:
+    # The probe crashed (not "pending"): the step runs, then the probe must pass.
+    secrets = values(cfg)
+    responses = {**converged(cfg, secrets), MIGRATE_PROBE: [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.succeeded
+    assert "Deploy echoport | manage.py migrate --noinput" in run.mutating_changed_ops
+    verify = run.op("Deploy echoport | Probe again: Echoport migrations")
+    assert verify.changed
+    assert verify.read_only
+    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)

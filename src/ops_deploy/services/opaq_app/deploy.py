@@ -49,6 +49,7 @@ from ops_deploy.helpers import (
     traefik_route,
     wait_port,
 )
+from ops_deploy.helpers.probes import last_line, migrations_state, probe, uv_sync_state, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user, _gate
 from ops_deploy.helpers.traefik import Hostname
 from ops_deploy.ops import secret_file, sync_tree
@@ -256,6 +257,8 @@ def _as(cfg_user: str, home: PurePosixPath, cwd: PurePosixPath, script: str, env
 
 
 def _probe(command: str) -> str:
+    """Stdout of an absence probe (a missing file is its answer, not an error)."""
+
     return str(host.get_fact(Command, command=f"{command} 2>/dev/null || true") or "")
 
 
@@ -392,7 +395,8 @@ def _upsert(
         return _as(user, home, cwd, script, env)
 
     installed = _probe(f"test -f {manage} && echo installed")
-    state = _probe(command(apply=False)).strip().splitlines()
+    check = when_present([cwd / "manage.py"], last_line(command(apply=False)), otherwise="missing")
+    state = probe(check, name=f"{name} entry")
     server.shell(
         name=f"Require {name}",
         commands=[f"test -f {manage} || {{ echo '{name} must be deployed before opaq_app' >&2; exit 1; }}"],
@@ -401,8 +405,10 @@ def _upsert(
     server.shell(
         name=f"Upsert {name} entry",
         commands=[command(apply=True)],
-        _if=lambda: not state or state[-1] != "unchanged",
+        _if=lambda: (state or "").strip() != "unchanged",
     )
+    if state is None:
+        verify_probe(check, name=f"{name} entry", expect="unchanged")
 
 
 def _echoport(cfg: OpaqAppConfig, target: EchoportTarget) -> None:
@@ -530,12 +536,18 @@ def deploy_opaq_app(
 
     # A venv that is not in sync with the lock (an earlier run died after the
     # files were copied) is as pending as new files.
-    out_of_sync = venv_missing or _probe(f"{uv('--check')} >/dev/null && echo ok").strip() != "ok"
+    deps_check = when_present(
+        [cfg.venv_path / "bin" / "python", site], uv_sync_state(uv("--check")), otherwise="pending"
+    )
+    deps_state = probe(deps_check, name="opaq_app dependencies")
+    out_of_sync = venv_missing or deps_state != "current"
     deps = server.shell(
         name=f"uv sync {site} ({cfg.dependency_group})",
         commands=[uv()],
         _if=_gate(project_files, force=out_of_sync or stale_python),
     )
+    if deps_state is None:
+        verify_probe(deps_check, name="opaq_app dependencies", expect="current")
 
     env = secret_file(
         name="Write environment file", path=cfg.env_path, content=env_content, mode="0600", user=user, group=user
@@ -554,16 +566,21 @@ def deploy_opaq_app(
     triggers = [*code, private, deps, env]
     # Unapplied migrations (an earlier run died after the sync) are pending too. The
     # probe runs at plan time, so it must leave nothing behind: no bytecode caches.
-    check = (
+    plan = (
         f"umask 077; export PYTHONDONTWRITEBYTECODE=1; set -a; . {env_file}; set +a; "
-        f"{python} manage.py migrate --check --noinput >/dev/null && echo ok"
+        f"exec {python} manage.py migrate --check --plan --noinput"
     )
-    unmigrated = database_missing or venv_missing or _probe(_as(user, home, cfg.app_dir, check)).strip() != "ok"
+    needed = (cfg.database_path, cfg.venv_path / "bin" / "python", cfg.env_path)
+    migrations_check = when_present(needed, migrations_state(_as(user, home, cfg.app_dir, plan)), otherwise="pending")
+    migrations = probe(migrations_check, name="opaq_app migrations")
+    unmigrated = database_missing or venv_missing or migrations != "current"
     manage = server.shell(
         name="manage.py migrate and collectstatic",
         commands=[_as(user, home, cfg.app_dir, script)],
         _if=lambda: unmigrated or any(meta.did_change() for meta in triggers),
     )
+    if migrations is None:
+        verify_probe(migrations_check, name="opaq_app migrations", expect="current")
     files.file(
         name="Restrict the database",
         path=str(cfg.database_path),

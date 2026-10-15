@@ -61,6 +61,10 @@ def render_role(template: str, variables: dict[str, Any]) -> str:
 
 
 def probe(command: str) -> str:
-    """Stdout of a read-only command, gathered while planning; empty when it fails."""
+    """Stdout of a read-only absence probe, gathered while planning; empty when it fails.
+
+    Only for questions a failure answers (no container, no file, no binary);
+    a probe that runs application code uses :mod:`ops_deploy.helpers.probes`.
+    """
 
     return str(host.get_fact(Command, command=f"{command} 2>/dev/null || true") or "")

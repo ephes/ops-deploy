@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.work_app import WorkAppConfig, deploy_work_app
 from ops_deploy.services.work_app.deploy import render, render_env, render_route, traefik_config
@@ -31,8 +32,8 @@ READ_ONLY = [
     "Deploy work_app | Port preflight tcp/10011",
     "Deploy work_app | Check http://127.0.0.1:10011/accounts/login/",
 ]
-ECHOPORT_PROBE = "test -f /home/echoport/site/manage.py &&"
-NYXMON_PROBE = "test -f /home/nyxmon/site/manage.py &&"
+ECHOPORT_PROBE = "if test -e /home/echoport/site/manage.py; then"
+NYXMON_PROBE = "if test -e /home/nyxmon/site/manage.py; then"
 
 
 @pytest.fixture
@@ -255,7 +256,7 @@ def test_migration_check_never_touches_a_missing_database(cfg: WorkAppConfig, se
     run = deploy(cfg, secrets)
 
     probe = next(c for c in run.fact_commands if "migrate --check" in c)
-    assert probe.index("test -f /home/work/site/db.sqlite3") < probe.index("migrate --check")
+    assert probe.index("test -e /home/work/site/db.sqlite3") < probe.index("migrate --check")
 
 
 def test_empty_static_root_is_collected(cfg: WorkAppConfig, secrets: SecretValues) -> None:
@@ -413,3 +414,17 @@ def test_failed_health_check_fails_the_deploy(cfg: WorkAppConfig, secrets: Secre
     run = run_deploy_fake(deploy_work_app, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
+
+
+def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: WorkAppConfig, secrets: SecretValues) -> None:
+    # The probe crashed (not "pending"): the step runs, then the probe must pass.
+    responses = {**converged(cfg, secrets), "migrate --check": [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.succeeded
+    assert "Deploy work_app | Run work_app migrations" in run.mutating_changed_ops
+    verify = run.op("Deploy work_app | Probe again: work_app migrations")
+    assert verify.changed
+    assert verify.read_only
+    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)

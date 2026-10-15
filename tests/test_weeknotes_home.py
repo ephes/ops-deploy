@@ -11,9 +11,11 @@ import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.helpers.postgres import scram_verifier, state_command
+from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.weeknotes_home import WeeknotesHomeConfig, deploy_weeknotes_home
 from ops_deploy.services.weeknotes_home.deploy import (
+    FILES,
     nyxmon_checks,
     render,
     render_env,
@@ -30,6 +32,7 @@ SERVICE_DIR = f"{SITE}/services/weeknotes_home"
 UNIT = "/etc/systemd/system/weeknotes-home.service"
 ROUTE = "/etc/traefik/dynamic/weeknotes-home.yml"
 ENV = f"{SITE}/.env.weeknotes-home"
+ENV_EXEC = f"{HOME}/env-exec.py"
 FD_CONFIG = "/home/fastdeploy/site/services/weeknotes-home-backup/config.json"
 FD_SERVICE = {"name": "weeknotes-home-backup", "cwd": "/tmp", "deploy_script": "deploy.sh"}
 SALT = b"fixture-salt-16b"
@@ -51,8 +54,8 @@ WIRING_READ_ONLY = [
     "Deploy weeknotes-home | Check FastDeploy backup service registration",
     "Deploy weeknotes-home | Check Nyxmon installation",
 ]
-ECHOPORT_PROBE = "test -f /home/echoport/site/manage.py &&"
-NYXMON_PROBE = "test -f /home/nyxmon/site/db.sqlite3 &&"
+ECHOPORT_PROBE = "if test -e /home/echoport/site/manage.py; then"
+NYXMON_PROBE = "if test -e /home/nyxmon/site/db.sqlite3; then"
 SERVICE_ROW_PROBE = "psql -XAtq -d fastdeploy -c"
 MIGRATE_CHECK = "manage.py migrate --check"
 STATIC_CHECK = "manage.py collectstatic --noinput --dry-run"
@@ -96,6 +99,7 @@ def converged(cfg: WeeknotesHomeConfig, secrets: SecretValues, **drift: str) -> 
         UNIT: render("weeknotes-home.service.j2", cfg=cfg),
         ROUTE: render_route(cfg, traefik_config(cfg, secrets), _HASH),
         FD_CONFIG: json.dumps(FD_SERVICE, indent=2) + "\n",
+        ENV_EXEC: (FILES / "env_exec.py").read_text(),
     }
     content.update(drift)
     responses: dict[str, Any] = {
@@ -505,3 +509,30 @@ def test_port_collision_stops_before_any_change(cfg: WeeknotesHomeConfig, secret
     assert not run.succeeded
     assert len(run.executed_commands) == 1
     assert "0::/system.slice/weeknotes-home.service" in run.executed_commands[0]
+
+
+def test_a_failing_migrations_probe_runs_migrate_and_probes_again(
+    cfg: WeeknotesHomeConfig, secrets: SecretValues
+) -> None:
+    # The probe crashed (not "pending"): the step runs, then the probe must pass.
+    responses = {**converged(cfg, secrets), MIGRATE_CHECK: [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.succeeded
+    assert "Deploy weeknotes-home | Run weeknotes-home migrations" in run.mutating_changed_ops
+    verify = run.op("Deploy weeknotes-home | Probe again: weeknotes-home migrations")
+    assert verify.changed
+    assert verify.read_only
+    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)
+
+
+def test_a_failing_wiring_probe_applies_and_probes_again(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), ECHOPORT_PROBE: [FAILED]}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.mutating_changed_ops == [
+        "Deploy weeknotes-home | Issue or reuse the FastDeploy token and upsert the Echoport backup target"
+    ]
+    assert run.op("Deploy weeknotes-home | Probe again: Echoport backup target").read_only

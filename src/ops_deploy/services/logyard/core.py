@@ -34,7 +34,7 @@ from pyinfra.operations.util import any_changed
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
-from ops_deploy.helpers import mark_read_only, service_rollout, system_user, systemd_unit
+from ops_deploy.helpers import mark_read_only, probes, service_rollout, system_user, systemd_unit
 from ops_deploy.infra import DockerInstallConfig, docker_steps
 from ops_deploy.infra._common import directory
 from ops_deploy.ops import secret_stdin, sync_tree
@@ -402,13 +402,17 @@ def _nyxmon(cfg: LogyardConfig, secrets: SecretValues) -> None:
         logger.info(f"{host.name}: no Nyxmon database at {nyxmon.db_path}, skipping the Logyard Nyxmon checks")
         return
     checks = nyxmon_checks(nyxmon, secrets["nyxmon_storage_metrics_password"])
-    current = nyxmon_checks_current(probe(_nyxmon_command(nyxmon, "probe")), checks)
+    check = _nyxmon_command(nyxmon, "probe")
+    stored = probes.probe(check, name="Nyxmon Logyard checks")
+    current = stored is not None and nyxmon_checks_current(stored, checks)
     secret_stdin(
         name="Upsert Nyxmon Logyard json-metrics checks",
         command=_nyxmon_command(nyxmon, "apply") + " >/dev/null",
         content=SecretContent(json.dumps(checks)),
         _if=lambda: not current,
     )
+    if stored is None:
+        probes.verify_probe(check, name="Nyxmon Logyard checks")
 
 
 # -- Grafana wiring (the role's grafana.yml) ----------------------------------------

@@ -5,7 +5,8 @@
 # Installs what the prod host provides before a service deploy: rsync and
 # python3, uv in /usr/local/bin, Traefik (file provider on
 # /etc/traefik/dynamic, entry point web-secure on :443) as traefik.service, and
-# PostgreSQL from the PGDG repository (what postgres_install sets up).
+# PostgreSQL from the PGDG repository (what postgres_install sets up), and fish
+# as root's login shell.
 set -euo pipefail
 
 PUBKEY="$1"
@@ -26,7 +27,8 @@ grep -qxF "$PUBKEY" /root/.ssh/authorized_keys || printf '%s\n' "$PUBKEY" >>/roo
 
 missing=()
 # build-essential: wheels missing for the VM (arm64, new Pythons) build from source, as macmini can.
-for pkg in rsync python3 curl ca-certificates build-essential; do
+# fish: root's login shell, as on macmini (sshd runs every command through it).
+for pkg in rsync python3 curl ca-certificates build-essential fish; do
     dpkg-query -W -f '${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" || missing+=("$pkg")
 done
 if ((${#missing[@]})); then
@@ -55,6 +57,8 @@ SOURCES
         "postgresql-$POSTGRES_VERSION" "postgresql-client-$POSTGRES_VERSION" "postgresql-contrib-$POSTGRES_VERSION"
 fi
 systemctl enable --now postgresql.service
+
+[[ "$(getent passwd root | cut -d: -f7)" == /usr/bin/fish ]] || chsh -s /usr/bin/fish root
 
 if [[ "$(/usr/local/bin/uv --version 2>/dev/null)" != "uv $UV_VERSION"* ]]; then
     curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" \

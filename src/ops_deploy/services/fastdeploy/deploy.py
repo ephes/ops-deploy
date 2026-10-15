@@ -46,6 +46,7 @@ from ops_deploy.helpers import (
     uv_sync,
     wait_port,
 )
+from ops_deploy.helpers.probes import probe, verify_probe
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, DEFAULT_INTERNAL_IP_RANGES, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
@@ -282,14 +283,24 @@ def _site_command(cfg: FastdeployConfig, script: str, env: dict[str, str] | None
     return f"cd {shlex.quote(str(cfg.site_path))} && {shell}"
 
 
-def _existing_users(cfg: FastdeployConfig) -> set[str]:
-    """SHA-256 digests of the FastDeploy user names in the database (names may be secret)."""
+def _users_probe(cfg: FastdeployConfig) -> str:
+    """SHA-256 digests of the FastDeploy user names in the database (names may be secret).
 
-    sql = "select encode(sha256(convert_to(name, 'UTF8')), 'hex') from \"user\""
-    psql = ["runuser", "-u", "postgres", "--", "psql", "-XAtq", "-d", cfg.postgres_database, "-c", sql]
-    # Empty while the database or its tables do not exist yet (first deploy).
-    output = host.get_fact(Command, command=f"{shlex.join(psql)} 2>/dev/null || true")
-    return set((output or "").split())
+    Prints nothing while the database or its ``user`` table does not exist yet
+    (first deploy); any other error fails the probe.
+    """
+
+    def psql(database: str, sql: str) -> str:
+        return shlex.join(["runuser", "-u", "postgres", "--", "psql", "-XAtq", "-d", database, "-c", sql])
+
+    database = f"select 1 from pg_database where datname = '{cfg.postgres_database}'"
+    table = "select to_regclass('public.\"user\"') is not null"
+    names = "select encode(sha256(convert_to(name, 'UTF8')), 'hex') from \"user\""
+    return (
+        f'cd / && db=$( {psql("postgres", database)} ) || exit 1; [ "$db" = 1 ] || exit 0; '
+        f't=$( {psql(cfg.postgres_database, table)} ) || exit 1; [ "$t" = t ] || exit 0; '
+        f"{psql(cfg.postgres_database, names)}"
+    )
 
 
 def _digest(name: str) -> str:
@@ -307,7 +318,10 @@ _JUDGE = (
 def _initialize(cfg: FastdeployConfig, secrets: SecretValues, when_changed: list[OperationMeta]) -> None:
     """The role's initialize.yml: initial user, legacy token users, service sync."""
 
-    users = _existing_users(cfg)
+    check = _users_probe(cfg)
+    found = probe(check, name="FastDeploy users")
+    # A failed probe: create them (createuser accepts an existing user), then probe again.
+    users = set((found or "").split())
     python = shlex.quote(str(cfg.venv_bin / "python"))
     env = {"PRODUCTION": "true", "COLUMNS": "1000"}
     if cfg.create_initial_user and _digest(secrets["initial_user_name"]) not in users:
@@ -333,6 +347,8 @@ def _initialize(cfg: FastdeployConfig, secrets: SecretValues, when_changed: list
             command=_site_command(cfg, _JUDGE.format(run=run, ok=ok, what=f"creating user {name}")),
             content=SecretContent(f"{name}\n"),
         )
+    if found is None and (cfg.create_initial_user or cfg.legacy_token_users):
+        verify_probe(check, name="FastDeploy users")
     if cfg.sync_services:
         server.shell(
             name="Sync services from filesystem",

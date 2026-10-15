@@ -42,7 +42,9 @@ of the test suite that touches a network or a host.
   0.13.0 in `/usr/local/bin`, Traefik 3.7.14 as `traefik.service` with the
   file provider on `/etc/traefik/dynamic` and the `web-secure` entry point on
   `:443` (Traefik's default certificate), and PostgreSQL 17 from the PGDG
-  repository (in the repository file `postgres_install` writes).
+  repository (in the repository file `postgres_install` writes). Root's login
+  shell is fish (`/usr/bin/fish`), as on macmini and staging: every deploy
+  command passes through it.
 
 The VM is meant to stay up between runs and is shared by later slices; a test
 must leave it in a state the next run can deploy over.
@@ -50,6 +52,16 @@ must leave it in a state the next run can deploy over.
 ## What runs
 
 `tests/smoke/` is skipped unless `SMOKE_SSH_HOST` is set (the recipe sets it).
+Checks on the VM go through `SmokeHost.run`, which sends them base64-encoded
+for `sh` to evaluate, so they do not depend on root's fish login shell;
+`login_shell=True` sends a command as it is, the way pyinfra does.
+A smoke session also fails when a strict probe logged a failure ("probe
+failed: ..."), even if the step after it and the second probe passed.
+Services that share a port (chesslab and marina use 10019, static_site's
+smoke site and weeknotes_home 10062) cannot run side by side: stop the other
+one's unit before such a smoke when one VM runs them all. With every service
+deployed, the 2 GiB VM also runs out of memory (the kernel killed Logyard's
+Loki): stop the other services' units before the Logyard smoke.
 
 `test_toyweb_smoke.py` deploys [toyweb](../services/toyweb.md) with
 `run_deploy_ssh` (pyinfra's ssh connector), using the Django app in

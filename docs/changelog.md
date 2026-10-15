@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Commands no longer depend on the SSH user's login shell. Root's on macmini
+  and staging is fish, which halves backslash pairs inside single quotes, so
+  the weeknotes_home env loader (`python -c` with a regex) crashed live with
+  `re.PatternError`. The loader is now a file the deploy installs
+  (`/home/weeknotes-home/env-exec.py`, run with `python -I`), and the
+  FastDeploy restore builds its pgpass escapes without backslashes in the
+  script. `run_deploy_fake` fails any deploy test that would send a command
+  fish reads differently (`fish_unsafe` on the exact `wire_command`, also for
+  `_if`-gated operations), and `tests/test_remote_shell_execution.py` runs
+  generated commands through real bash and fish. The smoke VM gives root the
+  fish login shell (`smoke/provision.sh`); smoke checks go through `sh`
+  (`SmokeHost.run`).
+- Strict probes (`ops_deploy.helpers.probes`): migrations, static files,
+  dependency (`uv sync --check`/`--dry-run`), admin, wiring, MinIO, Nyxmon and
+  FastDeploy probes of archive, chesslab, echoport, fastdeploy, heis, logyard,
+  marina, nyxmon, opaq_app, weeknotes_home and work_app no longer read an
+  error as "not current". States normal before a first deploy are explicit
+  answers; a failed probe runs the step it gates and then probes again
+  ("Probe again: ..."), failing the deploy if the probe still fails. See
+  [Deploy helpers](concepts/helpers.md#strict-probes-ops_deployhelpersprobes).
+
 - `ops_deploy.services.nyxmon` and `ops_deploy.services.fastdeploy`: backup,
   restore and removal, ports of the `nyxmon_backup`/`_restore`/`_remove` and
   `fastdeploy_backup`/`_restore`/`_remove` roles. Archives and snapshot

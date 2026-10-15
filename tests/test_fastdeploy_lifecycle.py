@@ -137,8 +137,8 @@ def installed() -> dict[str, Any]:
             )
         },
         "find /etc/sudoers.d": ["/etc/sudoers.d/fastdeploy_nyxmon", "/etc/sudoers.d/fastdeploy_work"],
-        "command -v psql >/dev/null && cd / && runuser -u postgres -- psql -tAc 'SELECT 1 FROM pg_database": ["1"],
-        "command -v psql >/dev/null && cd / && runuser -u postgres -- psql -tAc 'SELECT 1 FROM pg_roles": ["1"],
+        "cd / && runuser -u postgres -- psql -tAc 'SELECT 1 FROM pg_database": ["1"],
+        "cd / && runuser -u postgres -- psql -tAc 'SELECT 1 FROM pg_roles": ["1"],
         "ps -u fastdeploy": ["  4321"],
         "getent passwd fastdeploy": ["fastdeploy:x:998:998::/home/fastdeploy:/bin/bash"],
         "getent group fastdeploy": ["fastdeploy:x:998:"],

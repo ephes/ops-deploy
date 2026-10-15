@@ -45,6 +45,7 @@ from ops_deploy.helpers import (
     uv_sync,
     wait_port,
 )
+from ops_deploy.helpers.probes import last_line, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
@@ -354,6 +355,8 @@ def _bash(script: str, label: str, *args: object) -> str:
 
 
 def _probe(command: str) -> str:
+    """Stdout of an absence probe (a missing file is its answer, not an error)."""
+
     return str(host.get_fact(Command, command=f"{command} 2>/dev/null || true") or "")
 
 
@@ -363,8 +366,10 @@ def _python_changed(cfg: ArchiveConfig) -> OperationMeta:
     # As the service user: the venv belongs to it, root never runs its interpreter.
     python = shlex.quote(str(cfg.venv_path / "bin/python"))
     script = f"exec {python} -c 'import sys; print(\"%d.%d\" % sys.version_info[:2])'"
-    current = _probe(_as(cfg.user, cfg.home, cfg.site_path, script)).strip()
-    stale = bool(current) and current != cfg.python_version
+    # No venv yet: nothing to replace. A venv whose Python fails is replaced too.
+    check = when_present([cfg.venv_path / "bin/python"], _as(cfg.user, cfg.home, cfg.site_path, script), otherwise="")
+    current = probe(check, name="archive venv Python")
+    stale = current is None or (bool(current.strip()) and current.strip() != cfg.python_version)
     return server.shell(
         name=f"Python {cfg.python_version} wanted in the venv",
         commands=["true"],
@@ -379,7 +384,9 @@ def _minio(cfg: ArchiveConfig, secrets: SecretValues, env: OperationMeta) -> Non
     assert cfg.minio is not None
     minio = cfg.minio
     common = (minio.mc, cfg.media_storage_endpoint_url, cfg.media_storage_bucket_name)
-    state = _probe(_bash(MINIO_PROBE, "minio-probe", *common, minio.policy_name, minio.root_env_file, cfg.env_path))
+    # The script answers "ok" or "bootstrap:<reason>"; only a crash is a failure.
+    check = _bash(MINIO_PROBE, "minio-probe", *common, minio.policy_name, minio.root_env_file, cfg.env_path)
+    state = probe(check, name="MinIO media bucket and service account")
     credentials = (
         secrets["minio_root_user"],
         secrets["minio_root_password"],
@@ -391,15 +398,18 @@ def _minio(cfg: ArchiveConfig, secrets: SecretValues, env: OperationMeta) -> Non
         command=_bash(MINIO_BOOTSTRAP, "minio-bootstrap", *common, minio.policy_name),
         content=SecretContent("".join(f"{value}\n" for value in credentials)),
         # New app credentials in .env: the account may need them too.
-        _if=lambda: state.strip() != "ok" or env.did_change(),
+        _if=lambda: (state or "").strip() != "ok" or env.did_change(),
     )
+    if state is None:
+        verify_probe(check, name="MinIO media bucket and service account", expect="ok")
 
 
 def _media_migration(cfg: ArchiveConfig, secrets: SecretValues) -> None:
     mc = cfg.minio.mc if cfg.minio is not None else PurePosixPath("/usr/local/bin/mc")
     common = (mc, cfg.media_storage_endpoint_url, cfg.media_storage_bucket_name, cfg.media_location)
-    state = _probe(_bash(MEDIA_MIGRATE, "media-migrate", *common, "probe"))
-    if state.strip() != "archive_media_pending":
+    check = _bash(MEDIA_MIGRATE, "media-migrate", *common, "probe")
+    state = probe(check, name="local archive-media migration")
+    if state is not None and state.strip() != "archive_media_pending":
         return
     credentials = (cfg.media_storage_access_key_id, secrets["media_storage_secret_access_key"])
     secret_stdin(
@@ -407,6 +417,8 @@ def _media_migration(cfg: ArchiveConfig, secrets: SecretValues) -> None:
         command=_bash(MEDIA_MIGRATE, "media-migrate", *common),
         content=SecretContent("".join(f"{value}\n" for value in credentials)),
     )
+    if state is None:
+        verify_probe(check, name="local archive-media migration")
 
 
 # -- role: admin account --------------------------------------------------------
@@ -441,8 +453,11 @@ def admin_current(probe: str, username: str, email: str, password: str) -> bool:
 
 def _admin(cfg: ArchiveConfig, secrets: SecretValues) -> None:
     username, email = secrets["admin_username"].strip(), secrets.get("admin_email", "").strip()
-    probe = _probe(_as(cfg.user, cfg.home, cfg.django_path, _manage(cfg, f"shell -c {shlex.quote(ADMIN_PROBE)}")))
-    current = admin_current(probe, username, email, secrets["admin_password"])
+    run_probe = _as(cfg.user, cfg.home, cfg.django_path, _manage(cfg, f"shell -c {shlex.quote(ADMIN_PROBE)}"))
+    needed = (cfg.venv_path / "bin/python", cfg.django_path / "manage.py", f"{cfg.env_path}.shell")
+    check = when_present(needed, run_probe, otherwise="none")
+    rows = probe(check, name="archive admin user")
+    current = rows is not None and admin_current(rows, username, email, secrets["admin_password"])
     run = (
         "IFS= read -r ARCHIVE_ADMIN_USER; IFS= read -r ARCHIVE_ADMIN_EMAIL; "
         + _manage(
@@ -457,6 +472,8 @@ def _admin(cfg: ArchiveConfig, secrets: SecretValues) -> None:
         content=SecretContent(f"{username}\n{email}\n{secrets['admin_password']}\n"),
         _if=lambda: not current,
     )
+    if rows is None:
+        verify_probe(check, name="archive admin user")
 
 
 # -- role: retired units, playbook post_tasks: Echoport ------------------------------
@@ -496,7 +513,8 @@ def _echoport(cfg: ArchiveConfig) -> None:
         return _as(target.user, PurePosixPath("/home") / target.user, site, script, env)
 
     installed = _probe(f"test -f {manage} && echo installed")
-    state = _probe(command(apply=False)).strip().splitlines()
+    check = when_present([site / "manage.py"], last_line(command(apply=False)), otherwise="missing")
+    state = probe(check, name=f"Echoport backup target {target.name}")
     server.shell(
         name="Require Echoport for the archive backup target",
         commands=[f"test -f {manage} || {{ echo 'Echoport must be deployed before archive' >&2; exit 1; }}"],
@@ -505,8 +523,10 @@ def _echoport(cfg: ArchiveConfig) -> None:
     server.shell(
         name=f"Upsert Echoport backup target {target.name}",
         commands=[command(apply=True)],
-        _if=lambda: not state or state[-1] != "unchanged",
+        _if=lambda: (state or "").strip() != "unchanged",
     )
+    if state is None:
+        verify_probe(check, name=f"Echoport backup target {target.name}", expect="unchanged")
 
 
 @deploy("Deploy archive")

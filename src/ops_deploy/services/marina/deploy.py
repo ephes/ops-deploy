@@ -40,6 +40,7 @@ from ops_deploy.helpers import (
     uv_sync,
     wait_port,
 )
+from ops_deploy.helpers.probes import migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
 from ops_deploy.helpers.traefik import DYNAMIC_DIR, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
@@ -81,11 +82,14 @@ SECRET_KEY_PATTERN = r"^[A-Za-z0-9_@%+=:,./-]+$"
 # addresses never reach the controller's output.
 ADMIN_PROBE = """\
 import hashlib, sqlite3, sys
+db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
 try:
-    db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
     rows = db.execute("select username, email, is_staff, is_superuser, is_active from auth_user").fetchall()
-except sqlite3.Error:
-    sys.exit(0)
+except sqlite3.OperationalError as exc:
+    # Not migrated yet: no accounts. Any other database error fails the probe.
+    if "no such table" not in str(exc):
+        raise
+    rows = []
 digest = lambda *parts: hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()
 for username, email, staff, superuser, active in rows:
     print("A", digest(username, staff, superuser, active))
@@ -266,18 +270,18 @@ def _site_owned(cfg: MarinaConfig) -> OperationMeta:
     )
 
 
-def _migrations_current(cfg: MarinaConfig) -> bool:
-    """``migrate --check`` (read-only; exits 0 when nothing is unapplied)."""
+def _migrations_probe(cfg: MarinaConfig) -> str:
+    """``migrate --check`` (read-only), only against an existing database (Django would create one)."""
 
-    script = _manage_script(cfg, "migrate", "--check")
-    probe = f"test -f {shlex.quote(str(cfg.db_path))} && {_site_shell(cfg, script)} >/dev/null 2>&1 && echo current"
-    return _fact(f"{probe} || true") == "current"
+    plan = _site_shell(cfg, _manage_script(cfg, "migrate", "--check", "--plan"))
+    needed = (cfg.db_path, cfg.env_path, cfg.venv_bin / "python")
+    return when_present(needed, migrations_state(plan), otherwise="pending")
 
 
 UV_SYNC_ARGS = ("--frozen", "--no-dev")
 
 
-def _deps_current(cfg: MarinaConfig) -> bool:
+def _deps_probe(cfg: MarinaConfig) -> str:
     """``uv sync --dry-run`` (read-only) finds nothing to install, remove or recreate.
 
     Catches an earlier run that stopped after the source sync and a changed
@@ -287,7 +291,12 @@ def _deps_current(cfg: MarinaConfig) -> bool:
     argv = [str(DEFAULT_UV), "sync", *UV_SYNC_ARGS, "--python", cfg.python_version, "--dry-run"]
     env = {"UV_PROJECT_ENVIRONMENT": str(cfg.venv_path)}
     sync = f"cd {shlex.quote(str(cfg.site_path))} && {_as_user(cfg.user, cfg.home, env, argv)}"
-    return _fact(f"{sync} 2>&1 | grep -qx 'Would make no changes' && echo current || true") == "current"
+    check = (
+        f"out=$( {sync} 2>&1 ) || {{ printf '%s\\n' \"$out\" >&2; exit 1; }}; "
+        "if printf '%s\\n' \"$out\" | grep -qx 'Would make no changes'; then echo current; else echo pending; fi"
+    )
+    # Nothing synced yet: the sync installs everything.
+    return when_present([cfg.site_path / "uv.lock"], check, otherwise="pending")
 
 
 def _static_collected(cfg: MarinaConfig) -> bool:
@@ -314,13 +323,18 @@ def _digest(*parts: object) -> str:
     return hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()
 
 
-def _admin_in_place(cfg: MarinaConfig, secrets: SecretValues) -> bool:
+def _admin_probe(cfg: MarinaConfig) -> str:
     """The account exists as an active staff superuser with the configured email."""
 
-    username, email = secrets["admin_username"], secrets["admin_email"]
     argv = shlex.join(["python3", "-I", "-c", ADMIN_PROBE, str(cfg.db_path)])
-    rows = set(_fact(f"{argv} 2>/dev/null || true").splitlines())
-    return {f"A {_digest(username, 1, 1, 1)}", f"B {_digest(username, email)}"} <= rows
+    return when_present([cfg.db_path], argv, otherwise="none")
+
+
+def _admin_in_place(rows: str | None, secrets: SecretValues) -> bool:
+    username, email = secrets["admin_username"], secrets["admin_email"]
+    return rows is not None and {f"A {_digest(username, 1, 1, 1)}", f"B {_digest(username, email)}"} <= set(
+        rows.splitlines()
+    )
 
 
 def _ensure_superuser(cfg: MarinaConfig, secrets: SecretValues) -> None:
@@ -335,8 +349,10 @@ def _ensure_superuser(cfg: MarinaConfig, secrets: SecretValues) -> None:
 
     stamp_path = cfg.home / ADMIN_STAMP
     stamp = _admin_stamp(cfg, secrets)
+    check = _admin_probe(cfg)
+    rows = probe(check, name=f"{cfg.user} admin user")
     if _fact(f"cat {shlex.quote(str(stamp_path))} 2>/dev/null || true") == stamp.strip() and _admin_in_place(
-        cfg, secrets
+        rows, secrets
     ):
         return
     # Name, email and password travel on stdin: never in a process's arguments.
@@ -354,6 +370,8 @@ def _ensure_superuser(cfg: MarinaConfig, secrets: SecretValues) -> None:
     secret_file(
         name="Record marina admin user", path=stamp_path, content=SecretContent(stamp), user="root", group="root"
     )
+    if rows is None:
+        verify_probe(check, name=f"{cfg.user} admin user")
 
 
 def _http_checks(cfg: MarinaConfig) -> None:
@@ -411,6 +429,8 @@ def deploy_marina(cfg: MarinaConfig, secrets: SecretValues, rsync: RsyncRunner =
     )
     _site_owned(cfg)
 
+    deps_check = _deps_probe(cfg)
+    deps_state = probe(deps_check, name=f"{cfg.user} dependencies")
     deps = uv_sync(
         cfg.site_path,
         user=cfg.user,
@@ -419,8 +439,10 @@ def deploy_marina(cfg: MarinaConfig, secrets: SecretValues, rsync: RsyncRunner =
         python=cfg.python_version,
         args=UV_SYNC_ARGS,
         # None: run whatever the source did, when the environment is not as locked.
-        when_changed=[code] if _deps_current(cfg) else None,
+        when_changed=[code] if deps_state == "current" else None,
     )
+    if deps_state is None:
+        verify_probe(deps_check, name=f"{cfg.user} dependencies", expect="current")
     files.link(
         name="Link venv to .venv",
         path=str(cfg.site_path / "venv"),
@@ -432,13 +454,17 @@ def deploy_marina(cfg: MarinaConfig, secrets: SecretValues, rsync: RsyncRunner =
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group
     )
+    migrations_check = _migrations_probe(cfg)
+    migrations = probe(migrations_check, name=f"{cfg.user} migrations")
     _manage(
         cfg,
         "Run marina migrations",
         ("migrate",),
         when_changed=[code, deps],
-        force=not _migrations_current(cfg),
+        force=migrations != "current",
     )
+    if migrations is None:
+        verify_probe(migrations_check, name=f"{cfg.user} migrations", expect="current")
     _manage(
         cfg,
         "Collect static files",

@@ -50,6 +50,7 @@ from ops_deploy.helpers import (
     traefik_route,
     uv_sync,
 )
+from ops_deploy.helpers.probes import migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
@@ -414,9 +415,16 @@ def _ownership(cfg: EchoportConfig) -> OperationMeta:
 # -- the role: Django ------------------------------------------------------------
 
 
-def _migrations_pending(cfg: EchoportConfig) -> bool:
-    check = _as(cfg, f"{_manage(cfg, 'migrate --check')} >/dev/null 2>&1", _django_env(cfg))
-    return _probe(f"{check} && echo current") != "current"
+def _site_probe(cfg: EchoportConfig, command: str, *, otherwise: str) -> str:
+    """``command`` once the site can run ``manage.py``, else ``otherwise`` (before a first deploy)."""
+
+    needed = (cfg.venv_bin / "python", cfg.site_path / "manage.py", cfg.env_path)
+    return when_present(needed, command, otherwise=otherwise)
+
+
+def _migrations_probe(cfg: EchoportConfig) -> str:
+    plan = _as(cfg, _manage(cfg, "migrate --check --plan"), _django_env(cfg))
+    return _site_probe(cfg, migrations_state(plan), otherwise="pending")
 
 
 def _static_missing(cfg: EchoportConfig) -> bool:
@@ -459,19 +467,24 @@ def admin_current(probe: str, username: str, email: str, password: str) -> bool:
 
 def _admin(cfg: EchoportConfig, secrets: SecretValues) -> OperationMeta:
     username, email = secrets["admin_username"], secrets.get("admin_email", "")
-    probe = _probe(_as(cfg, _manage(cfg, f"shell -c {shlex.quote(ADMIN_PROBE)}"), _django_env(cfg)))
-    current = admin_current(probe, username, email, secrets["admin_password"])
-    run = (
+    run = _as(cfg, _manage(cfg, f"shell -c {shlex.quote(ADMIN_PROBE)}"), _django_env(cfg))
+    check = _site_probe(cfg, run, otherwise="none")
+    rows = probe(check, name="Echoport admin user")
+    current = rows is not None and admin_current(rows, username, email, secrets["admin_password"])
+    ensure_run = (
         "IFS= read -r ADMIN_USERNAME; IFS= read -r ADMIN_EMAIL; IFS= read -r ADMIN_PASSWORD; "
         "export ADMIN_USERNAME ADMIN_EMAIL ADMIN_PASSWORD; " + _manage(cfg, "ensure_superuser >/dev/null")
         # Its success line names the user; failures still reach stderr.
     )
-    return secret_stdin(
+    ensure = secret_stdin(
         name="Ensure Echoport admin user",
-        command=_as(cfg, run, _django_env(cfg)),
+        command=_as(cfg, ensure_run, _django_env(cfg)),
         content=SecretContent(f"{username}\n{email}\n{secrets['admin_password']}\n"),
         _if=lambda: not current,
     )
+    if rows is None:
+        verify_probe(check, name="Echoport admin user")
+    return ensure
 
 
 # -- the role: scheduler -----------------------------------------------------------
@@ -493,12 +506,17 @@ def cron_job(cfg: EchoportConfig, name: str, minute: str, hour: str, job: str, *
         arg = json.dumps({**params, "apply": apply}, separators=(",", ":"))
         return shlex.join(["python3", "-I", "-c", CRON_EDIT, arg])
 
-    state = _probe(command(apply=False)).strip()
-    return server.shell(
+    # Before the user exists there is no crontab to read.
+    check = when_present([cfg.home], command(apply=False), otherwise="pending")
+    state = probe(check, name=f"cron job {name}")
+    edit = server.shell(
         name=f"Cron job {name}: {params['state']}",
         commands=[command(apply=True)],
-        _if=lambda: state != "unchanged",
+        _if=lambda: (state or "").strip() != "unchanged",
     )
+    if state is None:
+        verify_probe(check, name=f"cron job {name}", expect="unchanged")
+    return edit
 
 
 def _log_file(cfg: EchoportConfig, name: str) -> OperationMeta:
@@ -528,9 +546,15 @@ def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
         "path": "auto",
     }
     digest = hashlib.sha256("\n".join((cfg.minio_url, wanted["accessKey"], wanted["secretKey"])).encode()).hexdigest()
-    stored = _probe(
-        f"{_mc(cfg, '--json', 'alias', 'list', cfg.minio_alias)} | python3 -I -c {shlex.quote(MC_ALIAS_PROBE)}"
-    ).strip()
+    # mc reports a missing alias as JSON, which the probe reads as "none"; any
+    # other failure of mc fails the probe.
+    listing = (
+        f"out=$( {_mc(cfg, '--json', 'alias', 'list', cfg.minio_alias)} ); rc=$?; "
+        f'printf \'%s\\n\' "$out" | python3 -I -c {shlex.quote(MC_ALIAS_PROBE)} "$rc"'
+    )
+    check = when_present([cfg.home], listing, otherwise="none")
+    found = probe(check, name="mc alias of the cleanup user")
+    stored = (found or "").strip()
     # ``alias import`` opens its file itself; the user cannot reopen the
     # root-owned pipe on stdin, so the JSON goes through a private file, removed
     # right after.
@@ -549,6 +573,8 @@ def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
         content=SecretContent(json.dumps(wanted)),
         _if=lambda: stored != digest,
     )
+    if found is None:
+        verify_probe(check, name="mc alias of the cleanup user")
     if cfg.minio_verify_bucket:
         mark_read_only(
             server.shell(
@@ -681,12 +707,14 @@ def _nyxmon(nyxmon: NyxmonCheck) -> None:
             ["python3", "-I", "-c", NYXMON_CHECK],
         )
 
-    state = _probe(command(apply=False)).strip()
+    state = probe(command(apply=False), name="Nyxmon Echoport check")
     server.shell(
         name="Upsert Nyxmon Echoport json-metrics check",
         commands=[command(apply=True)],
-        _if=lambda: state != "changed=false",
+        _if=lambda: (state or "").strip() != "changed=false",
     )
+    if state is None:
+        verify_probe(command(apply=False), name="Nyxmon Echoport check", expect="changed=false")
 
 
 @deploy("Deploy echoport")
@@ -758,12 +786,15 @@ def deploy_echoport(cfg: EchoportConfig, secrets: SecretValues, rsync: RsyncRunn
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group
     )
     changed = [*synced, deps, env]
-    pending = _migrations_pending(cfg)
+    migrations_check = _migrations_probe(cfg)
+    migrations = probe(migrations_check, name="Echoport migrations")
     migrate = server.shell(
         name="manage.py migrate --noinput",
         commands=[_as(cfg, _manage(cfg, "migrate --noinput"), _django_env(cfg))],
-        _if=lambda: pending or any(meta.did_change() for meta in changed),
+        _if=lambda: migrations != "current" or any(meta.did_change() for meta in changed),
     )
+    if migrations is None:
+        verify_probe(migrations_check, name="Echoport migrations", expect="current")
     collect_static = _static_missing(cfg)
     server.shell(
         name="manage.py collectstatic --noinput",

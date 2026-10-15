@@ -41,6 +41,7 @@ from ops_deploy.helpers import (
     traefik_route,
     uv_sync,
 )
+from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
@@ -328,7 +329,7 @@ def _row_digest(username: str, owner: str) -> str:
     return hashlib.sha256(f"{username.lower()}|1|1|1|{owner.strip().lower()}|1".encode()).hexdigest()
 
 
-def _users_in_place(cfg: ChesslabConfig, users: tuple[ChesslabUser, ...]) -> bool:
+def _users_probe(cfg: ChesslabConfig) -> str:
     """Every app user exists as an active superuser with its trainer profile.
 
     Read from the database (SQLite, read-only) as digests, so user names never
@@ -340,10 +341,25 @@ def _users_in_place(cfg: ChesslabConfig, users: tuple[ChesslabUser, ...]) -> boo
         "coalesce(p.lichess_username, ''), coalesce(p.is_trainer_admin, 0) "
         "from auth_user u left join accounts_profile p on p.user_id = u.id"
     )
-    query = shlex.join(["sqlite3", "-readonly", "-separator", "|", str(cfg.db_path), sql])
+
+    def sqlite(statement: str) -> str:
+        return shlex.join(["sqlite3", "-readonly", "-separator", "|", str(cfg.db_path), statement])
+
+    tables = "select count(*) from sqlite_master where type = 'table' and name in ('auth_user', 'accounts_profile')"
     digest = 'while IFS= read -r row; do printf %s "$row" | sha256sum | cut -c1-64; done'
-    rows = host.get_fact(Command, command=f"{{ {query} | {digest}; }} 2>/dev/null || true") or ""
-    return {_row_digest(u.username, u.owner) for u in users} <= set(rows.split())
+    rows = (
+        # Before a first deploy: no sqlite3 yet (installed by this deploy) or a
+        # database not migrated yet. Both mean no users; other errors fail.
+        "command -v sqlite3 >/dev/null || { echo none; exit 0; }; "
+        f't=$( {sqlite(tables)} ) || exit 1; [ "$t" = 2 ] || {{ echo none; exit 0; }}; '
+        f'rows=$( {sqlite(sql)} ) || exit 1; [ -z "$rows" ] || printf \'%s\\n\' "$rows" | {digest}'
+    )
+    # No database yet (the check before the sync fails the run then): no users.
+    return when_present([cfg.db_path], rows, otherwise="none")
+
+
+def _users_in_place(rows: str | None, users: tuple[ChesslabUser, ...]) -> bool:
+    return rows is not None and {_row_digest(u.username, u.owner) for u in users} <= set(rows.split())
 
 
 def _ensure_users(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[ChesslabUser, ...]) -> None:
@@ -357,7 +373,9 @@ def _ensure_users(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[Chess
     stamp_path = cfg.home / USERS_STAMP
     stamp = _users_stamp(cfg, secrets, users)
     current = host.get_fact(Command, command=f"cat {shlex.quote(str(stamp_path))} 2>/dev/null || true") or ""
-    if current.strip() == stamp.strip() and _users_in_place(cfg, users):
+    check = _users_probe(cfg)
+    rows = probe(check, name="chesslab app users")
+    if current.strip() == stamp.strip() and _users_in_place(rows, users):
         return
     env = django_environment(cfg, secrets)
     # User names travel on stdin with the password and are handed to the
@@ -385,9 +403,11 @@ def _ensure_users(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[Chess
     secret_file(
         name="Record chesslab app users", path=stamp_path, content=SecretContent(stamp), user="root", group="root"
     )
+    if rows is None:
+        verify_probe(check, name="chesslab app users")
 
 
-def _migrations_current(cfg: ChesslabConfig) -> bool:
+def _migrations_probe(cfg: ChesslabConfig) -> str:
     """``migrate --check`` (read-only), with Django's debug key instead of the secret one."""
 
     env = {
@@ -395,23 +415,27 @@ def _migrations_current(cfg: ChesslabConfig) -> bool:
         "CHESSLAB_DEBUG": "true",
         "CHESSLAB_DB_PATH": str(cfg.db_path),
     }
-    check = _as_user(cfg.user, cfg.home, env, [str(cfg.venv_bin / "python"), "-m", "django", "migrate", "--check"])
-    probe = f"cd {shlex.quote(str(cfg.site_path))} && {check} >/dev/null 2>&1 && echo current || true"
-    return host.get_fact(Command, command=probe) == "current"
+    argv = [str(cfg.venv_bin / "python"), "-m", "django", "migrate", "--check", "--plan"]
+    plan = f"cd {shlex.quote(str(cfg.site_path))} && {_as_user(cfg.user, cfg.home, env, argv)}"
+    return when_present([cfg.venv_bin / "python", cfg.db_path], migrations_state(plan), otherwise="pending")
 
 
 def _migrate(cfg: ChesslabConfig, secrets: SecretValues, when_changed: list[OperationMeta]) -> OperationMeta:
     """Run migrations after a code or dependency change, or while any are unapplied
     (also after a failed run whose sync already happened)."""
 
-    pending = not _migrations_current(cfg)
+    check = _migrations_probe(cfg)
+    state = probe(check, name="chesslab migrations")
     argv = [str(cfg.venv_bin / "python"), "-m", "django", "migrate", "--noinput"]
-    return secret_stdin(
+    migrate = secret_stdin(
         name="Run chesslab migrations",
         command=_site_shell(cfg, f"{_READ_ENV}; exec {shlex.join(argv)}"),
         content=_stdin_env(django_environment(cfg, secrets)),
-        _if=lambda: pending or any(meta.did_change() for meta in when_changed),
+        _if=lambda: state != "current" or any(meta.did_change() for meta in when_changed),
     )
+    if state is None:
+        verify_probe(check, name="chesslab migrations", expect="current")
+    return migrate
 
 
 def _health_check(cfg: ChesslabConfig) -> OperationMeta:
@@ -445,8 +469,10 @@ def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, en
     """Probe in check mode; apply only when the probe does not say ``unchanged``."""
 
     manage = shlex.quote(f"/home/{owner}/site/manage.py")
-    probe = _manage_shell(owner, script, {**params, "mode": "check"}, env_file=env_file)
-    state = host.get_fact(Command, command=f"{{ test -f {manage} && {probe}; }} 2>/dev/null | tail -n1 || true")
+    run_check = _manage_shell(owner, script, {**params, "mode": "check"}, env_file=env_file)
+    # Without the service the step below fails the run with a message.
+    check = when_present([f"/home/{owner}/site/manage.py"], last_line(run_check), otherwise="missing")
+    state = probe(check, name=name)
     if (state or "").strip() == "unchanged":
         return
     missing = f"{owner.capitalize()} must be deployed on this host before chesslab can be wired to it"
@@ -457,6 +483,8 @@ def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, en
             _manage_shell(owner, script, {**params, "mode": "apply"}, env_file=env_file),
         ],
     )
+    if state is None:
+        verify_probe(check, name=name, expect="unchanged")
 
 
 def _operations_wiring(cfg: ChesslabConfig) -> None:

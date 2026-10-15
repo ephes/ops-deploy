@@ -6,6 +6,7 @@ from ops_deploy.testing.harness import (
     OpResult,
     RecordedEvent,
     RecordingRsyncRunner,
+    fish_unsafe,
     run_deploy_fake,
 )
 from ops_deploy.testing.ssh import SshRun, run_deploy_ssh
@@ -17,6 +18,7 @@ __all__ = [
     "RecordedEvent",
     "RecordingRsyncRunner",
     "SshRun",
+    "fish_unsafe",
     "run_deploy_fake",
     "run_deploy_ssh",
 ]

@@ -15,10 +15,8 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, ClassVar, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
-from pyinfra.facts.server import Command
 from pyinfra.operations import files, server
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
@@ -38,6 +36,7 @@ from ops_deploy.helpers import (
     uv_sync,
     wait_port,
 )
+from ops_deploy.helpers.probes import probe, when_present
 from ops_deploy.helpers.traefik import _MIDDLEWARE, DEFAULT_INTERNAL_IP_RANGES, Hostname
 from ops_deploy.ops import secret_file, sync_tree
 
@@ -202,9 +201,10 @@ def _sqlite_private(cfg: NyxmonConfig) -> OperationMeta:
     site, owner = shlex.quote(str(cfg.site_path)), f"{cfg.user}:{cfg.user}"
     files_ = f"find {site} -maxdepth 1 -type f -name 'db.sqlite3*'"
     exposed = f"{files_} \\( ! -user {cfg.user} -o ! -group {cfg.user} -o ! -perm 600 \\) -print"
-    probe = f"test -f {site}/db.sqlite3 || echo missing; {exposed}"
+    check = when_present([cfg.site_path], f"test -f {site}/db.sqlite3 || echo missing; {exposed}", otherwise="missing")
     # Planned from what the host looks like now; on a first deploy migrate creates the database later.
-    pending = host.get_fact(Command, command=f"{probe} 2>/dev/null || true")
+    # A failed probe runs the step, whose last command checks the result.
+    pending = probe(check, name="nyxmon SQLite privacy")
     return server.shell(
         name="Restrict SQLite database and sidecars",
         commands=[
@@ -216,7 +216,7 @@ def _sqlite_private(cfg: NyxmonConfig) -> OperationMeta:
             '|| ! test -e "$f" || exit 1; done',
             f'test -z "$({exposed} 2>/dev/null)"',
         ],
-        _if=lambda: bool(pending),
+        _if=lambda: pending is None or bool(pending.strip()),
     )
 
 

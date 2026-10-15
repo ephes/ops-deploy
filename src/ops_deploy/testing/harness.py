@@ -26,12 +26,16 @@ from typing import Any, Literal
 
 from pyinfra.api import Config, Inventory, State
 from pyinfra.api import facts as pyinfra_facts
-from pyinfra.api.command import FunctionCommand
+from pyinfra.api.arguments import CONNECTOR_ARGUMENT_KEYS
+from pyinfra.api.command import FunctionCommand, StringCommand
 from pyinfra.api.connect import connect_all, disconnect_all
 from pyinfra.api.deploy import add_deploy
 from pyinfra.api.exceptions import PyinfraError
+from pyinfra.api.host import Host
 from pyinfra.api.operations import run_ops
 from pyinfra.connectors.fake import FakeConnector
+from pyinfra.connectors.util import make_unix_command_for_host
+from pyinfra.context import ctx_host, ctx_state
 
 from ops_deploy.core.rsync import RsyncResult
 from ops_deploy.helpers.checks import is_read_only
@@ -99,6 +103,34 @@ class DeployRun:
         return matches[0]
 
 
+def fish_unsafe(command: str) -> bool:
+    """Whether a fish login shell would read the wire command ``command`` differently from ``sh``.
+
+    sshd hands each command to the login shell of the SSH user; root's on
+    macmini and staging is fish. pyinfra sends ``sh -c '<command>'`` (see
+    :func:`wire_command`), and inside single quotes fish, unlike sh and bash,
+    reads ``\\\\`` and ``\\'`` as escapes: a backslash pair reaches ``sh`` halved,
+    and a command ending in a backslash leaves the quote open. Single
+    backslashes before any other character are safe.
+    """
+
+    return "\\\\" in command or "\\'" in command
+
+
+def wire_command(state: State, host: Host, command: str | StringCommand, arguments: Mapping[str, Any]) -> str:
+    """The command line pyinfra's SSH connector sends for ``command`` (unmasked).
+
+    The same wrapping as the connector: ``_env``, ``_chdir`` and the
+    ``<shell> -c '...'`` quoting, from the operation's connector arguments.
+    """
+
+    wanted = {k: v for k, v in arguments.items() if k in CONNECTOR_ARGUMENT_KEYS}
+    for key in ("_get_pty", "_timeout", "_stdin", "_success_exit_codes", "_retries", "_retry_delay", "_retry_until"):
+        wanted.pop(key, None)
+    text = StringCommand(command) if isinstance(command, str) else command
+    return make_unix_command_for_host(state, host, text, **wanted).get_raw_value()
+
+
 @dataclass
 class FakeRun(DeployRun):
     """Everything recorded during one :func:`run_deploy_fake` call."""
@@ -106,6 +138,10 @@ class FakeRun(DeployRun):
     events: list[RecordedEvent] = field(default_factory=list)
     uploads: list[tuple[str, bytes]] = field(default_factory=list)
     stdin: list[tuple[str, str]] = field(default_factory=list)
+    # Commands (masked) whose wire form a fish login shell would alter, also
+    # from ops an ``_if`` gate skipped (see :func:`fish_unsafe`);
+    # :func:`run_deploy_fake` fails when there is any.
+    fish_unsafe_commands: list[str] = field(default_factory=list)
 
     @property
     def executed(self) -> list[RecordedEvent]:
@@ -219,8 +255,13 @@ def run_deploy_fake(
             run.error = exc
         finally:
             run.ops = collect_ops(state, FAKE_HOST)
+            recorded = len(run.events), len(run.uploads), len(run.stdin)
+            run.fish_unsafe_commands.extend(_gated_fish_unsafe(state, FAKE_HOST))
+            del run.events[recorded[0] :], run.uploads[recorded[1] :], run.stdin[recorded[2] :]
             disconnect_all(state)
 
+    if run.fish_unsafe_commands:
+        raise AssertionError(f"commands a fish login shell would alter: {run.fish_unsafe_commands}")
     return run
 
 
@@ -236,6 +277,8 @@ def _recording(run: FakeRun) -> Iterator[list[Phase]]:
 
     def run_shell_command(self: FakeConnector, command: Any, *a: Any, **kw: Any) -> Any:
         text = command if isinstance(command, str) else command.get_masked_value()
+        if fish_unsafe(wire_command(self.state, self.host, command, kw)):
+            run.fish_unsafe_commands.append(text)
         kind: EventKind = "fact" if fact_depth[0] else "shell"
         run.events.append(RecordedEvent(phase[0], kind, text))
         stdin = kw.get("_stdin")
@@ -295,6 +338,39 @@ def _read_upload(filename_or_io: Any) -> bytes:
     if isinstance(filename_or_io, io.IOBase) or isinstance(content, bytes):
         return bytes(content)
     raise TypeError(f"cannot read upload source {type(filename_or_io).__name__}")
+
+
+def _gated_fish_unsafe(state: State, host_name: str) -> list[str]:
+    """Fish-unsafe commands of the ops an ``_if`` gate skipped.
+
+    A skipped op never generates its commands, so the run cannot see them.
+    Each is generated here once more with the gate ignored (pyinfra checks
+    ``_if`` only while executing); facts it reads come from the fake host.
+    """
+
+    host = state.inventory.get_host(host_name)
+    found: list[str] = []
+    was_executing = state.is_executing
+    state.is_executing = False
+    try:
+        for op_hash in state.get_op_order():
+            try:
+                op_data = state.get_op_data_for_host(host, op_hash)
+            except KeyError:
+                continue
+            if not op_data.global_arguments.get("_if") or op_data.operation_meta._commands:
+                continue
+            with ctx_state.use(state), ctx_host.use(host):
+                commands = list(op_data.command_generator())
+            arguments = {k: v for k, v in op_data.global_arguments.items() if k in CONNECTOR_ARGUMENT_KEYS}
+            for command in commands:
+                if not isinstance(command, StringCommand):
+                    continue
+                if fish_unsafe(wire_command(state, host, command, {**arguments, **command.connector_arguments})):
+                    found.append(f"(gated) {command.get_masked_value()}")
+    finally:
+        state.is_executing = was_executing
+    return found
 
 
 def collect_ops(state: State, host_name: str) -> list[OpResult]:

@@ -40,6 +40,7 @@ from ops_deploy.helpers import (
     traefik_route,
     uv_sync,
 )
+from ops_deploy.helpers.probes import last_line, migrations_state, probe, uv_sync_state, verify_probe, when_present
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, sync_tree
@@ -279,34 +280,31 @@ def _stale_venv(cfg: WorkAppConfig) -> OperationMeta | None:
     return files.directory(name=f"Remove outdated venv {cfg.venv_path}", path=str(cfg.venv_path), present=False)
 
 
-def _migrations_current(cfg: WorkAppConfig) -> bool:
+def _migrations_probe(cfg: WorkAppConfig) -> str:
     """``migrate --check`` (read-only), only against an existing database.
 
     Django would create an empty SQLite file when asked on a host without one,
     so a missing database or ``.env`` counts as "not current" without asking.
     """
 
-    check = site_shell(cfg, manage_script(cfg, "migrate", "--check"))
-    db, env = shlex.quote(str(cfg.database_path)), shlex.quote(str(cfg.env_path))
-    probe = f"test -f {db} && test -f {env} && {check} >/dev/null 2>&1 && echo current || true"
-    return host.get_fact(Command, command=probe) == "current"
+    plan = site_shell(cfg, manage_script(cfg, "migrate", "--check", "--plan"))
+    needed = (cfg.database_path, cfg.env_path, cfg.venv_bin / "python")
+    return when_present(needed, migrations_state(plan), otherwise="pending")
 
 
-def _deps_current(cfg: WorkAppConfig) -> bool:
+def _deps_probe(cfg: WorkAppConfig) -> str:
     """``uv sync --check`` (read-only): the venv matches the lock file as deployed.
 
     Catches a sync that failed after the sources were copied: the next run sees
     unchanged sources but a venv that is not up to date.
     """
 
-    python = shlex.quote(str(cfg.venv_bin / "python"))
     argv = [str(DEFAULT_UV), "sync", *UV_SYNC_ARGS, "--check"]
     env = {"UV_PROJECT_ENVIRONMENT": str(cfg.venv_path)}
     check = f"cd {shlex.quote(str(cfg.site_path))} && {_as_user(cfg.user, cfg.home, env, argv)}"
-    return (
-        host.get_fact(Command, command=f"test -x {python} && {check} >/dev/null 2>&1 && echo current || true")
-        == "current"
-    )
+    # No venv or no lock file yet: the sync installs them.
+    needed = (cfg.venv_bin / "python", cfg.site_path / "uv.lock")
+    return when_present(needed, uv_sync_state(check), otherwise="pending")
 
 
 def _code_newer_than_service(cfg: WorkAppConfig) -> bool:
@@ -351,8 +349,10 @@ def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, en
     """Probe in check mode; apply only when the probe does not say ``unchanged``."""
 
     manage = shlex.quote(f"/home/{owner}/site/manage.py")
-    probe = _manage_shell(owner, script, {**params, "mode": "check"}, env_file=env_file)
-    state = host.get_fact(Command, command=f"{{ test -f {manage} && {probe}; }} 2>/dev/null | tail -n1 || true")
+    run_check = _manage_shell(owner, script, {**params, "mode": "check"}, env_file=env_file)
+    # Without the service the step below fails the run with a message.
+    check = when_present([f"/home/{owner}/site/manage.py"], last_line(run_check), otherwise="missing")
+    state = probe(check, name=name)
     if (state or "").strip() == "unchanged":
         return
     missing = f"{owner.capitalize()} must be deployed on this host before the work app can be wired to it"
@@ -363,6 +363,8 @@ def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, en
             _manage_shell(owner, script, {**params, "mode": "apply"}, env_file=env_file),
         ],
     )
+    if state is None:
+        verify_probe(check, name=name, expect="unchanged")
 
 
 def _operations_wiring(cfg: WorkAppConfig) -> None:
@@ -438,7 +440,9 @@ def deploy_work_app(cfg: WorkAppConfig, secrets: SecretValues, rsync: RsyncRunne
         for name in SOURCE_FILES
     ]
     stale = _stale_venv(cfg)
-    deps_stale = not _deps_current(cfg)
+    deps_check = _deps_probe(cfg)
+    deps_state = probe(deps_check, name="work_app dependencies")
+    deps_stale = deps_state != "current"
     deps = uv_sync(
         cfg.site_path,
         user=cfg.user,
@@ -450,18 +454,23 @@ def deploy_work_app(cfg: WorkAppConfig, secrets: SecretValues, rsync: RsyncRunne
         # Also while the venv is out of step with the lock file (a failed earlier run).
         when_changed=None if deps_stale else [*synced, *([stale] if stale else [])],
     )
+    if deps_state is None:
+        verify_probe(deps_check, name="work_app dependencies", expect="current")
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group
     )
 
     # Migrations also run while any are unapplied (after a failed run whose sync already happened).
-    pending = not _migrations_current(cfg)
+    migrations_check = _migrations_probe(cfg)
+    migrations = probe(migrations_check, name="work_app migrations")
     code_changed = [*synced, deps, env]
     migrate = server.shell(
         name="Run work_app migrations",
         commands=[site_shell(cfg, manage_script(cfg, "migrate", "--noinput"))],
-        _if=lambda: pending or any(meta.did_change() for meta in code_changed),
+        _if=lambda: migrations != "current" or any(meta.did_change() for meta in code_changed),
     )
+    if migrations is None:
+        verify_probe(migrations_check, name="work_app migrations", expect="current")
     files.file(
         name="Restrict database permissions",
         path=str(cfg.database_path),
