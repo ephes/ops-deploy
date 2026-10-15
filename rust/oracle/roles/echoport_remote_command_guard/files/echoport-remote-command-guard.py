@@ -10,15 +10,19 @@ path in it is allowed by the policy file named on the command line. Anything
 else is refused and logged; there is no interactive shell.
 
 Allowed commands are executed directly (no shell), with a fixed PATH, so the
-quoting of the original string cannot smuggle extra commands through.
+quoting of the original string cannot smuggle extra commands through. The few
+redirections the runners use (``< file``, ``> file``) are done by the guard
+itself, on files it opens without following symlinks.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import pwd
 import re
 import shlex
+import stat
 import sys
 import syslog
 from dataclasses import dataclass, field
@@ -36,11 +40,53 @@ _PRIVATE_TMP_DIR_RE = re.compile(r"^/tmp/echoport-pp-private-media\.[A-Za-z0-9]+
 _PRIVATE_ARCHIVE_RE = re.compile(r"^/tmp/echoport-pp-private-media\.[A-Za-z0-9]+/private_media\.tar\.gz$")
 _PRIVATE_MKTEMP = ["mktemp", "-d", "/tmp/echoport-pp-private-media.XXXXXXXX"]
 _TAR_RE = re.compile(r"^umask 077 && (tar -C \S+ -czf \S+ -- \S+)$")
-_RSYNC_FLAGS_RE = re.compile(r"^-[A-Za-z.]+$")
+_CAT_TO_FILE_RE = re.compile(r"^umask 077 && cat > (\S+)$")
+_TEMP_TEMPLATE_RE = re.compile(r"^/(?:var/)?tmp/[a-z0-9][a-z0-9._-]*\.X{6,}$")
+_READY_URL_RE = re.compile(r"^http://127\.0\.0\.1:[0-9]{1,5}/[a-z]+$")
+
+# The rsync server arguments (everything between "rsync" and ". <dir>/") for
+# exactly the client options the runners use. Derived by running the rsync
+# client with a recording -e program: rsync 3.2.7 (Ubuntu 24.04, the runner
+# host) and 3.5.0 (Debian 13) send the same strings. Anything else (-L, -K,
+# devices/specials, --remove-source-files, ...) is refused.
+RSYNC_SERVER_ARGS = {
+    # rsync -a --safe-links <host>:<dir>/ <local>/      (download)
+    ("--server", "--sender", "-logDtpre.iLsfxCIvu", "--safe-links"),
+    # rsync -a --no-D <local>/ <host>:<dir>/             (upload, keeps extra files)
+    ("--server", "-logtpre.iLsfxCIvu"),
+    # rsync -a --no-D --delete <local>/ <host>:<dir>/    (upload, mirror)
+    ("--server", "-logtpre.iLsfxCIvu", "--delete"),
+}
+
+_PSQL_RUNNER_PREFIX = ["-X", "-v", "ON_ERROR_STOP=1", "-qAt", "-d"]
+_SQL_SERVER_VERSION = "SHOW server_version;"
+_SQL_DB_EXISTS_RE = re.compile(r"^SELECT 1 FROM pg_database WHERE datname = '([a-z0-9_]+)';$")
+_SQL_COUNT_RE = re.compile(r"^SELECT count\(\*\) FROM public\.[a-z_][a-z0-9_]*;$")
+_SQLITE_BACKUP_RE = re.compile(r"^\.backup '(/[A-Za-z0-9._/-]+)'$")
+_SQLITE_INTEGRITY = "PRAGMA integrity_check;"
+_CHMOD_MODES = ("0600", "0700")
+_UPLOAD_SUFFIXES = (".tmp", ".restore-tmp")
 
 
 class Refused(Exception):
     """The command is not on the allowlist."""
+
+
+def _temp_dir_re(template: str) -> re.Pattern[str]:
+    """What `mktemp -d <template>` can return."""
+    prefix = template.rstrip("X")
+    return re.compile(rf"^{re.escape(prefix)}[A-Za-z0-9]{{{len(template) - len(prefix)}}}$")
+
+
+@dataclass
+class SqliteSnapshot:
+    database: str
+    owner: str
+    temp_dir: str
+
+    @property
+    def user(self) -> str:
+        return self.owner.split(":", 1)[0]
 
 
 @dataclass
@@ -48,9 +94,14 @@ class Policy:
     dump_databases: set[str] = field(default_factory=set)
     restore_databases: dict[str, str] = field(default_factory=dict)
     temp_file_prefixes: list[str] = field(default_factory=list)
+    scratch_restore_prefixes: list[str] = field(default_factory=list)
     units: set[str] = field(default_factory=set)
     private_media_paths: set[str] = field(default_factory=set)
     path_roots: list[tuple[str, str]] = field(default_factory=list)
+    temp_dirs: list[str] = field(default_factory=list)
+    sqlite_snapshots: list[SqliteSnapshot] = field(default_factory=list)
+    read_files: set[str] = field(default_factory=set)
+    ready_urls: set[str] = field(default_factory=set)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Policy":
@@ -59,17 +110,27 @@ class Policy:
             dump_databases=set(postgres.get("dump_databases") or []),
             restore_databases=dict(postgres.get("restore_databases") or {}),
             temp_file_prefixes=list(postgres.get("temp_file_prefixes") or []),
+            scratch_restore_prefixes=list(postgres.get("scratch_restore_prefixes") or []),
             units=set(data.get("units") or []),
             private_media_paths={p.rstrip("/") for p in data.get("private_media_paths") or []},
             path_roots=[
                 (str(entry["path"]).rstrip("/"), str(entry["owner"]))
                 for entry in data.get("path_roots") or []
             ],
+            temp_dirs=[str(t) for t in data.get("temp_dirs") or []],
+            sqlite_snapshots=[
+                SqliteSnapshot(str(entry["database"]), str(entry["owner"]), str(entry["temp_dir"]))
+                for entry in data.get("sqlite_snapshots") or []
+            ],
+            read_files={str(p) for p in data.get("read_files") or []},
+            ready_urls={str(u) for u in data.get("ready_urls") or []},
         )
         for name in policy.dump_databases | set(policy.restore_databases) | set(policy.restore_databases.values()):
             _require(_SAFE_NAME_RE.match(name), f"invalid database or role name in policy: {name!r}")
         for prefix in policy.temp_file_prefixes:
             _require(re.fullmatch(r"[a-z0-9_]+", prefix), f"invalid temp file prefix in policy: {prefix!r}")
+        for prefix in policy.scratch_restore_prefixes:
+            _require(re.fullmatch(r"[a-z][a-z0-9_]*", prefix), f"invalid scratch database prefix: {prefix!r}")
         for unit in policy.units:
             _require(_SAFE_NAME_RE.match(unit), f"invalid unit name in policy: {unit!r}")
         for path in policy.private_media_paths:
@@ -77,13 +138,56 @@ class Policy:
         for root, owner in policy.path_roots:
             _require(_is_safe_path(root) and root.count("/") >= 2, f"invalid path root: {root!r}")
             _require(_SAFE_OWNER_RE.match(owner), f"invalid owner for {root}: {owner!r}")
+        for template in policy.temp_dirs:
+            _require(_TEMP_TEMPLATE_RE.match(template), f"invalid temp dir template: {template!r}")
+        for snapshot in policy.sqlite_snapshots:
+            _require(
+                _is_safe_path(snapshot.database) and snapshot.database.count("/") >= 2,
+                f"invalid sqlite database: {snapshot.database!r}",
+            )
+            _require(_SAFE_OWNER_RE.match(snapshot.owner), f"invalid sqlite owner: {snapshot.owner!r}")
+            _require(snapshot.user != "root", "sqlite snapshots must run as the service user, not root")
+            _require(_TEMP_TEMPLATE_RE.match(snapshot.temp_dir), f"invalid temp dir template: {snapshot.temp_dir!r}")
+        for path in policy.read_files:
+            _require(_is_safe_path(path) and path.count("/") >= 2, f"invalid read file: {path!r}")
+        for url in policy.ready_urls:
+            _require(_READY_URL_RE.match(url), f"invalid ready URL: {url!r}")
         return policy
+
+    def scratch_database(self, name: str) -> bool:
+        return any(re.fullmatch(rf"{re.escape(p)}_[0-9]+", name) for p in self.scratch_restore_prefixes)
+
+    def private_temp_dir(self, path: str) -> bool:
+        """A root-only directory from `mktemp -d <template>` (policy temp_dirs)."""
+        return any(_temp_dir_re(t).match(path) for t in self.temp_dirs)
+
+    def snapshot_for_temp_dir(self, path: str) -> SqliteSnapshot | None:
+        for snapshot in self.sqlite_snapshots:
+            if _temp_dir_re(snapshot.temp_dir).match(path):
+                return snapshot
+        return None
+
+
+@dataclass
+class Redirect:
+    """A file the guard opens itself and hands the command as stdin or stdout.
+
+    `directory` is opened without following symlinks and must belong to the
+    guard's own user (or one of `owners`) with no group/other access; `name`
+    is opened inside it without following symlinks and must be a plain file.
+    """
+
+    directory: str
+    name: str
+    owners: tuple[str, ...] = ()
 
 
 @dataclass
 class Decision:
     argv: list[str]
     umask: int | None = None
+    stdin: Redirect | None = None
+    stdout: Redirect | None = None  # created exclusively, mode 0600
 
 
 def _require(condition: object, message: str) -> None:
@@ -129,6 +233,35 @@ def _require_in_roots(policy: Policy, path: str, realpath=os.path.realpath) -> t
     return found  # type: ignore[return-value]
 
 
+def _lstat_or_none(path: str, lstat, what: str):
+    try:
+        return lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise Refused(f"{what} not checkable: {path!r}: {exc.strerror}") from exc
+
+
+def _require_plain_file_or_absent(path: str, lstat, what: str) -> None:
+    """A path scp may read or write: missing, or a regular file with one link.
+
+    Uses lstat, so a symlink, device, FIFO, socket or directory is refused.
+    """
+    st = _lstat_or_none(path, lstat, what)
+    if st is None:
+        return
+    _require(stat.S_ISREG(st.st_mode), f"{what} is not a regular file: {path!r}")
+    _require(st.st_nlink == 1, f"{what} has other hard links: {path!r}")
+
+
+def _split_in_dir(path: str, is_dir) -> tuple[str, str]:
+    """Split <dir>/<name> where `is_dir(dir)` and name is a plain file name."""
+    _require(_is_safe_path(path), f"unsafe path: {path!r}")
+    directory, _, name = path.rpartition("/")
+    _require(is_dir(directory) and _SAFE_NAME_RE.match(name), f"path not allowed: {path!r}")
+    return directory, name
+
+
 def private_media_probe_script(path: str) -> str:
     """The probe python_podcast_production_db_backup.py.j2 sends under sh -c."""
     quoted = shlex.quote(path)
@@ -140,25 +273,49 @@ def private_media_probe_script(path: str) -> str:
     )
 
 
-def _check_postgres(policy: Policy, args: list[str]) -> None:
+def _check_postgres(policy: Policy, args: list[str], stdin_path: str | None) -> Redirect | None:
+    """Check a PostgreSQL client call run as postgres; return its stdin file, if any."""
     tool, rest = args[0], args[1:]
+    if tool == "pg_restore" and stdin_path is not None:
+        # Restore into a fresh scratch database, the dump read from a root-only
+        # temp directory (django_chat_staging_db_backup.py.j2).
+        _require(
+            len(rest) == 4 and rest[:3] == ["--no-owner", "--no-privileges", "--exit-on-error"],
+            "unexpected pg_restore arguments",
+        )
+        _require(rest[3].startswith("--dbname="), "unexpected pg_restore arguments")
+        database = rest[3][len("--dbname="):]
+        _require(policy.scratch_database(database), f"pg_restore into {database!r} not allowed")
+        directory, name = _split_in_dir(stdin_path, policy.private_temp_dir)
+        _require(name.endswith(".dump"), f"pg_restore source not allowed: {stdin_path!r}")
+        return Redirect(directory, name)
+    _require(stdin_path is None, "input redirection not allowed here")
     if tool == "pg_dump":
+        if len(rest) == 2:
+            # Dump to stdout (django_chat_staging_db_backup.py.j2).
+            _require(rest[0] == "--format=custom" and rest[1].startswith("--dbname="), "unexpected pg_dump arguments")
+            database = rest[1][len("--dbname="):]
+            _require(database in policy.dump_databases, f"pg_dump of {database!r} not allowed")
+            return None
         _require(len(rest) == 3 and rest[0] == "--format=custom", "unexpected pg_dump arguments")
         _require(rest[1].startswith("--file=") and rest[2].startswith("--dbname="), "unexpected pg_dump arguments")
         dump_file = rest[1][len("--file="):]
         database = rest[2][len("--dbname="):]
         _require(database in policy.dump_databases, f"pg_dump of {database!r} not allowed")
         _require(_is_temp_dump(policy, dump_file, ("dump",)), f"pg_dump target not allowed: {dump_file!r}")
-        return
+        return None
     if tool == "dropdb":
         _require(len(rest) == 3 and rest[:2] == ["--if-exists", "--force"], "unexpected dropdb arguments")
         _require(rest[2] in policy.restore_databases, f"dropdb of {rest[2]!r} not allowed")
-        return
+        return None
     if tool == "createdb":
+        if len(rest) == 1:
+            _require(policy.scratch_database(rest[0]), f"createdb {rest[0]!r} not allowed")
+            return None
         _require(len(rest) == 2 and rest[0].startswith("--owner="), "unexpected createdb arguments")
         database, owner = rest[1], rest[0][len("--owner="):]
         _require(policy.restore_databases.get(database) == owner, f"createdb {database!r} owner {owner!r} not allowed")
-        return
+        return None
     if tool == "pg_restore":
         _require(len(rest) == 5, "unexpected pg_restore arguments")
         _require(rest[0] == "--exit-on-error" and rest[2] == "--no-owner", "unexpected pg_restore arguments")
@@ -166,49 +323,94 @@ def _check_postgres(policy: Policy, args: list[str]) -> None:
         database, role, dump_file = rest[1][len("--dbname="):], rest[3][len("--role="):], rest[4]
         _require(policy.restore_databases.get(database) == role, f"pg_restore into {database!r} as {role!r} not allowed")
         _require(_is_temp_dump(policy, dump_file, ("restore",)), f"pg_restore source not allowed: {dump_file!r}")
-        return
+        return None
     if tool == "psql":
-        _require(len(rest) == 4 and rest[0] == "-d" and rest[2:] == ["-c", "SELECT 1"], "unexpected psql arguments")
-        _require(
-            rest[1] in policy.restore_databases or rest[1] in policy.dump_databases,
-            f"psql on {rest[1]!r} not allowed",
-        )
-        return
+        if len(rest) == 4:
+            _require(rest[0] == "-d" and rest[2:] == ["-c", "SELECT 1"], "unexpected psql arguments")
+            _require(
+                rest[1] in policy.restore_databases or rest[1] in policy.dump_databases,
+                f"psql on {rest[1]!r} not allowed",
+            )
+            return None
+        # The read-only queries of django_chat_staging_db_backup.py.j2.
+        _require(len(rest) == 8 and rest[:5] == _PSQL_RUNNER_PREFIX and rest[6] == "-c", "unexpected psql arguments")
+        database, sql = rest[5], rest[7]
+        if sql == _SQL_SERVER_VERSION:
+            _require(database in policy.dump_databases, f"psql on {database!r} not allowed")
+            return None
+        exists = _SQL_DB_EXISTS_RE.match(sql)
+        if exists:
+            _require(database == "postgres" and policy.scratch_database(exists.group(1)), "psql query not allowed")
+            return None
+        _require(_SQL_COUNT_RE.match(sql) and policy.scratch_database(database), "psql query not allowed")
+        return None
     raise Refused(f"postgres tool not allowed: {tool!r}")
 
 
-def _check_scp(policy: Policy, args: list[str], realpath) -> None:
+def _check_sqlite(policy: Policy, user: str, args: list[str]) -> None:
+    """sqlite3 as the service user: online .backup into its temp dir, integrity check."""
+    _require(len(args) == 3 and args[0] == "sqlite3", "unexpected command for a service user")
+    for snapshot in policy.sqlite_snapshots:
+        if snapshot.user != user:
+            continue
+        in_temp = _temp_dir_re(snapshot.temp_dir)
+        backup = _SQLITE_BACKUP_RE.match(args[2])
+        if args[1] == snapshot.database and backup:
+            directory, _, name = backup.group(1).rpartition("/")
+            if in_temp.match(directory) and _SAFE_NAME_RE.match(name):
+                return
+        directory, _, name = args[1].rpartition("/")
+        if args[2] == _SQLITE_INTEGRITY and in_temp.match(directory) and _SAFE_NAME_RE.match(name):
+            return
+    raise Refused(f"sqlite3 call not allowed for {user!r}")
+
+
+def _check_scp(policy: Policy, args: list[str], realpath, lstat) -> None:
     _require(len(args) == 3 and args[1] in ("-f", "-t"), "unexpected scp arguments")
     mode, path = args[1], args[2]
     _require(_is_safe_path(path), f"unsafe scp path: {path!r}")
     if mode == "-f":
-        if _is_temp_dump(policy, path, ("dump",)):
+        if _is_temp_dump(policy, path, ("dump",)) or (policy.private_media_paths and _PRIVATE_ARCHIVE_RE.match(path)):
+            _require_plain_file_or_absent(path, lstat, "scp source")
             return
-        if policy.private_media_paths and _PRIVATE_ARCHIVE_RE.match(path):
-            return
+        if path not in policy.read_files:
+            _require_in_roots(policy, path, realpath)
+        _require_plain_file_or_absent(realpath(path), lstat, "scp source")
+        return
+    # Upload: onto a new path or an existing plain file, never through a symlink.
+    if not _is_temp_dump(policy, path, ("restore",)):
+        _require(path.endswith(_UPLOAD_SUFFIXES), f"scp upload target not allowed: {path!r}")
         _require_in_roots(policy, path, realpath)
-        return
-    if _is_temp_dump(policy, path, ("restore",)):
-        return
-    _require(path.endswith(".tmp"), f"scp upload target not allowed: {path!r}")
-    _require_in_roots(policy, path, realpath)
+    _require_plain_file_or_absent(path, lstat, "scp target")
 
 
 def _check_rsync(policy: Policy, args: list[str], realpath) -> None:
-    _require(len(args) >= 5 and args[1] == "--server", "unexpected rsync arguments")
-    rest = args[2:]
-    sender = rest[0] == "--sender"
-    if sender:
-        rest = rest[1:]
-    _require(len(rest) >= 3 and _RSYNC_FLAGS_RE.match(rest[0]), "unexpected rsync flags")
-    options, dot, path = rest[1:-2], rest[-2], rest[-1]
-    allowed_options = {"--safe-links"} if sender else {"--delete"}
-    _require(dot == "." and set(options) <= allowed_options and len(options) == len(set(options)), "unexpected rsync options")
+    _require(len(args) >= 5 and args[-2] == ".", "unexpected rsync arguments")
+    _require(tuple(args[1:-2]) in RSYNC_SERVER_ARGS, "unexpected rsync options")
+    path = args[-1]
     _require(path.endswith("/"), "rsync path must be a directory with a trailing slash")
     _require_in_roots(policy, path.rstrip("/"), realpath)
 
 
-def check(command: str, policy: Policy, realpath=os.path.realpath) -> Decision:
+def _check_chown(policy: Policy, args: list[str], realpath, lstat) -> None:
+    if len(args) == 3:
+        snapshot = policy.snapshot_for_temp_dir(args[2])
+        if snapshot is not None:
+            # Hand a fresh snapshot temp dir (root's, from mktemp) to the service user.
+            _require(args[1] == snapshot.owner, f"owner {args[1]!r} not allowed for {args[2]!r}")
+            st = _lstat_or_none(args[2], lstat, "chown target")
+            _require(st is not None and stat.S_ISDIR(st.st_mode), f"chown target is not a directory: {args[2]!r}")
+            return
+    if len(args) == 4 and args[1] == "-R":
+        owner, path = args[2], args[3]
+    else:
+        _require(len(args) == 3, "unexpected chown arguments")
+        owner, path = args[1], args[2]
+    _root, root_owner = _require_in_roots(policy, path, realpath)
+    _require(owner == root_owner, f"owner {owner!r} not allowed for {path!r}")
+
+
+def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lstat) -> Decision:
     """Return what to execute for an allowed command, or raise Refused."""
     _require(command and len(command) <= MAX_COMMAND_LENGTH, "empty or oversized command")
     _require("\n" not in command and "\0" not in command and "\r" not in command, "control characters in command")
@@ -223,17 +425,36 @@ def check(command: str, policy: Policy, realpath=os.path.realpath) -> Decision:
         _require(_PRIVATE_ARCHIVE_RE.match(archive), f"tar archive path not allowed: {archive!r}")
         return Decision(argv=args, umask=0o077)
 
+    cat_match = _CAT_TO_FILE_RE.match(command)
+    if cat_match:
+        # A restore dump sent on stdin into a root-only temp directory.
+        directory, name = _split_in_dir(cat_match.group(1), policy.private_temp_dir)
+        _require(name.endswith(".dump"), f"upload target not allowed: {name!r}")
+        return Decision(argv=["cat"], umask=0o077, stdout=Redirect(directory, name))
+
     try:
         args = shlex.split(command)
     except ValueError as exc:
         raise Refused(f"unparsable command: {exc}") from exc
     _require(args, "empty command")
+    stdin_path = None
+    if len(args) >= 3 and args[-2] == "<":
+        stdin_path, args = args[-1], args[:-2]
     tool = args[0]
+    _require(stdin_path is None or tool == "runuser", "input redirection not allowed here")
 
     if tool == "sudo":
         _require(len(args) >= 4 and args[1:3] == ["-u", "postgres"], "only sudo -u postgres is allowed")
-        _check_postgres(policy, args[3:])
+        _check_postgres(policy, args[3:], None)
         return Decision(argv=["sudo", "-n", "-u", "postgres", "--", *args[3:]])
+
+    if tool == "runuser":
+        _require(len(args) >= 5 and args[1] == "-u" and args[3] == "--", "unexpected runuser arguments")
+        if args[2] == "postgres":
+            return Decision(argv=args, stdin=_check_postgres(policy, args[4:], stdin_path))
+        _require(stdin_path is None, "input redirection not allowed here")
+        _check_sqlite(policy, args[2], args[4:])
+        return Decision(argv=args)
 
     if tool == "systemctl":
         if len(args) == 5 and args[1:4] == ["show", "--property=LoadState", "--value"]:
@@ -244,7 +465,7 @@ def check(command: str, policy: Policy, realpath=os.path.realpath) -> Decision:
         return Decision(argv=args)
 
     if tool == "scp":
-        _check_scp(policy, args, realpath)
+        _check_scp(policy, args, realpath, lstat)
         return Decision(argv=args)
 
     if tool == "rsync":
@@ -261,13 +482,46 @@ def check(command: str, policy: Policy, realpath=os.path.realpath) -> Decision:
             _require_in_roots(policy, wal, realpath)
             _require_in_roots(policy, shm, realpath)
             return Decision(argv=args)
-        if args[1:3] == ["-rf", "--"] and len(args) == 4 and policy.private_media_paths:
-            _require(_PRIVATE_TMP_DIR_RE.match(args[3]), f"rm -rf target not allowed: {args[3]!r}")
+        if args[1:3] == ["-rf", "--"] and len(args) == 4:
+            target = args[3]
+            _require(
+                (policy.private_media_paths and _PRIVATE_TMP_DIR_RE.match(target))
+                or policy.private_temp_dir(target)
+                or policy.snapshot_for_temp_dir(target),
+                f"rm -rf target not allowed: {target!r}",
+            )
             return Decision(argv=args)
         raise Refused("unexpected rm arguments")
 
     if tool == "mktemp":
-        _require(args == _PRIVATE_MKTEMP and policy.private_media_paths, "unexpected mktemp arguments")
+        if args == _PRIVATE_MKTEMP:
+            _require(policy.private_media_paths, "unexpected mktemp arguments")
+            return Decision(argv=args)
+        _require(len(args) == 3 and args[1] == "-d", "unexpected mktemp arguments")
+        templates = set(policy.temp_dirs) | {s.temp_dir for s in policy.sqlite_snapshots}
+        _require(args[2] in templates, f"mktemp template not allowed: {args[2]!r}")
+        return Decision(argv=args)
+
+    if tool == "cat":
+        # Read a SQLite snapshot out of its temp dir. The service user owns that
+        # directory, so the guard opens the file itself (no symlinks, one link).
+        _require(len(args) == 2, "unexpected cat arguments")
+        directory, name = _split_in_dir(args[1], lambda d: policy.snapshot_for_temp_dir(d) is not None)
+        snapshot = policy.snapshot_for_temp_dir(directory)
+        assert snapshot is not None
+        return Decision(argv=["cat"], stdin=Redirect(directory, name, owners=(snapshot.user,)))
+
+    if tool == "sha256sum":
+        # Only inside a root-only temp dir, where nobody else can place a symlink.
+        _require(len(args) == 2, "unexpected sha256sum arguments")
+        directory, name = _split_in_dir(args[1], policy.private_temp_dir)
+        _require(name.endswith(".dump"), f"sha256sum target not allowed: {args[1]!r}")
+        st = _lstat_or_none(directory, lstat, "sha256sum directory")
+        _require(
+            st is not None and stat.S_ISDIR(st.st_mode) and st.st_uid == os.geteuid() and not st.st_mode & 0o077,
+            f"not a private directory: {directory!r}",
+        )
+        _require_plain_file_or_absent(args[1], lstat, "sha256sum target")
         return Decision(argv=args)
 
     if tool == "du":
@@ -287,14 +541,20 @@ def check(command: str, policy: Policy, realpath=os.path.realpath) -> Decision:
         return Decision(argv=args)
 
     if tool == "test":
-        _require(len(args) == 3 and args[1] in ("-e", "-d"), "unexpected test arguments")
+        _require(len(args) == 3 and args[1] in ("-e", "-d", "-f"), "unexpected test arguments")
         _require_in_roots(policy, args[2], realpath)
         return Decision(argv=args)
 
     if tool == "mv":
-        _require(len(args) == 3 and args[1] == args[2] + ".tmp", "unexpected mv arguments")
-        _require_in_roots(policy, args[1], realpath)
-        _require_in_roots(policy, args[2], realpath)
+        _require(len(args) == 3, "unexpected mv arguments")
+        source, target = args[1], args[2]
+        source_root = _require_in_roots(policy, source, realpath)
+        target_root = _require_in_roots(policy, target, realpath)
+        if source != target + ".tmp":
+            # Anything but putting an uploaded <path>.tmp in place: a rename
+            # within one root onto a name that does not exist yet.
+            _require(source_root == target_root, "mv across roots not allowed")
+            _require(_lstat_or_none(target, lstat, "mv target") is None, f"mv target exists: {target!r}")
         return Decision(argv=args)
 
     if tool == "mkdir":
@@ -302,17 +562,53 @@ def check(command: str, policy: Policy, realpath=os.path.realpath) -> Decision:
         _require_in_roots(policy, args[2], realpath)
         return Decision(argv=args)
 
+    if tool == "chmod":
+        _require(len(args) == 3 and args[1] in _CHMOD_MODES, "unexpected chmod arguments")
+        _require_in_roots(policy, args[2], realpath)
+        return Decision(argv=args)
+
     if tool == "chown":
-        if len(args) == 4 and args[1] == "-R":
-            owner, path = args[2], args[3]
-        else:
-            _require(len(args) == 3, "unexpected chown arguments")
-            owner, path = args[1], args[2]
-        _root, root_owner = _require_in_roots(policy, path, realpath)
-        _require(owner == root_owner, f"owner {owner!r} not allowed for {path!r}")
+        _check_chown(policy, args, realpath, lstat)
+        return Decision(argv=args)
+
+    if tool == "curl":
+        _require(len(args) == 5 and args[1:4] == ["-fsS", "-o", "/dev/null"], "unexpected curl arguments")
+        _require(args[4] in policy.ready_urls, f"URL not allowed: {args[4]!r}")
         return Decision(argv=args)
 
     raise Refused(f"command not allowed: {tool!r}")
+
+
+def _owner_uids(owners: tuple[str, ...]) -> set[int]:
+    uids = {os.geteuid()}
+    for owner in owners:
+        try:
+            uids.add(pwd.getpwnam(owner).pw_uid)
+        except KeyError:
+            pass
+    return uids
+
+
+def open_redirect(redirect: Redirect, create: bool) -> int:
+    """Open a Redirect's file without following symlinks; return the fd."""
+    dir_fd = os.open(redirect.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        st = os.fstat(dir_fd)
+        _require(st.st_uid in _owner_uids(redirect.owners), f"unexpected owner of {redirect.directory!r}")
+        _require(not st.st_mode & 0o077, f"{redirect.directory!r} is accessible to others")
+        if create:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        else:
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        fd = os.open(redirect.name, flags, 0o600, dir_fd=dir_fd)
+    finally:
+        os.close(dir_fd)
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+        os.close(fd)
+        raise Refused(f"not a plain file: {redirect.directory}/{redirect.name}")
+    os.set_blocking(fd, True)
+    return fd
 
 
 def _log(priority: int, message: str) -> None:
@@ -359,15 +655,20 @@ def main(argv: list[str]) -> int:
         return 1
     try:
         decision = check(command, policy)
-    except Refused as exc:
+        if decision.umask is not None:
+            os.umask(decision.umask)
+        for redirect, target, create in ((decision.stdin, 0, False), (decision.stdout, 1, True)):
+            if redirect is not None:
+                fd = open_redirect(redirect, create)
+                os.dup2(fd, target)
+                os.close(fd)
+    except (Refused, OSError) as exc:
         _log(syslog.LOG_WARNING, f"refused from {client}: {exc}: {command!r}")
         print(f"{PROGRAM}: command not allowed", file=sys.stderr)
         return 1
 
     _log(syslog.LOG_INFO, f"allowed from {client}: {command!r}")
     os.environ["PATH"] = SAFE_PATH
-    if decision.umask is not None:
-        os.umask(decision.umask)
     try:
         os.execvp(decision.argv[0], decision.argv)
     except OSError as exc:
