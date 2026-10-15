@@ -1,0 +1,108 @@
+# Traefik configuration for Echoport
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+{% if echoport_basic_auth_enabled %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    echoport-int:
+      rule: "Host(`{{ echoport_traefik_host }}`) && ({% for range in echoport_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - echoport-headers
+        - echoport-gzip
+{% for middleware in echoport_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: echoport
+{% if echoport_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ echoport_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    echoport-ext:
+      rule: "Host(`{{ echoport_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - echoport-auth
+        - echoport-headers
+        - echoport-gzip
+{% for middleware in echoport_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: echoport
+{% if echoport_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ echoport_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Single router without authentication (legacy mode)
+    echoport-secure:
+      rule: "Host(`{{ echoport_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - echoport-headers
+        - echoport-gzip
+{% for middleware in echoport_traefik_middlewares | default([]) %}
+        - {{ middleware }}
+{% endfor %}
+      service: echoport
+{% if echoport_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ echoport_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP to HTTPS redirect (handled by static config entrypoint redirect)
+    # This router exists on :80 (web) entrypoint
+    # Traefik's static config automatically redirects to web-secure (see /etc/traefik/traefik.toml)
+    echoport-http:
+      rule: "Host(`{{ echoport_traefik_host }}`)"
+      entryPoints:
+        - web
+      service: echoport
+
+  middlewares:
+{% if echoport_basic_auth_enabled %}
+    echoport-auth:
+      basicAuth:
+        users:
+          - "{{ echoport_basic_auth_user }}:{{ echoport_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    echoport-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    echoport-gzip:
+      compress: {}
+
+  services:
+    echoport:
+      loadBalancer:
+        servers:
+          - url: "http://{{ echoport_app_host }}:{{ echoport_app_port }}"

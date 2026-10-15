@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Managed by Ansible - Echoport staging DB refresh runner
+#
+# Policy:
+# - warning-only (never hard-fail cron)
+# - no auto-retry
+# - restore latest successful backup run per target
+
+set -u
+set -o pipefail
+
+site_path="{{ echoport_site_path }}"
+python_bin="{{ echoport_venv_bin }}/python"
+sqlite_db="{{ echoport_site_path }}/db.sqlite3"
+triggered_by="{{ echoport_staging_db_refresh_triggered_by }}"
+
+log() {
+  printf '%s [staging-db-refresh] %s\n' "$(date -Is)" "$*"
+}
+
+if [[ ! -x "$python_bin" ]]; then
+  log "WARNING: python binary missing: $python_bin"
+  exit 0
+fi
+
+if [[ ! -f "$sqlite_db" ]]; then
+  log "WARNING: sqlite DB missing: $sqlite_db"
+  exit 0
+fi
+
+cd "$site_path" || {
+  log "WARNING: failed to cd into $site_path"
+  exit 0
+}
+
+targets=(
+{% for target in echoport_staging_db_refresh_targets %}
+  {{ target | quote }}
+{% endfor %}
+)
+
+if [[ -z "${targets[*]:-}" ]]; then
+  log "No targets configured; nothing to do"
+  exit 0
+fi
+
+for target in "${targets[@]}"; do
+  log "Resolving latest successful backup for target=$target"
+
+  run_id=$("$python_bin" - "$sqlite_db" "$target" <<'PY'
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+target_name = sys.argv[2]
+
+conn = sqlite3.connect(db_path)
+try:
+    row = conn.execute(
+        """
+        SELECT r.id
+        FROM backup_run r
+        JOIN backup_target t ON t.id = r.target_id
+        WHERE t.name = ? AND r.status = 'success'
+        ORDER BY r.id DESC
+        LIMIT 1
+        """,
+        (target_name,),
+    ).fetchone()
+    if row is not None:
+        print(row[0])
+finally:
+    conn.close()
+PY
+  )
+
+  run_id="${run_id//$'\n'/}"
+  run_id="${run_id//$'\r'/}"
+
+  if [[ -z "$run_id" ]]; then
+    log "WARNING: no successful backup run found for target=$target"
+    continue
+  fi
+
+  log "Starting restore target=$target run_id=$run_id"
+  if DJANGO_SETTINGS_MODULE="{{ echoport_django_settings_module }}" \
+     "$python_bin" manage.py restore "$target" "$run_id" --triggered-by "$triggered_by"; then
+    log "Restore success target=$target run_id=$run_id"
+  else
+    log "WARNING: restore failed target=$target run_id=$run_id"
+  fi
+
+done
+
+# Warning-only policy: never fail the timer/cron job.
+exit 0
