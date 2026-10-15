@@ -1,0 +1,12 @@
+# Managed by Ansible (delve_deploy). Do not edit on the host.
+[Unit]
+Description=Run Delve Discovery reviewed RSS collector
+
+[Timer]
+OnCalendar={{ delve_discovery_collector_calendar }}
+RandomizedDelaySec={{ delve_discovery_collector_randomized_delay_sec }}
+Persistent=true
+Unit={{ delve_discovery_collector_service_name }}.service
+
+[Install]
+WantedBy=timers.target

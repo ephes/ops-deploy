@@ -30,4 +30,5 @@ nav:
       - fastdeploy: services/fastdeploy.md
       - archive: services/archive.md
       - chesslab: services/chesslab.md
+      - delve: services/delve.md
   - Changelog: changelog.md
