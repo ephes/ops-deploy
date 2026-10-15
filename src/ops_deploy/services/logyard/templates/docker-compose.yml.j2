@@ -1,0 +1,23 @@
+services:
+  loki:
+    image: {{ logyard_loki_image | to_json }}
+    container_name: {{ logyard_loki_container_name | to_json }}
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:{{ logyard_loki_host_port }}:{{ logyard_loki_http_port }}"
+    volumes:
+      - "{{ logyard_config_path }}:/etc/loki/config.yml:ro"
+      - "{{ logyard_loki_data_dir }}:/var/lib/loki"
+    logging:
+      driver: journald
+      options:
+        tag: "{{ logyard_loki_container_name }}"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
+    name: {{ logyard_docker_network_name | to_json }}

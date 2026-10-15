@@ -1,0 +1,49 @@
+auth_enabled: false
+
+server:
+  http_listen_address: 0.0.0.0
+  http_listen_port: {{ logyard_loki_http_port }}
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /var/lib/loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /var/lib/loki/chunks
+      rules_directory: /var/lib/loki/rules
+
+schema_config:
+  configs:
+    - from: "{{ logyard_loki_schema_from }}"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: "{{ logyard_loki_index_prefix }}"
+        period: 24h
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: {{ logyard_query_cache_max_size_mb }}
+
+limits_config:
+  retention_period: {{ logyard_retention_period }}
+  volume_enabled: {{ logyard_volume_enabled | ternary('true', 'false') }}
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+compactor:
+  working_directory: /var/lib/loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

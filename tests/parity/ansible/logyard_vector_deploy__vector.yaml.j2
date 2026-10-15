@@ -1,0 +1,153 @@
+sources:
+  journald_logs:
+    type: journald
+{% if logyard_vector_current_boot_only %}
+    current_boot_only: {{ logyard_vector_current_boot_only | ternary('true', 'false') }}
+{% endif %}
+{% if logyard_vector_include_units | length > 0 %}
+    include_units:
+{% for unit in logyard_vector_include_units %}
+      - {{ unit | to_json }}
+{% endfor %}
+{% endif %}
+{% if logyard_vector_exclude_units | length > 0 %}
+    exclude_units:
+{% for unit in logyard_vector_exclude_units %}
+      - {{ unit | to_json }}
+{% endfor %}
+{% endif %}
+{% if logyard_vector_include_matches | length > 0 %}
+    include_matches:
+{% for match in logyard_vector_include_matches %}
+      {{ match.key | to_json }}: {{ match.value | to_json }}
+{% endfor %}
+{% endif %}
+
+transforms:
+  normalize_logs:
+    type: remap
+    inputs:
+      - journald_logs
+    source: |
+      journal = if exists(.log) { .log } else { . }
+      message = to_string(.message) ?? to_string(journal.message) ?? to_string(.MESSAGE) ?? to_string(journal.MESSAGE) ?? ""
+      if message == "" {
+        abort
+      }
+
+      unit = to_string(."_SYSTEMD_UNIT") ?? to_string(journal._SYSTEMD_UNIT) ?? ""
+      identifier = to_string(.SYSLOG_IDENTIFIER) ?? to_string(journal.SYSLOG_IDENTIFIER) ?? ""
+      service = unit
+      if service == "" {
+        service = identifier
+      }
+      if service == "" {
+        service = "journald"
+      }
+      if ends_with(service, ".service") {
+        service = replace(service, ".service", "")
+      }
+      if ends_with(service, ".socket") {
+        service = replace(service, ".socket", "")
+      }
+      if ends_with(service, ".timer") {
+        service = replace(service, ".timer", "")
+      }
+      if ends_with(service, ".mount") {
+        service = replace(service, ".mount", "")
+      }
+      if ends_with(service, ".scope") {
+        service = replace(service, ".scope", "")
+      }
+      if ends_with(service, ".slice") {
+        service = replace(service, ".slice", "")
+      }
+      if ends_with(service, ".target") {
+        service = replace(service, ".target", "")
+      }
+
+      priority = to_string(.PRIORITY) ?? to_string(journal.PRIORITY) ?? ""
+      level = "info"
+      if priority == "0" {
+        level = "emerg"
+      } else if priority == "1" {
+        level = "alert"
+      } else if priority == "2" {
+        level = "critical"
+      } else if priority == "3" {
+        level = "error"
+      } else if priority == "4" {
+        level = "warning"
+      } else if priority == "5" {
+        level = "notice"
+      } else if priority == "6" {
+        level = "info"
+      } else if priority == "7" {
+        level = "debug"
+      }
+
+      pid = to_string(."_PID") ?? to_string(journal._PID) ?? null
+      boot_id = to_string(."_BOOT_ID") ?? to_string(journal._BOOT_ID) ?? null
+
+      . = {
+        "message": message,
+        "host": {{ logyard_vector_host_id | to_json }},
+        "service": service,
+        "unit": unit,
+        "level": level,
+        "environment": {{ logyard_vector_environment | to_json }},
+        "source_type": {{ logyard_vector_source_type | to_json }},
+        "syslog_identifier": identifier,
+        "pid": pid,
+        "boot_id": boot_id,
+      }
+
+sinks:
+  logyard_loki:
+    type: loki
+    inputs:
+      - normalize_logs
+    endpoint: {{ logyard_vector_ingest_endpoint | to_json }}
+    encoding:
+      codec: json
+    # host/source_type/environment are Ansible-time constants (the remap below sets
+    # them from the same variables), so they are emitted as static literals rather
+    # than Vector templates. Values are unchanged; this only shrinks the set of
+    # fields subject to Vector's template confinement to the two genuinely
+    # per-event labels.
+    labels:
+      host: {{ logyard_vector_host_id | to_json }}
+      source_type: {{ logyard_vector_source_type | to_json }}
+      environment: {{ logyard_vector_environment | to_json }}
+{% if logyard_vector_allow_unconfined_label_templates | bool %}
+      service: "{{ '{{ service }}' }}"
+      level: "{{ '{{ level }}' }}"
+{% endif %}
+{% if (logyard_vector_allow_unconfined_label_templates | bool) and (logyard_vector_supports_template_confinement | bool) %}
+    # Vector 0.57 added template confinement: a templated value must have a literal
+    # static prefix or the sink is rejected at startup (exit 78/CONFIG). Loki label
+    # values cannot take a prefix without changing the label values themselves,
+    # which would break existing selectors and dashboards, so opt out explicitly.
+    # Remaining exposure is `service` and `level` only: `level` is a fixed enum
+    # produced by the remap, and `service` derives from the journald unit or
+    # SYSLOG_IDENTIFIER. These are Loki label values, not filesystem paths, so the
+    # path-traversal case the confinement guard targets does not apply here; the
+    # residual risk is label cardinality from a local process spoofing
+    # SYSLOG_IDENTIFIER.
+    dangerously_allow_unconfined_template_resolution: true
+{% endif %}
+    remove_label_fields: false
+    request:
+      timeout_secs: {{ logyard_vector_http_timeout_secs }}
+      concurrency: {{ logyard_vector_request_concurrency }}
+      retry_initial_backoff_secs: {{ logyard_vector_retry_initial_backoff_secs }}
+      retry_max_duration_secs: {{ logyard_vector_retry_max_duration_secs }}
+    batch:
+      max_events: {{ logyard_vector_batch_max_events }}
+      timeout_secs: {{ logyard_vector_batch_timeout_secs }}
+    buffer:
+      type: disk
+      max_size: {{ logyard_vector_buffer_max_size }}
+    # Startup must not depend on transient Logyard/Loki availability.
+    healthcheck:
+      enabled: {{ logyard_vector_healthcheck_enabled | ternary('true', 'false') }}

@@ -81,3 +81,29 @@ def venv(path: str) -> dict[str, Any]:
     """A venv at ``path`` with a working (executable) ``bin/python``."""
 
     return {f"test -x {path}/bin/python": ["present"]}
+
+
+def accounts(
+    users: dict[str, str], groups: tuple[str, ...] = (), *, shell: str = "/usr/sbin/nologin"
+) -> dict[str, Any]:
+    """``Users`` and ``Groups`` facts: each user (name -> home) with a same-named group, plus ``groups``."""
+
+    passwd = ["root:x:0:0:root:/root:/bin/bash|root|root||!"]
+    group_lines = ["root:x:0:"]
+    for index, (user, home) in enumerate(users.items()):
+        uid = 900 + index
+        passwd.append(f"{user}:x:{uid}:{uid}::{home}:{shell}|{user}|{user}||!")
+        group_lines.append(f"{user}:x:{uid}:")
+    group_lines += [f"{name}:x:{800 + index}:" for index, name in enumerate(groups)]
+    return {"cat /etc/group": group_lines, "cat /etc/passwd | cut": passwd}
+
+
+# An Ubuntu 24.04 amd64 host as the os-release and architecture probes see it.
+UBUNTU: dict[str, Any] = {
+    **LINUX,
+    "command -v apt-get": ["/usr/bin/apt-get"],
+    'echo "$ID"': ["ubuntu"],
+    ". /etc/os-release": ["noble"],
+    "uname -m": ["x86_64"],
+    "cat /proc/1/comm": ["systemd"],
+}

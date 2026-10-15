@@ -1,0 +1,27 @@
+[Unit]
+Description=Logyard health endpoint
+After=network-online.target {{ logyard_service_name }}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ logyard_user }}
+Group={{ logyard_group }}
+ExecStart=/usr/bin/python3 {{ logyard_health_script_path }}
+Restart=always
+RestartSec=5
+Environment=LOGYARD_HEALTH_BIND={{ logyard_health_bind_host }}
+Environment=LOGYARD_HEALTH_PORT={{ logyard_health_port }}
+Environment=LOGYARD_HEALTH_PATH={{ logyard_health_path }}
+Environment=LOGYARD_LOKI_URL=http://127.0.0.1:{{ logyard_loki_host_port }}
+Environment="LOGYARD_HEALTH_SELECTOR={{ logyard_health_selector | replace('\"', '\\\"') }}"
+Environment=LOGYARD_WARNING_WINDOW_SECONDS={{ logyard_health_warning_window_seconds }}
+Environment=LOGYARD_CRITICAL_WINDOW_SECONDS={{ logyard_health_critical_window_seconds }}
+Environment=LOGYARD_REQUEST_TIMEOUT_SECONDS={{ logyard_health_timeout_seconds }}
+Environment=LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS={{ logyard_health_systemctl_timeout_seconds }}
+# Base64 so the JSON survives systemd verbatim. Environment= resolves `%` specifiers
+# and backslash escapes, either of which would corrupt a raw JSON payload.
+Environment=LOGYARD_HEALTH_UNITS_B64={{ logyard_health_units | to_json | b64encode }}
+
+[Install]
+WantedBy=multi-user.target
