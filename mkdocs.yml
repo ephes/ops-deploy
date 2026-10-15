@@ -29,4 +29,5 @@ nav:
       - nyxmon: services/nyxmon.md
       - fastdeploy: services/fastdeploy.md
       - archive: services/archive.md
+      - chesslab: services/chesslab.md
   - Changelog: changelog.md

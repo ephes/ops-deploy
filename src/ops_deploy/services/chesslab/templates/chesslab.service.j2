@@ -1,0 +1,29 @@
+[Unit]
+Description=Chesslab trainer
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ cfg.user }}
+Group={{ cfg.group }}
+WorkingDirectory={{ cfg.site_path }}
+EnvironmentFile={{ cfg.env_path }}
+ExecStart={{ cfg.venv_bin }}/granian \
+    --workers {{ cfg.workers }} \
+    --interface wsgi \
+    --host {{ cfg.app_host }} \
+    --port {{ cfg.app_port }} \
+    --access-log \
+    {{ cfg.wsgi_module }}
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ cfg.home }} {{ cfg.data_path }} {{ cfg.db_path.parent }}
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

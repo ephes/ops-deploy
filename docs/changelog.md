@@ -12,6 +12,18 @@
   only. Fake connector, parity and smoke tests; see
   [archive](services/archive.md).
 
+- `ops_deploy.services.chesslab`: `deploy_chesslab`, a port of the
+  `chesslab_deploy` role (rsync method) and of the Echoport backup target and
+  Nyxmon health check upserts in ops-control's `deploy-chesslab.yml`.
+  `.env`, unit and Traefik route are byte-identical to the role's (parity
+  tests against the vendored templates). Like the playbook, it checks the app
+  port before any change and stops when the SQLite database is missing.
+  Migrations, `ensure_admin` and the upserts run only when something needs
+  them (the upserts probe read-only first), so a converged deploy changes
+  nothing. App users (a JSON list secret) reach the host only on stdin. Fake
+  connector tests and `tests/smoke/test_chesslab_smoke.py`; see
+  [chesslab](services/chesslab.md).
+
 - `ops_deploy.infra`: `deploy_traefik`, `deploy_traefik_backup`,
   `deploy_traefik_restore` and `deploy_traefik_remove`, ports of the
   `traefik_deploy` (full deploy), `traefik_backup`, `traefik_restore` and
