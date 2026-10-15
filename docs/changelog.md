@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `ops_deploy.services.nyxmon` and `ops_deploy.services.fastdeploy`: backup,
+  restore and removal, ports of the `nyxmon_backup`/`_restore`/`_remove` and
+  `fastdeploy_backup`/`_restore`/`_remove` roles. Archives and snapshot
+  directories have the roles' layout and metadata, so either tool restores
+  the other's backups. Backup and restore each run as one bash script on the
+  host, which keeps the roles' structure: services always restart after a
+  backup, and a failed restore puts back the safety copy or safety backup and
+  still fails. The FastDeploy database password reaches the host on stdin
+  only. Removals need `confirm`, only act on what exists and change nothing
+  on a second run. Shared pieces live in `ops_deploy.services._lifecycle`,
+  outside the size-capped layer. Fake connector tests and two lifecycle smoke
+  tests; see [nyxmon](services/nyxmon.md) and
+  [fastdeploy](services/fastdeploy.md).
+
 - `ops_deploy.services.archive`: `deploy_archive`, a port of the
   `archive_deploy` role (rsync method) plus the steps ops-control's
   `deploy-archive.yml` runs around it (MinIO bucket and service account,

@@ -95,6 +95,69 @@ auth or the monitor, `nyxmon_service_restart_on_change: false`, and the
 version change is left to `uv sync --python` on the next dependency change;
 the role removes a mismatched venv on every run.
 
+## Backup, restore and removal
+
+`ops_deploy.services.nyxmon` also ports `nyxmon_backup`, `nyxmon_restore` and
+`nyxmon_remove`. None of them needs secrets. Backups written by either tool
+restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_nyxmon_backup` | `NyxmonBackupConfig(host_name=...)` | `nyxmon_backup` |
+| `deploy_nyxmon_restore` | `NyxmonRestoreConfig(host_name=...)` | `nyxmon_restore` |
+| `deploy_nyxmon_remove` | `NyxmonRemoveConfig(confirm=True)` | `nyxmon_remove` |
+
+`host_name` is the inventory name. The backup writes it into
+`metadata.yml`, and the restore uses it in its error messages. The other
+fields are the roles' defaults under shorter names: `prefix`, `root`,
+`include_logs`, `include_cache`, `include_static`, `use_sqlite_backup`,
+`fetch_local` and `local_dir` for the backup; `archive`, `dry_run`,
+`create_safety_backup`, `verify_http` and `health_url` for the restore.
+
+**Backup.** It refuses to start when the site directory, `.env`, the
+database, `staticfiles` (when `include_static` is set) or the logs (when
+`include_logs` is set) are missing. It installs `sqlite3`, then stops
+`nyxmon-monitor` and `nyxmon` and copies the database and the media, static,
+cache and log directories, the config files, units and Traefik route into
+`/opt/backups/nyxmon/<prefix>-<timestamp>/`. Everything there is
+`root:root 0700/0600`, as are the parent directories it creates. Whatever the
+copy does, the services are started again (the role's `always`). Then the
+backup writes the role's `metadata.yml` (`to_nice_yaml`) and
+`manifest.sha256`, packs `<dir>.tar.gz` and fetches the archive into
+`~/backups/nyxmon` (`0700`).
+
+**Restore.** One bash script on the host runs the role's phases in order:
+
+1. Validate. Pick `latest` (the newest `*.tar.gz` under the root) or a name
+   below the root, unpack it under `/tmp/nyxmon-restore/<timestamp>`, check
+   the metadata fields and `manifest.sha256`.
+2. Check disk space (twice the archive size).
+3. With `dry_run`, stop here.
+4. Take a safety copy of the site directory (`<site>.pre-restore-<timestamp>`).
+5. Stop both services. Put back the database (`nyxmon 0600`) and run its
+   integrity check, then the directories (`rsync --delete`), config files and
+   units. Fix ownership and start both services.
+6. Verify: `nyxmon.service` enabled and started, then the HTTP probe on
+   `/admin/login/` with `X-Forwarded-Proto: https`.
+
+If step 5 fails, the safety copy is synced back, the services are started
+and the run fails (the role's `rescue`). The staging directory and the
+safety copy are always removed.
+
+Like the role, the restore does not put the Traefik route back. The role's
+condition (`is exists`) is evaluated on the Ansible controller, where the
+staging path never exists, so the route is never restored there either. The
+route on the host is not changed by a restore.
+
+**Removal.** It needs `confirm`. It stops and disables both units, then
+removes the unit files, the route and `/home/nyxmon` (with the database). It
+ends every process of the `nyxmon` user (SIGTERM, then SIGKILL, then
+`systemd-run pkill`), removes the user and group, the `/tmp/*nyxmon*` entries
+and the runtime drop-ins in `/run/systemd/system`. Like the role, it keeps
+the `sqlite-privacy.conf` drop-ins the deploy installs in
+`/etc/systemd/system/nyxmon*.service.d/`. It only acts on what exists, so a
+second run changes nothing.
+
 ## Tests
 
 - `tests/test_nyxmon.py` (fake connector): first run, converged second run
@@ -107,5 +170,15 @@ the role removes a mismatched venv on every run.
   checkout; second run converged, units active with `UMask=0077`, database and
   env files private, migrations applied, Traefik 401 without auth, no secret
   outside its files.
-- Ansible coexistence (deploy, backup, restore, remove taking turns with this
-  deploy) runs from ops-control: `just smoke-nyxmon-coexistence`.
+- `tests/test_nyxmon_lifecycle.py` (fake connector): backup settings,
+  metadata, archive and fetch, refusals before any change; the restore
+  script's settings; removal order, a second removal without change, the
+  confirmation.
+- `tests/smoke/test_nyxmon_lifecycle_smoke.py`: backup with a marker account
+  and media file, a dry-run restore (nothing restored), the restore (both
+  back, no staging or safety copy left), removal twice (the second without
+  change), then a fresh deploy.
+- Ansible coexistence runs from ops-control: `just smoke-nyxmon-coexistence`.
+  Deploys take turns with this deploy, and backup, restore and removal run
+  across the tools (Ansible backup with pyinfra restore, pyinfra backup with
+  Ansible restore, pyinfra removal with Ansible removal).
