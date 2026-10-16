@@ -1,0 +1,16 @@
+[Unit]
+Description=Graphyard dependency runtime (InfluxDB + Grafana)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory={{ graphyard_home }}
+ExecStart=/usr/bin/docker compose -p {{ graphyard_compose_project_name }} -f {{ graphyard_compose_path }} up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -p {{ graphyard_compose_project_name }} -f {{ graphyard_compose_path }} down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

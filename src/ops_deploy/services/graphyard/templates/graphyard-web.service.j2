@@ -1,0 +1,18 @@
+[Unit]
+Description=graphyard web application
+After=network.target{{ (" " ~ graphyard_runtime_service_name ~ ".service") if (graphyard_runtime_enabled | bool) else "" }}
+{{ ("Requires=" ~ graphyard_runtime_service_name ~ ".service") if (graphyard_runtime_enabled | bool) else "" }}
+
+[Service]
+Type=simple
+User={{ graphyard_user }}
+Group={{ graphyard_group }}
+WorkingDirectory={{ graphyard_django_path }}
+EnvironmentFile={{ graphyard_env_path }}
+# SQLite backend: keep write concurrency constrained to avoid lock storms.
+ExecStart={{ graphyard_venv_bin }}/granian --workers {{ graphyard_web_workers }} --interface wsgi --host {{ graphyard_web_bind_host }} --port {{ graphyard_web_bind_port }} --access-log config.wsgi_proxy:application
+Restart=always
+RestartSec={{ graphyard_web_restart_sec }}
+
+[Install]
+WantedBy=multi-user.target

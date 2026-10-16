@@ -1,0 +1,246 @@
+# Traefik configuration for Graphyard + Grafana
+# Managed by Ansible - do not edit manually
+# Dual-router pattern: LAN/Tailscale bypass basic auth, public requires basic auth
+
+http:
+  routers:
+{% if graphyard_ingress_inventory_enabled | bool %}
+    # Match all sources here so untrusted callers cannot fall through to UI auth.
+    graphyard-inventory:
+      rule: "Host(`{{ graphyard_ingress_graphyard_host }}`) && Path(`/v1/inventory`)"
+      entryPoints:
+        - web-secure
+      priority: 200
+      middlewares:
+        - graphyard-inventory-sources
+        - graphyard-inventory-rate
+        - graphyard-inventory-inflight
+        - graphyard-inventory-body
+        - graphyard-headers
+      service: graphyard
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+{% if graphyard_ingress_basic_auth_enabled %}
+    # Graphyard internal router (LAN + Tailscale) - no auth
+    graphyard-int:
+      rule: "Host(`{{ graphyard_ingress_graphyard_host }}`) && ({% for range in graphyard_ingress_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - graphyard-headers
+        - graphyard-gzip
+{% for middleware in graphyard_ingress_graphyard_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: graphyard
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # Graphyard external router (public) - basic auth
+    graphyard-ext:
+      rule: "Host(`{{ graphyard_ingress_graphyard_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - graphyard-stack-auth
+        - graphyard-headers
+        - graphyard-gzip
+{% for middleware in graphyard_ingress_graphyard_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: graphyard
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # Grafana internal router (LAN + Tailscale) - no auth
+    grafana-int:
+      rule: "Host(`{{ graphyard_ingress_grafana_host }}`) && ({% for range in graphyard_ingress_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - grafana-headers
+        - grafana-gzip
+{% for middleware in graphyard_ingress_grafana_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: grafana
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # Grafana external router (public) - basic auth
+    grafana-ext:
+      rule: "Host(`{{ graphyard_ingress_grafana_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - graphyard-stack-auth
+        - grafana-headers
+        - grafana-gzip
+{% for middleware in graphyard_ingress_grafana_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: grafana
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Graphyard secure router (no auth)
+    graphyard-secure:
+      rule: "Host(`{{ graphyard_ingress_graphyard_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - graphyard-headers
+        - graphyard-gzip
+{% for middleware in graphyard_ingress_graphyard_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: graphyard
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # Grafana secure router (no auth)
+    grafana-secure:
+      rule: "Host(`{{ graphyard_ingress_grafana_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - grafana-headers
+        - grafana-gzip
+{% for middleware in graphyard_ingress_grafana_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: grafana
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP routers (HTTPS redirect handled by Traefik static entrypoint config)
+    graphyard-http:
+      rule: "Host(`{{ graphyard_ingress_graphyard_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: graphyard
+
+    grafana-http:
+      rule: "Host(`{{ graphyard_ingress_grafana_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: grafana
+
+  middlewares:
+{% if graphyard_ingress_inventory_enabled | bool %}
+    graphyard-inventory-sources:
+      ipAllowList:
+        sourceRange:
+{% for range in graphyard_ingress_internal_ip_ranges %}
+          - "{{ range }}"
+{% endfor %}
+    graphyard-inventory-rate:
+      rateLimit:
+        average: 6
+        period: 1m
+        burst: 4
+    graphyard-inventory-inflight:
+      inFlightReq:
+        amount: 2
+        sourceCriterion:
+          requestHost: true
+    graphyard-inventory-body:
+      buffering:
+        maxRequestBodyBytes: 8388608
+        memRequestBodyBytes: 1048576
+{% endif %}
+{% if graphyard_ingress_basic_auth_enabled %}
+    graphyard-stack-auth:
+      basicAuth:
+        users:
+          - "{{ graphyard_ingress_basic_auth_user }}:{{ graphyard_ingress_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    graphyard-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    graphyard-gzip:
+      compress: {}
+
+    grafana-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    grafana-gzip:
+      compress: {}
+
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    graphyard:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "{{ graphyard_ingress_graphyard_backend_url }}"
+
+    grafana:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "{{ graphyard_ingress_grafana_backend_url }}"

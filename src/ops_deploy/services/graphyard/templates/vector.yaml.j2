@@ -1,0 +1,107 @@
+sources:
+  host_metrics:
+    type: host_metrics
+    scrape_interval_secs: {{ graphyard_vector_scrape_interval_secs }}
+    collectors:
+{% for collector in graphyard_vector_collectors %}
+      - {{ collector | to_json }}
+{% endfor %}
+{% if "filesystem" in graphyard_vector_collectors and graphyard_vector_filesystem_mountpoint_excludes | length > 0 %}
+    filesystem:
+      mountpoints:
+        excludes:
+{% for mountpoint in graphyard_vector_filesystem_mountpoint_excludes %}
+          - {{ mountpoint | to_json }}
+{% endfor %}
+{% endif %}
+
+transforms:
+  host_metrics_to_log:
+    type: metric_to_log
+    inputs:
+      - host_metrics
+
+  graphyard_payload:
+    type: remap
+    inputs:
+      - host_metrics_to_log
+    source: |
+      metric_name = to_string(.name) ?? ""
+      if metric_name == "" {
+        abort
+      }
+
+      wanted = false
+{% for prefix in graphyard_vector_metric_prefixes %}
+      if starts_with(metric_name, {{ prefix | to_json }}) {
+        wanted = true
+      }
+{% endfor %}
+      if !wanted {
+        abort
+      }
+
+      raw_value = null
+      if exists(.gauge) && exists(.gauge.value) {
+        raw_value = .gauge.value
+      } else if exists(.counter) && exists(.counter.value) {
+        raw_value = .counter.value
+      }
+      if is_null(raw_value) {
+        abort
+      }
+
+      metric_value = to_float(raw_value) ?? null
+      if is_null(metric_value) {
+        abort
+      }
+
+      tags = {}
+      if is_object(.tags) {
+        tags = .tags
+      }
+      tags.collector = "vector.host_metrics"
+      if exists(.counter) && exists(.counter.value) {
+        tags.metric_kind = "counter"
+      } else {
+        tags.metric_kind = "gauge"
+      }
+      tags.host_id = {{ graphyard_vector_host_id | to_json }}
+      tags.source = {{ graphyard_vector_source_tag | to_json }}
+
+      . = {
+        "ts": format_timestamp!(.timestamp, "%FT%TZ"),
+        "host": {{ graphyard_vector_host_id | to_json }},
+        "service": {{ graphyard_vector_service_id | to_json }},
+        "metric": "host." + metric_name,
+        "value": metric_value,
+        "tags": tags,
+      }
+
+sinks:
+  graphyard_ingest:
+    type: http
+    inputs:
+      - graphyard_payload
+    uri: {{ graphyard_vector_ingest_url | to_json }}
+    method: post
+    encoding:
+      codec: json
+    request:
+      timeout_secs: {{ graphyard_vector_http_timeout_secs }}
+      concurrency: {{ graphyard_vector_request_concurrency }}
+      retry_initial_backoff_secs: {{ graphyard_vector_retry_initial_backoff_secs }}
+      retry_max_duration_secs: {{ graphyard_vector_retry_max_duration_secs }}
+      headers:
+        Authorization: {{ ("Bearer " ~ graphyard_vector_ingest_token) | to_json }}
+        Content-Type: "application/json"
+        X-Forwarded-Proto: "https"
+    batch:
+      max_events: {{ graphyard_vector_batch_max_events }}
+      timeout_secs: {{ graphyard_vector_batch_timeout_secs }}
+    buffer:
+      type: disk
+      max_size: {{ graphyard_vector_buffer_max_size }}
+    # Graphyard's ingest endpoint has no dedicated sink healthcheck route.
+    healthcheck:
+      enabled: false

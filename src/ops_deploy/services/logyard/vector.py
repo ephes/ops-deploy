@@ -173,7 +173,7 @@ def lineinfile(path: str, regexp: str, line: str, *, current: list[str] | None) 
 
 
 @operation()
-def _env_line(path: str, line: str) -> Generator[StringCommand, None, None]:
+def env_line(path: str, line: str) -> Generator[StringCommand, None, None]:
     """The role's ``lineinfile``: ``VECTOR_CONFIG_DIR=`` set in the defaults file, created if missing."""
 
     content = lineinfile(path, "^VECTOR_CONFIG_DIR=", line, current=host.get_fact(FileContents, path=path))
@@ -220,7 +220,7 @@ def vector_steps(cfg: LogyardVectorConfig) -> None:
     files.directory(
         name="Ensure Vector config directory", path=str(cfg.config_dir), user="root", group="vector", mode="0750"
     )
-    env = _env_line(
+    env = env_line(
         name="Point Vector at its config directory",
         path=str(cfg.env_file),
         line=f"VECTOR_CONFIG_DIR={cfg.config_dir}",
