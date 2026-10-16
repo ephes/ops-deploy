@@ -36,6 +36,7 @@ Defaults follow the role's `defaults/main.yml`.
 | Field | Default | Notes |
 |---|---|---|
 | `source_path` | required | marina checkout (`manage.py`, `pyproject.toml`, `uv.lock`, `config/wsgi.py`); synced as the site root |
+| `source_commit` | `None` | the commit `source_path` is a checkout of (a [git source](../concepts/git-source.md)); recorded on the host, `None` (a local working tree) removes the record |
 | `fqdn`, `traefik_host_rule` | required | Traefik router names and rule (`marina_fqdn`, `marina_traefik_host_rule`) |
 | `user`, `group` | `marina` | login shell `/usr/bin/fish`; the systemd unit and the Traefik file are named after the user |
 | `home`, `site_path` | `/home/marina`, `/home/marina/site` | cache dir `site/cache`, venv `site/.venv` |
@@ -81,6 +82,10 @@ Defaults follow the role's `defaults/main.yml`.
     role does not either, its file provider watches the directory.
 11. Read-only checks: the port opens, `http://127.0.0.1:<port>/` answers 200,
     301 or 302 with the site's Host header.
+12. Records `source_commit` in `/home/marina/site/.ops-deploy-source`, or
+    removes that file for a local working tree (`record_source`, see
+    [Git source](../concepts/git-source.md)). Last, so only a deploy that came
+    up healthy records its commit; the same commit again is no change.
 
 ## Parity with the role
 
@@ -117,7 +122,9 @@ changed code.
   mutating change), code change, `.env` rotation, admin secret change, account
   drift, retried migrations, missing static manifest, ownership repair,
   launcher/unit/route changes (Traefik not restarted), leak checks (no secret
-  in commands, op names/args or uploads; secrets only on stdin), validation.
+  in commands, op names/args or uploads; secrets only on stdin), the deployed
+  commit record (written once, unchanged on a re-run, removed for a local
+  source, after the health checks), validation.
 - `tests/smoke/test_marina_smoke.py` (`just smoke`, needs `MARINA_SOURCE` or
   `PROJECTS_ROOT`): two real deploys of the committed `HEAD` and one of a fresh
   export; second and fresh runs converged; service active, answering, files

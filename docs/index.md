@@ -23,10 +23,11 @@ src/ops_deploy/
   core/config.py      BaseServiceConfig, ServiceName, UnixUser
   core/secrets.py     SecretRef, SecretValues, SecretStore protocol
   core/rsync.py       injectable controller-side rsync runner
+  core/git_source.py  fetch_source: a service's code from its git remote, on the controller
   core/templates.py   Jinja2 rendering of package templates
   ops/sync_tree.py    sync_tree: rsync a controller directory to the host
   ops/secret_file.py  secret_file (install a secret via stdin, temp file, rename), secret_stdin
-  helpers/            system_user, sudoers, systemd, uv/Django, Traefik, PostgreSQL, read-only checks
+  helpers/            system_user, sudoers, systemd, uv/Django, Traefik, PostgreSQL, read-only checks, deployed-commit record
   base/               host-level deploys: hostname, unit masks, headless mode, authorized keys, uv, Node.js, shell basics
   infra/              shared host services: PostgreSQL (server, config, databases), Redis,
                       Traefik (deploy, backup, restore, remove)

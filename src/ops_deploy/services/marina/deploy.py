@@ -28,11 +28,13 @@ from pyinfra.facts.server import Command
 from pyinfra.operations import files, server
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
+from ops_deploy.core.git_source import CommitSha
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import (
     TraefikRoute,
     http_check,
+    record_source,
     service_rollout,
     system_user,
     systemd_unit,
@@ -121,6 +123,9 @@ class MarinaConfig(BaseServiceConfig):
     site_path: PurePosixPath = PurePosixPath("/home/marina/site")
     # A marina checkout; synced as the site root.
     source_path: Path
+    # The commit ``source_path`` was checked out at (a git source), recorded on
+    # the host; None: a local working tree, and the host's record is removed.
+    source_commit: CommitSha | None = None
     source_excludes: tuple[str, ...] = SOURCE_EXCLUDES
     python_version: Annotated[str, Field(pattern=r"^3\.[0-9]{1,2}$")] = "3.13"
     app_port: int = Field(default=10019, ge=1024, le=65535)
@@ -488,3 +493,5 @@ def deploy_marina(cfg: MarinaConfig, secrets: SecretValues, rsync: RsyncRunner =
     traefik_route(route, renderer=lambda _route, _hash: render_route(cfg), restart="none")
 
     _http_checks(cfg)
+    # Last: only a deploy that came up healthy records its commit.
+    record_source(cfg.site_path, cfg.source_commit, user=cfg.user, group=cfg.group)

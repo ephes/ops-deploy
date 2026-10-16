@@ -17,6 +17,7 @@ nav:
       - Service configuration: concepts/config.md
       - Secrets: concepts/secrets.md
       - Operations: concepts/operations.md
+      - Git source: concepts/git-source.md
       - Deploy helpers: concepts/helpers.md
       - Testing deploys: concepts/testing.md
       - Smoke target: concepts/smoke.md

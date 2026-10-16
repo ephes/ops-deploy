@@ -43,6 +43,7 @@ Defaults follow the role's `defaults/main.yml`.
 | Field | Default | Notes |
 |---|---|---|
 | `source_path` | required | heis checkout (`manage.py`, `pyproject.toml`, `uv.lock`, `config/wsgi.py`); synced as the site root |
+| `source_commit` | `None` | the commit `source_path` is a checkout of (a [git source](../concepts/git-source.md)); recorded on the host, `None` (a local working tree) removes the record |
 | `fqdn`, `traefik_host_rule` | required | Traefik router names and HTTP rule (`heis_fqdn`, `heis_traefik_host_rule`) |
 | `traefik_tls_host_rule` | `None` (the HTTP rule) | the HTTPS router's rule (`heis_traefik_tls_host_rule`) |
 | `traefik_canonical_redirect_regex`, `_replacement` | `""` | both set: a permanent `redirect-canonical-host` middleware on the HTTPS router |
@@ -98,6 +99,10 @@ Defaults follow the role's `defaults/main.yml`.
     role does not either, its file provider watches the directory.
 11. Read-only checks: the port opens, `http://127.0.0.1:<port>/` answers 200,
     301 or 302 with the site's Host header.
+12. Records `source_commit` in `/home/heis/site/.ops-deploy-source`, or
+    removes that file for a local working tree (`record_source`, see
+    [Git source](../concepts/git-source.md)). Last, so only a deploy that came
+    up healthy records its commit; the same commit again is no change.
 
 ## Parity with the role
 
@@ -140,7 +145,9 @@ changed code.
   drift, retried migrations, the content reconcilers (order, production
   switches), missing static manifest, ownership repair,
   launcher/unit/route changes (Traefik not restarted), leak checks (no secret
-  in commands, op names/args or uploads; secrets only on stdin), validation.
+  in commands, op names/args or uploads; secrets only on stdin), the deployed
+  commit record (written once, unchanged on a re-run, removed for a local
+  source, after the health checks), validation.
 - `tests/smoke/test_heis_smoke.py` (`just smoke`, needs `HEIS_SOURCE` or
   `PROJECTS_ROOT`): two real deploys of the committed `HEAD` and one of a fresh
   export; second and fresh runs converged; service active, answering, files

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Git source: `ops_deploy.core.git_source.fetch_source` fetches a service's
+  code from its git remote at a branch, tag or full commit (default: the
+  remote's default branch) on the controller, with the operator's own git and
+  SSH setup, into a fresh directory that the deploy syncs like a checkout;
+  hosts need no git credentials. It fails closed on a missing ref, a name
+  that is both a branch and a tag, another commit than asked for or a file
+  that is not byte for byte its committed blob (attributes and filters are
+  switched off; LFS and submodules are refused), and refuses repository URLs
+  with credentials. `MarinaConfig` and `HeisConfig` gain
+  `source_commit`; their deploys end with `record_source` (new in
+  `ops_deploy.helpers`), which keeps the commit in
+  `<site>/.ops-deploy-source` (removed for a local working tree), so a re-run
+  of the same ref changes nothing. See [Git source](concepts/git-source.md).
+
 - `traefik_deploy`: the log rotation file follows ops-library 2.39.2: Traefik
   gets `SIGUSR1` after `access.log` is rotated (the old
   `systemctl reload traefik || true` did nothing, so the renamed file kept

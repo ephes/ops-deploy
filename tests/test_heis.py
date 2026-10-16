@@ -458,3 +458,55 @@ def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: HeisConfi
     assert verify.changed
     assert verify.read_only
     assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)
+
+
+RECORD = f"{SITE}/.ops-deploy-source"
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+def from_git(cfg: HeisConfig, commit: str = COMMIT) -> HeisConfig:
+    return HeisConfig.model_validate({**cfg.model_dump(), "source_commit": commit})
+
+
+def test_git_source_records_its_commit_once(cfg: HeisConfig, secrets: SecretValues) -> None:
+    git_cfg = from_git(cfg)
+
+    first = deploy(git_cfg, secrets, converged(cfg, secrets))
+    again = deploy(git_cfg, secrets, {**converged(cfg, secrets), **fakehost.file(RECORD, f"{COMMIT}\n", user="heis")})
+
+    # Recording the commit restarts nothing; the same commit again is a no-op.
+    assert first.mutating_changed_ops == ["Deploy heis | Record the deployed commit"]
+    assert first.upload(RECORD).decode() == f"{COMMIT}\n"
+    assert again.mutating_changed_ops == []
+    assert again.uploads == []
+
+
+def test_another_commit_with_the_same_tree_only_updates_the_record(cfg: HeisConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), **fakehost.file(RECORD, f"{'f' * 40}\n", user="heis")}
+
+    run = deploy(from_git(cfg), secrets, responses)
+
+    assert run.mutating_changed_ops == ["Deploy heis | Record the deployed commit"]
+
+
+def test_local_source_forgets_a_recorded_commit(cfg: HeisConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), **fakehost.file(RECORD, f"{COMMIT}\n", user="heis")}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.mutating_changed_ops == ["Deploy heis | Forget the deployed commit (local source)"]
+    assert f"rm -f {RECORD}" in run.executed_commands
+
+
+def test_the_record_comes_after_the_health_checks(cfg: HeisConfig, secrets: SecretValues) -> None:
+    run = deploy(from_git(cfg), secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
+
+    names = [op.name for op in run.ops]
+    assert names[-1] == "Deploy heis | Record the deployed commit"
+    assert names.index(READ_ONLY[-1]) < names.index(names[-1])
+
+
+@pytest.mark.parametrize("commit", ["abc1234", "0123456789ABCDEF0123456789ABCDEF01234567", "main"])
+def test_source_commit_must_be_a_full_commit(cfg: HeisConfig, commit: str) -> None:
+    with pytest.raises(ConfigValidationError, match="source_commit"):
+        from_git(cfg, commit)
