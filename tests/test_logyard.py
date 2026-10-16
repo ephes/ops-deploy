@@ -543,3 +543,29 @@ def test_a_failing_nyxmon_probe_upserts_and_probes_again(cfg: LogyardConfig) -> 
 
     assert any(name.endswith("| Upsert Nyxmon Logyard json-metrics checks") for name in run.mutating_changed_ops)
     assert any(name.endswith("| Probe again: Nyxmon Logyard checks") for name in run.changed_ops)
+
+
+def test_graphyards_shared_directories_keep_their_owner(cfg: LogyardConfig) -> None:
+    """The Grafana tree is Graphyard's: Logyard only creates its parent directories when missing."""
+
+    responses = converged(cfg)
+    for path in (
+        "/opt/apps/graphyard/site/deploy/grafana/provisioning/datasources",
+        "/opt/apps/graphyard/site/deploy/grafana/dashboards",
+    ):
+        responses.update(fakehost.directory(path, user="graphyard"))
+
+    run = deploy(cfg, responses)
+
+    assert run.mutating_changed_ops == []
+    assert not any("chown" in c and "/deploy/grafana/dashboards " in c for c in run.executed_commands)
+
+
+def test_missing_shared_directories_are_created_without_an_owner(source: Path) -> None:
+    run = deploy(core_config(source))
+
+    assert "mkdir -p /opt/apps/graphyard/site/deploy/grafana/provisioning/datasources" in run.executed_commands
+    assert not any(
+        c.startswith("chown") and c.endswith(" /opt/apps/graphyard/site/deploy/grafana/dashboards")
+        for c in run.executed_commands
+    )

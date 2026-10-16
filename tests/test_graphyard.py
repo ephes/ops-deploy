@@ -157,6 +157,16 @@ def deploy(
     return run
 
 
+AFTER_SITE_CHANGE = [
+    "Sync runtime dependencies with uv",
+    "Run Django migrations",
+    "Collect static files",
+    "Apply declarative metric collection specs",
+    "Restart graphyard-web.service",
+    "Restart graphyard-agent.service",
+]
+
+
 def mutating(run: FakeRun) -> list[str]:
     return [name.removeprefix(PREFIX) for name in run.mutating_changed_ops]
 
@@ -285,24 +295,31 @@ def test_source_change_syncs_installs_migrates_and_restarts_the_app(cfg: Graphya
     assert "systemctl restart graphyard-runtime.service" not in run.executed_commands
 
 
-def test_logyard_owned_files_are_taken_back_like_the_role_does(cfg: GraphyardConfig) -> None:
-    """The ping-pong with logyard: its deploy sets its Grafana files to root, the role's chown takes them back."""
+def test_wrong_owners_are_fixed_but_logyards_files_are_left_alone(cfg: GraphyardConfig) -> None:
+    """The shared Grafana tree: Graphyard owns it except Logyard's datasource file and dashboards."""
 
     responses = converged(cfg)
-    responses[f"find {SITE} "] = [f"{SITE}/deploy/grafana/provisioning/datasources/logyard.yaml"]
+    responses[f"find {SITE} "] = [f"{SITE}/deploy/grafana/provisioning/dashboards-json"]
 
     run = deploy(cfg, responses)
 
-    assert mutating(run) == [
-        "Ensure ownership for synced files",
-        "Sync runtime dependencies with uv",
-        "Run Django migrations",
-        "Collect static files",
-        "Apply declarative metric collection specs",
-        "Restart graphyard-web.service",
-        "Restart graphyard-agent.service",
-    ]
-    assert f"chown -hR graphyard:graphyard {SITE}" in run.executed_commands
+    assert mutating(run) == ["Ensure ownership for synced files", *AFTER_SITE_CHANGE]
+    chown = next(c for c in run.executed_commands if c.startswith(f"find {SITE} "))
+    assert (
+        f"\\( -path {SITE}/deploy/grafana/provisioning/datasources/logyard.yaml "
+        f"-o -path {SITE}/deploy/grafana/dashboards/logyard \\) -prune -o" in chown
+    )
+    assert chown.endswith("-exec chown -h graphyard:graphyard {} +")
+    probe = next(c for c in run.fact_commands if c.startswith(f"find {SITE} "))
+    assert "-prune -o" in probe
+
+
+def test_dashboards_mount_point_is_never_deleted_by_the_sync(cfg: GraphyardConfig) -> None:
+    rsync = RecordingRsyncRunner(responses={"--dry-run": [">f.st...... README.md"]})
+    deploy(cfg, converged(cfg), rsync=rsync)
+
+    real = next(call for call in rsync.calls if "--dry-run" not in call)
+    assert "--exclude=deploy/grafana/provisioning/dashboards-json/" in real
 
 
 def test_env_change_rewrites_it_migrates_and_restarts_web_and_agent(source: Path) -> None:

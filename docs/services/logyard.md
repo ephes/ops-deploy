@@ -77,7 +77,10 @@ digests, never the stored password.
    it to the network, writes the datasource provisioning file and the
    dashboards below `<dashboards_root>/logyard` (`root:root`, `0755`/`0644`;
    files other than the dashboards keep their content and get the same
-   owner and mode), starts the container if stopped. The container restarts
+   owner and mode), starts the container if stopped. The datasource
+   directory and the dashboards root are Graphyard's: they are created when
+   missing, their owner and mode are left alone (see the ownership rule on
+   the [graphyard](graphyard.md) page). The container restarts
    once, at the end, only if something above changed. The role copies the
    dashboards on the host after the sync; here they are put from the
    controller's checkout (the same bytes), so a change is known while
@@ -98,7 +101,9 @@ registration does for macmini); the defaults, like the role's, report none.
 Differences from the role: the apt `rsync` package is installed (the role
 assumes it); `/var/lib/logyard` is created `root:root` by `mkdir -p` where
 Ansible's `file` gives intermediate directories the leaf's owner; services
-restart in the order of their steps instead of all at the end.
+restart in the order of their steps instead of all at the end; the shared
+Grafana directories keep Graphyard's owner (the role sets them to
+`root:root`).
 
 ## Ingress (`LogyardIngressConfig`)
 
