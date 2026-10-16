@@ -63,10 +63,17 @@
   probed, the metric collection specs are compared by digest, and the auth
   bootstrap (a deploy-time reconcile) checks the Django user and Grafana's
   admin password on the controller and resets only on a difference (`grafana cli --password-from-stdin`). The core takes a
-  git source (`source_commit`). The ownership interplay with Logyard and the
-  removal of Docker's `dashboards-json` mount point by the source sync are
-  kept as the roles do them (see the service page). `logyard.vector.env_line`
-  (was `_env_line`) is shared by both Vector producers.
+  git source (`source_commit`). `logyard.vector.env_line` (was `_env_line`)
+  is shared by both Vector producers.
+- Graphyard and Logyard share the Grafana tree in Graphyard's site under one
+  ownership rule: Logyard owns its datasource file and `dashboards/logyard`
+  (`root:root`), Graphyard everything else. Graphyard's ownership step skips
+  Logyard's paths (`GraphyardConfig.foreign_paths`) and Logyard's deploy no
+  longer sets the shared `datasources/` and `dashboards/` directories to
+  root, which ended the role's ping-pong (an owner change and a Grafana
+  restart after every deploy of the other). The Graphyard sync keeps
+  Docker's `dashboards-json` mount point, which the role's sync deletes
+  (detaching Grafana's dashboards until it restarts).
 
 - `nyxmon`: the Rust monitoring agent is ported (the role's `agent_rust.yml`
   and `agent_verify.yml`, ops-library 2.32.0). `agent_impl` accepts `python`

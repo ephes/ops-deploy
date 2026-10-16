@@ -473,8 +473,11 @@ def _grafana(cfg: LogyardConfig, grafana: GrafanaWiring) -> list[Any]:
     ]
 
     target = grafana.dashboard_target_dir
+    # The shared Grafana tree belongs to Graphyard: its directories are only
+    # created when missing (Graphyard's deploy owns them, see the logyard and
+    # graphyard service pages); Logyard owns its datasource file and dashboards.
     datasource_dir = grafana.datasource_path.parent
-    directory(str(datasource_dir), user="root", group="root", mode="0755")
+    files.directory(name=f"Ensure {datasource_dir}", path=str(datasource_dir))
     triggers.append(
         files.put(
             name="Render Logyard datasource provisioning file",
@@ -485,7 +488,7 @@ def _grafana(cfg: LogyardConfig, grafana: GrafanaWiring) -> list[Any]:
             mode="0644",
         )
     )
-    directory(str(grafana.dashboards_root), user="root", group="root", mode="0755")
+    files.directory(name=f"Ensure {grafana.dashboards_root}", path=str(grafana.dashboards_root))
     directory(str(target), user="root", group="root", mode="0755")
 
     # The role copies site/deploy/grafana/dashboards/logyard on the host, which

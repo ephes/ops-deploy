@@ -180,24 +180,39 @@ role's container-IP fallback stays on Ansible.
 
 ## Living with Logyard
 
-Logyard's deploy writes its datasource file and dashboards into Graphyard's
-site (`deploy/grafana/...`, excluded from Graphyard's sync) and sets them to
-`root:root`; Graphyard's deploy sets the whole site to `graphyard`. Both
-roles do this today and both ports mirror it: whichever ran last wins, and a
-Logyard deploy after a Graphyard deploy restarts Grafana once.
+Logyard's Grafana files live in Graphyard's site. One rule, implemented in
+both ports, decides who owns what below `/opt/apps/graphyard/site/deploy/grafana`:
+
+| Path | Written by | Owner, mode |
+|---|---|---|
+| `provisioning/datasources/logyard.yaml` | Logyard | `root:root 0644` |
+| `dashboards/logyard/` and everything in it | Logyard | `root:root 0755` / `0644` |
+| everything else, the directories `provisioning/datasources/` and `dashboards/` included | Graphyard | `graphyard:graphyard` |
+
+Graphyard's sync excludes Logyard's two paths (the role does too), and its
+ownership step skips them (`foreign_paths`, default the two Logyard paths);
+Logyard's deploy creates the two shared directories only when they are
+missing and never changes their owner or mode. The roles still fight over
+these paths (the Graphyard role chowns the whole site, the Logyard role sets
+the shared directories to root), so an Ansible deploy of either brings the
+old ping-pong back for one round; the next pyinfra deploy of Graphyard takes
+the shared directories back once, and Logyard's pyinfra deploy, which only
+reads them, does not react.
 
 Docker creates `deploy/grafana/provisioning/dashboards-json/` in the site as
 the mount point of the dashboards bind mount whenever Grafana starts. The
-source sync (`--delete`, no exclude, as in the role) removes it, which
-detaches the dashboards mount in the running Grafana container: dashboards
-already loaded stay, file changes are not provisioned until Grafana restarts.
-The port keeps this behaviour of the role.
+role's sync (`--delete`) removes it, which detaches the dashboards mount in
+the running Grafana container (loaded dashboards stay, file changes are not
+provisioned until Grafana restarts). The port excludes it from the sync, so
+it survives; its owner becomes `graphyard` like the rest of the site.
 
 ## Differences from the roles
 
 - The `graphyard` user is a system user created without a skeleton home
   (`system_user`); an existing user is left as it is.
 - `rsync` is installed with apt when missing (the role assumes it).
+- The sync excludes `deploy/grafana/provisioning/dashboards-json/`, and the
+  ownership step skips Logyard's files (see above).
 - `uv_install` does not run unless `uv` is set: the role installs its pinned
   uv (0.13.0) on every deploy and so replaces a newer uv on the host.
 - In the stack, the auth step also plans the provisioning file rewrite when

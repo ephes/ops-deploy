@@ -88,6 +88,17 @@ SOURCE_EXCLUDES = (
     "deploy/grafana/dashboards/logyard/",
     "deploy/grafana/provisioning/datasources/logyard.yaml",
     ".inventory-releases.lock",
+    # Not in the role: Docker creates this as the mount point of the dashboards
+    # bind mount when Grafana starts; deleting it detaches the mount in the
+    # running container.
+    "deploy/grafana/provisioning/dashboards-json/",
+)
+# Paths in the site that the Logyard deploy owns (root-owned files of its own);
+# Graphyard's ownership step leaves them alone. Everything else in the site,
+# the shared Grafana directories included, is Graphyard's.
+LOGYARD_PATHS = (
+    "deploy/grafana/provisioning/datasources/logyard.yaml",
+    "deploy/grafana/dashboards/logyard",
 )
 PLACEHOLDERS = ("CHANGEME", "replace-me")
 # The playbook's secret references inside metric collection specs, and the
@@ -336,6 +347,8 @@ class GraphyardConfig(BaseServiceConfig):
     # the host; None: a local working tree, and the host's record is removed.
     source_commit: CommitSha | None = None
     source_excludes: tuple[str, ...] = SOURCE_EXCLUDES
+    # Below the site, relative: left to another deploy (owner and content).
+    foreign_paths: tuple[Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")], ...] = LOGYARD_PATHS
     python_version: Annotated[str, Field(pattern=r"^3\.[0-9]{1,2}$")] = "3.12"
     uv_sync_args: tuple[Annotated[str, Field(pattern=r"^--[a-z-]+$")], ...] = ("--no-default-groups", "--no-dev")
     # The role runs uv_install (its pinned uv, also replacing a newer one); like
@@ -1006,15 +1019,21 @@ def _health(cfg: GraphyardConfig, check: HealthCheck) -> None:
 def _site_owned(cfg: GraphyardConfig) -> OperationMeta | None:
     """The role's recursive ``file: owner/group`` on the site, only when something is off.
 
-    It also takes back the Logyard files below ``deploy/grafana`` (which the
-    Logyard deploy sets to root), as the role does.
+    Unlike the role, the ``foreign_paths`` (Logyard's datasource file and
+    dashboards) are left alone: the role takes them back and the Logyard
+    deploy then sets them to root again on every run of either.
     """
 
     site = shlex.quote(str(cfg.site_path))
-    wrong = probe(f"find {site} \\( ! -user {cfg.user} -o ! -group {cfg.group} \\) -print -quit").strip()
-    if not wrong:
+    pruned = " -o ".join(f"-path {shlex.quote(str(cfg.site_path / path))}" for path in cfg.foreign_paths)
+    skip = f"\\( {pruned} \\) -prune -o " if pruned else ""
+    wrong = f"\\( ! -user {cfg.user} -o ! -group {cfg.group} \\)"
+    if not probe(f"find {site} {skip}{wrong} -print -quit").strip():
         return None
-    return server.shell(name="Ensure ownership for synced files", commands=[f"chown -hR {cfg.user}:{cfg.group} {site}"])
+    return server.shell(
+        name="Ensure ownership for synced files",
+        commands=[f"find {site} {skip}{wrong} -exec chown -h {cfg.user}:{cfg.group} {{}} +"],
+    )
 
 
 def core_steps(cfg: GraphyardConfig, secrets: SecretValues, rsync: RsyncRunner) -> None:
