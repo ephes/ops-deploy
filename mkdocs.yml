@@ -40,5 +40,6 @@ nav:
       - weeknotes_home: services/weeknotes_home.md
       - echoport: services/echoport.md
       - logyard: services/logyard.md
+      - graphyard: services/graphyard.md
       - work_app: services/work_app.md
   - Changelog: changelog.md

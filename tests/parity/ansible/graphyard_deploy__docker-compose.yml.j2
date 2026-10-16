@@ -1,0 +1,45 @@
+services:
+  influxdb:
+    image: {{ graphyard_influx_image | to_json }}
+    container_name: {{ graphyard_influx_container_name | to_json }}
+    restart: unless-stopped
+    ports:
+      - "{{ graphyard_influx_host_bind_address }}:{{ graphyard_influx_host_port }}:{{ graphyard_influx_container_port }}"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: "setup"
+      DOCKER_INFLUXDB_INIT_USERNAME: {{ graphyard_influx_init_username | to_json }}
+      DOCKER_INFLUXDB_INIT_PASSWORD: {{ graphyard_influx_init_password | to_json }}
+      DOCKER_INFLUXDB_INIT_ORG: {{ graphyard_influx_org | to_json }}
+      DOCKER_INFLUXDB_INIT_BUCKET: {{ graphyard_influx_bucket | to_json }}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: {{ graphyard_influx_init_admin_token | to_json }}
+    volumes:
+      - "{{ graphyard_influx_data_dir }}:/var/lib/influxdb2"
+      - "{{ graphyard_influx_config_dir }}:/etc/influxdb2"
+    networks:
+      - monitoring
+
+  grafana:
+    image: {{ graphyard_grafana_image | to_json }}
+    container_name: {{ graphyard_grafana_container_name | to_json }}
+    restart: unless-stopped
+    ports:
+      - "{{ graphyard_grafana_host_bind_address }}:{{ graphyard_grafana_host_port }}:{{ graphyard_grafana_container_port }}"
+    environment:
+      GF_SECURITY_ADMIN_USER: {{ graphyard_grafana_admin_user | to_json }}
+      GF_SECURITY_ADMIN_PASSWORD: {{ graphyard_grafana_admin_password | to_json }}
+      GF_USERS_ALLOW_SIGN_UP: "{{ 'true' if graphyard_grafana_allow_sign_up | bool else 'false' }}"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: {{ graphyard_grafana_default_home_dashboard_path | to_json }}
+      GRAPHYARD_INFLUX_DB: {{ graphyard_grafana_influx_database | to_json }}
+      GRAPHYARD_INFLUX_USER: {{ graphyard_grafana_influx_username | to_json }}
+      GRAPHYARD_INFLUX_PASSWORD: {{ graphyard_grafana_influx_password | to_json }}
+    volumes:
+      - "{{ graphyard_grafana_provisioning_path }}:/etc/grafana/provisioning"
+      - "{{ graphyard_grafana_dashboards_path }}:/etc/grafana/provisioning/dashboards-json"
+      - "{{ graphyard_grafana_data_dir }}:/var/lib/grafana"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
+    name: {{ graphyard_docker_network_name | to_json }}

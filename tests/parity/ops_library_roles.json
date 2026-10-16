@@ -1,10 +1,14 @@
 {
-  "ops_library": "fd6b4cf1",
+  "ops_library": "94047183",
   "roles": {
     "fastdeploy_backup": "26b1ed9faa815701a9a75b6c2f711e056d85a7b290ae4d4b1dab05b9e7805297",
     "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
     "fastdeploy_restore": "95a3e5e43ea2b9f68aed59d2d1ff5e45da378eb8ed036e0435d18cd0eebeed9d",
+    "graphyard_auth_bootstrap_deploy": "63d80f3411916714757f600de97277f75c8306dd7b6e26c30ecdf115e6d2261f",
+    "graphyard_deploy": "dea6c54c44b6b853b3709898577c7260c16b171fb8bbe8ef0cefc0c1e53f74a2",
+    "graphyard_ingress_deploy": "b68c693f9ace695b17e3bdaa1d735457b0f075bcd66fe9dffa50a0cea6261a5c",
+    "graphyard_vector_deploy": "654594f49168eec8990dd987979f0328a8e07cbb6264045dfd89f5a66b0132d1",
     "minio_deploy": "a84d46cc024bc21926750133a321e1f449644d5c44b7d698ac75d6e548740964",
     "nyxmon_backup": "7412a272ae90c029d9ddca3232abaaa88649826208641cdea9de5fa42b4dcc18",
     "nyxmon_deploy": "7b5b492fbac5dd040b518aa0cfbca5572721ab62659b541ec4a083f36dfbc381",

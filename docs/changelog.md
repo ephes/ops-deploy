@@ -49,6 +49,25 @@
   is removed. New dev dependencies python-dotenv and django-environ: the
   `.env` values are read back by the real parsers in the tests.
 
+- `graphyard`: ports of `graphyard_deploy`, `graphyard_vector_deploy`,
+  `graphyard_ingress_deploy` and `graphyard_auth_bootstrap_deploy` with the
+  playbooks around them (`ops_deploy.services.graphyard`: core, Vector,
+  ingress, auth bootstrap and the stack). Templates are shipped unchanged and
+  byte-identical (`tests/test_graphyard_parity.py`; role digests recorded at
+  ops-library 94047183). Secret files (env, compose, metric specs, Vector
+  fragment) are written with `secret_file`; credentials reach the host on
+  stdin only (the InfluxDB v1 login is created through InfluxDB's HTTP API,
+  not `influx v1 auth create --password`; env-file secrets that bash would
+  read differently are refused). Steps are skipped when the host already
+  matches: the InfluxDB v1 login, bucket retention and static files are
+  probed, the metric collection specs are compared by digest, and the auth
+  bootstrap (a deploy-time reconcile) checks the Django user and Grafana's
+  admin password on the controller and resets only on a difference (`grafana cli --password-from-stdin`). The core takes a
+  git source (`source_commit`). The ownership interplay with Logyard and the
+  removal of Docker's `dashboards-json` mount point by the source sync are
+  kept as the roles do them (see the service page). `logyard.vector.env_line`
+  (was `_env_line`) is shared by both Vector producers.
+
 - `nyxmon`: the Rust monitoring agent is ported (the role's `agent_rust.yml`
   and `agent_verify.yml`, ops-library 2.32.0). `agent_impl` accepts `python`
   and `rust`. The new `agent_rust_version`, `agent_rust_sha256`,
