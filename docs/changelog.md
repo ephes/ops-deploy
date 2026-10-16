@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- New service `ops_deploy.services.django_site`: one deploy for the
+  Django/Wagtail sites, configured per site with a typed `DjangoSiteConfig`
+  (source, app, SQLite database, local media, `.env` entries with `Secret`
+  references, management-command `StepGroup`s with triggers and markers,
+  `EnsureSuperuser`, the route with a required `public_reason`, local
+  checks). It writes one canonical file set for every site: a single-quoted
+  `.env`, a launcher that sources it and `exec`s gunicorn, the classic unit
+  with `Group=` and `RestartSec=5`, the classic route and fish config, each
+  with a "managed by" header. Markers in the home directory
+  (`~/.ops-deploy-pending`, `~/.ops-deploy-restart-<unit>`) make the next run
+  finish what a failed one left undone; a converged run changes nothing.
+  `required_secret_keys` follows from the config. Switching marina from
+  `services/marina` rewrites `.env`, `gunicorn.sh`, the unit, the route and the
+  fish config once and restarts marina once; the differences are listed in
+  [django_site](services/django_site.md). `services/marina` stays until the
+  transitional equivalence test (every marina scenario through both modules)
+  is removed. New dev dependencies python-dotenv and django-environ: the
+  `.env` values are read back by the real parsers in the tests.
+
 - `nyxmon`: the Rust monitoring agent is ported (the role's `agent_rust.yml`
   and `agent_verify.yml`, ops-library 2.32.0). `agent_impl` accepts `python`
   and `rust`. The new `agent_rust_version`, `agent_rust_sha256`,

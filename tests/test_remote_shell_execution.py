@@ -37,10 +37,18 @@ from ops_deploy.helpers.probes import (
 from ops_deploy.ops.secret_file import encode_payload, install_command
 from ops_deploy.services.chesslab import ChesslabConfig
 from ops_deploy.services.chesslab.deploy import _users_probe as _chesslab_users_probe
+from ops_deploy.services.django_site import DjangoSiteConfig
+from ops_deploy.services.django_site.deploy import markers_command
+from ops_deploy.services.django_site.django import manage_script, site_shell
+from ops_deploy.services.django_site.render import render as render_django_site
+from ops_deploy.services.django_site.render import render_env as django_site_env
 from ops_deploy.services.weeknotes_home import WeeknotesHomeConfig
 from ops_deploy.services.weeknotes_home.deploy import FILES, _site_manage, render_env
 from ops_deploy.testing import fish_unsafe, run_deploy_fake
 from tests.chesslab_fixtures import make_source as make_chesslab_source
+from tests.django_site_fixtures import site_config
+from tests.django_site_fixtures import values as django_site_values
+from tests.marina_fixtures import make_source as make_marina_source
 from tests.weeknotes_home_fixtures import make_source
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "ops_deploy"
@@ -336,3 +344,91 @@ def test_chesslab_users_probe_tells_a_new_database_from_a_broken_one(tmp_path: P
     assert answer() == hashlib.sha256(b"trainer|1|1|1|Lichess|1").hexdigest() + "\n"
     db.write_bytes(b"not a database" * 100)
     assert answer() is None
+
+
+def _django_site(tmp_path: Path) -> DjangoSiteConfig:
+    home = tmp_path.resolve() / "home"
+    return site_config(make_marina_source(tmp_path), home=home, site_path=home / "site")
+
+
+# What ``.env`` can carry: quotes, single backslashes, $, backticks, ; and # (no single quote).
+TRICKY_ENV = 'a"b\\c$HOME`x` \\d;e "q" #h'
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_django_site_manage_command_loads_tricky_env_values(
+    tmp_path: Path, fake_runuser: str, login_shell: str
+) -> None:
+    cfg = _django_site(tmp_path)
+    secrets = django_site_values(cfg, django_secret_key=TRICKY_ENV)
+    Path(cfg.venv_bin).mkdir(parents=True)
+    Path(cfg.venv_bin / "python").symlink_to(sys.executable)
+    Path(cfg.env_path).write_bytes(django_site_env(cfg, secrets).reveal())
+    Path(cfg.app_path / "manage.py").write_text(
+        "import json, os, sys\n"
+        "print(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(),"
+        " 'secret': os.environ['DJANGO_SECRET_KEY'], 'cache': os.environ['DJANGO_CACHE_LOCATION']}))\n"
+    )
+
+    command = site_shell(cfg, manage_script(cfg, "migrate"))
+    assert not fish_unsafe(make_unix_command(StringCommand(command)).get_raw_value())
+    result = run_remote(command, login_shell, fake_runuser)
+
+    assert result.returncode == 0, result.stderr
+    seen = json.loads(result.stdout)
+    assert seen == {"argv": ["migrate"], "cwd": str(cfg.app_path), "secret": TRICKY_ENV, "cache": str(cfg.cache_dir)}
+
+
+def test_django_site_launcher_starts_gunicorn_with_the_env_and_arguments(tmp_path: Path) -> None:
+    cfg = _django_site(tmp_path)
+    secrets = django_site_values(cfg, django_secret_key=TRICKY_ENV)
+    Path(cfg.venv_bin).mkdir(parents=True)
+    Path(cfg.env_path).write_bytes(django_site_env(cfg, secrets).reveal())
+    gunicorn = Path(cfg.venv_bin / "gunicorn")
+    gunicorn.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\n"
+        "print(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'secret': os.environ['DJANGO_SECRET_KEY'],"
+        " 'settings': os.environ['DJANGO_SETTINGS_MODULE']}))\n"
+    )
+    gunicorn.chmod(0o755)
+    launcher = Path(cfg.site_path / "gunicorn.sh")
+    launcher.write_text(render_django_site("gunicorn.sh.j2", cfg))
+
+    result = subprocess.run(["bash", str(launcher)], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    seen = json.loads(result.stdout)
+    assert seen["cwd"] == str(cfg.app_path)
+    assert seen["secret"] == TRICKY_ENV
+    assert seen["settings"] == "config.settings.production"
+    assert seen["argv"] == [
+        "-w",
+        "4",
+        "--access-logfile",
+        "-",
+        "--error-logfile",
+        "-",
+        "--access-logformat",
+        '%({x-forwarded-for}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"',
+        "-b",
+        "127.0.0.1:10019",
+        "-t",
+        "3600",
+        "config.wsgi",
+    ]
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_django_site_marker_fact_lists_only_markers(tmp_path: Path, login_shell: str) -> None:
+    cfg = _django_site(tmp_path)
+    home = Path(cfg.home)
+    home.mkdir(parents=True)
+    for name in (".ops-deploy-pending", ".ops-deploy-restart-marina", ".ops-deploy-admin", ".ops-deploy-pendingx"):
+        (home / name).touch()
+
+    fact = markers_command(cfg)
+    result = run_remote(fact, login_shell, os.environ["PATH"])
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(result.stdout.split()) == [".ops-deploy-pending", ".ops-deploy-restart-marina"]
+    assert run_remote(fact.replace(str(home), str(home / "missing")), login_shell, os.environ["PATH"]).stdout == ""

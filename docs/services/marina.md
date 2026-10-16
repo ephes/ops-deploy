@@ -1,5 +1,12 @@
 # marina
 
+!!! note "Superseded by django_site"
+    ops-control deploys marina with [django_site](django_site.md) since
+    2026-10-16 (one canonical file set; the switch rewrites the files listed
+    there and restarts marina once). This module stays only for the
+    transitional equivalence test (`tests/test_django_site_equivalence.py`)
+    and is removed with it.
+
 Port of the `marina_deploy` Ansible role (rsync method, uv): the Marina
 portfolio site, a Django/Wagtail app on SQLite served by gunicorn behind
 Traefik.

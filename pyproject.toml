@@ -23,9 +23,11 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "django-environ>=0.14.0",
     "mkdocs-material>=9.7.7",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
+    "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
     "ruff>=0.17.0",
     "types-pyyaml>=6.0.12.20260906",
@@ -57,6 +59,11 @@ untyped_calls_exclude = ["pyinfra"]
 # pyinfra re-exports its public API without ``__all__``.
 module = ["pyinfra", "pyinfra.*"]
 implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# django-environ (a test-only parser of django_site's .env) ships no type hints.
+module = ["environ", "environ.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

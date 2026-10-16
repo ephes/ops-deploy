@@ -1,0 +1,9 @@
+# {{ managed }}
+alias bat="batcat"
+alias fd="fdfind"
+
+set -x PATH $PATH {{ cfg.home }}/.local/bin
+set -x PATH $PATH {{ cfg.app_path }}/venv/bin
+set -x VIRTUAL_ENV "{{ cfg.app_path }}/venv"
+set -x DJANGO_SETTINGS_MODULE "{{ cfg.app.settings_module }}"
+cd {{ cfg.app_path }}

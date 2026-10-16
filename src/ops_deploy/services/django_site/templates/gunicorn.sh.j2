@@ -1,0 +1,14 @@
+#!/bin/bash
+# {{ managed }}
+set -euo pipefail
+set -a; . {{ cfg.env_path }}; set +a
+
+cd {{ cfg.app_path }}
+exec {{ cfg.venv_bin }}/gunicorn \
+  -w {{ cfg.app.workers }} \
+  --access-logfile - \
+  --error-logfile - \
+  --access-logformat '%({x-forwarded-for}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"' \
+  -b 127.0.0.1:{{ cfg.app.port }} \
+  -t {{ cfg.app.timeout }} \
+  {{ cfg.app.wsgi_app }}

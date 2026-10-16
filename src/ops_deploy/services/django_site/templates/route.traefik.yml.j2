@@ -1,0 +1,54 @@
+# {{ managed }}
+# Public website, no Basic Auth: {{ cfg.route.public_reason }}
+http:
+  routers:
+    {{ cfg.route.fqdn }}-router:
+      rule: "{{ cfg.route.host_rule }}"
+
+      entryPoints:
+        - web
+      middlewares:
+        - redirect
+        - csrf
+      service: {{ cfg.route.fqdn }}
+
+    {{ cfg.route.fqdn }}-secure-router:
+      rule: "{{ cfg.route.tls_host_rule or cfg.route.host_rule }}"
+
+      entryPoints:
+        - web-secure
+      middlewares:
+        - csrf
+        - sslHeaders
+        - gzip-compress
+        - redirect-www
+      service: {{ cfg.route.fqdn }}
+      tls:
+        certResolver: {{ cfg.route.cert_resolver }}
+
+  middlewares:
+    redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+    csrf:
+      headers:
+        hostsProxyHeaders: ["X-CSRFToken"]
+    sslHeaders:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+          X-Forwarded-Port: "443"
+    gzip-compress:
+      compress: {}
+    redirect-www:
+      redirectRegex:
+        regex: "^https?://www\\.(.+)"
+        replacement: "https://${1}"
+        permanent: false
+
+  services:
+    {{ cfg.route.fqdn }}:
+      loadBalancer:
+        servers:
+          - url: http://localhost:{{ cfg.app.port }}
