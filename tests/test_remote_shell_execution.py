@@ -38,6 +38,7 @@ from ops_deploy.ops.secret_file import encode_payload, install_command
 from ops_deploy.services.chesslab import ChesslabConfig
 from ops_deploy.services.chesslab.deploy import _users_probe as _chesslab_users_probe
 from ops_deploy.services.django_site import DjangoSiteConfig
+from ops_deploy.services.django_site import deploy as django_site_deploy
 from ops_deploy.services.django_site.deploy import markers_command
 from ops_deploy.services.django_site.django import manage_script, site_shell
 from ops_deploy.services.django_site.render import render as render_django_site
@@ -419,16 +420,19 @@ def test_django_site_launcher_starts_gunicorn_with_the_env_and_arguments(tmp_pat
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
-def test_django_site_marker_fact_lists_only_markers(tmp_path: Path, login_shell: str) -> None:
+def test_django_site_marker_fact_lists_only_markers(
+    tmp_path: Path, login_shell: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cfg = _django_site(tmp_path)
-    home = Path(cfg.home)
-    home.mkdir(parents=True)
+    monkeypatch.setattr(django_site_deploy, "STATE_ROOT", PurePosixPath(tmp_path.resolve() / "state"))
+    state = Path(django_site_deploy.state_dir(cfg))
+    state.mkdir(parents=True)
     for name in (".ops-deploy-pending", ".ops-deploy-restart-marina", ".ops-deploy-admin", ".ops-deploy-pendingx"):
-        (home / name).touch()
+        (state / name).touch()
 
     fact = markers_command(cfg)
     result = run_remote(fact, login_shell, os.environ["PATH"])
 
     assert result.returncode == 0, result.stderr
     assert sorted(result.stdout.split()) == [".ops-deploy-pending", ".ops-deploy-restart-marina"]
-    assert run_remote(fact.replace(str(home), str(home / "missing")), login_shell, os.environ["PATH"]).stdout == ""
+    assert run_remote(fact.replace(str(state), str(state / "missing")), login_shell, os.environ["PATH"]).stdout == ""

@@ -1,22 +1,25 @@
 """The step sequence every Django/Wagtail site shares.
 
 A step runs when its input changed or a read-only probe says it is owed, so a
-converged deploy changes nothing. Markers in the service user's home, written
-before the changes they stand for and removed when a run completed, make the
-next run finish what a failed one left undone:
+converged deploy changes nothing. Markers in ``/var/lib/ops-deploy/<service>/``,
+written before the changes they stand for and removed when a run completed,
+make the next run finish what a failed one left undone:
 
-- ``~/.ops-deploy-pending``: the source or the dependencies changed; the
-  steps they gate (migrations, static files, triggered step groups) and the
-  restart are owed.
-- ``~/.ops-deploy-restart-<unit>``: something the unit reads changed (``.env``,
-  the launcher, the unit file); the restart is owed.
+- ``.ops-deploy-pending``: the source or the dependencies changed; the steps
+  they gate (migrations, static files, triggered step groups) and the restart
+  are owed.
+- ``.ops-deploy-restart-<unit>``: something the unit reads changed (``.env``,
+  the launcher, the unit file, the user's primary group); the restart is owed.
 
-No sync of either tool touches the home directory, so the markers survive a
-deploy that synced with ``--delete`` and then failed.
+The directory is root's (``0700``, created by the first marker): no sync of
+either tool touches it, so the markers survive a deploy that synced with
+``--delete`` and then failed, and the service user cannot plant a symlink
+that a root ``touch`` or write would follow.
 """
 
 from __future__ import annotations
 
+import re
 import shlex
 from collections.abc import Callable
 from io import StringIO
@@ -29,6 +32,7 @@ from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.files import Directory
 from pyinfra.operations import apt, files, server
 
+from ops_deploy.core.config import UNIX_USER_PATTERN
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretValues
 from ops_deploy.helpers import (
@@ -60,6 +64,10 @@ from ops_deploy.services.django_site.render import render, render_env
 
 PENDING = ".ops-deploy-pending"
 RESTART = ".ops-deploy-restart-{unit}"
+# The old primary group while its files still move (see _primary_group).
+REGROUP = ".ops-deploy-regroup"
+# Root's directory for the markers, one per site.
+STATE_ROOT = PurePosixPath("/var/lib/ops-deploy")
 
 
 class SiteRoute(TraefikRoute):
@@ -70,21 +78,31 @@ class SiteRoute(TraefikRoute):
         return DYNAMIC_DIR / f"{self.name}.traefik.yml"
 
 
+def state_dir(cfg: DjangoSiteConfig) -> PurePosixPath:
+    return STATE_ROOT / cfg.service_name
+
+
 def _marker(cfg: DjangoSiteConfig, name: str) -> str:
-    return shlex.quote(str(cfg.home / name))
+    return shlex.quote(str(state_dir(cfg) / name))
+
+
+def _touch(cfg: DjangoSiteConfig, name: str) -> str:
+    """Create the root-only state directory if needed, then the marker ``name`` in it."""
+
+    return f"install -d -o root -g root -m 0700 {shlex.quote(str(state_dir(cfg)))} && touch {_marker(cfg, name)}"
 
 
 def markers_command(cfg: DjangoSiteConfig) -> str:
     """Lists the markers an earlier run left because it stopped before its end."""
 
-    home = shlex.quote(str(cfg.home))
-    return f"cd {home} 2>/dev/null && ls -1A | grep -x -e {PENDING} -e '.ops-deploy-restart-.*' || true"
+    state = shlex.quote(str(state_dir(cfg)))
+    return f"ls -1A {state} 2>/dev/null | grep -x -e {PENDING} -e '.ops-deploy-restart-.*' || true"
 
 
-def _mark(name: str, path: str, *, when: Callable[[], bool]) -> OperationMeta:
-    """``touch path`` when ``when()`` says so (evaluated while executing, so it may read later ops)."""
+def _mark(cfg: DjangoSiteConfig, name: str, marker: str, *, when: Callable[[], bool]) -> OperationMeta:
+    """Write ``marker`` when ``when()`` says so (evaluated while executing, so it may read later ops)."""
 
-    return server.shell(name=name, commands=[f"touch {path}"], _if=when)
+    return server.shell(name=name, commands=[_touch(cfg, marker)], _if=when)
 
 
 def _site_owned(cfg: DjangoSiteConfig) -> OperationMeta:
@@ -98,6 +116,71 @@ def _site_owned(cfg: DjangoSiteConfig) -> OperationMeta:
         commands=[f"chown -hR {cfg.user}:{cfg.group_name} {site}"],
         _if=lambda: bool(pending),
     )
+
+
+def _primary_group(cfg: DjangoSiteConfig) -> list[OperationMeta]:
+    """Make the service group the user's primary group, and move the user's files to it.
+
+    ``system_user`` leaves an existing user alone; a user an older deploy
+    created with another primary group (the Ansible roles' ``users``) writes
+    its uploads, cache and bytecode with that group, and every run repairs
+    them again. ``usermod -g`` changes the group and, like every Linux
+    ``usermod``, also moves the files in the home that carry the old group,
+    whoever owns them and across mount points. So it runs only when every
+    such file belongs to the user and nothing is mounted below the home;
+    otherwise the deploy stops before any change. Then the user's own files
+    with the old group in the site (when it is outside the home) and the home
+    get the service group (``find -xdev``, symlinks themselves).
+
+    ``.ops-deploy-regroup`` in the state directory holds the old group from before ``usermod``
+    until the move succeeded, so a run that stopped in between finishes the
+    move. The running processes keep the old group until the unit restarts:
+    both operations count as something the unit reads.
+    """
+
+    user, group = cfg.user, cfg.group_name
+    marker = _marker(cfg, REGROUP)
+    # Group name, then the home passwd records (usermod works on that one).
+    account = fact(f"id -gn {shlex.quote(user)} 2>/dev/null && getent passwd {shlex.quote(user)} | cut -d: -f6 || true")
+    current, _, passwd_home = account.partition("\n")
+    owed = fact(f"cat {marker} 2>/dev/null || true")
+    old = current if current and current != group else owed
+    if not old:
+        return []
+    if not re.fullmatch(UNIX_USER_PATTERN, old):
+        raise ValueError(f"{user}'s old primary group has an unexpected name")
+    roots = " ".join(
+        shlex.quote(str(root))
+        for root in (cfg.home, *([] if cfg.site_path.is_relative_to(cfg.home) else [cfg.site_path]))
+    )
+    ops = []
+    if old == current:
+        if passwd_home.strip() != str(cfg.home):
+            raise ValueError(f"{user}'s home in passwd is not {cfg.home}: fix the primary group by hand")
+        home = shlex.quote(f"{cfg.home}/")
+        foreign = fact(
+            f"find {shlex.quote(str(cfg.home))} -group {old} ! -user {user} -print -quit 2>/dev/null || true"
+        )
+        mounts = fact(f"awk -v h={home} 'index($2, h) == 1 {{print $2}}' /proc/mounts")
+        if foreign or mounts:
+            raise ValueError(
+                f"{user}'s primary group is {old}, not {group}, and usermod would also move "
+                f"{'files of other owners' if foreign else 'files on other mounts'} in {cfg.home}: "
+                "fix the group by hand"
+            )
+        ops.append(
+            server.shell(
+                name=f"Make {group} the primary group of {user}",
+                commands=[f"{_touch(cfg, REGROUP)} && echo {old} > {marker}", f"usermod -g {group} {user}"],
+            )
+        )
+    ops.append(
+        server.shell(
+            name=f"Move {user}'s files from group {old} to {group}",
+            commands=[f"find {roots} -xdev -user {user} -group {old} -exec chgrp -h {group} {{}} +", f"rm -f {marker}"],
+        )
+    )
+    return ops
 
 
 def _fish(cfg: DjangoSiteConfig) -> None:
@@ -138,7 +221,7 @@ def _step_group(cfg: DjangoSiteConfig, group: StepGroup, triggers: dict[str, lis
         return group.when == "always" or left or any(op.did_change() for op in gate)
 
     if group.marker:
-        server.shell(name=f"Mark {group.name} pending", commands=[f"touch {_marker(cfg, group.marker)}"], _if=needed)
+        server.shell(name=f"Mark {group.name} pending", commands=[_touch(cfg, group.marker)], _if=needed)
     for step in group.steps:
         server.shell(name=step.name, commands=[site_shell(cfg, manage_script(cfg, *step.argv))], _if=needed)
     if group.marker:
@@ -180,14 +263,25 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
 
     left = fact(markers_command(cfg)).split()
     restart_marker = RESTART.format(unit=unit)
+    # Everything the unit's processes read (filled in below); a change marks
+    # the restart it owes before it happens.
+    unit_reads: list[OperationMeta] = []
+    restart_mark = _mark(
+        cfg,
+        f"Mark {unit} for a restart",
+        restart_marker,
+        when=lambda: restart_marker in left or any(op.will_change for op in unit_reads),
+    )
+    unit_reads += _primary_group(cfg)
 
     # Written before the changes they stand for; the operations they watch are
     # added below (their ``will_change`` is known once planning is done).
     source_ops: list[OperationMeta] = []
     deps_owed: list[bool] = []
     pending = _mark(
+        cfg,
         f"Mark the {name} source change pending",
-        _marker(cfg, PENDING),
+        PENDING,
         when=lambda: PENDING in left or any(op.will_change for op in source_ops) or any(deps_owed),
     )
     code = sync_tree(
@@ -229,12 +323,6 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
             group=cfg.group_name,
         )
 
-    unit_reads: list[OperationMeta] = []
-    restart_mark = _mark(
-        f"Mark {unit} for a restart",
-        _marker(cfg, restart_marker),
-        when=lambda: restart_marker in left or any(op.will_change for op in unit_reads),
-    )
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group_name
     )
@@ -254,7 +342,7 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         gate=[pending, deps],
         force=not static_collected(cfg),
         # The restart it owes is written down before the files change.
-        touch_first=_marker(cfg, restart_marker) if cfg.steps.restart_after_collectstatic else "",
+        before=_touch(cfg, restart_marker) if cfg.steps.restart_after_collectstatic else "",
     )
 
     def restarting_static() -> bool:

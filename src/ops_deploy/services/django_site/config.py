@@ -31,11 +31,11 @@ DottedName = Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_.]*(:[A-Za-z_][
 ManageArg = Annotated[str, Field(min_length=1, pattern=r"^[A-Za-z0-9_.,:/=@+-]+$")]
 # A relative directory inside the synced tree ("" is the tree itself).
 RelDir = Annotated[str, Field(pattern=r"^([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$")]
-# A file name in the service user's home (markers).
-HomeFile = Annotated[str, Field(pattern=r"^\.ops-deploy-[a-z0-9-]+$")]
+# A marker file name (in the site's root-only state directory).
+MarkerName = Annotated[str, Field(pattern=r"^\.ops-deploy-[a-z0-9-]+$")]
 
 # The deploy's own files in the home directory (and the site): not step-group markers.
-RESERVED_MARKERS = frozenset({".ops-deploy-pending", ".ops-deploy-admin", ".ops-deploy-source"})
+RESERVED_MARKERS = frozenset({".ops-deploy-pending", ".ops-deploy-admin", ".ops-deploy-source", ".ops-deploy-regroup"})
 UNIT_PATTERN = r"^[a-z][a-z0-9-]{0,62}$"
 # The keys django_site writes itself; ``env.extra`` may not repeat them.
 BASE_ENV_KEYS = (
@@ -183,7 +183,7 @@ class StepGroup(Part):
     steps: tuple[ManageStep, ...] = Field(min_length=1)
     when: Literal["changes", "always"] = "changes"
     triggers: frozenset[Trigger] = frozenset({"source", "deps", "migrate"})
-    marker: HomeFile | None = None
+    marker: MarkerName | None = None
     after: Literal["migrate", "collectstatic"] = "collectstatic"
 
 

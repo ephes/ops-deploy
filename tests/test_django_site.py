@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -42,10 +42,19 @@ from tests.django_site_fixtures import (
 from tests.marina_fixtures import make_source
 
 ITEMIZED_CHANGE = [">f.st...... apps/marina/views.py"]
-PENDING = f"{HOME}/.ops-deploy-pending"
-RESTART = f"{HOME}/.ops-deploy-restart-marina"
+STATE = "/var/lib/ops-deploy/marina"
+PENDING = f"{STATE}/.ops-deploy-pending"
+RESTART = f"{STATE}/.ops-deploy-restart-marina"
 CLEAR = f"rm -f {PENDING} {RESTART}"
-MARKERS_LEFT = "ls -1A | grep -x -e .ops-deploy-pending"
+MARKERS_LEFT = "grep -x -e .ops-deploy-pending"
+
+
+def touch(path: str) -> str:
+    """The marker command: the root-only state directory, then the marker."""
+
+    return f"install -d -o root -g root -m 0700 {STATE} && touch {path}"
+
+
 READ_ONLY = [
     "Deploy marina | Wait for port 127.0.0.1:10019",
     "Deploy marina | Check http://127.0.0.1:10019/",
@@ -171,9 +180,9 @@ def test_first_run_installs_everything_and_clears_its_markers(cfg: DjangoSiteCon
     assert "useradd -d /home/marina -s /usr/bin/fish -g marina -r -M marina" in commands
     sync = next(c for c in commands if "uv sync" in c)
     migrate = next(c for c in commands if "manage.py migrate" in c)
-    assert commands.index(f"touch {PENDING}") < commands.index(sync) < commands.index(migrate)
+    assert commands.index(touch(PENDING)) < commands.index(sync) < commands.index(migrate)
     env_install = next(c for c in commands if " .env " in c)
-    assert commands.index(f"touch {RESTART}") < commands.index(env_install)
+    assert commands.index(touch(RESTART)) < commands.index(env_install)
     assert commands[-1] == CLEAR
     assert "systemctl restart marina.service" not in commands
     assert not any(path.endswith(".env") for path in run.uploaded_paths)
@@ -242,7 +251,7 @@ def test_a_failed_run_keeps_its_markers(cfg: DjangoSiteConfig, secrets: SecretVa
     run = deploy(cfg, values(cfg, django_secret_key="rotated-fixture-django-key-0123456789"), responses, succeed=False)
 
     assert not run.succeeded
-    assert f"touch {RESTART}" in run.executed_commands
+    assert touch(RESTART) in run.executed_commands
     assert CLEAR not in run.executed_commands
 
 
@@ -306,7 +315,7 @@ def test_collectstatic_can_restart(cfg: DjangoSiteConfig, secrets: SecretValues)
     ]
     # The restart is owed from before the files change: a failure after it leaves the marker.
     collect = next(c for c in restarting.executed_commands if "collectstatic" in c)
-    assert collect.startswith(f"touch {RESTART} && ")
+    assert collect.startswith(f"{touch(RESTART)} && ")
 
 
 def test_a_failure_after_a_restarting_collectstatic_keeps_the_restart_owed(
@@ -318,7 +327,7 @@ def test_a_failure_after_a_restarting_collectstatic_keeps_the_restart_owed(
 
     run = deploy(site, secrets, responses, succeed=False)
 
-    assert any(c.startswith(f"touch {RESTART} && ") for c in run.executed_commands)
+    assert any(c.startswith(f"{touch(RESTART)} && ") for c in run.executed_commands)
     assert CLEAR not in run.executed_commands
     assert "systemctl restart marina.service" not in run.executed_commands
 
@@ -341,7 +350,7 @@ GROUP = StepGroup(
     ),
     marker=".ops-deploy-content-pending",
 )
-CONTENT = f"{HOME}/.ops-deploy-content-pending"
+CONTENT = f"{STATE}/.ops-deploy-content-pending"
 GROUP_OPS = [
     "Deploy marina | Mark content reconcilers pending",
     "Deploy marina | Seed home content",
@@ -362,7 +371,7 @@ def test_a_step_group_runs_after_a_code_change(cfg: DjangoSiteConfig, secrets: S
         ops.index("Deploy marina | Collect static files") + 1 : ops.index("Deploy marina | Restart marina.service")
     ] == (GROUP_OPS)
     assert any(c.endswith("manage.py seed_subpages_content --quiet'") for c in run.executed_commands)
-    assert run.executed_commands.index(f"touch {CONTENT}") < run.executed_commands.index(f"rm -f {CONTENT}")
+    assert run.executed_commands.index(touch(CONTENT)) < run.executed_commands.index(f"rm -f {CONTENT}")
 
 
 def test_a_step_group_is_skipped_when_nothing_triggers_it(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
@@ -603,3 +612,113 @@ def test_the_canonical_redirect_is_rendered_only_when_set(cfg: DjangoSiteConfig)
 def test_the_canonical_redirect_is_validated(redirect: dict[str, str]) -> None:
     with pytest.raises(ValueError, match="canonical_redirect"):
         Route.model_validate({"fqdn": FQDN, "host_rule": f"Host(`{FQDN}`)", "public_reason": "x", **redirect})
+
+
+# -- the service group as primary group -------------------------------------
+
+REGROUP = f"{STATE}/.ops-deploy-regroup"
+CHGRP = f"find {HOME} -xdev -user marina -group users -exec chgrp -h marina {{}} +"
+GROUP_FIX = [
+    "Deploy marina | Mark marina for a restart",
+    "Deploy marina | Make marina the primary group of marina",
+    "Deploy marina | Move marina's files from group users to marina",
+    "Deploy marina | Restart marina.service",
+    "Deploy marina | Clear the pending markers",
+]
+
+
+def wrong_group(cfg: DjangoSiteConfig, secrets: SecretValues, **extra: Any) -> dict[str, Any]:
+    # A user an older deploy created with the group ``users``.
+    return {**converged(cfg, secrets), "id -gn marina": ["users", HOME], **extra}
+
+
+def test_another_primary_group_is_fixed_with_the_one_restart(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, wrong_group(cfg, secrets))
+
+    assert run.mutating_changed_ops == GROUP_FIX
+    commands = run.executed_commands
+    order = [f"{touch(REGROUP)} && echo users > {REGROUP}", "usermod -g marina marina", CHGRP, f"rm -f {REGROUP}"]
+    assert [commands.index(c) for c in order] == sorted(commands.index(c) for c in order)
+    assert commands.index(f"rm -f {REGROUP}") < commands.index("systemctl restart marina.service")
+    assert commands.count("systemctl restart marina.service") == 1
+
+
+def test_the_group_fix_folds_into_the_switch_restart(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    responses = {**wrong_group(cfg, secrets), **fakehost.file(UNIT, "[Unit]\n")}
+
+    run = deploy(cfg, secrets, responses)
+
+    assert run.executed_commands.count("systemctl restart marina.service") == 1
+    assert "Deploy marina | Make marina the primary group of marina" in run.mutating_changed_ops
+
+
+def test_the_right_primary_group_changes_nothing(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, {**converged(cfg, secrets), "id -gn marina": ["marina", HOME]})
+
+    assert run.mutating_changed_ops == []
+    assert not any("usermod" in c or "chgrp" in c for c in run.executed_commands)
+
+
+def test_a_failed_move_is_finished_by_the_next_run(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    failed = deploy(cfg, secrets, wrong_group(cfg, secrets, **{"-exec chgrp": {"success": False}}), succeed=False)
+    # The old group is recorded before usermod and kept when the move fails.
+    assert f"{touch(REGROUP)} && echo users > {REGROUP}" in failed.executed_commands
+    assert f"rm -f {REGROUP}" not in failed.executed_commands
+
+    again = deploy(cfg, secrets, {**converged(cfg, secrets), "id -gn marina": ["marina", HOME], REGROUP: ["users"]})
+
+    assert again.mutating_changed_ops == [
+        "Deploy marina | Mark marina for a restart",
+        "Deploy marina | Move marina's files from group users to marina",
+        "Deploy marina | Restart marina.service",
+        "Deploy marina | Clear the pending markers",
+    ]
+    assert CHGRP in again.executed_commands
+    assert not any("usermod" in c for c in again.executed_commands)
+
+
+def test_a_site_outside_the_home_is_searched_too(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    outside = cfg.model_copy(update={"site_path": PurePosixPath("/srv/marina")})
+
+    run = deploy(outside, secrets, {**fakehost.LINUX, "id -gn marina": ["users", HOME]})
+
+    assert "find /home/marina /srv/marina -xdev -user marina -group users -exec chgrp -h marina {} +" in (
+        run.executed_commands
+    )
+
+
+@pytest.mark.parametrize(
+    ("fact", "found", "match"),
+    [
+        ("! -user marina -print -quit", [f"{HOME}/site/root-owned"], "files of other owners"),
+        ("/proc/mounts", [f"{HOME}/data"], "files on other mounts"),
+    ],
+)
+def test_usermod_side_effects_stop_the_deploy(
+    cfg: DjangoSiteConfig, secrets: SecretValues, fact: str, found: list[str], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        run_deploy_fake(deploy_django_site, cfg, secrets, responses=wrong_group(cfg, secrets, **{fact: found}))
+
+
+def test_an_unexpected_group_name_fails_while_planning(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    with pytest.raises(ValueError, match="primary group has an unexpected name"):
+        run_deploy_fake(
+            deploy_django_site, cfg, secrets, responses={**fakehost.LINUX, "id -gn marina": ["bad;name", HOME]}
+        )
+
+
+def test_another_passwd_home_stops_the_group_fix(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    # usermod would move files in the home passwd records, not the one the config names.
+    responses = {**converged(cfg, secrets), "id -gn marina": ["users", "/srv/elsewhere"]}
+
+    with pytest.raises(ValueError, match="home in passwd is not /home/marina"):
+        run_deploy_fake(deploy_django_site, cfg, secrets, responses=responses)
+
+
+def test_markers_live_in_a_root_only_directory(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, converged(cfg, secrets), rsync=changed())
+
+    marks = [c for c in run.executed_commands if "/var/lib/ops-deploy/marina" in c]
+    assert marks == [touch(PENDING), CLEAR]
+    assert not any(f"{HOME}/.ops-deploy-pending" in c for c in run.all_text().splitlines())

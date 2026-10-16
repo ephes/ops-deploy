@@ -32,6 +32,7 @@ from tests.smoke.test_heis_smoke import heis_checkout
 
 FQDN = "heis.example.invalid"
 HOME = "/home/heis"
+STATE = "/var/lib/ops-deploy/heis"
 SITE = f"{HOME}/site"
 FILES = (
     f"{SITE}/.env",
@@ -79,7 +80,8 @@ def _state(host: SmokeHost) -> dict[str, str]:
         "media": host.out(f"cat {SITE}/media/uploads/smoke.txt"),
         "cache": host.out(f"cat {SITE}/cache/smoke.txt"),
         "traefik": host.out("systemctl show -p MainPID --value traefik"),
-        "markers": host.out(f"ls -1A {HOME} | grep -c '^.ops-deploy-pending\\|^.ops-deploy-restart' || true"),
+        # django_site's markers (root-only state directory); none left after a healthy run.
+        "markers": host.out(f"ls -1A {STATE} 2>/dev/null | grep -c '^.ops-deploy-' || true"),
     }
     for path in FILES:
         state[path] = host.out(f"sha256sum {path} | cut -d' ' -f1")
@@ -101,7 +103,8 @@ def switch(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) -> S
     smoke_host.run(
         "systemctl disable --now heis 2>/dev/null; "
         "rm -f /etc/systemd/system/heis.service /etc/traefik/dynamic/heis*.yml; "
-        "systemctl daemon-reload; userdel -r heis 2>/dev/null; rm -rf /home/heis; true"
+        "systemctl daemon-reload; userdel -r heis 2>/dev/null; rm -rf /home/heis; "
+        f"rm -rf {STATE}; true"
     )
     archive = subprocess.run(["git", "-C", str(checkout), "archive", "HEAD"], check=True, capture_output=True)
     trees = {}

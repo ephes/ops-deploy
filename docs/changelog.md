@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `django_site` makes the service group the primary group of an existing
+  user that has another one (heis's user was created by the Ansible role
+  with `users`, so the files it wrote had that group and every run repaired
+  their ownership again): `usermod -g`, then a `chgrp` of the user's own
+  files with the old group in its home and the site (`find -xdev`), with the
+  old group kept in `~/.ops-deploy-regroup` until the move succeeded. The
+  deploy stops before any change when `usermod`'s own move would touch
+  files of other owners or other mounts in the home. Both steps are marked
+  as owing the unit's restart and fold into the run's one restart; a user
+  with the right group changes nothing.
+- `django_site` keeps its markers (pending, restart, step groups, the
+  regroup state) in `/var/lib/ops-deploy/<service_name>/` (`root:root 0700`,
+  created with the first marker) instead of the service user's home, where
+  the user could have planted a symlink that root's `touch` or write would
+  follow. The usermod step also stops when the user's home in passwd is not
+  the configured one.
+
 - `django_site` takes heis's shape: `apt_packages` (installed before the
   user), `StepGroup.after` (`"migrate"` runs a group before `collectstatic`,
   like heis's content reconcilers; group markers are cleared by

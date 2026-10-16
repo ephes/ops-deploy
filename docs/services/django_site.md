@@ -184,7 +184,7 @@ A `StepGroup` is a list of `ManageStep(name, argv)` run as `manage.py <argv>`
 in order. `when="changes"` runs it when one of its `triggers` happened in this
 run (`source`: the source changed; `deps`: `uv sync` ran; `migrate`:
 migrations ran), `"always"` on every deploy. With `marker` (a file name
-`.ops-deploy-<x>` in the home directory) the group is marked pending before it
+`.ops-deploy-<x>` in the site's state directory) the group is marked pending before it
 runs and the marker is removed after every step succeeded; while it is there,
 the next deploy runs the group again. The deploy's own file names
 (`.ops-deploy-pending`, `.ops-deploy-restart-*`, `.ops-deploy-admin`,
@@ -198,14 +198,26 @@ right after the migrations (heis's content reconcilers), the default
 2. `apt_packages`, then `system_user` (an existing user is left alone), `site`, the cache
    directory; with `fish` the fish config (a missing `~/.config` is created,
    an existing one is never touched).
-3. Reads the markers an earlier run left (one fact).
-4. `~/.ops-deploy-pending` is written when the sync will change something,
+3. Reads the markers an earlier run left (one fact). When an existing user
+   has another primary group than the service group (a user the Ansible
+   roles created with `users`): the restart marker, the old group into
+   `.ops-deploy-regroup` in the state directory, `usermod -g <group> <user>`, then
+   `find <home> [<site>] -xdev -user <user> -group <old> -exec chgrp -h <group> {} +`
+   (only the user's own files, only in its home and a site outside it) and
+   the marker removed; a run that stopped in between finishes the move.
+   Linux `usermod -g` itself also moves every file with the old group in the
+   home, whoever owns it and across mounts, so the deploy stops before any
+   change when such a file belongs to someone else or something is mounted
+   below the home (fix those by hand). The running processes keep the old
+   group until the unit restarts: the change folds into the run's one
+   restart. A user with the right group costs two read-only facts.
+4. `.ops-deploy-pending` is written when the sync will change something,
    `uv sync` is owed, or a marker is left over. Then `sync_tree` (`--delete`
    only with `source.delete`), and a recursive `chown` of the site only when a
    read-only `find` sees another owner.
 5. `uv sync` when the source changed, the venv is missing or a read-only
    `uv sync --dry-run` does not say "Would make no changes"; the `venv` link.
-6. `~/.ops-deploy-restart-<unit>` is written when `.env`, the launcher or the
+6. `.ops-deploy-restart-<unit>` is written when `.env`, the launcher or the
    unit will change, or one is left over. Then `.env` through `secret_file`.
 7. `migrate` when the source or the dependencies changed or a read-only
    `migrate --check` finds unapplied migrations; `collectstatic` when the
@@ -228,9 +240,11 @@ right after the migrations (heis's content reconcilers), the default
     a run that came up healthy gets here; a failed run leaves its markers, and
     the next run repeats the source steps and the restart it owes.
 
-The markers live in the home directory: no sync of either tool touches it,
-also not one with `--delete`. A converged deploy reads them and changes
-nothing.
+The markers live in the site's state directory `/var/lib/ops-deploy/<service_name>/`
+(`root:root 0700`, created by the first marker a run writes): no sync of
+either tool touches it, also not one with `--delete`, and the service user
+cannot plant a symlink there that a root `touch` or write would follow. A
+converged deploy reads it and changes nothing.
 
 ## Tests
 

@@ -7,7 +7,10 @@ writes. The normalized transcripts (fact and executed commands, uploads,
 stdin) must be equal except for:
 
 - the marker fact and the marker ``touch``/``rm`` operations, which only
-  change runs execute;
+  change runs execute, and the primary-group facts (``id -gn`` and the move
+  marker; the old module never fixed an existing user's group);
+- the markers' place: ``/var/lib/ops-deploy/heis/`` instead of the home
+  (normalized, so the content marker's operations are still compared);
 - the content of the files the canonical file set changes on purpose
   (``docs/services/django_site.md``): the launcher, the unit, the route and
   the fish config are django_site's renders, and ``.env`` carries the same
@@ -54,11 +57,16 @@ STAMP = f"{HOME}/.ops-deploy-admin"
 ITEMIZED_CHANGE = [">f.st...... apps/heis/views.py"]
 RECORD = f"{SITE}/.ops-deploy-source"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
-MARKER_FACT = "ls -1A | grep -x -e .ops-deploy-pending"
+MARKER_FACT = "grep -x -e .ops-deploy-pending"
+STATE = "/var/lib/ops-deploy/heis"
+# The markers' place: the old module kept them in the home, django_site in a
+# root-only directory it creates with its first marker.
+NEW_PLACE = (f"install -d -o root -g root -m 0700 {STATE} && ", f"{STATE}/")
+GROUP_FACTS = ("id -gn heis", f"cat {STATE}/.ops-deploy-regroup")
 MARKER_OPS = {
-    "touch /home/heis/.ops-deploy-pending",
-    "touch /home/heis/.ops-deploy-restart-heis",
-    "rm -f /home/heis/.ops-deploy-pending /home/heis/.ops-deploy-restart-heis",
+    f"{NEW_PLACE[0]}touch {STATE}/.ops-deploy-pending",
+    f"{NEW_PLACE[0]}touch {STATE}/.ops-deploy-restart-heis",
+    f"rm -f {STATE}/.ops-deploy-pending {STATE}/.ops-deploy-restart-heis",
 }
 MARK_SOURCE = "Deploy heis | Mark the heis source change pending"
 MARK_RESTART = "Deploy heis | Mark heis for a restart"
@@ -139,14 +147,18 @@ def parse_env(text: str) -> dict[str, str]:
 
 
 def _normalized(command: str) -> str:
-    # The decoded length of .env, an argument of its installer.
+    # The decoded length of .env, an argument of its installer, and the
+    # content marker's place.
+    command = command.replace(NEW_PLACE[0], "").replace(NEW_PLACE[1], f"{HOME}/")
     return re.sub(r"( \.env \S+ )\d+( 0600)", r"\1<size>\2", command)
 
 
 def transcript(run: FakeRun) -> list[tuple[str, str, str]]:
     events: list[tuple[str, str, str]] = []
     for event in run.events:
-        if event.kind == "fact" and (MARKER_FACT in event.value or event.value.startswith(TEMP_DIR_FACT)):
+        if event.kind == "fact" and (
+            MARKER_FACT in event.value or event.value.startswith((TEMP_DIR_FACT, *GROUP_FACTS))
+        ):
             continue
         if event.kind == "shell" and event.value in MARKER_OPS:
             continue

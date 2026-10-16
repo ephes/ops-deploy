@@ -81,14 +81,14 @@ def manage(
     *,
     gate: list[OperationMeta],
     force: bool,
-    touch_first: str = "",
+    before: str = "",
 ) -> OperationMeta:
-    """``manage.py <command>`` when one of ``gate`` changed or ``force``; ``touch_first``: a marker written before."""
+    """``manage.py <command>`` when one of ``gate`` changed or ``force``; ``before``: a command run first."""
 
     shell = site_shell(cfg, manage_script(cfg, *command))
     return server.shell(
         name=name,
-        commands=[f"touch {touch_first} && {shell}" if touch_first else shell],
+        commands=[f"{before} && {shell}" if before else shell],
         _if=lambda: force or any(meta.did_change() for meta in gate),
     )
 
