@@ -70,9 +70,16 @@ all routes down at the next restart. So:
 
 `traefik.toml`, `traefik.service`, `dynamic/certificates.yml` and
 `/etc/logrotate.d/traefik` are byte-identical to the role's
-(`tests/test_infra_traefik.py` renders the vendored templates; the log
-rotation text is compared with the role's task when `OPS_LIBRARY_PATH` is
-set). The binary is only replaced when its version differs, as in the role,
+(`tests/test_infra_traefik.py` renders the vendored templates, the log
+rotation one included).
+
+The log rotation has two blocks, as in the role (2.39.2): `traefik.log` is
+rotated with `copytruncate` (Traefik never reopens its own log; lines written
+between the copy and the truncate are lost), `access.log` is renamed and
+Traefik is sent `SIGUSR1` in `postrotate` (only if `traefik.service` is
+active) so it reopens the file. The unit has no `ExecReload`, so the former
+`systemctl reload traefik || true` never worked: Traefik kept writing to the
+renamed `access.log.1` and the fresh `access.log` stayed empty. The binary is only replaced when its version differs, as in the role,
 and UFW rules are the ones `community.general.ufw` adds. A host set up by one
 tool shows no change and no restart when the other runs; ops-control's
 `just smoke-traefik-coexistence` checks this both ways, and that each tool

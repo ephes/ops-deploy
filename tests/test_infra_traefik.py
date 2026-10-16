@@ -1,6 +1,5 @@
 """``deploy_traefik`` against the fake connector, and parity with the role's templates."""
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -348,6 +347,7 @@ PARITY = {
     "metrics only, no redirect": CFG.model_copy(
         update={"dashboard_enabled": False, "http_redirect_to_https": False, "alias_policy": ALL_ALIASES}
     ),
+    "thirty days of logs": CFG.model_copy(update={"logrotate_days": 30, "log_dir": "/var/log/t"}),
     "nothing on the traefik entrypoint": CFG.model_copy(
         update={
             "dashboard_enabled": False,
@@ -370,6 +370,7 @@ def role_vars(cfg: TraefikDeployConfig) -> dict[str, Any]:
         "traefik_log_level": cfg.log_level,
         "traefik_log_format": cfg.log_format,
         "traefik_log_dir": cfg.log_dir,
+        "traefik_logrotate_days": cfg.logrotate_days,
         "traefik_dynamic_dir": cfg.dynamic_path,
         "traefik_alias_policy": dict(cfg.alias_policy),
         "traefik_http_port": cfg.http_port,
@@ -413,18 +414,6 @@ def test_certificates_match_the_role() -> None:
     assert render_certificates(cfg) == render_ansible("traefik_deploy__dynamic__certificates.yml.j2", cfg)
 
 
-OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
-
-
-@pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
-@pytest.mark.parametrize("days", [7, 30])
-def test_logrotate_matches_the_role(days: int) -> None:
-    assert OPS_LIBRARY is not None
-    tasks = yaml.safe_load(Path(OPS_LIBRARY, "roles/traefik_deploy/tasks/main.yml").read_text())
-    task = next(t for t in tasks if t["name"] == "Configure log rotation for Traefik")
-    cfg = CFG.model_copy(update={"logrotate_days": days})
-    expected = jinja2.Template(task["ansible.builtin.copy"]["content"], keep_trailing_newline=True).render(
-        traefik_log_dir=cfg.log_dir, traefik_logrotate_days=days
-    )
-
-    assert render_logrotate(cfg) == expected
+@pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
+def test_logrotate_matches_the_role(cfg: TraefikDeployConfig) -> None:
+    assert render_logrotate(cfg) == render_ansible("traefik_deploy__traefik.logrotate.j2", cfg)

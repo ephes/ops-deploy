@@ -244,12 +244,31 @@ def render_unit(cfg: TraefikDeployConfig) -> str:
 
 
 def render_logrotate(cfg: TraefikDeployConfig) -> str:
-    """The role's ``/etc/logrotate.d/traefik`` content."""
+    """The role's ``/etc/logrotate.d/traefik`` content (``traefik.logrotate.j2``)."""
 
+    rotation = (
+        f"    daily\n    rotate {cfg.logrotate_days}\n    compress\n    delaycompress\n    missingok\n    notifempty\n"
+    )
     return (
-        f"{cfg.log_dir}/*.log {{\n    daily\n    rotate {cfg.logrotate_days}\n    compress\n"
-        "    delaycompress\n    missingok\n    notifempty\n    create 0644 root root\n"
-        "    postrotate\n        systemctl reload traefik > /dev/null 2>&1 || true\n    endscript\n}\n"
+        "# Managed by Ansible (traefik_deploy) - Traefik log rotation\n"
+        "# logrotate processes the blocks in order: traefik.log first, so the line\n"
+        "# Traefik logs on receiving SIGUSR1 lands in the fresh file.\n"
+        "\n"
+        "# SIGUSR1 reopens only the access log; Traefik never reopens its own log.\n"
+        "# It writes that file with O_APPEND, so copytruncate keeps it in place; lines\n"
+        "# written between the copy and the truncate are lost (the file is small).\n"
+        f"{cfg.log_dir}/traefik.log {{\n{rotation}    copytruncate\n}}\n"
+        "\n"
+        "# The access log is renamed and Traefik reopens it on SIGUSR1. The unit has no\n"
+        "# ExecReload, so `systemctl reload` fails; without the signal Traefik keeps\n"
+        "# writing to the renamed access.log.1 and the fresh access.log stays empty,\n"
+        "# which `notifempty` then never rotates again.\n"
+        f"{cfg.log_dir}/access.log {{\n{rotation}    create 0644 root root\n"
+        "    postrotate\n"
+        "        if systemctl is-active --quiet traefik.service; then\n"
+        "            systemctl kill --signal=USR1 --kill-whom=main traefik.service\n"
+        "        fi\n"
+        "    endscript\n}\n"
     )
 
 

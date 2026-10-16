@@ -117,8 +117,8 @@ branch:
   mirrors changed since it was last checked:
   `tests/parity/ops_library_roles.json` records the ops-library commit and a
   digest of each role's `defaults`, `files`, `handlers`, `tasks`,
-  `templates` and `vars`. It covers the `fastdeploy_*`, `nyxmon_*` and
-  `work_app_*` roles so far.
+  `templates` and `vars`. It covers the `fastdeploy_*`, `minio_deploy`, `nyxmon_*`,
+  `traefik_deploy` and `work_app_*` roles so far.
 
 After a role change, port it (or document why not), print the new digests
 with `uv run python -m tests.test_ops_library_drift <ops-library>` and update

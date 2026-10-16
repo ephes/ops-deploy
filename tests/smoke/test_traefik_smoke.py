@@ -23,7 +23,7 @@ from ops_deploy.infra import (
     deploy_traefik_remove,
     deploy_traefik_restore,
 )
-from ops_deploy.infra.traefik_deploy import render_static, render_unit
+from ops_deploy.infra.traefik_deploy import render_logrotate, render_static, render_unit
 from ops_deploy.testing import SshRun, run_deploy_ssh
 from tests.smoke.conftest import TIMINGS, SmokeHost
 
@@ -112,6 +112,18 @@ def test_traefik_lifecycle(smoke_host: SmokeHost, provisioned_traefik: None) -> 
     assert smoke_host.out("curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/metrics") == "200"
     assert smoke_host.out("systemctl is-enabled lighttpd.service || true") == "masked"
     assert smoke_host.out("systemctl is-active lighttpd.service || true") == "inactive"
+    # A forced rotation: logrotate accepts the file, Traefik reopens access.log on SIGUSR1
+    # (requests after the rotation land in the fresh file) and keeps running. The access
+    # log is buffered (100 lines) and the HTTP redirect is not logged, so each round sends
+    # enough unrouted requests (404) to flush it.
+    assert smoke_host.run("cat /etc/logrotate.d/traefik").stdout == render_logrotate(new)
+    flush = "for i in $(seq 120); do curl -s -o /dev/null http://127.0.0.1:8090/nope; done; sleep 2"
+    smoke_host.run(flush)
+    smoke_host.run("logrotate -f /etc/logrotate.d/traefik")
+    smoke_host.run(flush)
+    assert smoke_host.out("test -s /var/log/traefik/access.log.1 && echo rotated") == "rotated"
+    assert smoke_host.out("test -s /var/log/traefik/access.log && echo reopened") == "reopened"
+    assert smoke_host.out("systemctl show -p MainPID --value traefik") == pid
 
     # Backup with ACME state, then restore it over a damaged store.
     smoke_host.run("printf '{\"smoke\": true}' > /etc/traefik/acme/acme.json")

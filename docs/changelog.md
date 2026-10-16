@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `traefik_deploy`: the log rotation file follows ops-library 2.39.2: Traefik
+  gets `SIGUSR1` after `access.log` is rotated (the old
+  `systemctl reload traefik || true` did nothing, so the renamed file kept
+  growing), and `traefik.log` is rotated with `copytruncate`. The role's
+  template is vendored and compared byte for byte for several configs, and
+  `traefik_deploy` joins the roles `tests/test_ops_library_drift.py` watches.
 - Ports caught up with ops-library main (fd6b4cf1), ops-control main and the
   live hosts:
   - `fastdeploy`: the deploy removes the retired wildcard rule

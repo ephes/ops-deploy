@@ -1,0 +1,35 @@
+# Managed by Ansible (traefik_deploy) - Traefik log rotation
+# logrotate processes the blocks in order: traefik.log first, so the line
+# Traefik logs on receiving SIGUSR1 lands in the fresh file.
+
+# SIGUSR1 reopens only the access log; Traefik never reopens its own log.
+# It writes that file with O_APPEND, so copytruncate keeps it in place; lines
+# written between the copy and the truncate are lost (the file is small).
+{{ traefik_log_dir }}/traefik.log {
+    daily
+    rotate {{ traefik_logrotate_days }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+
+# The access log is renamed and Traefik reopens it on SIGUSR1. The unit has no
+# ExecReload, so `systemctl reload` fails; without the signal Traefik keeps
+# writing to the renamed access.log.1 and the fresh access.log stays empty,
+# which `notifempty` then never rotates again.
+{{ traefik_log_dir }}/access.log {
+    daily
+    rotate {{ traefik_logrotate_days }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    postrotate
+        if systemctl is-active --quiet traefik.service; then
+            systemctl kill --signal=USR1 --kill-whom=main traefik.service
+        fi
+    endscript
+}
