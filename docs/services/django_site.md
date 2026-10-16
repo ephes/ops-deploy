@@ -3,10 +3,10 @@
 One deploy for the Django/Wagtail sites: gunicorn behind Traefik, SQLite and
 local media, uv, an optional admin account and optional management-command
 groups. Each site is a typed `DjangoSiteConfig`; the step code never branches
-on the site. It replaces the per-site modules (marina since 2026-10-16,
-`services/marina` is gone; heis next, `services/heis` stays until heis
-production runs django_site; Villa Kunterbunt and the `wagtail_deploy` sites
-follow in later slices) and writes **one canonical file set** for every site.
+on the site. It replaced the per-site modules of marina and heis (both on
+django_site since 2026-10-16; `services/marina` and `services/heis` are
+gone); Villa Kunterbunt and the `wagtail_deploy` sites follow in later
+slices. It writes **one canonical file set** for every site.
 
 ```python
 from ops_deploy.services.django_site import (
@@ -255,13 +255,10 @@ converged deploy reads it and changes nothing.
   (triggers, marker, `always`, `after`), `apt_packages`, the canonical
   redirect, `restart_after_collectstatic`, `fish` off,
   secret and config validation, leak checks.
-- `tests/test_django_site_equivalence_heis.py` (transitional, removed with
-  `services/heis`): every scenario of `test_heis.py`, in the staging and the
-  production shape, through both modules (configured like ops-control's heis
-  `SiteSpec`, `tests/django_site_fixtures.from_heis`); the normalized
-  transcripts are equal apart from the markers and the documented file
-  contents, and `.env` carries the same keys and values. The same test for
-  marina ran until `services/marina` was removed.
+- The transitional equivalence tests ran every scenario of the old
+  `services/marina` and `services/heis` tests through both modules (equal
+  normalized transcripts apart from the markers and the documented file
+  contents) until those modules were removed after the sites' cutovers.
 - `tests/test_django_site_env_parsers.py`: `.env` values read back by `sh`,
   django-environ and python-dotenv (dev dependencies), accepted ones
   unchanged, refused ones changed by at least one of them.
@@ -270,11 +267,11 @@ converged deploy reads it and changes nothing.
   the launcher passes them and the gunicorn arguments unchanged; the marker
   fact lists only markers.
 - `tests/smoke/test_django_site_smoke.py` (`just smoke`, needs `HEIS_SOURCE`
-  or `PROJECTS_ROOT`): heis deployed by the old module in the staging shape,
-  then switched: only the documented files change, one restart, no content
-  reconciler, `.env` values, database, media, cache and admin kept; later
-  runs (same tree, fresh clone) change nothing; a code change restarts once
-  and runs the reconcilers; no secret on disk outside its files.
+  or `PROJECTS_ROOT`): heis in the staging shape, deployed from nothing; the
+  next runs (same tree, fresh clone) change nothing; a code change restarts
+  once and runs the reconcilers before `collectstatic`; `.env` values,
+  database, media, cache, admin and the primary group kept, no marker left,
+  no secret on disk outside its files.
 - ops-control: `just smoke-marina-coexistence` and
   `just smoke-heis-coexistence SHAPE=production|staging` switch from the
   Ansible roles.

@@ -34,7 +34,6 @@ nav:
       - delve: services/delve.md
       - recorder: services/recorder.md
       - static_site: services/static_site.md
-      - heis: services/heis.md
       - django_site: services/django_site.md
       - opaq_app: services/opaq_app.md
       - weeknotes_home: services/weeknotes_home.md

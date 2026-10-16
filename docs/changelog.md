@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `services/heis` is removed, with its tests, the vendored `heis_deploy`
+  templates, its smoke and page, and `tests/test_django_site_equivalence_heis.py`:
+  heis production and staging run django_site since 2026-10-16. The
+  django_site smoke now deploys heis's shape from nothing.
+
 - `django_site` makes the service group the primary group of an existing
   user that has another one (heis's user was created by the Ansible role
   with `users`, so the files it wrote had that group and every run repaired
@@ -215,7 +220,7 @@
   shape). The Wagtail content reconcilers follow the role's switches
   (production: off) and run only when the source, dependencies or schema
   changed; the SQLite database and media are never shipped or deleted. Fake
-  connector, parity and smoke tests; see [heis](services/heis.md).
+  connector, parity and smoke tests; see heis (its page was removed with the module).
 
 - `ops_deploy.services.archive`: `deploy_archive`, a port of the
   `archive_deploy` role (rsync method) plus the steps ops-control's

@@ -21,7 +21,6 @@ from ops_deploy.services.django_site import (
 )
 from ops_deploy.services.django_site.django import admin_stamp, digest
 from ops_deploy.services.django_site.render import render, render_env
-from ops_deploy.services.heis import HeisConfig
 from tests import fakehost
 
 HOME = "/home/marina"
@@ -150,71 +149,48 @@ def converged(cfg: DjangoSiteConfig, secrets: SecretValues, **drift: str) -> dic
     return deployed(files(cfg, secrets), secrets, **drift)
 
 
-HEIS_RECONCILERS = "content reconciliation"
+def heis_site(
+    checkout: Path,
+    secrets: SecretRef,
+    *,
+    fqdn: str,
+    reconcilers: bool = True,
+    serve_media: bool = True,
+    commit: str | None = None,
+) -> DjangoSiteConfig:
+    """heis's shape, as ops-control's HEIS SiteSpec builds it (staging: reconcilers on)."""
 
-
-def from_heis(cfg: HeisConfig) -> DjangoSiteConfig:
-    """The django_site config that deploys what the heis module's ``cfg`` deploys (ops-control's HEIS SiteSpec)."""
-
-    steps = []
-    if cfg.setup_default_pages:
-        steps.append(
-            ManageStep(
-                name="Ensure default Wagtail pages exist",
-                argv=("setup_default_pages", "--hostname", cfg.fqdn, "--port", "443"),
-            )
-        )
-    if cfg.seed_content:
-        steps.append(ManageStep(name="Seed homepage content", argv=("seed_home_content",)))
-        steps.append(ManageStep(name="Seed subpage content and chrome defaults", argv=("seed_subpages_content",)))
-    groups = (
-        (
-            StepGroup(
-                name=HEIS_RECONCILERS,
-                steps=tuple(steps),
-                marker=".ops-deploy-content-pending",
-                after="migrate",
-            ),
-        )
-        if steps
-        else ()
+    steps = (
+        ManageStep(
+            name="Ensure default Wagtail pages exist",
+            argv=("setup_default_pages", "--hostname", fqdn, "--port", "443"),
+        ),
+        ManageStep(name="Seed homepage content", argv=("seed_home_content",)),
+        ManageStep(name="Seed subpage content and chrome defaults", argv=("seed_subpages_content",)),
     )
+    group = StepGroup(name="content reconciliation", steps=steps, marker=".ops-deploy-content-pending", after="migrate")
     return DjangoSiteConfig(
         service_name="heis",
         title="Heis",
         user="heis",
-        home=cfg.home,
-        site_path=cfg.site_path,
+        home="/home/heis",
+        site_path="/home/heis/site",
         shell="/usr/bin/fish",
         fish=True,
         apt_packages=("fish", "rsync", "sqlite3"),
-        secrets=cfg.secrets,
-        source=SourceSpec(
-            path=cfg.source_path, commit=cfg.source_commit, excludes=cfg.source_excludes, required_files=REQUIRED
-        ),
-        app=AppSpec(
-            settings_module=cfg.django_settings_module,
-            port=cfg.app_port,
-            workers=cfg.gunicorn_workers,
-            timeout=cfg.gunicorn_timeout,
-            python=cfg.python_version,
-        ),
+        secrets=secrets,
+        source=SourceSpec(path=checkout, commit=commit, excludes=SOURCE_EXCLUDES, required_files=REQUIRED),
+        app=AppSpec(settings_module="config.settings.production", port=10020, python="3.13"),
         env=EnvSpec(
             admin_url=Secret(secret="django_admin_url"),
-            allowed_hosts=cfg.django_allowed_hosts,
             extra=(
-                EnvEntry(key="DJANGO_SERVE_MEDIA", value="True" if cfg.serve_media else "False"),
-                EnvEntry(key="WAGTAILADMIN_BASE_URL", value=cfg.admin_base_url),
+                EnvEntry(key="DJANGO_SERVE_MEDIA", value="True" if serve_media else "False"),
+                EnvEntry(key="WAGTAILADMIN_BASE_URL", value=f"https://{fqdn}"),
             ),
         ),
-        steps=Steps(extra=groups),
+        steps=Steps(extra=(group,) if reconcilers else ()),
         admin=EnsureSuperuser(),
         route=Route(
-            fqdn=cfg.fqdn,
-            host_rule=cfg.traefik_host_rule,
-            tls_host_rule=cfg.traefik_tls_host_rule,
-            canonical_redirect_regex=cfg.traefik_canonical_redirect_regex,
-            canonical_redirect_replacement=cfg.traefik_canonical_redirect_replacement,
-            public_reason="Public website; the Wagtail admin has a login",
+            fqdn=fqdn, host_rule=f"Host(`{fqdn}`)", public_reason="Public website; the Wagtail admin has a login"
         ),
     )

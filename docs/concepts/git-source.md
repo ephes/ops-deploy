@@ -75,7 +75,7 @@ new) changes nothing on a host that already runs the same code, whichever way
 that code got there.
 
 Services with a git source: [django_site](../services/django_site.md)
-(`SourceSpec.commit`; marina, heis) and [heis](../services/heis.md).
+(`SourceSpec.commit`; marina, heis).
 
 ## Why not clone on the host
 
