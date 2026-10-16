@@ -47,8 +47,13 @@ Defaults follow the role's `defaults/main.yml`.
 | `opsgate_approval_base_url` | `""` | empty: the submit URL |
 | `opsgate_ticket_expires_seconds`, `opsgate_submit_timeout_seconds`, `opsgate_submit_include_warnings` | `14400`, `10`, `false` | |
 | `traefik_host`, `traefik_cert_resolver`, `traefik_middlewares`, `internal_ip_ranges` | role defaults | |
-| `agent_impl` | `python` | the role's `nyxmon_agent_impl`; only `python` is accepted (see below) |
-| `agent_rust_install_root` | `/opt/nyxmon-agent` | a monitor running a binary from below it fails the agent check |
+| `agent_impl` | `python` | the role's `nyxmon_agent_impl`: `python` (the venv's `start-agent`) or `rust`; see [Monitoring agent](#monitoring-agent-python-or-rust) |
+| `agent_rust_version` | `""` | Rust release to install, e.g. `0.1.0`; empty installs, validates and prunes nothing. Required for `rust` |
+| `agent_rust_sha256` | `""` | sha256 of the release archive (64 lowercase hex digits); required with a version unless `agent_rust_local_archive` is set |
+| `agent_rust_release_url` | the GitHub release asset | download URL; `{version}` stands for the version |
+| `agent_rust_local_archive` | none | controller path of an archive with the release layout, uploaded instead of the download; checked against `agent_rust_sha256` when both are set |
+| `agent_rust_install_root` | `/opt/nyxmon-agent` | versions go to `<root>/<version>/nyxmon-agent`; absolute, not `/`, no trailing slash |
+| `agent_rust_keep_versions` | `3` | newest installed versions the pruning keeps |
 
 ### Host-side state (`persistent_excludes`)
 
@@ -71,27 +76,31 @@ root-anchored excludes, so the database survives `--delete`.
 5. `uv sync --frozen --no-dev --no-default-groups --python 3.13` if the source
    changed or the venv is missing; `site/venv` symlink to `.venv`.
 6. `migrate` and `collectstatic` if the sync ran or the source changed.
-7. Traefik route (dual router, basic auth). Traefik is not restarted: its
+7. With `agent_rust_version` set: the pinned Rust agent release is installed
+   and validated, or validated read-only when it is installed already (see
+   [Monitoring agent](#monitoring-agent-python-or-rust)).
+8. Traefik route (dual router, basic auth). Traefik is not restarted: its
    file provider watches `/etc/traefik/dynamic` and loads the change itself
    (as the role since ops-library 2.31.47).
-8. For each unit: unit file, `sqlite-privacy.conf` drop-in (`UMask=0077`),
+9. For each unit: unit file, `sqlite-privacy.conf` drop-in (`UMask=0077`),
    `service_rollout` (daemon-reload on unit/drop-in change; restart on code,
-   dependency or `.env` change). For `nyxmon-monitor` the role's Rust agent
-   drop-in `agent-impl.conf` is removed (the role's `nyxmon_agent_impl:
-   python`); removing it reloads systemd and restarts the monitor.
-9. Database and sidecars `0600 nyxmon:nyxmon` (only when a file is exposed or
-   the database is new; fails if `db.sqlite3` is missing).
-10. Read-only checks: port, HTTP (200/301/302), that `nyxmon-monitor` is
-    active and runs the venv's `start-agent`, not a binary below
-    `agent_rust_install_root` (the role's `agent_verify.yml`, 10 tries 3 s
-    apart), and with OpsGate enabled, that its live environment carries the
-    rendered OpsGate URLs.
+   dependency or `.env` change). For `nyxmon-monitor` the drop-in
+   `agent-impl.conf` is written (`rust`) or removed (`python`); a changed
+   drop-in reloads systemd and restarts the monitor.
+10. Database and sidecars `0600 nyxmon:nyxmon` (only when a file is exposed or
+    the database is new; fails if `db.sqlite3` is missing).
+11. Read-only checks: port, HTTP (200/301/302), that `nyxmon-monitor` is
+    active and runs the selected agent (the role's `agent_verify.yml`, 10
+    tries 3 s apart), and with OpsGate enabled, that its live environment
+    carries the rendered OpsGate URLs.
+12. With `agent_rust_version` set: old Rust agent versions are pruned, after
+    the agent check.
 
 ## Parity with the role
 
 `tests/test_nyxmon_parity.py` renders the vendored role templates
 (`tests/parity/ansible/nyxmon_deploy__*`) the way Ansible does and requires
-**byte-identical** `.env`, `.env.shell` and unit files. That is why the env
+**byte-identical** `.env`, `.env.shell`, unit files and the agent drop-in. That is why the env
 file still says "Managed by Ansible": identical bytes let Ansible and
 ops-deploy take turns on a host without rewriting files or restarting nyxmon.
 The only file that differs is the Traefik route (comments; see
@@ -104,17 +113,58 @@ auth or the monitor, `nyxmon_service_restart_on_change: false`, and the
 version change is left to `uv sync --python` on the next dependency change;
 the role removes a mismatched venv on every run.
 
-### Rust agent (`nyxmon_agent_impl`)
+### Monitoring agent (Python or Rust)
 
-ops-library 2.32.0 lets the role install a pinned Rust agent release
-(`nyxmon_agent_rust_version`, `_sha256`, below `/opt/nyxmon-agent`), select it
-with the drop-in `agent-impl.conf` (`nyxmon_agent_impl: rust`), verify the
-running agent and prune old versions. Only the Python side is ported: the
-drop-in is removed and the running agent is checked. `agent_impl` accepts only
-`python`, and ops-control refuses a host whose inventory says otherwise, so
-a switch to Rust stays with Ansible. A pinned Rust version is neither
-installed nor pruned here; a binary the role installed stays where it is,
-unused, as with the role's impl `python`.
+The port of the role's `agent_rust.yml` and `agent_verify.yml` (ops-library
+2.32.0). `nyxmon-monitor` runs the Python agent from the venv
+(`start-agent`) or the Rust port `nyxmon-agent`, a single binary published as
+a nyxmon GitHub release (`agent-rs-v<version>`). Both use the same database,
+`.env` and lock file, so only one runs at a time. The host-side steps are one
+script, `services/nyxmon/files/agent.sh` (`install`, `validate`, `prune`).
+
+1. **Install.** With `agent_rust_version` set and `<root>/<version>/` missing,
+   after the migrations: the archive is downloaded on the host with `curl`
+   (or `agent_rust_local_archive` is uploaded), its sha256 must be the pinned
+   one, and `tar --list` must show only the regular files `nyxmon-agent` and
+   `LICENSE`, once each (links, devices, directories and other members are
+   refused before anything is extracted). It is unpacked into
+   `<root>/.staging/`, made root-owned (`nyxmon-agent` `0755`), the checksum
+   is recorded in `<root>/<version>/.archive-sha256`, and the directory is
+   moved into place. A pinned version is installed with either
+   implementation, so the binary can be in place before the switch.
+2. **Validate.** As the service user, by the versioned path: `nyxmon-agent
+   --version` must print `nyxmon-agent <version> (<commit>)` and
+   `nyxmon-agent --check-schema --db <site>/db.sqlite3` must pass. A fresh
+   install that fails is removed again and nothing is switched. An installed
+   version is validated read-only on every deploy.
+3. **Never in place.** An installed version whose `.archive-sha256` is not
+   the pinned checksum (or is missing) stops the deploy before any change.
+4. **Select.** `rust` writes
+   `/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf` (an
+   `ExecStart=` override naming the versioned binary, byte-identical to the
+   role's, see `tests/test_nyxmon_parity.py`); `python` removes it. The
+   version is part of the file, so a switch or a version change reloads
+   systemd and restarts the monitor, and a deploy that changes neither
+   restarts nothing for it. When the selection moves away from a Rust version
+   whose directory still exists, that version is written to
+   `<root>/.previous-version` (the rollback target).
+5. **Check.** After the restart: for `rust`, `readlink /proc/<pid>/exe` is
+   the versioned binary; for `python`, the argv contains the venv's
+   `start-agent` and the executable is not below the install root.
+6. **Prune.** With a version set, after the check: version-shaped
+   directories beyond the `agent_rust_keep_versions` newest (by mtime) are
+   removed, except the pinned version, the one in `.previous-version` and the
+   one the live process runs. Other entries are never touched. A dry run
+   plans the pruning; it runs when that finds something, or when this deploy
+   installed a version or changed the drop-in.
+
+Rollback is a switch: `agent_impl="python"` removes the drop-in and restarts
+the monitor on the venv's `start-agent`. The binary stays installed, so
+switching forward again downloads nothing. For a bad release, pin the
+previous version and its checksum again; it is still installed.
+
+Not ported: `nyxmon_monitoring_enabled: false` (the port always runs the
+monitor, which `rust` needs anyway).
 
 ## Backup, restore and removal
 
@@ -185,8 +235,17 @@ second run changes nothing.
   (no mutating change), code change, lockfile change, `.env` secret rotation,
   basic-auth rotation (no Traefik restart), monitor unit change, missing
   drop-in, a Rust agent drop-in (removed, monitor restarted), the agent check,
-  `agent_impl: rust` refused, exposed database, OpsGate disabled, leak checks (no secret in commands, op names/args or
+  exposed database, OpsGate disabled, leak checks (no secret in commands, op names/args or
   uploads; env files only on stdin), validation.
+- `tests/test_nyxmon_agent.py` (fake connector): the agent settings and the
+  role's refusals, a pinned version installed without a switch, first Rust
+  deploy, converged runs with either implementation (no mutating change),
+  python to rust and back, a version change, `.previous-version`, an
+  installed version from another archive or without a checksum (refused
+  before any change), the local archive, the pruning gate; the `validate`
+  step of `files/agent.sh` through bash and fish with a fake binary.
+- `tests/smoke/test_nyxmon_agent_smoke.py`: `files/agent.sh` as root on the
+  smoke VM (see [smoke](../concepts/smoke.md)).
 - `tests/smoke/test_nyxmon_smoke.py` (`just smoke`, needs `NYXMON_SOURCE` or
   `PROJECTS_ROOT`): two real deploys of the committed `HEAD` of a nyxmon
   checkout over a Rust agent drop-in (removed; every run's agent check

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- `nyxmon`: the Rust monitoring agent is ported (the role's `agent_rust.yml`
+  and `agent_verify.yml`, ops-library 2.32.0). `agent_impl` accepts `python`
+  and `rust`. The new `agent_rust_version`, `agent_rust_sha256`,
+  `agent_rust_release_url` (with a `{version}` placeholder),
+  `agent_rust_local_archive` and `agent_rust_keep_versions` take the role's
+  defaults and are checked like the role checks them. A pinned release is
+  downloaded (or uploaded) and must have the pinned sha256 and hold only the
+  regular files `nyxmon-agent` and `LICENSE`. It is installed root-owned to
+  `/opt/nyxmon-agent/<version>/` and validated with `--version` and
+  `--check-schema` as the service user. A rejected fresh install is removed
+  again, and an installed version from another archive stops the deploy.
+  `rust` writes the role's `agent-impl.conf` (vendored, compared byte for
+  byte), `python` removes it; a switch restarts only `nyxmon-monitor`, and
+  `.previous-version` keeps the rollback target. The agent check follows the
+  selected implementation, and old versions are pruned after it. The host
+  steps are `services/nyxmon/files/agent.sh`; the new smoke test
+  `tests/smoke/test_nyxmon_agent_smoke.py` runs it on the smoke VM against
+  bad archives, failing candidates and the pruning rules.
 - Git source: `ops_deploy.core.git_source.fetch_source` fetches a service's
   code from its git remote at a branch, tag or full commit (default: the
   remote's default branch) on the controller, with the operator's own git and
@@ -35,11 +53,11 @@
     comes back from an older archive (`fastdeploy_restore` 2.35.0).
   - `fastdeploy` and `nyxmon`: a changed Traefik route no longer restarts
     Traefik (ops-library 2.31.47); its file provider loads the change.
-  - `nyxmon`: `agent_impl` (only `python`) mirrors the role's
-    `nyxmon_agent_impl`: the Rust agent drop-in `agent-impl.conf` is removed
-    and a read-only check proves the monitor runs the venv's `start-agent`
-    (the role's `agent_verify.yml`). Installing and selecting the Rust agent
-    is not ported.
+  - `nyxmon`: `agent_impl` mirrors the role's `nyxmon_agent_impl`: with
+    `python` the Rust agent drop-in `agent-impl.conf` is removed and a
+    read-only check proves the monitor runs the venv's `start-agent` (the
+    role's `agent_verify.yml`). Installing and selecting the Rust agent
+    followed later (see the `nyxmon` entry above).
   - `work_app` restore: `safe_snapshot_delete` defaults to `False`; the
     pre-restore copy is kept and its path reported (ops-library a811bc16).
   - `tests/test_ops_library_drift.py`: with `OPS_LIBRARY_PATH` set, fails

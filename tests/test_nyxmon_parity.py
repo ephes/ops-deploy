@@ -128,3 +128,20 @@ def test_shell_env_quotes_what_the_role_quotes(source: Path) -> None:
     shell = render_env(cfg, secrets, shell=True).reveal().decode()
 
     assert 'DJANGO_SECRET_KEY="k\\$y\\`with\\"quotes\\\\and(parens)&amp;#"' in shell.splitlines()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"agent_rust_version": "0.1.0"},
+        {"agent_rust_version": "1.2.3-rc.1", "agent_rust_install_root": "/srv/agents", "site_path": "/srv/nyx/site"},
+    ],
+)
+def test_agent_dropin_matches_role(source: Path, overrides: dict[str, Any]) -> None:
+    cfg, secrets = make(source, agent_impl="rust", agent_rust_sha256="0" * 64, **overrides)
+    extra = {"nyxmon_agent_rust_binary": f"{cfg.agent_rust_install_root}/{cfg.agent_rust_version}/nyxmon-agent"}
+
+    ours = render(TEMPLATE_PACKAGE, "agent-impl.conf.j2", cfg=cfg)
+
+    assert ours == render_ansible("agent-impl.conf.j2", role_vars(cfg, secrets, **extra))
+    assert f"ExecStart={extra['nyxmon_agent_rust_binary']} --db {cfg.site_path}/db.sqlite3 --enable-telegram\n" in ours

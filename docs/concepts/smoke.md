@@ -84,6 +84,16 @@ units, private database and env files, migrations, the Traefik auth and leaks.
 A third run from a fresh export of the same commit (new mtimes) must change
 nothing.
 
+`test_nyxmon_agent_smoke.py` runs the Rust agent host script
+(`services/nyxmon/files/agent.sh`) as root through the login shell, below a
+throwaway install root, with a fake `nyxmon-agent` in archives the test
+builds. A valid release installs root-owned. Links and extra, duplicate,
+nested or missing members are refused before extraction, and so is a wrong
+checksum. A candidate with the wrong version or a failing `--check-schema` is
+removed again, and an installed version is never replaced. The pruning keeps
+the pinned, previous, live and newest versions and anything that is not a
+version directory.
+
 `test_fastdeploy_smoke.py` deploys [fastdeploy](../services/fastdeploy.md)
 from the committed `HEAD` of a FastDeploy checkout (`FASTDEPLOY_SOURCE`, else
 `$PROJECTS_ROOT/fastdeploy`; skipped without one), adds a registered service

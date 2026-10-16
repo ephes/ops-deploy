@@ -242,11 +242,6 @@ def test_agent_defaults_validate_from_text(tmp_path: Path, entry: str) -> None:
     assert (cfg.agent_impl, cfg.agent_rust_install_root) == ("python", "/opt/nyxmon-agent")
 
 
-def test_rust_agent_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="agent_impl"):
-        NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("x.yml"), agent_impl="rust")
-
-
 def test_basic_auth_user_from_secrets_wins(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, values(cfg, basic_auth_user="ops"), converged(cfg, secrets))
 
