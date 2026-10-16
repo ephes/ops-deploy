@@ -1,4 +1,4 @@
-"""A django_site config in marina's shape, and the facts of a host where it is deployed."""
+"""A django_site config in marina's shape (marina runs on django_site), and the facts of a host where it is deployed."""
 
 from __future__ import annotations
 
@@ -10,14 +10,18 @@ from ops_deploy.services.django_site import (
     AppSpec,
     DjangoSiteConfig,
     EnsureSuperuser,
+    EnvEntry,
     EnvSpec,
+    ManageStep,
     Route,
+    Secret,
     SourceSpec,
+    StepGroup,
+    Steps,
 )
 from ops_deploy.services.django_site.django import admin_stamp, digest
 from ops_deploy.services.django_site.render import render, render_env
-from ops_deploy.services.marina import MarinaConfig
-from ops_deploy.services.marina.deploy import SOURCE_EXCLUDES
+from ops_deploy.services.heis import HeisConfig
 from tests import fakehost
 
 HOME = "/home/marina"
@@ -37,6 +41,28 @@ SECRET_VALUES = {
 }
 ADMIN_PROBE = "select username, email, is_staff"
 REQUIRED = ("manage.py", "pyproject.toml", "uv.lock", "config/wsgi.py")
+# marina's SiteSpec excludes (the marina_deploy role's list plus host-written files).
+SOURCE_EXCLUDES = (
+    ".vault_password",
+    "db.sqlite3",
+    "db.sqlite3-wal",
+    "db.sqlite3-shm",
+    "*.sqlite3",
+    "*.sqlite3-wal",
+    "*.sqlite3-shm",
+    "media",
+    "backups",
+    ".venv",
+    ".git",
+    "__pycache__",
+    "*.pyc",
+    ".pytest_cache",
+    ".mypy_cache",
+    "node_modules",
+    "/.env",
+    "/staticfiles",
+    "/cache",
+)
 
 
 def site_config(checkout: Path, **changes: Any) -> DjangoSiteConfig:
@@ -63,27 +89,6 @@ def site_config(checkout: Path, **changes: Any) -> DjangoSiteConfig:
     }
     values.update(changes)
     return DjangoSiteConfig(**values)
-
-
-def from_marina(cfg: MarinaConfig) -> DjangoSiteConfig:
-    """The django_site config that deploys what ``cfg`` deploys."""
-
-    return site_config(
-        cfg.source_path,
-        source=SourceSpec(
-            path=cfg.source_path, commit=cfg.source_commit, excludes=cfg.source_excludes, required_files=REQUIRED
-        ),
-        app=AppSpec(
-            settings_module=cfg.django_settings_module,
-            port=cfg.app_port,
-            workers=cfg.gunicorn_workers,
-            timeout=cfg.gunicorn_timeout,
-            python=cfg.python_version,
-        ),
-        env=EnvSpec(admin_url=cfg.django_admin_url, allowed_hosts=cfg.django_allowed_hosts),
-        route=Route(fqdn=cfg.fqdn, host_rule=cfg.traefik_host_rule, public_reason="Public portfolio website"),
-        hardening=cfg.systemd_hardening,
-    )
 
 
 def values(cfg: DjangoSiteConfig, **changes: str) -> SecretValues:
@@ -143,3 +148,73 @@ def deployed(content: dict[str, str], secrets: SecretValues, **drift: str) -> di
 
 def converged(cfg: DjangoSiteConfig, secrets: SecretValues, **drift: str) -> dict[str, Any]:
     return deployed(files(cfg, secrets), secrets, **drift)
+
+
+HEIS_RECONCILERS = "content reconciliation"
+
+
+def from_heis(cfg: HeisConfig) -> DjangoSiteConfig:
+    """The django_site config that deploys what the heis module's ``cfg`` deploys (ops-control's HEIS SiteSpec)."""
+
+    steps = []
+    if cfg.setup_default_pages:
+        steps.append(
+            ManageStep(
+                name="Ensure default Wagtail pages exist",
+                argv=("setup_default_pages", "--hostname", cfg.fqdn, "--port", "443"),
+            )
+        )
+    if cfg.seed_content:
+        steps.append(ManageStep(name="Seed homepage content", argv=("seed_home_content",)))
+        steps.append(ManageStep(name="Seed subpage content and chrome defaults", argv=("seed_subpages_content",)))
+    groups = (
+        (
+            StepGroup(
+                name=HEIS_RECONCILERS,
+                steps=tuple(steps),
+                marker=".ops-deploy-content-pending",
+                after="migrate",
+            ),
+        )
+        if steps
+        else ()
+    )
+    return DjangoSiteConfig(
+        service_name="heis",
+        title="Heis",
+        user="heis",
+        home=cfg.home,
+        site_path=cfg.site_path,
+        shell="/usr/bin/fish",
+        fish=True,
+        apt_packages=("fish", "rsync", "sqlite3"),
+        secrets=cfg.secrets,
+        source=SourceSpec(
+            path=cfg.source_path, commit=cfg.source_commit, excludes=cfg.source_excludes, required_files=REQUIRED
+        ),
+        app=AppSpec(
+            settings_module=cfg.django_settings_module,
+            port=cfg.app_port,
+            workers=cfg.gunicorn_workers,
+            timeout=cfg.gunicorn_timeout,
+            python=cfg.python_version,
+        ),
+        env=EnvSpec(
+            admin_url=Secret(secret="django_admin_url"),
+            allowed_hosts=cfg.django_allowed_hosts,
+            extra=(
+                EnvEntry(key="DJANGO_SERVE_MEDIA", value="True" if cfg.serve_media else "False"),
+                EnvEntry(key="WAGTAILADMIN_BASE_URL", value=cfg.admin_base_url),
+            ),
+        ),
+        steps=Steps(extra=groups),
+        admin=EnsureSuperuser(),
+        route=Route(
+            fqdn=cfg.fqdn,
+            host_rule=cfg.traefik_host_rule,
+            tls_host_rule=cfg.traefik_tls_host_rule,
+            canonical_redirect_regex=cfg.traefik_canonical_redirect_regex,
+            canonical_redirect_replacement=cfg.traefik_canonical_redirect_replacement,
+            public_reason="Public website; the Wagtail admin has a login",
+        ),
+    )

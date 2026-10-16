@@ -21,6 +21,9 @@ http:
         - csrf
         - sslHeaders
         - gzip-compress
+{% if cfg.route.canonical_redirect_regex %}
+        - redirect-canonical-host
+{% endif %}
         - redirect-www
       service: {{ cfg.route.fqdn }}
       tls:
@@ -46,6 +49,13 @@ http:
         regex: "^https?://www\\.(.+)"
         replacement: "https://${1}"
         permanent: false
+{% if cfg.route.canonical_redirect_regex %}
+    redirect-canonical-host:
+      redirectRegex:
+        regex: '{{ cfg.route.canonical_redirect_regex }}'
+        replacement: '{{ cfg.route.canonical_redirect_replacement }}'
+        permanent: true
+{% endif %}
 
   services:
     {{ cfg.route.fqdn }}:

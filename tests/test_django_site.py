@@ -346,7 +346,7 @@ GROUP_OPS = [
     "Deploy marina | Mark content reconcilers pending",
     "Deploy marina | Seed home content",
     "Deploy marina | Seed subpages",
-    "Deploy marina | Clear the content reconcilers marker",
+    "Deploy marina | Clear content reconcilers marker",
 ]
 
 
@@ -553,3 +553,53 @@ def test_rsync_keeps_the_host_files(tmp_path: Path, cfg: DjangoSiteConfig, path:
         assert (dest / path).read_text() == "new"
     else:
         assert not (dest / path).exists()
+
+
+def test_prerequisites_are_installed_before_the_user(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg.model_copy(update={"apt_packages": ("fish", "sqlite3")}), secrets, rsync=changed())
+
+    commands = run.executed_commands
+    install = next(c for c in commands if "apt-get" in c and "install" in c)
+    assert "fish" in install
+    assert "sqlite3" in install
+    assert commands.index(install) < commands.index("useradd -d /home/marina -s /usr/bin/fish -g marina -r -M marina")
+    assert run.ops[0].name == "Deploy marina | Install marina prerequisites"
+
+
+def test_a_group_after_migrate_runs_before_collectstatic(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
+    early = GROUP.model_copy(update={"after": "migrate"})
+
+    run = deploy(with_group(cfg, early), secrets, converged(cfg, secrets), rsync=changed())
+
+    ops = run.mutating_changed_ops
+    start = ops.index("Deploy marina | Run marina migrations")
+    assert ops[start + 1 : start + 1 + len(GROUP_OPS)] == GROUP_OPS
+    assert ops[start + 1 + len(GROUP_OPS)] == "Deploy marina | Collect static files"
+
+
+def test_the_canonical_redirect_is_rendered_only_when_set(cfg: DjangoSiteConfig) -> None:
+    route = cfg.route.model_copy(
+        update={
+            "canonical_redirect_regex": r"^https?://www\.a\.example(.*)$",
+            "canonical_redirect_replacement": "https://a.example${1}",
+        }
+    )
+    text = render("route.traefik.yml.j2", cfg.model_copy(update={"route": route}))
+
+    assert "        - redirect-canonical-host\n        - redirect-www\n" in text
+    assert "        regex: '^https?://www\\.a\\.example(.*)$'\n" in text
+    assert "        replacement: 'https://a.example${1}'\n        permanent: true\n" in text
+    assert "redirect-canonical-host" not in render("route.traefik.yml.j2", cfg)
+
+
+@pytest.mark.parametrize(
+    "redirect",
+    [
+        {"canonical_redirect_regex": "^x$"},
+        {"canonical_redirect_replacement": "https://x"},
+        {"canonical_redirect_regex": "it's", "canonical_redirect_replacement": "x"},
+    ],
+)
+def test_the_canonical_redirect_is_validated(redirect: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="canonical_redirect"):
+        Route.model_validate({"fqdn": FQDN, "host_rule": f"Host(`{FQDN}`)", "public_reason": "x", **redirect})

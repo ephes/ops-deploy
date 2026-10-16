@@ -21,6 +21,8 @@ from ops_deploy.helpers.traefik import Hostname
 
 # A Traefik rule; lands in double quotes in the route file.
 TraefikRule = Annotated[str, Field(min_length=1, pattern=r'^[^"\\\r\n]+$')]
+# Lands in single quotes in the route file.
+RedirectPart = Annotated[str, Field(pattern=r"^[^'\r\n]*$")]
 # Lands in a comment (route, unit) or a systemd ``Description=``: one plain line.
 Label = Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9 .,:;()/_+-]+$")]
 EnvKey = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]*$")]
@@ -173,7 +175,8 @@ class StepGroup(Part):
     ``"always"`` on every deploy. With ``marker`` (a file in the service
     user's home) the group is marked pending before it runs and the marker is
     removed only after every step succeeded; while it is there, the next
-    deploy runs the group again.
+    deploy runs the group again. ``after`` places the group right after the
+    migrations or after ``collectstatic`` (the default).
     """
 
     name: Label
@@ -181,6 +184,7 @@ class StepGroup(Part):
     when: Literal["changes", "always"] = "changes"
     triggers: frozenset[Trigger] = frozenset({"source", "deps", "migrate"})
     marker: HomeFile | None = None
+    after: Literal["migrate", "collectstatic"] = "collectstatic"
 
 
 class Steps(Part):
@@ -208,8 +212,18 @@ class Route(Part):
     # The HTTPS router's rule; None: ``host_rule``.
     tls_host_rule: TraefikRule | None = None
     cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")] = "letsencrypt"
+    # Both set: a permanent redirect to the canonical host on the HTTPS router
+    # (regex and replacement land in single quotes).
+    canonical_redirect_regex: RedirectPart = ""
+    canonical_redirect_replacement: RedirectPart = ""
     # Why this route has no Basic Auth (docs/TRAEFIK_SECURITY.md in the private repo).
     public_reason: Label
+
+    @model_validator(mode="after")
+    def _redirect_is_complete(self) -> Self:
+        if bool(self.canonical_redirect_regex) != bool(self.canonical_redirect_replacement):
+            raise ValueError("canonical_redirect_regex and canonical_redirect_replacement go together")
+        return self
 
 
 class Checks(Part):
@@ -232,6 +246,8 @@ class DjangoSiteConfig(BaseServiceConfig):
     home: PurePosixPath
     site_path: PurePosixPath
     shell: Literal["/usr/bin/fish", "/bin/bash"] = "/bin/bash"
+    # Debian packages the site needs on the host, installed first (no cache update).
+    apt_packages: tuple[Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.+-]+$")], ...] = ()
     # ``~/.config/fish/config.fish`` (venv on PATH, cd to the site) and the ``venv`` link.
     fish: bool = False
     source: SourceSpec

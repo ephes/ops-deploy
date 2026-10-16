@@ -3,9 +3,10 @@
 One deploy for the Django/Wagtail sites: gunicorn behind Traefik, SQLite and
 local media, uv, an optional admin account and optional management-command
 groups. Each site is a typed `DjangoSiteConfig`; the step code never branches
-on the site. It replaces the per-site modules (`marina` first; `heis`,
-Villa Kunterbunt and the `wagtail_deploy` sites follow in later slices) and
-writes **one canonical file set** for every site.
+on the site. It replaces the per-site modules (marina since 2026-10-16,
+`services/marina` is gone; heis next, `services/heis` stays until heis
+production runs django_site; Villa Kunterbunt and the `wagtail_deploy` sites
+follow in later slices) and writes **one canonical file set** for every site.
 
 ```python
 from ops_deploy.services.django_site import (
@@ -103,11 +104,14 @@ The set is the classic one (marina/heis) with these choices:
   (a required field).
 - **The classic fish config**, unchanged apart from the header.
 
-### Differences from the marina_deploy role's files
+### Differences from the marina_deploy and heis_deploy roles' files
 
-What the first django_site deploy of marina rewrites (the old module wrote the
-role's bytes). Everything else (paths, owners, modes, unit and route names,
-port, gunicorn arguments, env keys and values) stays.
+What the first django_site deploy of marina or heis rewrites (the old modules
+wrote the roles' bytes); shown with marina's paths, heis's are the same with
+`heis`. Everything else (paths, owners, modes, unit and route names, port,
+gunicorn arguments, env keys and values, heis's TLS rule and canonical
+redirect) stays. heis's role quoted `.env` values with `quote` (`'...'` only
+when needed); its values read the same as before.
 
 | File | Old line | New line | Why |
 |---|---|---|---|
@@ -123,8 +127,9 @@ port, gunicorn arguments, env keys and values) stays.
 | route | – | `# Managed by ...` and `# Public website, no Basic Auth: <public_reason>` | ownership and the documented exception |
 | fish config | – | `# Managed by ...` | as above |
 
-The equivalence test (below) shows that nothing else differs: the same
-commands, facts, uploads (paths) and stdin, apart from the markers.
+The equivalence tests showed that nothing else differs: the same commands,
+facts, uploads (paths) and stdin, apart from the markers (marina's while
+`services/marina` existed, heis's now).
 
 ### Ansible after the switch
 
@@ -158,6 +163,7 @@ reach the host only through `secret_file` (`.env`, the stamp) or stdin.
 | `user`, `group` | required, `user` | |
 | `home`, `site_path` | required | absolute, letters, digits and `_ . -` only |
 | `shell` | `/bin/bash` | `/usr/bin/fish` for classic sites |
+| `apt_packages` | `()` | Debian packages installed first, before the user (heis: `fish`, `rsync`, `sqlite3`; no cache update) |
 | `fish` | `false` | fish config and the `<app>/venv` link to `.venv` |
 | `source` | required | `SourceSpec`: `path`, `commit` ([git source](../concepts/git-source.md)), `excludes`, `delete` (default `false`), `required_files` (checked in the app directory), `repair_ownership` (default `true`). The sync always also excludes, anchored at the site root, `.env`, the cache, `staticfiles`, the SQLite database with everything SQLite keeps next to it (`<db>*`: `-wal`, `-shm`, `-journal`) and the media root when they are inside the site: rsync neither overwrites nor deletes them |
 | `app` | required | `AppSpec`: `app_dir`, `settings_module`, `wsgi_app` (`config.wsgi`), `port`, `workers` (4), `timeout` (3600), `python` (`uv sync --python`), `uv_args` (`--frozen --no-dev`) |
@@ -166,7 +172,7 @@ reach the host only through `secret_file` (`.env`, the stamp) or stdin.
 | `env` | `EnvSpec()` | `secret_key` (`Secret("django_secret_key")`), `admin_url` (literal or `Secret`), `allowed_hosts` (default `<fqdn>,localhost`), `extra` (ordered `EnvEntry(key, value)`) |
 | `steps` | `Steps()` | `collectstatic_args` (`--noinput`), `restart_after_collectstatic`, `extra` (`StepGroup`s) |
 | `admin` | `None` | `EnsureSuperuser(command="ensure_superuser", username/email/password secrets)` |
-| `route` | required | `Route`: `fqdn`, `host_rule`, `tls_host_rule` (default `host_rule`), `cert_resolver` (`letsencrypt`), `public_reason` (required) |
+| `route` | required | `Route`: `fqdn`, `host_rule`, `tls_host_rule` (default `host_rule`), `cert_resolver` (`letsencrypt`), `canonical_redirect_regex` and `canonical_redirect_replacement` (both or neither: a permanent `redirect-canonical-host` middleware on the HTTPS router, heis's), `public_reason` (required) |
 | `checks` | `Checks()` | `port_retries` (30), `path` (`/`), `statuses` (200, 301, 302) |
 | `hardening` | `false` | the systemd sandbox above |
 
@@ -182,12 +188,14 @@ migrations ran), `"always"` on every deploy. With `marker` (a file name
 runs and the marker is removed after every step succeeded; while it is there,
 the next deploy runs the group again. The deploy's own file names
 (`.ops-deploy-pending`, `.ops-deploy-restart-*`, `.ops-deploy-admin`,
-`.ops-deploy-source`) cannot be markers.
+`.ops-deploy-source`) cannot be markers. `after="migrate"` runs the group
+right after the migrations (heis's content reconcilers), the default
+`"collectstatic"` after the static files.
 
 ## What the deploy does
 
 1. Checks the secrets and renders every file (fails before any operation).
-2. `system_user` (an existing user is left alone), `site`, the cache
+2. `apt_packages`, then `system_user` (an existing user is left alone), `site`, the cache
    directory; with `fish` the fish config (a missing `~/.config` is created,
    an existing one is never touched).
 3. Reads the markers an earlier run left (one fact).
@@ -230,12 +238,16 @@ nothing.
   converged run (no mutating change), code change and its markers, leftover
   markers (pending, restart), a failed run that keeps them, `.env` rotation,
   the switch from marina's old files (one restart, then nothing), step groups
-  (triggers, marker, `always`), `restart_after_collectstatic`, `fish` off,
+  (triggers, marker, `always`, `after`), `apt_packages`, the canonical
+  redirect, `restart_after_collectstatic`, `fish` off,
   secret and config validation, leak checks.
-- `tests/test_django_site_equivalence.py` (transitional, removed with
-  `services/marina`): every scenario of `test_marina.py` through both modules;
-  the normalized transcripts are equal apart from the markers and the
-  documented file contents, and `.env` carries the same keys and values.
+- `tests/test_django_site_equivalence_heis.py` (transitional, removed with
+  `services/heis`): every scenario of `test_heis.py`, in the staging and the
+  production shape, through both modules (configured like ops-control's heis
+  `SiteSpec`, `tests/django_site_fixtures.from_heis`); the normalized
+  transcripts are equal apart from the markers and the documented file
+  contents, and `.env` carries the same keys and values. The same test for
+  marina ran until `services/marina` was removed.
 - `tests/test_django_site_env_parsers.py`: `.env` values read back by `sh`,
   django-environ and python-dotenv (dev dependencies), accepted ones
   unchanged, refused ones changed by at least one of them.
@@ -243,9 +255,12 @@ nothing.
   values with quotes, backslashes, `$` and backticks, through bash and fish;
   the launcher passes them and the gunicorn arguments unchanged; the marker
   fact lists only markers.
-- `tests/smoke/test_django_site_smoke.py` (`just smoke`, needs `MARINA_SOURCE`
-  or `PROJECTS_ROOT`): marina deployed by the old module, then switched: only
-  the documented files change, one restart, `.env` values, database, media,
-  cache and admin kept; later runs (same tree, fresh clone) change nothing; a
-  code change restarts once; no secret on disk outside its files.
-- ops-control: `just smoke-marina-coexistence` switches from the Ansible role.
+- `tests/smoke/test_django_site_smoke.py` (`just smoke`, needs `HEIS_SOURCE`
+  or `PROJECTS_ROOT`): heis deployed by the old module in the staging shape,
+  then switched: only the documented files change, one restart, no content
+  reconciler, `.env` values, database, media, cache and admin kept; later
+  runs (same tree, fresh clone) change nothing; a code change restarts once
+  and runs the reconcilers; no secret on disk outside its files.
+- ops-control: `just smoke-marina-coexistence` and
+  `just smoke-heis-coexistence SHAPE=production|staging` switch from the
+  Ansible roles.

@@ -27,7 +27,7 @@ from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.files import Directory
-from pyinfra.operations import files, server
+from pyinfra.operations import apt, files, server
 
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretValues
@@ -142,9 +142,7 @@ def _step_group(cfg: DjangoSiteConfig, group: StepGroup, triggers: dict[str, lis
     for step in group.steps:
         server.shell(name=step.name, commands=[site_shell(cfg, manage_script(cfg, *step.argv))], _if=needed)
     if group.marker:
-        server.shell(
-            name=f"Clear the {group.name} marker", commands=[f"rm -f {_marker(cfg, group.marker)}"], _if=needed
-        )
+        server.shell(name=f"Clear {group.name} marker", commands=[f"rm -f {_marker(cfg, group.marker)}"], _if=needed)
 
 
 def deploy_django_site(
@@ -167,6 +165,9 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     unit_text = render("unit.service.j2", cfg)
     route_text = render("route.traefik.yml.j2", cfg)
 
+    if cfg.apt_packages:
+        # Before the user: its login shell may be one of them (fish).
+        apt.packages(name=f"Install {name} prerequisites", packages=list(cfg.apt_packages))
     system_user(
         cfg.user,
         group=cfg.group_name,
@@ -242,6 +243,10 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     migrate = manage(cfg, f"Run {name} migrations", ("migrate",), gate=[pending, deps], force=migrations != "current")
     if migrations is None:
         verify_probe(migrations_check, name=f"{cfg.user} migrations", expect="current")
+    triggers = {"source": [pending], "deps": [deps], "migrate": [migrate]}
+    for group in cfg.steps.extra:
+        if group.after == "migrate":
+            _step_group(cfg, group, triggers)
     static = manage(
         cfg,
         "Collect static files",
@@ -255,9 +260,9 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     def restarting_static() -> bool:
         return cfg.steps.restart_after_collectstatic and static.did_change()
 
-    triggers = {"source": [pending], "deps": [deps], "migrate": [migrate]}
     for group in cfg.steps.extra:
-        _step_group(cfg, group, triggers)
+        if group.after == "collectstatic":
+            _step_group(cfg, group, triggers)
     if cfg.admin is not None:
         ensure_superuser(cfg, cfg.admin, secrets)
 

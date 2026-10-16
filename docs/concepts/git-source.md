@@ -11,7 +11,7 @@ from pathlib import Path
 from ops_deploy.core.git_source import GitSource, fetch_source
 
 tree = fetch_source(GitSource(repo="git@github.com:owner/app.git", ref="main"), workdir / "tree")
-cfg = MarinaConfig(source_path=tree.path, source_commit=tree.commit, ...)
+source = SourceSpec(path=tree.path, commit=tree.commit, ...)  # django_site
 ```
 
 ## `fetch_source`
@@ -74,8 +74,8 @@ Because `sync_tree` compares content, not times, the fetched tree (all files
 new) changes nothing on a host that already runs the same code, whichever way
 that code got there.
 
-Services with a git source: [marina](../services/marina.md),
-[heis](../services/heis.md).
+Services with a git source: [django_site](../services/django_site.md)
+(`SourceSpec.commit`; marina, heis) and [heis](../services/heis.md).
 
 ## Why not clone on the host
 

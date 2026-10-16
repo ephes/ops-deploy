@@ -1,10 +1,13 @@
-"""Switch marina from ``services/marina`` to django_site on the smoke target.
+"""Switch heis from ``services/heis`` to django_site on the smoke target.
 
-The old module deploys marina twice; data is written; django_site then takes
-over. The switch may rewrite only the documented files and restart marina
-once; the next runs (the same tree, a fresh clone) change nothing, a code
-change restarts once more, and the database, media, cache and admin account
-stay as they were. Needs a marina checkout like ``test_marina_smoke.py``.
+The old module deploys heis twice (staging shape: content reconcilers on,
+media served by Django); data is written; django_site then takes over with
+the config ops-control's heis SiteSpec builds (``from_heis``). The switch may
+rewrite only the documented files and restart heis once, and runs no content
+reconciler; the next runs (the same tree, a fresh clone) change nothing, a
+code change restarts once more and runs the reconcilers, and the database,
+media, cache and admin account stay as they were. Needs a heis checkout like
+``test_heis_smoke.py``.
 """
 
 from __future__ import annotations
@@ -21,32 +24,32 @@ import pytest
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.django_site import DjangoSiteConfig, deploy_django_site
-from ops_deploy.services.marina import MarinaConfig, deploy_marina
+from ops_deploy.services.heis import HeisConfig, deploy_heis
 from ops_deploy.testing import SshRun, run_deploy_ssh
-from tests.django_site_fixtures import from_marina
+from tests.django_site_fixtures import from_heis
 from tests.smoke.conftest import TIMINGS, SmokeHost
-from tests.smoke.test_marina_smoke import marina_checkout
+from tests.smoke.test_heis_smoke import heis_checkout
 
-FQDN = "marina.example.invalid"
-HOME = "/home/marina"
+FQDN = "heis.example.invalid"
+HOME = "/home/heis"
 SITE = f"{HOME}/site"
 FILES = (
     f"{SITE}/.env",
     f"{SITE}/gunicorn.sh",
     f"{HOME}/.config/fish/config.fish",
-    "/etc/systemd/system/marina.service",
-    "/etc/traefik/dynamic/marina.traefik.yml",
+    "/etc/systemd/system/heis.service",
+    "/etc/traefik/dynamic/heis.traefik.yml",
 )
 SWITCH = [
-    "Deploy marina | Write fish config",
-    "Deploy marina | Mark marina for a restart",
-    "Deploy marina | Write .env",
-    "Deploy marina | Write gunicorn.sh",
-    "Deploy marina | Install systemd unit marina.service",
-    "Deploy marina | Reload systemd for marina.service",
-    "Deploy marina | Restart marina.service",
-    "Deploy marina | Write Traefik route marina",
-    "Deploy marina | Clear the pending markers",
+    "Deploy heis | Write fish config",
+    "Deploy heis | Mark heis for a restart",
+    "Deploy heis | Write .env",
+    "Deploy heis | Write gunicorn.sh",
+    "Deploy heis | Install systemd unit heis.service",
+    "Deploy heis | Reload systemd for heis.service",
+    "Deploy heis | Restart heis.service",
+    "Deploy heis | Write Traefik route heis",
+    "Deploy heis | Clear the pending markers",
 ]
 USERS = "select username, is_staff, is_superuser, is_active from auth_user order by username"
 ENV_DUMP = f"env -i sh -c 'set -a; . {SITE}/.env; set +a; env' | grep -E '^(DJANGO|WAGTAIL)_' | sort"
@@ -66,8 +69,8 @@ def _state(host: SmokeHost) -> dict[str, str]:
     """What must survive the switch, and what may change once."""
 
     state = {
-        "pid": host.out("systemctl show -p MainPID --value marina"),
-        "started": host.out("systemctl show -p ActiveEnterTimestampMonotonic --value marina"),
+        "pid": host.out("systemctl show -p MainPID --value heis"),
+        "started": host.out("systemctl show -p ActiveEnterTimestampMonotonic --value heis"),
         "env": host.out(ENV_DUMP),
         "inode": host.out(f"stat -c %i {SITE}/db.sqlite3"),
         "users": host.out(
@@ -92,41 +95,46 @@ def _deploy(host: SmokeHost, label: str, fn: Callable[..., Any], cfg: object, va
 
 @pytest.fixture(scope="module")
 def switch(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) -> Switch:
-    checkout = marina_checkout()
+    checkout = heis_checkout()
     if checkout is None or not (checkout / ".git").exists():
-        pytest.skip("no marina checkout (set MARINA_SOURCE or PROJECTS_ROOT)")
+        pytest.skip("no heis checkout (set HEIS_SOURCE or PROJECTS_ROOT)")
     smoke_host.run(
-        "systemctl disable --now marina 2>/dev/null; "
-        "rm -f /etc/systemd/system/marina.service /etc/traefik/dynamic/marina*.yml; "
-        "systemctl daemon-reload; userdel -r marina 2>/dev/null; rm -rf /home/marina; true"
+        "systemctl disable --now heis 2>/dev/null; "
+        "rm -f /etc/systemd/system/heis.service /etc/traefik/dynamic/heis*.yml; "
+        "systemctl daemon-reload; userdel -r heis 2>/dev/null; rm -rf /home/heis; true"
     )
     archive = subprocess.run(["git", "-C", str(checkout), "archive", "HEAD"], check=True, capture_output=True)
     trees = {}
     for name, flags in (("tree", ["-x"]), ("fresh", ["-x", "-m"]), ("v2", ["-x"])):
-        trees[name] = Path(tmp_path_factory.mktemp(f"marina-{name}"))
+        trees[name] = Path(tmp_path_factory.mktemp(f"heis-{name}"))
         subprocess.run(["tar", *flags, "-C", str(trees[name])], input=archive.stdout, check=True)
     (trees["v2"] / "docs-smoke-v2.txt").write_text("code change\n")
-    ref = SecretRef("secrets/smoke/marina.yml")
-    old = MarinaConfig(
-        source_path=trees["tree"], secrets=ref, fqdn=FQDN, traefik_host_rule=f"Host(`{FQDN}`) || Host(`www.{FQDN}`)"
+    ref = SecretRef("secrets/smoke/heis.yml")
+    old = HeisConfig(
+        source_path=trees["tree"],
+        secrets=ref,
+        fqdn=FQDN,
+        traefik_host_rule=f"Host(`{FQDN}`)",
+        serve_media=True,
     )
     values = SecretValues(
         ref,
         {
             "django_secret_key": f"smoke-key-{secrets.token_hex(24)}",
+            "django_admin_url": "smoke-admin-url/",
             "admin_username": "smoke-admin",
             "admin_email": "smoke-admin@example.invalid",
             "admin_password": f"smoke-pw-{secrets.token_hex(12)}",
         },
     )
-    old_runs = [_deploy(smoke_host, f"old module {n}", deploy_marina, old, values) for n in (1, 2)]
+    old_runs = [_deploy(smoke_host, f"old module {n}", deploy_heis, old, values) for n in (1, 2)]
     marker = secrets.token_hex(8)
     smoke_host.run(
-        f"runuser -u marina -- mkdir -p {SITE}/media/uploads && "
-        f"echo {marker} | runuser -u marina -- tee {SITE}/media/uploads/smoke.txt {SITE}/cache/smoke.txt >/dev/null"
+        f"runuser -u heis -- mkdir -p {SITE}/media/uploads && "
+        f"echo {marker} | runuser -u heis -- tee {SITE}/media/uploads/smoke.txt {SITE}/cache/smoke.txt >/dev/null"
     )
     before = _state(smoke_host)
-    cfg = from_marina(old)
+    cfg = from_heis(old)
     runs = {"switch": _deploy(smoke_host, "switch", deploy_django_site, cfg, values)}
     after_switch = _state(smoke_host)
     runs["again"] = _deploy(smoke_host, "again", deploy_django_site, cfg, values)
@@ -165,24 +173,32 @@ def test_later_runs_change_nothing(switch: Switch, run: str) -> None:
 
 def test_a_code_change_restarts_once(switch: Switch) -> None:
     ops = switch.runs["code change"].mutating_changed_ops
-    assert ops[0] == "Deploy marina | Mark the marina source change pending"
-    assert "Deploy marina | Sync marina source" in ops
-    assert ops.count("Deploy marina | Restart marina.service") == 1
-    assert ops[-1] == "Deploy marina | Clear the pending markers"
+    assert ops[0] == "Deploy heis | Mark the heis source change pending"
+    assert "Deploy heis | Sync heis source" in ops
+    assert ops.count("Deploy heis | Restart heis.service") == 1
+    assert ops[-1] == "Deploy heis | Clear the pending markers"
+    # Staging shape: the content reconcilers follow the code change, before collectstatic.
+    reconcile = ops.index("Deploy heis | Mark content reconciliation pending")
+    assert ops.index("Deploy heis | Run heis migrations") < reconcile < ops.index("Deploy heis | Collect static files")
+    assert "Deploy heis | Clear content reconciliation marker" in ops
 
 
-def test_marina_answers_and_keeps_its_data(smoke_host: SmokeHost, switch: Switch) -> None:
-    assert smoke_host.out("systemctl is-active marina") == "active"
+def test_the_switch_runs_no_content_reconciler(switch: Switch) -> None:
+    assert not any("content reconciliation" in op or "Seed" in op for op in switch.runs["switch"].mutating_changed_ops)
+
+
+def test_heis_answers_and_keeps_its_data(smoke_host: SmokeHost, switch: Switch) -> None:
+    assert smoke_host.out("systemctl is-active heis") == "active"
     forwarded = f"curl -s -o /dev/null -w '%{{http_code}}' -H 'Host: {FQDN}' -H 'X-Forwarded-Proto: https'"
-    assert smoke_host.out(f"{forwarded} http://127.0.0.1:10019/") == "200"
+    assert smoke_host.out(f"{forwarded} http://127.0.0.1:10020/") == "200"
     now = _state(smoke_host)
     for key in ("env", "inode", "users", "media", "cache"):
         assert now[key] == switch.before[key], key
     assert now["markers"] == "0"
-    assert smoke_host.out(f"stat -c '%a %U %G' {SITE}/.env") == "600 marina marina"
-    assert smoke_host.out(f"stat -c '%a %U %G' {SITE}/gunicorn.sh") == "755 marina marina"
+    assert smoke_host.out(f"stat -c '%a %U %G' {SITE}/.env") == "600 heis heis"
+    assert smoke_host.out(f"stat -c '%a %U %G' {SITE}/gunicorn.sh") == "755 heis heis"
     # The launcher execs gunicorn: it is the unit's main process.
-    pid = smoke_host.out("systemctl show -p MainPID --value marina")
+    pid = smoke_host.out("systemctl show -p MainPID --value heis")
     assert "gunicorn" in smoke_host.out(f"cat /proc/{shlex.quote(pid)}/cmdline | tr '\\0' ' '")
 
 

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `django_site` takes heis's shape: `apt_packages` (installed before the
+  user), `StepGroup.after` (`"migrate"` runs a group before `collectstatic`,
+  like heis's content reconcilers; group markers are cleared by
+  "Clear <group> marker") and the route's `canonical_redirect_regex`/
+  `canonical_redirect_replacement` (heis's permanent redirect to the
+  canonical host). `tests/test_django_site_equivalence_heis.py` runs every
+  `test_heis.py` scenario, staging and production shape, through both
+  modules. `services/marina` is removed (marina runs on django_site since
+  2026-10-16), with its tests, parity templates, smoke and page; the
+  django_site smoke now switches heis from `services/heis`.
+
 - New service `ops_deploy.services.django_site`: one deploy for the
   Django/Wagtail sites, configured per site with a typed `DjangoSiteConfig`
   (source, app, SQLite database, local media, `.env` entries with `Secret`
@@ -253,7 +264,7 @@
   media and collected static files stay. Migrations, `collectstatic` and
   `ensure_superuser` run only when something needs them, so a converged deploy
   changes nothing; the admin account travels on stdin only. Fake connector tests
-  and `tests/smoke/test_marina_smoke.py`; see [marina](services/marina.md).
+  and `tests/smoke/test_marina_smoke.py`; its page was removed with the module (see [django_site](services/django_site.md)).
 
 - `ops_deploy.services.opaq_app`: `deploy_opaq_app`, port of the
   `opaq_app_deploy` role together with the steps of `deploy-opaq-app.yml`
