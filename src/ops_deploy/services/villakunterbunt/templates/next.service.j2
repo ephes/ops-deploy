@@ -1,0 +1,26 @@
+[Unit]
+Description={{ cfg.service_name }} Next.js admin (/cms)
+After=network.target {{ cfg.django_unit }}.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+WorkingDirectory={{ cfg.site_path }}
+User={{ cfg.user }}
+ExecStart={{ cfg.site_path }}/next.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={{ cfg.data_path }} {{ cfg.site_path }}
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

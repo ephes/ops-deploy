@@ -22,6 +22,18 @@
   growing), and `traefik.log` is rotated with `copytruncate`. The role's
   template is vendored and compared byte for byte for several configs, and
   `traefik_deploy` joins the roles `tests/test_ops_library_drift.py` watches.
+- `ops_deploy.services.villakunterbunt`: `deploy_villakunterbunt`, a port of
+  the Villa Kunterbunt project's own Ansible playbook: Django/Wagtail on
+  SQLite with gunicorn, a standalone Next.js server for the paths in
+  `next_path_prefixes`, one Traefik route splitting the traffic, the bootstrap
+  admin and the playbook's smoke checks. Everything application-specific
+  (extra sync excludes, Next.js paths, smoke checks, legacy-code guard,
+  middleware swap, content import) is config; the private deploy repository
+  supplies it and checks byte parity with the playbook. Steps run only when
+  their input changed; markers written before each change repeat the work of
+  a failed run. It takes a git source (`source_commit`, `record_source`). See
+  [villakunterbunt](services/villakunterbunt.md).
+
 - Ports caught up with ops-library main (fd6b4cf1), ops-control main and the
   live hosts:
   - `fastdeploy`: the deploy removes the retired wildcard rule

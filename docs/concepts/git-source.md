@@ -75,7 +75,7 @@ new) changes nothing on a host that already runs the same code, whichever way
 that code got there.
 
 Services with a git source: [marina](../services/marina.md),
-[heis](../services/heis.md).
+[heis](../services/heis.md), [villakunterbunt](../services/villakunterbunt.md).
 
 ## Why not clone on the host
 

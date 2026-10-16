@@ -41,4 +41,5 @@ nav:
       - echoport: services/echoport.md
       - logyard: services/logyard.md
       - work_app: services/work_app.md
+      - villakunterbunt: services/villakunterbunt.md
   - Changelog: changelog.md
