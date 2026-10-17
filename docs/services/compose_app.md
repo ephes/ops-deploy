@@ -105,7 +105,10 @@ on stdin), atomically, without following symlinks; the others go through
 ## Images: pinned by digest
 
 An image is `repo[:tag]@sha256:<digest>`: the tag is for people, the digest
-makes it immutable. Floating or tag-only references are refused. A pinned
+makes it immutable. Floating or tag-only references are refused. In ops-control the pins of an app
+live in a module-level literal dict `<APP>_IMAGES = {"<service>": "repo:tag@sha256:..."}`
+(`pyinfra_support/*.py`), so the software inventory can find them with `ast`
+without importing the module. A pinned
 image that is missing on the host is pulled (`docker pull`) before the apply,
 so the downtime is the recreation, not the download; converged runs never
 pull and nothing updates by itself. An update is a reviewed bump of the pin.
