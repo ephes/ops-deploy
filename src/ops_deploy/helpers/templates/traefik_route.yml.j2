@@ -19,6 +19,9 @@
       tls: {}
 {%- endif %}
 {%- endmacro -%}
+{%- set internal_rule -%}
+Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})
+{%- endset -%}
 # Traefik configuration for {{ route.title }}
 # Managed by ops-deploy - do not edit manually
 {%- if auth_hash %}
@@ -30,7 +33,7 @@ http:
 {%- if auth_hash %}
     # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
     {{ route.name }}-int:
-      rule: "Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      rule: "{{ internal_rule }}"
       entryPoints:
         - web-secure
       priority: 120
@@ -43,6 +46,13 @@ http:
         - web-secure
       priority: 100
 {{- middlewares(true) }}
+{%- elif route.internal_only %}
+    # INTERNAL router (LAN + Tailscale) only; no route for anyone else
+    {{ route.name }}-int:
+      rule: "{{ internal_rule }}"
+      entryPoints:
+        - web-secure
+{{- middlewares(false) }}
 {%- else %}
     {{ route.name }}-secure:
       rule: "Host(`{{ route.host }}`)"
@@ -53,7 +63,7 @@ http:
 
     # Plain HTTP; the static config redirects the web entrypoint to web-secure.
     {{ route.name }}-http:
-      rule: "Host(`{{ route.host }}`)"
+      rule: "{{ internal_rule if route.internal_only else 'Host(`' ~ route.host ~ '`)' }}"
       entryPoints:
         - web
       service: {{ route.name }}

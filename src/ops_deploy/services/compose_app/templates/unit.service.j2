@@ -1,0 +1,21 @@
+# {{ managed }}
+[Unit]
+Description={{ cfg.title }} (Docker Compose project {{ cfg.project }})
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+{% if cfg.mounts_required %}
+RequiresMountsFor={{ cfg.mounts_required | join(' ') }}
+{% endif %}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory={{ cfg.site_path }}
+ExecStart=/usr/bin/docker compose -p {{ cfg.project }} -f {{ cfg.compose_path }} up -d --remove-orphans
+ExecReload=/usr/bin/docker compose -p {{ cfg.project }} -f {{ cfg.compose_path }} up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -p {{ cfg.project }} -f {{ cfg.compose_path }} {{ cfg.stop }}
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

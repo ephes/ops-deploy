@@ -21,7 +21,7 @@ from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
 import bcrypt
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pyinfra import host
 from pyinfra.api import operation
 from pyinfra.api.command import StringCommand
@@ -92,7 +92,8 @@ class TraefikRoute(_Model):
 
     With ``basic_auth`` this is the roles' dual-router pattern: clients in
     ``internal_ip_ranges`` reach the service without auth (priority 120),
-    everyone else must authenticate (priority 100).
+    everyone else must authenticate (priority 100). ``internal_only`` keeps
+    the internal router and drops the external one.
     """
 
     name: Annotated[str, Field(pattern=_NAME)]
@@ -108,6 +109,8 @@ class TraefikRoute(_Model):
     frame_options: Literal["DENY", "SAMEORIGIN"] = "DENY"
     redirect: RedirectRegex | None = None
     health_check: HealthCheck | None = None
+    # One router for ``internal_ip_ranges`` and none for anyone else (no basic auth).
+    internal_only: bool = False
 
     @field_validator("internal_ip_ranges")
     @classmethod
@@ -120,6 +123,12 @@ class TraefikRoute(_Model):
             except ValueError:
                 raise ValueError("internal_ip_ranges must contain IP networks") from None
         return value
+
+    @model_validator(mode="after")
+    def _one_access(self) -> TraefikRoute:
+        if self.internal_only and self.basic_auth is not None:
+            raise ValueError("an internal_only route takes no basic_auth")
+        return self
 
     @property
     def path(self) -> PurePosixPath:

@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- New service `ops_deploy.services.compose_app`: one deploy for the Docker
+  Compose apps, configured per app with a typed `ComposeAppConfig` (users,
+  groups, directories with setgid modes, required mounts and paths, external
+  networks, env files and config files with `Secret`, `HostId` and
+  `HostSecret` values, `ComposeService`s with the keys the fleet uses and
+  nothing passed through, a route, typed API steps, checks, legacy paths). It
+  renders the compose file (long binds with `create_host_path: false`,
+  loopback ports, `$` escaped, a provider's dependents with `depends_on`
+  healthy and `restart: true`), single-quoted env files (completed on the host
+  by `files/compose_host.py` when they hold a host secret or id; a host secret
+  is created once and an existing one adopted unchanged) and a oneshot unit
+  with `ExecReload` and `RequiresMountsFor=`. Images must be pinned by digest
+  and are pulled only when missing. Every decision is made while planning
+  from read-only probes and an applied stamp (`applied.json` and `pending` in
+  `/var/lib/ops-deploy/<service>/`, root-only), so a converged host gets no
+  mutating operation, an interrupted or failed run is finished by the next,
+  only the services whose inputs changed are recreated (`systemctl reload`),
+  the readers of a changed config file restart, a unit-only change touches no
+  container, and a namespace provider's dependents are stopped before it can
+  be replaced and start only once it is healthy. Typed steps:
+  `qbittorrent_preferences` (qBittorrent 5.2's 204 login, the temporary
+  password bootstrap, preferences by drift, no secret in the output) and
+  `json_key_copy`. Read-only checks: the port preflight before any change,
+  running and healthy services, shared network namespaces, ports listening on
+  their address only. `remove_compose_app` (`ComposeAppRemoveConfig`) keeps
+  the data. Documented in [compose_app](services/compose_app.md) with the
+  torrent switch and a worked *arr example; torrent is its first consumer.
+- New service `ops_deploy.services.shared_tree`: a group-writable setgid tree
+  (ops-control's `media_storage`) with a plan-time-gated, idempotent repair.
+- `helpers.traefik`: `TraefikRoute.internal_only` renders one internal
+  router (`<name>-int`, ClientIP ranges; `-http` with the same rule) and no
+  external one; compose_app's `access: internal`. Shared layer: 1,413 of
+  1,500 code lines.
+- `docker_install`: the apt cache update after a changed Docker repository
+  is decided while planning, so a converged dry run (`pyinfra-check`) no
+  longer lists it.
+
 - `services/heis` is removed, with its tests, the vendored `heis_deploy`
   templates, its smoke and page, and `tests/test_django_site_equivalence_heis.py`:
   heis production and staging run django_site since 2026-10-16. The

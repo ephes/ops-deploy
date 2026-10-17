@@ -168,6 +168,7 @@ provider's `watch = true` instead.
 | `frame_options` | `DENY` | `customFrameOptionsValue`; fastdeploy uses `SAMEORIGIN` |
 | `redirect` | `None` | `RedirectRegex(regex, replacement, permanent=False)` |
 | `health_check` | `None` | `HealthCheck(path="/", interval="30s", timeout="3s")` |
+| `internal_only` | `False` | one router for `internal_ip_ranges` (`<name>-int`, its `-http` with the same rule) and none for anyone else; excludes `basic_auth` (compose_app's `access: internal`) |
 
 ### Basic auth hashing
 

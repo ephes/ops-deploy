@@ -126,7 +126,9 @@ def docker_steps(cfg: DockerInstallConfig) -> None:
         components=cfg.repo_components,
         architectures=(arch,),
     )
-    apt.update(name="Update apt cache for the Docker repository", _if=repo.did_change)
+    # Decided while planning, so a converged dry run shows no update.
+    if repo.will_change:
+        apt.update(name="Update apt cache for the Docker repository")
     apt.packages(name="Install Docker Engine and Compose", packages=list(cfg.packages), update=True, cache_time=3600)
 
     daemon = None

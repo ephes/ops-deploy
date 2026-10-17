@@ -35,6 +35,8 @@ nav:
       - recorder: services/recorder.md
       - static_site: services/static_site.md
       - django_site: services/django_site.md
+      - compose_app: services/compose_app.md
+      - shared_tree: services/shared_tree.md
       - opaq_app: services/opaq_app.md
       - weeknotes_home: services/weeknotes_home.md
       - echoport: services/echoport.md
