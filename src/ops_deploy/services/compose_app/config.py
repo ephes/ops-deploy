@@ -146,8 +146,20 @@ class EnvFile(Part):
         return any(isinstance(p, (HostSecret, HostId)) for e in self.entries for p in pieces(e.value))
 
 
+class EnvRef(Part):
+    """A YAML ``!env_var NAME`` leaf: the app reads the value from its environment (Recyclarr).
+
+    Lets a config file name a value that only its env file carries, such as
+    another app's :class:`HostSecret` API key, without the file holding it.
+    """
+
+    env_var: EnvKey
+
+
 class ConfigFile(Part):
     """A file a service reads through a bind mount, rendered from data (``Secret`` leaves allowed).
+
+    YAML files may also carry :class:`EnvRef` leaves (``{"env_var": "NAME"}``).
 
     Compose does not see a change in a mounted file, so the services in
     ``restarts`` are restarted when it changes.
@@ -166,15 +178,23 @@ class ConfigFile(Part):
     def _secret_leaves(cls, value: Any) -> Any:
         return _config_value(value)
 
+    @model_validator(mode="after")
+    def _env_refs_in_yaml(self) -> Self:
+        if self.format != "yaml" and any(isinstance(leaf, EnvRef) for leaf in _leaves(self.data)):
+            raise ValueError(f"config file {self.path}: env_var references need format yaml")
+        return self
+
 
 def _config_value(value: Any) -> Any:
     """Plain JSON data, with ``{"secret": key[, "form": ...]}`` mappings read as :class:`Secret`."""
 
-    if isinstance(value, (Secret, str, bool, int, float)) or value is None:
+    if isinstance(value, (Secret, EnvRef, str, bool, int, float)) or value is None:
         return value
     if isinstance(value, dict):
         if "secret" in value:
             return Secret.model_validate(value)
+        if "env_var" in value:
+            return EnvRef.model_validate(value)
         if not all(isinstance(key, str) for key in value):
             raise ValueError("config file keys must be strings")
         return {key: _config_value(item) for key, item in value.items()}
@@ -429,7 +449,110 @@ class JsonKeyCopy(Part):
         return value
 
 
-Step = Annotated[QbittorrentPreferences | JsonKeyCopy, Field(discriminator="kind")]
+# An API path below the app's prefix: no query, no spaces, no dot segments.
+ApiPath = Annotated[str, Field(pattern=r"^(/[A-Za-z0-9_-]+)+$")]
+# A key of a JSON object, or ``fields.<name>`` for a Servarr field.
+JsonKey = Annotated[str, Field(pattern=r"^(fields\.)?[A-Za-z_][A-Za-z0-9_]*$")]
+
+
+def _api_value(value: Any) -> Any:
+    """JSON data with ``{"secret": ...}`` read as :class:`Secret`, ``{"host_secret": ...}`` as :class:`HostSecret`."""
+
+    if isinstance(value, (Secret, HostSecret, str, bool, int, float)) or value is None:
+        return value
+    if isinstance(value, dict):
+        if "secret" in value:
+            return Secret.model_validate(value)
+        if "host_secret" in value:
+            return HostSecret.model_validate(value)
+        if not all(isinstance(key, str) for key in value):
+            raise ValueError("API data keys must be strings")
+        return {key: _api_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_api_value(item) for item in value]
+    raise ValueError("API data must be JSON values, secrets or host secrets")
+
+
+class ApiAuth(Part):
+    """A header carrying the app's API key (Servarr: ``X-Api-Key``)."""
+
+    header: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9-]{0,62}$")] = "X-Api-Key"
+    value: Annotated[Secret | HostSecret, Field(union_mode="left_to_right")]
+
+
+class _HttpJson(Part):
+    """Common fields of the JSON API kinds: the app's loopback port, API prefix and auth."""
+
+    name: Label
+    port: int = Field(ge=1, le=65535)
+    prefix: Annotated[str, Field(pattern=r"^(/[A-Za-z0-9_-]+)*$")] = ""
+    path: ApiPath
+    auth: ApiAuth
+    # Keys the API masks on reads (passwords, API keys): not compared, tracked by digest.
+    write_only: tuple[JsonKey, ...] = ()
+    # Directory paths the API returns with a trailing slash: one is ignored when comparing.
+    path_keys: tuple[JsonKey, ...] = ()
+    wait_seconds: int = Field(default=120, ge=1, le=600)
+
+
+class HttpJsonSettings(_HttpJson):
+    """One settings object: ``GET <path>``, ``PUT <path>/<id>`` with ``desired`` merged in.
+
+    Servarr: ``/api/v3/config/host``, ``/config/naming``, ``/config/mediamanagement``.
+    """
+
+    kind: Literal["http_json_settings"] = "http_json_settings"
+    desired: dict[str, Any] = Field(min_length=1)
+
+    @field_validator("desired", mode="before")
+    @classmethod
+    def _values(cls, value: Any) -> Any:
+        return _api_value(value)
+
+
+class SchemaRef(Part):
+    """Where new items start: the entry of ``path`` whose ``key`` equals the item's (Servarr ``implementation``)."""
+
+    path: ApiPath
+    key: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] = "implementation"
+
+
+class HttpJsonItems(_HttpJson):
+    """Listed items of a collection exist with the desired fields; nothing else is touched or deleted.
+
+    Matched by ``match``; created with ``POST <path>`` (from the ``schema``
+    entry, when given), corrected with ``PUT <path>/<id>``. ``fields`` is a
+    mapping written into Servarr's ``[{"name", "value"}]`` list; ``tags``
+    given as labels are mapped to ids through ``tags_path`` (created there
+    when missing). ``force_save`` adds ``?forceSave=true`` (Servarr skips its
+    connection test).
+    """
+
+    kind: Literal["http_json_items"] = "http_json_items"
+    match: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] = "name"
+    items: tuple[dict[str, Any], ...] = Field(min_length=1)
+    schema_ref: SchemaRef | None = Field(default=None, alias="schema")
+    tags_path: ApiPath | None = None
+    force_save: bool = False
+
+    @field_validator("items", mode="before")
+    @classmethod
+    def _values(cls, value: Any) -> Any:
+        return tuple(_api_value(item) for item in value)
+
+    @model_validator(mode="after")
+    def _matched(self) -> Self:
+        keys = []
+        for item in self.items:
+            key = item.get(self.match)
+            if not isinstance(key, (str, int)) or isinstance(key, bool):
+                raise ValueError(f"step {self.name}: every item needs a literal {self.match}")
+            keys.append(str(key))
+        _unique(f"step {self.name} items", keys)
+        return self
+
+
+Step = Annotated[QbittorrentPreferences | JsonKeyCopy | HttpJsonSettings | HttpJsonItems, Field(discriminator="kind")]
 
 
 class HttpCheck(Part):
@@ -542,6 +665,9 @@ class ComposeAppConfig(BaseServiceConfig):
                     raise ValueError(f"step qbittorrent_preferences names an unknown service {step.service}")
                 if (step.port, "tcp") not in published:
                     raise ValueError(f"step qbittorrent_preferences port {step.port} is not published")
+            if isinstance(step, (HttpJsonSettings, HttpJsonItems)) and (step.port, "tcp") not in published:
+                raise ValueError(f"step {step.name}: port {step.port} is not published")
+        _unique("step names", [s.name for s in self.steps if isinstance(s, (HttpJsonSettings, HttpJsonItems))])
         return self
 
     def _declared(self, source: PurePosixPath) -> bool:

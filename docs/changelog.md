@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- compose_app: typed steps `http_json_settings` and `http_json_items` for an
+  app's JSON API (Servarr: host settings, root folders, download clients,
+  Prowlarr applications and indexer proxies). Declarative: a read-only probe
+  while planning, an apply only on drift, a verifying second read; items are
+  created from a schema entry or corrected in place and never deleted;
+  Servarr `fields` lists and tag labels are handled; masked write-only values
+  are tracked by digest on the host. API keys may be `HostSecret` files read
+  on the host. Config files may carry `{"env_var": NAME}` YAML leaves
+  (`!env_var NAME`, for Recyclarr).
+
 - New service `ops_deploy.services.compose_app`: one deploy for the Docker
   Compose apps, configured per app with a typed `ComposeAppConfig` (users,
   groups, directories with setgid modes, required mounts and paths, external

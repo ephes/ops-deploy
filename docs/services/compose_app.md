@@ -30,7 +30,7 @@ the config from an `AppSpec` (`pyinfra_support/compose_apps.py`, see its
 | `directories` | owner and group both by name or both by numeric id (a container's user without a name here), mode with setgid (`"2775"`) |
 | `external_networks` | created when missing, never removed |
 | `env_files` | `<site_path>/<name>`, one `KEY='value'` line per entry, read by the services that list it |
-| `config_files` | YAML or JSON from data with `Secret` leaves; `restarts` names the services that read it, never a namespace provider (restarting it would replace the namespace under running dependents) |
+| `config_files` | YAML or JSON from data with `Secret` leaves (YAML also `{"env_var": "NAME"}` leaves, written as `!env_var NAME` for apps that read a value from their environment, such as Recyclarr); `restarts` names the services that read it, never a namespace provider (restarting it would replace the namespace under running dependents) |
 | `services` | `ComposeService`: the keys the apps on the fleet use, nothing passed through (below) |
 | `docker` | Docker Engine and Compose, as the `docker_install` role installs them (run inside the deploy) |
 | `route` | `/etc/traefik/dynamic/<name>.yml`: `internal`, `internal_or_basic_auth` or `public` |
@@ -193,6 +193,33 @@ or a response body, and gets its secrets on stdin.
   holds one of `keys`, then writes `dest`: `template` with every `"{value}"`
   string replaced by it, as JSON with a 4-space indent (torrent: Jackett's
   API key into qBittorrent's `jackett.json`).
+- `http_json_settings` and `http_json_items`: an app's JSON API on a loopback
+  port it publishes (`port`, `prefix`, `path`), authenticated by a header
+  (`auth`: `X-Api-Key` by default) whose value is a `Secret` or a
+  `HostSecret` (read on the host from its file, reached without following
+  symlinks; a missing file fails the step, it is never created here).
+  Values compare exactly; `path_keys` (Servarr root folder `path`) ignore one
+  trailing slash. Values in `desired`/`items` are literals,
+  `{"secret": ...}` or `{"host_secret": "<path>"}` (another app's API key).
+  - `http_json_settings`: one object, `GET <path>` and `PUT <path>/<id>` with
+    the `desired` subset merged in (Servarr `/api/v3/config/host`, `naming`,
+    `mediamanagement`).
+  - `http_json_items`: every listed item of `GET <path>` exists, matched by
+    `match` (`name`, or `path` for root folders): `POST <path>` when missing,
+    starting from the `schema` entry whose `key` (`implementation`) equals the
+    item's; `PUT <path>/<id>` when it differs. Items that are not listed are
+    never changed or deleted. Servarr shapes: `fields` is a mapping written
+    into the API's `[{"name", "value"}]` list; `tags` given as labels become
+    ids through `tags_path` (missing tags are created there);
+    `force_save: true` adds `?forceSave=true` (no connection test on save).
+  - `write_only` (`password`, `fields.apiKey`): values the API masks on reads.
+    They are not compared; a sha256 of their desired values is kept in
+    `/var/lib/ops-deploy/<service>/http_json.json` (root 0600, never the
+    values), and a new or changed digest is drift, so the next write sends
+    them. A masked value sent back unchanged keeps the stored one.
+  - The probe reads only (it creates no tags) and prints `current` or the
+    drifting `<item>:<key>` names; the apply verifies with a second read.
+    Errors name the method, path and status code, never a value or body.
 
 ## Checks
 
@@ -301,17 +328,16 @@ RADARR = {
 
 Sonarr and Prowlarr have the same shape (their own user, port, config
 directory and `SONARR__`/`PROWLARR__` keys; Prowlarr needs no media bind).
-Recyclarr is a scheduled job rather than a service: a compose app whose
-service has `profiles` (not started by `up`) and a config file, or a timer
-that runs it; its API keys come from the apps' `HostSecret` files, which a
-config file cannot reference yet (config files take `Secret` leaves only).
+Recyclarr runs as a service (its image schedules its own syncs, `CRON_SCHEDULE`);
+its config file names the API keys as `{"env_var": "RADARR_API_KEY"}`
+leaves (`!env_var` in YAML), and its env file carries them as the apps'
+`HostSecret` files, so the config file holds no key.
 qBittorrent is reached from the *arr containers at `gluetun:8080` once
 gluetun joins the `media` network: that is the first P3 change to torrent's
 `AppSpec` (`external_networks: ("media",)` and `networks: ("media",)` on
 gluetun; one gluetun recreation, run the leak checklist after it).
 
-Not built yet, planned for P3 (slice 3 of the design): `http_json_settings`
-and `http_json_items` (root folders, download clients, Prowlarr
-applications; declarative, never deleting, masked write-only fields), the
-`echoport` part (one Echoport target per app: the SQLite database, the
-config and the key files) and `update: track`.
+Wiring the apps uses `http_json_settings` and `http_json_items` (root
+folders, download clients, Prowlarr applications and indexer proxies). Not
+built yet: the `echoport` part (one Echoport target per app: the SQLite
+database, the config and the key files) and `update: track`.

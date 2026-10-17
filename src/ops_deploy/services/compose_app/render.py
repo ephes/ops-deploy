@@ -27,6 +27,7 @@ from ops_deploy.services.compose_app.config import (
     ComposeService,
     ConfigFile,
     EnvFile,
+    EnvRef,
     HostId,
     HostSecret,
     Secret,
@@ -209,8 +210,21 @@ def render_config(config: ConfigFile, secrets: SecretValues) -> tuple[str, bool]
     has_secret = any(True for _ in _secret_leaves(config.data))
     if config.format == "json":
         return json.dumps(data, indent=2, sort_keys=False) + "\n", has_secret
-    text = yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
+    text = yaml.dump(
+        data, Dumper=_ConfigDumper, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096
+    )
     return f"# {MANAGED}\n{text}", has_secret
+
+
+class _ConfigDumper(yaml.SafeDumper):
+    """``safe_dump`` plus :class:`EnvRef` leaves as ``!env_var NAME``."""
+
+
+def _env_ref(dumper: yaml.SafeDumper, ref: EnvRef) -> yaml.ScalarNode:
+    return dumper.represent_scalar("!env_var", ref.env_var)
+
+
+_ConfigDumper.add_representer(EnvRef, _env_ref)
 
 
 def _secret_leaves(value: Any) -> Any:

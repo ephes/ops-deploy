@@ -35,6 +35,7 @@ from ops_deploy.services.compose_app.render import RenderedEnv, digest, host_ref
 FILES = Path(__file__).parent / "files"
 COMPOSE_HOST = (FILES / "compose_host.py").read_text()
 QBITTORRENT = (FILES / "qbittorrent_prefs.py").read_text()
+HTTP_JSON = (FILES / "http_json.py").read_text()
 STAMP_VERSION = 1
 PENDING = "pending"
 STAMP = "applied.json"
