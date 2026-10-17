@@ -1,22 +1,36 @@
 # {{ managed }}
 [Unit]
+{% if frontend_unit | default(false) %}
+Description={{ cfg.title }} Next.js server
+After=network.target {{ cfg.unit_name }}.service
+{% else %}
 Description={{ cfg.title }} web application
 After=network.target
+{% endif %}
 
 [Service]
 Type=simple
 Restart=always
 RestartSec=5
-WorkingDirectory={{ cfg.app_path }}
+WorkingDirectory={{ cfg.site_path if frontend_unit | default(false) else cfg.app_path }}
 User={{ cfg.user }}
 Group={{ cfg.group_name }}
-ExecStart={{ cfg.site_path }}/gunicorn.sh
+ExecStart={{ cfg.site_path }}/{{ 'next.sh' if frontend_unit | default(false) else 'gunicorn.sh' }}
 {% if cfg.hardening %}
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=false
+ProtectHome={{ 'read-only' if cfg.hardening == 'strict' else 'false' }}
 ReadWritePaths={{ writable | join(' ') }}
+{% if cfg.hardening == 'strict' %}
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+{% endif %}
 {% endif %}
 
 [Install]

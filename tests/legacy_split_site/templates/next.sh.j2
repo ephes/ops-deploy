@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+cd {{ cfg.site_path }}
+export NODE_ENV=production
+export PORT={{ cfg.next_port }}
+export HOSTNAME=127.0.0.1
+# The Django URL is baked into the build (WAGTAIL_BASE_URL at build time);
+# setting it here would change nothing.
+#
+# Server-side fetches from the Next.js process read DJANGO_BASE_URL at
+# runtime: point them at the local Django port.
+export DJANGO_BASE_URL="{{ cfg.django_url }}"
+exec /usr/bin/node nextjs/.next/standalone/nextjs/server.js

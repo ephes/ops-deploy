@@ -1,0 +1,5 @@
+set -x PATH $PATH ~/.local/bin
+set -x PATH $PATH {{ cfg.venv_bin }}
+set -x VIRTUAL_ENV "{{ cfg.venv_path }}"
+set -x DJANGO_SETTINGS_MODULE "{{ cfg.django_settings_module }}"
+cd site/django

@@ -9,7 +9,8 @@ make the next run finish what a failed one left undone:
   they gate (migrations, static files, triggered step groups) and the restart
   are owed.
 - ``.ops-deploy-restart-<unit>``: something the unit reads changed (``.env``,
-  the launcher, the unit file, the user's primary group); the restart is owed.
+  the launcher, the unit file, the user's primary group, the frontend's
+  build); the restart is owed.
 
 The directory is root's (``0700``, created by the first marker): no sync of
 either tool touches it, so the markers survive a deploy that synced with
@@ -29,7 +30,7 @@ from typing import cast
 from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
-from pyinfra.facts.files import Directory
+from pyinfra.facts.files import Directory, FileContents
 from pyinfra.operations import apt, files, server
 
 from ops_deploy.core.config import UNIX_USER_PATTERN
@@ -49,8 +50,10 @@ from ops_deploy.helpers import (
 from ops_deploy.helpers.probes import probe, verify_probe
 from ops_deploy.helpers.traefik import DYNAMIC_DIR
 from ops_deploy.ops import secret_file, sync_tree
-from ops_deploy.services.django_site.config import DjangoSiteConfig, StepGroup
+from ops_deploy.services.django_site import frontend
+from ops_deploy.services.django_site.config import DjangoSiteConfig, EnsureSuperuser, NextStandalone, StepGroup
 from ops_deploy.services.django_site.django import (
+    bootstrap_superuser,
     deps_probe,
     ensure_superuser,
     fact,
@@ -60,6 +63,7 @@ from ops_deploy.services.django_site.django import (
     site_shell,
     static_collected,
 )
+from ops_deploy.services.django_site.public import public_checks
 from ops_deploy.services.django_site.render import render, render_env
 
 PENDING = ".ops-deploy-pending"
@@ -97,6 +101,24 @@ def markers_command(cfg: DjangoSiteConfig) -> str:
 
     state = shlex.quote(str(state_dir(cfg)))
     return f"ls -1A {state} 2>/dev/null | grep -x -e {PENDING} -e '.ops-deploy-restart-.*' || true"
+
+
+def _no_site_markers(cfg: DjangoSiteConfig) -> None:
+    """Stops before any change when the site holds markers of an older deploy that kept them there.
+
+    That deploy (the split-site module before django_site) stopped before its
+    end; its work is not one django_site can tell from its own markers.
+    """
+
+    site = shlex.quote(str(cfg.site_path))
+    found = fact(
+        f"ls -1A {site} 2>/dev/null | grep -x -e .ops-deploy-collectstatic -e {PENDING} -e '.ops-deploy-restart-.*' "
+        "|| true"
+    ).split()
+    if found:
+        raise ValueError(
+            f"{cfg.site_path} holds {', '.join(found)} from an older deploy that stopped early: finish it first"
+        )
 
 
 def _mark(cfg: DjangoSiteConfig, name: str, marker: str, *, when: Callable[[], bool]) -> OperationMeta:
@@ -209,16 +231,16 @@ def _fish(cfg: DjangoSiteConfig) -> None:
     )
 
 
-def _step_group(cfg: DjangoSiteConfig, group: StepGroup, triggers: dict[str, list[OperationMeta]]) -> None:
+def _step_group(cfg: DjangoSiteConfig, group: StepGroup, triggers: dict[str, Callable[[], bool]]) -> None:
     """One ``steps.extra`` group, gated by its triggers, its marker and ``when``."""
 
     left = False
     if group.marker:
         left = fact(f"test -e {_marker(cfg, group.marker)} && echo pending || true") == "pending"
-    gate = [op for trigger in sorted(group.triggers) for op in triggers[trigger]]
+    gate = [triggers[trigger] for trigger in sorted(group.triggers)]
 
     def needed() -> bool:
-        return group.when == "always" or left or any(op.did_change() for op in gate)
+        return group.when == "always" or left or any(happened() for happened in gate)
 
     if group.marker:
         server.shell(name=f"Mark {group.name} pending", commands=[_touch(cfg, group.marker)], _if=needed)
@@ -241,13 +263,16 @@ def deploy_django_site(
 
 
 def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) -> None:
-    name, unit = cfg.service_name, cfg.unit_name
+    name, unit, front = cfg.service_name, cfg.unit_name, cfg.frontend
     # Everything is rendered (and every value checked) before any operation.
     env_content = render_env(cfg, secrets)
     launcher_text = render("gunicorn.sh.j2", cfg)
     unit_text = render("unit.service.j2", cfg)
     route_text = render("route.traefik.yml.j2", cfg)
+    next_texts = (render("next.sh.j2", cfg), render("unit.service.j2", cfg, frontend_unit=True)) if front else ("", "")
 
+    if front is not None:
+        frontend.require_tools(front)
     if cfg.apt_packages:
         # Before the user: its login shell may be one of them (fish).
         apt.packages(name=f"Install {name} prerequisites", packages=list(cfg.apt_packages))
@@ -258,10 +283,15 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         shell=cfg.shell,
         directories=[cfg.site_path, cfg.cache_dir],
     )
+    for path in cfg.data_dirs:
+        files.directory(
+            name=f"Ensure directory {path}", path=str(path), user=cfg.user, group=cfg.group_name, mode="0750"
+        )
     if cfg.fish:
         _fish(cfg)
 
     left = fact(markers_command(cfg)).split()
+    _no_site_markers(cfg)
     restart_marker = RESTART.format(unit=unit)
     # Everything the unit's processes read (filled in below); a change marks
     # the restart it owes before it happens.
@@ -272,7 +302,22 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         restart_marker,
         when=lambda: restart_marker in left or any(op.will_change for op in unit_reads),
     )
-    unit_reads += _primary_group(cfg)
+    # The frontend's unit: its restart marker and what its processes read.
+    next_reads: list[OperationMeta] = []
+    next_marker = RESTART.format(unit=front.unit) if front else ""
+    next_mark = (
+        _mark(
+            cfg,
+            f"Mark {front.unit} for a restart",
+            next_marker,
+            when=lambda: next_marker in left or any(op.will_change for op in next_reads),
+        )
+        if front
+        else None
+    )
+    regroup = _primary_group(cfg)
+    unit_reads += regroup
+    next_reads += regroup
 
     # Written before the changes they stand for; the operations they watch are
     # added below (their ``will_change`` is known once planning is done).
@@ -295,6 +340,8 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         group=cfg.group_name,
     )
     source_ops.append(code)
+    if front is not None and (middleware := frontend.install_middleware(cfg, front)) is not None:
+        source_ops.append(middleware)
     if cfg.source.repair_ownership:
         _site_owned(cfg)
 
@@ -328,10 +375,21 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     )
     migrations_check = migrations_probe(cfg)
     migrations = probe(migrations_check, name=f"{cfg.user} migrations")
-    migrate = manage(cfg, f"Run {name} migrations", ("migrate",), gate=[pending, deps], force=migrations != "current")
+    migrate = manage(
+        cfg,
+        f"Run {name} migrations",
+        ("migrate", *cfg.steps.migrate_args),
+        gate=[pending, deps],
+        force=migrations != "current",
+    )
     if migrations is None:
         verify_probe(migrations_check, name=f"{cfg.user} migrations", expect="current")
-    triggers = {"source": [pending], "deps": [deps], "migrate": [migrate]}
+
+    def source_changed() -> bool:
+        # This run changed the source, or an earlier one that did stopped before its end.
+        return PENDING in left or any(op.did_change() for op in source_ops)
+
+    triggers = {"source": source_changed, "deps": deps.did_change, "migrate": migrate.did_change}
     for group in cfg.steps.extra:
         if group.after == "migrate":
             _step_group(cfg, group, triggers)
@@ -351,8 +409,11 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     for group in cfg.steps.extra:
         if group.after == "collectstatic":
             _step_group(cfg, group, triggers)
-    if cfg.admin is not None:
+    if isinstance(cfg.admin, EnsureSuperuser):
         ensure_superuser(cfg, cfg.admin, secrets)
+    elif cfg.admin is not None:
+        bootstrap_superuser(cfg, cfg.admin, secrets)
+    built = _frontend(cfg, front, source_changed, next_marker) if front else None
 
     launcher = files.put(
         name="Write gunicorn.sh",
@@ -364,6 +425,7 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     )
     unit_op = systemd_unit(unit, unit_text)
     unit_reads += [env, launcher, unit_op]
+    next_unit = _frontend_files(cfg, front, next_reads, *next_texts) if front else None
     # A leftover restart marker also reloads systemd: the unit file may be one
     # an earlier run installed and never loaded.
     service_rollout(
@@ -371,18 +433,65 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         units=[unit_op, *([restart_mark] if restart_marker in left else [])],
         restart_when=[pending, deps, restart_mark, *([static] if cfg.steps.restart_after_collectstatic else [])],
     )
+    if front is not None and next_unit is not None and next_mark is not None and built is not None:
+        service_rollout(
+            front.unit,
+            units=[next_unit, *([next_mark] if next_marker in left else [])],
+            restart_when=[next_mark, built],
+        )
     # Never a Traefik restart: its file provider watches the directory.
-    route = SiteRoute(name=unit, host=cfg.route.fqdn, app_port=cfg.app.port, app_host="localhost")
+    route = SiteRoute(name=cfg.route_name, host=cfg.route.fqdn, app_port=cfg.app.port, app_host=cfg.route.backend)
     traefik_route(route, renderer=lambda _route, _hash: route_text, restart="none")
 
     wait_port(cfg.app.port, host="127.0.0.1", retries=cfg.checks.port_retries)
     http_check(
         f"http://127.0.0.1:{cfg.app.port}{cfg.checks.path}", status=cfg.checks.statuses, host_header=cfg.route.fqdn
     )
+    if front is not None:
+        wait_port(front.port, host="127.0.0.1", retries=cfg.checks.port_retries)
+        http_check(f"http://127.0.0.1:{front.port}{front.check_path}", status=front.check_statuses)
+    public_checks(cfg)
     # Last: only a deploy that came up healthy records its commit and clears its markers.
     record_source(cfg.site_path, cfg.source.commit, user=cfg.user, group=cfg.group_name)
+    marks = [pending, restart_mark, *([next_mark] if next_mark else []), *([built] if built else [])]
     server.shell(
         name="Clear the pending markers",
-        commands=[f"rm -f {_marker(cfg, PENDING)} {_marker(cfg, restart_marker)}"],
-        _if=lambda: pending.did_change() or restart_mark.did_change() or restarting_static(),
+        commands=[" ".join(["rm -f", _marker(cfg, PENDING), _marker(cfg, restart_marker), *_next_marker(cfg)])],
+        _if=lambda: any(op.did_change() for op in marks) or restarting_static(),
     )
+
+
+def _next_marker(cfg: DjangoSiteConfig) -> list[str]:
+    return [_marker(cfg, RESTART.format(unit=cfg.frontend.unit))] if cfg.frontend else []
+
+
+def _frontend(
+    cfg: DjangoSiteConfig, front: NextStandalone, source_changed: Callable[[], bool], marker: str
+) -> OperationMeta:
+    """The build (its restart marker first), the purge and the legacy guard.
+
+    Both follow the source only: a change of the Python dependencies alone
+    neither rebuilds nor purges.
+    """
+
+    built = frontend.build(cfg, front, before=_touch(cfg, marker), when=source_changed)
+    frontend.purge_public_dirs(cfg, front, after=lambda: source_changed() or built.did_change())
+    if front.legacy_guard is not None:
+        frontend.legacy_guard(cfg, front.legacy_guard)
+    return built
+
+
+def _frontend_files(
+    cfg: DjangoSiteConfig, front: NextStandalone, reads: list[OperationMeta], text: str, unit_text: str
+) -> OperationMeta:
+    """``next.sh`` and the frontend's unit; a launcher that differs only in comments is no restart."""
+
+    path = cfg.site_path / "next.sh"
+    launcher = files.put(
+        name="Write next.sh", src=StringIO(text), dest=str(path), user=cfg.user, group=cfg.group_name, mode="0755"
+    )
+    if frontend.code_changed(text, host.get_fact(FileContents, path=str(path))):
+        reads.append(launcher)
+    unit = systemd_unit(front.unit, unit_text)
+    reads.append(unit)
+    return unit

@@ -1,0 +1,75 @@
+http:
+  routers:
+    # Paths the Next.js server answers go to it (priority 200); everything
+    # else goes to Django (priority 100). Each prefix is matched as
+    # `Path(p) || PathPrefix(p/)`, so `/cmsfoo` does not count as `/cms`.
+    {{ cfg.fqdn }}-cms-router:
+      rule: "{{ cfg.host_rule_grouped }} && ({{ cfg.next_paths_rule }})"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect
+      service: {{ cfg.fqdn }}-next
+      priority: 200
+
+    {{ cfg.fqdn }}-cms-secure-router:
+      rule: "{{ cfg.host_rule_grouped }} && ({{ cfg.next_paths_rule }})"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - csrf
+        - sslHeaders
+        - gzip-compress
+      service: {{ cfg.fqdn }}-next
+      priority: 200
+      tls:
+        certResolver: letsencrypt
+
+    {{ cfg.fqdn }}-router:
+      rule: "{{ cfg.host_rule }}"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect
+        - csrf
+      service: {{ cfg.fqdn }}-django
+      priority: 100
+
+    {{ cfg.fqdn }}-secure-router:
+      rule: "{{ cfg.host_rule }}"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - csrf
+        - sslHeaders
+        - gzip-compress
+      service: {{ cfg.fqdn }}-django
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+    csrf:
+      headers:
+        hostsProxyHeaders: ["X-CSRFToken"]
+    sslHeaders:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+          X-Forwarded-Port: "443"
+    gzip-compress:
+      compress: {}
+
+  services:
+    {{ cfg.fqdn }}-django:
+      loadBalancer:
+        servers:
+          - url: {{ cfg.django_url }}
+    {{ cfg.fqdn }}-next:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:{{ cfg.next_port }}

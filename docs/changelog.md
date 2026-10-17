@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- `django_site`: an optional Next.js standalone frontend (`NextStandalone`:
+  its own unit and `next.sh`, `npm ci` and `next build` gated on the source
+  and a build-environment stamp, the middleware installed from a source file,
+  purged public directories, a read-only legacy-code guard; the route sends
+  its path prefixes to it at priority 200). Also: `BootstrapSuperuser`
+  (`createsuperuser` when missing, the password set once), `app.env_dir`,
+  `media.private_root` and data directories outside the site (`0750`),
+  `steps.migrate_args`, `route.name` and `route.backend`, `hardening:
+  "strict"`, typed public URL checks and a CSRF check (`checks.public`,
+  `checks.csrf_path`), `Joined` env values, `Secret.strip`, `min_length` and
+  `equals`, and `env.url_paths` (admin path secrets checked before any
+  operation). A step group's `source` trigger now means the source changed
+  (or a pending marker is left), not a dependency change alone. The launchers,
+  the `venv` link and the frontend's middleware and purged directories are
+  always excluded from the sync. A deploy stops before any change when the
+  site holds markers of the old split-site module. marina's and heis's files
+  render byte for byte as before. The split site's module (never merged) is
+  replaced; its files and their differences are documented in
+  [django_site](services/django_site.md), and an equivalence test runs its
+  scenarios through the vendored old module and django_site.
 - compose_app: typed steps `http_json_settings` and `http_json_items` for an
   app's JSON API (Servarr: host settings, root folders, download clients,
   Prowlarr applications and indexer proxies). Declarative: a read-only probe

@@ -2,6 +2,34 @@
 # Public website, no Basic Auth: {{ cfg.route.public_reason }}
 http:
   routers:
+{% if cfg.frontend %}
+    # The frontend's paths go to it (priority 200), everything else to Django
+    # (priority 100). Each prefix is matched as `Path(p) || PathPrefix(p/)`.
+    {{ cfg.route.fqdn }}-{{ cfg.frontend.router }}-router:
+      rule: "{{ next_rule }}"
+
+      entryPoints:
+        - web
+      middlewares:
+        - redirect
+      service: {{ cfg.route.fqdn }}-next
+      priority: 200
+
+    {{ cfg.route.fqdn }}-{{ cfg.frontend.router }}-secure-router:
+      rule: "{{ next_tls_rule }}"
+
+      entryPoints:
+        - web-secure
+      middlewares:
+        - csrf
+        - sslHeaders
+        - gzip-compress
+      service: {{ cfg.route.fqdn }}-next
+      priority: 200
+      tls:
+        certResolver: {{ cfg.route.cert_resolver }}
+
+{% endif %}
     {{ cfg.route.fqdn }}-router:
       rule: "{{ cfg.route.host_rule }}"
 
@@ -10,7 +38,10 @@ http:
       middlewares:
         - redirect
         - csrf
-      service: {{ cfg.route.fqdn }}
+      service: {{ cfg.route.fqdn }}{{ '-django' if cfg.frontend else '' }}
+{% if cfg.frontend %}
+      priority: 100
+{% endif %}
 
     {{ cfg.route.fqdn }}-secure-router:
       rule: "{{ cfg.route.tls_host_rule or cfg.route.host_rule }}"
@@ -25,7 +56,10 @@ http:
         - redirect-canonical-host
 {% endif %}
         - redirect-www
-      service: {{ cfg.route.fqdn }}
+      service: {{ cfg.route.fqdn }}{{ '-django' if cfg.frontend else '' }}
+{% if cfg.frontend %}
+      priority: 100
+{% endif %}
       tls:
         certResolver: {{ cfg.route.cert_resolver }}
 
@@ -58,7 +92,13 @@ http:
 {% endif %}
 
   services:
-    {{ cfg.route.fqdn }}:
+    {{ cfg.route.fqdn }}{{ '-django' if cfg.frontend else '' }}:
       loadBalancer:
         servers:
-          - url: http://localhost:{{ cfg.app.port }}
+          - url: http://{{ cfg.route.backend }}:{{ cfg.app.port }}
+{% if cfg.frontend %}
+    {{ cfg.route.fqdn }}-next:
+      loadBalancer:
+        servers:
+          - url: http://{{ cfg.route.backend }}:{{ cfg.frontend.port }}
+{% endif %}

@@ -103,7 +103,7 @@ def admin_rows(secrets: SecretValues) -> list[str]:
 def files(cfg: DjangoSiteConfig, secrets: SecretValues) -> dict[str, str]:
     """The canonical file set as django_site renders it, by host path."""
 
-    assert cfg.admin is not None
+    assert isinstance(cfg.admin, EnsureSuperuser)
     return {
         ENV: render_env(cfg, secrets).reveal().decode(),
         LAUNCHER: render("gunicorn.sh.j2", cfg),

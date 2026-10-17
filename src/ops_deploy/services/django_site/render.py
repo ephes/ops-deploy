@@ -1,4 +1,4 @@
-"""The canonical file set: ``.env``, launcher, unit, Traefik route and fish config.
+"""The canonical file set: ``.env``, launchers, units, Traefik route and fish config.
 
 Every site gets the same files (``docs/services/django_site.md`` lists them
 and how they differ from the Ansible roles' files). All of them are rendered
@@ -9,11 +9,19 @@ the run before any change.
 from __future__ import annotations
 
 from functools import cache
+from pathlib import PurePosixPath
 
 import jinja2
 
 from ops_deploy.core.secrets import SecretContent, SecretValues
-from ops_deploy.services.django_site.config import DjangoSiteConfig, EnvValue, Secret, env_value_problem
+from ops_deploy.services.django_site.config import (
+    DjangoSiteConfig,
+    EnvValue,
+    Joined,
+    PathSecrets,
+    Secret,
+    env_value_problem,
+)
 
 TEMPLATE_PACKAGE = "ops_deploy.services.django_site"
 MANAGED = "Managed by ops-deploy (django_site). Local changes are overwritten by the next deploy."
@@ -32,20 +40,51 @@ def _templates() -> jinja2.Environment:
     )
 
 
-def render(template: str, cfg: DjangoSiteConfig) -> str:
-    return _templates().get_template(template).render(cfg=cfg, managed=MANAGED, writable=writable_paths(cfg))
+def render(template: str, cfg: DjangoSiteConfig, **context: object) -> str:
+    return (
+        _templates()
+        .get_template(template)
+        .render(
+            cfg=cfg,
+            managed=MANAGED,
+            writable=writable_paths(cfg),
+            next_rule=next_rule(cfg, cfg.route.host_rule),
+            next_tls_rule=next_rule(cfg, cfg.route.tls_host_rule or cfg.route.host_rule),
+            **context,
+        )
+    )
 
 
 def writable_paths(cfg: DjangoSiteConfig) -> list[str]:
-    """``ReadWritePaths=`` of the hardened unit: the site, the cache, and data kept outside the site."""
+    """``ReadWritePaths=`` of the hardened units: the site, the cache, and data kept outside the site.
+
+    A data directory inside another one outside the site (media under a data
+    directory) is covered by it and not repeated.
+    """
 
     paths = [cfg.site_path, cfg.cache_dir]
-    paths += [p for p in (cfg.db_path.parent, cfg.media_root) if not p.is_relative_to(cfg.site_path)]
-    return list(dict.fromkeys(str(p) for p in paths))
+    outside: list[PurePosixPath] = []
+    for path in cfg.outside_dirs:
+        if not any(path.is_relative_to(other) for other in outside):
+            outside.append(path)
+    return list(dict.fromkeys(str(p) for p in (*paths, *outside)))
+
+
+def next_rule(cfg: DjangoSiteConfig, host_rule: str) -> str:
+    """A frontend router's rule: the site router's host rule and the frontend's path prefixes."""
+
+    if cfg.frontend is None:
+        return ""
+    grouped = f"({host_rule})" if "||" in host_rule else host_rule
+    paths = " || ".join(f"Path(`{p}`) || PathPrefix(`{p}/`)" for p in cfg.frontend.path_prefixes)
+    return f"{grouped} && ({paths})"
 
 
 def check_secrets(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
-    """Every referenced secret is set, single-line and no placeholder. Errors name keys only."""
+    """Every referenced secret is set, single-line and no placeholder, and meets its own checks.
+
+    Errors name keys only.
+    """
 
     secrets.require(cfg.required_secret_keys)
     for key in cfg.required_secret_keys:
@@ -54,10 +93,44 @@ def check_secrets(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
             raise ValueError(f"secret {key} must be set and not a placeholder")
         if any(c in value for c in "\r\n\0"):
             raise ValueError(f"secret {key} must be a single line")
+    for ref in cfg.secret_refs:
+        if len(secrets[ref.secret]) < ref.min_length:
+            raise ValueError(f"secret {ref.secret} must have at least {ref.min_length} characters")
+        if ref.equals is not None and secrets[ref.secret] != ref.equals:
+            raise ValueError(f"secret {ref.secret} must be the configured value")
+    if cfg.env.url_paths is not None:
+        _check_paths(cfg, cfg.env.url_paths, secrets)
+
+
+def _slashed(path: str) -> str:
+    return "/" + path.strip("/") + "/"
+
+
+def _check_paths(cfg: DjangoSiteConfig, spec: PathSecrets, secrets: SecretValues) -> None:
+    refused = {_slashed(p) for p in spec.refused}
+    prefixes = cfg.frontend.path_prefixes if cfg.frontend else ()
+    reserved = tuple(_slashed(p) for p in (*prefixes, *spec.reserved))
+    seen: dict[str, str] = {}
+    for ref in spec.secrets:
+        key, value = ref.secret, secrets[ref.secret]
+        if not value.strip("/") or not all(c.isascii() and (c.isalnum() or c in "._~/-") for c in value):
+            raise ValueError(f"secret {key} must be a URL path (letters, digits and . _ ~ / -)")
+        path = _slashed(value)
+        if path in refused:
+            raise ValueError(f"secret {key} must not be a refused path")
+        if path.startswith(reserved):
+            raise ValueError(f"secret {key} must not be under a reserved prefix")
+        if path in seen:
+            raise ValueError(f"secrets {seen[path]} and {key} must differ")
+        seen[path] = key
 
 
 def resolve(value: EnvValue, secrets: SecretValues) -> str:
-    return secrets[value.secret] if isinstance(value, Secret) else value
+    if isinstance(value, Joined):
+        return "".join(resolve(part, secrets) for part in value.parts)
+    if isinstance(value, Secret):
+        return secrets[value.secret].strip(value.strip) if value.strip else secrets[value.secret]
+    return value
 
 
 def render_env(cfg: DjangoSiteConfig, secrets: SecretValues) -> SecretContent:

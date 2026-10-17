@@ -1,0 +1,27 @@
+[Unit]
+Description={{ cfg.service_name }} Django/Wagtail web application
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+WorkingDirectory={{ cfg.django_path }}
+User={{ cfg.user }}
+Environment="DJANGO_SETTINGS_MODULE={{ cfg.django_settings_module }}"
+ExecStart={{ cfg.site_path }}/gunicorn.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={{ cfg.data_path }} {{ cfg.site_path }} {{ cfg.cache_dir }}
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

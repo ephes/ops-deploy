@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import shlex
+from pathlib import PurePosixPath
 
 from pyinfra import host
 from pyinfra.api.operation import OperationMeta
@@ -20,7 +21,7 @@ from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers.probes import migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
 from ops_deploy.ops import secret_file, secret_stdin
-from ops_deploy.services.django_site.config import DjangoSiteConfig, EnsureSuperuser
+from ops_deploy.services.django_site.config import BootstrapSuperuser, DjangoSiteConfig, EnsureSuperuser
 from ops_deploy.services.django_site.render import resolve
 
 # Records which admin account was last ensured (an HMAC, never the password).
@@ -45,6 +46,28 @@ for username, email, staff, superuser, active in rows:
     print("B", digest(username, email))
 """
 
+# ``createsuperuser`` probe (stdlib only): does the bootstrap account exist?
+BOOTSTRAP_PROBE = """\
+import sqlite3, sys
+db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+try:
+    found = db.execute("select count(*) from auth_user where username = ?", (sys.argv[2],)).fetchone()[0]
+except sqlite3.OperationalError as exc:
+    # Not migrated yet: no accounts. Any other database error fails the probe.
+    if "no such table" not in str(exc):
+        raise
+    found = 0
+print("present" if found else "absent")
+"""
+# Creates or updates the bootstrap superuser from the environment, one line.
+SET_BOOTSTRAP_PASSWORD = (
+    "import os; from django.contrib.auth import get_user_model; U = get_user_model(); "
+    "u, _ = U.objects.get_or_create(username=os.environ['BOOTSTRAP_ADMIN_USERNAME'], "
+    "defaults={'email': os.environ['BOOTSTRAP_ADMIN_EMAIL'], 'is_staff': True, 'is_superuser': True}); "
+    "u.is_staff = True; u.is_superuser = True; u.email = os.environ['BOOTSTRAP_ADMIN_EMAIL']; "
+    "u.set_password(os.environ['BOOTSTRAP_ADMIN_PASSWORD']); u.save()"
+)
+
 _READ_ENV = 'while IFS= read -r line && [ -n "$line" ]; do export "$line"; done'
 
 
@@ -52,15 +75,18 @@ def fact(command: str) -> str:
     return str(host.get_fact(Command, command=command) or "").strip()
 
 
-def site_shell(cfg: DjangoSiteConfig, script: str) -> str:
-    """``script`` run by ``sh`` in the app directory as the service user."""
+def site_shell(cfg: DjangoSiteConfig, script: str, cwd: PurePosixPath | None = None) -> str:
+    """``script`` run by ``sh`` in ``cwd`` (default: the app directory) as the service user."""
 
     shell = _as_user(cfg.user, cfg.home, {}, ["sh", "-c", script])
-    return f"cd {shlex.quote(str(cfg.app_path))} && {shell}"
+    return f"cd {shlex.quote(str(cwd or cfg.app_path))} && {shell}"
 
 
-def manage_script(cfg: DjangoSiteConfig, *command: str, stdin_env: bool = False) -> str:
-    """``set -a; . .env; set +a; python manage.py ...`` with the site's settings module."""
+def manage_script(cfg: DjangoSiteConfig, *command: str, stdin_env: bool = False, then: str = "") -> str:
+    """``set -a; . .env; set +a; python manage.py ...`` with the site's settings module.
+
+    ``then``: a command run after a successful ``manage.py`` (instead of ``exec``).
+    """
 
     lines = [
         "set -a",
@@ -70,7 +96,8 @@ def manage_script(cfg: DjangoSiteConfig, *command: str, stdin_env: bool = False)
     ]
     if stdin_env:
         lines.append(_READ_ENV)
-    lines.append(f"exec {shlex.join([str(cfg.venv_bin / 'python'), 'manage.py', *command])}")
+    run = shlex.join([str(cfg.venv_bin / "python"), "manage.py", *command])
+    lines.append(f"{run} && {then}" if then else f"exec {run}")
     return "; ".join(lines)
 
 
@@ -191,3 +218,42 @@ def ensure_superuser(cfg: DjangoSiteConfig, admin: EnsureSuperuser, secrets: Sec
     )
     if rows is None:
         verify_probe(check, name=f"{cfg.user} admin user")
+
+
+def bootstrap_superuser(cfg: DjangoSiteConfig, admin: BootstrapSuperuser, secrets: SecretValues) -> None:
+    """``createsuperuser`` when the account is missing, then its password set once.
+
+    The account's existence is probed read-only (``createsuperuser`` itself
+    fails on an existing account). The password is set on the first deploy,
+    recorded by a marker; a password changed in the admin afterwards stays.
+    """
+
+    password = resolve(admin.password, secrets)
+    check = shlex.join(["python3", "-I", "-c", BOOTSTRAP_PROBE, str(cfg.db_path), admin.username])
+    check = when_present([cfg.db_path], check, otherwise="absent")
+    state = probe(check, name=f"{cfg.user} bootstrap admin")
+    if state != "present":
+        args = ("createsuperuser", "--noinput", "--username", admin.username, "--email", admin.email)
+        secret_stdin(
+            name="Create the bootstrap admin",
+            command=site_shell(cfg, manage_script(cfg, *args, stdin_env=True)),
+            content=stdin_env({"DJANGO_SUPERUSER_PASSWORD": password}),
+        )
+        if state is None:
+            verify_probe(check, name=f"{cfg.user} bootstrap admin", expect="present")
+    marker = shlex.quote(str(cfg.bootstrap_marker))
+    if fact(f"test -e {marker} && echo present || true") != "present":
+        secret_stdin(
+            name="Set the bootstrap admin password (first deploy only)",
+            command=site_shell(
+                cfg,
+                manage_script(cfg, "shell", "-c", SET_BOOTSTRAP_PASSWORD, stdin_env=True, then=f"touch {marker}"),
+            ),
+            content=stdin_env(
+                {
+                    "BOOTSTRAP_ADMIN_USERNAME": admin.username,
+                    "BOOTSTRAP_ADMIN_EMAIL": admin.email,
+                    "BOOTSTRAP_ADMIN_PASSWORD": password,
+                }
+            ),
+        )

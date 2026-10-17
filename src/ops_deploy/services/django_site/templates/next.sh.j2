@@ -1,0 +1,11 @@
+#!/bin/bash
+# {{ managed }}
+set -euo pipefail
+cd {{ cfg.site_path }}
+export NODE_ENV=production
+export PORT={{ cfg.frontend.port }}
+export HOSTNAME=127.0.0.1
+{% for entry in cfg.frontend.runtime_env %}
+export {{ entry.key }}={{ entry.value }}
+{% endfor %}
+exec {{ cfg.frontend.node }} {{ cfg.frontend.standalone_dir }}/server.js
