@@ -45,7 +45,6 @@ from ops_deploy.helpers import (
     system_user,
     systemd_unit,
     traefik_route,
-    uv_sync,
     wait_port,
 )
 from ops_deploy.helpers.checks import mark_read_only
@@ -72,6 +71,7 @@ from ops_deploy.services.django_site.django import (
     site_shell,
     static_collected,
     stdin_env,
+    uv_command,
 )
 from ops_deploy.services.django_site.public import public_checks
 from ops_deploy.services.django_site.render import render, render_env, resolve
@@ -298,6 +298,9 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     launcher_text = render("gunicorn.sh.j2", cfg)
     unit_text = render("unit.service.j2", cfg)
     route_text = render("route.traefik.yml.j2", cfg)
+    worker_texts = [
+        (w, render("worker.sh.j2", cfg, worker=w), render("worker.service.j2", cfg, worker=w)) for w in cfg.workers
+    ]
     next_texts = (render("next.sh.j2", cfg), render("unit.service.j2", cfg, frontend_unit=True)) if front else ("", "")
 
     if isinstance(cfg.database, PostgresDb):
@@ -368,9 +371,23 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         if front
         else None
     )
+    worker_reads: dict[str, list[OperationMeta]] = {w.unit: [] for w in cfg.workers}
+
+    def worker_owed(unit: str) -> Callable[[], bool]:
+        def needed() -> bool:
+            return RESTART.format(unit=unit) in left or any(o.will_change for o in worker_reads[unit])
+
+        return needed
+
+    worker_marks = [
+        _mark(cfg, f"Mark {w.unit} for a restart", RESTART.format(unit=w.unit), when=worker_owed(w.unit))
+        for w in cfg.workers
+    ]
     regroup = _primary_group(cfg)
     unit_reads += regroup
     next_reads += regroup
+    for reads in worker_reads.values():
+        reads += regroup
 
     # Written before the changes they stand for; the operations they watch are
     # added below (their ``will_change`` is known once planning is done).
@@ -402,15 +419,11 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     deps_state = probe(deps_check, name=f"{cfg.user} dependencies")
     # A missing or broken venv is "pending" too (uv would create it).
     deps_owed.append(deps_state != "current")
-    deps = uv_sync(
-        cfg.app_path,
-        user=cfg.user,
-        home=cfg.home,
-        venv=cfg.venv_path,
-        python=cfg.app.python,
-        args=cfg.app.uv_args,
-        # None: run whatever the source did, when the environment is not as locked.
-        when_changed=[pending] if deps_state == "current" else None,
+    missing_venv = fact(f"test -x {shlex.quote(str(cfg.venv_bin / 'python'))} && echo present || true") != "present"
+    deps = server.shell(
+        name=f"uv sync {cfg.app_path}",
+        commands=[uv_command(cfg)],
+        _if=lambda: missing_venv or deps_state != "current" or pending.did_change(),
     )
     if deps_state is None:
         verify_probe(deps_check, name=f"{cfg.user} dependencies", expect="current")
@@ -426,6 +439,8 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group_name
     )
+    for reads in worker_reads.values():
+        reads.append(env)
     if isinstance(cfg.database, PostgresDb):
         db = cfg.database
         postgres_database(
@@ -472,6 +487,23 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     def restarting_static() -> bool:
         return cfg.steps.restart_after_collectstatic and static.did_change()
 
+    if cfg.repair_cache_ownership:
+        cache = shlex.quote(str(cfg.cache_dir))
+        wrong = fact(
+            shlex.join(
+                [
+                    "sh",
+                    "-c",
+                    f"if test -d {cache}; then find {cache} "
+                    f"\\( ! -user {cfg.user} -o ! -group {cfg.group_name} \\) -print -quit; fi",
+                ]
+            )
+        )
+        server.shell(
+            name="Repair cache ownership",
+            commands=[f"chown -hR {cfg.user}:{cfg.group_name} {cache}"],
+            _if=lambda: bool(wrong),
+        )
     for group in cfg.steps.extra:
         if group.after == "collectstatic":
             _step_group(cfg, group, triggers, secrets)
@@ -499,6 +531,34 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         units=[unit_op, *([restart_mark] if restart_marker in left else [])],
         restart_when=[pending, deps, restart_mark, *([static] if cfg.steps.restart_after_collectstatic else [])],
     )
+    for (worker, script, text), mark in zip(worker_texts, worker_marks, strict=True):
+        launch = files.put(
+            name=f"Write {worker.unit} launcher",
+            src=StringIO(script),
+            dest=str(cfg.site_path / f"{worker.unit}.sh"),
+            user=cfg.user,
+            group=cfg.group_name,
+            mode="0755",
+        )
+        worker_unit = systemd_unit(worker.unit, text)
+        worker_reads[worker.unit] += [launch, worker_unit]
+        service_rollout(
+            worker.unit,
+            units=[worker_unit, *([mark] if RESTART.format(unit=worker.unit) in left else [])],
+            restart_when=[pending, deps, mark],
+        )
+        # Type=simple can accept a start whose process exits immediately. Keep
+        # restart obligations until the worker stays active without a restart.
+        worker_name = shlex.quote(worker.unit + ".service")
+        health = (
+            f"before=$(systemctl show {worker_name} -p NRestarts --value) && sleep 2 && "
+            f"systemctl is-active --quiet {worker_name} && "
+            f"after=$(systemctl show {worker_name} -p NRestarts --value) && "
+            '[ "$before" = "$after" ]'
+        )
+        mark_read_only(
+            server.shell(name=f"Check worker {worker.unit} stays active", commands=[shlex.join(["sh", "-c", health])])
+        )
     if front is not None and next_unit is not None and next_mark is not None and built is not None:
         service_rollout(
             front.unit,
@@ -529,10 +589,20 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     public_checks(cfg)
     # Last: only a deploy that came up healthy records its commit and clears its markers.
     record_source(cfg.site_path, cfg.source.commit, user=cfg.user, group=cfg.group_name)
-    marks = [pending, restart_mark, *([next_mark] if next_mark else []), *([built] if built else [])]
+    marks = [*worker_marks, pending, restart_mark, *([next_mark] if next_mark else []), *([built] if built else [])]
     server.shell(
         name="Clear the pending markers",
-        commands=[" ".join(["rm -f", _marker(cfg, PENDING), _marker(cfg, restart_marker), *_next_marker(cfg)])],
+        commands=[
+            " ".join(
+                [
+                    "rm -f",
+                    _marker(cfg, PENDING),
+                    _marker(cfg, restart_marker),
+                    *[_marker(cfg, RESTART.format(unit=w.unit)) for w in cfg.workers],
+                    *_next_marker(cfg),
+                ]
+            )
+        ],
         _if=lambda: any(op.did_change() for op in marks) or restarting_static(),
     )
 

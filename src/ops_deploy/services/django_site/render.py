@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import jinja2
 
-from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.core.secrets import MissingSecretKeysError, SecretContent, SecretValues
 from ops_deploy.services.django_site.config import (
     DjangoSiteConfig,
     EnvValue,
@@ -89,7 +89,11 @@ def check_secrets(cfg: DjangoSiteConfig, secrets: SecretValues) -> None:
     """
 
     secrets.require(cfg.required_secret_keys)
-    for key in cfg.required_secret_keys:
+    missing = sorted({ref.secret for ref in cfg.secret_refs if ref.secret not in secrets})
+    if missing:
+        raise MissingSecretKeysError(f"{secrets.ref} is missing referenced keys: {', '.join(missing)}")
+    for ref in cfg.secret_refs:
+        key = ref.secret
         value = secrets[key]
         if value.strip() in PLACEHOLDERS or "CHANGEME" in value:
             raise ValueError(f"secret {key} must be set and not a placeholder")
@@ -147,8 +151,11 @@ def render_env(cfg: DjangoSiteConfig, secrets: SecretValues) -> SecretContent:
             raise ValueError("PostgreSQL password must be ASCII")
         url = f"postgres://{db.user}:{quote(password, safe='')}@{db.host}:{db.port}/{db.name}"
         lines.append(f"DATABASE_URL='{url}'")
+    omit = {e.key for e in cfg.env.extra if e.omit_empty}
     for key, value in cfg.env_entries_unresolved():
         text = resolve(value, secrets)
+        if not text and key in omit:
+            continue
         problem = env_value_problem(text)
         if problem:
             source = f"secret {value.secret}" if isinstance(value, Secret) else "value"

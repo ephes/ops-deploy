@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Django-site database workers with resumable per-unit restart gates, uv
+  transport environment, controller Python-pin assertions, optional env
+  references and opt-in cache ownership repair. Existing site defaults stay
+  unchanged; source sync preserves worker launchers.
+
 - Preserve Django sites' existing `venv` aliases even without fish, and exclude
   controller Ruff caches from source sync. A canonical conversion no longer
   deletes the Wagtail-origin alias or deploys local lint-cache files. Preserve

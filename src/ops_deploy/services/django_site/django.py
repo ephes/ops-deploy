@@ -137,6 +137,13 @@ def uv_args(cfg: DjangoSiteConfig) -> list[str]:
     return [*cfg.app.uv_args, *(["--python", cfg.app.python] if cfg.app.python else [])]
 
 
+def uv_command(cfg: DjangoSiteConfig, *, dry: bool = False) -> str:
+    argv = [str(DEFAULT_UV), "sync", *uv_args(cfg), *(["--dry-run"] if dry else [])]
+    env = {e.key: e.value for e in cfg.app.uv_env}
+    env["UV_PROJECT_ENVIRONMENT"] = str(cfg.venv_path)
+    return f"cd {shlex.quote(str(cfg.app_path))} && {_as_user(cfg.user, cfg.home, env, argv)}"
+
+
 def deps_probe(cfg: DjangoSiteConfig) -> str:
     """``uv sync --dry-run`` (read-only) finds nothing to install, remove or recreate.
 
@@ -144,9 +151,7 @@ def deps_probe(cfg: DjangoSiteConfig) -> str:
     Python version, neither of which the sync's own change shows.
     """
 
-    argv = [str(DEFAULT_UV), "sync", *uv_args(cfg), "--dry-run"]
-    env = {"UV_PROJECT_ENVIRONMENT": str(cfg.venv_path)}
-    sync = f"cd {shlex.quote(str(cfg.app_path))} && {_as_user(cfg.user, cfg.home, env, argv)}"
+    sync = uv_command(cfg, dry=True)
     check = (
         f"out=$( {sync} 2>&1 ) || {{ printf '%s\\n' \"$out\" >&2; exit 1; }}; "
         "if printf '%s\\n' \"$out\" | grep -qx 'Would make no changes'; then echo current; else echo pending; fi"

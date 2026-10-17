@@ -109,6 +109,7 @@ class Secret(Part):
     """
 
     secret: SecretKey
+    allow_empty: bool = False
     strip: Literal["", "/"] = ""
     min_length: int = Field(default=0, ge=0)
     equals: Annotated[str, Field(min_length=1)] | None = None
@@ -126,6 +127,7 @@ EnvValue = str | Secret | Joined
 class EnvEntry(Part):
     key: EnvKey
     value: EnvValue
+    omit_empty: bool = False
 
 
 class SourceSpec(Part):
@@ -156,6 +158,8 @@ class AppSpec(Part):
     timeout: int = Field(default=3600, ge=1)
     python: Annotated[str, Field(pattern=r"^3\.[0-9]{1,2}(\.[0-9]{1,2})?$")] | None = None
     uv_args: tuple[Annotated[str, Field(pattern=r"^--[a-z-]+$")], ...] = DEFAULT_UV_ARGS
+    uv_env: tuple[EnvLiteral, ...] = ()
+    assert_python_version: bool = False
 
 
 class SqliteDb(Part):
@@ -435,6 +439,17 @@ class Checks(Part):
     csrf_path: UrlPath | None = None
 
 
+class DbWorker(Part):
+    """A Django Tasks db_worker sharing the web app and its environment."""
+
+    unit: Annotated[str, Field(pattern=UNIT_PATTERN)]
+    backend: Token = "default"
+    worker_id: Token | None = None
+    queue: Token | None = None
+    interval: int = Field(default=5, ge=1)
+    extra_args: tuple[ManageArg, ...] = ()
+
+
 class DjangoSiteConfig(BaseServiceConfig):
     service_name: ServiceName
     # systemd ``Description=<title> web application``.
@@ -457,6 +472,8 @@ class DjangoSiteConfig(BaseServiceConfig):
     env: EnvSpec = EnvSpec()
     steps: Steps = Steps()
     admin: Annotated[EnsureSuperuser | BootstrapSuperuser, Field(discriminator="kind")] | None = None
+    workers: tuple[DbWorker, ...] = ()
+    repair_cache_ownership: bool = False
     frontend: NextStandalone | None = None
     route: Route
     checks: Checks = Checks()
@@ -497,6 +514,31 @@ class DjangoSiteConfig(BaseServiceConfig):
                 entries = entries if isinstance(entries, list) else [entries]
                 if any(isinstance(entry, dict) and ("path" in entry or entry.get("workspace")) for entry in entries):
                     raise ValueError(f"source uses local dependency {dependency}")
+        protected = (self.database, self.admin, self.env.secret_key, self.env.url_paths, self.env.admin_url)
+        if any(ref.allow_empty for part in protected for ref in _secrets(part)):
+            raise ValueError("database, auth and admin secret references must stay required")
+        storage_keys = {
+            "DJANGO_AWS_ACCESS_KEY_ID",
+            "DJANGO_AWS_SECRET_ACCESS_KEY",
+            "DJANGO_AWS_STORAGE_BUCKET_NAME",
+            "CLOUDFRONT_DOMAIN",
+        }
+        if any(
+            ref.allow_empty for entry in self.env.extra if entry.key in storage_keys for ref in _secrets(entry.value)
+        ):
+            raise ValueError("object storage secret references must stay required")
+        units = [self.unit_name, *([self.frontend.unit] if self.frontend else []), *(w.unit for w in self.workers)]
+        if len(units) != len(set(units)):
+            raise ValueError("worker, frontend and web units must differ")
+        if any(w.unit in {"gunicorn", "next"} for w in self.workers):
+            raise ValueError("worker launcher collides with a reserved launcher")
+        uv_keys = [e.key for e in self.app.uv_env]
+        if len(uv_keys) != len(set(uv_keys)) or any(k in {"HOME", "UV_PROJECT_ENVIRONMENT"} for k in uv_keys):
+            raise ValueError("uv_env repeats or overrides a reserved key")
+        if self.app.assert_python_version:
+            pin = self.source.path / self.app.app_dir / ".python-version"
+            if not self.app.python or not pin.is_file() or pin.read_text().strip() != self.app.python:
+                raise ValueError("source .python-version must match app.python")
         keys = [entry.key for entry in self.env.extra]
         repeated = sorted(
             {
@@ -633,6 +675,7 @@ class DjangoSiteConfig(BaseServiceConfig):
         if isinstance(self.admin, BootstrapSuperuser):
             host_files.append(self.bootstrap_marker)
         host_files.append(self.site_path / "gunicorn.sh")
+        host_files.extend(self.site_path / f"{w.unit}.sh" for w in self.workers)
         # Wagtail also creates this alias when the account does not use fish.
         host_files.append(self.app_path / "venv")
         front = self.frontend
@@ -658,7 +701,7 @@ class DjangoSiteConfig(BaseServiceConfig):
     def required_secret_keys(self) -> tuple[str, ...]:  # type: ignore[override]
         """Every secret key the config refers to, in order of first use."""
 
-        return tuple(dict.fromkeys(secret.secret for secret in _secrets(self)))
+        return tuple(dict.fromkeys(secret.secret for secret in _secrets(self) if not secret.allow_empty))
 
     @property
     def secret_refs(self) -> tuple[Secret, ...]:
@@ -692,3 +735,6 @@ def _secrets(value: Any) -> Iterator[Secret]:
     elif isinstance(value, (tuple, list)):
         for item in value:
             yield from _secrets(item)
+
+
+AppSpec.model_rebuild()

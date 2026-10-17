@@ -1,0 +1,34 @@
+# Managed by Ansible - Wagtail Django Tasks db_worker
+
+[Unit]
+Description=Wagtail Django Tasks db_worker ({{ wagtail_service_name }})
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ wagtail_user }}
+Group={{ wagtail_group }}
+WorkingDirectory={{ wagtail_site_path }}
+Environment="DJANGO_SETTINGS_MODULE={{ wagtail_django_settings_module }}"
+EnvironmentFile={{ wagtail_env_path }}
+
+ExecStart={{ wagtail_python }} {{ wagtail_manage_py }} db_worker \
+  --backend {{ wagtail_db_worker_backend }} \
+  --worker-id {{ wagtail_db_worker_id }}{% if wagtail_db_worker_queue_name | length > 0 %} \
+  --queue-name {{ wagtail_db_worker_queue_name }}{% endif %} \
+  --interval {{ wagtail_db_worker_interval_seconds }}{% if wagtail_db_worker_extra_args | length > 0 %} \
+  {{ wagtail_db_worker_extra_args }}{% endif %}
+
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ wagtail_site_path }} {{ wagtail_cache_dir }}
+
+[Install]
+WantedBy=multi-user.target

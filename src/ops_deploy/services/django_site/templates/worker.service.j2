@@ -1,0 +1,33 @@
+# {{ managed }}
+[Unit]
+Description=Django Tasks db_worker ({{ cfg.title }})
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ cfg.user }}
+Group={{ cfg.group_name }}
+WorkingDirectory={{ cfg.app_path }}
+ExecStart={{ cfg.site_path }}/{{ worker.unit }}.sh
+Restart=always
+RestartSec=10
+{% if cfg.hardening %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome={{ 'read-only' if cfg.hardening == 'strict' else 'false' }}
+ReadWritePaths={{ writable | join(' ') }}
+{% if cfg.hardening == 'strict' %}
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+{% endif %}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

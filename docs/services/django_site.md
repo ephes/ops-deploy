@@ -216,7 +216,7 @@ points per site. Ansible stays the last-resort rollback.
 
 ## Secrets
 
-`required_secret_keys` follows from the config: every `Secret(secret=...)` in
+`required_secret_keys` follows from the config: every required `Secret(secret=...)` (excluding explicit `allow_empty` references) in
 it, in order of first use (`env.secret_key`, `env.admin_url` and
 `env.extra` values, `env.url_paths`, the admin account). For marina:
 
@@ -225,7 +225,7 @@ it, in order of first use (`env.secret_key`, `env.admin_url` and
 | `django_secret_key` | `DJANGO_SECRET_KEY`; also keys the admin stamp |
 | `admin_username`, `admin_email`, `admin_password` | `EnsureSuperuser` (stdin only) |
 
-Every referenced secret must be set, a single line and no `CHANGEME`; secrets
+Every required referenced secret must be set, a single line and no `CHANGEME`; secrets
 in `.env` follow its value rules. Errors name keys, never values. Secrets
 reach the host only through `secret_file` (`.env`, the stamp) or stdin.
 
@@ -240,13 +240,15 @@ reach the host only through `secret_file` (`.env`, the stamp) or stdin.
 | `shell` | `/bin/bash` | `/usr/bin/fish` for classic sites |
 | `apt_packages` | `()` | Debian packages installed first, before the user (heis: `fish`, `rsync`, `sqlite3`; no cache update) |
 | `fish` | `false` | fish config and the `<app>/venv` link to `.venv` (excluded from the sync) |
-| `source` | required | `SourceSpec`: `path`, `commit` ([git source](../concepts/git-source.md)), `excludes`, `delete` (default `false`), `required_files` (checked in the app directory), `repair_ownership` (default `true`). The sync always also excludes, anchored at the site root, `.env`, the cache, `staticfiles`, the SQLite database with everything SQLite keeps next to it (`<db>*`: `-wal`, `-shm`, `-journal`), the media root and `media.private_root`, the bootstrap admin's marker, the launchers, the `venv` link and the frontend's installed middleware, purged public directories, `node_modules` (anywhere) and `<app_dir>/.next` when they are inside the site: rsync neither overwrites nor deletes them |
-| `app` | required | `AppSpec`: `app_dir`, `env_dir` (`.env` and the cache, relative to the site; default the app directory), `settings_module`, `wsgi_app` (`config.wsgi`), `port`, `workers` (4), `timeout` (3600), `python` (`uv sync --python`), `uv_args` (`--frozen --no-dev`) |
+| `source` | required | `SourceSpec`: `path`, `commit` ([git source](../concepts/git-source.md)), `excludes`, `delete` (default `false`), `required_files` (checked in the app directory), `repair_ownership` (default `true`). The sync always also excludes, anchored at the site root, `.env`, the cache, `staticfiles`, the SQLite database with everything SQLite keeps next to it (`<db>*`: `-wal`, `-shm`, `-journal`), the media root and `media.private_root`, the bootstrap admin's marker, the launchers (including worker launchers), the `venv` link and the frontend's installed middleware, purged public directories, `node_modules` (anywhere) and `<app_dir>/.next` when they are inside the site: rsync neither overwrites nor deletes them |
+| `app` | required | `AppSpec`: `app_dir`, `env_dir` (`.env` and the cache, relative to the site; default the app directory), `settings_module`, `wsgi_app` (`config.wsgi`), `port`, `workers` (4), `timeout` (3600), `python` (`uv sync --python`), `uv_args` (`--frozen --no-dev`), `uv_env` (empty), `assert_python_version` (false) |
 | `database` | `SqliteDb()` | `path` (default `<app>/db.sqlite3`) |
 | `media` | `LocalMedia()` | `root` (default `<app>/media`), `private_root` (optional) |
 | `env` | `EnvSpec()` | `secret_key` (`Secret("django_secret_key")`), `admin_url` (literal or `Secret`), `allowed_hosts` (default `<fqdn>,localhost`), `extra` (ordered `EnvEntry(key, value)`), `url_paths` (`PathSecrets`, below) |
 | `steps` | `Steps()` | `migrate_args` (none), `collectstatic_args` (`--noinput`), `restart_after_collectstatic`, `extra` (`StepGroup`s) |
 | `admin` | `None` | `EnsureSuperuser(command="ensure_superuser", username/email/password secrets)` or `BootstrapSuperuser(username="admin", email, password=Secret("bootstrap_admin_password"), marker)` |
+| `workers` | `()` | `DbWorker` unit/backend/id/queue/interval/args, sharing app env and gated rollout |
+| `repair_cache_ownership` | `false` | Repair cache entry owner/group recursively, preserving modes |
 | `frontend` | `None` | `NextStandalone`, below |
 | `route` | required | `Route`: `fqdn`, `name` (the route file; default the unit), `host_rule`, `tls_host_rule` (default `host_rule`), `cert_resolver` (`letsencrypt`), `backend` (`localhost`), `canonical_redirect_regex` and `canonical_redirect_replacement` (both or neither: a permanent `redirect-canonical-host` middleware on the HTTPS router, heis's), `public_reason` (required) |
 | `checks` | `Checks()` | `port_retries` (30), `path` (`/`), `statuses` (200, 301, 302), `public` (`UrlCheck`s), `csrf_path` |
@@ -500,3 +502,36 @@ conversion. A missing directory is created as the app user/group with mode
 `0755`, matching the Wagtail origin. Symlinks and other existing file types
 are refused before execution. External `data_dirs` keep their existing `0750`
 provisioning policy.
+
+### Database workers and transport
+
+`workers` declares Django Tasks `db_worker` units sharing the app's `.env`
+and virtualenv. Each worker names its unit, backend, optional worker id/queue,
+interval and argv tuple. A canonical shell launcher sources `.env` and execs
+`python manage.py db_worker`; the unit keeps the origin's `RestartSec=10`.
+The worker's own unit/launcher or shared source, dependencies, env and primary
+group changes owe its restart. Root-owned restart markers are written before
+changes and cleared only after all rollouts and checks succeed. Each worker
+must remain active across a two-second settle window without an increase in
+NRestarts; an immediate exit fails the deploy and retains its marker. This
+is a process-liveness check, not proof of successful task processing. A worker-only
+unit repair or leftover worker marker does not restart the web process.
+
+`app.uv_env` supplies validated literal environment entries identically to
+`uv sync --dry-run` and the actual sync (for example per-command Git HTTP/1.1).
+It cannot override HOME or UV_PROJECT_ENVIRONMENT. `assert_python_version`
+requires the controller source's `.python-version` to match `app.python`
+before connecting. Both options default off/empty for existing sites.
+
+`repair_cache_ownership` opt-in repairs recursively owned cache entries when
+needed, without changing their modes. First-only `StepGroup`s can ensure an
+application's default Site once; their completion marker remains outside the
+source tree. Host-written worker launchers are excluded from source sync.
+
+A `Secret(allow_empty=True)` is an explicit optional env reference: the
+controller must still supply its value (including an empty default), and it
+still rejects placeholders and unsafe env characters. Database/auth/admin
+and the standard object-storage references cannot opt out of required values.
+`EnvEntry(omit_empty=True)` omits that env line when resolved empty; the default
+retains it. Optional/default resolution belongs in the private control plane;
+this module adds no object-storage provider or lifecycle behavior.

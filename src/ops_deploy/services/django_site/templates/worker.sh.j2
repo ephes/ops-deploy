@@ -1,0 +1,7 @@
+#!/bin/sh
+# {{ managed }}
+cd {{ cfg.app_path }}
+set -a
+. {{ cfg.env_path }}
+set +a
+exec {{ cfg.venv_bin }}/python manage.py db_worker --backend {{ worker.backend }} --worker-id {{ worker.worker_id or worker.unit }}{% if worker.queue %} --queue-name {{ worker.queue }}{% endif %} --interval {{ worker.interval }}{% for arg in worker.extra_args %} {{ arg }}{% endfor %}
