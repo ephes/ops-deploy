@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from functools import cache
 from pathlib import PurePosixPath
+from urllib.parse import quote
 
 import jinja2
 
@@ -19,6 +20,7 @@ from ops_deploy.services.django_site.config import (
     EnvValue,
     Joined,
     PathSecrets,
+    PostgresDb,
     Secret,
     env_value_problem,
 )
@@ -138,6 +140,13 @@ def render_env(cfg: DjangoSiteConfig, secrets: SecretValues) -> SecretContent:
 
     check_secrets(cfg, secrets)
     lines = [f"# {MANAGED}"]
+    if isinstance(cfg.database, PostgresDb):
+        db = cfg.database
+        password = resolve(db.password, secrets)
+        if not password.isascii():
+            raise ValueError("PostgreSQL password must be ASCII")
+        url = f"postgres://{db.user}:{quote(password, safe='')}@{db.host}:{db.port}/{db.name}"
+        lines.append(f"DATABASE_URL='{url}'")
     for key, value in cfg.env_entries_unresolved():
         text = resolve(value, secrets)
         problem = env_value_problem(text)

@@ -27,6 +27,7 @@ from io import StringIO
 from pathlib import PurePosixPath
 from typing import cast
 
+from pydantic import SecretStr
 from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
@@ -47,11 +48,19 @@ from ops_deploy.helpers import (
     uv_sync,
     wait_port,
 )
+from ops_deploy.helpers.checks import mark_read_only
+from ops_deploy.helpers.postgres import postgres_database
 from ops_deploy.helpers.probes import probe, verify_probe
 from ops_deploy.helpers.traefik import DYNAMIC_DIR
-from ops_deploy.ops import secret_file, sync_tree
+from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services.django_site import frontend
-from ops_deploy.services.django_site.config import DjangoSiteConfig, EnsureSuperuser, NextStandalone, StepGroup
+from ops_deploy.services.django_site.config import (
+    DjangoSiteConfig,
+    EnsureSuperuser,
+    NextStandalone,
+    PostgresDb,
+    StepGroup,
+)
 from ops_deploy.services.django_site.django import (
     bootstrap_superuser,
     deps_probe,
@@ -62,9 +71,10 @@ from ops_deploy.services.django_site.django import (
     migrations_probe,
     site_shell,
     static_collected,
+    stdin_env,
 )
 from ops_deploy.services.django_site.public import public_checks
-from ops_deploy.services.django_site.render import render, render_env
+from ops_deploy.services.django_site.render import render, render_env, resolve
 
 PENDING = ".ops-deploy-pending"
 RESTART = ".ops-deploy-restart-{unit}"
@@ -231,21 +241,40 @@ def _fish(cfg: DjangoSiteConfig) -> None:
     )
 
 
-def _step_group(cfg: DjangoSiteConfig, group: StepGroup, triggers: dict[str, Callable[[], bool]]) -> None:
+def _step_group(
+    cfg: DjangoSiteConfig, group: StepGroup, triggers: dict[str, Callable[[], bool]], secrets: SecretValues
+) -> None:
     """One ``steps.extra`` group, gated by its triggers, its marker and ``when``."""
 
     left = False
     if group.marker:
         left = fact(f"test -e {_marker(cfg, group.marker)} && echo pending || true") == "pending"
+    done = f"{group.marker}-done" if group.when == "first" else ""
+    complete = bool(done) and fact(f"test -e {_marker(cfg, done)} && echo present || true") == "present"
     gate = [triggers[trigger] for trigger in sorted(group.triggers)]
 
     def needed() -> bool:
-        return group.when == "always" or left or any(happened() for happened in gate)
+        return (
+            group.when == "always"
+            or left
+            or (not complete if group.when == "first" else any(happened() for happened in gate))
+        )
 
     if group.marker:
         server.shell(name=f"Mark {group.name} pending", commands=[_touch(cfg, group.marker)], _if=needed)
     for step in group.steps:
-        server.shell(name=step.name, commands=[site_shell(cfg, manage_script(cfg, *step.argv))], _if=needed)
+        command = site_shell(cfg, manage_script(cfg, *step.argv, stdin_env=bool(step.stdin_env)))
+        if step.stdin_env:
+            secret_stdin(
+                name=step.name,
+                command=command,
+                content=stdin_env({entry.key: resolve(entry.value, secrets) for entry in step.stdin_env}),
+                _if=needed,
+            )
+        else:
+            server.shell(name=step.name, commands=[command], _if=needed)
+    if done:
+        server.shell(name=f"Record {group.name} completed", commands=[_touch(cfg, done)], _if=needed)
     if group.marker:
         server.shell(name=f"Clear {group.name} marker", commands=[f"rm -f {_marker(cfg, group.marker)}"], _if=needed)
 
@@ -271,6 +300,12 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     route_text = render("route.traefik.yml.j2", cfg)
     next_texts = (render("next.sh.j2", cfg), render("unit.service.j2", cfg, frontend_unit=True)) if front else ("", "")
 
+    if isinstance(cfg.database, PostgresDb):
+        db = cfg.database
+        # Fail closed before any mutation: never install/start the shared server.
+        ready = fact(f"runuser -u postgres -- pg_isready -q -p {db.port} && echo ready || true")
+        if ready != "ready":
+            raise ValueError("PostgreSQL is unavailable; provision the host separately")
     if front is not None:
         frontend.require_tools(front)
     if cfg.apt_packages:
@@ -283,7 +318,7 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         shell=cfg.shell,
         directories=[cfg.site_path, cfg.cache_dir],
     )
-    for path in cfg.data_dirs:
+    for path in (*cfg.data_dirs, *([cfg.media_root] if isinstance(cfg.database, PostgresDb) else [])):
         files.directory(
             name=f"Ensure directory {path}", path=str(path), user=cfg.user, group=cfg.group_name, mode="0750"
         )
@@ -373,6 +408,15 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group_name
     )
+    if isinstance(cfg.database, PostgresDb):
+        db = cfg.database
+        postgres_database(
+            db.name,
+            owner=db.user,
+            password=SecretStr(resolve(db.password, secrets)),
+            port=db.port,
+            manage_service=False,
+        )
     migrations_check = migrations_probe(cfg)
     migrations = probe(migrations_check, name=f"{cfg.user} migrations")
     migrate = manage(
@@ -392,7 +436,7 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     triggers = {"source": source_changed, "deps": deps.did_change, "migrate": migrate.did_change}
     for group in cfg.steps.extra:
         if group.after == "migrate":
-            _step_group(cfg, group, triggers)
+            _step_group(cfg, group, triggers, secrets)
     static = manage(
         cfg,
         "Collect static files",
@@ -403,12 +447,16 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         before=_touch(cfg, restart_marker) if cfg.steps.restart_after_collectstatic else "",
     )
 
+    for static_path in cfg.steps.required_static:
+        target = shlex.quote(str(cfg.app_path / static_path))
+        mark_read_only(server.shell(name=f"Verify required static path {static_path}", commands=[f"test -e {target}"]))
+
     def restarting_static() -> bool:
         return cfg.steps.restart_after_collectstatic and static.did_change()
 
     for group in cfg.steps.extra:
         if group.after == "collectstatic":
-            _step_group(cfg, group, triggers)
+            _step_group(cfg, group, triggers, secrets)
     if isinstance(cfg.admin, EnsureSuperuser):
         ensure_superuser(cfg, cfg.admin, secrets)
     elif cfg.admin is not None:
@@ -439,6 +487,16 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
             units=[next_unit, *([next_mark] if next_marker in left else [])],
             restart_when=[next_mark, built],
         )
+    if cfg.route.noindex:
+        files.put(
+            name="Write noindex response middleware",
+            src=StringIO(render("noindex.traefik.yml.j2", cfg)),
+            dest=str(DYNAMIC_DIR / f"{cfg.route_name}-noindex.traefik.yml"),
+            mode="0644",
+            user="root",
+            group="root",
+        )
+
     # Never a Traefik restart: its file provider watches the directory.
     route = SiteRoute(name=cfg.route_name, host=cfg.route.fqdn, app_port=cfg.app.port, app_host=cfg.route.backend)
     traefik_route(route, renderer=lambda _route, _hash: route_text, restart="none")

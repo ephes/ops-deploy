@@ -1,0 +1,34 @@
+# Managed by Ansible - Wagtail systemd service
+
+[Unit]
+Description=Wagtail Django Application ({{ wagtail_service_name }})
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ wagtail_user }}
+Group={{ wagtail_group }}
+WorkingDirectory={{ wagtail_site_path }}
+Environment="DJANGO_SETTINGS_MODULE={{ wagtail_django_settings_module }}"
+EnvironmentFile={{ wagtail_env_path }}
+
+ExecStart={{ wagtail_venv_bin }}/gunicorn \
+  --workers {{ wagtail_gunicorn_workers }} \
+  --timeout {{ wagtail_gunicorn_timeout }} \
+  --bind {{ wagtail_app_host }}:{{ wagtail_app_port }}{% if wagtail_gunicorn_extra_args | length > 0 %} \
+  {{ wagtail_gunicorn_extra_args }}{% endif %} \
+  {{ wagtail_wsgi_module }}:application
+
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ wagtail_site_path }} {{ wagtail_cache_dir }}
+
+[Install]
+WantedBy=multi-user.target

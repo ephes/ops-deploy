@@ -21,7 +21,7 @@ from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers.probes import migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
 from ops_deploy.ops import secret_file, secret_stdin
-from ops_deploy.services.django_site.config import BootstrapSuperuser, DjangoSiteConfig, EnsureSuperuser
+from ops_deploy.services.django_site.config import BootstrapSuperuser, DjangoSiteConfig, EnsureSuperuser, SqliteDb
 from ops_deploy.services.django_site.render import resolve
 
 # Records which admin account was last ensured (an HMAC, never the password).
@@ -129,7 +129,7 @@ def migrations_probe(cfg: DjangoSiteConfig) -> str:
     """``migrate --check`` (read-only), only against an existing database (Django would create one)."""
 
     plan = site_shell(cfg, manage_script(cfg, "migrate", "--check", "--plan"))
-    needed = (cfg.db_path, cfg.env_path, cfg.venv_bin / "python")
+    needed = (*([cfg.db_path] if isinstance(cfg.database, SqliteDb) else []), cfg.env_path, cfg.venv_bin / "python")
     return when_present(needed, migrations_state(plan), otherwise="pending")
 
 

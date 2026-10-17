@@ -1,0 +1,66 @@
+# {{ managed }}
+# Public website, no Basic Auth: {{ cfg.route.public_reason }}
+
+http:
+  routers:
+    {{ cfg.unit_name }}-secure:
+      rule: "{{ cfg.route.host_rule }}"
+      entryPoints:
+{% for ep in ["web-secure"] %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - {{ cfg.unit_name }}-redirect-www
+        - {{ cfg.unit_name }}-headers
+        - {{ cfg.unit_name }}-gzip
+{% for middleware in cfg.route.extra_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ cfg.unit_name }}
+{% if cfg.route.cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ cfg.route.cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    {{ cfg.unit_name }}-http:
+      rule: "{{ cfg.route.host_rule }}"
+      entryPoints:
+        - web
+      middlewares:
+        - {{ cfg.unit_name }}-redirect
+      service: {{ cfg.unit_name }}
+
+  middlewares:
+    {{ cfg.unit_name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    {{ cfg.unit_name }}-gzip:
+      compress: {}
+
+    {{ cfg.unit_name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    {{ cfg.unit_name }}-redirect-www:
+      redirectRegex:
+        regex: "^https?://www\\.(.*)"
+        replacement: "https://${1}"
+        permanent: false
+
+  services:
+    {{ cfg.unit_name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ cfg.route.backend }}:{{ cfg.app.port }}"

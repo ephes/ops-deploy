@@ -9,6 +9,7 @@ on the site's name. Values that come from the site's secrets file are
 from __future__ import annotations
 
 import re
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal, Self
@@ -141,6 +142,7 @@ class SourceSpec(Part):
     required_files: tuple[str, ...] = ("manage.py", "pyproject.toml", "uv.lock")
     # Repair the owner of anything in the site tree that is not the service user's.
     repair_ownership: bool = True
+    forbid_local_dependencies: bool = False
 
 
 class AppSpec(Part):
@@ -165,6 +167,17 @@ class SqliteDb(Part):
     @classmethod
     def _plain(cls, value: PurePosixPath | None) -> PurePosixPath | None:
         return None if value is None else plain_path(value)
+
+
+class PostgresDb(Part):
+    """Local PostgreSQL role/database; installation remains a host concern."""
+
+    kind: Literal["postgres"] = "postgres"
+    name: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,62}$")]
+    user: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,62}$")]
+    host: Literal["localhost", "127.0.0.1"] = "localhost"
+    port: int = Field(default=5432, ge=1, le=65535)
+    password: Secret = Secret(secret="postgres_password")
 
 
 class LocalMedia(Part):
@@ -206,6 +219,7 @@ class EnvSpec(Part):
 class ManageStep(Part):
     name: Label
     argv: tuple[ManageArg, ...] = Field(min_length=1)
+    stdin_env: tuple[EnvEntry, ...] = ()
 
 
 Trigger = Literal["source", "deps", "migrate"]
@@ -225,7 +239,7 @@ class StepGroup(Part):
 
     name: Label
     steps: tuple[ManageStep, ...] = Field(min_length=1)
-    when: Literal["changes", "always"] = "changes"
+    when: Literal["changes", "first", "always"] = "changes"
     triggers: frozenset[Trigger] = frozenset({"source", "deps", "migrate"})
     marker: MarkerName | None = None
     after: Literal["migrate", "collectstatic"] = "collectstatic"
@@ -237,6 +251,9 @@ class Steps(Part):
     # collectstatic also restarts the main unit (a manifest the process caches).
     restart_after_collectstatic: bool = False
     extra: tuple[StepGroup, ...] = ()
+    required_static: tuple[
+        Annotated[str, Field(pattern=r"^\.?[A-Za-z0-9_-][A-Za-z0-9._-]*(/\.?[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")], ...
+    ] = ()
 
 
 class EnsureSuperuser(Part):
@@ -359,6 +376,10 @@ class Route(Part):
     """
 
     fqdn: Hostname
+    # Preserve externally referenced Wagtail router/middleware names.
+    wagtail: bool = False
+    extra_middlewares: tuple[Annotated[str, Field(pattern=r"^[A-Za-z0-9_.@-]+$")], ...] = ()
+    noindex: bool = False
     # The route file's name; None: the unit.
     name: Annotated[str, Field(pattern=UNIT_PATTERN)] | None = None
     # The address in the service URLs (gunicorn and Next.js listen on 127.0.0.1).
@@ -366,7 +387,7 @@ class Route(Part):
     host_rule: TraefikRule
     # The HTTPS router's rule; None: ``host_rule``.
     tls_host_rule: TraefikRule | None = None
-    cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")] = "letsencrypt"
+    cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]*$")] = "letsencrypt"
     # Both set: a permanent redirect to the canonical host on the HTTPS router
     # (regex and replacement land in single quotes).
     canonical_redirect_regex: RedirectPart = ""
@@ -376,6 +397,12 @@ class Route(Part):
 
     @model_validator(mode="after")
     def _redirect_is_complete(self) -> Self:
+        if self.wagtail and (
+            self.tls_host_rule or self.canonical_redirect_regex or self.canonical_redirect_replacement
+        ):
+            raise ValueError("Wagtail routes do not support classic TLS rules or canonical redirects")
+        if not self.wagtail and (not self.cert_resolver or self.noindex or self.extra_middlewares):
+            raise ValueError("optional TLS, noindex and extra middlewares require a Wagtail route")
         if bool(self.canonical_redirect_regex) != bool(self.canonical_redirect_replacement):
             raise ValueError("canonical_redirect_regex and canonical_redirect_replacement go together")
         return self
@@ -425,7 +452,7 @@ class DjangoSiteConfig(BaseServiceConfig):
     fish: bool = False
     source: SourceSpec
     app: AppSpec
-    database: SqliteDb = SqliteDb()
+    database: Annotated[SqliteDb | PostgresDb, Field(discriminator="kind")] = SqliteDb()
     media: LocalMedia = LocalMedia()
     env: EnvSpec = EnvSpec()
     steps: Steps = Steps()
@@ -437,13 +464,48 @@ class DjangoSiteConfig(BaseServiceConfig):
     # makes the home read-only and adds the kernel and address-family limits.
     hardening: bool | Literal["strict"] = False
 
+    @field_validator("database", mode="before")
+    @classmethod
+    def _database_kind(cls, value: Any) -> Any:
+        # Existing SQLite SiteSpecs predate the discriminated union.
+        return {"kind": "sqlite", **value} if isinstance(value, dict) else value
+
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         missing = [p for p in self.source.required_files if not (self.source.path / self.app.app_dir / p).exists()]
         if missing:
             raise ValueError(f"source.path is not a {self.service_name} checkout (missing {', '.join(missing)})")
+        if isinstance(self.database, PostgresDb) and self.admin is not None:
+            raise ValueError("PostgreSQL sites use management step groups for admin bootstrap")
+        if self.route.noindex and f"{self.route_name}-noindex@file" not in self.route.extra_middlewares:
+            raise ValueError("noindex middleware must be attached to the Wagtail route")
+        if self.route.wagtail and self.frontend is not None:
+            raise ValueError("Wagtail route does not support a frontend")
+        for group in self.steps.extra:
+            if group.when == "first" and not group.marker:
+                raise ValueError("first step groups require a stable marker")
+            for step in group.steps:
+                names = [entry.key for entry in step.stdin_env]
+                if any(any(c in str(entry.value) for c in "\r\n\0") for entry in step.stdin_env):
+                    raise ValueError("step stdin_env must contain single-line values")
+                if len(names) != len(set(names)):
+                    raise ValueError("step stdin_env repeats keys")
+        if self.source.forbid_local_dependencies:
+            project = tomllib.loads((self.source.path / self.app.app_dir / "pyproject.toml").read_text())
+            sources = project.get("tool", {}).get("uv", {}).get("sources", {})
+            for dependency, entries in sources.items():
+                entries = entries if isinstance(entries, list) else [entries]
+                if any(isinstance(entry, dict) and ("path" in entry or entry.get("workspace")) for entry in entries):
+                    raise ValueError(f"source uses local dependency {dependency}")
         keys = [entry.key for entry in self.env.extra]
-        repeated = sorted({k for k in keys if keys.count(k) > 1 or k in BASE_ENV_KEYS})
+        repeated = sorted(
+            {
+                k
+                for k in keys
+                if keys.count(k) > 1
+                or k in (*BASE_ENV_KEYS, *(["DATABASE_URL"] if isinstance(self.database, PostgresDb) else []))
+            }
+        )
         if repeated:
             raise ValueError(f"env.extra repeats {', '.join(repeated)}")
         for key, value in self.env_entries_unresolved():
@@ -451,6 +513,7 @@ class DjangoSiteConfig(BaseServiceConfig):
             if problem:
                 raise ValueError(f"env value of {key} {problem}")
         markers = [g.marker for g in self.steps.extra if g.marker]
+        markers += [f"{g.marker}-done" for g in self.steps.extra if g.when == "first" and g.marker]
         if len(markers) != len(set(markers)):
             raise ValueError("steps.extra markers must differ")
         reserved = [m for m in markers if m in RESERVED_MARKERS or m.startswith(".ops-deploy-restart-")]
@@ -514,6 +577,8 @@ class DjangoSiteConfig(BaseServiceConfig):
 
     @property
     def db_path(self) -> PurePosixPath:
+        if not isinstance(self.database, SqliteDb):
+            raise ValueError("PostgreSQL has no SQLite file")
         return self.database.path or self.app_path / "db.sqlite3"
 
     @property
@@ -528,7 +593,11 @@ class DjangoSiteConfig(BaseServiceConfig):
     def outside_dirs(self) -> tuple[PurePosixPath, ...]:
         """Directories outside the site the site writes to (database, media), the home included."""
 
-        dirs = (self.db_path.parent, self.media_root, *([self.media.private_root] if self.media.private_root else []))
+        dirs = (
+            *([self.db_path.parent] if isinstance(self.database, SqliteDb) else []),
+            self.media_root,
+            *([self.media.private_root] if self.media.private_root else []),
+        )
         return tuple(dict.fromkeys(d for d in dirs if not d.is_relative_to(self.site_path)))
 
     @property
@@ -571,7 +640,7 @@ class DjangoSiteConfig(BaseServiceConfig):
             if front.middleware_from:
                 host_files.append(self.site_path / front.app_dir / "middleware.ts")
         anchored = [f"/{p.relative_to(self.site_path)}" for p in host_files if p.is_relative_to(self.site_path)]
-        if self.db_path.is_relative_to(self.site_path):
+        if isinstance(self.database, SqliteDb) and self.db_path.is_relative_to(self.site_path):
             anchored.append(f"/{self.db_path.relative_to(self.site_path)}*")
         if front is not None:
             # Built on the host: the installed dependencies and the build output.

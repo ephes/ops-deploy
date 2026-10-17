@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add local PostgreSQL Django sites without shared-server management, Wagtail
+  route/security preservation, required static paths, and resumable bootstrap
+  step groups with secrets on stdin. SQLite defaults remain unchanged.
+
 - `django_site`: an optional Next.js standalone frontend (`NextStandalone`:
   its own unit and `next.sh`, `npm ci` and `next build` gated on the source
   and a build-environment stamp, the middleware installed from a source file,

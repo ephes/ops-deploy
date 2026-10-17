@@ -32,7 +32,7 @@ from pyinfra.facts.server import Command
 from pyinfra.operations import systemd
 
 SCRAM_ITERATIONS = 4096  # PostgreSQL's scram_iterations default
-_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_-]{0,62}$")
 
 
 def scram_verifier(password: str, *, salt: bytes, iterations: int = SCRAM_ITERATIONS) -> str:
@@ -159,7 +159,7 @@ def _database(database: str, owner: str, admin_user: str, port: int) -> Generato
 
 @dataclass(frozen=True)
 class PostgresDatabase:
-    service: OperationMeta
+    service: OperationMeta | None
     role: OperationMeta
     database: OperationMeta
 
@@ -173,23 +173,30 @@ def postgres_database(
     service: str = "postgresql",
     port: int = 5432,
     enabled: bool = True,
+    manage_service: bool = True,
 ) -> PostgresDatabase:
     """Ensure login role ``owner`` with ``password`` and database ``name`` owned by it.
 
-    Like ``postgres_install``: ``service`` is enabled and running, the role
+    Like ``postgres_install`` by default: ``service`` is enabled and running, the role
     has ``LOGIN`` (other attributes are left alone), the database and its
     ``public`` schema belong to ``owner``. ``port`` selects the cluster;
     ``enabled=False`` leaves the service disabled. The server must be running
-    when the operations run; while it is not installed or not running yet
+    when the operations run. ``manage_service=False`` leaves its state and
+    enablement untouched and returns ``service=None``; callers must check server
+    availability first. While it is not installed or not running yet
     (the same deploy sets it up) the plan treats everything as new.
     """
 
     for value in (name, owner, admin_user):
         if not _IDENTIFIER.match(value):
-            raise OperationValueError(f"not a plain PostgreSQL identifier: {value!r}")
+            raise OperationValueError(f"not a supported quoted PostgreSQL identifier: {value!r}")
     if not password.get_secret_value() or not password.get_secret_value().isascii():
         raise OperationValueError("the PostgreSQL password must be non-empty ASCII")
-    service_op = systemd.service(name=f"Ensure {service} is running", service=service, running=True, enabled=enabled)
+    service_op = (
+        systemd.service(name=f"Ensure {service} is running", service=service, running=True, enabled=enabled)
+        if manage_service
+        else None
+    )
     role = _role(
         name=f"Ensure PostgreSQL role {owner}",
         database=name,

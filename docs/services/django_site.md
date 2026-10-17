@@ -423,3 +423,63 @@ converged deploy reads it and changes nothing.
 - ops-control: `just smoke-marina-coexistence` and
   `just smoke-heis-coexistence SHAPE=production|staging` switch from the
   Ansible roles.
+
+
+## PostgreSQL and Wagtail sites
+
+`database=PostgresDb(name=..., user=..., password=Secret(...))` provisions only
+an ASCII-password login role, database ownership and public-schema ownership.
+The shared local PostgreSQL server must already answer `pg_isready` before any
+mutation; installation, startup and server upgrades remain host operations.
+Hyphenated database/user names are supported as quoted SQL identifiers.
+`DATABASE_URL` is generated automatically with percent-encoded credentials.
+SQLite remains the default, including existing untagged SQLite dictionaries.
+The SQLite superuser helpers are rejected for PostgreSQL; use a management
+step group for a site's idempotent bootstrap instead.
+
+`ManageStep.stdin_env` is a tuple of `EnvEntry` values sent on stdin and
+exported without shell expansion. Commands must never echo those values.
+`StepGroup(when="first", marker=".ops-deploy-bootstrap", ...)` runs once after
+a successful completion; the separate `-done` marker records completion.
+Both markers are in the root-only state directory. A leftover pending marker
+wins over completion, so interrupted work repeats. Completion-marker names and
+pending-marker names cannot collide. Ordinary `when="changes"` groups can run
+`update_index` on source/dependency/migration changes; their pending marker
+makes failures resumable. `steps.required_static` checks each relative path
+after collection and fails if it is missing.
+
+`source.forbid_local_dependencies=True` rejects uv path/workspace sources in
+`pyproject.toml` on the controller. This prevents a deployment from silently
+using a developer's local dependency checkout.
+
+`route.wagtail=True` retains Wagtail's externally referenced unit-based router,
+service and middleware names and HSTS/security headers inside the canonical
+route renderer. `route.extra_middlewares` adds existing file-provider
+middlewares; `route.noindex` writes a companion `<route>-noindex.traefik.yml`.
+Classic-only TLS rules and canonical redirects are rejected for Wagtail
+routes instead of silently ignored. Noindex middleware is installed before the
+route that references it. Disabling noindex leaves an inert companion file;
+removing that file belongs to a separately reviewed routing cleanup.
+An empty `cert_resolver` renders `tls: {}` for an existing certificate setup.
+There is one environment/launcher/unit format for all sites.
+
+| Origin file or behavior | Canonical change | Reason |
+|---|---|---|
+| Wagtail `.env`: double quotes/comments | Header and single quotes; same parsed keys/values; URL credentials encoded | Shared parser-safe format, reserved credential characters supported |
+| Wagtail unit: inline gunicorn, EnvironmentFile, RestartSec=10 | Shared launcher sourcing `.env`, RestartSec=5, shared description | One unit format, same bind/worker/timeout/WSGI arguments |
+| Wagtail gunicorn logging | Adds existing canonical stdout/stderr/access format | Consistent journal diagnostics |
+| Wagtail route | Header only differs; names, headers, redirects, TLS and extra middleware preserved | External references and security policy remain contracts |
+| noindex companion | Managed header changes | Same noindex response header |
+| `update_index` every deployment | Changes-only group plus pending marker | Converged deployment does no work |
+| bootstrap every deployment | First-success group plus pending/completion markers | Idempotent initialization with explicit resume |
+| PostgreSQL role dependency installs server | Read-only availability preflight, then role/database only | Server lifecycle belongs to host infrastructure |
+
+The first switch intentionally rewrites the canonical unit/env/launcher and
+restarts the app once; its second run must be a no-op. Ansible fallback would
+rewrite the old files and restart again. Do not alternate tools after a live
+switch; the private control plane owns admission/entry-point guards.
+
+Coverage: `test_django_site_postgres.py`, `test_django_site_wagtail_parity.py`
+(object storage/Sentry on/off, mail URL empty/set, TLS resolver empty/set),
+and `tests/smoke/test_django_site_postgres_smoke.py` (synthetic Linux/PostgreSQL
+Django app, data retention, no-op rerun, pending-source resume).

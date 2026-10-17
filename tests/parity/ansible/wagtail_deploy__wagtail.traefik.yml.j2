@@ -1,0 +1,65 @@
+# Managed by Ansible - Traefik configuration for Wagtail
+
+http:
+  routers:
+    {{ wagtail_service_name }}-secure:
+      rule: "{{ wagtail_traefik_host_rule }}"
+      entryPoints:
+{% for ep in wagtail_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - {{ wagtail_service_name }}-redirect-www
+        - {{ wagtail_service_name }}-headers
+        - {{ wagtail_service_name }}-gzip
+{% for middleware in wagtail_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: {{ wagtail_service_name }}
+{% if wagtail_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ wagtail_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    {{ wagtail_service_name }}-http:
+      rule: "{{ wagtail_traefik_host_rule }}"
+      entryPoints:
+        - web
+      middlewares:
+        - {{ wagtail_service_name }}-redirect
+      service: {{ wagtail_service_name }}
+
+  middlewares:
+    {{ wagtail_service_name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    {{ wagtail_service_name }}-gzip:
+      compress: {}
+
+    {{ wagtail_service_name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    {{ wagtail_service_name }}-redirect-www:
+      redirectRegex:
+        regex: "^https?://www\\.(.*)"
+        replacement: "https://${1}"
+        permanent: false
+
+  services:
+    {{ wagtail_service_name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ wagtail_app_host }}:{{ wagtail_app_port }}"

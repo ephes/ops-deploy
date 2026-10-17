@@ -1,0 +1,7 @@
+# {{ managed }}
+http:
+  middlewares:
+    {{ cfg.route_name }}-noindex:
+      headers:
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow, noarchive"

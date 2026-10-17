@@ -1,3 +1,6 @@
+{% if cfg.route.wagtail %}
+{% include "wagtail-route.traefik.yml.j2" %}
+{% else %}
 # {{ managed }}
 # Public website, no Basic Auth: {{ cfg.route.public_reason }}
 http:
@@ -101,4 +104,5 @@ http:
       loadBalancer:
         servers:
           - url: http://{{ cfg.route.backend }}:{{ cfg.frontend.port }}
+{% endif %}
 {% endif %}
