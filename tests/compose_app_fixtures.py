@@ -15,7 +15,7 @@ import json
 from typing import Any
 
 from ops_deploy.core import SecretRef, SecretValues
-from ops_deploy.helpers.traefik import hash_password, render_route
+from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.compose_app import (
     AppUser,
     Bind,
@@ -35,7 +35,7 @@ from ops_deploy.services.compose_app import (
     Secret,
     Sysctl,
 )
-from ops_deploy.services.compose_app.deploy import route_config
+from ops_deploy.services.compose_app.deploy import route_config, route_without_http
 from ops_deploy.services.compose_app.render import render_compose, render_env, render_unit
 from ops_deploy.services.compose_app.state import desired_stamp
 from tests import fakehost
@@ -286,7 +286,7 @@ def converged(cfg: ComposeAppConfig, secrets: SecretValues, **overrides: Any) ->
     route = route_config(cfg, secrets)
     if route is not None:
         auth = None if route.basic_auth is None else hash_password(route.basic_auth.password.get_secret_value())
-        responses.update(fakehost.file(ROUTE, render_route(route, auth)))
+        responses.update(fakehost.file(ROUTE, route_without_http(route, auth)))
     for env in envs.values():
         if env.content is not None:
             text = env.content.reveal().decode()

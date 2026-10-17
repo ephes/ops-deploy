@@ -636,8 +636,7 @@ def test_the_documented_arr_example_validates() -> None:
 
 
 def test_an_internal_route_has_no_external_router(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
-    from ops_deploy.helpers.traefik import render_route
-    from ops_deploy.services.compose_app.deploy import route_config
+    from ops_deploy.services.compose_app.deploy import route_config, route_without_http
 
     route = cfg.route
     assert route is not None
@@ -645,11 +644,10 @@ def test_an_internal_route_has_no_external_router(cfg: ComposeAppConfig, secrets
     rendered = route_config(internal, secrets)
     assert rendered is not None
 
-    doc = yaml.safe_load(render_route(rendered, None))
+    doc = yaml.safe_load(route_without_http(rendered, None))
     routers = doc["http"]["routers"]
-    assert set(routers) == {"vpnstack-int", "vpnstack-http"}
+    assert set(routers) == {"vpnstack-int"}
     assert "ClientIP(`192.168.0.0/16`)" in routers["vpnstack-int"]["rule"]
-    assert routers["vpnstack-http"]["rule"] == routers["vpnstack-int"]["rule"]
     assert "middlewares" not in doc["http"] or "vpnstack-auth" not in doc["http"]["middlewares"]
 
 
@@ -705,3 +703,25 @@ def test_port_checks_match_addresses_literally(cfg: ComposeAppConfig, tmp_path: 
     assert _run_check(listen, tmp_path, listener.replace("users:", "x"), ours).returncode == 0
     wide = f"{listener}\nLISTEN 0 4096 0.0.0.0:18080 0.0.0.0:*"
     assert _run_check(listen, tmp_path, wide, ours).returncode == 1
+
+
+def test_the_route_has_no_router_on_the_http_entrypoint(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, {**fakehost.UBUNTU})
+    doc = yaml.safe_load(run.upload(ROUTE).decode())
+
+    assert set(doc["http"]["routers"]) == {"vpnstack-int", "vpnstack-ext"}
+    for router in doc["http"]["routers"].values():
+        assert router["entryPoints"] == ["web-secure"]
+
+
+def test_only_the_http_router_is_dropped_whatever_the_host(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
+    from ops_deploy.services.compose_app.deploy import route_config, route_without_http
+
+    route = cfg.route
+    assert route is not None
+    named = cfg.model_copy(update={"route": route.model_copy(update={"name": "app", "host": "app-http.example.org"})})
+    rendered = route_config(named, secrets)
+    assert rendered is not None
+
+    doc = yaml.safe_load(route_without_http(rendered, "$2y$05$" + "a" * 53))
+    assert set(doc["http"]["routers"]) == {"app-int", "app-ext"}

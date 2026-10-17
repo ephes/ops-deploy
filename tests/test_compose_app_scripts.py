@@ -208,6 +208,7 @@ class FakeWebUI:
         self.sessions: set[str] = set()
         self.bad_hosts = 0
         self.sets = 0
+        self.types: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -242,7 +243,10 @@ def webui() -> Iterator[tuple[FakeWebUI, int]]:
 
         def do_POST(self) -> None:
             form = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
-            if self.path == "/api/v2/auth/login":
+            if self.headers.get("Host") != "localhost":
+                ui.bad_hosts += 1
+                self._reply(401)
+            elif self.path == "/api/v2/auth/login":
                 if (form["username"][0], form["password"][0]) == ui.credentials:
                     sid = f"sid{len(ui.sessions)}"
                     ui.sessions.add(sid)
@@ -254,6 +258,7 @@ def webui() -> Iterator[tuple[FakeWebUI, int]]:
                 ui.sets += 1
                 if "web_ui_username" in values:
                     ui.credentials = (values["web_ui_username"], values["web_ui_password"])
+                ui.types.update({k: type(v).__name__ for k, v in values.items()})
                 ui.prefs.update({k: v for k, v in values.items() if not k.startswith("web_ui_")})
                 self._reply(200)
             else:
@@ -310,6 +315,9 @@ def test_first_run_bootstraps_the_credentials_and_sets_the_preferences(
     assert applied.stdout == "changed\n"
     assert ui.credentials == ("fixture-user", "fixture-password-0123")
     assert ui.prefs == {"save_path": "/downloads", "listen_port": 40000, "upnp": False}
+    # Sent as a JSON number (qBittorrent rejects or never matches a string port).
+    assert ui.types["listen_port"] == "int"
+    # Every request carried Host: localhost (host header validation stays on).
     assert ui.bad_hosts == 0
     for text in ("fixture-password-0123", "TEMP0123"):
         assert text not in applied.stdout + applied.stderr + probe.stdout + probe.stderr
@@ -373,3 +381,17 @@ def test_the_key_copy_keeps_the_template_order_through_the_deploy_payload(site: 
 
     assert result.stdout == "changed\n", result.stderr
     assert list(json.loads((site / "jackett.json").read_text())) == ["api_key", "url", "tracker_first", "thread_count"]
+
+
+def test_a_temporary_password_that_fails_is_never_printed(
+    webui: tuple[FakeWebUI, int], docker_log: dict[str, str]
+) -> None:
+    ui, port = webui
+    ui.credentials = ("someone", "else-0123")
+
+    result = run(QBITTORRENT, "apply", qbt_request(port), **docker_log)
+
+    assert result.returncode == 1
+    assert "the temporary password does not log in" in result.stderr
+    for text in ("TEMP0123", "temporary password is provided", "fixture-password-0123"):
+        assert text not in result.stdout + result.stderr

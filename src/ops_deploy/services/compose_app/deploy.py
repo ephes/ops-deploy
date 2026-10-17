@@ -38,7 +38,7 @@ from ops_deploy.base._common import RoleConfig, output
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import BasicAuth, TraefikRoute, mark_read_only, systemd_unit, traefik_route
 from ops_deploy.helpers.systemd import UNIT_DIR
-from ops_deploy.helpers.traefik import DYNAMIC_DIR
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, render_route
 from ops_deploy.infra import docker_steps
 from ops_deploy.ops import secret_file, secret_stdin
 from ops_deploy.services._lifecycle import exists, remove_path, stop_disable
@@ -95,6 +95,21 @@ def route_config(cfg: ComposeAppConfig, secrets: SecretValues) -> TraefikRoute |
         internal_ip_ranges=route.internal_ip_ranges,
         frame_options=route.frame_options,
     )
+
+
+def route_without_http(route: TraefikRoute, auth_hash: str | None) -> str:
+    """The helper's route without its ``-http`` router: nothing on the HTTP entrypoint.
+
+    The static config redirects that entrypoint to HTTPS before any router;
+    without a router there, the backend cannot be served over HTTP even if
+    the redirect went away.
+    """
+
+    text = render_route(route, auth_hash)
+    stripped = re.sub(r"\n\n    # Plain HTTP;.*?(?=\n\n  middlewares:)", "", text, count=1, flags=re.S)
+    if stripped == text or re.search(rf"^    {re.escape(route.name)}-http:$", stripped, re.M):
+        raise ValueError(f"route {route.name}: the helper's -http router was not found")
+    return stripped
 
 
 def _preconditions(cfg: ComposeAppConfig) -> None:
@@ -320,7 +335,7 @@ def _deploy(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
     _inputs(cfg, decided, compose, envs, configs)
     _rollout(cfg, decided, unit_text)
     if route is not None:
-        traefik_route(route, restart="none")
+        traefik_route(route, renderer=route_without_http, restart="none")
     api_steps(cfg, secrets, recreated=decided.apply)
     checks.rollout_checks(cfg)
     if decided.apply:

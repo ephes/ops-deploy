@@ -71,7 +71,7 @@ secret). `required_secret_keys` lists every `Secret` key of the config.
 | `<site_path>/<env file>` | root, its `mode` | `# Managed by ...`, then `KEY='value'` per entry |
 | config files | their owner and mode | YAML (with the header comment) or JSON |
 | `/etc/systemd/system/<unit>.service` | root, `0644` | below |
-| `/etc/traefik/dynamic/<route>.yml` | root, `0644` | the shared helper's route (`-int`/`-ext` or `-secure`, `-http`, headers, gzip) |
+| `/etc/traefik/dynamic/<route>.yml` | root, `0644` | the shared helper's route (`-int`/`-ext` or `-secure`, headers, gzip) without its `-http` router: nothing listens for the app on the HTTP entrypoint |
 
 The unit:
 
@@ -161,9 +161,12 @@ watches the directory, so Traefik is never restarted. The bcrypt hash is
 computed on the controller and reused while it still verifies against the
 password, so a converged run does not rewrite the file.
 
+The helper's `-http` router is left out: no router serves the app on the
+HTTP entrypoint (the static config redirects that entrypoint to HTTPS).
+
 | `access` | Routers | Needs |
 |---|---|---|
-| `internal` | `<name>-int`: `Host && ClientIP(internal ranges)`; `-http` with the same rule | – |
+| `internal` | `<name>-int`: `Host && ClientIP(internal ranges)` | – |
 | `internal_or_basic_auth` | `<name>-int` (priority 120, no auth) and `<name>-ext` (priority 100, Basic Auth) | `basic_auth_user`, `basic_auth_password` (`Secret`) |
 | `public` | `<name>-secure` | `public_reason` |
 
@@ -225,7 +228,7 @@ access; the same qBittorrent preferences.
 | `compose.yml` | inline Jinja, short bind syntax, `./gluetun`, floating tags (`gluetun:v3`, lscr `:latest`), `depends_on` healthy | the structured render: long binds with `create_host_path: false`, absolute paths, the tags pinned to the digests the containers ran (`tag@sha256`), `depends_on` healthy with `restart: true`, a header | a missing mount fails instead of filling the root disk; no image changes without a reviewed pin; dependents restart with gluetun |
 | `gluetun.env`, `apps.env` | unquoted `KEY=value`, an "ansible" header | `KEY='value'`, the compose_app header; the same keys and values | literal values (no `${}` or ` #` surprises) |
 | `torrent.service` | no `ExecReload`, `TimeoutStartSec=0` | `ExecReload`, `TimeoutStartSec=300`, `RequiresMountsFor=/mnt/cryptdata`, the title with Jackett | a change recreates only the services that changed; the stack waits for the encrypted volume |
-| `/etc/traefik/dynamic/torrent.yml` | `torrent-internal`/`torrent-external`, the hash re-salted on every run and Traefik restarted | the helper route: `torrent-int`/`torrent-ext`/`torrent-http`, security headers and gzip, the hash reused while it verifies, no Traefik restart | no rewrite and no restart on converged runs |
+| `/etc/traefik/dynamic/torrent.yml` | `torrent-internal`/`torrent-external`, the hash re-salted on every run and Traefik restarted | the helper route: `torrent-int`/`torrent-ext` (no HTTP router, as before), security headers and gzip, the hash reused while it verifies, no Traefik restart | no rewrite and no restart on converged runs |
 
 Also different: images are pulled only when a pin is missing (the playbook
 pulled `latest` on every run and restarted on a new image); the gluetun

@@ -27,7 +27,8 @@
   `json_key_copy`. Read-only checks: the port preflight before any change,
   running and healthy services, shared network namespaces, ports listening on
   their address only. `remove_compose_app` (`ComposeAppRemoveConfig`) keeps
-  the data. Documented in [compose_app](services/compose_app.md) with the
+  the data. Its route has no router on the HTTP entrypoint. Documented in
+  [compose_app](services/compose_app.md) with the
   torrent switch and a worked *arr example; torrent is its first consumer.
 - New service `ops_deploy.services.shared_tree`: a group-writable setgid tree
   (ops-control's `media_storage`) with a plan-time-gated, idempotent repair.
