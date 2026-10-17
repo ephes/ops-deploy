@@ -1,6 +1,7 @@
 {
   "ops_library": "94047183",
   "roles": {
+    "echoport_backup": "955ddf48aa8916fd33baefb663be38df9b3e9e9cfbfcf7189c8169d261514c4e",
     "fastdeploy_backup": "26b1ed9faa815701a9a75b6c2f711e056d85a7b290ae4d4b1dab05b9e7805297",
     "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",

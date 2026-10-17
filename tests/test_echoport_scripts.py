@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from ops_deploy.services.echoport import deploy as echoport
+from ops_deploy.services.minio import deploy as minio
 
 FAKE_CRONTAB = """#!/bin/sh
 # usage: crontab -l -u USER | crontab -u USER -
@@ -178,7 +179,7 @@ def test_mc_alias_probe_prints_only_a_digest() -> None:
     missing = {"status": "error", "error": {"message": "No such alias `minio` found."}}
 
     def probe(text: str, status: int = 0) -> subprocess.CompletedProcess[str]:
-        argv = [sys.executable, "-I", "-c", echoport.MC_ALIAS_PROBE, str(status)]
+        argv = [sys.executable, "-I", "-c", minio.MC_ALIAS_PROBE, str(status)]
         return subprocess.run(argv, input=text, capture_output=True, text=True)
 
     assert probe(json.dumps(stored)).stdout.strip() == hashlib.sha256(b"http://m:9001\nak\nsk").hexdigest()
@@ -218,7 +219,7 @@ def account(root: Path, mode: str, *, policy: Any = None, user: Any = None) -> s
     argv = [str(root / "mc"), "local", spec.policy, spec.user, echoport.render_policy(spec)]
     env = {"PATH": os.environ["PATH"], "FAKE_MC_DIR": str(root)}
     return subprocess.run(
-        [sys.executable, "-I", "-c", echoport.MINIO_ACCOUNT, mode, *argv], env=env, capture_output=True, text=True
+        [sys.executable, "-I", "-c", minio.MINIO_ACCOUNT, mode, *argv], env=env, capture_output=True, text=True
     )
 
 

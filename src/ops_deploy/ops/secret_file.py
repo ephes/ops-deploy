@@ -29,6 +29,7 @@ from pyinfra.facts.files import File, FindDirectories, Sha256File
 
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.ops._secret_install import TEMP_PREFIX
+from ops_deploy.ops.quiet import quiet_fact
 
 _MODE = re.compile(r"^0?[0-7]{3}$")
 _NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.@-]*$")
@@ -113,7 +114,7 @@ def secret_file(
             info["mode"] == int(mode.lstrip("0") or "0")
             and (user is None or info["user"] == user)
             and (group is None or info["group"] == group)
-            and host.get_fact(Sha256File, path=str(dest)) == hashlib.sha256(content.reveal()).hexdigest()
+            and quiet_fact(Sha256File, path=str(dest)) == hashlib.sha256(content.reveal()).hexdigest()
         )
     if up_to_date and not leftovers:
         host.noop(f"secret file {dest} is up to date")

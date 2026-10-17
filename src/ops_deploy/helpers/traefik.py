@@ -22,7 +22,6 @@ from typing import Annotated, Literal
 
 import bcrypt
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from pyinfra import host
 from pyinfra.api import operation
 from pyinfra.api.command import StringCommand
 from pyinfra.api.operation import OperationMeta
@@ -31,6 +30,7 @@ from pyinfra.operations import files, systemd
 from pyinfra.operations.util import any_changed
 
 from ops_deploy.core.templates import render
+from ops_deploy.ops.quiet import quiet_fact
 
 DYNAMIC_DIR = PurePosixPath("/etc/traefik/dynamic")
 BCRYPT_COST = 5  # htpasswd -B default, which the Ansible roles use
@@ -180,7 +180,8 @@ def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[Strin
     # operation (per host, at plan and execution time) rather than up front.
     auth_hash = None
     if route.basic_auth is not None:
-        current = existing_hash(host.get_fact(FileContents, path=str(route.path)), route.basic_auth.user)
+        # Quiet: the deployed file holds the password hash.
+        current = existing_hash(quiet_fact(FileContents, path=str(route.path)), route.basic_auth.user)
         auth_hash = resolve_hash(route.basic_auth, current)
     yield from files.put._inner(
         src=StringIO(renderer(route, auth_hash)),

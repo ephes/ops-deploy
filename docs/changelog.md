@@ -148,6 +148,34 @@
   Docker's `dashboards-json` mount point, which the role's sync deletes
   (detaching Grafana's dashboards until it restarts).
 
+||||||| parent of b1b48f8 (Port the MinIO deploy and its scoped backup accounts)
+- `minio`: port of the `minio_deploy` role (ops-library main, digest
+  unchanged since fd6b4cf1) and of `deploy-minio.yml`'s port preflight, with
+  a read-only check that the data volume is mounted in place of the
+  playbook's encrypted-volume play. The env file, unit, Traefik route and
+  backup account policy are the role's templates, byte-identical
+  (`tests/test_minio_parity.py`). Binaries are downloaded only when their
+  sha256 differs and verified before they replace the installed ones; root's
+  admin alias goes in with `mc alias import` on stdin; buckets, versioning and
+  anonymous access are probed and set only where they differ; the console
+  route keeps its bcrypt hash while it verifies and Traefik is not restarted.
+  The data directories get the recursive owner but not the role's recursive
+  `0750` on every object. `backup_account` ports `tasks_from:
+  backup_account` (policy, user upsert on stdin, attachment, the final
+  assert) with an optional runner alias (`echoport_backup`'s `minio_alias`)
+  that proves the secret, so a converged run upserts nothing. Bucket policies
+  `readonly`/`writeonly`, TLS, SSE, service accounts and config backups are
+  refused. The account and alias probe scripts move from
+  `services/echoport/files` to `services/minio/files`; echoport imports them
+  from there unchanged. New smoke test `tests/smoke/test_minio_smoke.py`
+  (`MINIO_BIN_DIR`). Role digests: `minio_deploy` unchanged, `echoport_backup`
+  added (its `minio_alias` is mirrored); recorded ops-library commit 94047183.
+  See [minio](services/minio.md).
+- Facts derived from a secret are no longer printed by `pyinfra -vvv`:
+  `probe()`, `secret_file`'s sha256 comparison and the Traefik helper's read
+  of the deployed route (bcrypt hash) load them through the new
+  `ops_deploy.ops.quiet.quiet_fact`. `run_deploy_fake(verbose=True)` collects
+  pyinfra's printed output in `FakeRun.printed` for such checks.
 - `nyxmon`: the Rust monitoring agent is ported (the role's `agent_rust.yml`
   and `agent_verify.yml`, ops-library 2.32.0). `agent_impl` accepts `python`
   and `rust`. The new `agent_rust_version`, `agent_rust_sha256`,

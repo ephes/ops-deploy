@@ -43,4 +43,5 @@ nav:
       - logyard: services/logyard.md
       - graphyard: services/graphyard.md
       - work_app: services/work_app.md
+      - minio: services/minio.md
   - Changelog: changelog.md

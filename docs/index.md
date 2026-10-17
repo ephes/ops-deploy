@@ -40,6 +40,7 @@ src/ops_deploy/
   services/weeknotes_home/ weeknotes.home (port of the weeknotes_home_deploy role)
   services/echoport/  echoport (port of the echoport_deploy role)
   services/work_app/  work_app (port of the work_app_deploy role)
+  services/minio/     minio (port of the minio_deploy role and its backup accounts)
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
 ```

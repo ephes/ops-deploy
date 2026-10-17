@@ -26,6 +26,7 @@ from typing import Any, Literal
 
 from pyinfra.api import Config, Inventory, State
 from pyinfra.api import facts as pyinfra_facts
+from pyinfra.api import output as pyinfra_output
 from pyinfra.api.arguments import CONNECTOR_ARGUMENT_KEYS
 from pyinfra.api.command import FunctionCommand, StringCommand
 from pyinfra.api.connect import connect_all, disconnect_all
@@ -142,6 +143,8 @@ class FakeRun(DeployRun):
     # from ops an ``_if`` gate skipped (see :func:`fish_unsafe`);
     # :func:`run_deploy_fake` fails when there is any.
     fish_unsafe_commands: list[str] = field(default_factory=list)
+    # What pyinfra printed (``verbose=True`` only), one entry per message.
+    printed: list[str] = field(default_factory=list)
 
     @property
     def executed(self) -> list[RecordedEvent]:
@@ -224,6 +227,7 @@ def run_deploy_fake(
     *args: Any,
     responses: Mapping[Any, Any] | None = None,
     host_data: Mapping[str, Any] | None = None,
+    verbose: bool = False,
     **kwargs: Any,
 ) -> FakeRun:
     """Plan and execute ``deploy_fn(*args, **kwargs)`` against one ``@fake`` host.
@@ -231,6 +235,8 @@ def run_deploy_fake(
     ``responses`` is the connector's ``fake_responses`` mapping (first match
     wins, unmatched commands succeed with no output). A failing operation does
     not raise; inspect :attr:`FakeRun.succeeded` / :attr:`FakeRun.error`.
+    ``verbose`` turns on command and fact output as ``pyinfra -vvv`` does and
+    collects what pyinfra prints in :attr:`FakeRun.printed`.
     """
 
     data: dict[str, Any] = dict(host_data or {})
@@ -243,9 +249,10 @@ def run_deploy_fake(
     )
     inventory = Inventory(([(FAKE_HOST, data)], {}))
     state = State(inventory, Config())
+    state.print_output = state.print_fact_output = verbose
     run = FakeRun()
 
-    with _RECORDING_LOCK, _recording(run) as phase:
+    with _RECORDING_LOCK, _echoing(run, verbose), _recording(run) as phase:
         try:
             connect_all(state)
             add_deploy(state, deploy_fn, *args, **kwargs)
@@ -263,6 +270,19 @@ def run_deploy_fake(
     if run.fish_unsafe_commands:
         raise AssertionError(f"commands a fish login shell would alter: {run.fish_unsafe_commands}")
     return run
+
+
+@contextmanager
+def _echoing(run: FakeRun, verbose: bool) -> Iterator[None]:
+    """With ``verbose``, collect pyinfra's printed output (process-wide; under the lock)."""
+
+    previous = pyinfra_output._echo
+    if verbose:
+        pyinfra_output.set_echo(lambda message=None, **_kw: run.printed.append(str(message)))
+    try:
+        yield
+    finally:
+        pyinfra_output.set_echo(previous)
 
 
 @contextmanager

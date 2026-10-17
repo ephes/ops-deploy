@@ -31,6 +31,7 @@ from pyinfra.facts.server import Command
 from pyinfra.operations import server
 
 from ops_deploy.helpers.checks import mark_read_only
+from ops_deploy.ops.quiet import quiet_fact
 
 FAILED = "ops-deploy-probe-failed"
 
@@ -55,7 +56,8 @@ def probe(command: str, *, name: str) -> str | None:
     a warning; follow the step the probe gates with :func:`verify_probe`.
     """
 
-    output = probe_output(str(host.get_fact(Command, command=probe_command(command)) or ""))
+    # Quiet: a probe may answer with a digest of credentials.
+    output = probe_output(str(quiet_fact(Command, command=probe_command(command)) or ""))
     if output is None:
         logger.warning(f"{host.print_prefix}probe failed: {name}; running the step it gates and probing again after it")
     return output

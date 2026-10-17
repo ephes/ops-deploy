@@ -57,12 +57,13 @@ from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 
+# The MinIO account scripts live with the MinIO deploy, which manages such accounts too.
+from ops_deploy.services.minio.deploy import MC_ALIAS_PROBE, MINIO_ACCOUNT
+
 FILES = Path(__file__).parent / "files"
 ADMIN_PROBE = (FILES / "admin_probe.py").read_text()
-MC_ALIAS_PROBE = (FILES / "mc_alias_probe.py").read_text()
 CRON_EDIT = (FILES / "cron_edit.py").read_text()
 NYXMON_CHECK = (FILES / "nyxmon_check.py").read_text()
-MINIO_ACCOUNT = (FILES / "minio_account.py").read_text()
 
 # Never transferred, and protected from --delete (the role's rsync options).
 SOURCE_EXCLUDES = (

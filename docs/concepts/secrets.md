@@ -38,6 +38,13 @@ run). Deploys receive `SecretValues`, never a store.
   ([Operations](operations.md#secret_file)). Only `secret_file` calls
   `SecretContent.reveal()` (enforced by `tests/test_policy.py`).
 - No `_sudo` uploads (enforced by `tests/test_policy.py`).
+- A fact whose output is derived from a secret (a strict probe comparing
+  credentials as a digest, the sha256 `secret_file` compares, a deployed
+  Traefik route with its bcrypt hash) is loaded with `quiet_fact`
+  (`ops_deploy.ops.quiet`): `pyinfra -vvv` prints every other fact's output.
+  `probe()` is always quiet. The switch is shared by all hosts of a run, so
+  while a quiet fact loads, other hosts' facts are not printed either; the
+  last quiet call to end restores the setting.
 
 ## `SecretContent`
 

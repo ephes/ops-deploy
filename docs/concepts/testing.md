@@ -20,7 +20,7 @@ assert run.succeeded
 assert run.executed_commands[-1] == "systemctl restart toy.service"
 ```
 
-## `run_deploy_fake(deploy_fn, *args, responses=None, host_data=None, **kwargs)`
+## `run_deploy_fake(deploy_fn, *args, responses=None, host_data=None, verbose=False, **kwargs)`
 
 Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
 
@@ -29,6 +29,9 @@ Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
   values are stdout lines or `{"stdout", "stderr", "success"}`. Unmatched
   commands succeed with no output, which most facts read as "absent".
 - `host_data` is extra host data (for example `ssh_hostname`).
+- `verbose=True` turns on command and fact output as `pyinfra -vvv` does and
+  collects what pyinfra prints in `run.printed`, so a test can assert that no
+  digest or hash is printed.
 - A failing operation does not raise: check `run.succeeded` and `run.error`.
   An exception raised while planning (for example a failed rsync dry run)
   propagates.
