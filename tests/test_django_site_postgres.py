@@ -40,6 +40,7 @@ def facts() -> dict[str, Any]:
     return {
         **fakehost.LINUX,
         "pg_isready": ["ready"],
+        "test -L /home/marina/site/media": ["missing"],
         "migrate --check": ["current"],
         "--dry-run": ["current"],
         "staticfiles.json": ["present"],
@@ -184,3 +185,32 @@ def test_noindex_is_written_before_referencing_route(tmp_path: Path) -> None:
     assert names.index("Deploy marina | Write noindex response middleware") < names.index(
         "Deploy marina | Write Traefik route marina"
     )
+
+
+@pytest.mark.parametrize("mode", ["drwxr-xr-x", "drwxr-x---", "drwx------"])
+def test_existing_in_tree_media_keeps_its_mode(tmp_path: Path, mode: str) -> None:
+    cfg = config(tmp_path)
+    responses = {
+        **facts(),
+        **fakehost.directory(str(cfg.media_root), user=cfg.user, mode=mode),
+        "test -L /home/marina/site/media": ["directory"],
+    }
+    run = deploy(cfg, values(cfg, postgres_password="fixture-password"), responses)
+    assert "Deploy marina | Ensure directory /home/marina/site/media" not in run.changed_ops
+
+
+def test_missing_in_tree_media_uses_origin_mode(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    run = deploy(cfg, values(cfg, postgres_password="fixture-password"), facts())
+    assert any("chmod 755 /home/marina/site/media" in command for command in run.executed_commands)
+
+
+@pytest.mark.parametrize("kind", ["invalid", ""])
+def test_wrong_media_type_fails_closed(tmp_path: Path, kind: str) -> None:
+    cfg = config(tmp_path)
+    with pytest.raises(ValueError, match="media"):
+        deploy(
+            cfg,
+            values(cfg, postgres_password="fixture-password"),
+            {**facts(), "test -L /home/marina/site/media": [kind]},
+        )

@@ -622,7 +622,8 @@ class DjangoSiteConfig(BaseServiceConfig):
         admin's marker, the launchers, the ``venv`` link, the frontend's
         ``node_modules`` (anywhere) and build output
         and the frontend's installed middleware and purged public
-        directories, each anchored at the site root. rsync neither overwrites
+        directories, each anchored at the site root; plus ``.ruff_cache``
+        directories at any depth. rsync neither overwrites
         nor deletes an excluded path.
         """
 
@@ -632,8 +633,8 @@ class DjangoSiteConfig(BaseServiceConfig):
         if isinstance(self.admin, BootstrapSuperuser):
             host_files.append(self.bootstrap_marker)
         host_files.append(self.site_path / "gunicorn.sh")
-        if self.fish:
-            host_files.append(self.app_path / "venv")
+        # Wagtail also creates this alias when the account does not use fish.
+        host_files.append(self.app_path / "venv")
         front = self.frontend
         if front is not None:
             host_files.append(self.site_path / "next.sh")
@@ -647,7 +648,7 @@ class DjangoSiteConfig(BaseServiceConfig):
             anchored += ["node_modules", f"/{front.app_dir}/.next"]
             # Never shipped, so the purge does not fight the sync.
             anchored += [f"/{front.app_dir}/public/{name}/***" for name in front.purged_public_dirs]
-        return tuple(dict.fromkeys((*self.source.excludes, *anchored)))
+        return tuple(dict.fromkeys((*self.source.excludes, ".ruff_cache", *anchored)))
 
     @property
     def allowed_hosts(self) -> str:

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Preserve Django sites' existing `venv` aliases even without fish, and exclude
+  controller Ruff caches from source sync. A canonical conversion no longer
+  deletes the Wagtail-origin alias or deploys local lint-cache files. Preserve
+  existing in-tree PostgreSQL media permissions; create missing media with
+  the origin mode 0755 and refuse symlink/file substitutes.
+
 - Add local PostgreSQL Django sites without shared-server management, Wagtail
   route/security preservation, required static paths, and resumable bootstrap
   step groups with secrets on stdin. SQLite defaults remain unchanged.

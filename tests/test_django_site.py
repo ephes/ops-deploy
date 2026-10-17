@@ -722,3 +722,28 @@ def test_markers_live_in_a_root_only_directory(cfg: DjangoSiteConfig, secrets: S
     marks = [c for c in run.executed_commands if "/var/lib/ops-deploy/marina" in c]
     assert marks == [touch(PENDING), CLEAR]
     assert not any(f"{HOME}/.ops-deploy-pending" in c for c in run.all_text().splitlines())
+
+
+@pytest.mark.parametrize("fish", [False, True])
+def test_rsync_preserves_existing_venv_alias_and_ignores_ruff_caches(
+    tmp_path: Path, cfg: DjangoSiteConfig, fish: bool
+) -> None:
+    """The frozen Wagtail origin leaves a venv alias even without fish."""
+    if not shutil.which("rsync"):
+        pytest.skip("no rsync")
+    bare = cfg.model_copy(update={"fish": fish, "source": cfg.source.model_copy(update={"excludes": (".venv",)})})
+    src, dest = tmp_path / "sync-src", tmp_path / "sync-dest"
+    src.mkdir()
+    (dest / ".venv").mkdir(parents=True)
+    (dest / ".venv/sentinel").write_text("existing environment")
+    (dest / "venv").symlink_to(".venv", target_is_directory=True)
+    for relative in (".ruff_cache", "nested/.ruff_cache"):
+        directory = src / relative
+        directory.mkdir(parents=True)
+        (directory / "cache-entry").write_text("developer cache")
+    excludes = [f"--exclude={pattern}" for pattern in bare.sync_excludes]
+    subprocess.run(["rsync", "-rl", "--checksum", "--delete", *excludes, f"{src}/", f"{dest}/"], check=True)
+    assert (dest / "venv").is_symlink()
+    assert (dest / "venv/sentinel").read_text() == "existing environment"
+    assert not (dest / ".ruff_cache").exists()
+    assert not (dest / "nested/.ruff_cache").exists()

@@ -483,3 +483,20 @@ Coverage: `test_django_site_postgres.py`, `test_django_site_wagtail_parity.py`
 (object storage/Sentry on/off, mail URL empty/set, TLS resolver empty/set),
 and `tests/smoke/test_django_site_postgres_smoke.py` (synthetic Linux/PostgreSQL
 Django app, data retention, no-op rerun, pending-source resume).
+
+
+### Existing environment aliases and controller caches
+
+Source sync preserves an existing `<app>/venv` alias for every Django site,
+including Wagtail accounts that do not use fish. Fish controls creation of the
+alias and shell configuration, not protection of a host-managed alias left
+by an older deploy. Source sync also excludes `.ruff_cache` directories at any
+depth so local lint-cache files cannot create artificial source changes or
+trigger migrations, static collection, indexing and restarts. These exclusions
+preserve existing host files; they do not remove old caches already on a host.
+
+Existing in-tree PostgreSQL media directories retain their permissions during
+conversion. A missing directory is created as the app user/group with mode
+`0755`, matching the Wagtail origin. Symlinks and other existing file types
+are refused before execution. External `data_dirs` keep their existing `0750`
+provisioning policy.

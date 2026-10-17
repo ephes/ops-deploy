@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from ops_deploy.core import SecretRef, SecretValues
@@ -135,6 +136,14 @@ def test_postgres_conversion_idempotence_and_resume(smoke_host: SmokeHost, tmp_p
 
     first = run()
     assert first.mutating_changed_ops
+    assert smoke_host.out("stat -c %a /home/school-smoke/site/media") == "755"
+    smoke_host.run(
+        "ln -s .venv /home/school-smoke/site/venv; chown -h school-smoke:school-smoke /home/school-smoke/site/venv"
+    )
+    for relative in (".ruff_cache", "school/.ruff_cache"):
+        directory = source / relative
+        directory.mkdir()
+        (directory / "cache-entry").write_text("controller lint cache")
     smoke_host.run(
         "echo preserved > /home/school-smoke/site/media/sentinel; echo cached > /home/school-smoke/site/cache/sentinel; "  # noqa: E501
         "chown school-smoke:school-smoke /home/school-smoke/site/media/sentinel /home/school-smoke/site/cache/sentinel"
@@ -239,6 +248,9 @@ def test_postgres_conversion_idempotence_and_resume(smoke_host: SmokeHost, tmp_p
     old_pid = smoke_host.out("systemctl show -p MainPID --value school-smoke")
     converted = run()
     assert converted.mutating_changed_ops
+    assert smoke_host.out("stat -c %a /home/school-smoke/site/media") == "755"
+    assert smoke_host.out("readlink /home/school-smoke/site/venv") == ".venv"
+    assert smoke_host.out("find /home/school-smoke/site -name .ruff_cache -print") == ""
     assert smoke_host.out("systemctl show -p MainPID --value school-smoke") != old_pid
     assert smoke_host.out("systemctl show -p MainPID --value traefik") == traefik
     pid = smoke_host.out("systemctl show -p MainPID --value school-smoke")
@@ -254,3 +266,15 @@ def test_postgres_conversion_idempotence_and_resume(smoke_host: SmokeHost, tmp_p
     assert any("migrations" in name for name in resumed.mutating_changed_ops)
     assert smoke_host.out("cat /home/school-smoke/site/cache/index-count").splitlines() == ["indexed", "indexed"]
     assert not run().mutating_changed_ops
+
+    # A wrong existing path is refused while planning, before app restart or
+    # source sync. Exercise both a real symlink and a regular file on Linux.
+    pid = smoke_host.out("systemctl show -p MainPID --value school-smoke")
+    for create in ("ln -s media-held media", "touch media"):
+        smoke_host.run("cd /home/school-smoke/site && mv media media-held && " + create)
+        try:
+            with pytest.raises(ValueError, match="media"):
+                run()
+            assert smoke_host.out("systemctl show -p MainPID --value school-smoke") == pid
+        finally:
+            smoke_host.run("cd /home/school-smoke/site && rm media && mv media-held media")

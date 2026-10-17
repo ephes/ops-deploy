@@ -318,10 +318,28 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         shell=cfg.shell,
         directories=[cfg.site_path, cfg.cache_dir],
     )
-    for path in (*cfg.data_dirs, *([cfg.media_root] if isinstance(cfg.database, PostgresDb) else [])):
+    for path in cfg.data_dirs:
         files.directory(
             name=f"Ensure directory {path}", path=str(path), user=cfg.user, group=cfg.group_name, mode="0750"
         )
+    if isinstance(cfg.database, PostgresDb) and cfg.media_root.is_relative_to(cfg.site_path):
+        media = shlex.quote(str(cfg.media_root))
+        script = (
+            f"if test -L {media}; then echo invalid; "
+            f"elif test -d {media}; then echo directory; "
+            f"elif test -e {media}; then echo invalid; else echo missing; fi"
+        )
+        kind = fact(shlex.join(["sh", "-c", script]))
+        if kind not in ("directory", "missing"):
+            raise ValueError("media must be a real directory or an absent path")
+        if kind == "missing":
+            files.directory(
+                name=f"Ensure directory {cfg.media_root}",
+                path=str(cfg.media_root),
+                user=cfg.user,
+                group=cfg.group_name,
+                mode="0755",
+            )
     if cfg.fish:
         _fish(cfg)
 
