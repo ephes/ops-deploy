@@ -1,0 +1,24 @@
+# Managed by ops-deploy
+[Unit]
+Description={{ cfg.unit.description }}
+After={{ cfg.unit.after | join(' ') }}
+Wants=network-online.target
+{% if cfg.mounts_required %}
+RequiresMountsFor={{ cfg.mounts_required | join(' ') }}
+{% endif %}
+
+[Service]
+User={{ cfg.unit.user }}
+Group={{ cfg.unit.group }}
+WorkingDirectory={{ cfg.unit.working_directory }}
+ExecStart={% for arg in cfg.unit.exec_start %}{{ word(arg) }}{{ ' ' if not loop.last else '' }}{% endfor %}
+
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE={{ cfg.unit.nofile }}
+{% for key, value in cfg.unit.environment.items() %}
+Environment={{ env_word(key ~ '=' ~ value) }}
+{% endfor %}
+
+[Install]
+WantedBy=multi-user.target

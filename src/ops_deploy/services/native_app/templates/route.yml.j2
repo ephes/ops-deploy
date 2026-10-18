@@ -1,0 +1,57 @@
+# Managed by ops-deploy
+http:
+  routers:
+{% if route.internal_only or route.basic_auth %}
+    {{ route.name }}-int:
+      rule: "Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints: [web-secure]
+      priority: 120
+      middlewares: [{{ route.name }}-headers, {{ route.name }}-gzip]
+      service: {{ route.name }}
+      tls: {}
+{% endif %}
+{% if not route.internal_only %}
+    {{ route.name }}-ext:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints: [web-secure]
+      priority: 100
+      middlewares: [{% if route.basic_auth %}{{ route.name }}-auth, {% endif %}{{ route.name }}-headers, {{ route.name }}-gzip]
+      service: {{ route.name }}
+      tls: {}
+{% endif %}
+    {{ route.name }}-http:
+      rule: "Host(`{{ route.host }}`)"
+      entryPoints: [web]
+      middlewares: [{{ route.name }}-redirect]
+      service: {{ route.name }}
+  middlewares:
+{% if route.basic_auth %}
+    {{ route.name }}-auth:
+      basicAuth:
+        users:
+          - "{{ route.basic_auth.user }}:{{ auth_hash }}"
+        removeHeader: true
+{% endif %}
+    {{ route.name }}-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: {{ route.frame_options }}
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ route.host }}"
+    {{ route.name }}-gzip:
+      compress: {}
+    {{ route.name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    {{ route.name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ route.app_host }}:{{ route.app_port }}"

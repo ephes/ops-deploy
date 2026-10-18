@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add the minimal native_app release/TOML/custom-unit and route-only runtime,
+  with canonical rendering, restart/resume markers, stable routes and
+  read-only preflight checks. Release preflight refuses unsafe ownership/write
+  permissions before version execution and classifies undecodable tracked
+  drift for verified repair. Package-manager sources remain deferred.
+
 - Django-site database workers with resumable per-unit restart gates, uv
   transport environment, controller Python-pin assertions, optional env
   references and opt-in cache ownership repair. Existing site defaults stay
