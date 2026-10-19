@@ -165,6 +165,7 @@ def inspect_metadata(root, request):
     expected = {canonical(k): v for k, v in request["distributions"].items()}
     uncomparable = False
     newer_distribution = False
+    other_drift = found.keys() != expected.keys()
     for name in sorted(found.keys() & expected.keys()):
         if found[name] == expected[name]:
             continue
@@ -174,8 +175,12 @@ def inspect_metadata(root, request):
             continue
         if actual > intended:
             newer_distribution = True
+        else:
+            other_drift = True
     if uncomparable:
         return dict(observed, status="unknown", reason="uncomparable_version")
+    if other_drift:
+        return dict(observed, status="different_inventory", reason="different_distributions")
     if version != request["python_version"]:
         newer = numeric(version) > numeric(request["python_version"])
         return dict(observed, status="recognizable_newer" if newer else "different_inventory", reason="different_python")

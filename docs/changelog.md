@@ -7,7 +7,8 @@
   trust/classification and Docker fixture coverage. A matching metadata
   candidate does not authorize execution, adoption, installation or deletion;
   PyPI source dispatch, hooks, interpreter/content trust and liveness remain
-  separate prerequisites.
+  separate prerequisites. Mixed missing/extra/older inventory drift stays
+  different even when another Python/package declaration is newer.
 
 - `compose_app`: an `echoport` part registers the app's Echoport backup
   target (SQLite database plus listed files, directories and `HostSecret`

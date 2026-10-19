@@ -271,3 +271,35 @@ def test_python_version_drift_never_bypasses_internal_checks(observer: dict[str,
 def test_minor_only_uv_declaration_is_unknown(observer: dict[str, Any], tree: Path) -> None:
     (tree / "pyvenv.cfg").write_text("version_info = 3.12\ninclude-system-site-packages = false\n")
     assert observe(observer) == {"status": "unknown", "reason": "malformed_metadata"}
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected", "python", "status"),
+    [
+        ({"fixture-package": "2.0"}, {"fixture-package": "1.0", "z": "1.0"}, "3.12.3", "different_inventory"),
+        ({"fixture-package": "2.0", "z": "1.0"}, {"fixture-package": "1.0"}, "3.12.3", "different_inventory"),
+        (
+            {"fixture-package": "2.0", "z": "0.5"},
+            {"fixture-package": "1.0", "z": "1.0"},
+            "3.12.3",
+            "different_inventory",
+        ),
+        ({"fixture-package": "0.5"}, {"fixture-package": "1.0"}, "3.12.1", "different_inventory"),
+        ({}, {"fixture-package": "1.0"}, "3.12.1", "different_inventory"),
+        ({"fixture-package": "2.0"}, {"fixture-package": "1.0"}, "3.12.4", "different_inventory"),
+        ({"fixture-package": "1.0.0"}, {"fixture-package": "1.0"}, "3.12.1", "different_inventory"),
+        ({"fixture-package": "2.0"}, {"fixture-package": "1.0"}, "3.12.1", "recognizable_newer"),
+    ],
+)
+def test_newer_classification_never_hides_other_drift(
+    observer: dict[str, Any], tree: Path, installed: dict[str, str], expected: dict[str, str], python: str, status: str
+) -> None:
+    original = metadata(tree)
+    site = original.parent.parent
+    original.unlink()
+    original.parent.rmdir()
+    for name, version in installed.items():
+        dist = site / f"{name}-{version}.dist-info"
+        dist.mkdir()
+        (dist / "METADATA").write_text(f"Name: {name}\nVersion: {version}\n\n")
+    assert observe(observer, distributions=expected, python_version=python)["status"] == status

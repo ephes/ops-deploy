@@ -164,7 +164,10 @@ and local forms, without URLs or floating labels. A matching candidate requires
 literal version equality, not an inferred compatible range. Recognition of a
 newer version compares plain numeric releases only; a changed version that
 cannot be ordered by that limited rule stays unknown, even when another package
-has a recognizable newer numeric declaration. This is not a full
+has a recognizable newer numeric declaration. With otherwise comparable
+declarations, missing, extra, older or differently spelled numeric-equivalent
+declarations give `different_inventory`, even alongside
+a newer Python/package declaration. This is not a full
 package resolver or a choice of fresh-install lock/hash policy.
 
 The independently trusted system prerequisite `/usr/bin/python3` runs with
@@ -181,7 +184,7 @@ only**, not installed-file integrity or reproducible-install proof.
 | Venv root absent beneath trusted ancestors | `absent` | No install action follows |
 | Foreign owner, group/world write or unsafe metadata/root symlink | `refused_untrusted` | Refuse before metadata/version trust |
 | Matching declared Python and exact complete standard metadata set | `matching_candidate` | Metadata matches; actual interpreter, content and usability remain unverified |
-| Numeric installed declaration newer than requested | `recognizable_newer` | Not a downgrade/reinstall instruction |
+| Complete same distribution set; every changed declaration numerically newer, with Python equal or newer | `recognizable_newer` | Not a downgrade/reinstall instruction |
 | Older/different numeric declaration, extra or missing distribution | `different_inventory` | Report drift, never repair it here |
 | Malformed/undecodable/unreadable/changing/oversized/unsupported state | `unknown` | Stop for a separately scoped decision |
 

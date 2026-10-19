@@ -286,3 +286,56 @@ def test_native_venv_inventory_review_regression(
             }
         )
     )
+
+
+@pytest.mark.parametrize(
+    ("case", "installed", "expected", "requested", "status"),
+    [
+        ("newer-missing", {"a": "2.0"}, {"a": "1.0", "b": "1.0"}, "3.12.13", "different_inventory"),
+        ("newer-extra", {"a": "2.0", "c": "1.0"}, {"a": "1.0"}, "3.12.13", "different_inventory"),
+        ("newer-older", {"a": "2.0", "b": "0.5"}, {"a": "1.0", "b": "1.0"}, "3.12.13", "different_inventory"),
+        ("python-newer-older", {"a": "0.5"}, {"a": "1.0"}, "3.12.12", "different_inventory"),
+        ("python-newer-missing", {}, {"a": "1.0"}, "3.12.12", "different_inventory"),
+        ("python-newer-equivalent", {"a": "1.0.0"}, {"a": "1.0"}, "3.12.12", "different_inventory"),
+        ("python-older-newer", {"a": "2.0"}, {"a": "1.0"}, "3.12.14", "different_inventory"),
+        ("all-newer", {"a": "2.0"}, {"a": "1.0"}, "3.12.12", "recognizable_newer"),
+    ],
+)
+def test_native_venv_inventory_mixed_drift_regression(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    installed: dict[str, str],
+    expected: dict[str, str],
+    requested: str,
+    status: str,
+) -> None:
+    fixture = DockerFixture()
+    fixture.guard_connector(tmp_path, monkeypatch)
+    _prepare_fixture(fixture)
+    fixture.run(
+        "python3 -I -S -B - <<'FIXTURE_PY'\n"
+        "from pathlib import Path\n"
+        f"site=Path({SITE!r})\n"
+        "original=site/'fixture_package-1.2.3.dist-info'\n"
+        "(original/'METADATA').unlink();original.rmdir()\n"
+        f"installed={installed!r}\n"
+        "for name,version in installed.items():\n"
+        " info=site/f'{name}-{version}.dist-info';info.mkdir()\n"
+        " (info/'METADATA').write_text(f'Name: {name}\\nVersion: {version}\\n\\n')\n"
+        "FIXTURE_PY"
+    )
+    result = _unchanged_probe(fixture, requested, case, distributions=expected)
+    assert result.status == status
+    print(
+        json.dumps(
+            {
+                "case": case,
+                "status": result.status,
+                "zero_operations": True,
+                "unchanged_fixture": True,
+                "execution_sentinel_absent": True,
+                "seconds": fixture.timings[case],
+            }
+        )
+    )
