@@ -10,7 +10,9 @@
   (archive, chesslab, opaq_app, weeknotes_home, work_app) are one shared
   script in `services/_echoport`. Behaviour changes for those services:
   `schedule_required` is now set on every registered target (Echoport
-  migration 0008 is required; existing targets update once), and archive and
+  migration 0008 is required; targets registered without it, such as
+  opaq_app, weeknotes_home and work_app, update that one field on their next
+  deploy, while archive and chesslab already set it), and archive and
   opaq_app pass their parameters as `PARAMS` instead of an environment
   variable.
 
