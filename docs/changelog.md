@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+
+- Add a standalone read-only Native venv metadata inventory probe with bounded
+  trust/classification and Docker fixture coverage. A matching metadata
+  candidate does not authorize execution, adoption, installation or deletion;
+  PyPI source dispatch, hooks, interpreter/content trust and liveness remain
+  separate prerequisites.
+
 - `compose_app`: an `echoport` part registers the app's Echoport backup
   target (SQLite database plus listed files, directories and `HostSecret`
   files; default unit and owner from the app). Paths are checked before any
