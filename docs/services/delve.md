@@ -30,9 +30,18 @@ exists for the arm64 lima smoke VM.
 |---|---|---|
 | `session_secret` | yes | `DELVE_SESSION_SECRET`; at least 16 characters (the binary refuses less) |
 | `dogfood_token` | no | `DELVE_DOGFOOD_TOKEN`; left out when missing or empty |
+| `voxhelm_token` | with the analysis and `voxhelm_url` | Delve's voxhelm producer token, written to `voxhelm_token_path` (never into the env file) |
+| `detector_api_key` | with the analysis and `detector_url` | the detector `llama-server`'s API key, written to `detector_api_key_path` |
 
 Values must be single lines without `"` or `\` (they are written inside
-double quotes in the env file); errors name keys, never values.
+double quotes in the env file); errors name keys, never values. The two
+analysis secrets must also be at least 32 characters and not `CHANGEME` (the
+role's check); they are checked before any operation runs. The detector API
+key must match `DETECTOR_API_KEY_PATTERN` (`^[A-Za-z0-9._~+/=-]{32,}\Z`, the
+pattern of ops-library's `llama_server_deploy` and `delve_deploy`):
+llama-server reads its key file line by line without trimming and skips empty
+lines and lines starting with `#`, so a key outside that set could be ignored
+and leave the detector unauthenticated. `openssl rand -hex 32` makes one.
 
 ## Configuration (`DelveConfig`)
 
@@ -61,22 +70,53 @@ The role's variables without the `delve_` prefix; defaults follow its
 | `healthcheck_enabled`, `healthcheck_timeout`, `healthcheck_retries` | `true`, `30`, `10` | |
 | `public_health_check` | `false` | also check `/health` through Traefik (see below) |
 | `packages` | `("ca-certificates",)` | |
+| `smart_skip_analysis` | `false` | server ad analysis (below); off renders none of the fields after it |
+| `smart_skip_analysis_profile_src` | `None` | the analysis profile JSON on the controller; required when on, must be a JSON object |
+| `smart_skip_analysis_profile_path` | `<config_dir>/smart-skip-analysis-profile.json` | `DELVE_SMART_SKIP_ANALYSIS_PROFILE` |
+| `analysis_media_dir` | `None` | `DELVE_ANALYSIS_MEDIA_DIR`; `None`: Delve's `<data_dir>/smart-skip-media`. Not the data directory itself |
+| `analysis_media_disk_cap_bytes` | `None` | `DELVE_ANALYSIS_MEDIA_DISK_CAP_BYTES` (Delve's default 20 GB) |
+| `ffprobe_path`, `ffmpeg_path` | `None` | `DELVE_FFPROBE_PATH`, `DELVE_FFMPEG_PATH`; `None`: on `PATH` |
+| `smart_skip_packages` | `("ffmpeg",)` | apt packages added when on |
+| `voxhelm_url`, `detector_url` | `""` | bare origins `http(s)://host[:port]`; empty leaves the stage unconfigured (jobs wait) |
+| `voxhelm_token_path`, `detector_api_key_path` | `<config_dir>/voxhelm-token`, `<config_dir>/detector-api-key` | `DELVE_VOXHELM_TOKEN_FILE`, `DELVE_DETECTOR_API_KEY_FILE` |
+| `voxhelm_timeout_seconds`, `voxhelm_upload_timeout_seconds`, `voxhelm_poll_seconds`, `detector_timeout_seconds` | `None` | positive; `None` keeps Delve's defaults (60, 1800, 30, 300) |
 
 The role's `delve_service_enabled`/`delve_service_state` are not ported: the
 service is always enabled and started.
 
+Paths are absolute, without `..`, whitespace, quotes, backslashes, `$` or
+backticks (they are rendered inside double quotes).
+
+## Server ad analysis
+
+`smart_skip_analysis=True` mirrors the role's `delve_smart_skip_analysis`
+(podcast repo, `docs/player/specs/server-ad-analysis-design.md`): apt
+`ffmpeg`; the media directory `delve:delve 0700` before the unit names it (a
+directory outside `data_dir` gets its own `ReadWritePaths` line); the profile
+as `root:delve 0640`; the voxhelm token and the detector API key as their own
+files (`root:delve 0640`, through `secret_file`, trimmed plus one newline,
+exactly what the role's `copy` writes) for each configured URL; and the env
+lines `DELVE_SMART_SKIP_ANALYSIS*`, `DELVE_ANALYSIS_MEDIA_*`,
+`DELVE_FF*_PATH`, `DELVE_VOXHELM_*` and `DELVE_DETECTOR_*` (only those that
+are set). A new profile or secret file restarts `delve`. Off, or with a URL
+unset, the matching secret file is removed (no restart of its own; the env
+file changes with it). The media directory and the profile are never removed.
+
 ## What the deploy does
 
 1. `ca-certificates`, and `curl` for the read-only checks (apt cache
-   refreshed when older than an hour).
+   refreshed when older than an hour); with the analysis also `ffmpeg`.
 2. Group and system user (`/usr/sbin/nologin`, home `data_dir`, not created
    by `useradd`); `data_dir` `delve:delve 0750`, `site_path` `root:root 0755`,
-   `config_dir` `root:delve 0750`.
+   `config_dir` `root:delve 0750`; with the analysis, the media directory
+   `delve:delve 0700`.
 3. The binary as `root:root 0755`. New bytes are uploaded next to it and
    renamed over the old file: writing into a running executable fails with
    `ETXTBSY`, and pyinfra's `files.put` writes in place.
 4. With StoreKit, the PEM as `root:delve 0644`.
-5. `delve.env` (`root:delve 0640`) through `secret_file`.
+5. `delve.env` (`root:delve 0640`) through `secret_file`; with the analysis,
+   the profile and the secret files (above), otherwise the secret files are
+   removed.
 6. `delve.service`, the collector `.service` and `.timer`; systemd is
    reloaded when a unit changed; the timer is enabled and started only when
    configured, otherwise disabled and stopped.
@@ -85,7 +125,8 @@ service is always enabled and started.
    fails on a unit without `ExecReload` and is ignored, and the file
    provider's watcher applies the route.
 8. `delve` enabled and started; restarted when the binary, the PEM, the env
-   file or the unit changed (not right after this run started it).
+   file, the analysis profile or secret files, or the unit changed (not right
+   after this run started it).
 9. Read-only checks: the port opens, `GET /health` answers 200 with
    `"status": "ok"`. With `public_health_check`, the same through Traefik on
    the host (`curl --resolve <traefik_host>:443:127.0.0.1`, TLS verified):
@@ -99,11 +140,14 @@ tool touches the database.
 ## Tests
 
 - `tests/test_delve_parity.py`: rendered files against the vendored role
-  templates for the role defaults, the ops-control playbook's settings and
-  every optional branch.
+  templates for the role defaults, the ops-control playbook's settings,
+  every optional branch, and the server ad analysis (production settings,
+  Delve's defaults, every branch, and settings without the switch).
 - `tests/test_delve.py`: fake connector runs (first run, converged no-op,
   binary/PEM/secret/unit/collector/route changes, staged binary rename,
-  secrets never recorded, the role's validations, the build command).
+  secrets never recorded, the role's validations, the build command; the
+  analysis: first and converged runs, profile and secret file changes,
+  switching it off, secret and setting validations).
 - `tests/smoke/test_delve_smoke.py`: needs the Delve backend source
   (`DELVE_SOURCE_PATH`, else `$PROJECTS_ROOT/podcast/apps/delve-backend`) and
   Go. Four runs on the smoke VM: first, converged, a rebuilt binary (no-op),

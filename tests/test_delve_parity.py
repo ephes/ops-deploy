@@ -35,6 +35,12 @@ def flag(value: bool | None) -> Any:
     return "" if value is None else value
 
 
+def optional(value: object | None) -> Any:
+    """The role's empty string for a value left to Delve's default."""
+
+    return "" if value is None else value
+
+
 def role_vars(cfg: DelveConfig, secrets: SecretValues) -> dict[str, Any]:
     return {
         "delve_user": cfg.user,
@@ -70,6 +76,20 @@ def role_vars(cfg: DelveConfig, secrets: SecretValues) -> dict[str, Any]:
         "delve_discovery_max_items_per_feed": cfg.discovery_max_items_per_feed,
         "delve_discovery_max_sources_per_run": cfg.discovery_max_sources_per_run,
         "delve_systemd_nofile": cfg.systemd_nofile,
+        "delve_smart_skip_analysis": cfg.smart_skip_analysis,
+        "delve_smart_skip_analysis_profile_path": str(cfg.profile_path),
+        "delve_analysis_media_dir": str(optional(cfg.analysis_media_dir)),
+        "delve_analysis_media_disk_cap_bytes": optional(cfg.analysis_media_disk_cap_bytes),
+        "delve_ffprobe_path": str(optional(cfg.ffprobe_path)),
+        "delve_ffmpeg_path": str(optional(cfg.ffmpeg_path)),
+        "delve_voxhelm_url": cfg.voxhelm_url,
+        "delve_voxhelm_token_path": str(cfg.voxhelm_token_file),
+        "delve_voxhelm_timeout_seconds": optional(cfg.voxhelm_timeout_seconds),
+        "delve_voxhelm_upload_timeout_seconds": optional(cfg.voxhelm_upload_timeout_seconds),
+        "delve_voxhelm_poll_seconds": optional(cfg.voxhelm_poll_seconds),
+        "delve_detector_url": cfg.detector_url,
+        "delve_detector_api_key_path": str(cfg.detector_api_key_file),
+        "delve_detector_timeout_seconds": optional(cfg.detector_timeout_seconds),
     }
 
 
@@ -105,12 +125,49 @@ VARIANTS: dict[str, dict[str, Any]] = {
         "discovery_collector_concurrency": 8,
         "discovery_collector_calendar": "hourly",
         "systemd_nofile": 4096,
+        # Every analysis branch, the media directory outside the data dir.
+        "smart_skip_analysis": True,
+        "smart_skip_analysis_profile_path": "/srv/delve-etc/profile.json",
+        "analysis_media_dir": "/srv/delve-media",
+        "analysis_media_disk_cap_bytes": 5000000000,
+        "ffprobe_path": "/usr/local/bin/ffprobe",
+        "ffmpeg_path": "/usr/local/bin/ffmpeg",
+        "voxhelm_url": "https://voxhelm.example.org",
+        "voxhelm_token_path": "/srv/delve-etc/vox",
+        "voxhelm_timeout_seconds": 90,
+        "voxhelm_upload_timeout_seconds": 3600,
+        "voxhelm_poll_seconds": 10,
+        "detector_url": "http://100.64.0.7:8177",
+        "detector_api_key_path": "/srv/delve-etc/det",
+        "detector_timeout_seconds": 600,
+    },
+    # ops-control's production analysis settings (the role defaults otherwise).
+    "analysis": {
+        "smart_skip_analysis": True,
+        "analysis_media_dir": "/var/lib/delve-smart-skip-media",
+        "analysis_media_disk_cap_bytes": 20000000000,
+        "ffprobe_path": "/usr/bin/ffprobe",
+        "ffmpeg_path": "/usr/bin/ffmpeg",
+        "voxhelm_url": "http://studio.example.ts.net:8787",
+        "detector_url": "http://studio.example.ts.net:8177",
+    },
+    # Switched on with Delve's defaults: media inside the data dir, no stages.
+    "analysis-minimal": {"smart_skip_analysis": True},
+    # Analysis settings without the switch render nothing.
+    "analysis-off": {
+        "analysis_media_dir": "/var/lib/delve-smart-skip-media",
+        "voxhelm_url": "http://studio.example.ts.net:8787",
+        "detector_url": "http://studio.example.ts.net:8177",
+        "voxhelm_poll_seconds": 15,
     },
 }
 SECRETS: dict[str, dict[str, str]] = {
     "defaults": {"session_secret": "s" * 16},
     "playbook": {"session_secret": "fixture-session-secret-0123", "dogfood_token": "fixture-dogfood"},
     "everything": {"session_secret": "x$y`z(parens)&#'-0123456789", "dogfood_token": "t"},
+    "analysis": {"session_secret": "s" * 16, "voxhelm_token": "v" * 64, "detector_api_key": "d" * 64},
+    "analysis-minimal": {"session_secret": "s" * 16},
+    "analysis-off": {"session_secret": "s" * 16},
 }
 
 
@@ -118,7 +175,12 @@ SECRETS: dict[str, dict[str, str]] = {
 def case(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[DelveConfig, SecretValues]:
     binary = tmp_path / "delved"
     binary.write_bytes(b"\x7fELF")
-    cfg = DelveConfig(binary_path=binary, secrets=REF, **VARIANTS[request.param])
+    profile = tmp_path / "profile.json"
+    profile.write_text('{"taxonomy": "server-taxonomy-v1"}\n')
+    variant = dict(VARIANTS[request.param])
+    if variant.get("smart_skip_analysis"):
+        variant["smart_skip_analysis_profile_src"] = profile
+    cfg = DelveConfig(binary_path=binary, secrets=REF, **variant)
     return cfg, SecretValues(REF, SECRETS[request.param])
 
 

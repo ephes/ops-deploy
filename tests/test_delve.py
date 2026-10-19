@@ -2,7 +2,7 @@
 
 import base64
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -11,8 +11,10 @@ from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.services.delve import DelveConfig, build_delved, deploy_delve
 from ops_deploy.services.delve.deploy import (
+    DETECTOR_API_KEY_PATTERN,
     STOREKIT_ROOT_CERTS,
     TEMPLATE_PACKAGE,
+    analysis_secret_files,
     render_env,
     render_route,
     traefik_config,
@@ -343,3 +345,244 @@ def test_curl_is_installed_for_the_checks(cfg: DelveConfig) -> None:
 def test_build_refuses_a_non_checkout(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not a delve backend checkout"):
         build_delved(tmp_path, tmp_path / "delved", runner=lambda *_: None)
+
+
+# --- Server ad analysis -------------------------------------------------------
+
+MEDIA = "/var/lib/delve-smart-skip-media"
+PROFILE = "/etc/delve/smart-skip-analysis-profile.json"
+TOKEN_FILE = "/etc/delve/voxhelm-token"
+KEY_FILE = "/etc/delve/detector-api-key"
+PROFILE_JSON = '{"taxonomy": "server-taxonomy-v1"}\n'
+ANALYSIS_SECRETS = {"voxhelm_token": "v" * 64, "detector_api_key": "d" * 64}
+
+
+@pytest.fixture
+def analysis(cfg: DelveConfig, tmp_path: Path) -> DelveConfig:
+    profile = tmp_path / "profile.json"
+    profile.write_text(PROFILE_JSON)
+    return cfg.model_copy(
+        update={
+            "smart_skip_analysis": True,
+            "smart_skip_analysis_profile_src": profile,
+            "analysis_media_dir": PurePosixPath(MEDIA),
+            "analysis_media_disk_cap_bytes": 20000000000,
+            "ffprobe_path": PurePosixPath("/usr/bin/ffprobe"),
+            "ffmpeg_path": PurePosixPath("/usr/bin/ffmpeg"),
+            "voxhelm_url": "http://studio.example.ts.net:8787",
+            "detector_url": "http://studio.example.ts.net:8177",
+        }
+    )
+
+
+def analysis_values(**changes: str) -> SecretValues:
+    return values(**{**ANALYSIS_SECRETS, **changes})
+
+
+def converged_analysis(cfg: DelveConfig, secrets: SecretValues, **drift: str) -> dict[str, Any]:
+    responses = converged(cfg, secrets)
+    responses.update(fakehost.deb_installed("ca-certificates", "curl", "ffmpeg"))
+    responses.update(fakehost.stat(MEDIA, user="delve", mode="drwx------"))
+    content = {
+        PROFILE: PROFILE_JSON,
+        TOKEN_FILE: f"{secrets['voxhelm_token']}\n",
+        KEY_FILE: f"{secrets['detector_api_key']}\n",
+        **drift,
+    }
+    for path, text in content.items():
+        responses.update(fakehost.file(path, text, mode="-rw-r-----"))
+        responses.update(fakehost.stat(path, group="delve", mode="-rw-r-----"))
+    return responses
+
+
+def test_analysis_first_run_installs_its_pieces(analysis: DelveConfig) -> None:
+    run = deploy(analysis, analysis_values())
+
+    commands = run.executed_commands
+    assert any(c.endswith("install ca-certificates curl ffmpeg") for c in commands)
+    assert f"mkdir -p {MEDIA}" in commands
+    assert f"chmod 700 {MEDIA}" in commands
+    assert f"chown delve:delve {MEDIA}" in commands
+    assert run.upload(PROFILE) == PROFILE_JSON.encode()
+    assert TOKEN_FILE not in run.uploaded_paths
+    assert KEY_FILE not in run.uploaded_paths
+    # delve.env, the token file and the key file, each over stdin.
+    assert len(run.stdin) == 3
+    decoded = [base64.b64decode("".join(payload.split())) for _command, payload in run.stdin]
+    assert decoded[1:] == [f"{'v' * 64}\n".encode(), f"{'d' * 64}\n".encode()]
+    unit = run.upload(UNIT).decode()
+    assert "ReadWritePaths=/var/lib/delve\n" in unit
+    assert f"ReadWritePaths={MEDIA}\n" in unit
+
+
+def test_analysis_env_names_files_never_secrets(analysis: DelveConfig) -> None:
+    env = render_env(analysis, analysis_values()).reveal().decode()
+
+    assert 'DELVE_SMART_SKIP_ANALYSIS="true"\n' in env
+    assert f'DELVE_SMART_SKIP_ANALYSIS_PROFILE="{PROFILE}"\n' in env
+    assert f'DELVE_ANALYSIS_MEDIA_DIR="{MEDIA}"\n' in env
+    assert 'DELVE_ANALYSIS_MEDIA_DISK_CAP_BYTES="20000000000"\n' in env
+    assert f'DELVE_VOXHELM_TOKEN_FILE="{TOKEN_FILE}"\n' in env
+    assert f'DELVE_DETECTOR_API_KEY_FILE="{KEY_FILE}"\n' in env
+    assert "v" * 64 not in env
+    assert "d" * 64 not in env
+    assert "DELVE_VOXHELM_POLL_SECONDS" not in env
+
+
+def test_analysis_second_run_changes_nothing_mutating(analysis: DelveConfig) -> None:
+    run = deploy(analysis, analysis_values(), converged_analysis(analysis, analysis_values()))
+
+    assert run.mutating_changed_ops == []
+    assert run.uploads == []
+    assert run.stdin == []
+
+
+@pytest.mark.parametrize(
+    ("path", "op"),
+    [
+        (PROFILE, "Install the server ad analysis profile"),
+        (TOKEN_FILE, "Write the voxhelm producer token file"),
+        (KEY_FILE, "Write the detector API key file"),
+    ],
+)
+def test_analysis_file_change_restarts_delve(analysis: DelveConfig, path: str, op: str) -> None:
+    run = deploy(analysis, analysis_values(), converged_analysis(analysis, analysis_values(), **{path: "old\n"}))
+
+    assert run.mutating_changed_ops == [f"Deploy delve | {op}", "Deploy delve | Restart delve.service"]
+
+
+def test_rotated_analysis_secret_is_never_recorded(analysis: DelveConfig) -> None:
+    rotated = analysis_values(detector_api_key="r" * 48)
+
+    run = deploy(analysis, rotated, converged_analysis(analysis, analysis_values()))
+
+    assert run.mutating_changed_ops == [
+        "Deploy delve | Write the detector API key file",
+        "Deploy delve | Restart delve.service",
+    ]
+    text = run.all_text() + repr(run.ops)
+    for value in ("r" * 48, "v" * 64, "d" * 64):
+        assert value not in text
+
+
+def test_switching_the_analysis_off_removes_the_secret_files(analysis: DelveConfig, cfg: DelveConfig) -> None:
+    host = converged_analysis(analysis, analysis_values())
+    host.update(converged(cfg, values()))  # env and unit of the switched-off config
+
+    run = deploy(cfg, values(), host)
+
+    assert run.mutating_changed_ops == [
+        "Deploy delve | Remove the voxhelm producer token file",
+        "Deploy delve | Remove the detector API key file",
+    ]
+    assert f"rm -f {TOKEN_FILE}" in run.executed_commands
+    assert f"rm -f {KEY_FILE}" in run.executed_commands
+    # The media directory and the profile stay.
+    assert not any(MEDIA in c or PROFILE in c for c in run.executed_commands)
+
+
+def test_media_dir_inside_the_data_dir_needs_no_extra_write_path(analysis: DelveConfig) -> None:
+    inside = analysis.model_copy(update={"analysis_media_dir": PurePosixPath("/var/lib/delve/smart-skip-media")})
+
+    unit = render(TEMPLATE_PACKAGE, "delve.service.j2", cfg=inside)
+
+    assert [line for line in unit.splitlines() if line.startswith("ReadWritePaths=")] == [
+        "ReadWritePaths=/var/lib/delve"
+    ]
+
+
+def test_without_urls_no_secret_is_needed(analysis: DelveConfig) -> None:
+    bare = analysis.model_copy(update={"voxhelm_url": "", "detector_url": ""})
+
+    run = deploy(bare, values())
+
+    assert len(run.stdin) == 1
+    env = render_env(bare, values()).reveal().decode()
+    assert "DELVE_VOXHELM" not in env
+    assert "DELVE_DETECTOR" not in env
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"voxhelm_token": "CHANGEME"}, "voxhelm_token must be a single line of at least 32"),
+        ({"detector_api_key": "short-key"}, "detector_api_key must be a single line of at least 32"),
+        ({"detector_api_key": "x" * 40 + "\ny"}, "detector_api_key must be a single line"),
+        # llama-server reads a key-file line starting with "#" as a comment.
+        ({"detector_api_key": "#" + "k" * 39}, "detector_api_key must be at least 32 of"),
+        ({"detector_api_key": "k" * 20 + " " + "k" * 20}, "detector_api_key must be at least 32 of"),
+        ({"detector_api_key": "k" * 39 + ","}, "detector_api_key must be at least 32 of"),
+    ],
+)
+def test_bad_analysis_secrets_fail_before_any_operation(
+    analysis: DelveConfig, changes: dict[str, str], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message) as excinfo:
+        run_deploy_fake(deploy_delve, analysis, analysis_values(**changes), responses=APT)
+    for value in changes.values():
+        if value != "CHANGEME":  # the placeholder is named, a value never is
+            assert value not in str(excinfo.value)
+
+
+def test_missing_analysis_secret_fails(analysis: DelveConfig) -> None:
+    with pytest.raises(KeyError, match="detector_api_key"):
+        run_deploy_fake(deploy_delve, analysis, values(voxhelm_token="v" * 64), responses=APT)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"smart_skip_analysis": True},  # no profile
+        {"smart_skip_analysis": True, "smart_skip_analysis_profile_src": "missing.json"},
+        {"voxhelm_url": "http://studio.example.ts.net:8787/v1"},
+        {"detector_url": "http://user:pw@studio:8177"},
+        {"detector_url": "studio:8177"},
+        {"analysis_media_dir": "smart-skip-media"},
+        {"analysis_media_dir": "/var/lib/delve media"},
+        {"analysis_media_disk_cap_bytes": 0},
+        {"detector_timeout_seconds": 0},
+        {"ffprobe_path": "ffprobe"},
+    ],
+)
+def test_analysis_validations(tmp_path: Path, overrides: dict[str, Any]) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    with pytest.raises(ConfigValidationError):
+        DelveConfig(binary_path=binary, secrets=REF, **overrides)
+
+
+@pytest.mark.parametrize("text", ["not json\n", "[1, 2]\n"])
+def test_profile_must_be_a_json_object(tmp_path: Path, text: str) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    profile = tmp_path / "profile.json"
+    profile.write_text(text)
+    with pytest.raises(ConfigValidationError, match="JSON object"):
+        DelveConfig(binary_path=binary, secrets=REF, smart_skip_analysis=True, smart_skip_analysis_profile_src=profile)
+
+
+def test_media_dir_must_not_be_the_data_dir(tmp_path: Path) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    profile = tmp_path / "profile.json"
+    profile.write_text(PROFILE_JSON)
+    with pytest.raises(ConfigValidationError, match="data directory"):
+        DelveConfig(
+            binary_path=binary,
+            secrets=REF,
+            smart_skip_analysis=True,
+            smart_skip_analysis_profile_src=profile,
+            analysis_media_dir="/var/lib/delve/",
+        )
+
+
+@pytest.mark.parametrize("key", ["0123456789abcdef" * 4, "A" * 32, "abc-._~+/=" * 4, " " + "k" * 40 + " "])
+def test_detector_keys_llama_server_reads_whole_are_accepted(analysis: DelveConfig, key: str) -> None:
+    contents = analysis_secret_files(analysis, analysis_values(detector_api_key=key))
+
+    assert contents["detector_api_key"].reveal() == f"{key.strip()}\n".encode()
+
+
+def test_detector_key_pattern_is_the_roles() -> None:
+    # ops-library's llama_server_deploy / delve_deploy use the same string.
+    assert DETECTOR_API_KEY_PATTERN == r"^[A-Za-z0-9._~+/=-]{32,}\Z"

@@ -21,6 +21,12 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths={{ delve_data_dir }}
+{% if delve_smart_skip_analysis | bool
+      and delve_analysis_media_dir | length > 0
+      and not (delve_analysis_media_dir ~ '/').startswith(delve_data_dir ~ '/') %}
+# Server ad analysis audio and transcripts (off the backup path).
+ReadWritePaths={{ delve_analysis_media_dir }}
+{% endif %}
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
