@@ -11,8 +11,10 @@ from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.services.delve import DelveConfig, build_delved, deploy_delve
 from ops_deploy.services.delve.deploy import (
+    DETECTOR_API_KEY_PATTERN,
     STOREKIT_ROOT_CERTS,
     TEMPLATE_PACKAGE,
+    analysis_secret_files,
     render_env,
     render_route,
     traefik_config,
@@ -506,6 +508,10 @@ def test_without_urls_no_secret_is_needed(analysis: DelveConfig) -> None:
         ({"voxhelm_token": "CHANGEME"}, "voxhelm_token must be a single line of at least 32"),
         ({"detector_api_key": "short-key"}, "detector_api_key must be a single line of at least 32"),
         ({"detector_api_key": "x" * 40 + "\ny"}, "detector_api_key must be a single line"),
+        # llama-server reads a key-file line starting with "#" as a comment.
+        ({"detector_api_key": "#" + "k" * 39}, "detector_api_key must be at least 32 of"),
+        ({"detector_api_key": "k" * 20 + " " + "k" * 20}, "detector_api_key must be at least 32 of"),
+        ({"detector_api_key": "k" * 39 + ","}, "detector_api_key must be at least 32 of"),
     ],
 )
 def test_bad_analysis_secrets_fail_before_any_operation(
@@ -568,3 +574,15 @@ def test_media_dir_must_not_be_the_data_dir(tmp_path: Path) -> None:
             smart_skip_analysis_profile_src=profile,
             analysis_media_dir="/var/lib/delve/",
         )
+
+
+@pytest.mark.parametrize("key", ["0123456789abcdef" * 4, "A" * 32, "abc-._~+/=" * 4, " " + "k" * 40 + " "])
+def test_detector_keys_llama_server_reads_whole_are_accepted(analysis: DelveConfig, key: str) -> None:
+    contents = analysis_secret_files(analysis, analysis_values(detector_api_key=key))
+
+    assert contents["detector_api_key"].reveal() == f"{key.strip()}\n".encode()
+
+
+def test_detector_key_pattern_is_the_roles() -> None:
+    # ops-library's llama_server_deploy / delve_deploy use the same string.
+    assert DETECTOR_API_KEY_PATTERN == r"^[A-Za-z0-9._~+/=-]{32,}\Z"

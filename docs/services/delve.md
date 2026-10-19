@@ -36,7 +36,12 @@ exists for the arm64 lima smoke VM.
 Values must be single lines without `"` or `\` (they are written inside
 double quotes in the env file); errors name keys, never values. The two
 analysis secrets must also be at least 32 characters and not `CHANGEME` (the
-role's check); they are checked before any operation runs.
+role's check); they are checked before any operation runs. The detector API
+key must match `DETECTOR_API_KEY_PATTERN` (`^[A-Za-z0-9._~+/=-]{32,}\Z`, the
+pattern of ops-library's `llama_server_deploy` and `delve_deploy`):
+llama-server reads its key file line by line without trimming and skips empty
+lines and lines starting with `#`, so a key outside that set could be ignored
+and leave the detector unauthenticated. `openssl rand -hex 32` makes one.
 
 ## Configuration (`DelveConfig`)
 

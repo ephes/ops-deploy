@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 from collections.abc import Callable, Generator, Sequence
@@ -304,12 +305,22 @@ def render_env(cfg: DelveConfig, secrets: SecretValues) -> SecretContent:
     return SecretContent(render(TEMPLATE_PACKAGE, "delve.env.j2", cfg=cfg, secrets=secrets))
 
 
+# The detector API key, as ops-library's llama_server_deploy and delve_deploy
+# accept it (``llama_server_api_key_pattern``, ``delve_detector_api_key_pattern``).
+# llama-server (b11669, common/arg.cpp ``--api-key-file``) reads its key file
+# line by line without trimming and skips empty lines and lines starting with
+# ``#``; so the key is one token of URL-safe/base64 characters: never a
+# comment, never split, never padded. ``openssl rand -hex 32`` produces one.
+DETECTOR_API_KEY_PATTERN = r"^[A-Za-z0-9._~+/=-]{32,}\Z"
+
+
 def analysis_secret_files(cfg: DelveConfig, secrets: SecretValues) -> dict[str, SecretContent]:
     """The contents of the analysis secret files the deploy writes (key -> content).
 
     The role's checks: a single line of at least 32 characters that is not
-    ``CHANGEME``, written trimmed with one newline (what Ansible's ``copy``
-    with ``content`` writes). Errors name the key, never the value.
+    ``CHANGEME`` (the detector API key: :data:`DETECTOR_API_KEY_PATTERN`),
+    written trimmed with one newline (what Ansible's ``copy`` with
+    ``content`` writes). Errors name the key, never the value.
     """
 
     contents: dict[str, SecretContent] = {}
@@ -321,6 +332,11 @@ def analysis_secret_files(cfg: DelveConfig, secrets: SecretValues) -> dict[str, 
         value = secrets[key].strip()
         if len(value) < 32 or value == "CHANGEME" or any(c in value for c in "\r\n"):
             raise ValueError(f"secret {key} must be a single line of at least 32 characters that is not CHANGEME")
+        if key == "detector_api_key" and not re.match(DETECTOR_API_KEY_PATTERN, value):
+            raise ValueError(
+                f"secret {key} must be at least 32 of A-Z a-z 0-9 . _ ~ + / = - "
+                "(llama-server ignores key lines starting with #)"
+            )
         contents[key] = SecretContent(f"{value}\n")
     return contents
 

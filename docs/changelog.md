@@ -12,8 +12,11 @@
   detector origins with their secrets `voxhelm_token` and `detector_api_key`
   written to their own `root:delve 0640` files (never into `delve.env`), and
   the optional timeouts. The secrets must be single lines of at least 32
-  characters and not `CHANGEME`, checked before any operation. The vendored
-  `delve.env.j2` and `delve.service.j2` follow the role.
+  characters and not `CHANGEME`, checked before any operation; the detector
+  API key must also be at least 32 of `A-Z a-z 0-9 . _ ~ + / = -`
+  (`DETECTOR_API_KEY_PATTERN`; llama-server skips key-file lines starting
+  with `#`). The vendored `delve.env.j2` and `delve.service.j2` follow the
+  role.
 
 - Add the minimal native_app release/TOML/custom-unit and route-only runtime,
   with canonical rendering, restart/resume markers, stable routes and
