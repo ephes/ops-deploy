@@ -21,6 +21,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths={{ cfg.data_dir }}
+{% if cfg.media_read_write_path -%}
+# Server ad analysis audio and transcripts (off the backup path).
+ReadWritePaths={{ cfg.media_read_write_path }}
+{% endif -%}
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true

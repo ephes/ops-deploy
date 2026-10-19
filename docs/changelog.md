@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `delve`: Delve's server ad analysis, mirroring ops-library 2.48.0's
+  `delve_deploy` (`delve_smart_skip_analysis`). New `DelveConfig` fields
+  `smart_skip_analysis` (default off; off renders nothing new, so existing
+  deploys are unchanged), the profile (`smart_skip_analysis_profile_src`,
+  copied to `<config_dir>/smart-skip-analysis-profile.json`), the media
+  directory (`delve:delve 0700`, an own `ReadWritePaths` line outside
+  `data_dir`), disk cap, ffprobe/ffmpeg paths, apt `ffmpeg`, the voxhelm and
+  detector origins with their secrets `voxhelm_token` and `detector_api_key`
+  written to their own `root:delve 0640` files (never into `delve.env`), and
+  the optional timeouts. The secrets must be single lines of at least 32
+  characters and not `CHANGEME`, checked before any operation. The vendored
+  `delve.env.j2` and `delve.service.j2` follow the role.
+
 - Add the minimal native_app release/TOML/custom-unit and route-only runtime,
   with canonical rendering, restart/resume markers, stable routes and
   read-only preflight checks. Release preflight refuses unsafe ownership/write

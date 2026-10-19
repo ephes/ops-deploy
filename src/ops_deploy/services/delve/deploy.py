@@ -10,6 +10,7 @@ so Ansible and ops-deploy can take turns on one host without churn.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shlex
 import subprocess
@@ -49,6 +50,9 @@ STOREKIT_ROOT_CERTS = FILES / "apple-storekit-root-certs.pem"
 # quotes, backslashes, ``$`` or backticks.
 _PLAIN = r"[^\s'\"\\$`]"
 Url = Annotated[str, Field(pattern=rf"^https?://{_PLAIN}+$")]
+# voxhelm and detector origins: http(s)://host[:port], no path, query or
+# credentials (the role's check); empty leaves the stage unconfigured.
+Origin = Annotated[str, Field(pattern=r"^(https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?)?$")]
 Plain = Annotated[str, Field(pattern=rf"^{_PLAIN}*$")]
 EntryPoint = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")]
 
@@ -120,6 +124,50 @@ class DelveConfig(BaseServiceConfig):
 
     packages: tuple[Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.+-]*$")], ...] = ("ca-certificates",)
 
+    # Server ad analysis (DELVE_SMART_SKIP_ANALYSIS). Off: none of the settings
+    # below is rendered, and the two secret files are removed. On: ffmpeg, the
+    # profile JSON from the controller, the media directory, the voxhelm token
+    # and detector API key files (secrets ``voxhelm_token`` and
+    # ``detector_api_key``) and the env lines. None leaves an optional value to
+    # Delve's default (the role's empty string).
+    smart_skip_analysis: bool = False
+    smart_skip_analysis_profile_src: Path | None = None
+    # None: <config_dir>/smart-skip-analysis-profile.json.
+    smart_skip_analysis_profile_path: PurePosixPath | None = None
+    # Publisher audio and transcripts; keep it off the backup path. A directory
+    # outside data_dir joins the unit's ReadWritePaths.
+    analysis_media_dir: PurePosixPath | None = None
+    analysis_media_disk_cap_bytes: int | None = Field(default=None, gt=0)
+    ffprobe_path: PurePosixPath | None = None
+    ffmpeg_path: PurePosixPath | None = None
+    smart_skip_packages: tuple[Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.+-]*$")], ...] = ("ffmpeg",)
+    voxhelm_url: Origin = ""
+    # None: <config_dir>/voxhelm-token.
+    voxhelm_token_path: PurePosixPath | None = None
+    voxhelm_timeout_seconds: int | None = Field(default=None, gt=0)
+    voxhelm_upload_timeout_seconds: int | None = Field(default=None, gt=0)
+    voxhelm_poll_seconds: int | None = Field(default=None, gt=0)
+    detector_url: Origin = ""
+    # None: <config_dir>/detector-api-key.
+    detector_api_key_path: PurePosixPath | None = None
+    detector_timeout_seconds: int | None = Field(default=None, gt=0)
+
+    @field_validator(
+        "smart_skip_analysis_profile_path",
+        "analysis_media_dir",
+        "ffprobe_path",
+        "ffmpeg_path",
+        "voxhelm_token_path",
+        "detector_api_key_path",
+    )
+    @classmethod
+    def _plain_absolute_paths(cls, value: PurePosixPath | None) -> PurePosixPath | None:
+        if value is None:
+            return None
+        if any(c in str(value) for c in " \t\n\r'\"\\$`"):
+            raise ValueError("paths are rendered inside double quotes: no whitespace, quotes, backslashes, $ or `")
+        return _absolute(value)
+
     @field_validator("data_dir", "config_dir", "storekit_root_certs_path")
     @classmethod
     def _absolute_paths(cls, value: PurePosixPath | None) -> PurePosixPath | None:
@@ -143,6 +191,18 @@ class DelveConfig(BaseServiceConfig):
             raise ValueError("apple_server_notifications requires apple_client_id")
         if not self.traefik_entrypoints:
             raise ValueError("traefik_entrypoints must not be empty")
+        if self.smart_skip_analysis:
+            src = self.smart_skip_analysis_profile_src
+            if src is None or not src.is_file():
+                raise ValueError("smart_skip_analysis needs smart_skip_analysis_profile_src, a file on the controller")
+            try:
+                profile = json.loads(src.read_text())
+            except (OSError, ValueError) as exc:
+                raise ValueError("smart_skip_analysis_profile_src must be a JSON object file") from exc
+            if not isinstance(profile, dict):
+                raise ValueError("smart_skip_analysis_profile_src must be a JSON object file")
+            if self.analysis_media_dir == self.data_dir:
+                raise ValueError("analysis_media_dir must not be the data directory itself")
         return self
 
     @property
@@ -156,6 +216,37 @@ class DelveConfig(BaseServiceConfig):
     @property
     def env_path(self) -> PurePosixPath:
         return self.config_dir / "delve.env"
+
+    @property
+    def profile_path(self) -> PurePosixPath:
+        return self.smart_skip_analysis_profile_path or self.config_dir / "smart-skip-analysis-profile.json"
+
+    @property
+    def voxhelm_token_file(self) -> PurePosixPath:
+        return self.voxhelm_token_path or self.config_dir / "voxhelm-token"
+
+    @property
+    def detector_api_key_file(self) -> PurePosixPath:
+        return self.detector_api_key_path or self.config_dir / "detector-api-key"
+
+    @property
+    def analysis_secret_files(self) -> tuple[tuple[str, str, PurePosixPath, bool], ...]:
+        """(secret key, what, file, wanted) of the two analysis secrets."""
+
+        on = self.smart_skip_analysis
+        return (
+            ("voxhelm_token", "voxhelm producer token", self.voxhelm_token_file, on and bool(self.voxhelm_url)),
+            ("detector_api_key", "detector API key", self.detector_api_key_file, on and bool(self.detector_url)),
+        )
+
+    @property
+    def media_read_write_path(self) -> PurePosixPath | None:
+        """The media directory when the unit must name it in ReadWritePaths (outside data_dir)."""
+
+        media = self.analysis_media_dir
+        if not self.smart_skip_analysis or media is None or media.is_relative_to(self.data_dir):
+            return None
+        return media
 
     @property
     def collector_service_name(self) -> str:
@@ -211,6 +302,27 @@ def render_env(cfg: DelveConfig, secrets: SecretValues) -> SecretContent:
         if any(c in value for c in '\n\r"\\'):
             raise ValueError(f"secret {key} must be a single line without double quotes or backslashes")
     return SecretContent(render(TEMPLATE_PACKAGE, "delve.env.j2", cfg=cfg, secrets=secrets))
+
+
+def analysis_secret_files(cfg: DelveConfig, secrets: SecretValues) -> dict[str, SecretContent]:
+    """The contents of the analysis secret files the deploy writes (key -> content).
+
+    The role's checks: a single line of at least 32 characters that is not
+    ``CHANGEME``, written trimmed with one newline (what Ansible's ``copy``
+    with ``content`` writes). Errors name the key, never the value.
+    """
+
+    contents: dict[str, SecretContent] = {}
+    for key, _what, _path, wanted in cfg.analysis_secret_files:
+        if not wanted:
+            continue
+        if key not in secrets:
+            raise KeyError(f"secret {key} is required while the server ad analysis uses it")
+        value = secrets[key].strip()
+        if len(value) < 32 or value == "CHANGEME" or any(c in value for c in "\r\n"):
+            raise ValueError(f"secret {key} must be a single line of at least 32 characters that is not CHANGEME")
+        contents[key] = SecretContent(f"{value}\n")
+    return contents
 
 
 def traefik_config(cfg: DelveConfig) -> TraefikRoute:
@@ -269,6 +381,42 @@ def _binary(src: str, dest: str) -> Generator[StringCommand, None, None]:
     yield StringCommand(f"mv -f {shlex.quote(staged)} {shlex.quote(dest)}")
 
 
+def _analysis_files(cfg: DelveConfig, contents: dict[str, SecretContent]) -> list[OperationMeta]:
+    """The profile and the two secret files (the role's config.yml); returns the restart triggers.
+
+    Secret files of a switched-off analysis or an unset URL are removed (no
+    restart of their own: the env file changes with them).
+    """
+
+    changes: list[OperationMeta] = []
+    if cfg.smart_skip_analysis:
+        changes.append(
+            files.put(
+                name="Install the server ad analysis profile",
+                src=str(cfg.smart_skip_analysis_profile_src),
+                dest=str(cfg.profile_path),
+                user="root",
+                group=cfg.group,
+                mode="0640",
+            )
+        )
+    for key, what, path, _wanted in cfg.analysis_secret_files:
+        if key in contents:
+            changes.append(
+                secret_file(
+                    name=f"Write the {what} file",
+                    path=path,
+                    content=contents[key],
+                    mode="0640",
+                    user="root",
+                    group=cfg.group,
+                )
+            )
+        else:
+            files.file(name=f"Remove the {what} file", path=str(path), present=False)
+    return changes
+
+
 def _collector(cfg: DelveConfig) -> None:
     """Install the Discovery collector oneshot and timer; set the timer state."""
 
@@ -291,14 +439,26 @@ def _collector(cfg: DelveConfig) -> None:
 def deploy_delve(cfg: DelveConfig, secrets: SecretValues) -> None:
     secrets.require(cfg.required_secret_keys)
     env_content = render_env(cfg, secrets)
+    analysis_secrets = analysis_secret_files(cfg, secrets)
 
     packages = list(cfg.packages)
     if (cfg.healthcheck_enabled or cfg.public_health_check) and "curl" not in packages:
         packages.append("curl")  # the read-only checks (the role used Ansible's uri)
+    if cfg.smart_skip_analysis:
+        packages += [name for name in cfg.smart_skip_packages if name not in packages]
     apt.packages(name="Install delve runtime packages", packages=packages, update=True, cache_time=3600)
     system_user(cfg.user, group=cfg.group, home=cfg.data_dir, shell="/usr/sbin/nologin", mode="0750")
     files.directory(name="Ensure install directory", path=str(cfg.install_dir), user="root", group="root", mode="0755")
     files.directory(name="Ensure config directory", path=str(cfg.config_dir), user="root", group=cfg.group, mode="0750")
+    if cfg.smart_skip_analysis and cfg.analysis_media_dir is not None:
+        # Before the unit names it in ReadWritePaths; never removed here.
+        files.directory(
+            name="Ensure the analysis media directory",
+            path=str(cfg.analysis_media_dir),
+            user=cfg.user,
+            group=cfg.group,
+            mode="0700",
+        )
 
     binary = _binary(name="Install delved", src=str(cfg.binary_path), dest=str(cfg.bin_path))
     changes = [binary]
@@ -318,6 +478,7 @@ def deploy_delve(cfg: DelveConfig, secrets: SecretValues) -> None:
             name="Write delve.env", path=cfg.env_path, content=env_content, mode="0640", user="root", group=cfg.group
         )
     )
+    changes += _analysis_files(cfg, analysis_secrets)
 
     unit = systemd_unit(cfg.service_name, render(TEMPLATE_PACKAGE, "delve.service.j2", cfg=cfg))
     _collector(cfg)
