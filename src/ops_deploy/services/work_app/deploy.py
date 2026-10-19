@@ -44,6 +44,7 @@ from ops_deploy.helpers.probes import last_line, migrations_state, probe, uv_syn
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, sync_tree
+from ops_deploy.services._echoport import TARGET_SCRIPT
 
 TEMPLATE_PACKAGE = "ops_deploy.services.work_app"
 FILES = Path(__file__).parent / "files"
@@ -372,7 +373,7 @@ def _operations_wiring(cfg: WorkAppConfig) -> None:
         _wiring(
             "Upsert Echoport backup target",
             "echoport",
-            (FILES / "echoport_target.py").read_text(),
+            TARGET_SCRIPT,
             {
                 "name": cfg.echoport_target,
                 "description": "Work app SQLite database backups via echoport-backup",
@@ -381,6 +382,7 @@ def _operations_wiring(cfg: WorkAppConfig) -> None:
                 "restore_owner": f"{cfg.user}:{cfg.group}",
                 "db_path": str(cfg.database_path),
                 "schedule": cfg.echoport_schedule,
+                "schedule_policy": "set",
             },
             env_file=False,
         )

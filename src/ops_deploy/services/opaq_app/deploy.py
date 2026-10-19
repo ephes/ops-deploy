@@ -53,10 +53,10 @@ from ops_deploy.helpers.probes import last_line, migrations_state, probe, uv_syn
 from ops_deploy.helpers.python import _as_user, _gate
 from ops_deploy.helpers.traefik import Hostname
 from ops_deploy.ops import secret_file, sync_tree
+from ops_deploy.services._echoport import target_code
 
 TEMPLATE_PACKAGE = "ops_deploy.services.opaq_app"
 FILES = Path(__file__).parent / "files"
-ECHOPORT_TARGET = (FILES / "echoport_target.py").read_text()
 NYXMON_CHECK = (FILES / "nyxmon_check.py").read_text()
 
 SECRET_KEY = re.compile(r"^[A-Za-z0-9_-]{50,}$")
@@ -379,19 +379,26 @@ def _upsert(
     user: str,
     cwd: PurePosixPath,
     python: PurePosixPath,
-    code: str,
-    env_name: str,
+    code: str | Callable[[bool], str],
     params: dict[str, object],
+    env_name: str = "",
     preamble: str = "",
 ) -> None:
-    """Run ``code`` through ``manage.py shell`` twice: a read-only probe, then (if pending) the write."""
+    """Run ``code`` through ``manage.py shell`` twice: a read-only probe, then (if pending) the write.
+
+    ``params`` reach a ``code`` string as JSON in ``env_name`` (with ``apply``);
+    a callable ``code`` gets ``apply`` and carries the parameters itself.
+    """
 
     manage = shlex.quote(str(cwd / "manage.py"))
     home = PurePosixPath("/home") / user
 
     def command(apply: bool) -> str:
-        env = {env_name: json.dumps({**params, "apply": apply}, separators=(",", ":"))}
-        script = f"{preamble}exec {shlex.quote(str(python))} {manage} shell -c {shlex.quote(code)}"
+        if callable(code):
+            body, env = code(apply), {}
+        else:
+            body, env = code, {env_name: json.dumps({**params, "apply": apply}, separators=(",", ":"))}
+        script = f"{preamble}exec {shlex.quote(str(python))} {manage} shell -c {shlex.quote(body)}"
         return _as(user, home, cwd, script, env)
 
     installed = _probe(f"test -f {manage} && echo installed")
@@ -412,20 +419,24 @@ def _upsert(
 
 
 def _echoport(cfg: OpaqAppConfig, target: EchoportTarget) -> None:
+    # Like the playbook, every deploy sets the schedule.
+    params: dict[str, object] = {
+        "name": target.name,
+        "description": "Opaq app SQLite database (verified months, saved scenarios)",
+        "icon": "landmark",
+        "service_name": f"{cfg.service_name}.service",
+        "restore_owner": f"{cfg.user}:{cfg.user}",
+        "db_path": str(cfg.database_path),
+        "schedule": target.schedule,
+        "schedule_policy": "set",
+    }
     _upsert(
         name="Echoport",
         user=target.user,
         cwd=target.site_path,
         python=target.site_path / ".venv/bin/python",
-        code=ECHOPORT_TARGET,
-        env_name="OPAQ_ECHOPORT",
-        params={
-            "name": target.name,
-            "schedule": target.schedule,
-            "db_path": str(cfg.database_path),
-            "service_name": f"{cfg.service_name}.service",
-            "restore_owner": f"{cfg.user}:{cfg.user}",
-        },
+        code=lambda apply: target_code(params, "apply" if apply else "check"),
+        params=params,
     )
 
 

@@ -12,23 +12,37 @@ from __future__ import annotations
 import hashlib
 
 ECHOPORT_MODELS = """
+import enum
 import json
 import os
 
 STORE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "targets.json")
 
 
-class BackupStatus:
+class BackupStatus(str, enum.Enum):
     ACTIVE = "active"
 
 
-class BackupTargetMode:
+class BackupTargetMode(str, enum.Enum):
+    GENERIC_PATHS = "generic_paths"
     SERVICE_OWNED = "service_owned"
 
 
 FIELDS = ("name", "description", "icon", "fastdeploy_service", "service_name", "restore_owner", "target_mode",
-          "db_path", "backup_files", "schedule", "status", "retention_days", "timeout_seconds", "storage_bucket",
-          "service_token")
+          "db_path", "backup_files", "schedule", "schedule_required", "status", "retention_days", "timeout_seconds",
+          "storage_bucket", "service_token")
+
+
+class _Field:
+    def __init__(self, name):
+        self.name = name
+
+
+class _Meta:
+    db_table = "backups_backuptarget"
+
+    def get_fields(self):
+        return [_Field(field) for field in FIELDS]
 
 
 def _load():
@@ -45,6 +59,7 @@ class BackupTarget:
         for field in FIELDS:
             setattr(self, field, "")
         self.backup_files = []
+        self.schedule_required = False
         self.__dict__.update(values)
 
     def save(self):
@@ -77,6 +92,35 @@ class _Result(list):
 
 
 BackupTarget.objects = _Manager()
+BackupTarget._meta = _Meta()
+"""
+
+# ``django.db.connection``, as far as the shared target script asks it (the table's columns).
+DJANGO_DB = """
+import contextlib
+
+from backups.models import FIELDS
+
+
+class _Column:
+    def __init__(self, name):
+        self.name = name
+
+
+class _Introspection:
+    def get_table_description(self, cursor, table):
+        return [_Column(field) for field in FIELDS]
+
+
+class _Connection:
+    introspection = _Introspection()
+
+    @contextlib.contextmanager
+    def cursor(self):
+        yield None
+
+
+connection = _Connection()
 """
 
 ECHOPORT_MANAGE = """#!/usr/bin/env python3
@@ -133,12 +177,16 @@ def setup_script(operator: str, fastdeploy_config: str) -> str:
 for user in echoport fastdeploy nyxmon; do
     id "$user" >/dev/null 2>&1 || useradd --system --create-home --home-dir "/home/$user" --shell /usr/sbin/nologin "$user"
 done
-install -d -o echoport -g echoport /home/echoport/site /home/echoport/site/stub/backups /home/echoport/site/.venv/bin
+install -d -o echoport -g echoport /home/echoport/site /home/echoport/site/stub/backups /home/echoport/site/stub/django /home/echoport/site/.venv/bin
 ln -sf /usr/bin/python3 /home/echoport/site/.venv/bin/python
 cat >/home/echoport/site/stub/backups/models.py <<'PY'
 {ECHOPORT_MODELS}
 PY
 touch /home/echoport/site/stub/backups/__init__.py
+cat >/home/echoport/site/stub/django/db.py <<'PY'
+{DJANGO_DB}
+PY
+touch /home/echoport/site/stub/django/__init__.py
 cat >/home/echoport/site/manage.py <<'PY'
 {ECHOPORT_MANAGE}
 PY

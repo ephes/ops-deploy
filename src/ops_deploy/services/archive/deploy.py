@@ -51,12 +51,12 @@ from ops_deploy.helpers.probes import last_line, probe, verify_probe, when_prese
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services._echoport import target_shell
 
 FILES = Path(__file__).parent / "files"
 MINIO_BOOTSTRAP = (FILES / "minio_bootstrap.sh").read_text()
 MINIO_PROBE = (FILES / "minio_probe.sh").read_text()
 MEDIA_MIGRATE = (FILES / "media_migrate.sh").read_text()
-ECHOPORT_TARGET = (FILES / "echoport_target.py").read_text()
 ADMIN_PROBE = (FILES / "admin_probe.py").read_text()
 
 S3 = "storages.backends.s3.S3Storage"
@@ -529,16 +529,17 @@ def _echoport(cfg: ArchiveConfig) -> None:
     manage = shlex.quote(str(site / "manage.py"))
     params = {
         "name": target.name,
-        "schedule": target.schedule,
-        "update_schedule": target.update_schedule,
+        "description": "Archive SQLite database backups via echoport-backup",
+        "icon": "archive",
+        "service_name": "archive.service",
+        "restore_owner": "archive:archive",
         "db_path": f"{cfg.site_path}/db.sqlite3",
+        "schedule": target.schedule,
+        "schedule_policy": "set" if target.update_schedule else "keep",
     }
 
     def command(apply: bool) -> str:
-        env = {"ARCHIVE_ECHOPORT": json.dumps({**params, "apply": apply}, separators=(",", ":"))}
-        python = shlex.quote(str(site / ".venv/bin/python"))
-        script = f"exec {python} {manage} shell -c {shlex.quote(ECHOPORT_TARGET)}"
-        return _as(target.user, PurePosixPath("/home") / target.user, site, script, env)
+        return target_shell(params, "apply" if apply else "check", user=target.user, site=site)
 
     installed = _probe(f"test -f {manage} && echo installed")
     check = when_present([site / "manage.py"], last_line(command(apply=False)), otherwise="missing")

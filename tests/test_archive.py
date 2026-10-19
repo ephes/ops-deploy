@@ -50,7 +50,7 @@ ITEMIZED_CHANGE = [">f.st...... src/django/manage.py"]
 ADMIN_PROBE = "One line per staff"
 MINIO_PROBE = "minio-probe /usr/local/bin/mc"
 MEDIA_PROBE = f"{SITE}/archive-media probe"
-ECHOPORT_PROBE = '"apply":false'
+ECHOPORT_PROBE = '"mode": "check"'
 RETIRED_PROBE = "ls /etc/systemd/system/archive-quote-classifier.timer"
 READ_ONLY = [
     "Deploy archive | Wait for port 127.0.0.1:10041",
@@ -329,10 +329,8 @@ def test_echoport_target_is_upserted_when_pending(tmp_path: Path) -> None:
 
     assert changed_names(run) == {"Upsert Echoport backup target archive"}
     upsert = run.executed_commands[-1]
-    assert upsert.startswith(
-        "cd /home/echoport/site && runuser -u echoport -- env HOME=/home/echoport 'ARCHIVE_ECHOPORT="
-    )
-    for fragment in ('"apply":true', '"schedule":"40 2 * * *"', '"update_schedule":false'):
+    assert upsert.startswith("(cd /home/echoport/site && runuser -u echoport -- env HOME=/home/echoport ")
+    for fragment in ('"mode": "apply"', '"schedule": "40 2 * * *"', '"schedule_policy": "keep"'):
         assert fragment in upsert
 
 
@@ -346,7 +344,7 @@ def test_missing_echoport_fails_the_deploy(tmp_path: Path) -> None:
     assert not run.succeeded
     failed = [op.name for op in run.ops if not op.succeeded]
     assert failed[0] == "Deploy archive | Require Echoport for the archive backup target"
-    assert not any('"apply":true' in command for command in run.executed_commands)
+    assert not any('"mode": "apply"' in command for command in run.executed_commands)
 
 
 def test_settings_from_the_secrets_file_override_the_config(tmp_path: Path) -> None:

@@ -15,7 +15,7 @@
    starts them again only once the provider is healthy. Then the readers of
    changed config files restart.
 6. The route (never a Traefik restart), the API steps, the read-only checks,
-   the stamp, and the legacy directories.
+   the stamp, the legacy directories, and the Echoport backup target.
 
 A routine deploy never runs ``systemctl restart`` (``down`` + ``up``).
 """
@@ -41,6 +41,7 @@ from ops_deploy.helpers.systemd import UNIT_DIR
 from ops_deploy.helpers.traefik import DYNAMIC_DIR, render_route
 from ops_deploy.infra import docker_steps
 from ops_deploy.ops import secret_file, secret_stdin
+from ops_deploy.services._echoport import upsert_target
 from ops_deploy.services._lifecycle import exists, remove_path, stop_disable
 from ops_deploy.services.compose_app import checks
 from ops_deploy.services.compose_app.config import AppUser, ComposeAppConfig, Directory, Secret
@@ -62,6 +63,7 @@ from ops_deploy.services.compose_app.state import (
     payload,
     plan,
     script,
+    stdin_probe,
 )
 from ops_deploy.services.compose_app.steps import api_steps
 
@@ -314,6 +316,37 @@ def _legacy_dirs(cfg: ComposeAppConfig) -> None:
         )
 
 
+def _echoport(cfg: ComposeAppConfig) -> None:
+    """The host secrets a restore may have handed to ``restore_owner`` back to root ``0600``, then the target."""
+
+    target = cfg.echoport
+    assert target is not None
+    secrets = {"paths": [str(path) for path in cfg.echoport_secret_paths]}
+    if secrets["paths"]:
+        found = stdin_probe(script(COMPOSE_HOST, "secrets-probe"), secrets, name="host secret owners")
+        if found is None or any(line.endswith(" differs") for line in found.splitlines()):
+            secret_stdin(
+                name="Set host secrets back to root 0600",
+                command=script(COMPOSE_HOST, "secrets-apply"),
+                content=SecretContent(payload(secrets)),
+            )
+    upsert_target(
+        {
+            "name": target.name,
+            "description": target.description,
+            "icon": target.icon,
+            "service_name": cfg.echoport_service,
+            "restore_owner": cfg.echoport_owner,
+            "db_path": str(target.db_path or ""),
+            "backup_files": [str(path) for path in target.backup_files],
+            "schedule": target.schedule,
+            "schedule_policy": "set" if target.update_schedule else "keep",
+        },
+        name=f"Upsert Echoport backup target {target.name}",
+        missing=f"Echoport must be deployed on this host before {cfg.service_name} can register its backup target",
+    )
+
+
 def _deploy(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
     # Everything is rendered (and every value checked) before any operation.
     check_secrets(cfg, secrets)
@@ -348,6 +381,8 @@ def _deploy(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
             ),
         )
     _legacy_dirs(cfg)
+    if cfg.echoport is not None:
+        _echoport(cfg)
 
 
 class ComposeAppRemoveConfig(RoleConfig):

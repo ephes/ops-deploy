@@ -347,7 +347,8 @@ def test_wiring_scripts_are_valid_shell(cfg: WeeknotesHomeConfig, secrets: Secre
     scripts = [c for c, _ in run.stdin if "issueservicetoken" in c]
     scripts += [c for c in run.executed_commands if "NYXMON_MODE" in c or "migrate" in c]
     scripts += [c for c in run.fact_commands if "manage.py shell" in c]
-    assert len(scripts) >= 4
+    # The token pipeline, the Nyxmon upsert and the Echoport check probe.
+    assert len(scripts) >= 3
     for script in scripts:
         checked = subprocess.run(["sh", "-n", "-c", script], capture_output=True, text=True, check=False)
         assert checked.returncode == 0, checked.stderr

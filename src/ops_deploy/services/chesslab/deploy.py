@@ -45,6 +45,7 @@ from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services._echoport import TARGET_SCRIPT
 
 TEMPLATE_PACKAGE = "ops_deploy.services.chesslab"
 FILES = Path(__file__).parent / "files"
@@ -492,7 +493,7 @@ def _operations_wiring(cfg: ChesslabConfig) -> None:
         _wiring(
             "Upsert Echoport backup target",
             "echoport",
-            (FILES / "echoport_target.py").read_text(),
+            TARGET_SCRIPT,
             {
                 "name": cfg.echoport_target,
                 "description": "Chesslab SQLite trainer database backups via echoport-backup",
@@ -501,7 +502,7 @@ def _operations_wiring(cfg: ChesslabConfig) -> None:
                 "restore_owner": f"{cfg.user}:{cfg.group}",
                 "db_path": str(cfg.db_path),
                 "schedule": cfg.echoport_schedule,
-                "update_schedule": cfg.echoport_update_schedule,
+                "schedule_policy": "set" if cfg.echoport_update_schedule else "keep",
             },
             env_file=False,
         )

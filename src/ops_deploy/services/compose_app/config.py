@@ -569,6 +569,63 @@ class Checks(Part):
     http: tuple[HttpCheck, ...] = ()
 
 
+# The prefixes Echoport accepts for a target's paths (its default
+# ``ECHOPORT_ALLOWED_PATH_PREFIXES``); checked here so a wrong path fails before any operation.
+ECHOPORT_PATH_PREFIXES = ("/home/", "/opt/", "/var/lib/", "/mnt/cryptdata/")
+
+
+class Echoport(Part):
+    """The app's Echoport backup target (generic paths), upserted at the end of the run.
+
+    Echoport copies ``db_path`` with SQLite's online backup and the
+    ``backup_files`` (files or whole directories) as they are, while the app
+    runs; a restore stops ``service_name``, puts every path back and chowns it
+    to ``restore_owner``. Each path is a declared directory of the app, below
+    one, or one of its :class:`HostSecret` files (put back to root ``0600`` by
+    the next deploy). Basenames must differ: the archive is flat.
+    """
+
+    name: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")]
+    description: Label
+    icon: Annotated[str, Field(pattern=r"^[a-z0-9-]{1,50}$")] = "archive"
+    db_path: PlainPath | None = None
+    backup_files: tuple[PlainPath, ...] = ()
+    # Default: the app's unit.
+    service_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,62}\.service$")] | None = None
+    # ``user:group``; default: the app's user and its primary group.
+    restore_owner: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}:[a-z_][a-z0-9_-]{0,31}$")] | None = None
+    schedule: Annotated[str, Field(pattern=r"^[0-9*/,-]+( [0-9*/,-]+){4}$")]
+    # A schedule changed in the Echoport UI is kept unless this is set.
+    update_schedule: bool = False
+
+    @model_validator(mode="after")
+    def _paths(self) -> Self:
+        paths = self.paths
+        if not paths:
+            raise ValueError("an echoport target needs a db_path or backup_files")
+        _unique("echoport paths", [str(p) for p in paths])
+        _unique("echoport basenames", [p.name for p in paths])
+        for path in paths:
+            # A directory around another path (the database above all) copies it raw and restores it twice.
+            outer = next((o for o in paths if o != path and path.is_relative_to(o)), None)
+            if outer is not None:
+                raise ValueError(f"echoport: {path} is inside {outer}")
+        if self.db_path is not None:
+            sidecars = {self.db_path.with_name(self.db_path.name + s) for s in ("-wal", "-shm", "-journal")}
+            if sidecars & set(self.backup_files):
+                raise ValueError("echoport: the database's -wal/-shm/-journal files come from the online backup")
+        for path in paths:
+            if path.name == "manifest.json":
+                raise ValueError("echoport: manifest.json is the archive's own file")
+            if not any(str(path).startswith(prefix) for prefix in ECHOPORT_PATH_PREFIXES):
+                raise ValueError(f"echoport: {path} is outside {', '.join(ECHOPORT_PATH_PREFIXES)}")
+        return self
+
+    @property
+    def paths(self) -> tuple[PurePosixPath, ...]:
+        return ((self.db_path,) if self.db_path is not None else ()) + self.backup_files
+
+
 # -- the app -------------------------------------------------------------------------
 
 
@@ -599,6 +656,7 @@ class ComposeAppConfig(BaseServiceConfig):
     route: Route | None = None
     steps: tuple[Step, ...] = ()
     checks: Checks = Checks()
+    echoport: Echoport | None = None
     # Removed after a successful run when empty; a non-empty one is kept and reported.
     legacy_dirs: tuple[PlainPath, ...] = ()
     # Removed before the apply (the compose project reads its directory's ``.env``).
@@ -668,6 +726,11 @@ class ComposeAppConfig(BaseServiceConfig):
             if isinstance(step, (HttpJsonSettings, HttpJsonItems)) and (step.port, "tcp") not in published:
                 raise ValueError(f"step {step.name}: port {step.port} is not published")
         _unique("step names", [s.name for s in self.steps if isinstance(s, (HttpJsonSettings, HttpJsonItems))])
+        if self.echoport is not None:
+            secrets = set(self.host_secret_paths)
+            for path in self.echoport.paths:
+                if path not in secrets and not self._declared(path):
+                    raise ValueError(f"echoport: {path} is neither a declared directory of the app nor its host secret")
         return self
 
     def _declared(self, source: PurePosixPath) -> bool:
@@ -722,6 +785,33 @@ class ComposeAppConfig(BaseServiceConfig):
         return tuple(dict.fromkeys(s.image for s in self.services))
 
     @property
+    def host_secret_paths(self) -> tuple[PurePosixPath, ...]:
+        """The files of every :class:`HostSecret` the config refers to, in order of first use."""
+
+        return tuple(dict.fromkeys(ref.host_secret for ref in _parts(self, HostSecret)))
+
+    @property
+    def echoport_secret_paths(self) -> tuple[PurePosixPath, ...]:
+        """The app's host secrets an Echoport restore puts back: listed, or inside a listed directory."""
+
+        assert self.echoport is not None
+        roots = self.echoport.paths
+        return tuple(p for p in self.host_secret_paths if any(_within(p, root) for root in roots))
+
+    @property
+    def echoport_service(self) -> str:
+        assert self.echoport is not None
+        return self.echoport.service_name or f"{self.unit_name}.service"
+
+    @property
+    def echoport_owner(self) -> str:
+        assert self.echoport is not None
+        if self.echoport.restore_owner is not None:
+            return self.echoport.restore_owner
+        user = next(u for u in self.users if u.name == self.user)
+        return f"{user.name}:{user.primary_group}"
+
+    @property
     def required_secret_keys(self) -> tuple[str, ...]:  # type: ignore[override]
         """Every secret key the config refers to, in order of first use."""
 
@@ -758,6 +848,20 @@ def _leaves(value: Any) -> Iterator[Any]:
             yield from _leaves(item)
     else:
         yield value
+
+
+def _parts[T: BaseModel](value: Any, kind: type[T]) -> Iterator[T]:
+    if isinstance(value, kind):
+        yield value
+    elif isinstance(value, BaseModel):
+        for name in type(value).model_fields:
+            yield from _parts(getattr(value, name), kind)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _parts(item, kind)
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            yield from _parts(item, kind)
 
 
 def _secrets(value: Any) -> Iterator[Secret]:

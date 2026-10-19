@@ -39,7 +39,7 @@ UV_SYNC = (
 UV_CHECK = "--no-install-project --python 3.14 --check"
 MIGRATE_CHECK = "manage.py migrate --check"
 ITEMIZED_CHANGE = [">f.st...... opaq_app/views.py"]
-ECHOPORT_PROBE = re.compile(r'OPAQ_ECHOPORT=.*"apply":false')
+ECHOPORT_PROBE = re.compile(r'manage\.py shell -c .*"mode": "check"')
 NYXMON_PROBE = re.compile(r'OPAQ_NYXMON=.*"apply":false')
 READ_ONLY = [
     "Deploy opaq_app service | Port preflight tcp/10065",
@@ -327,8 +327,13 @@ def test_echoport_target_is_upserted_only_when_it_differs(tmp_path: Path, secret
     run = deploy(cfg, secrets, responses)
     assert run.mutating_changed_ops == ["Deploy opaq_app service | Upsert Echoport entry"]
     apply = run.executed_commands[-1]
-    assert '"apply":true' in apply
-    for fragment in ('"name":"opaq_app"', f'"db_path":"{DB}"', '"schedule":"20 2 * * *"'):
+    assert '"mode": "apply"' in apply
+    for fragment in (
+        '"name": "opaq_app"',
+        f'"db_path": "{DB}"',
+        '"schedule": "20 2 * * *"',
+        '"schedule_policy": "set"',
+    ):
         assert fragment in apply
     assert apply.startswith("cd /home/echoport/site && runuser -u echoport --")
 
@@ -342,7 +347,7 @@ def test_echoport_is_required_when_a_target_is_configured(tmp_path: Path, secret
 
     assert not run.succeeded
     assert next(op.name for op in run.ops if not op.succeeded) == "Deploy opaq_app service | Require Echoport"
-    assert not any('"apply":true' in command for command in run.executed_commands)
+    assert not any('"mode": "apply"' in command for command in run.executed_commands)
 
 
 def test_nyxmon_check_is_upserted_only_when_it_differs(tmp_path: Path, secrets: SecretValues) -> None:
@@ -503,10 +508,10 @@ def test_echoport_target_follows_the_service_and_user(tmp_path: Path, secrets: S
 
     run = deploy(cfg, secrets, responses)
 
-    apply = next(c for c in run.executed_commands if '"apply":true' in c)
-    assert '"service_name":"opaq.service"' in apply
-    assert '"restore_owner":"opaq:opaq"' in apply
-    assert '"db_path":"/home/opaq/data/db.sqlite3"' in apply
+    apply = next(c for c in run.executed_commands if '"mode": "apply"' in c)
+    assert '"service_name": "opaq.service"' in apply
+    assert '"restore_owner": "opaq:opaq"' in apply
+    assert '"db_path": "/home/opaq/data/db.sqlite3"' in apply
 
 
 def test_migration_probe_writes_no_bytecode(cfg: OpaqAppConfig, secrets: SecretValues) -> None:

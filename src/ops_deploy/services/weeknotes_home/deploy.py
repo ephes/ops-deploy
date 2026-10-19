@@ -54,6 +54,7 @@ from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services._echoport import target_shell
 
 TEMPLATE_PACKAGE = "ops_deploy.services.weeknotes_home"
 FILES = Path(__file__).parent / "files"
@@ -553,27 +554,25 @@ def _fastdeploy_service_row(cfg: WeeknotesHomeConfig) -> None:
         verify_probe(query_row, name="FastDeploy service row")
 
 
-def _echoport_shell(cfg: WeeknotesHomeConfig, mode: str) -> str:
+def _echoport_shell(cfg: WeeknotesHomeConfig, mode: Literal["check", "apply"]) -> str:
+    # Like the playbook, every deploy sets the schedule.
     params = {
-        "mode": mode,
         "name": cfg.echoport_target_name,
         "legacy_name": cfg.echoport_legacy_target_name,
         "description": "weeknotes.home PostgreSQL backups via service-owned FastDeploy runner",
+        "icon": "notebook",
+        "target_mode": "service_owned",
         "fastdeploy_service": cfg.echoport_fastdeploy_service,
         "service_name": cfg.service_name,
         "restore_owner": f"{cfg.user}:{cfg.group}",
         "schedule": cfg.echoport_target_schedule,
-        "renewal_days": cfg.fastdeploy_token_rotate_days,
-        "force_rotate": cfg.fastdeploy_token_force_rotate,
+        "schedule_policy": "set",
+        "service_token": {
+            "renewal_days": cfg.fastdeploy_token_rotate_days,
+            "force_rotate": cfg.fastdeploy_token_force_rotate,
+        },
     }
-    code = (
-        f"PARAMS = {json.dumps(params)!r}\nimport json as _j\nPARAMS = _j.loads(PARAMS)\n"
-        + (FILES / "echoport_target.py").read_text()
-    )
-    run = _as_user(
-        "echoport", PurePosixPath("/home/echoport"), {}, [".venv/bin/python", "manage.py", "shell", "-c", code]
-    )
-    return f"(cd {shlex.quote(str(ECHOPORT_SITE))} && {run})"
+    return target_shell(params, mode, site=ECHOPORT_SITE)
 
 
 def _token_and_target(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:

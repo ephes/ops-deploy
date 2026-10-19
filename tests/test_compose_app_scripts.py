@@ -12,6 +12,7 @@ import grp
 import json
 import os
 import pwd
+import stat
 import subprocess
 import sys
 import threading
@@ -156,6 +157,58 @@ def test_the_stamp_records_the_host_ids_and_clears_pending(site: Path) -> None:
         "version": 1,
     }
     assert not (state / "pending").exists()
+
+
+def test_secret_owners_probe_reports_without_changing_anything(site: Path) -> None:
+    secret = site / "app-apikey"
+    secret.write_text("value\n")
+    secret.chmod(0o640)
+    request = {"paths": [str(secret), str(site / "missing-apikey"), str(site / "gone" / "apikey")]}
+
+    result = run(COMPOSE_HOST, "secrets-probe", request)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        f"secret {secret} differs",
+        f"secret {site / 'missing-apikey'} missing",
+        f"secret {site / 'gone' / 'apikey'} missing",
+    ]
+    assert stat.S_IMODE(secret.stat().st_mode) == 0o640
+    assert "value" not in result.stdout + result.stderr
+    # A missing secret is never created.
+    assert run(COMPOSE_HOST, "secrets-apply", {"paths": [str(site / "missing-apikey")]}).stdout == (
+        f"secret {site / 'missing-apikey'} missing\n"
+    )
+    assert not (site / "missing-apikey").exists()
+
+
+@pytest.mark.parametrize("mode", ["secrets-probe", "secrets-apply"])
+def test_secret_owners_refuse_symlinks_on_the_path(site: Path, mode: str) -> None:
+    (site / "elsewhere").write_text("keep\n")
+    (site / "elsewhere").chmod(0o644)
+    (site / "app-apikey").symlink_to(site / "elsewhere")
+    (site / "real").mkdir()
+    (site / "real" / "apikey").write_text("keep\n")
+    (site / "linked").symlink_to(site / "real")
+
+    for path in (site / "app-apikey", site / "linked" / "apikey"):
+        result = run(COMPOSE_HOST, mode, {"paths": [str(path)]})
+        assert result.returncode == 1
+        assert "symlink" in result.stderr or "not a plain directory" in result.stderr
+    assert stat.S_IMODE((site / "elsewhere").stat().st_mode) == 0o644
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="chown to root needs root")
+def test_secret_owners_apply_sets_root_0600(site: Path) -> None:
+    secret = site / "app-apikey"
+    secret.write_text("value\n")
+    os.chown(secret, 1, 1)
+    secret.chmod(0o640)
+
+    assert run(COMPOSE_HOST, "secrets-apply", {"paths": [str(secret)]}).stdout == f"secret {secret} changed\n"
+    info = secret.stat()
+    assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 0, 0o600)
+    assert run(COMPOSE_HOST, "secrets-probe", {"paths": [str(secret)]}).stdout == f"secret {secret} same\n"
 
 
 def copy_request(site: Path, wait: int = 1) -> dict[str, Any]:

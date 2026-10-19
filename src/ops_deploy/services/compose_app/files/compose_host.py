@@ -14,6 +14,8 @@ Modes:
   makes its file ``differs``.
 - ``stamp``: writes ``applied.json`` (the fingerprint, with the ids resolved
   here) in the root-only state directory, then removes the ``pending`` marker.
+- ``secrets-probe`` / ``secrets-apply``: host secrets an Echoport restore
+  handed to its owner, back to root 0600 (missing ones are left alone).
 - ``copy-probe`` / ``copy-apply``: json_key_copy. Probe prints ``same``,
   ``differs`` or ``waiting`` (no key in the source yet); apply waits for the
   key, writes the destination when it differs and prints ``changed|noop``.
@@ -307,6 +309,50 @@ def copy(req, apply):
         print("changed")
 
 
+def secret_owners(req, apply):
+    """Host secrets back to root 0600 (an Echoport restore chowns them to its owner).
+
+    Each file is opened without following a symlink and changed through its
+    descriptor; a missing one is reported and left alone, never created.
+    Prints ``secret <path> same|differs|missing`` (probe) or ``noop|changed|missing``.
+    """
+
+    for path in req["paths"]:
+        parent, name = split(path)
+        try:
+            dfd = open_dir(parent)
+        except FileNotFoundError:
+            print("secret", path, "missing")
+            continue
+        try:
+            try:
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dfd)
+            except FileNotFoundError:
+                print("secret", path, "missing")
+                continue
+            except OSError as exc:
+                if exc.errno == errno.ELOOP:
+                    raise Fail(path + " is a symlink") from None
+                raise
+            try:
+                info = os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode):
+                    raise Fail(path + " is not a regular file")
+                if info.st_uid == 0 and info.st_gid == 0 and stat.S_IMODE(info.st_mode) == 0o600:
+                    state = "noop" if apply else "same"
+                elif not apply:
+                    state = "differs"
+                else:
+                    os.fchown(fd, 0, 0)
+                    os.fchmod(fd, 0o600)
+                    state = "changed"
+            finally:
+                os.close(fd)
+        finally:
+            os.close(dfd)
+        print("secret", path, state)
+
+
 def main():
     mode = sys.argv[1]
     req = request()
@@ -317,6 +363,8 @@ def main():
             stamp(req)
         elif mode in ("copy-probe", "copy-apply"):
             copy(req, mode == "copy-apply")
+        elif mode in ("secrets-probe", "secrets-apply"):
+            secret_owners(req, mode == "secrets-apply")
         else:
             raise Fail("unknown mode " + mode)
     except Fail as exc:

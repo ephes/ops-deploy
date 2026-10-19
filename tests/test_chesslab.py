@@ -240,7 +240,7 @@ def test_wiring_drift_is_applied(cfg: ChesslabConfig, secrets: SecretValues) -> 
     assert run.mutating_changed_ops == ["Deploy chesslab | Upsert Echoport backup target"]
     apply = next(c for c in run.executed_commands if "/home/echoport/site" in c and "manage.py shell" in c)
     assert '"schedule": "50 2 * * *"' in apply
-    assert '"update_schedule": false' in apply
+    assert '"schedule_policy": "keep"' in apply
 
 
 def test_wiring_is_optional(tmp_path: Path) -> None:

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `compose_app`: an `echoport` part registers the app's Echoport backup
+  target (SQLite database plus listed files, directories and `HostSecret`
+  files; default unit and owner from the app). Paths are checked before any
+  operation; host secrets a restore handed to `restore_owner` go back to root
+  `0600` on the next deploy. The five copies of `echoport_target.py`
+  (archive, chesslab, opaq_app, weeknotes_home, work_app) are one shared
+  script in `services/_echoport`. Behaviour changes for those services:
+  `schedule_required` is now set on every registered target (Echoport
+  migration 0008 is required; existing targets update once), and archive and
+  opaq_app pass their parameters as `PARAMS` instead of an environment
+  variable.
+
 - Add the minimal native_app release/TOML/custom-unit and route-only runtime,
   with canonical rendering, restart/resume markers, stable routes and
   read-only preflight checks. Release preflight refuses unsafe ownership/write

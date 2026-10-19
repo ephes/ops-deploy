@@ -235,6 +235,67 @@ Read-only operations (they do not count as changes):
 - every published TCP port listens on its address only (`ss`);
 - `checks.http`.
 
+## Echoport backup target
+
+`echoport` registers one Echoport target (`generic_paths`) for the app. It
+is the last step of a run, after the stamp: Echoport must already run on the
+host, or the run fails with a message. The upsert script is shared with the
+other services (`services/_echoport`): a check-mode probe first, an apply
+only when it does not say `unchanged`.
+
+```python
+"echoport": {
+    "name": "radarr",
+    "description": "Radarr database, config.xml and API key",
+    "db_path": "/mnt/cryptdata/media-apps/radarr/radarr.db",
+    "backup_files": (
+        "/mnt/cryptdata/media-apps/radarr/config.xml",
+        "/mnt/cryptdata/media-apps/secrets/radarr-apikey",
+    ),
+    "restore_owner": "radarr:media",
+    "schedule": "15 3 * * *",
+},
+```
+
+| Key | Meaning |
+| --- | --- |
+| `name`, `description`, `icon` | the target in Echoport's UI (`icon` defaults to `archive`) |
+| `db_path` | a SQLite database, copied with SQLite's online backup |
+| `backup_files` | files or whole directories, copied as they are |
+| `service_name` | the unit Echoport stops around a restore; default: the app's unit |
+| `restore_owner` | `user:group` every restored path is chowned to; default: the app's user and its primary group |
+| `schedule` | cron schedule of a new target |
+| `update_schedule` | `true`: every deploy sets the schedule; default `false`: a schedule changed in the Echoport UI is kept |
+
+Checked before any operation: at least one path; every path below
+`/home/`, `/opt/`, `/var/lib/` or `/mnt/cryptdata/` (Echoport's default
+prefixes); every path a declared directory of the app, below one, or one of
+the app's `HostSecret` files; no path inside another (a directory around the
+database would copy it raw and restore it over the snapshot), and none of
+the database's `-wal`/`-shm`/`-journal` files; basenames all different and
+none `manifest.json` (the archive is flat and keeps its manifest beside them).
+
+**Consistency while the app runs.** Backups never stop the app. The
+database is a consistent snapshot (SQLite's backup API, WAL included). Files
+and directories are copied one by one: each file is whole if the app writes
+it atomically (replace by rename, as qBittorrent does for its resume data),
+but files written at different times may be minutes apart. A file that
+disappears during the copy (a torrent removed at that moment) fails that
+backup run; the next scheduled run tries again. Only list what the deploy
+cannot rebuild.
+
+**Restore.** Echoport stops `service_name`, verifies the archive's checksum,
+puts the database and every listed path back (a directory replaces the
+current one), removes stale `-wal`/`-shm` files, chowns everything to
+`restore_owner` and starts the unit again. `HostSecret` files therefore come
+back owned by `restore_owner`; the next deploy sets them to root `0600`
+again ("Set host secrets back to root 0600": listed ones and those inside a
+listed directory, each opened without following symlinks and changed through
+its descriptor; a missing one is left alone). Run the deploy once after a
+restore; it also re-applies settings the API steps own.
+
+`remove_compose_app` leaves the target and its backups in Echoport.
+
 ## Remove
 
 `remove_compose_app(ComposeAppRemoveConfig(app=cfg, confirm=True))` stops and
@@ -338,6 +399,7 @@ gluetun joins the `media` network: that is the first P3 change to torrent's
 gluetun; one gluetun recreation, run the leak checklist after it).
 
 Wiring the apps uses `http_json_settings` and `http_json_items` (root
-folders, download clients, Prowlarr applications and indexer proxies). Not
-built yet: the `echoport` part (one Echoport target per app: the SQLite
-database, the config and the key files) and `update: track`.
+folders, download clients, Prowlarr applications and indexer proxies). Each
+app registers its backups with the `echoport` part ([above](#echoport-backup-target)):
+the SQLite database, `config.xml` and its `HostSecret` API key. Not built yet:
+`update: track`.
