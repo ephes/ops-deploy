@@ -145,8 +145,10 @@ Differences from the role, on purpose:
 
 The default now captures the **whole dynamic directory**, including nested,
 hidden and non-YAML files, into `dynamic/` regardless of the source directory's
-basename or trailing slash. It preserves source permissions inside a root-only
-`<root>/<prefix>-<timestamp>/` container. `metadata.yml` (`0600`) records the
+basename or trailing slash. Entries below `dynamic/` keep their source
+permissions; `dynamic/` itself is reset to `root:root 0700` after the copy (a
+plain `cp -a` would give it the source directory's owner and mode), inside the
+root-only `<root>/<prefix>-<timestamp>/` container. `metadata.yml` (`0600`) records the
 timestamp, both configured sources and both inclusion flags in the role's
 format. Optional ACME state is copied into `acme/` as `root:root 0600`.
 
@@ -166,8 +168,12 @@ all regular files within the selected dynamic tree are included.
 With `include_dynamic=False` the tree is neither inspected nor copied. With
 `create_archive=False`, only the remote payload directory is produced; nothing
 is fetched. Missing enabled sources fail before any operation. Source and
-backup roots cannot overlap or contain parent traversal. The backup root must
-be a real directory (or absent); an existing payload/archive attempt, including
+backup roots cannot overlap or contain parent traversal, both as configured and
+after resolving symlinks on the host (`realpath -m`, so an absent root under an
+aliased ancestor is resolved too; this needs GNU coreutils, and an unresolvable
+answer refuses). Link checks apply to the path with trailing `/` and `.`
+components removed, so `link/` or `link/.` still counts as a link. The backup
+root must be a real directory (or absent); an existing payload/archive attempt, including
 a dangling link, refuses before writes rather than overwriting history. Use a trusted source
 tree: unlike the role's recursive copy, this implementation refuses symlinks
 and special entries rather than following them outside the chosen tree, and

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import stat
 import subprocess
 import tarfile
 from pathlib import Path
@@ -13,8 +15,20 @@ import yaml
 from pydantic import ValidationError
 
 from ops_deploy.infra import TraefikBackupConfig, TraefikRestoreConfig
-from ops_deploy.infra.traefik_backup import _dynamic_copy, _dynamic_tree_check, _private_local_file
+from ops_deploy.infra.traefik_backup import (
+    _dynamic_copy,
+    _dynamic_tree_check,
+    _private_local_file,
+    _resolved_paths,
+    _unsafe_root_check,
+)
 from tests.test_infra_traefik_lifecycle import STAMP, backup
+
+
+def _realpath_missing_supported() -> bool:
+    if shutil.which("realpath") is None:
+        return False
+    return subprocess.run(["realpath", "-m", "--", "/nonexistent-dir/child"], capture_output=True).returncode == 0
 
 
 @pytest.mark.parametrize("include_dynamic", [True, False])
@@ -24,6 +38,7 @@ def test_real_archive_contains_selected_tree_and_private_metadata(
 ) -> None:
     source = tmp_path / "selected-routes"
     (source / "nested").mkdir(parents=True)
+    source.chmod(0o755)
     contents = {
         "service.yml": b"http: {middlewares: {auth: {basicAuth: {users: [synthetic-auth-hash]}}}}\n",
         "nested/route.toml": b"[http.services.private]\n",
@@ -57,7 +72,13 @@ def test_real_archive_contains_selected_tree_and_private_metadata(
     metadata.write_bytes(result.upload(str(metadata)))
     metadata.chmod(0o600)
     # Execute only the generated copy/archive commands, not fake connector
-    # mkdir/chown/system operations. Everything resolves inside tmp_path.
+    # mkdir/chown/system operations. Everything resolves inside tmp_path. The
+    # test is not root, so a stub stands in for ``chown root:root``; the real
+    # ``chmod`` of the dynamic container still runs.
+    stub = tmp_path / "stub-bin"
+    stub.mkdir()
+    (stub / "chown").write_text("#!/bin/sh\nexit 0\n")
+    (stub / "chown").chmod(0o700)
     commands = [c for c in result.executed_commands if "cp -a " in c or "tar -czf " in c]
     for command in commands:
         subprocess.run(
@@ -66,7 +87,7 @@ def test_real_archive_contains_selected_tree_and_private_metadata(
             capture_output=True,
             # BSD tar's macOS resource-fork sidecars do not exist on the Linux
             # target. Disable only that test-platform metadata behavior.
-            env={**os.environ, "COPYFILE_DISABLE": "1"},
+            env={**os.environ, "COPYFILE_DISABLE": "1", "PATH": f"{stub}:{os.environ['PATH']}"},
         )
     archive = root / f"{name}.tar.gz"
     assert archive.stat().st_mode & 0o777 == 0o600
@@ -75,6 +96,10 @@ def test_real_archive_contains_selected_tree_and_private_metadata(
         assert {key.split("/", 1)[0] for key in members} == {name}
         assert members[name].mode & 0o777 == 0o700
         assert members[f"{name}/metadata.yml"].mode & 0o777 == 0o600
+        # The 0755 source directory's mode must not replace the private container.
+        assert members[f"{name}/dynamic"].mode & 0o777 == 0o700
+        if include_dynamic:
+            assert members[f"{name}/dynamic/nested"].mode & 0o777 == source.joinpath("nested").stat().st_mode & 0o777
         files = {key for key, member in members.items() if member.isfile()}
         expected = {f"{name}/metadata.yml"}
         if include_dynamic:
@@ -132,6 +157,81 @@ def test_unsafe_tree_cannot_copy_or_create_an_archive(tmp_path: Path, kind: str)
     assert not archive.exists()
     assert secret.read_bytes() == b"synthetic-secret"
     assert b"synthetic-secret" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("source_mode", [0o2755, 0o4755, 0o6755])
+def test_set_id_bits_of_the_source_directory_are_cleared_on_the_container(tmp_path: Path, source_mode: int) -> None:
+    source, dest = tmp_path / "source", tmp_path / "dynamic"
+    (source / "nested").mkdir(parents=True)
+    (source / "route.yml").write_bytes(b"synthetic")
+    source.chmod(source_mode)
+    # The check is only meaningful when the platform kept the set-ID bits.
+    assert stat.S_IMODE(source.stat().st_mode) == source_mode
+    dest.mkdir()
+    dest.chmod(0o700)
+    stub = tmp_path / "stub-bin"
+    stub.mkdir()
+    (stub / "chown").write_text("#!/bin/sh\nexit 0\n")
+    (stub / "chown").chmod(0o700)
+    archive = tmp_path / "dynamic.tar.gz"
+    command = _dynamic_copy(str(source), str(dest)) + f" && tar -czf {archive} -C {tmp_path} {dest.name}"
+    subprocess.run(
+        ["sh", "-c", command],
+        check=True,
+        capture_output=True,
+        env={**os.environ, "COPYFILE_DISABLE": "1", "PATH": f"{stub}:{os.environ['PATH']}"},
+    )
+    # Full mode, not masked to the permission bits.
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o700
+    with tarfile.open(archive) as packed:
+        assert packed.getmember(dest.name).mode == 0o700
+        assert packed.getmember(f"{dest.name}/nested").isdir()
+
+
+@pytest.mark.parametrize("spelling", ["", "/", "/.", "//./"])
+def test_linked_paths_refuse_whatever_their_spelling(tmp_path: Path, spelling: str) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "route.yml").write_bytes(b"synthetic")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    path = str(link) + spelling
+    root_check = subprocess.run(["sh", "-c", _unsafe_root_check(path)], capture_output=True, text=True)
+    assert root_check.stdout.strip() == "unsafe"
+    source_check = subprocess.run(["sh", "-c", _dynamic_tree_check(path)], capture_output=True)
+    assert source_check.returncode != 0
+
+
+@pytest.mark.parametrize(("root", "source"), [("/srv/routes/backups", "/srv/routes"), ("/srv", "/srv/routes")])
+def test_resolved_overlap_refuses_before_writes(tmp_path: Path, root: str, source: str) -> None:
+    cfg = TraefikBackupConfig(root="/alias/backups", dynamic_dir="/srv/routes", local_dir=tmp_path / "local")
+    result = backup(cfg, {_resolved_paths(cfg.root, cfg.dynamic_dir): [root, source]})
+    assert not result.succeeded
+    assert "resolved dynamic source and backup root" in str(result.error)
+    assert result.executed_commands == []
+    assert not (tmp_path / "local").exists()
+
+
+@pytest.mark.parametrize("response", [[], ["/opt/backups/traefik"], ["relative", "/etc/traefik/dynamic"]])
+def test_unresolvable_paths_refuse_before_writes(response: list[str]) -> None:
+    cfg = TraefikBackupConfig(fetch_local=False)
+    result = backup(cfg, {_resolved_paths(cfg.root, cfg.dynamic_dir): response})
+    assert not result.succeeded
+    assert "resolved dynamic source" in str(result.error)
+    assert result.executed_commands == []
+
+
+@pytest.mark.skipif(not _realpath_missing_supported(), reason="needs GNU realpath -m, as on the Linux target")
+def test_resolved_paths_follow_an_aliased_ancestor_of_an_absent_root(tmp_path: Path) -> None:
+    source = tmp_path / "routes"
+    source.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(source, target_is_directory=True)
+    command = _resolved_paths(str(alias / "backups"), str(source) + "/.")
+    lines = subprocess.run(["sh", "-c", command], check=True, capture_output=True, text=True).stdout.splitlines()
+    resolved = Path(os.path.realpath(source))
+    assert lines == [str(resolved / "backups"), str(resolved)]
+    assert not (source / "backups").exists()
 
 
 def test_copy_failure_never_archives_or_fetches(tmp_path: Path) -> None:

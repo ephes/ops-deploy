@@ -15,7 +15,7 @@ from ops_deploy.infra import (
     deploy_traefik_remove,
     deploy_traefik_restore,
 )
-from ops_deploy.infra.traefik_backup import _dynamic_tree_check
+from ops_deploy.infra.traefik_backup import _canonical, _dynamic_tree_check, _resolved_paths
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -26,6 +26,7 @@ ENROLLED = {"test -e /var/lib/traefik-transactions": ["enrolled"]}
 def backup(cfg: TraefikBackupConfig, responses: dict[str, Any] | None = None) -> FakeRun:
     base = {"date +%Y%m%dT%H%M%S": [STAMP], "stat -c %a ": ["700"]}
     base[_dynamic_tree_check(cfg.dynamic_dir) + " && echo yes"] = ["yes"]
+    base[_resolved_paths(cfg.root, cfg.dynamic_dir)] = [_canonical(cfg.root), _canonical(cfg.dynamic_dir)]
 
     def download(_self: FakeConnector, _source: str, destination: str, **_kwargs: Any) -> bool:
         Path(destination).write_bytes(b"synthetic downloaded archive")
