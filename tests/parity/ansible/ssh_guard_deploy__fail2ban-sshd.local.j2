@@ -1,0 +1,12 @@
+# Managed by ops-library ssh_guard_deploy. Do not edit.
+[{{ ssh_guard_fail2ban_jail_name }}]
+enabled = true
+backend = {{ ssh_guard_fail2ban_backend }}
+filter = {{ ssh_guard_fail2ban_filter }}
+port = {{ ssh_guard_fail2ban_port }}
+maxretry = {{ ssh_guard_fail2ban_maxretry }}
+findtime = {{ ssh_guard_fail2ban_findtime }}
+bantime = {{ ssh_guard_fail2ban_bantime }}
+{% if ssh_guard_fail2ban_ignoreip %}
+ignoreip = {{ ssh_guard_fail2ban_ignoreip }}
+{% endif %}
