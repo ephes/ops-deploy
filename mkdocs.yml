@@ -44,4 +44,5 @@ nav:
       - logyard: services/logyard.md
       - graphyard: services/graphyard.md
       - work_app: services/work_app.md
+      - zellij_ingress: services/zellij_ingress.md
   - Changelog: changelog.md
