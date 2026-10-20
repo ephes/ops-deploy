@@ -135,6 +135,7 @@ def test_traefik_lifecycle(smoke_host: SmokeHost, provisioned_traefik: None) -> 
     outside_dynamic = {entry for entry in relative if entry == "dynamic/" or not entry.startswith("dynamic/")}
     assert outside_dynamic == {"", "acme/", "acme/acme.json", "dynamic/", "metadata.yml"}
     assert "dynamic/backup-route.yml" in relative
+    assert smoke_host.out(f"stat -c '%U:%G %a' {BACKUPS}/smoke-*/dynamic") == "root:root 700"
     # This lifecycle smoke still restores ACME only, never archived routes.
     smoke_host.run("echo damaged > /etc/traefik/acme/acme.json && chmod 644 /etc/traefik/acme/acme.json")
     deploy(smoke_host, "traefik restore", deploy_traefik_restore, TraefikRestoreConfig(root=BACKUPS, include_acme=True))

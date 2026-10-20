@@ -21,6 +21,13 @@
   not implemented; existing ACME-only restore/transaction guards are unchanged.
   No private registration or live qualification is included.
 
+- Traefik backup fixes: the archived `dynamic/` directory is reset to
+  `root:root 0700` after copying instead of inheriting the source directory's
+  owner and mode (setuid/setgid bits included, which GNU `chmod 0700` would keep
+  on a directory); `link/` and `link/.` spellings of a symlinked backup root or
+  dynamic source now refuse; and source/root overlap is also checked after
+  resolving symlinks on the host (GNU `realpath -m`) before anything is written.
+
 - `zellij_ingress`: port of the `zellij_ingress_deploy` role. Writes only
   `/etc/traefik/dynamic/zellij.yml` (`root:root 0644`, directory ensured
   `0755`) from the role's template shipped unchanged, so the file is

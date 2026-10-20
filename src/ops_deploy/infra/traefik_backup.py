@@ -102,8 +102,33 @@ def _private_local_file(path: str, missing_ok: bool = False) -> None:
         os.close(descriptor)
 
 
+def _canonical(path: str) -> str:
+    # ``PurePosixPath`` drops trailing separators and ``.`` components, so
+    # ``link/`` and ``link/.`` name the link itself for ``test -L``.
+    return str(PurePosixPath(path))
+
+
+def _unsafe_root_check(root: str) -> str:
+    quoted = shlex.quote(_canonical(root))
+    return f"if [ -L {quoted} ] || {{ [ -e {quoted} ] && [ ! -d {quoted} ]; }}; then echo unsafe; fi"
+
+
+def _resolved_paths(root: str, source: str) -> str:
+    # GNU ``realpath -m`` resolves the existing ancestors of an absent root,
+    # so an aliased root cannot land inside the live source tree.
+    return f"realpath -m -- {shlex.quote(_canonical(root))} && realpath -e -- {shlex.quote(_canonical(source))}"
+
+
+def _resolved_overlap(cfg: TraefikBackupConfig) -> bool:
+    lines = output(_resolved_paths(cfg.root, cfg.dynamic_dir)).splitlines()
+    if len(lines) != 2 or not all(line.startswith("/") for line in lines):
+        return True
+    root, source = PurePosixPath(lines[0]), PurePosixPath(lines[1])
+    return root.is_relative_to(source) or source.is_relative_to(root)
+
+
 def _dynamic_tree_check(path: str) -> str:
-    source = shlex.quote(path.rstrip("/"))
+    source = shlex.quote(_canonical(path))
     return (
         f"test -d {source} && test ! -L {source} "
         f'&& unsafe=$(find {source} ! -type d ! -type f -print -quit) && test -z "$unsafe"'
@@ -112,11 +137,17 @@ def _dynamic_tree_check(path: str) -> str:
 
 def _dynamic_copy(source: str, destination: str) -> str:
     # cp -a preserves modes and copies dot/nested files without following links.
-    # Check again after copying: a newly introduced link must not produce an
-    # apparently complete archive. The containing backup directory stays0700.
+    # Copying ``source/.`` also gives ``destination`` the source directory's
+    # owner and mode, so restore the root:root 0700 container afterwards; the
+    # descendants keep their source modes. GNU ``chmod 0700`` keeps a
+    # directory's setuid/setgid bits, so the extra leading zero clears them
+    # (BSD treats ``00700`` as plain ``0700``). Check again after copying: a
+    # newly introduced link must not produce an apparently complete archive.
+    target = shlex.quote(destination)
     return (
         f"{_dynamic_tree_check(source)} && "
-        f"cp -a {shlex.quote(source.rstrip('/') + '/.')} {shlex.quote(destination + '/')} && "
+        f"cp -a {shlex.quote(_canonical(source) + '/.')} {shlex.quote(destination + '/')} && "
+        f"chown root:root {target} && chmod 00700 {target} && "
         f"{_dynamic_tree_check(destination)}"
     )
 
@@ -129,23 +160,25 @@ def deploy_traefik_backup(cfg: TraefikBackupConfig) -> None:
         raise DeployError(f"traefik_backup: ACME state file not found: {cfg.acme_path}")
     if cfg.include_dynamic and output(_dynamic_tree_check(cfg.dynamic_dir) + " && echo yes").strip() != "yes":
         raise DeployError("traefik_backup: dynamic source must be a directory of regular files (no links)")
+    if cfg.include_dynamic and _resolved_overlap(cfg):
+        raise DeployError("traefik_backup: resolved dynamic source and backup root must not overlap")
     # Ansible's ``ansible_date_time.iso8601_basic_short``: the host's local time.
     stamp = output("date +%Y%m%dT%H%M%S").strip()
     if len(stamp) != 15:
         raise DeployError("traefik_backup: cannot read the host's time")
     name = f"{cfg.prefix}-{stamp}"
-    backup_dir = f"{cfg.root}/{name}"
+    root_dir = _canonical(cfg.root)
+    backup_dir = f"{root_dir}/{name}"
     archive = f"{backup_dir}.tar.gz"
 
-    root = shlex.quote(cfg.root)
-    if output(f"if [ -L {root} ] || {{ [ -e {root} ] && [ ! -d {root} ]; }}; then echo unsafe; fi").strip():
+    if output(_unsafe_root_check(cfg.root)).strip():
         raise DeployError("traefik_backup: backup root must be a real directory, not a link or special file")
     for target in (backup_dir, archive):
         quoted = shlex.quote(target)
         if output(f"if [ -e {quoted} ] || [ -L {quoted} ]; then echo exists; fi").strip():
             raise DeployError("traefik_backup: backup attempt already exists; choose another prefix or timestamp")
 
-    for path in (cfg.root, backup_dir, f"{backup_dir}/acme", f"{backup_dir}/dynamic"):
+    for path in (root_dir, backup_dir, f"{backup_dir}/acme", f"{backup_dir}/dynamic"):
         directory(path, user="root", group="root", mode="0700")
     if cfg.include_acme:
         dest = f"{backup_dir}/acme/{PurePosixPath(cfg.acme_path).name}"
@@ -175,7 +208,7 @@ def deploy_traefik_backup(cfg: TraefikBackupConfig) -> None:
     server.shell(
         name=f"Create {archive}",
         commands=[
-            f"(umask 077 && tar -czf {shlex.quote(archive)} -C {shlex.quote(cfg.root)} -- {shlex.quote(name)} "
+            f"(umask 077 && tar -czf {shlex.quote(archive)} -C {shlex.quote(root_dir)} -- {shlex.quote(name)} "
             f"&& chmod 0600 {shlex.quote(archive)})"
         ],
     )
