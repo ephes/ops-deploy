@@ -49,6 +49,8 @@ Url = Annotated[str, Field(pattern=r"^https?://[A-Za-z0-9.:/_-]+$")]
 UNITS = ("/etc/systemd/system/nyxmon.service", "/etc/systemd/system/nyxmon-monitor.service")
 STOP_ORDER = ("nyxmon-monitor.service", "nyxmon.service")
 START_ORDER = ("nyxmon.service", "nyxmon-monitor.service")
+# ``use_sqlite_backup``: ``sqlite3 .timeout`` per attempt, attempts, seconds between them (``files/backup.sh``).
+SQLITE_BACKUP_SETTINGS = {"SQLITE_TIMEOUT_MS": "30000", "SQLITE_ATTEMPTS": "3", "SQLITE_RETRY_DELAY": "5"}
 
 
 class NyxmonBackupConfig(RoleConfig):
@@ -59,7 +61,8 @@ class NyxmonBackupConfig(RoleConfig):
     site_path: AbsolutePath = "/home/nyxmon/site"
     logs_path: AbsolutePath = "/home/nyxmon/logs"
     stop_services: bool = True
-    # Off: the database file is copied (the role's default); on: ``sqlite3 .backup``.
+    # Off: the database file is copied (the role's default); on: ``sqlite3 .backup``
+    # (waits for a writer's lock, three attempts, the copy must pass its integrity check).
     use_sqlite_backup: bool = False
     include_logs: bool = True
     include_cache: bool = False
@@ -176,6 +179,7 @@ def deploy_nyxmon_backup(cfg: NyxmonBackupConfig) -> None:
                     "DB": f"{site}/db.sqlite3",
                     "STOP": flag(cfg.stop_services),
                     "SQLITE_BACKUP": flag(cfg.use_sqlite_backup),
+                    **SQLITE_BACKUP_SETTINGS,
                     "DELETE": flag(cfg.use_delete),
                     "STOP_ORDER": STOP_ORDER,
                     "START_ORDER": START_ORDER,

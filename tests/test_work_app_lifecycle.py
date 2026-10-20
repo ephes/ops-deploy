@@ -43,10 +43,12 @@ def test_backup_writes_the_roles_layout(tmp_path: Path) -> None:
     commands = run.executed_commands
     for path in (BACKUP, *(f"{BACKUP}/{sub}" for sub in ("database", "static", "configs", "env"))):
         assert f"work_app backup | Ensure {path}" in run.changed_ops or any(path in c for c in commands)
-    hot = next(c for c in commands if "sqlite3 /home/work/site/db.sqlite3" in c)
-    assert f".backup '{BACKUP}/database/db.sqlite3';" in shlex.split(hot)
+    hot = next(c for c in commands if ".backup '$tgt'" in c)
+    assert f"db=/home/work/site/db.sqlite3 tgt={BACKUP}/database/db.sqlite3 mode={BACKUP}/database/.mode" in hot
+    assert 'sqlite3 "$db" ".timeout 30000" ".backup \'$tgt\'"' in hot
+    assert '[ "$out" = ok ]' in hot  # the copy's integrity check, exactly ``ok``
     assert "seq 1 3" in hot
-    assert "systemctl stop work-app.service" in hot  # the offline fallback
+    assert 'systemctl stop "$unit"' in hot  # the offline fallback
     assert f"rsync -a --delete /home/work/site/staticfiles/ {BACKUP}/static/" in commands
     assert f"install -o root -g root -m 0600 /home/work/site/.env {BACKUP}/env/.env" in commands
     assert (
@@ -88,7 +90,7 @@ def test_backup_without_a_database_records_it_as_missing() -> None:
     )
 
     assert run.succeeded, run.error
-    assert not any("sqlite3 /home" in c for c in run.executed_commands)
+    assert not any("sqlite3" in c and ".backup" in c for c in run.executed_commands)
     metadata = next(c for c in run.executed_commands if "cat >" in c)
     assert 'MODE="missing"' in metadata
 
@@ -98,7 +100,8 @@ def test_force_stop_goes_straight_to_the_offline_copy() -> None:
 
     copy = next(c for c in run.executed_commands if "systemctl stop" in c)
     assert ".backup" not in copy
-    assert "trap 'rc=$?; systemctl start work-app.service || rc=1; exit $rc' EXIT" in copy
+    assert """trap 'rc=$?; systemctl start "$unit" || rc=1; """ in copy
+    assert "unit=work-app.service;" in copy
 
 
 def test_backup_options_leave_parts_out() -> None:

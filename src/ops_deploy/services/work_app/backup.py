@@ -27,6 +27,8 @@ from ops_deploy.base._common import AbsolutePath, output
 from ops_deploy.services.work_app._lifecycle import SLUG, WorkAppPaths
 
 SUBDIRECTORIES = ("database", "static", "configs", "env")
+# ``sqlite3 .timeout``: how long one hot ``.backup`` waits for a writer's lock.
+SQLITE_BUSY_TIMEOUT_MS = 30000
 
 
 class WorkAppBackupConfig(WorkAppPaths):
@@ -60,23 +62,46 @@ def _private_local_dir(path: str) -> None:
 
 
 def _sqlite_script(cfg: WorkAppBackupConfig, target: str, mode_file: str) -> str:
-    """The role's hot backup with retries and its offline fallback; records the mode used."""
+    """The role's hot backup with retries and its offline fallback; records the mode used.
 
-    db, tgt, unit = shlex.quote(cfg.database_path), shlex.quote(target), shlex.quote(cfg.unit)
-    mode = shlex.quote(mode_file)
-    backup = shlex.quote(f".backup '{target}'")
-    # With the service stopped; it is started again however the copy ends, and a
-    # failed start fails the backup.
+    Like ops-library's SQLite runners (2.53.0): ``.timeout`` before ``.backup``
+    waits for a committing writer instead of failing with "database is
+    locked", and a copy counts only when ``PRAGMA integrity_check`` prints
+    exactly ``ok`` (a failed copy is removed). A hot copy that fails the check
+    is retried but never answered with the offline copy: the source itself is
+    damaged, and stopping the service would not help.
+    """
+
+    values = " ".join(
+        f"{name}={shlex.quote(value)}"
+        for name, value in (("db", cfg.database_path), ("tgt", target), ("mode", mode_file), ("unit", cfg.unit))
+    )
+    verify = (
+        'verify() { out=""; if [ -f "$tgt" ] && out=$(sqlite3 "$tgt" "PRAGMA integrity_check;") '
+        '&& [ "$out" = ok ]; then return 0; fi; '
+        'echo "work_app_backup: integrity check of $tgt failed: $out" >&2; rm -f "$tgt"; return 1; }'
+    )
+    # With the service stopped; it is started again however the copy ends, a
+    # failed start fails the backup, the copy is checked once it runs again, and
+    # a failed copy is removed.
     offline = (
-        f"trap 'rc=$?; systemctl start {unit} || rc=1; exit $rc' EXIT; "
-        f"systemctl stop {unit} && cp {db} {tgt} && echo offline > {mode}"
+        'trap \'rc=$?; systemctl start "$unit" || rc=1; '
+        'if [ $rc = 0 ]; then verify && echo offline > "$mode" || rc=1; else rm -f "$tgt"; fi; exit $rc\' EXIT; '
+        'systemctl stop "$unit" && cp "$db" "$tgt"'
     )
     if cfg.force_stop:
-        return f"set -e; {offline}"
+        return f"set -e; {values}; {verify}; {offline}"
+    attempts = cfg.sqlite_retries
     return (
-        f"set -e; hot=0; for i in $(seq 1 {cfg.sqlite_retries}); do "
-        f"if sqlite3 {db} {backup}; then hot=1; break; fi; sleep 2; done; "
-        f"if [ $hot = 1 ]; then echo hot > {mode}; else {offline}; fi"
+        f'set -e; {values}; {verify}; hot=0; bad=0; for i in $(seq 1 {attempts}); do rm -f "$tgt"; '
+        f'if sqlite3 "$db" ".timeout {SQLITE_BUSY_TIMEOUT_MS}" ".backup \'$tgt\'"; then '
+        "if verify; then hot=1; break; fi; bad=1; fi; "
+        f'echo "work_app_backup: SQLite backup attempt $i/{attempts} failed" >&2; '
+        f"[ $i = {attempts} ] || sleep 2; done; "
+        'if [ $hot = 1 ]; then echo hot > "$mode"; '
+        'elif [ $bad = 1 ]; then rm -f "$tgt"; '
+        'echo "work_app_backup: no offline copy of a database that fails its integrity check" >&2; '
+        f"exit 1; else {offline}; fi"
     )
 
 

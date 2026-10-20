@@ -190,7 +190,12 @@ database, `staticfiles` (when `include_static` is set) or the logs (when
 `include_logs` is set) are missing. It installs `sqlite3`, then stops
 `nyxmon-monitor` and `nyxmon` and copies the database and the media, static,
 cache and log directories, the config files, units and Traefik route into
-`/opt/backups/nyxmon/<prefix>-<timestamp>/`. Everything there is
+`/opt/backups/nyxmon/<prefix>-<timestamp>/`. With `use_sqlite_backup` the
+database is copied with `sqlite3 .backup` as ops-library's SQLite runners
+(2.53.0) do it: `.timeout 30000` first (a committing writer is waited for
+instead of failing with "database is locked"), up to 3 attempts 5 s apart,
+and the copy counts only when `PRAGMA integrity_check` prints exactly `ok`;
+otherwise the copy is removed and the backup fails. Everything there is
 `root:root 0700/0600`, as are the parent directories it creates. Whatever the
 copy does, the services are started again (the role's `always`). Then the
 backup writes the role's `metadata.yml` (`to_nice_yaml`) and

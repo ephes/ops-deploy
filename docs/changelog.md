@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `work_app` and `nyxmon` backups: the SQLite copy follows ops-library
+  2.53.0's SQLite runners. Every `sqlite3 .backup` passes `.timeout 30000`
+  first (a committing writer is waited for instead of failing with "database
+  is locked"), and a copy counts only when `PRAGMA integrity_check` prints
+  exactly `ok` (a failed copy is removed). `work_app` keeps its
+  `sqlite_retries` attempts 2 s apart and the offline fallback for a failing
+  `.backup`; the offline copy is checked after the service is started again,
+  and a hot copy that fails its integrity check fails the backup without
+  stopping the service. `nyxmon` (`use_sqlite_backup`) retries up to 3 times
+  5 s apart, as the role now does. CI installs the `sqlite3` CLI for the new
+  real-`sqlite3` tests (`tests/test_sqlite_backup_scripts.py`).
+
 - `livekit`: port of the `livekit_deploy` role (LiveKit SFU and Egress) on
   `compose_app`. `LivekitConfig` maps the role's inputs onto one Compose
   project (`livekit`, containers `livekit-server` and `livekit-egress`, host

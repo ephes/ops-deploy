@@ -152,10 +152,17 @@ prefix `manual`, timestamp the host's local `%Y%m%dT%H%M%S`) with
 controller. Directories are `0700 root`, copied files `0600 root`.
 
 - The database is copied with `sqlite3 .backup` (up to `sqlite_retries`
-  attempts, 2 s apart) while the service runs; if that fails, or with
-  `force_stop`, the service is stopped for a plain copy and started again
-  however the copy ends. `metadata.yml` records `sqlite_mode` (`hot`,
-  `offline` or `missing`).
+  attempts, 2 s apart) while the service runs. Like ops-library's SQLite
+  runners (2.53.0), each attempt passes `.timeout 30000` first, so a
+  committing writer is waited for (up to 30 s) instead of failing the attempt
+  with "database is locked", and a copy counts only when
+  `PRAGMA integrity_check` prints exactly `ok`; a failed copy is removed. If
+  every attempt fails on the backup itself, or with `force_stop`, the service
+  is stopped for a plain copy and started again however the copy ends; that
+  copy is checked the same way once the service runs again. A hot copy that
+  fails its integrity check fails the backup without the offline copy (the
+  database itself is damaged; stopping the service would not help).
+  `metadata.yml` records `sqlite_mode` (`hot`, `offline` or `missing`).
 - `include_static`, `include_env`, `include_systemd`, `include_traefik`,
   `manifest`, `create_archive`, `fetch_local` switch the parts as the role's
   variables do. A part whose source is missing is skipped.

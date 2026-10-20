@@ -8,6 +8,27 @@ start_services() {
     return "$failed"
 }
 
+# sqlite_backup DB COPY: ops-library's SQLite runner semantics (2.53.0).
+# `.timeout` waits for a committing writer instead of failing with "database
+# is locked"; a failed attempt is retried; the copy counts only when
+# `PRAGMA integrity_check` prints exactly `ok`, and a failed copy is removed.
+sqlite_backup() {
+    local attempt check
+    for ((attempt = 1; attempt <= SQLITE_ATTEMPTS; attempt++)); do
+        rm -f "$2"
+        check=""
+        if sqlite3 "$1" ".timeout $SQLITE_TIMEOUT_MS" ".backup '$2'" && [ -f "$2" ] &&
+            check=$(sqlite3 "$2" 'PRAGMA integrity_check;') && [ "$check" = ok ]; then
+            return 0
+        fi
+        echo "nyxmon_backup: SQLite backup attempt $attempt/$SQLITE_ATTEMPTS failed${check:+ (integrity check: ${check:0:200})}" >&2
+        [ "$attempt" -ge "$SQLITE_ATTEMPTS" ] || sleep "$SQLITE_RETRY_DELAY"
+    done
+    rm -f "$2"
+    echo "nyxmon_backup: SQLite backup of $1 failed" >&2
+    return 1
+}
+
 ensure_dir root root 0700 "$ROOT"
 ensure_dir root root 0700 "$DIR"
 for sub in database media static cache logs config systemd traefik; do ensure_dir root root 0700 "$DIR/$sub"; done
@@ -20,7 +41,7 @@ fi
 
 db_copy="$DIR/database/$(basename "$DB")"
 if [ "$SQLITE_BACKUP" = 1 ]; then
-    sqlite3 "$DB" ".backup '$db_copy'"
+    sqlite_backup "$DB" "$db_copy"
 else
     copy_file root root 0600 "$DB" "$db_copy"
 fi
