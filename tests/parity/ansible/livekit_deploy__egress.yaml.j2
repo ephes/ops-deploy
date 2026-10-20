@@ -1,0 +1,23 @@
+# Managed by Ansible (livekit_deploy). Do not edit on the host.
+
+redis:
+  address: "127.0.0.1:6379"
+{% if livekit_redis_password | default('') | length > 0 %}
+  password: "{{ livekit_redis_password }}"
+{% endif %}
+
+api_key: "{{ livekit_api_key }}"
+api_secret: "{{ livekit_api_secret }}"
+
+ws_url: "ws://127.0.0.1:{{ livekit_http_port | default(7880) }}"
+
+s3:
+  access_key: "{{ livekit_s3_access_key }}"
+  secret: "{{ livekit_s3_secret_key }}"
+  region: "us-east-1"
+  endpoint: "{{ livekit_s3_endpoint | default('http://127.0.0.1:9001') }}"
+  bucket: "{{ livekit_s3_bucket | default('recorder') }}"
+  force_path_style: true
+
+logging:
+  level: info

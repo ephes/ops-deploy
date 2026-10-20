@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- `livekit`: port of the `livekit_deploy` role (LiveKit SFU and Egress) on
+  `compose_app`. `LivekitConfig` maps the role's inputs onto one Compose
+  project (`livekit`, containers `livekit-server` and `livekit-egress`, host
+  network with a reason, Egress `SYS_ADMIN` and 1 GiB `/dev/shm`, the two
+  config files bind-mounted read-only, `livekit.yaml` root `0600`,
+  `egress.yaml` root `0640`); images are digest-pinned by the consumer.
+  `deploy_livekit` then writes the role's Traefik route byte for byte (one
+  public router with the forwarded-header middleware) without restarting
+  Traefik. A converged host gets no mutating operation and no container
+  command; a changed config file restarts only its reader; an image bump
+  recreates through `up`; the role's `down` + `up` restart and Traefik
+  restart are gone. The switch from role-written files applies once (both
+  containers recreated, then their config readers restarted). Secrets
+  (`api_key`, `api_secret`, `redis_password`, `s3_access_key`,
+  `s3_secret_key`) must be set; an empty Redis password is refused instead
+  of omitted. Role templates vendored for parity; `livekit_deploy` added to
+  the drift manifest.
+
+- `compose_app`: `SecretKeyed` config-file mappings (one entry whose key is
+  a secret); a config mapping that has a `secret` key among other keys is
+  now data instead of a refused reference; `HttpCheck.retries` (default 10,
+  unchanged behaviour); `user: root` without a `users` entry for root-run
+  apps (root in `users` is refused; an Echoport target of such an app
+  defaults `restore_owner` to `root:root`).
+
 - `fastdeploy`: port of ops-library 2.49.0's root-owned runner layout. The
   services root is `root:root 0755` and fastdeploy-owned leftovers below it
   (older Ansible deploys chowned the whole site, root-run backup scripts

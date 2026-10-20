@@ -1,0 +1,17 @@
+# Managed by Ansible (livekit_deploy). Do not edit on the host.
+[Unit]
+Description=LiveKit Stack (Docker Compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory={{ livekit_site_dir }}
+ExecStart=/usr/bin/docker compose -f {{ livekit_site_dir }}/docker-compose.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f {{ livekit_site_dir }}/docker-compose.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

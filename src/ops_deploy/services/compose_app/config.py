@@ -156,10 +156,22 @@ class EnvRef(Part):
     env_var: EnvKey
 
 
+class SecretKeyed(Part):
+    """A one-entry mapping whose key is a secret: ``{"secret_key": {"secret": ...}, "value": ...}``.
+
+    For config files that key a mapping by a secret, such as LiveKit's
+    ``keys: {<api key>: <api secret>}``. ``value`` is a literal or a :class:`Secret`.
+    """
+
+    secret_key: Secret
+    value: Annotated[Secret | str, Field(union_mode="left_to_right")]
+
+
 class ConfigFile(Part):
     """A file a service reads through a bind mount, rendered from data (``Secret`` leaves allowed).
 
-    YAML files may also carry :class:`EnvRef` leaves (``{"env_var": "NAME"}``).
+    YAML files may also carry :class:`EnvRef` leaves (``{"env_var": "NAME"}``),
+    and both formats :class:`SecretKeyed` mappings.
 
     Compose does not see a change in a mounted file, so the services in
     ``restarts`` are restarted when it changes.
@@ -186,13 +198,20 @@ class ConfigFile(Part):
 
 
 def _config_value(value: Any) -> Any:
-    """Plain JSON data, with ``{"secret": key[, "form": ...]}`` mappings read as :class:`Secret`."""
+    """Plain JSON data, with ``{"secret": key[, "form": ...]}`` mappings read as :class:`Secret`.
 
-    if isinstance(value, (Secret, EnvRef, str, bool, int, float)) or value is None:
+    Only a mapping of exactly those keys is a reference (and ``{"secret_key":
+    ..., "value": ...}`` a :class:`SecretKeyed`): a config mapping that has a
+    ``secret`` key among others (Egress's ``s3.secret``) stays a mapping.
+    """
+
+    if isinstance(value, (Secret, EnvRef, SecretKeyed, str, bool, int, float)) or value is None:
         return value
     if isinstance(value, dict):
-        if "secret" in value:
+        if "secret" in value and set(value) <= {"secret", "form"}:
             return Secret.model_validate(value)
+        if set(value) == {"secret_key", "value"}:
+            return SecretKeyed.model_validate(value)
         if "env_var" in value:
             return EnvRef.model_validate(value)
         if not all(isinstance(key, str) for key in value):
@@ -559,6 +578,8 @@ class HttpCheck(Part):
     url: Annotated[str, Field(pattern=r"^https?://[^\s'\"$`\\]+$")]
     statuses: tuple[int, ...] = (200,)
     host_header: Hostname | None = None
+    # Attempts, one second apart (an app that needs a while after a recreation).
+    retries: int = Field(default=10, ge=1, le=600)
 
 
 class Checks(Part):
@@ -633,7 +654,8 @@ class ComposeAppConfig(BaseServiceConfig):
     """One Compose app: its project, files, services, route, steps and checks.
 
     ``site_path`` is the directory of the compose and env files; ``user`` the
-    app's main user (one of ``users``).
+    app's main user (one of ``users``), or ``root`` for an app whose
+    containers run as root and that has no user of its own.
     """
 
     service_name: ServiceName
@@ -674,8 +696,10 @@ class ComposeAppConfig(BaseServiceConfig):
         _unique("env files", [f.name for f in self.env_files])
         _unique("config files", [str(f.path) for f in self.config_files])
         _unique("directories", [str(d.path) for d in self.directories])
-        if self.user not in {u.name for u in self.users}:
+        if self.user != "root" and self.user not in {u.name for u in self.users}:
             raise ValueError(f"user {self.user} must be one of users")
+        if any(u.name == "root" for u in self.users):
+            raise ValueError("root is never one of users (it is not created or changed)")
         env_names = {f.name for f in self.env_files}
         published: set[tuple[int, str]] = set()
         for service in self.services:
@@ -808,6 +832,8 @@ class ComposeAppConfig(BaseServiceConfig):
         assert self.echoport is not None
         if self.echoport.restore_owner is not None:
             return self.echoport.restore_owner
+        if self.user == "root":
+            return "root:root"
         user = next(u for u in self.users if u.name == self.user)
         return f"{user.name}:{user.primary_group}"
 

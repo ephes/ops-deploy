@@ -7,6 +7,8 @@ steps and read-only checks. Each app is a `ComposeAppConfig` (data only); the
 step code never branches on the app. torrent (gluetun, qBittorrent, Jackett)
 is the first consumer; the *arr apps follow (see the worked example below).
 logyard and the graphyard runtime keep their byte-parity modules.
+[livekit](livekit.md) is a typed wrapper that builds its config and adds
+the role's own route (its services use the host network).
 
 ```python
 from ops_deploy.services.compose_app import ComposeAppConfig, deploy_compose_app
@@ -25,12 +27,12 @@ the config from an `AppSpec` (`pyinfra_support/compose_apps.py`, see its
 | Part | What it is |
 |---|---|
 | `service_name`, `title`, `unit`, `project`, `site_path`, `compose_file` | names: the unit (default `service_name` with `-` for `_`), the Compose project (also the container name prefix `<project>-<service>-1`), the directory of the compose and env files |
-| `user`, `users`, `groups` | system users (nologin; an existing user only gets missing supplementary groups appended) and groups (`media`) |
+| `user`, `users`, `groups` | system users (nologin; an existing user only gets missing supplementary groups appended) and groups (`media`); `user: root` with no entry in `users` for an app whose containers run as root (root is never one of `users`: it is not created or changed) |
 | `mounts_required`, `paths_required` | `findmnt --mountpoint` and `test -e` before any change (`paths_required` with a hint), and `RequiresMountsFor=` in the unit |
 | `directories` | owner and group both by name or both by numeric id (a container's user without a name here), mode with setgid (`"2775"`) |
 | `external_networks` | created when missing, never removed |
 | `env_files` | `<site_path>/<name>`, one `KEY='value'` line per entry, read by the services that list it |
-| `config_files` | YAML or JSON from data with `Secret` leaves (YAML also `{"env_var": "NAME"}` leaves, written as `!env_var NAME` for apps that read a value from their environment, such as Recyclarr); `restarts` names the services that read it, never a namespace provider (restarting it would replace the namespace under running dependents) |
+| `config_files` | YAML or JSON from data with `Secret` leaves (YAML also `{"env_var": "NAME"}` leaves, written as `!env_var NAME` for apps that read a value from their environment, such as Recyclarr), and `SecretKeyed` mappings `{"secret_key": {"secret": ...}, "value": ...}`, one entry whose key is a secret (LiveKit's `keys: {<api key>: <secret>}`); only a mapping of exactly `secret` (and `form`) is a reference, so a file's own `secret` key next to others (`s3: {access_key: ..., secret: ...}`) stays data; `restarts` names the services that read it, never a namespace provider (restarting it would replace the namespace under running dependents) |
 | `services` | `ComposeService`: the keys the apps on the fleet use, nothing passed through (below) |
 | `docker` | Docker Engine and Compose, as the `docker_install` role installs them (run inside the deploy) |
 | `route` | `/etc/traefik/dynamic/<name>.yml`: `internal`, `internal_or_basic_auth` or `public` |
@@ -233,7 +235,8 @@ Read-only operations (they do not count as changes):
 - every `service:X` container shares X's network namespace
   (`HostConfig.NetworkMode == container:<id of X>`);
 - every published TCP port listens on its address only (`ss`);
-- `checks.http`.
+- `checks.http` (`retries` attempts one second apart, default 10; livekit
+  gives its server up to 60 after a recreation).
 
 ## Echoport backup target
 

@@ -1,0 +1,25 @@
+# Managed by Ansible (livekit_deploy). Do not edit on the host.
+services:
+  livekit-server:
+    image: {{ livekit_server_image }}:{{ livekit_server_tag }}
+    container_name: livekit-server
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit/livekit.yaml
+    volumes:
+      - {{ livekit_config_dir }}/livekit.yaml:/etc/livekit/livekit.yaml:ro
+
+  livekit-egress:
+    image: {{ livekit_egress_image }}:{{ livekit_egress_tag }}
+    container_name: livekit-egress
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    shm_size: "1gb"
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - {{ livekit_config_dir }}/egress.yaml:/etc/egress.yaml:ro

@@ -123,4 +123,4 @@ def rollout_checks(cfg: ComposeAppConfig) -> None:
     namespaces(cfg)
     listen(cfg)
     for check in cfg.checks.http:
-        http_check(check.url, status=check.statuses, host_header=check.host_header)
+        http_check(check.url, status=check.statuses, host_header=check.host_header, retries=check.retries)
