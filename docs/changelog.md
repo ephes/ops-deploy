@@ -87,6 +87,16 @@
   against real sshd, fail2ban and systemd in an owned container (skipped
   without one).
 
+- Add `ops_deploy.base.dpkg_arch_remove` (`DpkgArchRemoveConfig`,
+  `deploy_dpkg_arch_remove`), a port of ops-library's `dpkg_arch_remove`
+  role: drops the configured foreign dpkg architectures (default `i386`) and
+  updates the apt cache, after strict reads of the foreign architectures and
+  installed packages. A host without a foreign target gets no operation; a
+  target architecture that still has installed packages fails the deploy
+  before any change, listing them. Intended difference from the role:
+  `purge_packages`/`autoremove` (package removal) are refused when the config
+  is built instead of being implemented.
+
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata
   candidate does not authorize execution, adoption, installation or deletion;

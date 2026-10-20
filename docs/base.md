@@ -3,8 +3,8 @@
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, shell basics, authorized keys, SSH
-guard), the
-others are steps a service deploy calls (uv, Node.js):
+guard, dpkg foreign architectures), the others are steps a service deploy
+calls (uv, Node.js):
 
 ```python
 from ops_deploy.base import HostnameConfig, deploy_hostname
@@ -30,6 +30,7 @@ change.
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
 | `ssh_guard` | `ssh_guard_deploy` | `SshGuardConfig` | `deploy_ssh_guard` |
+| `dpkg_arch_remove` | `dpkg_arch_remove` | `DpkgArchRemoveConfig` | `deploy_dpkg_arch_remove` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -215,13 +216,41 @@ Inherited from the role: with ssh stopped, Debian removes `/run/sshd`, so
 run again). A run interrupted between writing the drop-in and the check leaves
 the file unchecked and not reloaded until it changes again.
 
+## dpkg_arch_remove
+
+| Field | Default | |
+|---|---|---|
+| `targets` | `("i386",)` | dpkg architecture names (`[a-z0-9-]`, not starting with `-`); a single name is accepted, names are trimmed, empty ones dropped and duplicates removed, as in the role |
+| `update_cache` | `True` | `apt-get update` after an architecture was removed |
+| `purge_packages`, `autoremove` | `False` | **refused** when `True` (see below) |
+
+Reads `dpkg --print-foreign-architectures` while planning. A host where no
+target is a foreign architecture gets no operation at all (the converged
+case, also the usual one). When targets are present, the installed packages
+are listed with `dpkg-query -W -f='${Package} ${Architecture}\n'`; if any of
+them has a present target architecture, the deploy fails before any change,
+naming them (`libc6:i386, ...`), even if other targets have no packages.
+Otherwise it runs `dpkg --remove-architecture <arch>` for each present
+target, in `targets` order, then updates the apt cache. Both reads are strict:
+a failing `dpkg` or `dpkg-query` fails the deploy instead of reading as "no
+foreign architecture". Debian-family hosts only (the role's
+`ansible_os_family == "Debian"` assert; the port requires `apt-get`).
+
+Intended difference: the role's `dpkg_arch_remove_purge_packages` (with
+`dpkg_arch_remove_autoremove`) removes the foreign-architecture packages
+before dropping the architecture. The port does not remove packages: setting
+either field is refused when the config is built, so the deploy behaves like
+the role with its defaults, which fail on such packages. Remove the packages
+deliberately first (or use the role).
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
 converged run (no change), drift and refusal cases, config validation, and the
 authorized_keys rendering against the vendored role template.
 `tests/smoke/test_base_smoke.py` deploys each one twice on the
-[smoke VM](concepts/smoke.md) (the second run must not change anything) and
+[smoke VM](concepts/smoke.md) (the second run must not change anything; not
+`dpkg_arch_remove`, which has only fake-connector tests) and
 checks the end state, including an SSH login with the managed key. It works on
 a throwaway user, units and directories and restores the hostname, default
 target and editor.
