@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Traefik backup now captures the whole dynamic route-config tree by default,
+  matching ops-library 2.48.1 coverage and metadata flags. Source modes are kept
+  under a private container; archives and fetched copies stay `0600`. Missing,
+  overlapping, symlinked or special dynamic sources refuse, and copy failure cannot
+  proceed to packing/fetching. Dynamic-route restore and dry-run validation are
+  not implemented; existing ACME-only restore/transaction guards are unchanged.
+  No private registration or live qualification is included.
 
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata

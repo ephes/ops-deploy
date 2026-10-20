@@ -2,8 +2,10 @@
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+from pyinfra.connectors.fake import FakeConnector
 
 from ops_deploy.infra import (
     TraefikBackupConfig,
@@ -13,6 +15,7 @@ from ops_deploy.infra import (
     deploy_traefik_remove,
     deploy_traefik_restore,
 )
+from ops_deploy.infra.traefik_backup import _dynamic_tree_check
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -22,7 +25,15 @@ ENROLLED = {"test -e /var/lib/traefik-transactions": ["enrolled"]}
 
 def backup(cfg: TraefikBackupConfig, responses: dict[str, Any] | None = None) -> FakeRun:
     base = {"date +%Y%m%dT%H%M%S": [STAMP], "stat -c %a ": ["700"]}
-    return run_deploy_fake(deploy_traefik_backup, cfg, responses={**base, **(responses or {})})
+    base[_dynamic_tree_check(cfg.dynamic_dir) + " && echo yes"] = ["yes"]
+
+    def download(_self: FakeConnector, _source: str, destination: str, **_kwargs: Any) -> bool:
+        Path(destination).write_bytes(b"synthetic downloaded archive")
+        Path(destination).chmod(0o644)
+        return True
+
+    with patch.object(FakeConnector, "get_file", download):
+        return run_deploy_fake(deploy_traefik_backup, cfg, responses={**base, **(responses or {})})
 
 
 def test_backup_without_acme_writes_metadata_and_archive(tmp_path: Path) -> None:
@@ -32,15 +43,18 @@ def test_backup_without_acme_writes_metadata_and_archive(tmp_path: Path) -> None
     assert result.succeeded, result.error
     assert result.upload("/opt/backups/traefik/manual-20261014T120000/metadata.yml") == (
         b"timestamp: 20261014T120000\nacme_path: /etc/traefik/acme/acme.json\n"
+        b"include_acme: false\ndynamic_dir: /etc/traefik/dynamic\ninclude_dynamic: true\n"
     )
     assert not any("acme.json" in command and "install" in command for command in result.executed_commands)
     assert (
         "(umask 077 && tar -czf /opt/backups/traefik/manual-20261014T120000.tar.gz "
-        "-C /opt/backups/traefik manual-20261014T120000)"
+        "-C /opt/backups/traefik -- manual-20261014T120000 "
+        "&& chmod 0600 /opt/backups/traefik/manual-20261014T120000.tar.gz)"
     ) in result.executed_commands
     assert "Traefik backup | Fetch the backup archive" in result.changed_ops
     assert local.is_dir()
     assert local.stat().st_mode & 0o777 == 0o700
+    assert (local / "manual-20261014T120000.tar.gz").stat().st_mode & 0o777 == 0o600
 
 
 def test_backup_with_acme_copies_it_root_only() -> None:

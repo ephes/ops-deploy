@@ -127,10 +127,15 @@ def test_traefik_lifecycle(smoke_host: SmokeHost, provisioned_traefik: None) -> 
 
     # Backup with ACME state, then restore it over a damaged store.
     smoke_host.run("printf '{\"smoke\": true}' > /etc/traefik/acme/acme.json")
+    smoke_host.run("printf 'http: {}\\n' > /etc/traefik/dynamic/backup-route.yml")
     backup = TraefikBackupConfig(root=BACKUPS, include_acme=True, fetch_local=False, prefix="smoke")
     deploy(smoke_host, "traefik backup", deploy_traefik_backup, backup)
     listing = smoke_host.out(f"tar -tzf {BACKUPS}/smoke-*.tar.gz | sort").splitlines()
-    assert [entry.partition("/")[2] for entry in listing] == ["", "acme/", "acme/acme.json", "metadata.yml"]
+    relative = {entry.partition("/")[2] for entry in listing}
+    outside_dynamic = {entry for entry in relative if entry == "dynamic/" or not entry.startswith("dynamic/")}
+    assert outside_dynamic == {"", "acme/", "acme/acme.json", "dynamic/", "metadata.yml"}
+    assert "dynamic/backup-route.yml" in relative
+    # This lifecycle smoke still restores ACME only, never archived routes.
     smoke_host.run("echo damaged > /etc/traefik/acme/acme.json && chmod 644 /etc/traefik/acme/acme.json")
     deploy(smoke_host, "traefik restore", deploy_traefik_restore, TraefikRestoreConfig(root=BACKUPS, include_acme=True))
     assert smoke_host.out("cat /etc/traefik/acme/acme.json") == '{"smoke": true}'

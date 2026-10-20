@@ -83,7 +83,8 @@ renamed `access.log.1` and the fresh `access.log` stayed empty. The binary is on
 and UFW rules are the ones `community.general.ufw` adds. A host set up by one
 tool shows no change and no restart when the other runs; ops-control's
 `just smoke-traefik-coexistence` checks this both ways, and that each tool
-restores the other's backup archives and finishes the other's removal.
+restores the other's ACME backup payload and finishes the other's removal.
+That historical smoke does not establish dynamic-route recovery.
 
 ## deploy_traefik
 
@@ -137,17 +138,48 @@ Differences from the role, on purpose:
 ## deploy_traefik_backup
 
 `deploy_traefik_backup(cfg)`; `TraefikBackupConfig` fields: `root`
-(`/opt/backups/traefik`), `prefix` (`manual`), `acme_path`, `include_acme`
-(`False`, as in the role), `create_archive` (`True`), `fetch_local` (`True`)
-and `local_dir` (`None`: `~/backups/traefik` on the controller).
+(`/opt/backups/traefik`), `prefix` (`manual`), `dynamic_dir`
+(`/etc/traefik/dynamic`), `include_dynamic` (`True`, matching ops-library
+2.48.1), `acme_path`, `include_acme` (`False`), `create_archive` (`True`),
+`fetch_local` (`True`) and `local_dir` (`None`: `~/backups/traefik`).
 
-It writes `<root>/<prefix>-<timestamp>/` (`0700`, root) with `metadata.yml`
-and, with `include_acme`, `acme/acme.json` (`0600`), and packs that directory
-as the only top-level entry of `<root>/<prefix>-<timestamp>.tar.gz`, created
-`umask 077`. The timestamp is the host's local time in Ansible's
-`iso8601_basic_short` form. The archive is then fetched into `local_dir`,
-which is created `0700` (the role uses `0700` too). With `include_acme` the
-archive holds the private keys of every certificate Traefik obtained.
+The default now captures the **whole dynamic directory**, including nested,
+hidden and non-YAML files, into `dynamic/` regardless of the source directory's
+basename or trailing slash. It preserves source permissions inside a root-only
+`<root>/<prefix>-<timestamp>/` container. `metadata.yml` (`0600`) records the
+timestamp, both configured sources and both inclusion flags in the role's
+format. Optional ACME state is copied into `acme/` as `root:root 0600`.
+
+The payload directory is the only top-level entry in
+`<root>/<prefix>-<timestamp>.tar.gz` (`umask 077`). With `fetch_local`, the
+controller directory is `0700` and the fetched archive is restricted to `0600`.
+The controller directory itself must be a real, accessible directory: a symlink
+(such as a link to an external volume) deliberately refuses with an explicit
+error. Configure the real destination path instead. This fetch-phase refusal
+can leave a completed remote backup; it does not mean the backup was fetched.
+An existing linked or special archive destination also refuses before download;
+the permission checks use no-follow file descriptors. Dynamic configs can
+contain authentication hashes or credentials, so these protections apply even
+when ACME is disabled. `include_acme` controls only the separate ACME payload;
+all regular files within the selected dynamic tree are included.
+
+With `include_dynamic=False` the tree is neither inspected nor copied. With
+`create_archive=False`, only the remote payload directory is produced; nothing
+is fetched. Missing enabled sources fail before any operation. Source and
+backup roots cannot overlap or contain parent traversal. The backup root must
+be a real directory (or absent); an existing payload/archive attempt, including
+a dangling link, refuses before writes rather than overwriting history. Use a trusted source
+tree: unlike the role's recursive copy, this implementation refuses symlinks
+and special entries rather than following them outside the chosen tree, and
+rechecks the copied tree before allowing an archive. A failed copy never packs
+or fetches the partial payload. No retention or pruning policy is added.
+
+**Backup coverage does not qualify restoration.** Dynamic payloads are never
+published by `deploy_traefik_restore`: it remains ACME-only, has no `dry_run`
+option and still refuses transaction-managed hosts. Do not copy an archived
+Native route into a watched directory; recovery needs the owning service's
+reviewed canonical/quarantine workflow. No new private lifecycle registration,
+deployment or positive restore/removal qualification is implied by this change.
 
 ## deploy_traefik_restore
 
