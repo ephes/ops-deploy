@@ -116,7 +116,8 @@ Defaults follow the role's `defaults/main.yml`.
       `weeknotes-home` (legacy) is renamed.
     - Nyxmon checks ("local health" and "backup freshness") by direct SQLite
       upsert as the `nyxmon` user, after a read-only check pass, same SQL as
-      the playbook.
+      the playbook. The checks reach the script as JSON on stdin in both
+      passes, never on the command line.
     - The service-row query and both check passes are strict probes: an
       error applies and probes again instead of passing as "differs".
 

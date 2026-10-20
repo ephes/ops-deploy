@@ -28,7 +28,7 @@ from pyinfra.facts.files import Sha256File
 from pyinfra.facts.server import Command
 
 from ops_deploy.base._common import output
-from ops_deploy.helpers.probes import probe_command, probe_output
+from ops_deploy.helpers.probes import probe_command, probe_output, stdin_arguments
 from ops_deploy.services.compose_app.config import ComposeAppConfig
 from ops_deploy.services.compose_app.render import RenderedEnv, digest, host_refs, service_digests
 
@@ -59,7 +59,7 @@ def payload(request: Mapping[str, Any]) -> str:
 def stdin_probe(command: str, request: Mapping[str, Any], *, name: str) -> str | None:
     """Stdout of the read-only ``command`` fed ``request`` on stdin, or ``None`` when it failed."""
 
-    raw = host.get_fact(Command, command=probe_command(command), _stdin=payload(request), _get_pty=False)
+    raw = host.get_fact(Command, command=probe_command(command), **stdin_arguments(payload(request)))
     result = probe_output(str(raw or ""))
     if result is None:
         logger.warning(f"{host.print_prefix}probe failed: {name}; running the step it gates")

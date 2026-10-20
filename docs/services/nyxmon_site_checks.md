@@ -83,8 +83,11 @@ input.
       `next_check_time=0`, `processing_started_at=0`;
     - checks of the service that are not listed, and other services, are
       left alone.
-   The checks travel as `NYXMON_CHECKS_JSON` in the environment of the
-   Nyxmon user's process, like the playbooks pass them; none is secret.
+   The checks reach the script as JSON on stdin, in the check pass, the
+   upsert and the repeated probe alike: never in an environment variable or
+   on a command line, which every local user can read while it runs (check
+   data can carry a monitor login). The playbooks' `NYXMON_CHECKS_JSON` is
+   gone from the pyinfra path.
 5. If the planning probe itself failed (an error, not an answer), the apply
    runs and the probe runs again afterwards; it must then answer
    `changed=false`.
@@ -114,7 +117,8 @@ differences:
 ## Tests
 
 - `tests/test_nyxmon_site_checks.py`: config validation (every refusal
-  above, no input in errors), JSON type fidelity of `NYXMON_CHECKS_JSON`;
+  above, no input in errors), JSON type fidelity of the stdin payload;
+  the payload only on stdin (a sentinel in check data is in no command);
   plans on the fake connector: converged (only the read-only requirements),
   drift and missing rows (one upsert as the Nyxmon user with `python3 -I`),
   requirement order, refusal without the literal (also when converged) or

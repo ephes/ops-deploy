@@ -5,7 +5,9 @@ on the Nyxmon host that requires the Nyxmon database (and optionally a
 literal in a deployed Nyxmon source file, so checks that need a newer
 Nyxmon are never written for an older one) and upserts one service row and
 its checks as the Nyxmon user. Nothing else is touched: no service restart,
-no secrets, no other service's rows, and checks that are not listed stay.
+no other service's rows, and checks that are not listed stay. The checks
+reach the script on stdin, never on a command line or in an environment
+(check data can carry a monitor login).
 
 While planning, ``files/site_checks.py check`` runs the apply's comparison
 on a read-only connection; a converged database gets no mutating operation.
@@ -34,8 +36,10 @@ from pyinfra.api import deploy
 from pyinfra.operations import server
 
 from ops_deploy.core.config import BaseServiceConfig, UnixUser
+from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import last_line, probe, verify_probe, when_present
+from ops_deploy.ops import secret_stdin
 
 SCRIPT = (Path(__file__).parent / "files" / "site_checks.py").read_text()
 URL_CHECK_TYPES = frozenset({"http", "json-metrics"})
@@ -130,7 +134,7 @@ class SiteCheck(_Part):
         return self
 
     def as_json(self) -> dict[str, Any]:
-        """The check as the playbooks hand it to the upsert (``NYXMON_CHECKS_JSON``)."""
+        """The check as the playbooks hand it to the upsert (one entry of :func:`checks_json`)."""
 
         return {
             "name": self.name,
@@ -166,19 +170,18 @@ class NyxmonSiteChecksConfig(BaseServiceConfig):
 
 
 def checks_json(cfg: NyxmonSiteChecksConfig) -> str:
-    """``NYXMON_CHECKS_JSON``: the checks in config order."""
+    """The checks in config order, as ``files/site_checks.py`` reads them from stdin."""
 
     return json.dumps([check.as_json() for check in cfg.checks])
 
 
 def site_checks_command(cfg: NyxmonSiteChecksConfig, mode: Literal["check", "apply"]) -> str:
-    """``files/site_checks.py`` in ``mode`` as the Nyxmon user, isolated from the user's Python setup."""
+    """``files/site_checks.py`` in ``mode`` as the Nyxmon user, isolated from the user's Python setup.
 
-    env = {
-        "NYXMON_DB_PATH": str(cfg.db_path),
-        "NYXMON_SERVICE_NAME": cfg.service_name,
-        "NYXMON_CHECKS_JSON": checks_json(cfg),
-    }
+    The command reads :func:`checks_json` on stdin.
+    """
+
+    env = {"NYXMON_DB_PATH": str(cfg.db_path), "NYXMON_SERVICE_NAME": cfg.service_name}
     assignments = [f"{key}={value}" for key, value in env.items()]
     return shlex.join(["runuser", "-u", cfg.user, "--", "env", *assignments, "python3", "-I", "-c", SCRIPT, mode])
 
@@ -201,9 +204,10 @@ def deploy_nyxmon_site_checks(cfg: NyxmonSiteChecksConfig) -> None:
 
     name = f"Nyxmon checks for {cfg.service_name}"
     check = when_present([cfg.db_path], last_line(site_checks_command(cfg, "check")), otherwise="missing")
-    state = probe(check, name=name)
+    payload = checks_json(cfg) + "\n"
+    state = probe(check, name=name, stdin=payload)
     if (state or "").strip() == "changed=false":
         return
-    server.shell(name=f"Upsert {name}", commands=[site_checks_command(cfg, "apply")])
+    secret_stdin(name=f"Upsert {name}", command=site_checks_command(cfg, "apply"), content=SecretContent(payload))
     if state is None:
-        verify_probe(check, name=name, expect="changed=false")
+        verify_probe(check, name=name, expect="changed=false", stdin=payload)

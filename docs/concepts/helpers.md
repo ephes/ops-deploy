@@ -233,12 +233,19 @@ if state is None:
     verify_probe(check, name="app migrations", expect="current")
 ```
 
-- `probe(command, *, name)` runs the command in a subshell while planning and
-  returns its stdout, or `None` when it exited non-zero (logged as a warning).
+- `probe(command, *, name, stdin=None)` runs the command in a subshell while
+  planning and returns its stdout, or `None` when it exited non-zero (logged
+  as a warning). `stdin` is text for the command's standard input: the way a
+  check payload reaches a script without a command line or an environment
+  variable (both readable by other users while it runs). It is passed as
+  `StdinLines`, which prints as `<stdin redacted>`: pyinfra logs a fact's
+  arguments, `_stdin` included, in its debug output ("Loaded fact ...").
+  `stdin_arguments(text)` gives those global arguments (with `_get_pty=False`)
+  for any other fact that needs stdin.
   A failure is not fatal while planning: the step it gates is how a
   half-finished earlier run repairs itself (a sync that died before
   `uv sync`), so the caller runs the step.
-- `verify_probe(command, *, name, expect=None)` is a read-only operation
+- `verify_probe(command, *, name, expect=None, stdin=None)` is a read-only operation
   ("Probe again: <name>") placed after that step: the probe must now succeed
   (and print `expect` last), else the deploy fails with the probe's error
   output. A probe that is broken for its own reasons can no longer pass as a

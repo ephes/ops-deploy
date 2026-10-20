@@ -625,12 +625,9 @@ def _token_and_target(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
 
 
 def _nyxmon(cfg: WeeknotesHomeConfig, mode: str) -> str:
-    env = {
-        "NYXMON_DB_PATH": str(NYXMON_DB),
-        "NYXMON_SERVICE_NAME": cfg.nyxmon_service_name,
-        "NYXMON_CHECKS_JSON": json.dumps(nyxmon_checks(cfg)),
-        "NYXMON_MODE": mode,
-    }
+    """``files/nyxmon_checks.py`` as the nyxmon user; it reads :func:`nyxmon_checks` on stdin."""
+
+    env = {"NYXMON_DB_PATH": str(NYXMON_DB), "NYXMON_SERVICE_NAME": cfg.nyxmon_service_name, "NYXMON_MODE": mode}
     script = (FILES / "nyxmon_checks.py").read_text()
     return _as_user("nyxmon", PurePosixPath("/home/nyxmon"), env, ["python3", "-c", script])
 
@@ -638,12 +635,14 @@ def _nyxmon(cfg: WeeknotesHomeConfig, mode: str) -> str:
 def _nyxmon_checks(cfg: WeeknotesHomeConfig) -> None:
     # Without Nyxmon the guard before this step fails the run.
     check = when_present([NYXMON_DB], last_line(_nyxmon(cfg, "check")), otherwise="missing")
-    state = probe(check, name="Nyxmon checks")
+    # On stdin, never on the command line (world-readable while it runs).
+    checks = json.dumps(nyxmon_checks(cfg)) + "\n"
+    state = probe(check, name="Nyxmon checks", stdin=checks)
     if (state or "").strip() == "changed=false":
         return
-    server.shell(name="Upsert Nyxmon checks", commands=[_nyxmon(cfg, "apply")])
+    secret_stdin(name="Upsert Nyxmon checks", command=_nyxmon(cfg, "apply"), content=SecretContent(checks))
     if state is None:
-        verify_probe(check, name="Nyxmon checks", expect="changed=false")
+        verify_probe(check, name="Nyxmon checks", expect="changed=false", stdin=checks)
 
 
 def _operations_wiring(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:

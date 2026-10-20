@@ -44,6 +44,43 @@
   check data, which holds a monitor login, only on stdin: never in argv or
   the environment of the Nyxmon user's process.
 
+- No check payloads on command lines or in the environment of user-switched
+  commands. `nyxmon_site_checks`, the `echoport` Nyxmon check and the
+  `weeknotes_home` Nyxmon checks passed their check list as
+  `NYXMON_CHECKS_JSON=...` in `runuser -u nyxmon -- env ...`, so it was in
+  the process list (`/proc/<pid>/cmdline`, readable by every local user)
+  while the command ran, in pyinfra's debug output and in the Nyxmon
+  process's environment. The checks now reach the scripts as JSON on stdin,
+  in the planning probe, the upsert and the repeated probe alike; the
+  scripts read `sys.stdin` instead of `NYXMON_CHECKS_JSON`. None of today's
+  checks holds a credential, but `nyxmon_site_checks` accepts any check
+  `data`, which can carry a monitor login. Consumers that run
+  `files/site_checks.py` themselves must feed the checks on stdin.
+  `helpers.probes.probe` and `verify_probe` take `stdin=` for this.
+- Fact stdin is redacted in pyinfra's logs. pyinfra prints a fact's
+  arguments, `_stdin` included, in its debug output ("Loaded fact ..."), so
+  `compose_app`'s planning probes (`stdin_probe`: env-file render check,
+  `json_key_copy`, `http_json` and qBittorrent preference probes, host
+  secret owners) logged their request, base64 only, credentials included,
+  with `--debug`. Fact stdin now goes through
+  `helpers.probes.stdin_arguments`, whose `StdinLines` carrier prints as
+  `<stdin redacted>`; tests capture the debug log and require it.
+- New guard `tests/test_become_environment_secrets.py` (part of `just test`),
+  the counterpart of ops-control's and ops-library's guards of the same name:
+  a static scan that fails on pyinfra's `_env`, on secret-looking or payload
+  (`*_JSON`, `*_DATA`, `*_SPEC`) names in the environment dicts of functions
+  that build a user-switched command (`runuser`, directly or through a
+  helper), and on such names assigned on a command line by `env`,
+  `docker exec -e`, `systemd-run --setenv`/`-E` or `sudo`/`su`/`runuser`/
+  `setpriv`/`doas` in Python strings, shell scripts and templates. The
+  allowlist is explicit and empty. Audit of the whole package found no
+  password, token or key on a command line or in another user's
+  environment: secrets already travel on stdin or in 0600 files, and host
+  scripts read them there and export them only to the program that uses
+  them (Redis `REDISCLI_AUTH`, the FastDeploy backup's `PGPASSWORD` for
+  `pg_dump` as `postgres`, as ops-library's role does, the Graphyard
+  bootstrap user, Django admin users).
+
 - `work_app` and `nyxmon` backups: the SQLite copy follows ops-library
   2.53.0's SQLite runners. Every `sqlite3 .backup` passes `.timeout 30000`
   first (a committing writer is waited for instead of failing with "database

@@ -20,6 +20,10 @@ CI (`.github/workflows/ci.yml`) runs `just check` steps on Python 3.12 and 3.13.
 
 - No `_sudo`, `_sudo_user`, `_su_user` or `_doas` in `ops_deploy`
   (`tests/test_policy.py`): pyinfra stages `_sudo` uploads as plaintext in `/tmp`.
+- No secret-looking or payload (`*_JSON`, `*_DATA`, `*_SPEC`) environment
+  name in a user-switched command's environment or on a command line, and no
+  pyinfra `_env` (`tests/test_become_environment_secrets.py`, see
+  [Secrets](concepts/secrets.md#rules)).
 - `pyinfra.api.MaskString` is banned (ruff `TID251`); use `HiddenValue`.
 - The whole suite must stay fast (target: under 10 s) and must not touch the
   network or the controller's rsync; use the [test harness](concepts/testing.md).

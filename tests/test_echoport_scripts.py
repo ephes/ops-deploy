@@ -140,11 +140,15 @@ def run_nyxmon(path: Path, checks: list[dict[str, Any]], *, apply: bool) -> str:
         "PATH": os.environ["PATH"],
         "NYXMON_DB_PATH": str(path),
         "NYXMON_SERVICE_NAME": "echoport",
-        "NYXMON_CHECKS_JSON": json.dumps(checks),
         "NYXMON_APPLY": "1" if apply else "0",
     }
     result = subprocess.run(
-        [sys.executable, "-I", "-c", echoport.NYXMON_CHECK], env=env, capture_output=True, text=True, check=True
+        [sys.executable, "-I", "-c", echoport.NYXMON_CHECK],
+        env=env,
+        input=json.dumps(checks) + "\n",
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return result.stdout.strip()
 

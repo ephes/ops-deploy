@@ -172,7 +172,8 @@ def test_second_run_changes_nothing_mutating(cfg: WeeknotesHomeConfig, secrets: 
     assert run.mutating_changed_ops == []
     assert set(run.changed_ops) == {*READ_ONLY, *WIRING_READ_ONLY}
     assert run.uploads == []
-    assert run.stdin == []
+    # Only the Nyxmon check probe reads stdin: the check payload.
+    assert [command for command, _ in run.stdin if "NYXMON_MODE=check" not in command] == []
 
 
 def test_code_change_syncs_migrates_collects_and_restarts(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
@@ -304,6 +305,10 @@ def test_wiring_drift_is_applied(cfg: WeeknotesHomeConfig, secrets: SecretValues
         "Deploy weeknotes-home | Issue or reuse the FastDeploy token and upsert the Echoport backup target",
         "Deploy weeknotes-home | Upsert Nyxmon checks",
     ]
+    upsert = next(c for c in run.executed_commands if "NYXMON_MODE=apply" in c)
+    assert json.loads(dict(run.stdin)[upsert]) == nyxmon_checks(cfg)
+    commands = run.executed_commands + run.fact_commands
+    assert not any("NYXMON_CHECKS_JSON" in c or "backup freshness" in c for c in commands)
     sql = next(s for _, s in run.stdin if s.startswith("INSERT INTO service"))
     assert "'weeknotes-home-backup'" in sql
     assert '"cwd": "/tmp"' in sql

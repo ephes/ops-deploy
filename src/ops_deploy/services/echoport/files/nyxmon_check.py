@@ -1,17 +1,19 @@
 # Upserts Echoport's json-metrics health check into the Nyxmon database, the
 # way deploy-echoport.yml's "Upsert Nyxmon Echoport json-metrics check" task
-# does. Environment: NYXMON_DB_PATH, NYXMON_SERVICE_NAME, NYXMON_CHECKS_JSON and
-# NYXMON_APPLY ("1" writes). Prints "changed=true" when something differs (and
-# was written, when applying) and "changed=false" otherwise; without
-# NYXMON_APPLY the database is opened read-only and nothing is written.
+# does. Environment: NYXMON_DB_PATH, NYXMON_SERVICE_NAME and NYXMON_APPLY ("1"
+# writes); the checks arrive as JSON on stdin, never in the environment or the
+# arguments. Prints "changed=true" when something differs (and was written,
+# when applying) and "changed=false" otherwise; without NYXMON_APPLY the
+# database is opened read-only and nothing is written.
 import json
 import os
 import sqlite3
+import sys
 
 apply = os.environ.get("NYXMON_APPLY") == "1"
 db_path = os.environ["NYXMON_DB_PATH"]
 service_name = os.environ["NYXMON_SERVICE_NAME"]
-checks = json.loads(os.environ["NYXMON_CHECKS_JSON"])
+checks = json.load(sys.stdin)
 
 conn = sqlite3.connect(db_path if apply else f"file:{db_path}?mode=ro", timeout=10, uri=not apply)
 cur = conn.cursor()
