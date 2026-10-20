@@ -3,6 +3,19 @@
 ## Unreleased
 
 
+- `zellij_ingress`: port of the `zellij_ingress_deploy` role. Writes only
+  `/etc/traefik/dynamic/zellij.yml` (`root:root 0644`, directory ensured
+  `0755`) from the role's template shipped unchanged, so the file is
+  byte-identical to the role's: routers `zellij-secure` and `zellij-http`,
+  both restricted to `Host` plus the `ClientIP` allowlist, the
+  `zellij-redirect-target` temporary redirect (`permanent: false`) to a fixed
+  URL and `noop@internal`, no backend. Disabled is a no-op (nothing is
+  removed). Unlike the role, nothing reloads or restarts Traefik; its file
+  provider watches the directory. Host name, target URL (http(s), no
+  credentials, query, quotes or `$`), entry points, resolver, allowlist and
+  route path (directly in the dynamic directory) are checked before any
+  operation. `tests/parity/ops_library_roles.json` now records the role.
+
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata
   candidate does not authorize execution, adoption, installation or deletion;

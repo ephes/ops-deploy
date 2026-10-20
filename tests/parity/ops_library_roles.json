@@ -19,6 +19,7 @@
     "work_app_deploy": "7ccde64149021c2e0fcdfb1f7b2ab36a8d617cba775a5270b81a3e064bedd1b0",
     "work_app_remove": "ece2d5b7f6e76e891cde94de494e47990a9970596e356764450550e9e94f12cd",
     "work_app_restore": "8e77e479699afb7bec18e1101deca212df9cd44996bb8a86a7dd0f42be669c96",
-    "work_app_shared": "42f3d908d13a05139b07b1c89e0a50cb21d710d331cb9b667b5868d6b12e0879"
+    "work_app_shared": "42f3d908d13a05139b07b1c89e0a50cb21d710d331cb9b667b5868d6b12e0879",
+    "zellij_ingress_deploy": "40c6bc5c3da9a1f616632af14b8e43ebc4e2147383ef954c17356c637109b250"
   }
 }
