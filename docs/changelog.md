@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- `homelab`: port of the `homelab_deploy` role (deploy only; with the
+  `homelab_shared` defaults), checked against ops-library main `540ede2b`
+  (2.56.0). `HomelabConfig` mirrors the role's variables; `deploy_homelab`
+  ships the role's `env.j2`, unit and Traefik templates unchanged, so the
+  `.env`, unit and route are byte-identical to the role's, and the deployed
+  bcrypt hash is kept while it matches (as the role since 2.49.1; Traefik is
+  never restarted). `src/` (and `media/` when present) are synced without
+  `--delete` with the role's excludes; `manage.py`, `pyproject.toml` and
+  `uv.lock` are copied with the role's modes. A venv that does not run or
+  runs another Python is removed and recreated with `uv venv`; `uv sync
+  --frozen`, `migrate`, `collectstatic`, `add_default_services` and the
+  recursive owner fix run only when a change or a read-only probe calls for
+  them, so a converged host gets no mutating operation. The default-services
+  probe runs the command with SQL and file-storage writes refused inside a
+  rolled-back transaction. `db.sqlite3` keeps the role's `0644`. The
+  playbook's `uv_install` runs only with `uv=UvInstallConfig()` (graphyard's
+  precedent); otherwise a missing uv fails the deploy before any Python
+  step. `django_secret_key` must be a value systemd and bash read alike.
+  `homelab_deploy`, `homelab_shared` and `uv_install` added to the drift
+  manifest.
+
 - `work_app` and `nyxmon` backups: the SQLite copy follows ops-library
   2.53.0's SQLite runners. Every `sqlite3 .backup` passes `.timeout 30000`
   first (a committing writer is waited for instead of failing with "database

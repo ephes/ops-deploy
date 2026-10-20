@@ -1,0 +1,96 @@
+# Traefik configuration for Homelab
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+{% if homelab_basic_auth_enabled %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    homelab-int:
+      rule: "Host(`{{ homelab_traefik_host }}`) && ({% for range in homelab_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - homelab-headers
+        - homelab-gzip
+      service: homelab
+{% if homelab_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ homelab_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    homelab-ext:
+      rule: "Host(`{{ homelab_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - homelab-auth
+        - homelab-headers
+        - homelab-gzip
+      service: homelab
+{% if homelab_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ homelab_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Single router without authentication
+    homelab-secure:
+      rule: "Host(`{{ homelab_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - homelab-headers
+        - homelab-gzip
+      service: homelab
+{% if homelab_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ homelab_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP redirect
+    homelab-http:
+      rule: "Host(`{{ homelab_traefik_host }}`)"
+      entryPoints:
+        - web
+      service: homelab
+
+  middlewares:
+{% if homelab_basic_auth_enabled %}
+    homelab-auth:
+      basicAuth:
+        users:
+          - "{{ homelab_basic_auth_user }}:{{ homelab_basic_auth_password_hash }}"
+        removeHeader: true
+{% endif %}
+
+    homelab-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    homelab-gzip:
+      compress: {}
+
+  services:
+    homelab:
+      loadBalancer:
+        servers:
+          - url: "http://{{ homelab_app_host }}:{{ homelab_app_port }}"

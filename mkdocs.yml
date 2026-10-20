@@ -47,4 +47,5 @@ nav:
       - graphyard: services/graphyard.md
       - work_app: services/work_app.md
       - zellij_ingress: services/zellij_ingress.md
+      - homelab: services/homelab.md
   - Changelog: changelog.md

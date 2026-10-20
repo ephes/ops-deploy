@@ -1,0 +1,30 @@
+# Homelab systemd service
+# Managed by Ansible - do not edit manually
+
+[Unit]
+Description=Homelab web application
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+WorkingDirectory={{ homelab_site_path }}
+User={{ homelab_user }}
+Group={{ homelab_group }}
+Environment="DJANGO_SETTINGS_MODULE={{ homelab_django_settings_module }}"
+EnvironmentFile={{ homelab_site_path }}/.env
+ExecStart={{ homelab_uv_path }} run gunicorn --workers {{ homelab_workers }} --bind {{ homelab_app_host }}:{{ homelab_app_port }} --access-logfile - src.config.wsgi:application
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Note: ProtectHome not used because service runs from /home/homelab
+ReadWritePaths={{ homelab_site_path }}
+ReadWritePaths={{ homelab_database_path | dirname }}
+ReadWritePaths={{ homelab_static_root }}
+ReadWritePaths={{ homelab_media_root }}
+ReadWritePaths={{ homelab_cache_dir }}
+
+[Install]
+WantedBy=multi-user.target

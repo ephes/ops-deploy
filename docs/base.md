@@ -159,6 +159,13 @@ release archive into a private temp directory with `curl`, checks the sha256,
 unpacks it and renames `uv`/`uvx` into place, then runs `uv --version`. `curl` is installed with apt first when missing.
 Linux only (the role also handles macOS; macOS hosts are a later phase). The
 role's deprecated `uv_create_symlinks`/`uv_symlink_dir` are not ported.
+Planning (`pyinfra-check`) only reads, which matches the role's `--check`
+since ops-library 2.48.2: a host with the pinned version plans no step, a
+pending install or update shows as the one install step.
+`tests/parity/ops_library_roles.json` records the role (`uv_install`, checked
+against ops-library main `540ede2b`, 2.56.0).
+[homelab](services/homelab.md) and [graphyard](services/graphyard.md) run it
+only when their `uv` field is set.
 
 ## nodejs_install
 
