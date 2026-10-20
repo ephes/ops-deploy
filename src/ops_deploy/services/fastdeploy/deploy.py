@@ -188,6 +188,11 @@ class FastdeployConfig(BaseServiceConfig):
         return self.site_path / "services"
 
     @property
+    def libexec_path(self) -> PurePosixPath:
+        """Root-owned home of the scripts FastDeploy runs through sudo (ops-library fastdeploy_runner)."""
+        return PurePosixPath("/usr/local/libexec/fastdeploy")
+
+    @property
     def venv_path(self) -> PurePosixPath:
         return self.site_path / ".venv"
 
@@ -464,12 +469,40 @@ def _accounts(cfg: FastdeployConfig) -> None:
         ensure_home=False,
         comment="FastDeploy Service Account",
     )
-    for path in (cfg.home, cfg.site_path, cfg.site_path / "bin", cfg.site_path / "logs", cfg.services_path):
+    for path in (cfg.home, cfg.site_path, cfg.site_path / "bin", cfg.site_path / "logs"):
         files.directory(name=f"Ensure directory {path}", path=str(path), user=cfg.user, group=cfg.user, mode="0755")
+    _runner_layout(cfg)
     # The old wildcard rule (``<user> ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *``)
     # let FastDeploy run any script it writes into its own services directory;
     # like the role (ops-library 2.35.0), remove it.
     files.file(name="Remove the retired wildcard sudoers rule", path="/etc/sudoers.d/fastdeploy", present=False)
+
+
+def _runner_layout(cfg: FastdeployConfig) -> None:
+    """The role's runner_layout.yml (ops-library 2.49.0).
+
+    FastDeploy only reads its services root, so it is root-owned. Hosts deployed
+    by older role versions have a fastdeploy-owned tree below it, root-run
+    backup scripts included: the owner becomes root and the service group
+    becomes root (other groups, such as deploy, stay). The scripts sudo runs
+    live in the root-owned libexec directory instead: fastdeploy owns the site
+    around the services root and could rename it.
+    """
+
+    services = shlex.quote(str(cfg.services_path))
+    group = shlex.quote(cfg.user)
+    root = str(cfg.services_path)
+    files.directory(name=f"Ensure directory {root}", path=root, user="root", group="root", mode="0755")
+    not_root = f"find {services} -mindepth 1 ! -user root"
+    service_group = f"find {services} -mindepth 1 -group {group}"
+    leftovers = host.get_fact(Command, command=f"{{ {not_root} -print; {service_group} -print; }} 2>/dev/null || true")
+    if leftovers:
+        server.shell(
+            name="Hand everything below the services root to root",
+            commands=[f"{not_root} -exec chown -h root {{}} +", f"{service_group} -exec chgrp -h root {{}} +"],
+        )
+    for path in (cfg.libexec_path.parent, cfg.libexec_path):
+        files.directory(name=f"Ensure directory {path}", path=str(path), user="root", group="root", mode="0755")
 
 
 @deploy("Deploy fastdeploy")

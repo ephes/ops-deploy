@@ -6,9 +6,13 @@ registration roles write,
 
     <user> ALL=(<runas>) NOPASSWD:[NOSETENV:] <script>[ *| --config *]
 
-where <script> is a file (one or two plain path components, no directory, no
-`..`) under /home/fastdeploy/site/services/, /home/deploy/runners/ or
-/usr/local/libexec/ - where the registration roles put service scripts.
+where <script> is a file where the registration roles put service scripts:
+/usr/local/libexec/fastdeploy/<service>/<file> or /usr/local/libexec/<file>
+(root-owned, fastdeploy_runner role), or, for a rule that runs as deploy,
+/home/deploy/runners/<service>/<file>. Plain path components only (no
+directory, no `..`). Rules naming FastDeploy's services root
+(/home/fastdeploy/site/services/) are not restored: fastdeploy owns the site
+and could replace any script there.
 
 Comments are "#" alone or "# text". Anything else (a command list with
 ALL, aliases, Defaults, includes, #<uid> rules,
@@ -20,8 +24,15 @@ import re
 import sys
 
 RULE = re.compile(
-    r"^[a-z_][a-z0-9_-]*[ \t]+ALL[ \t]*=[ \t]*\([A-Za-z_][A-Za-z0-9_-]*\)[ \t]*"
-    r"NOPASSWD:(?:NOSETENV:)?[ \t]*(?:/home/fastdeploy/site/services/|/home/deploy/runners/|/usr/local/libexec/)(?!\.\.?/)[A-Za-z0-9_][A-Za-z0-9._-]*(?:/(?!\.\.?(?:[ \t]|$))[A-Za-z0-9_][A-Za-z0-9._-]*)?(?:[ \t]+(?:\*|--config[ \t]+\*))?[ \t]*$"
+    r"^[a-z_][a-z0-9_-]*[ \t]+ALL[ \t]*=[ \t]*\("
+    # run as deploy: a root-owned runner or one in the deploy user's own runner directory
+    r"(?:deploy\)[ \t]*NOPASSWD:(?:NOSETENV:)?[ \t]*"
+    r"(?:/usr/local/libexec/(?:fastdeploy/[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*|[A-Za-z0-9_][A-Za-z0-9._-]*)"
+    r"|/home/deploy/runners/[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*)"
+    # run as anyone else (root): only a root-owned runner
+    r"|[A-Za-z_][A-Za-z0-9_-]*\)[ \t]*NOPASSWD:(?:NOSETENV:)?[ \t]*"
+    r"/usr/local/libexec/(?:fastdeploy/[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*|[A-Za-z0-9_][A-Za-z0-9._-]*))"
+    r"(?:[ \t]+(?:\*|--config[ \t]+\*))?[ \t]*$"
 )
 
 

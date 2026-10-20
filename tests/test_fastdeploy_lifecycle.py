@@ -121,7 +121,7 @@ def _bash_44() -> bool:
     return (major, minor) >= (4, 4)
 
 
-NARROW = "deploy ALL=(root) NOPASSWD: /home/fastdeploy/site/services/nyxmon/deploy.sh --config *\n"
+NARROW = "deploy ALL=(root) NOPASSWD: /usr/local/libexec/fastdeploy/nyxmon/deploy.sh --config *\n"
 SNAPSHOT_SUDOERS = {
     # Retired by name, whatever they hold.
     "fastdeploy": "fastdeploy ALL=(deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *\n",
@@ -131,6 +131,8 @@ SNAPSHOT_SUDOERS = {
     "fastdeploy_old": "# Managed by Ansible\ndeploy ALL=(root) NOPASSWD: ALL\n",
     "fastdeploy_split": "deploy ALL=(root) \\\n    NOPASSWD: ALL\n",
     "fastdeploy_nyxmon": f"# Managed by Ansible\n\n{NARROW}",
+    # A script inside the fastdeploy-owned site (before ops-library 2.49.0).
+    "fastdeploy_legacysite": "deploy ALL=(root) NOPASSWD: /home/fastdeploy/site/services/nyxmon/backup.py *\n",
 }
 
 
@@ -159,13 +161,14 @@ def test_restore_skips_retired_entries_and_blanket_sudoers(tmp_path: Path) -> No
     # Present on the host: an rsync --delete leaves excluded entries alone, as in the role.
     (host / "services" / "fastdeploy-self").mkdir(parents=True)
     copied = tmp_path / "copied"
+    owners = tmp_path / "owners"
     # restore_phase alone, with everything that needs root or a database stubbed.
     run = "\n".join(
         [
             script.rstrip().removesuffix("fd_restore"),
             f"copy_file() {{ printf '%s\\n' \"$5\" >> {shlex.quote(str(copied))}; }}",
             'ensure_dir() { mkdir -p "$4"; }',
-            "chown_tree() { :; }",
+            f"chown_tree() {{ printf '%s\\n' \"$*\" >> {shlex.quote(str(owners))}; }}",
             "restore_database() { :; }",
             "systemctl() { :; }",
             f"snapshot={shlex.quote(str(snapshot))} includes_workspace=0",
@@ -185,6 +188,9 @@ def test_restore_skips_retired_entries_and_blanket_sudoers(tmp_path: Path) -> No
         assert f"Not restoring {name}: retired" in done.stdout
     for name in ("fastdeploy_old", "fastdeploy_split"):
         assert f"Not restoring {name}: it grants unrestricted sudo (ALL)" in done.stdout
+    assert "fastdeploy_legacysite" not in copied.read_text()
+    # The services root is restored root-owned (ops-library 2.49.0).
+    assert f"root root {host / 'services'}" in owners.read_text().splitlines()
 
 
 def test_restore_ships_the_retired_lists_and_the_roles_check() -> None:

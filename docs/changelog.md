@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `fastdeploy`: port of ops-library 2.49.0's root-owned runner layout. The
+  services root is `root:root 0755` and fastdeploy-owned leftovers below it
+  (older Ansible deploys chowned the whole site, root-run backup scripts
+  included) get owner root and lose the `fastdeploy` group;
+  `/usr/local/libexec/fastdeploy` is created `root:root 0755`. The restore
+  writes the services root `root:root` and, with the re-vendored
+  `sudoers_blanket_check.py`, no longer restores sudoers rules naming scripts
+  below the FastDeploy site. `tests/parity/ops_library_roles.json` records the
+  new `fastdeploy_restore`; `fastdeploy_deploy` keeps its old digest because
+  the unrelated HSTS preload change (ops-library `abae172`) is not ported yet.
+
 - Traefik backup now captures the whole dynamic route-config tree by default,
   matching ops-library 2.48.1 coverage and metadata flags. Source modes are kept
   under a private container; archives and fetched copies stay `0600`. Missing,
