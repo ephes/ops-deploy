@@ -1,15 +1,17 @@
 # Run by ``python3 -c`` as the nyxmon user. The playbook's "Upsert Nyxmon checks
 # for weeknotes.home" step, plus a read-only "check" mode. The environment
-# carries NYXMON_DB_PATH, NYXMON_SERVICE_NAME, NYXMON_CHECKS_JSON and
-# NYXMON_MODE (check or apply). Prints "changed=true" when an apply wrote
-# something (or, in check mode, would), else "changed=false".
+# carries NYXMON_DB_PATH, NYXMON_SERVICE_NAME and NYXMON_MODE (check or apply);
+# the checks arrive as JSON on stdin, never in the environment or the
+# arguments. Prints "changed=true" when an apply wrote something (or, in check
+# mode, would), else "changed=false".
 import json
 import os
 import sqlite3
+import sys
 
 db_path = os.environ["NYXMON_DB_PATH"]
 service_name = os.environ["NYXMON_SERVICE_NAME"]
-checks = json.loads(os.environ["NYXMON_CHECKS_JSON"])
+checks = json.load(sys.stdin)
 apply = os.environ["NYXMON_MODE"] == "apply"
 
 if apply:

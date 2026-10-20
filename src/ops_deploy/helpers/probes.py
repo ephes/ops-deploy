@@ -24,6 +24,7 @@ from __future__ import annotations
 import shlex
 from collections.abc import Iterable
 from pathlib import PurePosixPath
+from typing import Any
 
 from pyinfra import host, logger
 from pyinfra.api.operation import OperationMeta
@@ -48,30 +49,55 @@ def probe_output(output: str) -> str | None:
     return None if output.splitlines()[-1:] == [FAILED] else output
 
 
-def probe(command: str, *, name: str) -> str | None:
+class StdinLines(list[str]):
+    """``_stdin`` for a fact or command that prints as ``<stdin redacted>``.
+
+    pyinfra logs a fact's arguments, ``_stdin`` included ("Loaded fact ..."),
+    so a plain string payload would end up in its debug output.
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text.splitlines(keepends=True))
+
+    def __repr__(self) -> str:
+        return "<stdin redacted>"
+
+    __str__ = __repr__
+
+
+def stdin_arguments(stdin: str | None) -> dict[str, Any]:
+    """Global arguments that feed ``stdin`` (redacted in pyinfra's logs) without a pty, which would echo it."""
+
+    return {} if stdin is None else {"_stdin": StdinLines(stdin), "_get_pty": False}
+
+
+def probe(command: str, *, name: str, stdin: str | None = None) -> str | None:
     """Stdout of the strict probe ``command`` while planning, or ``None`` if it failed.
 
     The command runs in a subshell, so it may ``exit``. A failure is logged as
     a warning; follow the step the probe gates with :func:`verify_probe`.
+    ``stdin``: text for the command's standard input (data that must stay off
+    the command line, such as a check payload; line based, so text only).
     """
 
-    output = probe_output(str(host.get_fact(Command, command=probe_command(command)) or ""))
+    output = probe_output(str(host.get_fact(Command, command=probe_command(command), **stdin_arguments(stdin)) or ""))
     if output is None:
         logger.warning(f"{host.print_prefix}probe failed: {name}; running the step it gates and probing again after it")
     return output
 
 
-def verify_probe(command: str, *, name: str, expect: str | None = None) -> OperationMeta:
+def verify_probe(command: str, *, name: str, expect: str | None = None, stdin: str | None = None) -> OperationMeta:
     """Read-only operation: the probe ``command`` succeeds now (and its last line is ``expect``).
 
     Its error output is the operation's; a still failing probe fails the deploy.
+    ``stdin`` as for :func:`probe`.
     """
 
     script = f"out=$( {command} ) || {{ echo {shlex.quote(f'probe still fails: {name}')} >&2; exit 1; }}"
     if expect is not None:
         wrong = shlex.quote(f"probe answers something else than {expect}: {name}")
         script += f'; [ "$(printf %s "$out" | tail -n 1)" = {shlex.quote(expect)} ] || {{ echo {wrong} >&2; exit 1; }}'
-    return mark_read_only(server.shell(name=f"Probe again: {name}", commands=[script]))
+    return mark_read_only(server.shell(name=f"Probe again: {name}", commands=[script], **stdin_arguments(stdin)))
 
 
 def when_present(paths: Iterable[PurePosixPath | str], command: str, *, otherwise: str) -> str:

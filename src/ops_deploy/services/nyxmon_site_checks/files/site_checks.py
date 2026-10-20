@@ -1,6 +1,7 @@
 # Run on the host as the Nyxmon user: ``python3 -I -c <this file> check|apply``
-# with NYXMON_DB_PATH, NYXMON_SERVICE_NAME and NYXMON_CHECKS_JSON (a list of
-# {name, check_type, url, check_interval, data}) in the environment.
+# with NYXMON_DB_PATH and NYXMON_SERVICE_NAME in the environment and the checks
+# (a JSON list of {name, check_type, url, check_interval, data}) on stdin, never
+# in the environment or the arguments: check data can carry a monitor login.
 #
 # ``apply`` upserts the service row and its checks the way the private
 # site-check provisioning playbooks do: a missing service or check is
@@ -29,7 +30,7 @@ apply = mode == "apply"
 
 db_path = os.environ["NYXMON_DB_PATH"]
 service_name = os.environ["NYXMON_SERVICE_NAME"]
-checks = json.loads(os.environ["NYXMON_CHECKS_JSON"])
+checks = json.load(sys.stdin)
 
 os.umask(0o077)
 uri = pathlib.PurePosixPath(db_path).as_uri() + ("?mode=rw" if apply else "?mode=ro")

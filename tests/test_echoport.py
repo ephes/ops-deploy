@@ -79,6 +79,12 @@ READ_ONLY = [
 ]
 
 
+def stdin_writes(run: FakeRun) -> list[tuple[str, str]]:
+    """Stdin of every command but the Nyxmon check probe, which reads the check payload."""
+
+    return [(command, text) for command, text in run.stdin if NYXMON_CHECK_PROBE not in command]
+
+
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -253,7 +259,7 @@ def test_second_run_changes_nothing_mutating(cfg: EchoportConfig) -> None:
     assert run.mutating_changed_ops == []
     assert run.changed_ops == READ_ONLY
     assert run.uploads == []
-    assert run.stdin == []
+    assert stdin_writes(run) == []
     assert not any("rm -rf" in c or "chown" in c for c in run.executed_commands)
 
 
@@ -544,6 +550,12 @@ def test_nyxmon_check_is_upserted_when_it_differs(cfg: EchoportConfig) -> None:
     assert command.startswith("runuser -u nyxmon -- env HOME=/home/nyxmon ")
     assert "NYXMON_APPLY=1" in command
     assert "NYXMON_SERVICE_NAME=echoport" in command
+    # The checks ride on stdin (probe and upsert), never on the command line.
+    assert cfg.nyxmon is not None
+    payload = json.dumps(nyxmon_checks(cfg.nyxmon), separators=(",", ":")) + "\n"
+    assert dict(run.stdin)[command] == payload
+    assert [text for c, text in run.stdin if NYXMON_CHECK_PROBE in c] == [payload]
+    assert not any("NYXMON_CHECKS_JSON" in c or "freshness" in c for c in run.executed_commands + run.fact_commands)
 
 
 def test_nyxmon_check_is_skipped_without_the_database(cfg: EchoportConfig) -> None:
@@ -730,7 +742,7 @@ def test_a_secret_the_alias_cannot_log_in_with_is_upserted(cfg: EchoportConfig) 
     run = deploy(cfg, secrets, {**converged(cfg, secrets), ACCOUNT_LOGIN: []})
 
     assert changed_names(run) == {ACCOUNT_STEPS["user"]}
-    [(command, stdin)] = run.stdin
+    [(command, stdin)] = stdin_writes(run)
     assert command.startswith("/usr/local/bin/mc admin user add local >/dev/null 2>&1 || ")
     assert stdin == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
 
@@ -759,7 +771,7 @@ def test_without_root_admin_alias_nothing_changes_on_minio(cfg: EchoportConfig) 
     assert not run.succeeded
     assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[0]
     assert not any("mc admin policy" in c or "mc admin user" in c for c in run.executed_commands)
-    assert run.stdin == []
+    assert stdin_writes(run) == []
 
 
 def test_an_account_that_fails_verification_fails_the_deploy(cfg: EchoportConfig) -> None:

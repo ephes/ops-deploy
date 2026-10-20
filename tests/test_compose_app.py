@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -313,6 +314,23 @@ def test_secrets_never_reach_commands_uploads_or_op_arguments(cfg: ComposeAppCon
         assert value not in text, key
     route = run.upload(ROUTE).decode()
     assert SECRET_VALUES["basic_auth_password"] not in route
+
+
+def test_stdin_probe_payloads_are_redacted_in_pyinfra_logs(
+    cfg: ComposeAppConfig, secrets: SecretValues, caplog: pytest.LogCaptureFixture
+) -> None:
+    # pyinfra logs a fact's arguments, _stdin included ("Loaded fact ...").
+    caplog.set_level(logging.DEBUG)
+    run = deploy(cfg, secrets, {**fakehost.UBUNTU})
+
+    assert any(command.startswith("( python3 -I -c ") for command, _ in run.stdin)
+    logged = caplog.text
+    assert "_stdin=<stdin redacted>" in logged
+    assert logged.count("_stdin=") == logged.count("_stdin=<stdin redacted>")
+    for key, value in SECRET_VALUES.items():
+        if key in ("tz", "vpn_forwarded_port", "vpn_addresses", "basic_auth_user"):
+            continue
+        assert value not in logged, key
 
 
 def test_second_run_after_a_stamp_is_a_no_op_also_for_the_route(cfg: ComposeAppConfig, secrets: SecretValues) -> None:

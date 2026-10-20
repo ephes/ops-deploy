@@ -846,11 +846,9 @@ def _nyxmon(nyxmon: NyxmonCheck) -> None:
     if _probe(f"test -f {db} && echo present") != "present":
         logger.warning(f"{host.name}: Nyxmon database {nyxmon.db_path} not found; skipping the Echoport Nyxmon check")
         return
-    env = {
-        "NYXMON_DB_PATH": str(nyxmon.db_path),
-        "NYXMON_SERVICE_NAME": nyxmon.service_name,
-        "NYXMON_CHECKS_JSON": json.dumps(nyxmon_checks(nyxmon), separators=(",", ":")),
-    }
+    env = {"NYXMON_DB_PATH": str(nyxmon.db_path), "NYXMON_SERVICE_NAME": nyxmon.service_name}
+    # On stdin, never on the command line (world-readable while it runs).
+    checks = json.dumps(nyxmon_checks(nyxmon), separators=(",", ":")) + "\n"
     home = PurePosixPath("/home") / nyxmon.user
 
     def command(apply: bool) -> str:
@@ -861,14 +859,15 @@ def _nyxmon(nyxmon: NyxmonCheck) -> None:
             ["python3", "-I", "-c", NYXMON_CHECK],
         )
 
-    state = probe(command(apply=False), name="Nyxmon Echoport check")
-    server.shell(
+    state = probe(command(apply=False), name="Nyxmon Echoport check", stdin=checks)
+    secret_stdin(
         name="Upsert Nyxmon Echoport json-metrics check",
-        commands=[command(apply=True)],
+        command=command(apply=True),
+        content=SecretContent(checks),
         _if=lambda: (state or "").strip() != "changed=false",
     )
     if state is None:
-        verify_probe(command(apply=False), name="Nyxmon Echoport check", expect="changed=false")
+        verify_probe(command(apply=False), name="Nyxmon Echoport check", expect="changed=false", stdin=checks)
 
 
 @deploy("Deploy echoport")

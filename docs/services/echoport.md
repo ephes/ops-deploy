@@ -153,8 +153,9 @@ credentials never leave the controller) and its ops-library version assert.
     playbook's upsert (as `nyxmon`, SQLite opened read-only) and, only if it
     reports a difference, the upsert itself (service `echoport` and the
     `json-metrics` check on `/api/health/` with the four target freshness
-    conditions and the backup-window suppression). Without the database it
-    warns and skips, like the playbook.
+    conditions and the backup-window suppression). The check reaches the
+    script as JSON on stdin in both passes, never on the command line.
+    Without the database it warns and skips, like the playbook.
 
 ## Parity with the role
 

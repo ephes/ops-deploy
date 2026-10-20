@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import subprocess
@@ -281,6 +282,21 @@ def test_drift_or_a_new_database_is_upserted(cfg: NyxmonSiteChecksConfig, state:
     assert upsert.startswith("runuser -u nyxmon -- env NYXMON_DB_PATH=/home/nyxmon/site/db.sqlite3 ")
     assert " python3 -I -c " in upsert
     assert upsert.endswith(" apply")
+    assert run.stdin[-1] == (upsert, checks_json(cfg) + "\n")
+
+
+def test_the_checks_travel_on_stdin_only() -> None:
+    # Command lines are world-readable while they run; check data can carry a login.
+    checks = [{**CHECKS[0], "data": {"auth": {"password": "site-check-sentinel"}}}]
+    sentinel_cfg = make_cfg(checks=checks)
+    run = deploy(sentinel_cfg, {PROBE: [FAILED]})
+
+    assert run.succeeded
+    assert "site-check-sentinel" not in run.all_text()
+    assert "NYXMON_CHECKS_JSON" not in run.all_text()
+    probes = [text for command, text in run.stdin if PROBE in command or command.endswith(" apply")]
+    assert len(probes) == 3  # the planning probe, the upsert and the probe again
+    assert all(json.loads(text) == checks for text in probes)
 
 
 def test_the_requirements_run_before_the_upsert(cfg: NyxmonSiteChecksConfig) -> None:
@@ -332,12 +348,24 @@ def test_a_failing_probe_upserts_and_probes_again(cfg: NyxmonSiteChecksConfig) -
     assert run.ops[-1].read_only
 
 
+def test_the_checks_are_redacted_in_pyinfra_logs(caplog: pytest.LogCaptureFixture) -> None:
+    # pyinfra logs a fact's arguments, _stdin included ("Loaded fact ...").
+    caplog.set_level(logging.DEBUG)
+    checks = [{**CHECKS[0], "data": {"auth": {"password": "site-check-sentinel"}}}]
+    run = deploy(make_cfg(checks=checks), {PROBE: [FAILED]})
+
+    assert run.succeeded
+    assert "_stdin=<stdin redacted>" in caplog.text
+    assert "site-check-sentinel" not in caplog.text
+
+
 def test_the_probe_runs_the_check_mode_as_the_nyxmon_user(cfg: NyxmonSiteChecksConfig) -> None:
     run = deploy(cfg, {PROBE: ["changed=false"]})
 
     probes = [c for c in run.fact_commands if PROBE in c]
     assert probes
     assert site_checks_command(cfg, "check") in probes[0]
+    assert [text for command, text in run.stdin if command == probes[0]] == [checks_json(cfg) + "\n"]
 
 
 def test_commands_are_valid_shell(cfg: NyxmonSiteChecksConfig) -> None:
@@ -379,14 +407,17 @@ def db(tmp_path: Path) -> Path:
 
 
 def script(db: Path, mode: str, checks: list[dict[str, Any]] | None = None) -> subprocess.CompletedProcess[str]:
-    env = {
-        "PATH": os.environ.get("PATH", ""),
-        "NYXMON_DB_PATH": str(db),
-        "NYXMON_SERVICE_NAME": "example-site",
-        "NYXMON_CHECKS_JSON": json.dumps(CHECKS if checks is None else checks),
-    }
+    env = {"PATH": os.environ.get("PATH", ""), "NYXMON_DB_PATH": str(db), "NYXMON_SERVICE_NAME": "example-site"}
+    # As pyinfra writes it: the JSON line, newline-terminated.
+    payload = json.dumps(CHECKS if checks is None else checks) + "\n"
     return subprocess.run(
-        [sys.executable, "-I", "-c", SCRIPT, mode], env=env, capture_output=True, text=True, check=False, timeout=60
+        [sys.executable, "-I", "-c", SCRIPT, mode],
+        env=env,
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
     )
 
 
