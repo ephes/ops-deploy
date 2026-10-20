@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- `thermal_monitoring`: port of the `thermal_metrics_exporter` and
+  `thermal_metrics_endpoint` roles (checked against ops-library 2.56.0
+  `540ede2b`; both roles unchanged since `49d2f168`) and the play around
+  them: the exporter, HTTP server script and three units byte for byte from
+  the vendored role templates, the endpoint bound to `tailscale ip --4`, the
+  htpasswd entry checked against the password on the controller and written
+  through `secret_file` only when it does not verify (a verifying file only
+  gets its owner and mode enforced), restarts only on
+  change, the collector run while the metrics file is missing or the
+  collector changed, the role's timer re-arm and armed check. A converged
+  host gets read-only operations only. Both roles added to the drift
+  manifest.
+- `_nyxmon_json_metrics`: the shared json-metrics Nyxmon check upsert of the
+  private host monitoring playbooks (`tasks/upsert-nyxmon-json-metrics-check.yml`)
+  as a step for deploys: the database privacy guard (database and sidecars
+  regular, owned by the Nyxmon user, `0600`), a digest probe that needs no
+  secret, and the task's upsert (ambiguous rows and processing leases
+  refused, umask 077, `BEGIN IMMEDIATE`, 7 retries 5 s apart) with the
+  check data, which holds a monitor login, only on stdin: never in argv or
+  the environment of the Nyxmon user's process.
+
 - `work_app` and `nyxmon` backups: the SQLite copy follows ops-library
   2.53.0's SQLite runners. Every `sqlite3 .backup` passes `.timeout 30000`
   first (a committing writer is waited for instead of failing with "database

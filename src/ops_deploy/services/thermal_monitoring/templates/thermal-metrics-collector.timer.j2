@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect thermal metrics every {{ thermal_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+# OnActiveSec= provides an independent activation anchor if the boot trigger is
+# already exhausted or service activation history is unavailable. OnCalendar=
+# is the Persistent= wall-clock backstop.
+OnBootSec={{ thermal_metrics_endpoint_timer_on_boot_sec }}
+OnActiveSec={{ thermal_metrics_endpoint_timer_interval }}
+OnUnitActiveSec={{ thermal_metrics_endpoint_timer_interval }}
+OnCalendar={{ thermal_metrics_endpoint_timer_on_calendar }}
+AccuracySec={{ thermal_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ thermal_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
