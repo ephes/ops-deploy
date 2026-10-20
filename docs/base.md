@@ -2,7 +2,8 @@
 
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
-host (hostname, unit masks, headless mode, shell basics, authorized keys), the
+host (hostname, unit masks, headless mode, shell basics, authorized keys, SSH
+guard), the
 others are steps a service deploy calls (uv, Node.js):
 
 ```python
@@ -28,6 +29,7 @@ change.
 | `uv_install` | `uv_install` | `UvInstallConfig` | `deploy_uv_install` |
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
+| `ssh_guard` | `ssh_guard_deploy` | `SshGuardConfig` | `deploy_ssh_guard` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -158,6 +160,61 @@ last owns the file.
 - **editor**: `update-alternatives --set editor <path>`; the path must be a
   registered alternative (vim registers `vim.basic`).
 
+## ssh_guard
+
+| Field | Default | |
+|---|---|---|
+| `fail2ban_enabled` | `True` | `False` skips the package, service and jail |
+| `fail2ban_package`, `fail2ban_service_name` | `fail2ban` | |
+| `fail2ban_jail_name` | `sshd` | letters, digits, `_ . @ -` |
+| `fail2ban_backend`, `fail2ban_filter`, `fail2ban_port` | `systemd`, `sshd`, `ssh` | |
+| `fail2ban_maxretry` | `5` | must be > 0 while fail2ban is enabled |
+| `fail2ban_findtime`, `fail2ban_bantime` | `10m`, `1h` | |
+| `fail2ban_ignoreip` | `127.0.0.1/8 ::1 100.64.0.0/10` | empty: no `ignoreip` line |
+| `sshd_dropin_enabled` | `True` | `False` skips the drop-in, check and reload |
+| `sshd_dropin_path` | `/etc/ssh/sshd_config.d/99-ssh-guard.conf` | a file below a directory |
+| `sshd_service_name` | `ssh` | |
+| `per_source_max_startups` | `"5"` | empty: directive left out; `None` is refused while the drop-in is enabled |
+| `max_auth_tries`, `login_grace_time` | `""` | empty: directive left out |
+
+Values written into the files must not contain line breaks or other control
+characters, so a value cannot add a directive of its own. The role's two
+asserts (`maxretry`, `PerSourceMaxStartups`) are checked when the config is
+built, each only for the enabled part.
+
+`/etc/fail2ban/jail.d/ssh-guard.local` and the drop-in are byte-identical to
+the role's templates (including the `# Managed by ops-library
+ssh_guard_deploy. Do not edit.` header), `root:root 0644`; the drop-in
+directory is `root:root 0755`. In the role's order: drop-in directory,
+`fail2ban` from apt (no cache refresh, as the role's `package` task),
+fail2ban enabled and started, jail file, drop-in.
+
+- **fail2ban** is restarted (`systemctl restart`, which also starts a stopped
+  unit) only when the jail file changed, right after it is written.
+- **ssh**: only when the drop-in changed, `sshd -t -f /etc/ssh/sshd_config`
+  checks the whole configuration. When it fails, the drop-in is removed and
+  the deploy fails with `Invalid sshd config; removed <path>.`, before any
+  reload (the role's `rescue`). When it passes, ssh is reloaded if it runs and
+  started if not (the role handler's `state: reloaded`).
+- A converged host reports no change and nothing is restarted or reloaded.
+
+Differences from the role, on purpose:
+
+- The fail2ban restart is not deferred to the end. The role's handlers do not
+  run once the drop-in check fails, which leaves a written jail that fail2ban
+  never loads (later runs see it unchanged). Here the jail is applied before
+  the drop-in is checked.
+- Only a failing `sshd -t` removes the drop-in. The role's `rescue` also
+  removes it when writing the file fails (an upload or permission error),
+  which would drop a valid earlier drop-in.
+- Linux hosts with systemd and apt only. The role's `package` and `service`
+  modules would also try other package managers and init systems.
+
+Inherited from the role: with ssh stopped, Debian removes `/run/sshd`, so
+`sshd -t` fails on that alone and a changed drop-in is removed (start ssh and
+run again). A run interrupted between writing the drop-in and the check leaves
+the file unchecked and not reloaded until it changes again.
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
@@ -168,3 +225,16 @@ authorized_keys rendering against the vendored role template.
 checks the end state, including an SSH login with the managed key. It works on
 a throwaway user, units and directories and restores the hostname, default
 target and editor.
+
+`tests/test_base_ssh_guard_docker.py` runs `deploy_ssh_guard` against real
+sshd, fail2ban and systemd. It is skipped unless `SSH_GUARD_DOCKER_CONTAINER`
+holds the full ID of a running container named `ops-deploy-ssh-guard-*`,
+labelled `ops-deploy.fixture=ssh-guard`, with `--network none`, not
+privileged, no mounts and systemd as PID 1, built from `debian:trixie` with
+`systemd systemd-sysv openssh-server fail2ban python3-systemd` (for example
+`--cgroupns private --cap-add SYS_ADMIN --tmpfs /run --tmpfs /run/lock`,
+`/sbin/init` after remounting `/sys/fs/cgroup` as cgroup2). pyinfra's Docker
+CLI is wrapped so it can only inspect, exec and copy. The test covers the
+first run, a converged run, jail drift (restart only), drop-in drift (check
+and reload only), a value `sshd -t` rejects (drop-in removed, deploy failed,
+no reload, sshd still running) and recovery, and a stopped ssh.

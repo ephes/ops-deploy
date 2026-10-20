@@ -1,0 +1,10 @@
+# Managed by ops-library ssh_guard_deploy. Do not edit.
+{% if ssh_guard_per_source_max_startups %}
+PerSourceMaxStartups {{ ssh_guard_per_source_max_startups }}
+{% endif %}
+{% if ssh_guard_max_auth_tries %}
+MaxAuthTries {{ ssh_guard_max_auth_tries }}
+{% endif %}
+{% if ssh_guard_login_grace_time %}
+LoginGraceTime {{ ssh_guard_login_grace_time }}
+{% endif %}

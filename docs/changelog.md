@@ -73,6 +73,20 @@
   JSON types exactly; non-JSON values, control characters and backslashes
   are refused before any connection.
 
+- `ops_deploy.base`: `deploy_ssh_guard` and `SshGuardConfig`, a port of
+  ops-library's `ssh_guard_deploy` role (fail2ban jail for sshd and an sshd
+  hardening drop-in). Both files are byte-identical to the role's templates
+  (vendored under `tests/parity/ansible`). fail2ban is restarted only when
+  the jail changed; a changed drop-in is checked with `sshd -t` and, when the
+  check fails, removed before the deploy fails, so ssh is reloaded only for a
+  configuration sshd accepts. The role's asserts are config validators, and
+  rendered values refuse line breaks and other control characters. Unlike
+  the role, the fail2ban restart is not deferred behind the drop-in check,
+  and only a failing check (not a failed write) removes the drop-in. Linux
+  with systemd and apt only. `tests/test_base_ssh_guard_docker.py` runs it
+  against real sshd, fail2ban and systemd in an owned container (skipped
+  without one).
+
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata
   candidate does not authorize execution, adoption, installation or deletion;
