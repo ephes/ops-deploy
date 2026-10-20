@@ -28,6 +28,7 @@ nav:
       - toy: services/toy.md
       - toyweb: services/toyweb.md
       - nyxmon: services/nyxmon.md
+      - nyxmon_site_checks: services/nyxmon_site_checks.md
       - fastdeploy: services/fastdeploy.md
       - archive: services/archive.md
       - chesslab: services/chesslab.md

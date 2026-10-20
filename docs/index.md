@@ -34,6 +34,7 @@ src/ops_deploy/
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
+  services/nyxmon_site_checks/ one Nyxmon service and its checks, upserted in Nyxmon's database
   services/opaq_app/  opaq_app (port of the opaq_app_deploy role)
   services/fastdeploy/ fastdeploy (port of the fastdeploy_deploy role)
   services/delve/     delve (port of the delve_deploy role)
