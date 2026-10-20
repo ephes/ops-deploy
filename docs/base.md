@@ -2,7 +2,7 @@
 
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
-host (hostname, unit masks, headless mode, shell basics, authorized keys), the
+host (hostname, unit masks, headless mode, journald, shell basics, authorized keys), the
 others are steps a service deploy calls (uv, Node.js):
 
 ```python
@@ -24,6 +24,7 @@ change.
 | `hostname` | `hostname_set` | `HostnameConfig` | `deploy_hostname` |
 | `headless_mode` | `headless_mode` | `HeadlessModeConfig` | `deploy_headless_mode` |
 | `systemd_unit_masks` | `systemd_unit_masks` | `SystemdUnitMasksConfig`, `UnitMask` | `deploy_systemd_unit_masks` |
+| `journald_config` | `journald_config` | `JournaldConfig` | `deploy_journald_config` |
 | `ssh_authorized_keys` | `ssh_authorized_keys_manage` | `SshAuthorizedKeysConfig`, `AuthorizedKey` | `deploy_ssh_authorized_keys` |
 | `uv_install` | `uv_install` | `UvInstallConfig` | `deploy_uv_install` |
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
@@ -68,6 +69,56 @@ stopped (a failing stop is ignored, as in the role), masked and its failed
 state cleared; one that is in the failed state gets `reset-failed`.
 `systemctl mask` (and so the deploy, like the role) fails for a unit whose
 file lives in `/etc/systemd/system`; masking is for packaged units.
+
+## journald_config
+
+| Field | Default | journald key |
+|---|---|---|
+| `state` | `present` | `absent` removes the drop-in |
+| `dropin_path` | `/etc/systemd/journald.conf.d/60-ops-library.conf` | a `*.conf` file directly in that directory |
+| `storage` | `persistent` | `Storage=` (`persistent`, `volatile`, `auto`, `none` or empty) |
+| `system_max_use`, `system_keep_free`, `system_max_file_size` | `""` | `SystemMaxUse=` etc.: a byte count with an optional `K`..`E` suffix (`16G`, `1.5G`) |
+| `system_max_files` | `""` | `SystemMaxFiles=`: a non-negative integer (`0` turns the limit off) |
+| `max_retention_sec`, `max_file_sec` | `""` | `MaxRetentionSec=`, `MaxFileSec=`: a systemd time span (`21day`, `1w 2d12h`) |
+| `extra_settings` | `{}` | further `[Journal]` keys in the given order; booleans render as `yes`/`no` |
+| `restart_on_change` | `True` | restart journald (and flush) when the drop-in changed |
+
+Writes one drop-in, `root:root 0644` in a `root:root 0755` directory,
+byte-identical to the role's template (including its `# Managed by Ansible`
+header), so taking a host over from the role rewrites nothing and restarts
+nothing. An empty setting writes nothing for its key. Size and age limits are
+whatever the caller passes; the deploy never vacuums or deletes journal
+files itself (journald does, at the restart or the next rotation, when a
+lower limit is applied).
+
+journald has no reload. As with the role's handlers, `systemctl restart
+systemd-journald` runs only when the drop-in was written, changed owner or
+mode, or was removed, and `journalctl --flush` follows only a written drop-in
+with `storage="persistent"` (it moves a journal that lived in `/run` to
+`/var/log/journal`). A converged host gets neither: the running journald keeps
+its PID. A read-only check then requires `systemctl is-active
+systemd-journald` to print `active` (reported separately, see
+[read-only checks](concepts/helpers.md)). Hosts whose PID 1 is not systemd are
+refused.
+
+A symlink at the drop-in path is replaced by the regular file (present) or
+unlinked (absent), never followed, as the role's `template` and `file:
+state=absent` do; its target is left alone. Anything else at the path (a
+directory, FIFO, socket or device), or a drop-in directory that is not a
+directory (a symlink included), is refused before any change, where the role
+would write into the directory, delete a directory tree or follow the link.
+The file types are read with `stat` in the C locale, so a host with a
+non-English locale is handled the same way.
+
+Values are checked when the config is built, before any operation, with the
+role's patterns and only for `state="present"`, as in the role: with
+`state="absent"` the settings are dropped unchecked (they are not used), while
+`dropin_path` is still checked. Numbers from YAML (`system_max_files: 2000`)
+are accepted as their text. Two deliberate differences: a value or extra key
+ending in a newline (which the role's Python `$` lets through) is refused, and
+so is a control character in `dropin_path`. Extra values are written literally
+(Ansible would first expand Jinja in them). An extra key that a field already
+covers (`SystemMaxUse`) is refused, as in the role.
 
 ## ssh_authorized_keys
 
@@ -162,7 +213,25 @@ last owns the file.
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
 converged run (no change), drift and refusal cases, config validation, and the
-authorized_keys rendering against the vendored role template.
+authorized_keys and journald drop-in rendering against the vendored role
+templates.
+
+`tests/test_base_journald_docker.py` runs `journald_config` against a real
+systemd and journald in an owned Docker container and is skipped unless
+`JOURNALD_SYSTEMD_DOCKER_CONTAINER` holds that container's full ID. The
+container must be named `ops-deploy-systemd-journald-20261020`, carry the
+labels `ops-deploy.fixture=journald-systemd` and `ops-deploy.run=journald-20261020`,
+and run systemd as PID 1 with no network, binds, ports or devices, a private
+cgroup namespace and `SYS_ADMIN` as its only added capability (an Ubuntu 24.04
+image with `systemd`, plus `ansible-core` for the takeover case; the entry
+point remounts its own cgroup2 tree writable before `exec /sbin/init`, which
+needs AppArmor unconfined). The test checks that the first run restarts
+(new invocation ID and PID) and flushes, a converged run leaves journald and
+the file alone, mode drift restarts, `restart_on_change=False` does not, the
+flush moves a volatile journal to disk, `absent` restarts once, and a symlinked
+drop-in is replaced or unlinked while its target stays untouched. With
+`OPS_LIBRARY_PATH` set it also applies the role with Ansible inside the
+container first; the deploy must then change nothing.
 `tests/smoke/test_base_smoke.py` deploys each one twice on the
 [smoke VM](concepts/smoke.md) (the second run must not change anything) and
 checks the end state, including an SSH login with the managed key. It works on

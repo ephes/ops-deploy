@@ -9,6 +9,7 @@
     "graphyard_deploy": "dea6c54c44b6b853b3709898577c7260c16b171fb8bbe8ef0cefc0c1e53f74a2",
     "graphyard_ingress_deploy": "b68c693f9ace695b17e3bdaa1d735457b0f075bcd66fe9dffa50a0cea6261a5c",
     "graphyard_vector_deploy": "654594f49168eec8990dd987979f0328a8e07cbb6264045dfd89f5a66b0132d1",
+    "journald_config": "dd157e7d3858efe46070e941c06299f200ac2037f21d2e0c79afbb9358f74f58",
     "minio_deploy": "a84d46cc024bc21926750133a321e1f449644d5c44b7d698ac75d6e548740964",
     "nyxmon_backup": "7412a272ae90c029d9ddca3232abaaa88649826208641cdea9de5fa42b4dcc18",
     "nyxmon_deploy": "7b5b492fbac5dd040b518aa0cfbca5572721ab62659b541ec4a083f36dfbc381",
