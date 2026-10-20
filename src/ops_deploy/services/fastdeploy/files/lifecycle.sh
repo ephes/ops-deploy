@@ -276,7 +276,7 @@ restore_database() {
 restore_phase() {
     restore_database
     local items=(
-        "services:$R_SERVICES:$R_USER:$R_GROUP:1"
+        "services:$R_SERVICES:root:root:1"
         "deploy_runners:$R_RUNNERS:$R_DEPLOY_USER:$R_DEPLOY_GROUP:1"
         "deploy_workspace:$R_WORKSPACE:$R_DEPLOY_USER:$R_DEPLOY_GROUP:$includes_workspace"
     )

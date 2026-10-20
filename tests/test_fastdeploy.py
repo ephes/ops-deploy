@@ -109,9 +109,16 @@ def converged(cfg: FastdeployConfig, secrets: SecretValues, **drift: str) -> dic
             account("fastdeploy", "/home/fastdeploy", 1002, comment="FastDeploy Service Account"),
         ],
     }
-    for path in ("", "/site", "/site/bin", "/site/logs", "/site/services", "/site/frontend/dist"):
+    for path in ("", "/site", "/site/bin", "/site/logs", "/site/frontend/dist"):
         responses.update(fakehost.directory(f"/home/fastdeploy{path}", user="fastdeploy"))
-    for path in ("/etc/systemd/system", "/etc/traefik/dynamic", "/etc/sudoers.d"):
+    for path in (
+        "/etc/systemd/system",
+        "/etc/traefik/dynamic",
+        "/etc/sudoers.d",
+        "/home/fastdeploy/site/services",
+        "/usr/local/libexec",
+        "/usr/local/libexec/fastdeploy",
+    ):
         responses.update(fakehost.directory(path))
     for path, text in content.items():
         owner = "fastdeploy" if path.startswith(SITE) else "root"
@@ -470,3 +477,27 @@ def test_a_failing_users_probe_creates_the_users_and_probes_again(cfg: Fastdeplo
 
     assert "Deploy fastdeploy | Create initial FastDeploy user" in run.changed_ops
     assert run.op("Deploy fastdeploy | Probe again: FastDeploy users").read_only
+
+
+LEFTOVERS = "{ find /home/fastdeploy/site/services -mindepth 1 ! -user root -print;"
+
+
+def test_services_root_and_runner_directory_are_root_owned(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets)
+
+    for path in ("/home/fastdeploy/site/services", "/usr/local/libexec", "/usr/local/libexec/fastdeploy"):
+        assert f"Deploy fastdeploy | Ensure directory {path}" in run.mutating_changed_ops
+    assert "Hand everything below the services root to root" not in run.mutating_changed_ops
+
+
+def test_fastdeploy_owned_leftovers_below_the_services_root_go_to_root(
+    cfg: FastdeployConfig, secrets: SecretValues
+) -> None:
+    responses = converged(cfg, secrets)
+    responses[LEFTOVERS] = ["/home/fastdeploy/site/services/delve-backup/backup.py"]
+    run = deploy(cfg, secrets, responses)
+
+    assert "Deploy fastdeploy | Hand everything below the services root to root" in run.mutating_changed_ops
+    services = "/home/fastdeploy/site/services"
+    assert f"find {services} -mindepth 1 ! -user root -exec chown -h root {{}} +" in run.executed_commands
+    assert f"find {services} -mindepth 1 -group fastdeploy -exec chgrp -h root {{}} +" in run.executed_commands
