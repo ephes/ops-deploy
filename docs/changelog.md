@@ -116,6 +116,20 @@
   `purge_packages`/`autoremove` (package removal) are refused when the config
   is built instead of being implemented.
 
+- Add the `journald_config` base deploy (`JournaldConfig`,
+  `deploy_journald_config`), a port of the ops-library role: one drop-in,
+  byte-identical to the role's template, present or absent, the role's value
+  checks and ordered extra settings. journald restarts only when the drop-in
+  changed (owner and mode included) or was removed, and `journalctl --flush`
+  follows only a written persistent drop-in; a converged host is left alone.
+  A symlinked drop-in is replaced or unlinked, never followed; a directory or
+  other special file in its place is refused (file types are read in the C
+  locale, so non-English hosts work too). With `state="absent"` the
+  settings are ignored, as in the role. No retention sizing, vacuum or
+  journal deletion. Covered by fake-connector
+  tests, a parity test against the vendored role template and an opt-in real
+  systemd Docker fixture test (`docs/base.md`).
+
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata
   candidate does not authorize execution, adoption, installation or deletion;

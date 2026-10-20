@@ -1,0 +1,11 @@
+# Managed by Ansible (ops-library journald_config role). Do not edit by hand.
+#
+# Effective configuration across all files:
+#   systemd-analyze cat-config systemd/journald.conf
+[Journal]
+{% for key, value in journald_config_managed_settings.items() if value | string | length > 0 %}
+{{ key }}={{ value }}
+{% endfor %}
+{% for key, value in journald_config_extra_settings.items() %}
+{{ key }}={{ ('yes' if value else 'no') if value is boolean else value }}
+{% endfor %}

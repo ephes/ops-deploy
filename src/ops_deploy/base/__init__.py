@@ -1,7 +1,7 @@
 """Host-level base deploys ported from the ops-library base/bootstrap roles.
 
 Each module holds one role: a typed config and a ``@deploy`` function, used on
-their own (hostname, unit masks, headless mode, shell basics, authorized keys,
+their own (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
 SSH guard, dpkg foreign architectures) or as a step of a service deploy (uv,
 Node.js). They are deploys, not shared helpers, so they sit outside the
 size-capped helpers/ops/core layer.
@@ -11,6 +11,7 @@ from ops_deploy.base._common import RoleConfig
 from ops_deploy.base.dpkg_arch_remove import DpkgArchRemoveConfig, deploy_dpkg_arch_remove
 from ops_deploy.base.headless_mode import HeadlessModeConfig, deploy_headless_mode
 from ops_deploy.base.hostname import HostnameConfig, deploy_hostname
+from ops_deploy.base.journald_config import JournaldConfig, deploy_journald_config
 from ops_deploy.base.nodejs_install import NodejsInstallConfig, deploy_nodejs_install
 from ops_deploy.base.shell_basics import ShellBasicsConfig, deploy_shell_basics
 from ops_deploy.base.ssh_authorized_keys import AuthorizedKey, SshAuthorizedKeysConfig, deploy_ssh_authorized_keys
@@ -23,6 +24,7 @@ __all__ = [
     "DpkgArchRemoveConfig",
     "HeadlessModeConfig",
     "HostnameConfig",
+    "JournaldConfig",
     "NodejsInstallConfig",
     "RoleConfig",
     "ShellBasicsConfig",
@@ -34,6 +36,7 @@ __all__ = [
     "deploy_dpkg_arch_remove",
     "deploy_headless_mode",
     "deploy_hostname",
+    "deploy_journald_config",
     "deploy_nodejs_install",
     "deploy_shell_basics",
     "deploy_ssh_authorized_keys",
