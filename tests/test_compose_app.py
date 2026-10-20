@@ -725,3 +725,68 @@ def test_only_the_http_router_is_dropped_whatever_the_host(cfg: ComposeAppConfig
 
     doc = yaml.safe_load(route_without_http(rendered, "$2y$05$" + "a" * 53))
     assert set(doc["http"]["routers"]) == {"app-int", "app-ext"}
+
+
+# -- secret-keyed mappings, root apps, http check retries --------------------------
+
+
+def test_a_secret_keyed_mapping_renders_the_secret_as_key(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
+    from ops_deploy.services.compose_app.render import render_config
+
+    config = ConfigFile(
+        path=f"{DATA}/client/config/keys.yml",
+        format="yaml",
+        data={
+            "keys": {"secret_key": {"secret": "client_username"}, "value": {"secret": "client_password"}},
+            "plain": {"secret_key": {"secret": "client_username"}, "value": "literal"},
+        },
+    )
+    with_config = cfg.model_copy(update={"config_files": (config,)})
+    text, private = render_config(config, secrets)
+
+    assert private
+    assert yaml.safe_load(text) == {
+        "keys": {SECRET_VALUES["client_username"]: SECRET_VALUES["client_password"]},
+        "plain": {SECRET_VALUES["client_username"]: "literal"},
+    }
+    assert {"client_username", "client_password"} <= set(with_config.required_secret_keys)
+
+
+def test_a_mapping_with_a_secret_key_among_others_stays_a_mapping(secrets: SecretValues) -> None:
+    from ops_deploy.services.compose_app.render import render_config
+
+    # Egress's ``s3: {access_key: ..., secret: ...}``: ``secret`` is a key of the file, not a reference.
+    config = ConfigFile(
+        path=f"{DATA}/s3.yml",
+        format="yaml",
+        data={"s3": {"access_key": {"secret": "client_username"}, "secret": {"secret": "client_password"}}},
+    )
+    text, _ = render_config(config, secrets)
+
+    assert yaml.safe_load(text) == {
+        "s3": {"access_key": SECRET_VALUES["client_username"], "secret": SECRET_VALUES["client_password"]}
+    }
+    # A reference is exactly {"secret": key[, "form": ...]}; anything else with "secret" is plain data.
+    assert isinstance(ConfigFile(path=f"{DATA}/a.yml", format="json", data={"x": {"secret": "a"}}).data["x"], Secret)
+
+
+def test_a_root_app_needs_no_user_and_root_is_never_created(cfg: ComposeAppConfig) -> None:
+    data = cfg.model_dump()
+    rooted = ComposeAppConfig.model_validate({**data, "user": "root", "users": ()})
+    assert rooted.users == ()
+
+    with pytest.raises(ConfigValidationError, match="root is never one of users"):
+        ComposeAppConfig.model_validate({**data, "user": "root", "users": ({"name": "root", "home": "/root"},)})
+    with pytest.raises(ConfigValidationError, match="user nobody must be one of users"):
+        ComposeAppConfig.model_validate({**data, "user": "nobody"})
+
+
+def test_http_checks_take_their_retries(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
+    from ops_deploy.services.compose_app import Checks, HttpCheck
+
+    checked = cfg.model_copy(update={"checks": Checks(http=(HttpCheck(url="http://127.0.0.1:18080/", retries=42),))})
+    run = deploy(checked, secrets, converged(cfg, secrets))
+
+    check = next(c for c in run.executed_commands if "http://127.0.0.1:18080/" in c and "curl" in c)
+    assert "seq 1 42" in check
+    assert HttpCheck(url="http://x.example.org/").retries == 10

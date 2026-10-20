@@ -33,6 +33,7 @@ from ops_deploy.services.compose_app.config import (
     Route,
     SchemaRef,
     Secret,
+    SecretKeyed,
     Sysctl,
 )
 from ops_deploy.services.compose_app.deploy import ComposeAppRemoveConfig, deploy_compose_app, remove_compose_app
@@ -65,6 +66,7 @@ __all__ = [
     "Route",
     "SchemaRef",
     "Secret",
+    "SecretKeyed",
     "Sysctl",
     "deploy_compose_app",
     "remove_compose_app",

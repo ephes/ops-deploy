@@ -1,0 +1,27 @@
+# Managed by Ansible (livekit_deploy). Do not edit on the host.
+
+port: {{ livekit_http_port | default(7880) }}
+
+rtc:
+  tcp_port: {{ livekit_rtc_tcp_port }}
+  port_range_start: {{ livekit_rtc_port_range_start }}
+  port_range_end: {{ livekit_rtc_port_range_end }}
+  use_external_ip: false
+  node_ip: "{{ livekit_node_ip }}"
+
+redis:
+  address: "127.0.0.1:6379"
+{% if livekit_redis_password | default('') | length > 0 %}
+  password: "{{ livekit_redis_password }}"
+{% endif %}
+
+keys:
+  {{ livekit_api_key }}: "{{ livekit_api_secret }}"
+
+webhook:
+  api_key: "{{ livekit_api_key }}"
+  urls:
+    - "{{ livekit_webhook_url }}"
+
+logging:
+  level: info

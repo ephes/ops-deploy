@@ -31,6 +31,7 @@ from ops_deploy.services.compose_app.config import (
     HostId,
     HostSecret,
     Secret,
+    SecretKeyed,
     pieces,
 )
 
@@ -97,6 +98,8 @@ def json_value(value: Any, secrets: SecretValues) -> Any:
     if isinstance(value, Secret):
         text = resolve(value, secrets)
         return int(text) if value.form == "int" else text
+    if isinstance(value, SecretKeyed):
+        return {resolve(value.secret_key, secrets): json_value(value.value, secrets)}
     if isinstance(value, dict):
         return {key: json_value(item, secrets) for key, item in value.items()}
     if isinstance(value, list):
@@ -230,6 +233,9 @@ _ConfigDumper.add_representer(EnvRef, _env_ref)
 def _secret_leaves(value: Any) -> Any:
     if isinstance(value, Secret):
         yield value
+    elif isinstance(value, SecretKeyed):
+        yield value.secret_key
+        yield from _secret_leaves(value.value)
     elif isinstance(value, dict):
         for item in value.values():
             yield from _secret_leaves(item)

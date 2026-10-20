@@ -1,0 +1,25 @@
+# Managed by Ansible (livekit_deploy). Do not edit on the host.
+
+http:
+  routers:
+    livekit:
+      rule: "Host(`{{ livekit_traefik_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - livekit-headers
+      service: livekit
+      tls: {}
+
+  middlewares:
+    livekit-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ livekit_traefik_host }}"
+
+  services:
+    livekit:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ livekit_http_port }}"
