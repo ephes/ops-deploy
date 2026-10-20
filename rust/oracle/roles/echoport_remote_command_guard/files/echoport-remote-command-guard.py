@@ -65,6 +65,8 @@ _SQL_SERVER_VERSION = "SHOW server_version;"
 _SQL_DB_EXISTS_RE = re.compile(r"^SELECT 1 FROM pg_database WHERE datname = '([a-z0-9_]+)';$")
 _SQL_COUNT_RE = re.compile(r"^SELECT count\(\*\) FROM public\.[a-z_][a-z0-9_]*;$")
 _SQLITE_BACKUP_RE = re.compile(r"^\.backup '(/[A-Za-z0-9._/-]+)'$")
+# The busy handler a runner sets before `.backup` (waits for a committing writer).
+_SQLITE_TIMEOUT_RE = re.compile(r"^\.timeout [1-9][0-9]{0,5}$")
 _SQLITE_INTEGRITY = "PRAGMA integrity_check;"
 _CHMOD_MODES = ("0600", "0700")
 _UPLOAD_SUFFIXES = (".tmp", ".restore-tmp")
@@ -368,7 +370,11 @@ def _check_postgres(policy: Policy, args: list[str], stdin_path: str | None) -> 
 
 def _check_sqlite(policy: Policy, user: str, args: list[str]) -> None:
     """sqlite3 as the service user: online .backup into its temp dir, integrity check."""
-    _require(len(args) == 3 and args[0] == "sqlite3", "unexpected command for a service user")
+    _require(len(args) in (3, 4) and args[0] == "sqlite3", "unexpected command for a service user")
+    if len(args) == 4:
+        # sqlite3 <db> ".timeout <ms>" ".backup '<snapshot>'"
+        _require(_SQLITE_TIMEOUT_RE.match(args[2]) and args[3].startswith(".backup "), "unexpected sqlite3 arguments")
+        args = [args[0], args[1], args[3]]
     for snapshot in policy.sqlite_snapshots:
         if snapshot.user != user:
             continue
