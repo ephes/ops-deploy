@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import csv
+import glob
+import json
+import os
+import re
+import subprocess
+from datetime import datetime, timezone
+from typing import Any
+
+LM_SENSORS = json.loads(
+    r'''{{ thermal_metrics_exporter_lm_sensors | default([]) | to_json }}'''
+)
+SYSFS_SENSORS = json.loads(
+    r'''{{ thermal_metrics_exporter_sysfs_sensors | default([]) | to_json }}'''
+)
+IPMI_SENSORS = json.loads(
+    r'''{{ thermal_metrics_exporter_ipmi_sensors | default([]) | to_json }}'''
+)
+
+
+def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(argv, check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=127,
+            stdout="",
+            stderr=f"command not found: {argv[0] if argv else 'unknown'}",
+        )
+
+
+def _now_ts() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
+
+def _base_entry(spec: dict[str, Any], collector_kind: str) -> dict[str, Any]:
+    return {
+        "collector_kind": collector_kind,
+        "id": str(spec["id"]),
+        "sensor_class": str(spec.get("sensor_class", "")),
+        "sensor_label": str(spec.get("sensor_label", spec["id"])),
+        "source_entity_id": str(spec["source_entity_id"]),
+    }
+
+
+def _error_entry(
+    spec: dict[str, Any], collector_kind: str, error_type: str, message: str
+) -> dict[str, Any]:
+    entry = _base_entry(spec, collector_kind)
+    entry["error"] = {"type": error_type, "message": message}
+    return entry
+
+
+def _normalize_numeric(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw or raw.lower() in {"na", "nc"}:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_unit(raw_unit: str) -> str:
+    unit = raw_unit.strip().lower()
+    if unit == "degrees c":
+        return "celsius"
+    if unit == "rpm":
+        return "rpm"
+    return unit.replace(" ", "_")
+
+
+def _resolve_nvme_chip_name(device_path: str) -> str | None:
+    resolved_device = os.path.realpath(device_path)
+    block_name = os.path.basename(resolved_device)
+    if not block_name:
+        return None
+
+    sysfs_device = os.path.realpath(f"/sys/class/block/{block_name}/device")
+    if not sysfs_device:
+        return None
+
+    matches = re.findall(r"0000:([0-9a-fA-F]{2}):([0-9a-fA-F]{2})\.([0-9])", sysfs_device)
+    if not matches:
+        return None
+
+    bus, slot, _function = matches[-1]
+    return f"nvme-pci-{bus.lower()}{slot.lower()}"
+
+
+def _resolve_lm_chip_name(
+    spec: dict[str, Any], sensors_payload: dict[str, Any]
+) -> tuple[str | None, str | None]:
+    chip_name_regex = str(spec.get("chip_name_regex", "")).strip()
+    if chip_name_regex:
+        try:
+            pattern = re.compile(chip_name_regex)
+        except re.error as err:
+            return None, f"invalid chip_name_regex: {err}"
+        for chip_name in sensors_payload:
+            if pattern.search(chip_name):
+                return chip_name, None
+        return None, f"chip not found for regex {chip_name_regex!r}"
+
+    device_path = str(spec.get("device_path", "")).strip()
+    if device_path:
+        chip_name = _resolve_nvme_chip_name(device_path)
+        if chip_name is None:
+            return None, f"could not resolve NVMe chip from {device_path}"
+        if chip_name not in sensors_payload:
+            return None, f"resolved NVMe chip {chip_name!r} missing from sensors output"
+        return chip_name, None
+
+    return None, "no chip selector configured"
+
+
+def _collect_lm_sensors() -> tuple[dict[str, Any], str | None]:
+    if not LM_SENSORS:
+        return {}, None
+
+    result = _run(["sensors", "-j"])
+    if result.returncode != 0:
+        error = result.stderr.strip() or result.stdout.strip() or "sensors command failed"
+        return (
+            {
+                str(spec["id"]): _error_entry(spec, "lm_sensors", "command_failed", error)
+                for spec in LM_SENSORS
+            },
+            error,
+        )
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as err:
+        error = f"sensors returned invalid JSON: {err}"
+        return (
+            {
+                str(spec["id"]): _error_entry(spec, "lm_sensors", "invalid_json", error)
+                for spec in LM_SENSORS
+            },
+            error,
+        )
+
+    if not isinstance(payload, dict):
+        error = "sensors payload is not an object"
+        return (
+            {
+                str(spec["id"]): _error_entry(spec, "lm_sensors", "invalid_payload", error)
+                for spec in LM_SENSORS
+            },
+            error,
+        )
+
+    entries: dict[str, Any] = {}
+    for spec in LM_SENSORS:
+        sensor_id = str(spec["id"])
+        chip_name, chip_error = _resolve_lm_chip_name(spec, payload)
+        if chip_error is not None or chip_name is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "lm_sensors",
+                "chip_not_found",
+                chip_error or "chip not found",
+            )
+            continue
+
+        feature_name = str(spec["feature_name"])
+        feature_payload = payload.get(chip_name, {}).get(feature_name)
+        if not isinstance(feature_payload, dict):
+            entries[sensor_id] = _error_entry(
+                spec,
+                "lm_sensors",
+                "feature_not_found",
+                f"feature {feature_name!r} missing on chip {chip_name!r}",
+            )
+            continue
+
+        value_key = str(spec["value_key"])
+        value = _normalize_numeric(feature_payload.get(value_key))
+        if value is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "lm_sensors",
+                "value_missing",
+                f"value {value_key!r} missing or not numeric on {chip_name!r}/{feature_name!r}",
+            )
+            continue
+
+        entry = _base_entry(spec, "lm_sensors")
+        entry["chip_name"] = chip_name
+        entry["feature_name"] = feature_name
+        entry["metric_kind"] = str(spec.get("metric_kind", "temperature"))
+        entry["unit"] = str(spec.get("unit", "celsius"))
+        entry["value"] = value
+        device_path = str(spec.get("device_path", "")).strip()
+        if device_path:
+            entry["device_path"] = device_path
+        entries[sensor_id] = entry
+
+    return entries, None
+
+
+def _resolve_sysfs_value_path(spec: dict[str, Any]) -> tuple[str | None, str | None]:
+    value_path_glob = str(spec["value_path_glob"]).strip()
+    matches = sorted({os.path.realpath(path) for path in glob.glob(value_path_glob)})
+    if not matches:
+        return None, f"no sysfs path matches {value_path_glob!r}"
+    if len(matches) > 1:
+        return None, f"multiple sysfs paths match {value_path_glob!r}: {matches!r}"
+    value_path = matches[0]
+    if not os.path.isfile(value_path):
+        return None, f"sysfs path {value_path!r} is not a regular file"
+    return value_path, None
+
+
+def _collect_sysfs_sensors() -> tuple[dict[str, Any], str | None]:
+    if not SYSFS_SENSORS:
+        return {}, None
+
+    entries: dict[str, Any] = {}
+    for spec in SYSFS_SENSORS:
+        sensor_id = str(spec["id"])
+        value_path, value_path_error = _resolve_sysfs_value_path(spec)
+        if value_path_error is not None or value_path is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "path_not_found",
+                value_path_error or "sysfs path not found",
+            )
+            continue
+
+        try:
+            with open(value_path, encoding="utf-8") as handle:
+                raw_value = handle.read().strip()
+        except OSError as err:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "read_failed",
+                f"failed to read {value_path!r}: {err}",
+            )
+            continue
+
+        value = _normalize_numeric(raw_value)
+        if value is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "value_missing",
+                f"value from {value_path!r} is missing or not numeric",
+            )
+            continue
+
+        try:
+            scale = float(spec.get("scale", 1.0))
+        except (TypeError, ValueError):
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "invalid_scale",
+                f"invalid scale for {sensor_id!r}",
+            )
+            continue
+
+        entry = _base_entry(spec, "sysfs")
+        entry["metric_kind"] = str(spec.get("metric_kind", "temperature"))
+        entry["unit"] = str(spec.get("unit", "celsius"))
+        entry["value_path"] = value_path
+        if scale != 1.0:
+            entry["scale"] = scale
+        entry["value"] = value * scale
+        entries[sensor_id] = entry
+
+    return entries, None
+
+
+def _parse_ipmi_rows(output: str) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in csv.reader(output.splitlines()):
+        if len(row) < 4:
+            continue
+        name = row[0].strip()
+        if not name:
+            continue
+        rows[name] = {
+            "name": name,
+            "reading": row[1].strip(),
+            "unit": row[2].strip(),
+            "status": row[3].strip(),
+            "thresholds": {
+                "lower_non_recoverable": row[4].strip() if len(row) > 4 else "",
+                "lower_critical": row[5].strip() if len(row) > 5 else "",
+                "lower_non_critical": row[6].strip() if len(row) > 6 else "",
+                "upper_non_critical": row[7].strip() if len(row) > 7 else "",
+                "upper_critical": row[8].strip() if len(row) > 8 else "",
+                "upper_non_recoverable": row[9].strip() if len(row) > 9 else "",
+            },
+        }
+    return rows
+
+
+def _collect_ipmi_sensors() -> tuple[dict[str, Any], str | None]:
+    if not IPMI_SENSORS:
+        return {}, None
+
+    result = _run(["ipmitool", "sensor", "list", "-c"])
+    if result.returncode != 0:
+        error = result.stderr.strip() or result.stdout.strip() or "ipmitool sensor failed"
+        return (
+            {
+                str(spec["id"]): _error_entry(spec, "ipmi", "command_failed", error)
+                for spec in IPMI_SENSORS
+            },
+            error,
+        )
+
+    rows = _parse_ipmi_rows(result.stdout)
+    entries: dict[str, Any] = {}
+    for spec in IPMI_SENSORS:
+        sensor_id = str(spec["id"])
+        sensor_name = str(spec["sensor_name"])
+        row = rows.get(sensor_name)
+        if row is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "ipmi",
+                "sensor_not_found",
+                f"sensor {sensor_name!r} missing from ipmitool output",
+            )
+            continue
+
+        value = _normalize_numeric(row["reading"])
+        if value is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "ipmi",
+                "value_missing",
+                f"sensor {sensor_name!r} value is unavailable",
+            )
+            entries[sensor_id]["status"] = row["status"]
+            continue
+
+        entry = _base_entry(spec, "ipmi")
+        entry["metric_kind"] = str(spec.get("metric_kind", "temperature"))
+        entry["sensor_name"] = sensor_name
+        entry["status"] = row["status"]
+        entry["unit"] = _normalize_unit(row["unit"])
+        entry["value"] = value
+        entry["thresholds"] = row["thresholds"]
+        entries[sensor_id] = entry
+
+    return entries, None
+
+
+def main() -> None:
+    lm_entries, lm_error = _collect_lm_sensors()
+    sysfs_entries, sysfs_error = _collect_sysfs_sensors()
+    ipmi_entries, ipmi_error = _collect_ipmi_sensors()
+
+    payload: dict[str, Any] = {
+        "lm_sensors": lm_entries,
+        "sysfs": sysfs_entries,
+        "ipmi": ipmi_entries,
+        "ts": _now_ts(),
+    }
+    collector_errors: dict[str, str] = {}
+    if lm_error is not None:
+        collector_errors["lm_sensors"] = lm_error
+    if sysfs_error is not None:
+        collector_errors["sysfs"] = sysfs_error
+    if ipmi_error is not None:
+        collector_errors["ipmi"] = ipmi_error
+    if collector_errors:
+        payload["collector_errors"] = collector_errors
+
+    print(json.dumps(payload, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

@@ -18,6 +18,8 @@
     "nyxmon_deploy": "7b5b492fbac5dd040b518aa0cfbca5572721ab62659b541ec4a083f36dfbc381",
     "nyxmon_remove": "012e52c4aaa7cd5681c334addfe4ed082bc06485442821fa839e0f46fd19514b",
     "nyxmon_restore": "fb2057559d9a42938a6ca2e080115f3809a09de2c4785467429594eb3039c9bf",
+    "thermal_metrics_endpoint": "f7f7216dbc36f914989200eb85e612671da3f3c2528113ede6ce424a98f5967a",
+    "thermal_metrics_exporter": "8a7a282a4049495e6b68488a8c3d55b6d2349caa229dd45a0b0368b8dcdf68cd",
     "traefik_deploy": "7edf2234a30dfa5f155cd3cf45c70ffc491565344814bddd6f1ea2e055a80df1",
     "uv_install": "804a848edc75d02a0c3f48a256cdf777c24aa1f447dfa8f5ec5f99bea8c5b447",
     "work_app_backup": "517acddf9c779c6e0ab1e41e58837b0cd4a604a4355e8d8d0405e5a699063739",
