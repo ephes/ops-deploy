@@ -59,6 +59,20 @@
   route path (directly in the dynamic directory) are checked before any
   operation. `tests/parity/ops_library_roles.json` now records the role.
 
+- Add `nyxmon_site_checks`: one Nyxmon service row and its `http`,
+  `json-metrics` and `tcp` health checks, upserted in Nyxmon's SQLite
+  database as the Nyxmon user (`python3 -I`), the pyinfra counterpart of
+  site-check provisioning playbooks. Same comparison and writes as those
+  playbooks (type, URL, interval, sorted-JSON data and the `disabled` flag;
+  an update re-enables the check and resets `status`, `next_check_time` and
+  `processing_started_at`), decided while planning by a read-only check
+  mode, so a converged database gets no mutating operation. Optional
+  `require_literal` stops the run before any write when a deployed file
+  lacks a literal. Intended differences: umask 077, `BEGIN IMMEDIATE`, and
+  `mode=rw`/`mode=ro` URIs that never create a database file. Data keeps its
+  JSON types exactly; non-JSON values, control characters and backslashes
+  are refused before any connection.
+
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata
   candidate does not authorize execution, adoption, installation or deletion;
