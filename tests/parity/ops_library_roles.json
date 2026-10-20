@@ -4,7 +4,7 @@
     "fastdeploy_backup": "26b1ed9faa815701a9a75b6c2f711e056d85a7b290ae4d4b1dab05b9e7805297",
     "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
-    "fastdeploy_restore": "95a3e5e43ea2b9f68aed59d2d1ff5e45da378eb8ed036e0435d18cd0eebeed9d",
+    "fastdeploy_restore": "16e3f4a52acc22222632f283d49c6f3553248e76b3f734948f065d795b6a6f5f",
     "graphyard_auth_bootstrap_deploy": "63d80f3411916714757f600de97277f75c8306dd7b6e26c30ecdf115e6d2261f",
     "graphyard_deploy": "dea6c54c44b6b853b3709898577c7260c16b171fb8bbe8ef0cefc0c1e53f74a2",
     "graphyard_ingress_deploy": "b68c693f9ace695b17e3bdaa1d735457b0f075bcd66fe9dffa50a0cea6261a5c",
@@ -20,6 +20,7 @@
     "work_app_deploy": "7ccde64149021c2e0fcdfb1f7b2ab36a8d617cba775a5270b81a3e064bedd1b0",
     "work_app_remove": "ece2d5b7f6e76e891cde94de494e47990a9970596e356764450550e9e94f12cd",
     "work_app_restore": "8e77e479699afb7bec18e1101deca212df9cd44996bb8a86a7dd0f42be669c96",
-    "work_app_shared": "42f3d908d13a05139b07b1c89e0a50cb21d710d331cb9b667b5868d6b12e0879"
+    "work_app_shared": "42f3d908d13a05139b07b1c89e0a50cb21d710d331cb9b667b5868d6b12e0879",
+    "zellij_ingress_deploy": "40c6bc5c3da9a1f616632af14b8e43ebc4e2147383ef954c17356c637109b250"
   }
 }

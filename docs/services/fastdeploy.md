@@ -75,8 +75,15 @@ are removed from the host.
    `fastdeploy` with the password, database `fastdeploy` and its `public`
    schema owned by it.
 3. Groups and users `deploy` (also in group `fastdeploy`) and `fastdeploy`,
-   `/home/fastdeploy` and `site`, `site/bin`, `site/logs`, `site/services`
-   (`0755`). The retired wildcard rule `/etc/sudoers.d/fastdeploy`
+   `/home/fastdeploy` and `site`, `site/bin`, `site/logs` (`0755`). The
+   services root `site/services` is `root:root 0755` (FastDeploy only reads
+   it); anything below it not owned by root gets owner root, and the
+   `fastdeploy` group becomes root (other groups stay), as
+   `fastdeploy_deploy`'s `runner_layout.yml` does since ops-library 2.49.0.
+   `/usr/local/libexec/fastdeploy` (`root:root 0755`) holds the scripts
+   FastDeploy runs through sudo (ops-library `fastdeploy_runner`); the
+   services root is inside the fastdeploy-owned site, so no sudoers rule may
+   name a script there. The retired wildcard rule `/etc/sudoers.d/fastdeploy`
    (`fastdeploy` could run any `services/*/deploy.sh` as `deploy`) is removed,
    as `fastdeploy_deploy` does since ops-library 2.35.0; each registered
    service installs its own narrow rule for its script.
@@ -220,9 +227,12 @@ as `fastdeploy`. Then:
   file is restored only when the role's `files/sudoers_blanket_check.py`
   (vendored) passes it: nothing but blank lines, comments and narrow
   `<user> ALL=(<runas>) NOPASSWD:[NOSETENV:] <script>[ *| --config *]` rules
-  for scripts below `/home/fastdeploy/site/services/`, `/home/deploy/runners/`
-  or `/usr/local/libexec/`. An older register rule `deploy ALL=(root)
-  NOPASSWD: ALL` is skipped (rerun that service's register playbook). Each
+  for root-owned scripts (`/usr/local/libexec/fastdeploy/<service>/<file>`,
+  `/usr/local/libexec/<file>`) or, for a rule that runs as `deploy`,
+  `/home/deploy/runners/<service>/<file>`. Older rules naming scripts below
+  `/home/fastdeploy/site/services/` and an older register rule
+  `deploy ALL=(root) NOPASSWD: ALL` are skipped (rerun that service's register
+  playbook). The services root is restored `root:root`. Each
   skipped file is named in the output.
 - **Verify.** The service is active and `/docs` answers 200. The service
   table counts as many rows as the metadata recorded, when that count is

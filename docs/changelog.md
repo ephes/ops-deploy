@@ -16,6 +16,37 @@
   tests, a parity test against the vendored role template and an opt-in real
   systemd Docker fixture test (`docs/base.md`).
 
+- `fastdeploy`: port of ops-library 2.49.0's root-owned runner layout. The
+  services root is `root:root 0755` and fastdeploy-owned leftovers below it
+  (older Ansible deploys chowned the whole site, root-run backup scripts
+  included) get owner root and lose the `fastdeploy` group;
+  `/usr/local/libexec/fastdeploy` is created `root:root 0755`. The restore
+  writes the services root `root:root` and, with the re-vendored
+  `sudoers_blanket_check.py`, no longer restores sudoers rules naming scripts
+  below the FastDeploy site. `tests/parity/ops_library_roles.json` records the
+  new `fastdeploy_restore`; `fastdeploy_deploy` keeps its old digest because
+  the unrelated HSTS preload change (ops-library `abae172`) is not ported yet.
+
+- Traefik backup now captures the whole dynamic route-config tree by default,
+  matching ops-library 2.48.1 coverage and metadata flags. Source modes are kept
+  under a private container; archives and fetched copies stay `0600`. Missing,
+  overlapping, symlinked or special dynamic sources refuse, and copy failure cannot
+  proceed to packing/fetching. Dynamic-route restore and dry-run validation are
+  not implemented; existing ACME-only restore/transaction guards are unchanged.
+  No private registration or live qualification is included.
+
+- `zellij_ingress`: port of the `zellij_ingress_deploy` role. Writes only
+  `/etc/traefik/dynamic/zellij.yml` (`root:root 0644`, directory ensured
+  `0755`) from the role's template shipped unchanged, so the file is
+  byte-identical to the role's: routers `zellij-secure` and `zellij-http`,
+  both restricted to `Host` plus the `ClientIP` allowlist, the
+  `zellij-redirect-target` temporary redirect (`permanent: false`) to a fixed
+  URL and `noop@internal`, no backend. Disabled is a no-op (nothing is
+  removed). Unlike the role, nothing reloads or restarts Traefik; its file
+  provider watches the directory. Host name, target URL (http(s), no
+  credentials, query, quotes or `$`), entry points, resolver, allowlist and
+  route path (directly in the dynamic directory) are checked before any
+  operation. `tests/parity/ops_library_roles.json` now records the role.
 
 - Add a standalone read-only Native venv metadata inventory probe with bounded
   trust/classification and Docker fixture coverage. A matching metadata
