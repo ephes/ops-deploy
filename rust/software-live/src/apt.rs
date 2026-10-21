@@ -559,6 +559,16 @@ mod tests {
             );
             assert!(started.elapsed() < Duration::from_secs(10), "{stream}");
         }
+        // The helper exits, a child it left behind writes past the limit
+        // and keeps the other pipe open: the limit, not the timeout.
+        let (_dir, path, uid) =
+            script("(sleep 0.1; head -c 4194305 /dev/zero; exec sleep 5 >&2) & exit 0");
+        let started = std::time::Instant::now();
+        assert_eq!(
+            error_of(&host_run(&path, uid, Duration::from_secs(3))),
+            "APT observation failed (InvalidHelperOutput)"
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
         // Exactly the limit on stderr is not too much.
         let output = ok_output().to_string();
         let (_dir, path, uid) = script(&format!(
