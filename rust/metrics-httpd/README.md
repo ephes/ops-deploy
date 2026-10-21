@@ -126,7 +126,8 @@ cargo test -p metrics-httpd --locked
 
 `parity/run_parity.py` (PLAN.md 8.3) starts each rendered Python endpoint
 script and the binary side by side on loopback, sends both the requests of
-the fixture matrix (`http_common`, `json_file`, `script`, `apt_state`) over
+the fixture matrix (`http_common`, `json_file`, `script`, `apt_state`,
+`logyard_health`, `static`) over
 real sockets with the same file states, and compares the two live answers
 by each case's `compare` mode; cases with an allowed difference (D item)
 require Python's recorded answer and Rust's expectation. Then keep-alive,
@@ -144,13 +145,13 @@ or by hand (the repo venv renders the templates; `htpasswd` must be on
 (cd rust && cargo build --locked -p metrics-httpd)
 .venv/bin/python rust/metrics-httpd/parity/run_parity.py \
     --binary rust/target/debug/metrics-httpd --python "$(uv python find 3.12)" \
-    [--family gate|json_file|script|apt_state|process|shadow ...] [-v]
+    [--family gate|json_file|script|apt_state|logyard_health|static|process|shadow ...] [-v]
 ```
 
 The `rust` CI job runs the same step (with `apache2-utils`). Without an
-ops-control checkout the torrent-vpn variant is reported as skipped. The
-logyard-health payload and the static mode join the harness with S2d and
-S2e.
+ops-control checkout the torrent-vpn variant is reported as skipped. A
+static `Content-Type` that differs is printed as a D-11 note, not a
+failure: the Python side reads the host's `mime.types`.
 
 `parity/shadow_compare.py` (PLAN.md 10.3, stdlib, copied to the hosts for
 the S7 shadow run) compares the Python and Rust shadow units of one host:

@@ -214,8 +214,8 @@ same apart from the differences in the variant table 4.3).
    ignores query and fragment. Wrong path → **404** with the JSON error body
    of 4.2 (`not_found`, "Endpoint not found"); `metrics_endpoint` instead
    uses `send_error(404, "Not found")` (HTML body, `metrics_httpd.py.j2` l.18).
-3. Auth second (l.38–47): `Authorization` must start with `Basic` (case
-   sensitive); the token is `header.split()[1]`, base64-decoded, UTF-8
+3. Auth second (l.38–47): `Authorization` must start with `Basic` and a space
+   (case sensitive); the token is `header.split()[1]`, base64-decoded, UTF-8
    decoded, split at the first `:`; the password is verified against the
    htpasswd file for that user (`htpasswd -vi <file> <user>` with the
    password on stdin, l.131–138; `metrics_endpoint`: `htpasswd -vb` with the
@@ -1046,10 +1046,27 @@ stopped with SIGTERM: Rust must exit 0, Python dies by the signal (status
 test credential. The family `shadow` runs `shadow_compare.py` (10.3) against
 a live backup pair: equal documents, a D-4 and a D-2 file state (allowed,
 counted), a wrong password (counted as a 401 difference) and `preflight`.
-The logyard-health payload (S2d) and the static mode (S2e) are not in the
-harness yet; their slices add a family each (logyard against a fake Loki
-and `systemctl`, static on the sample tree and the real site content of
-D-11). The `rust` CI job also runs on changes to `roles/**/*httpd*` (the
+Family `logyard_health`: one pair per `http` case of
+`logyard_health.json` with the case's environment, the fixture's fake Loki
+(reset before each side's request; both sides must ask it the same decoded
+requests, Rust those of the fixture) and `fixtures/fake-bin/systemctl`
+first on `PATH` (an empty `PATH` for the missing-`systemctl` case); the two
+payloads must be equal after `generated_at` (each within 2 s of the
+clock) and the case's D-3 `texts` (compared by presence) are neutralised;
+where the script's handler crashes (`python: crash`, D-2) Python must drop
+the connection and Rust answer the fixture's payload; for the redirect
+(D-13) Python must answer the followed redirect's payload. Family `static`:
+the rendered `static-site-httpd.py.j2` (port baked in at each start) and
+`metrics-httpd static` on the `static.json` sample tree, every case
+compared by status, `Content-Length`, `Last-Modified`, `Location`, the four
+`end_headers` headers and the body (error pages: `Content-Type` and the
+page without the `<style>` block; no `ETag` from Rust); a `Content-Type`
+that differs is reported as D-11 and not as a failure, because the Python
+side reads the host's `mime.types` (the fixture pins Rust's types against
+the built-in table and `static_real_site.json`); PUT and POST write
+nothing. The family `shadow` also runs the comparer's logyard-health and
+static rules against live pairs (a steady fake Loki, the sample tree). The
+`rust` CI job also runs on changes to `roles/**/*httpd*` (the
 endpoint scripts), so a template change runs the harness.
 
 ### 8.4 Process e2e (Rust only)

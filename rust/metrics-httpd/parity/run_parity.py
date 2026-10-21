@@ -16,9 +16,10 @@ against the live pairs.
 
 Families (``--family``, default all): ``gate`` (``http_common.json``),
 ``json_file`` (``json_file.json``, the eight variants), ``script``
-(``script.json``), ``apt_state`` (``apt_state.json`` ``http``), ``process``
-and ``shadow``. The logyard-health payload and the static mode join when
-their slices (S2d, S2e) land.
+(``script.json``), ``apt_state`` (``apt_state.json`` ``http``),
+``logyard_health`` (``logyard_health.json`` ``http``, a fake Loki and the
+fake ``systemctl``), ``static`` (``static.json`` on its sample tree),
+``process`` and ``shadow``.
 
 The clock is real: file mtimes (and the epochs inside the apt-state
 documents) that the fixtures place relative to the generator's frozen clock
@@ -42,6 +43,7 @@ import argparse
 import base64
 import concurrent.futures
 import http.client
+import http.server
 import json
 import os
 import re
@@ -52,7 +54,10 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import urllib.parse
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -140,6 +145,8 @@ class Endpoint:
         self.log = log
         self.process: subprocess.Popen[bytes] | None = None
         self.port = 0
+        # Writes a script that bakes its port (static) before each start.
+        self.writer: Callable[[int], None] | None = None
 
     def log_text(self) -> str:
         try:
@@ -184,6 +191,8 @@ class Endpoint:
     def _start_python(self) -> None:
         for _attempt in range(5):
             port = free_port()
+            if self.writer is not None:
+                self.writer(port)
             command = [part.replace("{port}", str(port)) for part in self.command]
             env = {k: v.replace("{port}", str(port)) for k, v in self.env.items()}
             self.process = self._spawn(command, env)
@@ -1029,6 +1038,338 @@ def family_process(ctx: Context) -> None:
         )
 
 
+# --------------------------------------------------------------------------
+# logyard-health (S2d) and static (S2e)
+
+LOGYARD_TIME_PATH = ("generated_at",)
+PROXY_VARIABLES = ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
+
+
+def proxy_free(env: dict[str, str]) -> dict[str, str]:
+    """No proxy from the environment (the units set none); a set no_proxy
+    also keeps Python's urllib from the system proxy settings."""
+    out = {k: v for k, v in env.items() if k.lower() not in PROXY_VARIABLES}
+    out["no_proxy"] = "*"
+    return out
+
+
+def _node(document: Any, path: str) -> tuple[Any, Any] | None:
+    """(container, key) of a dotted path (list indexes as numbers)."""
+    *parents, last = path.split(".")
+    node = document
+    try:
+        for key in parents:
+            node = node[int(key)] if isinstance(node, list) else node[key]
+        key: Any = int(last) if isinstance(node, list) else last
+        node[key]  # noqa: B018  (the path must exist)
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    return node, key
+
+
+def logyard_normalised(
+    body: bytes | str, texts: list[str], now: float
+) -> tuple[str | None, list[str]]:
+    """The payload with ``generated_at`` checked against the clock (±2 s)
+    and replaced, and the D-3 exception texts checked for presence and
+    replaced by the fixture's marker; then Python's ``json.dumps``."""
+    problems = []
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return None, ["the payload is not JSON"]
+    try:
+        generated = datetime.fromisoformat(document["generated_at"])
+        if generated.utcoffset() is None or abs(generated.timestamp() - now) > 2:
+            problems.append(f"generated_at {document['generated_at']!r} is not now")
+    except (KeyError, TypeError, ValueError):
+        problems.append("generated_at missing or not ISO-8601")
+    document["generated_at"] = "<now>"
+    for path in texts:
+        found = _node(document, path)
+        if found is None or not isinstance(found[0][found[1]], str):
+            problems.append(f"{path} is not a text")
+        else:
+            found[0][found[1]] = generate.TEXT_MARKER
+    return json.dumps(document, sort_keys=True), problems
+
+
+def logyard_compare(
+    case: dict[str, Any],
+    side: str,
+    answer: Answer | None,
+    expected: str,
+    now: float,
+) -> list[str]:
+    """One side's answer against an expected payload text (generated_at and
+    the D-3 texts neutralised on both)."""
+    if answer is None:
+        return [f"{side} dropped the connection without an answer"]
+    problems = []
+    if answer.status != case["status"]:
+        problems.append(f"{side} status {answer.status}, expected {case['status']}")
+    if answer.header("Content-Type") != case["content_type"]:
+        problems.append(f"{side} Content-Type {answer.header('Content-Type')!r}")
+    actual, found = logyard_normalised(answer.body, case["texts"], now)
+    problems += [f"{side}: {p}" for p in found]
+    wanted, _ = logyard_normalised(expected, case["texts"], now)
+    if actual != wanted:
+        problems.append(f"{side} payload differs: {actual} != {wanted}")
+    if side == "rust":
+        # D-5: Rust's bytes are Python's json.dumps of the same payload.
+        if json.dumps(json.loads(answer.body), sort_keys=True).encode() != answer.body:
+            problems.append("rust payload bytes are not Python's json.dumps")
+        if not length_ok(answer):
+            problems.append("rust Content-Length does not match the body")
+    return problems
+
+
+def family_logyard(ctx: Context) -> None:
+    fixture = load_fixture("logyard_health.json")["http"]
+    tmp = ctx.dir("logyard")
+    script = Path(
+        generate.load_module(
+            "parity_logyard",
+            generate.LOGYARD,
+            {},
+            tmp,
+            env={"LOGYARD_HEALTH_UNITS_B64": ""},
+        ).__file__
+    )
+    empty_bin = ctx.dir("logyard-empty-bin")
+    loki = generate.FakeLoki()
+    closed = generate.closed_port_url()
+    try:
+        for case in fixture["cases"]:
+            check = f"logyard_health/{case['id']}"
+            env = {
+                name: value.replace("{loki}", loki.url).replace("{closed}", closed)
+                for name, value in case["env"].items()
+            }
+            if "units_json" in case:
+                env["LOGYARD_HEALTH_UNITS_B64"] = generate.b64_text(case["units_json"])
+            path = (
+                f"{generate.FAKE_BIN}{os.pathsep}{os.environ['PATH']}"
+                if case["systemctl"] == "fake"
+                else str(empty_bin)  # no systemctl at all, not the host's
+            )
+            environment = proxy_free({**base_env(), **env, "PATH": path})
+            python = Endpoint(
+                "python",
+                check,
+                [ctx.python, str(script)],
+                {**environment, "LOGYARD_HEALTH_PORT": "{port}"},
+                ctx.dir("logs-logyard") / "python.log",
+            )
+            rust = Endpoint(
+                "rust",
+                check,
+                [str(ctx.binary), "logyard-health"],
+                {**environment, "LOGYARD_HEALTH_PORT": "0"},
+                python.log.parent / "rust.log",
+            )
+            raw = raw_request(
+                {
+                    "method": "GET",
+                    "target": case["path"],
+                    "version": "HTTP/1.1",
+                    "headers": [],
+                }
+            )
+            with Pair(ctx.results, check, python, rust) as pair:
+                answers, requests = [], []
+                for endpoint in (pair.python, pair.rust):
+                    loki.reset(case["loki"])
+                    answers.append(exchange(endpoint.port, raw, "GET"))
+                    with loki.lock:
+                        requests.append(list(loki.requests))
+                now = time.time()
+            python_answer, rust_answer = answers
+            problems = logyard_compare(case, "rust", rust_answer, case["body"], now)
+            if requests[1] != case["requests"]:
+                problems.append(
+                    f"rust asked Loki {requests[1]}, expected {case['requests']}"
+                )
+            if case.get("python") == "crash":
+                # D-2: the script's handler raises; Rust answers the
+                # caught-error payload of the fixture.
+                if python_answer is not None:
+                    problems.append(
+                        f"python answered {python_answer.status}, the fixture recorded a crash"
+                    )
+            elif case.get("python") == "redirect followed":
+                # D-13: Python follows Loki's redirect; Rust does not.
+                problems += logyard_compare(
+                    case, "python", python_answer, case["python_body"], now
+                )
+            else:
+                problems += logyard_compare(
+                    case, "python", python_answer, case["body"], now
+                )
+                if requests[0] != requests[1]:
+                    problems.append(
+                        f"Loki requests differ: python {requests[0]} rust {requests[1]}"
+                    )
+            ctx.results.check(check, problems, case.get("d"))
+    finally:
+        loki.close()
+
+
+STATIC_COMPARED = (
+    "Content-Length",
+    "Last-Modified",
+    "Location",
+    "Cache-Control",
+    "Referrer-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+)
+
+
+def write_static_tree(fixture: dict[str, Any], base: Path) -> Path:
+    """The sample tree of ``static.json`` (as tests/fixtures.rs writes it)."""
+    for kind, name, content, _mode in fixture["tree"]:
+        path = base / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "file":
+            path.write_text(content, encoding="utf-8")
+        elif kind == "dir":
+            path.mkdir(exist_ok=True)
+        else:
+            path.symlink_to(content)
+    for kind, name, _content, mode in fixture["tree"]:
+        if kind == "file":
+            os.utime(base / name, (fixture["mtime"], fixture["mtime"]))
+            (base / name).chmod(mode)
+    return base / "site"
+
+
+def static_answer(port: int, raw: bytes, method: str) -> Answer | None:
+    with socket.create_connection(("127.0.0.1", port), timeout=REQUEST_SECONDS) as sock:
+        sock.sendall(raw)
+        response = http.client.HTTPResponse(sock, method=method)
+        try:
+            response.begin()
+            body = response.read()
+        except (http.client.HTTPException, ConnectionError):
+            return None
+        names = (
+            *STATIC_COMPARED,
+            "Content-Type",
+            "Content-Range",
+            "Accept-Ranges",
+            "ETag",
+        )
+        return Answer(response.status, {n: response.getheader(n) for n in names}, body)
+
+
+def family_static(ctx: Context) -> None:
+    fixture = load_fixture("static.json")
+    base = ctx.dir("static")
+    root = write_static_tree(fixture, base / "tree")
+    scripts = ctx.dir("static-script")
+
+    def writer(port: int) -> None:
+        text = generate.render(
+            fixture["template"],
+            {
+                "static_site_path": str(root),
+                "static_site_bind_host": "127.0.0.1",
+                "static_site_port": port,
+            },
+        )
+        (scripts / "static-site-httpd.py").write_text(text, encoding="utf-8")
+
+    argv = substitute(fixture["argv"], {"{root}": str(root)})
+    logs = ctx.dir("logs-static")
+    python = Endpoint(
+        "python",
+        "static",
+        [ctx.python, str(scripts / "static-site-httpd.py")],
+        base_env(),
+        logs / "python.log",
+    )
+    python.writer = writer
+    rust = Endpoint(
+        "rust", "static", rust_command(ctx.binary, argv), base_env(), logs / "rust.log"
+    )
+    types: dict[str, str] = {}
+    try:
+        with Pair(ctx.results, "static", python, rust) as pair:
+            for case in fixture["cases"]:
+                check = f"static/{case['id']}"
+                if case["id"] == "unreadable" and not ctx.unreadable:
+                    ctx.results.skip(
+                        check, "running as root: a mode-0 file stays readable"
+                    )
+                    continue
+                raw = raw_request(case)
+                python_answer = static_answer(pair.python.port, raw, case["method"])
+                rust_answer = static_answer(pair.rust.port, raw, case["method"])
+                if "rust_status" in case:
+                    ctx.results.check(
+                        check,
+                        check_rust_expectation(case, python_answer, rust_answer),
+                        case["d"],
+                    )
+                    continue
+                if python_answer is None or rust_answer is None:
+                    ctx.results.check(check, ["a side dropped the connection"])
+                    continue
+                problems = []
+                if python_answer.status != rust_answer.status:
+                    problems.append(
+                        f"status python {python_answer.status} rust {rust_answer.status}"
+                    )
+                html = case["compare"] == "html"
+                for name in STATIC_COMPARED:
+                    if html and name == "Content-Length":
+                        continue
+                    if python_answer.header(name) != rust_answer.header(name):
+                        problems.append(
+                            f"{name}: python {python_answer.header(name)!r} rust {rust_answer.header(name)!r}"
+                        )
+                if rust_answer.header("ETag") is not None:
+                    problems.append("rust sends an ETag (D-11: none)")
+                python_type, rust_type = (
+                    python_answer.header("Content-Type"),
+                    rust_answer.header("Content-Type"),
+                )
+                if html:
+                    if python_type != rust_type:
+                        problems.append(
+                            f"Content-Type python {python_type!r} rust {rust_type!r}"
+                        )
+                    expected = without_style(
+                        python_answer.body.decode("utf-8", "replace")
+                    )
+                    if rust_answer.body.decode("utf-8", "replace") != expected:
+                        problems.append("error page differs")
+                else:
+                    if python_answer.body != rust_answer.body:
+                        problems.append("body differs")
+                    if python_type != rust_type:
+                        # D-11: this Python reads the host's mime.types; the
+                        # fixture pins Rust's types against the built-in
+                        # table and the real site's record.
+                        types[case["target"]] = f"python {python_type} rust {rust_type}"
+                ctx.results.check(check, problems)
+        written = root / "new.txt"
+        ctx.results.check(
+            "static/read-only", [] if not written.exists() else ["PUT wrote new.txt"]
+        )
+    finally:
+        for kind, name, _content, mode in fixture["tree"]:
+            if kind == "file" and mode == 0:
+                (base / "tree" / name).chmod(0o644)
+    for target, note in sorted(types.items()):
+        print(
+            f"note static {target}: Content-Type {note} (D-11, the host's mime.types)"
+        )
+    if types:
+        ctx.results.allowed["D-11 Content-Type"] = len(types)
+
+
 def family_shadow(ctx: Context) -> None:
     """shadow_compare.py against live pairs (PLAN.md 10.3)."""
     pair, json_path = json_file_pair(ctx, "backup", "shadow-backup")
@@ -1107,6 +1448,166 @@ def family_shadow(ctx: Context) -> None:
         ctx.results.check(
             "shadow/preflight", [] if code == 0 else [f"preflight exit {code}"]
         )
+    shadow_logyard_and_static(ctx)
+
+
+class SteadyLoki:
+    """A Loki that answers every request alike (the shadow probes repeat):
+    ``/ready`` and the two window counts by the window in the query."""
+
+    def __init__(self) -> None:
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/ready":
+                    body = b"ready\n"
+                else:
+                    count = (
+                        "42"
+                        if "[900s]" in urllib.parse.unquote_plus(self.path)
+                        else "1234"
+                    )
+                    body = generate.loki_vector(count).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(
+            target=self.server.serve_forever, args=(0.05,), daemon=True
+        ).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def shadow_logyard_and_static(ctx: Context) -> None:
+    """The comparer's logyard-health and static rules against live pairs."""
+    tmp = ctx.dir("shadow-logyard-static")
+    loki = SteadyLoki()
+    script = Path(
+        generate.load_module(
+            "shadow_logyard",
+            generate.LOGYARD,
+            {},
+            tmp,
+            env={"LOGYARD_HEALTH_UNITS_B64": ""},
+        ).__file__
+    )
+    units = json.dumps([{"id": "vector", "unit": "vector.service"}])
+    env = proxy_free(
+        {
+            **base_env(),
+            "PATH": f"{generate.FAKE_BIN}{os.pathsep}{os.environ['PATH']}",
+            "LOGYARD_HEALTH_BIND": "127.0.0.1",
+            "LOGYARD_LOKI_URL": loki.url,
+            "LOGYARD_HEALTH_UNITS_B64": generate.b64_text(units),
+        }
+    )
+    logyard = Pair(
+        ctx.results,
+        "shadow-logyard",
+        Endpoint(
+            "python",
+            "shadow-logyard",
+            [ctx.python, str(script)],
+            {**env, "LOGYARD_HEALTH_PORT": "{port}"},
+            tmp / "logyard-python.log",
+        ),
+        Endpoint(
+            "rust",
+            "shadow-logyard",
+            [str(ctx.binary), "logyard-health"],
+            {**env, "LOGYARD_HEALTH_PORT": "0"},
+            tmp / "logyard-rust.log",
+        ),
+    )
+    fixture = load_fixture("static.json")
+    root = write_static_tree(fixture, tmp / "tree")
+    for kind, name, _content, mode in fixture["tree"]:
+        if kind == "file" and mode == 0:
+            (tmp / "tree" / name).chmod(0o644)
+
+    def writer(port: int) -> None:
+        text = generate.render(
+            fixture["template"],
+            {
+                "static_site_path": str(root),
+                "static_site_bind_host": "127.0.0.1",
+                "static_site_port": port,
+            },
+        )
+        (tmp / "static-site-httpd.py").write_text(text, encoding="utf-8")
+
+    python_static = Endpoint(
+        "python",
+        "shadow-static",
+        [ctx.python, str(tmp / "static-site-httpd.py")],
+        base_env(),
+        tmp / "static-python.log",
+    )
+    python_static.writer = writer
+    static = Pair(
+        ctx.results,
+        "shadow-static",
+        python_static,
+        Endpoint(
+            "rust",
+            "shadow-static",
+            rust_command(
+                ctx.binary, substitute(fixture["argv"], {"{root}": str(root)})
+            ),
+            base_env(),
+            tmp / "static-rust.log",
+        ),
+    )
+    report = tmp / "report.jsonl"
+    try:
+        with logyard, static:
+            config = {
+                "host": "parity",
+                "report": str(report),
+                "endpoints": [
+                    {
+                        "name": "logyard",
+                        "mode": "logyard-health",
+                        "path": "/.well-known/logyard",
+                        "python": f"127.0.0.1:{logyard.python.port}",
+                        "rust": f"127.0.0.1:{logyard.rust.port}",
+                    },
+                    {
+                        "name": "static",
+                        "mode": "static",
+                        "paths": [
+                            "/",
+                            "/index.html",
+                            "/report.md",
+                            "/snapshot.json",
+                            "/sub",
+                            "/missing.html",
+                        ],
+                        "python": f"127.0.0.1:{static.python.port}",
+                        "rust": f"127.0.0.1:{static.rust.port}",
+                    },
+                ],
+            }
+            config_path = tmp / "shadow.json"
+            config_path.write_text(json.dumps(config))
+            code = shadow_compare.main(["run", "--config", str(config_path)])
+            line = json.loads(report.read_text().splitlines()[-1])
+            problems = [] if code == 0 else [f"exit {code}: {line['endpoints']}"]
+            if line["endpoints"]["logyard"]["statuses"]["get"] != [200, 200]:
+                problems.append(
+                    f"logyard statuses {line['endpoints']['logyard']['statuses']}"
+                )
+            ctx.results.check("shadow/logyard-and-static", problems)
+    finally:
+        loki.close()
 
 
 FAMILIES: dict[str, Callable[[Context], None]] = {
@@ -1114,6 +1615,8 @@ FAMILIES: dict[str, Callable[[Context], None]] = {
     "json_file": family_json_file,
     "script": family_script,
     "apt_state": family_apt_state,
+    "logyard_health": family_logyard,
+    "static": family_static,
     "process": family_process,
     "shadow": family_shadow,
 }

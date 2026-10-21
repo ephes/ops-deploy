@@ -107,8 +107,9 @@ a D item requires Python's recorded answer and Rust's expectation.
 | `apt_state/<case>` | `os_apt_maintenance_httpd.py.j2` reading a temporary reboot flag | every `apt_state.json` `http` case with epochs moved to now and the real `uname().release` | done (S3) |
 | `process/keep-alive`, `process/concurrent`, `process/slow-client-*`, `process/sigterm-idle-keep-alive` | backup (single-threaded), dns (threaded) | three requests per connection; four concurrent requests; D-1; Rust exit 0 with an idle connection open | done (S3) |
 | `<pair>/sigterm-and-logs` | every pair | Rust exits 0 and Python dies by SIGTERM; no credential in either log | done (S3) |
-| `shadow/*` | backup | `shadow_compare.py` against the live pair: equal documents, D-4 and D-2 counted as allowed, a wrong password counted as a 401 difference, `preflight` | done (S3) |
-| logyard-health payload, static mode | — | added by their slices | pending (S2d, S2e) |
+| `shadow/*` | backup, logyard-health, static | `shadow_compare.py` against live pairs: equal documents, D-4 and D-2 counted as allowed, a wrong password counted as a 401 difference, `preflight`; logyard-health (steady fake Loki) and static without differences | done (S3) |
+| `logyard_health/<case>` | `logyard_health_httpd.py.j2` with the case's environment, the fake Loki and `fixtures/fake-bin/systemctl` | every `logyard_health.json` `http` case: payloads equal apart from `generated_at` and the D-3 `texts`, the same Loki requests; D-2 crash cases (Python drops, Rust answers the fixture's payload), D-13 redirect | done (S3) |
+| `static/<case>` | `static-site-httpd.py.j2` on the `static.json` sample tree | every `static.json` case (D-2, D-3, D-11 as Rust expectations); `Content-Type` differences reported as D-11 (host `mime.types`); nothing written | done (S3) |
 
 `parity/shadow_compare.py` (PLAN.md 10.3) is tested by
 `parity/test_shadow_compare.py` against fake pairs: time tolerance, value
