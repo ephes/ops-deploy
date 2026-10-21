@@ -192,11 +192,20 @@ ubuntu}`, `os.product == os.expected_id`, `os.desired_cycle` matches
 `": "`, `ensure_ascii=True` and Python's `repr` for floats. **This value
 must be byte-identical** between the implementations, because operators
 compare it across hosts and implementations (ops-control
-`docs/SOFTWARE_LIVE.md`). Rust implements it with a custom
-`serde_json::ser::Formatter` (separators, ASCII escaping with surrogate
-pairs, Python float `repr`) on a key-sorted value; it is fixture-tested
-against Python for strings with non-ASCII and control characters, ints,
-floats (`1e16`, `1e-05`, `0.1`), bools, null, and nested mappings.
+`docs/SOFTWARE_LIVE.md`). Rust parses JSON losslessly (`serde_json` with
+`arbitrary_precision`, so an extra policy value such as
+`18446744073709551617` is not turned into a float) and hashes a key-sorted
+value through a custom `serde_json::ser::Formatter` that canonicalises
+numbers the way Python re-serialises them: an integer token (no `.`, `e`
+or `E`) is written as its canonical decimal integer (`-0` → `0`), any other
+number is parsed as `f64` and written as Python's float `repr` (`1E2` →
+`100.0`, `1e16` → `1e+16`, `1e-05`); separators and ASCII escaping with
+surrogate pairs as above. It is fixture-tested against Python for strings
+with non-ASCII and control characters, small and big integers
+(`18446744073709551617`, `-0`), floats (`1E2`, `1.0`, `1e16`, `1e-05`,
+`0.1`), bools, null, and nested mappings. The same lossless parsing applies
+wherever Rust reads JSON that Python could have written (state, caches,
+endpoint configuration), so no integer is silently rounded.
 
 ### 3.3 Report shape (P1, `collect`, `:644-684`)
 
@@ -566,9 +575,11 @@ a timeout (60 s; the unit allows 90 s for everything), or invalid JSON
 makes the main binary emit the "unknown" object (4.2 item 8). The main
 binary finds the helper next to its own executable (`/proc/self/exe`
 directory) and refuses to run it unless it is root-owned and not
-group/world-writable. The helper sets `Dir::Cache::pkgcache ""` and
-`Dir::Cache::srcpkgcache ""` (what python-apt's `memonly=True` does), so it
-never writes under `/var/cache/apt`, takes no APT lock, and keeps the
+group/world-writable. The helper sets `Dir::Cache::pkgcache ""` (exactly
+what python-apt's `memonly=True` does, `apt/cache.py` of python-apt 2.7.7),
+so it never writes under `/var/cache/apt`; S1 checks with `strace` in the
+containers that no write is attempted (and additionally clears
+`Dir::Cache::srcpkgcache` only if one is). It takes no APT lock and keeps the
 `apt-mark showhold` subprocess for holds. `name` (pretty, native architecture
 omitted) and `fullname` (`name:arch`) follow python-apt's
 `Package.name`/`Package.fullname`; S1 confirms this against python-apt.
@@ -585,7 +596,7 @@ as its main evidence. This plan does not recommend it.
 | Need | Crate | Notes |
 | --- | --- | --- |
 | CLI | `clap` (derive) | usage errors exit 2 |
-| JSON | `serde`, `serde_json` (`float_roundtrip`) | sorted maps by default; custom `Formatter` for the policy hash (3.2) |
+| JSON | `serde`, `serde_json` (`arbitrary_precision`) | sorted maps by default; lossless numbers; custom `Formatter` for the policy hash (3.2) |
 | sha256 | `sha2`, `hex` | |
 | upstream HTTPS | `ureq` 3 (rustls, `rustls-native-certs` for the system store) | synchronous; the collector has no async runtime |
 | child processes with timeout | `std::process` plus `wait-timeout` (or the equivalent F1 picks) | kill on timeout like `subprocess.run` |
@@ -742,23 +753,30 @@ software_live_rust_shadow: false      # shadow units, section 8.1
 Tasks (`tasks/rust.yml`, `tasks/impl.yml`, `tasks/verify_impl.yml`, after
 the policy and endpoint configuration and before the units):
 
-1. Assert `software_live_impl in ['python', 'rust']`; for `rust` or shadow,
-   a version and a 64-hex checksum for this host's variant (or a local
-   archive). The variant comes from `/etc/os-release` (`ubuntu` + `24.04` →
-   `ubuntu24.04`, `debian` + `13` → `debian13`); anything else fails the
-   play before any change.
-2. When a version is set (also with impl `python`, so the binary can be
-   in place before the switch), install it with the **F1 shared
-   download/pin tasks** into
+1. Assert `software_live_impl in ['python', 'rust']`. **Rollback first:**
+   when impl is `python`, the drop-ins of step 4 are removed (and the
+   handlers notified) before any Rust task runs, and every Rust task below
+   is skipped unless the shadow is on. A pinned but broken release (does not
+   start, reports `unknown`, wrong checksum, missing variant) therefore never
+   blocks the Python rollback. S6 tests exactly this: impl `python` with a
+   pinned version whose archive is missing or whose candidate fails
+   validation still converges to Python.
+2. For impl `rust` or shadow `true`: a version and a 64-hex checksum for
+   this host's variant (or a local archive). The variant comes from
+   `/etc/os-release` (`ubuntu` + `24.04` → `ubuntu24.04`, `debian` + `13` →
+   `debian13`); anything else fails the play before any change. Install the
+   release with the **F1 shared download/pin tasks** into
    `{{ software_live_install_dir }}/releases/<version>/` (root:root 0755;
    inside the dedicated directory the path guard of `tasks/main.yml:21-29`
    demands, and removed by `software_live_remove` without changes). An
    existing version directory is never modified; a different archive for an
-   installed version fails the run.
+   installed version fails the run. The binary is put in place ahead of the
+   switch by deploying with the shadow on (S9), not by impl `python`.
 3. Validate the candidate by its versioned path before anything points at
    it: `--version` reports the pinned version; `validate --config
    policy.json` succeeds; `software-live-apt observe` exits 0 and prints
-   `status: ok` (run as root, read-only).
+   `status: ok` (run as root, read-only). A failure stops the play with the
+   running units, the drop-ins and every installed version untouched.
 4. Drop-ins, present iff impl is `rust`, naming the versioned binary (no
    `current` symlink):
    `/etc/systemd/system/software-live-endpoint.service.d/impl.conf`
@@ -823,7 +841,9 @@ second release workflow.
 - Normal: `software_live_impl: python` in the host vars, then
   `just deploy-one software_live <host>` (under the deploy lock, in tmux).
   The role removes the drop-ins, reloads systemd, restarts the endpoint and
-  the timer; Python reads the Rust-written state and caches (3.3, P1).
+  the timer, and runs no Rust task, so it works even when the pinned release
+  is broken (7.3 step 1); Python reads the Rust-written state and caches
+  (3.3, P1).
 - Emergency on the host (until S12):
   `rm /etc/systemd/system/software-live-{endpoint,collector}.service.d/impl.conf && systemctl daemon-reload && systemctl restart software-live-endpoint.service && systemctl start software-live-collector.service`,
   then flip the inventory before the next deploy.
