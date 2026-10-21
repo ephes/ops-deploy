@@ -21,10 +21,16 @@ Precedents this plan follows: `mailgun-relay/rust/PLAN.md` and
 parity harness, a pinned release on an old glibc baseline, an impl selector in
 the role with Python as rollback, a shadow run, a cutover with a rollback
 drill, and Python retirement as its own slice). The shared Rust foundation in
-this repo (Cargo workspace, CI, release workflow, role download/pin task) is
-designed in `rust/PLAN-foundation.md` (stream `rust-metrics-httpd`) and is
-referred to here as **F1**. This plan does not design its own release
-pipeline. Section 8.1 lists what it needs from F1.
+this repo is designed in `rust/PLAN-foundation.md` (stream
+`rust-metrics-httpd`), and its slice ids are used here: **F1** (Cargo
+workspace, toolchain, `rust.yml` CI), **F2** (`rust-release.yml` with
+per-binary tags) and **F3** (the internal install/pin/prune role
+`rust_release_binary`). F4 (the pyinfra helper in ops-deploy) is not needed:
+this role is Ansible only. This plan does not design its own release
+pipeline. Section 8.1 lists what it needs from the foundation.
+
+Owner decisions of 2026-10-21 are recorded in section 9; they replace the
+former owner questions.
 
 ---
 
@@ -415,7 +421,7 @@ text. Nothing the Python guard refuses may be accepted. The differential
 tests (7.3) enforce this invariant: *if Rust accepts, Python accepts with an
 identical `Decision`*.
 
-### 4.1 Command prefilter (needs Q2)
+### 4.1 Command prefilter (decided, Q2)
 
 Right after Python's own pre-checks (3.3.1, same order and reasons; the
 length is counted in characters of the decoded string), the Rust guard
@@ -441,7 +447,7 @@ Justification:
 - With the prefilter, the `shlex` crate and Python's `shlex.split` agree
   (5.2), and the `\S` difference (3.3.2) cannot arise.
 
-### 4.2 Other stricter refusals (needs Q2)
+### 4.2 Other stricter refusals (decided, Q2)
 
 - **Policy types.** Values must have the JSON type the role writes: lists of
   strings, an object of strings, objects with string fields, or `null` for
@@ -602,7 +608,22 @@ No async runtime, no TLS, no CLI parser, no logging framework.
   the coordinator.
 - Each step needs `just install-local-library` with an ops-library at or
   after the release containing S6. The playbook's minimum version is raised
-  in S8.
+  in S8. Workers never bump `galaxy.yml`: the coordinator makes the
+  collection release commit (`galaxy.yml` bump plus the CHANGELOG heading) on
+  ops-library `main` right before the first production step that needs it
+  (owner decision 2026-10-21, section 9).
+- **Scheduling (Q1).** This stream is scheduled last in the campaign. Its
+  production steps (S9, S10a, S10b, S11a, S11b, S12) never run alongside
+  another production or staging change: each step starts only when the
+  coordinator has confirmed in the go that no other change on production or
+  staging is in flight or scheduled for the step and its acceptance, and the
+  production chain starts only after the other streams' production and
+  staging cutovers of this campaign are done or the coordinator releases it
+  explicitly. During the shadow and soak windows, another change on
+  production or staging needs the coordinator's explicit go and is noted in
+  the deployment record, because it can confound the evidence. The
+  non-production slices S0–S8 change nothing on a host and may run earlier
+  when the coordinator has capacity.
 - Secrets: the role handles none. Nothing sets `environment:` under
   `become_user` (ops-control `test-become-environment-secrets`, ops-library
   `tests/test_become_environment_secrets.py` ≥ 2.55.0).
@@ -637,16 +658,31 @@ The tasks:
   require a version with a sha256 or a local archive.
 - **Python guard:** always installed as today (copy, `0755`, validate) until
   S12. It is the rollback target, and it is what `shadow` execs.
-- **Rust binary:** installed through F1's download/pin task. The binary goes
-  to `<install_root>/<version>/echoport-command-guard`. The install root, the
+- **Rust binary:** installed through F3's role `rust_release_binary`
+  (`tasks_from: install`, with `install_root` set to this role's
+  `rust_install_root`, and `fail_hard` true only for impl `shadow`/`rust`,
+  per the rollback-independence rule below). The binary goes to
+  `<install_root>/<version>/echoport-command-guard`. The install root, the
   version directory and the binary are root:root, directories `0755` and the
   binary `0755`. No component of the path may be group- or world-writable;
   the role asserts this with `stat` on every component up to `/`, because
   sshd runs this file as root.
   - After installing, run `<bin> --version` (it must print the pinned
     version) and `<bin> --check-policy <rendered policy>`.
-  - Pruning keeps `keep_versions` and never removes the version the forced
-    command points to.
+  - Pruning uses F3's `prune` with `keep_versions` and protects the
+    version the forced command points to, also in the window before the
+    playbook writes the new `authorized_keys` line. F3 prune keeps
+    every pinned version, so for impl `shadow`/`rust`, when the existing pin
+    `.pins/echoport_remote_command_guard` names a different version than the
+    target, the role first copies it to
+    `.pins/echoport_remote_command_guard-previous`, then writes the pin for
+    the target version, and prunes only after both pins are written. A
+    re-run of the same target after a failed play therefore keeps
+    protecting the version the forced command still points to; after
+    several failed plays with different targets, `keep_versions` (3, by
+    mtime) still keeps the most recent versions. For impl `python` the role leaves both
+    pins as they are: they only keep up to two versions on disk and keep
+    the switch back to Rust quick.
   - **Rollback independence.** With `impl: python`, every Rust step is
     best-effort: download, install, `--version`, `--check-policy` and
     pruning run, but their failures only warn (`failed_when: false`, an
@@ -836,7 +872,10 @@ production.
    failed Echoport run attributable to the guard, or any Nyxmon Echoport
    freshness alert that the guard causes. On any of these, roll back first
    and investigate afterwards.
-6. **Retirement** (S12): at least 14 days after S11b with no incident.
+6. **Retirement on the hosts** (S12): at least 14 days after S11b with no
+   incident.
+7. **Retirement in the repo** (S13, Q5): 30 days after S11b with no
+   incident, or at the first runner change after that.
 
 **Emergency rollback** for both hosts, about 1 minute, while the Python guard
 is still installed (until S12):
@@ -946,10 +985,14 @@ in `parity/allowed_differences.json` (expected: none at Layer 1, because
 **Expected size:** about 10–20k cases, generated rather than hand-written.
 The JSONL is committed, and reviewers spot-check it.
 
-**Drift check:** a CI job (F1) regenerates the fixtures and fails on any
-diff. `fixtures/GUARD_SHA256` must equal the sha256 of `guard.py`, so any
-change to the Python guard before S13 forces a regeneration and a Rust
-update in the same change.
+**Drift check:** a step in F1's `rust.yml` regenerates the fixtures and
+fails on any diff. `fixtures/GUARD_SHA256` must equal the sha256 of
+`guard.py`, so any change to the Python guard before S13 forces a
+regeneration and a Rust update in the same change. `rust.yml` only runs on
+changes under `rust/` (owner decision 2026-10-21), so a change to `guard.py`
+alone does not trigger it. S0 therefore also adds the `GUARD_SHA256`
+comparison (stdlib, no Rust toolchain) to `just
+test-echoport-remote-command-guard`, which `just test` runs.
 
 ### 7.3 Differential and property tests (CI, stable toolchain)
 
@@ -1041,32 +1084,39 @@ Ansible-level counterpart.
 
 ## 8. Build, release, lean goals
 
-### 8.1 What this stream needs from F1 (`rust/PLAN-foundation.md`)
+### 8.1 What this stream needs from the foundation (`rust/PLAN-foundation.md`)
 
-1. The workspace member `rust/echoport-command-guard`, the pinned stable
-   toolchain, `cargo-deny`, and `--locked` everywhere.
-2. CI: fmt, clippy (`-D warnings`), test, deny. Also Python 3.12 available
-   (via `uv`) for the oracle tests, a Linux runner where tests may use real
-   temp dirs, and a job that runs the fixture drift check (7.2). The drift
-   check needs the repo venv for the `runner` corpus.
-3. Release workflow with tag prefix **`echoport-command-guard-v<semver>`**:
+1. F1: the workspace (S1 appends the member `echoport-command-guard`), the
+   pinned stable toolchain, `cargo-deny`, and `--locked` everywhere.
+2. F1 CI (`rust.yml`): fmt, clippy (`-D warnings`), test, deny. S1 adds
+   steps for this crate (the foundation allows crate steps, not new suites):
+   Python 3.12 available (via `uv`) for the oracle tests, a Linux runner
+   where tests may use real temp dirs, and a step that runs the fixture
+   drift check (7.2). The drift check needs the repo venv for the `runner`
+   corpus.
+3. F2 release workflow (`rust-release.yml`) with the tag prefix
+   **`echoport-command-guard-v<semver>`** in its trigger list (the
+   foundation lists it; if it is missing when S7 runs, S7 adds it):
    - target `x86_64-unknown-linux-gnu`;
-   - glibc floor **≤ 2.39** (production); the precedents use 2.35, which is
-     fine. `NEEDED` libraries are glibc/libgcc only, enforced by the floor
-     check;
+   - glibc floor: F2 checks **2.35**, below what this crate needs
+     (production 2.39). `NEEDED` libraries are glibc/libgcc only, enforced by
+     the floor check;
    - `--version` smoke with the full commit;
    - a deterministic `tar.gz` holding only the binary and `LICENSE`, plus
      its `.sha256`;
    - the tag must equal the crate version.
-4. The role download/pin task, with these properties:
-   - it installs a pinned archive (URL from the tag, sha256 required) or a
-     local archive into `<root>/<version>/`;
-   - it can set owner root:root and modes `0755`, and never leaves a
-     group- or world-writable path component (6.2);
-   - it can prune while keeping a protected version;
-   - it reports the installed binary path as a fact.
-   If F1's task cannot guarantee the permission properties, S6 adds the
-   asserts on top and does not fork the task.
+4. F3 role `rust_release_binary`, with these properties:
+   - `install` puts a pinned archive (URL from the tag, sha256 required) or
+     a local archive into `<install_root>/<version>/`, with `install_root`
+     set by this role (6.2);
+   - it sets owner root:root and modes `0755`, and never leaves a group- or
+     world-writable path component (6.2);
+   - `pin`/`prune` keep every pinned version (6.2);
+   - it reports the installed binary path as a fact
+     (`rust_release_binary_path`) and, without `fail_hard`, a failure as
+     `rust_release_binary_failed` instead of stopping the play.
+   If F3 cannot guarantee the permission properties, S6 adds the asserts on
+   top and does not fork the role.
 5. Nothing else. No container image, no service unit, no secrets.
 
 ### 8.2 Target and linking (decision)
@@ -1099,40 +1149,55 @@ features) before relaxing it.
 
 ---
 
-## 9. Owner questions (each with a recommended answer)
+## 9. Owner decisions (2026-10-21)
 
-- **Q1. Port at all?** The guard is not a resident process: it costs about
-  13.5 MiB for about 15 ms, a few dozen times a day. The value lies in:
-  - getting the distribution's Python (3.12 vs 3.13 already) off the root
-    forced-command path;
-  - a typed, differential-tested and fuzzed parser.
-  The risk is that a security regression locks out backups.
-  *Recommended:* yes, but schedule it last in the campaign and never in
-  parallel with another production change on production or staging.
-- **Q2. Accept the stricter refusals in 4.1 and 4.2?** These are: the
-  command prefilter (no `\`, no `#`, printable ASCII and tab only, valid
-  UTF-8), strict policy JSON types, refusing trailing `\n` in policy values,
-  and refusing realpath loops. No runner command and no generated policy is
-  affected; S0 and S9 prove that. *Recommended:* yes.
-- **Q3. Allow three small Python-compatibility ports instead of crates?**
-  They are a non-strict `realpath` (unless `soft-canonicalize` matches the
-  oracle), `repr` for log lines, and PEP 538 locale coercion. No crate
-  reproduces these semantics, and each is differential-tested against
-  CPython 3.12 and 3.13. *Recommended:* yes.
-- **Q4. Live acceptance only with non-destructive restores?** These are the
-  nightly production → staging DB restores and the Django Chat scratch
-  restore. The in-place restores of marina, villakunterbunt and GoToSocial
-  are not run live; the fixtures, Layer 3 and molecule cover their commands.
-  *Recommended:* yes.
-- **Q5. When does the Python guard leave the repo (S13)?** Until then, every
-  runner change needs the Python rule, the fixture regeneration and the Rust
-  rule. *Recommended:* after at least 30 days on Rust with no incident, or
-  at the first runner change after that, whichever comes first. The
-  runner-shape tests and ops-control's policy test then use the Rust binary
-  (`--decide`, `--check-policy`).
-- **Approvals to bundle** (not questions): the production steps S9
-  (install only), S10b (shadow), S11b (cutover) and S12 (retirement), each
-  at a time the coordinator clears with the other production work (6.1).
+The owner accepted every recommended answer of the former owner questions on
+2026-10-21 (given in chat to the campaign coordinator). They are decided:
+
+- **Q1 Port at all:** **yes**, scheduled **last in the campaign** and
+  **never alongside other production or staging changes** (6.1,
+  "Scheduling"). The guard is not a resident process (about 13.5 MiB for
+  about 15 ms, a few dozen times a day); the value is getting the
+  distribution's Python (3.12 vs 3.13 already) off the root forced-command
+  path and a typed, differential-tested and fuzzed parser. The risk, a
+  security regression that locks out backups, is handled by 6.5 and R1.
+- **Q2 Stricter refusals (4.1, 4.2):** **accepted**: the command prefilter
+  (valid UTF-8, printable ASCII and tab only, no `\`, no `#`), strict policy
+  JSON types, refusing trailing `\n` in policy values, and refusing realpath
+  loops. No runner command and no generated policy is affected; S0 and S9
+  prove that.
+- **Q3 Python-compatibility ports:** **allowed**: a non-strict `realpath`
+  (unless `soft-canonicalize` matches the oracle, S2), `repr` for log lines,
+  and PEP 538 locale coercion. Each is differential-tested against CPython
+  3.12 and 3.13 (7.3–7.5).
+- **Q4 Live acceptance:** **only non-destructive restores**: the nightly
+  production → staging DB restores and the Django Chat scratch restore. The
+  in-place restores of marina, villakunterbunt and GoToSocial are not run
+  live; the fixtures, Layer 3 and molecule cover their commands (6.5).
+- **Q5 Python guard removal from the repo (S13):** **30 days after S11b
+  with no incident, or at the first runner change after that.** Until then,
+  every runner change needs the Python rule, the fixture regeneration and the
+  Rust rule. After S13 the runner-shape tests and ops-control's policy test
+  use the Rust binary (`--decide`, `--check-policy`). The removal from the
+  hosts (S12, 14 days after S11b) is unchanged.
+
+Campaign-wide decisions of the same day that this plan follows:
+
+- **Foundation CI and releases:** ops-library gets its first GitHub Actions
+  workflows from the foundation: `rust.yml` (CI for `rust/` only, F1) and
+  `rust-release.yml` (F2; `contents: write` only in the publish job, binary
+  releases on the public repository). See 7.2 and 8.1.
+- **Collection releases:** the coordinator makes the collection release
+  commit (`galaxy.yml` bump plus the CHANGELOG heading) on ops-library
+  `main` right before the production steps that need it; workers never bump
+  `galaxy.yml` (6.1, S8).
+- **Review rounds:** a slice, and a plan, may get a **third** review round
+  over the repair delta of round 2. If round 3 is not clean, the worker
+  stops and reports to the coordinator (section 11).
+
+**Approvals to bundle** (not questions): the production steps S9 (install
+only), S10b (shadow), S11b (cutover) and S12 (retirement), each at a time
+the coordinator clears with the other production work (6.1).
 
 ## 10. Risks
 
@@ -1146,9 +1211,9 @@ features) before relaxing it.
 | R6 | A shadow-mode bug breaks backups (the Rust binary runs first). | `catch_unwind` plus an unconditional `execv` of Python; the shadow forced command is validated by the role; staging first. |
 | R7 | `authorize-root-ssh.yml` also applies pending operator-key changes. | `--check --diff` under the lock before each run; stop on any unexpected line. |
 | R8 | Collisions with other production work: Traefik ACME (production, until 2026-10-30), the `.timeout` rollout (6.4), opsgate key rotation (macmini only, different playbook). | Coordinator's go for the production steps; the shared deploy lock; 6.4 ordering. |
-| R9 | F1 is late or differs from what 8.1 assumes. | S0 needs no F1; S1 adapts to F1's actual layout; any gap goes back to the F1 stream, without a parallel pipeline here. |
+| R9 | The foundation (F1–F3) is late or differs from what 8.1 assumes. | S0 needs no foundation slice; S1 adapts to F1's actual layout, S6 to F3's, S7 to F2's; any gap goes back to the foundation stream (`rust-metrics-httpd`), without a parallel pipeline here. |
 | R10 | Public repo: fixtures could leak private data. | Fixtures use only the policies that are already public in the tests, and synthetic stamps; no tailnet addresses (the `SSH_CLIENT` in tests uses a documentation address). |
-| R11 | ops-library has no CI today (no `.github/workflows`). | Delivered by F1; until then the slices run `cargo test` and `just test-echoport-remote-command-guard` locally and record this in the review. |
+| R11 | ops-library has no CI today (no `.github/workflows`), and F1's `rust.yml` covers only `rust/`. | `rust.yml` comes with F1 (owner decision 2026-10-21); until then the slices run `cargo test` and `just test-echoport-remote-command-guard` locally and record this in the review. The Ansible/Python suite stays local (`just test`), including the `GUARD_SHA256` comparison (7.2). |
 
 ---
 
@@ -1159,8 +1224,12 @@ Rules, as in the precedents:
 - **Branch:** one per slice, `rust-echoport-command-guard/<id>-<name>`, in
   its own worktree.
 - **Review:** `gpt-6.1-sol` at high reasoning through the codex review loop.
-  After the review: merge into `main`, push, and deploy where the slice says
-  so.
+  A slice may get up to three rounds; round 3 covers only the repair delta
+  of round 2, and if round 3 is not clean the worker stops and reports to
+  the coordinator (owner decision 2026-10-21). After a clean review: merge
+  into `main`, push, and deploy where the slice says so.
+- **Collection version:** never bump `galaxy.yml`; CHANGELOG entries go under
+  "Unreleased". The coordinator cuts collection releases (6.1).
 - **Merging is safe at any time:** nothing on a host changes until the
   role's `impl` and version change in ops-control.
 - **Every slice:** keeps `cargo fmt/clippy/test/deny` and
@@ -1172,27 +1241,27 @@ Rules, as in the precedents:
 
 | ID | Slice | Scope | Depends on | Parallel | Prod | Est. h |
 |---|---|---|---|---|---|---|
-| S0 | Contract freeze and fixture generator | `parity/gen_fixtures.py`, `parity/oracle.py`, all Layer-1 sources (7.2), `fixtures/` + `GUARD_SHA256`, `allowed_differences.json` (empty), property test "Python accepts only printable ASCII and tab", runner-corpus check (no `\`/`#`), `TESTMAP.md` skeleton. Python only. | — | yes (with F1) | no | 4 |
-| S1 | Crate skeleton, policy, tokeniser | Crate in the F1 workspace, `main.rs` argv grammar and `--version`, `policy.rs` + `--check-policy` (policy fixtures green), `prefilter.rs`, `tokens.rs` + tokeniser differential proptest, `Decision` types, fail-closed dispatcher stub, `GuardEnv` trait with the virtual impl, Layer-1 test runner (cases from unported branches are expected-refused). | F1, S0 | no | no | 4 |
+| S0 | Contract freeze and fixture generator | `parity/gen_fixtures.py`, `parity/oracle.py`, all Layer-1 sources (7.2), `fixtures/` + `GUARD_SHA256`, `allowed_differences.json` (empty), property test "Python accepts only printable ASCII and tab", runner-corpus check (no `\`/`#`), the `GUARD_SHA256` comparison in `just test-echoport-remote-command-guard` (7.2), `TESTMAP.md` skeleton. Python only. | — | yes (with F1–F3) | no | 4 |
+| S1 | Crate skeleton, policy, tokeniser | Crate in the F1 workspace (member added), this crate's `rust.yml` steps (8.1 item 2: Python 3.12 via `uv`, fixture drift check), `main.rs` argv grammar and `--version`, `policy.rs` + `--check-policy` (policy fixtures green), `prefilter.rs`, `tokens.rs` + tokeniser differential proptest, `Decision` types, fail-closed dispatcher stub, `GuardEnv` trait with the virtual impl, Layer-1 test runner (cases from unported branches are expected-refused). | F1, S0 | no | no | 4 |
 | S2 | Filesystem layer | Real `GuardEnv` (`lstat`, `readlink`, `getpwnam_r`, `geteuid`), `pyrealpath.rs` or `soft-canonicalize` (decision with evidence), plain-file and private-dir helpers, Layer-2 container harness for realpath against 3.12 and 3.13. | S1 | with S3a, S4, S6 | no | 3 |
 | S3a | Rules without filesystem | `sudo`/`runuser` postgres (all branches), `sqlite3` including `.timeout`, `systemctl`, `curl`, `sh -c` probe, `du`, `mktemp`, `rm -f` dumps and `rm -rf --` temp dirs; their Layer-1 cases green. | S1 | with S2, S4, S6 | no | 3 |
 | S3b | Rules with filesystem | `scp -f/-t`, rsync, `mv`, `mkdir`, `chmod`, `chown`, `rm` wal/shm, `test`, `readlink`, snapshot `cat`, `cat >`, `sha256sum`, `tar`; redirect decisions; their Layer-1 cases green (with S3a: all of Layer 1). | S1, S2 | with S3a, S4, S6 | no | 4 |
 | S4 | Runtime and exec | Forced-command flow (3.1), syslog and `py_repr` (3.6, 4.3), `redirect.rs` (3.5), umask, `PATH`, locale coercion, SIGPIPE/SIGXFSZ, fd hygiene, exit codes, `--decide`, `--shadow`; `tests/cli.rs` process tests in a container. | S1 | with S2, S3a, S3b, S6 | no | 4 |
 | S5 | Parity gate | All of Layer 1 green, the 4.4 list reviewed, decision proptests (7.3), Layer 2 complete, Layer 3 sshd e2e on both distros, fuzz targets with at least 1 hour each and the corpus committed, TESTMAP complete. | S2, S3a, S3b, S4 | with S6 | no | 4 |
-| S6 | Role switch | 6.2: the impl selector, Rust install through F1's task with the permission asserts, dual validate, forced command per impl, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), README/docs/CHANGELOG (Unreleased). | F1 (install task), S4 (CLI surface) | with S2–S5 | no | 4 |
-| S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F1's workflow, archive sha256 recorded. | S5, S6, F1 (release workflow) | with S8 prep | no | 2 |
-| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus an ops-library release (owner/coordinator), S7 (pin values) | prep with S7 | no | 3 |
-| S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. | S7, S8, 6.4 (`.timeout` item) | no | **yes** | 1.5 |
+| S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts and the F3 pin, dual validate, forced command per impl, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), README/docs/CHANGELOG (Unreleased). | F3 (install role), S4 (CLI surface) | with S2–S5 | no | 4 |
+| S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
+| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
+| S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. | S7, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
 | S11a | Cutover, staging, and rollback drills | 6.5 step 4, drills (a)–(c). | S10a (gate), S10b running | no | **yes** | 2 + 72 h soak |
 | S11b | Cutover, production | 6.5 step 5. | S11a (soak clean), S10b (gate), coordinator go | no | **yes** | 1.5 |
 | S12 | Retire Python on the hosts | Role: with impl `rust` the Python guard file is removed from the host and the `shadow` impl is removed; the default stays `python` for other consumers until S13. ops-control: host_vars cleanup, runbooks (rollback then means re-installing Python by a role run with `impl: python`, still one command). Deploy both hosts. | S11b + 14 days | no | **yes** | 2 |
-| S13 | Retire Python in the repo | Q5: delete `guard.py`, make the Rust binary the source for the runner-shape tests (`--decide`) and for ops-control's policy test (`--check-policy`), make the role default `rust`, remove the impl selector's Python branch. | S12, Q5 | no | no | 3 |
+| S13 | Retire Python in the repo | Q5 (30 days after S11b with no incident, or the first runner change after that): delete `guard.py`, make the Rust binary the source for the runner-shape tests (`--decide`) and for ops-control's policy test (`--check-policy`), make the role default `rust`, remove the impl selector's Python branch. | S12, S11b + 30 days (Q5) | no | no | 3 |
 
 **Parallel waves:**
 
-1. F1 ∥ S0.
+1. F1 ∥ S0 (F2 and F3 follow F1 in the foundation stream).
 2. S1.
 3. S2 ∥ S3a ∥ S4 ∥ S6.
 4. S3b (after S2) ∥ the rest of wave 3.
@@ -1203,8 +1272,9 @@ Rules, as in the precedents:
 
 Up to four implementation workers can run at the same time (wave 3).
 
-**Total:** about 50 worker-hours, plus at least 7 days of soak before S11b
-and 14 days before S12.
+**Total:** about 50 worker-hours, plus at least 7 days of soak before S11b,
+14 days before S12 and 30 days before S13. The production chain waits for the
+coordinator's go under 6.1 "Scheduling".
 
 **Review focus per slice** (in addition to correctness):
 
