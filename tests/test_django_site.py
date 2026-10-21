@@ -56,6 +56,7 @@ def touch(path: str) -> str:
 
 
 READ_ONLY = [
+    "Deploy marina | Verify marina certifi/pip trust",
     "Deploy marina | Wait for port 127.0.0.1:10019",
     "Deploy marina | Check http://127.0.0.1:10019/",
 ]
