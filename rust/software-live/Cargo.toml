@@ -19,8 +19,9 @@ rustix = { version = "1", default-features = false, features = ["std"] }
 ryu = "1"
 serde = { version = "1", features = ["derive"] }
 # arbitrary_precision: numbers keep their JSON text, so nothing Python could
-# have written is rounded (PLAN.md 3.2).
-serde_json = { version = "1", features = ["arbitrary_precision"] }
+# have written is rounded (PLAN.md 3.2); raw_value: pyjson::loads takes the
+# text apart through RawValue (see there).
+serde_json = { version = "1", features = ["arbitrary_precision", "raw_value"] }
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
 wait-timeout = "0.2"
 

@@ -15,10 +15,14 @@
 //!   Python view of a JSON value where `validate_policy` and
 //!   `with_freshness` depend on it.
 
+use std::fmt;
 use std::io;
+use std::str::FromStr;
 
+use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
 use serde_json::ser::{CharEscape, Formatter};
-use serde_json::{Number, Value};
+use serde_json::value::RawValue;
+use serde_json::{Map, Number, Value};
 
 use crate::error::PyError;
 
@@ -26,30 +30,115 @@ use crate::error::PyError;
 /// decimal string (the sign does not count) raises `ValueError`.
 pub const INT_MAX_STR_DIGITS: usize = 4300;
 
-/// `json.loads(text)` for the JSON this program reads.
-pub fn loads(text: &str) -> Result<Value, PyError> {
-    let value: Value = serde_json::from_str(text)
-        .map_err(|error| PyError::new("JSONDecodeError", error.to_string()))?;
-    check_int_digits(&value)?;
-    Ok(value)
+/// The deepest nesting of arrays and objects [`loads`] accepts (PLAN.md
+/// 4.2 item 4; Python's limit is its interpreter's recursion limit).
+pub const MAX_DEPTH: usize = 128;
+
+fn decode_error(error: serde_json::Error) -> PyError {
+    PyError::new("JSONDecodeError", error.to_string())
 }
 
-fn check_int_digits(value: &Value) -> Result<(), PyError> {
-    match value {
-        Value::Number(number) if is_int_token(number.as_str()) => {
-            let digits = number.as_str().trim_start_matches('-').len();
-            if digits > INT_MAX_STR_DIGITS {
-                return Err(PyError::value(format!(
-                    "Exceeds the limit ({INT_MAX_STR_DIGITS} digits) for integer string \
-                     conversion: value has {digits} digits"
-                )));
+/// `json.loads(text)` for the JSON this program reads.
+///
+/// The text is taken apart level by level through `RawValue`, never through
+/// `Value`'s own deserializer: with `arbitrary_precision` that deserializer
+/// reads an object whose only key is serde_json's internal number token
+/// (`{"$serde_json::private::Number": "7"}`) as the number 7, while Python
+/// keeps the object. Every number token is checked as it is read, including
+/// one a later duplicate key replaces (Python converts it before the
+/// replacement).
+pub fn loads(text: &str) -> Result<Value, PyError> {
+    let raw: &RawValue = serde_json::from_str(text).map_err(decode_error)?;
+    convert(raw, 0)
+}
+
+/// The members of a JSON object in text order, duplicates included.
+struct Members<'a>(Vec<(String, &'a RawValue)>);
+
+impl<'de: 'a, 'a> Deserialize<'de> for Members<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct MembersVisitor;
+        impl<'de> Visitor<'de> for MembersVisitor {
+            type Value = Members<'de>;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a JSON object")
             }
-            Ok(())
+            fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+                let mut members = Vec::new();
+                while let Some(member) = access.next_entry::<String, &'de RawValue>()? {
+                    members.push(member);
+                }
+                Ok(Members(members))
+            }
         }
-        Value::Array(items) => items.iter().try_for_each(check_int_digits),
-        Value::Object(map) => map.values().try_for_each(check_int_digits),
-        _ => Ok(()),
+        deserializer.deserialize_map(MembersVisitor)
     }
+}
+
+fn convert(raw: &RawValue, depth: usize) -> Result<Value, PyError> {
+    let text = raw.get();
+    let container = |depth: usize| {
+        if depth >= MAX_DEPTH {
+            Err(PyError::value(format!(
+                "JSON nested deeper than {MAX_DEPTH} levels"
+            )))
+        } else {
+            Ok(depth + 1)
+        }
+    };
+    match text.as_bytes().first() {
+        Some(b'{') => {
+            let inner = container(depth)?;
+            let members: Members<'_> = serde_json::from_str(text).map_err(decode_error)?;
+            let mut map = Map::new();
+            for (key, value) in members.0 {
+                // The last duplicate wins, as in Python.
+                map.insert(key, convert(value, inner)?);
+            }
+            Ok(Value::Object(map))
+        }
+        Some(b'[') => {
+            let inner = container(depth)?;
+            let items: Vec<&RawValue> = serde_json::from_str(text).map_err(decode_error)?;
+            items
+                .into_iter()
+                .map(|item| convert(item, inner))
+                .collect::<Result<_, _>>()
+                .map(Value::Array)
+        }
+        Some(b'"') => serde_json::from_str::<String>(text)
+            .map(Value::String)
+            .map_err(decode_error),
+        _ => match text {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            "null" => Ok(Value::Null),
+            token => {
+                check_int_digits(token)?;
+                Number::from_str(token)
+                    .map(Value::Number)
+                    .map_err(decode_error)
+            }
+        },
+    }
+}
+
+fn check_int_digits(token: &str) -> Result<(), PyError> {
+    if is_int_token(token) {
+        let digits = token.trim_start_matches('-').len();
+        if digits > INT_MAX_STR_DIGITS {
+            return Err(int_digits_error(digits));
+        }
+    }
+    Ok(())
+}
+
+/// Python's `ValueError` for an `int()` of more than 4300 digits.
+pub fn int_digits_error(digits: usize) -> PyError {
+    PyError::value(format!(
+        "Exceeds the limit ({INT_MAX_STR_DIGITS} digits) for integer string \
+         conversion: value has {digits} digits"
+    ))
 }
 
 /// A JSON number token that Python reads as `int` (no fraction, no exponent).
@@ -454,6 +543,34 @@ mod tests {
         assert!(!two("true") && !two("\"2\"") && !two("null") && !two("3"));
         assert!(eq_int(&Value::Bool(false), 0) && eq_int(&Value::Bool(true), 1));
         assert!(!two("18446744073709551617"));
+    }
+
+    #[test]
+    fn serde_jsons_number_token_is_an_ordinary_key() {
+        let text =
+            r#"{"$serde_json::private::Number": "7", "n": {"$serde_json::private::Number": 7}}"#;
+        let value = loads(text).unwrap();
+        assert!(value.is_object());
+        assert_eq!(value["$serde_json::private::Number"], "7");
+        assert!(value["n"].is_object());
+        assert_eq!(
+            String::from_utf8(python_dumps(&value)).unwrap(),
+            r#"{"$serde_json::private::Number": "7", "n": {"$serde_json::private::Number": 7}}"#
+        );
+    }
+
+    #[test]
+    fn a_replaced_duplicate_is_still_checked() {
+        let text = format!(r#"{{"a": {}, "a": 0}}"#, "1".repeat(INT_MAX_STR_DIGITS + 1));
+        assert_eq!(loads(&text).unwrap_err().class, "ValueError");
+        assert_eq!(loads(r#"{"a": 1, "a": 2}"#).unwrap()["a"], 2);
+    }
+
+    #[test]
+    fn nesting_limit() {
+        let deep = |n: usize| format!("{}{}", "[".repeat(n), "]".repeat(n));
+        assert!(loads(&deep(MAX_DEPTH)).is_ok());
+        assert!(loads(&deep(MAX_DEPTH + 1)).is_err());
     }
 
     #[test]

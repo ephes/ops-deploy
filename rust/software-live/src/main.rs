@@ -18,7 +18,10 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{ArgAction, Parser, ValueEnum};
+use std::sync::LazyLock;
+
+use clap::{ArgAction, CommandFactory, Parser, ValueEnum};
+use regex::Regex;
 use serde_json::Value;
 
 use software_live::error::PyError;
@@ -53,23 +56,116 @@ enum Mode {
 struct Cli {
     #[arg(value_enum)]
     mode: Mode,
-    #[arg(long, value_name = "CONFIG")]
+    // Values may start with `-`: `check_option_values` has already refused
+    // the ones argparse reads as an option.
+    #[arg(long, value_name = "CONFIG", allow_hyphen_values = true)]
     config: Option<PathBuf>,
     #[arg(
         long = "config-json",
         value_name = "CONFIG_JSON",
-        allow_negative_numbers = true
+        allow_hyphen_values = true
     )]
     config_json: Option<OsString>,
-    #[arg(long, value_name = "OUTPUT")]
+    #[arg(long, value_name = "OUTPUT", allow_hyphen_values = true)]
     output: Option<PathBuf>,
-    #[arg(long, value_name = "CACHE")]
+    #[arg(long, value_name = "CACHE", allow_hyphen_values = true)]
     cache: Option<PathBuf>,
-    #[arg(long, value_name = "GROUP")]
+    #[arg(long, value_name = "GROUP", allow_hyphen_values = true)]
     group: Option<OsString>,
     /// Print the version and the commit it was built from.
     #[arg(long, action = ArgAction::Version)]
     version: Option<bool>,
+}
+
+/// The long options; `--version` is the only one argparse does not have.
+const LONG_OPTIONS: [&str; 7] = [
+    "--config",
+    "--config-json",
+    "--output",
+    "--cache",
+    "--group",
+    "--help",
+    "--version",
+];
+const VALUE_OPTIONS: [&str; 5] = [
+    "--config",
+    "--config-json",
+    "--output",
+    "--cache",
+    "--group",
+];
+
+/// argparse's `_negative_number_matcher` of Python 3.12 and 3.13 (the
+/// hosts' versions; 3.14 also accepts `-1e5` and `-1.`).
+static NEGATIVE_NUMBER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^-\d+$|^-\d*\.\d+$").expect("valid pattern"));
+
+/// A long option by its exact name or an unambiguous prefix.
+fn resolve_long(name: &str) -> Option<&'static str> {
+    if let Some(exact) = LONG_OPTIONS.iter().find(|option| **option == name) {
+        return Some(exact);
+    }
+    let mut matches = LONG_OPTIONS
+        .iter()
+        .filter(|option| option.starts_with(name));
+    match (matches.next(), matches.next()) {
+        (Some(only), None) => Some(only),
+        _ => None,
+    }
+}
+
+/// Whether argparse classifies a command-line word as an option
+/// (`ArgumentParser._parse_optional` returns something): then it can never
+/// be the value of an option given as a separate word.
+fn argparse_reads_as_option(arg: &str) -> bool {
+    if !arg.starts_with('-') || arg == "-" {
+        return false;
+    }
+    let name = arg.split_once('=').map_or(arg, |(name, _)| name);
+    if name == "-h" || LONG_OPTIONS.contains(&name) {
+        return true;
+    }
+    // Abbreviations: any option a `--` word is a prefix of (one is a match,
+    // several an error), and `-h` with an attached value.
+    if arg.starts_with("--") {
+        if LONG_OPTIONS.iter().any(|option| option.starts_with(name)) {
+            return true;
+        }
+    } else if arg.starts_with("-h") {
+        return true;
+    }
+    !(NEGATIVE_NUMBER.is_match(arg) || arg.contains(' '))
+}
+
+/// argparse takes the value of `--opt value` only from a word it does not
+/// read as an option, so `--group -x` and `--config --output` are usage
+/// errors while `--group -1`, `--config '-a b'` and `--group=-x` are values.
+/// clap is told to accept values starting with `-`; this check refuses the
+/// rest first.
+fn check_option_values(args: &[OsString]) -> Result<(), String> {
+    let words: Vec<_> = args.iter().map(|arg| arg.to_string_lossy()).collect();
+    let mut index = 0;
+    while index < words.len() {
+        let word = &words[index];
+        if word == "--" {
+            break;
+        }
+        let value_option = (word.starts_with("--") && !word.contains('='))
+            .then(|| resolve_long(word))
+            .flatten()
+            .filter(|option| VALUE_OPTIONS.contains(option));
+        if let Some(option) = value_option {
+            match words.get(index + 1) {
+                Some(value) if value != "--" && !argparse_reads_as_option(value) => {
+                    index += 2;
+                    continue;
+                }
+                _ => return Err(format!("argument {option}: expected one argument")),
+            }
+        }
+        index += 1;
+    }
+    Ok(())
 }
 
 /// A fatal error: one line on stderr, exit 1 (PLAN.md 3.8, 4.2 item 7).
@@ -141,6 +237,12 @@ fn run(cli: &Cli, system: &impl System) -> Result<(), Fatal> {
 
 fn main() -> ExitCode {
     // Help and --version exit 0, usage errors 2 (as argparse).
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if let Err(message) = check_option_values(&args) {
+        Cli::command()
+            .error(clap::error::ErrorKind::InvalidValue, message)
+            .exit();
+    }
     let cli = Cli::parse();
     match run(&cli, &HostSystem) {
         Ok(()) => ExitCode::SUCCESS,
@@ -158,7 +260,6 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
 
     #[test]
     fn command_line_definition_is_consistent() {
@@ -184,5 +285,40 @@ mod tests {
         // A prefix of two options is ambiguous, as in argparse.
         assert!(Cli::try_parse_from(["software-live", "validate", "--conf", "/a"]).is_err());
         assert!(Cli::try_parse_from(["software-live", "validate", "--conf=/a"]).is_err());
+    }
+
+    #[test]
+    fn option_values_follow_argparse() {
+        let check = |words: &[&str]| {
+            let args: Vec<OsString> = words.iter().map(OsString::from).collect();
+            check_option_values(&args)
+        };
+        for ok in [
+            &["validate", "--group", "-1"][..],
+            &["--cache", "-.5", "validate"],
+            &["--output", "-1.5"],
+            &["--config", "-a b"],
+            &["--group=-x"],
+            &["--gro", "-"],
+            &["--", "--group", "-x"],
+            &["--config-json", "{}"],
+        ] {
+            assert_eq!(check(ok), Ok(()), "{ok:?}");
+        }
+        for bad in [
+            &["validate", "--group", "-x"][..],
+            &["--group", "-1e5"],
+            &["--output", "-1."],
+            &["--config", "--output"],
+            &["--config", "--out=x"],
+            &["--config", "--ver"],
+            &["--config", "-h"],
+            &["--config", "-hx"],
+            &["--config", "--"],
+            &["--config"],
+            &["--co", "x", "--cache", "-y"],
+        ] {
+            assert!(check(bad).is_err(), "{bad:?}");
+        }
     }
 }

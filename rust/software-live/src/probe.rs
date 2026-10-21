@@ -76,17 +76,30 @@ impl FileStat {
     }
 }
 
-/// How a child process failed, as `subprocess.run(check=True, timeout=…)`
-/// raises it.
+/// What a finished child process left: both captured streams and how it
+/// ended.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CommandOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    /// The exit code; `None` when a signal ended the child.
+    pub code: Option<i32>,
+    pub signal: Option<i32>,
+}
+
+impl CommandOutput {
+    pub fn success(&self) -> bool {
+        self.code == Some(0)
+    }
+}
+
+/// How running a child process failed before it finished, as
+/// `subprocess.run(timeout=…)` raises it. A non-zero exit is not an error
+/// here: [`command`] decides that after decoding, as Python does.
 #[derive(Debug)]
 pub enum CommandError {
     /// The program could not be started (`FileNotFoundError`, `PermissionError`, `OSError`).
     Spawn(io::Error),
-    /// Non-zero exit or death by a signal (`CalledProcessError`).
-    Exit {
-        code: Option<i32>,
-        signal: Option<i32>,
-    },
     /// The timeout passed; the child was killed (`TimeoutExpired`).
     Timeout(Duration),
     /// Reading the child's output failed.
@@ -104,19 +117,6 @@ impl CommandError {
                 py.message = format!("{}: '{program}'", py.message);
                 py
             }
-            Self::Exit {
-                code: Some(code), ..
-            } => PyError::new(
-                "CalledProcessError",
-                format!("Command '{program}' returned non-zero exit status {code}."),
-            ),
-            Self::Exit { signal, .. } => PyError::new(
-                "CalledProcessError",
-                format!(
-                    "Command '{program}' died with signal {}.",
-                    signal.unwrap_or_default()
-                ),
-            ),
             Self::Timeout(timeout) => PyError::new(
                 "TimeoutExpired",
                 format!(
@@ -148,8 +148,8 @@ pub trait System {
     fn readlink(&self, path: &Path) -> io::Result<OsString>;
     /// Run `argv` (the program looked up in `PATH` unless it contains a
     /// `/`), no stdin, stdout and stderr captured, killed when `timeout`
-    /// passes; returns stdout of a zero exit.
-    fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<Vec<u8>, CommandError>;
+    /// passes; returns what the finished child left, whatever its exit.
+    fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError>;
 
     /// `Path(path).exists()` of Python 3.12: `False` for a missing path,
     /// a non-directory in the path, a bad descriptor or a symlink loop;
@@ -186,21 +186,43 @@ fn is_ignored_exists_error(error: &io::Error) -> bool {
         .is_some_and(|code| ignored.iter().any(|errno| errno.raw_os_error() == code))
 }
 
-/// `command(argv, timeout)` of `software_live.py:68-77`: run, decode the
-/// output as UTF-8 text with universal newlines (`text=True`) and strip it.
+/// `subprocess.run(text=True)` decoding: strict UTF-8, universal newlines.
+fn decode_text(bytes: Vec<u8>) -> Result<String, PyError> {
+    let text = String::from_utf8(bytes)
+        .map_err(|error| PyError::new("UnicodeDecodeError", error.to_string()))?;
+    Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+/// `command(argv, timeout)` of `software_live.py:68-77`. As
+/// `subprocess.run(capture_output=True, text=True, check=True)`: both
+/// streams are decoded first (a stream that is not UTF-8 is a
+/// `UnicodeDecodeError`, whatever the exit), then a non-zero exit is a
+/// `CalledProcessError`; stdout is returned stripped.
 pub fn command<S: System + ?Sized>(
     system: &S,
     argv: &[&OsStr],
     timeout: Duration,
 ) -> Result<String, PyError> {
     let program = argv.first().copied().unwrap_or_default();
-    let stdout = system
+    let output = system
         .run(argv, timeout)
         .map_err(|error| error.to_py(program))?;
-    let text = String::from_utf8(stdout)
-        .map_err(|error| PyError::new("UnicodeDecodeError", error.to_string()))?;
-    let text = text.replace("\r\n", "\n").replace('\r', "\n");
-    Ok(python_strip(&text).to_owned())
+    let success = output.success();
+    let (code, signal) = (output.code, output.signal);
+    let stdout = decode_text(output.stdout)?;
+    decode_text(output.stderr)?;
+    if !success {
+        let program = program.to_string_lossy();
+        let message = match code {
+            Some(code) => format!("Command '{program}' returned non-zero exit status {code}."),
+            None => format!(
+                "Command '{program}' died with signal {}.",
+                signal.unwrap_or_default()
+            ),
+        };
+        return Err(PyError::new("CalledProcessError", message));
+    }
+    Ok(python_strip(&stdout).to_owned())
 }
 
 /// The real host.
@@ -231,7 +253,7 @@ impl System for HostSystem {
         std::fs::read_link(path).map(PathBuf::into_os_string)
     }
 
-    fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<Vec<u8>, CommandError> {
+    fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError> {
         let (program, args) = argv
             .split_first()
             .ok_or_else(|| CommandError::Spawn(io::Error::other("empty command")))?;
@@ -262,23 +284,20 @@ impl System for HostSystem {
         // A grandchild may still hold a pipe open: wait for the end of
         // both pipes only until the deadline (Python's `communicate()` times
         // out the same way).
-        let mut output = Vec::new();
+        let mut output = CommandOutput {
+            code: status.code(),
+            signal: status.signal(),
+            ..CommandOutput::default()
+        };
         for _ in [&stdout, &stderr].iter().filter(|pipe| pipe.is_some()) {
             match receiver.recv_timeout(remaining(deadline)) {
-                Ok((0, Ok(bytes))) => output = bytes,
-                Ok((_, Ok(_))) => {}
+                Ok((0, Ok(bytes))) => output.stdout = bytes,
+                Ok((_, Ok(bytes))) => output.stderr = bytes,
                 Ok((_, Err(error))) => return Err(CommandError::Io(error)),
                 Err(_) => return Err(CommandError::Timeout(timeout)),
             }
         }
-        if status.success() {
-            Ok(output)
-        } else {
-            Err(CommandError::Exit {
-                code: status.code(),
-                signal: status.signal(),
-            })
-        }
+        Ok(output)
     }
 }
 
@@ -534,6 +553,8 @@ pub mod fake {
         pub argv: Vec<String>,
         #[serde(default)]
         pub stdout: String,
+        #[serde(default)]
+        pub stderr: String,
         /// Exit code (0 when absent).
         #[serde(default)]
         pub exit: i32,
@@ -654,7 +675,7 @@ pub mod fake {
                 .map_or_else(|| Err(errno("ENOENT")), |e| e.get().map(OsString::from))
         }
 
-        fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<Vec<u8>, CommandError> {
+        fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError> {
             let argv: Vec<String> = argv
                 .iter()
                 .map(|a| a.to_string_lossy().into_owned())
@@ -669,8 +690,9 @@ pub mod fake {
             match spec.error.as_deref() {
                 Some("timeout") => Err(CommandError::Timeout(timeout)),
                 Some(name) => Err(CommandError::Spawn(errno(name))),
-                None if spec.exit == 0 => Ok(spec.stdout.into_bytes()),
-                None => Err(CommandError::Exit {
+                None => Ok(CommandOutput {
+                    stdout: spec.stdout.into_bytes(),
+                    stderr: spec.stderr.into_bytes(),
                     code: Some(spec.exit),
                     signal: None,
                 }),
@@ -745,6 +767,28 @@ mod tests {
             ),
             "UnicodeDecodeError"
         );
+        // Both streams are decoded before the exit status counts.
+        assert_eq!(
+            class(
+                &[os("/bin/sh"), os("-c"), os("printf ok; printf '\\377' >&2")],
+                COMMAND_TIMEOUT
+            ),
+            "UnicodeDecodeError"
+        );
+        assert_eq!(
+            class(
+                &[os("/bin/sh"), os("-c"), os("printf '\\377'; exit 4")],
+                COMMAND_TIMEOUT
+            ),
+            "UnicodeDecodeError"
+        );
+        assert_eq!(
+            class(
+                &[os("/bin/sh"), os("-c"), os("kill -9 $$")],
+                COMMAND_TIMEOUT
+            ),
+            "CalledProcessError"
+        );
         let started = Instant::now();
         assert_eq!(
             class(&[os("/bin/sleep"), os("10")], Duration::from_millis(200)),
@@ -778,7 +822,8 @@ mod tests {
         let out = HostSystem
             .run(&[os("/bin/sh"), os("-c"), os(script)], COMMAND_TIMEOUT)
             .unwrap();
-        assert_eq!(out.len(), 300_000);
+        assert_eq!((out.stdout.len(), out.stderr.len()), (300_000, 300_000));
+        assert!(out.success());
     }
 
     #[test]

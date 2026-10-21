@@ -177,7 +177,11 @@ with modes `collect | serve | validate | export-inventory`
 
 Every option is accepted with every mode, in any order, as `--opt value` or
 `--opt=value` and by any unambiguous prefix (argparse's `allow_abbrev`); the
-last occurrence wins; `--` ends the options. `--config-json` takes precedence
+last occurrence wins; `--` ends the options. The value of `--opt value`
+is never a word argparse reads as an option (`-x`, `-h…`, `--out`, `--`),
+but may be a negative number (`-1`, `-.5`; argparse of Python 3.12 and
+3.13, the hosts' versions — 3.14 also takes `-1e5` and `-1.`) or contain a
+space; with `--opt=value` any value is taken. `--config-json` takes precedence
 over `--config` (`:904-906`) unless it is empty (`args.config_json if
 args.config_json else …`). `fixtures/cli.json` pins these exit codes against
 the Python program. New and only
@@ -515,7 +519,10 @@ request path or a policy value other than the host.
    `--config-json` argument that is not UTF-8 (Python decodes argv with
    `surrogateescape`). Python accepts all of these. Our writers never
    produce them, and the role writes the policy with Ansible's `to_json`.
-   Python's own limit of 4300 digits per integer is kept.
+   Python's own limit of 4300 digits per integer is kept, also for a value a
+   later duplicate key replaces and for release numbers (`version()`). JSON
+   is taken apart through `RawValue`, so an object key equal to serde_json's
+   internal number token stays an ordinary key.
 5. **Error texts.** Messages the Python code raises itself are reproduced
    verbatim with the Python class name (`ValueError: service stopped or
    managed binary missing`, `ValueError: MainPID changed during

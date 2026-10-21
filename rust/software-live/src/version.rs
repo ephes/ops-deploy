@@ -14,17 +14,24 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::error::PyError;
+use crate::pyjson::{INT_MAX_STR_DIGITS, int_digits_error};
 
 /// A non-negative integer of any size, kept as its canonical decimal digits.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Int(String);
 
 impl Int {
-    /// `int(digits)` for a non-empty string of ASCII digits.
-    fn from_digits(digits: &str) -> Self {
+    /// `int(digits)` for a non-empty string of ASCII digits: more than
+    /// 4300 digits (leading zeros count) is Python's `ValueError`.
+    fn from_digits(digits: &str) -> Result<Self, PyError> {
         debug_assert!(!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
+        if digits.len() > INT_MAX_STR_DIGITS {
+            return Err(int_digits_error(digits.len()));
+        }
         let trimmed = digits.trim_start_matches('0');
-        Self(if trimmed.is_empty() { "0" } else { trimmed }.to_owned())
+        Ok(Self(
+            if trimmed.is_empty() { "0" } else { trimmed }.to_owned(),
+        ))
     }
 
     pub fn as_str(&self) -> &str {
@@ -80,9 +87,9 @@ pub fn version(value: &str) -> Result<Release, PyError> {
     let captures = VERSION
         .captures(value)
         .ok_or_else(|| PyError::value("unsupported version"))?;
-    Ok((1..=3)
+    (1..=3)
         .map(|group| Int::from_digits(&captures[group]))
-        .collect())
+        .collect()
 }
 
 /// `numeric_version(value)`: `N.N[.N…]` after stripping, optionally followed
@@ -91,7 +98,7 @@ pub fn numeric_version(value: &str) -> Result<Release, PyError> {
     let captures = NUMERIC_VERSION
         .captures(python_strip(value))
         .ok_or_else(|| PyError::value("unsupported numeric version"))?;
-    Ok(captures[1].split('.').map(Int::from_digits).collect())
+    captures[1].split('.').map(Int::from_digits).collect()
 }
 
 #[cfg(test)]

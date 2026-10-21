@@ -109,6 +109,7 @@ def gen_pyjson() -> dict[str, Any]:
             {"host": "h\u00f4st", "extra": {"n": [1, 2.5, None, True]}, "port": 5432}
         ),
         "deep_128": "[" * 127 + "1" + "]" * 127,
+        "serde_number_token": '[{"$serde_json::private::Number": "7"}, {"$serde_json::private::Number": 7.5}]',
         "long_string": json.dumps("x" * 5000 + "\u00e9" * 100),
         "int_4300_digits": "1" * 4300,
     }
@@ -133,6 +134,8 @@ def gen_pyjson() -> dict[str, Any]:
         "int_4301_digits": ("1" * 4301, None),
         "negative_int_4300_digits": ("-" + "1" * 4300, None),
         "negative_int_4301_digits": ("-" + "1" * 4301, None),
+        "replaced_duplicate_4301_digits": ('{"a": ' + "1" * 4301 + ', "a": 0}', None),
+        "serde_number_token_key": ('{"$serde_json::private::Number": "7"}', None),
         "nan": ("NaN", "non-standard-json"),
         "infinity": ('{"a": Infinity}', "non-standard-json"),
         "negative_infinity": ("[-Infinity]", "non-standard-json"),
@@ -207,6 +210,9 @@ def gen_version() -> dict[str, Any]:
             "123456789012345678901234567890.1",
         ],
     }
+    # Python's int() limit: 4300 digits, leading zeros included.
+    inputs["version"] += ["1" * 4300 + ".0.0", "1" * 4301 + ".0.0", "0" * 4301 + ".0.0"]
+    inputs["numeric_version"] += ["17." + "1" * 4300, "17." + "1" * 4301 + " x", "0" * 4301 + ".1"]
     p3_inputs = {
         "version": ["\u0663.\u0667.\u0669", "3.7.\uff19"],
         "numeric_version": ["\u0661\u0667.\u0666", "17.\U0001d7d8"],
@@ -396,6 +402,12 @@ def policy_texts() -> list[tuple[str, str, str | None]]:
         "deep_120": "[" * 120 + "]" * 120,
     }.items():
         add(f"hash_extra_{case_id}", with_raw("extra", raw))
+    add("hash_extra_serde_number_token",
+        with_raw("extra", '{"$serde_json::private::Number": "7", "n": {"$serde_json::private::Number": 7}}'))
+    add("postgresql_port_serde_number_token",
+        with_raw("postgresql.port", '{"$serde_json::private::Number": "5432"}'))
+    add("traefik_desired_version_4301_digits", mutate("traefik.desired_version", "1" * 4301 + ".0.0"))
+    add("traefik_desired_version_4300_digits", mutate("traefik.desired_version", "1" * 4300 + ".0.0"))
     add("hash_key_order", json.dumps({key: BASE[key] for key in reversed(list(BASE))}))
     add("hash_pretty_printed", json.dumps(BASE, indent=4))
     add("hash_desired_cycle_float", with_raw("os.desired_cycle", "24.04"))
@@ -693,6 +705,23 @@ def cli_cases() -> list[dict[str, Any]]:
         ("config_json_list", ["validate", "--config-json", "[]"]),
         ("config_json_negative_number", ["validate", "--config-json", "-1"]),
         ("config_json_nan", ["validate", "--config-json", "NaN"]),
+        ("value_negative_int", ["validate", "--config-json", valid, "--group", "-1"]),
+        ("value_negative_fraction", ["validate", "--config-json", valid, "--cache", "-.5"]),
+        ("value_negative_float", ["validate", "--config-json", valid, "--output", "-1.5"]),
+        # Not here: `-1e5` and `-1.`, which argparse reads as options up to
+        # Python 3.13 (the hosts) and as negative numbers from 3.14 on; the
+        # Rust code follows 3.12/3.13 (main::tests::option_values_follow_argparse).
+        ("value_dash_word", ["validate", "--config-json", valid, "--group", "-x"]),
+        ("value_dash_with_space", ["validate", "--config-json", valid, "--group", "-x y"]),
+        ("value_single_dash", ["validate", "--config-json", valid, "--group", "-"]),
+        ("value_attached_dash_word", ["validate", "--config-json", valid, "--group=-x"]),
+        ("value_is_an_option", ["validate", "--config", "--output", "x"]),
+        ("value_is_an_option_prefix", ["validate", "--config-json", valid, "--group", "--out"]),
+        ("value_is_help", ["validate", "--config-json", valid, "--group", "-h"]),
+        ("value_is_help_attached", ["validate", "--config-json", valid, "--group", "-hx"]),
+        ("value_is_double_dash", ["validate", "--config-json", valid, "--group", "--"]),
+        ("value_after_prefix", ["validate", "--config-json", valid, "--gr", "-x"]),
+        ("negative_config_path", ["validate", "--config", "-1"]),
         ("no_arguments", []),
         ("unknown_mode", ["nope"]),
         ("extra_positional", ["validate", "extra"]),

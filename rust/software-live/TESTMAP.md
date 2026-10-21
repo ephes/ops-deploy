@@ -63,15 +63,15 @@ here passes.
 
 | Python behaviour | Rust counterpart | Status |
 | --- | --- | --- |
-| `main()` argument handling (`:884-931`): modes, options with every mode, any order, `--opt=value`, unique prefixes, ambiguous prefixes, last occurrence wins, `--config-json` before `--config` (an empty one falls back), usage errors exit 2, failures exit 1, the `export-inventory` argument check and its stderr line | `tests/cli.rs::exit_codes_match_python` against `fixtures/cli.json` (the Python program run as a subprocess); `main::tests` | done |
+| `main()` argument handling (`:884-931`): modes, options with every mode, any order, `--opt=value`, unique prefixes, ambiguous prefixes, last occurrence wins, which words can be an option's value (negative numbers, words with a space, `-` vs `-x`, `--`, `-h…`), `--config-json` before `--config` (an empty one falls back), usage errors exit 2, failures exit 1, the `export-inventory` argument check and its stderr line | `tests/cli.rs::exit_codes_match_python` against `fixtures/cli.json` (the Python program run as a subprocess); `main::tests` | done |
 | `validate_policy` (`:607-641`): every rule, the order of the checks, the exception class per wrong type (`KeyError`, `TypeError`, `AttributeError`, unhashable values), `str()` of numbers in the cycle and major patterns | `policy::tests::validation_and_hash_match_python` (`fixtures/policy.json`, about 160 cases) | done |
 | `policy_sha256` (`:666-668`): `json.dumps(policy, sort_keys=True)` with non-ASCII and control characters, big and negative-zero integers, floats (`1E2`, `1e16`, `1e-05`, `1e400`, ties), key order, duplicate keys, nesting | `policy::tests::validation_and_hash_match_python` (hash taken from `collect()` with patched observations); `pyjson::tests::dumps_matches_python`, `::float_repr_matches_python` (about 2200 doubles incl. 200 exact ties) | done |
-| `json.loads` limits: more than 4300 digits, BOM, trailing data | `pyjson::tests::loads_accepts_and_rejects_like_python` | done |
+| `json.loads` limits: more than 4300 digits (also in a replaced duplicate), BOM, trailing data; serde_json's internal number token as an ordinary key | `pyjson::tests::loads_accepts_and_rejects_like_python` | done |
 | `collect()` summary (`:673-683`) and the top-level key set | `report::tests::summary_and_report_shape_match_python` (`fixtures/report.json`, observations patched into `collect()`) | done |
 | `with_freshness` (`:687-710`) | `report::tests::freshness_matches_python` | done |
 | `f"{Class}: {exc}"[:240]` at an observation boundary | `report::tests::error_texts_are_cut_like_python` (taken from `observe_os`) | done |
 | `os.path.realpath` (not strict) | `probe::tests::realpath_matches_python_on_a_real_tree` (`fixtures/realpath.json`) | done |
-| `command()` (`:68-77`): `text=True` decoding, universal newlines, `strip()`, `CalledProcessError`, `TimeoutExpired` with kill, `FileNotFoundError` | `probe::tests::command_*`, `::a_grandchild_holding_the_pipe_times_out`, `::large_output_on_both_pipes_does_not_block` | done |
+| `command()` (`:68-77`): `text=True` decoding of both streams before the exit check, universal newlines, `strip()`, `CalledProcessError` (exit code or signal), `TimeoutExpired` with kill, `FileNotFoundError` | `probe::tests::command_*`, `::a_grandchild_holding_the_pipe_times_out`, `::large_output_on_both_pipes_does_not_block` | done |
 | `Path.exists()` (Python 3.12 ignored errnos) | `probe::tests::exists_ignores_only_pathlibs_errnos` | done |
 
 ## P3 cases in the fixtures (PLAN.md 4.2)
