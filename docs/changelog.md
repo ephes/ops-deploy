@@ -97,6 +97,28 @@
   change, refused layout change, and the role and the deploy taking turns
   without a restart. `gotosocial_deploy` added to the drift manifest.
 
+- `vaultwarden`: port of the `vaultwarden_deploy` role (deploy only) and of
+  its playbook's port preflight, checked against ops-library main `540ede2b`
+  (2.56.0). `VaultwardenConfig` mirrors the role's variables;
+  `deploy_vaultwarden` adds the vendor's apt repository (signing key
+  downloaded once, `vaultwarden.list` as `apt_repository` writes it; the
+  Ubuntu releases use the `bookworm` suite), installs `vaultwarden` and
+  `vaultwarden-web-vault` when missing and requires a version for each,
+  creates the data and log directories, and ships the role's env, drop-in
+  and Traefik templates unchanged, so `/etc/vaultwarden.env` (through
+  `secret_file`), the drop-in and the route are byte-identical to the
+  role's. With SMTP configured, an existing `data/config.json` gets the
+  role's SMTP settings merged in on the host (`files/smtp_config_sync.py`,
+  request on stdin): every other key is kept, the file never leaves the
+  host, and it is rewritten in `to_nice_json` layout only when a setting
+  differs in value or JSON type (or fixed in place when only its owner or
+  mode differ). Vaultwarden restarts only after a package install or a
+  change to a file it reads; systemd reloads only for the drop-in; Traefik
+  is never restarted. Package pins and the apt hold are not ported (the
+  playbook sets none, so the deploy never touches either). `admin_enabled`
+  comes from the secrets, as in the playbook. `vaultwarden_deploy` added to
+  the drift manifest.
+
 - `homelab`: port of the `homelab_deploy` role (deploy only; with the
   `homelab_shared` defaults), checked against ops-library main `540ede2b`
   (2.56.0). `HomelabConfig` mirrors the role's variables; `deploy_homelab`
