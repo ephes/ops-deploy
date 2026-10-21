@@ -569,3 +569,21 @@ def test_runtime_rejects_relative_ca_store() -> None:
 
     with pytest.raises(ValidationError):
         Runtime(ca_store_root=Path("relative"))
+
+
+def test_missing_prepared_runtime_ca_store_aborts_before_service_changes(source: Path) -> None:
+    import re
+
+    cfg = macmini_core_config(source)
+    assert cfg.runtime is not None
+    protected = cfg.model_copy(
+        update={"runtime": cfg.runtime.model_copy(update={"ca_store_root": Path("/var/lib/managed-container-ca")})}
+    )
+    responses: dict[Any, Any] = dict(fakehost.UBUNTU)
+    responses[re.compile(r"test -s /var/lib/managed-container-ca/.*")] = {"success": False}
+    runner = RecordingRsyncRunner()
+    run = run_deploy_fake(deploy_graphyard_core, protected, secrets_values(), runner, responses=responses)
+    assert not run.succeeded
+    assert not run.op(PREFIX + "Require prepared CA store /var/lib/managed-container-ca/graphyard-influxdb").succeeded
+    assert not run.mutating_changed_ops
+    assert all("--dry-run" in call for call in runner.calls)

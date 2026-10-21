@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fail LiveKit, Loki and Graphyard runtime deployments before service changes when explicitly enabled replacement CA stores have not been prepared.
+
 - Support optional prepared replacement container CA stores for LiveKit, Graphyard and Logyard without changing application images.
 - LiveKit optionally binds a prepared managed Chrome distrust policy into Egress, with required-file preflight before application changes.
 

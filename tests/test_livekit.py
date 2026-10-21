@@ -380,3 +380,25 @@ def test_chrome_policy_only_binds_egress(cfg: LivekitConfig) -> None:
     combined = cfg.model_copy(update={"ca_store_root": path.parent, "egress_chrome_policy_path": path}).compose_app()
     assert combined.paths_required[0].path == path
     assert len({entry.path for entry in combined.directories}) == len(combined.directories)
+
+
+def test_native_ca_stores_are_required_before_service_changes(cfg: LivekitConfig) -> None:
+    protected = cfg.model_copy(update={"ca_store_root": PurePosixPath("/var/lib/managed-container-ca")}).compose_app()
+    required = {str(item.path) for item in protected.paths_required}
+    assert required == {
+        f"/var/lib/managed-container-ca/{container}/{name}"
+        for container in ("livekit-server", "livekit-egress")
+        for name in ("bundle.pem", "empty", "manifest.json")
+    }
+
+
+def test_missing_native_store_stops_before_compose_changes(cfg: LivekitConfig, secrets: SecretValues) -> None:
+    import re
+
+    protected = cfg.model_copy(update={"ca_store_root": PurePosixPath("/var/lib/managed-container-ca")})
+    responses: dict[Any, Any] = dict(fakehost.UBUNTU)
+    responses[re.compile(r"test -s /var/lib/managed-container-ca/.*")] = {"success": False}
+    run = run_deploy_fake(deploy_livekit, protected, secrets, responses=responses)
+    assert not run.succeeded
+    assert not run.mutating_changed_ops
+    assert not container_commands(run)

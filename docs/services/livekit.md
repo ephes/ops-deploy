@@ -127,3 +127,5 @@ negative and positive TLS probes. The preparation role owns root:root 0755 for
 the managed store root; LiveKit declares the same metadata for bind validation.
 
 `egress_chrome_policy_path` optionally binds a prepared managed Chrome policy file read-only at `/etc/opt/chrome/policies/managed/99-emudhra.json` in Egress only. Use the collection `chrome_ca_distrust` role to prepare the policy; native SSL certificate environment settings do not affect Chrome Root Store. Recreate Egress after changing the single-file binding so it sees the new inode. The policy preserves other managed policies and does not touch browser profiles.
+
+When replacement trust is enabled, preconditions require the prepared bundle, empty directory and manifest before any service changes. A missing store fails deployment; prepare the target image first rather than allowing Compose to create a missing source.

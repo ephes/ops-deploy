@@ -153,3 +153,5 @@ Refreshing store files alone does not trigger compose change detection. Explicit
 restart/recreate affected containers to discard loaded trust contexts, then repeat
 negative and positive TLS probes. The preparation role owns root:root 0755 for
 the managed store root; LiveKit declares the same metadata for bind validation.
+
+When replacement trust is enabled, preconditions require the prepared bundle, empty directory and manifest before any service changes. A missing store fails deployment; prepare the target image first rather than allowing Compose to create a missing source.

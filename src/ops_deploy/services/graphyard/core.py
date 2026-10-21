@@ -42,6 +42,7 @@ from ops_deploy.core.git_source import CommitSha
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import mark_read_only, record_source, service_rollout, system_user, systemd_unit, wait_port
+from ops_deploy.helpers.container_ca import require_container_ca_stores
 from ops_deploy.helpers.probes import migrations_state, verify_probe, when_present
 from ops_deploy.helpers.probes import probe as strict_probe
 from ops_deploy.helpers.python import DEFAULT_UV
@@ -1039,6 +1040,8 @@ def _site_owned(cfg: GraphyardConfig) -> OperationMeta | None:
 
 
 def core_steps(cfg: GraphyardConfig, secrets: SecretValues, rsync: RsyncRunner) -> None:
+    if cfg.runtime is not None and cfg.runtime.ca_store_root is not None:
+        require_container_ca_stores(cfg.runtime.ca_store_root, (cfg.influx.container_name, cfg.grafana.container_name))
     secrets.require(cfg.required_secret_keys)
     check_secrets(cfg, secrets)
     specs = render_specs(cfg, secrets) if cfg.metric_specs is not None else None

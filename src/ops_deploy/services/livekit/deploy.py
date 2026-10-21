@@ -31,6 +31,7 @@ from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.helpers import TraefikRoute, traefik_route
+from ops_deploy.helpers.container_ca import require_container_ca_stores
 from ops_deploy.helpers.traefik import Hostname
 from ops_deploy.services.compose_app import (
     Bind,
@@ -275,6 +276,18 @@ class LivekitConfig(BaseServiceConfig):
                     if self.egress_chrome_policy_path is not None
                     else ()
                 ),
+                *(
+                    tuple(
+                        RequiredPath(
+                            path=self.ca_store_root / container / name,
+                            hint="prepare the per-image container CA store first",
+                        )
+                        for container in (SERVER, EGRESS)
+                        for name in ("bundle.pem", "empty", "manifest.json")
+                    )
+                    if self.ca_store_root is not None
+                    else ()
+                ),
             ),
             services=(server, egress),
             checks=Checks(
@@ -307,6 +320,8 @@ def deploy_livekit(cfg: LivekitConfig, secrets: SecretValues) -> None:
     """The Compose app (``Deploy livekit | ...``), then the route (``Deploy livekit route | ...``)."""
 
     check_livekit_secrets(cfg, secrets)
+    if cfg.ca_store_root is not None:
+        require_container_ca_stores(cfg.ca_store_root, (SERVER, EGRESS))
     app = cfg.compose_app()
     route = cfg.route()
     text = render_route(cfg) if route is not None else None

@@ -35,6 +35,7 @@ from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import mark_read_only, probes, service_rollout, system_user, systemd_unit
+from ops_deploy.helpers.container_ca import require_container_ca_stores
 from ops_deploy.infra import DockerInstallConfig, docker_steps
 from ops_deploy.infra._common import directory
 from ops_deploy.ops import secret_stdin, sync_tree
@@ -555,6 +556,8 @@ def _loki_data_directory(loki: Loki) -> None:
 
 
 def core_steps(cfg: LogyardConfig, secrets: SecretValues, rsync: RsyncRunner) -> None:
+    if cfg.loki.ca_store_root is not None:
+        require_container_ca_stores(cfg.loki.ca_store_root, (cfg.loki.container_name,))
     secrets.require(cfg.required_secret_keys)
     if "\n" in secrets["nyxmon_storage_metrics_password"]:
         raise ValueError("secret nyxmon_storage_metrics_password must be a single line")
