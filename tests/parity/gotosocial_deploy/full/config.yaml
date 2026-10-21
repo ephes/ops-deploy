@@ -1,0 +1,47 @@
+# Managed by Ansible (ops-library gotosocial_deploy) - do not edit by hand.
+# Keys: https://docs.gotosocial.org/en/latest/configuration/
+account-domain: example.org
+accounts-registration-open: true
+advanced-rate-limit-requests: 600
+application-name: 'Example Fedi: "quoted" & more'
+bind-address: 127.0.0.1
+cache:
+  memory-target: 100MiB
+  visibility-mem-ratio: 2
+db-address: /var/lib/gotosocial/sqlite.db
+db-sqlite-journal-mode: WAL
+db-sqlite-synchronous: NORMAL
+db-type: sqlite
+host: fedi.example.org
+http-client:
+  allow-ips:
+  - 10.0.0.0/8
+  timeout: 30s
+instance-expose-public-timeline: true
+instance-federation-mode: blocklist
+instance-inject-mastodon-version: true
+instance-languages:
+- de
+- en-GB
+instance-robots-allow-indexing: false
+landing-page-user: show
+letsencrypt-enabled: false
+log-client-ip: false
+log-level: debug
+media-emoji-local-max-size: 50KiB
+media-remote-cache-duration: 14 days
+port: 10070
+protocol: https
+smtp-from: GoToSocial <noreply@example.org>
+smtp-host: smtp.example.org
+smtp-password: 'fixture: ''pw'' with "quotes", #hash and ümlaut'
+smtp-port: 2525
+smtp-username: postmaster@example.org
+storage-backend: local
+storage-local-base-path: /var/lib/gotosocial/storage
+trusted-proxies:
+- 127.0.0.1/32
+- ::1
+- 10.0.0.0/8
+web-asset-base-dir: /opt/gotosocial/current/web/assets/
+web-template-base-dir: /opt/gotosocial/current/web/template/

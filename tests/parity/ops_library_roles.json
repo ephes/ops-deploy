@@ -5,6 +5,7 @@
     "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
     "fastdeploy_restore": "16e3f4a52acc22222632f283d49c6f3553248e76b3f734948f065d795b6a6f5f",
+    "gotosocial_deploy": "c6e0a3e5d74259f172d2e3810619c26ca83c033f1885f95a032cd333937984e1",
     "graphyard_auth_bootstrap_deploy": "63d80f3411916714757f600de97277f75c8306dd7b6e26c30ecdf115e6d2261f",
     "graphyard_deploy": "dea6c54c44b6b853b3709898577c7260c16b171fb8bbe8ef0cefc0c1e53f74a2",
     "graphyard_ingress_deploy": "b68c693f9ace695b17e3bdaa1d735457b0f075bcd66fe9dffa50a0cea6261a5c",

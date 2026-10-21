@@ -43,6 +43,7 @@ src/ops_deploy/
   services/echoport/  echoport (port of the echoport_deploy role)
   services/work_app/  work_app (port of the work_app_deploy role)
   services/zellij_ingress/ redirect-only Traefik route (port of the zellij_ingress_deploy role)
+  services/gotosocial/ GoToSocial from a pinned release (port of the gotosocial_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share
   testing/harness.py  run_deploy_fake(): in-process runs against @fake

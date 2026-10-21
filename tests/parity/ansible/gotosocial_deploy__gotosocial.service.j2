@@ -1,0 +1,50 @@
+# Managed by Ansible (ops-library gotosocial_deploy)
+[Unit]
+Description=GoToSocial server ({{ gotosocial_host }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ gotosocial_user }}
+Group={{ gotosocial_group }}
+Type=exec
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory={{ gotosocial_current_link }}
+ExecStart={{ gotosocial_current_link }}/gotosocial --config-path {{ gotosocial_config_path }} server start
+# Cache compiled wazero (ffmpeg/ffprobe) artifacts between restarts.
+Environment=GTS_WAZERO_COMPILATION_CACHE={{ gotosocial_cache_dir }}
+{% if gotosocial_systemd_memory_max | length > 0 %}
+MemoryMax={{ gotosocial_systemd_memory_max }}
+{% endif %}
+
+# Hardening: upstream example plus a read-only system and a single writable
+# data directory. No capabilities: the listener is an unprivileged port.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ gotosocial_data_dir }}
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+DevicePolicy=closed
+LockPersonality=yes
+UMask=0077
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@clock @debug @module @mount @obsolete @reboot @setuid @swap @privileged
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+{
+  "gotosocial_host": "fedi.example.org",
+  "gotosocial_account_domain": "example.org",
+  "gotosocial_traefik_cert_resolver": "letsencrypt",
+  "gotosocial_traefik_middlewares": ["ratelimit@file", "extra"],
+  "gotosocial_application_name": "Example Fedi: \"quoted\" & more",
+  "gotosocial_landing_page_user": "show",
+  "gotosocial_instance_languages": ["de", "en-GB"],
+  "gotosocial_accounts_registration_open": true,
+  "gotosocial_instance_expose_public_timeline": true,
+  "gotosocial_media_remote_cache_duration": "14 days",
+  "gotosocial_log_level": "debug",
+  "gotosocial_smtp_host": "smtp.example.org",
+  "gotosocial_smtp_port": 2525,
+  "gotosocial_smtp_username": "postmaster@example.org",
+  "gotosocial_smtp_password": "fixture: 'pw' with \"quotes\", #hash and ümlaut",
+  "gotosocial_smtp_from": "GoToSocial <noreply@example.org>",
+  "gotosocial_extra_config": {
+    "cache": {"visibility-mem-ratio": 2},
+    "instance-federation-mode": "blocklist",
+    "media-emoji-local-max-size": "50KiB",
+    "advanced-rate-limit-requests": 600,
+    "instance-inject-mastodon-version": true,
+    "http-client": {"timeout": "30s", "allow-ips": ["10.0.0.0/8"]}
+  },
+  "gotosocial_systemd_memory_max": "",
+  "gotosocial_traefik_host": "social.example.org",
+  "gotosocial_trusted_proxies": ["127.0.0.1/32", "::1", "10.0.0.0/8"]
+}

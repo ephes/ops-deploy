@@ -1,0 +1,35 @@
+# Managed by Ansible (ops-library gotosocial_deploy) - do not edit by hand.
+# Keys: https://docs.gotosocial.org/en/latest/configuration/
+account-domain: example.org
+accounts-registration-open: false
+application-name: gotosocial
+bind-address: ::1
+cache:
+  memory-target: 100MiB
+db-address: /srv/gts-data/sqlite.db
+db-sqlite-journal-mode: WAL
+db-sqlite-synchronous: NORMAL
+db-type: sqlite
+host: example.org
+instance-expose-public-timeline: false
+instance-languages: []
+instance-robots-allow-indexing: false
+landing-page-user: ''
+letsencrypt-enabled: false
+log-client-ip: false
+log-level: info
+media-remote-cache-duration: 7 days
+port: 18080
+protocol: https
+smtp-from: ''
+smtp-host: ''
+smtp-password: ''
+smtp-port: 587
+smtp-username: ''
+storage-backend: local
+storage-local-base-path: /srv/gts-data/storage
+trusted-proxies:
+- 127.0.0.1/32
+- ::1
+web-asset-base-dir: /srv/gts/current/web/assets/
+web-template-base-dir: /srv/gts/current/web/template/
