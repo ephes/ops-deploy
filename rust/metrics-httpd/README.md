@@ -8,7 +8,8 @@ scripts today. The contract is [PLAN.md](PLAN.md), the test map
 [TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
 hosts run the Python scripts.
 
-Status: **S1** (core) and **S2b** (`script` mode). What exists:
+Status: **S1** (core), **S2b** (`script` mode) and **S2c** (`apt-state`
+mode). What exists:
 
 - The command line of PLAN.md 4.9 for all five modes (`json-file`,
   `script`, `apt-state`, `logyard-health`, `static`), `--version`
@@ -28,8 +29,13 @@ Status: **S1** (core) and **S2b** (`script` mode). What exists:
   its own process group and serves its stdout (200), a 502 page with the
   script's stderr or a 504 page after `--script-timeout`, which kills the
   whole process group (PLAN.md 4.4, D-8).
+- `apt-state` mode (S2c, PLAN.md 4.5): serves the os_apt_maintenance
+  state file with the computed `meta`, `summary` and reboot state (the
+  reboot flag and `uname` are read per request), answers like the Python
+  script for every fixture case, and answers with a JSON error where the
+  script crashes (D-2).
 - In the other modes a request that passes the gate gets 500
-  `internal_error` until the mode's slice (S2a, S2c–S2e) lands.
+  `internal_error` until the mode's slice (S2a, S2d, S2e) lands.
 
 ```bash
 metrics-httpd json-file --bind 127.0.0.1 --port 9103 --path /.well-known/backup \
@@ -44,7 +50,8 @@ metrics-httpd json-file --bind 127.0.0.1 --port 9103 --path /.well-known/backup 
 endpoint templates, runs their handlers on loopback with raw requests, calls
 their `_check_auth` with the real `htpasswd`, and records CPython's
 `json.dumps`, `float.__repr__`, `datetime` and `st_mtime` results.
-`tests/fixtures.rs` replays every case. From the repository root:
+`tests/fixtures.rs` replays every case (the `apt_state` family:
+`tests/apt_state.rs`). From the repository root:
 
 ```bash
 just metrics-httpd-fixtures       # regenerate (venv; then 3.12 and 3.13 must agree)

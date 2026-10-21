@@ -3,9 +3,11 @@
 Status: S1 implemented (core: command line of all five modes,
 `--check-config`, server, auth, Python-compatible JSON, meta, clock,
 fixture generator with drift test, `TESTMAP.md`); every mode answers the
-501/404/401 gate of 4.1, a request past the gate gets 500 `internal_error`
-until its slice S2a–S2e lands. S2b implemented (`script` mode, fixture
-family `script`). Campaign "Rust-Ports Runde 2"
+501/404/401 gate of 4.1. S2b implemented (`script` mode, fixture family
+`script`). S2c implemented (`apt-state` mode, port of
+`EndpointRebootStateTests`, fixture family `apt_state`). In the other modes
+a request past the gate gets 500 `internal_error` until its slice (S2a,
+S2d, S2e) lands. Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -301,8 +303,10 @@ l.17–18; flags `--freshness-max-age`, `--state-max-age` in Rust):
   {"flag_present"}`; reason `reboot_required_flag` if the flag exists;
   reason `stale_kernel` iff `reboot_required_details` is an object, `"stale_kernel"
   in (persisted.get("reasons") or [])` (Python `in`: list element equality,
-  substring for a string, key for an object) and `persisted["running_kernel"]
-  == running_release`; then the keys `running_kernel`,
+  substring for a string, key for an object; a truthy number or `true`
+  raises `TypeError`, evaluated before the kernel comparison, D-2) and
+  `persisted.get("running_kernel") == running_release` (only an equal
+  string matches); then the keys `running_kernel`,
   `running_kernel_version`, `newest_installed_kernel` are copied when present;
   `required = bool(reasons)`, `reasons` list. The flag and `uname` are read
   per request.
@@ -317,7 +321,9 @@ l.17–18; flags `--freshness-max-age`, `--state-max-age` in Rust):
   last_success_age_seconds, freshness_max_age_seconds, reboot_required,
   overall_ok = last_run_ok and last_success_fresh and state_file_fresh}`.
 - Existing tests that pin this: `tests/test_monitoring_pipeline_repair.py`
-  `EndpointRebootStateTests` (6 tests).
+  `EndpointRebootStateTests` (6 tests). S2c ported them to
+  `modes::apt_state::tests` and replays the script's `reboot_state()` and
+  handler answers from `fixtures/apt_state.json` (`tests/apt_state.rs`).
 
 ### 4.6 Mode `logyard-health` (`logyard_health_httpd.py.j2`)
 
@@ -464,8 +470,9 @@ per-request 401/503, not a startup failure.
 - **D-2 Python crash paths get answers.** Where Python raises inside the
   handler and drops the connection without a response, Rust answers:
   top-level JSON not an object (json-file, apt-state) → 502 `invalid_json`;
-  apt-state type errors (e.g. `reasons` a number) → 500 `{"error": true,
-  "error_type": "internal_error", …}`; script stdout not UTF-8 → passed
+  apt-state type errors (e.g. `reasons` a number) and a state file mtime
+  outside the years 1–9999 (`datetime.fromtimestamp` raises) → 500
+  `{"error": true, "error_type": "internal_error", …}`; script stdout not UTF-8 → passed
   through with 200 (newlines translated as in 4.4); script stderr not UTF-8
   (exit ≠ 0) → 502 with the text decoded lossily; a script stderr text
   outside latin-1 (Python: `UnicodeEncodeError` writing it into the status
@@ -530,7 +537,8 @@ per-request 401/503, not a startup failure.
   formatter writes computed floats (logyard counts). The int/float split
   also drives the apt-state type checks (`isinstance(v, int)`: `1e9` and
   `5.0` are floats there, as in Python); integers used in apt-state
-  arithmetic are exact (i128; a lexeme outside i128 there → 500
+  arithmetic are exact (i128; a lexeme outside i128 there, or a
+  difference `served − last_success_epoch` outside i128 → 500
   `internal_error`, D-2 style, never a wrong number). S1 has a fixture
   with exactly these cases; the parity harness compares bytes for every
   200 response and parsed JSON plus the D-3 rules for errors.
@@ -611,9 +619,9 @@ rust/metrics-httpd/
   src/modes/mod.rs                     # shared flags, the 4.1 gate, the Mode trait, --check-config problems
   src/modes/{json_file,script,apt_state,logyard_health,static_site}.rs
   src/clock.rs                         # injectable clock for tests
-  tests/fixtures.rs, tests/binary.rs   # fixture replay (in process, real sockets), process e2e
+  tests/fixtures.rs, tests/apt_state.rs, tests/binary.rs   # fixture replay (in process, real sockets; apt_state family in its own file), process e2e
   fixtures/generate.py                 # Python oracle (8.2)
-  fixtures/{pyjson,meta,auth,http_common}.json, fixtures/float_repr/part-*.txt
+  fixtures/{pyjson,meta,auth,http_common,apt_state}.json, fixtures/float_repr/part-*.txt
   fixtures/htpasswd, htpasswd-mixed, htpasswd-invalid   # committed test-only files (bcrypt cost 4)
   parity/run_parity.py, parity/shadow_compare.py
   TESTMAP.md
@@ -635,7 +643,7 @@ are small and may stay async via `tokio::fs`, subprocesses via
 | URL query encoding | `form_urlencoded` | D-13 |
 | CLI | `clap` 4 (derive, minimal features) | as the precedents |
 | time | `chrono` (`clock`, `std`) | UTC ISO strings, local time for the access log |
-| uname, process-group kill, `access(X_OK)` | `rustix` (`fs` from S1; `system`, `process` in S2b/S2c) | `os.uname().release` equivalent; D-8; `--check-config` of the script |
+| uname, process-group kill, `access(X_OK)` | `rustix` (`fs` from S1; `system` from S2c; `process` in S2b) | `os.uname().release` equivalent; D-8; `--check-config` of the script |
 | JSON serialisation trait | `serde` (no derive) | the `Formatter` writes `serde_json::Value`s |
 | tests | `tempfile`, `httparse` (reading raw responses in the fixture replay) | |
 
@@ -819,6 +827,14 @@ family `script` (`script.json`: one fixture script per case behind the
 rendered `metrics_httpd.py.j2` handler; cases where Python drops the
 connection or the plan allows a difference carry the D item and the Rust
 status, message or body).
+S2c added the family `apt_state` (`fixtures/apt_state.json`, rendered
+template and the real `htpasswd`): `reboot_state()` results and the
+handler's answers with a frozen `datetime`, a fixed `uname().release` and a
+temporary reboot flag (the Rust side sets them with `--reboot-flag` and
+`AptState::kernel_release`); compare modes `bytes`, `error_type_only`
+(D-3, with the message prefix) and `rust_only` (Python crashes or accepts
+what Rust refuses; the case names the D item and the Rust status and
+`error_type`).
 
 ### 8.3 Parity harness (process level)
 

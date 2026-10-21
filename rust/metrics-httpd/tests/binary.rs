@@ -837,3 +837,77 @@ fn sigterm_kills_a_running_script_group() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+/// apt-state (PLAN.md 4.5, D-9): the reboot flag and `uname` are read per
+/// request, and every 5xx answer gets one error line next to the access
+/// line, without credentials.
+#[test]
+fn apt_state_reads_flag_and_uname_per_request_and_logs_5xx_causes() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    let flag = dir.path().join("reboot-required");
+    let mut args = json_file_args(dir.path(), &htpasswd());
+    args[0] = "apt-state".into();
+    let json_index = args.iter().position(|a| a == "--json-path").unwrap();
+    args[json_index + 1] = state.display().to_string();
+    args.extend(
+        [
+            "--freshness-max-age",
+            "1209600",
+            "--state-max-age",
+            "1296000",
+            "--reboot-flag",
+            &flag.display().to_string(),
+        ]
+        .map(str::to_owned),
+    );
+    let server = Server::start(&args, &[]);
+    let auth = [("Authorization", "Basic dXNlcjpzZWNyZXQ=")]; // user:secret
+    let body =
+        |response: &support::Exchange| -> Value { serde_json::from_slice(&response.body).unwrap() };
+
+    let missing = get(server.addr, "/.well-known/backup", &auth);
+    assert_eq!(missing.status, 503);
+    assert_eq!(body(&missing)["error_type"], "state_file_missing");
+
+    let release = Command::new("uname").arg("-r").output().unwrap();
+    let release = String::from_utf8(release.stdout).unwrap().trim().to_owned();
+    std::fs::write(
+        &state,
+        serde_json::json!({
+            "last_status": "success",
+            "reboot_required_details": {"reasons": ["stale_kernel"], "running_kernel": release},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let stale = body(&get(server.addr, "/.well-known/backup", &auth));
+    assert_eq!(
+        stale["reboot_required_details"]["reasons"],
+        serde_json::json!(["stale_kernel"])
+    );
+    std::fs::write(&flag, "*** System restart required ***\n").unwrap();
+    let both = body(&get(server.addr, "/.well-known/backup", &auth));
+    assert_eq!(
+        both["reboot_required_details"]["reasons"],
+        serde_json::json!(["reboot_required_flag", "stale_kernel"])
+    );
+    assert_eq!(both["summary"]["reboot_required"], true);
+
+    std::fs::write(&state, "[1]").unwrap();
+    let list = get(server.addr, "/.well-known/backup", &auth);
+    assert_eq!(list.status, 502);
+    assert_eq!(body(&list)["error_type"], "invalid_json");
+
+    let lines = server.stop();
+    let errors: Vec<&String> = lines
+        .iter()
+        .filter(|line| line.starts_with("metrics-httpd apt-state: "))
+        .collect();
+    assert_eq!(errors.len(), 2, "{lines:?}");
+    assert!(errors[0].starts_with("metrics-httpd apt-state: 503 state_file_missing: "));
+    assert!(errors[1].starts_with("metrics-httpd apt-state: 502 invalid_json: "));
+    for line in &lines {
+        assert!(!line.contains("dXNlcjpzZWNyZXQ="), "{line}");
+    }
+}

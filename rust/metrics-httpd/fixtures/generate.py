@@ -3,7 +3,7 @@
 
 Python is the oracle: every expected value in ``fixtures/`` is what CPython or
 one of the rendered Python endpoint scripts produces. The Rust tests
-(``tests/fixtures.rs``) replay every case. Families:
+(``tests/fixtures.rs``, ``tests/apt_state.rs``) replay every case. Families:
 
 ``float_repr`` (stdlib)
     ``float_repr/part-*.txt``: ``repr()`` of seeded random finite ``f64``
@@ -30,6 +30,12 @@ one of the rendered Python endpoint scripts produces. The Rust tests
     fixture scripts' stdout, exit codes, stderr and timeout as the handler
     answers them, with the Rust expectation next to every case where Python
     drops the connection or the plan allows a difference (D-2, D-3).
+``apt_state`` (templates, ``htpasswd``)
+    ``apt_state.json``: the rendered os_apt_maintenance script's
+    ``reboot_state()`` for the inputs of ``EndpointRebootStateTests`` and
+    every branch of the reason check, and its handler on loopback (frozen
+    clock, fixed ``uname().release``, a temporary reboot flag) for state
+    files covering every branch of PLAN.md 4.5 (S2c).
 
 Commands: ``write`` regenerates the files in place, ``check`` regenerates in
 memory and fails on any difference (the drift test,
@@ -243,10 +249,22 @@ DUMPS_CASES: list[tuple[str, str, str | None]] = [
     ("d4-depth-500", "[" * 500 + "]" * 500, D4),
     ("depth-127", "[" * 127 + "]" * 127, None),
     ("d4-serde-number-key", '{"a": {"$serde_json::private::Number": "2.5"}}', D4),
-    ("d4-serde-number-key-escaped", '{"a": {"\\u0024serde_json::private::Number": "1"}}', D4),
+    (
+        "d4-serde-number-key-escaped",
+        '{"a": {"\\u0024serde_json::private::Number": "1"}}',
+        D4,
+    ),
     ("d4-serde-number-key-other-value", '{"$serde_json::private::Number": "x"}', D4),
-    ("serde-number-token-as-value", '["$serde_json::private::Number", {"k": "$serde_json::private::Number"}]', None),
-    ("d5-int-4301-digits-replaced-by-duplicate", '{"a": ' + "9" * 4301 + ', "a": 1}', None),
+    (
+        "serde-number-token-as-value",
+        '["$serde_json::private::Number", {"k": "$serde_json::private::Number"}]',
+        None,
+    ),
+    (
+        "d5-int-4301-digits-replaced-by-duplicate",
+        '{"a": ' + "9" * 4301 + ', "a": 1}',
+        None,
+    ),
     ("float-overflow-replaced-by-duplicate", '{"a": 1e400, "a": 1}', None),
     ("long-digit-string", '{"' + "9" * 4400 + '": "' + "9" * 4400 + '"}', None),
     ("depth-127-objects", '{"a": ' * 127 + "1" + "}" * 127, None),
@@ -1349,6 +1367,712 @@ def build_script() -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------
+# apt_state
+
+APT_SERVED = 1_792_576_800
+APT_FRESHNESS = PLACEHOLDER_VARS["os_apt_maintenance_freshness_max_age_seconds"]
+APT_STATE_MAX = PLACEHOLDER_VARS["os_apt_maintenance_endpoint_state_max_age_seconds"]
+APT_PATH = "/.well-known/os-apt-maintenance"
+APT_RELEASE = "6.8.0-138-generic"
+APT_STALE_RELEASE = "5.10.0-23-amd64"
+APT_ARGV = [
+    "apt-state",
+    "--path",
+    APT_PATH,
+    "--json-path",
+    "{json}",
+    "--htpasswd-file",
+    "{htpasswd}",
+    "--freshness-max-age",
+    str(APT_FRESHNESS),
+    "--state-max-age",
+    str(APT_STATE_MAX),
+    "--reboot-flag",
+    "{reboot_flag}",
+    "--realm",
+    "os-apt-maintenance",
+    "--server-name",
+    "os-apt-maintenance-httpd/0.1",
+]
+
+
+def apt_stale_state() -> dict[str, Any]:
+    """EndpointRebootStateTests._stale_state."""
+    return {
+        "reboot_required": True,
+        "reboot_required_details": {
+            "required": True,
+            "reasons": ["stale_kernel"],
+            "flag_present": False,
+            "running_kernel": APT_STALE_RELEASE,
+            "running_kernel_version": "5.10.0-23",
+            "newest_installed_kernel": "6.1.0-52",
+        },
+    }
+
+
+def apt_with_reasons(reasons: Any, **details: Any) -> dict[str, Any]:
+    return {
+        "reboot_required_details": {
+            "reasons": reasons,
+            "running_kernel": APT_STALE_RELEASE,
+            **details,
+        }
+    }
+
+
+# (id, state, flag_present, running_release): the inputs of
+# tests/test_monitoring_pipeline_repair.py EndpointRebootStateTests first,
+# then the branches of `"stale_kernel" in (persisted.get("reasons") or [])`.
+REBOOT_STATE_CASES: list[tuple[str, Any, bool, str]] = [
+    ("persisted-kernel-signal-served", apt_stale_state(), False, APT_STALE_RELEASE),
+    ("reboot-into-new-kernel-clears", apt_stale_state(), False, "6.1.0-52-amd64"),
+    ("live-marker-alone", {"reboot_required": False}, True, APT_RELEASE),
+    ("both-signals", apt_stale_state(), True, APT_STALE_RELEASE),
+    (
+        "legacy-reboot-required-only",
+        {"reboot_required": True},
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "legacy-details-null",
+        {"reboot_required_details": None},
+        False,
+        APT_STALE_RELEASE,
+    ),
+    ("legacy-empty", {}, False, APT_STALE_RELEASE),
+    ("legacy-with-marker", {}, True, APT_STALE_RELEASE),
+    (
+        "details-not-object",
+        {"reboot_required_details": ["stale_kernel"]},
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "details-string",
+        {"reboot_required_details": "stale_kernel"},
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "reasons-absent",
+        {"reboot_required_details": {"running_kernel": APT_STALE_RELEASE}},
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "reasons-other",
+        apt_with_reasons(["reboot_required_flag"]),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "reasons-two",
+        apt_with_reasons(["reboot_required_flag", "stale_kernel"]),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "reasons-nested-list",
+        apt_with_reasons([["stale_kernel"]]),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "reasons-substring",
+        apt_with_reasons("prefix stale_kernel suffix"),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    ("reasons-string-other", apt_with_reasons("stale"), False, APT_STALE_RELEASE),
+    (
+        "reasons-object-key",
+        apt_with_reasons({"stale_kernel": False}),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "reasons-object-value",
+        apt_with_reasons({"x": "stale_kernel"}),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    ("reasons-null", apt_with_reasons(None), False, APT_STALE_RELEASE),
+    ("reasons-false", apt_with_reasons(False), False, APT_STALE_RELEASE),
+    ("reasons-zero", apt_with_reasons(0), False, APT_STALE_RELEASE),
+    ("reasons-zero-float", apt_with_reasons(0.0), False, APT_STALE_RELEASE),
+    ("reasons-empty-string", apt_with_reasons(""), False, APT_STALE_RELEASE),
+    ("reasons-empty-list", apt_with_reasons([]), True, APT_STALE_RELEASE),
+    ("reasons-int", apt_with_reasons(1), False, APT_STALE_RELEASE),
+    ("reasons-int-other-kernel", apt_with_reasons(1), False, APT_RELEASE),
+    ("reasons-true", apt_with_reasons(True), True, APT_STALE_RELEASE),
+    ("reasons-float", apt_with_reasons(2.5), False, APT_STALE_RELEASE),
+    (
+        "reasons-not-a-reason-for-other-details",
+        {"reboot_required_details": [1]},
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "running-kernel-int",
+        apt_with_reasons(["stale_kernel"], running_kernel=5),
+        False,
+        "5",
+    ),
+    (
+        "running-kernel-null",
+        apt_with_reasons(["stale_kernel"], running_kernel=None),
+        False,
+        "None",
+    ),
+    (
+        "running-kernel-absent",
+        {"reboot_required_details": {"reasons": ["stale_kernel"]}},
+        False,
+        "",
+    ),
+    (
+        "kernel-keys-partly-present",
+        apt_with_reasons(
+            ["stale_kernel"], newest_installed_kernel=None, extra="ignored"
+        ),
+        False,
+        APT_STALE_RELEASE,
+    ),
+    (
+        "kernel-keys-any-value",
+        apt_with_reasons(
+            ["stale_kernel"],
+            running_kernel_version={"major": 5},
+            newest_installed_kernel=[6, 1],
+        ),
+        True,
+        APT_STALE_RELEASE,
+    ),
+]
+
+
+def python_reboot_state(module: Any, state: Any, flag: bool, release: str) -> Any:
+    try:
+        return module.reboot_state(state, flag_present=flag, running_release=release)
+    except TypeError:
+        return "TypeError"
+
+
+def apt_state_document(**fields: Any) -> dict[str, Any]:
+    """A state file as roles/os_apt_maintenance/templates/os_apt_maintenance.py.j2 writes it."""
+    state: dict[str, Any] = {
+        "schema_version": 1,
+        "host_id": "fixture-host",
+        "hostname": "fixture-host",
+        "generated_at": "2026-10-21T09:00:00+00:00",
+        "generated_epoch": APT_SERVED - 3_600,
+        "freshness_max_age_seconds": APT_FRESHNESS,
+        "last_run_started_at": "2026-10-21T08:59:00+00:00",
+        "last_run_started_epoch": APT_SERVED - 3_660,
+        "last_run_finished_at": "2026-10-21T09:00:00+00:00",
+        "last_run_finished_epoch": APT_SERVED - 3_600,
+        "last_success_at": "2026-10-21T09:00:00+00:00",
+        "last_success_epoch": APT_SERVED - 3_600,
+        "last_exit_code": 0,
+        "last_status": "success",
+        "last_error": None,
+        "last_skipped_at": None,
+        "last_skipped_epoch": None,
+        "last_skipped_reason": None,
+        "reboot_required": False,
+        "reboot_required_details": {
+            "required": False,
+            "reasons": [],
+            "flag_present": False,
+        },
+        "auto_reboot_enabled": False,
+        "auto_reboot_attempted": False,
+        "auto_reboot_result": None,
+        "steps": {
+            "update_cache": {
+                "enabled": True,
+                "attempted": True,
+                "started_at": "2026-10-21T08:59:00+00:00",
+                "finished_at": "2026-10-21T08:59:12+00:00",
+                "duration_seconds": 12.345,
+                "exit_code": 0,
+                "status": "success",
+                "stdout_tail": "Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\nReading package lists… Done",
+                "stderr_tail": "",
+                "error": None,
+            }
+        },
+        "summary": {"last_run_ok": True, "reboot_required": False},
+    }
+    state.update(fields)
+    return state
+
+
+def apt_http_cases() -> list[dict[str, Any]]:
+    """(id, state, mtime offset to the served time, flag, release[, Rust expectation])."""
+    fresh = APT_SERVED - APT_FRESHNESS
+    s = APT_SERVED
+    cases: list[tuple[Any, ...]] = [
+        ("success-fresh", apt_state_document(), -60, False, APT_RELEASE),
+        (
+            "success-file-without-details",
+            {"last_status": "success", "last_success_epoch": s - 10},
+            -10,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "running-fresh-last-success",
+            apt_state_document(last_status="running", last_success_epoch=fresh),
+            -5,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "running-stale-last-success",
+            apt_state_document(last_status="running", last_success_epoch=fresh - 1),
+            -5,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "running-without-last-success",
+            apt_state_document(last_status="running", last_success_epoch=None),
+            -5,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "failed",
+            apt_state_document(
+                last_status="failed",
+                last_exit_code=100,
+                last_error="E: Unable to locate package",
+            ),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        ("never-run", {"last_status": "never_run"}, 0, False, APT_RELEASE),
+        (
+            "status-not-a-string",
+            apt_state_document(last_status=1),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        ("status-absent", {"last_success_epoch": s - 60}, -60, False, APT_RELEASE),
+        (
+            "success-without-last-success",
+            {"last_status": "success"},
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "state-age-at-limit",
+            apt_state_document(),
+            -APT_STATE_MAX,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "state-age-over-limit",
+            apt_state_document(),
+            -APT_STATE_MAX - 1,
+            False,
+            APT_RELEASE,
+        ),
+        ("mtime-in-the-future", apt_state_document(), 100, False, APT_RELEASE),
+        (
+            "last-success-in-the-future",
+            apt_state_document(last_success_epoch=s + 500),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-true",
+            apt_state_document(last_success_epoch=True),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-false",
+            apt_state_document(last_success_epoch=False),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-float",
+            apt_state_document(last_success_epoch=float(s - 60)),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-exponent",
+            '{"last_status": "success", "last_success_epoch": 1.7925768e9}',
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-string",
+            apt_state_document(last_success_epoch=str(s - 60)),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-big-negative",
+            apt_state_document(last_success_epoch=-(10**30)),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-big-positive",
+            apt_state_document(last_success_epoch=10**30),
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        (
+            "last-success-outside-i128",
+            apt_state_document(last_success_epoch=10**40),
+            -60,
+            False,
+            APT_RELEASE,
+            {"rust_status": 500, "rust_error_type": "internal_error", "d": "D-5"},
+        ),
+        (
+            "reboot-required-truthy-string",
+            {"reboot_required": "yes"},
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        ("reboot-required-zero", {"reboot_required": 0}, -60, False, APT_RELEASE),
+        (
+            "reboot-required-empty-list",
+            {"reboot_required": []},
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        ("reboot-flag-present", apt_state_document(), -60, True, APT_RELEASE),
+        (
+            "stale-kernel-served",
+            apt_state_document(**apt_stale_state()),
+            -60,
+            False,
+            APT_STALE_RELEASE,
+        ),
+        (
+            "stale-kernel-cleared-by-reboot",
+            apt_state_document(**apt_stale_state()),
+            -60,
+            False,
+            "6.1.0-52-amd64",
+        ),
+        (
+            "stale-kernel-and-flag",
+            apt_state_document(**apt_stale_state()),
+            -60,
+            True,
+            APT_STALE_RELEASE,
+        ),
+        (
+            "legacy-state-with-flag",
+            {"last_status": "success", "reboot_required": True},
+            -60,
+            True,
+            APT_RELEASE,
+        ),
+        (
+            "reasons-substring",
+            apt_with_reasons("stale_kernel"),
+            -60,
+            False,
+            APT_STALE_RELEASE,
+        ),
+        (
+            "reasons-int",
+            apt_with_reasons(1),
+            -60,
+            False,
+            APT_STALE_RELEASE,
+            {"rust_status": 500, "rust_error_type": "internal_error", "d": "D-2"},
+        ),
+        (
+            "reasons-true-other-kernel",
+            apt_with_reasons(True),
+            -60,
+            False,
+            APT_RELEASE,
+            {"rust_status": 500, "rust_error_type": "internal_error", "d": "D-2"},
+        ),
+        (
+            "computed-keys-replaced",
+            {
+                "meta": {"collector": "x", "age_seconds": 1},
+                "summary": [1, 2],
+                "reboot_required": "maybe",
+                "reboot_required_details": {
+                    "required": True,
+                    "reasons": ["reboot_required_flag"],
+                },
+                "unicode": "é € 😀",
+                "big": 123456789012345678901234567890,
+                "floats": [1.0, 1e16, 0.00001, 181703637716804.125],
+            },
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        ("empty-object", "{}", -60, False, APT_RELEASE),
+        (
+            "whitespace-and-duplicates",
+            ' {"last_status": "failed", "last_status": "success"}\n',
+            -60,
+            False,
+            APT_RELEASE,
+        ),
+        ("invalid-json", '{"last_status": ', -60, False, APT_RELEASE),
+        ("empty-file", "", -60, False, APT_RELEASE),
+        ("bom", "﻿{}", -60, False, APT_RELEASE),
+        (
+            "top-level-list",
+            "[1, 2]",
+            -60,
+            False,
+            APT_RELEASE,
+            {"rust_status": 502, "rust_error_type": "invalid_json", "d": "D-2"},
+        ),
+        (
+            "top-level-null",
+            "null",
+            -60,
+            False,
+            APT_RELEASE,
+            {"rust_status": 502, "rust_error_type": "invalid_json", "d": "D-2"},
+        ),
+        (
+            "not-utf8",
+            {"latin1": '{"last_status": "\xff"}'},
+            -60,
+            False,
+            APT_RELEASE,
+            {"rust_status": 502, "rust_error_type": "invalid_json", "d": "D-2"},
+        ),
+        (
+            "nan",
+            '{"last_status": "success", "x": NaN}',
+            -60,
+            False,
+            APT_RELEASE,
+            {"rust_status": 502, "rust_error_type": "invalid_json", "d": "D-4"},
+        ),
+        ("missing", {"kind": "missing"}, 0, False, APT_RELEASE),
+        ("directory", {"kind": "directory"}, 0, False, APT_RELEASE),
+        ("broken-symlink", {"kind": "broken-symlink"}, 0, False, APT_RELEASE),
+        ("unreadable", {"kind": "unreadable"}, -60, False, APT_RELEASE),
+    ]
+    rows = []
+    for case in cases:
+        case_id, state, offset, flag, release = case[:5]
+        row: dict[str, Any] = {"id": case_id}
+        if isinstance(state, str):
+            row["state_text"] = state
+        elif isinstance(state, dict) and set(state) == {"latin1"}:
+            # Bytes that are not UTF-8, written as latin-1 text.
+            row["state_latin1"] = state["latin1"]
+        elif isinstance(state, dict) and set(state) == {"kind"}:
+            row["state_kind"] = state["kind"]
+        else:
+            row["state_text"] = json.dumps(state, ensure_ascii=False)
+        row.update(
+            mtime_epoch=APT_SERVED + offset, flag_present=flag, running_release=release
+        )
+        if len(case) > 5:
+            row.update(case[5])
+        rows.append(row)
+    return rows
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+        return datetime.fromtimestamp(APT_SERVED, tz=tz)
+
+
+class _UnameOs:
+    """The `os` module of the rendered script with a fixed `uname().release`."""
+
+    def __init__(self) -> None:
+        self.release = APT_RELEASE
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+    def uname(self) -> Any:
+        real = os.uname()
+        return os.uname_result(
+            (real.sysname, real.nodename, self.release, real.version, real.machine)
+        )
+
+
+APT_MESSAGE_PREFIXES = {
+    "invalid_json": "Invalid JSON in state file: ",
+    "read_error": "Cannot read state file: ",
+}
+
+
+def write_state(path: Path, row: dict[str, Any]) -> None:
+    kind = row.get("state_kind")
+    if kind == "missing":
+        return
+    if kind == "directory":
+        path.mkdir()
+        return
+    if kind == "broken-symlink":
+        path.symlink_to(path.parent / "absent.json")
+        return
+    if "state_latin1" in row:
+        path.write_bytes(row["state_latin1"].encode("latin-1"))
+    else:
+        path.write_bytes((row["state_text"] if kind is None else "{}").encode("utf-8"))
+    os.utime(path, (row["mtime_epoch"], row["mtime_epoch"]))
+    if kind == "unreadable":
+        os.chmod(path, 0)
+
+
+def build_apt_state() -> dict[str, str]:
+    htpasswd = str(FIXTURES / "htpasswd")
+    request = raw_request(
+        {
+            "method": "GET",
+            "target": APT_PATH,
+            "version": "HTTP/1.1",
+            "headers": [("Authorization", basic("user", "secret"))],
+        }
+    )
+    captured = _CapturedStderr()
+    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
+        captured
+    ):
+        tmp = Path(tmp_name)
+        module = load_module("apt_state", APT, PLACEHOLDER_VARS, tmp)
+        reboot_rows = []
+        for case_id, state, flag, release in REBOOT_STATE_CASES:
+            reboot_rows.append(
+                {
+                    "id": case_id,
+                    "state": state,
+                    "flag_present": flag,
+                    "running_release": release,
+                    "python": python_reboot_state(module, state, flag, release),
+                }
+            )
+        fake_os = _UnameOs()
+        module.os = fake_os
+        module.datetime = _FrozenDatetime
+        flag_path = tmp / "reboot-required"
+        module.REBOOT_REQUIRED_FLAG = str(flag_path)
+        server = socketserver.TCPServer(("127.0.0.1", 0), module.AptMaintenanceHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        http_rows = []
+        try:
+            for index, row in enumerate(apt_http_cases()):
+                case_dir = tmp / f"case-{index:03d}"
+                case_dir.mkdir()
+                json_path = case_dir / "state.json"
+                write_state(json_path, row)
+                if row["flag_present"]:
+                    flag_path.write_text("*** System restart required ***\n")
+                else:
+                    flag_path.unlink(missing_ok=True)
+                fake_os.release = row["running_release"]
+                server.cfg = {  # type: ignore[attr-defined]
+                    "path": APT_PATH,
+                    "json_path": str(json_path),
+                    "htpasswd_file": htpasswd,
+                }
+                captured.take()
+                try:
+                    with socket.create_connection(
+                        ("127.0.0.1", server.server_address[1]), timeout=10
+                    ) as sock:
+                        sock.sendall(request)
+                        response = http.client.HTTPResponse(sock, method="GET")
+                        response.begin()
+                        body = response.read().decode("utf-8")
+                    result: dict[str, Any] = {
+                        "status": response.status,
+                        "response_headers": {
+                            name: response.getheader(name)
+                            for name in ("Content-Type", "Content-Length")
+                        },
+                        "body": body,
+                    }
+                except (http.client.RemoteDisconnected, ConnectionResetError):
+                    errors = re.findall(
+                        r"^(\w+): ", captured.take(), flags=re.MULTILINE
+                    )
+                    result = {"python": "crash", "python_exception": errors[-1]}
+                finally:
+                    if row.get("state_kind") == "unreadable":
+                        os.chmod(json_path, stat.S_IRUSR | stat.S_IWUSR)
+                if "python" in result:
+                    if "rust_status" not in row:
+                        raise SystemExit(
+                            f"apt_state {row['id']}: Python crashed without a Rust expectation"
+                        )
+                    compare = "rust_only"
+                elif "rust_status" in row:
+                    compare = "rust_only"
+                elif result["status"] == 200:
+                    compare = "bytes"
+                else:
+                    error_type = json.loads(result["body"])["error_type"]
+                    prefix = APT_MESSAGE_PREFIXES.get(error_type)
+                    if prefix is None:
+                        compare = "bytes"
+                    else:
+                        if not json.loads(result["body"])["message"].startswith(prefix):
+                            raise SystemExit(
+                                f"apt_state {row['id']}: unexpected message"
+                            )
+                        # D-3: the parser's or the OS error's text may differ.
+                        compare = "error_type_only"
+                        result["message_prefix"] = prefix
+                        result["body"] = result["body"].replace(
+                            json.dumps(str(tmp))[1:-1], "{tmp}"
+                        )
+                http_rows.append({**row, **result, "compare": compare})
+        finally:
+            server.shutdown()
+            server.server_close()
+    if os.geteuid() == 0:
+        raise SystemExit(
+            "generate the apt_state fixtures as an unprivileged user (unreadable case)"
+        )
+    data = {
+        "template": APT,
+        "served_at_epoch": APT_SERVED,
+        "reboot_state": reboot_rows,
+        "http": {"argv": APT_ARGV, "cases": http_rows},
+    }
+    return {"apt_state.json": dump_json(data)}
+
+
+# --------------------------------------------------------------------------
 
 FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "float_repr": (False, build_float_repr),
@@ -1357,6 +2081,7 @@ FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "auth": (True, build_auth),
     "http_common": (True, build_http_common),
     "script": (True, build_script),
+    "apt_state": (True, build_apt_state),
 }
 
 
