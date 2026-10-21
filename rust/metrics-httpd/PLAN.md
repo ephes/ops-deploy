@@ -1364,10 +1364,13 @@ known when S5d lands, and a collection installed from an ops-library
 checkout reports the last released version even when it already has the
 switch. Instead of `version(…, '>=')`, every ops-control play that runs an
 endpoint role imports `playbooks/common/require_metrics_httpd_switch.yml`
-(tagged `always`, before anything changes a host): it reads the collection
-Ansible loads (the first `local/ops_library` under `COLLECTIONS_PATHS`) and
-refuses the deploy unless `roles/metrics_httpd_switch` exists and every
-endpoint role of the play defaults its `<role>_impl` to `metrics_httpd_impl`.
+(tagged `always`, before anything changes a host): it reads every copy of
+the collection Ansible could load (`collections/` next to the playbook, its
+parent and grandparent directory, since an imported playbook's
+`playbook_dir` is not the command line playbook's, then each
+`COLLECTIONS_PATHS` entry) and refuses the deploy unless each has
+`roles/metrics_httpd_switch` and every endpoint role of the play defaults
+its `<role>_impl` to `metrics_httpd_impl`.
 An older role would ignore the fleet pin and the `<role>_impl` overrides
 silently. Plays with an S5b/S5c role therefore deploy only from a checkout
 in which that slice has merged.
