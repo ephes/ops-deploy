@@ -73,7 +73,11 @@ fn exit_codes_match_python() {
         if let Some(expected) = &case.stderr {
             assert_eq!(&stderr, expected, "{}", case.id);
         }
-        if case.exit == 0 && !case.argv.iter().any(|a| a == "--help" || a == "-h") {
+        let help = case
+            .argv
+            .iter()
+            .any(|a| a.starts_with("-h") || a.starts_with("--he"));
+        if case.exit == 0 && !help {
             assert!(
                 output.stdout.is_empty(),
                 "{}: validate prints nothing",

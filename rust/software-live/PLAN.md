@@ -181,7 +181,9 @@ last occurrence wins; `--` ends the options. The value of `--opt value`
 is never a word argparse reads as an option (`-x`, `-h…`, `--out`, `--`),
 but may be a negative number (`-1`, `-.5`; argparse of Python 3.12 and
 3.13, the hosts' versions — 3.14 also takes `-1e5` and `-1.`) or contain a
-space; with `--opt=value` any value is taken. `--config-json` takes precedence
+space; with `--opt=value` any value is taken. Help (`-h`, `-h…`, `--help`
+or a prefix) acts where it stands: what follows is not looked at, a missing
+value before it is still a usage error. `--config-json` takes precedence
 over `--config` (`:904-906`) unless it is empty (`args.config_json if
 args.config_json else …`). `fixtures/cli.json` pins these exit codes against
 the Python program. New and only

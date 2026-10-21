@@ -137,6 +137,16 @@ fn argparse_reads_as_option(arg: &str) -> bool {
     !(NEGATIVE_NUMBER.is_match(arg) || arg.contains(' '))
 }
 
+/// `-h` (also with something attached, `-hx`), `--help`, `--version` or an
+/// unambiguous prefix of them, without `=value`.
+fn shows_help_or_version(word: &str) -> bool {
+    if word.starts_with("--") {
+        !word.contains('=') && matches!(resolve_long(word), Some("--help" | "--version"))
+    } else {
+        word.starts_with("-h")
+    }
+}
+
 /// argparse takes the value of `--opt value` only from a word it does not
 /// read as an option, so `--group -x` and `--config --output` are usage
 /// errors while `--group -1`, `--config '-a b'` and `--group=-x` are values.
@@ -147,7 +157,9 @@ fn check_option_values(args: &[OsString]) -> Result<(), String> {
     let mut index = 0;
     while index < words.len() {
         let word = &words[index];
-        if word == "--" {
+        // argparse acts on the words in order: help (and our --version)
+        // ends the command line before any later word is looked at.
+        if word == "--" || shows_help_or_version(word) {
             break;
         }
         let value_option = (word.starts_with("--") && !word.contains('='))
@@ -302,6 +314,11 @@ mod tests {
             &["--gro", "-"],
             &["--", "--group", "-x"],
             &["--config-json", "{}"],
+            &["--help", "--config"],
+            &["-h", "--group", "-x"],
+            &["-hx", "--group"],
+            &["validate", "--he", "--group", "-x"],
+            &["--vers", "--config"],
         ] {
             assert_eq!(check(ok), Ok(()), "{ok:?}");
         }
@@ -317,6 +334,8 @@ mod tests {
             &["--config", "--"],
             &["--config"],
             &["--co", "x", "--cache", "-y"],
+            &["--config", "--help"],
+            &["--help=x", "--group", "-x"],
         ] {
             assert!(check(bad).is_err(), "{bad:?}");
         }

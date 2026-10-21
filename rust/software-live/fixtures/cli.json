@@ -365,6 +365,65 @@
    "id": "negative_config_path"
   },
   {
+   "argv": [
+    "--help",
+    "--config"
+   ],
+   "exit": 0,
+   "id": "help_before_missing_value"
+  },
+  {
+   "argv": [
+    "-h",
+    "--group",
+    "-x"
+   ],
+   "exit": 0,
+   "id": "help_before_option_value"
+  },
+  {
+   "argv": [
+    "validate",
+    "--he",
+    "--group",
+    "-x"
+   ],
+   "exit": 0,
+   "id": "help_prefix_before_option_value"
+  },
+  {
+   "argv": [
+    "-hx",
+    "--group"
+   ],
+   "exit": 0,
+   "id": "help_attached_before_missing_value"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "--help"
+   ],
+   "exit": 2,
+   "id": "missing_value_before_help"
+  },
+  {
+   "argv": [
+    "--help=x"
+   ],
+   "exit": 2,
+   "id": "help_with_value"
+  },
+  {
+   "argv": [
+    "--help",
+    "--bogus"
+   ],
+   "exit": 0,
+   "id": "help_before_unknown_option"
+  },
+  {
    "argv": [],
    "exit": 2,
    "id": "no_arguments"
