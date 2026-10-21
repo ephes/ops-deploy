@@ -669,24 +669,17 @@ The tasks:
   sshd runs this file as root.
   - After installing, run `<bin> --version` (it must print the pinned
     version) and `<bin> --check-policy <rendered policy>`.
-  - Pruning uses F3's `prune` with `keep_versions` and protects the
-    version the forced command points to, also in the window before the
-    playbook writes the new `authorized_keys` line. F3 prune keeps
-    every pinned version, so for impl `shadow`/`rust`, when the existing pin
-    `.pins/echoport_remote_command_guard` names a different version than the
-    target, the role first copies it to
-    `.pins/echoport_remote_command_guard-previous`, then writes the pin for
-    the target version, and prunes only after both pins are written. A
-    re-run of the same target after a failed play therefore keeps
-    protecting the version the forced command still points to; after
-    several failed plays with different targets, `keep_versions` (3, by
-    mtime) still keeps the most recent versions. For impl `python` the role leaves both
-    pins as they are: they only keep up to two versions on disk and keep
-    the switch back to Rust quick.
+  - **No pin and no prune in the main tasks.** When the role's main tasks
+    run, the playbook has not yet written the new `authorized_keys` line,
+    so the forced command may still name an older version, and the play can
+    still stop before the line is written. So the main tasks install and
+    check the target version but never move a pin and never prune.
+    Installing never deletes a version.
   - **Rollback independence.** With `impl: python`, every Rust step is
-    best-effort: download, install, `--version`, `--check-policy` and
-    pruning run, but their failures only warn (`failed_when: false`, an
-    explicit warning, and a registered result the slice evidence records).
+    best-effort: download, install, `--version`, `--check-policy`, and in
+    `confirm_live.yml` the pin and prune steps run, but their failures only
+    warn (`failed_when: false`, an explicit warning, and a registered result
+    the slice evidence records).
     They are fatal only for `impl: shadow` and `impl: rust`, and then
     *before* the fact is set. So a broken, missing or unrunnable Rust binary
     or release can never block a switch back to Python. S6 has a molecule
@@ -705,6 +698,57 @@ The tasks:
   - `rust`: `<bin> <policy>`.
   All parts are safe paths (asserted), so no quoting is needed inside
   `command="…"`.
+- **Pin and prune after the line is verified live:** new
+  `tasks_from: confirm_live.yml`, which the playbook includes after its
+  fatal post-probe (6.3). The mechanism is F3's (`rust/PLAN-foundation.md`,
+  F3, owner requirement of 2026-10-21, section 9): `prune` never deletes a
+  version in its explicit `protect` list, which the consumer fills from the
+  live state, and never deletes a version named by a pin, including the
+  consumer's separate "previous" rollback pin, which moves only when the
+  consumer pins a new version that it verified live. This role's duties as
+  the consumer, in this order:
+  1. **Verify live.** Read root's `authorized_keys`, the file the playbook
+     has just written, and assert that the deploy key's line carries exactly
+     the `command="…"` of the fact
+     `echoport_remote_command_guard_forced_command`. Together with the
+     playbook's fatal post-probe through that line, this is the "verified
+     live" condition. For impl `shadow`/`rust`, `<bin> --version` must also
+     print the target version. A mismatch in the line is fatal for every
+     impl (it checks what the playbook wrote, not the Rust binary), and none
+     of the steps below run.
+  2. **Protect list from the live state.** Every version that any line of
+     that `authorized_keys` names as
+     `<install_root>/<version>/echoport-command-guard` (the deploy key line
+     and any other line, for example a manual edit from the runbook), plus
+     the configured `rust_version` (installed for a quick switch even with
+     impl `python`). If a line mentions `<install_root>` in any other form,
+     or the file cannot be read or parsed, the live state is unknown: the
+     role skips prune with a warning and never deletes on doubt. The parsing
+     is a small filter with its own unit test (S6).
+  3. **Move the pins, only now.** impl `shadow`/`rust`: F3 `pin` for the
+     consumer `echoport_remote_command_guard` with the target version; if
+     the current pin named another version, F3 moves that version to the
+     previous pin. impl `python`: F3 removes the current pin and keeps its
+     version as the previous pin, so the last Rust version verified live
+     stays on disk for a quick switch back. If F3's `pin` cannot keep a
+     removed version as the previous pin, S6 leaves the current pin as it is
+     for impl `python` instead (R9).
+  4. **Prune** with F3's `prune`, `keep_versions` and the `protect` list of
+     step 2.
+
+  A play that stops anywhere before step 3 (the role, the write of the
+  line, the post-probe, or step 1 or 2) moves no pin and prunes nothing, so
+  the current pin keeps naming the last version verified live and the
+  version the forced command names is never pruned. Example: the
+  `authorized_keys` line names A and the current pin is A; deploys
+  targeting B and then C stop after the role, before the line is written;
+  the pins stay A and nothing is pruned. A deploy targeting D whose line is
+  written and verified pins D, moves A to the previous pin, and prunes with
+  `protect` [D]: A, D and the newest versions by mtime stay. If D's write
+  or post-probe fails instead, nothing is pruned and A stays. In check mode
+  `confirm_live.yml` only reports what it would do. Under the
+  rollback-independence rule above, the `--version` check of step 1 and
+  steps 3 and 4 only warn with impl `python`.
 - **Molecule:** the existing scenario becomes impl × platform: `python`,
   `shadow` and `rust` on Ubuntu 24.04 and Debian 13 (new platform). The
   `rust` and `shadow` runs use `rust_local_archive` built from the branch.
@@ -712,6 +756,43 @@ The tasks:
   classic scp, the three rsync forms, SFTP refused, interactive refused) runs
   unchanged for all three. The shadow run also checks that one journal line
   with each identifier carries the same `_PID`.
+- **Pin and prune tests (S6)**, a molecule scenario `pins` on Ubuntu 24.04
+  with a real sshd and impl `shadow`. Each version is a local stub archive:
+  a script that answers `--version` and `--check-policy` and, called as
+  `--shadow <policy> <argv…>`, execs the given Python guard command, so
+  every guarded SSH command still goes through the real Python guard. The
+  scenario runs the role's main tasks, the line write (as the playbook
+  does) and `confirm_live.yml` separately, so a failed play can be cut at
+  any point. Cases:
+  - **Repeated failed deployments with different targets.** A is written
+    and confirmed (current pin A). Then runs targeting B, C and D each stop
+    after the role's main tasks (no write, no `confirm_live.yml`). After
+    each run: A–D are on disk, the pins are unchanged (current A, no
+    previous), the line still names A, and an allowed guarded command
+    succeeds through sshd. Then a run targeting E is written and
+    confirmed: current pin E, previous pin A, and with `keep_versions` 3
+    the prune keeps E, D, C (newest by mtime) and A (previous pin) and
+    removes only B; the allowed command succeeds through E.
+  - **Stale line.** A run targeting F stops after the role, then
+    `confirm_live.yml` runs with F's fact while the line still names E: it
+    fails, no pin moves, nothing is pruned.
+  - **Written but not verified.** F's line is written but the post-probe
+    is made to fail (stub F refuses everything); the play stops before
+    `confirm_live.yml`: no pin moves, nothing is pruned. The next run back
+    to E is confirmed; F is not pinned.
+  - **Protect from the live state alone.** The pin files are removed and a
+    second, manual `authorized_keys` line names an unpinned version X,
+    installed first in the scenario and so the oldest by mtime; a confirmed
+    run keeps X. A line that
+    mentions the install root in another form makes the role skip prune
+    with a warning and delete nothing.
+  - **Switch to Python verified.** impl `python` is written and confirmed:
+    the current pin is removed, the previous pin names the last Rust
+    version, and that version is still on disk after the prune.
+  - **Check mode:** `confirm_live.yml` moves no pin and prunes nothing.
+  The filter that parses the versions from `authorized_keys` has a unit
+  test (Python, Rust and shadow lines, several lines with different
+  versions, an install-root mention in another form, an unreadable file).
 - **Docs:** role README (impl selector, switch, rollback, shadow),
   `docs/source/roles/infrastructure/echoport_remote_command_guard.md`, and a
   CHANGELOG entry under "Unreleased". `galaxy.yml` is not bumped.
@@ -726,6 +807,12 @@ The tasks:
   - Raise the minimum ops-library version to the release containing S6.
   - The post-probe stays as it is: every impl prints the same
     interactive-session text.
+  - After the post-probe, `include_role` of
+    `local.ops_library.echoport_remote_command_guard` with
+    `tasks_from: confirm_live.yml` (6.2): the only place where the guard's
+    pins move and old Rust versions are pruned. A test pins its position
+    (after the post-probe, nothing between that could prune) and that it
+    runs for every impl, the rollback included.
   - One change for rollback. Today's **pre**-probe (the route check before
     the guard role, `failed_when` at l.155–157) goes through the *currently
     installed* forced command. If that is a broken Rust binary, the probe
@@ -1111,7 +1198,13 @@ Ansible-level counterpart.
      set by this role (6.2);
    - it sets owner root:root and modes `0755`, and never leaves a group- or
      world-writable path component (6.2);
-   - `pin`/`prune` keep every pinned version (6.2);
+   - `prune` never deletes a version in its explicit `protect` list (the
+     consumer fills it from the live state) or a version named by a pin,
+     including the consumer's separate "previous" rollback pin, which moves
+     only when the consumer pins a new version it verified live (owner
+     requirement for F3 of 2026-10-21, section 9); `pin` with
+     `state: absent` keeps the removed version as the previous pin. This
+     role's side of it (when to pin, what to protect) is in 6.2;
    - it reports the installed binary path as a fact
      (`rust_release_binary_path`) and, without `fail_hard`, a failure as
      `rust_release_binary_failed` instead of stopping the play.
@@ -1193,7 +1286,14 @@ Campaign-wide decisions of the same day that this plan follows:
   `galaxy.yml` (6.1, S8).
 - **Review rounds:** a slice, and a plan, may get a **third** review round
   over the repair delta of round 2. If round 3 is not clean, the worker
-  stops and reports to the coordinator (section 11).
+  stops and reports to the coordinator (section 11). For this plan the
+  owner allowed exactly one more round (round 4) over the fix of the
+  round-3 finding on the pin rotation.
+- **Version protection in F3:** F3's `prune` never deletes a version in an
+  explicit `protect` list that the consuming role fills from the live state,
+  nor the consumer's separate "previous" rollback pin, which moves only
+  after a new version is verified live. The mechanism is F3's; this plan
+  keeps the consumer's duties and their S6 tests (6.2, 8.1).
 
 **Approvals to bundle** (not questions): the production steps S9 (install
 only), S10b (shadow), S11b (cutover) and S12 (retirement), each at a time
@@ -1248,9 +1348,9 @@ Rules, as in the precedents:
 | S3b | Rules with filesystem | `scp -f/-t`, rsync, `mv`, `mkdir`, `chmod`, `chown`, `rm` wal/shm, `test`, `readlink`, snapshot `cat`, `cat >`, `sha256sum`, `tar`; redirect decisions; their Layer-1 cases green (with S3a: all of Layer 1). | S1, S2 | with S3a, S4, S6 | no | 4 |
 | S4 | Runtime and exec | Forced-command flow (3.1), syslog and `py_repr` (3.6, 4.3), `redirect.rs` (3.5), umask, `PATH`, locale coercion, SIGPIPE/SIGXFSZ, fd hygiene, exit codes, `--decide`, `--shadow`; `tests/cli.rs` process tests in a container. | S1 | with S2, S3a, S3b, S6 | no | 4 |
 | S5 | Parity gate | All of Layer 1 green, the 4.4 list reviewed, decision proptests (7.3), Layer 2 complete, Layer 3 sshd e2e on both distros, fuzz targets with at least 1 hour each and the corpus committed, TESTMAP complete. | S2, S3a, S3b, S4 | with S6 | no | 4 |
-| S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts and the F3 pin, dual validate, forced command per impl, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), README/docs/CHANGELOG (Unreleased). | F3 (install role), S4 (CLI surface) | with S2–S5 | no | 4 |
+| S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts, dual validate, forced command per impl, `confirm_live.yml` (verify the written line, protect list from the live `authorized_keys`, F3 pin and previous pin, F3 prune with `protect`) with its parse filter and unit test, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), the `pins` scenario (repeated failed deployments with different targets and the other 6.2 cases), README/docs/CHANGELOG (Unreleased). | F3 (install role with `protect` and the previous pin), S4 (CLI surface) | with S2–S5 | no | 5 |
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
-| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
+| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
 | S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. | S7, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
@@ -1280,7 +1380,9 @@ coordinator's go under 6.1 "Scheduling".
 
 - S1/S3/S4/S5: acceptance drift, check order (reasons), panics on input,
   `unsafe`.
-- S6: the permissions of the root-executed path, and that the forced
-  command for impl `python` is byte-identical.
+- S6: the permissions of the root-executed path, that the forced
+  command for impl `python` is byte-identical, and that no path moves a pin
+  or prunes before the written line is verified live, or prunes a version
+  that any `authorized_keys` line names.
 - S9–S12: the evidence (lock, diff, probes, compare report, journal) in the
   deployment record.
