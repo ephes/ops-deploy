@@ -22,7 +22,7 @@ serde = { version = "1", features = ["derive"] }
 # have written is rounded (PLAN.md 3.2); raw_value: pyjson::loads takes the
 # text apart through RawValue (see there).
 serde_json = { version = "1", features = ["arbitrary_precision", "raw_value"] }
-sha2 = { version = "0.10", default-features = false, features = ["std"] }
+sha2 = { version = "0.11", default-features = false }
 wait-timeout = "0.2"
 
 [dev-dependencies]

@@ -21,7 +21,9 @@ use crate::version::version;
 /// `apt_max_age_seconds` when the policy has none.
 pub const DEFAULT_APT_MAX_AGE: i64 = 172_800;
 
-const TRAEFIK_BINARIES: [&str; 2] = ["/usr/bin/traefik", "/usr/local/bin/traefik"];
+/// The Traefik binaries a policy may name (also the paths an unexpected
+/// installation is looked for at, `software_live.py:262-265`).
+pub const TRAEFIK_BINARIES: [&str; 2] = ["/usr/bin/traefik", "/usr/local/bin/traefik"];
 const OS_IDS: [&str; 2] = ["debian", "ubuntu"];
 
 // Python's `\d` also matches non-ASCII digits (PLAN.md 4.2 item 11).
@@ -44,7 +46,7 @@ fn get<'a>(value: &'a Value, key: &str) -> Result<Option<&'a Value>, PyError> {
 }
 
 /// `value[key]` with a `str` key.
-fn subscript<'a>(value: &'a Value, key: &str) -> Result<&'a Value, PyError> {
+pub(crate) fn subscript<'a>(value: &'a Value, key: &str) -> Result<&'a Value, PyError> {
     match value {
         Value::Object(map) => map.get(key).ok_or_else(|| PyError::key(key)),
         Value::Array(_) => Err(PyError::type_error(

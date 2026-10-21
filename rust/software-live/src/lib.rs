@@ -6,6 +6,7 @@ pub mod policy;
 pub mod probe;
 pub mod pyjson;
 pub mod report;
+pub mod traefik;
 pub mod version;
 
 #[cfg(test)]

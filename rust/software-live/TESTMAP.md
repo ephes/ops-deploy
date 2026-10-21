@@ -19,17 +19,17 @@ missing from this file.
 | --- | --- | --- |
 | `test_deployed_programs_support_python_311` | n/a: Python only; the Python file stays the oracle | — |
 | `test_numeric_release_comparison` | `version::tests::parsing_matches_python`, `::comparisons_match_python` against `fixtures/version.json` (`version()`, `numeric_version()`, unbounded numbers, Python's whitespace) | done (S2) |
-| `test_matching_process_and_binary` | `traefik` fixtures | pending S3b |
-| `test_replaced_disk_binary_is_not_a_completed_update` | `traefik` fixtures | pending S3b |
-| `test_same_version_different_bytes_is_drift` | `traefik` fixtures | pending S3b |
-| `test_unknown_upstream_never_passes` | `traefik` fixtures | pending S3b |
-| `test_new_upstream_and_unassigned_desired_are_visible` | `traefik` fixtures | pending S3b |
-| `test_deleted_and_wrong_paths_are_visible` | `traefik` fixtures | pending S3b |
-| `test_unexpected_process_image_is_never_executed` | `traefik` fixtures plus a Linux-only test that executes a real fake binary through a pinned descriptor | pending S3b |
-| `test_bounded_pid_retry` | `traefik` fixtures | pending S3b |
-| `test_stopped_service_and_probe_errors_are_unknown` | `traefik` fixtures | pending S3b |
-| `test_expected_absence_and_unexpected_other_path` | `traefik` fixtures | pending S3b |
-| `test_binary_identity_and_in_place_change` | `traefik` fixtures | pending S3b |
+| `test_matching_process_and_binary` | `traefik::tests::observation_matches_python` (`fixtures/traefik.json` `matching_process_and_binary`, `usr_bin_policy`, `symlinked_binary_is_resolved`); `tests/traefik_host.rs::matching_process_is_probed_through_its_pinned_descriptor` (Linux, a real process) | done (S3b) |
+| `test_replaced_disk_binary_is_not_a_completed_update` | `observation_matches_python` (`replaced_disk_binary_same_path`, `replaced_disk_binary_deleted`, `outdated_and_drift`); `traefik_host.rs::replaced_binary_is_reported_and_the_old_image_is_never_executed` (Linux) | done (S3b) |
+| `test_same_version_different_bytes_is_drift` | `observation_matches_python` (`same_version_different_bytes`) | done (S3b) |
+| `test_unknown_upstream_never_passes` | `observation_matches_python` (`unknown_upstream`, `upstream_not_applicable`, `upstream_status_missing`, …) | done (S3b) |
+| `test_new_upstream_and_unassigned_desired_are_visible` | `observation_matches_python` (`new_upstream_and_unassigned_desired`, `desired_version_absent`, `desired_installed_drift`, `running_newer_than_upstream`) | done (S3b) |
+| `test_deleted_and_wrong_paths_are_visible` | `observation_matches_python` (`deleted_and_wrong_path`, `symlinked_binary_running_the_link_path`, `non_ascii_running_path`) | done (S3b) |
+| `test_unexpected_process_image_is_never_executed` | `observation_matches_python` (`unexpected_image_*_is_not_executed`, `reexec_after_link_check_is_refused`: the call log shows no execution); `traefik::tests::binary_info_matches_python` (`no_probe_never_executes`, `descriptor_target_*_is_refused`); Linux: `traefik_host.rs::foreign_process_image_is_hashed_but_never_executed`, `::execution_follows_the_descriptor_not_the_path`, `::binary_info_checks_the_descriptor_target_before_executing` | done (S3b) |
+| `test_bounded_pid_retry` | `observation_matches_python` (`pid_retry_settles`, `pid_retry_exhausted`, `link_retry_*`, `retry_resets_issues`, `pid_gone_after_probe`) | done (S3b) |
+| `test_stopped_service_and_probe_errors_are_unknown` | `observation_matches_python` (`stopped_service`, `systemctl_*`, `pid_invalid_*`, `exe_link_*`, `installed_probe_*`, `running_probe_fails`, …); `traefik_host.rs::stopped_service_is_unknown` (Linux) | done (S3b) |
+| `test_expected_absence_and_unexpected_other_path` | `observation_matches_python` (`expected_absence`, `unexpected_process`, `unexpected_other_path`, `unexpected_managed_path`, `not_expected_*`) | done (S3b) |
+| `test_binary_identity_and_in_place_change` | `binary_info_matches_python` (`output_*`, `changed_during_probe`, `final_stat_*`, `unparseable_wins_over_change`); `traefik::tests::real_binary_identity_and_in_place_change` (a real self-modifying script); `traefik_host.rs::binary_info_checks_the_descriptor_target_before_executing` (the same through the descriptor, Linux) | done (S3b) |
 | `test_upstream_failure_warns_without_claiming_local_collection_failed` | `upstream` fixtures plus a local HTTPS fake server | pending S3a |
 | `test_failed_upstream_refresh_retains_old_timestamp_only_as_evidence` | `upstream` fixtures | pending S3a |
 | `test_upstream_daily_cache_and_unparseable_release` | `upstream` fixtures | pending S3a |
@@ -74,9 +74,28 @@ here passes.
 | `command()` (`:68-77`): `text=True` decoding of both streams before the exit check, universal newlines, `strip()`, `CalledProcessError` (exit code or signal), `TimeoutExpired` with kill, `FileNotFoundError` | `probe::tests::command_*`, `::a_grandchild_holding_the_pipe_times_out`, `::large_output_on_both_pipes_does_not_block` | done |
 | `Path.exists()` (Python 3.12 ignored errnos) | `probe::tests::exists_ignores_only_pathlibs_errnos` | done |
 
+## S3b — Traefik contract parts
+
+`fixtures/traefik.json` runs the real `binary_info` and `observe_traefik`
+against a fake host (`FakeHost` in `fixtures/generate.py`, the Python side of
+`probe::fake::FakeSystem`): the same world, the same answers, and a log of
+every call in the same format. The Rust tests replay each world and require
+the same result and **the same call log** (opens, descriptor and `/proc`
+link reads, `realpath`, `fstat`, hashes, `stat`, and every command with the
+descriptors it inherits), so the order of the checks and what is executed
+match Python step by step.
+
+| Python behaviour | Rust counterpart | Status |
+| --- | --- | --- |
+| `main_pid` (`:128-129`): `int()` of `systemctl show … --value` (padding, `+`, `_`, leading zeros, `-0`, negative and huge numbers, non-numbers, more than 4300 digits) | `observation_matches_python` (`pid_*`); `traefik::tests::pid_parsing_follows_int` | done |
+| `binary_info` (`:90-125`): the version line `(?m)^Version:\s*(v?\d+\.\d+\.\d+)\s*$` (prefix `v`, Python's whitespace incl. U+001C..U+001F and line breaks, first matching line, universal newlines), the descriptor target check before anything else, the identity `(st_dev, st_ino, st_mtime_ns, st_ctime_ns, st_size)` before the hash, after the probe and of the final `stat` (and not uid, mode or link count), "unparseable" before "changed", errors of open, `fstat`, readlink and the probe | `binary_info_matches_python` (about 50 cases) | done |
+| `pass_fds=(fd,)` without `unsafe`: only the probe inherits the descriptor, close-on-exec is set again after the spawn (also after a failed start or a timeout) | `probe::tests::only_run_inheriting_passes_the_descriptor`, `::open_file_is_hashed_and_stated_through_its_descriptor` | done |
+| `observe_traefik` (`:242-319`): order of the issues, what the error keeps (issues of the failed attempt, fields set before the failure), `KeyError`/`TypeError` of a malformed upstream answer, `desired_version` absent vs `null`, a version over Python's int limit | `observation_matches_python` (about 75 cases) | done |
+
 ## P3 cases in the fixtures (PLAN.md 4.2)
 
 Fixture cases tagged `p3` are inputs Python accepts and the Rust code
 refuses: `non-standard-json` (`NaN`, `Infinity`, lone surrogates; item 4),
 `nesting` (deeper than 128 levels; item 4) and `unicode-digits` (non-ASCII
-digits; item 11). The Rust tests assert the refusal.
+digits; item 11; in `traefik.json` a `MainPID` and a version line). The Rust
+tests assert the refusal.

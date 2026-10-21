@@ -29,7 +29,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+import collections
+import contextlib
+import errno
+import hashlib
 import importlib.util
+import io
 import json
 import math
 import os
@@ -40,6 +45,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -668,6 +674,526 @@ def gen_realpath() -> dict[str, Any]:
     return {"tree": REALPATH_TREE, "cases": cases}
 
 
+# ------------------------------------------------------------------ traefik
+#
+# The Traefik cases run the real ``binary_info``/``observe_traefik`` against a
+# fake host. ``FakeHost`` is the Python side of ``probe::fake::FakeSystem``:
+# it reads the same world (paths map to answers or errno names, consumed in
+# order with the last one repeating; a path that is not listed is ENOENT),
+# patches the calls the Python code makes (``subprocess.run`` under
+# ``command()``, ``open``, ``os.fstat``, ``hashlib.file_digest``,
+# ``os.readlink``, ``os.path.realpath``, ``os.stat``, ``Path.exists`` of
+# Python 3.12) and logs every call in the format the Rust fake logs it. The
+# Rust tests replay each world and compare the result and the call log.
+
+FAKE_ERRNOS = {name: getattr(errno, name)
+               for name in ("ENOENT", "EACCES", "ENOTDIR", "ELOOP", "EISDIR", "EINVAL", "EBADF")}
+EXISTS_IGNORED = {errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP}
+STAT_DEFAULTS = {"dev": 0, "ino": 0, "nlink": 1, "uid": 0, "gid": 0, "size": 0, "mtime_ns": 0, "ctime_ns": 0}
+
+
+def fake_os_error(name: str, *filename: str) -> OSError:
+    code = FAKE_ERRNOS[name]
+    return OSError(code, os.strerror(code), *filename)
+
+
+def fake_stat(spec: dict[str, Any]) -> SimpleNamespace:
+    values = {**STAT_DEFAULTS, **spec}
+    return SimpleNamespace(**{f"st_{key}": value for key, value in values.items()})
+
+
+class FakeStream(io.BytesIO):
+    def __init__(self, data: bytes, fd: int) -> None:
+        super().__init__(data)
+        self.fd = fd
+
+    def fileno(self) -> int:
+        return self.fd
+
+
+class FakeHost:
+    def __init__(self, world: dict[str, Any]) -> None:
+        self.world = world
+        self.queues = {
+            kind: {key: collections.deque(answers) for key, answers in world.get(kind, {}).items()}
+            for kind in ("stat", "lstat", "readlink", "open")
+        }
+        self.commands = collections.deque(world.get("commands", []))
+        self.fstat_queues: dict[int, collections.deque[Any]] = {}
+        self.calls: list[str] = []
+
+    @staticmethod
+    def take(queue: collections.deque[Any] | None) -> Any:
+        if not queue:
+            return None
+        return queue.popleft() if len(queue) > 1 else queue[0]
+
+    def answer(self, kind: str, key: str) -> Any:
+        entry = self.take(self.queues[kind].get(key))
+        if entry is None:
+            raise fake_os_error("ENOENT", key)
+        if "errno" in entry:
+            raise fake_os_error(entry["errno"], key)
+        return entry["ok"]
+
+    def stat(self, path: Any, *, follow_symlinks: bool = True) -> SimpleNamespace:
+        assert follow_symlinks
+        self.calls.append(f"stat {path}")
+        return fake_stat(self.answer("stat", str(path)))
+
+    def exists(self, path: Any) -> bool:
+        try:
+            self.stat(path)
+        except OSError as exc:
+            if exc.errno in EXISTS_IGNORED:
+                return False
+            raise
+        return True
+
+    def readlink(self, path: Any) -> str:
+        self.calls.append(f"readlink {path}")
+        return self.answer("readlink", str(path))
+
+    def realpath(self, path: Any, *, strict: bool = False) -> str:
+        assert not strict
+        self.calls.append(f"realpath {path}")
+        return self.world.get("realpath", {}).get(str(path), str(path))
+
+    def open(self, path: Any, mode: str = "r", *args: Any, **kwargs: Any) -> FakeStream:
+        assert mode == "rb" and not args and not kwargs, (mode, args, kwargs)
+        self.calls.append(f"open {path}")
+        spec = self.answer("open", str(path))
+        self.fstat_queues[spec["fd"]] = collections.deque(spec.get("fstat", []))
+        return FakeStream(spec["data"].encode(), spec["fd"])
+
+    def fstat(self, fd: int) -> SimpleNamespace:
+        self.calls.append(f"fstat {fd}")
+        entry = self.take(self.fstat_queues.get(fd))
+        if entry is None:
+            raise fake_os_error("EBADF")
+        if "errno" in entry:
+            raise fake_os_error(entry["errno"])
+        return fake_stat(entry["ok"])
+
+    def file_digest(self, stream: FakeStream, name: str) -> Any:
+        assert name == "sha256"
+        self.calls.append(f"sha256 {stream.fileno()}")
+        return hashlib.sha256(stream.read())
+
+    def run(self, argv: list[str], *, capture_output: bool, text: bool, timeout: int, check: bool,
+            pass_fds: tuple[int, ...] = ()) -> subprocess.CompletedProcess[str]:
+        assert capture_output and text and check and timeout == 15
+        argv = [str(arg) for arg in argv]
+        self.calls.append("run " + " ".join(argv) + "".join(f" pass_fds={fd}" for fd in pass_fds))
+        spec = self.commands.popleft()
+        assert spec["argv"] == argv and spec.get("pass_fds", []) == list(pass_fds), (spec, argv)
+        if spec.get("error") == "timeout":
+            raise subprocess.TimeoutExpired(argv, timeout)
+        if spec.get("error"):
+            raise fake_os_error(spec["error"], argv[0])
+        text_mode = lambda value: value.replace("\r\n", "\n").replace("\r", "\n")
+        result = subprocess.CompletedProcess(
+            argv, spec.get("exit", 0), text_mode(spec.get("stdout", "")), text_mode(spec.get("stderr", ""))
+        )
+        result.check_returncode()
+        return result
+
+    @contextlib.contextmanager
+    def patched(self) -> Any:
+        with (
+            mock.patch.object(live.subprocess, "run", self.run),
+            mock.patch.object(live, "open", self.open, create=True),
+            mock.patch.object(live.os, "fstat", self.fstat),
+            mock.patch.object(live.hashlib, "file_digest", self.file_digest),
+            mock.patch.object(live.os, "readlink", self.readlink),
+            mock.patch.object(live.os.path, "realpath", self.realpath),
+            mock.patch.object(live.os, "stat", self.stat),
+            mock.patch.object(live.Path, "exists", lambda path: self.exists(path)),
+        ):
+            yield self
+        assert not self.commands, f"commands left in the world: {list(self.commands)}"
+
+
+TRAEFIK = "/usr/local/bin/traefik"
+SYSTEMCTL = ["systemctl", "show", "traefik.service", "--property=MainPID", "--value"]
+TRAEFIK_POLICY = BASE["traefik"]
+LATEST = {"status": "ok", "version": "3.7.9", "checked_at_epoch": 1_760_000_000.5, "cached": True}
+LATEST_UNKNOWN = {"status": "unknown", "error": "URLError", "last_success": None}
+MTIME = 1_760_000_000_123_456_789
+
+
+def ok(value: Any) -> dict[str, Any]:
+    return {"ok": value}
+
+
+def err(name: str) -> dict[str, str]:
+    return {"errno": name}
+
+
+def st(ino: int, size: int = 4096, mtime_ns: int = MTIME, ctime_ns: int | None = None,
+       dev: int = 2049) -> dict[str, Any]:
+    return {"dev": dev, "ino": ino, "mode": 0o100755, "size": size, "mtime_ns": mtime_ns,
+            "ctime_ns": mtime_ns if ctime_ns is None else ctime_ns}
+
+
+class Binary:
+    """A file: its bytes, what ``<it> version`` prints and its inode."""
+
+    def __init__(self, data: str, output: str = "Version: 3.7.9", ino: int = 101) -> None:
+        self.data, self.output, self.ino = data, output, ino
+
+    @property
+    def stat(self) -> dict[str, Any]:
+        return st(self.ino, size=len(self.data.encode()))
+
+
+INSTALLED = Binary("traefik 3.7.9 bytes")
+
+
+class Builder:
+    def __init__(self) -> None:
+        self.world: dict[str, Any] = {"stat": {}, "readlink": {}, "open": {}, "commands": [], "realpath": {}}
+
+    def add(self, kind: str, key: str, *answers: Any) -> Builder:
+        self.world[kind].setdefault(key, []).extend(answers)
+        return self
+
+    def run(self, argv: list[str], stdout: str = "", **spec: Any) -> Builder:
+        self.world["commands"].append({"argv": argv, "stdout": stdout, **spec})
+        return self
+
+    def pid(self, output: str, **spec: Any) -> Builder:
+        return self.run(SYSTEMCTL, output, **spec)
+
+    def realpath(self, path: str, result: str) -> Builder:
+        self.world["realpath"][path] = result
+        return self
+
+    def opened(self, path: str, fd: int, binary: Binary, *fstat: dict[str, Any]) -> Builder:
+        answers = [ok(s) for s in fstat] or [ok(binary.stat)]
+        return self.add("open", path, ok({"fd": fd, "data": binary.data, "fstat": answers}))
+
+    def build(self) -> dict[str, Any]:
+        return {kind: value for kind, value in self.world.items() if value}
+
+
+def attempt(b: Builder, *, pid: int = 11, target: str = TRAEFIK, installed: Binary = INSTALLED,
+            running: Binary | None = None, refused: bool | None = None, fd_target: str | None = None,
+            pid_after: int | None = None, target_after: str | None = None, path: str = TRAEFIK,
+            real: str | None = None, fds: tuple[int, int] = (3, 4)) -> Builder:
+    """One complete attempt of ``observe_traefik`` with an expected Traefik."""
+    running = running or installed
+    real = real or path
+    refused = target != real if refused is None else refused
+    exe = f"/proc/{pid}/exe"
+    b.pid(str(pid)).add("stat", path, ok(installed.stat)).add("readlink", exe, ok(target))
+    b.opened(path, fds[0], installed).run([path, "version"], installed.output)
+    b.add("stat", path, ok(installed.stat))
+    b.opened(exe, fds[1], running)
+    if not refused:
+        b.add("readlink", f"/proc/self/fd/{fds[1]}", ok(fd_target or real))
+        b.run([f"/proc/self/fd/{fds[1]}", "version"], running.output, pass_fds=[fds[1]])
+    b.add("stat", exe, ok(running.stat))
+    after = pid if pid_after is None else pid_after
+    b.pid(str(after))
+    if after == pid:
+        b.add("readlink", exe, ok(target if target_after is None else target_after))
+    return b
+
+
+def split_error(text: str) -> dict[str, Any]:
+    cls, message = text.split(": ", 1)
+    contract = cls == "KeyError" or message in OWN_MESSAGES
+    return {"class": cls, "message": message if contract else None}
+
+
+def observe_cases() -> list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any], str | None]]:
+    cases: list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any], str | None]] = []
+
+    def add(case_id: str, b: Builder, policy: dict[str, Any] = TRAEFIK_POLICY,
+            latest: dict[str, Any] = LATEST, p3: str | None = None) -> None:
+        cases.append((case_id, b.build(), policy, latest, p3))
+
+    new = Binary("traefik 3.7.12 bytes", "Version: 3.7.12", ino=202)
+    other_bytes = Binary("traefik 3.7.9 rebuilt bytes", ino=303)
+    unassigned = {**TRAEFIK_POLICY, "desired_version": None}
+    no_desired = {key: value for key, value in TRAEFIK_POLICY.items() if key != "desired_version"}
+    not_expected = {**TRAEFIK_POLICY, "expected": False}
+    usr_bin = {**TRAEFIK_POLICY, "binary_path": "/usr/bin/traefik"}
+
+    # tests/test_software_live.py, in the order of the Python tests
+    add("matching_process_and_binary", attempt(Builder()))
+    add("replaced_disk_binary_same_path", attempt(Builder(), installed=new, running=INSTALLED))
+    add("replaced_disk_binary_deleted", attempt(Builder(), target=TRAEFIK + " (deleted)",
+                                                installed=new, running=INSTALLED))
+    add("same_version_different_bytes", attempt(Builder(), running=other_bytes))
+    add("unknown_upstream", attempt(Builder()), latest=LATEST_UNKNOWN)
+    add("new_upstream_and_unassigned_desired", attempt(Builder()), policy=unassigned,
+        latest={**LATEST, "version": "3.7.12"})
+    add("desired_version_absent", attempt(Builder()), policy=no_desired)
+    add("deleted_and_wrong_path", attempt(Builder(), target="/usr/bin/traefik (deleted)"))
+    for case_id, target in (("memfd", "/memfd:payload (deleted)"), ("tmp", "/tmp/other"),
+                            ("deleted_managed", TRAEFIK + " (deleted)")):
+        add(f"unexpected_image_{case_id}_is_not_executed",
+            attempt(Builder(), target=target, running=Binary("unexpected bytes", "Version: 9.9.9", ino=404)))
+    add("pid_retry_settles", attempt(attempt(Builder(), pid_after=12), pid=12))
+    add("pid_retry_exhausted", attempt(attempt(Builder(), pid_after=12), pid=13, pid_after=14))
+    add("link_retry_settles", attempt(attempt(Builder(), target_after="/usr/local/bin/traefik (deleted)"),
+                                      target=TRAEFIK + " (deleted)"))
+    add("link_retry_exhausted", attempt(attempt(Builder(), target_after="/tmp/a"), target="/tmp/a",
+                                        target_after="/tmp/b"))
+    add("retry_resets_issues", attempt(attempt(Builder(), target="/tmp/a", pid_after=12), pid=12))
+    add("stopped_service", Builder().pid("0").add("stat", TRAEFIK, ok(INSTALLED.stat)))
+    add("systemctl_fails", Builder().pid("", exit=1))
+    add("systemctl_missing", Builder().pid("", error="ENOENT"))
+    add("systemctl_timeout", Builder().pid("", error="timeout"))
+    add("expected_absence", Builder().pid("0"), policy=not_expected)
+    add("unexpected_process", Builder().pid("11"), policy=not_expected)
+    add("unexpected_other_path", Builder().pid("0").add("stat", "/usr/bin/traefik", ok(INSTALLED.stat)),
+        policy=not_expected)
+    add("unexpected_managed_path", Builder().pid("0").add("stat", TRAEFIK, ok(INSTALLED.stat)),
+        policy={**not_expected, "binary_path": "/usr/bin/traefik"})
+    add("not_expected_exists_denied", Builder().pid("0").add("stat", "/usr/bin/traefik", err("EACCES")),
+        policy=not_expected)
+    add("not_expected_ignored_errnos", Builder().pid("0").add("stat", TRAEFIK, err("ENOTDIR"))
+        .add("stat", "/usr/bin/traefik", err("ELOOP")), policy=not_expected)
+    add("not_expected_upstream_is_not_read", Builder().pid("0"), policy=not_expected, latest={})
+
+    # MainPID as int() reads it
+    for case_id, output in (("padded", " 11 "), ("plus", "+11"), ("underscore", "1_1"),
+                            ("leading_zeros", "011")):
+        add(f"pid_{case_id}", _with_pid_output(attempt(Builder()), output))
+    add("pid_negative_zero", Builder().pid("-0").add("stat", TRAEFIK, ok(INSTALLED.stat)))
+    for case_id, output in (("empty", ""), ("word", "n/a"), ("double_underscore", "1__1"),
+                            ("float", "11.0"), ("too_many_digits", "1" * 4301)):
+        add(f"pid_invalid_{case_id}", Builder().pid(output))
+    add("pid_negative", Builder().pid("-5").add("stat", TRAEFIK, ok(INSTALLED.stat)))
+    add("pid_huge", Builder().pid("99999999999999999999999").add("stat", TRAEFIK, ok(INSTALLED.stat)))
+    add("pid_unicode_digits", _with_pid_output(attempt(Builder()), "١١"), p3="unicode-digits")
+
+    # the managed binary
+    add("binary_missing", Builder().pid("11"))
+    add("binary_stat_denied", Builder().pid("11").add("stat", TRAEFIK, err("EACCES")))
+    add("usr_bin_policy", attempt(Builder(), path="/usr/bin/traefik", target="/usr/bin/traefik"), policy=usr_bin)
+    add("symlinked_binary_is_resolved",
+        attempt(Builder().realpath(TRAEFIK, "/opt/traefik/v3.7.9/traefik"),
+                target="/opt/traefik/v3.7.9/traefik", real="/opt/traefik/v3.7.9/traefik"))
+    add("symlinked_binary_running_the_link_path",
+        attempt(Builder().realpath(TRAEFIK, "/opt/traefik/v3.7.9/traefik"), target=TRAEFIK,
+                real="/opt/traefik/v3.7.9/traefik"))
+    add("non_ascii_running_path", attempt(Builder(), target="/usr/local/bin/träefik"))
+    add("exe_link_gone", Builder().pid("11").add("stat", TRAEFIK, ok(INSTALLED.stat)))
+    add("exe_link_denied", Builder().pid("11").add("stat", TRAEFIK, ok(INSTALLED.stat))
+        .add("readlink", "/proc/11/exe", err("EACCES")))
+
+    # probes and identities
+    add("installed_open_denied", prefix(Builder()).add("open", TRAEFIK, err("EACCES")))
+    add("installed_probe_fails", prefix(Builder()).opened(TRAEFIK, 3, INSTALLED)
+        .run([TRAEFIK, "version"], "", exit=2))
+    add("installed_probe_times_out", prefix(Builder()).opened(TRAEFIK, 3, INSTALLED)
+        .run([TRAEFIK, "version"], error="timeout"))
+    add("installed_version_unparseable", prefix(Builder()).opened(TRAEFIK, 3, INSTALLED)
+        .run([TRAEFIK, "version"], "traefik version 3.7.9"))
+    add("installed_version_prefixed", attempt(Builder(), installed=Binary(INSTALLED.data, "Version: v3.7.9")))
+    add("installed_changed_during_probe",
+        prefix(Builder()).opened(TRAEFIK, 3, INSTALLED, INSTALLED.stat, st(101, size=99))
+        .run([TRAEFIK, "version"], "Version: 3.7.9"))
+    add("installed_replaced_after_probe", prefix(Builder()).opened(TRAEFIK, 3, INSTALLED)
+        .run([TRAEFIK, "version"], "Version: 3.7.9").add("stat", TRAEFIK, ok(st(999))))
+    add("reexec_after_link_check_is_refused",
+        installed_probed(prefix(Builder())).opened("/proc/11/exe", 4, INSTALLED)
+        .add("readlink", "/proc/self/fd/4", ok("/memfd:payload (deleted)")))
+    add("running_probe_fails",
+        installed_probed(prefix(Builder())).opened("/proc/11/exe", 4, INSTALLED)
+        .add("readlink", "/proc/self/fd/4", ok(TRAEFIK))
+        .run(["/proc/self/fd/4", "version"], "", exit=1, pass_fds=[4]))
+    add("running_changed_during_probe",
+        installed_probed(prefix(Builder()))
+        .opened("/proc/11/exe", 4, INSTALLED, INSTALLED.stat, st(101, mtime_ns=MTIME + 1))
+        .add("readlink", "/proc/self/fd/4", ok(TRAEFIK))
+        .run(["/proc/self/fd/4", "version"], "Version: 3.7.9", pass_fds=[4])
+        .add("stat", "/proc/11/exe", ok(INSTALLED.stat)))
+    add("refused_image_gone_before_open", installed_probed(prefix(Builder(), target="/tmp/x")))
+    add("refused_image_changed", installed_probed(prefix(Builder(), target="/tmp/x"))
+        .opened("/proc/11/exe", 4, INSTALLED).add("stat", "/proc/11/exe", ok(st(5))))
+    add("pid_gone_after_probe", attempt(Builder(), pid_after=0).pid("0")
+        .add("stat", TRAEFIK, ok(INSTALLED.stat)))
+    add("final_link_gone", _final_link(attempt(Builder()), err("ENOENT")))
+
+    # evaluation
+    add("desired_installed_drift", attempt(Builder()), policy={**TRAEFIK_POLICY, "desired_version": "v3.7.8"})
+    add("desired_matches_with_prefix", attempt(Builder()), policy={**TRAEFIK_POLICY, "desired_version": "v3.7.9"})
+    add("running_newer_than_upstream", attempt(Builder()), latest={**LATEST, "version": "3.7.8"})
+    add("outdated_and_drift", attempt(Builder(), installed=new, running=INSTALLED),
+        latest={**LATEST, "version": "v3.8.0"})
+    add("refused_running_is_never_outdated", attempt(Builder(), target="/tmp/x"),
+        latest={**LATEST, "version": "4.0.0"})
+    add("upstream_not_applicable", attempt(Builder()), latest={"status": "not_applicable"})
+    add("upstream_status_missing", attempt(Builder()), latest={"version": "3.7.9"})
+    add("upstream_version_missing", attempt(Builder()), latest={"status": "ok"})
+    add("upstream_version_not_a_string", attempt(Builder()), latest={"status": "ok", "version": 3})
+    add("upstream_version_unparseable", attempt(Builder()), latest={"status": "ok", "version": "latest"})
+    add("upstream_version_not_read_without_running_version", attempt(Builder(), target="/tmp/x"),
+        latest={"status": "ok"})
+    add("installed_version_over_int_limit",
+        attempt(Builder(), installed=Binary("big", "Version: " + "1" * 4301 + ".0.0")))
+    return cases
+
+
+def prefix(b: Builder, target: str = TRAEFIK) -> Builder:
+    """The start of an attempt up to the installed probe: MainPID 11, the
+    managed binary exists, ``/proc/11/exe`` points at ``target``."""
+    return b.pid("11").add("stat", TRAEFIK, ok(INSTALLED.stat)).add("readlink", "/proc/11/exe", ok(target))
+
+
+def installed_probed(b: Builder) -> Builder:
+    """The installed binary opened, probed and stat'ed successfully."""
+    return (b.opened(TRAEFIK, 3, INSTALLED).run([TRAEFIK, "version"], INSTALLED.output)
+            .add("stat", TRAEFIK, ok(INSTALLED.stat)))
+
+
+def _with_pid_output(b: Builder, output: str) -> Builder:
+    """The first ``systemctl`` answer printed as ``output`` (same number)."""
+    b.world["commands"][0]["stdout"] = output
+    return b
+
+
+def _final_link(b: Builder, answer: dict[str, Any]) -> Builder:
+    b.world["readlink"]["/proc/11/exe"][-1] = answer
+    return b
+
+
+def binary_info_cases() -> list[tuple[str, dict[str, Any], str, str | None, bool, str | None]]:
+    cases: list[tuple[str, dict[str, Any], str, str | None, bool, str | None]] = []
+    path = "/opt/proxy"
+    exe = "/proc/11/exe"
+
+    def probe(output: str, binary: Binary = Binary("bytes")) -> Builder:
+        return (Builder().opened(path, 3, binary).run([path, "version"], output)
+                .add("stat", path, ok(binary.stat)))
+
+    outputs = {
+        "plain": "Version: 3.7.9",
+        "prefixed": "Version: v3.7.9",
+        "no_space": "Version:3.7.9",
+        "tabs_and_trailing": "Version:\t3.7.9 \t",
+        "traefik_banner": "Version:      3.7.9\nCodename:     x\nGo version:   go1.25\nBuilt:        now",
+        "later_line": "banner\nVersion: 3.7.9\nmore",
+        "first_of_two": "Version: 3.7.9\nVersion: 4.0.0",
+        "skips_bad_line": "Version: 3.7\nVersion: 3.7.10",
+        "spans_a_line_break": "Version:\n3.7.9",
+        "trailing_line_break_whitespace": "Version: 3.7.9 \n \nx",
+        "python_space_separators": "Version:\x1c3.7.9\x1f",
+        "unicode_space": "Version:　3.7.9 ",
+        "carriage_return": "Version: 3.7.9\r\nx",
+        "big_numbers": "Version: 99999999999999999999.0.1",
+        "lowercase": "version: 3.7.9",
+        "indented": " Version: 3.7.9",
+        "two_parts": "Version: 3.7",
+        "rc": "Version: 3.7.9-rc1",
+        "double_v": "Version: vv3.7.9",
+        "suffix": "Version: 3.7.9 (x)",
+        "empty": "",
+    }
+    for case_id, output in outputs.items():
+        cases.append((f"output_{case_id}", probe(output).build(), path, None, True, None))
+    cases.append(("output_unicode_digits", probe("Version: ٣.٧.٩").build(), path, None, True,
+                  "unicode-digits"))
+    cases.append(("no_probe_never_executes",
+                  Builder().opened(path, 3, Binary("bytes")).add("stat", path, ok(Binary("bytes").stat)).build(),
+                  path, None, False, None))
+    pinned = (Builder().opened(exe, 5, Binary("bytes")).add("readlink", "/proc/self/fd/5", ok(path))
+              .run(["/proc/self/fd/5", "version"], "Version: 3.7.9", pass_fds=[5])
+              .add("stat", exe, ok(Binary("bytes").stat)))
+    cases.append(("pinned_descriptor_is_executed", pinned.build(), exe, path, True, None))
+    cases.append(("pinned_descriptor_resolved_target",
+                  Builder().realpath(path, "/srv/proxy").opened(exe, 5, Binary("bytes"))
+                  .add("readlink", "/proc/self/fd/5", ok("/srv/proxy"))
+                  .run(["/proc/self/fd/5", "version"], "Version: 3.7.9", pass_fds=[5])
+                  .add("stat", exe, ok(Binary("bytes").stat)).build(), exe, path, True, None))
+    for case_id, target in (("memfd", "/memfd:payload (deleted)"), ("deleted", path + " (deleted)"),
+                            ("other", "/tmp/other"), ("unresolved", path + "/")):
+        cases.append((f"descriptor_target_{case_id}_is_refused",
+                      Builder().opened(exe, 5, Binary("bytes")).add("readlink", "/proc/self/fd/5", ok(target))
+                      .build(), exe, path, True, None))
+    cases.append(("descriptor_target_refused_without_probe",
+                  Builder().opened(exe, 5, Binary("bytes")).add("readlink", "/proc/self/fd/5", ok("/tmp/x"))
+                  .build(), exe, path, False, None))
+    cases.append(("open_missing", Builder().build(), path, None, True, None))
+    cases.append(("open_denied", Builder().add("open", path, err("EACCES")).build(), path, None, True, None))
+    cases.append(("descriptor_link_missing", Builder().opened(exe, 5, Binary("bytes")).build(), exe, path,
+                  True, None))
+    cases.append(("fstat_fails", Builder().add("open", path, ok({"fd": 3, "data": "x", "fstat": []})).build(),
+                  path, None, True, None))
+    cases.append(("changed_during_probe",
+                  probe("Version: 3.7.9", Binary("bytes")).build() | {"open": {path: [ok(
+                      {"fd": 3, "data": "bytes", "fstat": [ok(st(101, size=5)), ok(st(101, size=6))]})]}},
+                  path, None, True, None))
+    for case_id, changed in (("inode", st(102, size=5)), ("device", st(101, size=5, dev=7)),
+                             ("mtime", st(101, size=5, mtime_ns=MTIME + 1)),
+                             ("ctime", st(101, size=5, ctime_ns=MTIME + 1)), ("size", st(101, size=6))):
+        cases.append((f"final_stat_{case_id}_changed",
+                      Builder().opened(path, 3, Binary("bytes")).run([path, "version"], "Version: 3.7.9")
+                      .add("stat", path, ok(changed)).build(), path, None, True, None))
+    cases.append(("uid_and_mode_are_not_identity",
+                  Builder().opened(path, 3, Binary("bytes")).run([path, "version"], "Version: 3.7.9")
+                  .add("stat", path, ok({**st(101, size=5), "uid": 7, "mode": 0o100700, "nlink": 2})).build(),
+                  path, None, True, None))
+    cases.append(("final_stat_missing",
+                  Builder().opened(path, 3, Binary("bytes")).run([path, "version"], "Version: 3.7.9").build(),
+                  path, None, True, None))
+    cases.append(("unparseable_wins_over_change",
+                  Builder().add("open", path, ok({"fd": 3, "data": "x", "fstat": [ok(st(1)), ok(st(2))]}))
+                  .run([path, "version"], "no version").build(), path, None, True, None))
+    cases.append(("no_probe_changed",
+                  Builder().opened(path, 3, Binary("bytes")).add("stat", path, ok(st(1))).build(),
+                  path, None, False, None))
+    cases.append(("probe_stderr_is_ignored",
+                  Builder().opened(path, 3, Binary("bytes"))
+                  .run([path, "version"], "Version: 3.7.9", stderr="warning\n").add("stat", path,
+                                                                                    ok(Binary("bytes").stat))
+                  .build(), path, None, True, None))
+    cases.append(("probe_missing_program",
+                  Builder().opened(path, 3, Binary("bytes")).run([path, "version"], error="EACCES").build(),
+                  path, None, True, None))
+    return cases
+
+
+def gen_traefik() -> dict[str, Any]:
+    binary_info = []
+    for case_id, world, path, expected_target, probe_version, p3 in binary_info_cases():
+        host = FakeHost(world)
+        case: dict[str, Any] = {"id": case_id, "world": world, "path": path, "expected_target": expected_target,
+                                "probe_version": probe_version, "result": None, "error": None}
+        with host.patched():
+            try:
+                case["result"] = live.binary_info(path, expected_target=expected_target,
+                                                  probe_version=probe_version)
+            except Exception as exc:  # noqa: BLE001 - the oracle's answer
+                case["error"] = error(exc)
+        case["calls"] = host.calls
+        if p3:
+            assert case["result"] is not None, case_id
+            case["p3"] = p3
+        binary_info.append(case)
+    observe = []
+    seen = set()
+    for case_id, world, policy, latest, p3 in observe_cases():
+        assert case_id not in seen, case_id
+        seen.add(case_id)
+        host = FakeHost(world)
+        with host.patched():
+            result = live.observe_traefik(json.loads(json.dumps(policy)), json.loads(json.dumps(latest)))
+        text = result.pop("error", None)
+        case = {"id": case_id, "world": world, "policy": policy, "latest": latest, "result": result,
+                "error": split_error(text) if text is not None else None, "calls": host.calls}
+        if p3:
+            assert text is None, case_id
+            case["p3"] = p3
+        observe.append(case)
+    return {"binary_info": binary_info, "observe": observe}
+
+
 # ------------------------------------------------------------------ cli
 
 CLI_FILES = {
@@ -790,6 +1316,7 @@ GENERATORS: dict[str, Callable[[], Any]] = {
     "policy.json": gen_policy,
     "report.json": gen_report,
     "realpath.json": gen_realpath,
+    "traefik.json": gen_traefik,
     "cli.json": gen_cli,
 }
 

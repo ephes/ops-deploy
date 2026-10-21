@@ -2,7 +2,8 @@
 
 Status: S2 implemented (crate skeleton, command line, `validate`, policy
 hash, report types, `System` trait, fixtures, TESTMAP; see `README.md`);
-S1 spike done, report in section 13; the other slices planned. Owner
+S3b implemented (Traefik observation, `src/traefik.rs`); S1 spike done,
+report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
@@ -292,13 +293,21 @@ what is known" structure.
 
 Rust: open with `std::fs::File` (which sets `O_CLOEXEC`); right before
 spawning the probe, clear `FD_CLOEXEC` on exactly that descriptor in the
-parent (`rustix::io::fcntl_setfd`, a safe API) and close the descriptor
-after the child has exited — the equivalent of `pass_fds`. This needs no
+parent (`rustix::io::fcntl_setfd`, a safe API) and set it again as soon as
+the spawn returns — `std::process::Command::spawn` returns only after the
+child has executed its program (or failed to), so the child holds the
+descriptor under the same number and no later child inherits it. The
+parent keeps the file open for the `fstat` after the probe and closes it at
+the end of `binary_info`, as Python's `with` block does. Together this is
+the equivalent of `pass_fds`. It needs no
 `unsafe` (`pre_exec` is unsafe, and F1's workspace lints set
 `unsafe_code = "forbid"`); it is race-free because `collect` is
 single-threaded and spawns no other child while the descriptor is
 inheritable. Timeouts kill the child (as `subprocess.run(timeout=…)`
-does). Hashing uses `sha2`.
+does). Hashing uses `sha2`. `MainPID` is read as `int()` reads it (sign,
+underscores between digits, leading zeros, any size, ASCII digits only,
+4.2 item 11) and kept as its decimal text, so `/proc/<pid>/exe` and
+`main_pid` are what Python would use.
 
 #### OS (`observe_os`, `:346-390`)
 
@@ -524,6 +533,10 @@ request path or a policy value other than the host.
    `--config-json` argument that is not UTF-8 (Python decodes argv with
    `surrogateescape`). Python accepts all of these. Our writers never
    produce them, and the role writes the policy with Ansible's `to_json`.
+   Likewise a `/proc/<pid>/exe` target that is not UTF-8 is written into
+   `traefik.running_path` with U+FFFD in place of the invalid bytes (Python
+   writes a lone surrogate escape `"\udcxx"`); the comparisons with the
+   managed path work on the raw bytes in both.
    Python's own limit of 4300 digits per integer is kept, also for a value a
    later duplicate key replaces and for release numbers (`version()`). JSON
    is taken apart through `RawValue`, so an object key equal to serde_json's

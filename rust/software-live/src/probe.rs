@@ -6,15 +6,17 @@
 //! around the Python code through a fake `System` (`probe::fake`), so the
 //! Rust code sees the same answers Python saw.
 //!
-//! This slice (S2) provides the clock, file reads, `exists`, `stat`/`lstat`,
-//! `readlink`, `realpath` and child processes with a timeout. The slices
-//! that need them add the rest to this trait with their host and fake
-//! implementations: the upstream HTTPS request and the cache write (S3a)
-//! and the pinned-descriptor operations — open, descriptor target, `fstat`,
-//! hash and execution through `/proc/self/fd/<fd>` (S3b, S3c).
+//! S2 provided the clock, file reads, `exists`, `stat`/`lstat`, `readlink`,
+//! `realpath` and child processes with a timeout. S3b added the
+//! pinned-descriptor operations: open a file, `fstat` and hash it through
+//! its descriptor, and run a child that inherits exactly that descriptor, so
+//! it can be executed as `/proc/self/fd/<fd>` (PLAN.md 3.3, Traefik). The
+//! slices that need them add the rest to this trait with their host and fake
+//! implementations (the upstream HTTPS request and the cache write, S3a).
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read};
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::ExitStatusExt;
@@ -24,6 +26,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use sha2::{Digest, Sha256};
 // wait-timeout installs a SIGCHLD handler and waits on an AF_UNIX socket
 // pair: fine in the collector unit, which restricts no address family.
 use wait_timeout::ChildExt;
@@ -134,8 +137,20 @@ impl CommandError {
     }
 }
 
+/// A file an observation holds open (`open(path, "rb")`). Its descriptor
+/// pins the inode: the checks, the hash and an execution through
+/// `/proc/self/fd/<fd>` all see the same file, whatever happens to its path
+/// meanwhile.
+pub trait OpenFile {
+    /// The descriptor number (`stream.fileno()`).
+    fn fd(&self) -> RawFd;
+}
+
 /// What an observation reads from the host.
 pub trait System {
+    /// A file [`System::open`] returns.
+    type File: OpenFile;
+
     /// `time.time()`.
     fn now(&self) -> f64;
     /// The bytes of a file (`Path.read_bytes()`).
@@ -150,10 +165,27 @@ pub trait System {
     /// `/`), no stdin, stdout and stderr captured, killed when `timeout`
     /// passes; returns what the finished child left, whatever its exit.
     fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError>;
+    /// `open(path, "rb")` (follows symbolic links, also `/proc/<pid>/exe`).
+    fn open(&self, path: &Path) -> io::Result<Self::File>;
+    /// `os.fstat(file.fileno())`.
+    fn fstat(&self, file: &Self::File) -> io::Result<FileStat>;
+    /// `hashlib.file_digest(file, "sha256").hexdigest()`: the bytes from the
+    /// file's position (the start, for a file just opened) to its end.
+    fn sha256(&self, file: &mut Self::File) -> io::Result<String>;
+    /// [`System::run`] with `subprocess.run(…, pass_fds=(file.fileno(),))`:
+    /// the child inherits exactly this descriptor under its own number, so
+    /// `argv[0]` may be `/proc/self/fd/<fd>`.
+    fn run_inheriting(
+        &self,
+        file: &Self::File,
+        argv: &[&OsStr],
+        timeout: Duration,
+    ) -> Result<CommandOutput, CommandError>;
 
-    /// `Path(path).exists()` of Python 3.12: `False` for a missing path,
-    /// a non-directory in the path, a bad descriptor or a symlink loop;
-    /// any other error (e.g. `EACCES`) is raised.
+    /// `Path(path).exists()` of Python 3.12 and 3.13 (the hosts'
+    /// versions): `False` for a missing path, a non-directory in the path, a
+    /// bad descriptor or a symlink loop; any other error (e.g. `EACCES`) is
+    /// raised. (Python 3.14 reports every error as `False`.)
     fn exists(&self, path: &Path) -> io::Result<bool> {
         match self.stat(path) {
             Ok(_) => Ok(true),
@@ -204,9 +236,24 @@ pub fn command<S: System + ?Sized>(
     timeout: Duration,
 ) -> Result<String, PyError> {
     let program = argv.first().copied().unwrap_or_default();
-    let output = system
-        .run(argv, timeout)
-        .map_err(|error| error.to_py(program))?;
+    finish(program, system.run(argv, timeout))
+}
+
+/// `command(argv, timeout, pass_fds=(file.fileno(),))`: [`command`] with
+/// `file`'s descriptor inherited by the child ([`System::run_inheriting`]).
+pub fn command_inheriting<S: System + ?Sized>(
+    system: &S,
+    file: &S::File,
+    argv: &[&OsStr],
+    timeout: Duration,
+) -> Result<String, PyError> {
+    let program = argv.first().copied().unwrap_or_default();
+    finish(program, system.run_inheriting(file, argv, timeout))
+}
+
+/// The part of `command()` after the child has finished.
+fn finish(program: &OsStr, result: Result<CommandOutput, CommandError>) -> Result<String, PyError> {
+    let output = result.map_err(|error| error.to_py(program))?;
     let success = output.success();
     let (code, signal) = (output.code, output.signal);
     let stdout = decode_text(output.stdout)?;
@@ -225,11 +272,24 @@ pub fn command<S: System + ?Sized>(
     Ok(python_strip(&stdout).to_owned())
 }
 
+/// A file the host opened. `std::fs::File` opens with `O_CLOEXEC`, so no
+/// child inherits it unless [`System::run_inheriting`] passes it.
+#[derive(Debug)]
+pub struct HostFile(std::fs::File);
+
+impl OpenFile for HostFile {
+    fn fd(&self) -> RawFd {
+        self.0.as_raw_fd()
+    }
+}
+
 /// The real host.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostSystem;
 
 impl System for HostSystem {
+    type File = HostFile;
+
     fn now(&self) -> f64 {
         match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(elapsed) => elapsed.as_secs_f64(),
@@ -254,51 +314,108 @@ impl System for HostSystem {
     }
 
     fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError> {
-        let (program, args) = argv
-            .split_first()
-            .ok_or_else(|| CommandError::Spawn(io::Error::other("empty command")))?;
-        let deadline = Instant::now() + timeout;
-        let mut child = Command::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(CommandError::Spawn)?;
-        // Drain both pipes while waiting, as `communicate()` does, so a
-        // chatty child never blocks on a full pipe.
-        let (sender, receiver) = mpsc::channel();
-        let stdout = child
-            .stdout
-            .take()
-            .map(|pipe| drain(pipe, 0, sender.clone()));
-        let stderr = child.stderr.take().map(|pipe| drain(pipe, 1, sender));
-        let status = match child.wait_timeout(remaining(deadline)) {
-            Ok(Some(status)) => status,
-            Ok(None) => return Err(kill(&mut child, timeout)),
-            Err(error) => {
-                kill(&mut child, timeout);
-                return Err(CommandError::Io(error));
-            }
-        };
-        // A grandchild may still hold a pipe open: wait for the end of
-        // both pipes only until the deadline (Python's `communicate()` times
-        // out the same way).
-        let mut output = CommandOutput {
-            code: status.code(),
-            signal: status.signal(),
-            ..CommandOutput::default()
-        };
-        for _ in [&stdout, &stderr].iter().filter(|pipe| pipe.is_some()) {
-            match receiver.recv_timeout(remaining(deadline)) {
-                Ok((0, Ok(bytes))) => output.stdout = bytes,
-                Ok((_, Ok(bytes))) => output.stderr = bytes,
-                Ok((_, Err(error))) => return Err(CommandError::Io(error)),
-                Err(_) => return Err(CommandError::Timeout(timeout)),
+        spawn_and_wait(argv, timeout, || {})
+    }
+
+    fn open(&self, path: &Path) -> io::Result<HostFile> {
+        std::fs::File::open(path).map(HostFile)
+    }
+
+    fn fstat(&self, file: &HostFile) -> io::Result<FileStat> {
+        file.0.metadata().map(|m| FileStat::from_metadata(&m))
+    }
+
+    fn sha256(&self, file: &mut HostFile) -> io::Result<String> {
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0; 1 << 18];
+        loop {
+            match file.0.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => hasher.update(&buffer[..n]),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
             }
         }
-        Ok(output)
+        Ok(hex::encode(hasher.finalize()))
     }
+
+    /// The equivalent of `pass_fds` without `pre_exec` (which is `unsafe`):
+    /// `FD_CLOEXEC` is cleared on exactly this descriptor right before the
+    /// spawn and set again as soon as the spawn returns. `spawn` returns only
+    /// after the child has executed its program (or failed to), so the child
+    /// keeps the descriptor under the same number and no later child sees
+    /// it. This is race-free because `collect` is single-threaded and starts
+    /// no other child meanwhile (PLAN.md 3.3).
+    fn run_inheriting(
+        &self,
+        file: &HostFile,
+        argv: &[&OsStr],
+        timeout: Duration,
+    ) -> Result<CommandOutput, CommandError> {
+        use rustix::io::{FdFlags, fcntl_setfd};
+        fcntl_setfd(&file.0, FdFlags::empty())
+            .map_err(|errno| CommandError::Spawn(errno.into()))?;
+        spawn_and_wait(argv, timeout, || {
+            // Cannot fail on a descriptor that is open; the file is closed
+            // when the observation drops it either way.
+            let _ = fcntl_setfd(&file.0, FdFlags::CLOEXEC);
+        })
+    }
+}
+
+/// Start `argv` (no stdin, both streams captured), call `after_spawn` as
+/// soon as the spawn has returned (whether it worked or not), then wait for
+/// the child until `timeout` passes.
+fn spawn_and_wait(
+    argv: &[&OsStr],
+    timeout: Duration,
+    after_spawn: impl FnOnce(),
+) -> Result<CommandOutput, CommandError> {
+    let (program, args) = argv
+        .split_first()
+        .ok_or_else(|| CommandError::Spawn(io::Error::other("empty command")))?;
+    let deadline = Instant::now() + timeout;
+    let spawned = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+    after_spawn();
+    let mut child = spawned.map_err(CommandError::Spawn)?;
+    // Drain both pipes while waiting, as `communicate()` does, so a
+    // chatty child never blocks on a full pipe.
+    let (sender, receiver) = mpsc::channel();
+    let stdout = child
+        .stdout
+        .take()
+        .map(|pipe| drain(pipe, 0, sender.clone()));
+    let stderr = child.stderr.take().map(|pipe| drain(pipe, 1, sender));
+    let status = match child.wait_timeout(remaining(deadline)) {
+        Ok(Some(status)) => status,
+        Ok(None) => return Err(kill(&mut child, timeout)),
+        Err(error) => {
+            kill(&mut child, timeout);
+            return Err(CommandError::Io(error));
+        }
+    };
+    // A grandchild may still hold a pipe open: wait for the end of
+    // both pipes only until the deadline (Python's `communicate()` times
+    // out the same way).
+    let mut output = CommandOutput {
+        code: status.code(),
+        signal: status.signal(),
+        ..CommandOutput::default()
+    };
+    for _ in [&stdout, &stderr].iter().filter(|pipe| pipe.is_some()) {
+        match receiver.recv_timeout(remaining(deadline)) {
+            Ok((0, Ok(bytes))) => output.stdout = bytes,
+            Ok((_, Ok(bytes))) => output.stderr = bytes,
+            Ok((_, Err(error))) => return Err(CommandError::Io(error)),
+            Err(_) => return Err(CommandError::Timeout(timeout)),
+        }
+    }
+    Ok(output)
 }
 
 type Drained = (u8, io::Result<Vec<u8>>);
@@ -485,23 +602,29 @@ pub mod fake {
             "ELOOP" => Errno::LOOP,
             "EISDIR" => Errno::ISDIR,
             "EINVAL" => Errno::INVAL,
+            "EBADF" => Errno::BADF,
             other => panic!("unknown errno {other} in a fixture world"),
         };
         io::Error::from_raw_os_error(errno.raw_os_error())
     }
 
+    /// One answer: `{"ok": value}` or `{"errno": "ENOENT"}`. (A struct, not
+    /// an untagged enum: serde's buffering of untagged content loses
+    /// `arbitrary_precision` numbers.)
     #[derive(Clone, Debug, Deserialize)]
-    #[serde(untagged)]
-    pub enum Entry<T> {
-        Ok { ok: T },
-        Err { errno: String },
+    #[serde(deny_unknown_fields)]
+    pub struct Entry<T> {
+        // A missing `Option` field is `None` without `#[serde(default)]`.
+        ok: Option<T>,
+        errno: Option<String>,
     }
 
     impl<T: Clone> Entry<T> {
         fn get(&self) -> io::Result<T> {
-            match self {
-                Self::Ok { ok } => Ok(ok.clone()),
-                Self::Err { errno: name } => Err(errno(name)),
+            match (&self.ok, &self.errno) {
+                (Some(ok), None) => Ok(ok.clone()),
+                (None, Some(name)) => Err(errno(name)),
+                _ => panic!("an answer is either ok or an errno"),
             }
         }
     }
@@ -561,6 +684,33 @@ pub mod fake {
         /// `"timeout"` or an errno name for a failed start.
         #[serde(default)]
         pub error: Option<String>,
+        /// The descriptors the child inherits (`pass_fds`).
+        #[serde(default)]
+        pub pass_fds: Vec<RawFd>,
+    }
+
+    /// What `open(path, "rb")` gives: a descriptor number, the file's bytes
+    /// and the answers of `fstat` on it (consumed in order, the last one
+    /// repeats; none left is `EBADF`).
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct OpenSpec {
+        pub fd: RawFd,
+        pub data: String,
+        #[serde(default)]
+        pub fstat: Vec<Entry<StatSpec>>,
+    }
+
+    pub struct FakeFile {
+        fd: RawFd,
+        data: Vec<u8>,
+        fstat: RefCell<VecDeque<Entry<StatSpec>>>,
+    }
+
+    impl OpenFile for FakeFile {
+        fn fd(&self) -> RawFd {
+            self.fd
+        }
     }
 
     /// The world of one fixture case. Paths map to a value or an errno;
@@ -582,6 +732,13 @@ pub mod fake {
         pub readlink: BTreeMap<String, Vec<Entry<String>>>,
         #[serde(default)]
         pub commands: Vec<CommandSpec>,
+        /// `open(path, "rb")` answers per path.
+        #[serde(default)]
+        pub open: BTreeMap<String, Vec<Entry<OpenSpec>>>,
+        /// `os.path.realpath(path)` answers; a path not listed is its own
+        /// real path (the fixture generator patches `realpath` the same way).
+        #[serde(default)]
+        pub realpath: BTreeMap<String, String>,
     }
 
     pub struct FakeSystem {
@@ -591,6 +748,7 @@ pub mod fake {
         stat: RefCell<BTreeMap<String, VecDeque<Entry<StatSpec>>>>,
         lstat: RefCell<BTreeMap<String, VecDeque<Entry<StatSpec>>>>,
         readlink: RefCell<BTreeMap<String, VecDeque<Entry<String>>>>,
+        open: RefCell<BTreeMap<String, VecDeque<Entry<OpenSpec>>>>,
         commands: RefCell<VecDeque<CommandSpec>>,
         pub calls: RefCell<Vec<String>>,
     }
@@ -624,6 +782,7 @@ pub mod fake {
                 stat: RefCell::new(queues(&world.stat)),
                 lstat: RefCell::new(queues(&world.lstat)),
                 readlink: RefCell::new(queues(&world.readlink)),
+                open: RefCell::new(queues(&world.open)),
                 commands: RefCell::new(world.commands.iter().cloned().collect()),
                 world,
                 calls: RefCell::new(Vec::new()),
@@ -638,9 +797,47 @@ pub mod fake {
         pub fn pending_commands(&self) -> usize {
             self.commands.borrow().len()
         }
+
+        /// The next expected command; its argv and inherited descriptors
+        /// must be the ones the code runs.
+        fn next_command(
+            &self,
+            argv: &[&OsStr],
+            pass_fds: &[RawFd],
+            timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            let argv: Vec<String> = argv
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let fds: String = pass_fds
+                .iter()
+                .map(|fd| format!(" pass_fds={fd}"))
+                .collect();
+            self.log(format!("run {}{fds}", argv.join(" ")));
+            let spec = self
+                .commands
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| panic!("unexpected command {argv:?}"));
+            assert_eq!(spec.argv, argv, "the commands ran out of order");
+            assert_eq!(spec.pass_fds, pass_fds, "inherited descriptors of {argv:?}");
+            match spec.error.as_deref() {
+                Some("timeout") => Err(CommandError::Timeout(timeout)),
+                Some(name) => Err(CommandError::Spawn(errno(name))),
+                None => Ok(CommandOutput {
+                    stdout: spec.stdout.into_bytes(),
+                    stderr: spec.stderr.into_bytes(),
+                    code: Some(spec.exit),
+                    signal: None,
+                }),
+            }
+        }
     }
 
     impl System for FakeSystem {
+        type File = FakeFile;
+
         fn now(&self) -> f64 {
             self.log("now".into());
             if let Some(now) = self.now.borrow_mut().pop_front() {
@@ -676,27 +873,52 @@ pub mod fake {
         }
 
         fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError> {
-            let argv: Vec<String> = argv
-                .iter()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect();
-            self.log(format!("run {}", argv.join(" ")));
-            let spec = self
-                .commands
-                .borrow_mut()
-                .pop_front()
-                .unwrap_or_else(|| panic!("unexpected command {argv:?}"));
-            assert_eq!(spec.argv, argv, "the commands ran out of order");
-            match spec.error.as_deref() {
-                Some("timeout") => Err(CommandError::Timeout(timeout)),
-                Some(name) => Err(CommandError::Spawn(errno(name))),
-                None => Ok(CommandOutput {
-                    stdout: spec.stdout.into_bytes(),
-                    stderr: spec.stderr.into_bytes(),
-                    code: Some(spec.exit),
-                    signal: None,
-                }),
-            }
+            self.next_command(argv, &[], timeout)
+        }
+
+        fn open(&self, path: &Path) -> io::Result<FakeFile> {
+            self.log(format!("open {}", path.display()));
+            let spec =
+                next(&self.open, &key(path)).map_or_else(|| Err(errno("ENOENT")), |e| e.get())?;
+            Ok(FakeFile {
+                fd: spec.fd,
+                data: spec.data.into_bytes(),
+                fstat: RefCell::new(spec.fstat.into_iter().collect()),
+            })
+        }
+
+        fn fstat(&self, file: &FakeFile) -> io::Result<FileStat> {
+            self.log(format!("fstat {}", file.fd));
+            let mut queue = file.fstat.borrow_mut();
+            let entry = if queue.len() > 1 {
+                queue.pop_front()
+            } else {
+                queue.front().cloned()
+            };
+            entry.map_or_else(|| Err(errno("EBADF")), |e| e.get().map(Into::into))
+        }
+
+        fn sha256(&self, file: &mut FakeFile) -> io::Result<String> {
+            self.log(format!("sha256 {}", file.fd));
+            Ok(hex::encode(Sha256::digest(&file.data)))
+        }
+
+        fn run_inheriting(
+            &self,
+            file: &FakeFile,
+            argv: &[&OsStr],
+            timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            self.next_command(argv, &[file.fd], timeout)
+        }
+
+        fn realpath(&self, path: &Path) -> io::Result<PathBuf> {
+            self.log(format!("realpath {}", path.display()));
+            Ok(self
+                .world
+                .realpath
+                .get(&key(path))
+                .map_or_else(|| path.to_path_buf(), PathBuf::from))
         }
     }
 }
@@ -824,6 +1046,87 @@ mod tests {
             .unwrap();
         assert_eq!((out.stdout.len(), out.stderr.len()), (300_000, 300_000));
         assert!(out.success());
+    }
+
+    fn cloexec(file: &HostFile) -> bool {
+        rustix::io::fcntl_getfd(&file.0)
+            .unwrap()
+            .contains(rustix::io::FdFlags::CLOEXEC)
+    }
+
+    #[test]
+    fn open_file_is_hashed_and_stated_through_its_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("binary");
+        std::fs::write(&path, b"unexpected bytes").unwrap();
+        let mut file = HostSystem.open(&path).unwrap();
+        assert!(cloexec(&file), "opened with O_CLOEXEC");
+        let before = HostSystem.fstat(&file).unwrap();
+        assert_eq!(
+            before.identity(),
+            HostSystem.stat(&path).unwrap().identity()
+        );
+        assert_eq!(before.size, 16);
+        // sha256(b"unexpected bytes"), as the Python test computes it.
+        assert_eq!(
+            HostSystem.sha256(&mut file).unwrap(),
+            hex::encode(Sha256::digest(b"unexpected bytes"))
+        );
+        // Replacing the path leaves the descriptor on the old inode (whose
+        // ctime may move as its last link goes).
+        std::fs::write(dir.path().join("new"), b"other").unwrap();
+        std::fs::rename(dir.path().join("new"), &path).unwrap();
+        let pinned = HostSystem.fstat(&file).unwrap();
+        assert_eq!(
+            (pinned.dev, pinned.ino, pinned.size),
+            (before.dev, before.ino, 16)
+        );
+        assert_ne!(HostSystem.stat(&path).unwrap().ino, before.ino);
+    }
+
+    #[test]
+    fn only_run_inheriting_passes_the_descriptor() {
+        let _serial = spawn_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pinned");
+        std::fs::write(&path, b"pinned bytes").unwrap();
+        let file = HostSystem.open(&path).unwrap();
+        // `/dev/fd/<n>` is the child's own descriptor n (Linux and macOS).
+        let script = format!("cat /dev/fd/{}", file.fd());
+        let argv = [os("/bin/sh"), os("-c"), os(&script)];
+        let out = HostSystem
+            .run_inheriting(&file, &argv, COMMAND_TIMEOUT)
+            .unwrap();
+        assert!(out.success(), "{out:?}");
+        assert_eq!(out.stdout, b"pinned bytes");
+        assert!(cloexec(&file), "close-on-exec is set again after the spawn");
+        let out = HostSystem.run(&argv, COMMAND_TIMEOUT).unwrap();
+        assert!(!out.success(), "a plain run must not see the descriptor");
+        assert!(out.stdout.is_empty());
+        // A failed start and a timeout restore the flag as well.
+        let error = HostSystem
+            .run_inheriting(&file, &[os("/nonexistent/program")], COMMAND_TIMEOUT)
+            .unwrap_err();
+        assert!(error.is_not_found());
+        assert!(cloexec(&file));
+        let error = HostSystem
+            .run_inheriting(
+                &file,
+                &[os("/bin/sleep"), os("10")],
+                Duration::from_millis(200),
+            )
+            .unwrap_err();
+        assert!(matches!(error, CommandError::Timeout(_)), "{error:?}");
+        assert!(cloexec(&file));
+        // A fresh descriptor: on macOS `/dev/fd/<n>` shares the offset that
+        // the first `cat` moved to the end.
+        let file = HostSystem.open(&path).unwrap();
+        let script = format!("cat /dev/fd/{}", file.fd());
+        let argv = [os("/bin/sh"), os("-c"), os(&script)];
+        assert_eq!(
+            command_inheriting(&HostSystem, &file, &argv, COMMAND_TIMEOUT).unwrap(),
+            "pinned bytes"
+        );
     }
 
     #[test]

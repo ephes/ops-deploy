@@ -30,6 +30,19 @@ Slice S2 (crate skeleton):
   summary and `with_freshness` (`src/report.rs`), and the `System` trait
   with the host implementation and the fixture world (`src/probe.rs`).
 
+Slice S3b (Traefik observation, `src/traefik.rs`):
+
+- `traefik::observe` is `observe_traefik`: `MainPID` from `systemctl`, the
+  `/proc/<pid>/exe` link checks, the installed and the running binary
+  hashed and probed, two attempts against a `MainPID` or link change, and
+  the issues and status of PLAN.md 3.3.
+- The running image is never executed through `/proc/<pid>/exe`: it is
+  opened, the descriptor's own target must be the managed binary's real
+  path, and the probe executes `/proc/self/fd/<fd>` with exactly that
+  descriptor inherited (`System::run_inheriting`, no `unsafe`). The file
+  identity must not change while it is hashed and probed.
+- `collect` does not call it yet (S3f).
+
 ## Layout
 
 ```
@@ -43,7 +56,9 @@ software-live/
   src/version.rs              version(), numeric_version()
   src/report.rs               observations, summary, report, with_freshness
   src/probe.rs                trait System, HostSystem, the fixture world (tests)
+  src/traefik.rs              observe_traefik, binary_info, main_pid
   tests/cli.rs                the binary against the Python program's exit codes
+  tests/traefik_host.rs       Linux only: real processes and pinned descriptors
   fixtures/generate.py        writes fixtures/*.json from the Python program
   fixtures/*.json             generated; never edit by hand
 ```
