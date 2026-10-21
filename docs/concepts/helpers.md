@@ -307,8 +307,11 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
   `validate_user` (`runuser`) and must start with `<name> <version> (`. A
   failure removes this run's fresh install and fails the deploy. With
   `fail_hard=False` it warns and the deploy goes on, so a Python rollback is
-  never blocked, and `Install.failed()` tells later `_if` callbacks. It never
-  moves a pin and never deletes another version.
+  never blocked, and `Install.failed()` tells later `_if` callbacks. A
+  `local_archive` that cannot be read raises `ValueError` while planning, or
+  with `fail_hard=False` is refused the same soft way on the host. A staging
+  leftover is removed without following a symlink. It never moves a pin and
+  never deletes another version.
 - `pin_release(name, consumer, version, *, install_root="", previous="",
   keep_previous=True)` pins `version` for `consumer`, or removes the pin when
   `version` is `None`. Pinning `V` over a current pin `C ≠ V` makes `C` the
@@ -316,7 +319,9 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
   `keep_previous` is false. `previous` replaces the automatic choice. The
   previous pin is written first. A pin file that is not a regular file
   holding exactly one version fails the step and changes nothing. Call it
-  only after the consumer verified that its unit runs `version`.
+  only after the consumer verified that its unit runs `version`. A later pin
+  of the same consumer in one deploy runs whenever an earlier one changed,
+  since its planning probe saw the files before that change.
 - `prune_releases(name, *, install_root="", keep_versions=3, protect=(),
   live_state_unknown=False, after=())` keeps the `keep_versions` newest
   version directories by mtime, every version a pin of any consumer names
@@ -327,7 +332,10 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
   `live_state_unknown` is set or a pin, the pin directory or a `protect` entry
   cannot be interpreted. It is skipped when an `Install` in `after` failed in
   this run, and it runs again, even when the planning probe found nothing,
-  after an operation in `after` changed.
+  after an operation in `after` changed. Unlike the role, nothing remembers a
+  failed install by itself (the role's sticky
+  `rust_release_binary_failed_names`): pass every `Install` of the crate from
+  the same deploy in `after`.
 
 The decisions (pin moves, the prune plan, the version and consumer grammar)
 are ops-library's `plugins/filter/rust_release.py`, vendored byte for byte as

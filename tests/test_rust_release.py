@@ -32,7 +32,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pyinfra.api import deploy
+from pyinfra.api import Config, Inventory, State, deploy
+from pyinfra.api.connect import connect_all, disconnect_all
+from pyinfra.api.deploy import add_deploy
+from pyinfra.api.operations import run_ops
 
 from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.rust_release import HOST_SCRIPT, Install, install_release, pin_release, prune_releases
@@ -297,6 +300,47 @@ def test_an_installed_version_that_is_not_a_directory_is_refused(box: Host) -> N
     assert refused.returncode == 1
     assert "not a directory (or is a symlink)" in refused.stderr
     assert (box.root / "1.0.0").is_symlink()
+
+
+@pytest.mark.parametrize("kind", ["symlink", "file"])
+def test_a_staging_leftover_that_is_not_a_directory_is_never_followed(box: Host, kind: str) -> None:
+    outside = box.base / "outside"
+    outside.mkdir()
+    (outside / "archive.tar.gz").write_text("keep me")
+    (outside / "tree").mkdir()
+    box.root.mkdir(parents=True)
+    staging = box.root / ".staging-1.0.0"
+    if kind == "symlink":
+        staging.symlink_to(outside)
+    else:
+        staging.write_text("junk")
+    assert box.install("1.0.0").returncode == 0
+    assert (outside / "archive.tar.gz").read_text() == "keep me"
+    assert sorted(p.name for p in outside.iterdir()) == ["archive.tar.gz", "tree"]
+    assert box.hidden() == []
+    assert box.versions() == ["1.0.0"]
+
+
+def test_an_upload_that_is_not_a_regular_file_is_refused(box: Host) -> None:
+    _, sha = box.archive("1.0.0")
+    box.root.mkdir(parents=True)
+    upload = box.root / ".upload-1.0.0.tar.gz"
+    upload.symlink_to(box.archives["1.0.0"][0])
+    refused = host("install", box.root, "--version", "1.0.0", "--sha256", sha, "--upload", str(upload))
+    assert refused.returncode == 1
+    assert "not a regular file" in refused.stderr
+    assert box.versions() == []
+    assert box.archives["1.0.0"][0].exists()
+
+
+def test_refuse_fails_inside_the_guarded_step(box: Host) -> None:
+    hard = host("install", box.root, "--version", "1.0.0", "--sha256", "a" * 64, "--refuse", "cannot read x")
+    assert hard.returncode == 1
+    assert "failed installation or validation: cannot read x" in hard.stderr
+    soft = host("install", box.root, "--version", "1.0.0", "--sha256", "a" * 64, "--refuse", "cannot read x", "--soft")
+    assert soft.returncode == 0
+    assert soft.stdout == "failed cannot read x\n"
+    assert not box.root.exists()
 
 
 def test_a_staging_leftover_is_removed(box: Host) -> None:
@@ -572,6 +616,65 @@ def test_a_local_archive_is_uploaded_and_its_checksum_passed(tmp_path: Path) -> 
         *("--members", "software-live,software-live-apt,LICENSE", "--executables", "software-live,software-live-apt"),
         *("--url", "https://example.invalid/a.tar.gz", "--archive-sha256", actual, "--upload", upload),
     ]
+
+
+def test_an_unreadable_local_archive(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.tar.gz"
+    with pytest.raises(ValueError, match=r"cannot read the local archive of metrics-httpd 0\.1\.0"):
+        run(lambda: install_release("metrics-httpd", "0.1.0", local_archive=missing))
+
+    soft = run(lambda: install_release("metrics-httpd", "0.1.0", local_archive=missing, fail_hard=False))
+    assert soft.succeeded, soft.error
+    assert soft.uploaded_paths == []
+    (command,) = soft.executed_commands
+    argv = shlex.split(command)
+    assert argv[argv.index("--refuse") + 1].startswith(f"cannot read the local archive {missing}: ")
+    assert "--upload" not in argv
+    assert "--soft" in argv
+
+
+def test_a_later_pin_of_the_same_consumer_runs_after_an_earlier_one_changed() -> None:
+    def body() -> None:
+        pin_release("metrics-httpd", "svc", "1.0.0")
+        pin_release("metrics-httpd", "svc", "2.0.0")
+        pin_release("metrics-httpd", "other", "2.0.0")
+
+    key = f"pin --name metrics-httpd --root {ROOT} --consumer"
+    responses = {
+        f"{key} svc --version 1.0.0 --check": [f"change {ROOT}/.pins/svc"],
+        f"{key} svc --version 2.0.0 --check": [],
+        f"{key} other --version 2.0.0 --check": [],
+    }
+    result = run(body, responses)
+    assert result.succeeded, result.error
+    assert [c.split()[-1] for c in result.executed_commands] == ["1.0.0", "2.0.0"]
+    assert "other" not in " ".join(result.executed_commands)
+
+
+def test_pin_gates_stay_per_host() -> None:
+    """Two hosts plan the same pins; a gate never looks at the other host's operations."""
+
+    @deploy("Pins")
+    def pins() -> None:
+        pin_release("metrics-httpd", "svc", "1.0.0")
+        pin_release("metrics-httpd", "svc", "2.0.0")
+
+    key = f"pin --name metrics-httpd --root {ROOT} --consumer svc --version"
+    responses = {**fakehost.LINUX, f"{key} 1.0.0 --check": [], f"{key} 2.0.0 --check": []}
+    data = {"fake_responses": responses, "fake_delay": 0, "fake_delay_jitter": 0}
+    state = State(Inventory(([("@fake/one", dict(data)), ("@fake/two", dict(data))], {})), Config())
+    connect_all(state)
+    try:
+        add_deploy(state, pins)
+        run_ops(state)
+    finally:
+        disconnect_all(state)
+    assert not state.failed_hosts
+    for name in ("@fake/one", "@fake/two"):
+        target = state.inventory.get_host(name)
+        assert [state.get_op_meta(h).names for h in state.get_op_order() if h in state.ops[target]] == [
+            {"Pins | Pin metrics-httpd for svc"}
+        ] * 2
 
 
 def test_pin_runs_only_when_its_probe_asks_for_a_change() -> None:

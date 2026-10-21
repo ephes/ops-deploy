@@ -17,6 +17,7 @@
 # Actions (--name and --root always):
 #   install --version V --sha256 S [--archive-sha256 A] [--url U] [--upload P]
 #           [--members M,..] [--executables E,..] [--validate-user U] [--soft]
+#           [--refuse REASON]
 #       Validate an installed version (same archive, --version), or stage,
 #       check, unpack and move a new one into place and validate it. Prints
 #       "installed <binary>" or "validated <binary>". A failure removes this
@@ -111,6 +112,8 @@ def sha256_of(path):
 
 
 def check_install_inputs(args):
+    if args.refuse:
+        raise Refused(args.refuse)
     check_common(args)
     if not rust_release_version_ok(args.version):
         raise Refused(f"version must be a release version, not {args.version!r}")
@@ -139,11 +142,26 @@ def check_install_inputs(args):
     return url, members, executables
 
 
+def remove_path(path):
+    """Remove ``path`` without following a symlink; it must be gone afterwards."""
+
+    info = lstat_or_none(path)
+    if info is not None and stat.S_ISDIR(info.st_mode):
+        shutil.rmtree(path)
+    elif info is not None:
+        os.unlink(path)
+    if os.path.lexists(path):
+        raise Refused(f"cannot remove {path}")
+
+
 def fetch(url, upload, archive):
     if upload:
+        info = lstat_or_none(upload)
+        if info is None or not stat.S_ISREG(info.st_mode):
+            raise Refused(f"the uploaded archive {upload} is missing or not a regular file")
         os.replace(upload, archive)
         return
-    with urllib.request.urlopen(url, timeout=120) as response, open(archive, "wb") as out:
+    with urllib.request.urlopen(url, timeout=120) as response, open(archive, "xb") as out:
         shutil.copyfileobj(response, out)
 
 
@@ -211,7 +229,8 @@ def install(args):
         os.makedirs(root, mode=0o755, exist_ok=True)
         chown(root, args)
         os.chmod(root, 0o755)
-        shutil.rmtree(staging, ignore_errors=True)
+        # A leftover of an interrupted install; never followed if it is a link.
+        remove_path(staging)
         if not fresh:
             try:
                 with open(os.path.join(directory, ".archive-sha256"), encoding="utf-8") as handle:
@@ -226,7 +245,8 @@ def install(args):
                 )
         else:
             tree = os.path.join(staging, "tree")
-            os.makedirs(tree, mode=0o755)
+            os.mkdir(staging, 0o755)
+            os.mkdir(tree, 0o755)
             for path in (staging, tree):
                 chown(path, args)
                 os.chmod(path, 0o755)
@@ -251,7 +271,10 @@ def install(args):
         if created:
             shutil.rmtree(directory, ignore_errors=True)
         if staging:
-            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                remove_path(staging)
+            except (OSError, Refused):
+                pass
         reason = f"{args.name} {args.version} failed installation or validation: {error}"
         if not args.soft:
             raise Refused(f"{reason}. Nothing else changed: the other installed versions and every pin are untouched.")
@@ -449,6 +472,7 @@ def main(argv):
     parser.add_argument("--executables", default="")
     parser.add_argument("--validate-user", default="nobody")
     parser.add_argument("--soft", action="store_true")
+    parser.add_argument("--refuse", default="")
     parser.add_argument("--consumer", default="")
     parser.add_argument("--absent", action="store_true")
     parser.add_argument("--previous", default="")
