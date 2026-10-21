@@ -16,6 +16,7 @@ Two uses:
     {"op": "split", "command": "..."}
     {"op": "check_policy", "text": "..." | "hex": "..."}
     {"op": "realpath", "path": "/...", "fs": {"/path": {...}, ...}}
+    {"op": "os_realpath", "path": "/..."}
 
   Every response carries ``"ok"`` (false only for a malformed request, with
   ``"error"``) and echoes ``"id"`` when the request had one.
@@ -386,15 +387,18 @@ class _FsPatch:
         os.lstat, os.readlink = self.saved  # type: ignore[assignment]
 
 
-def realpath(path: str, fs: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """os.path.realpath (non-strict) of this Python over a virtual tree."""
+def realpath(path: str, fs: dict[str, dict[str, Any]] | None) -> dict[str, Any]:
+    """os.path.realpath (non-strict) of this Python over a virtual tree, or
+    over the real filesystem when `fs` is None (the Rust real-tree tests)."""
     if not path.startswith("/"):
         raise ValueError("realpath needs an absolute path")
-    with _FsPatch(fs):
-        try:
+    try:
+        if fs is None:
             return {"resolved": os.path.realpath(path)}
-        except OSError as exc:
-            return {"error": {"errno": errno.errorcode.get(exc.errno or 0, "?"), "strerror": exc.strerror}}
+        with _FsPatch(fs):
+            return {"resolved": os.path.realpath(path)}
+    except OSError as exc:
+        return {"error": {"errno": errno.errorcode.get(exc.errno or 0, "?"), "strerror": exc.strerror}}
 
 
 # --- server ---------------------------------------------------------------------
@@ -418,6 +422,8 @@ def handle(request: dict[str, Any]) -> dict[str, Any]:
         return {"expected": check_policy_bytes(data)}
     if op == "realpath":
         return realpath(request["path"], request.get("fs") or {})
+    if op == "os_realpath":
+        return realpath(request["path"], None)
     raise ValueError(f"unknown op: {op!r}")
 
 

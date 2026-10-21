@@ -1,6 +1,6 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S3a and S4 implemented (campaign "Rust-Ports Runde 2", stream
+Status: S0, S1, S2, S3a and S4 implemented (campaign "Rust-Ports Runde 2", stream
 `rust-echoport-command-guard`; see `README.md`). Nothing in this directory is
 released or deployed yet. This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
@@ -247,11 +247,16 @@ enforces this for every mode (3.5, S4).
    (`guard.py:224-238`). Behaviour to keep:
    - symlinks are resolved component by component, also when they dangle
      (their target text is followed);
-   - missing components are appended literally;
+   - missing components (`lstat` gives `ENOENT`, or `ENOTDIR` below a
+     non-directory) are appended literally;
    - `..` in a link target is applied to the resolved path.
    Python 3.12 (production) and 3.13 (staging) implement it differently, and
-   symlink loops are where they can diverge. Section 4.2 makes loops a
-   refusal.
+   symlink loops are where they can diverge. Section 4.2 makes loops, and the
+   lookup errors Python skips over, a refusal. The guard only ever resolves
+   paths that `_is_safe_path` accepts (absolute, no `.`, `..` or empty
+   component except trailing `/`), so the port resolves absolute paths only.
+   S2 ports CPython 3.13's algorithm (`pyrealpath.rs`) and checks it against
+   both versions (7.3, 7.5).
 7. **`lstat`**: `ENOENT` means absent. Any other `OSError` refuses with
    `<what> not checkable` (`guard.py:241-247`).
 8. **User and UID lookups.**
@@ -485,9 +490,20 @@ Justification:
   is accepted by both. S9 runs the Rust `--check-policy` on both live
   policies before anything switches.
 - **Trailing `\n` in policy values** is refused (3.3.5).
-- **realpath errors.** A symlink loop or `ENAMETOOLONG` while resolving
-  refuses (`path not checkable`), where Python returns a partly resolved path
-  (which differs between 3.12 and 3.13).
+- **realpath errors.** While resolving, these refuse with `path not
+  checkable: <path!r>: <strerror>`:
+  - a symlink loop, where Python returns a partly resolved path (which
+    differs between 3.12 and 3.13), and a chain of more than 40 links
+    (Linux's `MAXSYMLINKS`; the kernel itself refuses to open such a path),
+    which Python resolves;
+  - an `lstat` error other than `ENOENT`/`ENOTDIR`, for example
+    `ENAMETOOLONG` or `EACCES`, where Python treats the component as "not a
+    link" and appends it unchecked;
+  - a `readlink` error (Python 3.12 raises it, 3.13 appends the link
+    literally) and a link target that is not valid UTF-8 (Python carries the
+    bytes as surrogates).
+  None of these occur on the hosts' policy paths; S2's Layer-2 harness
+  exercises each of them (7.5).
 - **Invalid UTF-8 in `SSH_ORIGINAL_COMMAND`.** Python decodes it with
   `surrogateescape` and refuses later. Rust refuses right after Python's
   pre-checks (counted in bytes, 4.1) with the same `refused from` log line,
@@ -575,8 +591,9 @@ rust/echoport-command-guard/
   src/prefilter.rs      # 4.1
   src/tokens.rs         # shlex crate wrapper + _TAR_RE/_CAT_TO_FILE_RE
   src/env.rs            # trait GuardEnv { euid, uid_of, lstat, realpath }; virtual impl (S1), real impl (S2)
-  src/pyrealpath.rs     # non-strict realpath over GuardEnv (3.3.6)
+  src/pyrealpath.rs     # non-strict realpath over trait ResolveFs { lstat, readlink } (3.3.6, S2)
   src/rules/{mod,postgres,sqlite,transfer,files}.rs   # check() port (3.4)
+  src/rules/paths.rs    # realpath/lstat/uid helpers of check() (3.3.6-3.3.8, S2)
   src/decision.rs       # Decision/Redirect + JSON for --decide/--shadow
   src/redirect.rs       # openat/fstat/dup2 (3.5)
   src/exec.rs           # umask, PATH, locale coercion, signals, execvp
@@ -584,6 +601,7 @@ rust/echoport-command-guard/
   src/syslog.rs         # openlog/syslog through nix's libc wrapper (3.6)
   parity/gen_fixtures.py  parity/oracle.py  parity/allowed_differences.json
   parity/e2e/           # Dockerfiles + scripts for Layers 2 and 3
+  examples/env-probe.rs # the real GuardEnv as JSON lines, for Layer 2 (S2)
   fixtures/             # generated, committed (7.2)
   fuzz/                 # cargo-fuzz targets (not a workspace member)
 ```
@@ -596,8 +614,9 @@ a log file (S4). `main.rs` passes the real ones (`SAFE_PATH`, syslog).
 `check()` takes `&dyn GuardEnv`, so the Layer-1 fixtures run against a
 virtual filesystem and user table, the way the Python tests inject `realpath`
 and `lstat`: the virtual impl answers `realpath` from the case's recorded
-map (default `normpath`). Production uses the real implementation, whose
-`realpath` is `pyrealpath.rs` (or the crate, 5.2) over `lstat`/`readlink`.
+map (default `normpath`). Production uses the real implementation
+(`RealEnv`), whose `realpath` is `pyrealpath.rs` over `lstat`/`readlink`
+(5.2: the crate was evaluated and rejected in S2).
 
 ### 5.2 Crate choices
 
@@ -606,11 +625,11 @@ map (default `normpath`). Production uses the real implementation, whose
 | Tokenising | `shlex` (comex), behind the 4.1 prefilter | A maintained crate. With `\` and `#` refused and only printable ASCII and tab left, its POSIX splitting equals Python's `shlex.split` (no comments, no escapes, literal quotes). The differential test in S1 is the proof; any disagreement blocks S1. |
 | Regexes | `regex-lite` | Only ASCII classes are needed after the prefilter. Smaller than `regex`. |
 | JSON policy | `serde` + `serde_json` into a strict JSON tree (a `Deserialize` visitor that refuses duplicate keys anywhere), then a typed conversion in `Policy.from_dict`'s order | Strict types (4.2); a missing entry key is a `KeyError` and a wrong type a `TypeError` in Python's order, which typed `serde` structs cannot give. Unknown keys are ignored (3.2). |
-| Syscalls (`openat`, `fstat`, `fcntl`, `dup2`, `umask`, `execvp`, `getpwnam_r`, `geteuid`, `sigaction`) | `nix` | Maintained. One crate covers everything. |
+| Syscalls (`openat`, `fstat`, `fcntl`, `dup2`, `umask`, `execvp`, `getpwnam_r`, `geteuid`, `sigaction`) | `nix` | Maintained. One crate covers everything. `lstat` and `readlink` are std's `symlink_metadata` and `read_link` (S2). |
 | syslog | `nix::syslog` (`openlog`, `syslog(priority, "%s", msg)`) | Parity with CPython, which calls the same libc functions (3.6). nix's wrapper is exactly these two calls, so no `unsafe` of our own (S4). |
 | `setlocale`, `nl_langinfo` | `libc` (thin `unsafe` calls in `exec.rs`) | PEP 538 parity (3.5); nix has no wrapper. |
 | `strerror` texts | std's `io::Error` (glibc `strerror_r`) | `nix::Errno::desc` is nix's own table and differs from glibc for some codes (`EBADF`: "Bad file number"). |
-| Non-strict realpath | own `pyrealpath.rs`, about 60 lines, a port of CPython's `posixpath` algorithm over `GuardEnv` | `std::fs::canonicalize` is strict (it fails on missing paths and dangling links). S2 first evaluates the `soft-canonicalize` crate against the Python oracle on the real-tree corpus. If it matches every case that is reachable after `_is_safe_path`, the crate is used and the port is dropped. Q3. |
+| Non-strict realpath | own `pyrealpath.rs`, about 70 lines, a port of CPython 3.13's `posixpath.realpath` over `ResolveFs` (`lstat`, `readlink`) | `std::fs::canonicalize` is strict (it fails on missing paths and dangling links). **Decided in S2 (Q3):** `soft-canonicalize` 0.5.6 was run through the Layer-2 harness (7.5) on Ubuntu 24.04 against Python 3.12.3, on the same 1,531 safe-path probes (31 curated, 1,500 in 300 random trees). It differed on 265: it does not follow dangling links, it keeps a trailing `/` and resolves `..` in link targets differently, it resolves a loop through `..` and the `ENAMETOOLONG`, `EACCES` and non-UTF-8 cases instead of refusing them, and 49 of its results lie inside the probe's tree where Python's lie outside (acceptance drift). `pyrealpath.rs` matched Python 3.12.3 and 3.13.5 on every probe, apart from the 4.2 refusals. |
 | Tests | `proptest`, `tempfile`, `serde_json` | |
 | Fuzzing | `cargo-fuzz` (nightly, outside the workspace) | Section 7.4. |
 
@@ -1171,8 +1190,9 @@ under 3.12, `check` under 3.13 and the venv).
 ### 7.3 Differential and property tests (CI, stable toolchain)
 
 **The oracle server:** `parity/oracle.py` is a long-running Python process
-speaking JSON lines (`check`, `split`, `check_policy`, `realpath`) with
-injected env.
+speaking JSON lines (`check`, `split`, `check_policy`, `realpath` over a
+virtual tree, and `os_realpath` on the real filesystem, S2) with injected
+env.
 
 **proptest suites** call the oracle server:
 
@@ -1180,6 +1200,14 @@ injected env.
   quote, space and tab characters, and towards `\`, `#`, `$` and control
   characters. Property: if the prefilter passes, Rust tokens equal
   `shlex.split` (including errors).
+- **realpath** (S2, `tests/realpath.rs`): random trees of directories,
+  files, links with random relative and absolute targets (`.`, `..`, empty
+  parts) and `lstat` errors, probed with random safe paths: virtual trees
+  through the oracle's `realpath`, real trees in a temp directory through
+  `os_realpath` with the real `GuardEnv`. Property: when Rust resolves,
+  Python resolves to the same string; Rust may refuse only as 4.2 allows, and
+  a loop refusal must be confirmed by an independent resolver without
+  Python's `seen` map.
 - **decisions:** grammar-aware commands built from the policy vocabulary
   and the mutation operators, with random virtual fs states. Property:
   `rust_accepts ⇒ python_accepts ∧ decision_equal`; for refusals, reasons are
@@ -1224,8 +1252,20 @@ policy paths:
 
 It then runs each command through Python `check()` with the real
 `realpath`/`lstat`/`pwd` and through Rust `--decide`, and compares. This
-covers `test_scp_against_a_real_tree` and validates `pyrealpath.rs` (or the
-crate, 5.2) against both CPython versions.
+covers `test_scp_against_a_real_tree` and validates `pyrealpath.rs` against
+both CPython versions.
+
+**S2 delivers the filesystem part** (`parity/e2e/Dockerfile`,
+`layer2_realpath.py`, `run-layer2.sh`; `just echoport-command-guard-layer2`,
+local, needs Docker). The probe `examples/env-probe.rs` answers the real
+`GuardEnv`'s lookups as JSON lines; the script builds the scenarios above
+under the policies' path roots (plus a 40/41-link chain, an `ENAMETOOLONG`
+component, a non-UTF-8 link target, an `EACCES` case run as `nobody`, and
+300 seeded random trees) and compares `realpath` with `os.path.realpath`,
+`lstat` with `os.lstat` (kind, mode, uid, link count, or errno and
+`strerror`), `uid_of` with `pwd.getpwnam` and the euid. A loop refusal must
+be confirmed by an independent resolver without Python's `seen` map. S5 adds
+the `check()`/`--decide` comparison on top.
 
 ### 7.6 Layer 3: end to end through sshd
 
@@ -1347,7 +1387,8 @@ The owner accepted every recommended answer of the former owner questions on
   loops. No runner command and no generated policy is affected; S0 and S9
   prove that.
 - **Q3 Python-compatibility ports:** **allowed**: a non-strict `realpath`
-  (unless `soft-canonicalize` matches the oracle, S2), `repr` for log lines,
+  (unless `soft-canonicalize` matches the oracle, S2; it does not, 5.2),
+  `repr` for log lines,
   and PEP 538 locale coercion. Each is differential-tested against CPython
   3.12 and 3.13 (7.3–7.5).
 - **Q4 Live acceptance:** **only non-destructive restores**: the nightly

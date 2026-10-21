@@ -41,10 +41,10 @@ Kinds:
 | --- | --- | --- | --- |
 | `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner; `rules::tests` | unknown tools, prefilter and tokeniser stages done (S1); S3a tool branches done (S3a); S3b tool branches pending (S3b) |
 | `test_host_specific_rules` | `unit.jsonl` | Layer-1 runner | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
-| `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
+| `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner; `rules::paths::tests::roots_as_python` | helper done (S2); Rust rule pending (S3b) |
 | `test_rsync_options_must_match_exactly` | `unit.jsonl`; `mutation/tools.jsonl` (`rsync-*`) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_scp_refuses_targets_that_are_not_plain_files` | `unit.jsonl` (lstat recorded); `fs.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_scp_against_a_real_tree` | — (real filesystem) | Layer 2 | pending (S2, S5) |
+| `test_scp_refuses_targets_that_are_not_plain_files` | `unit.jsonl` (lstat recorded); `fs.jsonl` | Layer-1 runner; `rules::paths::tests::plain_file_reasons_as_python` | helper done (S2); Rust rule pending (S3b) |
+| `test_scp_against_a_real_tree` | — (real filesystem) | Layer 2 | filesystem part done (S2: `parity/e2e/layer2_realpath.py`, the real `GuardEnv` against Python 3.12 and 3.13); the `scp` decision pending (S5) |
 | `test_mv_only_onto_new_names_within_one_root` | `unit.jsonl`; `fs.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_django_chat_refusals` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
 | `test_gotosocial_refusals` | `unit.jsonl` | Layer-1 runner; `rules::sqlite` unit tests | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
@@ -116,7 +116,7 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `PrefilterContract.test_p3_tags_follow_the_prefilter_rule` | the `p3` tags of PLAN.md 4.1/4.2 | the Layer-1 runner's tag handling | done (S0, S1) |
 | `PrefilterContract.test_accepted_fixture_commands_are_printable_ascii` | every accepted fixture command is printable ASCII and tab | — | done (S0) |
 | `PrefilterContract.test_python_accepts_only_printable_ascii_and_tab` | seeded random edits: whatever Python accepts is printable ASCII and tab | `prefilter::tests`; the Layer-1 `prefilter` cases | done (S0, S1) |
-| `OracleServer.test_round_trip` | `parity/oracle.py` JSON lines: `ping`, `check`, `split`, `check_policy`, `realpath` | `tests/tokeniser.rs` (`ping`, `split`, S1); S2/S5 proptests | done (S0); `split` used (S1) |
+| `OracleServer.test_round_trip` | `parity/oracle.py` JSON lines: `ping`, `check`, `split`, `check_policy`, `realpath`, `os_realpath` (S2) | `tests/tokeniser.rs` (`ping`, `split`, S1); `tests/realpath.rs` (`realpath`, `os_realpath`, S2); S5 proptests | done (S0, S2); `split` used (S1); `realpath`, `os_realpath` used (S2) |
 
 ## New in S1 (Rust)
 
@@ -151,3 +151,14 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `tests/flow.rs` `decide_prints_the_decision`, `shadow_logs_then_execs_python` | `--decide` JSON and exit codes, no redirect, log or exec; `--shadow` logs the record under its own identifier and execs the Python guard with the same PID, the environment and umask unchanged, also after a panic | done (S4) |
 | `tests/cli.rs` `decide_prints_the_decision_only`, `shadow_requires_the_python_guards_forced_command`, `shadow_execs_the_python_guard_with_the_same_pid` | the binary's `--decide` with the real `check()`; the `--shadow` argv rule (exit 2); its exec (same PID, environment unchanged) and exec failure (127) | done (S4) |
 | `redirect::tests::os_error_text_is_pythons`, `exec::tests`, `syslog::tests`, `repr::tests::undecodable_bytes_as_surrogate_escapes` | `str(OSError)`, glibc `strerror` texts, `os.path.join`, failing searches, `message[:1000]`, `repr` of `surrogateescape` text | done (S4) |
+
+## New in S2 (Rust, filesystem layer)
+
+| Test | What it pins | Status |
+| --- | --- | --- |
+| `tests/realpath.rs` `virtual_trees_resolve_like_python` | 2,000 seeded random virtual trees (dirs, files, links with random targets, `lstat` errors) and safe-path probes: `pyrealpath` resolves to Python's `os.path.realpath` (the oracle's `realpath`), or refuses as PLAN.md 4.2 allows; a loop refusal is confirmed by a resolver without `seen` | done (S2) |
+| `tests/realpath.rs` `real_trees_resolve_like_python` | 500 random real trees in a temp directory: `RealEnv::realpath` against the real `os.path.realpath` (`os_realpath`) | done (S2) |
+| `tests/realpath.rs` `virtual_cases`, `link_limit` | `..` in targets, dangling links, missing components, `ENOTDIR`, cached links, `//`, absolute targets, loops, `EACCES`; 40 links resolve, 41 refuse | done (S2) |
+| `tests/realpath.rs` `real_env_lookups`, `non_utf8_link_target_refuses` | `RealEnv`: kinds, modes, uid and link count from `lstat`, `ENOENT` as absent, `ENOTDIR`/`ENAMETOOLONG` with glibc's texts, `EINVAL` for a NUL byte, euid against `id -u`, `getpwnam_r` for `root` and missing users; a non-UTF-8 link target refuses (Linux) | done (S2) |
+| `pyrealpath::tests`, `rules::paths::tests` | the port without the oracle; the helpers' refusal reasons (`_lstat_or_none`, `_require_plain_file_or_absent`, `_require_private_dir`, `_root_for`, `_require_in_roots`, `_user_uids`) and the `path not checkable` refusal | done (S2) |
+| Layer 2 `parity/e2e/layer2_realpath.py` | as root in Ubuntu 24.04 (Python 3.12.3) and Debian 13 (Python 3.13.5): `realpath`, `lstat`, `getpwnam` and euid of the real `GuardEnv` (`examples/env-probe.rs`) against CPython on the PLAN.md 7.5 scenarios and 300 random trees | done (S2), local (`just echoport-command-guard-layer2`) |

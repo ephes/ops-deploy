@@ -2,16 +2,24 @@
 //! euid, user lookups, `lstat` and the non-strict `realpath`.
 //!
 //! `check()` takes `&dyn GuardEnv`, so the Layer-1 fixtures run against
-//! [`VirtualEnv`], the way the Python tests inject `realpath` and `lstat`. The
-//! real implementation (`getpwnam_r`, `geteuid`, `lstat`, and `realpath` as
-//! `pyrealpath.rs` over `lstat`/`readlink`) arrives with S2.
+//! [`VirtualEnv`], the way the Python tests inject `realpath` and `lstat`.
+//! The guard itself runs against [`RealEnv`]: `geteuid`, `getpwnam_r` (NSS,
+//! as Python's `pwd.getpwnam`), `lstat`, and `realpath` as
+//! [`crate::pyrealpath`] over `lstat`/`readlink`.
 
 use std::collections::BTreeMap;
+use std::fs::Metadata;
+use std::io;
+use std::os::unix::fs::MetadataExt;
 
-use serde::Deserialize;
+use nix::errno::Errno;
+use nix::unistd::{User, geteuid};
+use serde::{Deserialize, Serialize};
+
+use crate::pyrealpath::{self, ResolveFs};
 
 /// The file type of an `lstat` result (the fixtures' `kind`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FileKind {
     Reg,
@@ -24,7 +32,7 @@ pub enum FileKind {
 }
 
 /// The parts of an `lstat` result `check()` looks at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileStat {
     pub kind: FileKind,
@@ -36,11 +44,37 @@ pub struct FileStat {
 
 /// An `OSError` other than `ENOENT`: the errno name and glibc's `strerror`
 /// text, which refusal reasons quote (`guard.py:247`).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OsError {
     pub errno: String,
     pub strerror: String,
+}
+
+impl OsError {
+    /// The errno name and glibc's `strerror` text of an `io::Error` from a
+    /// system call (`EINVAL` for the errors std raises before the call, such
+    /// as a NUL byte in a path).
+    pub fn from_io(error: &io::Error) -> Self {
+        let text = error.to_string();
+        match error.raw_os_error() {
+            Some(code) => {
+                // std's `Display` is `<strerror> (os error <code>)`.
+                let strerror = text
+                    .strip_suffix(&format!(" (os error {code})"))
+                    .unwrap_or(&text)
+                    .to_owned();
+                Self {
+                    errno: format!("{:?}", Errno::from_raw(code)),
+                    strerror,
+                }
+            }
+            None => Self {
+                errno: "EINVAL".into(),
+                strerror: text,
+            },
+        }
+    }
 }
 
 /// The host as `check()` sees it.
@@ -115,6 +149,85 @@ impl GuardEnv for VirtualEnv {
             .cloned()
             .unwrap_or_else(|| normpath(path)))
     }
+}
+
+/// The real host: what the guard sees when sshd runs it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RealEnv;
+
+impl GuardEnv for RealEnv {
+    fn euid(&self) -> u32 {
+        geteuid().as_raw()
+    }
+
+    /// `getpwnam_r` through NSS (glibc), like CPython's `pwd.getpwnam`. A
+    /// lookup error counts as "no such user", as in Python (`KeyError`); that
+    /// only ever removes a uid from an owner check.
+    fn uid_of(&self, name: &str) -> Option<u32> {
+        match User::from_name(name) {
+            Ok(Some(user)) => Some(user.uid.as_raw()),
+            Ok(None) | Err(_) => None,
+        }
+    }
+
+    fn lstat(&self, path: &str) -> Result<Option<FileStat>, OsError> {
+        real_lstat(path)
+    }
+
+    fn realpath(&self, path: &str) -> Result<String, OsError> {
+        pyrealpath::realpath(self, path)
+    }
+}
+
+impl ResolveFs for RealEnv {
+    fn lstat(&self, path: &str) -> Result<Option<FileStat>, OsError> {
+        real_lstat(path)
+    }
+
+    fn readlink(&self, path: &str) -> Result<String, OsError> {
+        let target = std::fs::read_link(path).map_err(|error| OsError::from_io(&error))?;
+        target.into_os_string().into_string().map_err(|_| OsError {
+            errno: "EILSEQ".into(),
+            strerror: "link target is not valid UTF-8".into(),
+        })
+    }
+}
+
+/// `os.lstat(path)`: `Ok(None)` for `ENOENT`.
+fn real_lstat(path: &str) -> Result<Option<FileStat>, OsError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => file_stat(&metadata).map(Some),
+        Err(error) if error.raw_os_error() == Some(Errno::ENOENT as i32) => Ok(None),
+        Err(error) => Err(OsError::from_io(&error)),
+    }
+}
+
+/// The parts of a `stat` result the guard looks at. `kind` comes from the
+/// `S_IFMT` bits; a type outside the seven Linux knows is an error.
+fn file_stat(metadata: &Metadata) -> Result<FileStat, OsError> {
+    let mode = metadata.mode();
+    let kind = match mode & 0o170_000 {
+        0o100_000 => FileKind::Reg,
+        0o040_000 => FileKind::Dir,
+        0o120_000 => FileKind::Lnk,
+        0o010_000 => FileKind::Fifo,
+        0o140_000 => FileKind::Sock,
+        0o020_000 => FileKind::Chr,
+        0o060_000 => FileKind::Blk,
+        _ => {
+            return Err(OsError {
+                errno: "EINVAL".into(),
+                strerror: "unknown file type".into(),
+            });
+        }
+    };
+    Ok(FileStat {
+        kind,
+        // `stat.S_IMODE`
+        mode: mode & 0o7777,
+        uid: metadata.uid(),
+        nlink: metadata.nlink(),
+    })
 }
 
 /// `posixpath.normpath` (CPython 3.12/3.13): collapses `//`, `.` and `..`

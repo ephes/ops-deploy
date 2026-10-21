@@ -17,6 +17,8 @@ pub mod files;
 pub mod postgres;
 pub mod sqlite;
 
+pub mod paths;
+
 use crate::decision::{Decision, Refused};
 use crate::env::GuardEnv;
 use crate::policy::{Policy, is_safe_name, is_safe_path};

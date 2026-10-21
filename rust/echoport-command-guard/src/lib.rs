@@ -15,6 +15,7 @@ pub mod exec;
 pub mod modes;
 pub mod policy;
 pub mod prefilter;
+pub mod pyrealpath;
 pub mod redirect;
 pub mod repr;
 pub mod rules;

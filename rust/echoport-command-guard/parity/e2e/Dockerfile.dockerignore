@@ -1,0 +1,5 @@
+# Build context of parity/e2e/Dockerfile is rust/: the sources and the lock
+# file, never a build directory.
+**/target
+**/.git
+**/__pycache__

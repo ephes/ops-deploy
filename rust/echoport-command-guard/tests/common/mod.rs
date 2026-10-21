@@ -193,3 +193,154 @@ impl Drop for Oracle {
         let _ = self.child.wait();
     }
 }
+
+impl Oracle {
+    /// Python's `os.path.realpath(path)` over the virtual tree `fs` (the
+    /// oracle's `_FsPatch`): `Ok(resolved)` or `Err(errno name)`.
+    pub fn realpath_virtual(&mut self, path: &str, fs: &Value) -> Result<String, String> {
+        let response = self.ask(&json!({"op": "realpath", "path": path, "fs": fs}));
+        realpath_outcome(&response)
+    }
+
+    /// Python's `os.path.realpath(path)` on the real filesystem.
+    pub fn realpath_os(&mut self, path: &str) -> Result<String, String> {
+        let response = self.ask(&json!({"op": "os_realpath", "path": path}));
+        realpath_outcome(&response)
+    }
+}
+
+fn realpath_outcome(response: &Value) -> Result<String, String> {
+    match (response.get("resolved"), response.get("error")) {
+        (Some(resolved), None) => Ok(resolved.as_str().unwrap().to_owned()),
+        (None, Some(error)) => Err(error["errno"].as_str().unwrap().to_owned()),
+        _ => panic!("unexpected realpath answer {response}"),
+    }
+}
+
+/// A virtual tree as the oracle's `_FsPatch` serves it (`parity/oracle.py`):
+/// path → `{kind, mode, uid, nlink[, target]}`, `{"absent": true}` or
+/// `{errno, strerror}`. A path that is not listed is `ENOENT`, or `ENOTDIR`
+/// when a listed ancestor is neither a directory nor a link; `/` is a
+/// directory.
+pub struct VirtualTree(pub serde_json::Map<String, Value>);
+
+impl echoport_command_guard::pyrealpath::ResolveFs for VirtualTree {
+    fn lstat(
+        &self,
+        path: &str,
+    ) -> Result<Option<echoport_command_guard::env::FileStat>, echoport_command_guard::env::OsError>
+    {
+        use echoport_command_guard::env::{FileStat, OsError};
+        let error = |errno: &str, strerror: &str| OsError {
+            errno: errno.into(),
+            strerror: strerror.into(),
+        };
+        let Some(entry) = self.0.get(path) else {
+            let mut parent = posix_dirname(path);
+            while !parent.is_empty() && parent != "/" {
+                if let Some(entry) = self.0.get(parent)
+                    && !matches!(
+                        entry.get("kind").and_then(Value::as_str),
+                        None | Some("dir" | "lnk")
+                    )
+                {
+                    return Err(error("ENOTDIR", "Not a directory"));
+                }
+                parent = posix_dirname(parent);
+            }
+            if path == "/" {
+                return Ok(Some(
+                    serde_json::from_value(
+                        json!({"kind": "dir", "mode": 0o755, "uid": 0, "nlink": 2}),
+                    )
+                    .unwrap(),
+                ));
+            }
+            return Ok(None);
+        };
+        if entry.get("absent").is_some() {
+            return Ok(None);
+        }
+        if let Some(errno) = entry.get("errno") {
+            return Err(error(
+                errno.as_str().unwrap(),
+                entry["strerror"].as_str().unwrap(),
+            ));
+        }
+        let mut stat = entry.clone();
+        stat.as_object_mut().unwrap().remove("target");
+        Ok(Some(serde_json::from_value::<FileStat>(stat).unwrap()))
+    }
+
+    fn readlink(&self, path: &str) -> Result<String, echoport_command_guard::env::OsError> {
+        use echoport_command_guard::env::OsError;
+        match self.0.get(path) {
+            None => Err(OsError {
+                errno: "ENOENT".into(),
+                strerror: "No such file or directory".into(),
+            }),
+            Some(entry) if entry.get("kind").and_then(Value::as_str) == Some("lnk") => {
+                Ok(entry["target"].as_str().unwrap().to_owned())
+            }
+            Some(_) => Err(OsError {
+                errno: "EINVAL".into(),
+                strerror: "Invalid argument".into(),
+            }),
+        }
+    }
+}
+
+/// `posixpath.dirname`.
+pub fn posix_dirname(path: &str) -> &str {
+    let head = match path.rfind('/') {
+        Some(index) => &path[..=index],
+        None => "",
+    };
+    let trimmed = head.trim_end_matches('/');
+    if trimmed.is_empty() { head } else { trimmed }
+}
+
+/// An independent check for the loop refusals: Python's non-strict
+/// resolution without its `seen` map, following at most `budget` links.
+/// `None` when the budget runs out, which for the small test trees means the
+/// resolution never ends (a loop).
+pub fn naive_realpath(
+    fs: &dyn echoport_command_guard::pyrealpath::ResolveFs,
+    path: &str,
+    budget: usize,
+) -> Option<String> {
+    use echoport_command_guard::env::FileKind;
+    let mut stack: Vec<String> = path.split('/').rev().map(str::to_owned).collect();
+    let mut resolved = String::from("/");
+    let mut links = 0;
+    while let Some(name) = stack.pop() {
+        if name.is_empty() || name == "." {
+            continue;
+        }
+        if name == ".." {
+            let cut = resolved.rfind('/').unwrap_or(0);
+            resolved.truncate(cut.max(1));
+            continue;
+        }
+        let newpath = if resolved == "/" {
+            format!("/{name}")
+        } else {
+            format!("{resolved}/{name}")
+        };
+        let is_link = matches!(fs.lstat(&newpath), Ok(Some(stat)) if stat.kind == FileKind::Lnk);
+        if !is_link {
+            resolved = newpath;
+            continue;
+        }
+        links += 1;
+        if links > budget {
+            return None;
+        }
+        let target = fs.readlink(&newpath).ok()?;
+        if target.starts_with('/') {
+            resolved = String::from("/");
+        }
+        stack.extend(target.split('/').rev().map(str::to_owned));
+    }
+    Some(resolved)
+}

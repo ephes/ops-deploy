@@ -5,8 +5,9 @@ The plan and contract are in [PLAN.md](PLAN.md), the test map in
 [TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
 hosts run the Python guard.
 
-Status: **S1** (crate skeleton, policy, tokeniser), **S3a** (the rules
-without filesystem) and **S4** (runtime and exec). What exists:
+Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
+layer), **S3a** (the rules without filesystem) and **S4** (runtime and
+exec). What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -43,10 +44,8 @@ without filesystem) and **S4** (runtime and exec). What exists:
     log lines pair up by `_PID`. Any other tail (not absolute, not `-I`,
     another policy path, extra arguments) is exit 2 and executes nothing.
   - Any other argv is the Python guard's usage error (exit 2).
-  - Until S2 lands, the binary's `GuardEnv` has the real euid and NSS user
-    lookups but no `lstat`/`realpath`: those fail, so a rule that looks at
-    the filesystem refuses (`... not checkable`). S2 replaces it with the
-    real one.
+  - The binary's `GuardEnv` is `env::RealEnv` (S2, below): the real euid,
+    NSS user lookups, `lstat` and `realpath`.
   - `check()` ports the pre-checks, the prefilter (PLAN.md 4.1), the two raw
     shapes (detected only), the tokeniser and the tool dispatcher (S1), and
     the branches that need no filesystem (S3a, `src/rules/`): `sudo -u
@@ -58,13 +57,27 @@ without filesystem) and **S4** (runtime and exec). What exists:
     `tar` and `cat >` shapes, `scp`, `rsync`, `rm -f` of `-wal`/`-shm`
     files, `cat`, `sha256sum`, `readlink`, `test`, `mv`, `mkdir`, `chmod`,
     `chown`) still refuse; S3b ports them.
+  - The filesystem layer (S2): `env::RealEnv`, the real `GuardEnv`
+    (`geteuid`, `getpwnam_r` through NSS, `lstat` with glibc's `strerror`
+    texts, `realpath`); `pyrealpath`, a port of CPython's non-strict
+    `os.path.realpath` over `lstat`/`readlink` that refuses loops, more than
+    40 links, `lstat` errors other than `ENOENT`/`ENOTDIR`, `readlink`
+    errors and non-UTF-8 link targets (PLAN.md 4.2); and `rules::paths`, the
+    helpers of `check()` (`_root_for`, `_require_in_roots`,
+    `_lstat_or_none`, `_require_plain_file_or_absent`,
+    `_require_private_dir`, `_user_uids`) with Python's refusal reasons.
+    The `soft-canonicalize` crate was evaluated and rejected (PLAN.md 5.2).
 - `parity/oracle.py`: the Python guard as the oracle. A module for the
   generator and the tests, and a JSON-lines server (`python3 -I
-  parity/oracle.py`) with the ops `ping`, `check`, `split`, `check_policy`
-  and `realpath` for the Rust property tests. Stdlib only.
+  parity/oracle.py`) with the ops `ping`, `check`, `split`, `check_policy`,
+  `realpath` (over a virtual tree) and `os_realpath` (real filesystem) for
+  the Rust property tests. Stdlib only.
 - `parity/gen_fixtures.py`: writes `fixtures/` (below).
 - `parity/allowed_differences.json`: per-case exceptions (empty).
 - `fixtures/`: the Layer-1 cases, generated and committed.
+- `parity/e2e/`: the Layer-2 containers (Ubuntu 24.04 with Python 3.12,
+  Debian 13 with Python 3.13) and, so far, the filesystem comparison
+  `layer2_realpath.py` with the probe `examples/env-probe.rs` (below).
 
 ## Build and test
 
@@ -80,7 +93,8 @@ The tests:
 - `src/**` unit tests: prefilter, tokeniser, `repr`, `normpath`, the policy
   loader and its helpers (scratch databases, `mktemp` results), the
   dispatcher and the S3a rules (`rules::{postgres,sqlite,files}`; their
-  expected reasons are the Python guard's).
+  expected reasons are the Python guard's), `pyrealpath`, and the
+  `rules::paths` helpers with Python's refusal reasons.
 - `tests/layer1.rs`, the Layer-1 runner: every decision and policy case of
   `fixtures/` against the Rust guard, with the case's recorded environment as
   a virtual `GuardEnv`. A Rust acceptance must equal Python's decision. A
@@ -95,6 +109,13 @@ The tests:
   the oracle server, over every fixture command that passes the prefilter
   and over 2,000 seeded random commands (proptest). `PROPTEST_CASES=100000`
   runs more, `PROPTEST_RNG_SEED=<n>` changes the seed.
+- `tests/realpath.rs`: `pyrealpath` against `os.path.realpath` through the
+  oracle server, over 2,000 random virtual trees (the oracle's `realpath`)
+  and 500 random real trees in a temp directory with the real `GuardEnv`
+  (`os_realpath`), plus fixed cases, the 40-link limit and `RealEnv`'s
+  `lstat`, `euid` and user lookups on a real directory. Rust must resolve to
+  Python's string or refuse as PLAN.md 4.2 allows; a loop refusal must be
+  confirmed by a resolver without Python's `seen` map.
 - `src/redirect.rs` tests (`GuardRedirects`): on real temporary
   directories; the exact `OSError` texts are checked on Linux.
 - `tests/cli.rs`: the binary's argv grammar, `--version`, `--check-policy`,
@@ -132,6 +153,35 @@ fixture drift check: `gen_fixtures.py check` under Python 3.12 and 3.13, then
 for changes under `rust/`; a change to the Python guard or a runner template
 alone is caught by `just test-echoport-remote-command-guard` (part of `just
 test`).
+
+## Layer 2: the filesystem layer on real trees
+
+```bash
+just echoport-command-guard-layer2   # or rust/echoport-command-guard/parity/e2e/run-layer2.sh [ubuntu2404] [debian13]
+```
+
+Needs Docker; changes nothing outside the containers. It builds
+`examples/env-probe.rs` (the real `GuardEnv` as JSON lines) with the pinned
+toolchain on Debian 12, runs `parity/e2e/layer2_realpath.py` as root in an
+Ubuntu 24.04 (Python 3.12.3) and a Debian 13 (Python 3.13.5) container with
+the policies' users, and fails on any difference PLAN.md 4.2 does not allow.
+The script builds real trees under the policies' path roots: links in and
+out of a root, dangling links, `..` in targets, loops, a replaced
+directory, files below which nothing exists (`ENOTDIR`), hard links, a fifo,
+foreign owners, a 40- and a 41-link chain, an `ENAMETOOLONG` component, a
+non-UTF-8 link target, an `EACCES` case run as `nobody`, and 300 seeded
+random trees (`ECHOPORT_L2_ARGS="--random 3000 --seed 7"` for more). It
+compares `realpath`, `lstat` (kind, mode, uid, link count, or errno and
+`strerror`), user lookups and the euid. `ECHOPORT_E2E_SUFFIX` is appended to
+the image and container names.
+
+S2 results (2026-10-21, arm64 Docker host): 1,531 `realpath` and 1,640
+`lstat` comparisons per distribution (15,031 and 15,140 with 3,000 random
+trees), no difference; the refusals were the expected ones (`ELOOP` for the
+loops and the 41-link chain, `ENAMETOOLONG`, `EILSEQ`, `EACCES`). Run with
+`--probe <bin> --realpath-only` the same script evaluates another resolver;
+that is how `soft-canonicalize` 0.5.6 was measured (PLAN.md 5.2: 265 of
+1,531 differ).
 
 ## Fixtures
 
