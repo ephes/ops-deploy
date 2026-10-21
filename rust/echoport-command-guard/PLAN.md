@@ -90,8 +90,10 @@ Installed on both hosts (2026-10-16):
   `authorize-root-ssh.yml`, `authorize-opsgate-root-ssh.yml` and
   `remove-root-ssh-key.yml` stay on Ansible for every host, the
   pyinfra-deployed ones included. This plan does not move them.
-- Entry point: `just pin-deploy-backup-key HOSTS=staging|production|production,staging`
-  (ops-control `justfiles/register.just`). It runs
+- Entry point: `just pin-deploy-backup-key <hosts>`, where the argument is
+  positional (`staging`, `production` or `production,staging`; the
+  default is both). It lives in ops-control `justfiles/register.just` and
+  runs
   `ansible-playbook -i inventories/prod/hosts.yml playbooks/authorize-root-ssh.yml --limit <hosts>`
   with `SOPS_AGE_KEY_FILE`.
 - Inside `playbooks/authorize-root-ssh.yml` (ops-control main `93368405`), in
@@ -170,7 +172,8 @@ Forced-command mode, in this order:
    <reason>: <repr(command)>`, print `echoport-remote-command-guard: command
    not allowed`, exit 1.
 4. Log info `allowed from <client>: <repr(command)>`. Set `PATH` to `SAFE_PATH`
-   (`guard.py:33`). Run `execvp(argv[0], argv)`. If exec fails, print
+   (`guard.py:33`). Run Python's `os.execvp(argv[0], argv)`; 3.5 describes
+   its exact PATH search. If exec fails, print
    `echoport-remote-command-guard: cannot run <argv0>: <strerror>`, exit 127.
 
 `<client>` is `SSH_CLIENT.split(" ")[0]`, or `-` when `SSH_CLIENT` is unset.
@@ -337,9 +340,24 @@ S4/S5 enforce each item.
   scp get `EPIPE` instead of being killed. The Rust guard execs with exactly
   these two ignored. Rust std already ignores SIGPIPE; SIGXFSZ is set
   explicitly.
-- `exec` is `execvp` with the *process* `PATH` already set to `SAFE_PATH`.
-  glibc's `execvpe` searches the caller's `PATH`, not the `envp` it is
-  given, so the port sets the variable and then calls `execvp`.
+- `exec` follows **CPython's `os.execvp`** (`os._execvpe`), which is **not**
+  libc `execvp`:
+  - When `argv[0]` contains `/`, it is a single `execv`.
+  - Otherwise it calls `execv(<dir>/<argv0>, argv)` for each directory of
+    `PATH`. By then `PATH` is `SAFE_PATH` in the process environment, which
+    `execv` passes on.
+  - `ENOENT`/`ENOTDIR` record the last error and move on. Any other error
+    (`EACCES`, `ENOEXEC`, …) is remembered if it is the first such error,
+    and the search moves on.
+  - At the end it reports the first remembered error, else the last one.
+  - **No `/bin/sh` fallback on `ENOEXEC`.** glibc's `execvp` runs an
+    executable text file without a `#!` line through `/bin/sh`, and it also
+    treats `EACCES` differently. So the port implements this loop itself
+    over `nix::unistd::execv`; it never calls libc `execvp`/`execvpe`.
+  - Tests (S4 and Layer 3): a shebang-less executable earlier in
+    `SAFE_PATH` gives exit 127 with Python's `ENOEXEC` message in both
+    guards and is never run. So do an `EACCES` entry followed by a valid
+    one, a directory named like the tool, and a missing tool.
 
 ### 3.6 Logging (P1 for identifier, facility, priorities and message prefixes; P2/P3 for the repr text)
 
@@ -548,8 +566,19 @@ No async runtime, no TLS, no CLI parser, no logging framework.
 ### 6.1 Rules for every production step
 
 - Every production step goes through ops-control's existing entry point,
-  `just pin-deploy-backup-key HOSTS=<host>`, or the same playbook with `-e`
-  for the emergency rollback (6.5). There is no new deploy mechanism.
+  `just pin-deploy-backup-key <host>` (positional: `staging` or
+  `production`), or the playbook it wraps, run directly. The direct form is
+  used for previews and for the rollback with `-e` (6.5). There is no new
+  deploy mechanism. The direct form, from the ops-control checkout, with the
+  same environment as the recipe:
+  ```bash
+  SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt \
+    ansible-playbook -i inventories/prod/hosts.yml playbooks/authorize-root-ssh.yml \
+    --limit <host> [--check --diff] [-e …]
+  ```
+  The recipe cannot pass `--check --diff` or `-e`. In check mode the
+  playbook's `shell` probes are skipped, so a preview never touches the
+  guard.
 - **Deploy lock.** Before every production step:
   ```bash
   mkdir /tmp/ops-control-deploy.lock \
@@ -559,8 +588,8 @@ No async runtime, no TLS, no CLI parser, no logging framework.
   If `mkdir` fails, wait and retry. Never remove a lock you did not create.
   Release with `rm /tmp/ops-control-deploy.lock/owner && rmdir
   /tmp/ops-control-deploy.lock` right after the step.
-- Before each real run, run the same command with `--check --diff` under
-  the lock. Expected change: **only** the deploy key line's `command=` and
+- Before each real run, run the direct form above with `--check --diff`
+  under the lock. Expected change: **only** the deploy key line's `command=` and
   the guard's files. `authorize-root-ssh.yml` also applies the current
   operator key declarations. If the diff shows anything else, stop and ask
   the coordinator.
@@ -611,12 +640,21 @@ The tasks:
     version) and `<bin> --check-policy <rendered policy>`.
   - Pruning keeps `keep_versions` and never removes the version the forced
     command points to.
-- **Policy `validate`:** the Python guard always validates. If a Rust
-  version is installed, the Rust guard validates as well, through a second
-  `validate` on the rendered temp file before the copy (the copy task takes
-  only one `validate`, so the Rust check runs as a separate `command` task on
-  a staging copy). This shows divergence on the hosts' own policy before any
-  switch.
+  - **Rollback independence.** With `impl: python`, every Rust step is
+    best-effort: download, install, `--version`, `--check-policy` and
+    pruning run, but their failures only warn (`failed_when: false`, an
+    explicit warning, and a registered result the slice evidence records).
+    They are fatal only for `impl: shadow` and `impl: rust`, and then
+    *before* the fact is set. So a broken, missing or unrunnable Rust binary
+    or release can never block a switch back to Python. S6 has a molecule
+    case for this: a broken archive or a binary that exits 1, with impl
+    `python`, must converge and leave the Python forced command.
+- **Policy `validate`:** the Python guard always validates (fatal, as
+  today). If a Rust binary is installed, a separate `command` task also runs
+  the Rust `--check-policy` on the rendered file. The copy task takes only
+  one `validate`, so the Rust check is its own task. It is fatal under the
+  same rule as above. This shows divergence on the hosts' own policy before
+  any switch.
 - **The fact `echoport_remote_command_guard_forced_command`:**
   - `python`: unchanged, `{{ python }} -I {{ path }} {{ policy_path }}`. It
     is byte-identical, so `ssh_authorized_keys_manage` reports no change.
@@ -641,9 +679,24 @@ The tasks:
   `echoport_remote_command_guard_rust_version` and `_sha256` (one pin for
   both hosts). host_vars `production.yml` and `staging.yml`:
   `echoport_remote_command_guard_impl: python` at first.
-- `playbooks/authorize-root-ssh.yml`: raise the minimum ops-library version
-  to the release containing S6. No other change; the probes stay valid,
-  since every impl prints the same interactive-session text.
+- `playbooks/authorize-root-ssh.yml`:
+  - Raise the minimum ops-library version to the release containing S6.
+  - The post-probe stays as it is: every impl prints the same
+    interactive-session text.
+  - One change for rollback. Today's **pre**-probe (the route check before
+    the guard role, `failed_when` at l.155–157) goes through the *currently
+    installed* forced command. If that is a broken Rust binary, the probe
+    fails and the playbook stops before it can write the Python command
+    back.
+  - S8 adds a variable `deploy_backup_route_probe_fatal`, default `true`.
+    The rollback passes `-e deploy_backup_route_probe_fatal=false`. The
+    probe then still runs and its output is printed, but a failure no
+    longer stops the play.
+  - The **post**-probe, after `authorized_keys` is written, stays fatal, so
+    the rollback is still verified against the Python guard.
+  - A test in `tests/test_echoport_remote_command_guard_policy.py` (or the
+    root-key tests) pins this: the default stays fatal, and only the
+    pre-probe honours the variable.
 - `tests/test_echoport_remote_command_guard_policy.py`:
   - `impl` is valid on the pinned hosts, and `shadow`/`rust` require the pins;
   - the existing `test_guard_accepts_the_policies` keeps using the Python
@@ -656,8 +709,31 @@ The tasks:
     echoport-remote-command-guard -t echoport-remote-command-guard-shadow
     --since <ts>`;
   - pairs the lines by `_PID` and reports: pairs, matches, verdict
-    mismatches, unpaired lines and Rust shadow panics. With `--strict` it
-    exits non-zero on any mismatch or panic.
+    mismatches, unpaired lines on either side, malformed records and Rust
+    shadow panics.
+  - With `--strict` it exits non-zero on any of these:
+    - an `ssh` or `journalctl` failure, or output that is not JSON lines;
+    - zero records, or fewer pairs than `--min-pairs` (the default is 1; the
+      S10 gates set it from the expected run count);
+    - a Python guard line without a shadow line, or a shadow line without a
+      Python line;
+    - a shadow record that does not parse;
+    - a verdict mismatch;
+    - a panic;
+    - when `--require-shapes` is given (the S10 gates pass it), any missing
+      shape family, i.e. a tool family such as `scp -t` or `sqlite3`
+      `.timeout` with no pair in the window.
+    Silence is never a pass.
+  - Its unit tests cover:
+    - empty output;
+    - an `ssh` failure;
+    - only Python lines;
+    - only shadow lines;
+    - a malformed shadow JSON;
+    - a reused PID with two pairs at different times (pairing is by
+      `_PID` *and* the closest timestamp within 5 s);
+    - a mismatch;
+    - a clean window.
   - It compares verdicts. Argv parity is covered by Layers 1–3.
 - Docs: `docs/FASTDEPLOY_PRIVILEGES.md` and `docs/ROOT_SSH_KEY_ROLLOUT.md`
   (impl selector, shadow compare, switch, rollback, emergency rollback) and a
@@ -681,8 +757,9 @@ production.
 ### 6.5 Rollout phases
 
 1. **Install only** (S9). Steps:
-   - `impl: python` with the version pinned, `just pin-deploy-backup-key
-     HOSTS=staging`, then the same for production;
+   - `impl: python` with the version pinned: first the direct `--check
+     --diff` preview, then `just pin-deploy-backup-key staging`, then the
+     same two steps for `production`;
    - check that the `authorized_keys` line is unchanged (the
      `ssh-keygen -lf` listing plus a `grep command=` of the line, compared
      before and after);
@@ -700,9 +777,13 @@ production.
      `just restore-django-chat-staging-db <run>` (a scratch restore), then
      `drop-django-chat-staging-db-restore`;
    - one refused probe (`ssh … id` from macmini as deploy).
-   Gate: `echoport_guard_shadow_compare.py --strict` clean, i.e. zero verdict
-   mismatches and zero shadow panics. All Echoport targets on the host
-   succeed in the window.
+   Gate: `echoport_guard_shadow_compare.py --strict --min-pairs <n>
+   --require-shapes staging` is clean. That means every guard line has its
+   shadow pair, there are zero mismatches, zero panics, zero malformed
+   records and at least `<n>` pairs. `<n>` is the number of guard lines the
+   journal shows for the window, which must be at least the count of a
+   normal staging night (about 40). Every staging shape family must be
+   present. All Echoport targets on the host succeed in the window.
 3. **Shadow, production** (S10b). Starts after at least 24 hours of clean
    staging shadow and needs the coordinator's go (6.1). At least 72 hours,
    including:
@@ -711,7 +792,8 @@ production.
    - `just backup-gotosocial`, which covers `.timeout`, the snapshot `cat`
      and `chown`;
    - the python-podcast private media archive (`tar`, `du`, `sh -c`, `rm -rf`).
-   Same gate.
+   Same gate, with `--require-shapes production` and `<n>` at least the
+   count of a normal production day (about 25).
 4. **Cutover, staging = canary** (S11a). Set `impl: rust` and deploy.
    Acceptance:
    - the post-probe of the playbook;
@@ -720,13 +802,27 @@ production.
    - the next morning's nightly runs and the 02:20 restore successful;
    - `journalctl -t echoport-remote-command-guard` shows no refusal of a
      runner command.
-   **Rollback drill**, timed:
-   - run with `-e echoport_remote_command_guard_impl=python` under the lock;
-   - the forced command is Python again;
-   - one manual staging backup succeeds;
-   - back to `rust`.
-   Target: rollback ≤ 3 minutes including the lock. Then soak at least 72
-   hours.
+   **Rollback drills**, timed, outside Echoport run windows:
+   - (a) **Healthy binary.** Run the emergency rollback command below under
+     the lock. The forced command is Python again, the post-probe passes and
+     one manual staging backup succeeds. Then switch back to `rust` with
+     `just pin-deploy-backup-key staging`.
+   - (b) **Broken binary**, the case rollback exists for:
+     - with impl `rust` active, an operator root session sets the active
+       Rust binary to `chmod 000`, which is reversible;
+     - check that the deploy key now fails: as `deploy` on macmini,
+       `ssh … test -d /home/marina/site` fails;
+     - run the emergency rollback command. The pre-probe failure is
+       reported but does not stop the play, the role converges with impl
+       `python` despite the unrunnable binary, the post-probe passes, and
+       one manual staging backup succeeds;
+     - restore the binary with `chmod 0755` (the next role run also sets it)
+       and switch back to `rust`.
+   - (c) **Manual path, no controller.** The authorized_keys edit from the
+     runbook below is rehearsed on staging once, with `ssh-keygen -lf`
+     before and after.
+   Target: (a) and (b) each ≤ 3 minutes including the lock. The deployment
+   record notes the times. Then soak at least 72 hours.
 5. **Cutover, production** (S11b). Needs the coordinator's go. The same
    acceptance with the production targets, plus a refused `id` probe.
    Rollback criteria during soak: any refusal of a runner command, any
@@ -739,9 +835,17 @@ production.
 is still installed (until S12):
 
 ```bash
-ansible-playbook -i inventories/prod/hosts.yml playbooks/authorize-root-ssh.yml \
-  --limit <host> -e echoport_remote_command_guard_impl=python
+SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt \
+  ansible-playbook -i inventories/prod/hosts.yml playbooks/authorize-root-ssh.yml \
+  --limit <host> -e echoport_remote_command_guard_impl=python \
+  -e deploy_backup_route_probe_fatal=false
 ```
+
+This command depends on neither the Rust binary nor its release. With impl
+`python` the role's Rust steps are non-fatal (6.2), and the pre-probe through
+the current, possibly broken, forced command is non-fatal (6.3). The
+post-probe still verifies the Python guard. The Python guard file is always
+installed before S12.
 
 Afterwards, record `impl: python` in host_vars. If the controller is
 unavailable: log in as root with an operator key (it is unrestricted), copy
@@ -1027,7 +1131,7 @@ features) before relaxing it.
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R1 | **Backups are locked out silently**: the Rust binary does not start, or it refuses a runner command. | Role-level `--version`/`--check-policy` on the host before any switch; staging canary first; shadow gate with zero mismatches; the playbook's post-probe; manual acceptance runs; Nyxmon Echoport freshness alerts; rollback by one playbook run (about 1 minute, drilled in S11a); Python stays installed until S12. |
+| R1 | **Backups are locked out silently**: the Rust binary does not start, or it refuses a runner command. | Role-level `--version`/`--check-policy` on the host before any switch; staging canary first; shadow gate with zero mismatches; the playbook's post-probe; manual acceptance runs; Nyxmon Echoport freshness alerts; rollback by one playbook run that needs neither the Rust binary nor the pre-probe (6.5; about 1 minute, drilled in S11a with a healthy and a deliberately broken binary); Python stays installed until S12. |
 | R2 | **The Rust guard accepts something Python refuses** (a security hole). | The invariant `rust_accepts ⇒ python_accepts ∧ same decision` in Layer 1, the proptests, Layer 2 and fuzzing; the prefilter; fail-closed stubs; a dedicated security review in S7 (gpt-6.1-sol high, prompt focused on acceptance drift, path handling and fd/exec hygiene). |
 | R3 | The Python guard changes during the port (new runner shapes). | The `GUARD_SHA256` drift check; TESTMAP; until S13 every guard change updates both. |
 | R4 | The CPython versions on the hosts differ (3.12/3.13). | The oracle runs on both; loops are refused (4.2). |
@@ -1068,13 +1172,13 @@ Rules, as in the precedents:
 | S3b | Rules with filesystem | `scp -f/-t`, rsync, `mv`, `mkdir`, `chmod`, `chown`, `rm` wal/shm, `test`, `readlink`, snapshot `cat`, `cat >`, `sha256sum`, `tar`; redirect decisions; their Layer-1 cases green (with S3a: all of Layer 1). | S1, S2 | with S3a, S4, S6 | no | 4 |
 | S4 | Runtime and exec | Forced-command flow (3.1), syslog and `py_repr` (3.6, 4.3), `redirect.rs` (3.5), umask, `PATH`, locale coercion, SIGPIPE/SIGXFSZ, fd hygiene, exit codes, `--decide`, `--shadow`; `tests/cli.rs` process tests in a container. | S1 | with S2, S3a, S3b, S6 | no | 4 |
 | S5 | Parity gate | All of Layer 1 green, the 4.4 list reviewed, decision proptests (7.3), Layer 2 complete, Layer 3 sshd e2e on both distros, fuzz targets with at least 1 hour each and the corpus committed, TESTMAP complete. | S2, S3a, S3b, S4 | with S6 | no | 4 |
-| S6 | Role switch | 6.2: the impl selector, Rust install through F1's task with the permission asserts, dual validate, forced command per impl, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, README/docs/CHANGELOG (Unreleased). | F1 (install task), S4 (CLI surface) | with S2–S5 | no | 4 |
+| S6 | Role switch | 6.2: the impl selector, Rust install through F1's task with the permission asserts, dual validate, forced command per impl, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), README/docs/CHANGELOG (Unreleased). | F1 (install task), S4 (CLI surface) | with S2–S5 | no | 4 |
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F1's workflow, archive sha256 recorded. | S5, S6, F1 (release workflow) | with S8 prep | no | 2 |
-| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, shadow-compare script and test, runbooks. | S6 merged plus an ops-library release (owner/coordinator), S7 (pin values) | prep with S7 | no | 3 |
+| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus an ops-library release (owner/coordinator), S7 (pin values) | prep with S7 | no | 3 |
 | S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. | S7, S8, 6.4 (`.timeout` item) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
-| S11a | Cutover, staging, and rollback drill | 6.5 step 4. | S10a (gate), S10b running | no | **yes** | 2 + 72 h soak |
+| S11a | Cutover, staging, and rollback drills | 6.5 step 4, drills (a)–(c). | S10a (gate), S10b running | no | **yes** | 2 + 72 h soak |
 | S11b | Cutover, production | 6.5 step 5. | S11a (soak clean), S10b (gate), coordinator go | no | **yes** | 1.5 |
 | S12 | Retire Python on the hosts | Role: with impl `rust` the Python guard file is removed from the host and the `shadow` impl is removed; the default stays `python` for other consumers until S13. ops-control: host_vars cleanup, runbooks (rollback then means re-installing Python by a role run with `impl: python`, still one command). Deploy both hosts. | S11b + 14 days | no | **yes** | 2 |
 | S13 | Retire Python in the repo | Q5: delete `guard.py`, make the Rust binary the source for the runner-shape tests (`--decide`) and for ops-control's policy test (`--check-policy`), make the role default `rust`, remove the impl selector's Python branch. | S12, Q5 | no | no | 3 |
