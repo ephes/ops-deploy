@@ -46,6 +46,8 @@ MIGRATIONS = "migrate --check --plan"
 DB_MODE = f"stat -c '%U:%G %a' {DB}"
 STATIC = "collectstatic --noinput --dry-run"
 SERVICES = "manage.py shell -c"
+NO_BYTECODE = "PYTHONDONTWRITEBYTECODE=1"
+AS_SERVICE_USER = "runuser -u homelab --"
 
 
 @pytest.fixture
@@ -153,6 +155,45 @@ def test_second_run_changes_nothing_mutating(cfg: HomelabConfig, secrets: Secret
     assert run.stdin == []
     # The deployed hash is kept: no route rewrite, and Traefik is never restarted.
     assert not any("traefik" in c for c in run.executed_commands)
+
+
+def test_planning_probes_run_python_without_writing_bytecode(cfg: HomelabConfig, secrets: SecretValues) -> None:
+    # The service user's primary group may not be the service group (the
+    # role only appends it): a bytecode cache written while planning would
+    # carry it, and the next run's ownership probe would plan a chown.
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+
+    python = [c for c in run.fact_commands if AS_SERVICE_USER in c]
+    for probe_key in (VENV_VERSION, DEPS, MIGRATIONS, STATIC, SERVICES):
+        assert [c for c in python if probe_key in c], probe_key
+    assert len(python) == 5
+    assert all(NO_BYTECODE in c for c in python)
+    # A converged host plans no mutating operation.
+    assert run.mutating_changed_ops == []
+
+
+def test_steps_that_change_the_host_keep_the_roles_environment(cfg: HomelabConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
+
+    steps = [c for c in run.executed_commands if AS_SERVICE_USER in c]
+    assert len(steps) == 5  # uv venv, uv sync, migrate, collectstatic, add_default_services
+    assert not any(NO_BYTECODE in c for c in steps)
+    assert "PYTHONDONTWRITEBYTECODE" not in render_unit(cfg)
+    assert "PYTHONDONTWRITEBYTECODE" not in render_env(cfg, secrets).reveal().decode()
+
+
+def test_ownership_and_route_repair_run_no_python_as_the_service_user(
+    cfg: HomelabConfig, secrets: SecretValues
+) -> None:
+    # Nothing that runs after the ownership fix can leave a file with the
+    # service user's primary group behind, so the next run plans nothing.
+    route = render_route(cfg, traefik_config(cfg, secrets), _HASH) + "# drift\n"
+    drift = {OWNERSHIP: [f"{SITE}/src/config/__pycache__/media.cpython-314.pyc"], **fakehost.file(ROUTE, route)}
+
+    run = deploy(cfg, secrets, converged(cfg, secrets, **drift))
+
+    assert run.mutating_changed_ops == changed("Set ownership for synced files", "Write Traefik route homelab")
+    assert not any(AS_SERVICE_USER in c for c in run.executed_commands)
 
 
 def test_code_change_syncs_and_reruns_the_django_steps(cfg: HomelabConfig, secrets: SecretValues) -> None:
@@ -335,7 +376,9 @@ def test_a_failing_probe_runs_its_step_and_probes_again(
     verify = run.op(f"{P}Probe again: {name}")
     assert verify.changed
     assert verify.read_only
-    assert any("probe still fails" in c and probe_key in c for c in run.executed_commands)
+    again = [c for c in run.executed_commands if "probe still fails" in c and probe_key in c]
+    assert again
+    assert all(NO_BYTECODE in c for c in again)
 
 
 def test_default_services_probe_is_read_only_by_construction(cfg: HomelabConfig, secrets: SecretValues) -> None:

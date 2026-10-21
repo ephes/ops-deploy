@@ -110,9 +110,40 @@ another `homelab_traefik_config_path` (always
 
 A probe that fails (rather than answering) does not stop planning: its step
 runs, and the probe then runs again as a read-only operation that fails the
-deploy if it still fails. A run that failed after the source sync but before
+deploy if it still fails. The probes that run Python as the service user
+(`.venv/bin/python --version`, `uv sync --check`, `migrate --check --plan`,
+`collectstatic --dry-run` and the default-services probe, in planning and
+when probed again) run with `PYTHONDONTWRITEBYTECODE=1`; see
+[Ownership and the service user's group](#ownership-and-the-service-users-group). A run that failed after the source sync but before
 the restart leaves the old code running: the next run finds the sync current
 and does not restart (as chesslab); restart `homelab` by hand then.
+
+## Ownership and the service user's group
+
+The role creates the user with `group` as primary group, but an existing user
+only gets `group` appended. A user from before (on one host the primary group
+is `users`) writes every new file with its primary group: the venv and
+packages from `uv venv`/`uv sync`, bytecode caches (`__pycache__/*.pyc` in
+`src` and in the venv) from any Python run, the files `collectstatic` and
+`add_default_services` write. The unit runs the service with
+`Group=<group>`, so the service itself writes files with `group`.
+
+Planning runs the ownership `find` (step 4) before the probes. A probe that
+writes bytecode would leave a file with the wrong group after the run, and
+the next run's `find` would plan the `chown` again: a converged host would not
+stay converged. So the planning probes run with
+`PYTHONDONTWRITEBYTECODE=1`. Only probes get it; the steps that change the host, the unit and `.env` are as in
+the role.
+
+Order of the steps that run: as in the role, the owner fix comes before
+`uv venv`, `uv sync`, `migrate`, `collectstatic`, `add_default_services` and
+the restart. When a run executes one of them (a code, dependency, `.env` or
+venv change), files they create may carry the user's primary group until the
+next run fixes them, which is then that run's only change (the role leaves
+the same files and fixes them on its next run too). A run that only fixes
+ownership, the database mode or the route executes no Python as the service
+user, so the run after it plans no mutating operation. Making the primary
+group `group` (as the `django_site` port does) is not part of this port.
 
 ## Parity with the role and playbook
 
@@ -144,3 +175,7 @@ Differences:
   uses the uv it finds at `uv_path` and refuses before any Python step when
   there is none (as the graphyard port).
 - A new user is a system user (`useradd -r`); an existing one is untouched.
+- The read-only probes run Python with `PYTHONDONTWRITEBYTECODE=1`. The
+  role has no such probes: it runs `migrate`, `collectstatic` and
+  `add_default_services` on every deploy, after its owner fix, so its runs
+  leave new bytecode caches with the user's primary group behind.
