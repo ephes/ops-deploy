@@ -257,6 +257,102 @@ op_hash)` lets a runner tell them apart. In tests, `OpResult.read_only` and
 nothing" is checked as `run.mutating_changed_ops == []`. Use
 `mark_read_only(meta)` for any other custom check that changes nothing.
 
+## Pinned Rust release binaries: `ops_deploy.helpers.rust_release`
+
+The pyinfra side of ops-library's internal role `rust_release_binary`
+(ops-library `rust/PLAN-foundation.md` 6.1 and 6.3, slice F4). It installs,
+pins and prunes release binaries of the Rust crates in ops-library's `rust/`
+(`metrics-httpd`, `echoport-command-guard`, `software-live`). It uses the
+same on-host layout and writes the same files with the same bytes as the role,
+so Ansible and pyinfra can take turns on a host:
+
+```
+<root>/<version>/<name>              root:root 0755, never modified in place
+<root>/<version>/LICENSE             root:root 0644 (and any other member)
+<root>/<version>/.archive-sha256     root:root 0644, "<archive sha256>\n"
+<root>/.pins/<consumer>              root:root 0644, "<version>\n": the version the consumer runs, verified live
+<root>/.pins/<consumer>.previous     root:root 0644, "<version>\n": the rollback pin
+<root>/.staging-<version>/           transient
+```
+
+`<root>` defaults to `/opt/<name>`. No service uses the helper yet; the
+metrics-httpd switch of `thermal_monitoring`, `logyard` and `static_site`
+(slice S5e) will be the first.
+
+```python
+installed = install_release(
+    "metrics-httpd",
+    cfg.httpd_rust_version,
+    sha256=cfg.httpd_rust_sha256,
+    validate_user="thermal-metrics",
+    fail_hard=cfg.httpd_impl == "rust",
+)
+# ... drop-in, restart, verify that the unit runs installed.binary ...
+pin_release("metrics-httpd", "thermal-metrics-endpoint", cfg.httpd_rust_version)  # None: back to Python
+prune_releases("metrics-httpd", protect=live_executables, after=[installed])
+```
+
+- `install_release(name, version, *, sha256="", install_root="", release_url="",
+  local_archive=None, members=(), executables=(), validate_user="nobody",
+  fail_hard=True)` returns an `Install` (`op`, `binary`). An installed version
+  is only validated, as a read-only operation; a different archive for it is
+  refused (an installed version is never replaced in place). A new version is
+  downloaded from `release_url` (default: the ops-library GitHub release
+  `<name>-v<version>`) or uploaded from `local_archive` (checked against
+  `sha256` when both are given). The archive's sha256 must match, and it must
+  hold exactly `members` (default `[name, "LICENSE"]`) as regular files at
+  its root, each once. The members are unpacked with `executables` (default
+  `[name]`) 0755 and the rest 0644, `.archive-sha256` is recorded, and the
+  version is moved into place. Then `<binary> --version` runs as
+  `validate_user` (`runuser`) and must start with `<name> <version> (`. A
+  failure removes this run's fresh install and fails the deploy. With
+  `fail_hard=False` it warns and the deploy goes on, so a Python rollback is
+  never blocked, and `Install.failed()` tells later `_if` callbacks. It never
+  moves a pin and never deletes another version.
+- `pin_release(name, consumer, version, *, install_root="", previous="",
+  keep_previous=True)` pins `version` for `consumer`, or removes the pin when
+  `version` is `None`. Pinning `V` over a current pin `C ≠ V` makes `C` the
+  previous pin. Removing the pin keeps its version as the previous pin unless
+  `keep_previous` is false. `previous` replaces the automatic choice. The
+  previous pin is written first. A pin file that is not a regular file
+  holding exactly one version fails the step and changes nothing. Call it
+  only after the consumer verified that its unit runs `version`.
+- `prune_releases(name, *, install_root="", keep_versions=3, protect=(),
+  live_state_unknown=False, after=())` keeps the `keep_versions` newest
+  version directories by mtime, every version a pin of any consumer names
+  (`.previous` included), and every `protect` entry. An entry is a version or
+  an executable path as `readlink /proc/<pid>/exe` prints it, also with
+  ` (deleted)` and below the root's resolved path. Only plain directories
+  named like a version are ever removed. Prune deletes nothing and warns when
+  `live_state_unknown` is set or a pin, the pin directory or a `protect` entry
+  cannot be interpreted. It is skipped when an `Install` in `after` failed in
+  this run, and it runs again, even when the planning probe found nothing,
+  after an operation in `after` changed.
+
+The decisions (pin moves, the prune plan, the version and consumer grammar)
+are ops-library's `plugins/filter/rust_release.py`, vendored byte for byte as
+`templates/rust_release.py.txt`; `tests/test_ops_library_drift.py` compares
+the two, and the drift manifest records the role. The steps run on the host
+at execution time, in `templates/rust_release_host.py.txt` (standard library
+only). Both texts are sent on stdin to `/usr/bin/python3 -I -` as root, so
+target hosts need a system Python 3.9 or later; every Ansible-managed host
+has one. While planning, the same script with `--check` (`probe`, read-only)
+decides whether a pin or prune step is needed, so a converged run changes
+nothing.
+
+`tests/test_rust_release.py` runs the host script locally against temporary
+roots with fake release archives. It also checks the planned operations
+against the fake connector. With `OPS_LIBRARY_PATH` and `ansible-playbook`
+it runs the role on a twin tree with the same steps: installs, the pin moves
+v1 → v2 → v1 → v3, a second consumer, a switch to Python, then prunes with
+`protect` entries and the fail-closed cases. The trees must stay
+byte-identical (contents and modes), and both engines must remove the same
+versions. On macOS the role needs Homebrew's `gmv`.
+
+nyxmon's and graphyard's agent installs keep their own code (`.staging`,
+`.previous-version`, no `.pins`). Moving them to this helper would change
+their on-host layout, so it is not a pure refactor.
+
 ## Strict probes: `ops_deploy.helpers.probes`
 
 A deploy decides while planning whether a step is needed by asking the host

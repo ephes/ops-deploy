@@ -1,0 +1,470 @@
+
+# ---------------------------------------------------------------------------
+# Host side of ops_deploy.helpers.rust_release (ops-library
+# rust/PLAN-foundation.md 6.1 and 6.3). The helper sends this text, appended
+# to ops-library's plugins/filter/rust_release.py (vendored byte for byte as
+# templates/rust_release.py.txt: the decisions above), on stdin to
+# ``/usr/bin/python3 -I - ACTION OPTIONS`` as root. It mirrors the tasks of
+# the rust_release_binary role step for step, on the same files:
+#
+#   <root>/<version>/<name>               0755, never modified in place
+#   <root>/<version>/<member>             0644 (executables 0755)
+#   <root>/<version>/.archive-sha256      0644, "<sha256>\n"
+#   <root>/.pins/<consumer>               0644, "<version>\n"
+#   <root>/.pins/<consumer>.previous      0644, "<version>\n"
+#   <root>/.staging-<version>/            transient
+#
+# Actions (--name and --root always):
+#   install --version V --sha256 S [--archive-sha256 A] [--url U] [--upload P]
+#           [--members M,..] [--executables E,..] [--validate-user U] [--soft]
+#       Validate an installed version (same archive, --version), or stage,
+#       check, unpack and move a new one into place and validate it. Prints
+#       "installed <binary>" or "validated <binary>". A failure removes this
+#       run's fresh install and exits 1, or with --soft warns on stderr,
+#       prints "failed <reason>" and exits 0.
+#   pin --consumer C (--version V | --absent) [--previous P] [--no-keep-previous] [--check]
+#       Move the consumer's pins (previous first). Prints "current <v|->" and
+#       "previous <v|->"; --check prints "change <file>" per file it would
+#       write or remove and changes nothing.
+#   prune [--keep-versions N] [--protect ENTRY]... [--live-state-unknown] [--check]
+#       Remove the version directories nobody keeps. Prints "remove <v>" per
+#       version it removes (or would); "blocked <reason>" per reason it does
+#       not (then nothing is removed and the reasons go to stderr as well).
+# Standard library only; Python 3.9 or later.
+import argparse
+import grp
+import hashlib
+import os
+import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+
+PIN_DIR = ".pins"
+DEFAULT_URL = "https://github.com/ephes/ops-library/releases/download/{n}-v{v}/{n}-{v}-x86_64-unknown-linux-gnu.tar.gz"
+
+
+class Refused(Exception):
+    """The action cannot go on; the message says why."""
+
+
+def lstat_or_none(path):
+    try:
+        return os.lstat(path)
+    except FileNotFoundError:
+        return None
+
+
+def chown(path, args):
+    shutil.chown(path, args.owner, args.group)
+
+
+def ids(args):
+    """The numeric owner and group for ``args.owner``/``args.group`` (names or numbers)."""
+
+    owner = int(args.owner) if args.owner.isdigit() else pwd.getpwnam(args.owner).pw_uid
+    group = int(args.group) if args.group.isdigit() else grp.getgrnam(args.group).gr_gid
+    return owner, group
+
+
+def write_file(path, content, args, temp_dir=None):
+    """Write ``content`` atomically (a temporary file, then rename), mode 0644.
+
+    ``temp_dir`` (same file system) keeps the temporary file out of a
+    directory that is listed, such as ``.pins``.
+    """
+
+    fd, temp = tempfile.mkstemp(dir=temp_dir or os.path.dirname(path), prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.chmod(temp, 0o644)
+        chown(temp, args)
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.lexists(temp):
+            os.unlink(temp)
+        raise
+
+
+def check_common(args):
+    if not rust_release_name_ok(args.name):
+        raise Refused(f"name must be a crate name, not {args.name!r}")
+    if not rust_release_root_ok(args.root):
+        raise Refused(f"root must be a normalised absolute path other than /, not {args.root!r}")
+
+
+# -- install --------------------------------------------------------------------
+
+
+def sha256_of(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def check_install_inputs(args):
+    check_common(args)
+    if not rust_release_version_ok(args.version):
+        raise Refused(f"version must be a release version, not {args.version!r}")
+    if not rust_release_sha256_ok(args.sha256):
+        raise Refused(f"the archive sha256 must be 64 lowercase hex digits, not {args.sha256!r}")
+    if args.archive_sha256 and args.archive_sha256 != args.sha256:
+        raise Refused(f"the local archive has sha256 {args.archive_sha256}, not the pinned {args.sha256}")
+    url = args.url or DEFAULT_URL.format(n=args.name, v=args.version)
+    if not url.startswith(("https://", "file://")) or any(c.isspace() for c in url):
+        raise Refused(f"the release URL must be https:// (or file://) without whitespace, not {url!r}")
+    members = args.members.split(",") if args.members else [args.name, "LICENSE"]
+    executables = args.executables.split(",") if args.executables else [args.name]
+    plain = all(re.fullmatch("[A-Za-z0-9][A-Za-z0-9._-]*", m) for m in members)
+    if (
+        not plain
+        or len(set(members)) != len(members)
+        or args.name not in members
+        or ".archive-sha256" in members
+        or args.name not in executables
+        or not set(executables) <= set(members)
+    ):
+        raise Refused(
+            f"members must be unique plain names that include {args.name}, executables members that include it "
+            f"(members {members}, executables {executables})"
+        )
+    return url, members, executables
+
+
+def fetch(url, upload, archive):
+    if upload:
+        os.replace(upload, archive)
+        return
+    with urllib.request.urlopen(url, timeout=120) as response, open(archive, "wb") as out:
+        shutil.copyfileobj(response, out)
+
+
+def check_members(archive, members):
+    """Exactly the regular files of ``members`` at the archive root, once each (before extraction)."""
+
+    with tarfile.open(archive, mode="r:gz") as tar:
+        entries = tar.getmembers()
+    found = [e.name[2:] if e.name.startswith("./") else e.name for e in entries]
+    if sorted(found) != sorted(members) or len(entries) != len(members) or not all(e.isreg() for e in entries):
+        listing = ", ".join(f"{e.name} ({'file' if e.isreg() else 'not a regular file'})" for e in entries)
+        raise Refused(
+            f"the release archive must hold exactly the regular files {', '.join(sorted(members))} at its root, "
+            f"once each; found {listing or 'nothing'}"
+        )
+
+
+def unpack(archive, tree, members, executables, args):
+    with tarfile.open(archive, mode="r:gz") as tar:
+        for entry in tar.getmembers():
+            name = entry.name[2:] if entry.name.startswith("./") else entry.name
+            source = tar.extractfile(entry)
+            if source is None:
+                raise Refused(f"cannot read {entry.name} from the archive")
+            target = os.path.join(tree, name)
+            with source, open(target, "xb") as out:
+                shutil.copyfileobj(source, out)
+    for name in members:
+        target = os.path.join(tree, name)
+        chown(target, args)
+        os.chmod(target, 0o755 if name in executables else 0o644)
+
+
+def validate(binary, args):
+    argv = [binary, "--version"]
+    if args.validate_user:
+        argv = ["runuser", "-u", args.validate_user, "--", *argv]
+    try:
+        result = subprocess.run(
+            argv, cwd="/", stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise Refused(f"{binary} --version could not run: {error}") from error
+    out = result.stdout.decode("utf-8", "replace")
+    first = out.splitlines()[0] if out.splitlines() else ""
+    if result.returncode != 0 or not first.startswith(f"{args.name} {args.version} ("):
+        err = result.stderr.decode("utf-8", "replace").strip()
+        raise Refused(
+            f"{binary} --version exited {result.returncode} with {out.strip()!r} {err}; "
+            f"expected '{args.name} {args.version} (<commit>)'"
+        )
+
+
+def install(args):
+    root = args.root
+    directory = os.path.join(root, args.version) if rust_release_version_ok(args.version) else ""
+    staging = os.path.join(root, f".staging-{args.version}") if directory else ""
+    fresh = created = False
+    try:
+        url, members, executables = check_install_inputs(args)
+        existing = lstat_or_none(directory)
+        if existing is not None and not stat.S_ISDIR(existing.st_mode):
+            raise Refused(f"{directory} exists but is not a directory (or is a symlink)")
+        fresh = existing is None
+        os.makedirs(root, mode=0o755, exist_ok=True)
+        chown(root, args)
+        os.chmod(root, 0o755)
+        shutil.rmtree(staging, ignore_errors=True)
+        if not fresh:
+            try:
+                with open(os.path.join(directory, ".archive-sha256"), encoding="utf-8") as handle:
+                    installed = handle.read().strip()
+            except (OSError, UnicodeDecodeError):
+                installed = ""
+            if installed != args.sha256:
+                raise Refused(
+                    f"{directory} is installed from an archive with sha256 {installed or 'unknown'}, but this run "
+                    f"pins {args.sha256}. An installed version is never replaced in place. Pin the matching archive, "
+                    f"or remove the directory by hand when no consumer runs or pins it ({root}/{PIN_DIR})."
+                )
+        else:
+            tree = os.path.join(staging, "tree")
+            os.makedirs(tree, mode=0o755)
+            for path in (staging, tree):
+                chown(path, args)
+                os.chmod(path, 0o755)
+            archive = os.path.join(staging, "archive.tar.gz")
+            fetch(url, args.upload, archive)
+            chown(archive, args)
+            os.chmod(archive, 0o600)
+            actual = sha256_of(archive)
+            if actual != args.sha256:
+                raise Refused(f"the staged archive has sha256 {actual}, expected {args.sha256}")
+            check_members(archive, members)
+            unpack(archive, tree, members, executables, args)
+            write_file(os.path.join(tree, ".archive-sha256"), args.sha256 + "\n", args)
+            if os.path.lexists(directory):
+                raise Refused(f"{directory} appeared during the install")
+            os.rename(tree, directory)
+            created = True
+            shutil.rmtree(staging)
+        binary = os.path.join(directory, args.name)
+        validate(binary, args)
+    except Exception as error:  # the role's rescue: any failure
+        if created:
+            shutil.rmtree(directory, ignore_errors=True)
+        if staging:
+            shutil.rmtree(staging, ignore_errors=True)
+        reason = f"{args.name} {args.version} failed installation or validation: {error}"
+        if not args.soft:
+            raise Refused(f"{reason}. Nothing else changed: the other installed versions and every pin are untouched.")
+        print(
+            f"WARNING: {reason}. The deploy continues (fail_hard is off); nothing is pinned, and prune of "
+            f"{args.name} deletes nothing for the rest of this run.",
+            file=sys.stderr,
+        )
+        print(f"failed {error}")
+        return
+    finally:
+        if args.upload and os.path.lexists(args.upload):
+            os.unlink(args.upload)
+    print(f"{'installed' if fresh else 'validated'} {binary}")
+
+
+# -- pin ------------------------------------------------------------------------
+
+
+def read_pin(path):
+    """The text of a pin file, or None when it does not exist; refuses anything but a regular file."""
+
+    info = lstat_or_none(path)
+    if info is None:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        raise Refused(f"{path} exists but is not a regular file; fix it by hand.")
+    with open(path, "rb") as handle:
+        return handle.read().decode("utf-8", "replace")
+
+
+def pin(args):
+    check_common(args)
+    if not rust_release_consumer_ok(args.consumer):
+        raise Refused(f"consumer must be lower-case letters, digits, '-' and '_', not {args.consumer!r}")
+    state = "absent" if args.absent else "present"
+    if state == "present":
+        if not rust_release_version_ok(args.version):
+            raise Refused(f"version must be a release version, not {args.version!r}")
+    # As the role in check mode: a version this run installs is not there while planning.
+    if state == "present" and not args.check:
+        binary = os.path.join(args.root, args.version, args.name)
+        info = lstat_or_none(binary)
+        if info is None or not stat.S_ISREG(info.st_mode):
+            raise Refused(f"{binary} is not installed; install it before pinning it.")
+    if args.previous and not rust_release_version_ok(args.previous):
+        raise Refused(f"previous must be empty or a release version, not {args.previous!r}")
+    pins = os.path.join(args.root, PIN_DIR)
+    current_path = os.path.join(pins, args.consumer)
+    previous_path = current_path + PREVIOUS_SUFFIX
+    current, previous = read_pin(current_path), read_pin(previous_path)
+    plan = rust_release_pin_plan(
+        current, previous, state, args.version if state == "present" else "", args.previous, not args.no_keep_previous
+    )
+    if plan["error"]:
+        raise Refused(
+            f"Cannot move the pins of {args.consumer}: {plan['error']}. Nothing was changed; "
+            f"fix the pin files in {pins} by hand."
+        )
+    # The previous pin first, so a version that was live is never unpinned in between.
+    steps = [(previous_path, previous, plan["previous"]), (current_path, current, plan["current"])]
+    if args.check:
+        for path, old, new in steps:
+            wanted = None if new is None else rust_release_pin_content(new)
+            if old != wanted or (wanted is not None and not pin_attributes_ok(path, args)):
+                print(f"change {path}")
+        return
+    if plan["current"] is not None or plan["previous"] is not None:
+        info = lstat_or_none(pins)
+        if info is None:
+            os.mkdir(pins, 0o755)
+        elif not stat.S_ISDIR(info.st_mode):
+            raise Refused(f"{pins} exists but is not a directory; fix it by hand.")
+        chown(pins, args)
+        os.chmod(pins, 0o755)
+    for path, old, new in steps:
+        if new is None:
+            if old is not None:
+                os.unlink(path)
+        elif old != rust_release_pin_content(new) or not pin_attributes_ok(path, args):
+            write_file(path, rust_release_pin_content(new), args, temp_dir=args.root)
+    print(f"current {plan['current'] or '-'}")
+    print(f"previous {plan['previous'] or '-'}")
+
+
+def pin_attributes_ok(path, args):
+    info = lstat_or_none(path)
+    if info is None:
+        return False
+    return stat.S_IMODE(info.st_mode) == 0o644 and (info.st_uid, info.st_gid) == ids(args)
+
+
+# -- prune ----------------------------------------------------------------------
+
+
+def list_entries(path, only_dirs, skipped):
+    """Non-recursive listing like ansible.builtin.find (lstat, no following)."""
+
+    records = []
+    with os.scandir(path) as listing:
+        for item in listing:
+            if only_dirs and item.name.startswith("."):
+                continue
+            full = os.path.join(path, item.name)
+            try:
+                info = os.lstat(full)
+            except OSError as error:
+                skipped[full] = str(error)
+                continue
+            if only_dirs and not stat.S_ISDIR(info.st_mode):
+                continue
+            records.append((full, info))
+    return records
+
+
+def prune(args):
+    check_common(args)
+    if args.keep_versions < 1:
+        raise Refused(f"keep_versions must be an integer >= 1, not {args.keep_versions!r}")
+    root = args.root
+    blocked = ["the consumer marked its live state as unknown"] if args.live_state_unknown else []
+    if not os.path.isdir(root):
+        return
+    roots = [root]
+    try:
+        real = os.path.realpath(root)
+        if not os.path.isdir(real):
+            raise OSError(f"{real} is not a directory")
+        if real != root:
+            roots.append(real)
+    except OSError:
+        blocked.append(f"cannot resolve {root}")
+    skipped_versions, skipped_pins = {}, {}
+    entries = []
+    try:
+        for full, info in list_entries(root, True, skipped_versions):
+            entries.append({"path": full, "mtime": info.st_mtime, "isdir": True, "islnk": False})
+    except OSError:
+        blocked.append(f"cannot list {root}")
+    pins_dir = os.path.join(root, PIN_DIR)
+    records = []
+    pins_info = lstat_or_none(pins_dir)
+    if pins_info is not None and not stat.S_ISDIR(pins_info.st_mode):
+        blocked.append(f"{pins_dir} cannot be read or is not a directory")
+    elif pins_info is not None:
+        try:
+            listed = list_entries(pins_dir, False, skipped_pins)
+        except OSError:
+            blocked.append(f"cannot list {pins_dir}")
+            listed = []
+        for full, info in listed:
+            content = None
+            if stat.S_ISREG(info.st_mode):
+                try:
+                    with open(full, "rb") as handle:
+                        content = handle.read().decode("utf-8")
+                except (OSError, UnicodeDecodeError):
+                    content = None
+            records.append({"path": full, "isreg": stat.S_ISREG(info.st_mode), "content": content})
+    plan = rust_release_prune_plan(entries, records, list(args.protect), args.keep_versions, roots, args.name)
+    blocked += plan["unknown"]
+    if skipped_pins:
+        blocked.append(f"cannot list every pin: {skipped_pins}")
+    if skipped_versions:
+        blocked.append(f"cannot list every version: {skipped_versions}")
+    if blocked:
+        for reason in blocked:
+            print(f"blocked {reason}")
+        if not args.check:
+            print(
+                f"WARNING: not pruning {root}: {'; '.join(blocked)}. Nothing was deleted; installed versions: "
+                f"{', '.join(plan['versions']) or 'none'}.",
+                file=sys.stderr,
+            )
+        return
+    for version in plan["remove"]:
+        print(f"remove {version}")
+        if not args.check:
+            shutil.rmtree(os.path.join(root, version))
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(prog="rust-release")
+    parser.add_argument("action", choices=("install", "pin", "prune"))
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--root", required=True)
+    parser.add_argument("--owner", default="root")
+    parser.add_argument("--group", default="root")
+    parser.add_argument("--version", default="")
+    parser.add_argument("--sha256", default="")
+    parser.add_argument("--archive-sha256", default="")
+    parser.add_argument("--url", default="")
+    parser.add_argument("--upload", default="")
+    parser.add_argument("--members", default="")
+    parser.add_argument("--executables", default="")
+    parser.add_argument("--validate-user", default="nobody")
+    parser.add_argument("--soft", action="store_true")
+    parser.add_argument("--consumer", default="")
+    parser.add_argument("--absent", action="store_true")
+    parser.add_argument("--previous", default="")
+    parser.add_argument("--no-keep-previous", action="store_true")
+    parser.add_argument("--keep-versions", type=int, default=3)
+    parser.add_argument("--protect", action="append", default=[])
+    parser.add_argument("--live-state-unknown", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        {"install": install, "pin": pin, "prune": prune}[args.action](args)
+    except (Refused, OSError, ValueError, LookupError) as error:
+        print(f"rust-release {args.action}: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
