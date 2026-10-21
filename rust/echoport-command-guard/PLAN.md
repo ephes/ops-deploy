@@ -1435,10 +1435,11 @@ features) before relaxing it.
 
 S7 (README "Lean measurements"): `parity/e2e/lean.py`, run by `just
 echoport-command-guard-lean` and by the `rust` workflow's manual job on its
-x86_64 runner. On an arm64 Docker host the Rust guard stays well inside every
-budget on both distributions: stripped binary 661,272 bytes, peak RSS
-1.88–2.12 MiB, wall time 0.27–0.49 ms (Python: 13.25–13.62 MiB, 17.75–22.12
-ms).
+x86_64 runner. On the x86_64 runner (both containers, median of 20 runs)
+the Rust guard stays well inside every budget: stripped binary 668,576
+bytes, peak RSS 2.25–2.50 MiB, wall time 0.96–1.70 ms (Python 3.12/3.13:
+14.25–14.38 MiB, 38.17–42.76 ms). An arm64 Docker host gives 661,272 bytes,
+1.88–2.12 MiB and 0.27–0.49 ms.
 
 ---
 

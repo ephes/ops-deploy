@@ -126,13 +126,18 @@ S7 results (2026-10-21), median of 20 runs:
 
 | Where | Guard | `--check-policy` | Refusal | Allowed (with `test -d`) | Stripped binary |
 |---|---|---|---|---|---|
+| x86_64 CI runner, Ubuntu 24.04 | Python 3.12.3 | 42.32 ms, 14.25 MiB | 42.76 ms, 14.38 MiB | 39.41 ms, 14.38 MiB | |
+| x86_64 CI runner, Ubuntu 24.04 | Rust | 0.96 ms, 2.38 MiB | 1.06 ms, 2.38 MiB | 1.70 ms, 2.50 MiB | 668,576 bytes |
+| x86_64 CI runner, Debian 13 | Python 3.13.5 | 40.45 ms, 14.25 MiB | 40.20 ms, 14.25 MiB | 38.17 ms, 14.38 MiB | |
+| x86_64 CI runner, Debian 13 | Rust | 0.99 ms, 2.25 MiB | 1.08 ms, 2.25 MiB | 1.70 ms, 2.50 MiB | 668,576 bytes |
 | arm64 Docker host, Ubuntu 24.04 | Python 3.12.3 | 19.96 ms, 13.25 MiB | 22.12 ms, 13.38 MiB | 17.75 ms, 13.38 MiB | |
 | arm64 Docker host, Ubuntu 24.04 | Rust | 0.27 ms, 2.00 MiB | 0.30 ms, 2.12 MiB | 0.44 ms, 2.12 MiB | 661,272 bytes |
 | arm64 Docker host, Debian 13 | Python 3.13.5 | 20.73 ms, 13.36 MiB | 20.66 ms, 13.48 MiB | 18.24 ms, 13.62 MiB | |
 | arm64 Docker host, Debian 13 | Rust | 0.32 ms, 1.88 MiB | 0.34 ms, 2.00 MiB | 0.49 ms, 2.12 MiB | 661,272 bytes |
 
-The x86_64 runner's numbers are added here when the manual workflow run has
-been made on the release commit. Memory at rest is zero for both guards (no
+The x86_64 rows are the recorded ones (`rust` workflow run 39637463506,
+4 CPUs, on the S7 branch at `3b8feeb9`, whose crate sources are the
+release's); the arm64 rows are a local run for comparison. Memory at rest is zero for both guards (no
 resident process). S9 measures `--check-policy` again on both hosts.
 
 ## Release
