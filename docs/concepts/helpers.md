@@ -182,9 +182,10 @@ the command as in `uv_sync`.
 
 ## `traefik_route(route, *, renderer=render_route, restart="traefik")`
 
-Writes `/etc/traefik/dynamic/<route.name>.yml` (`root:root 0644`) and restarts
-`traefik.service` when the file changed and Traefik is running (the roles'
-`reload traefik` handler). With `restart="none"`, it relies on the file
+Writes `/etc/traefik/dynamic/<route.name>.yml` (`root:root 0644`; through
+`secret_file` when it holds a basic-auth hash, see
+[below](#no-hash-in-diff-output)) and restarts `traefik.service` when the file
+changed and Traefik is running (the roles' `reload traefik` handler). With `restart="none"`, it relies on the file
 provider's `watch = true` instead.
 
 `TraefikRoute` covers the roles' dual-router template:
@@ -224,6 +225,34 @@ ops-deploy sets `stsPreload` (`tests/test_traefik_hsts.py`).
 - Hashes from `htpasswd` (the Ansible path) are reused as well. So once the
   comments match, switching a service from Ansible to ops-deploy causes no
   change.
+
+### No hash in `--diff` output
+
+With `--diff` (`just pyinfra-check` in ops-control runs `--dry --diff`),
+pyinfra's `files.put` logs the old and new file line by line, so a basic-auth
+route would show the deployed and the new bcrypt hash in the controller's
+output. pyinfra 3.10 has no per-operation way to turn that off (`DIFF` is one
+global config value, shared by all hosts' concurrent runs). So a route file
+whose new content **or** deployed content holds an htpasswd hash marker
+(`$2`/`$2a`/`$2b`/`$2x`/`$2y`, `$apr1$`, `{SHA}`) is written with
+[`secret_file`](operations.md#secret_file) instead: its content travels on
+stdin and is never logged. Under `--diff` such a route shows up only as a
+changed operation, without a content diff; this also covers removing basic
+auth from a route, whose deployed file still holds the old hash. Routes
+without a hash are still written with `files.put` and diffed as before.
+
+Bytes, owner and mode (`root:root 0644`) and change detection are the same:
+a change of content, owner or mode marks the operation changed (and restarts
+Traefik where `restart="traefik"`), and an up-to-date file is a no-op.
+Differences that come with `secret_file`: an owner- or mode-only difference
+rewrites the whole file (same bytes) instead of running `chown`/`chmod`; a
+symlink at the route path is refused instead of replaced; the host needs
+`python3`; and every route operation reads the deployed file
+(`FileContents`), routes without basic auth included. pyinfra still prints
+raw fact output at `-vvv`, which includes the deployed file; keep that
+verbosity out of shared logs. `tests/test_traefik_route_diff.py` (and the
+jellyfin and homelab `--diff` tests) check that no hash reaches anything
+pyinfra logs, in the plan or the execution phase.
 
 ### Parity with the Ansible templates
 

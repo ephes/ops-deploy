@@ -20,7 +20,7 @@ assert run.succeeded
 assert run.executed_commands[-1] == "systemctl restart toy.service"
 ```
 
-## `run_deploy_fake(deploy_fn, *args, responses=None, host_data=None, **kwargs)`
+## `run_deploy_fake(deploy_fn, *args, responses=None, host_data=None, pyinfra_config=None, **kwargs)`
 
 Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
 
@@ -29,6 +29,8 @@ Plans and executes `deploy_fn(*args, **kwargs)` on one fake host.
   values are stdout lines or `{"stdout", "stderr", "success"}`. Unmatched
   commands succeed with no output, which most facts read as "absent".
 - `host_data` is extra host data (for example `ssh_hostname`).
+- `pyinfra_config` replaces the default `Config()`; `Config(DIFF=True)` with
+  pytest's `caplog` shows what `--diff` would log.
 - A failing operation does not raise: check `run.succeeded` and `run.error`.
   An exception raised while planning (for example a failed rsync dry run)
   propagates.
@@ -71,8 +73,11 @@ Helpers: `executed_commands` (non-fact shell commands while executing),
 `fact_commands`, `function_calls`, `uploads` (every `(path, content)` in order,
 including repeated uploads to one path), `uploaded_paths`, `upload(path)`, `ops` / `changed_ops` / `op(name)`
 (per-operation `changed`, `succeeded` and pyinfra's argument strings `args`),
-`stdin` (every `(masked command, stdin text)` pair, as pyinfra sends it), and
-`all_text()` for secret-leak assertions. `all_text()` covers events, op names,
+`stdin` (every `(masked command, stdin text)` pair, as pyinfra sends it),
+`secret_files` (every `(path, content)` a `secret_file` install sent, decoded
+from its stdin), `written_paths` / `written(path)` (uploads and `secret_file`
+installs together, for files such as basic-auth routes that may take either
+way), and `all_text()` for secret-leak assertions. `all_text()` covers events, op names,
 op arguments and uploads but not `stdin`, which is where secrets are meant to
 travel.
 

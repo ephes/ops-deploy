@@ -83,7 +83,7 @@ def test_ingress_first_run_writes_the_route_and_the_env_lines() -> None:
 
     run = run_ingress(cfg, responses)
 
-    route = run.upload(ROUTE).decode()
+    route = run.written(ROUTE).decode()
     assert "Host(`graphyard.example.invalid`)" in route
     assert "certResolver: letsencrypt" in route
     assert SECRETS["basic_auth_password"] not in route

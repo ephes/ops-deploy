@@ -15,8 +15,10 @@ Typical use::
 
 from __future__ import annotations
 
+import base64
 import io
 import re
+import shlex
 import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -39,6 +41,7 @@ from pyinfra.context import ctx_host, ctx_state
 
 from ops_deploy.core.rsync import RsyncResult
 from ops_deploy.helpers.checks import is_read_only
+from ops_deploy.ops.secret_file import INSTALLER_SOURCE
 
 EventKind = Literal["fact", "shell", "put", "function"]
 Phase = Literal["plan", "execute"]
@@ -177,6 +180,31 @@ class FakeRun(DeployRun):
             raise KeyError(f"expected exactly one upload to {path!r}, found {len(matches)}")
         return matches[0]
 
+    @property
+    def secret_files(self) -> list[tuple[str, bytes]]:
+        """``(path, content)`` of every ``secret_file`` install, decoded from its stdin."""
+
+        found = []
+        for command, payload in self.stdin:
+            dest = secret_file_destination(command)
+            if dest is not None:
+                found.append((dest, base64.b64decode("".join(payload.split()), validate=True)))
+        return found
+
+    @property
+    def written_paths(self) -> list[str]:
+        """Paths written by an upload or by ``secret_file``, in that order."""
+
+        return [*self.uploaded_paths, *(path for path, _ in self.secret_files)]
+
+    def written(self, path: str) -> bytes:
+        """Content of the single upload or ``secret_file`` install at ``path``."""
+
+        matches = [content for remote, content in (*self.uploads, *self.secret_files) if remote == path]
+        if len(matches) != 1:
+            raise KeyError(f"expected exactly one write to {path!r}, found {len(matches)}")
+        return matches[0]
+
     def all_text(self) -> str:
         """Every recorded command, path, callback name, op name and argument and
         upload, for leak checks.
@@ -189,6 +217,18 @@ class FakeRun(DeployRun):
         parts.extend(text for op in self.ops for text in (op.name, *op.args))
         parts.extend(content.decode("utf-8", errors="replace") for _, content in self.uploads)
         return "\n".join(parts)
+
+
+def secret_file_destination(command: str) -> str | None:
+    """The destination of a ``secret_file`` install command, else ``None``."""
+
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if len(argv) != 11 or argv[:4] != ["python3", "-I", "-c", INSTALLER_SOURCE]:
+        return None
+    return f"{argv[4].rstrip('/')}/{argv[5]}"
 
 
 @dataclass
@@ -224,6 +264,7 @@ def run_deploy_fake(
     *args: Any,
     responses: Mapping[Any, Any] | None = None,
     host_data: Mapping[str, Any] | None = None,
+    pyinfra_config: Config | None = None,
     **kwargs: Any,
 ) -> FakeRun:
     """Plan and execute ``deploy_fn(*args, **kwargs)`` against one ``@fake`` host.
@@ -231,6 +272,8 @@ def run_deploy_fake(
     ``responses`` is the connector's ``fake_responses`` mapping (first match
     wins, unmatched commands succeed with no output). A failing operation does
     not raise; inspect :attr:`FakeRun.succeeded` / :attr:`FakeRun.error`.
+    ``pyinfra_config`` replaces the default ``Config()``, for example
+    ``Config(DIFF=True)`` to check what ``--diff`` would log.
     """
 
     data: dict[str, Any] = dict(host_data or {})
@@ -242,7 +285,7 @@ def run_deploy_fake(
         }
     )
     inventory = Inventory(([(FAKE_HOST, data)], {}))
-    state = State(inventory, Config())
+    state = State(inventory, pyinfra_config or Config())
     run = FakeRun()
 
     with _RECORDING_LOCK, _recording(run) as phase:

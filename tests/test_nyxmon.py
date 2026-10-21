@@ -1,6 +1,5 @@
 """Deploy-level scenarios for nyxmon against the fake connector."""
 
-import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -127,8 +126,9 @@ def test_first_run_installs_everything(cfg: NyxmonConfig, secrets: SecretValues)
     assert commands.index("systemctl start nyxmon.service") < commands.index("systemctl start nyxmon-monitor.service")
     assert "systemctl restart nyxmon.service" not in commands
     assert any("chmod 0600" in c for c in commands)
-    # Both env files go over stdin via secret_file, never as uploads.
-    assert len(run.stdin) == 2
+    # Both env files and the route (it holds the basic-auth hash) go over stdin via secret_file, never as uploads.
+    assert len(run.stdin) == 3
+    assert ROUTE in [path for path, _ in run.secret_files]
     assert not any(path.endswith((".env", ".env.shell")) for path in run.uploaded_paths)
     assert [op.name for op in run.ops if op.read_only] == READ_ONLY
 
@@ -246,7 +246,7 @@ def test_agent_defaults_validate_from_text(tmp_path: Path, entry: str) -> None:
 def test_basic_auth_user_from_secrets_wins(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, values(cfg, basic_auth_user="ops"), converged(cfg, secrets))
 
-    assert "ops:$2y$05$" in run.upload(ROUTE).decode()
+    assert "ops:$2y$05$" in run.written(ROUTE).decode()
 
 
 def test_monitor_unit_change_reloads_and_restarts_only_the_monitor(cfg: NyxmonConfig, secrets: SecretValues) -> None:
@@ -307,9 +307,12 @@ def test_secrets_never_recorded(cfg: NyxmonConfig, secrets: SecretValues, scenar
 def test_env_files_ride_on_stdin_only(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, secrets)
 
-    for command, payload in run.stdin:
+    for command, _payload in run.stdin:
         assert SECRET_VALUES["django_secret_key"] not in command
-        assert SECRET_VALUES["django_secret_key"].encode() in base64.b64decode("".join(payload.split()))
+    envs = [content for path, content in run.secret_files if path != ROUTE]
+    assert len(envs) == 2
+    for content in envs:
+        assert SECRET_VALUES["django_secret_key"].encode() in content
 
 
 def test_short_opsgate_token_fails_before_any_operation(cfg: NyxmonConfig) -> None:

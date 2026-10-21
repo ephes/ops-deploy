@@ -203,7 +203,7 @@ def test_route_change_writes_the_file_without_restarting_traefik(cfg: DelveConfi
 def test_traefik_disabled_writes_no_route(cfg: DelveConfig) -> None:
     run = deploy(cfg.model_copy(update={"traefik_enabled": False}), values())
 
-    assert ROUTE not in run.uploaded_paths
+    assert ROUTE not in run.written_paths
 
 
 def test_public_health_check_goes_through_traefik_on_loopback(cfg: DelveConfig) -> None:

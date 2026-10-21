@@ -1,10 +1,13 @@
 """Deploy-level scenarios for homelab against the fake connector."""
 
 import base64
+import logging
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pyinfra.api import Config
 
 from ops_deploy.base import UvInstallConfig
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
@@ -139,9 +142,10 @@ def test_first_run_installs_everything(cfg: HomelabConfig, secrets: SecretValues
     assert [commands.index(c) for c in order] == sorted(commands.index(c) for c in order)
     assert "systemctl restart homelab.service" not in commands
     assert not any("traefik" in c and "systemctl" in c for c in commands)
-    # Only .env goes over stdin; the top-level files and the route are plain uploads.
-    assert len(run.stdin) == 1
-    assert {f"{SITE}/manage.py", f"{SITE}/pyproject.toml", f"{SITE}/uv.lock", UNIT, ROUTE} <= set(run.uploaded_paths)
+    # .env and the route (it holds the basic-auth hash) go over stdin; the top-level files are plain uploads.
+    assert len(run.stdin) == 2
+    assert {f"{SITE}/manage.py", f"{SITE}/pyproject.toml", f"{SITE}/uv.lock", UNIT} <= set(run.uploaded_paths)
+    assert ROUTE in [path for path, _ in run.secret_files]
     assert [op.name for op in run.ops if op.read_only] == READ_ONLY
     assert f"{P}Create venv symlink to .venv" in run.mutating_changed_ops
 
@@ -280,6 +284,27 @@ def test_basic_auth_rotation_only_touches_the_route(cfg: HomelabConfig, secrets:
 
     assert run.mutating_changed_ops == changed("Write Traefik route homelab")
     assert not any("traefik" in c and "systemctl" in c for c in run.executed_commands)
+
+
+def test_basic_auth_rotation_diff_never_shows_a_hash(
+    cfg: HomelabConfig, secrets: SecretValues, caplog: pytest.LogCaptureFixture
+) -> None:
+    # What `just pyinfra-check homelab` (pyinfra --dry --diff) logs.
+    caplog.set_level(logging.DEBUG)
+
+    run = run_deploy_fake(
+        deploy_homelab,
+        cfg,
+        values(cfg, basic_auth_password="rotated-fixture-pw"),
+        rsync=RecordingRsyncRunner(),
+        responses=converged(cfg, secrets),
+        pyinfra_config=Config(DIFF=True),
+    )
+
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == changed("Write Traefik route homelab")
+    assert not re.search(r"\$2[aby]\$", caplog.text)
+    assert _HASH not in caplog.text
 
 
 def test_basic_auth_user_comes_from_the_secret(cfg: HomelabConfig, secrets: SecretValues) -> None:

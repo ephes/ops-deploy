@@ -213,8 +213,10 @@ def test_first_run_installs_everything(cfg: EchoportConfig) -> None:
     # Like the role's django_manage: python manage.py in the site root as the service user.
     assert migrate.startswith(f"cd {SITE} && runuser -u echoport -- env HOME={HOME} DJANGO_SETTINGS_MODULE=")
     assert f"exec {SITE}/.venv/bin/python manage.py migrate --noinput" in migrate
-    # The env file, admin credentials, MinIO account and mc alias only travel on stdin.
-    assert len(run.stdin) == 4
+    # The env file, admin credentials, MinIO account, mc alias and the route
+    # (it holds the basic-auth hash) only travel on stdin.
+    assert len(run.stdin) == 5
+    assert ROUTE in [path for path, _ in run.secret_files]
     stdin = dict(run.stdin)
     user_add = next(c for c in commands if "admin user add local" in c)
     assert stdin[user_add] == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
@@ -242,7 +244,7 @@ def test_first_run_installs_everything(cfg: EchoportConfig) -> None:
     }
     assert not any(path.endswith(".env") for path in run.uploaded_paths)
     assert [op.name for op in run.ops if op.read_only] == READ_ONLY
-    uploaded = run.upload(ROUTE).decode()
+    uploaded = run.written(ROUTE).decode()
     auth_hash = _hash_in(uploaded)
     assert bcrypt.checkpw(SECRET_VALUES["basic_auth_password"].encode(), auth_hash.encode())
     assert uploaded == render_route(cfg, secrets, traefik_config(cfg, secrets), auth_hash)
