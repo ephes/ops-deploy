@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `fastdeploy`: `service_token_admin_users` (with
+  `service_token_admin_initial_user` for the secret initial user) and
+  `restore_policies` write FastDeploy's `SERVICE_TOKEN_ADMIN_USERS` and
+  `RESTORE_POLICIES` (FastDeploy main `8faa9bd`, which refuses API token
+  issuance and every restore without them). Each is written only when set, as
+  compact JSON in single quotes in `.env` and `.env.shell`, byte-identical to
+  the `fastdeploy_deploy` role of ops-library 2.59.0 (re-vendored
+  `fastdeploy.env.j2`). The role's drift digest stays at its old value: the
+  HSTS preload change (ops-library `abae172`) is still not ported. Invalid
+  user names, buckets and prefixes fail the config.
+
 - Pin the managed uv installer to 0.13.4 with verified Linux release checksums and refresh certifi to 2026.10.19 for the eMudhra trust incident. The updated `uv_install` mirror digest is from the paired incident ops-library branch; other digests retain their recorded source baseline.
 
 - `homelab`: port of the `homelab_deploy` role (deploy only; with the

@@ -54,9 +54,27 @@ Defaults follow the role's `defaults/main.yml`.
 | `legacy_service_tokens_accepted_until` | `""` | ISO 8601 with offset; empty: not rendered |
 | `service_token_max_expire_days`, `service_token_retention_days` | `None` | positive days; `None`: not rendered |
 | `legacy_token_users` | `()` | temporary users for legacy service tokens |
+| `service_token_admin_users`, `service_token_admin_initial_user` | `()`, `false` | `SERVICE_TOKEN_ADMIN_USERS`; the flag puts the secret `initial_user_name` first; empty: not rendered (API token issuance gets 403) |
+| `restore_policies` | `{}` | `RESTORE_POLICIES`: FastDeploy service name to `{bucket, prefixes}` (each prefix ends in `/`); empty: not rendered (every restore gets 422) |
 | `create_initial_user`, `sync_services` | `true`, `true` | |
 | `rollout_validation` and `rollout_validation_*` | `true`, `/users/me`, initial user, 300 s, 15 x 2 s | |
 | `traefik_host`, `traefik_cert_resolver`, `traefik_middlewares`, `internal_ip_ranges`, `basic_auth_user` | role defaults | |
+
+### Token issuance admins and restore policies
+
+FastDeploy main `8faa9bd` and later fail closed without `SERVICE_TOKEN_ADMIN_USERS`
+(no user may issue service tokens through the API, which also stops the web
+UI's deploy button) and `RESTORE_POLICIES` (every Echoport restore is refused).
+Each is written only when set, as compact JSON (keys sorted, list order kept)
+in single quotes, in `.env` and `.env.shell` alike: systemd's
+`EnvironmentFile=`, dotenv and `sh` all read it literally. The config refuses
+anything that could contain a quote or that FastDeploy's `RestorePolicy`
+rejects (a non-lowercase bucket, an empty prefix list, a prefix that is
+absolute, has `..` or an empty component, or lacks the trailing `/`). The
+bytes match the role's `fastdeploy_service_token_admin_users` and
+`fastdeploy_restore_policies` (ops-library 2.59.0); the role takes the initial
+user by name, so a playbook lists `{{ secrets.initial_user_name }}` where the
+config sets `service_token_admin_initial_user`.
 
 ### Host-side state (`persistent_excludes`)
 
