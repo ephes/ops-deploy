@@ -1,0 +1,5 @@
+{
+  "about": "Per-case exceptions to the Layer-1 fixtures (rust/echoport-command-guard/PLAN.md 4.4, 7.2). python_versions: cases where the Python guard decides differently under 3.12 and 3.13 (the generator fails on any unlisted one). rust: cases where the Rust guard may differ from the expected decision beyond the classes the generator tags with p3 (prefilter, invalid-utf8, python-error, policy-type, policy-trailing-newline). Each entry is {\"id\": <case id>, \"reason\": <why>}; S5 reviews every entry.",
+  "python_versions": [],
+  "rust": []
+}

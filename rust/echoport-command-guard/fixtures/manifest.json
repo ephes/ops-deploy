@@ -1,0 +1,62 @@
+{
+  "guard": "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py",
+  "guard_sha256": "ca74405e7bfeb1312c01b77188febe7f3fb1e151f64239e61062e4ec2e3650ae",
+  "decision_files": [
+    "fs.jsonl",
+    "journal.jsonl",
+    "mutation/append.jsonl",
+    "mutation/characters.jsonl",
+    "mutation/edges.jsonl",
+    "mutation/paths.jsonl",
+    "mutation/requote.jsonl",
+    "mutation/tokens.jsonl",
+    "mutation/tools.jsonl",
+    "mutation/vocabulary.jsonl",
+    "mutation/whitespace.jsonl",
+    "runner.jsonl",
+    "unit.jsonl"
+  ],
+  "policy_files": [
+    "policy.jsonl"
+  ],
+  "cases": {
+    "fs.jsonl": 698,
+    "journal.jsonl": 70,
+    "mutation/append.jsonl": 1960,
+    "mutation/characters.jsonl": 2330,
+    "mutation/edges.jsonl": 84,
+    "mutation/paths.jsonl": 974,
+    "mutation/requote.jsonl": 1950,
+    "mutation/tokens.jsonl": 1885,
+    "mutation/tools.jsonl": 275,
+    "mutation/vocabulary.jsonl": 1558,
+    "mutation/whitespace.jsonl": 978,
+    "policy.jsonl": 241,
+    "runner.jsonl": 130,
+    "unit.jsonl": 257
+  },
+  "total": 13390,
+  "accepted": {
+    "fs.jsonl": 206,
+    "journal.jsonl": 69,
+    "mutation/append.jsonl": 0,
+    "mutation/characters.jsonl": 0,
+    "mutation/edges.jsonl": 12,
+    "mutation/paths.jsonl": 62,
+    "mutation/requote.jsonl": 1882,
+    "mutation/tokens.jsonl": 18,
+    "mutation/tools.jsonl": 7,
+    "mutation/vocabulary.jsonl": 140,
+    "mutation/whitespace.jsonl": 930,
+    "runner.jsonl": 130,
+    "unit.jsonl": 49
+  },
+  "p3": {
+    "prefilter": 2902,
+    "invalid-utf8": 32,
+    "python-error": 5,
+    "policy-type": 30,
+    "policy-trailing-newline": 12
+  },
+  "decisions": 13149
+}

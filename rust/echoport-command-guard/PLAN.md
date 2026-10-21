@@ -468,6 +468,18 @@ Justification:
   `surrogateescape` and refuses later. Rust refuses at once with the same
   `refused from` log line, using the reason `non-ASCII or control characters
   in command`.
+- **Non-standard JSON in the policy** (found by S0): Python's `json` accepts
+  `NaN`, `Infinity` and lone surrogate escapes such as `"\ud800"`, also under
+  unknown keys, and keeps the last of duplicate keys anywhere in the
+  document. Rust refuses these as policy-type errors.
+- **Python crashes in `check()`** (found by S0). The `umask 077 && tar …`
+  shape matches `_TAR_RE` on the raw string and then calls `shlex.split` on
+  the group without a guard (`guard.py:459`), so an unbalanced quote or a
+  trailing `\` in it raises `ValueError`. `main()` does not catch that: the
+  Python guard exits 1 with a traceback on stderr, logs nothing and runs
+  nothing. Rust refuses such a command like any other (`refused from` log
+  line, `command not allowed`, exit 1). The fixtures record these cases with
+  the verdict `error`.
 
 ### 4.3 Log text (P2)
 
@@ -491,11 +503,17 @@ Justification:
 The reason inside `refused from <client>: <reason>: …` must equal Python's
 for every Layer-1 fixture, except:
 
-- commands caught by the prefilter (4.1);
-- the policy-type and realpath refusals (4.2).
+- commands caught by the prefilter (4.1), and invalid UTF-8 (4.2);
+- the policy-type, trailing-`\n` and realpath refusals (4.2);
+- the `check()` crashes (4.2).
 
-Those exceptions are listed in `parity/allowed_differences.json`, and S5
-reviews each entry.
+The generator tags every Layer-1 case that falls into one of these classes
+with `p3` (`prefilter`, `invalid-utf8`, `python-error`, `policy-type`,
+`policy-trailing-newline`). For a tagged case the Rust guard may refuse where
+Python accepts and may give another reason or error type, but it must never
+accept what Python refuses. Any other exception is listed by case id in
+`parity/allowed_differences.json` (empty at S0). S5 reviews each tag class
+and each entry.
 
 ### 4.5 Non-goals
 
@@ -994,7 +1012,7 @@ before and after. The runbook in S8 spells this out.
 
 S0 creates `TESTMAP.md` with one row per Python test method. Every later
 slice fills in its rows, and S5 requires every row filled. Mapping by class
-(`tests/test_echoport_remote_command_guard.py`, 41 methods):
+(`tests/test_echoport_remote_command_guard.py`, 33 methods):
 
 | Python | Rust |
 |---|---|
@@ -1011,22 +1029,39 @@ slice fills in its rows, and S5 requires every row filled. Mapping by class
 ### 7.2 Layer 1: generated decision fixtures (Python oracle, committed)
 
 `parity/gen_fixtures.py` imports `guard.py` from the role path, as the tests
-do. It writes `fixtures/*.jsonl` and records the sha256 of the guard file it
-used.
+do. It writes `fixtures/*.jsonl` (with `fixtures/mutation/*.jsonl`, every
+file under the repository's 1000 KB limit and listed in
+`fixtures/manifest.json`) and records the sha256 of the guard file it used
+in `fixtures/GUARD_SHA256`. The crate's `README.md` documents the format.
 
 **One case:**
+- `id` (stable) and `source`;
 - `policy` (a reference into `fixtures/policies/`);
-- `env`:
-  - `euid` (default 0);
-  - `users` (name → uid);
-  - `lstat` (path → kind, mode, uid, nlink; or `absent`, or an errno);
-  - `realpath` (path → resolved; the default is `normpath`, as the tests'
-    `identity`);
-- `command`;
-- `expected`: `{allowed, argv, umask, stdin, stdout}` or `{refused, reason}`.
+- `env`, every lookup the Python guard made for the case:
+  - `euid` (0);
+  - `users` (name → uid, `null` for none);
+  - `lstat` (path → kind, mode, uid, nlink; or `absent`, or an errno with
+    glibc's `strerror`);
+  - `realpath` (path → resolved).
+  A path missing from `lstat` is absent, a path missing from `realpath`
+  resolves to `normpath` (the tests' `identity`), and a missing user does
+  not exist.
+- `command`, or `command_hex` for bytes that are not valid UTF-8;
+- `expected`: `{verdict: "allowed", argv, umask, stdin, stdout}`,
+  `{verdict: "refused", reason}` or `{verdict: "error", error_type,
+  message}` (4.2, `check()` crashes);
+- `p3`, when the case falls into a 4.4 class.
 
-**How it is generated:** the generator patches `GUARD.pwd.getpwnam` and
-`GUARD.os.geteuid` and passes `realpath`/`lstat` callables built from `env`.
+**How it is generated:** in two steps. `gen_fixtures.py record` runs in the
+repo venv (ansible-core, jinja2): it imports
+`tests/test_echoport_remote_command_guard.py`, writes its policies to
+`fixtures/policies/`, records the runner corpus (below) and every `check()`
+and `Policy.from_dict()` call of the guard's unit tests, with the lookups
+each call made, to `fixtures/corpus/`. `gen_fixtures.py generate` is stdlib
+only: it points the guard module's `os.geteuid` and `pwd.getpwnam` at a
+recorder and passes `realpath`/`lstat` callables, so each case's `env` is
+exactly what that call asked; every case is replayed from its `env` and must
+give the same decision. It runs with `PYTHONHASHSEED=0`.
 
 **Python versions:** it runs under the hosts' Pythons, 3.12 and 3.13
 (`uv run --python 3.12/3.13 --no-project`, stdlib only), and the outputs must
@@ -1039,10 +1074,14 @@ in `parity/allowed_differences.json` (expected: none at Layer 1, because
 1. `runner`: every command of every runner's backup and restore, recorded
    with the existing `RecordingHosts` harness. This runs once under the repo
    venv (ansible-core and jinja2) and is written to `fixtures/corpus/runner.jsonl`.
-   Policies: the production and staging policies from the tests.
+   Policies: the production and staging policies from the tests. Clock
+   stamps are replaced by synthetic ones.
 2. `journal`: the shapes seen live (3.4), with real paths and synthetic
    stamps.
-3. `unit`: every case from the Python unit tests.
+3. `unit`: every case from the Python unit tests (`GuardAllowsRunnerShapes`
+   and `GuardRefusals` except `test_scp_against_a_real_tree`, which is
+   Layer 2; `Policy.from_dict()` calls and `GuardMain`'s documents go to the
+   `policy` source).
 4. `mutation`: a systematic mutation of every accepted command:
    - drop, duplicate or swap each token;
    - replace a value with its counterpart from the other host's policy or
@@ -1069,17 +1108,22 @@ in `parity/allowed_differences.json` (expected: none at Layer 1, because
    types and `null` cases are included, plus the trailing-`\n` quirk (a P3
    entry).
 
-**Expected size:** about 10–20k cases, generated rather than hand-written.
-The JSONL is committed, and reviewers spot-check it.
+**Expected size:** about 10–20k cases, generated rather than hand-written
+(S0: about 13.4k cases, 5 MB). The JSONL is committed, and reviewers spot-check
+it.
 
 **Drift check:** a step in F1's `rust.yml` regenerates the fixtures and
 fails on any diff. `fixtures/GUARD_SHA256` must equal the sha256 of
 `guard.py`, so any change to the Python guard before S13 forces a
 regeneration and a Rust update in the same change. `rust.yml` only runs on
 changes under `rust/` (owner decision 2026-10-21), so a change to `guard.py`
-alone does not trigger it. S0 therefore also adds the `GUARD_SHA256`
-comparison (stdlib, no Rust toolchain) to `just
-test-echoport-remote-command-guard`, which `just test` runs.
+or a runner template alone does not trigger it. S0 therefore also adds
+`tests/test_echoport_command_guard_fixtures.py` (no Rust toolchain) to `just
+test-echoport-remote-command-guard`, which `just test` runs: the
+`GUARD_SHA256` comparison and the full drift check (`gen_fixtures.py check
+--record`, which re-records the runners), plus the 4.1 property tests. `just
+echoport-command-guard-fixtures` regenerates (record in the venv, generate
+under 3.12, `check` under 3.13 and the venv).
 
 ### 7.3 Differential and property tests (CI, stable toolchain)
 
