@@ -6,8 +6,9 @@ stop restarting Traefik, skip entries on restore) without touching a
 template. With ``OPS_LIBRARY_PATH`` set to a checkout of ops-library's main
 branch, the tests here fail when
 
-- a role file vendored under ``services/*/files`` or ``infra/files`` differs
-  from the role's or is gone, and
+- a role file vendored under ``services/*/files`` or ``infra/files`` (or
+  another ops-library file, such as ``plugins/filter/rust_release.py``)
+  differs from ops-library's or is gone, and
 - a role a port mirrors changed since the port was last checked against it:
   ``tests/parity/ops_library_roles.json`` records a digest of each role's
   behaviour (tasks, handlers, defaults, vars, files, templates).
@@ -39,6 +40,10 @@ VENDORED_FILES = {
     "services/fastdeploy/files/ensure_token_user.py": "fastdeploy_deploy",
     "services/fastdeploy/files/sudoers_blanket_check.py": "fastdeploy_restore",
 }
+# ``<package path>``: a file of ops-library outside the roles, byte for byte.
+VENDORED_LIBRARY_FILES = {
+    "helpers/templates/rust_release.py.txt": "plugins/filter/rust_release.py",
+}
 
 needs_ops_library = pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
 
@@ -67,6 +72,16 @@ def recorded() -> dict[str, str]:
 def test_vendored_role_files_match_ops_library(vendored: str) -> None:
     assert OPS_LIBRARY is not None
     source = Path(OPS_LIBRARY, "roles", VENDORED_FILES[vendored], "files", Path(vendored).name)
+
+    assert source.is_file(), f"{source} is gone; the port still ships {vendored}"
+    assert (PACKAGE / vendored).read_bytes() == source.read_bytes(), f"{source} changed; re-vendor and re-check"
+
+
+@needs_ops_library
+@pytest.mark.parametrize("vendored", sorted(VENDORED_LIBRARY_FILES), ids=str)
+def test_vendored_library_files_match_ops_library(vendored: str) -> None:
+    assert OPS_LIBRARY is not None
+    source = Path(OPS_LIBRARY, VENDORED_LIBRARY_FILES[vendored])
 
     assert source.is_file(), f"{source} is gone; the port still ships {vendored}"
     assert (PACKAGE / vendored).read_bytes() == source.read_bytes(), f"{source} changed; re-vendor and re-check"

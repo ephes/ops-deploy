@@ -20,7 +20,7 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent.parent / "src" / "ops_deploy"
 LAYERS = ("helpers", "ops", "core")
-DEFAULT_CAP = 1500
+DEFAULT_CAP = 1650
 _SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
 

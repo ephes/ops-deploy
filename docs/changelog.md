@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Size cap on the shared layer raised from 1,500 to 1,650 code lines (owner
+  decision 2026-10-21), to make room for `helpers.rust_release`, which all
+  Rust ports share; the shared layer is at 1,633 code lines. See
+  [development](development.md#size-cap-on-the-shared-layer).
+
+- New helper `ops_deploy.helpers.rust_release` (`install_release`,
+  `pin_release`, `prune_releases`), the pyinfra side of ops-library's
+  `rust_release_binary` role (ops-library `rust/PLAN-foundation.md` 6.3,
+  slice F4). It manages pinned Rust release binaries under
+  `/opt/<crate>/<version>/` with `.archive-sha256` and the
+  `.pins/<consumer>`/`.pins/<consumer>.previous` pins, writing the same files
+  with the same bytes as the role and making the same pin moves and prune
+  decisions (`protect`, unknown live state, fail closed). The decisions are
+  ops-library's `plugins/filter/rust_release.py`, vendored byte for byte as
+  `helpers/templates/rust_release.py.txt` and checked by
+  `tests/test_ops_library_drift.py`, which also records the role
+  `rust_release_binary` at ops-library main `d8cac44c`. The host steps run as
+  `/usr/bin/python3 -I -` with the script on stdin. No service uses the
+  helper yet, so no deploy changes. `tests/test_rust_release.py` compares the
+  helper with the role on twin trees when `OPS_LIBRARY_PATH` and
+  `ansible-playbook` are available.
+
 - `graphyard` core: select the agent implementation, the port of
   `graphyard_deploy`'s `agent_rust.yml` and `agent_verify.yml` (ops-library
   `08faab6a`, graphyard `agent-rs/PLAN.md` 8.3). New `GraphyardConfig` fields
