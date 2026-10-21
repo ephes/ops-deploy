@@ -40,6 +40,7 @@ import filecmp
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import shlex
@@ -765,6 +766,16 @@ class _Strict:
         self.tags.add(P3_POLICY_TYPE)
         return float(name.replace("Infinity", "inf"))
 
+    def number(self, text: str) -> float | int:
+        """A number outside the double range (serde_json refuses it, Python keeps inf or the int)."""
+        value: float | int = int(text) if re.fullmatch(r"-?[0-9]+", text) else float(text)
+        try:
+            if math.isinf(float(value)):
+                self.tags.add(P3_POLICY_TYPE)
+        except OverflowError:
+            self.tags.add(P3_POLICY_TYPE)
+        return value
+
 
 def _walk_strings(value: Any) -> Iterator[str]:
     if isinstance(value, str):
@@ -783,7 +794,8 @@ def policy_p3(data: bytes) -> list[str]:
     strict = _Strict()
     try:
         text = data.decode("utf-8")
-        document = json.loads(text, object_pairs_hook=strict.pairs, parse_constant=strict.constant)
+        document = json.loads(text, object_pairs_hook=strict.pairs, parse_constant=strict.constant,
+                              parse_float=strict.number, parse_int=strict.number)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return []  # both guards refuse a file that is not JSON
     tags = strict.tags
@@ -968,6 +980,7 @@ def policy_documents(policies: dict[str, dict[str, Any]]) -> list[tuple[str, byt
         ("raw-lone-surrogate-unit", b'{"units": ["\\udcff"]}'),
         ("raw-escaped-unit", b'{"units": ["\\u0061"]}'),
         ("raw-big-number", b'{"extra": 1e400}'),
+        ("raw-big-integer", b'{"extra": 1' + b"0" * 400 + b"}"),
         ("raw-crlf", b'{\r\n"units": ["a"]\r\n}\r\n'),
         ("raw-nul", b'{"units": ["a\\u0000"]}'),
     ]

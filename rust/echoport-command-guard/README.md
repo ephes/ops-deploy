@@ -2,12 +2,26 @@
 
 The Rust port of the `echoport_remote_command_guard` forced-command guard.
 The plan and contract are in [PLAN.md](PLAN.md), the test map in
-[TESTMAP.md](TESTMAP.md). Nothing here is built, released or deployed yet;
-the hosts run the Python guard.
+[TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
+hosts run the Python guard.
 
-Status: **S0** (contract freeze and fixture generator). There is no crate yet
-(S1). What exists:
+Status: **S1** (crate skeleton, policy, tokeniser). What exists:
 
+- The crate (a member of the `rust/` workspace): the library that decides and
+  the binary `echoport-command-guard`.
+  - `--version` prints `echoport-command-guard <version> (<commit>)`
+    (`build.rs`: `ECHOPORT_COMMAND_GUARD_GIT_COMMIT`, else `git rev-parse
+    HEAD`, else `unknown`).
+  - `--check-policy <file>` validates a policy file as the Python guard does
+    (exit 0, or `echoport-remote-command-guard: invalid policy: <detail>` on
+    stderr and exit 1), with the stricter types of PLAN.md 4.2.
+  - Any other argv is the Python guard's usage error (exit 2), except
+    `<prog> <policy>`: forced-command mode is S4, so until then it refuses
+    every command (`echoport-remote-command-guard: command not allowed`,
+    exit 1) and never executes anything.
+  - `check()` ports the pre-checks, the prefilter (PLAN.md 4.1), the two raw
+    shapes (detected only), the tokeniser and the tool dispatcher. Every tool
+    branch still refuses; S3a and S3b port them.
 - `parity/oracle.py`: the Python guard as the oracle. A module for the
   generator and the tests, and a JSON-lines server (`python3 -I
   parity/oracle.py`) with the ops `ping`, `check`, `split`, `check_policy`
@@ -15,6 +29,45 @@ Status: **S0** (contract freeze and fixture generator). There is no crate yet
 - `parity/gen_fixtures.py`: writes `fixtures/` (below).
 - `parity/allowed_differences.json`: per-case exceptions (empty).
 - `fixtures/`: the Layer-1 cases, generated and committed.
+
+## Build and test
+
+From `rust/` in a worktree (never in a shared checkout; this writes
+`rust/target/`), or with `just rust-check` from the repository root:
+
+```bash
+cargo test -p echoport-command-guard --locked
+```
+
+The tests:
+
+- `src/**` unit tests: prefilter, tokeniser, `repr`, `normpath`, the policy
+  loader, the dispatcher.
+- `tests/layer1.rs`, the Layer-1 runner: every decision and policy case of
+  `fixtures/` against the Rust guard, with the case's recorded environment as
+  a virtual `GuardEnv`. A Rust acceptance must equal Python's decision. A
+  refusal by a branch that is not ported yet counts as pending. Any other
+  refusal must be Python's, with Python's reason, unless the case has a `p3`
+  tag or is listed in `parity/allowed_differences.json`. Policy cases must
+  give Python's verdict, normalized policy and error type, and Python's
+  message for `Refused` and `KeyError` texts in printable ASCII (PLAN.md 4.3).
+- `tests/tokeniser.rs`: the tokeniser against Python's `shlex.split` through
+  the oracle server, over every fixture command that passes the prefilter
+  and over 2,000 seeded random commands (proptest). `PROPTEST_CASES=100000`
+  runs more, `PROPTEST_RNG_SEED=<n>` changes the seed.
+- `tests/cli.rs`: the binary's argv grammar, `--version`, `--check-policy`.
+
+The oracle tests run `$ECHOPORT_ORACLE_PYTHON -I parity/oracle.py`
+(default `python3`; CI uses Python 3.12, production's, from uv:
+`ECHOPORT_ORACLE_PYTHON=$(uv python find --no-project 3.12)`). They fail
+rather than skip when it cannot start.
+
+CI (`.github/workflows/rust.yml`) runs these with the workspace and adds the
+fixture drift check: `gen_fixtures.py check` under Python 3.12 and 3.13, then
+`check --record` in the repo venv (`uv sync --locked`). `rust.yml` runs only
+for changes under `rust/`; a change to the Python guard or a runner template
+alone is caught by `just test-echoport-remote-command-guard` (part of `just
+test`).
 
 ## Fixtures
 

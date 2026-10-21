@@ -31,11 +31,11 @@
     "mutation/tools.jsonl": 275,
     "mutation/vocabulary.jsonl": 1558,
     "mutation/whitespace.jsonl": 978,
-    "policy.jsonl": 241,
+    "policy.jsonl": 242,
     "runner.jsonl": 130,
     "unit.jsonl": 257
   },
-  "total": 13390,
+  "total": 13391,
   "accepted": {
     "fs.jsonl": 206,
     "journal.jsonl": 69,
@@ -55,7 +55,7 @@
     "prefilter": 2902,
     "invalid-utf8": 32,
     "python-error": 5,
-    "policy-type": 30,
+    "policy-type": 32,
     "policy-trailing-newline": 12
   },
   "decisions": 13149

@@ -1,7 +1,7 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: plan (campaign "Rust-Ports Runde 2", stream
-`rust-echoport-command-guard`). Nothing in this directory is built,
+Status: S0 and S1 implemented (campaign "Rust-Ports Runde 2", stream
+`rust-echoport-command-guard`; see `README.md`). Nothing in this directory is
 released or deployed yet. This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
 file first, in its own reviewed diff.
@@ -465,13 +465,16 @@ Justification:
   refuses (`path not checkable`), where Python returns a partly resolved path
   (which differs between 3.12 and 3.13).
 - **Invalid UTF-8 in `SSH_ORIGINAL_COMMAND`.** Python decodes it with
-  `surrogateescape` and refuses later. Rust refuses at once with the same
-  `refused from` log line, using the reason `non-ASCII or control characters
-  in command`.
-- **Non-standard JSON in the policy** (found by S0): Python's `json` accepts
-  `NaN`, `Infinity` and lone surrogate escapes such as `"\ud800"`, also under
-  unknown keys, and keeps the last of duplicate keys anywhere in the
-  document. Rust refuses these as policy-type errors.
+  `surrogateescape` and refuses later. Rust refuses right after Python's
+  pre-checks (counted in bytes, 4.1) with the same `refused from` log line,
+  using the reason `non-ASCII or control characters in command`.
+- **Non-standard JSON in the policy** (found by S0, S1): Python's `json`
+  accepts `NaN`, `Infinity`, lone surrogate escapes such as `"\ud800"` and
+  numbers outside the double range such as `1e400` (as `inf`, or as an
+  unbounded int), also under unknown keys, and keeps the last of duplicate
+  keys anywhere in the document. Rust refuses these (`serde_json` refuses all
+  but the duplicates as malformed JSON, the strict tree of 5.2 the
+  duplicates as a type error); the fixtures tag them `policy-type`.
 - **Python crashes in `check()`** (found by S0). The `umask 077 && tar …`
   shape matches `_TAR_RE` on the raw string and then calls `shlex.split` on
   the group without a guard (`guard.py:459`), so an unbalanced quote or a
@@ -541,16 +544,17 @@ rust/echoport-command-guard/
   Cargo.toml            # [[bin]] echoport-command-guard; lib for tests
   PLAN.md  TESTMAP.md  README.md
   src/main.rs           # argv grammar (3.1), the modes, exit codes
-  src/policy.rs         # serde types (strict), validation (3.2)
+  src/policy.rs         # strict JSON tree, typed policy, validation (3.2, 4.2)
   src/prefilter.rs      # 4.1
   src/tokens.rs         # shlex crate wrapper + _TAR_RE/_CAT_TO_FILE_RE
-  src/env.rs            # trait GuardEnv { lstat, readlink, euid, uid_of }; real + virtual impls
+  src/env.rs            # trait GuardEnv { euid, uid_of, lstat, realpath }; virtual impl (S1), real impl (S2)
   src/pyrealpath.rs     # non-strict realpath over GuardEnv (3.3.6)
   src/rules/{mod,postgres,sqlite,transfer,files}.rs   # check() port (3.4)
   src/decision.rs       # Decision/Redirect + JSON for --decide/--shadow
   src/redirect.rs       # openat/fstat/dup2 (3.5)
   src/exec.rs           # umask, PATH, locale coercion, signals, execvp
-  src/syslog.rs         # libc openlog/syslog wrapper, py_repr (3.6, 4.3)
+  src/repr.rs           # py_repr (4.3), used by refusal reasons and log lines
+  src/syslog.rs         # libc openlog/syslog wrapper (3.6)
   parity/gen_fixtures.py  parity/oracle.py  parity/allowed_differences.json
   parity/e2e/           # Dockerfiles + scripts for Layers 2 and 3
   fixtures/             # generated, committed (7.2)
@@ -559,7 +563,9 @@ rust/echoport-command-guard/
 
 `check()` takes `&dyn GuardEnv`, so the Layer-1 fixtures run against a
 virtual filesystem and user table, the way the Python tests inject `realpath`
-and `lstat`. Production uses the real implementation.
+and `lstat`: the virtual impl answers `realpath` from the case's recorded
+map (default `normpath`). Production uses the real implementation, whose
+`realpath` is `pyrealpath.rs` (or the crate, 5.2) over `lstat`/`readlink`.
 
 ### 5.2 Crate choices
 
@@ -567,7 +573,7 @@ and `lstat`. Production uses the real implementation.
 |---|---|---|
 | Tokenising | `shlex` (comex), behind the 4.1 prefilter | A maintained crate. With `\` and `#` refused and only printable ASCII and tab left, its POSIX splitting equals Python's `shlex.split` (no comments, no escapes, literal quotes). The differential test in S1 is the proof; any disagreement blocks S1. |
 | Regexes | `regex-lite` | Only ASCII classes are needed after the prefilter. Smaller than `regex`. |
-| JSON policy | `serde` + `serde_json` (`deny` nothing extra, typed structs, `Option<Vec<String>>`) | Strict types (4.2). Unknown keys are ignored (3.2). |
+| JSON policy | `serde` + `serde_json` into a strict JSON tree (a `Deserialize` visitor that refuses duplicate keys anywhere), then a typed conversion in `Policy.from_dict`'s order | Strict types (4.2); a missing entry key is a `KeyError` and a wrong type a `TypeError` in Python's order, which typed `serde` structs cannot give. Unknown keys are ignored (3.2). |
 | Syscalls (`openat`, `fstat`, `fcntl`, `dup2`, `umask`, `execvp`, `getpwnam_r`, `geteuid`, `sigaction`) | `nix` | Maintained. One crate covers everything. |
 | syslog, `setlocale` | `libc` (two thin `unsafe` wrappers) | Parity with CPython, which calls the same libc functions (3.6, 3.5). |
 | Non-strict realpath | own `pyrealpath.rs`, about 60 lines, a port of CPython's `posixpath` algorithm over `GuardEnv` | `std::fs::canonicalize` is strict (it fails on missing paths and dangling links). S2 first evaluates the `soft-canonicalize` crate against the Python oracle on the real-tree corpus. If it matches every case that is reachable after `_is_safe_path`, the crate is used and the port is dropped. Q3. |
@@ -1365,8 +1371,8 @@ the coordinator clears with the other production work (6.1).
 
 Rules, as in the precedents:
 
-- **Branch:** one per slice, `rust-echoport-command-guard/<id>-<name>`, in
-  its own worktree.
+- **Branch:** one per slice, `rust-echoport-command-guard-<id>` (e.g.
+  `rust-echoport-command-guard-s1`), in its own worktree.
 - **Review:** `gpt-6.1-sol` at high reasoning through the codex review loop.
   A slice may get up to three rounds; round 3 covers only the repair delta
   of round 2, and if round 3 is not clean the worker stops and reports to

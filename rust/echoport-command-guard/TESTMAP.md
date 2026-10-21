@@ -18,7 +18,7 @@ Kinds:
   once, under the first test by name); source `runner` every command the
   runners send; `journal`, `mutation`, `fs` and `policy` are generated
   (PLAN.md 7.2). The Rust Layer-1 runner (S1) reads them; until a branch is
-  ported its cases are expected to be refused.
+  ported its cases are expected to be refused (counted as pending).
 - **unit** / **process**: Rust tests (`src/**` unit tests, `tests/cli.rs`).
 - **Layer 2** / **Layer 3**: container differential and sshd end-to-end tests
   (`parity/e2e/`, PLAN.md 7.5, 7.6).
@@ -33,13 +33,13 @@ Kinds:
 | `test_exact_rsync_commands` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_django_chat_shapes` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
 | `test_gotosocial_shapes` | `unit.jsonl` (`.timeout` included) | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
-| `test_policy_rejects_unsafe_entries` | `policy.jsonl` (source `unit`) | `policy.rs` tests over `policy.jsonl` | fixture done (S0); Rust pending (S1) |
+| `test_policy_rejects_unsafe_entries` | `policy.jsonl` (source `unit`) | `tests/layer1.rs` `policy_fixtures` over `policy.jsonl`; `policy::tests` | done (S1) |
 
 ## Refusals (`GuardRefusals`, 9 tests)
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner | fixture done (S0); Rust pending (S1–S3b) |
+| `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner; `rules::tests` | unknown tools, prefilter and tokeniser stages done (S1); tool branches pending (S3a, S3b) |
 | `test_host_specific_rules` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
 | `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_rsync_options_must_match_exactly` | `unit.jsonl`; `mutation/tools.jsonl` (`rsync-*`) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
@@ -72,7 +72,7 @@ Process tests of the binary (`tests/cli.rs`) with a fake exec target in
 | `test_refused_command_is_not_executed` | process test | pending (S4) |
 | `test_allowed_command_is_executed_without_shell` | process test | pending (S4) |
 | `test_broken_policy_refuses_everything` | process test; the documents are in `policy.jsonl` (source `unit`, label `GuardMain`) | fixture done (S0); Rust pending (S4) |
-| `test_check_policy_mode` | process test; `policy.jsonl` | fixture done (S0); Rust pending (S1, S4) |
+| `test_check_policy_mode` | process test (`tests/cli.rs`); `policy.jsonl` | `--check-policy` done (S1); forced-command part pending (S4) |
 
 ## Runners (`RunnerCommandsAreAllowlisted`, 6 tests; `RunnersUseClassicScp`, 1 test)
 
@@ -94,20 +94,31 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | Python test | Rust counterpart | Status |
 | --- | --- | --- |
 | `tests/test_sqlite_backup_runners.py` (`.timeout`) | `mutation/tools.jsonl` (`sqlite-timeout`: 1, 30000, 999999 accepted; 0, 1000000, `01`, `-1`, extra space, missing `.backup`, order refused) and `sqlite-backup` | fixture done (S0); Rust pending (S3a) |
-| ops-control `test_echoport_remote_command_guard_policy.py` | `policy.jsonl` plus the S8 Rust `--check-policy` test | fixture done (S0); Rust pending (S1, S8) |
+| ops-control `test_echoport_remote_command_guard_policy.py` | `policy.jsonl` (`tests/layer1.rs`) plus the S8 Rust `--check-policy` test | Rust done (S1); ops-control pending (S8) |
 | role molecule verify | runs unchanged for impl `rust` and `shadow` (PLAN.md 6.2) | pending (S6) |
 
 ## New in S0 (Python, `tests/test_echoport_command_guard_fixtures.py`)
 
 | Test | What it pins | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `FixturesMatchTheGuard.test_guard_sha256` | `fixtures/GUARD_SHA256` is the guard's sha256 | the S1 drift step in `rust.yml` | done (S0) |
-| `FixturesMatchTheGuard.test_regenerating_gives_the_committed_fixtures` | `gen_fixtures.py check --record` (runners re-recorded) | the S1 drift step in `rust.yml` | done (S0) |
-| `FixturesMatchTheGuard.test_every_case_replays_from_its_env` | each case's env with its defaults reproduces the decision | the Layer-1 runner's virtual `GuardEnv` | done (S0); Rust pending (S1) |
+| `FixturesMatchTheGuard.test_guard_sha256` | `fixtures/GUARD_SHA256` is the guard's sha256 | the drift step in `rust.yml`; the oracle tests compare the oracle's guard with it | done (S0, S1) |
+| `FixturesMatchTheGuard.test_regenerating_gives_the_committed_fixtures` | `gen_fixtures.py check --record` (runners re-recorded) | the drift step in `rust.yml` (3.12, 3.13, repo venv with `--record`) | done (S0, S1) |
+| `FixturesMatchTheGuard.test_every_case_replays_from_its_env` | each case's env with its defaults reproduces the decision | the Layer-1 runner's virtual `GuardEnv` (`env::VirtualEnv`) | done (S0, S1) |
 | `FixturesMatchTheGuard.test_case_ids_are_unique_and_allowed_differences_name_real_cases` | ids, `parity/allowed_differences.json` | — | done (S0) |
-| `FixturesMatchTheGuard.test_manifest_lists_every_fixture_file` | `fixtures/manifest.json` | the Layer-1 runner reads its file list | done (S0) |
+| `FixturesMatchTheGuard.test_manifest_lists_every_fixture_file` | `fixtures/manifest.json` | the Layer-1 runner reads its file list and checks the case count | done (S0, S1) |
 | `PrefilterContract.test_runners_and_journal_send_no_backslash_hash_or_odd_character` | no runner or live command has `\`, `#` or a character outside printable ASCII and tab | — | done (S0) |
-| `PrefilterContract.test_p3_tags_follow_the_prefilter_rule` | the `p3` tags of PLAN.md 4.1/4.2 | the Layer-1 runner's tag handling | done (S0); Rust pending (S1) |
+| `PrefilterContract.test_p3_tags_follow_the_prefilter_rule` | the `p3` tags of PLAN.md 4.1/4.2 | the Layer-1 runner's tag handling | done (S0, S1) |
 | `PrefilterContract.test_accepted_fixture_commands_are_printable_ascii` | every accepted fixture command is printable ASCII and tab | — | done (S0) |
-| `PrefilterContract.test_python_accepts_only_printable_ascii_and_tab` | seeded random edits: whatever Python accepts is printable ASCII and tab | `prefilter.rs` unit tests | done (S0); Rust pending (S1) |
-| `OracleServer.test_round_trip` | `parity/oracle.py` JSON lines: `ping`, `check`, `split`, `check_policy`, `realpath` | the S1/S2/S5 proptests call it | done (S0) |
+| `PrefilterContract.test_python_accepts_only_printable_ascii_and_tab` | seeded random edits: whatever Python accepts is printable ASCII and tab | `prefilter::tests`; the Layer-1 `prefilter` cases | done (S0, S1) |
+| `OracleServer.test_round_trip` | `parity/oracle.py` JSON lines: `ping`, `check`, `split`, `check_policy`, `realpath` | `tests/tokeniser.rs` (`ping`, `split`, S1); S2/S5 proptests | done (S0); `split` used (S1) |
+
+## New in S1 (Rust)
+
+| Test | What it pins | Status |
+| --- | --- | --- |
+| `tests/layer1.rs` `decision_fixtures` | every decision case: a Rust acceptance equals Python's decision; a refusal outside an unported branch is Python's, with Python's reason (except `p3` and listed cases) | done (S1); tool branches pending (S3a, S3b) |
+| `tests/layer1.rs` `policy_fixtures` | every `--check-policy` document: Python's verdict, normalized policy and error type (message for printable `Refused`/`KeyError`); `p3` documents may only be refused more | done (S1) |
+| `tests/tokeniser.rs` `fixture_commands_split_like_python` | every distinct fixture command past the prefilter splits as `shlex.split` | done (S1) |
+| `tests/tokeniser.rs` `random_commands_split_like_python` | 2,000 seeded random commands (quotes, whitespace, metacharacters, `\`, `#`, control and non-ASCII): past the prefilter, the tokens or the error equal Python's | done (S1) |
+| `tests/cli.rs` | argv grammar (usage exit 2), `--version`, `--check-policy`, forced-command mode refusing until S4 | done (S1) |
+| `prefilter::tests`, `tokens::tests`, `repr::tests`, `env::tests`, `policy::tests`, `rules::tests` | the pre-checks and prefilter (4.1), the raw shapes, Python `repr` (4.3), `normpath`, the strict policy types (4.2), the dispatcher | done (S1) |

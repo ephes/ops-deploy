@@ -1,0 +1,25 @@
+[package]
+name = "echoport-command-guard"
+# Own version (not the workspace's): the binary is released by the tag
+# `echoport-command-guard-v<version>` (PLAN.md 8.1, PLAN-foundation.md section 4).
+version = "0.0.0"
+description = "Forced-command allowlist for the Echoport remote backup runners (Rust port of echoport-remote-command-guard)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Crate choices: PLAN.md 5.2.
+[dependencies]
+regex-lite = "0.1.9"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+shlex = "2.0.1"
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

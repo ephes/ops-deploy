@@ -8,7 +8,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
 | `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | skeleton (F1): only `metrics-httpd --version` |
-| `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | contract fixtures (S0); not yet a workspace member (its S1 adds the crate) |
+| `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | crate skeleton (S1): `--version`, `--check-policy`, prefilter and tokeniser; every command still refused |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
 `build_ignore` excludes `rust` and `.github`, and
@@ -29,7 +29,7 @@ rust/
   scripts/              stdlib Python helpers for CI (ci_excludes.py) and releases
                         (release_checks.py), with tests and testdata/
   metrics-httpd/        crate + binary `metrics-httpd`
-  echoport-command-guard/  plan, Python oracle and fixtures; crate + binary from its S1
+  echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures
 ```
 
 Rules (PLAN-foundation.md section 1):
@@ -73,7 +73,9 @@ python3 -I -m unittest discover -s scripts -p 'test_*.py'
 
 Neither recipe is a dependency of `just test`, so the Ansible test suite keeps
 working without a Rust toolchain. Run them in a worktree, not in a shared
-checkout: they write `rust/target/`.
+checkout: they write `rust/target/`. The `cargo test` of
+echoport-command-guard runs its Python oracle with `python3` (or
+`$ECHOPORT_ORACLE_PYTHON`; CI uses 3.12), so a Python 3 must be on `PATH`.
 
 `metrics-httpd --version` prints `metrics-httpd <version> (<commit>)`. The
 crate's `build.rs` embeds the commit: `METRICS_HTTPD_GIT_COMMIT` if set (the
@@ -125,6 +127,11 @@ keyed on `rust-toolchain.toml` and `Cargo.lock`, the CI exclusions, then
 0.20.2 (the release tarball, sha256-checked, as mailgun-relay) with
 `cargo deny --locked check`, and the `rust/scripts` tests with the runner's
 `python3` (3.10; the scripts are stdlib-only).
+
+Crate steps in the same job (PLAN-foundation.md section 3 allows them):
+echoport-command-guard sets up uv with Python 3.12 for its oracle tests
+(`ECHOPORT_ORACLE_PYTHON`) and runs its fixture drift check
+(`echoport-command-guard/README.md`).
 
 If GitHub retires the `ubuntu-22.04` image, the same steps run in a
 `ubuntu:22.04` container on `ubuntu-latest` (PLAN-foundation.md section 2).
