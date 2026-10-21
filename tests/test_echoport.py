@@ -28,6 +28,7 @@ from ops_deploy.services.echoport.deploy import (
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 from tests.echoport_fixtures import make_source
+from tests.hsts import hsts_headers
 
 HOME = "/home/echoport"
 SITE = f"{HOME}/site"
@@ -801,3 +802,7 @@ def test_account_secrets_follow_the_roles_input_check(cfg: EchoportConfig) -> No
         check_secrets(cfg, values(cfg, minio_access_key="minio-root-user"))
     with pytest.raises(ConfigValidationError, match="requires cleanup_enabled"):
         make_cfg(cfg.source_path.parent / "other", cleanup_enabled=False)
+
+
+def test_route_sends_hsts_without_preload(cfg: EchoportConfig) -> None:
+    assert len(hsts_headers(route_text(cfg, values(cfg)))) == 1

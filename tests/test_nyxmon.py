@@ -14,6 +14,7 @@ from ops_deploy.services.nyxmon import NyxmonConfig, deploy_nyxmon
 from ops_deploy.services.nyxmon.deploy import SQLITE_PRIVACY, TEMPLATE_PACKAGE, render_env, traefik_config
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
+from tests.hsts import hsts_headers
 from tests.nyxmon_fixtures import SOURCE_FILES, make_source
 
 SITE = "/home/nyxmon/site"
@@ -366,3 +367,7 @@ def test_source_must_be_a_nyxmon_checkout(tmp_path: Path) -> None:
 def test_role_validations(tmp_path: Path, overrides: dict[str, Any]) -> None:
     with pytest.raises(ConfigValidationError):
         NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("secrets/prod/nyxmon.yml"), **overrides)
+
+
+def test_route_sends_hsts_without_preload(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1

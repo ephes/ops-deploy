@@ -13,6 +13,7 @@ from ops_deploy.services.work_app import WorkAppConfig, deploy_work_app
 from ops_deploy.services.work_app.deploy import render, render_env, render_route, traefik_config
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
+from tests.hsts import hsts_headers
 from tests.work_app_fixtures import SOURCE_FILES, make_source
 
 HOME = "/home/work"
@@ -428,3 +429,7 @@ def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: WorkAppCo
     assert verify.changed
     assert verify.read_only
     assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)
+
+
+def test_route_sends_hsts_without_preload(cfg: WorkAppConfig, secrets: SecretValues) -> None:
+    assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1

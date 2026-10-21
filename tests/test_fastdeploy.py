@@ -25,6 +25,7 @@ from ops_deploy.services.fastdeploy.deploy import (
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 from tests.fastdeploy_fixtures import make_source
+from tests.hsts import hsts_headers
 
 SITE = "/home/fastdeploy/site"
 SECRET_VALUES = {
@@ -551,3 +552,7 @@ def test_admins_and_restore_policies_are_not_rendered_by_default(cfg: Fastdeploy
         assert "SERVICE_TOKEN_ADMIN_USERS" not in env
         assert "RESTORE_POLICIES" not in env
         assert "# Restores" not in env
+
+
+def test_route_sends_hsts_without_preload(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1

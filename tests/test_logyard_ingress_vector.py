@@ -23,6 +23,7 @@ from ops_deploy.services.logyard import ingress as ingress_module
 from ops_deploy.services.logyard import vector as vector_module
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
+from tests.hsts import hsts_headers
 from tests.logyard_fixtures import ingress_config, make_source, secrets_values, stack_config, vector_config
 from tests.test_infra_docker_vector import vector_converged
 from tests.test_logyard import converged as core_converged
@@ -400,3 +401,7 @@ def test_converged_stack_changes_nothing(tmp_path: Path) -> None:
     assert run.succeeded, run.error
     assert run.mutating_changed_ops == []
     assert run.uploaded_paths == []
+
+
+def test_ingress_route_sends_hsts_without_preload() -> None:
+    assert len(hsts_headers(ingress_module.render_route(ingress_config()))) == 1

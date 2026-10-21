@@ -13,6 +13,7 @@ from ops_deploy.services.recorder import RecorderConfig, deploy_recorder
 from ops_deploy.services.recorder.deploy import TEMPLATE_PACKAGE, render_env, render_route, traefik_config
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
+from tests.hsts import hsts_headers
 from tests.recorder_fixtures import BINARY, FakeToolchain, make_source
 
 HOST = "recorder.example.com"
@@ -255,3 +256,7 @@ def test_relative_controller_paths_are_made_absolute(tmp_path: Path, monkeypatch
     )
     assert cfg.source_path == tmp_path / "recorder"
     assert cfg.artifact_path == tmp_path / "out/recorderd"
+
+
+def test_route_sends_hsts_without_preload(cfg: RecorderConfig) -> None:
+    assert len(hsts_headers(render_route(cfg, traefik_config(cfg)), seconds=31536000)) == 1

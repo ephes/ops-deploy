@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- Traefik routes no longer advertise HSTS `preload`: port of ops-library
+  `abae172` (2026-10-19), checked against ops-library main `121564c4`
+  (2.61.0). `stsPreload: true` is gone from the shared `traefik_route`
+  template (nyxmon, fastdeploy, compose_app, toyweb), the native_app route,
+  the route templates of archive, chesslab, delve, echoport, graphyard
+  ingress, logyard ingress, recorder and work_app, and django_site's Wagtail
+  route, as well as from the vendored role templates in
+  `tests/parity/ansible`, which match ops-library main again. HSTS
+  lifetimes, `includeSubDomains`, `forceSTSHeader` and all other headers are
+  unchanged. No domain was submitted to the browser preload list.
+  `tests/test_traefik_hsts.py` refuses `stsPreload` in any template and the
+  service tests check each rendered route. In the drift manifest
+  `graphyard_ingress_deploy`, `work_app_deploy` and `fastdeploy_deploy` get
+  their main digests: `abae172` was the last unported change of each (the
+  fastdeploy entries below ported the others; `3221e0c4` changed only a
+  comment in its tasks, ops-deploy already reuses the deployed hash).
+  `nyxmon_deploy` keeps its old digest (it also carries `13ca7465`, not
+  ported), as does `minio_deploy` (its basic-auth hash reuse, `3221e0c4`;
+  ops-deploy does not port the MinIO route).
+  Operational effect: the next pyinfra deploy of a service whose live route
+  still has `stsPreload: true` rewrites that route file once, exactly as an
+  Ansible run with current ops-library would. Traefik's file provider picks
+  the change up without a restart; archive, chesslab and echoport restart
+  Traefik once for the changed route, as their roles' `reload traefik`
+  handler does, and so does toyweb (the helper's default `restart="traefik"`).
+  The run after that changes nothing.
+
 - `fastdeploy`: `service_token_admin_users` (with
   `service_token_admin_initial_user` for the secret initial user) and
   `restore_policies` write FastDeploy's `SERVICE_TOKEN_ADMIN_USERS` and
@@ -9,8 +36,9 @@
   issuance and every restore without them). Each is written only when set, as
   compact JSON in single quotes in `.env` and `.env.shell`, byte-identical to
   the `fastdeploy_deploy` role of ops-library 2.59.0 (re-vendored
-  `fastdeploy.env.j2`). The role's drift digest stays at its old value: the
-  HSTS preload change (ops-library `abae172`) is still not ported. Invalid
+  `fastdeploy.env.j2`). The role's drift digest stayed at its old value
+  until the HSTS preload change (ops-library `abae172`) was ported (see
+  above). Invalid
   user names, buckets and prefixes fail the config.
 
 - Pin the managed uv installer to 0.13.4 with verified Linux release checksums and refresh certifi to 2026.10.19 for the eMudhra trust incident. The updated `uv_install` mirror digest is from the paired incident ops-library branch; other digests retain their recorded source baseline.
@@ -177,8 +205,8 @@
   writes the services root `root:root` and, with the re-vendored
   `sudoers_blanket_check.py`, no longer restores sudoers rules naming scripts
   below the FastDeploy site. `tests/parity/ops_library_roles.json` records the
-  new `fastdeploy_restore`; `fastdeploy_deploy` keeps its old digest because
-  the unrelated HSTS preload change (ops-library `abae172`) is not ported yet.
+  new `fastdeploy_restore`; `fastdeploy_deploy` kept its old digest until
+  the HSTS preload change (ops-library `abae172`) was ported (see above).
 
 - Traefik backup now captures the whole dynamic route-config tree by default,
   matching ops-library 2.48.1 coverage and metadata flags. Source modes are kept

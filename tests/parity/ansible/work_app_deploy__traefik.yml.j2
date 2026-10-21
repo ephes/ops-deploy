@@ -81,7 +81,6 @@ http:
         contentTypeNosniff: true
         forceSTSHeader: true
         stsIncludeSubdomains: true
-        stsPreload: true
         stsSeconds: 15552000
         # The backend answers X-Frame-Options: DENY itself. Traefik replaces
         # the backend's header with this value, so it must not be weaker.

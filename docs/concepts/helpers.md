@@ -170,6 +170,12 @@ provider's `watch = true` instead.
 | `health_check` | `None` | `HealthCheck(path="/", interval="30s", timeout="3s")` |
 | `internal_only` | `False` | one router for `internal_ip_ranges` (`<name>-int`, its `-http` with the same rule) and none for anyone else; excludes `basic_auth` (compose_app's `access: internal`) |
 
+The `<name>-headers` middleware sends HSTS for 180 days
+(`stsSeconds: 15552000`) with `includeSubDomains` and `forceSTSHeader`, but
+without `preload`, as the roles' templates since ops-library `abae172`: the
+owner decided against browser preload registration. No route template in
+ops-deploy sets `stsPreload` (`tests/test_traefik_hsts.py`).
+
 ### Basic auth hashing
 
 - The bcrypt hash is computed **on the controller** in the format

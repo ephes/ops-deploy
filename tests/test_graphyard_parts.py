@@ -35,6 +35,7 @@ from tests.graphyard_fixtures import (
     stack_config,
     vector_config,
 )
+from tests.hsts import hsts_headers
 from tests.test_graphyard import as_file, assert_no_secret_leaks
 from tests.test_graphyard import converged as core_converged
 from tests.test_infra_docker_vector import vector_converged
@@ -594,3 +595,8 @@ def test_a_symlinked_provisioning_file_is_incoming(tmp_path: Path) -> None:
     cfg = stack_config(source)
 
     assert stack_module.incoming_provisioning(cfg) == (datasource.parent / "real.yaml").read_text()
+
+
+def test_ingress_route_sends_hsts_without_preload() -> None:
+    # Grafana and the ingest API each have their own headers middleware.
+    assert len(hsts_headers(ingress_module.render_route(ingress_config(), HASH))) == 2

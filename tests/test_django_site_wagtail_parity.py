@@ -10,6 +10,7 @@ from dotenv import dotenv_values
 from ops_deploy.services.django_site import EnvEntry, EnvSpec, Route
 from ops_deploy.services.django_site.render import render, render_env
 from tests.django_site_fixtures import values
+from tests.hsts import hsts_headers
 from tests.test_django_site_postgres import config
 
 ORIGIN = Path(__file__).parent / "parity/ansible"
@@ -113,3 +114,14 @@ def test_route_matches_origin_except_comments(tmp_path: Path, resolver: str) -> 
         return "\n".join(line for line in text.splitlines() if line and not line.startswith("#"))
 
     assert normalize(render("route.traefik.yml.j2", cfg)) == normalize(origin)
+
+
+def test_wagtail_route_sends_hsts_without_preload(tmp_path: Path) -> None:
+    route = Route(
+        fqdn="school.example.com",
+        host_rule="Host(`school.example.com`)",
+        wagtail=True,
+        public_reason="Public school website",
+    )
+
+    assert len(hsts_headers(render("route.traefik.yml.j2", config(tmp_path, route=route)))) == 1

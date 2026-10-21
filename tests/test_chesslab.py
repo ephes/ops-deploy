@@ -23,6 +23,7 @@ from ops_deploy.services.chesslab.deploy import (
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 from tests.chesslab_fixtures import make_source
+from tests.hsts import hsts_headers
 
 HOME = "/home/chesslab"
 SITE = f"{HOME}/site"
@@ -385,3 +386,7 @@ def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: ChesslabC
     assert verify.changed
     assert verify.read_only
     assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)
+
+
+def test_route_sends_hsts_without_preload(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1
