@@ -6,7 +6,8 @@ rust-check`/`rust-test`; see `rust/README.md`); F2 implemented
 (`rust-release.yml`, `rust/scripts/release_checks.py` with the
 `release.json` format and tests; `rust/README.md` "Releases"); F3 implemented
 (`roles/rust_release_binary` with the `protect` list and the `previous`
-rollback pin, 6.2); F4 planned. Campaign
+rollback pin, 6.2); F4 implemented in ops-deploy
+(`ops_deploy.helpers.rust_release`, 6.3). Campaign
 "Rust-Ports Runde 2" (umbrella item `rust-ports-campaign`), stream
 `rust-metrics-httpd`, which also owns this foundation.
 
@@ -431,6 +432,23 @@ same `protect` input and fail-closed cases (6.2).
 nyxmon's agent keeps its own code in this campaign unless the extraction is a
 pure refactor with its tests unchanged (the F4 worker decides; the review
 checks it).
+
+Implemented in F4 (see ops-deploy `docs/concepts/helpers.md`, "Pinned Rust
+release binaries"): `install_release`, `pin_release` and `prune_releases`
+mirror the role's `install`, `pin` and `prune` entry points. The decisions
+are not re-implemented: F3's `plugins/filter/rust_release.py` is vendored
+byte for byte as `helpers/templates/rust_release.py.txt`, and ops-deploy's
+drift test compares the two. The steps run on the host at execution time, in
+a standard-library script sent on stdin to `/usr/bin/python3 -I -` as root,
+with `--check` probes while planning. pyinfra has no rescue, so with
+`fail_hard=False` a rejected install warns and the deploy goes on;
+`Install.failed()` gates later `_if` callbacks, and prune is skipped after a
+failed install in the same run. ops-deploy's `tests/test_rust_release.py`
+runs this role on a twin tree when `OPS_LIBRARY_PATH` and `ansible-playbook`
+are available, and asserts byte-identical trees and the same prune decisions
+(acceptance in 7). nyxmon's and graphyard's agents keep their own code. They
+use `.staging` and `.previous-version` and have no `.pins`, so moving them to
+the helper would change their layout and is not a pure refactor.
 
 ## 7. Slices
 
