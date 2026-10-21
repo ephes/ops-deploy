@@ -1,8 +1,8 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a and S4 implemented (campaign "Rust-Ports Runde 2", stream
-`rust-echoport-command-guard`; see `README.md`). Nothing in this directory is
-released or deployed yet. This file is the contract for the implementers and
+Status: S0, S1, S2, S3a, S3b and S4 implemented (campaign "Rust-Ports Runde
+2", stream `rust-echoport-command-guard`; see `README.md`). Nothing in this
+directory is released or deployed yet. This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
 file first, in its own reviewed diff.
 

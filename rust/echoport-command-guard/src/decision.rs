@@ -57,34 +57,17 @@ impl Decision {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused {
     reason: String,
-    not_ported: bool,
 }
 
 impl Refused {
     pub fn new(reason: impl Into<String>) -> Self {
         Self {
             reason: reason.into(),
-            not_ported: false,
-        }
-    }
-
-    /// A refusal by a branch of `check()` that is not ported yet (PLAN.md
-    /// 5.3). It refuses like any other refusal; the Layer-1 runner does not
-    /// hold it against Python's decision. The variant goes away with the last
-    /// ported branch (S3b).
-    pub fn not_ported(reason: impl Into<String>) -> Self {
-        Self {
-            reason: reason.into(),
-            not_ported: true,
         }
     }
 
     pub fn reason(&self) -> &str {
         &self.reason
-    }
-
-    pub fn is_not_ported(&self) -> bool {
-        self.not_ported
     }
 }
 

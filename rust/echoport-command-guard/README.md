@@ -6,8 +6,9 @@ The plan and contract are in [PLAN.md](PLAN.md), the test map in
 hosts run the Python guard.
 
 Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
-layer), **S3a** (the rules without filesystem) and **S4** (runtime and
-exec). What exists:
+layer), **S3a** (the rules without filesystem), **S3b** (the rules with
+filesystem) and **S4** (runtime and exec). Every branch of the Python
+guard's `check()` is ported. What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -46,17 +47,22 @@ exec). What exists:
   - Any other argv is the Python guard's usage error (exit 2).
   - The binary's `GuardEnv` is `env::RealEnv` (S2, below): the real euid,
     NSS user lookups, `lstat` and `realpath`.
-  - `check()` ports the pre-checks, the prefilter (PLAN.md 4.1), the two raw
-    shapes (detected only), the tokeniser and the tool dispatcher (S1), and
-    the branches that need no filesystem (S3a, `src/rules/`): `sudo -u
-    postgres` and `runuser -u postgres --` with every PostgreSQL branch
-    (including the `pg_restore … < file` redirect), `runuser -u <user> --
-    sqlite3` (`.backup`, `.timeout`, the integrity check), `systemctl`,
-    `curl`, `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du`
-    and the `sh -c` probe. The branches that look at the filesystem (the raw
-    `tar` and `cat >` shapes, `scp`, `rsync`, `rm -f` of `-wal`/`-shm`
-    files, `cat`, `sha256sum`, `readlink`, `test`, `mv`, `mkdir`, `chmod`,
-    `chown`) still refuse; S3b ports them.
+  - `check()` ports the pre-checks, the prefilter (PLAN.md 4.1), the
+    tokeniser and the tool dispatcher (S1); the branches that need no
+    filesystem (S3a, `src/rules/`): `sudo -u postgres` and `runuser -u
+    postgres --` with every PostgreSQL branch (including the `pg_restore … <
+    file` redirect), `runuser -u <user> -- sqlite3` (`.backup`, `.timeout`,
+    the integrity check), `systemctl`, `curl`, `rm -f` of temp dumps, `rm
+    -rf --` of temp dirs, `mktemp`, `du` and the `sh -c` probe; and the
+    branches that look at the filesystem through the `GuardEnv` (S3b): the
+    raw `umask 077 && tar …` shape (umask `077`) and `umask 077 && cat > …`
+    (a created stdout redirect), `scp -f/-t` and the three rsync server
+    forms (`src/rules/transfer.rs`; uploads and receivers run as `runuser -u
+    <owner> --`), `rm -f` of `-wal`/`-shm` files, the snapshot `cat` (a
+    stdin redirect owned by the service user), `sha256sum`, `readlink`,
+    `test`, `mv`, `mkdir -p` (as the root's owner), `chmod` and `chown`. An
+    unbalanced quote inside the `tar` shape, where the Python guard crashes,
+    is refused as `unparsable command: No closing quotation` (PLAN.md 4.2).
   - The filesystem layer (S2): `env::RealEnv`, the real `GuardEnv`
     (`geteuid`, `getpwnam_r` through NSS, `lstat` with glibc's `strerror`
     texts, `realpath`); `pyrealpath`, a port of CPython's non-strict
@@ -92,19 +98,21 @@ The tests:
 
 - `src/**` unit tests: prefilter, tokeniser, `repr`, `normpath`, the policy
   loader and its helpers (scratch databases, `mktemp` results), the
-  dispatcher and the S3a rules (`rules::{postgres,sqlite,files}`; their
-  expected reasons are the Python guard's), `pyrealpath`, and the
-  `rules::paths` helpers with Python's refusal reasons.
+  dispatcher and the rules (`rules::{postgres,sqlite,files,transfer}`,
+  with virtual filesystems for the S3b branches; their expected reasons are
+  the Python guard's), `pyrealpath`, and the `rules::paths` helpers with
+  Python's refusal reasons.
 - `tests/layer1.rs`, the Layer-1 runner: every decision and policy case of
   `fixtures/` against the Rust guard, with the case's recorded environment as
-  a virtual `GuardEnv`. A Rust acceptance must equal Python's decision. A
-  refusal by a branch that is not ported yet counts as pending, and only a
-  command that reaches an S3b branch may be pending. Any other refusal must
-  be Python's, with Python's reason, unless the case is listed in
-  `parity/allowed_differences.json`, or has a `p3` tag and is refused by the
-  prefilter or is a `python-error` case. Policy cases must
-  give Python's verdict, normalized policy and error type, and Python's
-  message for `Refused` and `KeyError` texts in printable ASCII (PLAN.md 4.3).
+  a virtual `GuardEnv`. A Rust acceptance must equal Python's decision, and
+  every case Python allows must be allowed (no branch is pending since
+  S3b). A refusal must be Python's, with Python's reason, unless the case
+  is listed in `parity/allowed_differences.json`, or has a `p3` tag and is
+  refused by the prefilter. Where Python's `check()` crashes (the
+  `python-error` cases), Rust's reason must be `unparsable command:
+  <Python's error text>`. Policy cases must give Python's verdict, normalized policy
+  and error type, and Python's message for `Refused` and `KeyError` texts in
+  printable ASCII (PLAN.md 4.3).
 - `tests/tokeniser.rs`: the tokeniser against Python's `shlex.split` through
   the oracle server, over every fixture command that passes the prefilter
   and over 2,000 seeded random commands (proptest). `PROPTEST_CASES=100000`

@@ -17,8 +17,8 @@ Kinds:
   realpath and user lookups recorded (a command two tests share is listed
   once, under the first test by name); source `runner` every command the
   runners send; `journal`, `mutation`, `fs` and `policy` are generated
-  (PLAN.md 7.2). The Rust Layer-1 runner (S1) reads them; until a branch is
-  ported its cases are expected to be refused (counted as pending).
+  (PLAN.md 7.2). The Rust Layer-1 runner (S1) reads them; since S3b every
+  branch is ported and every case is decided.
 - **unit** / **process**: Rust tests (`src/**` unit tests, `tests/cli.rs`).
 - **Layer 2** / **Layer 3**: container differential and sshd end-to-end tests
   (`parity/e2e/`, PLAN.md 7.5, 7.6).
@@ -28,26 +28,26 @@ Kinds:
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
 | `test_postgres_dump_and_restore` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests | done (S0, S3a) |
-| `test_tar_runs_with_umask` | `unit.jsonl` (allowed; foreign, open and symlinked dir; symlinked archive) | Layer-1 runner; `rules::files` unit tests | fixture done (S0); Rust pending (S3b) |
-| `test_uploads_run_as_the_target_owner` | `unit.jsonl` | Layer-1 runner; `rules::transfer` unit tests | fixture done (S0); Rust pending (S3b) |
-| `test_exact_rsync_commands` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_django_chat_shapes` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests (scratch restore, runner queries) | fixture done (S0); PostgreSQL, `mktemp`, `rm -rf` done (S3a); `cat >`, `sha256sum` pending (S3b) |
-| `test_gotosocial_shapes` | `unit.jsonl` (`.timeout` included) | Layer-1 runner; `rules::sqlite` unit tests | fixture done (S0); `sqlite3`, `systemctl`, `mktemp`, `rm -rf`, `curl` done (S3a); `chown`, snapshot `cat`, `rm` wal/shm pending (S3b) |
+| `test_tar_runs_with_umask` | `unit.jsonl` (allowed; foreign, open and symlinked dir; symlinked archive) | Layer-1 runner; `rules::files::tests::tar_runs_with_umask` | done (S0, S3b) |
+| `test_uploads_run_as_the_target_owner` | `unit.jsonl` | Layer-1 runner; `rules::transfer::tests::scp_uploads_run_as_the_target_owner`, `exact_rsync_commands`; `rules::files::tests::mkdir_runs_as_the_roots_owner` | done (S0, S3b) |
+| `test_exact_rsync_commands` | `unit.jsonl` | Layer-1 runner; `rules::transfer::tests::exact_rsync_commands` | done (S0, S3b) |
+| `test_django_chat_shapes` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests (scratch restore, runner queries) | fixture done (S0); PostgreSQL, `mktemp`, `rm -rf` done (S3a); `cat >`, `sha256sum` done (S3b) |
+| `test_gotosocial_shapes` | `unit.jsonl` (`.timeout` included) | Layer-1 runner; `rules::sqlite` unit tests | fixture done (S0); `sqlite3`, `systemctl`, `mktemp`, `rm -rf`, `curl` done (S3a); `chown`, snapshot `cat`, `rm` wal/shm done (S3b) |
 | `test_policy_rejects_unsafe_entries` | `policy.jsonl` (source `unit`) | `tests/layer1.rs` `policy_fixtures` over `policy.jsonl`; `policy::tests` | done (S1) |
 
 ## Refusals (`GuardRefusals`, 9 tests)
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner; `rules::tests` | unknown tools, prefilter and tokeniser stages done (S1); S3a tool branches done (S3a); S3b tool branches pending (S3b) |
-| `test_host_specific_rules` | `unit.jsonl` | Layer-1 runner | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
-| `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner; `rules::paths::tests::roots_as_python` | helper done (S2); Rust rule pending (S3b) |
-| `test_rsync_options_must_match_exactly` | `unit.jsonl`; `mutation/tools.jsonl` (`rsync-*`) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_scp_refuses_targets_that_are_not_plain_files` | `unit.jsonl` (lstat recorded); `fs.jsonl` | Layer-1 runner; `rules::paths::tests::plain_file_reasons_as_python` | helper done (S2); Rust rule pending (S3b) |
+| `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner; `rules::tests` | unknown tools, prefilter and tokeniser stages done (S1); S3a tool branches done (S3a); S3b tool branches done (S3b) |
+| `test_host_specific_rules` | `unit.jsonl` | Layer-1 runner | fixture done (S0); S3a branches done (S3a); S3b branches done (S3b) |
+| `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner; `rules::paths::tests::roots_as_python`; `rules::files::tests::rm_of_sqlite_side_files_inside_a_root`, `rules::transfer::tests::scp_download_checks_the_resolved_path` | helper done (S2); rules done (S3b) |
+| `test_rsync_options_must_match_exactly` | `unit.jsonl`; `mutation/tools.jsonl` (`rsync-*`) | Layer-1 runner; `rules::transfer::tests::exact_rsync_commands` | done (S0, S3b) |
+| `test_scp_refuses_targets_that_are_not_plain_files` | `unit.jsonl` (lstat recorded); `fs.jsonl` | Layer-1 runner; `rules::paths::tests::plain_file_reasons_as_python`; `rules::transfer::tests` | helper done (S2); rule done (S3b) |
 | `test_scp_against_a_real_tree` | — (real filesystem) | Layer 2 | filesystem part done (S2: `parity/e2e/layer2_realpath.py`, the real `GuardEnv` against Python 3.12 and 3.13); the `scp` decision pending (S5) |
-| `test_mv_only_onto_new_names_within_one_root` | `unit.jsonl`; `fs.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_django_chat_refusals` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
-| `test_gotosocial_refusals` | `unit.jsonl` | Layer-1 runner; `rules::sqlite` unit tests | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
+| `test_mv_only_onto_new_names_within_one_root` | `unit.jsonl`; `fs.jsonl` | Layer-1 runner; `rules::files::tests::mv_only_onto_new_names_within_one_root` | done (S0, S3b) |
+| `test_django_chat_refusals` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests; `rules::files::tests` (`cat >`, `sha256sum`) | fixture done (S0); S3a branches done (S3a); S3b branches done (S3b) |
+| `test_gotosocial_refusals` | `unit.jsonl` | Layer-1 runner; `rules::sqlite` unit tests; `rules::files::tests` (`chown`, snapshot `cat`) | fixture done (S0); S3a branches done (S3a); S3b branches done (S3b) |
 
 ## Redirects (`GuardRedirects`, 5 tests)
 
@@ -87,12 +87,12 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_production_db_runners` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); `scp` and the other S3b shapes pending (S3b) |
-| `test_staging_db_runners` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); `scp` and the other S3b shapes pending (S3b) |
-| `test_marina_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_villakunterbunt_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_django_chat_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); `cat >`, `sha256sum` pending (S3b) |
-| `test_gotosocial_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); S3b shapes pending (S3b) |
+| `test_production_db_runners` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
+| `test_staging_db_runners` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
+| `test_marina_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3b) |
+| `test_villakunterbunt_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3b) |
+| `test_django_chat_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
+| `test_gotosocial_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
 | `RunnersUseClassicScp.test_scp_helpers_pass_dash_O` | — | n/a: tests the runner templates, not the guard; stays Python | n/a |
 
 ## Other suites
@@ -122,7 +122,7 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 
 | Test | What it pins | Status |
 | --- | --- | --- |
-| `tests/layer1.rs` `decision_fixtures` | every decision case: a Rust acceptance equals Python's decision; a refusal outside an unported branch is Python's, with Python's reason (except listed cases, and `p3` cases refused by the prefilter or tagged `python-error`); only commands that reach an S3b branch may be pending | done (S1, S3a); S3b branches pending (S3b) |
+| `tests/layer1.rs` `decision_fixtures` | every decision case: a Rust acceptance equals Python's decision; a refusal is Python's, with Python's reason (except listed cases, and `p3` cases refused by the prefilter); until S3b, commands that reached an unported branch were pending | done (S1, S3a); every case decided (S3b) |
 | `tests/layer1.rs` `policy_fixtures` | every `--check-policy` document: Python's verdict, normalized policy and error type (message for printable `Refused`/`KeyError`); `p3` documents may only be refused more | done (S1) |
 | `tests/tokeniser.rs` `fixture_commands_split_like_python` | every distinct fixture command past the prefilter splits as `shlex.split` | done (S1) |
 | `tests/tokeniser.rs` `random_commands_split_like_python` | 2,000 seeded random commands (quotes, whitespace, metacharacters, `\`, `#`, control and non-ASCII): past the prefilter, the tokens or the error equal Python's | done (S1) |
@@ -136,8 +136,18 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `rules::postgres::tests` | every `_check_postgres` branch (`pg_dump` both forms, `dropdb`, `createdb` both forms, `pg_restore` from a temp dump and the scratch restore with its `< file` redirect, `psql` `SELECT 1` and the three runner queries), with Python's reasons | done (S3a) |
 | `rules::sqlite::tests` | `.backup`, `.timeout` 1/30000/999999 and its refused variants, the integrity check, the per-user snapshot match | done (S3a) |
 | `rules::files::tests` | `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du`, the `sh -c` probe (and that a path `shlex.quote` would change allows no script) | done (S3a) |
-| `rules::tests` | `sudo`, `runuser`, `systemctl`, `curl`, `_is_temp_dump`, `_split_in_dir`; only the S3b branches are stubs | done (S3a) |
+| `rules::tests` | `sudo`, `runuser`, `systemctl`, `curl`, `_is_temp_dump`, `_split_in_dir`; the S3b branches were stubs until S3b | done (S3a) |
 | `policy::tests` `scratch_databases`, `mktemp_results` | `Policy.scratch_database`, `_temp_dir_re`, `private_temp_dir`, `snapshot_for_temp_dir` (first match wins) | done (S3a) |
+
+## New in S3b (Rust)
+
+| Test | What it pins | Status |
+| --- | --- | --- |
+| `tests/layer1.rs` `decision_fixtures` | no pending branch: every case Python allows (3,505) is allowed with an identical decision; a `python-error` case (Python's `check()` crashes on an unbalanced quote in the `tar` shape) is refused as `unparsable command: <Python's error>` | done (S3b) |
+| `rules::transfer::tests` | `_check_scp`: downloads as root (temp dumps owned by postgres, the private media archive in root's private dir, read files and roots, the resolved path checked as a plain file), uploads as `runuser -u <owner>` (restore dumps as postgres, `.tmp`/`.restore-tmp` in a root, never through a link); `_check_rsync`: the three exact server forms, the trailing `/`, sender as root, receivers as the root's owner | done (S3b) |
+| `rules::files::tests` (S3b part) | the raw `tar` shape (umask, argv from the split group, private dir and archive checks, the crash case) and `cat >` (stdout redirect); `rm -f` of `-wal`/`-shm` (each path resolved); the snapshot `cat` (stdin redirect with the service user as owner); `sha256sum`; `readlink`, `test`, `chmod`; `mv` (in-place upload, new names within one root, `mv target exists`/`not checkable`); `mkdir -p` as the root's owner; `chown` (snapshot dir, root owner, `-R`) | done (S3b) |
+| `rules::tests::every_tool_has_a_branch` | every tool of `guard.py` has its branch; the raw shapes come before the tokeniser | done (S3b) |
+| `tests/cli.rs` `decide_prints_the_decision_only` | the binary's `--decide` prints an S3b redirect decision (`cat >`) and an S3b refusal resolved by the real `GuardEnv` | done (S3b) |
 
 ## New in S4 (Rust)
 

@@ -1,22 +1,23 @@
 //! `check()` (PLAN.md 3.4; `guard.py:452-619`): what to execute for an
 //! allowed command, or why it is refused.
 //!
-//! Ported: the pre-checks and the prefilter, the tokeniser, the trailing
-//! `< file` of `runuser`, the tool dispatcher (S1), and the branches that
-//! need no filesystem (S3a): `sudo` and `runuser` (PostgreSQL and SQLite,
-//! [`postgres`], [`sqlite`]), `systemctl`, `curl`, and in [`files`] `rm -f`
-//! of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du` and the `sh -c`
-//! probe. The branches that look at the filesystem (the two raw shapes,
-//! `scp`, `rsync`, `rm` of `-wal`/`-shm` files, `cat`, `sha256sum`,
-//! `readlink`, `test`, `mv`, `mkdir`, `chmod`, `chown`) are still stubs that
-//! refuse ([`Refused::not_ported`]); S3b ports them. Every branch keeps the
-//! order of `guard.py`'s checks, so that the refusal reasons match (PLAN.md
-//! 4.4).
+//! Every branch is ported: the pre-checks and the prefilter, the tokeniser,
+//! the trailing `< file` of `runuser`, the tool dispatcher (S1); the branches
+//! that need no filesystem (S3a): `sudo` and `runuser` (PostgreSQL and
+//! SQLite, [`postgres`], [`sqlite`]), `systemctl`, `curl`, and in [`files`]
+//! `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du` and the
+//! `sh -c` probe; and the branches that look at the filesystem through the
+//! [`GuardEnv`] and the [`paths`] helpers (S3b): the raw `tar` and `cat >`
+//! shapes, `rm -f` of `-wal`/`-shm` files, the snapshot `cat`, `sha256sum`,
+//! `readlink`, `test`, `mv`, `mkdir`, `chmod` and `chown` ([`files`]), and
+//! `scp` and `rsync` ([`transfer`]). Every branch keeps the order of
+//! `guard.py`'s checks, so that the refusal reasons match (PLAN.md 4.4).
 
 pub mod files;
 pub mod paths;
 pub mod postgres;
 pub mod sqlite;
+pub mod transfer;
 
 use crate::decision::{Decision, Refused};
 use crate::env::GuardEnv;
@@ -52,13 +53,11 @@ pub const TOOLS: [&str; 18] = [
 pub fn check(command: &[u8], policy: &Policy, env: &dyn GuardEnv) -> Result<Decision, Refused> {
     let command = prefilter::command_text(command)?;
 
-    if tokens::tar_shape(command).is_some() {
-        // `guard.py:457-469`, S3b.
-        return Err(Refused::not_ported("command not allowed: 'tar'"));
+    if let Some(group) = tokens::tar_shape(command) {
+        return files::tar(policy, group, env);
     }
-    if tokens::cat_to_file_shape(command).is_some() {
-        // `guard.py:471-476`, S3b.
-        return Err(Refused::not_ported("command not allowed: 'cat'"));
+    if let Some(target) = tokens::cat_to_file_shape(command) {
+        return files::cat_to_file(policy, target);
     }
 
     let mut args = tokens::split(command)
@@ -87,23 +86,27 @@ fn dispatch(
     args: &[String],
     stdin_path: Option<&str>,
     policy: &Policy,
-    _env: &dyn GuardEnv,
+    env: &dyn GuardEnv,
 ) -> Result<Decision, Refused> {
     match tool {
         "sudo" => sudo(policy, args),
         "runuser" => runuser(policy, args, stdin_path),
         "systemctl" => systemctl(policy, args),
-        "rm" => files::rm(policy, args),
+        "scp" => transfer::scp(policy, args, env),
+        "rsync" => transfer::rsync(policy, args, env),
+        "rm" => files::rm(policy, args, env),
         "mktemp" => files::mktemp(policy, args),
+        "cat" => files::cat(policy, args),
+        "sha256sum" => files::sha256sum(policy, args, env),
         "du" => files::du(policy, args),
         "sh" => files::sh(policy, args),
+        "readlink" => files::readlink(policy, args, env),
+        "test" => files::test(policy, args, env),
+        "mv" => files::mv(policy, args, env),
+        "mkdir" => files::mkdir(policy, args, env),
+        "chmod" => files::chmod(policy, args, env),
+        "chown" => files::chown(policy, args, env),
         "curl" => curl(policy, args),
-        // S3b.
-        "scp" | "rsync" | "cat" | "sha256sum" | "readlink" | "test" | "mv" | "mkdir" | "chmod"
-        | "chown" => Err(Refused::not_ported(format!(
-            "command not allowed: {}",
-            py_repr(tool)
-        ))),
         _ => Err(Refused::new(format!(
             "command not allowed: {}",
             py_repr(tool)
@@ -282,6 +285,11 @@ mod tests {
                 {"database": "/var/lib/gotosocial/sqlite.db", "owner": "gotosocial:gotosocial",
                  "temp_dir": "/var/tmp/echoport-gotosocial.XXXXXX"}
               ],
+              "path_roots": [
+                {"path": "/home/marina/site", "owner": "marina:marina"},
+                {"path": "/home/marina", "owner": "marina:www-data"},
+                {"path": "/var/lib/gotosocial", "owner": "gotosocial:gotosocial"}
+              ],
               "ready_urls": ["http://127.0.0.1:8080/ready"]
             }"#,
         )
@@ -291,7 +299,12 @@ mod tests {
     /// The decision for `command` under [`test_policy`]: the argv, or the
     /// refusal reason.
     pub(crate) fn decide(command: &str) -> Result<Decision, String> {
-        check(command.as_bytes(), &test_policy(), &VirtualEnv::default())
+        decide_in(command, &VirtualEnv::default())
+    }
+
+    /// [`decide`] with a fixture env (PLAN.md 7.2 format).
+    pub(crate) fn decide_in(command: &str, env: &VirtualEnv) -> Result<Decision, String> {
+        check(command.as_bytes(), &test_policy(), env)
             .map_err(|refused| refused.reason().to_owned())
     }
 
@@ -307,7 +320,6 @@ mod tests {
     fn unknown_tools_are_refused_with_pythons_reason() {
         let refused = refusal("id");
         assert_eq!(refused.reason(), "command not allowed: 'id'");
-        assert!(!refused.is_not_ported());
         assert_eq!(refusal("'' x").reason(), "command not allowed: ''");
         assert_eq!(
             refusal("\"it's\"").reason(),
@@ -315,29 +327,29 @@ mod tests {
         );
     }
 
+    /// Every tool of `guard.py` has its branch: none is refused as an
+    /// unknown tool, and the raw shapes are checked before the tokeniser.
     #[test]
-    fn only_the_filesystem_branches_are_still_stubs() {
-        let s3b = [
-            "scp",
-            "rsync",
-            "cat",
-            "sha256sum",
-            "readlink",
-            "test",
-            "mv",
-            "mkdir",
-            "chmod",
-            "chown",
-        ];
+    fn every_tool_has_a_branch() {
         for tool in TOOLS {
-            let refused = refusal(&format!("{tool} x y z"));
-            assert_eq!(refused.is_not_ported(), s3b.contains(&tool), "{tool}");
+            assert_ne!(
+                refusal(&format!("{tool} x y z")).reason(),
+                format!("command not allowed: '{tool}'"),
+                "{tool}"
+            );
         }
-        assert!(refusal("umask 077 && tar -C /a -czf /b -- c").is_not_ported());
-        assert!(refusal("umask 077 && cat > /a/b").is_not_ported());
-        // The `-wal`/`-shm` branch of rm resolves paths (S3b).
-        assert!(refusal("rm -f /a/db-wal /a/db-shm").is_not_ported());
-        assert!(!refusal("rm -f /a/db-wal").is_not_ported());
+        assert_eq!(
+            refusal("umask 077 && tar -C /a -czf /b -- c").reason(),
+            "tar source not allowed"
+        );
+        assert_eq!(
+            refusal("umask 077 && cat > /a/b").reason(),
+            "path not allowed: '/a/b'"
+        );
+        assert_eq!(
+            refusal("umask 077 && tar").reason(),
+            "command not allowed: 'umask'"
+        );
     }
 
     #[test]

@@ -4,9 +4,9 @@
 //! This test has its own `main` (`harness = false`): it re-runs its own
 //! executable as a single-threaded child that is the guard, with
 //! `modes::forced_command`/`decide`/`shadow`, a stub `check()` that returns
-//! the decision a test asks for (the real rules arrive with S3a/S3b), a
-//! search path of test directories instead of `SAFE_PATH`, and a log file
-//! instead of syslog. The child then really sets the umask, opens the
+//! the decision a test asks for (the real rules are tested by the Layer-1
+//! runner and `tests/cli.rs`), a search path of test directories instead of
+//! `SAFE_PATH`, and a log file instead of syslog. The child then really sets the umask, opens the
 //! redirects, and execs a probe script that records what it inherited:
 //! argv, environment, umask, ignored signals, open fds, stdin, stdout.
 //!

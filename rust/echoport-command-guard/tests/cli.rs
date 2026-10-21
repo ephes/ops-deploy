@@ -1,7 +1,8 @@
 //! Process tests of the binary (PLAN.md 3.1, 3.6): the argv grammar,
 //! `--version`, `--check-policy`, and forced-command mode, `--decide` and
 //! `--shadow` with the real `check()` and syslog. What an allowed command
-//! inherits is `tests/flow.rs` (it needs a stub `check()` until S3a/S3b).
+//! inherits is `tests/flow.rs` (with a stub `check()`, so that it can
+//! choose any decision and exec target).
 
 mod common;
 
@@ -203,6 +204,22 @@ fn decide_prints_the_decision_only() {
         "{\"argv\":[\"systemctl\",\"start\",\"marina.service\"],\"stdin\":null,\"stdout\":null,\"umask\":null,\"verdict\":\"allowed\"}\n"
     );
     assert!(output.stderr.is_empty());
+    // A redirect decision of S3b (the restore dump onto stdout; no lookup),
+    // and a path outside the roots, resolved by the real `GuardEnv`.
+    let output = decide(Some(
+        "umask 077 && cat > /var/tmp/django-chat-db-restore.Ab12Cd34/db.dump",
+    ));
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "{\"argv\":[\"cat\"],\"stdin\":null,\"stdout\":{\"directory\":\"/var/tmp/django-chat-db-restore.Ab12Cd34\",\"name\":\"db.dump\",\"owners\":[]},\"umask\":63,\"verdict\":\"allowed\"}\n"
+    );
+    let output = decide(Some("test -d /etc/echoport"));
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        text(&output.stdout),
+        "{\"reason\":\"path outside the allowed roots: '/etc/echoport'\",\"verdict\":\"refused\"}\n"
+    );
     let output = decide(None);
     assert_eq!(text(&output.stdout), "{\"verdict\":\"interactive\"}\n");
     let output = guard(

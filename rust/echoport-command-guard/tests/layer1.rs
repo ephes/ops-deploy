@@ -4,14 +4,14 @@
 //! Rules for a decision case:
 //!
 //! - Rust allows: Python must allow with an identical decision. No exception.
-//! - Rust refuses in a branch that is not ported yet ([`Refused::not_ported`]):
-//!   counted as pending, whatever Python decided. Only the branches S3b ports
-//!   may be pending ([`s3b_shape`]); every other case must be decided.
-//! - Rust refuses in a ported stage: Python must refuse (or crash, verdict
-//!   `error`) with the same reason, unless the case is listed in
-//!   `parity/allowed_differences.json`, or carries a `p3` tag and is refused
-//!   by the prefilter or is a `python-error` case ([`p3_stage`]); for those,
-//!   Rust may refuse where Python allows and may give another reason.
+//! - Rust refuses: Python must refuse with the same reason, unless the case
+//!   is listed in `parity/allowed_differences.json`, or carries a `p3` tag
+//!   and is refused by the prefilter ([`p3_stage`]); for those, Rust may
+//!   refuse where Python allows and may give another reason. Where Python's
+//!   `check()` crashes (verdict `error`, the `python-error` cases), Rust
+//!   refuses with `unparsable command: <Python's error text>`.
+//!
+//! Every branch of `check()` is ported (S3a, S3b), so no case is pending.
 //!
 //! For a policy case: Rust must accept exactly what Python accepts, with the
 //! same normalized policy, and refuse with Python's error type and message,
@@ -27,8 +27,8 @@ use serde_json::{Value, json};
 use common::{DecisionCase, PolicyCase};
 use echoport_command_guard::decision::{Decision, Refused};
 use echoport_command_guard::policy::{Policy, PolicyError, PolicyErrorKind, parse_policy};
+use echoport_command_guard::prefilter;
 use echoport_command_guard::rules::check;
-use echoport_command_guard::{prefilter, tokens};
 
 fn fixture_policies() -> BTreeMap<String, Policy> {
     ["production", "staging"]
@@ -47,46 +47,7 @@ struct Tally {
     allowed_equal: usize,
     refused_equal: usize,
     refused_p3: usize,
-    pending: usize,
     failures: Vec<String>,
-}
-
-/// The tools whose branches look at the filesystem (S3b).
-const S3B_TOOLS: [&str; 10] = [
-    "scp",
-    "rsync",
-    "cat",
-    "sha256sum",
-    "readlink",
-    "test",
-    "mv",
-    "mkdir",
-    "chmod",
-    "chown",
-];
-
-/// Whether `command` reaches a branch of `check()` that S3b ports: the two
-/// raw shapes, an S3b tool, or the `-wal`/`-shm` form of `rm -f`
-/// (`guard.py:457-476, 521-527`). Worked out from the command, independently
-/// of the code under test.
-fn s3b_shape(command: &[u8]) -> bool {
-    let Ok(text) = prefilter::command_text(command) else {
-        return false;
-    };
-    if tokens::tar_shape(text).is_some() || tokens::cat_to_file_shape(text).is_some() {
-        return true;
-    }
-    let Ok(mut args) = tokens::split(text) else {
-        return false;
-    };
-    if args.len() >= 3 && args[args.len() - 2] == "<" {
-        args.truncate(args.len() - 2);
-    }
-    match args.first().map(String::as_str) {
-        Some("rm") => args.len() == 4 && args[1] == "-f",
-        Some(tool) => S3B_TOOLS.contains(&tool),
-        None => false,
-    }
 }
 
 fn judge(
@@ -109,19 +70,17 @@ fn judge(
                 ));
             }
         }
-        Err(refused) if refused.is_not_ported() => {
-            if s3b_shape(&case.command_bytes()) {
-                tally.pending += 1;
-            } else {
-                tally.failures.push(format!(
-                    "{}: pending ({:?}) outside the S3b branches",
-                    case.id,
-                    refused.reason()
-                ));
-            }
-        }
         Err(refused) => {
-            let same = verdict == "refused" && python["reason"].as_str() == Some(refused.reason());
+            // Python's `check()` crashes (verdict `error`, PLAN.md 4.2) on an
+            // unbalanced quote in the `tar` shape; Rust refuses it as an
+            // unparsable command with the same text.
+            let same = match verdict {
+                "refused" => python["reason"].as_str() == Some(refused.reason()),
+                "error" => python["message"]
+                    .as_str()
+                    .is_some_and(|m| refused.reason() == format!("unparsable command: {m}")),
+                _ => false,
+            };
             if same {
                 tally.refused_equal += 1;
             } else if exempt {
@@ -138,14 +97,13 @@ fn judge(
 }
 
 /// Whether a `p3` case's refusal may differ from Python's: when it comes
-/// from a stage the PLAN.md 4.4 exceptions name, the prefilter (the
-/// `prefilter` and `invalid-utf8` classes) or a `check()` crash of Python
-/// (`python-error`). A `p3` command that passes the prefilter must
-/// otherwise get Python's reason.
+/// from the stage the PLAN.md 4.4 exceptions name, the prefilter (the
+/// `prefilter` and `invalid-utf8` classes). A `p3` command that passes the
+/// prefilter must otherwise get Python's reason; for a `check()` crash of
+/// Python (`python-error`), that is `unparsable command: <Python's error>`
+/// ([`judge`]).
 fn p3_stage(case: &DecisionCase) -> bool {
-    !case.p3.is_empty()
-        && (prefilter::command_text(&case.command_bytes()).is_err()
-            || case.p3.iter().any(|tag| tag == "python-error"))
+    !case.p3.is_empty() && prefilter::command_text(&case.command_bytes()).is_err()
 }
 
 fn report(what: &str, tally: &Tally) {
@@ -175,10 +133,15 @@ fn decision_fixtures() {
         judge(case, &outcome, exempt, &mut tally);
     }
     report("decision fixtures", &tally);
-    // S3a's branches allow and refuse; S3b's are still pending.
-    assert!(tally.allowed_equal > 1700, "{tally:?}");
-    assert!(tally.refused_equal > 3300, "{tally:?}");
-    assert!(tally.pending < 5100, "{tally:?}");
+    // Every branch is ported (S3b): every case Python allows, Rust allows
+    // with the same decision.
+    let python_allowed = cases
+        .iter()
+        .filter(|case| case.expected["verdict"] == "allowed")
+        .count();
+    assert_eq!(tally.allowed_equal, python_allowed, "{tally:?}");
+    assert!(tally.allowed_equal > 3400, "{tally:?}");
+    assert!(tally.refused_equal > 6600, "{tally:?}");
 }
 
 /// `normalize_policy` of `parity/oracle.py`: sets sorted, dicts by key.
