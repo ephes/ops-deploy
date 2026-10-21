@@ -263,16 +263,43 @@ fn check_config_exit_codes() {
     ];
     assert_eq!(run(&static_file).status.code(), Some(2));
 
-    // logyard-health: the environment, and only http:// Loki URLs (D-13).
+    // logyard-health: the environment, only http:// Loki URLs (D-13) and a
+    // units list without rejected entries (S2d).
     let check = ["logyard-health", "--check-config"];
     assert_eq!(run_env(&check, &[]).status.code(), Some(0));
+    // [{"id": "vector", "unit": "vector.service"}]
+    let good_units = "W3siaWQiOiAidmVjdG9yIiwgInVuaXQiOiAidmVjdG9yLnNlcnZpY2UifV0="; // pragma: allowlist secret
+    let output = run_env(&check, &[("LOGYARD_HEALTH_UNITS_B64", good_units)]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let summary = String::from_utf8(output.stdout).unwrap();
+    assert!(summary.trim_end().ends_with(" units 1"), "{summary}");
     for env in [
         [("LOGYARD_LOKI_URL", "https://loki.example:3100")],
         [("LOGYARD_HEALTH_PORT", "nine")],
         [("LOGYARD_WARNING_WINDOW_SECONDS", "1.5")],
+        [("LOGYARD_HEALTH_UNITS_B64", "not base64!")],
+        // [{"id": "a.b", "unit": "x.service"}]
+        [(
+            "LOGYARD_HEALTH_UNITS_B64",
+            "W3siaWQiOiAiYS5iIiwgInVuaXQiOiAieC5zZXJ2aWNlIn1d",
+        )],
     ] {
-        assert_eq!(run_env(&check, &env).status.code(), Some(2), "{env:?}");
+        let output = run_env(&check, &env);
+        assert_eq!(output.status.code(), Some(2), "{env:?}");
+        assert!(output.stdout.is_empty(), "{env:?}: {output:?}");
     }
+    let output = run_env(
+        &check,
+        &[(
+            "LOGYARD_HEALTH_UNITS_B64",
+            "W3siaWQiOiAiYS5iIiwgInVuaXQiOiAieC5zZXJ2aWNlIn1d",
+        )],
+    );
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "metrics-httpd logyard-health: LOGYARD_HEALTH_UNITS_B64: entry rejected \
+         (id_contains_dot) unit \"x.service\" id \"a.b\"\n"
+    );
     drop(taken);
 }
 
@@ -611,20 +638,41 @@ fn ipv6_bind_works_in_every_mode() {
     assert!(lines[1].starts_with("::1 - - ["), "{lines:?}");
 }
 
-/// PLAN.md 4.6: logyard-health writes nothing per request.
+/// PLAN.md 4.6: logyard-health writes nothing per request, also when Loki
+/// is down and a unit entry is rejected.
 #[test]
 fn logyard_health_is_silent_per_request() {
+    let closed = TcpListener::bind("127.0.0.1:0").unwrap();
+    let loki = format!("http://{}", closed.local_addr().unwrap());
+    drop(closed);
     let server = Server::start(
         &["logyard-health".to_owned()],
         &[
             ("LOGYARD_HEALTH_PORT", "0"),
             ("LOGYARD_HEALTH_PATH", "/.well-known/logyard"),
+            ("LOGYARD_LOKI_URL", &loki),
+            ("LOGYARD_REQUEST_TIMEOUT_SECONDS", "2"),
+            // [5]: one rejected entry, so no systemctl call.
+            ("LOGYARD_HEALTH_UNITS_B64", "WzVd"),
         ],
     );
     let response = get(server.addr, "/elsewhere", &[]);
     assert_eq!(response.status, 404);
     assert_eq!(response.body, b"{\"error\":\"not_found\"}");
     assert_eq!(response.header("Content-Type"), Some("application/json"));
+    let response = get(server.addr, "/.well-known/logyard", &[]);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.header("Content-Type"), Some("application/json"));
+    let payload: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(payload["status"], "critical", "{payload}");
+    assert_eq!(payload["loki"]["ready"], false, "{payload}");
+    assert_eq!(payload["loki"]["ready_status"], Value::Null, "{payload}");
+    assert!(payload["ingest"]["error"].is_string(), "{payload}");
+    assert_eq!(payload["units"], serde_json::json!({}));
+    assert_eq!(
+        payload["units_rejected"],
+        serde_json::json!([{"reason": "not_an_object"}])
+    );
     let lines = server.stop();
     assert_eq!(lines.len(), 1, "{lines:?}");
 }

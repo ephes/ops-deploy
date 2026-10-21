@@ -88,6 +88,9 @@ import struct
 import sys
 import tempfile
 import threading
+import time
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -1095,8 +1098,9 @@ def build_http_common() -> dict[str, str]:
     htpasswd = str(FIXTURES / "htpasswd")
     out = []
     captured = _CapturedStderr()
-    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
-        captured
+    with (
+        tempfile.TemporaryDirectory() as tmp_name,
+        contextlib.redirect_stderr(captured),
     ):
         for variant in variants(Path(tmp_name)):
             handler = getattr(variant["module"], variant["handler"])
@@ -1335,8 +1339,9 @@ def build_script() -> dict[str, str]:
     htpasswd = str(FIXTURES / "htpasswd")
     out = []
     captured = _CapturedStderr()
-    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
-        captured
+    with (
+        tempfile.TemporaryDirectory() as tmp_name,
+        contextlib.redirect_stderr(captured),
     ):
         tmp = Path(tmp_name)
         module = load_module("metrics_script", METRICS, PLACEHOLDER_VARS, tmp)
@@ -1988,8 +1993,9 @@ def build_apt_state() -> dict[str, str]:
         }
     )
     captured = _CapturedStderr()
-    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
-        captured
+    with (
+        tempfile.TemporaryDirectory() as tmp_name,
+        contextlib.redirect_stderr(captured),
     ):
         tmp = Path(tmp_name)
         module = load_module("apt_state", APT, PLACEHOLDER_VARS, tmp)
@@ -2534,8 +2540,9 @@ def build_json_file() -> dict[str, str]:
     ops_control = ops_control_checkout()
     captured = _CapturedStderr()
     variants_out = []
-    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
-        captured
+    with (
+        tempfile.TemporaryDirectory() as tmp_name,
+        contextlib.redirect_stderr(captured),
     ):
         tmp = Path(tmp_name)
         for variant in json_file_variants(tmp, ops_control):
@@ -2598,6 +2605,873 @@ def build_json_file() -> dict[str, str]:
         "variants": variants_out,
     }
     return {"json_file.json": dump_json(fixture)}
+
+
+# --------------------------------------------------------------------------
+# logyard_health
+
+# The frozen `datetime.now()` of the rendered logyard script (seconds with a
+# fraction: `replace(microsecond=0)` truncates it).
+LOGYARD_EPOCH = 1_792_576_800.75
+FAKE_BIN = FIXTURES / "fake-bin"
+LOKI_SAMPLE_TIME = 1_792_576_800.123
+# Units whose error text comes from an exception (timeout, spawn, decode),
+# not from the fake's own output: the texts may differ (D-3).
+EXCEPTION_UNITS = {"slow.service", "latin1.service", "a\x00b.service"}
+# Stands for an exception text in a recorded body (see `texts`).
+TEXT_MARKER = "<text: D-3>"
+PROXY_VARIABLES = ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
+
+
+def b64_text(data: str | bytes) -> str:
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    return base64.b64encode(raw).decode("ascii")
+
+
+def loki_vector(value: Any) -> str:
+    return json.dumps(
+        {
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [{"metric": {}, "value": [LOKI_SAMPLE_TIME, value]}],
+                "stats": {"summary": {"execTime": 0.001}},
+            },
+        }
+    )
+
+
+UNIT_LIST_CASES: list[tuple[str, str, str | None]] = [
+    ("empty-variable", "", None),
+    ("one-unit", b64_text('[{"id": "vector", "unit": "vector.service"}]'), None),
+    ("empty-list", b64_text("[]"), None),
+    (
+        "every-reason",
+        b64_text(
+            json.dumps(
+                [
+                    {"id": "vector", "unit": "vector.service"},
+                    "vector.service",
+                    5,
+                    None,
+                    [],
+                    {"id": "x"},
+                    {"id": "x", "unit": ""},
+                    {"id": "x", "unit": True},
+                    {"id": "x", "unit": 1},
+                    {"id": "x", "unit": ["a"]},
+                    {"unit": "a.service"},
+                    {"unit": "a.service", "id": ""},
+                    {"unit": "a.service", "id": 7},
+                    {"unit": "a.service", "id": None},
+                    {"unit": "a.service", "id": "a.service"},
+                    {"unit": "a.service", "id": "."},
+                    {"unit": "other.service", "id": "vector"},
+                    {"unit": "-.mount", "id": "root", "extra": [1, 2]},
+                    {"unit": "with space.service", "id": "with space"},
+                    {"unit": "ünï.service", "id": "ünï"},
+                    {"unit": "dup.service", "id": "root"},
+                ]
+            )
+        ),
+        None,
+    ),
+    (
+        "duplicate-keys",
+        b64_text('[{"id": "a", "id": "b", "unit": "u", "unit": "v"}]'),
+        None,
+    ),
+    ("object", b64_text('{"id": "vector", "unit": "vector.service"}'), None),
+    ("string", b64_text('"vector.service"'), None),
+    ("null", b64_text("null"), None),
+    ("number", b64_text("1"), None),
+    ("invalid-json", b64_text('[{"id": "vector"'), None),
+    ("trailing-data", b64_text("[] []"), None),
+    ("bom", b64_text("﻿[]"), None),
+    ("blank-json", b64_text("  "), None),
+    ("not-utf8", b64_text(b'["\xff"]'), None),
+    ("non-ascii-input", "W10=é", None),
+    ("leading-space", " " + b64_text("[]"), None),
+    ("trailing-newline", b64_text("[]") + "\n", None),
+    ("missing-padding", b64_text("[]").rstrip("="), None),
+    ("excess-padding", b64_text("[1]") + "=", None),
+    ("trailing-bits", "W11=", None),
+    (
+        "urlsafe-alphabet",
+        b64_text('"??>"').replace("/", "_").replace("+", "-"),
+        None,
+    ),
+    ("not-base64", "not base64!", None),
+    # Python accepts these; serde_json refuses the whole text (D-4).
+    ("nan-element", b64_text('[NaN, {"id": "a", "unit": "u"}]'), "D-4"),
+    ("lone-surrogate", b64_text('[{"id": "\\ud800", "unit": "u"}]'), "D-4"),
+    ("deeper-than-128", b64_text("[" * 200 + "]" * 200), "D-4"),
+    # json.loads raises ValueError (not JSONDecodeError): the module fails
+    # at import; Rust rejects the list (D-2).
+    ("int-too-long", b64_text("[" + "1" * 4301 + "]"), "D-2"),
+]
+
+
+def build_unit_lists(module: Any) -> list[dict[str, Any]]:
+    rows = []
+    for case_id, text, d in UNIT_LIST_CASES:
+        module.UNITS_B64 = text
+        row: dict[str, Any] = {"id": case_id}
+        try:
+            canonical = base64.b64encode(base64.b64decode(text, validate=True))
+        except (binascii.Error, ValueError):
+            canonical = None
+        if text and canonical is not None and canonical.decode("ascii") == text:
+            # Stored decoded (the replay encodes it): long base64 strings
+            # would trip the repository's secret scanner.
+            raw = base64.b64decode(text)
+            try:
+                row["input_decoded"] = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                row["input_decoded_hex"] = raw.hex()
+        else:
+            row["input"] = text
+        try:
+            units, rejected = module._load_units()
+            if d:
+                # As repr(): a lone surrogate is not valid JSON for Rust.
+                row["python"] = ascii((units, rejected))
+            else:
+                row.update(units=units, rejected=rejected)
+        except Exception as err:  # noqa: BLE001 - the oracle records crashes
+            row["python_error"] = type(err).__name__
+        if d:
+            row.update(d=d, rust_rejected="invalid_json")
+        rows.append(row)
+    return rows
+
+
+def build_base64_cases() -> list[dict[str, Any]]:
+    rng = random.Random(SEED + 6)
+    alphabet = "AQgw+/=_-é \n"
+    inputs = [
+        "",
+        "QQ==",
+        "QR==",
+        "QUJD",
+        "QUJD=",
+        "QUJDRA==",
+        "QUJDRA",
+        "Q",
+        "=",
+        "QQ==QQ==",
+    ]
+    while len(inputs) < 400:
+        inputs.append("".join(rng.choice(alphabet) for _ in range(rng.randint(1, 10))))
+    rows = []
+    for text in inputs:
+        try:
+            decoded = base64.b64decode(text, validate=True).hex()
+        except (binascii.Error, ValueError):
+            decoded = None
+        rows.append({"input": text, "decoded_hex": decoded})
+    return rows
+
+
+# (id, Loki query body, D tag and Rust's count when Rust differs)
+COUNT_CASES: list[tuple[str, str | bytes, tuple[str, float | None] | None]] = [
+    ("vector", loki_vector("42"), None),
+    ("zero", loki_vector("0"), None),
+    ("negative-zero", loki_vector("-0"), None),
+    ("fraction", loki_vector("12.5"), None),
+    ("spaces", loki_vector(" 42\n"), None),
+    ("underscore", loki_vector("1_000"), None),
+    ("double-underscore", loki_vector("1__000"), None),
+    ("leading-underscore", loki_vector("_1"), None),
+    ("exponent", loki_vector("1e3"), None),
+    ("exponent-upper-signed", loki_vector("1E+03"), None),
+    ("leading-dot", loki_vector(".5"), None),
+    ("trailing-dot", loki_vector("5."), None),
+    ("nan", loki_vector("nan"), None),
+    ("nan-signed", loki_vector("-NaN"), None),
+    ("inf", loki_vector("+inf"), None),
+    ("infinity", loki_vector("-Infinity"), None),
+    ("overflow-string", loki_vector("1e500"), None),
+    ("underflow-string", loki_vector("1e-400"), None),
+    ("hex", loki_vector("0x10"), None),
+    ("comma", loki_vector("1,000"), None),
+    ("empty-string", loki_vector(""), None),
+    ("blank-string", loki_vector("   "), None),
+    ("inf-underscore", loki_vector("in_f"), None),
+    ("separator-space", loki_vector("\x1c7\x1f"), None),
+    ("nbsp", loki_vector(" 7 "), None),
+    # Python's float() also reads non-ASCII decimal digits; Rust does not.
+    ("arabic-indic-digits", loki_vector("١٢"), ("D-13", 0.0)),
+    ("int-number", loki_vector(7), None),
+    ("int-negative-zero", '{"data": {"result": [{"value": [1, -0]}]}}', None),
+    (
+        "int-above-2-53",
+        '{"data": {"result": [{"value": [1, 9007199254740993]}]}}',
+        None,
+    ),
+    ("float-number", loki_vector(3.25), None),
+    ("true", loki_vector(True), None),
+    ("false", loki_vector(False), None),
+    ("null-value", loki_vector(None), None),
+    ("list-value", loki_vector([1]), None),
+    ("object-value", loki_vector({"a": 1}), None),
+    ("value-string", '{"data": {"result": [{"value": "12"}]}}', None),
+    ("value-short-string", '{"data": {"result": [{"value": "1"}]}}', None),
+    ("value-one-element", '{"data": {"result": [{"value": [1]}]}}', None),
+    ("value-object", '{"data": {"result": [{"value": {"1": "5"}}]}}', None),
+    ("value-number", '{"data": {"result": [{"value": 5}]}}', None),
+    ("value-missing", '{"data": {"result": [{"metric": {}}]}}', None),
+    ("element-list", '{"data": {"result": [[1, "5"]]}}', None),
+    ("element-string", '{"data": {"result": ["abc"]}}', None),
+    (
+        "two-results",
+        '{"data": {"result": [{"value": [1, "3"]}, {"value": [1, "4"]}]}}',
+        None,
+    ),
+    ("result-empty", '{"data": {"result": []}}', None),
+    ("result-string", '{"data": {"result": "abc"}}', None),
+    ("result-object", '{"data": {"result": {"0": {"value": [1, "5"]}}}}', None),
+    ("result-number", '{"data": {"result": 5}}', None),
+    ("result-true", '{"data": {"result": true}}', None),
+    ("result-false", '{"data": {"result": false}}', None),
+    ("result-null", '{"data": {"result": null}}', None),
+    ("no-result", '{"data": {}}', None),
+    ("no-data", '{"status": "success"}', None),
+    ("data-null", '{"data": null}', None),
+    ("data-list", '{"data": []}', None),
+    ("data-string", '{"data": "x"}', None),
+    ("body-list", "[]", None),
+    ("body-string", '"x"', None),
+    ("body-number", "5", None),
+    ("body-null", "null", None),
+    ("invalid-json", "not json", None),
+    ("empty-body", "", None),
+    ("bom", "﻿{}", None),
+    ("not-utf8", b"\xff", None),
+    ("huge-int", '{"data": {"result": [{"value": [1, 1' + "0" * 400 + "]}]}}", None),
+    (
+        "int-too-long",
+        '{"data": {"result": [{"value": [1, ' + "1" * 4301 + "]}]}}",
+        None,
+    ),
+    # Python accepts these tokens; serde_json refuses the body (D-4).
+    ("nan-token", '{"data": {"result": [{"value": [1, NaN]}]}}', ("D-4", None)),
+    ("overflow-token", '{"data": {"result": [{"value": [1, 1e400]}]}}', ("D-4", None)),
+]
+
+
+def build_counts(module: Any) -> list[dict[str, Any]]:
+    caught = (
+        module.HTTPError,
+        module.URLError,
+        TimeoutError,
+        json.JSONDecodeError,
+    )
+    rows = []
+    for case_id, body, difference in COUNT_CASES:
+        raw = body.encode("utf-8") if isinstance(body, str) else body
+        module._fetch_json = lambda _url, raw=raw: json.loads(raw.decode("utf-8"))
+        row: dict[str, Any] = {"id": case_id}
+        try:
+            row["body"] = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            row["body_hex"] = raw.hex()
+        try:
+            row["python"] = repr(module._query_count(900))
+        except Exception as err:  # noqa: BLE001 - the oracle records crashes
+            row["python_error"] = type(err).__name__
+            # Outside _build_payload's except tuple, the handler crashes.
+            row["python_caught"] = isinstance(err, caught)
+            if not row["python_caught"]:
+                row["d"] = "D-2"
+        if difference:
+            row["d"], rust = difference
+            row["rust"] = "error" if rust is None else repr(rust)
+        rows.append(row)
+    return rows
+
+
+# ---- the payload over HTTP: fake Loki, fake systemctl
+
+
+def loki_response(spec: dict[str, Any]) -> bytes:
+    """The bytes a fake Loki answer is made of (tests/logyard_health.rs
+    builds the same bytes from the recorded spec)."""
+    body = (
+        bytes.fromhex(spec["body_hex"])
+        if "body_hex" in spec
+        else spec.get("body", "").encode("utf-8")
+    )
+    head = f"HTTP/1.1 {spec.get('status', 200)} {spec.get('reason', 'OK')}\r\n"
+    for name, value in spec.get("headers", []):
+        head += f"{name}: {value}\r\n"
+    if spec.get("chunked"):
+        head += "Transfer-Encoding: chunked\r\n"
+        data = (
+            b"".join(
+                f"{len(body[i : i + 7]):x}\r\n".encode("ascii")
+                + body[i : i + 7]
+                + b"\r\n"
+                for i in range(0, len(body), 7)
+            )
+            + b"0\r\n\r\n"
+        )
+    else:
+        head += f"Content-Length: {len(body)}\r\n"
+        data = body
+    return (head + "Connection: close\r\n\r\n").encode("latin-1") + data
+
+
+LOKI_NOT_FOUND = {"status": 404, "reason": "Not Found", "body": "404 page not found\n"}
+
+
+class FakeLoki:
+    """Canned Loki answers by role: `ready` (`/ready`), `ready_target`
+    (`/ready-target`), `warning` and `critical` (the first and second
+    `/loki/api/v1/query`). Records each request's path and decoded `query`."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.specs: dict[str, dict[str, Any]] = {}
+        self.requests: list[list[str | None]] = []
+        self.queries = 0
+        fake = self
+
+        class Handler(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                lines = []
+                while True:
+                    line = self.rfile.readline(65537)
+                    if not line or line in (b"\r\n", b"\n"):
+                        break
+                    lines.append(line)
+                if not lines:
+                    return
+                target = lines[0].decode("latin-1").split(" ")[1]
+                parts = urllib.parse.urlsplit(target)
+                query = urllib.parse.parse_qs(parts.query).get("query")
+                with fake.lock:
+                    if parts.path == "/loki/api/v1/query":
+                        role = ("warning", "critical", "extra")[min(fake.queries, 2)]
+                        fake.queries += 1
+                    else:
+                        role = {"/ready": "ready", "/ready-target": "ready_target"}.get(
+                            parts.path, "unknown"
+                        )
+                    fake.requests.append([parts.path, query[0] if query else None])
+                    spec = fake.specs.get(role, LOKI_NOT_FOUND)
+                if spec.get("delay"):
+                    time.sleep(spec["delay"])
+                if spec.get("close"):
+                    return
+                with contextlib.suppress(OSError):
+                    self.wfile.write(loki_response(spec))
+
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.server.block_on_close = False
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(
+            target=self.server.serve_forever,
+            kwargs={"poll_interval": 0.05},
+            daemon=True,
+        ).start()
+
+    def reset(self, specs: dict[str, dict[str, Any]]) -> None:
+        with self.lock:
+            self.specs = specs
+            self.requests = []
+            self.queries = 0
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def closed_port_url() -> str:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
+LOGYARD_UNITS_OK = [
+    {"id": "vector", "unit": "vector.service"},
+    {"id": "failed", "unit": "failed.service"},
+    {"id": "missing", "unit": "missing.service"},
+    {"id": "root", "unit": "-.mount"},
+    {"id": "spaced", "unit": "with space.service"},
+    {"id": "partial", "unit": "partial.service"},
+    {"id": "dup", "unit": "dup.service"},
+    {"id": "empty", "unit": "empty.service"},
+    {"id": "crlf", "unit": "crlf.service"},
+    {"id": "separators", "unit": "separators.service"},
+    {"id": "unicode", "unit": "unicode.service"},
+    {"id": "Zebra", "unit": "vector.service"},
+    {"id": "ünï", "unit": "vector.service"},
+]
+LOGYARD_UNITS_FAILING = [
+    {"id": "stderr", "unit": "fail-stderr.service"},
+    {"id": "stdout", "unit": "fail-stdout.service"},
+    {"id": "both", "unit": "fail-both.service"},
+    {"id": "blank_stderr", "unit": "fail-blank-stderr.service"},
+    {"id": "silent", "unit": "fail-silent.service"},
+    {"id": "killed", "unit": "killed.service"},
+    {"id": "unknown", "unit": "unknown.service"},
+]
+SELECTOR_SPECIAL = '{job=~"a|b", text="ü*~ +&%=/?#"}'
+
+
+def logyard_http_cases() -> list[dict[str, Any]]:
+    """(id, env overrides, Loki specs, units, systemctl)."""
+    vec = lambda value: {"body": loki_vector(value)}  # noqa: E731
+    cases: list[dict[str, Any]] = [
+        {"id": "ok"},
+        {"id": "ok-units", "units": LOGYARD_UNITS_OK},
+        {"id": "warning", "loki": {"warning": vec("0"), "critical": vec("17")}},
+        {
+            "id": "critical-no-entries",
+            "loki": {"warning": vec("0"), "critical": vec("0")},
+        },
+        {
+            "id": "empty-result",
+            "loki": {
+                "warning": {
+                    "body": '{"status": "success", "data": {"resultType": "vector", "result": []}}'
+                },
+                "critical": {
+                    "body": '{"status": "success", "data": {"resultType": "vector", "result": []}}'
+                },
+            },
+        },
+        {
+            "id": "no-data",
+            "loki": {
+                "warning": {"body": "{}"},
+                "critical": {"body": '{"status": "success"}'},
+            },
+        },
+        {
+            "id": "result-string",
+            "loki": {"warning": {"body": '{"data": {"result": "abc"}}'}},
+        },
+        {
+            "id": "value-string-index",
+            "loki": {
+                "warning": {"body": '{"data": {"result": [{"value": "12"}]}}'},
+                "critical": {"body": '{"data": {"result": [{"value": "34"}]}}'},
+            },
+        },
+        {"id": "nan-values", "loki": {"warning": vec("NaN"), "critical": vec("nan")}},
+        {
+            "id": "infinite-values",
+            "loki": {"warning": vec("-inf"), "critical": vec("+Infinity")},
+        },
+        {
+            "id": "number-values",
+            "loki": {
+                "warning": vec(3.5),
+                "critical": {
+                    "body": '{"data": {"result": [{"value": [1, 9007199254740993]}]}}'
+                },
+            },
+        },
+        {
+            "id": "string-spellings",
+            "loki": {"warning": vec(" 1_000 "), "critical": vec("1e3")},
+        },
+        {
+            "id": "ready-not-ready",
+            "loki": {
+                "ready": {
+                    "body": "Ingester not ready: waiting for 15s after being ready\n"
+                }
+            },
+        },
+        {"id": "ready-uppercase", "loki": {"ready": {"body": " READY \r\n"}}},
+        {
+            "id": "ready-503",
+            "loki": {
+                "ready": {
+                    "status": 503,
+                    "reason": "Service Unavailable",
+                    "body": "Ingester not ready\n",
+                }
+            },
+        },
+        {
+            "id": "ready-503-custom-reason",
+            "loki": {
+                "ready": {
+                    "status": 503,
+                    "reason": "Loki Starting",
+                    "body": "starting\n",
+                }
+            },
+        },
+        {
+            "id": "ready-204",
+            "loki": {"ready": {"status": 204, "reason": "No Content", "body": ""}},
+        },
+        {
+            "id": "ready-chunked",
+            "loki": {"ready": {"body": "ready\n", "chunked": True}},
+        },
+        {
+            "id": "ready-redirect",
+            "loki": {
+                "ready": {
+                    "status": 302,
+                    "reason": "Found",
+                    "headers": [["Location", "/ready-target"]],
+                    "body": "",
+                },
+                "ready_target": {"body": "ready"},
+            },
+            "d": "D-13",
+        },
+        {
+            "id": "ready-301-without-location",
+            "loki": {
+                "ready": {"status": 301, "reason": "Moved Permanently", "body": ""}
+            },
+        },
+        {
+            "id": "ready-timeout",
+            "env": {"LOGYARD_REQUEST_TIMEOUT_SECONDS": "0.3"},
+            "loki": {"ready": {"body": "ready", "delay": 1.5}},
+        },
+        {"id": "ready-closes", "loki": {"ready": {"close": True}}, "d": "D-2"},
+        {
+            "id": "ready-not-utf8",
+            "loki": {"ready": {"body_hex": "72656164ff"}},
+            "d": "D-2",
+        },
+        {"id": "loki-down", "env": {"LOGYARD_LOKI_URL": "{closed}"}},
+        {
+            "id": "query-500",
+            "loki": {
+                "warning": {
+                    "status": 500,
+                    "reason": "Internal Server Error",
+                    "body": "boom\n",
+                }
+            },
+        },
+        {
+            "id": "critical-query-400",
+            "loki": {
+                "critical": {
+                    "status": 400,
+                    "reason": "Bad Request",
+                    "body": "parse error\n",
+                }
+            },
+        },
+        {"id": "query-invalid-json", "loki": {"warning": {"body": "not json"}}},
+        {"id": "query-list-body", "loki": {"warning": {"body": "[]"}}, "d": "D-2"},
+        {
+            "id": "query-data-null",
+            "loki": {"critical": {"body": '{"data": null}'}},
+            "d": "D-2",
+        },
+        {
+            "id": "query-huge-int",
+            "loki": {
+                "warning": {
+                    "body": '{"data": {"result": [{"value": [1, 1' + "0" * 400 + "]}]}}"
+                }
+            },
+            "d": "D-2",
+        },
+        {
+            "id": "query-chunked",
+            "loki": {"warning": {"body": loki_vector("99"), "chunked": True}},
+        },
+        {
+            "id": "query-timeout",
+            "env": {"LOGYARD_REQUEST_TIMEOUT_SECONDS": "0.3"},
+            "loki": {"warning": {"body": loki_vector("1"), "delay": 1.5}},
+        },
+        {
+            "id": "critical-timeout",
+            "env": {"LOGYARD_REQUEST_TIMEOUT_SECONDS": "0.3"},
+            "loki": {"critical": {"body": loki_vector("1"), "delay": 1.5}},
+        },
+        {
+            "id": "selector-and-windows",
+            "env": {
+                "LOGYARD_HEALTH_SELECTOR": SELECTOR_SPECIAL,
+                "LOGYARD_WARNING_WINDOW_SECONDS": "60",
+                "LOGYARD_CRITICAL_WINDOW_SECONDS": "-120",
+            },
+        },
+        {"id": "loki-url-trailing-slashes", "env": {"LOGYARD_LOKI_URL": "{loki}//"}},
+        {
+            "id": "custom-path",
+            "env": {"LOGYARD_HEALTH_PATH": "/health"},
+            "path": "/health",
+        },
+        {
+            "id": "units-rejected",
+            "units": [
+                {"id": "vector", "unit": "vector.service"},
+                {"id": "vector", "unit": "failed.service"},
+                {"id": "a.b", "unit": "missing.service"},
+                {"unit": "missing.service"},
+                {"id": "x"},
+                "vector.service",
+            ],
+        },
+        {
+            "id": "units-invalid-base64",
+            "env": {"LOGYARD_HEALTH_UNITS_B64": "not base64!"},
+        },
+        {
+            "id": "units-invalid-json",
+            "env": {"LOGYARD_HEALTH_UNITS_B64": b64_text("[{")},
+        },
+        {
+            "id": "units-not-a-list",
+            "env": {"LOGYARD_HEALTH_UNITS_B64": b64_text('{"a": 1}')},
+        },
+        {"id": "units-systemctl-failures", "units": LOGYARD_UNITS_FAILING},
+        {
+            "id": "units-systemctl-timeout",
+            "env": {"LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "0.3"},
+            "units": [
+                {"id": "slow", "unit": "slow.service"},
+                {"id": "vector", "unit": "vector.service"},
+            ],
+        },
+        {
+            "id": "units-systemctl-missing",
+            "systemctl": "missing",
+            "units": [
+                {"id": "vector", "unit": "vector.service"},
+                {"id": "failed", "unit": "failed.service"},
+            ],
+        },
+        {
+            "id": "units-output-not-utf8",
+            "units": [
+                {"id": "latin1", "unit": "latin1.service"},
+                {"id": "vector", "unit": "vector.service"},
+            ],
+            "d": "D-2",
+        },
+        {
+            "id": "units-nul-in-name",
+            "units": [
+                {"id": "nul", "unit": "a\x00b.service"},
+                {"id": "vector", "unit": "vector.service"},
+            ],
+            "d": "D-2",
+        },
+    ]
+    return cases
+
+
+LOGYARD_BASE_ENV = {
+    "LOGYARD_HEALTH_BIND": "127.0.0.1",
+    "LOGYARD_HEALTH_PORT": "0",
+    "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+    "LOGYARD_LOKI_URL": "{loki}",
+    "LOGYARD_HEALTH_SELECTOR": '{host="macmini",source_type="journald"}',
+    "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+    "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+    "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+    "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5",
+}
+LOGYARD_DEFAULT_LOKI = {
+    "ready": {"body": "ready\n"},
+    "warning": {"body": loki_vector("42")},
+    "critical": {"body": loki_vector("1234")},
+}
+
+
+class FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):  # type: ignore[override]
+        return datetime.fromtimestamp(LOGYARD_EPOCH, tz)
+
+
+def text_paths(payload: dict[str, Any], every_unit: bool) -> list[str]:
+    """The fields whose text comes from an exception message (D-3)."""
+    paths = []
+    loki = payload["loki"]
+    if loki["ready_status"] is None and not loki["ready_body"].startswith(
+        "HTTP Error "
+    ):
+        paths.append("loki.ready_body")
+    error = payload["ingest"].get("error")
+    if error is not None and not error.startswith("HTTP Error "):
+        paths.append("ingest.error")
+    for unit_id, status in sorted(payload["units"].items()):
+        if status["error"] is not None and (
+            every_unit or status["unit"] in EXCEPTION_UNITS
+        ):
+            paths.append(f"units.{unit_id}.error")
+    for index, entry in enumerate(payload.get("units_rejected", [])):
+        if "detail" in entry:
+            paths.append(f"units_rejected.{index}.detail")
+    return paths
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+def build_logyard_http(tmp: Path, loki: FakeLoki) -> list[dict[str, Any]]:
+    empty_bin = tmp / "empty-bin"
+    empty_bin.mkdir()
+    closed = closed_port_url()
+    stderr = io.StringIO()
+    rows = []
+    for index, case in enumerate(logyard_http_cases()):
+        env = {**LOGYARD_BASE_ENV, **case.get("env", {})}
+        real_env = {
+            name: value.replace("{loki}", loki.url).replace("{closed}", closed)
+            for name, value in env.items()
+        }
+        units_json = json.dumps(case["units"]) if "units" in case else None
+        if units_json is not None:
+            # Recorded as JSON text; the replay base64-encodes it.
+            real_env["LOGYARD_HEALTH_UNITS_B64"] = b64_text(units_json)
+        specs = {**LOGYARD_DEFAULT_LOKI, **case.get("loki", {})}
+        systemctl = case.get("systemctl", "fake")
+        path = case.get("path", "/.well-known/logyard")
+        module = load_module(f"logyard_{index}", LOGYARD, {}, tmp, env=real_env)
+        module.datetime = FrozenDatetime
+        request = {
+            "method": "GET",
+            "target": path,
+            "version": "HTTP/1.1",
+            "headers": [],
+        }
+
+        def run() -> tuple[dict[str, Any] | None, list[Any], str]:
+            loki.reset(specs)
+            stderr.seek(0)
+            stderr.truncate()
+            server = module.ReusableThreadingHTTPServer(
+                ("127.0.0.1", 0), module.Handler
+            )
+            threading.Thread(
+                target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
+            ).start()
+            saved_path = os.environ["PATH"]
+            os.environ["PATH"] = (
+                str(FAKE_BIN if systemctl == "fake" else empty_bin)
+                + os.pathsep
+                + saved_path
+            )
+            try:
+                with contextlib.redirect_stderr(stderr):
+                    try:
+                        result = exchange(server.server_address[1], request)
+                    except (http.client.HTTPException, ConnectionError):
+                        result = None
+            finally:
+                os.environ["PATH"] = saved_path
+                server.shutdown()
+                server.server_close()
+            with loki.lock:
+                requests = list(loki.requests)
+            raised = re.findall(
+                r"^([A-Za-z_][\w.]*): ", stderr.getvalue(), flags=re.MULTILINE
+            )
+            return result, requests, raised[-1] if raised else ""
+
+        result, requests, error_line = run()
+        row: dict[str, Any] = {
+            "id": case["id"],
+            "env": env,
+            **({"units_json": units_json} if units_json is not None else {}),
+            "systemctl": systemctl,
+            "loki": specs,
+            "path": path,
+        }
+        if result is None:
+            # The handler raised outside its except clauses and dropped the
+            # connection. Rust takes the caught-error path of the same try
+            # block (D-2): the oracle is the script with those clauses
+            # catching every exception.
+            assert case.get("d") == "D-2", (case["id"], error_line)
+            row["python"] = "crash"
+            row["python_error"] = error_line
+            module.TimeoutError = Exception
+            module.OSError = Exception
+            result, requests, _ = run()
+            assert result is not None, case["id"]
+        elif case.get("d") == "D-13":
+            # Python's urlopen follows the redirect; Rust does not (D-13):
+            # the oracle is the script with a redirect-free opener.
+            row["python"] = "redirect followed"
+            row["python_body"] = result["body"]
+            module.urlopen = urllib.request.build_opener(_NoRedirect).open
+            result, requests, _ = run()
+        else:
+            assert "d" not in case, case["id"]
+        if "d" in case:
+            row["d"] = case["d"]
+        payload = json.loads(result["body"])
+        texts = text_paths(payload, every_unit=systemctl == "missing")
+        body = result["body"]
+        if texts:
+            # Exception texts are compared by presence only (D-3); the
+            # recorded ones drop the platform's errno numbers so the fixture
+            # is the same on every OS.
+            row["python_texts"] = {}
+            for text_path in texts:
+                *parents, last = text_path.split(".")
+                node = payload
+                for key in parents:
+                    node = node[int(key)] if isinstance(node, list) else node[key]
+                row["python_texts"][text_path] = re.sub(
+                    r"\[Errno \d+\]", "[Errno N]", node[last]
+                )
+                node[last] = TEXT_MARKER
+            body = json.dumps(payload, sort_keys=True)
+        row.update(
+            status=result["status"],
+            content_type=result["response_headers"]["Content-Type"],
+            body=body,
+            texts=texts,
+            requests=requests,
+        )
+        rows.append(row)
+    return rows
+
+
+def build_logyard_health() -> dict[str, str]:
+    saved = {
+        name: os.environ.pop(name)
+        for name in list(os.environ)
+        if name.lower() in PROXY_VARIABLES
+    }
+    # A set no_proxy keeps urllib from reading the system proxy settings.
+    os.environ["no_proxy"] = "*"
+    loki = FakeLoki()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            module = load_module("logyard_units", LOGYARD, {}, tmp)
+            out = {
+                "unit_lists": build_unit_lists(module),
+                "base64": build_base64_cases(),
+                "counts": build_counts(module),
+                "http": {
+                    "generated_at_epoch": LOGYARD_EPOCH,
+                    "cases": build_logyard_http(tmp, loki),
+                },
+            }
+    finally:
+        loki.close()
+        del os.environ["no_proxy"]
+        os.environ.update(saved)
+    return {"logyard_health.json": dump_json(out)}
 
 
 # --------------------------------------------------------------------------
@@ -2889,6 +3763,7 @@ FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "apt_state": (True, build_apt_state),
     "json_file": (True, build_json_file),
     "static": (True, build_static),
+    "logyard_health": (True, build_logyard_health),
 }
 
 

@@ -9,8 +9,8 @@ scripts today. The contract is [PLAN.md](PLAN.md), the test map
 hosts run the Python scripts.
 
 Status: **S1** (core), **S2a** (`json-file` mode), **S2b** (`script`
-mode), **S2c** (`apt-state` mode) and **S2e** (`static` mode). What
-exists:
+mode), **S2c** (`apt-state` mode), **S2d** (`logyard-health` mode) and
+**S2e** (`static` mode). What exists:
 
 - The command line of PLAN.md 4.9 for all five modes (`json-file`,
   `script`, `apt-state`, `logyard-health`, `static`), `--version`
@@ -50,8 +50,13 @@ exists:
   `static-site-httpd.py.j2` kept around it: GET/HEAD only, Python's 301
   for a directory without `/`, its 404 page, the four `end_headers`
   headers on every answer, the access line on stdout (PLAN.md 4.7, D-11).
-- In the other modes a request that passes the gate gets 500
-  `internal_error` until the mode's slice (S2d) lands.
+- `logyard-health` mode (S2d, PLAN.md 4.6): configured from the
+  `LOGYARD_*` environment of the unit; per request `GET /ready` and two
+  `count_over_time` queries against Loki (http only, no redirects, D-13)
+  and `systemctl show` per configured unit, served as the Python script's
+  payload (status ok/warning/critical); no auth and no log line per
+  request. `--check-config` also refuses a units list with rejected
+  entries.
 
 ```bash
 metrics-httpd json-file --bind 127.0.0.1 --port 9103 --path /.well-known/backup \
@@ -67,7 +72,9 @@ endpoint templates, runs their handlers on loopback with raw requests, calls
 their `_check_auth` with the real `htpasswd`, and records CPython's
 `json.dumps`, `float.__repr__`, `datetime` and `st_mtime` results.
 `tests/fixtures.rs` replays every case (the `apt_state` family:
-`tests/apt_state.rs`). From the repository root:
+`tests/apt_state.rs`; `logyard_health`: `tests/logyard_health.rs`, with a
+fake Loki in the test and the test-only `fixtures/fake-bin/systemctl`, which
+the generator puts first on `PATH`). From the repository root:
 
 ```bash
 just metrics-httpd-fixtures       # regenerate (venv; then 3.12 and 3.13 must agree)

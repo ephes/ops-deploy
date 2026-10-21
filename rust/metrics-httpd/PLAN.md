@@ -8,9 +8,9 @@ eight variants of 4.3 (fixture `json_file.json`, writer audit in 5.3). S2b
 implemented (`script` mode, fixture family `script`). S2c implemented
 (`apt-state` mode, port of `EndpointRebootStateTests`, fixture family
 `apt_state`). S2e implemented (`static` mode, fixture family `static`,
-`parity/static_site.py` and the real-site record of D-11). In the other
-modes a request past the gate gets 500 `internal_error` until its slice
-(S2d) lands. Campaign "Rust-Ports Runde 2"
+`parity/static_site.py` and the real-site record of D-11). S2d implemented
+(`logyard-health` mode, fixture family `logyard_health` with a fake Loki
+and the fake `systemctl` of `fixtures/fake-bin/`). Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -211,7 +211,7 @@ same apart from the differences in the variant table 4.3).
    ignores query and fragment. Wrong path → **404** with the JSON error body
    of 4.2 (`not_found`, "Endpoint not found"); `metrics_endpoint` instead
    uses `send_error(404, "Not found")` (HTML body, `metrics_httpd.py.j2` l.18).
-3. Auth second (l.38–47): `Authorization` must start with `Basic ` (case
+3. Auth second (l.38–47): `Authorization` must start with `Basic` (case
    sensitive); the token is `header.split()[1]`, base64-decoded, UTF-8
    decoded, split at the first `:`; the password is verified against the
    htpasswd file for that user (`htpasswd -vi <file> <user>` with the
@@ -365,7 +365,27 @@ l.19–28. Invalid integers abort startup (module-level `int()`).
   non-zero exit; `exists = load_state not in ("", "not-found")`);
   `units_rejected` only when non-empty. `status = critical` if not ready or
   ingest error or critical entries ≤ 0, else `warning` if warning entries ≤ 0,
-  else `ok`. Floats serialise as floats (`12.0`).
+  else `ok`. Floats serialise as floats (`12.0`; `NaN`, `Infinity`,
+  `-Infinity` as `json.dumps` writes them; `NaN` compares false both
+  ways, so a `NaN` count is not ≤ 0 and not > 0).
+- Details the port keeps (S2d, pinned by `fixtures/logyard_health.json`):
+  `ready_status` is set only for a 2xx answer; any other status is
+  `urlopen`'s `HTTPError`, `ready_body` = `HTTP Error <code>: <reason>`
+  with the reason phrase Loki sent (a 3xx without a followable `Location`
+  too). The count is Python's `float()` of `result[0]["value"][1]` with
+  Python's indexing: a `str` value gives its second character (`"12"` →
+  2.0), a JSON int goes through `float(int)` (`-0` → 0.0), `true`/`false`
+  → 1.0/0.0, a string accepts surrounding white space, a sign, `_` between
+  digits, `nan`/`inf`/`infinity` in any case and overflows to `inf`; any
+  other shape counts 0.0. `systemctl` is looked up on `PATH` with the
+  inherited environment; its output is read as `text=True` does (strict
+  UTF-8, universal newlines), parsed with `str.splitlines()` and
+  `split("=", 1)` (a later duplicate key wins); a non-zero exit gives
+  `error` = stripped stderr, else stripped stdout, else `systemctl show
+  failed (<returncode>)` (a signal is a negative return code); the
+  timeout gives `Command '[…]' timed out after <seconds> seconds`, a spawn
+  failure the `OSError` text. Units are queried one after the other, after
+  the Loki requests, as in Python.
 - **No access log** (`log_message` returns, l.252) — important because Logyard
   ingests this host's journal.
 - Threaded server (`ThreadingHTTPServer`).
@@ -411,7 +431,7 @@ Pinned by `tests/test_static_site_deploy.py`
 
 ### 4.9 Command line (Rust)
 
-```
+```text
 metrics-httpd --version                       # "metrics-httpd <version> (<commit>)"
 metrics-httpd json-file --bind A --port N --path P --json-path F --htpasswd-file H
     --realm R --server-name S [--meta replace|merge] [--path-match exact|path-only]
@@ -433,8 +453,9 @@ free port (tests; the startup line names the address). `--request-timeout`
 and `--script-timeout` take seconds with fractions, more than 0 and at most
 86400. `--path` starts with `/`; `--realm` and `--server-name` are printable
 ASCII without `"` and `\`. logyard-health reads the environment like the
-Python module, with Python's `int()`/`float()` spelling rules (whitespace,
-sign, `_` between digits); an invalid number, a port outside 0–65535, a
+Python module, with Python's `int()`/`float()` spelling rules (white space
+as they strip it — ASCII and non-ASCII `str.isspace()`, not U+001C–U+001F,
+which they refuse —, sign, `_` between digits); an invalid number, a port outside 0–65535, a
 non-IP `LOGYARD_HEALTH_BIND` or a timeout that is not a finite positive
 number is a configuration error (exit 2; Python: a traceback at import or a
 failure per request).
@@ -442,7 +463,9 @@ failure per request).
 address syntax, htpasswd file readable and valid as `htpasswd` reads it, at
 least one entry and only `$2y$`/`$2a$` bcrypt entries (D-6), JSON file's
 directory or script an executable file (`access(X_OK)` as the running
-user), site root a directory, Loki URL `http://`, units list (S2d))
+user), site root a directory, Loki URL `http://` and a valid URI, units
+list: every entry Python would put under `units_rejected` is a problem,
+one line each, `LOGYARD_HEALTH_UNITS_B64: entry rejected (<reason>) …`)
 **without binding**, prints a one-line summary to stdout (never a hash or
 password; problems go to stderr, one line each) and exits 0 or 2. At normal startup the binary is as
 lenient as Python: an unreadable htpasswd file or missing JSON file is a
@@ -489,10 +512,20 @@ per-request 401/503, not a startup failure.
   line) → 502; a script that cannot be started (missing, not executable;
   Python: `OSError` from `subprocess.run`) → 502 `send_error` "Cannot run
   metrics script"; static: a `%00` in the target (Python: `ValueError`
-  from `open()`) → Python's 404 page; logyard unexpected Loki responses (non-object body,
-  disconnects not covered by the caught exceptions) → the caught-error path
-  (ready false / ingest `error`) with the error text; openclaw/os_apt htpasswd
-  timeout → not applicable (in-process verification).
+  from `open()`) → Python's 404 page;
+  logyard-health: a Loki answer that is not UTF-8
+  (`UnicodeDecodeError`), a query body or `data` that is not an object
+  (`AttributeError`), a sample int too large for a float (`OverflowError`)
+  or a disconnect before the status line (`RemoteDisconnected`) → the
+  caught-error path of the same `try` (ready false with `ready_status`
+  null / ingest `error`) with the error text; `systemctl` output that is
+  not UTF-8 or a unit name with a NUL (`UnicodeDecodeError`, `ValueError`)
+  → the unit's unknown-shape entry with `error`; a units list with an int
+  longer than 4300 digits (Python: `ValueError` at import, the unit does
+  not start) → rejected `invalid_json`. The fixture's oracle for these is
+  the script with its `except` clauses catching every exception;
+  openclaw/os_apt htpasswd timeout → not applicable (in-process
+  verification).
 - **D-3 Texts.** Status codes, `error_type` values and JSON keys are equal;
   `message` texts after the fixed prefixes (parser error details, OS error
   details), HTML bodies of `send_error`, reason phrases and the 501 body may
@@ -501,7 +534,12 @@ per-request 401/503, not a startup failure.
   Rust uses the standard reason phrase and puts the stderr text (stripped
   as Python strips it, cut to ≤ 1 KiB at a character boundary, control
   characters replaced by spaces) into the page's message, as Python does
-  for a short single-line text.
+  for a short single-line text. logyard-health: exception texts in
+  `loki.ready_body` (when `ready_status` is null), `ingest.error`, a unit's
+  `error` that comes from an exception (timeout, spawn or decode failure)
+  and `units_rejected[].detail` may differ (`fixtures/logyard_health.json`
+  names the fields per case); `HTTP Error <code>: <reason>` and the texts
+  taken from `systemctl`'s output are equal.
 - **D-4 JSON input strictness.** Python accepts `NaN`, `Infinity`,
   `-Infinity`, lone surrogates, float literals that overflow to
   infinity (`1e400`, which Python then serves as `Infinity`) and nesting
@@ -517,7 +555,12 @@ per-request 401/503, not a startup failure.
   of them (1.1); 5.3 lists every writer and whether it can emit them
   (`json.dumps(..., allow_nan=True)` default). json-file pins each refusal
   per variant (`fixtures/json_file.json`, cases `nan`, `infinity`,
-  `overflow`, `lone-surrogate`, `depth-128`, `reserved-key`).
+  `overflow`, `lone-surrogate`, `depth-128`, `reserved-key`). The same
+  refusals apply to logyard-health's `LOGYARD_HEALTH_UNITS_B64` (the whole
+  list is rejected `invalid_json`; Python, e.g., skips a `NaN` element as
+  `not_an_object` and monitors the rest) and to Loki query answers (ingest
+  `error`); the units list comes from the role's `to_json`, Loki writes
+  sample values as strings.
 - **D-5 JSON output bytes: none.** Rust reproduces sorted keys, Python
   separators and `\uXXXX` escaping, and Python's number round trip
   (`json.loads` then `json.dumps`): a number lexeme without `.`, `e`, `E`
@@ -615,13 +658,21 @@ per-request 401/503, not a startup failure.
   (Python: unbounded; live ≤ 24 KB); script stdout capped at 64 MiB → 502
   "Metrics script output too large" and the process group is killed; of the
   script's stderr the first 64 KiB are kept for the 502 message, the rest
-  is read and discarded; request headers capped by hyper's defaults.
+  is read and discarded; Loki answers larger than 64 MiB → the caught-error
+  path of logyard-health (Python: unbounded); request headers capped by
+  hyper's defaults.
 - **D-13 Loki query encoding.** The query string is
   `application/x-www-form-urlencoded` by `form_urlencoded` (Python
   `urlencode`/`quote_plus`): `*` and `~` may be encoded differently; Loki
   decodes both the same. Redirects from Loki are not followed (Python's
   `urlopen` follows them; Loki's endpoints do not redirect). Only `http://`
   Loki URLs (live: `http://127.0.0.1:3101`); `https` fails `--check-config`.
+  A redirect answer is `HTTP Error 3xx: <reason>` (fixture case
+  `ready-redirect`). The request timeout covers the whole exchange
+  (connect, headers, body); Python's applies to each socket operation. No
+  proxy is taken from the environment (`urlopen` would honour
+  `http_proxy`; the unit sets none). A sample value spelled with non-ASCII
+  decimal digits, which Python's `float()` reads, counts 0.0.
 - **D-14 Request parsing.** hyper drops a `#fragment` from the
   request-target before the handler sees it (a fragment is not valid in a
   request, RFC 9112), so `<path>#x` matches in exact mode where Python
@@ -672,7 +723,7 @@ refuse or replace such values (`allow_nan=False`, `math.isfinite`,
 
 ## 6. Crate design
 
-```
+```text
 rust/metrics-httpd/
   Cargo.toml  build.rs                 # build.rs: commit for --version (as mailgun-relay)
   src/main.rs                          # mode dispatch, --version, --check-config, runtime, exit codes
@@ -685,10 +736,11 @@ rust/metrics-httpd/
   src/modes/mod.rs                     # shared flags, the 4.1 gate, the Mode trait, --check-config problems
   src/modes/{json_file,script,apt_state,logyard_health,static_site}.rs  # static_site: tower-http ServeDir
   src/clock.rs                         # injectable clock for tests
-  tests/fixtures.rs, tests/apt_state.rs, tests/binary.rs   # fixture replay (in process, real sockets; apt_state family in its own file), process e2e
+  tests/fixtures.rs, tests/apt_state.rs, tests/logyard_health.rs, tests/binary.rs   # fixture replay (in process, real sockets; apt_state and logyard_health families in their own files), process e2e
   fixtures/generate.py                 # Python oracle (8.2)
-  fixtures/{pyjson,meta,auth,http_common,script,apt_state,json_file}.json, fixtures/float_repr/part-*.txt
+  fixtures/{pyjson,meta,auth,http_common,script,apt_state,json_file,logyard_health}.json, fixtures/float_repr/part-*.txt
   fixtures/{static,static_real_site}.json   # S2e
+  fixtures/fake-bin/systemctl          # test-only `systemctl show` with canned answers per unit name
   fixtures/htpasswd, htpasswd-mixed, htpasswd-invalid   # committed test-only files (bcrypt cost 4)
   parity/run_parity.py, parity/shadow_compare.py
   parity/static_site.py                # S2e: static mode against a Python server on a site directory
@@ -703,7 +755,7 @@ are small and may stay async via `tokio::fs`, subprocesses via
 | --- | --- | --- |
 | HTTP server | `hyper` 1 (`server`, `http1`) + `hyper-util` (`tokio`, `server`) + `http-body-util` | one route per process, raw request-target access for the exact path match, `header_read_timeout`; no router needed |
 | runtime | `tokio` (`rt`, `net`, `time`, `signal`, `process`, `fs`, `io-util`, `macros`) | |
-| HTTP client (Loki) | `hyper-util` `client-legacy` (http only) | already in the tree; no TLS needed (D-13) |
+| HTTP client (Loki) | `hyper` (`client`) + `hyper-util` `client-legacy` (http only, no idle connections kept) | already in the tree; no TLS needed (D-13) |
 | static files | `tower-http` (`fs`; `ServeDir::try_call`, so no `tower`) | maintained file serving with conditional requests and path sanitising (D-11); the file is streamed, so the response body of every mode is a boxed body (`server::ResponseBody`) |
 | JSON | `serde_json` (`arbitrary_precision`; default `BTreeMap` map = sorted keys) with a custom `Formatter` | D-5 |
 | bcrypt | `bcrypt` (verify only) | D-6 |
@@ -866,9 +918,11 @@ answers with `http.client`: right/wrong/query/absolute path, no/malformed/wrong/
 the real `htpasswd` binary that the scripts call), missing file, directory,
 unreadable file, invalid JSON, non-object JSON, `meta` present/absent/non-object,
 unicode and big numbers, every apt-state branch, script stdout/exit/stderr/
-timeout (fixture scripts), logyard against a fake Loki (`http.server` thread)
-and a fake `systemctl` on `PATH` (canned output, non-zero exit, sleep past the
-timeout), static against a small site tree. The clock is frozen by patching
+timeout (fixture scripts), logyard against a fake Loki (a `socketserver`
+thread writing canned answer bytes that the Rust replay writes too) and the
+fake `systemctl` of `fixtures/fake-bin/` (first on `PATH` for Python, the
+configured program for Rust: canned output, non-zero exit, a signal, sleep
+past the timeout), static against a small site tree. The clock is frozen by patching
 the module's `datetime`; file mtimes are set with `os.utime`. Each case
 records the request, the input state, status, `Content-Type`,
 `Content-Length`, `WWW-Authenticate`, body, and a `compare` mode (`bytes`,
