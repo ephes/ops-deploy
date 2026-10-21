@@ -1,7 +1,8 @@
 # Rust port of `software_live` — implementation plan
 
-Status: plan, not yet implemented. Campaign "Rust-Ports Runde 2", stream
-`rust-software-live` (umbrella item `rust-ports-campaign`).
+Status: plan, not yet implemented; owner questions decided on 2026-10-21
+(section 12). Campaign "Rust-Ports Runde 2", stream `rust-software-live`
+(umbrella item `rust-ports-campaign`).
 
 This document is the contract for porting the Python program of the
 ops-library role `software_live` (`roles/software_live/files/software_live.py`,
@@ -21,13 +22,17 @@ parity harness runs both implementations. A shadow run precedes the cutover.
 The cutover includes a rollback drill. Python retirement is its own, later
 slice.
 
-The shared foundation (Cargo workspace under `rust/`, toolchain pin,
-`cargo-deny`, CI, release workflow with per-binary tag prefixes, the shared
-role download/pin tasks, and possibly a shared small HTTP server crate) is
-designed by the stream `rust-metrics-httpd` in `rust/PLAN-foundation.md`.
-This plan depends on its slice **F1** and does not design a release
-pipeline of its own. Section 7.4 lists the requirements this stream adds
-to F1.
+The shared foundation is designed by the stream `rust-metrics-httpd` in
+`rust/PLAN-foundation.md` (its section 7): **F1** Cargo workspace under
+`rust/`, toolchain pin, `cargo-deny`, `rust.yml` CI, `build_ignore`;
+**F2** `rust-release.yml` with per-binary tag prefixes and
+`rust/scripts/release_checks.py`; **F3** the internal role
+`rust_release_binary` (install/pin/prune, on-host layout of its 6.1);
+**F4** the pyinfra helper in ops-deploy, which this stream does not need
+(the role is Ansible, section 2). F1 has no shared library crate. This
+plan depends on F1, F2 and F3 by those ids and does not design a release
+pipeline or install mechanism of its own. Section 7.4 lists the
+requirements this stream adds to F2 and F3.
 
 ---
 
@@ -269,10 +274,15 @@ what is known" structure.
   (running version known and lower than upstream). Otherwise `warning` if
   any issue, else `ok`.
 
-Rust: open with `std::fs::File` (which sets `O_CLOEXEC`), and clear
-`FD_CLOEXEC` for exactly that descriptor in the child (`pre_exec` with
-`rustix::io::fcntl_setfd`) — the equivalent of `pass_fds`. Timeouts kill
-the child (as `subprocess.run(timeout=…)` does). Hashing uses `sha2`.
+Rust: open with `std::fs::File` (which sets `O_CLOEXEC`); right before
+spawning the probe, clear `FD_CLOEXEC` on exactly that descriptor in the
+parent (`rustix::io::fcntl_setfd`, a safe API) and close the descriptor
+after the child has exited — the equivalent of `pass_fds`. This needs no
+`unsafe` (`pre_exec` is unsafe, and F1's workspace lints set
+`unsafe_code = "forbid"`); it is race-free because `collect` is
+single-threaded and spawns no other child while the descriptor is
+inheritable. Timeouts kill the child (as `subprocess.run(timeout=…)`
+does). Hashing uses `sha2`.
 
 #### OS (`observe_os`, `:346-390`)
 
@@ -530,16 +540,17 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   src/traefik.rs  src/os.rs  src/postgresql.rs  src/upstream.rs  src/apt.rs (helper invocation)
   src/export.rs                inventory projection + safe source read
   src/atomic.rs                atomic JSON write with group
-  src/serve.rs                 endpoint (on the shared HTTP crate if F1 provides one)
+  src/serve.rs                 endpoint (hyper behind an `Endpoint` boundary, 5.4)
   fixtures/generate.py         fixture generator (imports the Python oracle)
   fixtures/*.json
   parity/run_parity.py         process-level parity harness
   parity/shadow_compare.py     live shadow comparison
-rust/software-live-apt/        crate `software-live-apt` (license per Q1), binary `software-live-apt`
+rust/software-live-apt/        crate `software-live-apt` (GPL-3.0-or-later), binary `software-live-apt`
+  LICENSE.GPL-3.0              the helper's own license file (section 12)
   src/main.rs                  prints the `apt` observation object (3.3) as JSON
 ```
 
-### 5.2 APT: a separate helper binary (decision, subject to Q1)
+### 5.2 APT: a separate helper binary (decided 2026-10-21, section 12)
 
 The APT observation needs libapt-pkg semantics (origins, trust, version
 comparison, candidate policy). The maintained binding is **`rust-apt`**
@@ -584,12 +595,10 @@ containers that no write is attempted (and additionally clears
 omitted) and `fullname` (`name:arch`) follow python-apt's
 `Package.name`/`Package.fullname`; S1 confirms this against python-apt.
 
-Fallback if the owner rejects GPL code in the repository (Q1): a
-`deb822`-based implementation in the main crate (`debian-control`,
-`deb822-lossless`, `debversion`, all Apache-2.0 and maintained), with
-`apt-cache policy` for the candidate. It is a single portable binary, but
-re-implements APT's trust and index association and needs the shadow run
-as its main evidence. This plan does not recommend it.
+The rejected alternative was a `deb822`-based re-implementation in the
+main crate (`debian-control`, `deb822-lossless`, `debversion`, with
+`apt-cache policy` for the candidate). The owner chose `rust-apt` in the
+separate helper (section 12); the alternative is not built.
 
 ### 5.3 Crates
 
@@ -599,14 +608,14 @@ as its main evidence. This plan does not recommend it.
 | JSON | `serde`, `serde_json` (`arbitrary_precision`) | sorted maps by default; lossless numbers; custom `Formatter` for the policy hash (3.2) |
 | sha256 | `sha2`, `hex` | |
 | upstream HTTPS | `ureq` 3 (rustls, `rustls-native-certs` for the system store) | synchronous; the collector has no async runtime |
-| child processes with timeout | `std::process` plus `wait-timeout` (or the equivalent F1 picks) | kill on timeout like `subprocess.run` |
+| child processes with timeout | `std::process` plus `wait-timeout` | kill on timeout like `subprocess.run` |
 | fd and stat details | `rustix` (`fcntl_setfd`, `fstat`, `fchown`, `fchmod`, `O_NOFOLLOW`) | |
 | atomic file | `tempfile` (`Builder::prefix(".software-live-")`, `persist`) | plus `fsync` |
 | users/groups | `nix::unistd::Group::from_name` or `uzers` | `grp.getgrnam` |
 | os-release | a maintained parser crate if one matches Python's unquoting (fixture-tested); otherwise a 30-line parser with fixtures from `platform._parse_os_release` | decision recorded in S3c |
 | regex | `regex` | the patterns of 3.3 |
 | dates | `time` or `chrono` (date only, UTC) | |
-| endpoint HTTP | the shared HTTP server crate from F1 if it exists, else `hyper` 1 (`server::conn::http1`) + `tokio` current-thread | see 5.4 |
+| endpoint HTTP | `hyper` 1 (`server::conn::http1`) + `tokio` current-thread | see 5.4 |
 | bcrypt | `bcrypt` (MIT) | 4.2 item 1 |
 | base64 | `base64` (strict standard engine, padding required) | `b64decode(validate=True)` |
 | APT (helper) | `rust-apt` | 5.2 |
@@ -616,14 +625,15 @@ as its main evidence. This plan does not recommend it.
 The metrics endpoints of the fleet (`backup_metrics_endpoint`,
 `storage_metrics_endpoint`, `metrics_endpoint`, …) share the shape of this
 endpoint: a fixed path, Basic auth against a role-written bcrypt
-`htpasswd`, JSON, Tailscale or loopback bind, no request logging. If
-`rust/PLAN-foundation.md` defines a shared crate for this, **S4 must use it**
-and adds only the software-live handler (404-before-auth order, the
-503/401 bodies, `with_freshness`). If the foundation crate does not exist
-when S4 starts, S4 implements `serve.rs` on hyper 1 behind a small
-`Endpoint` boundary (bind check, auth, handler), so that moving it into the
-shared crate later is mechanical. The coordinator decides which case
-applies when S4 is dispatched.
+`htpasswd`, JSON, Tailscale or loopback bind, no request logging.
+`rust/PLAN-foundation.md` has no shared library crate in F1 (its section 1;
+`metrics-httpd` is a binary crate, not a library). S4 therefore implements
+`serve.rs` on hyper 1 behind a small `Endpoint` boundary (bind check, auth,
+handler), so that moving it into a shared crate, if a later foundation
+slice extracts one, is mechanical. If such a crate is on `main` when S4 is
+dispatched, the coordinator may tell S4 to use it; S4 then adds only the
+software-live handler (404-before-auth order, the 503/401 bodies,
+`with_freshness`).
 
 ---
 
@@ -719,19 +729,25 @@ keeps running the Python tests unchanged.
 
 ### 7.1 Targets
 
-- `software-live`: `x86_64-unknown-linux-gnu`, built on the F1 glibc
-  baseline (≤ 2.39, the oldest target glibc is Ubuntu 24.04's 2.39), with
-  `--locked` and the pinned toolchain; `NEEDED` only glibc/libgcc.
+- `software-live`: `x86_64-unknown-linux-gnu`, built by the F2 pipeline
+  on `ubuntu-22.04` with the foundation's glibc floor 2.35
+  (`PLAN-foundation.md` section 2), `--locked` and the pinned toolchain;
+  `NEEDED` only glibc/libgcc.
 - `software-live-apt`: built inside `ubuntu:24.04` (links
   `libapt-pkg.so.6.0`) and `debian:13` (links `libapt-pkg.so.7.0`);
-  `NEEDED` only glibc, libgcc, libstdc++ and the expected libapt-pkg soname.
+  `NEEDED` only glibc, libgcc, libstdc++ and the expected libapt-pkg soname;
+  its glibc floor is the variant's own (2.39 and 2.41), since each variant
+  runs only on its distribution.
 
 ### 7.2 Release artifacts
 
-Per release tag (prefix per F1, e.g. `software-live-v0.1.0`), one archive per
-variant: `software-live-<ver>-x86_64-linux-gnu-<variant>.tar.gz` with
-`software-live`, `software-live-apt`, `LICENSE` (MIT) and the helper's
-license file, plus `.sha256` files. The `software-live` binary is the same
+Per release tag (F2 grammar `<crate>-v<semver>`, e.g.
+`software-live-v0.1.0`), one archive per variant:
+`software-live-<ver>-x86_64-unknown-linux-gnu-<variant>.tar.gz` with exactly
+the regular files `software-live`, `software-live-apt`, `LICENSE` (MIT, the
+workspace's `rust/LICENSE`) and `LICENSE.GPL-3.0` (the helper's), plus
+`.sha256` files. The tag is cut from the `software-live` crate version; the
+helper crate carries the same version. The `software-live` binary is the same
 build in both archives. Deterministic archives, `--version` smoke test
 against the tag commit, as in nyxmon 8.2.
 
@@ -743,8 +759,8 @@ New defaults:
 software_live_impl: python            # python | rust
 software_live_rust_version: ""        # e.g. "0.1.0"; required for impl rust or shadow
 software_live_rust_sha256: {}         # {ubuntu24.04: <64 hex>, debian13: <64 hex>}
-software_live_rust_release_url: >-    # per F1 naming
-  https://github.com/ephes/ops-library/releases/download/software-live-v{{ software_live_rust_version }}/software-live-{{ software_live_rust_version }}-x86_64-linux-gnu-{{ _software_live_variant }}.tar.gz
+software_live_rust_release_url: >-    # F2 naming plus the variant suffix (7.2)
+  https://github.com/ephes/ops-library/releases/download/software-live-v{{ software_live_rust_version }}/software-live-{{ software_live_rust_version }}-x86_64-unknown-linux-gnu-{{ _software_live_variant }}.tar.gz
 software_live_rust_local_archive: ""  # controller path, development only
 software_live_rust_keep_versions: 3
 software_live_rust_shadow: false      # shadow units, section 8.1
@@ -769,12 +785,16 @@ the policy and endpoint configuration and before the units):
    this host's variant (or a local archive). The variant comes from
    `/etc/os-release` (`ubuntu` + `24.04` → `ubuntu24.04`, `debian` + `13` →
    `debian13`); anything else fails the play before any change. Install the
-   release with the **F1 shared download/pin tasks** into
-   `{{ software_live_install_dir }}/releases/<version>/` (root:root 0755;
-   inside the dedicated directory the path guard of `tasks/main.yml:21-29`
-   demands, and removed by `software_live_remove` without changes). An
+   release with the **F3 role** (`include_role: rust_release_binary`,
+   `tasks_from: install`; `name: software-live`, the variant's
+   `release_url` and `sha256`, `local_archive`, `fail_hard: true`, the extra
+   archive members of 7.4) with `install_root:
+   {{ software_live_install_dir }}/releases`, so the F3 layout
+   (`<version>/software-live`, `.archive-sha256`, `.pins/`) lies inside the
+   dedicated directory the path guard of `tasks/main.yml:21-29` demands and
+   is removed by `software_live_remove` without changes (root:root 0755). An
    existing version directory is never modified; a different archive for an
-   installed version fails the run. The binary is put in place ahead of the
+   installed version fails the run (F3). The binary is put in place ahead of the
    switch by deploying with the shadow on (S9), not by impl `python`.
 3. Validate the candidate by its versioned path before anything points at
    it: `--version` reports the pinned version; `validate --config
@@ -798,8 +818,14 @@ the policy and endpoint configuration and before the units):
    and `readlink /proc/<MainPID>/exe` equals the versioned binary (rust), or
    `/proc/<MainPID>/cmdline` contains `software_live.py serve` (python);
    collector `ExecMainStatus=0` and `state.json` newer than the run start.
-7. Only after 6 succeeded, prune versions beyond `keep_versions`, never the
-   active one or the previous one.
+7. Only after 6 succeeded, pin and prune with F3: `tasks_from: pin`
+   writes `.pins/software-live` with the version the production units run
+   (impl `rust`) or removes it (impl `python`); with the shadow on,
+   `.pins/software-live-shadow` names the shadow units' version and is
+   removed when the shadow is turned off. Then `tasks_from: prune` with
+   `keep_versions` (asserted ≥ 2, so the previous version stays for a
+   Rust-to-Rust rollback) keeps the newest versions plus every pinned one.
+   F3 never prunes after a failure in the same play.
 8. `software_live_remove` also removes both drop-in directories and the
    shadow units.
 9. Secrets: no new secret, no `environment:` under `become_user`
@@ -812,20 +838,35 @@ include files unchanged, CHANGELOG entry under "Unreleased" (never bump
 templates and drop-ins for both impls and both variants, check the
 variable validation, and that `nyxmon_checks.py` is installed in every mode.
 
-### 7.4 Requirements on F1 (to be agreed with the foundation stream)
+### 7.4 Requirements on F1, F2 and F3 (to be agreed with the foundation stream)
 
-- A build matrix that can build one workspace member inside given container
-  images (`ubuntu:24.04`, `debian:13`) with extra build packages
-  (`libapt-pkg-dev`, a C++ compiler), and pack per-variant archives.
-- Per-binary `NEEDED` allowlists in the release checks (7.1).
-- A `cargo-deny` license exception scoped to `software-live-apt` for
-  `GPL-3.0-or-later` (only if Q1 is answered with rust-apt).
-- `rust/` excluded from the Ansible collection build (`build_ignore` in
-  `galaxy.yml`, done by F1, not by this stream).
+- **F1** (workspace): this stream appends `software-live` and
+  `software-live-apt` to `members` in S2/S3d (foundation section 1). The
+  helper crate sets its own `license = "GPL-3.0-or-later"` instead of the
+  workspace's MIT. S3d adds the `cargo-deny` exceptions in `rust/deny.toml`
+  scoped to `rust-apt` (and to the helper crate itself unless
+  `[licenses.private] ignore` already covers unpublished members), as the
+  foundation's "explicit line with the crate that brings it" rule demands.
+  `rust/` is excluded from the collection build by F1, not by this stream.
+- **F1** (CI): a job that builds and tests `software-live-apt` inside
+  `ubuntu:24.04` and `debian:13` with `libapt-pkg-dev` and a C++ compiler
+  (S3d adds it to `rust.yml`); the default `rust` job on `ubuntu-22.04`
+  excludes the helper (`--workspace --exclude software-live-apt`), since
+  Ubuntu 22.04's libapt-pkg is not a target.
+- **F2** (release): the tag prefix `software-live-v*` in the trigger list;
+  a build matrix that builds the helper inside the two variant images and
+  packs one archive per variant with the members of 7.2; per-binary
+  `NEEDED` allowlists and glibc floors in `release_checks.py` (7.1); the
+  release job's workspace checks exclude the helper as the CI job does (it
+  is built and tested in its variant images).
+- **F3** (install role): an input for additional archive members (here
+  `software-live-apt` and `LICENSE.GPL-3.0`) next to `<name>` and `LICENSE`,
+  installed with the same ownership and modes.
 
-If F1 does not provide the container matrix, S7 adds it to the F1 workflow
-in agreement with the foundation stream; this plan does not create a
-second release workflow.
+Whatever F2 or F3 does not provide when S6/S7 start, S6 (F3 input) and S7
+(F2 matrix) add to the foundation's files in agreement with the foundation
+stream; this plan does not create a second release workflow or a second
+install mechanism.
 
 ### 7.5 ops-control
 
@@ -898,6 +939,15 @@ The ops coordination has announced possible work on production (Traefik
 ACME move, window until 2026-10-30) and fractal (MinIO TLS and replication
 users). Cutovers on fractal and production happen only after the
 coordinator confirms that no such change is scheduled at the same time.
+The echoport-command-guard cutover is scheduled last in the campaign and
+never runs alongside other production or staging changes (section 12), so
+no S9, S10 or S12 deploy of this stream overlaps it.
+
+Every production or staging deploy of a role change (S9 with the S6 role,
+S12 with its own change) needs the installed collection to contain it:
+the coordinator makes the collection release commit (`galaxy.yml` bump
+plus CHANGELOG heading) on ops-library `main` right before that deploy;
+workers never bump `galaxy.yml` (section 12).
 A Traefik restart during a collection makes the Traefik observation
 `unknown` for one run (PID race); this is expected and is not a Rust
 regression.
@@ -933,7 +983,7 @@ fails (`ExecMainStatus != 0`), `observation_ok` turns false where Python
 was true, a Nyxmon severity changes without a matching real change, the
 projection is rejected by the software_estate reader, or memory exceeds
 twice the budget of section 10. The soak before the Python retirement is
-7 days on all four hosts without a rollback (Q2).
+7 days on all four hosts without a rollback (owner decision, section 12).
 
 ---
 
@@ -941,40 +991,44 @@ twice the budget of section 10. The soak before the Python retirement is
 
 Every implementation slice ends with a review by gpt-6.1-sol at high
 reasoning (`codex-review-loop`), then commit, push and, where the slice says
-so, deploy. Slices touching production take the shared deploy lock (2).
+so, deploy. A slice gets at most three review rounds; the third round
+reviews only the repair delta of round 2. If round 3 is not clean, the
+worker stops and reports to the coordinator instead of merging (owner rule,
+section 12). Slices touching production take the shared deploy lock (2).
 Hours are for one worker.
 
 | Id | Title | Depends on | Parallel | Touches production | Hours |
 | --- | --- | --- | --- | --- | --- |
-| S1 | Spike: `rust-apt` helper in `ubuntu:24.04` and `debian:13` containers vs python-apt on the same lists (memonly, origins and `trusted`, `version_compare`, candidate, holds, `name`/`fullname`); report appended to this plan | Q1 answered or pending (spike only) | yes, from the start | no | 3 |
-| S2 | Crate skeleton in the F1 workspace; CLI and exit codes; policy validation; python-compatible policy hash; report types, summary, freshness; `System` trait; `fixtures/generate.py` and the fixture check test; `TESTMAP.md` | F1 | no (critical path) | no | 4 |
+| S1 | Spike: `rust-apt` helper in `ubuntu:24.04` and `debian:13` containers vs python-apt on the same lists (memonly, origins and `trusted`, `version_compare`, candidate, holds, `name`/`fullname`); report appended to this plan | — | yes, from the start | no | 3 |
+| S2 | Crate skeleton in the F1 workspace (append to `members`); CLI and exit codes; policy validation; python-compatible policy hash; report types, summary, freshness; `System` trait; `fixtures/generate.py` and the fixture check test; `TESTMAP.md` | F1 | no (critical path) | no | 4 |
 | S3a | Upstream lookups and caches (GitHub, endoflife.date), cross-implementation cache compatibility, TLS via system store | S2 | yes (with S3b–S3e, S4) | no | 3 |
 | S3b | Traefik observation: MainPID, `/proc` link checks, pinned-descriptor execution, identity checks, retry | S2 | yes | no | 3 |
 | S3c | OS and PostgreSQL observation: os-release, lifecycle evaluation, `pg_lsclusters`, pinned postmaster probe | S2 | yes | no | 3 |
-| S3d | `software-live-apt` helper (`rust-apt`, or the deb822 fallback per Q1) and its invocation from `collect`; container tests | S1, S2, F1 (container CI) | yes | no | 4 |
+| S3d | `software-live-apt` helper (`rust-apt`, GPL-3.0-or-later, `LICENSE.GPL-3.0`, `cargo-deny` exception) and its invocation from `collect`; variant container CI job (7.4) | S1, S2, F1 | yes | no | 4 |
 | S3e | `export-inventory`: safe source read, projection, atomic write with group; Python reader accepts Rust output | S2 | yes | no | 2 |
 | S3f | `collect` orchestration: order, `generated_at_epoch`, atomic state write, `--report-usage` | S3a–S3e | no | no | 2 |
-| S4 | `serve`: endpoint on the shared HTTP crate (or hyper, 5.4), bind check, Basic auth with bcrypt, `htpasswd` fixtures, freshness | S2 (+ F1 HTTP crate if any) | yes (with S3*) | no | 3 |
+| S4 | `serve`: endpoint on hyper behind the `Endpoint` boundary (5.4), bind check, Basic auth with bcrypt, `htpasswd` fixtures, freshness | S2 | yes (with S3*) | no | 3 |
 | S5 | Parity harness (6.2) incl. the container collect cases; fixes found by it | S3f, S4 | yes (with S6) | no | 4 |
-| S6 | Role switch (7.3): impl selector, variant detection, install via F1 tasks, candidate validation, drop-ins, verification, pruning, shadow units (8.1), `software_live_remove` update, README, CHANGELOG, tests | F1, S2 (CLI contract) | yes (from S2 on) | no | 4 |
-| S7 | Release `software-live-v0.1.0`: F1 workflow extension for the variants (7.4), release checks, tag | F1, S5 | no | no (GitHub release only) | 3 |
-| S8 | ops-control (7.5): group/host vars with the pins and `impl: python`, shadow flag, version pre-task, runbook in `docs/SOFTWARE_LIVE.md`; an ops-library release containing S6 is a precondition | S6, S7, ops-library release | no | no | 2 |
-| S9 | Shadow on staging, then on macmini, fractal, production (deploy with `shadow: true`, impl python); ≥ 24 h; `shadow_compare.py` reports; lean measurements | S8 | yes (S11 in parallel) | yes (new shadow units only) | 2 + soak |
+| S6 | Role switch (7.3): impl selector, variant detection, install/pin/prune via the F3 role (plus the extra-members input, 7.4, if F3 lacks it), candidate validation, drop-ins, verification, shadow units (8.1), `software_live_remove` update, README, CHANGELOG, tests | F3, S2 (CLI contract) | yes (from S2 on) | no | 4 |
+| S7 | Release `software-live-v0.1.0`: F2 workflow extension for the variants and the tag prefix (7.4), release checks, tag | F2, S5 | no | no (GitHub release only) | 3 |
+| S8 | ops-control (7.5): group/host vars with the pins and `impl: python`, shadow flag, version pre-task, runbook in `docs/SOFTWARE_LIVE.md`; the coordinator's collection release commit containing S6 (8.2) is a precondition for S9 | S6, S7 | no | no | 2 |
+| S9 | Shadow on staging, then on macmini, fractal, production (deploy with `shadow: true`, impl python); ≥ 24 h; `shadow_compare.py` reports; lean measurements | S8, coordinator's collection release containing S6 (8.2) | yes (S11 in parallel) | yes (new shadow units only) | 2 + soak |
 | S10 | Cutover staging → macmini → fractal → production with verification (8.3) and the rollback drill on staging (8.4); shadow off afterwards | S9, coordinator check (8.2) | no | yes | 3 |
 | S11 | Manual CLI in ops-control: for hosts with impl `rust`, run the installed versioned `software-live collect --config-json` over SSH (path from the inventory pins) instead of streaming Python; keep the controller allowlist and timeouts; update ops-control `tests/test_software_live.py` and docs | S8 | yes (with S9/S10) | no | 2 |
-| S12 | Python retirement, ≥ 7 days after S10 on all hosts (Q2): role default `rust`, base templates render the Rust commands (drop-ins removed), stop installing `software_live.py` and remove the deployed copy and `__pycache__` (keep `nyxmon_checks.py`), drop `python3-apt` from `software_live_packages` (no uninstall), keep `software_live.py` in the repository as the oracle for fixtures and parity, docs and CHANGELOG; deploy to all four hosts | S10 + soak, S11 | no | yes | 3 |
+| S12 | Python retirement, ≥ 7 days after S10 on all four hosts without a rollback (section 12): role default `rust`, base templates render the Rust commands (drop-ins removed), stop installing `software_live.py` and remove the deployed copy and `__pycache__` (keep `nyxmon_checks.py`), drop `python3-apt` from `software_live_packages` (no uninstall), keep `software_live.py` in the repository as the oracle for fixtures and parity, docs and CHANGELOG; merge, then the coordinator's collection release commit (8.2), then deploy to all four hosts | S10 + soak, S11 | no | yes | 3 |
 
 Parallelism:
 
-- From the start: S1 (spike), and as soon as F1 lands, S2.
-- After S2: S3a, S3b, S3c, S3d (needs S1), S3e, S4 and S6 concurrently
+- From the start: S1 (spike), and as soon as F1 lands, S2. S6 needs F3,
+  S7 needs F2; both foundation slices run in parallel with S2–S5.
+- After S2: S3a, S3b, S3c, S3d (needs S1), S3e, S4 and S6 (needs F3) concurrently
   (up to seven workers; they touch separate modules or the role).
 - After S3a–S3e: S3f; after S3f and S4: S5. S6 can finish meanwhile.
 - After S8: S9 and S11 concurrently; S10 after S9.
 - S12 waits for the soak.
 
-Critical path: F1 → S2 → S3d (or the slowest S3*) → S3f → S5 → S7 → S8 →
-S9 (24 h) → S10 → 7 days → S12.
+Critical path: F1 → S2 → S3d (or the slowest S3*) → S3f → S5 → S7 (needs
+F2) → S8 → collection release → S9 (24 h) → S10 → 7 days → S12.
 
 Review gate per slice: the reviewer checks the slice against the sections
 of this plan it names, the TESTMAP rows it changes, and the P3 list (no
@@ -1007,9 +1061,7 @@ allocator is considered.
 
 ---
 
-## 11. Risks and owner questions
-
-### 11.1 Risks
+## 11. Risks
 
 | Risk | Mitigation |
 | --- | --- |
@@ -1025,15 +1077,44 @@ allocator is considered.
 | ops-control CI is red at `test-software-inventory` (unrelated eMudhra work) | S8/S11 run the targeted tests and record the pre-existing failure; this stream does not fix it |
 | Graphyard Atlas step open | this stream changes neither `graphyard_vector` nor ingest tokens; the projection format is unchanged |
 
-### 11.2 Questions for the owner
+The owner questions of this plan (Q1, Q2) are decided; see section 12.
 
-- **Q1 — APT binding and license.** Recommended: use `rust-apt`
-  (GPL-3.0-or-later) in a separate helper binary `software-live-apt`, built
-  per distribution variant (Ubuntu 24.04, Debian 13), with its source in
-  ops-library under its own GPL license file, while the rest of the port
-  stays MIT. Alternative: a deb822-based re-implementation (Apache-2.0
-  crates, single portable binary) that copies APT's trust and index logic
-  and relies on the shadow run for evidence.
-- **Q2 — Soak before the Python retirement.** Recommended: 7 days on all
-  four hosts without a rollback, then S12; `software_live.py` stays in the
-  repository as the test oracle (not deployed).
+---
+
+## 12. Owner decisions (2026-10-21)
+
+The owner answered the planners' questions on 2026-10-21 (given in chat to
+the campaign coordinator) and accepted every recommended answer.
+
+For this stream:
+
+- **Q1 APT binding and license: `rust-apt` in a separate helper.**
+  `rust-apt` (GPL-3.0-or-later) is used only in the small helper binary
+  `software-live-apt`, built per distribution variant (`ubuntu24.04` with
+  `libapt-pkg.so.6.0`, `debian13` with `libapt-pkg.so.7.0`), with its own
+  GPL license file (`rust/software-live-apt/LICENSE.GPL-3.0`, packed into
+  the archive). The main `software-live` binary stays MIT and links no
+  libapt-pkg (5.2, 7.2). The deb822 alternative is not built.
+- **Q2 Python retirement: 7 days on all four hosts without a rollback.**
+  S12 starts no earlier than 7 days after the last S10 cutover, and only if
+  no host was rolled back in that time (8.5). `software_live.py` stays in
+  the repository as the test oracle for fixtures and parity; it is no
+  longer deployed after S12.
+
+Campaign-wide decisions that bind this stream:
+
+- **Foundation.** ops-library may get its first GitHub Actions workflows:
+  `rust.yml` (CI for `rust/` only) and `rust-release.yml` with
+  `contents: write` only in the publish job; binary releases are published
+  on the public repository (F1, F2; 7.2, 7.4).
+- **Collection releases.** The coordinator makes the collection release
+  commit (`galaxy.yml` bump plus CHANGELOG heading) on ops-library `main`
+  right before each production deploy that needs it; workers never bump
+  `galaxy.yml` and write CHANGELOG entries under "Unreleased" (7.3, 8.2,
+  S8, S12).
+- **Scheduling.** The echoport-command-guard port is scheduled last in the
+  campaign and never alongside other production or staging changes; this
+  stream's production steps do not overlap it (8.2).
+- **Review rounds.** A slice, and a plan, may get a third review round over
+  the repair delta of round 2; if round 3 is not clean, the worker stops and
+  reports (section 9).
