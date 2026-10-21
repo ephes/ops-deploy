@@ -735,7 +735,9 @@ variant is released, while the endpoint keeps serving.
 Helper contract (P1 for its output): argv
 `software-live-apt observe --max-age <seconds> --now <epoch>` (`now` as
 Python's float `repr`, which the helper reads back exactly), no stdin,
-JSON object of 3.3 "APT" on stdout (≤ 4 MiB), exit 0 also for
+JSON object of 3.3 "APT" on stdout (≤ 4 MiB; the main binary reads each
+stream only up to 4 MiB and kills the helper there, through
+`System::run_bounded`), exit 0 also for
 `status: unknown` results it could produce itself; any other exit,
 a timeout (60 s; the unit allows 90 s for everything), invalid JSON, or an
 object whose keys or value types are not exactly those of `observe_apt`'s

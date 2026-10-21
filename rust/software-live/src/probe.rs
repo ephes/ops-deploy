@@ -25,7 +25,8 @@ use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{OnceLock, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -113,6 +114,9 @@ pub enum CommandError {
     Timeout(Duration),
     /// Reading the child's output failed.
     Io(io::Error),
+    /// A stream exceeded the byte limit of [`System::run_bounded`]; the
+    /// child was killed.
+    OutputLimit(usize),
 }
 
 impl CommandError {
@@ -134,6 +138,10 @@ impl CommandError {
                 ),
             ),
             Self::Io(error) => PyError::os(error),
+            Self::OutputLimit(limit) => PyError::new(
+                "OSError",
+                format!("Command '{program}' wrote more than {limit} bytes to a stream"),
+            ),
         }
     }
 
@@ -179,6 +187,23 @@ pub trait System {
     /// `/`), no stdin, stdout and stderr captured, killed when `timeout`
     /// passes; returns what the finished child left, whatever its exit.
     fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError>;
+    /// [`System::run`], but a stream longer than `limit` bytes is
+    /// [`CommandError::OutputLimit`]. The host stops reading at the limit
+    /// and kills the child right away, so the output never takes more memory
+    /// than the limit (the APT helper, PLAN.md 5.2). The default (the
+    /// fixture world) checks the lengths after the run.
+    fn run_bounded(
+        &self,
+        argv: &[&OsStr],
+        timeout: Duration,
+        limit: usize,
+    ) -> Result<CommandOutput, CommandError> {
+        let output = self.run(argv, timeout)?;
+        if output.stdout.len() > limit || output.stderr.len() > limit {
+            return Err(CommandError::OutputLimit(limit));
+        }
+        Ok(output)
+    }
     /// `open(path, "rb")` (follows symbolic links, also `/proc/<pid>/exe`).
     fn open(&self, path: &Path) -> io::Result<Self::File>;
     /// `os.fstat(file.fileno())`.
@@ -347,7 +372,16 @@ impl System for HostSystem {
     }
 
     fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError> {
-        spawn_and_wait(argv, timeout, &[], || {})
+        spawn_and_wait(argv, timeout, &[], || {}, None)
+    }
+
+    fn run_bounded(
+        &self,
+        argv: &[&OsStr],
+        timeout: Duration,
+        limit: usize,
+    ) -> Result<CommandOutput, CommandError> {
+        spawn_and_wait(argv, timeout, &[], || {}, Some(limit))
     }
 
     fn open(&self, path: &Path) -> io::Result<HostFile> {
@@ -388,11 +422,17 @@ impl System for HostSystem {
         use rustix::io::{FdFlags, fcntl_setfd};
         fcntl_setfd(&file.0, FdFlags::empty())
             .map_err(|errno| CommandError::Spawn(errno.into()))?;
-        spawn_and_wait(argv, timeout, &[file.fd()], || {
-            // Cannot fail on a descriptor that is open; the file is closed
-            // when the observation drops it either way.
-            let _ = fcntl_setfd(&file.0, FdFlags::CLOEXEC);
-        })
+        spawn_and_wait(
+            argv,
+            timeout,
+            &[file.fd()],
+            || {
+                // Cannot fail on a descriptor that is open; the file is closed
+                // when the observation drops it either way.
+                let _ = fcntl_setfd(&file.0, FdFlags::CLOEXEC);
+            },
+            None,
+        )
     }
 
     fn http_get(&self, request: &HttpRequest<'_>) -> Result<Vec<u8>, PyError> {
@@ -412,7 +452,9 @@ impl System for HostSystem {
 
 /// Start `argv` (no stdin, both streams captured), call `after_spawn` as
 /// soon as the spawn has returned (whether it worked or not), then wait for
-/// the child until `timeout` passes.
+/// the child until `timeout` passes. With a `limit`, each stream is read
+/// only up to `limit + 1` bytes and the child is killed as soon as one
+/// passes the limit ([`CommandError::OutputLimit`]).
 ///
 /// As `subprocess.run` (`close_fds=True`), the child gets no descriptor of
 /// this process beyond its standard streams and `keep`: every other
@@ -425,6 +467,7 @@ fn spawn_and_wait(
     timeout: Duration,
     keep: &[RawFd],
     after_spawn: impl FnOnce(),
+    limit: Option<usize>,
 ) -> Result<CommandOutput, CommandError> {
     let (program, args) = argv
         .split_first()
@@ -439,20 +482,37 @@ fn spawn_and_wait(
         .spawn();
     after_spawn();
     let mut child = spawned.map_err(CommandError::Spawn)?;
+    let exceeded = Arc::new(AtomicBool::new(false));
+    let over_limit = || CommandError::OutputLimit(limit.unwrap_or_default());
     // Drain both pipes while waiting, as `communicate()` does, so a
     // chatty child never blocks on a full pipe.
     let (sender, receiver) = mpsc::channel();
     let stdout = child
         .stdout
         .take()
-        .map(|pipe| drain(pipe, 0, sender.clone()));
-    let stderr = child.stderr.take().map(|pipe| drain(pipe, 1, sender));
-    let status = match child.wait_timeout(remaining(deadline)) {
-        Ok(Some(status)) => status,
-        Ok(None) => return Err(kill(&mut child, timeout)),
-        Err(error) => {
-            kill(&mut child, timeout);
-            return Err(CommandError::Io(error));
+        .map(|pipe| drain(pipe, 0, limit, Arc::clone(&exceeded), sender.clone()));
+    let stderr = child
+        .stderr
+        .take()
+        .map(|pipe| drain(pipe, 1, limit, Arc::clone(&exceeded), sender));
+    let status = loop {
+        // With a limit, look at it every LIMIT_POLL while the child runs.
+        let step = match limit {
+            Some(_) => remaining(deadline).min(LIMIT_POLL),
+            None => remaining(deadline),
+        };
+        match child.wait_timeout(step) {
+            Ok(Some(status)) => break status,
+            Ok(None) if exceeded.load(Ordering::SeqCst) => {
+                kill(&mut child, timeout);
+                return Err(over_limit());
+            }
+            Ok(None) if remaining(deadline).is_zero() => return Err(kill(&mut child, timeout)),
+            Ok(None) => {}
+            Err(error) => {
+                kill(&mut child, timeout);
+                return Err(CommandError::Io(error));
+            }
         }
     };
     // A grandchild may still hold a pipe open: wait for the end of
@@ -470,20 +530,39 @@ fn spawn_and_wait(
             Ok((_, Err(error))) => return Err(CommandError::Io(error)),
             Err(_) => return Err(CommandError::Timeout(timeout)),
         }
+        // A drain thread sets the flag before it sends: a stream past the
+        // limit ends the run now, even while a grandchild keeps the other
+        // pipe open.
+        if exceeded.load(Ordering::SeqCst) {
+            return Err(over_limit());
+        }
     }
     Ok(output)
 }
 
+/// How often a bounded run looks at the output limit while the child runs.
+const LIMIT_POLL: Duration = Duration::from_millis(20);
+
 type Drained = (u8, io::Result<Vec<u8>>);
 
 fn drain<R: Read + Send + 'static>(
-    mut pipe: R,
+    pipe: R,
     which: u8,
+    limit: Option<usize>,
+    exceeded: Arc<AtomicBool>,
     sender: mpsc::Sender<Drained>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        let result = pipe.read_to_end(&mut bytes).map(|_| bytes);
+        // One byte past the limit tells "too much" from "exactly the limit".
+        let cap = limit.map_or(u64::MAX, |limit| {
+            u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1)
+        });
+        let result = pipe.take(cap).read_to_end(&mut bytes);
+        if limit.is_some_and(|limit| bytes.len() > limit) {
+            exceeded.store(true, Ordering::SeqCst);
+        }
+        let result = result.map(|_| bytes);
         // The receiver is gone after a timeout; nothing left to report.
         let _ = sender.send((which, result));
     })

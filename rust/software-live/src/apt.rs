@@ -11,7 +11,8 @@
 //! - argv `software-live-apt observe --max-age <seconds> --now <epoch>`
 //!   (`now` as Python's float `repr`, which the helper reads back exactly),
 //!   no stdin, killed after 60 seconds.
-//! - Exit 0 and at most 4 MiB of stdout holding one JSON object with
+//! - Exit 0 and at most 4 MiB on each stream (read no further: the helper
+//!   is killed at the limit), stdout holding one JSON object with
 //!   exactly the keys of `observe_apt`'s result (`ok`, or the helper's own
 //!   `unknown`); anything else is the `unknown` object with a class of
 //!   this module (PLAN.md 4.2 item 8): `HelperMissing`, `HelperUnsafe`,
@@ -134,16 +135,16 @@ fn run<S: System + ?Sized>(
         OsStr::new("--now"),
         &now_arg,
     ];
-    let output = system.run(&argv, timeout).map_err(|error| match error {
-        CommandError::Spawn(_) => "HelperStart",
-        CommandError::Timeout(_) => "HelperTimeout",
-        CommandError::Io(_) => "InvalidHelperOutput",
-    })?;
+    // Neither stream is read past OUTPUT_LIMIT: the helper is killed there.
+    let output = system
+        .run_bounded(&argv, timeout, OUTPUT_LIMIT)
+        .map_err(|error| match error {
+            CommandError::Spawn(_) => "HelperStart",
+            CommandError::Timeout(_) => "HelperTimeout",
+            CommandError::Io(_) | CommandError::OutputLimit(_) => "InvalidHelperOutput",
+        })?;
     if !output.success() {
         return Err("HelperExit");
-    }
-    if output.stdout.len() > OUTPUT_LIMIT {
-        return Err("InvalidHelperOutput");
     }
     let text = std::str::from_utf8(&output.stdout).map_err(|_| "InvalidHelperOutput")?;
     let value = pyjson::loads(text).map_err(|_| "InvalidHelperOutput")?;
@@ -380,6 +381,10 @@ mod tests {
                 "InvalidHelperOutput",
             ),
             (json!({"stdout": "[]"}), "InvalidHelperOutput"),
+            (
+                json!({"stdout": " ".repeat(OUTPUT_LIMIT + 1)}),
+                "InvalidHelperOutput",
+            ),
         ] {
             let (result, _) = observe_world(world(0o100_755, 0, command.clone()));
             assert_eq!(
@@ -540,11 +545,28 @@ mod tests {
             "APT observation failed (HelperTimeout)"
         );
         assert!(started.elapsed() < Duration::from_secs(5));
-        // More than 4 MiB of output.
-        let (_dir, path, uid) = script("head -c 4194305 /dev/zero | tr '\\0' ' '");
+        // More than 4 MiB on stdout, or on stderr, then a long sleep: the
+        // helper is killed at the limit, long before its timeout.
+        for stream in ["", ">&2"] {
+            let (_dir, path, uid) = script(&format!(
+                "head -c 8388608 /dev/zero | tr '\\0' ' ' {stream}; exec sleep 30"
+            ));
+            let started = std::time::Instant::now();
+            assert_eq!(
+                error_of(&host_run(&path, uid, Duration::from_secs(20))),
+                "APT observation failed (InvalidHelperOutput)",
+                "{stream}"
+            );
+            assert!(started.elapsed() < Duration::from_secs(10), "{stream}");
+        }
+        // Exactly the limit on stderr is not too much.
+        let output = ok_output().to_string();
+        let (_dir, path, uid) = script(&format!(
+            "head -c {OUTPUT_LIMIT} /dev/zero >&2; printf '%s\\n' '{output}'"
+        ));
         assert_eq!(
-            error_of(&host_run(&path, uid, Duration::from_secs(10))),
-            "APT observation failed (InvalidHelperOutput)"
+            host_run(&path, uid, Duration::from_secs(20)).status(),
+            Some("ok")
         );
         // Owned by someone else: refused before it runs.
         let (dir, path, uid) = script("touch \"$(dirname \"$0\")/ran\"");
