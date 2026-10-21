@@ -466,12 +466,25 @@ per-request 401/503, not a startup failure.
   `int_max_str_digits` default, a `ValueError` in Python) → 502
   `invalid_json` in Rust; every other
   lexeme is a Python `float`: parsed to the nearest `f64` and written with
-  Python's `float.__repr__` rules — the shortest round-trip digits (Rust's
-  `{:e}` formatting yields them) laid out fixed-point with at least one
+  Python's `float.__repr__` rules. Digits: CPython's `repr` (David Gay
+  `dtoa` mode 0) takes the shortest digit string that round-trips and,
+  among equally short ones, the one closest to the exact binary value
+  (exact ties: round half to even). Rust's shortest `{:e}` has the right
+  length but may pick the other candidate (`181703637716804.125`: Rust
+  `1.8170363771680413e14`, Python `181703637716804.12`). So the formatter
+  takes the digit count `n` from Rust's shortest `{:e}`, then formats the
+  exact value correctly rounded to `n` significant digits
+  (`format!("{:.*e}", n - 1, x)`, exact with round half to even) and uses
+  that string if it parses back to the same `f64`, else Rust's shortest.
+  S1 pins it with a differential test against CPython 3.12 and 3.13:
+  `fixtures/generate.py` writes `repr()` of ≥ 100 000 seeded random finite
+  `f64` bit patterns plus the cases of this item, and the Rust test
+  requires identical strings. Layout: fixed-point with at least one
   fractional digit when the decimal exponent is in −4 ≤ e < 16, else as
   `<d>[.<ddd>]e<sign><at least two digits>` (`1e2` → `100.0`, `1.00` →
   `1.0`, `9007199254740993.0` → `9007199254740992.0`, `1e16` → `1e+16`,
-  `0.0001` → `0.0001`, `0.00001` → `1e-05`, `-0.0` → `-0.0`). The same
+  `0.0001` → `0.0001`, `0.00001` → `1e-05`, `-0.0` → `-0.0`,
+  `181703637716804.125` → `181703637716804.12`). The same
   formatter writes computed floats (logyard counts). The int/float split
   also drives the apt-state type checks (`isinstance(v, int)`: `1e9` and
   `5.0` are floats there, as in Python); integers used in apt-state
