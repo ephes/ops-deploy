@@ -1,0 +1,2585 @@
+{
+ "config": [
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "loopback"
+  },
+  {
+   "address": [
+    "127.255.255.255",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.255.255.255\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "loopback_top"
+  },
+  {
+   "address": [
+    "127.0.0.0",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.0\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "loopback_network"
+  },
+  {
+   "address": [
+    "100.64.0.0",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"100.64.0.0\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "tailscale_first"
+  },
+  {
+   "address": [
+    "100.100.1.2",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"100.100.1.2\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "tailscale"
+  },
+  {
+   "address": [
+    "100.127.255.255",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"100.127.255.255\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "tailscale_last"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"0.0.0.0\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "public_any"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"100.63.255.255\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "below_tailscale"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"100.128.0.0\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "above_tailscale"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"10.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "private"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"::1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "ipv6_loopback"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"::ffff:127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "ipv4_mapped"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"fe80::1%eth0\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "ipv6_scoped"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.01\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "leading_zero"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "short_form"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1 \", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "trailing_space"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \" 127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "leading_space"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1/8\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "network"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "empty_bind"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"localhost\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "hostname"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"\\uff11\\uff12\\uff17.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "fullwidth_digits"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.256\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "octet_too_big"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 2130706433, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "int_loopback"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 1684275458, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "int_tailscale"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 167772161, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "int_private"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 4294967296, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "int_ipv6"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": -1, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "int_negative"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 1.5, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "float_bind"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": null, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "null_bind"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": true, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "true_bind"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": [], \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "list_bind"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "KeyError",
+    "message": "'bind'"
+   },
+   "id": "missing_bind"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 2130706433, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"x\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "int_loopback_bad_port"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": 2130706433, \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 70000, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "int_loopback_big_port"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"0.0.0.0\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"x\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": "endpoint must bind IPv4 loopback or Tailscale"
+   },
+   "id": "public_and_bad_port"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    0
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 0, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_zero"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    65535
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 65535, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_max"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 65536, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_too_big"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": -1, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_negative"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    0
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": -0, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_negative_zero"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 1000000000000000000000000000000, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_huge"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"9110\", \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_string"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \" 9110\\n\", \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_string_spaces"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"+9110\", \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_string_plus"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"9_110\", \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_string_underscore"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"9__110\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "port_string_double_underscore"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"009110\", \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_string_leading_zeros"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"-1\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_string_negative"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"0x10\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "port_string_hex"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"9110.0\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "port_string_float"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "port_string_empty"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "port_string_too_long"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": \"\\u0669\\u0661\\u0661\\u0660\", \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_unicode_digits",
+   "p3": "unicode-digits"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110.0, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_float"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110.9, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_float_fraction"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    0
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": -0.5, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_float_negative_fraction"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9.11e3, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_float_exponent"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 1e300, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_float_huge"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 1e400, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_float_overflow"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 65536.5, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "port_float_too_big"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    1
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": true, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_true"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    0
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": false, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "port_false"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": null, \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "port_null"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": [], \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "port_list"
+  },
+  {
+   "address": null,
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"state\": \"{dir}/state.json\"}",
+   "error": {
+    "class": "KeyError",
+    "message": "'port'"
+   },
+   "id": "missing_port"
+  },
+  {
+   "address": null,
+   "config": "[]",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "config_list"
+  },
+  {
+   "address": null,
+   "config": "\"x\"",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "config_string"
+  },
+  {
+   "address": null,
+   "config": "null",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "config_null"
+  },
+  {
+   "address": null,
+   "config": "5",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "id": "config_number"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\", \"extra\": {\"x\": 1}}",
+   "error": null,
+   "id": "extra_keys"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "missing_path",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "missing_auth_user",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "missing_htpasswd",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110}",
+   "error": null,
+   "id": "missing_state",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": 1, \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "path_not_string",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": null, \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "auth_user_not_string",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": [], \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": \"{dir}/state.json\"}",
+   "error": null,
+   "id": "htpasswd_not_string",
+   "p3": "startup-config"
+  },
+  {
+   "address": [
+    "127.0.0.1",
+    9110
+   ],
+   "config": "{\"auth_user\": \"nyxmon\", \"bind\": \"127.0.0.1\", \"htpasswd\": \"{dir}/htpasswd\", \"path\": \"/.well-known/software-live\", \"port\": 9110, \"state\": {}}",
+   "error": null,
+   "id": "state_not_string",
+   "p3": "startup-config"
+  }
+ ],
+ "constants": {
+  "max_age": 1800,
+  "password": "correct horse battery staple",
+  "path": "/.well-known/software-live",
+  "realm": "software-live",
+  "user": "nyxmon"
+ },
+ "requests": [
+  {
+   "htpasswd_calls": 1,
+   "id": "get_valid",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "http_1_0",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e300d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "query_string",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976653f783d3120485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "empty_query",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976653f20485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "trailing_slash",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976652f20485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "double_slash",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "triple_slash",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2f2f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "absolute_form",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "47455420687474703a2f2f3132372e302e302e313a393131302f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "percent_encoded",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652532446c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "other_case",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e57656c6c2d4b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "root",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f20485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "asterisk",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202a20485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "other_path_without_auth",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f6d65747269637320485454502f312e310d0a486f73743a203132372e302e302e310d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "other_path_wrong_auth",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f6d65747269637320485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320654470350d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "post",
+   "now": 1700000060.75,
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": null,
+    "status": 501
+   },
+   "request_hex": "504f5354202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "head",
+   "now": 1700000060.75,
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": null,
+    "status": 501
+   },
+   "request_hex": "48454144202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "put_other_path",
+   "now": 1700000060.75,
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": null,
+    "status": 501
+   },
+   "request_hex": "505554202f7820485454502f312e310d0a486f73743a203132372e302e302e310d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "lowercase_method",
+   "now": 1700000060.75,
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": null,
+    "status": 501
+   },
+   "request_hex": "676574202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "options_asterisk",
+   "now": 1700000060.75,
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": null,
+    "status": 501
+   },
+   "request_hex": "4f5054494f4e53202a20485454502f312e310d0a486f73743a203132372e302e302e310d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "no_authorization",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "empty_authorization",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "scheme_only",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a2042617369630d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "scheme_space_only",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a204261736963200d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "lowercase_scheme",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20626173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "bearer",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a2042656172657220626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "two_spaces",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a2042617369632020626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "tab_separator",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696309626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "leading_whitespace",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20092020426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "no_space_after_colon",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "header_name_case",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a615554484f52495a4154494f4e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "trailing_space",
+   "now": 1700000060.75,
+   "p3": "header-whitespace",
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d200d0a0d0a",
+   "rust_status": 200,
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "trailing_tab",
+   "now": 1700000060.75,
+   "p3": "header-whitespace",
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d090d0a0d0a",
+   "rust_status": 200,
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "missing_padding",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247550d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "extra_padding",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d3d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "leading_padding",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a204261736963203d626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "dot_inside",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c342e625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "url_safe_alphabet",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f76765f0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "non_zero_trailing_bits",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247563d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "non_ascii_byte",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553de90d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "control_byte",
+   "now": 1700000060.75,
+   "p3": "framing",
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d010d0a0d0a",
+   "rust_status": 400,
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "obs_fold",
+   "now": 1700000060.75,
+   "p3": "framing",
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a2042617369630d0a20626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "rust_status": 400,
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "not_utf8",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f76383d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "no_colon",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739750d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "wrong_user",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320546e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "empty_user",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a204261736963204f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "wrong_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "wrong"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6e64796232356e0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "empty_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     ""
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f673d3d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "colon_in_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "pa:ss"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6e42684f6e4e7a0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "lf_in_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247554b0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "cr_in_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple\r"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247554e0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "nul_in_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple\u0000"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a64474677624755410d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "non_ascii_password",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "p\u00e4ssw\u00f6rd"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6e444470484e7a64384f32636d513d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "header_4094_bytes",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6e68346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465413d3d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "header_4098_bytes",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6e6834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465486834654868346548683465413d3d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "two_headers_first_wrong",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": [
+     "nyxmon",
+     "wrong"
+    ],
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6e64796232356e0d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "two_headers_first_right",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a417574686f72697a6174696f6e3a20426173696320780d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "fresh",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "age_limit",
+   "now": 1700001800.25,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 1800.0,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "stale",
+   "now": 1700001800.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 1800.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": false,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "future",
+   "now": 1699999995.25,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": -5.0,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": false,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "int_timestamp",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.75,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "schema_1",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 1, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "schema_float",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2.0,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2.0, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "schema_string",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": \"2\", \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "schema_true",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": true, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "schema_missing",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "summary_missing",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\"}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "summary_list",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": []}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "summary_key_missing",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "summary_string",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": \"yes\", \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "summary_int",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": 1, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "summary_extra_and_fresh",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "extra": [
+       1
+      ],
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true, \"fresh\": \"old\", \"extra\": [1]}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_missing",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_bool",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": true, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_string",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": \"1700000000\", \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_null",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": null, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_huge_int",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_overflowing_float",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1e400, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "timestamp_nan",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": NaN, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "nan_elsewhere",
+   "now": 1700000060.75,
+   "p3": "non-standard-json",
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "rust_status": 503,
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}, \"extra\": NaN}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "meta_replaced",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}, \"meta\": {\"age_seconds\": 1, \"other\": 2}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "extra_fields",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "h\u00e9",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "os": {
+      "big": 18446744073709551617,
+      "status": "ok"
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"h\\u00e9\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}, \"os\": {\"status\": \"ok\", \"big\": 18446744073709551617}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "duplicate_keys",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "second",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}, \"host\": \"second\"}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_list",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "[]"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_empty",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": ""
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_broken",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{broken"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_missing",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": null
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_bom",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state_hex": "efbbbf7b22736368656d615f76657273696f6e223a20322c2022686f7374223a20226578616d706c65222c202267656e6572617465645f61745f65706f6368223a20313730303030303030302e32352c2022706f6c6963795f736861323536223a202230303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c202273756d6d617279223a207b226f62736572766174696f6e5f6f6b223a20747275652c20226f735f6f6b223a20747275652c2022706f737467726573716c5f6f6b223a20747275652c20227472616566696b5f6f6b223a20747275652c202273656375726974795f757064617465735f6f6b223a20747275652c20226170745f696e64657865735f6672657368223a20747275657d7d"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_not_utf8",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state_hex": "7b22736368656d615f76657273696f6e223a20322c2022686f7374223a202268e9222c202267656e6572617465645f61745f65706f6368223a20313730303030303030302e32352c2022706f6c6963795f736861323536223a202230303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c202273756d6d617279223a207b226f62736572766174696f6e5f6f6b223a20747275652c20226f735f6f6b223a20747275652c2022706f737467726573716c5f6f6b223a20747275652c20227472616566696b5f6f6b223a20747275652c202273656375726974795f757064617465735f6f6b223a20747275652c20226170745f696e64657865735f6672657368223a20747275657d7d"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_crlf",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "generated_at_epoch": 1700000000.25,
+     "host": "example",
+     "meta": {
+      "age_seconds": 60.5,
+      "max_age_seconds": 1800
+     },
+     "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "schema_version": 2,
+     "summary": {
+      "apt_indexes_fresh": true,
+      "fresh": true,
+      "observation_ok": true,
+      "os_ok": true,
+      "postgresql_ok": true,
+      "security_updates_ok": true,
+      "traefik_ok": true
+     }
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 200
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2,\r\n\"host\": \"example\",\r\n\"generated_at_epoch\": 1700000000.25,\r\n\"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\",\r\n\"summary\": {\"observation_ok\": true,\r\n\"os_ok\": true,\r\n\"postgresql_ok\": true,\r\n\"traefik_ok\": true,\r\n\"security_updates_ok\": true,\r\n\"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 1,
+   "id": "state_trailing_data",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "missing_or_invalid_observation"
+    },
+    "challenge": null,
+    "htpasswd": [
+     "nyxmon",
+     "correct horse battery staple"
+    ],
+    "status": 503
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}} x"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "stale_without_auth",
+   "now": 1700009999.25,
+   "python": {
+    "body": {
+     "error": "unauthorized"
+    },
+    "challenge": "Basic realm=\"software-live\"",
+    "htpasswd": null,
+    "status": 401
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  }
+ ]
+}

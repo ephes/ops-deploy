@@ -4,8 +4,10 @@
 pub mod apt;
 pub mod atomic;
 pub mod collect;
+pub mod endpoint;
 pub mod error;
 pub mod export;
+pub mod htpasswd;
 pub mod http;
 pub mod lifecycle;
 pub mod os;
@@ -14,6 +16,7 @@ pub mod postgresql;
 pub mod probe;
 pub mod pyjson;
 pub mod report;
+pub mod serve;
 pub mod traefik;
 pub mod upstream;
 pub mod usage;

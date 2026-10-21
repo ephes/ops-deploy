@@ -129,17 +129,6 @@ fn the_error_line_never_quotes_a_policy_value() {
     assert!(!stderr.contains(secret), "{stderr}");
 }
 
-#[test]
-fn serve_stops_with_exit_1_until_its_slice() {
-    let output = Command::new(binary())
-        .args(["serve", "--config-json", "{}"])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("not implemented yet"), "{stderr}");
-}
-
 /// `collect --report-usage` (PLAN.md 3.1): one usage line on stderr after
 /// the run, also after a failed one; other modes ignore the flag. (A
 /// successful `collect` is not run here: it would read this host and ask
@@ -181,4 +170,114 @@ fn report_usage_adds_one_line_to_collect() {
         let output = Command::new(binary()).args(argv).output().unwrap();
         assert_eq!(output.status.code(), Some(2), "{argv:?}");
     }
+}
+
+/// A free port on 127.0.0.1 (released again; the race with another
+/// process taking it in between is accepted).
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+fn http_get(port: u16, authorization: Option<&str>) -> (u16, String) {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let mut request = "GET /.well-known/software-live HTTP/1.1\r\nHost: x\r\n".to_owned();
+    if let Some(value) = authorization {
+        request.push_str(&format!("Authorization: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let status = response[9..12].parse().unwrap();
+    let body = response.split_once("\r\n\r\n").unwrap().1.to_owned();
+    (status, body)
+}
+
+#[test]
+fn serve_answers_on_its_bind_address_and_logs_nothing() {
+    #[derive(Deserialize)]
+    struct Htpasswd {
+        files: BTreeMap<String, String>,
+    }
+    let htpasswd: Htpasswd =
+        serde_json::from_str(include_str!("../fixtures/htpasswd.json")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("htpasswd"), &htpasswd.files["main"]).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let state = serde_json::json!({
+        "schema_version": 2, "host": "example", "generated_at_epoch": now - 30.0,
+        "summary": {"observation_ok": true, "os_ok": true, "postgresql_ok": true,
+                    "traefik_ok": true, "security_updates_ok": true, "apt_indexes_fresh": true},
+    });
+    std::fs::write(dir.path().join("state.json"), state.to_string()).unwrap();
+    let port = free_port();
+    let config = serde_json::json!({
+        "auth_user": "nyxmon", "bind": "127.0.0.1", "port": port,
+        "htpasswd": dir.path().join("htpasswd"), "path": "/.well-known/software-live",
+        "state": dir.path().join("state.json"),
+    });
+    let config_path = dir.path().join("endpoint.json");
+    std::fs::write(&config_path, config.to_string()).unwrap();
+    let started = std::time::Instant::now();
+    let mut child = Command::new(binary())
+        .args(["serve", "--config"])
+        .arg(&config_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "not listening"
+        );
+        assert!(child.try_wait().unwrap().is_none(), "serve exited");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let (status, body) = http_get(port, None);
+    assert_eq!(status, 401);
+    assert_eq!(body, r#"{"error":"unauthorized"}"#);
+    // "nyxmon:correct horse battery staple"
+    let good = "Basic bnl4bW9uOmNvcnJlY3QgaG9yc2UgYmF0dGVyeSBzdGFwbGU=";
+    let (status, body) = http_get(port, Some(good));
+    assert_eq!(status, 200);
+    let data: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(data["summary"]["fresh"], true);
+    assert_eq!(data["host"], "example");
+    child.kill().unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.stdout.is_empty());
+    assert!(
+        output.stderr.is_empty(),
+        "no request logging: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn serve_exits_1_when_the_port_is_taken() {
+    let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = taken.local_addr().unwrap().port();
+    let config = format!(
+        r#"{{"auth_user": "u", "bind": "127.0.0.1", "port": {port}, "htpasswd": "h",
+            "path": "/", "state": "s"}}"#
+    );
+    let output = Command::new(binary())
+        .args(["serve", "--config-json", &config])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(stderr.lines().count(), 1, "{stderr}");
+    assert!(stderr.starts_with("software-live: "), "{stderr}");
 }

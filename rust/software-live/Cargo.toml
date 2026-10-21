@@ -11,12 +11,21 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The endpoint (`serve`, PLAN.md 3.4, 5.4): strict base64 of the
+# Authorization header, bcrypt entries of the role's htpasswd file, hyper 1
+# over a current-thread tokio runtime.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }
+bytes = "1.12.1"
 # Lifecycle dates (`date.fromisoformat`, PLAN.md 3.3 and 4.2 item 6).
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 # `subprocess`'s close_fds for every child without `unsafe` (probe.rs).
 close_fds = "0.3.2"
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 hex = "0.4"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["tokio"] }
 # `grp.getgrnam` of the export and state groups (PLAN.md 3.6, 5.3);
 # `getrusage` of `collect --report-usage` (PLAN.md 3.1).
 nix = { version = "0.31.3", default-features = false, features = ["user", "resource"] }
@@ -38,6 +47,7 @@ serde_json = { version = "1", features = ["arbitrary_precision", "raw_value"] }
 sha2 = { version = "0.11", default-features = false }
 # Atomic JSON writes (`atomic_json`, PLAN.md 3.5).
 tempfile = "3"
+tokio = { version = "1.54.0", default-features = false, features = ["rt", "net", "time", "sync", "macros"] }
 # Upstream HTTPS (GitHub, endoflife.date): synchronous, no proxy, no gzip,
 # no bundled roots (PLAN.md 3.3, 5.3).
 ureq = { version = "3.4.2", default-features = false, features = ["rustls-no-provider"] }

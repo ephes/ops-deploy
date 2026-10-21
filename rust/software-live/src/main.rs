@@ -11,9 +11,8 @@
 //! and `--report-usage` (`collect` prints one stderr line with its wall
 //! time, CPU time and peak memory, [`software_live::usage`]).
 //!
-//! `validate` (S2), `export-inventory` (S3e) and `collect` (S3f) are
-//! complete; `serve` reads its configuration, then stops with exit 1 until
-//! its slice (S4).
+//! `validate` (S2), `export-inventory` (S3e), `collect` (S3f) and `serve`
+//! (S4) are complete.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -32,6 +31,7 @@ use software_live::export::{self, PyPath};
 use software_live::policy::{self, Policy};
 use software_live::probe::{HostSystem, System};
 use software_live::pyjson;
+use software_live::serve::{self, EndpointConfig};
 use software_live::usage;
 
 const VERSION: &str = concat!(
@@ -319,12 +319,6 @@ fn collect(cli: &Cli, system: &impl System, config: serde_json::Value) -> Result
     Ok(())
 }
 
-fn not_implemented(mode: &str, slice: &str) -> Fatal {
-    Fatal(format!(
-        "{mode} is not implemented yet (PLAN.md slice {slice})"
-    ))
-}
-
 /// `export-inventory` (`software_live.py:895-902`): it reads only the
 /// state file named by `--config` (never `--config-json`), so it takes no
 /// [`System`]: it neither collects nor connects. Any failure is the one
@@ -353,7 +347,12 @@ fn run(cli: &Cli, system: &impl System) -> Result<(), Fatal> {
             Ok(())
         }
         Mode::Collect => collect(cli, system, config),
-        Mode::Serve => Err(not_implemented("serve", "S4")),
+        Mode::Serve => {
+            // Runs until the process is stopped; returns only on an invalid
+            // configuration or a bind failure (exit 1).
+            let endpoint = EndpointConfig::from_value(&config)?;
+            match serve::run(&endpoint)? {}
+        }
         Mode::ExportInventory => unreachable!("handled above"),
     }
 }

@@ -2430,6 +2430,15 @@ def cli_cases() -> list[dict[str, Any]]:
         ("collect_invalid_policy", ["collect", "--config", "{dir}/invalid.json"]),
         ("collect_without_config", ["collect"]),
         ("collect_broken_json", ["collect", "--config-json", "{"]),
+        # serve: only configurations that stop before listening.
+        ("serve_public_bind", ["serve", "--config-json", '{"bind": "0.0.0.0"}']),
+        ("serve_missing_bind", ["serve", "--config-json", "{}"]),
+        ("serve_ipv6_bind", ["serve", "--config-json", '{"bind": "::1", "port": 9119}']),
+        ("serve_invalid_port", ["serve", "--config-json", '{"bind": "127.0.0.1", "port": "x"}']),
+        ("serve_port_out_of_range", ["serve", "--config-json", '{"bind": "127.0.0.1", "port": 70000}']),
+        ("serve_policy_as_config", ["serve", "--config", "{dir}/valid.json"]),
+        ("serve_without_config", ["serve"]),
+        ("serve_broken_json", ["serve", "--config-json", "{"]),
     ]
     return [{"id": case_id, "argv": argv} for case_id, argv in cases]
 
@@ -3126,6 +3135,397 @@ def gen_collect() -> list[dict[str, Any]]:
     return [run_collect_case(case) for case in collect_cases()]
 
 
+# ------------------------------------------------------------------ serve
+#
+# ``serve.json``: the endpoint (PLAN.md 3.1, 3.4). ``config`` runs the real
+# ``main()`` with ``serve --config-json`` and a fake ``HTTPServer`` that
+# records the address it would bind, refusing what ``socket.bind`` refuses (a
+# host that is not a string, then a port outside 0-65535). ``requests`` feeds
+# raw request bytes to the real ``Handler.handle_one_request`` (request line
+# and header parsing, the ``//`` collapse, method dispatch, ``do_GET``) with
+# ``htpasswd`` replaced by a table (``SERVE_PASSWORDS``) and the clock fixed;
+# it records the status, the JSON body, the challenge header and the
+# ``htpasswd`` call (user and stdin). The table answers like the real
+# ``htpasswd -vi`` for every password here except a trailing NUL, which the
+# real one cuts off; the call is what these cases compare, and the verdicts of
+# the real ``htpasswd`` are pinned by ``htpasswd.json`` (``htpasswd.py``), whose
+# file has the same password.
+
+SERVE_PATH = "/.well-known/software-live"
+SERVE_USER = "nyxmon"
+SERVE_PASSWORD = "correct horse battery staple"
+SERVE_PASSWORDS = {(SERVE_USER, SERVE_PASSWORD)}
+SERVE_CONFIG = {
+    "auth_user": SERVE_USER,
+    "bind": "127.0.0.1",
+    "htpasswd": "{dir}/htpasswd",
+    "path": SERVE_PATH,
+    "port": 9110,
+    "state": "{dir}/state.json",
+}
+SUMMARY_OK = {key: True for key in (
+    "observation_ok", "os_ok", "postgresql_ok", "traefik_ok", "security_updates_ok",
+    "apt_indexes_fresh")}
+STATE_OK = {"schema_version": 2, "host": "example", "generated_at_epoch": 1700000000.25,
+            "policy_sha256": "0" * 64, "summary": SUMMARY_OK}
+SERVE_NOW = 1700000060.75
+
+
+class FakeHTTPServer:
+    """``http.server.HTTPServer`` up to ``socket.bind``'s argument checks."""
+
+    bound: list[tuple[Any, Any]] = []
+
+    def __init__(self, address: tuple[Any, Any], handler: Any) -> None:
+        host, port = address
+        if not isinstance(host, str):
+            raise TypeError(f"str, bytes or bytearray expected, not {type(host).__name__}")
+        if not 0 <= port <= 65535:
+            raise OverflowError("bind(): port must be 0-65535.")
+        self.address = address
+
+    def serve_forever(self) -> None:
+        FakeHTTPServer.bound.append(self.address)
+
+
+def serve_config(**changes: Any) -> str:
+    config = dict(SERVE_CONFIG)
+    for key, value in changes.items():
+        if value is MISSING:
+            del config[key]
+        else:
+            config[key] = value
+    return json.dumps(config)
+
+
+def serve_config_cases() -> list[tuple[str, str, str | None]]:
+    """(id, configuration text, P3 tag)."""
+    raw_port = lambda token: serve_config(port="__PORT__").replace('"__PORT__"', token)  # noqa: E731
+    cases: list[tuple[str, str, str | None]] = [
+        ("loopback", serve_config(), None),
+        ("loopback_top", serve_config(bind="127.255.255.255"), None),
+        ("loopback_network", serve_config(bind="127.0.0.0"), None),
+        ("tailscale_first", serve_config(bind="100.64.0.0"), None),
+        ("tailscale", serve_config(bind="100.100.1.2"), None),
+        ("tailscale_last", serve_config(bind="100.127.255.255"), None),
+        ("public_any", serve_config(bind="0.0.0.0"), None),
+        ("below_tailscale", serve_config(bind="100.63.255.255"), None),
+        ("above_tailscale", serve_config(bind="100.128.0.0"), None),
+        ("private", serve_config(bind="10.0.0.1"), None),
+        ("ipv6_loopback", serve_config(bind="::1"), None),
+        ("ipv4_mapped", serve_config(bind="::ffff:127.0.0.1"), None),
+        ("ipv6_scoped", serve_config(bind="fe80::1%eth0"), None),
+        ("leading_zero", serve_config(bind="127.0.0.01"), None),
+        ("short_form", serve_config(bind="127.1"), None),
+        ("trailing_space", serve_config(bind="127.0.0.1 "), None),
+        ("leading_space", serve_config(bind=" 127.0.0.1"), None),
+        ("network", serve_config(bind="127.0.0.1/8"), None),
+        ("empty_bind", serve_config(bind=""), None),
+        ("hostname", serve_config(bind="localhost"), None),
+        ("fullwidth_digits", serve_config(bind="１２７.0.0.1"), None),
+        ("octet_too_big", serve_config(bind="127.0.0.256"), None),
+        ("int_loopback", serve_config(bind=2130706433), None),
+        ("int_tailscale", serve_config(bind=1684275458), None),
+        ("int_private", serve_config(bind=167772161), None),
+        ("int_ipv6", serve_config(bind=2**32), None),
+        ("int_negative", serve_config(bind=-1), None),
+        ("float_bind", serve_config(bind=1.5), None),
+        ("null_bind", serve_config(bind=None), None),
+        ("true_bind", serve_config(bind=True), None),
+        ("list_bind", serve_config(bind=[]), None),
+        ("missing_bind", serve_config(bind=MISSING), None),
+        ("int_loopback_bad_port", serve_config(bind=2130706433, port="x"), None),
+        ("int_loopback_big_port", serve_config(bind=2130706433, port=70000), None),
+        ("public_and_bad_port", serve_config(bind="0.0.0.0", port="x"), None),
+        ("port_zero", serve_config(port=0), None),
+        ("port_max", serve_config(port=65535), None),
+        ("port_too_big", serve_config(port=65536), None),
+        ("port_negative", serve_config(port=-1), None),
+        ("port_negative_zero", raw_port("-0"), None),
+        ("port_huge", raw_port("1" + "0" * 30), None),
+        ("port_string", serve_config(port="9110"), None),
+        ("port_string_spaces", serve_config(port=" 9110\n"), None),
+        ("port_string_plus", serve_config(port="+9110"), None),
+        ("port_string_underscore", serve_config(port="9_110"), None),
+        ("port_string_double_underscore", serve_config(port="9__110"), None),
+        ("port_string_leading_zeros", serve_config(port="009110"), None),
+        ("port_string_negative", serve_config(port="-1"), None),
+        ("port_string_hex", serve_config(port="0x10"), None),
+        ("port_string_float", serve_config(port="9110.0"), None),
+        ("port_string_empty", serve_config(port=""), None),
+        ("port_string_too_long", serve_config(port="1" * 4301), None),
+        ("port_unicode_digits", serve_config(port="٩١١٠"), "unicode-digits"),
+        ("port_float", raw_port("9110.0"), None),
+        ("port_float_fraction", raw_port("9110.9"), None),
+        ("port_float_negative_fraction", raw_port("-0.5"), None),
+        ("port_float_exponent", raw_port("9.11e3"), None),
+        ("port_float_huge", raw_port("1e300"), None),
+        ("port_float_overflow", raw_port("1e400"), None),
+        ("port_float_too_big", raw_port("65536.5"), None),
+        ("port_true", serve_config(port=True), None),
+        ("port_false", serve_config(port=False), None),
+        ("port_null", serve_config(port=None), None),
+        ("port_list", serve_config(port=[]), None),
+        ("missing_port", serve_config(port=MISSING), None),
+        ("config_list", "[]", None),
+        ("config_string", '"x"', None),
+        ("config_null", "null", None),
+        ("config_number", "5", None),
+        ("extra_keys", serve_config(extra={"x": 1}), None),
+        ("missing_path", serve_config(path=MISSING), "startup-config"),
+        ("missing_auth_user", serve_config(auth_user=MISSING), "startup-config"),
+        ("missing_htpasswd", serve_config(htpasswd=MISSING), "startup-config"),
+        ("missing_state", serve_config(state=MISSING), "startup-config"),
+        ("path_not_string", serve_config(path=1), "startup-config"),
+        ("auth_user_not_string", serve_config(auth_user=None), "startup-config"),
+        ("htpasswd_not_string", serve_config(htpasswd=[]), "startup-config"),
+        ("state_not_string", serve_config(state={}), "startup-config"),
+    ]
+    return cases
+
+
+def gen_serve_config_case(case_id: str, text: str, p3: str | None) -> dict[str, Any]:
+    case: dict[str, Any] = {"id": case_id, "config": text, "address": None, "error": None}
+    FakeHTTPServer.bound = []
+    with (
+        mock.patch.object(sys, "argv", ["software_live", "serve", "--config-json", text]),
+        mock.patch.object(live.http.server, "HTTPServer", FakeHTTPServer),
+    ):
+        try:
+            live.main()
+            [(host, port)] = FakeHTTPServer.bound
+            case["address"] = [host, port]
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            case["error"] = error(exc)
+    if p3 is not None:
+        case["p3"] = p3
+    return case
+
+
+def basic(credentials: bytes) -> bytes:
+    import base64
+
+    return b"Basic " + base64.b64encode(credentials)
+
+
+def request(target: str = SERVE_PATH, headers: list[bytes] | None = None, method: str = "GET",
+            version: str = "HTTP/1.1") -> bytes:
+    head = [f"{method} {target} {version}".encode("latin-1"), b"Host: 127.0.0.1"]
+    head += headers or []
+    return b"\r\n".join(head) + b"\r\n\r\n"
+
+
+def serve_request_cases() -> list[dict[str, Any]]:
+    """Raw requests and states. ``p3``/``rust_status``: PLAN.md 4.2 item 2
+    (hyper's framing) and item 4 (non-standard JSON in the state)."""
+    good = SERVE_USER.encode() + b":" + SERVE_PASSWORD.encode()
+    ok = b"Authorization: " + basic(good)
+    token = basic(good)[6:]
+    state = json.dumps(STATE_OK)
+    out: list[dict[str, Any]] = []
+
+    def add(case_id: str, raw: bytes, state_text: str | bytes | None = state, *,
+            now: float = SERVE_NOW, p3: str | None = None, rust_status: int | None = None) -> None:
+        entry: dict[str, Any] = {"id": case_id, "request_hex": raw.hex(), "now": now}
+        if isinstance(state_text, bytes):
+            entry["state_hex"] = state_text.hex()
+        else:
+            entry["state"] = state_text
+        if p3 is not None:
+            entry["p3"] = p3
+            entry["rust_status"] = rust_status
+        out.append(entry)
+
+    def with_state(**changes: Any) -> str:
+        data = json.loads(json.dumps(STATE_OK))
+        for key, value in changes.items():
+            if value is MISSING:
+                del data[key]
+            else:
+                data[key] = value
+        return json.dumps(data)
+
+    def summary(**changes: Any) -> str:
+        data = dict(SUMMARY_OK)
+        for key, value in changes.items():
+            if value is MISSING:
+                del data[key]
+            else:
+                data[key] = value
+        return with_state(summary=data)
+
+    # Methods and request-targets.
+    add("get_valid", request(headers=[ok]))
+    add("http_1_0", request(headers=[ok], version="HTTP/1.0"))
+    add("query_string", request(SERVE_PATH + "?x=1", [ok]))
+    add("empty_query", request(SERVE_PATH + "?", [ok]))
+    add("trailing_slash", request(SERVE_PATH + "/", [ok]))
+    add("double_slash", request("/" + SERVE_PATH, [ok]))
+    add("triple_slash", request("//" + SERVE_PATH, [ok]))
+    add("absolute_form", request("http://127.0.0.1:9110" + SERVE_PATH, [ok]))
+    add("percent_encoded", request("/.well-known/software%2Dlive", [ok]))
+    add("other_case", request("/.Well-Known/software-live", [ok]))
+    add("root", request("/", [ok]))
+    add("asterisk", request("*", [ok]))
+    add("other_path_without_auth", request("/metrics"))
+    add("other_path_wrong_auth", request("/metrics", [b"Authorization: Basic eDp5"]))
+    add("post", request(headers=[ok], method="POST"))
+    add("head", request(headers=[ok], method="HEAD"))
+    add("put_other_path", request("/x", method="PUT"))
+    add("lowercase_method", request(headers=[ok], method="get"))
+    add("options_asterisk", request("*", method="OPTIONS"))
+    # Authentication.
+    add("no_authorization", request())
+    add("empty_authorization", request(headers=[b"Authorization:"]))
+    add("scheme_only", request(headers=[b"Authorization: Basic"]))
+    add("scheme_space_only", request(headers=[b"Authorization: Basic "]))
+    add("lowercase_scheme", request(headers=[b"Authorization: basic " + token]))
+    add("bearer", request(headers=[b"Authorization: Bearer " + token]))
+    add("two_spaces", request(headers=[b"Authorization: Basic  " + token]))
+    add("tab_separator", request(headers=[b"Authorization: Basic\t" + token]))
+    add("leading_whitespace", request(headers=[b"Authorization: \t  " + basic(good)]))
+    add("no_space_after_colon", request(headers=[b"Authorization:" + basic(good)]))
+    add("header_name_case", request(headers=[b"aUTHORIZATION: " + basic(good)]))
+    add("trailing_space", request(headers=[ok + b" "]), p3="header-whitespace", rust_status=200)
+    add("trailing_tab", request(headers=[ok + b"\t"]), p3="header-whitespace", rust_status=200)
+    add("missing_padding", request(headers=[ok.rstrip(b"=")]))
+    add("extra_padding", request(headers=[ok + b"="]))
+    add("leading_padding", request(headers=[b"Authorization: Basic =" + token]))
+    add("dot_inside", request(headers=[b"Authorization: Basic " + token[:4] + b"." + token[4:]]))
+    add("url_safe_alphabet", request(headers=[b"Authorization: " + basic(SERVE_USER.encode() + b":\xfb\xff")
+                                              .replace(b"+", b"-").replace(b"/", b"_")]))
+    bits = token[:-2] + bytes([token[-2] + 1]) + token[-1:]
+    add("non_zero_trailing_bits", request(headers=[b"Authorization: Basic " + bits]))
+    add("non_ascii_byte", request(headers=[ok + b"\xe9"]))
+    add("control_byte", request(headers=[ok + b"\x01"]), p3="framing", rust_status=400)
+    add("obs_fold", request(headers=[b"Authorization: Basic", b" " + token]), p3="framing",
+        rust_status=400)
+    add("not_utf8", request(headers=[b"Authorization: " + basic(SERVE_USER.encode() + b":\xff")]))
+    add("no_colon", request(headers=[b"Authorization: " + basic(SERVE_USER.encode())]))
+    add("wrong_user", request(headers=[b"Authorization: " + basic(b"Nyxmon:" + SERVE_PASSWORD.encode())]))
+    add("empty_user", request(headers=[b"Authorization: " + basic(b":" + SERVE_PASSWORD.encode())]))
+    add("wrong_password", request(headers=[b"Authorization: " + basic(SERVE_USER.encode() + b":wrong")]))
+    add("empty_password", request(headers=[b"Authorization: " + basic(SERVE_USER.encode() + b":")]))
+    add("colon_in_password", request(headers=[b"Authorization: " + basic(SERVE_USER.encode() + b":pa:ss")]))
+    add("lf_in_password", request(headers=[b"Authorization: " + basic(good + b"\n")]))
+    add("cr_in_password", request(headers=[b"Authorization: " + basic(good + b"\r")]))
+    add("nul_in_password", request(headers=[b"Authorization: " + basic(good + b"\x00")]))
+    add("non_ascii_password", request(headers=[b"Authorization: " + basic(SERVE_USER.encode()
+                                                                           + ":pässwörd".encode())]))
+    add("header_4094_bytes", request(headers=[b"Authorization: "
+                                              + basic(SERVE_USER.encode() + b":" + b"x" * 3057)]))
+    add("header_4098_bytes", request(headers=[b"Authorization: "
+                                              + basic(SERVE_USER.encode() + b":" + b"x" * 3060)]))
+    add("two_headers_first_wrong", request(headers=[
+        b"Authorization: " + basic(SERVE_USER.encode() + b":wrong"), ok]))
+    add("two_headers_first_right", request(headers=[ok, b"Authorization: Basic x"]))
+    # The observation.
+    add("fresh", request(headers=[ok]))
+    add("age_limit", request(headers=[ok]), now=STATE_OK["generated_at_epoch"] + 1800)
+    add("stale", request(headers=[ok]), now=STATE_OK["generated_at_epoch"] + 1800.5)
+    add("future", request(headers=[ok]), now=STATE_OK["generated_at_epoch"] - 5)
+    add("int_timestamp", request(headers=[ok]), with_state(generated_at_epoch=1700000000))
+    add("schema_1", request(headers=[ok]), with_state(schema_version=1))
+    add("schema_float", request(headers=[ok]), with_state(schema_version=2.0))
+    add("schema_string", request(headers=[ok]), with_state(schema_version="2"))
+    add("schema_true", request(headers=[ok]), with_state(schema_version=True))
+    add("schema_missing", request(headers=[ok]), with_state(schema_version=MISSING))
+    add("summary_missing", request(headers=[ok]), with_state(summary=MISSING))
+    add("summary_list", request(headers=[ok]), with_state(summary=[]))
+    add("summary_key_missing", request(headers=[ok]), summary(os_ok=MISSING))
+    add("summary_string", request(headers=[ok]), summary(os_ok="yes"))
+    add("summary_int", request(headers=[ok]), summary(traefik_ok=1))
+    add("summary_extra_and_fresh", request(headers=[ok]), summary(fresh="old", extra=[1]))
+    add("timestamp_missing", request(headers=[ok]), with_state(generated_at_epoch=MISSING))
+    add("timestamp_bool", request(headers=[ok]), with_state(generated_at_epoch=True))
+    add("timestamp_string", request(headers=[ok]), with_state(generated_at_epoch="1700000000"))
+    add("timestamp_null", request(headers=[ok]), with_state(generated_at_epoch=None))
+    add("timestamp_huge_int", request(headers=[ok]),
+        with_state(generated_at_epoch="__T__").replace('"__T__"', "1" + "0" * 400))
+    add("timestamp_overflowing_float", request(headers=[ok]),
+        with_state(generated_at_epoch="__T__").replace('"__T__"', "1e400"))
+    add("timestamp_nan", request(headers=[ok]),
+        with_state(generated_at_epoch="__T__").replace('"__T__"', "NaN"))
+    add("nan_elsewhere", request(headers=[ok]), with_state(extra="__T__").replace('"__T__"', "NaN"),
+        p3="non-standard-json", rust_status=503)
+    add("meta_replaced", request(headers=[ok]), with_state(meta={"age_seconds": 1, "other": 2}))
+    add("extra_fields", request(headers=[ok]), with_state(os={"status": "ok", "big": "__B__"}, host="hé")
+        .replace('"__B__"', "18446744073709551617"))
+    add("duplicate_keys", request(headers=[ok]), state[:-1] + ', "host": "second"}')
+    add("state_list", request(headers=[ok]), "[]")
+    add("state_empty", request(headers=[ok]), "")
+    add("state_broken", request(headers=[ok]), "{broken")
+    add("state_missing", request(headers=[ok]), None)
+    add("state_bom", request(headers=[ok]), b"\xef\xbb\xbf" + state.encode())
+    add("state_not_utf8", request(headers=[ok]), with_state(host="hé").encode().replace(b"\\u00e9", b"\xe9"))
+    add("state_crlf", request(headers=[ok]), state.replace(", ", ",\r\n"))
+    add("state_trailing_data", request(headers=[ok]), state + " x")
+    add("stale_without_auth", request(), now=STATE_OK["generated_at_epoch"] + 9999)
+    return out
+
+
+def parse_response(raw: bytes) -> dict[str, Any]:
+    head, _, body = raw.partition(b"\r\n\r\n")
+    lines = head.decode("latin-1").split("\r\n")
+    status = int(lines[0].split(" ", 2)[1])
+    headers = {}
+    for line in lines[1:]:
+        name, _, value = line.partition(":")
+        headers[name.strip().lower()] = value.strip()
+    result: dict[str, Any] = {"status": status, "challenge": headers.get("www-authenticate"),
+                              "body": None}
+    if headers.get("content-type") == "application/json":
+        assert headers["cache-control"] == "no-store"
+        assert int(headers["content-length"]) == len(body)
+        data = json.loads(body)
+        if "NaN" not in body.decode("ascii"):
+            result["body"] = data
+    return result
+
+
+def gen_serve_request_case(case: dict[str, Any], directory: str) -> dict[str, Any]:
+    state_path = Path(directory) / "state.json"
+    state_path.unlink(missing_ok=True)
+    if "state_hex" in case:
+        state_path.write_bytes(bytes.fromhex(case["state_hex"]))
+    elif case["state"] is not None:
+        state_path.write_bytes(case["state"].encode())
+    calls: list[list[str]] = []
+
+    def fake_htpasswd(argv: list[str], **kwargs: Any) -> Any:
+        assert argv[:3] == ["htpasswd", "-vi", SERVE_CONFIG["htpasswd"]]
+        calls.append([argv[3], kwargs["input"]])
+        if (argv[3], kwargs["input"]) not in SERVE_PASSWORDS:
+            raise subprocess.CalledProcessError(3, argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    handler = live.Handler.__new__(live.Handler)
+    handler.rfile = io.BytesIO(bytes.fromhex(case["request_hex"]))
+    handler.wfile = io.BytesIO()
+    handler.client_address = ("127.0.0.1", 40000)
+    handler.server = SimpleNamespace(config={**SERVE_CONFIG, "state": str(state_path)})
+    handler.close_connection = True
+    with (
+        mock.patch.object(live.subprocess, "run", side_effect=fake_htpasswd),
+        mock.patch.object(live.time, "time", return_value=case["now"]),
+    ):
+        handler.handle_one_request()
+    result = parse_response(handler.wfile.getvalue())
+    return {**case, "python": {**result, "htpasswd": calls[0] if calls else None},
+            "htpasswd_calls": len(calls)}
+
+
+def gen_serve() -> dict[str, Any]:
+    with tempfile.TemporaryDirectory() as directory:
+        requests = [gen_serve_request_case(case, directory) for case in serve_request_cases()]
+    return {
+        "constants": {"path": SERVE_PATH, "user": SERVE_USER, "password": SERVE_PASSWORD,
+                      "realm": "software-live", "max_age": live.MAX_REPORT_AGE},
+        "config": [gen_serve_config_case(*case) for case in serve_config_cases()],
+        "requests": requests,
+    }
+
+
 # ------------------------------------------------------------------ driver
 
 GENERATORS: dict[str, Callable[[], Any]] = {
@@ -3142,6 +3542,7 @@ GENERATORS: dict[str, Callable[[], Any]] = {
     "postgresql.json": gen_postgresql,
     "export.json": gen_export,
     "collect.json": gen_collect,
+    "serve.json": gen_serve,
 }
 
 

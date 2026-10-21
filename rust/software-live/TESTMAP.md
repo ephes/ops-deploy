@@ -45,8 +45,8 @@ missing from this file.
 | `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql::tests::clusters_match_python`, case `rejects_unsafe_identity` | done (S3c) |
 | `test_security_packages_include_held_and_pinned_versions` | `software-live-apt`: `observe::tests::security_packages_include_held_and_pinned_versions` (the same package, compare function and hold), `::newest_security_version_wins_and_order_is_by_package`, `::a_tie_keeps_the_first_newest_version`, `::security_origins_follow_python`; in the variant containers (CI job `software-live-apt`, `just rs-software-live-apt`) `container/compare.py` runs the helper and `observe_apt` with python-apt on the fake APT world of `container/setup-world.sh` (held native and foreign packages, pinned candidate, every `security_origin` branch) and requires identical JSON | done (S3d) |
 | `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic::tests::*` (mode 0640, group through the descriptor, a failed write keeps the old file and leaves no temporary file); the state write of `collect`: `collect::tests::the_state_file_on_disk_keeps_its_previous_content_on_failure` (mode, group, the rendered report; an unknown group and a failed rename keep the previous state and leave no temporary file), `::an_unknown_group_is_a_key_error_and_nothing_is_written`, `::a_failed_write_is_the_os_error` | done (S3a, S3f) |
-| `test_invalid_policy_and_public_bind_fail` | policy part: `policy::tests::validation_and_hash_match_python` against `fixtures/policy.json` (incl. `/bin/sh` and `/tmp/proxy` as `binary_path`) and `tests/cli.rs` (`validate` exit codes); bind part: `serve` bind tests | done (S2) / pending S4 |
-| `test_http_auth_freshness_and_malformed_state` (`EndpointTests`) | freshness part: `report::tests::freshness_matches_python` against `fixtures/report.json` (stale, `"yes"` in the summary, missing and malformed fields); HTTP part: `serve` integration tests plus endpoint parity | done (S2) / pending S4, S5 |
+| `test_invalid_policy_and_public_bind_fail` | policy part: `policy::tests::validation_and_hash_match_python` against `fixtures/policy.json` (incl. `/bin/sh` and `/tmp/proxy` as `binary_path`) and `tests/cli.rs` (`validate` exit codes); bind part: `serve::tests::configuration_matches_python` (`fixtures/serve.json` `config`: the real `main()` with `serve --config-json` and a fake `HTTPServer`, including `{"bind": "0.0.0.0"}` of this test) and `tests/cli.rs` (`serve_public_bind` and the other `serve_*` exit codes in `fixtures/cli.json`) | done (S2, S4) |
+| `test_http_auth_freshness_and_malformed_state` (`EndpointTests`) | freshness part: `report::tests::freshness_matches_python` against `fixtures/report.json` (stale, `"yes"` in the summary, missing and malformed fields); HTTP part: `serve::tests::requests_match_python` (`fixtures/serve.json` `requests`: raw requests through the real `Handler.handle_one_request` with a password table in place of `htpasswd`, replayed over TCP against the Rust server: 401 without credentials, stale 200 with `fresh: false`, 503 for `"yes"` in the summary and a broken file, 401 when `htpasswd` fails), `::the_role_written_htpasswd_file_is_verified_with_bcrypt` (the Python test's state with a real bcrypt file), `tests/cli.rs::serve_answers_on_its_bind_address_and_logs_nothing`; endpoint parity of both programs | done (S2, S4) / pending S5 |
 | `test_idempotent_targeted_upsert_and_reenable` (`NyxmonTests`) | n/a: `nyxmon_checks.py` stays Python (PLAN.md 4.1) | — |
 | `test_allowlisted_projection_roundtrip_preserves_time_and_unknowns` | `export::tests::projection_matches_python` against `fixtures/export.json` (`base` with private fields, `apt_unknown_and_postgresql_not_expected`, the time as Python parses it, …); `::projection_keeps_numbers_as_read_and_copies_nothing_else`; the round trip through the reader: `PythonReaderAcceptsRustExport` (below) | done (S3e) |
 | `test_projection_rejects_invalid_source_not_manufacture_success` | `projection_matches_python` (every rejection in Python's order: `schema_*`, `host_*`, `time_*` incl. `OverflowError` of a huge integer, `check_*`, `issues_*`, `apt_*`, a non-object source) | done (S3e) |
@@ -176,6 +176,36 @@ cycle's date replaced by an invalid one). Tags: `non-standard-json` and
 `utf16-body` (item 4), `unicode-digits` (item 11), `iso-date` (item 6) and
 `cache-crash` (item 12: a lifecycle cache that is not an object, a
 `checked_at_epoch` beyond the float range).
+
+## S4 — the endpoint
+
+`fixtures/serve.json` runs the real Python code: `config` the start of
+`main()` for `serve` (with a fake `HTTPServer` that refuses what
+`socket.bind` refuses), `requests` raw request bytes through
+`Handler.handle_one_request` with the clock fixed and `htpasswd` replaced by
+a password table that records each call. The Rust tests replay every request
+over TCP against the real hyper server with the same table and clock and
+compare the status, the JSON body, the challenge and the `htpasswd` call.
+`fixtures/htpasswd.json` (`fixtures/htpasswd.py`) holds the real
+`htpasswd -vi` verdicts of Debian 13 and Ubuntu 24.04.
+
+| Python behaviour | Rust counterpart | Status |
+| --- | --- | --- |
+| `serve` startup (`:909-916`): `ip_address(config["bind"])` (dotted quads only, leading zeros, spaces, IPv6, scoped, integers, other types), loopback or `100.64.0.0/10`, `int(config["port"])` (strings with sign, `_`, spaces and leading zeros, floats truncated, bools, 4300 digits), `bind()`'s host type and port range, the order of these errors, a configuration that is not an object | `serve::tests::configuration_matches_python` (`fixtures/serve.json` `config`, 79 cases); `endpoint::tests::bind_follows_python` | done |
+| `HTTPServer` binding a taken address | `tests/cli.rs::serve_exits_1_when_the_port_is_taken`, `serve::tests::run_reports_a_bind_failure` | done |
+| `Handler`: method dispatch (501 for every other method), the exact path with the `//` collapse of `parse_request`, 404 before authentication, absolute form, `*`, query strings | `serve::tests::requests_match_python` (`fixtures/serve.json` `requests`) | done |
+| Authentication (`:724-739`): the first `Authorization` header, `startswith("Basic ")`, the 4096-byte limit, strict base64 (padding, alphabet, trailing bits), UTF-8, the first `:`, the configured user, `\n` refused before `htpasswd`, what `htpasswd` gets on stdin | same test; `endpoint::tests::basic_auth_follows_python` | done |
+| `htpasswd -vi` (Apache 2.4 `htpasswd.c`, APR-util `apr_password_validate`): password from stdin (255 bytes, `\n`/`\r\n`, NUL), the file in 255-byte pieces, whitespace, comments, lines without `:`, empty hashes, every entry of the user, bcrypt `$2y$`/`$2a$`/`$2b$` with exact string comparison (non-canonical characters, costs, trailing text) | `htpasswd::tests::verification_matches_apache_htpasswd` (`fixtures/htpasswd.json`, 89 cases from both distributions); `::stdin_rules`, `::files_are_read_in_pieces_of_255_bytes`, `endpoint::tests::htpasswd_file_is_read_on_every_check` | done |
+| The state read per request: `read_text` (UTF-8, BOM, CRLF), `json.loads` (duplicates, big integers, trailing data), `with_freshness` (schema, summary, timestamp types, age limit, future), `meta` and `summary.fresh` replaced, extra keys kept | `serve::tests::requests_match_python` | done |
+| `reply`: `Content-Type`, `Content-Length`, `Cache-Control: no-store`, `WWW-Authenticate` only on 401, sorted keys, no request logging (`log_message`) | `requests_match_python` (`Answer::assert_contract`), `endpoint::tests::responses_are_json_with_the_contract_headers`, `tests/cli.rs::serve_answers_on_its_bind_address_and_logs_nothing` | done |
+| The 5 s socket timeout (`:714-716`) | `serve::tests::a_partial_request_is_closed_after_the_budget`, `::idle_connections_are_closed_after_the_budget_and_never_block_others` (PLAN.md 4.2 item 2: one budget per connection, 16 at a time) | done |
+
+P3 cases in `fixtures/serve.json`: `startup-config` (PLAN.md 4.2 item 14),
+`unicode-digits` (item 11, a port of non-ASCII digits), `header-whitespace`
+and `framing` (item 2: trailing whitespace of a header value, a control
+character, a folded header line), `non-standard-json` (item 4, `NaN` in the
+state). In `fixtures/htpasswd.json`: `non-bcrypt` and `2a-non-ascii`
+(item 1).
 
 ## Role switch (S6, PLAN.md 7.3 and 8.1)
 

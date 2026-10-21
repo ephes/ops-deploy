@@ -688,6 +688,76 @@
    ],
    "exit": 1,
    "id": "collect_broken_json"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config-json",
+    "{\"bind\": \"0.0.0.0\"}"
+   ],
+   "exit": 1,
+   "id": "serve_public_bind"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config-json",
+    "{}"
+   ],
+   "exit": 1,
+   "id": "serve_missing_bind"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config-json",
+    "{\"bind\": \"::1\", \"port\": 9119}"
+   ],
+   "exit": 1,
+   "id": "serve_ipv6_bind"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config-json",
+    "{\"bind\": \"127.0.0.1\", \"port\": \"x\"}"
+   ],
+   "exit": 1,
+   "id": "serve_invalid_port"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config-json",
+    "{\"bind\": \"127.0.0.1\", \"port\": 70000}"
+   ],
+   "exit": 1,
+   "id": "serve_port_out_of_range"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config",
+    "{dir}/valid.json"
+   ],
+   "exit": 1,
+   "id": "serve_policy_as_config"
+  },
+  {
+   "argv": [
+    "serve"
+   ],
+   "exit": 1,
+   "id": "serve_without_config"
+  },
+  {
+   "argv": [
+    "serve",
+    "--config-json",
+    "{"
+   ],
+   "exit": 1,
+   "id": "serve_broken_json"
   }
  ],
  "files": {

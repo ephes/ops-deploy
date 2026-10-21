@@ -20,8 +20,7 @@ Slice S2 (crate skeleton):
   parser: options with every mode, in any order, `--opt=value`, unique
   prefixes, the last occurrence winning; usage errors exit 2.
   `--version` prints `software-live <version> (<commit>)`.
-- `collect` works from S3f on (see below); `serve` stops with exit 1
-  until S4.
+- `collect` works from S3f on and `serve` from S4 on (see below).
 - Slice S3d: `src/apt.rs` runs the APT helper `software-live-apt`
   (`../software-live-apt`, GPL-3.0-or-later, built per distribution
   variant) next to the executable and takes its JSON result, or reports the
@@ -31,6 +30,25 @@ Slice S2 (crate skeleton):
   (`src/pyjson.rs`), release numbers (`src/version.rs`), report types,
   summary and `with_freshness` (`src/report.rs`), and the `System` trait
   with the host implementation and the fixture world (`src/probe.rs`).
+
+Slice S4 (`serve`, the endpoint):
+
+- `software-live serve --config /etc/software-live/endpoint.json` serves
+  the state file as the Python endpoint does (PLAN.md 3.4): only `GET` of
+  the exact configured path (`//` collapsed as in Python, a query string is
+  404), 404 before authentication, Basic auth of the configured user against
+  the role's `htpasswd` file (401 with `WWW-Authenticate`), the state re-read
+  for every request through `with_freshness` (503 when missing or invalid,
+  200 with `summary.fresh: false` when stale), sorted compact JSON with
+  `Cache-Control: no-store`, no request logging.
+- Startup (exit 1 on any failure): `bind` must be IPv4 loopback or
+  `100.64.0.0/10`, `port` is read as Python's `int()` reads it, and the
+  other keys must be strings (PLAN.md 4.2 item 14).
+- `src/endpoint.rs` is the `Endpoint` boundary of PLAN.md 5.4 (bind check,
+  Basic auth with a `Verifier`, hyper 1 on a current-thread tokio runtime,
+  one request per connection, a 5 s budget per connection, at most 16 at a
+  time); `src/htpasswd.rs` is `htpasswd -vi` in process (PLAN.md 4.2 item 1),
+  checked against the real `htpasswd` (`fixtures/htpasswd.json`).
 
 Slice S3b (Traefik observation, `src/traefik.rs`):
 
@@ -149,12 +167,16 @@ software-live/
   src/export.rs               inventory_projection, export_inventory
   src/collect.rs              collect: the steps in Python's order, the state write, the manual output
   src/usage.rs                the --report-usage line (getrusage)
+  src/endpoint.rs             the Endpoint boundary: bind check, Basic auth, hyper server
+  src/htpasswd.rs             htpasswd -vi in process (file and password rules, bcrypt)
+  src/serve.rs                the software-live handler and endpoint.json
   tests/cli.rs                the binary against the Python program's exit codes
   tests/traefik_host.rs       Linux only: real processes and pinned descriptors
   fixtures/generate.py        writes fixtures/*.json from the Python program
   fixtures/*.json             generated; never edit by hand
   fixtures/rust-caches.json   caches as the Rust code writes them (see below)
   fixtures/rust-export.json   projections as the Rust code writes them (see below)
+  fixtures/htpasswd.py        records fixtures/htpasswd.json with the real htpasswd (Docker)
 ```
 
 ## Checks
@@ -187,6 +209,12 @@ rust_written` rewrites it). `tests/test_software_live_rust_fixtures.py`
 (`PythonReaderAcceptsRustExport`) then runs the `software_estate` reader on
 each file and requires the value Python's own projection of the same source
 gives.
+
+`fixtures/htpasswd.json` is not written by `generate.py` either: bcrypt
+salts are random and the verdicts come from the real `htpasswd -vi` of the
+hosts' distributions. `python3 -I rust/software-live/fixtures/htpasswd.py`
+(Docker, network for the images and `apache2-utils`) records it again in
+`debian:13` and `ubuntu:24.04` containers and fails when the two disagree.
 
 `--version` takes the commit from `SOFTWARE_LIVE_GIT_COMMIT` (7 to 40
 lowercase hex digits, set by the release workflow), else `git rev-parse

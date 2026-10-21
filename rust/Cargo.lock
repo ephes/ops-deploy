@@ -1249,10 +1249,16 @@ dependencies = [
 name = "software-live"
 version = "0.0.0"
 dependencies = [
+ "base64",
+ "bcrypt",
+ "bytes",
  "chrono",
  "clap",
  "close_fds",
  "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "nix",
  "rcgen",
  "regex",
@@ -1264,6 +1270,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "tokio",
  "ureq",
  "wait-timeout",
 ]
