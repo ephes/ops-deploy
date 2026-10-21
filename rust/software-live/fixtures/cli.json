@@ -1,0 +1,345 @@
+{
+ "binary_files": {
+  "latin1.json": "7b22686f7374223a202268e9227d"
+ },
+ "cases": [
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/valid.json"
+   ],
+   "exit": 0,
+   "id": "validate_valid"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config={dir}/valid.json"
+   ],
+   "exit": 0,
+   "id": "validate_equals_form"
+  },
+  {
+   "argv": [
+    "--config",
+    "{dir}/valid.json",
+    "validate"
+   ],
+   "exit": 0,
+   "id": "options_before_mode"
+  },
+  {
+   "argv": [
+    "--config",
+    "{dir}/valid.json",
+    "--",
+    "validate"
+   ],
+   "exit": 0,
+   "id": "double_dash"
+  },
+  {
+   "argv": [
+    "validate",
+    "--conf",
+    "{dir}/valid.json"
+   ],
+   "exit": 2,
+   "id": "ambiguous_prefix"
+  },
+  {
+   "argv": [
+    "validate",
+    "--conf={dir}/valid.json"
+   ],
+   "exit": 2,
+   "id": "ambiguous_prefix_equals"
+  },
+  {
+   "argv": [
+    "validate",
+    "--out",
+    "x",
+    "--config",
+    "{dir}/valid.json"
+   ],
+   "exit": 0,
+   "id": "unique_prefix"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/valid.json",
+    "--cache",
+    "c",
+    "--group",
+    "g",
+    "--output",
+    "o"
+   ],
+   "exit": 0,
+   "id": "unused_options_accepted"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/invalid.json"
+   ],
+   "exit": 1,
+   "id": "validate_invalid"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/missing.json"
+   ],
+   "exit": 1,
+   "id": "validate_missing_file"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}"
+   ],
+   "exit": 1,
+   "id": "validate_directory"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/broken.json"
+   ],
+   "exit": 1,
+   "id": "validate_broken_json"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/latin1.json"
+   ],
+   "exit": 1,
+   "id": "validate_invalid_utf8"
+  },
+  {
+   "argv": [
+    "validate"
+   ],
+   "exit": 1,
+   "id": "validate_without_config"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config-json",
+    "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+   ],
+   "exit": 0,
+   "id": "config_json"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/missing.json",
+    "--config-json",
+    "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+   ],
+   "exit": 0,
+   "id": "config_json_wins"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/valid.json",
+    "--config-json",
+    ""
+   ],
+   "exit": 0,
+   "id": "empty_config_json_falls_back"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/invalid.json",
+    "--config-json",
+    ""
+   ],
+   "exit": 1,
+   "id": "empty_config_json_falls_back_invalid"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config",
+    "{dir}/invalid.json",
+    "--config",
+    "{dir}/valid.json"
+   ],
+   "exit": 0,
+   "id": "last_option_wins"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config-json",
+    "[]"
+   ],
+   "exit": 1,
+   "id": "config_json_list"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config-json",
+    "-1"
+   ],
+   "exit": 1,
+   "id": "config_json_negative_number"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config-json",
+    "NaN"
+   ],
+   "exit": 1,
+   "id": "config_json_nan"
+  },
+  {
+   "argv": [],
+   "exit": 2,
+   "id": "no_arguments"
+  },
+  {
+   "argv": [
+    "nope"
+   ],
+   "exit": 2,
+   "id": "unknown_mode"
+  },
+  {
+   "argv": [
+    "validate",
+    "extra"
+   ],
+   "exit": 2,
+   "id": "extra_positional"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config"
+   ],
+   "exit": 2,
+   "id": "option_without_value"
+  },
+  {
+   "argv": [
+    "validate",
+    "--unknown"
+   ],
+   "exit": 2,
+   "id": "unknown_option"
+  },
+  {
+   "argv": [
+    "--help"
+   ],
+   "exit": 0,
+   "id": "help"
+  },
+  {
+   "argv": [
+    "validate",
+    "-h"
+   ],
+   "exit": 0,
+   "id": "help_after_mode"
+  },
+  {
+   "argv": [
+    "export-inventory"
+   ],
+   "exit": 1,
+   "id": "export_without_arguments",
+   "stderr": "inventory export failed: ValueError\n"
+  },
+  {
+   "argv": [
+    "export-inventory",
+    "--config",
+    "x",
+    "--output",
+    "y"
+   ],
+   "exit": 1,
+   "id": "export_without_group",
+   "stderr": "inventory export failed: ValueError\n"
+  },
+  {
+   "argv": [
+    "export-inventory",
+    "--config",
+    "x",
+    "--output",
+    "y",
+    "--group",
+    ""
+   ],
+   "exit": 1,
+   "id": "export_empty_group",
+   "stderr": "inventory export failed: ValueError\n"
+  },
+  {
+   "argv": [
+    "export-inventory",
+    "--config",
+    "x",
+    "--group",
+    "g"
+   ],
+   "exit": 1,
+   "id": "export_without_output",
+   "stderr": "inventory export failed: ValueError\n"
+  },
+  {
+   "argv": [
+    "collect",
+    "--config",
+    "{dir}/invalid.json"
+   ],
+   "exit": 1,
+   "id": "collect_invalid_policy"
+  },
+  {
+   "argv": [
+    "collect"
+   ],
+   "exit": 1,
+   "id": "collect_without_config"
+  },
+  {
+   "argv": [
+    "collect",
+    "--config-json",
+    "{"
+   ],
+   "exit": 1,
+   "id": "collect_broken_json"
+  }
+ ],
+ "files": {
+  "broken.json": "{broken",
+  "invalid.json": "{\"host\": \"\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+  "valid.json": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ }
+}

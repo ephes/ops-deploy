@@ -1,0 +1,31 @@
+[package]
+name = "software-live"
+# Own version (not the workspace's): the binary is released by the tag
+# `software-live-v<version>` (PLAN.md 7.2, PLAN-foundation.md section 4).
+version = "0.0.0"
+description = "Read-only Linux software observations and their authenticated endpoint (Rust port of software_live.py)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+hex = "0.4"
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+rustix = { version = "1", default-features = false, features = ["std"] }
+# Shortest float digits with ties to even, as Python's repr (PLAN.md 3.2).
+ryu = "1"
+serde = { version = "1", features = ["derive"] }
+# arbitrary_precision: numbers keep their JSON text, so nothing Python could
+# have written is rounded (PLAN.md 3.2).
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+wait-timeout = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

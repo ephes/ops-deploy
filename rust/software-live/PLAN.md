@@ -1,7 +1,9 @@
 # Rust port of `software_live` — implementation plan
 
-Status: plan, not yet implemented; owner questions decided on 2026-10-21
-(section 12); S1 spike done, report in section 13. Campaign "Rust-Ports
+Status: S2 implemented (crate skeleton, command line, `validate`, policy
+hash, report types, `System` trait, fixtures, TESTMAP; see `README.md`);
+S1 spike done, report in section 13; the other slices planned. Owner
+questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
 This document is the contract for porting the Python program of the
@@ -173,7 +175,12 @@ with modes `collect | serve | validate | export-inventory`
 | `export-inventory --config STATE --output O --group G` | project the state (3.6) and write it atomically | 0; 1 with stderr `inventory export failed: <Class>` |
 | argument errors | argparse usage error | 2 |
 
-`--config-json` takes precedence over `--config` (`:904-906`). New and only
+Every option is accepted with every mode, in any order, as `--opt value` or
+`--opt=value` and by any unambiguous prefix (argparse's `allow_abbrev`); the
+last occurrence wins; `--` ends the options. `--config-json` takes precedence
+over `--config` (`:904-906`) unless it is empty (`args.config_json if
+args.config_json else …`). `fixtures/cli.json` pins these exit codes against
+the Python program. New and only
 additive: `--version` (prints `software-live <version> (<commit>)`), and
 `collect --report-usage` (one stderr line with wall time, CPU time and
 `maxrss` of self plus children; used only by the shadow units, section
@@ -501,9 +508,14 @@ request path or a policy value other than the host.
    shortest round-trip form (same digits as Python's `repr`, possibly
    different exponent spelling). Exception: `policy_sha256` input (3.2) is
    byte-identical.
-4. **Non-standard JSON** (`NaN`, `Infinity`) in state, caches, policy or
-   endpoint configuration is rejected (Python accepts it). Our writers
-   never produce it.
+4. **Non-standard JSON** (`NaN`, `Infinity`, `-Infinity`) and lone
+   surrogate escapes (`"\ud800"`) in state, caches, policy or endpoint
+   configuration are rejected, as is nesting deeper than 128 levels
+   (serde_json's recursion limit; Python's limit is its interpreter's) and a
+   `--config-json` argument that is not UTF-8 (Python decodes argv with
+   `surrogateescape`). Python accepts all of these. Our writers never
+   produce them, and the role writes the policy with Ansible's `to_json`.
+   Python's own limit of 4300 digits per integer is kept.
 5. **Error texts.** Messages the Python code raises itself are reproduced
    verbatim with the Python class name (`ValueError: service stopped or
    managed binary missing`, `ValueError: MainPID changed during
@@ -527,6 +539,14 @@ request path or a policy value other than the host.
     runs the installed release binary instead of streaming the checkout's
     Python file. It therefore reports with the deployed program, not with
     the ops-library checkout.
+11. **ASCII digits only.** Python's `\d` (in `version`, `numeric_version`,
+    the `desired_cycle`/`desired_major` patterns and the version patterns
+    of tool output) and `int()` also accept other Unicode decimal digits
+    (`"٢٤.٠٤"`); the Rust code accepts `0-9` only, so such a policy is
+    invalid and such a version unparseable. This avoids a Unicode table
+    whose version would differ between Python 3.12, 3.13 and the `regex`
+    crate. Whitespace (`\s`, `str.strip()`) is Python's exactly: Unicode
+    `White_Space` plus U+001C..U+001F (fixture-tested over all code points).
 
 ---
 
@@ -538,9 +558,15 @@ request path or a policy value other than the host.
 rust/software-live/            crate `software-live` (MIT), binary `software-live`
   PLAN.md  TESTMAP.md  README.md
   src/main.rs                  CLI (clap), exit codes, --version
+  src/lib.rs                   the modules (a library, so tests reach every step)
+  src/error.rs                 PyError: Python exception class + message
+  src/pyjson.rs                lossless json.loads, json.dumps(sort_keys=True), float repr
+  src/version.rs               version(), numeric_version(), Python whitespace
   src/policy.rs                validate, policy hash (python-compatible formatter)
   src/report.rs                types, summary, freshness
-  src/probe.rs                 trait System (clock, fs, readlink, stat, commands, fd exec, HTTP)
+  src/probe.rs                 trait System (clock, fs, readlink, stat, commands; S3a adds
+                               HTTP and the cache write, S3b/S3c the fd operations)
+  tests/cli.rs                 the binary against the Python program's exit codes
   src/traefik.rs  src/os.rs  src/postgresql.rs  src/upstream.rs  src/apt.rs (helper invocation)
   src/export.rs                inventory projection + safe source read
   src/atomic.rs                atomic JSON write with group
@@ -637,6 +663,7 @@ separate helper (section 12); the alternative is not built.
 | --- | --- | --- |
 | CLI | `clap` (derive) | usage errors exit 2 |
 | JSON | `serde`, `serde_json` (`arbitrary_precision`) | sorted maps by default; lossless numbers; custom `Formatter` for the policy hash (3.2) |
+| float digits | `ryu` | shortest round-trip digits with exact ties to even, as Python's `repr` (Rust's `{:e}` rounds a tie up: `-85917593882605.625` is `…605.62` in Python); the layout (positional for exponents in [-4, 16)) is `pyjson::float_repr` |
 | sha256 | `sha2`, `hex` | |
 | upstream HTTPS | `ureq` 3 (rustls, `rustls-native-certs` for the system store) | synchronous; the collector has no async runtime |
 | child processes with timeout | `std::process` plus `wait-timeout` | kill on timeout like `subprocess.run` |
@@ -680,9 +707,15 @@ software-live handler (404-before-auth order, the 503/401 bodies,
   and the Python result. The Rust code reads the world through the `System`
   trait (5.1), so a test replays the same world and compares the result
   under the P1/P2 classes.
-- A CI test (`tests/test_software_live_rust_fixtures.py`, Python) fails when
-  a committed fixture no longer matches the Python code (precedent:
-  nyxmon `test_agent_rs_fixtures.py`).
+- A Python test (`tests/test_software_live_rust_fixtures.py`, `just
+  test-software-live-rust-fixtures`, part of `just test`; the Python suite
+  stays local, PLAN-foundation section 3) fails when a committed fixture no
+  longer matches the Python code (precedent: nyxmon
+  `test_agent_rs_fixtures.py`) and when a Python test is missing from
+  `TESTMAP.md`. Exceptions are recorded by class, and by message where the
+  message is the Python code's own (found in its source) or a `KeyError`.
+  The generator is stdlib-only and gives identical output under Python
+  3.12 and 3.13 (`just rs-software-live-fixtures` checks both).
 - `TESTMAP.md` (created in S2) maps every Python test to its Rust
   counterpart and records the status per slice (`done`, `pending S<n>`,
   `n/a` with reason). Initial map:
@@ -750,6 +783,7 @@ compared the same way.
 
 `just rs-software-live` (fmt, clippy `-D warnings`, tests),
 `just rs-software-live-fixtures` (regenerate fixtures),
+`just test-software-live-rust-fixtures` (the drift test of 6.1),
 `just rs-software-live-parity` (parity harness; needs Docker for the
 container cases), wired into the F1 CI workflow. `just test-software-live`
 keeps running the Python tests unchanged.

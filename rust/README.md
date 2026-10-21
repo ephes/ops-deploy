@@ -9,6 +9,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 | --- | --- | --- |
 | `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c), `static` mode (S2e), `logyard-health` mode (S2d); process-level parity harness and shadow comparer (S3) ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
 | `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | S1–S5: `--version`, `--check-policy`, every branch of the Python guard's `check()` (Layer-1 parity, filesystem layer), forced-command mode, `--decide` and `--shadow`; the parity gate (decision property tests, Layers 2 and 3 in containers, fuzzing); not released or installed yet ([`TESTMAP.md`](echoport-command-guard/TESTMAP.md)) |
+| `software-live` | [`software-live/PLAN.md`](software-live/PLAN.md) | crate skeleton (S2): `validate`, command line, policy hash, report types, fixtures from the Python program; see [`software-live/README.md`](software-live/README.md) |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
 `build_ignore` excludes `rust` and `.github`, and
@@ -31,6 +32,7 @@ rust/
   metrics-httpd/        crate + binary `metrics-httpd`, plan, TESTMAP, Python-generated fixtures
   echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures,
                            container harnesses (parity/e2e/) and cargo-fuzz targets (fuzz/, not a member)
+  software-live/        crate + binary `software-live` (Rust port of software_live.py)
 ```
 
 Rules (PLAN-foundation.md section 1):
