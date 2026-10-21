@@ -62,7 +62,7 @@ Kinds:
 | 4.6 logyard-health: environment, units list, payload, no access log | fixture `logyard_health` (units list, base64, counts, payloads; `tests/logyard_health.rs`); unit `modes::logyard_health::tests` (environment as the module reads it, `int()`/`float()` spellings, units list, Python indexing of the count, texts, `NaN`/`Infinity` output); process `binary::logyard_health_is_silent_per_request` (payload with Loki down and a rejected entry, no log line); fixture `http_common` logyard 404/501 | done (S1 environment, 404/501, silence; S2d units list and payload) |
 | 4.7 static, `tests/test_static_site_deploy.py::test_rendered_server_serves_files_without_listing_or_writes`, `::test_server_binds_loopback_and_disables_directory_listing` | fixture `static` (`fixtures::static_mode_matches_static_site_httpd_py`: file served with `X-Content-Type-Options`, `empty-dir` 404 without listing, `put`/`post` 501 and nothing written; the bind address stays the role's `static_site_bind_host`, S5c passes it as `--bind`); unit `modes::static_site::tests`; process `binary::static_mode_logs_access_lines_to_stdout`, `binary::every_mode_answers_the_gate` (501); real site `fixtures::static_types_match_the_real_site` and `parity/static_site.py` | done (S2e) |
 | `tests/test_logyard_deploy.yml` (template list rendering) | stays (role test); S5c adds the drop-in template | pending (S5c) |
-| Molecule verify scenarios that curl endpoints (`metrics_endpoint`, `tailscale_metrics_endpoint`, `mail_monitoring`) | unchanged with `impl: python`; drop-in render tests for `impl: rust` | pending (S5a, S5b) |
+| Molecule verify scenarios that curl endpoints (`metrics_endpoint`, `tailscale_metrics_endpoint`, `mail_monitoring`) | unchanged with `impl: python` (the `tailscale_metrics_endpoint` scenario, `just test-tailscale-metrics-timer`, runs the switch's select and verify against real systemd); drop-in render tests for `impl: rust` in `tests/test_metrics_httpd_switch.py` (`ConsumerRenderTests`: argv of PLAN.md 7.3 equal to the `json_file.json` fixture argv, drop-in and unchanged base unit equal to `tests/fixtures/metrics_httpd_switch/`) | done for the five `*_metrics_endpoint` roles (S5a); `metrics_endpoint`, `mail_monitoring` pending (S5b) |
 
 ## Process, command line, configuration (PLAN.md 4.8, 4.9, 8.4)
 
@@ -117,3 +117,17 @@ and byte differences named by key without values, D-2, D-3, D-4, D-11,
 401 and unreachable sides, transient differences, logyard volatile
 fields, summary, preflight, configuration errors, report mode 0600, memory
 sampling.
+
+## Role switch (PLAN.md 7.2, 7.3)
+
+Python-side tests of the Ansible switch; no Rust counterpart (they test the
+roles, not the binary). `tests/test_metrics_httpd_switch.py` (`just
+test-metrics-httpd-switch`, part of `just test`).
+
+| Behaviour | Test | Status |
+| --- | --- | --- |
+| argv safe for `ExecStart=` (no `%`, `$`, `"`, `\`, control characters, empty words; a mode first; no `--check-config`), sandbox list, probe coverage by `IPAddressAllow=` | `FilterTests` (`plugins/filter/metrics_httpd.py`) | done (S5a) |
+| drop-in layout and systemd quoting, rendered by plain Jinja2 as ops-deploy will (7.4) | `TemplateTests`, `ConsumerRenderTests.test_dropin_execstart_is_the_argv` | done (S5a) |
+| consumer argv per 7.3 equals the `json_file` fixture argv; `impl: python` renders the base unit unchanged | `ConsumerRenderTests` | done (S5a: backup, storage, thermal, tailscale, dns) |
+| select/verify placement, handlers, sandbox and IP allow list mirror the unit | `ConsumerStaticTests` | done (S5a) |
+| switch to Rust, idempotent re-run, upgrade, back to Python, `--check-config` in the unit's sandbox, pins and prune (other units' pins, rollback pin, old drop-in's version), refusals, warn-and-continue for `python`, failed process check, wrong realm, open endpoint, skipped probe, check mode | `SwitchPlaybookTests` (`ansible-playbook` on localhost with fakes) | done (S5a) |

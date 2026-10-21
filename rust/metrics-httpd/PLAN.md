@@ -17,6 +17,9 @@ and the fake `systemctl` of `fixtures/fake-bin/`). S3 implemented: the process-l
 `metrics-httpd-v0.1.0` (commit `20d566c4`; archive sha256
 `7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27`,
 stripped binary 2,249,216 bytes = 2.14 MiB, highest `GLIBC_2.34`).
+S5a implemented: the internal helper role
+`metrics_httpd_switch` (7.2) and the switch in the five
+`*_metrics_endpoint` roles (7.3), all with `impl: python` by default.
 Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
@@ -807,27 +810,42 @@ likewise `storage_metrics_endpoint_impl`, `thermal_metrics_endpoint_impl`,
 
 ### 7.2 Internal helper role `metrics_httpd_switch` (ops-library, S5a)
 
-Used by each consumer role with `include_role` (`tasks_from`):
+Implemented in S5a: `roles/metrics_httpd_switch/` (its README is the
+reference for every input), with the argv, sandbox and probe-coverage checks
+as plain functions in `plugins/filter/metrics_httpd.py`. Used by each
+consumer role with `include_role` (`tasks_from`); the consumer sets the
+inputs once (S5a: as `vars:` of its deploy block):
 
-- `select.yml` (before the role's "enable and start" task). Inputs: `impl`,
+- `select.yml` (after the unit file and the files `--check-config` reads,
+  before the role's "enable and start" task). Inputs: `impl`,
   `service_name` (= consumer for the pin), `argv` (list after the binary,
-  e.g. `["json-file", "--bind", …]`), `validate_user`, `validate_group`,
-  `unit_sandbox` (the `systemd-run --property` list mirroring the unit: user,
-  group, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `NoNewPrivileges`,
-  `ReadOnlyPaths`, `Environment` for logyard), `notify` (the caller's
-  `reload systemd` and restart handlers). Steps:
+  e.g. `["json-file", "--bind", …]`), `validate_user`, `validate_group`
+  (the unit's `User=`/`Group=`), `unit_sandbox` (the `systemd-run --property`
+  list mirroring the rest of the unit's sandbox: `NoNewPrivileges`,
+  `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `ReadOnlyPaths`,
+  `Environment` for logyard), `notify` (the caller's `reload systemd` and
+  restart handlers); `version`, `sha256`, `local_archive` default to the
+  fleet variables of 7.1. Steps:
   1. assert `impl in ['python', 'rust']`; for `rust` a version with a 64-hex
-     sha256 (or a local archive); `argv` elements contain no newline, no `%`
-     (systemd specifier) and no `"`/`\`;
-  2. when a version is set (independent of `impl`, so the binary can be
+     sha256 (or a local archive); every `argv` element is a non-empty string
+     or integer without `%` (systemd specifier), `$` (environment
+     expansion), `"`, `\` or a control character (newline, tab, …),
+     `argv[0]` is a mode and `--check-config` is not in it (the role appends
+     it); the service name is a pin consumer name;
+  2. `impl == python`: remove the drop-in first (as mailgun-relay), so the
+     switch back never waits on a Rust download or check;
+  3. when a version is set (independent of `impl`, so the binary can be
      installed ahead of the switch): F3 `rust_release_binary` `install`
      (`name: metrics-httpd`, `fail_hard: impl == 'rust'`);
-  3. if installed: run `<versioned binary> <argv> --check-config` through
-     `systemd-run --wait --pipe --collect` with `unit_sandbox` (as
+  4. if installed (and the install did not fail): run `<versioned binary>
+     <argv> --check-config` through `systemd-run --wait --pipe --collect
+     --quiet` as `validate_user`/`validate_group` with `unit_sandbox` (as
      mailgun-relay's `--check-config` task); failure stops the play for
-     `rust`, warns and continues for `python`;
-  4. template `/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
-     (root 0644) iff `impl == rust`, else `state: absent`:
+     `rust` (nothing switched), warns (ignored failed task) and continues for
+     `python`;
+  5. `impl == rust`: template
+     `/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
+     (root 0644, directory 0755):
 
      ```ini
      # Managed by ops-library metrics_httpd_switch: selects the Rust metrics-httpd.
@@ -837,20 +855,37 @@ Used by each consumer role with `include_role` (`tasks_from`):
      ExecStart=/opt/metrics-httpd/<version>/metrics-httpd <argv, systemd-quoted>
      ```
 
-     A change notifies `reload systemd` and the unit's restart handler. The
-     role's base unit template and its Python script stay untouched, so a
-     deploy with `impl: python` renders exactly what it renders today (this
-     keeps ops-deploy's byte-identical parity copies valid).
-- `verify.yml` (after `meta: flush_handlers`): retry up to 30 s: unit
-  active, `MainPID > 0`; `rust`: `readlink /proc/<pid>/exe` equals the
-  versioned binary; `python`: `/proc/<pid>/cmdline` contains the role's
-  Python script path. Then an unauthenticated `GET http://<bind>:<port><path>`
-  from the host: 401 with the role's realm (json-file, script, apt-state), 200
-  with a JSON object containing `status` (logyard-health), 200 for `/`
-  (static) — skipped with a message when the unit's `IPAddressAllow` does not
-  cover the bind address as a source. No credentials are used anywhere in the
-  role switch. On success: F3 `pin` (rust) or pin `state: absent` (python),
-  then F3 `prune`.
+     systemd quoting: a word with a space, `'` or `;` is written in double
+     quotes, every other word as it is (with the characters of step 1 refused,
+     systemd's word splitting gives back exactly `argv`). The template takes
+     two variables, `metrics_httpd_impl_binary` and `metrics_httpd_impl_argv`
+     (strings), and uses no Ansible filter, so ops-deploy renders it
+     byte-identically with plain Jinja2 (7.4).
+
+     A change (also the removal of step 2) notifies `reload systemd` and the
+     unit's restart handler. The role's base unit template and its Python
+     script stay untouched, so a deploy with `impl: python` renders exactly
+     what it renders today (this keeps ops-deploy's byte-identical parity
+     copies valid; `tests/test_metrics_httpd_switch.py` pins the base units
+     against goldens).
+- `verify.yml` (after `meta: flush_handlers`; skipped in check mode): retry
+  up to 30 s: unit active, `MainPID > 0`; `rust`: `readlink /proc/<pid>/exe`
+  equals the versioned binary (or its `realpath`); `python`:
+  `/proc/<pid>/cmdline` contains the role's Python script path (input
+  `python_script`). Then an unauthenticated `GET
+  http://<bind>:<port><path>` from the host (inputs `probe_bind`,
+  `probe_port`, `probe_path`, `probe_expect`, `probe_realm`; no proxy, no
+  redirects): 401 with `WWW-Authenticate: Basic realm="<realm>"` (json-file,
+  script, apt-state), 200 with a JSON object containing `status`
+  (logyard-health), 200 for `/` (static) — skipped with a message when the
+  unit's `IPAddressAllow` (input `ip_address_allow`; the symbolic names
+  `any`, `localhost`, `link-local`, `multicast` are understood) does not
+  cover the bind address as a source (an unspecified bind address is probed
+  on loopback). No credentials are used anywhere in the role switch. On
+  success: F3 `pin` (rust) or pin `state: absent` (python, keeping the last
+  version as the rollback pin), then F3 `prune` with `protect` = the live
+  executable and the binary the drop-in named before this run. A failed
+  check stops the play before a pin moves or anything is pruned.
 
 ### 7.3 Consumer roles (argv per role)
 
@@ -878,7 +913,9 @@ CHANGELOG under "Unreleased"; role tests render the drop-in for both impls.
 `httpd_rust_sha256` and call F4 `helpers/rust_release` plus a byte-identical
 rendering of the role's `metrics-httpd-impl.conf.j2` (vendored under
 `tests/parity/ansible/metrics_httpd_switch__metrics-httpd-impl.conf.j2`, checked
-like the other vendored copies), with the same verify steps. ops-control maps
+like the other vendored copies; variables `metrics_httpd_impl_binary` and
+`metrics_httpd_impl_argv`, argv checked by the rules of 7.2 step 1), with the
+same verify steps. ops-control maps
 the variables in `pyinfra_support/macmini_monitoring.py` (its
 `ROLE_PREFIXES` check refuses unmapped `thermal_metrics_endpoint_*` vars, so
 `thermal_metrics_endpoint_impl` must be mapped, not refused) and in
@@ -912,7 +949,7 @@ same slice, announced to the pyinfra session through the coordinator.
 | `tests/test_monitoring_pipeline_repair.py::EndpointRebootStateTests` (persisted kernel signal served; reboot into new kernel clears it; live marker alone; both reasons; old state files; handler serves merged state) | `apt_state` unit tests + `fixtures/apt_state.json` cases with the same inputs | S2c |
 | `tests/test_static_site_deploy.py::test_rendered_server_serves_files_without_listing_or_writes`, `::test_server_binds_loopback_and_disables_directory_listing` | `static` fixture cases + e2e test (GET file, dir listing 404, PUT/POST 501, headers on errors) | S2e |
 | `tests/test_logyard_deploy.yml` (template list rendering) | stays (role test); S5c adds the drop-in template | S5c |
-| Molecule verify scenarios that curl endpoints (`metrics_endpoint`, `tailscale_metrics_endpoint`, `mail_monitoring`) | unchanged with `impl: python`; S5a/S5b add drop-in render tests for `impl: rust` | S5a, S5b |
+| Molecule verify scenarios that curl endpoints (`metrics_endpoint`, `tailscale_metrics_endpoint`, `mail_monitoring`) | unchanged with `impl: python` (the `tailscale_metrics_endpoint` scenario now also runs select/verify of the switch against real systemd); S5a/S5b add drop-in render tests for `impl: rust` (S5a: `tests/test_metrics_httpd_switch.py`) | S5a, S5b |
 | No Python tests exist for the json-file and script handlers | fixtures generated from the eight json-file scripts and `metrics_httpd.py.j2` (8.2) | S2a, S2b |
 
 `TESTMAP.md` lists every fixture family with its Python source and the Rust
