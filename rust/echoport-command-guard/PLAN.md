@@ -1,6 +1,6 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a, S3b and S4 implemented (campaign "Rust-Ports Runde
+Status: S0, S1, S2, S3a, S3b, S4 and S6 implemented (campaign "Rust-Ports Runde
 2", stream `rust-echoport-command-guard`; see `README.md`). Nothing in this
 directory is released or deployed yet. This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
@@ -732,6 +732,9 @@ echoport_remote_command_guard_rust_sha256: ""         # archive sha256 (64 hex)
 echoport_remote_command_guard_rust_local_archive: ""  # dev/molecule only
 echoport_remote_command_guard_rust_install_root: /usr/local/lib/echoport-command-guard
 echoport_remote_command_guard_rust_keep_versions: 3
+# confirm_live.yml only (S6): the file the playbook wrote and the pinned key.
+echoport_remote_command_guard_authorized_keys_path: /root/.ssh/authorized_keys
+echoport_remote_command_guard_confirm_public_key: ""
 ```
 
 The tasks:
@@ -750,7 +753,13 @@ The tasks:
   the role asserts this with `stat` on every component up to `/`, because
   sshd runs this file as root.
   - After installing, run `<bin> --version` (it must print the pinned
-    version) and `<bin> --check-policy <rendered policy>`.
+    version) and `<bin> --check-policy <rendered policy>`. As built (S6):
+    the `--version` check is F3's own (as `nobody`, first line
+    `echoport-command-guard <version> (`), and `--check-policy` runs on a
+    scratch rendering of the policy **before** the policy is installed, so
+    with impl `shadow`/`rust` a policy the Rust guard refuses never reaches
+    the host. In check mode a version that is not installed yet is not
+    checked.
   - **No pin and no prune in the main tasks.** When the role's main tasks
     run, the playbook has not yet written the new `authorized_keys` line,
     so the forced command may still name an older version, and the play can
@@ -792,7 +801,10 @@ The tasks:
   1. **Verify live.** Read root's `authorized_keys`, the file the playbook
      has just written, and assert that the deploy key's line carries exactly
      the `command="…"` of the fact
-     `echoport_remote_command_guard_forced_command`. Together with the
+     `echoport_remote_command_guard_forced_command`. As built (S6): the
+     playbook passes the key as
+     `echoport_remote_command_guard_confirm_public_key`; exactly one line
+     may carry it, with exactly one `command=` option equal to the fact. Together with the
      playbook's fatal post-probe through that line, this is the "verified
      live" condition. For impl `shadow`/`rust`, `<bin> --version` must also
      print the target version. A mismatch in the line is fatal for every
@@ -837,7 +849,12 @@ The tasks:
   The existing verify (allowed and refused commands through a real sshd,
   classic scp, the three rsync forms, SFTP refused, interactive refused) runs
   unchanged for all three. The shadow run also checks that one journal line
-  with each identifier carries the same `_PID`.
+  with each identifier carries the same `_PID`. As built (S6): three
+  scenarios `default` (python), `shadow` and `rust` share
+  `molecule/shared/{prepare,converge,verify}.yml`; the converge follows the
+  playbook (role, line, post-probe, `confirm_live.yml`). The binary is built
+  by `parity/e2e/build-local-archive.sh` in a Debian 12 container for the
+  Docker host's architecture (version `0.0.0`).
 - **Pin and prune tests (S6)**, a molecule scenario `pins` on Ubuntu 24.04
   with a real sshd and impl `shadow`. Each version is a local stub archive:
   a script that answers `--version` and `--check-policy` and, called as
@@ -875,6 +892,15 @@ The tasks:
   The filter that parses the versions from `authorized_keys` has a unit
   test (Python, Rust and shadow lines, several lines with different
   versions, an install-root mention in another form, an unreadable file).
+  As built (S6): X is installed in its case (after the run to E, whose
+  prune would otherwise remove it) and then aged to the oldest mtime; the
+  pin files are removed before that case. Each simulated run is a
+  `deploy.yml` include that starts with fresh run facts; check mode is a
+  real `ansible-playbook --check` of the role and `confirm_live.yml`. The
+  rollback-independence cases (a binary that exits 1 and an archive that is
+  not gzip, with impl `python` and, failing before the line, with `rust`)
+  run in this scenario too. `tests/test_echoport_remote_command_guard_role.py`
+  repeats the `confirm_live.yml` cases against localhost.
 - **Docs:** role README (impl selector, switch, rollback, shadow),
   `docs/source/roles/infrastructure/echoport_remote_command_guard.md`, and a
   CHANGELOG entry under "Unreleased". `galaxy.yml` is not bumped.

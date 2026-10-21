@@ -7,8 +7,11 @@ hosts run the Python guard.
 
 Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
 layer), **S3a** (the rules without filesystem), **S3b** (the rules with
-filesystem) and **S4** (runtime and exec). Every branch of the Python
-guard's `check()` is ported. What exists:
+filesystem), **S4** (runtime and exec) and **S6** (the role switch:
+`roles/echoport_remote_command_guard` installs this binary through
+`rust_release_binary` and selects it with `echoport_remote_command_guard_impl`,
+default `python`; see its README). Every branch of the Python guard's
+`check()` is ported. What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -83,7 +86,10 @@ guard's `check()` is ported. What exists:
 - `fixtures/`: the Layer-1 cases, generated and committed.
 - `parity/e2e/`: the Layer-2 containers (Ubuntu 24.04 with Python 3.12,
   Debian 13 with Python 3.13) and, so far, the filesystem comparison
-  `layer2_realpath.py` with the probe `examples/env-probe.rs` (below).
+  `layer2_realpath.py` with the probe `examples/env-probe.rs` (below);
+  `build-local-archive.sh <dest.tar.gz>` builds the guard in the same Debian
+  12 container (target `local-archive`) into a release-layout archive for the
+  role's molecule scenarios.
 
 ## Build and test
 

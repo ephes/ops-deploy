@@ -101,7 +101,8 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | --- | --- | --- |
 | `tests/test_sqlite_backup_runners.py` (`.timeout`) | `mutation/tools.jsonl` (`sqlite-timeout`: 1, 30000, 999999 accepted; 0, 1000000, `01`, `-1`, extra space, missing `.backup`, order refused) and `sqlite-backup`; `rules::sqlite` unit tests | done (S0, S3a) |
 | ops-control `test_echoport_remote_command_guard_policy.py` | `policy.jsonl` (`tests/layer1.rs`) plus the S8 Rust `--check-policy` test | Rust done (S1); ops-control pending (S8) |
-| role molecule verify | runs unchanged for impl `rust` and `shadow` (PLAN.md 6.2) | pending (S6) |
+| role molecule verify | scenarios `default` (impl python), `shadow` and `rust` on Ubuntu 24.04 and Debian 13 run the same `molecule/shared/verify.yml`; the shadow run pairs every guard journal line with one shadow line by `_PID`. | done (S6) |
+| — (new in S6) role switch, pin and prune | molecule scenario `pins` (stub releases, impl shadow, real sshd); `tests/test_echoport_remote_command_guard_role.py` (the live-state filter, the forced command per impl, `confirm_live.yml` on localhost) | done (S6) |
 
 ## New in S0 (Python, `tests/test_echoport_command_guard_fixtures.py`)
 

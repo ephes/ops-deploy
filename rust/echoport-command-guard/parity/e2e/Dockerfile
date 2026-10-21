@@ -28,3 +28,21 @@ RUN for user in postgres gotosocial marina villakunterbunt python-podcast; do \
 COPY --from=build /env-probe /usr/local/bin/env-probe
 COPY echoport-command-guard/parity/e2e/layer2_realpath.py /e2e/layer2_realpath.py
 CMD ["python3", "-I", "/e2e/layer2_realpath.py", "--probe", "/usr/local/bin/env-probe"]
+
+# A local release-layout archive of the guard binary (the binary and LICENSE
+# at the archive root, as rust-release.yml packs them) for the role's molecule
+# scenarios (PLAN.md 6.2, S6). Built for the Docker host's architecture, on
+# Debian 12 (glibc 2.36), so it runs in the Ubuntu 24.04 and Debian 13
+# instances. `build-local-archive.sh` exports it:
+#
+#   docker build --target local-archive --output type=local,dest=<dir> rust/
+FROM build AS guard-build
+RUN cargo build --locked --release -p echoport-command-guard --bin echoport-command-guard \
+    && mkdir /archive \
+    && install -m 0755 target/release/echoport-command-guard /archive/echoport-command-guard \
+    && install -m 0644 LICENSE /archive/LICENSE \
+    && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
+        -czf /echoport-command-guard-local.tar.gz -C /archive echoport-command-guard LICENSE
+
+FROM scratch AS local-archive
+COPY --from=guard-build /echoport-command-guard-local.tar.gz /echoport-command-guard-local.tar.gz
