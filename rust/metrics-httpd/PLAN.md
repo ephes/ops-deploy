@@ -452,16 +452,33 @@ per-request 401/503, not a startup failure.
   status line's reason phrase; Rust uses the standard reason phrase and puts
   the stderr text (≤ 1 KiB, control characters replaced) into the body.
 - **D-4 JSON input strictness.** Python accepts `NaN`, `Infinity`,
-  `-Infinity` and lone surrogates; serde_json rejects them → 502
-  `invalid_json`. No live file contains them (1.1); S2a lists every writer
-  and whether it can emit them (`json.dumps(..., allow_nan=True)` default).
-- **D-5 JSON output bytes.** Rust reproduces sorted keys, Python separators
-  and `\uXXXX` escaping, and keeps numbers verbatim from the input
-  (`serde_json` `arbitrary_precision`), so outputs are byte-identical for
-  file-derived values; computed floats (logyard counts) may differ in
-  formatting only for magnitudes ≥ 1e16 or < 1e-4 (Python `repr` vs ryu),
-  which counts never reach. The parity harness compares parsed JSON and, for
-  file-derived payloads, bytes.
+  `-Infinity`, lone surrogates and float literals that overflow to
+  infinity (`1e400`, which Python then serves as `Infinity`); Rust rejects
+  all of them → 502 `invalid_json`. No live file contains them (1.1); S2a
+  lists every writer and whether it can emit them
+  (`json.dumps(..., allow_nan=True)` default).
+- **D-5 JSON output bytes: none.** Rust reproduces sorted keys, Python
+  separators and `\uXXXX` escaping, and Python's number round trip
+  (`json.loads` then `json.dumps`): a number lexeme without `.`, `e`, `E`
+  is a Python `int` and is written verbatim, at any size (`serde_json`
+  `arbitrary_precision` keeps the lexeme), except `-0`, which Python
+  writes as `0`; an int lexeme longer than 4300 digits (CPython's
+  `int_max_str_digits` default, a `ValueError` in Python) → 502
+  `invalid_json` in Rust; every other
+  lexeme is a Python `float`: parsed to the nearest `f64` and written with
+  Python's `float.__repr__` rules — the shortest round-trip digits (Rust's
+  `{:e}` formatting yields them) laid out fixed-point with at least one
+  fractional digit when the decimal exponent is in −4 ≤ e < 16, else as
+  `<d>[.<ddd>]e<sign><at least two digits>` (`1e2` → `100.0`, `1.00` →
+  `1.0`, `9007199254740993.0` → `9007199254740992.0`, `1e16` → `1e+16`,
+  `0.0001` → `0.0001`, `0.00001` → `1e-05`, `-0.0` → `-0.0`). The same
+  formatter writes computed floats (logyard counts). The int/float split
+  also drives the apt-state type checks (`isinstance(v, int)`: `1e9` and
+  `5.0` are floats there, as in Python); integers used in apt-state
+  arithmetic are exact (i128; a lexeme outside i128 there → 500
+  `internal_error`, D-2 style, never a wrong number). S1 has a fixture
+  with exactly these cases; the parity harness compares bytes for every
+  200 response and parsed JSON plus the D-3 rules for errors.
 - **D-6 Auth.** In-process bcrypt verification (no subprocess; fixes the
   password in argv of `metrics_endpoint`'s `htpasswd -vb`). Only `$2a$`,
   `$2b$`, `$2y$` hashes (all live files are `$2y$`); other schemes → 401 and
@@ -769,13 +786,28 @@ restarted, no drop-in.
 Per host (macmini, fractal, staging, production), under the lock for setup
 and teardown: for every endpoint in 1.1, two transient units via
 `systemd-run` with the production unit's `User`/`Group` and sandbox
-properties, bound to `127.0.0.1:<port + 20000>`: the deployed Python script
-(with flags or, for scripts with baked settings, a copy with the port
-substituted) and the installed Rust binary with the argv of 7.3; both read
-the **production** JSON/state files and a shadow htpasswd file with a random
-throwaway credential generated on the host (root-only directory, the file
-`0640 root:<group>`), so no production secret is used. logyard-health shadow
-uses the unit's environment with the port changed. `parity/shadow_compare.py`
+properties plus `IPAddressAllow=localhost`: the deployed Python script
+(with flags or, for scripts with baked settings, a copy with the port and
+the htpasswd path substituted) and the installed Rust binary with the argv
+of 7.3 (bind, port and htpasswd path replaced). Ports: on each host the
+endpoints are numbered in the order of table 1.1 (i = 0, 1, …); the Python
+shadow binds `127.0.0.1:<39000 + 2i>`, the Rust shadow `127.0.0.1:<39001 +
+2i>`, so no two shadows share a socket even where production ports repeat
+on different addresses (macmini thermal TS:9104 and OpenClaw
+127.0.0.1:9104). Setup refuses to start if any of these ports is already
+listening (`ss -ltn`). Both read the **production** JSON/state files and a
+shadow htpasswd file with a random throwaway credential generated on the
+host, so no production secret is used: `/run/metrics-httpd-shadow/` is
+`0711 root:root`; the plaintext throwaway password lives in
+`/run/metrics-httpd-shadow/secret/` (`0700 root:root`, read only by the
+root-run comparer); each service group gets
+`/run/metrics-httpd-shadow/<group>/` (`0750 root:<group>`) holding
+`htpasswd` (`0640 root:<group>`), and the shadow units get that directory
+in `ReadOnlyPaths`. Before the first comparison, setup asserts that an
+authenticated request to every authenticated shadow (Python and Rust)
+returns 200 or the expected file-state status, never 401; the comparer
+counts any 401 on an authenticated probe as a difference.
+logyard-health shadow uses the unit's environment with the port changed. `parity/shadow_compare.py`
 (stdlib, copied to the host) runs every 5 min from a transient timer and
 writes a JSONL report (counts and differing keys only, no payloads) to
 `/var/lib/metrics-httpd-shadow/`. Teardown removes units, timer, files.
@@ -917,8 +949,9 @@ Acceptance criteria (beyond the green checks):
 
 - **S1**: server answers 404/401/501 per 4.1 for every mode stub;
   `--check-config` exit codes; formatter fixture (sorted keys, separators,
-  `\uXXXX` incl. astral characters as surrogate pairs, big ints and floats
-  verbatim) matches Python `json.dumps(sort_keys=True)` byte for byte.
+  `\uXXXX` incl. astral characters as surrogate pairs, big ints verbatim,
+  the float cases of D-5) matches Python `json.dumps(sort_keys=True)` of
+  `json.loads(<input>)` byte for byte.
 - **S2a–S2e**: every fixture case of the mode passes; D-items of the mode
   pinned by named tests.
 - **S3**: harness green for all modes on Linux CI; slow-client case shows

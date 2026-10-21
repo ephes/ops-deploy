@@ -209,7 +209,12 @@ Rules:
   never points at a binary.
 - Job (one per tag, `ubuntu-22.04`, no cargo cache, `permissions: contents:
   read`; only the publish job gets `contents: write`): fmt, clippy, the
-  workspace tests, `cargo build --release --locked -p <crate> --target
+  workspace tests — on the runner with the same `--workspace --exclude`
+  list as CI (section 3), so a release of one crate never builds a
+  CI-excluded crate on an unsupported image; a CI-excluded crate that the
+  tagged crate's variants build (`software-live-apt` for `software-live`)
+  is linted, tested and built only inside each variant's container —,
+  `cargo build --release --locked -p <crate> --target
   x86_64-unknown-linux-gnu`, glibc floor check (2.35), smoke test
   (`<binary> --version` must print `<crate> <version> (<full commit sha>)`;
   the commit comes from the crate's `build.rs`: `<CRATE>_GIT_COMMIT` env,
