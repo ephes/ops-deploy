@@ -1,0 +1,116 @@
+# Read-only check of one Python environment's certifi/pip trust (ops-deploy).
+# Run as ``<venv>/bin/python -I -c <this text>``, as the service user. Imports only certifi and pip's vendored certifi. Prints one line per
+# problem and exits 1 if there is any; exits 0 silently otherwise.
+# Standard library only, so it also runs in old environments.
+import glob
+import hashlib
+import importlib
+import importlib.util
+import os
+import re
+import shutil
+import ssl
+import subprocess
+import sys
+
+FLOORS = {"certifi": (2026, 10, 19), "pip": (26, 2, 2)}
+# Requires-Python of exactly the floor releases (wheel METADATA).
+REQUIRES_PYTHON = {"certifi": (3, 7), "pip": (3, 10)}
+DISTRUSTED = {
+    "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b": "emSign ECC Root CA - G3",
+    "d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4": "AAA Certificate Services",
+}
+WHERE = {"certifi": "certifi", "pip": "pip._vendor.certifi"}
+DISTRO = {"certifi": "python3-certifi", "pip": "python3-pip"}
+SYSTEM_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+
+
+def release(text):
+    if text is None or not re.fullmatch(r"\d+(\.\d+)*", text):
+        return None
+    parts = tuple(int(p) for p in text.split("."))
+    return parts + (0,) * (3 - len(parts))
+
+
+def version(module_file, name):
+    # The Version of the one <name>-*.dist-info next to the imported package
+    # (stdlib only, any Python; tied to the module actually imported). None
+    # when there is not exactly one, so the caller fails closed.
+    site = os.path.dirname(os.path.dirname(module_file))
+    infos = glob.glob(os.path.join(site, name + "-*.dist-info", "METADATA"))
+    if len(infos) != 1:
+        return None
+    with open(infos[0], encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line.strip():
+                break
+            if line.startswith("Version:"):
+                return line.split(":", 1)[1].strip()
+    return None
+
+
+def owner(path):
+    query = shutil.which("dpkg-query")
+    if not query:
+        return None
+    try:
+        out = subprocess.run([query, "-S", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             check=True, universal_newlines=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    owners = out.split(":", 1)[0].strip().split(", ")
+    return owners[0] if len(owners) == 1 else None
+
+
+def fingerprints(path):
+    # SHA-256 of every CA certificate this interpreter's OpenSSL loads from
+    # the bundle, in OpenSSL's own DER (what `openssl x509 -fingerprint`
+    # hashes): CERTIFICATE and TRUSTED CERTIFICATE blocks alike, whatever
+    # their encoding in the file. A bundle OpenSSL cannot load raises
+    # (ssl.SSLError is an OSError), so the caller fails closed.
+    protocol = getattr(ssl, "PROTOCOL_TLS_CLIENT", None) or ssl.PROTOCOL_SSLv23
+    context = ssl.SSLContext(protocol)
+    context.load_verify_locations(cafile=path)
+    return [hashlib.sha256(der).hexdigest() for der in context.get_ca_certs(binary_form=True)]
+
+
+def check(name):
+    if importlib.util.find_spec(name) is None:
+        return []
+    try:
+        module = os.path.realpath(importlib.import_module(name).__file__)
+        bundle = os.path.realpath(importlib.import_module(WHERE[name]).where())
+    except Exception as exc:
+        return ["{}: could not be inspected: {}: {}".format(name, type(exc).__name__, exc)]
+    problems = []
+    inside = sys.prefix != sys.base_prefix and module.startswith(os.path.realpath(sys.prefix) + os.sep)
+    if inside:
+        installed = version(module, name)
+        parsed = release(installed)
+        if parsed is None:
+            problems.append("{} {}: version not recognised".format(name, installed))
+        elif parsed < FLOORS[name]:
+            floor = ".".join(map(str, FLOORS[name]))
+            problem = "{} {} is installed; {} or later is required".format(name, installed, floor)
+            if sys.version_info[:2] < REQUIRES_PYTHON[name]:
+                problem += " but {} {} requires Python >={} and this environment runs {}; it cannot be updated in place".format(
+                    name, floor, ".".join(map(str, REQUIRES_PYTHON[name])), ".".join(map(str, sys.version_info[:3])))
+            problems.append(problem)
+    elif owner(module) != DISTRO[name] or bundle != SYSTEM_BUNDLE:
+        problems.append("{} is imported from outside the environment ({}) with bundle {}; only a distribution "
+                        "package using the system store is accepted".format(name, module, bundle))
+    try:
+        found = fingerprints(bundle)
+    except (OSError, ValueError) as exc:
+        return problems + ["{}: bundle {} could not be read: {}".format(name, bundle, exc)]
+    for fingerprint in found:
+        label = DISTRUSTED.get(fingerprint)
+        if label:
+            problems.append("{}: bundle {} contains distrusted root {}".format(name, bundle, label))
+    return problems
+
+
+problems = check("certifi") + check("pip")
+for line in problems:
+    print(line)
+sys.exit(1 if problems else 0)

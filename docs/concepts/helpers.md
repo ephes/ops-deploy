@@ -137,6 +137,41 @@ Why `runuser` rather than `_sudo_user`: the `_sudo` global arguments are
 banned in this package (see `tests/test_policy.py`), because pyinfra stages
 `_sudo` uploads as plaintext in `/tmp`.
 
+## certifi/pip security floors: `ops_deploy.helpers.python_security`
+
+After the eMudhra/emSign CA compromise (certifi advisory GHSA-6q48-6c7w-9gw2)
+a normal deploy must not bring back certifi below 2026.10.19 or upstream pip
+below 26.2.2. Both checks fail closed and never add, upgrade or rewrite
+anything:
+
+- `require_lock_floors(project, label, *, root=None)` reads, on the
+  controller, every `uv.lock` uv may install for `project`: its own and those
+  of its parents up to `root` (the synced tree), because a workspace member is
+  installed from its workspace root's lock. It raises `ValueError`, naming the
+  lock, when one locks certifi or pip below the floor (packages a lock does not
+  contain are ignored). Call it while planning, before any operation, with the
+  source the deploy syncs. Without any lock it is left to `uv sync`.
+- `verify_trust(python, *, user, home, name)` is a read-only operation (see
+  `mark_read_only`) for after the dependency sync: it runs
+  `templates/python_security_check.py.txt` as `<python> -I -c <script>` as the
+  service user (no secrets in it, so it travels on the command line, not
+  stdin). It fails when certifi/pip in the environment are below the floor
+  (noting when the floor release's `Requires-Python` excludes the
+  environment's Python, so it cannot be updated in place), when they are
+  imported from outside the environment unless `dpkg-query` shows
+  `python3-certifi`/`python3-pip` using `/etc/ssl/certs/ca-certificates.crt`,
+  or when their bundles contain emSign ECC Root CA - G3 or AAA Certificate
+  Services (the environment's `ssl`/OpenSSL loads the bundle; each CA
+  certificate it holds is matched by SHA-256 of OpenSSL's DER, as
+  `openssl x509 -fingerprint` hashes it; a bundle OpenSSL cannot load fails). The
+  installed version is read from the one `*.dist-info/METADATA` next to the
+  imported package (no `importlib.metadata`, so old Pythons work; zero or
+  several fail closed). Explicit trust settings such as
+  `SSL_CERT_FILE` are not changed or inspected.
+
+`django_site` uses both. The same floors are enforced by ops-library's
+`python_security_floor` role for the Ansible deploys.
+
 ## `django_manage(project_dir, *command, user, home, venv, env_file=None, when_changed=None, name=None)`
 
 Runs `./manage.py <command>` in `project_dir` as `user`, with `venv/bin` first

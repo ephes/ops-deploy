@@ -51,6 +51,7 @@ READ_ONLY = [
     f"{V}{name}"
     for name in (
         "Require Node.js and uv",
+        "Verify splitsite certifi/pip trust",
         "Check purged public files are absent",
         "Check no legacy code is served",
         f"Wait for port 127.0.0.1:{DJANGO_PORT}",

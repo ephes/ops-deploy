@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `django_site` (and so every site deployed through it): refuse a source
+  `uv.lock` that locks certifi below 2026.10.19 or upstream pip below 26.2.2
+  before any operation, and verify after the dependency sync, read-only and on
+  every run, that the venv's certifi/pip meet those floors and that their
+  bundles hold neither emSign ECC Root CA - G3 nor AAA Certificate Services
+  (eMudhra/emSign CA compromise, GHSA-6q48-6c7w-9gw2). New helpers
+  `ops_deploy.helpers.python_security.require_lock_floors` and `verify_trust`.
+  A site whose source lock is stale now fails to deploy until the lock is
+  updated in its source or a reviewed source revision with a current lock is
+  deployed; nothing is added to environments without certifi/pip.
+
 - Fail LiveKit, Loki and Graphyard runtime deployments before service changes when explicitly enabled replacement CA stores have not been prepared.
 
 - Support optional prepared replacement container CA stores for LiveKit, Graphyard and Logyard without changing application images.
