@@ -776,12 +776,29 @@ before the units):
    form `{{ software_live_install_dir }}/releases/<version>/software-live`:
    the `ExecStart=` of the existing production drop-ins of step 4 (endpoint
    and collector `impl.conf`), the `ExecStart=` of the existing shadow units
-   (8.1), and `readlink /proc/<MainPID>/exe` of the running production and
-   shadow endpoints. A Python command contributes nothing. A drop-in or
-   shadow unit that exists but cannot be read, or whose command names a
-   path under `releases/` that does not parse, sets
-   `_software_live_live_unknown`; then step 7 does not prune in this play
-   (fail closed: unknown live state never leads to a deletion).
+   (8.1), `readlink /proc/<MainPID>/exe` of the running production and
+   shadow endpoints, and the executables of the running production and
+   shadow **collector** runs. A collector run (oneshot, up to 90 s) can
+   still execute vN after its unit, the endpoint and the pin moved to a
+   newer version, so its `ExecStart=` alone does not name what runs: for
+   each collector unit whose `ActiveState` is `activating`, `active`,
+   `deactivating` or `reloading`, step 0 reads every PID in the unit's
+   cgroup (`ControlGroup=` → `cgroup.procs`; this covers the `MainPID` of
+   `collect`, its `software-live-apt` child, and the `ControlPID` of the
+   `ExecStartPost=` export) and adds the version of each
+   `readlink /proc/<pid>/exe` (a ` (deleted)` suffix is stripped before
+   parsing; the binary and `software-live-apt` lie in the same
+   `releases/<version>/` directory). A PID that exited between listing and
+   reading contributes nothing. A Python command contributes nothing. A
+   drop-in or shadow unit that exists but cannot be read, a command or
+   executable that names a path under `releases/` that does not parse, a
+   collector unit in one of those states whose cgroup cannot be listed, or
+   a listed PID that still exists but whose executable cannot be resolved,
+   sets `_software_live_live_unknown`; then step 7 does not prune in this
+   play (fail closed: unknown live state never leads to a deletion). A
+   collector run that starts after step 0 executes the drop-in's version,
+   which step 0 already protects (old drop-in) or which is pinned (new
+   drop-in, step 4).
    `_software_live_last_live` is the version in the existing
    `.pins/software-live` (the version last verified live in the production
    units, step 7), or, when that pin is absent, the version of the running
@@ -889,6 +906,13 @@ asserts:
 - a failed verification moves neither `.pins/software-live` nor the
   `previous` pin and prunes nothing;
 - an unreadable or unparseable drop-in or shadow unit skips the prune;
+- **(mandatory, owner decision 2026-10-21)** a production or shadow
+  collector run still executing vN (and its `software-live-apt` child)
+  after its unit, the endpoint and both pins moved on keeps vN from being
+  pruned: v1 live, a collector run of v1 still active, switch to v2, then
+  v3 with `keep_versions: 2` while that run is active → v1 stays
+  installed; a collector unit in a running state whose executable cannot
+  be resolved skips the prune;
 - switching from `rust` to `python` removes the production pin, sets
   `previous` to the last Rust version, and keeps that version installed;
 - a re-run with the same version moves nothing and reports no change.
@@ -940,8 +964,11 @@ asserts:
   new version is verified live. F3 owns the mechanism (inputs, pin file,
   its own tests, `PLAN-foundation.md` 6.2); this stream's duties are the
   consumer side of 7.3 (step 0 fills `protect` from the drop-ins, the
-  shadow units and `/proc/<MainPID>/exe`; step 7 moves `previous` only
-  after step 6) and the S6 tests listed there.
+  shadow units, the endpoints' `/proc/<MainPID>/exe` and the executables
+  of running collector runs; step 7 moves `previous` only after step 6)
+  and the S6 tests listed there. F3's own tests include the same case on
+  its side: a protected version that is neither among the newest
+  `keep_versions` nor pinned survives the prune (section 12).
 
 Whatever F2 or F3 does not provide when S6/S7 start, S6 (F3 input) and S7
 (F2 matrix) add to the foundation's files in agreement with the foundation
@@ -1205,6 +1232,15 @@ Campaign-wide decisions that bind this stream:
   reports (section 9). For this plan the owner allowed one fourth round
   over the repair delta of round 3 (2026-10-21); the slice rule of
   section 9 is unchanged.
+- **Plan merged after round 4** (2026-10-21). Round 4 left one warning:
+  step 0 of 7.3 protected the executables of the running endpoints but
+  not of running collector runs. The owner decided to fix it and merge
+  the plan without another plan review; the verification moves into the
+  implementation slices. S6 (role switch) and the foundation slice F3
+  (version protection) each get up to three gpt-6.1-sol high review
+  rounds, and the running-collector case (7.3 step 0, the mandatory S6
+  test, and the matching F3 prune test of 7.4) is a mandatory test in
+  both.
 - **Version protection** (2026-10-21, built into F3): prune never deletes
   a version in the consumer's `protect` list (filled from the live state)
   or the consumer's `previous` rollback pin (moved only after a new
