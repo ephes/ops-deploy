@@ -45,9 +45,10 @@ Slice S4 (`serve`, the endpoint):
   `100.64.0.0/10`, `port` is read as Python's `int()` reads it, and the
   other keys must be strings (PLAN.md 4.2 item 14).
 - `src/endpoint.rs` is the `Endpoint` boundary of PLAN.md 5.4 (bind check,
-  Basic auth with a `Verifier`, hyper 1 on a current-thread tokio runtime,
-  one request per connection, a 5 s budget per connection, at most 16 at a
-  time); `src/htpasswd.rs` is `htpasswd -vi` in process (PLAN.md 4.2 item 1),
+  Basic auth with a `Verifier`, hyper 1 on a current-thread tokio runtime
+  with the handler on its blocking pool, one request per connection, the
+  head within 5 s, the password check stopped after 5 s, at most 16
+  connections at a time); `src/htpasswd.rs` is `htpasswd -vi` in process (PLAN.md 4.2 item 1),
   checked against the real `htpasswd` (`fixtures/htpasswd.json`).
 
 Slice S3b (Traefik observation, `src/traefik.rs`):

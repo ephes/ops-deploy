@@ -820,6 +820,81 @@
   },
   {
    "htpasswd_calls": 0,
+   "id": "fragment",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976652369676e6f72656420485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "fragment_without_auth",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976652369676e6f72656420485454502f312e310d0a486f73743a203132372e302e302e310d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "empty_fragment",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976652320485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "query_and_fragment",
+   "now": 1700000060.75,
+   "python": {
+    "body": {
+     "error": "not_found"
+    },
+    "challenge": null,
+    "htpasswd": null,
+    "status": 404
+   },
+   "request_hex": "474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c6976653f61236220485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
+   "id": "leading_empty_line",
+   "now": 1700000060.75,
+   "p3": "framing",
+   "python": {
+    "body": null,
+    "challenge": null,
+    "htpasswd": null,
+    "status": null
+   },
+   "request_hex": "0d0a474554202f2e77656c6c2d6b6e6f776e2f736f6674776172652d6c69766520485454502f312e310d0a486f73743a203132372e302e302e310d0a417574686f72697a6174696f6e3a20426173696320626e6c34625739754f6d4e76636e4a6c593351676147397963325567596d4630644756796553427a644746776247553d0d0a0d0a",
+   "rust_status": 200,
+   "state": "{\"schema_version\": 2, \"host\": \"example\", \"generated_at_epoch\": 1700000000.25, \"policy_sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "htpasswd_calls": 0,
    "id": "trailing_slash",
    "now": 1700000060.75,
    "python": {

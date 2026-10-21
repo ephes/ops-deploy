@@ -485,8 +485,8 @@ underscores between digits, leading zeros, any size, ASCII digits only,
   request (no caching).
 - No request logging at all (`log_message` is a no-op, `:760-761`):
   no paths, headers or credentials in the journal.
-- Socket timeout 5 s per connection (`:714-716`; Rust: one 5 s budget per
-  connection, 4.2 item 2). Bind is validated at startup (`:911-915`); Rust
+- Socket timeout 5 s per connection (`:714-716`; Rust: the head within 5 s,
+  at most 15 s per connection, 4.2 item 2). Bind is validated at startup (`:911-915`); Rust
   also requires the other keys at startup (4.2 item 14).
 
 ### 3.5 Atomic writes and permissions (P1, `atomic_json`, `:132-146`)
@@ -598,9 +598,12 @@ request path or a policy value other than the host.
    Refused where `htpasswd` accepts: the other formats (`$apr1$` MD5,
    `{SHA}`, `crypt`), `$2x$`, a `$2a$` entry checked with a non-ASCII
    password (APR's `$2a$` safety measure can compute another hash than the
-   correct algorithm), and a cost above 16 (Python gives `htpasswd` 5 s; cost
-   17 takes longer than that on the hosts, and verification runs on the
-   endpoint's single thread). `fixtures/htpasswd.json` records 89 cases
+   correct algorithm), and a cost above 16 (cost 17 takes longer than
+   Python's 5 s `htpasswd` timeout on the hosts). That timeout becomes a
+   deadline: an entry of the user reached more than 5 s after the check
+   started fails it (401, as Python's `TimeoutExpired`), so a file with many
+   entries cannot keep a check going; the check runs on tokio's blocking
+   pool and never holds up other connections. `fixtures/htpasswd.json` records 89 cases
    (empty, 72+ byte, 255/256 byte, non-ASCII, `\r`, NUL, prefixes,
    non-canonical characters, long and broken lines, duplicates) with the
    real `htpasswd -vi` of `debian:13` and `ubuntu:24.04` (apache2-utils
@@ -612,13 +615,17 @@ request path or a policy value other than the host.
    501 with an HTML body). Malformed requests give hyper's 400 (Python: 400
    HTML), also where Python's lenient parser goes on: an HTTP/0.9 request
    line, a folded header line (obs-fold) or a control character in a header
-   value; a request head beyond hyper's 64 KiB read buffer gets 431. Header
+   value; a request head beyond hyper's 64 KiB read buffer gets 431. Empty
+   lines before the request line are skipped (Python closes the connection
+   without an answer). The request-target is read from the request line as
+   sent, so a `#fragment` makes it differ from the path (404), as in Python. Header
    values lose trailing spaces and tabs (RFC 9110 field values; Python keeps
    them, so `Basic <token> ` is a 401 there and a 200 here). Python serves
    one connection at a time with a 5 s socket timeout per read or write;
    Rust serves up to 16 connections at once (more wait in the listen
-   queue), each with one 5 s budget from accept to the last byte, so a slow
-   client neither blocks other clients nor keeps its connection longer.
+   queue): the request head must arrive within 5 s of the accept, the
+   password check stops after 5 s (item 1), and no connection lives longer
+   than 15 s, so a slow client or a slow check never blocks other clients.
 3. **JSON formatting.** State, caches, projection, responses and the
    stdout of `collect` without `--output` use compact
    separators (Python: `", "`, `": "`). Keys stay sorted. Files are

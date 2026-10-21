@@ -192,7 +192,7 @@ impl<V: Verifier, C: Fn() -> f64> SoftwareLive<V, C> {
     }
 }
 
-impl<V: Verifier, C: Fn() -> f64> Handler for SoftwareLive<V, C> {
+impl<V: Verifier + Send + Sync, C: Fn() -> f64 + Send + Sync> Handler for SoftwareLive<V, C> {
     fn handle(&self, request: &Request<'_>) -> Reply {
         if request.method != Method::GET {
             return error(StatusCode::NOT_IMPLEMENTED, "unsupported_method");
@@ -289,7 +289,8 @@ mod tests {
 
     #[derive(Deserialize)]
     struct PythonAnswer {
-        status: u16,
+        /// `None`: Python closed the connection without an answer.
+        status: Option<u16>,
         body: Option<Value>,
         challenge: Option<String>,
         htpasswd: Option<(String, String)>,
@@ -308,7 +309,7 @@ mod tests {
     }
 
     impl Verifier for Table {
-        fn verify(&self, user: &str, password: &str) -> bool {
+        fn verify(&self, user: &str, password: &str, _deadline: std::time::Instant) -> bool {
             self.calls
                 .lock()
                 .unwrap()
@@ -521,11 +522,11 @@ mod tests {
             if case.p3.is_some() {
                 // PLAN.md 4.2 items 2 and 4.
                 divergences += 1;
-                assert_ne!(Some(python.status), case.rust_status, "{id}");
+                assert_ne!(python.status, case.rust_status, "{id}");
                 assert_eq!(Some(answer.status), case.rust_status, "{id}");
                 continue;
             }
-            assert_eq!(answer.status, python.status, "{id}");
+            assert_eq!(Some(answer.status), python.status, "{id}");
             answer.assert_contract(id, raw.starts_with(b"HEAD "));
             assert_eq!(
                 answer.header("www-authenticate"),
@@ -684,6 +685,77 @@ mod tests {
         let elapsed = started.elapsed();
         assert!(elapsed >= Duration::from_secs(4), "{elapsed:?}");
         assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
+    }
+
+    /// A verifier that takes its time, as `htpasswd` on a slow host.
+    struct Slow(Duration);
+
+    impl Verifier for Slow {
+        fn verify(&self, _user: &str, _password: &str, _deadline: std::time::Instant) -> bool {
+            std::thread::sleep(self.0);
+            true
+        }
+    }
+
+    #[test]
+    fn a_slow_password_check_never_holds_up_other_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = Arc::new(Running::start(SoftwareLive {
+            path: "/p".into(),
+            auth: BasicAuth {
+                user: "u".into(),
+                verifier: Slow(Duration::from_secs(3)),
+            },
+            state: dir.path().join("missing"),
+            clock: || 0.0,
+        }));
+        let slow = {
+            let server = server.clone();
+            std::thread::spawn(move || {
+                let started = Instant::now();
+                let answer = server.send(&get("/p", Some("u:x")));
+                (answer.status, started.elapsed())
+            })
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        let started = Instant::now();
+        assert_eq!(server.send(&get("/other", None)).status, 404);
+        assert_eq!(server.send(&get("/p", None)).status, 401);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        let (status, took) = slow.join().unwrap();
+        assert_eq!(status, 503, "authenticated, no state file");
+        assert!(took >= Duration::from_secs(3), "{took:?}");
+    }
+
+    #[test]
+    fn the_password_check_gives_up_after_its_budget() {
+        // Many entries of the user, each verified in turn (htpasswd checks
+        // every one): far more work than the budget allows.
+        let dir = tempfile::tempdir().unwrap();
+        let hash = bcrypt::hash_with_salt("pw", 12, [3; 16])
+            .unwrap()
+            .format_for_version(bcrypt::Version::TwoY);
+        let htpasswd = dir.path().join("htpasswd");
+        std::fs::write(&htpasswd, format!("u:{hash}\n").repeat(400)).unwrap();
+        let config = EndpointConfig {
+            bind: Ipv4Addr::LOCALHOST,
+            port: 0,
+            path: "/p".into(),
+            auth_user: "u".into(),
+            htpasswd,
+            state: dir.path().join("missing"),
+        };
+        let server = Running::start(SoftwareLive::new(&config));
+        let started = Instant::now();
+        let answer = server.send(&get("/p", Some("u:pw")));
+        let took = started.elapsed();
+        assert_eq!(answer.status, 401, "as Python's htpasswd timeout");
+        assert!(took >= endpoint::VERIFY_BUDGET, "{took:?}");
+        assert!(took < endpoint::CONNECTION_LIMIT, "{took:?}");
     }
 
     #[test]

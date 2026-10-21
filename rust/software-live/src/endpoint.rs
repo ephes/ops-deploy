@@ -7,22 +7,30 @@
 //! into a shared crate later is mechanical.
 //!
 //! Server behaviour (PLAN.md 3.4, 4.2 item 2): one request per connection
-//! (`Connection: close`), a 5-second budget for the whole connection (Python
-//! sets a 5-second socket timeout per read or write), at most
-//! [`MAX_CONNECTIONS`] connections at a time (Python serves one at a time),
-//! request heads up to [`MAX_HEAD_BYTES`]; every response is JSON with
-//! `Content-Type`, `Content-Length` and `Cache-Control: no-store`. Malformed
-//! requests get hyper's 400 (431 for an oversized head). Nothing is logged:
-//! no request line, path, header or credential ever reaches the journal.
+//! (`Connection: close`); the request head must arrive within
+//! [`HEAD_TIMEOUT`] of the accept (Python sets a 5-second socket timeout per
+//! read or write); the handler runs on tokio's blocking pool, so a slow
+//! password check never holds up another connection, and the password check
+//! gives up after [`VERIFY_BUDGET`] (Python's `htpasswd` timeout; the request
+//! is then a 401); no connection lives longer than [`CONNECTION_LIMIT`]. At
+//! most [`MAX_CONNECTIONS`] connections are served at a time (Python serves
+//! one at a time), request heads up to [`MAX_HEAD_BYTES`]; every response is
+//! JSON with `Content-Type`, `Content-Length` and `Cache-Control: no-store`.
+//! Malformed requests get hyper's 400 (431 for an oversized head). The
+//! request-target is taken from the request line as sent, as Python's
+//! `self.path` is (hyper's `Uri` drops a `#fragment`). Nothing is logged: no
+//! request line, path, header or credential ever reaches the journal.
 
-use std::cell::Cell;
-use std::convert::Infallible;
+use std::cell::{Cell, RefCell};
 use std::future::Future;
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::rc::Rc;
-use std::time::Duration;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::alphabet;
@@ -32,15 +40,23 @@ use bytes::Bytes;
 use http_body_util::Full;
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Method, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use serde_json::Value;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpStream;
 
 use crate::error::PyError;
 use crate::htpasswd;
 use crate::pyjson;
 
-/// The time a connection may take from accept to the last byte written.
-pub const CONNECTION_BUDGET: Duration = Duration::from_secs(5);
+/// The request head must have arrived this long after the accept.
+pub const HEAD_TIMEOUT: Duration = Duration::from_secs(5);
+/// A password check stops after this long and fails (Python runs
+/// `htpasswd` with `timeout=5`).
+pub const VERIFY_BUDGET: Duration = Duration::from_secs(5);
+/// No connection lives longer than this from the accept: the head, the
+/// handler with its password check and the response together.
+pub const CONNECTION_LIMIT: Duration = Duration::from_secs(15);
 /// Connections served at once; more wait in the listen queue.
 pub const MAX_CONNECTIONS: usize = 16;
 /// The largest request head hyper reads (request line plus headers).
@@ -76,9 +92,10 @@ fn is_ipv6(text: &str) -> bool {
     address.parse::<Ipv6Addr>().is_ok()
 }
 
-/// Checks a user name and password, e.g. against an htpasswd file.
+/// Checks a user name and password, e.g. against an htpasswd file; a check
+/// that is still running at `deadline` fails.
 pub trait Verifier {
-    fn verify(&self, user: &str, password: &str) -> bool;
+    fn verify(&self, user: &str, password: &str, deadline: Instant) -> bool;
 }
 
 /// `htpasswd -vi <file> <user>` with the password on stdin
@@ -88,9 +105,10 @@ pub trait Verifier {
 pub struct HtpasswdFile(pub PathBuf);
 
 impl Verifier for HtpasswdFile {
-    fn verify(&self, user: &str, password: &str) -> bool {
-        std::fs::read(&self.0)
-            .is_ok_and(|contents| htpasswd::verify(&contents, user.as_bytes(), password.as_bytes()))
+    fn verify(&self, user: &str, password: &str, deadline: Instant) -> bool {
+        std::fs::read(&self.0).is_ok_and(|contents| {
+            htpasswd::verify(&contents, user.as_bytes(), password.as_bytes(), deadline)
+        })
     }
 }
 
@@ -107,7 +125,7 @@ const STRICT_BASE64: GeneralPurpose = GeneralPurpose::new(
 /// starts with `Basic ` and has at most 4096 bytes; the rest is strict
 /// base64 of UTF-8 `user:password` (split at the first `:`); the user must
 /// be the configured one and the password must not contain `\n`; then the
-/// verifier decides.
+/// verifier decides within [`VERIFY_BUDGET`].
 pub struct BasicAuth<V> {
     pub user: String,
     pub verifier: V,
@@ -135,7 +153,8 @@ impl<V: Verifier> BasicAuth<V> {
         if user != self.user || password.contains('\n') {
             return false;
         }
-        self.verifier.verify(user, password)
+        self.verifier
+            .verify(user, password, Instant::now() + VERIFY_BUDGET)
     }
 }
 
@@ -153,6 +172,21 @@ impl Request<'_> {
     pub fn header(&self, name: header::HeaderName) -> Option<&[u8]> {
         self.headers.get(name).map(HeaderValue::as_bytes)
     }
+}
+
+/// The request-target of the request line at the start of `head`, decoded
+/// as ISO-8859-1 like Python's request line. Empty lines before it are
+/// skipped, as hyper skips them; hyper accepts only single spaces between
+/// the parts of a request line it parses.
+pub fn request_target(head: &[u8]) -> Option<String> {
+    let start = head
+        .iter()
+        .position(|&byte| byte != b'\r' && byte != b'\n')?;
+    let line = &head[start..];
+    let line = &line[..line.iter().position(|&byte| byte == b'\n')?];
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    let target = line.split(|&byte| byte == b' ').nth(1)?;
+    Some(target.iter().map(|&byte| char::from(byte)).collect())
 }
 
 /// [`Request::path`] of a request-target.
@@ -183,8 +217,9 @@ impl Reply {
     }
 }
 
-/// The endpoint's request handler.
-pub trait Handler {
+/// The endpoint's request handler. It runs on tokio's blocking pool, one
+/// call per request.
+pub trait Handler: Send + Sync {
     fn handle(&self, request: &Request<'_>) -> Reply;
 }
 
@@ -212,7 +247,7 @@ pub fn response(reply: &Reply) -> Response<Full<Bytes>> {
 
 /// Serves `handler` on `listener` until `shutdown` resolves (the binary
 /// passes a future that never does). Runs a current-thread tokio runtime on
-/// the calling thread.
+/// the calling thread; handlers run on its blocking pool.
 pub fn serve<H: Handler + 'static>(
     listener: std::net::TcpListener,
     handler: H,
@@ -222,14 +257,15 @@ pub fn serve<H: Handler + 'static>(
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
+        .max_blocking_threads(MAX_CONNECTIONS)
         .build()?;
     let local = tokio::task::LocalSet::new();
-    local.block_on(&runtime, accept_loop(listener, Rc::new(handler), shutdown))
+    local.block_on(&runtime, accept_loop(listener, Arc::new(handler), shutdown))
 }
 
 async fn accept_loop<H: Handler + 'static>(
     listener: std::net::TcpListener,
-    handler: Rc<H>,
+    handler: Arc<H>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let listener = tokio::net::TcpListener::from_std(listener)?;
@@ -257,31 +293,95 @@ async fn accept_loop<H: Handler + 'static>(
         open.set(open.get() + 1);
         let (handler, open, slot_freed) = (handler.clone(), open.clone(), slot_freed.clone());
         tokio::task::spawn_local(async move {
-            // Errors and an exceeded budget close the connection; nothing
-            // is reported (no request logging).
-            let _ = tokio::time::timeout(CONNECTION_BUDGET, connection(stream, handler)).await;
+            // Errors and timeouts close the connection; nothing is reported
+            // (no request logging).
+            let _ = tokio::time::timeout(CONNECTION_LIMIT, connection(stream, handler)).await;
             open.set(open.get() - 1);
             slot_freed.notify_one();
         });
     }
 }
 
-async fn connection<H: Handler + 'static>(stream: tokio::net::TcpStream, handler: Rc<H>) {
+/// A connection's stream that keeps a copy of the first bytes read, up to
+/// the end of the request line: hyper's parsed `Uri` drops a `#fragment`,
+/// Python's `self.path` keeps it.
+struct RecordingStream {
+    stream: TcpStream,
+    head: Rc<RefCell<Vec<u8>>>,
+}
+
+impl AsyncRead for RecordingStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let before = buf.filled().len();
+        let poll = Pin::new(&mut this.stream).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = poll {
+            let mut head = this.head.borrow_mut();
+            if request_target(&head).is_none() && head.len() < MAX_HEAD_BYTES {
+                let new = &buf.filled()[before..];
+                let room = MAX_HEAD_BYTES - head.len();
+                head.extend_from_slice(&new[..new.len().min(room)]);
+            }
+        }
+        poll
+    }
+}
+
+impl AsyncWrite for RecordingStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
+    }
+}
+
+async fn connection<H: Handler + 'static>(stream: TcpStream, handler: Arc<H>) {
+    let head = Rc::new(RefCell::new(Vec::new()));
+    let recorded = head.clone();
     let service = hyper::service::service_fn(move |request: hyper::Request<_>| {
         let (parts, _body) = request.into_parts();
-        let path = python_path(&parts.uri.to_string());
-        let reply = handler.handle(&Request {
-            method: &parts.method,
-            path: &path,
-            headers: &parts.headers,
-        });
-        std::future::ready(Ok::<_, Infallible>(response(&reply)))
+        // hyper accepted the head, so the request line is complete; without
+        // one, no path can match.
+        let path = request_target(&recorded.borrow())
+            .map(|target| python_path(&target))
+            .unwrap_or_default();
+        let handler = handler.clone();
+        async move {
+            let reply = tokio::task::spawn_blocking(move || {
+                handler.handle(&Request {
+                    method: &parts.method,
+                    path: &path,
+                    headers: &parts.headers,
+                })
+            })
+            .await
+            // A panicking handler closes the connection without an answer,
+            // as an exception in Python's handler does.
+            .map_err(io::Error::other)?;
+            Ok::<_, io::Error>(response(&reply))
+        }
     });
     let _ = hyper::server::conn::http1::Builder::new()
+        .timer(TokioTimer::new())
+        .header_read_timeout(HEAD_TIMEOUT)
         .keep_alive(false)
         .title_case_headers(true)
         .max_buf_size(MAX_HEAD_BYTES)
-        .serve_connection(TokioIo::new(stream), service)
+        .serve_connection(TokioIo::new(RecordingStream { stream, head }), service)
         .await;
 }
 
@@ -322,7 +422,7 @@ mod tests {
     struct Table(Vec<(&'static str, &'static str)>);
 
     impl Verifier for Table {
-        fn verify(&self, user: &str, password: &str) -> bool {
+        fn verify(&self, user: &str, password: &str, _deadline: Instant) -> bool {
             self.0.contains(&(user, password))
         }
     }
@@ -368,7 +468,7 @@ mod tests {
         let calls = std::cell::RefCell::new(Vec::new());
         struct Recorder<'a>(&'a std::cell::RefCell<Vec<usize>>);
         impl Verifier for Recorder<'_> {
-            fn verify(&self, _user: &str, password: &str) -> bool {
+            fn verify(&self, _user: &str, password: &str, _deadline: Instant) -> bool {
                 self.0.borrow_mut().push(password.len());
                 false
             }
@@ -382,20 +482,44 @@ mod tests {
         assert_eq!(*calls.borrow(), [3062]);
     }
 
+    fn far() -> Instant {
+        Instant::now() + Duration::from_secs(3600)
+    }
+
     #[test]
     fn htpasswd_file_is_read_on_every_check() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("htpasswd");
         let verifier = HtpasswdFile(path.clone());
-        assert!(!verifier.verify("u", "secret"), "missing file");
+        assert!(!verifier.verify("u", "secret", far()), "missing file");
         let hash = bcrypt::hash_with_salt("secret", 4, [7; 16])
             .unwrap()
             .format_for_version(bcrypt::Version::TwoY);
         std::fs::write(&path, format!("u:{hash}\n")).unwrap();
-        assert!(verifier.verify("u", "secret"));
-        assert!(!verifier.verify("u", "other"));
+        assert!(verifier.verify("u", "secret", far()));
+        assert!(!verifier.verify("u", "other", far()));
         std::fs::write(&path, "u:$apr1$x$y\n").unwrap();
-        assert!(!verifier.verify("u", "secret"));
+        assert!(!verifier.verify("u", "secret", far()));
+    }
+
+    #[test]
+    fn the_request_target_is_read_from_the_request_line() {
+        let target = |head: &[u8]| request_target(head);
+        assert_eq!(
+            target(b"GET /a#b HTTP/1.1\r\nHost: x\r\n\r\n").as_deref(),
+            Some("/a#b")
+        );
+        assert_eq!(
+            target(b"\r\n\r\nGET /a HTTP/1.1\r\n").as_deref(),
+            Some("/a")
+        );
+        assert_eq!(target(b"GET /a HTTP/1.1\n").as_deref(), Some("/a"));
+        assert_eq!(
+            target(b"GET /\xe9 HTTP/1.1\r\n").as_deref(),
+            Some("/\u{e9}")
+        );
+        assert_eq!(target(b"GET /a HTTP/1.1"), None, "incomplete");
+        assert_eq!(target(b""), None);
     }
 
     #[test]

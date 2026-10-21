@@ -34,6 +34,8 @@
 //!   endpoint gives `htpasswd` 5 seconds; a cost of 17 takes longer than
 //!   that on the hosts) — all of them are refused.
 
+use std::time::Instant;
+
 use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::DecodePaddingMode;
@@ -102,7 +104,10 @@ fn pieces(contents: &[u8]) -> impl Iterator<Item = &[u8]> {
 }
 
 /// Whether `htpasswd -vi` exits 0 for this file content, user and stdin.
-pub fn verify(contents: &[u8], user: &[u8], input: &[u8]) -> bool {
+/// An entry reached after `deadline` fails the check, as the Python
+/// endpoint's `htpasswd` is killed after 5 seconds; a cost of at most
+/// [`MAX_COST`] keeps the one hash under way when it passes short.
+pub fn verify(contents: &[u8], user: &[u8], input: &[u8], deadline: Instant) -> bool {
     if user.len() > MAX_ARGUMENT_BYTES || user.contains(&b':') || user.contains(&0) {
         return false;
     }
@@ -138,7 +143,7 @@ pub fn verify(contents: &[u8], user: &[u8], input: &[u8]) -> bool {
         let Some(password) = *key.get_or_insert_with(|| stdin_password(input)) else {
             return false;
         };
-        if !bcrypt_matches(password, hash) {
+        if Instant::now() >= deadline || !bcrypt_matches(password, hash) {
             return false;
         }
     }
@@ -234,7 +239,7 @@ mod tests {
             };
             let user = decode_hex(&case.user_hex);
             let password = decode_hex(&case.password_hex);
-            let answer = contents.is_some_and(|contents| verify(contents, &user, &password));
+            let answer = contents.is_some_and(|contents| verify(contents, &user, &password, far()));
             assert_eq!(answer, case.rust, "{}", case.id);
             match &case.p3 {
                 Some(_) => {
@@ -245,6 +250,29 @@ mod tests {
             }
         }
         assert!(p3 >= 4, "the refused formats are recorded");
+    }
+
+    fn far() -> Instant {
+        Instant::now() + std::time::Duration::from_secs(3600)
+    }
+
+    #[test]
+    fn the_deadline_ends_the_check() {
+        let hash = bcrypt::hash_with_salt("pw", 4, [1; 16])
+            .unwrap()
+            .format_for_version(bcrypt::Version::TwoY);
+        let file = format!("u:{hash}\n");
+        assert!(verify(file.as_bytes(), b"u", b"pw", far()));
+        assert!(!verify(file.as_bytes(), b"u", b"pw", Instant::now()));
+        // Many entries of the user: the check stops at the deadline.
+        let slow = bcrypt::hash_with_salt("pw", 10, [1; 16])
+            .unwrap()
+            .format_for_version(bcrypt::Version::TwoY);
+        let many = format!("u:{slow}\n").repeat(200);
+        let started = Instant::now();
+        let deadline = started + std::time::Duration::from_millis(300);
+        assert!(!verify(many.as_bytes(), b"u", b"pw", deadline));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]

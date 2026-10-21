@@ -3359,6 +3359,11 @@ def serve_request_cases() -> list[dict[str, Any]]:
     add("http_1_0", request(headers=[ok], version="HTTP/1.0"))
     add("query_string", request(SERVE_PATH + "?x=1", [ok]))
     add("empty_query", request(SERVE_PATH + "?", [ok]))
+    add("fragment", request(SERVE_PATH + "#ignored", [ok]))
+    add("fragment_without_auth", request(SERVE_PATH + "#ignored"))
+    add("empty_fragment", request(SERVE_PATH + "#", [ok]))
+    add("query_and_fragment", request(SERVE_PATH + "?a#b", [ok]))
+    add("leading_empty_line", b"\r\n" + request(headers=[ok]), p3="framing", rust_status=200)
     add("trailing_slash", request(SERVE_PATH + "/", [ok]))
     add("double_slash", request("/" + SERVE_PATH, [ok]))
     add("triple_slash", request("//" + SERVE_PATH, [ok]))
@@ -3465,6 +3470,9 @@ def serve_request_cases() -> list[dict[str, Any]]:
 
 
 def parse_response(raw: bytes) -> dict[str, Any]:
+    if not raw:
+        # The connection closed without an answer.
+        return {"status": None, "challenge": None, "body": None}
     head, _, body = raw.partition(b"\r\n\r\n")
     lines = head.decode("latin-1").split("\r\n")
     status = int(lines[0].split(" ", 2)[1])
