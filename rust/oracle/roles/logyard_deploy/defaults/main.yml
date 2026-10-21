@@ -55,6 +55,13 @@ logyard_health_bind_host: "127.0.0.1"
 logyard_health_port: 9105
 logyard_health_path: "/.well-known/logyard"
 logyard_health_script_path: "/usr/local/bin/logyard_health_httpd.py"
+# HTTP server implementation (rust/metrics-httpd/PLAN.md 7.1): python runs
+# logyard_health_script_path; rust runs the pinned metrics-httpd release
+# (fleet variables metrics_httpd_rust_version / metrics_httpd_rust_sha256)
+# through the drop-in /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+logyard_health_impl: "{{ metrics_httpd_impl | default('python') }}"
 logyard_health_selector: '{host="macmini",source_type="journald"}'
 logyard_health_warning_window_seconds: 900
 logyard_health_critical_window_seconds: 3600

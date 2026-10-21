@@ -27,6 +27,8 @@ runbook `docs/METRICS_HTTPD_RUST.md` and the collection gate of every
 endpoint playbook (`playbooks/common/require_metrics_httpd_switch.yml`;
 section 11 says why it checks the installed collection instead of a
 version number).
+S5c implemented: the switch in `logyard_deploy` (health endpoint) and
+`static_site_deploy` (7.3), `impl: python` by default.
 Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
@@ -437,7 +439,9 @@ Pinned by `tests/test_static_site_deploy.py`
   `IPAddressDeny/Allow`, `ReadOnlyPaths`, `Environment=` lines, `TasksMax`,
   `MemoryMax` are unchanged; the Rust binary must run under each of them
   (notably `MemoryDenyWriteExecute=true` and `RestrictAddressFamilies=AF_UNIX
-  AF_INET` of the static unit, `ProtectSystem=strict` everywhere).
+  AF_INET` of the static unit, `ProtectSystem=strict` in every unit except
+  `logyard-health-endpoint`, whose unit sets no hardening at all — only its
+  user, group and `Environment=` lines; corrected in S5c from the code).
 - Files read: JSON file, htpasswd file, `/var/run/reboot-required`, `uname`
   (apt-state), the site root (static). Nothing is written, no temp files.
 - Exit codes: 0 after SIGTERM/SIGINT (graceful: stop accepting, finish
@@ -829,9 +833,13 @@ inputs once (S5a: as `vars:` of its deploy block):
   e.g. `["json-file", "--bind", …]`), `validate_user`, `validate_group`
   (the unit's `User=`/`Group=`), `unit_sandbox` (the `systemd-run --property`
   list mirroring the rest of the unit's sandbox: `NoNewPrivileges`,
-  `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `ReadOnlyPaths`,
-  `Environment` for logyard), `notify` (the caller's `reload systemd` and
-  restart handlers); `version`, `sha256`, `local_archive` default to the
+  `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `ReadOnlyPaths`;
+  S5c: `static_site_deploy` passes every `[Service]` line of its unit except
+  `Type`, `User`, `Group`, `ExecStart`, `Restart`, `RestartSec` (the full
+  hardening, `UMask`, `TasksMax`, `MemoryMax`), `logyard_deploy` exactly the
+  `Environment=` lines of its rendered unit, read with a controller-side
+  `template` lookup so their quoting is the unit's own), `notify` (the
+  caller's `reload systemd` and restart handlers); `version`, `sha256`, `local_archive` default to the
   fleet variables of 7.1. Steps:
   1. assert `impl in ['python', 'rust']`; for `rust` a version with a 64-hex
      sha256 (or a local archive); every `argv` element is a non-empty string
