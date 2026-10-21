@@ -2,12 +2,14 @@
 
 The Rust port of the `echoport_remote_command_guard` forced-command guard.
 The plan and contract are in [PLAN.md](PLAN.md), the test map in
-[TESTMAP.md](TESTMAP.md). Version 0.1.0 is released (S7, see "Release"
-below) but installed nowhere; the hosts run the Python guard. 0.1.0 keeps a
-race of the Python guard (the root-run `chmod`, `chown`, `mv` and `rm -f`
-of `-wal`/`-shm`, PLAN.md 4.5 and R12) and must never be installed: the
-first release a host gets is the one of the hardening slice H1 (work item
-`echoport-guard-toctou-hardening`).
+[TESTMAP.md](TESTMAP.md). Nothing is installed on a host yet; the hosts run
+the Python guard. Version 0.1.0 (S7) is a parity port that keeps a race of
+the Python guard (the root-run `chmod`, `chown`, `mv` and `rm -f` of
+`-wal`/`-shm`, PLAN.md 4.5 and R12) and must never be installed. Version
+0.2.0 is the hardening slice H1 (work item `echoport-guard-toctou-hardening`,
+see "TOCTOU hardening (H1)" below): both guards make those changes
+themselves on file descriptors, and 0.2.0 is the first release a host may
+get (S9).
 
 Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
 layer), **S3a** (the rules without filesystem), **S3b** (the rules with
@@ -18,8 +20,10 @@ distributions, fuzzing; see "Parity gate" below) and **S6** (the role switch:
 `rust_release_binary` and selects it with `echoport_remote_command_guard_impl`,
 default `python`; see its README) and **S7** (release 0.1.0: the lean
 measurements, the security review of the whole crate, the tag; see "Lean
-measurements", "Security review (S7)" and "Release" below). Every branch of
-the Python guard's `check()` is ported. What exists:
+measurements", "Security review (S7)" and "Release" below) and **H1** (the
+TOCTOU hardening of the root-run mutations in both guards, release 0.2.0;
+see "TOCTOU hardening (H1)" below). Every branch of the Python guard's
+`check()` is ported. What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -35,6 +39,10 @@ the Python guard's `check()` is ported. What exists:
     allowed`), a policy error refuses (`policy error`), then `check()`, the
     umask, the redirects (`src/redirect.rs`: `O_NOFOLLOW` opens relative to
     a checked private directory), the `allowed from` log line, and the exec
+    or, for a mutation (`chmod`, `chown`, `mv`, `rm -f` of SQLite side
+    files), the change made by the guard itself (`src/mutate.rs`, H1; a
+    failure is a refusal, logged with its reason; success is the `allowed
+    from` line and exit 0, nothing is executed). The exec
     (`src/exec.rs`): `PATH` set to `SAFE_PATH`, CPython's PEP 538 `LC_CTYPE`
     coercion, SIGPIPE and SIGXFSZ ignored, and CPython's `os.execvp` search
     (no `/bin/sh` fallback; `cannot run <tool>: <strerror>`, exit 127).
@@ -44,14 +52,15 @@ the Python guard's `check()` is ported. What exists:
     `repr` of the command, cut at 1000 characters; `src/syslog.rs`).
   - `--decide <policy>` prints the decision for `SSH_ORIGINAL_COMMAND` as
     one JSON line on stdout and exits 0 when it is allowed, else 1. The
-    verdicts are `allowed` (with `argv`, `umask`, `stdin`, `stdout`, the
-    fixtures' form), `refused` (`reason`), `interactive`, `policy-error`
-    (`error_type`, `message`) and `panic` (`reason`). It never opens a
-    redirect, logs or executes anything.
+    verdicts are `allowed` (with `argv`, `umask`, `stdin`, `stdout` and
+    `mutation`, the fixtures' form), `refused` (`reason`), `interactive`,
+    `policy-error` (`error_type`, `message`) and `panic` (`reason`). It never
+    opens a redirect, makes a mutation, logs or executes anything.
   - `--shadow <policy> </abs/python> -I </abs/guard> <policy>` logs the same
     JSON record under the identifier `echoport-remote-command-guard-shadow`
-    (priority info; `check()` only, so a redirect that later fails to open
-    is still `allowed` there), then always `execv`s `<python> -I <guard>
+    (priority info; `check()` only, so a redirect that later fails to open,
+    or a mutation the guard then cannot make, is still `allowed` there),
+    then always `execv`s `<python> -I <guard>
     <policy>` with the environment unchanged; the PID stays, so the two
     log lines pair up by `_PID`. Any other tail (not absolute, not `-I`,
     another policy path, extra arguments) is exit 2 and executes nothing.
@@ -71,7 +80,11 @@ the Python guard's `check()` is ported. What exists:
     forms (`src/rules/transfer.rs`; uploads and receivers run as `runuser -u
     <owner> --`), `rm -f` of `-wal`/`-shm` files, the snapshot `cat` (a
     stdin redirect owned by the service user), `sha256sum`, `readlink`,
-    `test`, `mv`, `mkdir -p` (as the root's owner), `chmod` and `chown`. An
+    `test`, `mv`, `mkdir -p` (as the root's owner), `chmod` and `chown`.
+    `chmod`, `chown`, both `mv` forms and `rm -f` of `-wal`/`-shm` decide a
+    `Mutation` with an empty `argv` (H1), and each path they change must lie
+    inside its root as written, not only once resolved
+    (`rules::paths::require_mutable`: `path not inside its root as written`). An
     unbalanced quote inside the `tar` shape, where the Python guard crashes,
     is refused as `unparsable command: No closing quotation` (PLAN.md 4.2).
   - The filesystem layer (S2): `env::RealEnv`, the real `GuardEnv`
@@ -84,6 +97,17 @@ the Python guard's `check()` is ported. What exists:
     `_lstat_or_none`, `_require_plain_file_or_absent`,
     `_require_private_dir`, `_user_uids`) with Python's refusal reasons.
     The `soft-canonicalize` crate was evaluated and rejected (PLAN.md 5.2).
+- `src/mutate.rs` (H1): the guard's own mutations, a port of the Python
+  guard's `perform()`. It opens `/` and each directory on a path with
+  `O_NOFOLLOW|O_DIRECTORY` and works relative to the last one (`fchmod`,
+  `fchown` on an `O_NOFOLLOW` descriptor whose inode must be the one
+  `lstat` saw, `renameat`, `unlinkat`); `chown -R` walks with one directory
+  descriptor per level and leaves symlinks alone; a regular file it changes
+  must have one link. A test hook (`dir`, `stat` events) lets the race
+  tests change the tree at exact points.
+- `parity/races.json` (H1): the race regressions both guards run
+  (`parity/races.py` for the Python guard, also as root in the Layer-2
+  containers; `tests/mutations.rs` for the Rust guard).
 - `parity/oracle.py`: the Python guard as the oracle. A module for the
   generator and the tests, and a JSON-lines server (`python3 -I
   parity/oracle.py`) with the ops `ping`, `check`, `split`, `check_policy`,
@@ -156,6 +180,7 @@ The role pins a version and that sha256
 | Version | Tag (commit) | Archive sha256 | Stripped binary |
 |---|---|---|---|
 | 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` (`5b734af5`) | `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9` | 668,632 bytes (0.64 MiB), highest `GLIBC_2.34` |
+| 0.2.0 (H1, TOCTOU hardening; the release S8 pins and S9 installs) | `echoport-command-guard-v0.2.0` | (recorded after the release) | |
 
 ## Security review (S7)
 
@@ -172,7 +197,56 @@ redirect them outside the root (the reviewer reproduced it with `chmod`
 through the forced command). The owner accepted it for 0.1.0 only, as a
 parity port (2026-10-21; PLAN.md 4.5, R12, the role README "Files the guard
 opens itself"). The hardening slice H1 fixes it in both guards before any
-install (S9 depends on it).
+install (S9 depends on it); see the next section.
+
+## TOCTOU hardening (H1)
+
+Since H1 the guards no longer run `chmod 0600|0700`, `chown [-R]`, `mv` or
+`rm -f <db>-wal <db>-shm` as root on a pathname. `check()` decides a
+`Mutation` (`op`, `paths`, `mode`, `owner`, `recursive`, `private`,
+`replace`) with an empty `argv`, and the guard makes the change itself
+(`perform()` in the Python guard, `src/mutate.rs` here), the same way in
+both:
+
+- every path is walked from `/` one directory at a time with
+  `O_NOFOLLOW|O_DIRECTORY`, so a symlink anywhere on the path, also one
+  that resolves inside the root, is refused (`symbolic link in the path:
+  <path>`), and a directory replaced after it was opened is harmless: the
+  change happens in the directory the guard holds;
+- `chmod`/`chown`: the last entry is `lstat`ed (a symlink is refused, only a
+  regular file or a directory is changed), opened with `O_NOFOLLOW`, and its
+  inode must be the one `lstat` saw (`target was replaced`); a regular file
+  must have one link (`target has other hard links`); then `fchmod`/`fchown`.
+  The snapshot temp dir chown re-checks on the descriptor that the directory
+  is still root's with no group/other access;
+- `chown -R`: the same for every entry, one open directory per level; a
+  symlink inside the tree is neither followed nor changed (coreutils changed
+  the link's own owner), a fifo, socket or device is refused;
+- `mv`: one `renameat` between the two directories walked to; the target is
+  replaced as a name, never followed into (coreutils moved into a target
+  that is a directory or a link to one), and there is no copy across
+  filesystems. Without the `.tmp` form the target must still not exist;
+- `rm -f`: `unlinkat` on the name; a missing file or directory on the way is
+  fine, a symlink is removed itself.
+
+`check()` additionally requires each changed path to lie inside its root as
+written (no trailing `/`, no detour through a symlink outside the root).
+Runner-facing, nothing changes for the shapes the runners send: exit 0 on
+success with no output; a failure is exit 1 with `command not allowed` on
+stderr (the tool's own message before) and a `refused from` log line with
+the reason (before, a failed tool still logged `allowed from`).
+
+The race regressions are a table both guards run, `parity/races.json`: 43
+scenarios over all four commands, with a symlink (or a renamed directory,
+a hard link, a fifo) put in place between `check()` and the change, and at
+exact points during the walk through a test hook (`dir` after a directory on
+the way was opened, `stat` right before an entry is opened). Each asserts
+the outcome, the reason word for word, and the files inside and outside the
+root afterwards. `just test-echoport-remote-command-guard` runs it against
+the Python guard, `cargo test` against the Rust guard, and `run-layer2.sh`
+both again as root in the Ubuntu 24.04 and Debian 13 containers (a real
+`chown` to `nobody:nogroup`). Layer 3 and the role's molecule verify send
+mutations through sshd with symlinks the guards must refuse.
 
 ## Build and test
 
@@ -312,6 +386,11 @@ loops and the 41-traversal chains, `ENAMETOOLONG`, `EILSEQ`, `EACCES`). Run with
 that is how `soft-canonicalize` 0.5.6 was measured (PLAN.md 5.2: 265 of
 1,531 differ, on the corpus before the cached-link chain was added).
 
+**The race regressions** (H1): `parity/races.py` (Python guard) and the
+`tests/mutations.rs` binary (Rust guard, built in the same Debian 12 stage)
+run `parity/races.json` as root in both containers, so `chown` goes to a
+real other user (`nobody:nogroup`).
+
 **The decisions** (S5): `parity/e2e/layer2_decide.py` runs the Python
 guard's `check()` with the real `os.path.realpath`, `os.lstat`, `pwd` and
 euid and the Rust binary's `--decide` on the same real trees and compares
@@ -374,7 +453,8 @@ Each scenario runs once per implementation from the same fresh state:
   its search path) that record argv, environment, the targets of fds 0-2,
   the open fds, the signal mask and ignored signals, the umask and the uid,
   and act just enough like the tool; `runuser`, `scp`, `rsync`, `tar`,
-  `cat`, `mv`, `chown`, `mkdir` and the rest are real;
+  `cat`, `mkdir` and the rest are real (`chmod`, `chown`, `mv` and `rm -f`
+  of side files are the guards' own mutations since H1);
 - real `scp -O` downloads (a dump, the read file, the private media
   archive) and uploads (into a root as its owner, a restore dump as
   postgres, through a symlink), the three rsync forms with the real client
@@ -513,7 +593,7 @@ A decision case:
          "lstat": {"/tmp/echoport_pp_dump_2026-10-15T02-00-00.dump": {"kind": "reg", "mode": 384, "uid": 110, "nlink": 1}},
          "realpath": {}},
  "expected": {"verdict": "allowed", "argv": ["scp", "-f", "/tmp/echoport_pp_dump_2026-10-15T02-00-00.dump"],
-              "umask": null, "stdin": null, "stdout": null}}
+              "umask": null, "stdin": null, "stdout": null, "mutation": null}}
 ```
 
 - `policy` names `fixtures/policies/<policy>.json`.
@@ -528,8 +608,10 @@ A decision case:
     `realpath` resolves to `os.path.normpath(path)`, and a missing user does
     not exist.
 - `expected` is one of:
-  - `{"verdict": "allowed", argv, umask, stdin, stdout}`, where a redirect is
-    `{directory, name, owners}` and `umask` is `null` or `63` (`0o077`);
+  - `{"verdict": "allowed", argv, umask, stdin, stdout, mutation}`, where a
+    redirect is `{directory, name, owners}`, `umask` is `null` or `63`
+    (`0o077`), and `mutation` is `null` or `{op, paths, mode, owner,
+    recursive, private, replace}` (H1: then `argv` is empty);
   - `{"verdict": "refused", "reason"}`;
   - `{"verdict": "error", "error_type", "message"}`: Python's `check()`
     raised, so the Python guard exits 1 with a traceback and runs nothing.

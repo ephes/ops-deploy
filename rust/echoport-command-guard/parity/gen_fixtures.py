@@ -675,6 +675,11 @@ FS_BASES: dict[str, list[str]] = {
         f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/",
         f"{RSYNC_UPLOAD_DELETE} /var/lib/gotosocial/storage/",
         "rm -f /var/lib/gotosocial/sqlite.db-wal /var/lib/gotosocial/sqlite.db-shm",
+        # H1: a changed path must lie inside its root as written, not only once resolved.
+        "chmod 0600 /var/lib/gotosocial-alias/sqlite.db",
+        "chown -R gotosocial:gotosocial /var/lib/gotosocial-alias/storage",
+        "mv /var/lib/gotosocial-alias/sqlite.db /var/lib/gotosocial/sqlite.db.pre-restore-20261015T020000Z",
+        "rm -f /var/lib/gotosocial-alias/sqlite.db-wal /var/lib/gotosocial-alias/sqlite.db-shm",
     ],
     "staging": [
         f"scp -t /tmp/echoport_homepage_restore_{RESTORE_STAMP}.dump",
@@ -693,6 +698,8 @@ FS_BASES: dict[str, list[str]] = {
         "chmod 0700 /home/marina/site/media",
         f"sha256sum {CHAT_TMP}/django-chat.dump",
         "rm -f /home/marina/site/db.sqlite3-wal /home/marina/site/db.sqlite3-shm",
+        "chown marina:marina /home/marina/alias/db.sqlite3",
+        "mv /home/marina/site/db.sqlite3.tmp /home/marina/alias/db.sqlite3",
     ],
 }
 SERVICE_UID = {"production": USERS["gotosocial"], "staging": USERS["marina"]}

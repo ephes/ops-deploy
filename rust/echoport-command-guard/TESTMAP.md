@@ -188,3 +188,22 @@ to the Python, Rust and shadow forced commands and compares what happens.
 | Layer 2 `parity/e2e/layer2_decide.py` | PLAN.md 7.5: Python's `check()` with the real `realpath`/`lstat`/`pwd`/euid against `--decide` on real trees, every path state of 28 path-taking shapes, `test_scp_against_a_real_tree`, shapes as `nobody`, 200 random trees; Ubuntu 24.04 (3.12.3) and Debian 13 (3.13.5) | done (S5), local (`just echoport-command-guard-layer2`) |
 | Layer 3 `parity/e2e/layer3_sshd.py` | PLAN.md 7.6: the `python`, `rust` and `shadow` forced commands through sshd (OpenSSH 9.6 and 10.0): every runner command, real `scp -O` and rsync transfers, `cat >`, snapshot `cat`, `tar` with umask, `mkdir -p` as owner, refusals, prefilter, interactive, SFTP, `LANG` variants, a missing tool; exit codes, stdout, stderr, files, stub records (argv, environment, fds, signals, umask) and syslog lines | done (S5), local (`just echoport-command-guard-layer3`) |
 | `fuzz/` (`prefilter_tokens`, `check`, `policy`, `py_repr`) | PLAN.md 7.4: no panic, the prefilter alphabet, the decision invariants, valid policies only, printable `repr`; at least one hour each on nightly, corpus committed | done (S5), local (`just echoport-command-guard-fuzz`) |
+
+## New in H1 (TOCTOU hardening, both guards)
+
+The root-run mutations (`chmod`, `chown [-R]`, `mv`, `rm -f` of
+`-wal`/`-shm`) are made by the guards themselves on file descriptors
+(PLAN.md 4.5, R12). New Python tests and their Rust counterparts:
+
+| Python test | Rust counterpart | Status |
+| --- | --- | --- |
+| `GuardAllowsRunnerShapes.test_root_changes_are_made_by_the_guard` | `rules::files::tests` (`rm_of_sqlite_side_files_inside_a_root`, `readlink_test_and_chmod_inside_a_root`, `mv_only_onto_new_names_within_one_root`, `chown_shapes`: the `Mutation` decisions with an empty argv); `decision::tests::json_has_the_fixture_shape`; Layer-1 fixtures (`expected.mutation`) | done (H1) |
+| `GuardRefusals.test_mutations_name_their_root_as_written` | `rules::files::tests` (the `path not inside its root as written` cases); `fs.jsonl` (the `-alias` paths that resolve into a root, the trailing `/` of `mutation/paths.jsonl`) | done (H1) |
+| `GuardMain.test_allowed_mutation_is_made_without_exec` | `tests/cli.rs` `decide_prints_the_decision_only` (a mutation decision, not made by `--decide`); Layer 3 (`chmod of a symlink inside the root`, `chown through a symlinked directory inside the root`, `chown -R leaves a symlink out of the root alone`, `mv of a missing file`, `rm -f of missing side files`: exit codes, stderr, files and log lines of both guards); molecule verify (`Change, move and remove inside the root, never through a symlink`) | done (H1) |
+| `GuardMutationRaces.test_scenarios` (`parity/races.py` over `parity/races.json`) | `tests/mutations.rs` `race_scenarios_of_both_guards` over the same table; both again as root in the Layer-2 containers (`run-layer2.sh`) | done (H1) |
+
+| Rust test | What it pins | Status |
+| --- | --- | --- |
+| `tests/mutations.rs` `race_scenarios_of_both_guards` | 43 scenarios: a symlink (or a renamed directory, a hard link, a fifo) between `check()` and the change, and at exact points of the walk (hook events `dir`, `stat`); the outcome, the reason word for word, the files inside and outside the root afterwards | done (H1) |
+| `tests/mutations.rs` `perform_with_an_empty_hook` | the guard's own call of `perform` (a hook that does nothing) | done (H1) |
+| `tests/common/invariants.rs` (H1 part) | a mutation decision has an empty argv and nothing else; its op, paths, mode and owner; `mv`, `chmod` and `chown` are no longer among the executed tools | done (H1) |

@@ -18,6 +18,12 @@ ENV RUSTUP_TOOLCHAIN=1.99.1
 RUN cargo build --locked --release -p echoport-command-guard --bin echoport-command-guard --example env-probe \
     && install -m 0755 target/release/examples/env-probe /env-probe \
     && install -m 0755 target/release/echoport-command-guard /echoport-command-guard
+# The race regressions of the guard's own mutations (tests/mutations.rs, H1),
+# run as root in the Layer-2 containers with parity/races.json.
+RUN cargo test --locked --release -p echoport-command-guard --test mutations --no-run 2>&1 \
+        | sed -n 's/.*Executable tests\/mutations.rs (\(.*\))$/\1/p' > /tmp/mutations-test \
+    && test -s /tmp/mutations-test \
+    && install -m 0755 "$(cat /tmp/mutations-test)" /mutations-test
 
 FROM ${BASE} AS layer2
 RUN apt-get update \
@@ -29,8 +35,10 @@ RUN for user in postgres gotosocial marina villakunterbunt python-podcast; do \
     done
 COPY --from=build /env-probe /usr/local/bin/env-probe
 COPY --from=build /echoport-command-guard /usr/local/bin/echoport-command-guard
+COPY --from=build /mutations-test /usr/local/bin/echoport-command-guard-races
 COPY echoport-command-guard/fixtures/policies/ /e2e/policies/
 COPY echoport-command-guard/parity/e2e/layer2_realpath.py echoport-command-guard/parity/e2e/layer2_decide.py /e2e/
+COPY echoport-command-guard/parity/races.py echoport-command-guard/parity/races.json /e2e/
 CMD ["python3", "-I", "/e2e/layer2_realpath.py", "--probe", "/usr/local/bin/env-probe"]
 
 # A local release-layout archive of the guard binary (the binary and LICENSE

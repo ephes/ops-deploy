@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Layer 2 (rust/echoport-command-guard/PLAN.md 7.5): build the probe and the
 # guard, then run as root in a container per host distribution
-# parity/e2e/layer2_realpath.py (the filesystem layer against CPython) and
+# parity/e2e/layer2_realpath.py (the filesystem layer against CPython),
 # parity/e2e/layer2_decide.py (Python's check() against `--decide` on real
-# trees; the Python guard is mounted read-only). Needs Docker; changes
-# nothing outside the containers.
+# trees; the Python guard is mounted read-only) and the race regressions of
+# the guard's own mutations (parity/races.py and tests/mutations.rs on
+# parity/races.json, as root). Needs Docker; changes nothing outside the
+# containers.
 #
 #   rust/echoport-command-guard/parity/e2e/run-layer2.sh [ubuntu2404] [debian13]
 #
@@ -46,6 +48,16 @@ for distro in "${distros[@]}"; do
         python3 -I /e2e/layer2_decide.py --guard /e2e/guard.py \
         --binary /usr/local/bin/echoport-command-guard --policies /e2e/policies \
         ${decide_extra[@]+"${decide_extra[@]}"}; then
+        status=1
+    fi
+    # The race regressions of the guard's own mutations (parity/races.json,
+    # H1) as root: chown to a real other user. Python guard, then Rust guard.
+    if ! docker run --rm --name "$name" -v "$guard":/e2e/guard.py:ro "$name" \
+        python3 -I /e2e/races.py --guard /e2e/guard.py --races /e2e/races.json; then
+        status=1
+    fi
+    if ! docker run --rm --name "$name" -e ECHOPORT_RACES=/e2e/races.json "$name" \
+        /usr/local/bin/echoport-command-guard-races --test-threads 1; then
         status=1
     fi
 done

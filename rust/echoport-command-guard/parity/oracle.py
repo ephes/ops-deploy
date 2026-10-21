@@ -166,6 +166,20 @@ def encode_redirect(redirect: Any) -> dict[str, Any] | None:
     return {"directory": redirect.directory, "name": redirect.name, "owners": list(redirect.owners)}
 
 
+def encode_mutation(mutation: Any) -> dict[str, Any] | None:
+    if mutation is None:
+        return None
+    return {
+        "op": mutation.op,
+        "paths": list(mutation.paths),
+        "mode": mutation.mode,
+        "owner": mutation.owner,
+        "recursive": mutation.recursive,
+        "private": mutation.private,
+        "replace": mutation.replace,
+    }
+
+
 def encode_decision(decision: Any) -> dict[str, Any]:
     return {
         "verdict": "allowed",
@@ -173,6 +187,7 @@ def encode_decision(decision: Any) -> dict[str, Any]:
         "umask": decision.umask,
         "stdin": encode_redirect(decision.stdin),
         "stdout": encode_redirect(decision.stdout),
+        "mutation": encode_mutation(decision.mutation),
     }
 
 

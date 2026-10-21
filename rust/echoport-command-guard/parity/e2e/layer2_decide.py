@@ -112,8 +112,12 @@ def python_decide(guard: Any, policy_path: str, command: str) -> dict[str, Any]:
         return {"verdict": "refused", "reason": str(exc)}
     except Exception as exc:  # noqa: BLE001 - the Python guard crashes
         return {"verdict": "error", "error_type": type(exc).__name__, "message": str(exc)}
+    mutation = decision.mutation
     return {"verdict": "allowed", "argv": list(decision.argv), "umask": decision.umask,
-            "stdin": encode_redirect(decision.stdin), "stdout": encode_redirect(decision.stdout)}
+            "stdin": encode_redirect(decision.stdin), "stdout": encode_redirect(decision.stdout),
+            "mutation": None if mutation is None else {
+                "op": mutation.op, "paths": list(mutation.paths), "mode": mutation.mode, "owner": mutation.owner,
+                "recursive": mutation.recursive, "private": mutation.private, "replace": mutation.replace}}
 
 
 def rust_decide(binary: str, policy_path: str, command: str, user: str | None = None) -> dict[str, Any]:

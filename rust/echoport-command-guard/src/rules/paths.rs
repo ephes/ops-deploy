@@ -65,6 +65,29 @@ pub fn require_in_roots<'p>(
         .ok_or_else(|| Refused::new(format!("path outside the allowed roots: {}", py_repr(path))))
 }
 
+/// `_require_mutable` (H1): a path inside a root that root changes
+/// ([`crate::mutate::perform`]). Besides resolving inside a root, it must
+/// name that root as written (the root itself or below it, no trailing
+/// `/`), because `perform` walks the path as written and follows no symlink.
+pub fn require_mutable<'p>(
+    policy: &'p Policy,
+    path: &str,
+    env: &dyn GuardEnv,
+) -> Result<&'p PathRoot, Refused> {
+    let root = require_in_roots(policy, path, env)?;
+    let below = path
+        .strip_prefix(root.path.as_str())
+        .is_some_and(|rest| rest.starts_with('/') && !rest.ends_with('/'));
+    if path == root.path || below {
+        Ok(root)
+    } else {
+        Err(Refused::new(format!(
+            "path not inside its root as written: {}",
+            py_repr(path)
+        )))
+    }
+}
+
 /// `_lstat_or_none` (`guard.py:241-247`): `None` when the path does not
 /// exist; any other error refuses with `<what> not checkable`.
 pub fn lstat_or_none(

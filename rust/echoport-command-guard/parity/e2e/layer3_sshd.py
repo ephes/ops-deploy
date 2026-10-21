@@ -22,16 +22,17 @@ Then, for each scenario and each implementation, from the same fresh state
   fds, ignored signals and umask; the other tools are the real ones;
 - real ``scp -O`` downloads and uploads, the three rsync forms, ``cat >``
   and the snapshot ``cat`` with data, ``tar`` with the umask, ``mkdir -p``
-  as the owner, refused commands, an interactive session, SFTP, the
-  environment with and without a client ``LANG``, a failing redirect and a
-  missing tool.
+  as the owner, the guard's own mutations through symlinks it refuses (H1),
+  refused commands, an interactive session, SFTP, the environment with and
+  without a client ``LANG``, a failing redirect and a missing tool.
 
 Compared between ``python`` and ``rust``: exit code, stdout, stderr, the
 resulting files (kind, content, owner, group, mode) on both sides, the stub
 records and the syslog lines (identifier, facility and priority, message
 with the PID removed). ``shadow`` must give exactly what ``python`` gives,
 plus one record under ``echoport-remote-command-guard-shadow`` whose
-verdict is Python's (a redirect that fails to open is ``allowed`` there).
+verdict is Python's (a redirect that fails to open, or a mutation the guard
+cannot make, is ``allowed`` there: the record covers ``check()`` only).
 Every runner command must be allowed by the Python guard in its state, so
 the comparison covers the allowed path, not only refusals.
 
@@ -468,6 +469,22 @@ def scenarios(runner_commands: list[tuple[str, str]]) -> list[Scenario]:
         Scenario("tar with umask", "production",
                  ssh(f"umask 077 && tar -C /home/python-podcast/site -czf {PRIVATE}/private_media.tar.gz "
                      "-- private_media"), "umask 077 && tar", expect_allowed=True),
+        # The guard's own mutations (H1): made on file descriptors, never through
+        # a symlink, also one check() allowed because it resolves inside the root.
+        Scenario("chmod of a symlink inside the root", "staging", ssh(f"chmod 0600 {SITE}/alias"),
+                 f"chmod 0600 {SITE}/alias", prepare=lambda: os.symlink(f"{SITE}/db.sqlite3", f"{SITE}/alias"),
+                 expect_allowed=False),
+        Scenario("chown through a symlinked directory inside the root", "staging",
+                 ssh(f"chown marina:marina {SITE}/dir/db.sqlite3"), f"chown marina:marina {SITE}/dir/db.sqlite3",
+                 prepare=lambda: os.symlink(SITE, f"{SITE}/dir"), expect_allowed=False),
+        Scenario("chown -R leaves a symlink out of the root alone", "staging",
+                 ssh(f"chown -R marina:marina {SITE}/media"), f"chown -R marina:marina {SITE}/media",
+                 prepare=lambda: os.symlink("/etc/gotosocial/config.yaml", f"{SITE}/media/out"),
+                 expect_allowed=True),
+        Scenario("mv of a missing file", "staging", ssh(f"mv {SITE}/gone {SITE}/gone2"),
+                 f"mv {SITE}/gone {SITE}/gone2", expect_allowed=False),
+        Scenario("rm -f of missing side files", "staging", ssh(f"rm -f {SITE}/none-wal {SITE}/none-shm"),
+                 f"rm -f {SITE}/none-wal {SITE}/none-shm", expect_allowed=True),
         Scenario("mkdir -p as owner", "staging", ssh(f"mkdir -p {SITE}/media/new/deeper"),
                  f"mkdir -p {SITE}/media/new/deeper", expect_allowed=True),
         # Refusals.
@@ -588,9 +605,10 @@ def main(argv: list[str]) -> int:
             record = shadow.shadow[0]
             ok = record.get("verdict") == verdict and (verdict != "refused" or record.get("reason") == reason)
             ok = ok or (scenario.p3 and record.get("reason") in (NON_ASCII, UNSUPPORTED))
-            # check() only: a redirect that fails to open is allowed there.
+            # check() only: a redirect that fails to open, or a mutation the
+            # guard cannot make (H1), is allowed there.
             redirect_failure = verdict == "refused" and record.get("verdict") == "allowed" and (
-                record.get("stdin") or record.get("stdout"))
+                record.get("stdin") or record.get("stdout") or record.get("mutation"))
             if not ok and not redirect_failure and not (verdict == "none" and record.get("verdict") == "refused"):
                 failures.append(f"{scenario.name}: shadow record {record}, Python {verdict} {reason!r}")
     print(json.dumps({"python": sys.version.split()[0], "ssh": subprocess.run(

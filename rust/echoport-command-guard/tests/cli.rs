@@ -187,6 +187,8 @@ fn broken_policy_refuses_everything() {
 
 #[test]
 fn decide_prints_the_decision_only() {
+    use std::os::unix::fs::PermissionsExt;
+
     let policy = common::fixtures_dir().join("policies/staging.json");
     let decide = |command| guard(&["--decide".as_ref(), policy.as_os_str()], command);
     let output = decide(Some("id"));
@@ -201,9 +203,45 @@ fn decide_prints_the_decision_only() {
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "{\"argv\":[\"systemctl\",\"start\",\"marina.service\"],\"stdin\":null,\"stdout\":null,\"umask\":null,\"verdict\":\"allowed\"}\n"
+        "{\"argv\":[\"systemctl\",\"start\",\"marina.service\"],\"mutation\":null,\"stdin\":null,\"stdout\":null,\"umask\":null,\"verdict\":\"allowed\"}\n"
     );
     assert!(output.stderr.is_empty());
+    // A change the guard makes itself (H1): no argv, the mutation; `--decide`
+    // never makes it. (A root in a canonical temp dir: on macOS /home and
+    // /var resolve elsewhere.)
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap().join("site");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("db"), "db").unwrap();
+    std::fs::set_permissions(root.join("db"), std::fs::Permissions::from_mode(0o644)).unwrap();
+    let root = root.to_str().unwrap();
+    let own_policy = tmp.path().join("policy.json");
+    std::fs::write(
+        &own_policy,
+        format!(r#"{{"path_roots": [{{"path": "{root}", "owner": "marina:marina"}}]}}"#),
+    )
+    .unwrap();
+    let output = guard(
+        &["--decide".as_ref(), own_policy.as_os_str()],
+        Some(&format!("chmod 0600 {root}/db")),
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stdout));
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "{{\"argv\":[],\"mutation\":{{\"mode\":384,\"op\":\"chmod\",\"owner\":null,\"paths\":[\"{root}/db\"],\"private\":false,\"recursive\":false,\"replace\":false}},\"stdin\":null,\"stdout\":null,\"umask\":null,\"verdict\":\"allowed\"}}\n"
+        )
+    );
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        std::fs::metadata(format!("{root}/db"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o644,
+        "--decide changed the file"
+    );
     // A redirect decision of S3b (the restore dump onto stdout; no lookup),
     // and a path outside the roots, resolved by the real `GuardEnv`.
     let output = decide(Some(
@@ -212,7 +250,7 @@ fn decide_prints_the_decision_only() {
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "{\"argv\":[\"cat\"],\"stdin\":null,\"stdout\":{\"directory\":\"/var/tmp/django-chat-db-restore.Ab12Cd34\",\"name\":\"db.dump\",\"owners\":[]},\"umask\":63,\"verdict\":\"allowed\"}\n"
+        "{\"argv\":[\"cat\"],\"mutation\":null,\"stdin\":null,\"stdout\":{\"directory\":\"/var/tmp/django-chat-db-restore.Ab12Cd34\",\"name\":\"db.dump\",\"owners\":[]},\"umask\":63,\"verdict\":\"allowed\"}\n"
     );
     let output = decide(Some("test -d /etc/echoport"));
     assert_eq!(output.status.code(), Some(1));

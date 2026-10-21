@@ -20,6 +20,7 @@ use crate::PROGRAM;
 use crate::decision::{Decision, Refused};
 use crate::env::GuardEnv;
 use crate::exec;
+use crate::mutate;
 use crate::policy::{Policy, load_policy};
 use crate::redirect;
 use crate::repr::py_repr_bytes;
@@ -107,9 +108,10 @@ fn refuse(host: &Host<'_>, client: &str, reason: &str, command: &[u8]) -> ExitCo
     ExitCode::FAILURE
 }
 
-/// Forced-command mode (`<prog> <policy>`, PLAN.md 3.1): refuse, or exec the
-/// allowed command. Returns only when nothing was executed: 1 for a refusal,
-/// 127 when the exec failed.
+/// Forced-command mode (`<prog> <policy>`, PLAN.md 3.1): refuse, make an
+/// allowed mutation itself (exit 0, H1), or exec the allowed command.
+/// Returns only when nothing was executed: 0 for a mutation made, 1 for a
+/// refusal, 127 when the exec failed.
 pub fn forced_command(host: &Host<'_>, policy_path: &OsStr) -> ExitCode {
     let client = client();
     // 1. Interactive sessions, before the policy is read.
@@ -150,6 +152,22 @@ pub fn forced_command(host: &Host<'_>, policy_path: &OsStr) -> ExitCode {
             return refuse(host, &client, &format!("internal error: {panic}"), &command);
         }
     };
+    if let Some(mutation) = &decision.mutation {
+        // Made here, on file descriptors; nothing is executed (H1).
+        match guarded(|| mutate::perform(mutation, host.env, &mut |_, _| {})) {
+            Ok(Ok(())) => {}
+            Ok(Err(refused)) => return refuse(host, &client, refused.reason(), &command),
+            Err(panic) => {
+                return refuse(host, &client, &format!("internal error: {panic}"), &command);
+            }
+        }
+        log(
+            host,
+            Priority::Info,
+            &format!("allowed from {client}: {}", py_repr_bytes(&command)),
+        );
+        return ExitCode::SUCCESS;
+    }
     let argv = match exec::c_argv(&decision.argv) {
         Ok(argv) if !argv.is_empty() => argv,
         _ => return refuse(host, &client, "internal error: unusable argv", &command),

@@ -105,6 +105,7 @@ fn stub_check(command: &[u8], policy: &Policy, env: &dyn GuardEnv) -> Result<Dec
         umask: spec["umask"].as_u64().map(|m| u32::try_from(m).unwrap()),
         stdin: redirect(&spec["stdin"]),
         stdout: redirect(&spec["stdout"]),
+        mutation: None,
     })
 }
 

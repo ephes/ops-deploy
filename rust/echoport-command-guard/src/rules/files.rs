@@ -4,17 +4,23 @@
 //! -c` probe of the private media archive, `readlink`, `test`, `mv`,
 //! `mkdir`, `chmod` and `chown`. S3a ported the branches without filesystem
 //! lookups, S3b the others.
+//!
+//! H1 (PLAN.md 4.5): `chmod`, `chown`, `mv` and `rm -f` of SQLite side files
+//! decide a [`Mutation`] that the guard makes itself on file descriptors
+//! ([`crate::mutate`]) instead of running the tool as root on a pathname; each
+//! changed path must lie inside its root as written ([`require_mutable`]).
 
 use std::sync::LazyLock;
 
 use regex_lite::Regex;
 
 use super::paths::{
-    lstat_or_none, require_in_roots, require_plain_file_or_absent, require_private_dir,
+    lstat_or_none, require_in_roots, require_mutable, require_plain_file_or_absent,
+    require_private_dir,
 };
 use super::transfer::{PRIVATE_ARCHIVE, owner_user};
 use super::{is_temp_dump, require, rpartition, split_in_dir, strings};
-use crate::decision::{Decision, Redirect, Refused};
+use crate::decision::{Decision, Mutation, Redirect, Refused};
 use crate::env::GuardEnv;
 use crate::policy::{Policy, is_safe_name, is_safe_path};
 use crate::repr::py_repr;
@@ -25,9 +31,6 @@ static PRIVATE_TMP_DIR: LazyLock<Regex> =
     LazyLock::new(|| constant_regex(r"^/tmp/echoport-pp-private-media\.[A-Za-z0-9]+$"));
 /// `_PRIVATE_MKTEMP` (`guard.py:43`).
 const PRIVATE_MKTEMP: [&str; 3] = ["mktemp", "-d", "/tmp/echoport-pp-private-media.XXXXXXXX"];
-
-/// `_CHMOD_MODES` (`guard.py:71`).
-const CHMOD_MODES: [&str; 2] = ["0600", "0700"];
 
 /// `umask 077 && tar -C <dir> -czf <archive> -- <name>` (`guard.py:457-469`),
 /// `group` being the `tar …` part `_TAR_RE` matched on the raw command: the
@@ -110,9 +113,9 @@ pub fn rm(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Decisi
             return Err(Refused::new("unexpected rm arguments"));
         };
         require_in_roots(policy, database, env)?;
-        require_in_roots(policy, wal, env)?;
-        require_in_roots(policy, shm, env)?;
-        return Ok(Decision::run(args.to_vec()));
+        require_mutable(policy, wal, env)?;
+        require_mutable(policy, shm, env)?;
+        return Ok(Decision::mutate(Mutation::new("rm", &[wal, shm])));
     }
     if args.len() == 4 && args[1..3] == ["-rf", "--"] {
         let target = &args[3];
@@ -245,14 +248,15 @@ pub fn test(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Deci
 }
 
 /// `mv <source> <target>` (`guard.py:587-597`): an uploaded `<path>.tmp`
-/// put in place, or a rename within one root onto a name that does not
-/// exist yet.
+/// put in place (`replace`), or a rename within one root onto a name that
+/// does not exist yet.
 pub fn mv(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Decision, Refused> {
     require(args.len() == 3, "unexpected mv arguments")?;
     let (source, target) = (&args[1], &args[2]);
-    let source_root = require_in_roots(policy, source, env)?;
-    let target_root = require_in_roots(policy, target, env)?;
-    if *source != format!("{target}.tmp") {
+    let source_root = require_mutable(policy, source, env)?;
+    let target_root = require_mutable(policy, target, env)?;
+    let replace = *source == format!("{target}.tmp");
+    if !replace {
         // Python compares the `(root, owner)` tuples by value.
         require(source_root == target_root, "mv across roots not allowed")?;
         require(
@@ -260,7 +264,10 @@ pub fn mv(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Decisi
             format!("mv target exists: {}", py_repr(target)),
         )?;
     }
-    Ok(Decision::run(args.to_vec()))
+    Ok(Decision::mutate(Mutation {
+        replace,
+        ..Mutation::new("mv", &[source, target])
+    }))
 }
 
 /// `mkdir -p <path>` (`guard.py:599-603`), as the root's owner, like the
@@ -276,14 +283,19 @@ pub fn mkdir(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Dec
     Ok(Decision::run(argv))
 }
 
-/// `chmod 0600|0700 <path>` (`guard.py:605-608`) inside a policy root.
+/// `chmod 0600|0700 <path>` (`guard.py:605-608`; the modes are
+/// `_CHMOD_MODES`, `guard.py:71`) inside a policy root.
 pub fn chmod(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Decision, Refused> {
-    require(
-        args.len() == 3 && CHMOD_MODES.contains(&args[1].as_str()),
-        "unexpected chmod arguments",
-    )?;
-    require_in_roots(policy, &args[2], env)?;
-    Ok(Decision::run(args.to_vec()))
+    let mode = match args.get(1).map(String::as_str) {
+        Some("0600") if args.len() == 3 => 0o600,
+        Some("0700") if args.len() == 3 => 0o700,
+        _ => return Err(Refused::new("unexpected chmod arguments")),
+    };
+    require_mutable(policy, &args[2], env)?;
+    Ok(Decision::mutate(Mutation {
+        mode: Some(mode),
+        ..Mutation::new("chmod", &[&args[2]])
+    }))
 }
 
 /// `chown [-R] <owner> <path>` (`_check_chown`, `guard.py:435-449,
@@ -304,7 +316,11 @@ pub fn chown(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Dec
             ),
         )?;
         require_private_dir(env, &args[2])?;
-        return Ok(Decision::run(args.to_vec()));
+        return Ok(Decision::mutate(Mutation {
+            owner: Some(args[1].clone()),
+            private: true,
+            ..Mutation::new("chown", &[&args[2]])
+        }));
     }
     let (owner, path) = if args.len() == 4 && args[1] == "-R" {
         (&args[2], &args[3])
@@ -312,12 +328,16 @@ pub fn chown(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Dec
         require(args.len() == 3, "unexpected chown arguments")?;
         (&args[1], &args[2])
     };
-    let root = require_in_roots(policy, path, env)?;
+    let root = require_mutable(policy, path, env)?;
     require(
         *owner == root.owner,
         format!("owner {} not allowed for {}", py_repr(owner), py_repr(path)),
     )?;
-    Ok(Decision::run(args.to_vec()))
+    Ok(Decision::mutate(Mutation {
+        owner: Some(owner.clone()),
+        recursive: args.len() == 4,
+        ..Mutation::new("chown", &[path])
+    }))
 }
 
 /// `private_media_probe_script(path)` (`guard.py:286-294`), or `None` when
@@ -370,6 +390,13 @@ mod tests {
 
     fn refused_in(command: &str, env: &VirtualEnv) -> String {
         decide_in(command, env).unwrap_err()
+    }
+
+    /// The change the guard makes itself for `command` (nothing is run).
+    fn mutation(command: &str) -> Mutation {
+        let decision = decide(command).unwrap();
+        assert!(decision.argv.is_empty(), "{command}");
+        decision.mutation.unwrap()
     }
 
     fn tar_command(parent: &str, archive: &str, name: &str) -> String {
@@ -596,7 +623,31 @@ mod tests {
     #[test]
     fn rm_of_sqlite_side_files_inside_a_root() {
         let command = "rm -f /var/lib/gotosocial/sqlite.db-wal /var/lib/gotosocial/sqlite.db-shm";
-        assert_eq!(argv(command).join(" "), command);
+        assert_eq!(
+            decide(command).unwrap(),
+            Decision::mutate(Mutation::new(
+                "rm",
+                &[
+                    "/var/lib/gotosocial/sqlite.db-wal",
+                    "/var/lib/gotosocial/sqlite.db-shm"
+                ]
+            ))
+        );
+        // Through a symlink into the root: resolved inside, not inside as
+        // written (H1).
+        let aliased = serde_json::from_str::<VirtualEnv>(
+            r#"{"realpath": {"/var/lib/gts/sqlite.db": "/var/lib/gotosocial/sqlite.db",
+                             "/var/lib/gts/sqlite.db-wal": "/var/lib/gotosocial/sqlite.db-wal",
+                             "/var/lib/gts/sqlite.db-shm": "/var/lib/gotosocial/sqlite.db-shm"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            refused_in(
+                "rm -f /var/lib/gts/sqlite.db-wal /var/lib/gts/sqlite.db-shm",
+                &aliased
+            ),
+            "path not inside its root as written: '/var/lib/gts/sqlite.db-wal'"
+        );
         for (command, expected) in [
             (
                 "rm -f /var/lib/gotosocial/a-wal /var/lib/gotosocial/b-shm",
@@ -635,11 +686,20 @@ mod tests {
             "test -e /home/marina/site",
             "test -d /var/lib/gotosocial/storage",
             "test -f /home/marina/x",
-            "chmod 0600 /home/marina/site/db.sqlite3",
-            "chmod 0700 /var/lib/gotosocial/storage",
         ] {
             assert_eq!(argv(command).join(" "), command);
         }
+        assert_eq!(
+            mutation("chmod 0600 /home/marina/site/db.sqlite3"),
+            Mutation {
+                mode: Some(0o600),
+                ..Mutation::new("chmod", &["/home/marina/site/db.sqlite3"])
+            }
+        );
+        assert_eq!(
+            mutation("chmod 0700 /var/lib/gotosocial/storage").mode,
+            Some(0o700)
+        );
         for (command, expected) in [
             (
                 "readlink /home/marina/site",
@@ -658,6 +718,15 @@ mod tests {
                 "chmod 0600 /etc/shadow",
                 "path outside the allowed roots: '/etc/shadow'",
             ),
+            (
+                "chmod 0600 /var/lib/gotosocial/sqlite.db/",
+                "path not inside its root as written: '/var/lib/gotosocial/sqlite.db/'",
+            ),
+            ("chmod 0600", "unexpected chmod arguments"),
+            (
+                "chmod 0600 /home/marina/a /home/marina/b",
+                "unexpected chmod arguments",
+            ),
         ] {
             assert_eq!(reason(command), expected, "{command}");
         }
@@ -675,13 +744,21 @@ mod tests {
                               "/home/marina/x": {"kind": "reg", "mode": 384, "uid": 1000, "nlink": 1}}}"#,
             )
             .unwrap();
+            let decision = decide_in(command, &existing).unwrap();
+            let paths: Vec<&str> = command.split(' ').skip(1).collect();
             assert_eq!(
-                decide_in(command, &existing).unwrap().argv.join(" "),
-                command
+                decision,
+                Decision::mutate(Mutation {
+                    replace: true,
+                    ..Mutation::new("mv", &paths)
+                })
             );
         }
-        assert!(decide("mv /home/marina/site.tmp /home/marina/site").is_ok());
-        assert!(decide("mv /home/marina/site/a /home/marina/site/b").is_ok());
+        assert!(mutation("mv /home/marina/site.tmp /home/marina/site").replace);
+        assert_eq!(
+            mutation("mv /home/marina/site/a /home/marina/site/b"),
+            Mutation::new("mv", &["/home/marina/site/a", "/home/marina/site/b"])
+        );
         let exists = serde_json::from_str::<VirtualEnv>(
             r#"{"lstat": {"/home/marina/site/b": {"kind": "dir", "mode": 493, "uid": 1000, "nlink": 2}}}"#,
         )
@@ -716,6 +793,10 @@ mod tests {
                 "path outside the allowed roots: '/etc/a'",
             ),
             ("mv /home/marina/a", "unexpected mv arguments"),
+            (
+                "mv /home/marina/site/a/ /home/marina/site/b",
+                "path not inside its root as written: '/home/marina/site/a/'",
+            ),
         ] {
             assert_eq!(reason(command), expected, "{command}");
         }
@@ -743,11 +824,12 @@ mod tests {
         // A fresh snapshot temp dir, handed to the service user.
         let command = format!("chown gotosocial:gotosocial {SNAPSHOT_DIR}");
         assert_eq!(
-            decide_in(&command, &private(SNAPSHOT_DIR))
-                .unwrap()
-                .argv
-                .join(" "),
-            command
+            decide_in(&command, &private(SNAPSHOT_DIR)).unwrap(),
+            Decision::mutate(Mutation {
+                owner: Some("gotosocial:gotosocial".into()),
+                private: true,
+                ..Mutation::new("chown", &[SNAPSHOT_DIR])
+            })
         );
         assert_eq!(
             reason(&command),
@@ -758,12 +840,21 @@ mod tests {
             format!("owner 'marina:marina' not allowed for '{SNAPSHOT_DIR}'")
         );
         // Inside a root, its owner, also recursively.
-        for command in [
-            "chown marina:marina /home/marina/site/db.sqlite3",
-            "chown -R marina:www-data /home/marina/media",
-        ] {
-            assert_eq!(argv(command).join(" "), command);
-        }
+        assert_eq!(
+            mutation("chown marina:marina /home/marina/site/db.sqlite3"),
+            Mutation {
+                owner: Some("marina:marina".into()),
+                ..Mutation::new("chown", &["/home/marina/site/db.sqlite3"])
+            }
+        );
+        assert_eq!(
+            mutation("chown -R marina:www-data /home/marina/media"),
+            Mutation {
+                owner: Some("marina:www-data".into()),
+                recursive: true,
+                ..Mutation::new("chown", &["/home/marina/media"])
+            }
+        );
         for (command, expected) in [
             (
                 "chown marina:www-data /home/marina/site/x".to_owned(),
@@ -785,6 +876,10 @@ mod tests {
             (
                 "chown marina:marina /etc".to_owned(),
                 "path outside the allowed roots: '/etc'".to_owned(),
+            ),
+            (
+                "chown -R marina:marina /home/marina/site/".to_owned(),
+                "path not inside its root as written: '/home/marina/site/'".to_owned(),
             ),
         ] {
             assert_eq!(reason(&command), expected, "{command}");

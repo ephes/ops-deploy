@@ -1,6 +1,6 @@
 {
   "guard": "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py",
-  "guard_sha256": "ca74405e7bfeb1312c01b77188febe7f3fb1e151f64239e61062e4ec2e3650ae",
+  "guard_sha256": "3da2cca295b9b71ffadcfec9fad8d4ed236ff0df7cefd8aa364cfe937f98c800",
   "decision_files": [
     "fs.jsonl",
     "journal.jsonl",
@@ -20,43 +20,43 @@
     "policy.jsonl"
   ],
   "cases": {
-    "fs.jsonl": 698,
+    "fs.jsonl": 762,
     "journal.jsonl": 70,
-    "mutation/append.jsonl": 1960,
-    "mutation/characters.jsonl": 2330,
+    "mutation/append.jsonl": 2016,
+    "mutation/characters.jsonl": 2397,
     "mutation/edges.jsonl": 84,
-    "mutation/paths.jsonl": 974,
-    "mutation/requote.jsonl": 1950,
-    "mutation/tokens.jsonl": 1885,
+    "mutation/paths.jsonl": 1006,
+    "mutation/requote.jsonl": 1986,
+    "mutation/tokens.jsonl": 1914,
     "mutation/tools.jsonl": 275,
-    "mutation/vocabulary.jsonl": 1558,
-    "mutation/whitespace.jsonl": 978,
+    "mutation/vocabulary.jsonl": 1580,
+    "mutation/whitespace.jsonl": 1006,
     "policy.jsonl": 244,
     "runner.jsonl": 130,
-    "unit.jsonl": 257
+    "unit.jsonl": 273
   },
-  "total": 13393,
+  "total": 13743,
   "accepted": {
-    "fs.jsonl": 206,
+    "fs.jsonl": 196,
     "journal.jsonl": 69,
     "mutation/append.jsonl": 0,
     "mutation/characters.jsonl": 0,
     "mutation/edges.jsonl": 12,
-    "mutation/paths.jsonl": 62,
-    "mutation/requote.jsonl": 1882,
+    "mutation/paths.jsonl": 39,
+    "mutation/requote.jsonl": 1909,
     "mutation/tokens.jsonl": 18,
     "mutation/tools.jsonl": 7,
-    "mutation/vocabulary.jsonl": 140,
-    "mutation/whitespace.jsonl": 930,
+    "mutation/vocabulary.jsonl": 144,
+    "mutation/whitespace.jsonl": 951,
     "runner.jsonl": 130,
-    "unit.jsonl": 49
+    "unit.jsonl": 57
   },
   "p3": {
-    "prefilter": 2902,
+    "prefilter": 2985,
     "invalid-utf8": 32,
     "python-error": 5,
     "policy-type": 33,
     "policy-trailing-newline": 12
   },
-  "decisions": 13149
+  "decisions": 13499
 }

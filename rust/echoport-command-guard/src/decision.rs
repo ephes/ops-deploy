@@ -1,7 +1,7 @@
 //! The outcome of `check()`: a [`Decision`] for an allowed command, or
 //! [`Refused`] (PLAN.md 3.4; `guard.py:75-77, 176-195`).
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// A file the guard opens itself and hands the command as stdin or stdout
@@ -16,7 +16,43 @@ pub struct Redirect {
     pub owners: Vec<String>,
 }
 
-/// What to execute for an allowed command (`guard.py:190-195`).
+/// A change the guard makes itself instead of running a tool (the Python
+/// guard's `Mutation`; made by [`crate::mutate::perform`]): `chmod` (`mode`),
+/// `chown` (`owner`, `recursive`; `private`: the path must still be a
+/// directory of the guard's own user with no group or other access), `mv`
+/// (`paths` is source and target; `replace`: the target may exist) or `rm`
+/// (`-f`: missing paths are fine). Every path is walked from `/` without
+/// following symlinks (PLAN.md 4.5, H1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Mutation {
+    pub op: String,
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub mode: Option<u32>,
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub recursive: bool,
+    #[serde(default)]
+    pub private: bool,
+    #[serde(default)]
+    pub replace: bool,
+}
+
+impl Mutation {
+    /// `Mutation(op, paths)`.
+    pub fn new(op: &str, paths: &[&str]) -> Self {
+        Self {
+            op: op.to_owned(),
+            paths: paths.iter().map(|path| (*path).to_owned()).collect(),
+            ..Self::default()
+        }
+    }
+}
+
+/// What to execute for an allowed command (`guard.py:190-195`), or the
+/// change the guard makes itself (`mutation`, with an empty `argv`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Decision {
     pub argv: Vec<String>,
@@ -25,6 +61,8 @@ pub struct Decision {
     pub stdin: Option<Redirect>,
     /// Created exclusively, mode `0600`.
     pub stdout: Option<Redirect>,
+    /// Made by the guard on file descriptors; nothing is executed.
+    pub mutation: Option<Mutation>,
 }
 
 impl Decision {
@@ -36,6 +74,16 @@ impl Decision {
             umask: None,
             stdin: None,
             stdout: None,
+            mutation: None,
+        }
+    }
+
+    /// `Decision(argv=[], mutation=mutation)`: the guard makes the change
+    /// itself and runs nothing.
+    pub fn mutate(mutation: Mutation) -> Self {
+        Self {
+            mutation: Some(mutation),
+            ..Self::run(Vec::new())
         }
     }
 
@@ -48,6 +96,7 @@ impl Decision {
             "umask": self.umask,
             "stdin": self.stdin,
             "stdout": self.stdout,
+            "mutation": self.mutation,
         })
     }
 }
@@ -94,11 +143,25 @@ mod tests {
                 name: "db.dump".into(),
                 owners: vec![],
             }),
+            mutation: None,
         };
         assert_eq!(
             decision.to_json(),
             json!({"verdict": "allowed", "argv": ["cat"], "umask": 63, "stdin": null,
-                   "stdout": {"directory": "/var/tmp/x.abcdef", "name": "db.dump", "owners": []}})
+                   "stdout": {"directory": "/var/tmp/x.abcdef", "name": "db.dump", "owners": []},
+                   "mutation": null})
+        );
+        let chown = Decision::mutate(Mutation {
+            owner: Some("marina:marina".into()),
+            recursive: true,
+            ..Mutation::new("chown", &["/home/marina/site/media"])
+        });
+        assert_eq!(
+            chown.to_json(),
+            json!({"verdict": "allowed", "argv": [], "umask": null, "stdin": null, "stdout": null,
+                   "mutation": {"op": "chown", "paths": ["/home/marina/site/media"], "mode": null,
+                                "owner": "marina:marina", "recursive": true, "private": false,
+                                "replace": false}})
         );
     }
 }

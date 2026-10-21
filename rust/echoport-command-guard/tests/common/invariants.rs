@@ -11,13 +11,20 @@
 //! - every path the decision names (an argv token that starts with `/`, the
 //!   value of `--file=`, the target of `.backup`, the redirects) is a safe
 //!   path (`_SAFE_PATH_RE`, no empty, `.` or `..` component);
-//! - the umask is none or `0o077`, and a redirect's name is a single safe name.
+//! - the umask is none or `0o077`, and a redirect's name is a single safe name;
+//! - a mutation (H1) has an empty argv and nothing else: `chmod` with one
+//!   safe path and mode `0o600`/`0o700`, `chown` with one safe path and a
+//!   `<user>:<group>` owner that is not `root`'s (`private` only without
+//!   `recursive`), `mv` with two safe paths, `rm` with two safe paths ending
+//!   in `-wal`/`-shm`; a path never ends in `/`.
 
-use echoport_command_guard::decision::Decision;
+use echoport_command_guard::decision::{Decision, Mutation};
 use echoport_command_guard::policy::{is_safe_name, is_safe_path};
 
 /// The programs an accepted decision may execute (`guard.py:489-617`).
-pub const EXECUTED: [&str; 19] = [
+/// `mv`, `chmod` and `chown` are not among them: the guard makes those
+/// changes itself (H1), as it does `rm -f` of SQLite side files.
+pub const EXECUTED: [&str; 16] = [
     "sudo",
     "runuser",
     "systemctl",
@@ -31,16 +38,73 @@ pub const EXECUTED: [&str; 19] = [
     "sh",
     "readlink",
     "test",
-    "mv",
     "mkdir",
-    "chmod",
-    "chown",
     "curl",
     "tar",
 ];
 
+/// The invariants of a change the guard makes itself.
+fn mutation_invariants(decision: &Decision, mutation: &Mutation) -> Result<(), String> {
+    if !decision.argv.is_empty()
+        || decision.umask.is_some()
+        || decision.stdin.is_some()
+        || decision.stdout.is_some()
+    {
+        return Err(format!("mutation with more: {decision:?}"));
+    }
+    let paths = &mutation.paths;
+    if paths
+        .iter()
+        .any(|path| !is_safe_path(path) || path.ends_with('/'))
+    {
+        return Err(format!("unsafe mutation path in {mutation:?}"));
+    }
+    let only_paths = mutation.mode.is_none()
+        && mutation.owner.is_none()
+        && !mutation.recursive
+        && !mutation.private;
+    let ok = match mutation.op.as_str() {
+        "chmod" => {
+            paths.len() == 1
+                && matches!(mutation.mode, Some(0o600 | 0o700))
+                && mutation.owner.is_none()
+                && !mutation.recursive
+                && !mutation.private
+                && !mutation.replace
+        }
+        "chown" => {
+            paths.len() == 1
+                && mutation.mode.is_none()
+                && !mutation.replace
+                && !(mutation.private && mutation.recursive)
+                && mutation.owner.as_deref().is_some_and(|owner| {
+                    owner.split_once(':').is_some_and(|(user, group)| {
+                        user != "root" && is_safe_name(user) && is_safe_name(group)
+                    })
+                })
+        }
+        "mv" => paths.len() == 2 && only_paths,
+        "rm" => {
+            paths.len() == 2
+                && only_paths
+                && !mutation.replace
+                && paths[0].ends_with("-wal")
+                && paths[1].ends_with("-shm")
+        }
+        _ => false,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("mutation {mutation:?}"))
+    }
+}
+
 /// `Ok(())`, or the first invariant `decision` breaks.
 pub fn decision_invariants(decision: &Decision) -> Result<(), String> {
+    if let Some(mutation) = &decision.mutation {
+        return mutation_invariants(decision, mutation);
+    }
     let argv = &decision.argv;
     let Some(program) = argv.first() else {
         return Err("empty argv".into());

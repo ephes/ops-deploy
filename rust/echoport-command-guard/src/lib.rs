@@ -13,6 +13,7 @@ pub mod decision;
 pub mod env;
 pub mod exec;
 pub mod modes;
+pub mod mutate;
 pub mod policy;
 pub mod prefilter;
 pub mod pyrealpath;
