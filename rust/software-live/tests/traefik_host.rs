@@ -25,6 +25,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use software_live::error::PyError;
+use software_live::http::HttpRequest;
 use software_live::probe::{
     COMMAND_TIMEOUT, CommandError, CommandOutput, FileStat, HostFile, HostSystem, OpenFile, System,
 };
@@ -131,6 +133,12 @@ impl System for Host {
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
         HostSystem.run_inheriting(file, argv, timeout)
+    }
+    fn http_get(&self, request: &HttpRequest<'_>) -> Result<Vec<u8>, PyError> {
+        panic!("the Traefik observation made a request: {}", request.url)
+    }
+    fn write_json(&self, path: &Path, _: &Value, _: Option<u32>) -> io::Result<()> {
+        panic!("the Traefik observation wrote {}", path.display())
     }
 }
 
