@@ -58,7 +58,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from layer2_realpath import is_eloop, reset  # noqa: E402
+from layer2_realpath import MAX_LINKS, reset  # noqa: E402
 
 GTS = "/var/lib/gotosocial"
 SITE = "/home/marina/site"
@@ -157,10 +157,10 @@ def realpath_error(path: str) -> str | None:
     """The error a component-by-component resolution of ``path`` meets, as
     the stricter Rust resolver reports it (PLAN.md 4.2), found independently
     of both guards: an ``lstat`` error other than ``ENOENT``/``ENOTDIR``, a
-    ``readlink`` error, a link target that is not UTF-8, or a loop (no end,
-    or more than 40 traversals). ``None`` when there is none."""
-    if is_eloop(path):
-        return "Too many levels of symbolic links"
+    ``readlink`` error, a link target that is not UTF-8, or more than 40
+    symlink traversals (a loop never ends; every traversal counts, as in the
+    kernel, without Python's ``seen`` map), whichever comes first.
+    ``None`` when there is none."""
     stack = path.split("/")[::-1]
     resolved = "/"
     links = 0
@@ -183,7 +183,7 @@ def realpath_error(path: str) -> str | None:
             resolved = newpath
             continue
         links += 1
-        if links > 10_000:
+        if links > MAX_LINKS:
             return "Too many levels of symbolic links"
         try:
             raw = os.readlink(os.fsencode(newpath))
