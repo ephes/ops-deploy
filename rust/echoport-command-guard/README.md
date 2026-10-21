@@ -2,8 +2,12 @@
 
 The Rust port of the `echoport_remote_command_guard` forced-command guard.
 The plan and contract are in [PLAN.md](PLAN.md), the test map in
-[TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
-hosts run the Python guard.
+[TESTMAP.md](TESTMAP.md). Version 0.1.0 is released (S7, see "Release"
+below) but installed nowhere; the hosts run the Python guard. 0.1.0 keeps a
+race of the Python guard (the root-run `chmod`, `chown`, `mv` and `rm -f`
+of `-wal`/`-shm`, PLAN.md 4.5 and R12) and must never be installed: the
+first release a host gets is the one of the hardening slice H1 (work item
+`echoport-guard-toctou-hardening`).
 
 Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
 layer), **S3a** (the rules without filesystem), **S3b** (the rules with
@@ -12,8 +16,10 @@ property tests, Layer 2 and Layer 3 against the Python guard on both host
 distributions, fuzzing; see "Parity gate" below) and **S6** (the role switch:
 `roles/echoport_remote_command_guard` installs this binary through
 `rust_release_binary` and selects it with `echoport_remote_command_guard_impl`,
-default `python`; see its README). Every branch of the Python guard's
-`check()` is ported. What exists:
+default `python`; see its README) and **S7** (release 0.1.0: the lean
+measurements, the security review of the whole crate, the tag; see "Lean
+measurements", "Security review (S7)" and "Release" below). Every branch of
+the Python guard's `check()` is ported. What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -95,6 +101,40 @@ default `python`; see its README). Every branch of the Python guard's
   guard in the same Debian 12 container (target `local-archive`) into a
   release-layout archive for the role's molecule scenarios.
 - `fuzz/`: the cargo-fuzz targets and their committed corpus (below).
+
+## Release
+
+The binary is released by the tag `echoport-command-guard-v<version>`
+through `.github/workflows/rust-release.yml` (`rust/README.md` "Releases",
+PLAN-foundation.md section 4). The crate has no `release.json`: one archive
+`echoport-command-guard-<version>-x86_64-unknown-linux-gnu.tar.gz` with
+`echoport-command-guard` and `LICENSE`, built on `ubuntu-22.04` (glibc floor
+2.35), plus its `.sha256`, attached to
+`https://github.com/ephes/ops-library/releases/tag/echoport-command-guard-v<version>`.
+The role pins a version and that sha256
+(`echoport_remote_command_guard_rust_version`,
+`echoport_remote_command_guard_rust_sha256`); no release installs itself.
+
+| Version | Tag (commit) | Archive sha256 | Stripped binary |
+|---|---|---|---|
+| 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` | recorded after the release | |
+
+## Security review (S7)
+
+PLAN.md R2 asks for a dedicated security review of the whole crate before
+the first release: `gpt-6.1-sol` at high reasoning over every production
+source (`src/`, `build.rs`, `Cargo.toml`, `examples/`), focused on
+acceptance drift against the Python guard, path handling (realpath, root
+containment, the redirect opens) and fd/exec hygiene. It found no acceptance
+drift and one Critical finding, which the Python guard has as well: the
+root-run `chmod 0600|0700`, `chown [-R]`, `mv` and `rm -f` of `-wal`/`-shm`
+are checked on the resolved path and then executed as root on the original
+pathname, so the root's service user can swap in a symlink in between and
+redirect them outside the root (the reviewer reproduced it with `chmod`
+through the forced command). The owner accepted it for 0.1.0 only, as a
+parity port (2026-10-21; PLAN.md 4.5, R12, the role README "Files the guard
+opens itself"). The hardening slice H1 fixes it in both guards before any
+install (S9 depends on it).
 
 ## Build and test
 

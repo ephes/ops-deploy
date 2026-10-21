@@ -1,8 +1,10 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a, S3b, S4, S5 and S6 implemented (campaign "Rust-Ports Runde
-2", stream `rust-echoport-command-guard`; see `README.md`). Nothing in this
-directory is released or deployed yet. This file is the contract for the implementers and
+Status: S0, S1, S2, S3a, S3b, S4, S5, S6 and S7 implemented (campaign "Rust-Ports
+Runde 2", stream `rust-echoport-command-guard`; see `README.md`). S7 releases
+0.1.0 as a parity port with a pre-existing race accepted for that release
+only (4.5, R12); nothing is installed or deployed, and no host gets the Rust
+guard before the hardening slice H1 is merged (section 11). This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
 file first, in its own reviewed diff.
 
@@ -575,6 +577,27 @@ and each entry.
 - The TOCTOU windows Python documents as accepted (downloads as root
   re-open their path after the check; README "Files the guard opens itself")
   stay as they are. The port neither widens nor narrows them.
+- **Accepted for 0.1.0 only (owner decision 2026-10-21, R12): the race of
+  the root-run mutations.** `chmod 0600|0700 <path>`, `chown [-R] <owner>
+  <path>`, both `mv` forms (including `mv <p>.tmp <p>`) and `rm -f
+  <db>-wal <db>-shm` on paths inside a root are checked on the resolved path
+  (`guard.py:435-449`, `guard.py:518-527`, `guard.py:587-612`; Rust
+  `src/rules/files.rs` `rm`, `mv`, `chmod`, `chown`, the same checks) and
+  then executed **as root with the original pathname**, which the tool
+  resolves again. A local user who can write inside a policy root (the
+  root's service user) can swap the path, or a directory on it,
+  for a symlink between the check and the tool's system call, and so have
+  root change the mode or owner of a file outside the root, or rename or
+  unlink there: a privilege escalation from that service user to root. The
+  Python guard on the hosts has the same race today; the dedicated security
+  review of S7 found it in the Rust port (a faithful port of those lines)
+  and reproduced it with `chmod`. 0.1.0 ships as a parity port with this
+  race documented (role README, "Files the guard opens itself"). The fix is
+  the hardening slice H1 (work item `echoport-guard-toctou-hardening`,
+  section 11): the Python guard first, then the Rust guard, mutations bound
+  to file descriptors opened without following symlinks, new fixtures. H1
+  must be merged, and its release used, before any Rust guard install
+  (S9); 0.1.0 is never installed on a host.
 - No musl build (8.2). No aarch64 build. No packaging for macmini.
 
 ---
@@ -1475,7 +1498,7 @@ the coordinator clears with the other production work (6.1).
 | # | Risk | Mitigation |
 |---|---|---|
 | R1 | **Backups are locked out silently**: the Rust binary does not start, or it refuses a runner command. | Role-level `--version`/`--check-policy` on the host before any switch; staging canary first; shadow gate with zero mismatches; the playbook's post-probe; manual acceptance runs; Nyxmon Echoport freshness alerts; rollback by one playbook run that needs neither the Rust binary nor the pre-probe (6.5; about 1 minute, drilled in S11a with a healthy and a deliberately broken binary); Python stays installed until S12. |
-| R2 | **The Rust guard accepts something Python refuses** (a security hole). | The invariant `rust_accepts ⇒ python_accepts ∧ same decision` in Layer 1, the proptests, Layer 2 and fuzzing; the prefilter; fail-closed stubs; a dedicated security review in S7 (gpt-6.1-sol high, prompt focused on acceptance drift, path handling and fd/exec hygiene). |
+| R2 | **The Rust guard accepts something Python refuses** (a security hole). | The invariant `rust_accepts ⇒ python_accepts ∧ same decision` in Layer 1, the proptests, Layer 2 and fuzzing; the prefilter; fail-closed stubs; a dedicated security review in S7 (gpt-6.1-sol high, prompt focused on acceptance drift, path handling and fd/exec hygiene; it ran over the whole crate and found no acceptance drift, only the pre-existing race of R12). |
 | R3 | The Python guard changes during the port (new runner shapes). | The `GUARD_SHA256` drift check; TESTMAP; until S13 every guard change updates both. |
 | R4 | The CPython versions on the hosts differ (3.12/3.13). | The oracle runs on both; loops are refused (4.2). |
 | R5 | Side effects on the exec'd tools (environment, locale, signals, fds, umask). | Measured contract (3.5); Layer-3 probes. |
@@ -1484,6 +1507,7 @@ the coordinator clears with the other production work (6.1).
 | R8 | Collisions with other production work: Traefik ACME (production, until 2026-10-30), the `.timeout` rollout (6.4), opsgate key rotation (macmini only, different playbook). | Coordinator's go for the production steps; the shared deploy lock; 6.4 ordering. |
 | R9 | The foundation (F1–F3) is late or differs from what 8.1 assumes. | S0 needs no foundation slice; S1 adapts to F1's actual layout, S6 to F3's, S7 to F2's; any gap goes back to the foundation stream (`rust-metrics-httpd`), without a parallel pipeline here. |
 | R10 | Public repo: fixtures could leak private data. | Fixtures use only the policies that are already public in the tests, and synthetic stamps; no tailnet addresses (the `SSH_CLIENT` in tests uses a documentation address). |
+| R12 | **Root-run mutations race with a symlink swap** (4.5): `chmod`, `chown [-R]`, `mv` and `rm -f` of `-wal`/`-shm` are checked on the resolved path but executed as root on the original pathname; the root's service user can redirect them outside the root (service user → root). Pre-existing in the Python guard; found by the S7 security review. | Accepted for 0.1.0 only (owner decision 2026-10-21) and documented in the role README. Hardening slice H1 (work item `echoport-guard-toctou-hardening`): Python guard first, then Rust, fd-based mutations, new fixtures and a race regression test. S9 depends on H1; 0.1.0 is never installed. |
 | R11 | ops-library has no CI today (no `.github/workflows`), and F1's `rust.yml` covers only `rust/`. | `rust.yml` comes with F1 (owner decision 2026-10-21); until then the slices run `cargo test` and `just test-echoport-remote-command-guard` locally and record this in the review. The Ansible/Python suite stays local (`just test`), including the `GUARD_SHA256` comparison (7.2). |
 
 ---
@@ -1521,8 +1545,9 @@ Rules, as in the precedents:
 | S5 | Parity gate | All of Layer 1 green, the 4.4 list reviewed, decision proptests (7.3), Layer 2 complete, Layer 3 sshd e2e on both distros, fuzz targets with at least 1 hour each and the corpus committed, TESTMAP complete. | S2, S3a, S3b, S4 | with S6 | no | 4 |
 | S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts, dual validate, forced command per impl, `confirm_live.yml` (verify the written line, protect list from the live `authorized_keys`, F3 pin and previous pin, F3 prune with `protect`) with its parse filter and unit test, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), the `pins` scenario (repeated failed deployments with different targets and the other 6.2 cases), README/docs/CHANGELOG (Unreleased). | F3 (install role with `protect` and the previous pin), S4 (CLI surface) | with S2–S5 | no | 5 |
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
-| S8 | ops-control wiring | 6.3: pins (filled after S7), impl `python`, tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
-| S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. | S7, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
+| H1 | TOCTOU hardening (work item `echoport-guard-toctou-hardening`, R12) | 4.5: the root-run mutations (`chmod`, `chown [-R]`, both `mv` forms, `rm -f` of `-wal`/`-shm`) bound to file descriptors opened without following symlinks (or run as the root's owner where that suffices), in the Python guard first (the oracle; fixtures and `GUARD_SHA256` regenerated), then in the Rust guard; new Layer-1/Layer-2 fixtures and a race regression test; a new release (the version H1 decides) that S8 pins instead of 0.1.0. | S7 | no | no | (H1's own plan) |
+| S8 | ops-control wiring | 6.3: pins (filled after S7, then H1's release), impl `python`, tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
+| S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. Installs H1's release, never 0.1.0 (R12). | S7, **H1 merged and released**, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
 | S11a | Cutover, staging, and rollback drills | 6.5 step 4, drills (a)–(c). | S10a (gate), S10b running | no | **yes** | 2 + 72 h soak |
@@ -1538,7 +1563,8 @@ Rules, as in the precedents:
 4. S3b (after S2) ∥ the rest of wave 3.
 5. S5 ∥ S6.
 6. S7 ∥ S8 prep.
-7. The production chain S9 → S10a → (S10b overlapping) → S11a → S11b → S12
+7. H1 (right after S7; must be merged before S9).
+8. The production chain S9 → S10a → (S10b overlapping) → S11a → S11b → S12
    → S13.
 
 Up to four implementation workers can run at the same time (wave 3).
