@@ -361,6 +361,7 @@ def test_bad_requests_fail_without_echoing_them(tree: Tree) -> None:
 @pytest.mark.parametrize("fail", [False, True])
 def test_a_signal_waits_until_the_transaction_is_done(tree: Tree, fail: bool) -> None:
     tree.ok("apply")
+    (tree.etc / ".ops-deploy-bind-reload-pending").unlink()  # the deploy's reload
     before = tree.snapshot()
     tree.set_config(options="options { BOGUS; };\n" if fail else "options { changed; };\n")
 
@@ -369,10 +370,15 @@ def test_a_signal_waits_until_the_transaction_is_done(tree: Tree, fail: bool) ->
     # Delivered after the commit or the restore, never in between.
     assert result.returncode == 128 + 15
     after = tree.snapshot()
+    marker = tree.etc / ".ops-deploy-bind-reload-pending"
     if fail:
         assert after == before
+        assert not marker.exists()
     else:
         assert (tree.etc / "named.conf.options").read_text() == "options { changed; };\n"
+        # The deploy's next run sees the reload it still owes.
+        assert marker.exists()
+        assert tree.ok("probe")["reload_pending"] is True
         assert {path for path in after if ".ops-deploy-bind." in path} == set()
 
 
@@ -396,5 +402,43 @@ def test_a_failed_restore_keeps_the_backups_and_refuses_the_next_run(tree: Tree)
     assert tree.ok("probe")["leftovers"] == [str(stage)]
     again = tree.run("apply")
     assert again.returncode == 1
-    assert "holds backups of an interrupted or unrestored run" in again.stderr
+    assert "is left from an interrupted or unrestored run" in again.stderr
     assert stage.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the directory permissions this test relies on")
+def test_new_files_that_cannot_be_removed_again_refuse_the_next_run(tree: Tree) -> None:
+    # A first install whose rollback cannot delete the files it created: no backups exist.
+    tree.set_config(options="options { new; };\n")
+
+    result = tree.run("apply", env={"CHECKCONF_LOCK_DIR": str(tree.etc)})
+    os.chmod(tree.etc, 0o755)
+
+    assert result.returncode == 1
+    assert "could not be restored" in result.stderr
+    [stage] = [path for path in tree.etc.iterdir() if path.name.startswith(".ops-deploy-bind.")]
+    assert str(stage) in tree.ok("probe")["leftovers"]
+    again = tree.run("apply")
+    assert again.returncode == 1
+    assert "is left from an interrupted or unrestored run" in again.stderr
+
+
+def test_a_killed_run_leaves_a_stage_that_refuses(tree: Tree) -> None:
+    (tree.etc / ".ops-deploy-bind.deadbeef").mkdir(mode=0o700)
+
+    assert tree.ok("probe")["leftovers"] == [str(tree.etc / ".ops-deploy-bind.deadbeef")]
+    result = tree.run("apply")
+    assert result.returncode == 1
+    assert "is left from an interrupted or unrestored run" in result.stderr
+
+
+def test_success_marks_a_reload_and_a_failure_does_not(tree: Tree) -> None:
+    marker = tree.etc / ".ops-deploy-bind-reload-pending"
+    tree.set_config(options="options { BOGUS; };\n")
+    assert tree.run("apply").returncode == 1
+    assert not marker.exists()
+
+    tree.set_config()
+    tree.ok("apply")
+    assert marker.exists()
+    assert tree.ok("probe")["reload_pending"] is True

@@ -86,13 +86,17 @@ zone, non-empty `primaries` for transfer-backed zones, `dynamic` only on
       keeps the files it had. SIGHUP, SIGINT and SIGTERM are blocked from the
       first change to the last restore and take effect afterwards.
     - A file that cannot be restored keeps its backup (`old-*`) in the
-      staging directory (`.ops-deploy-bind.*` next to it), which stays in
-      place; so does one that a killed run left behind. The probe reports
-      such a directory and every later run is refused before any change
-      until it has been checked against the configuration and removed by
-      hand.
+      staging directory (`.ops-deploy-bind.*` next to it), and a new file
+      that cannot be removed stays; the staging directories stay in place.
+      So does one a killed run left behind. The probe reports any such
+      directory and every later run is refused before any change until it
+      has been checked against the configuration and removed by hand.
 4. named enabled and running; `systemctl reload named` only when step 3
-   changed something.
+   changed something, or when a reload is still owed: the transaction
+   creates `<config_dir>/.ops-deploy-bind-reload-pending` before its first
+   change (and removes it when it undoes everything), and only a successful
+   reload removes it, so a run that ended between the files and the reload
+   (a signal, a lost connection) reloads on the next run.
 5. Read-only `dig @<verify_server> <zone> SOA +comments +norecurse` per
    authoritative zone (`verify_zone_types`) until it answers `NOERROR` with
    the `aa` flag (`verify_retries` × `verify_delay`). UFW warnings as in the
@@ -157,9 +161,10 @@ names the keys file is withheld.
   secrets. Static zones may share a file; a dynamic or transfer-backed zone
   may not.
 - Debian-family hosts with systemd only.
-- A deploy that dies after the transaction and before the reload is not
-  noticed by the next run (files already current); `rndc reload` by hand, as
-  with the role.
+- A deploy that ends after the files changed and before the reload reloads
+  on its next run (the reload marker); the role's handler is lost then and
+  needs `rndc reload` by hand. The marker is a file the role does not know;
+  an Ansible run leaves it, and the next pyinfra run reloads once.
 
 ## Tests
 

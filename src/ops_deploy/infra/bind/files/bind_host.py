@@ -27,9 +27,12 @@ memory and prints JSON: per path ``missing``, ``same``, ``differs`` or
    the command fails: named is not reloaded and keeps its files. SIGHUP,
    SIGINT and SIGTERM are blocked from the first change to the last restore
    and take effect afterwards. A file that cannot be restored keeps its
-   backup in the staging directory, which is left in place and refuses every
-   later run until it is checked and removed by hand (as does one a killed
-   run left behind).
+   backup in the staging directory, which is left in place; any staging
+   directory left (also by a killed run) refuses every later run until it is
+   checked and removed by hand.
+5. A marker (``RELOAD_MARKER`` in the config directory) is created before the
+   first change and removed by the deploy's reload, or when the transaction
+   is undone, so a reload that never happened is retried by the next run.
 
 Output of ``named-checkconf`` that names the keys file is withheld.
 """
@@ -57,9 +60,12 @@ STAGE_PREFIX = ".ops-deploy-bind."
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
 SERIAL = re.compile(r"loaded serial ([0-9]+)")
 LEFTOVER = (
-    "{} holds backups of an interrupted or unrestored run; check the configuration against them "
-    "(named-checkconf), then remove the directory by hand"
+    "{} is left from an interrupted or unrestored run (backups old-*); check the configuration "
+    "against it (named-checkconf), then remove the directory by hand"
 )
+# Set before the first change of a transaction, removed by the deploy's reload
+# (or when the transaction is undone): a reload that did not happen is retried.
+RELOAD_MARKER = ".ops-deploy-bind-reload-pending"
 
 
 class Refused(Exception):
@@ -158,7 +164,8 @@ def probe(request: dict[str, Any]) -> dict[str, Any]:
     return {
         "files": {item["path"]: file_state(item) for item in request["files"]},
         "remove": removals,
-        "leftovers": leftover_backups(request),
+        "leftovers": leftover_stages(request),
+        "reload_pending": lexists(os.path.join(request["lock_dir"], RELOAD_MARKER)),
         "ufw": ufw_state() if request.get("ufw") else "unchecked",
     }
 
@@ -282,8 +289,13 @@ def remove_stage(dir_fd: int, name: str) -> None:
         os.rmdir(name, dir_fd=dir_fd)
 
 
-def leftover_backups(request: dict[str, Any]) -> list[str]:
-    """Staging directories next to the managed files that still hold backups (``old-*``)."""
+def leftover_stages(request: dict[str, Any]) -> list[str]:
+    """Staging directories of this deploy next to the managed files.
+
+    A successful or fully undone run removes its own; one that is left is from
+    a run that was killed, or that could not restore every file (its backups
+    and any file it could not remove are then still in place).
+    """
 
     directories = sorted(
         {os.path.dirname(item["path"]) for item in request["files"]}
@@ -300,13 +312,9 @@ def leftover_backups(request: dict[str, Any]) -> list[str]:
                 if not entry.startswith(STAGE_PREFIX):
                     continue
                 stage_fd = private_dir(dir_fd, entry)
-                if stage_fd is None:
-                    continue
-                try:
-                    if any(name.startswith("old-") for name in os.listdir(stage_fd)):
-                        found.append(f"{directory}/{entry}")
-                finally:
+                if stage_fd is not None:
                     os.close(stage_fd)
+                    found.append(f"{directory}/{entry}")
         finally:
             os.close(dir_fd)
     return found
@@ -333,17 +341,11 @@ class Transaction:
             dir_fd = open_directory(directory)
             try:
                 for entry in os.listdir(dir_fd):
-                    if not entry.startswith(STAGE_PREFIX):
-                        continue
-                    leftover = private_dir(dir_fd, entry)
-                    if leftover is not None:
-                        try:
-                            backups = [name for name in os.listdir(leftover) if name.startswith("old-")]
-                        finally:
+                    if entry.startswith(STAGE_PREFIX):
+                        leftover = private_dir(dir_fd, entry)
+                        if leftover is not None:
                             os.close(leftover)
-                        if backups:
                             raise Refused(LEFTOVER.format(f"{directory}/{entry}"))
-                    remove_stage(dir_fd, entry)
                 name = STAGE_PREFIX + secrets.token_hex(8)
                 os.mkdir(name, 0o700, dir_fd=dir_fd)
                 stage_fd = private_dir(dir_fd, name)
@@ -466,7 +468,7 @@ def apply(request: dict[str, Any]) -> dict[str, Any]:
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             raise Refused(f"another deploy holds the lock on {request['lock_dir']}") from None
-        leftovers = leftover_backups(request)
+        leftovers = leftover_stages(request)
         if leftovers:
             raise Refused(LEFTOVER.format(", ".join(leftovers)))
         writes, removals = decide(request)
@@ -477,18 +479,33 @@ def apply(request: dict[str, Any]) -> dict[str, Any]:
         # transaction is committed or undone (it is delivered afterwards).
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED)
         try:
-            return transact(request, writes, removals)
+            return transact(request, lock_fd, writes, removals)
         finally:
             signal.pthread_sigmask(signal.SIG_SETMASK, previous)
     finally:
         os.close(lock_fd)
 
 
-def transact(request: dict[str, Any], writes: list[dict[str, Any]], removals: list[str]) -> dict[str, Any]:
+def mark_reload(lock_fd: int) -> bool:
+    """Create the reload marker; whether this call created it."""
+
+    try:
+        fd = os.open(RELOAD_MARKER, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=lock_fd)
+    except FileExistsError:
+        return False
+    os.close(fd)
+    return True
+
+
+def transact(
+    request: dict[str, Any], lock_fd: int, writes: list[dict[str, Any]], removals: list[str]
+) -> dict[str, Any]:
     transaction = Transaction()
     written = []
+    marked = False
     try:
         staged = [(item, *transaction.stage(item)) for item in writes]
+        marked = mark_reload(lock_fd)
         for item, name, inode in staged:
             if transaction.commit(item, name, inode):
                 written.append(item["path"])
@@ -511,6 +528,10 @@ def transact(request: dict[str, Any], writes: list[dict[str, Any]], removals: li
             )
     except BaseException:
         problems = transaction.rollback()
+        if marked and not transaction.keep:
+            # Fully undone: nothing new for named to load.
+            with contextlib.suppress(OSError):
+                os.unlink(RELOAD_MARKER, dir_fd=lock_fd)
         if problems:
             sys.stderr.write(
                 "bind: restore problems: "

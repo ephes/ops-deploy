@@ -54,6 +54,8 @@ from ops_deploy.infra.postgres_install import missing_packages
 from ops_deploy.ops.secret_file import secret_stdin
 
 HOST_SCRIPT = (Path(__file__).parent / "files" / "bind_host.py").read_text()
+# The host script's RELOAD_MARKER, in the config directory (tests check they agree).
+RELOAD_MARKER = ".ops-deploy-bind-reload-pending"
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 
 
@@ -195,8 +197,8 @@ def plan_changes(files: list[Candidate], state: Mapping[str, Any]) -> list[str]:
 
     if state["leftovers"]:
         raise DeployError(
-            f"bind: {', '.join(state['leftovers'])} holds backups of an interrupted or unrestored run; check the "
-            "configuration against them (named-checkconf), then remove the directory by hand"
+            f"bind: {', '.join(state['leftovers'])} is left from an interrupted or unrestored run (backups old-*); "
+            "check the configuration against it (named-checkconf), then remove the directory by hand"
         )
     found = state["files"]
     changes: list[str] = []
@@ -297,11 +299,16 @@ def deploy_bind(cfg: BindConfig, tsig_secrets: Mapping[str, SecretStr] | None = 
         running=True,
         enabled=True,
     )
-    if install is not None:
+    # The transaction leaves a marker that only a successful reload removes, so a
+    # run that ended between the two (a signal, a lost connection) reloads next time.
+    pending = bool(state["reload_pending"])
+    if install is not None or pending:
+        marker = f"{cfg.config_dir}/{RELOAD_MARKER}"
+        reload = shlex.join(["systemctl", "reload", cfg.service_name]) + " && " + shlex.join(["rm", "-f", "--", marker])
         server.shell(
             name=f"Reload {cfg.service_name}",
-            commands=[shlex.join(["systemctl", "reload", cfg.service_name])],
-            _if=install.did_change,
+            commands=[reload],
+            _if=(lambda: True) if pending or install is None else install.did_change,
         )
     if cfg.verify_enabled:
         for zone in cfg.zones:

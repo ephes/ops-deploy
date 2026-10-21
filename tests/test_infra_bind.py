@@ -84,12 +84,14 @@ def probe_output(
     remove: dict[str, str] | None = None,
     ufw: str = "absent",
     leftovers: list[str] | None = None,
+    reload_pending: bool = False,
 ) -> str:
     return json.dumps(
         {
             "files": files_state(cfg, overrides),
             "remove": remove if remove is not None else ({} if cfg.tsig_keys else {cfg.keys_file: "missing"}),
             "leftovers": leftovers or [],
+            "reload_pending": reload_pending,
             "ufw": ufw,
         }
     )
@@ -173,7 +175,8 @@ def test_fresh_host_installs_packages_then_the_validated_configuration(zones_dir
     ]
     commands = result.executed_commands
     assert any("bind9 bind9-utils dnsutils" in command for command in commands)
-    assert commands.index(next(c for c in commands if APPLY in c)) < commands.index("systemctl reload named")
+    reload = next(c for c in commands if c.startswith("systemctl reload named"))
+    assert commands.index(next(c for c in commands if APPLY in c)) < commands.index(reload)
     request = request_of(result, APPLY)
     assert [(item["path"], item["kind"]) for item in request["files"]] == [
         ("/etc/bind/named.conf.keys", "keys"),
@@ -510,5 +513,25 @@ def test_leftover_backups_refuse_before_any_change(zones_dir: Path) -> None:
 
     result = failed(cfg, host(cfg, probe_output(cfg, leftovers=["/etc/bind/.ops-deploy-bind.0123"])))
 
-    assert "/etc/bind/.ops-deploy-bind.0123 holds backups of an interrupted or unrestored run" in str(result.error)
+    assert "/etc/bind/.ops-deploy-bind.0123 is left from an interrupted or unrestored run" in str(result.error)
     assert result.executed_commands == []
+
+
+def test_a_reload_that_did_not_happen_is_retried(zones_dir: Path) -> None:
+    cfg = config(zones_dir)
+
+    result = run(cfg, host(cfg, probe_output(cfg, reload_pending=True)))
+
+    assert result.mutating_changed_ops == [RELOAD]
+    assert "systemctl reload named && rm -f -- /etc/bind/.ops-deploy-bind-reload-pending" in result.executed_commands
+
+    changed = run(
+        cfg, host(cfg, probe_output(cfg, {"/etc/bind/named.conf": {"state": "differs"}}, reload_pending=True))
+    )
+    assert changed.mutating_changed_ops == [INSTALL, RELOAD]
+
+
+def test_the_reload_marker_is_the_host_scripts() -> None:
+    from ops_deploy.infra.bind.deploy import RELOAD_MARKER
+
+    assert f'RELOAD_MARKER = "{RELOAD_MARKER}"' in HOST_SCRIPT

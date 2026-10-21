@@ -18,7 +18,10 @@
   (RFC 2136) zone files are only seeded when neither the file nor its
   journal exists, and never read, replaced or reset; a lone journal, a
   journal next to a changing static zone and non-regular managed paths are
-  refused before any change. Adds an opt-in Docker test against real named
+  refused before any change. Signals wait until the transaction is committed
+  or undone; a staging directory left by a killed or unrestorable run refuses
+  later runs until it is checked by hand; a reload marker makes the next run
+  retry a reload that never happened. Adds an opt-in Docker test against real named
   (`BIND_DOCKER_CONTAINER`, including an `nsupdate` followed by deploys that
   leave the dynamic zone and its journal untouched) and the role's digest to
   the drift manifest.

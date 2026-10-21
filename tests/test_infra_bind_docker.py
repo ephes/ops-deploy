@@ -347,8 +347,24 @@ def test_a_configuration_named_rejects_is_rolled_back_without_a_reload(fixture: 
 
     assert fixture.files() == snapshot
     assert fixture.configured() == configured
+    # No staging directory and no reload marker left behind.
     assert not fixture.sh("ls -A /etc/bind /var/lib/bind | grep ops-deploy-bind || true")
     assert " aa" in fixture.flags("example.test")
+    assert mutating(fixture.deploy(cfg)) == []
+
+
+def test_a_lost_reload_is_retried_once(fixture: Fixture, zones_dir: Path) -> None:
+    cfg = primary(zones_dir)
+    fixture.deploy(cfg)
+    marker = "/etc/bind/.ops-deploy-bind-reload-pending"
+    assert fixture.sh(f"test -e {marker} || echo absent") == "absent"
+    # As a run leaves it that committed the files and ended before its reload.
+    fixture.sh(f"touch {marker}")
+    configured = fixture.configured()
+
+    assert mutating(fixture.deploy(cfg)) == [RELOAD]
+    assert fixture.configured() != configured
+    assert fixture.sh(f"test -e {marker} || echo absent") == "absent"
     assert mutating(fixture.deploy(cfg)) == []
 
 
