@@ -164,7 +164,11 @@ by itself; the roles pin a version and its sha256 (section 6).
    with the archive(s) and `.sha256` files; the job summary prints each
    sha256 and the member sizes (the stripped binary). The release is never
    marked "latest" (`--latest=false`); a semver pre-release version
-   (`0.2.0-rc.1`) becomes a GitHub pre-release.
+   (`0.2.0-rc.1`) becomes a GitHub pre-release. While the repository has no
+   other release, GitHub still shows the newest binary release as "Latest"
+   and returns it from `/releases/latest` (seen with
+   `metrics-httpd-v0.1.0`): nothing may resolve a binary through "latest";
+   the roles pin a version and sha256.
 
 A dry run without tag or release: *Actions → Rust release → Run workflow*
 with a crate (or `gh workflow run rust-release.yml -f crate=metrics-httpd`);

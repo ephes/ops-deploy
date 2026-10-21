@@ -227,7 +227,10 @@ Rules:
   the binary prefixes, and the release workflow ignores everything else.
   GitHub releases created by this workflow are named `<crate> <version>` and
   are created with `make_latest: false`, so the repository's "latest release"
-  never points at a binary.
+  never points at a binary. (As long as the repository has no other
+  release, GitHub falls back to the newest release anyway: after
+  `metrics-httpd-v0.1.0` it showed that one as "Latest". Pins never use
+  "latest".)
 - Job (one per tag, `ubuntu-22.04`, no cargo cache, `permissions: contents:
   read`; only the publish job gets `contents: write`): fmt, clippy, the
   workspace tests — on the runner with the same `--workspace --exclude`

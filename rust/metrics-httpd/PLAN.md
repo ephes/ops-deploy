@@ -13,7 +13,11 @@ implemented (`script` mode, fixture family `script`). S2c implemented
 and the fake `systemctl` of `fixtures/fake-bin/`). S3 implemented: the process-level parity harness
 (`parity/run_parity.py`, `just rust-parity-metrics-httpd`, a step of the
 `rust` CI job) for every mode and the shadow comparer
-`parity/shadow_compare.py` of 10.3. Campaign "Rust-Ports Runde 2"
+`parity/shadow_compare.py` of 10.3. S4 done: release
+`metrics-httpd-v0.1.0` (commit `20d566c4`; archive sha256
+`7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27`,
+stripped binary 2,249,216 bytes = 2.14 MiB, highest `GLIBC_2.34`).
+Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -1091,7 +1095,10 @@ bad units list), access log line format, no credential in any output.
   (excluding bcrypt cost of the existing hashes).
 - Fleet target: ≤ 60 MiB cgroup memory for the 20 processes (Python: 201.7
   MiB).
-- Measured: binary size in the release job summary (S4); per-process
+- Measured: binary size in the release job summary (S4: 0.1.0 is
+  2,249,216 bytes = 2.14 MiB stripped, archive 955,475 bytes; `NEEDED`
+  `libc.so.6`, `libgcc_s.so.1`, `ld-linux-x86-64.so.2`, highest symbol
+  version `GLIBC_2.34`); per-process
   `MemoryCurrent`/`MemoryPeak`/`RssAnon`/`RssFile`/threads during the shadow
   run (S7) and 24 h after each cutover (S9a–S9e), recorded in the reports.
 

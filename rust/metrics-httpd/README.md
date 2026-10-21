@@ -126,9 +126,9 @@ plus its `.sha256`, attached to
 The roles pin a version and that sha256 (`metrics_httpd_rust_version`,
 `metrics_httpd_rust_sha256`, PLAN.md 7.1); no release installs itself.
 
-| Version | Tag | Release |
-|---|---|---|
-| 0.1.0 (S4) | `metrics-httpd-v0.1.0` | first release, all five modes |
+| Version | Tag (commit) | Archive sha256 | Stripped binary |
+|---|---|---|---|
+| 0.1.0 (S4, all five modes) | `metrics-httpd-v0.1.0` (`20d566c4`) | `7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27` | 2,249,216 bytes (2.14 MiB), highest `GLIBC_2.34` |
 
 ## Build and test
 
