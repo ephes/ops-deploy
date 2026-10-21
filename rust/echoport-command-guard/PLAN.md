@@ -354,10 +354,17 @@ S4/S5 enforce each item.
     executable text file without a `#!` line through `/bin/sh`, and it also
     treats `EACCES` differently. So the port implements this loop itself
     over `nix::unistd::execv`; it never calls libc `execvp`/`execvpe`.
-  - Tests (S4 and Layer 3): a shebang-less executable earlier in
-    `SAFE_PATH` gives exit 127 with Python's `ENOEXEC` message in both
-    guards and is never run. So do an `EACCES` entry followed by a valid
-    one, a directory named like the tool, and a missing tool.
+  - Tests (S4 and Layer 3), with expectations taken from CPython and the
+    same for both guards:
+    - A shebang-less executable that is the **only** candidate in
+      `SAFE_PATH` exits 127 with the `ENOEXEC` message ("Exec format
+      error") and is never run by a shell.
+    - A shebang-less executable or a non-executable (`EACCES`) entry
+      **followed by** a valid executable in a later `SAFE_PATH` directory:
+      the later executable runs. The search goes on after those errors.
+    - A directory named like the tool and nothing else: 127 with `EACCES`.
+    - A missing tool: 127 with `ENOENT`.
+    Exit 127 is reserved for searches that find no executable candidate.
 
 ### 3.6 Logging (P1 for identifier, facility, priorities and message prefixes; P2/P3 for the repr text)
 
