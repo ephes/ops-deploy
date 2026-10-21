@@ -27,27 +27,27 @@ Kinds:
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_postgres_dump_and_restore` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests | fixture done (S0); Rust pending (S3a) |
+| `test_postgres_dump_and_restore` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests | done (S0, S3a) |
 | `test_tar_runs_with_umask` | `unit.jsonl` (allowed; foreign, open and symlinked dir; symlinked archive) | Layer-1 runner; `rules::files` unit tests | fixture done (S0); Rust pending (S3b) |
 | `test_uploads_run_as_the_target_owner` | `unit.jsonl` | Layer-1 runner; `rules::transfer` unit tests | fixture done (S0); Rust pending (S3b) |
 | `test_exact_rsync_commands` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_django_chat_shapes` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
-| `test_gotosocial_shapes` | `unit.jsonl` (`.timeout` included) | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
+| `test_django_chat_shapes` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests (scratch restore, runner queries) | fixture done (S0); PostgreSQL, `mktemp`, `rm -rf` done (S3a); `cat >`, `sha256sum` pending (S3b) |
+| `test_gotosocial_shapes` | `unit.jsonl` (`.timeout` included) | Layer-1 runner; `rules::sqlite` unit tests | fixture done (S0); `sqlite3`, `systemctl`, `mktemp`, `rm -rf`, `curl` done (S3a); `chown`, snapshot `cat`, `rm` wal/shm pending (S3b) |
 | `test_policy_rejects_unsafe_entries` | `policy.jsonl` (source `unit`) | `tests/layer1.rs` `policy_fixtures` over `policy.jsonl`; `policy::tests` | done (S1) |
 
 ## Refusals (`GuardRefusals`, 9 tests)
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner; `rules::tests` | unknown tools, prefilter and tokeniser stages done (S1); tool branches pending (S3a, S3b) |
-| `test_host_specific_rules` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
+| `test_arbitrary_commands` | `unit.jsonl` (both policies) | Layer-1 runner; `rules::tests` | unknown tools, prefilter and tokeniser stages done (S1); S3a tool branches done (S3a); S3b tool branches pending (S3b) |
+| `test_host_specific_rules` | `unit.jsonl` | Layer-1 runner | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
 | `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_rsync_options_must_match_exactly` | `unit.jsonl`; `mutation/tools.jsonl` (`rsync-*`) | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_scp_refuses_targets_that_are_not_plain_files` | `unit.jsonl` (lstat recorded); `fs.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_scp_against_a_real_tree` | — (real filesystem) | Layer 2 | pending (S2, S5) |
 | `test_mv_only_onto_new_names_within_one_root` | `unit.jsonl`; `fs.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_django_chat_refusals` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
-| `test_gotosocial_refusals` | `unit.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
+| `test_django_chat_refusals` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
+| `test_gotosocial_refusals` | `unit.jsonl` | Layer-1 runner; `rules::sqlite` unit tests | fixture done (S0); S3a branches done (S3a); S3b branches pending (S3b) |
 
 ## Redirects (`GuardRedirects`, 5 tests)
 
@@ -81,19 +81,19 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_production_db_runners` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
-| `test_staging_db_runners` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
+| `test_production_db_runners` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); `scp` and the other S3b shapes pending (S3b) |
+| `test_staging_db_runners` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); `scp` and the other S3b shapes pending (S3b) |
 | `test_marina_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
 | `test_villakunterbunt_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3b) |
-| `test_django_chat_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
-| `test_gotosocial_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); Rust pending (S3a, S3b) |
+| `test_django_chat_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); `cat >`, `sha256sum` pending (S3b) |
+| `test_gotosocial_runner` | `runner.jsonl` | Layer-1 runner | fixture done (S0); S3a shapes done (S3a); S3b shapes pending (S3b) |
 | `RunnersUseClassicScp.test_scp_helpers_pass_dash_O` | — | n/a: tests the runner templates, not the guard; stays Python | n/a |
 
 ## Other suites
 
 | Python test | Rust counterpart | Status |
 | --- | --- | --- |
-| `tests/test_sqlite_backup_runners.py` (`.timeout`) | `mutation/tools.jsonl` (`sqlite-timeout`: 1, 30000, 999999 accepted; 0, 1000000, `01`, `-1`, extra space, missing `.backup`, order refused) and `sqlite-backup` | fixture done (S0); Rust pending (S3a) |
+| `tests/test_sqlite_backup_runners.py` (`.timeout`) | `mutation/tools.jsonl` (`sqlite-timeout`: 1, 30000, 999999 accepted; 0, 1000000, `01`, `-1`, extra space, missing `.backup`, order refused) and `sqlite-backup`; `rules::sqlite` unit tests | done (S0, S3a) |
 | ops-control `test_echoport_remote_command_guard_policy.py` | `policy.jsonl` (`tests/layer1.rs`) plus the S8 Rust `--check-policy` test | Rust done (S1); ops-control pending (S8) |
 | role molecule verify | runs unchanged for impl `rust` and `shadow` (PLAN.md 6.2) | pending (S6) |
 
@@ -116,9 +116,19 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 
 | Test | What it pins | Status |
 | --- | --- | --- |
-| `tests/layer1.rs` `decision_fixtures` | every decision case: a Rust acceptance equals Python's decision; a refusal outside an unported branch is Python's, with Python's reason (except `p3` and listed cases) | done (S1); tool branches pending (S3a, S3b) |
+| `tests/layer1.rs` `decision_fixtures` | every decision case: a Rust acceptance equals Python's decision; a refusal outside an unported branch is Python's, with Python's reason (except listed cases, and `p3` cases refused by the prefilter or tagged `python-error`); only commands that reach an S3b branch may be pending | done (S1, S3a); S3b branches pending (S3b) |
 | `tests/layer1.rs` `policy_fixtures` | every `--check-policy` document: Python's verdict, normalized policy and error type (message for printable `Refused`/`KeyError`); `p3` documents may only be refused more | done (S1) |
 | `tests/tokeniser.rs` `fixture_commands_split_like_python` | every distinct fixture command past the prefilter splits as `shlex.split` | done (S1) |
 | `tests/tokeniser.rs` `random_commands_split_like_python` | 2,000 seeded random commands (quotes, whitespace, metacharacters, `\`, `#`, control and non-ASCII): past the prefilter, the tokens or the error equal Python's | done (S1) |
 | `tests/cli.rs` | argv grammar (usage exit 2), `--version`, `--check-policy`, forced-command mode refusing until S4 | done (S1) |
 | `prefilter::tests`, `tokens::tests`, `repr::tests`, `env::tests`, `policy::tests`, `rules::tests` | the pre-checks and prefilter (4.1), the raw shapes, Python `repr` (4.3), `normpath`, the strict policy types (4.2), the dispatcher | done (S1) |
+
+## New in S3a (Rust)
+
+| Test | What it pins | Status |
+| --- | --- | --- |
+| `rules::postgres::tests` | every `_check_postgres` branch (`pg_dump` both forms, `dropdb`, `createdb` both forms, `pg_restore` from a temp dump and the scratch restore with its `< file` redirect, `psql` `SELECT 1` and the three runner queries), with Python's reasons | done (S3a) |
+| `rules::sqlite::tests` | `.backup`, `.timeout` 1/30000/999999 and its refused variants, the integrity check, the per-user snapshot match | done (S3a) |
+| `rules::files::tests` | `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du`, the `sh -c` probe (and that a path `shlex.quote` would change allows no script) | done (S3a) |
+| `rules::tests` | `sudo`, `runuser`, `systemctl`, `curl`, `_is_temp_dump`, `_split_in_dir`; only the S3b branches are stubs | done (S3a) |
+| `policy::tests` `scratch_databases`, `mktemp_results` | `Policy.scratch_database`, `_temp_dir_re`, `private_temp_dir`, `snapshot_for_temp_dir` (first match wins) | done (S3a) |

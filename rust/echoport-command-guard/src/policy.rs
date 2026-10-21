@@ -98,6 +98,50 @@ pub struct Policy {
     pub ready_urls: BTreeSet<String>,
 }
 
+impl Policy {
+    /// `Policy.scratch_database` (`guard.py:162-163`): `<prefix>_<digits>` for
+    /// a scratch restore prefix (`re.fullmatch` of the escaped prefix, `_`
+    /// and `[0-9]+`).
+    pub fn scratch_database(&self, name: &str) -> bool {
+        self.scratch_restore_prefixes.iter().any(|prefix| {
+            name.strip_prefix(prefix.as_str())
+                .and_then(|rest| rest.strip_prefix('_'))
+                .is_some_and(|digits| {
+                    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+                })
+        })
+    }
+
+    /// `Policy.private_temp_dir` (`guard.py:165-167`): a directory `mktemp -d`
+    /// can return for one of the policy's `temp_dirs`.
+    pub fn private_temp_dir(&self, path: &str) -> bool {
+        self.temp_dirs
+            .iter()
+            .any(|template| is_mktemp_result(template, path))
+    }
+
+    /// `Policy.snapshot_for_temp_dir` (`guard.py:169-173`): the first
+    /// snapshot whose `temp_dir` template `mktemp -d` turns into `path`.
+    pub fn snapshot_for_temp_dir(&self, path: &str) -> Option<&SqliteSnapshot> {
+        self.sqlite_snapshots
+            .iter()
+            .find(|snapshot| is_mktemp_result(&snapshot.temp_dir, path))
+    }
+}
+
+/// `_temp_dir_re(template).match(path)` (`guard.py:79-82`): what `mktemp -d
+/// <template>` can return, i.e. the template with its trailing `X`s replaced
+/// by as many ASCII letters and digits. The prefix is compared literally (as
+/// `re.escape` makes it). `path` is never a policy value, so Python's `$`
+/// before a final `\n` cannot matter (commands cannot contain `\n`).
+pub fn is_mktemp_result(template: &str, path: &str) -> bool {
+    let prefix = template.trim_end_matches('X');
+    let random = template.len() - prefix.len();
+    path.strip_prefix(prefix).is_some_and(|suffix| {
+        suffix.len() == random && suffix.bytes().all(|b| b.is_ascii_alphanumeric())
+    })
+}
+
 /// The Python exception a policy error corresponds to (PLAN.md 4.3): the
 /// name goes into the log line `policy error (<name>)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -645,6 +689,77 @@ mod tests {
         assert_eq!(missing.kind, PolicyErrorKind::FileNotFound);
         let directory = load_policy(Path::new("/")).unwrap_err();
         assert_eq!(directory.kind, PolicyErrorKind::IsADirectory);
+    }
+
+    #[test]
+    fn scratch_databases() {
+        let policy = Policy {
+            scratch_restore_prefixes: vec!["djangochat_restore".into(), "x".into()],
+            ..Policy::default()
+        };
+        for name in ["djangochat_restore_1", "djangochat_restore_20261015", "x_0"] {
+            assert!(policy.scratch_database(name), "{name}");
+        }
+        for name in [
+            "djangochat_restore",
+            "djangochat_restore_",
+            "djangochat_restore_1a",
+            "djangochat_restore__1",
+            "xdjangochat_restore_1",
+            "djangochat_restore_-1",
+            "y_1",
+            "",
+        ] {
+            assert!(!policy.scratch_database(name), "{name}");
+        }
+        assert!(!Policy::default().scratch_database("x_1"));
+    }
+
+    #[test]
+    fn mktemp_results() {
+        let template = "/var/tmp/djangochat-restore.XXXXXXXX";
+        assert!(is_mktemp_result(
+            template,
+            "/var/tmp/djangochat-restore.Ab12Cd34"
+        ));
+        for path in [
+            "/var/tmp/djangochat-restore.Ab12Cd3",
+            "/var/tmp/djangochat-restore.Ab12Cd345",
+            "/var/tmp/djangochat-restore.Ab12Cd3_",
+            "/var/tmp/djangochat-restore.Ab12Cd3/",
+            "/var/tmp/djangochat-restoreXAb12Cd34",
+            "/tmp/djangochat-restore.Ab12Cd34",
+        ] {
+            assert!(!is_mktemp_result(template, path), "{path}");
+        }
+        // `rstrip("X")` takes every trailing X, also one before the dot.
+        assert!(is_mktemp_result("/tmp/aX.XXXXXX", "/tmp/aX.abcdef"));
+        let policy = Policy {
+            temp_dirs: vec![template.into()],
+            sqlite_snapshots: vec![
+                SqliteSnapshot {
+                    database: "/var/lib/a/a.db".into(),
+                    owner: "a:a".into(),
+                    temp_dir: "/var/tmp/s.XXXXXX".into(),
+                },
+                SqliteSnapshot {
+                    database: "/var/lib/b/b.db".into(),
+                    owner: "b:b".into(),
+                    temp_dir: "/var/tmp/s.XXXXXX".into(),
+                },
+            ],
+            ..Policy::default()
+        };
+        assert!(policy.private_temp_dir("/var/tmp/djangochat-restore.abcdefgh"));
+        assert!(!policy.private_temp_dir("/var/tmp/s.abcdef"));
+        // The first matching snapshot wins (PLAN.md 3.2).
+        assert_eq!(
+            policy
+                .snapshot_for_temp_dir("/var/tmp/s.abcdef")
+                .map(|s| s.owner.as_str()),
+            Some("a:a")
+        );
+        assert_eq!(policy.snapshot_for_temp_dir("/var/tmp/s.abcde"), None);
     }
 
     #[test]

@@ -5,7 +5,8 @@ The plan and contract are in [PLAN.md](PLAN.md), the test map in
 [TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
 hosts run the Python guard.
 
-Status: **S1** (crate skeleton, policy, tokeniser). What exists:
+Status: **S1** (crate skeleton, policy, tokeniser) and **S3a** (the rules
+without filesystem). What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -20,8 +21,16 @@ Status: **S1** (crate skeleton, policy, tokeniser). What exists:
     every command (`echoport-remote-command-guard: command not allowed`,
     exit 1) and never executes anything.
   - `check()` ports the pre-checks, the prefilter (PLAN.md 4.1), the two raw
-    shapes (detected only), the tokeniser and the tool dispatcher. Every tool
-    branch still refuses; S3a and S3b port them.
+    shapes (detected only), the tokeniser and the tool dispatcher (S1), and
+    the branches that need no filesystem (S3a, `src/rules/`): `sudo -u
+    postgres` and `runuser -u postgres --` with every PostgreSQL branch
+    (including the `pg_restore … < file` redirect), `runuser -u <user> --
+    sqlite3` (`.backup`, `.timeout`, the integrity check), `systemctl`,
+    `curl`, `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du`
+    and the `sh -c` probe. The branches that look at the filesystem (the raw
+    `tar` and `cat >` shapes, `scp`, `rsync`, `rm -f` of `-wal`/`-shm`
+    files, `cat`, `sha256sum`, `readlink`, `test`, `mv`, `mkdir`, `chmod`,
+    `chown`) still refuse; S3b ports them.
 - `parity/oracle.py`: the Python guard as the oracle. A module for the
   generator and the tests, and a JSON-lines server (`python3 -I
   parity/oracle.py`) with the ops `ping`, `check`, `split`, `check_policy`
@@ -42,13 +51,17 @@ cargo test -p echoport-command-guard --locked
 The tests:
 
 - `src/**` unit tests: prefilter, tokeniser, `repr`, `normpath`, the policy
-  loader, the dispatcher.
+  loader and its helpers (scratch databases, `mktemp` results), the
+  dispatcher and the S3a rules (`rules::{postgres,sqlite,files}`; their
+  expected reasons are the Python guard's).
 - `tests/layer1.rs`, the Layer-1 runner: every decision and policy case of
   `fixtures/` against the Rust guard, with the case's recorded environment as
   a virtual `GuardEnv`. A Rust acceptance must equal Python's decision. A
-  refusal by a branch that is not ported yet counts as pending. Any other
-  refusal must be Python's, with Python's reason, unless the case has a `p3`
-  tag or is listed in `parity/allowed_differences.json`. Policy cases must
+  refusal by a branch that is not ported yet counts as pending, and only a
+  command that reaches an S3b branch may be pending. Any other refusal must
+  be Python's, with Python's reason, unless the case is listed in
+  `parity/allowed_differences.json`, or has a `p3` tag and is refused by the
+  prefilter or is a `python-error` case. Policy cases must
   give Python's verdict, normalized policy and error type, and Python's
   message for `Refused` and `KeyError` texts in printable ASCII (PLAN.md 4.3).
 - `tests/tokeniser.rs`: the tokeniser against Python's `shlex.split` through

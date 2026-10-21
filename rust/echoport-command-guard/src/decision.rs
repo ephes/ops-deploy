@@ -28,6 +28,17 @@ pub struct Decision {
 }
 
 impl Decision {
+    /// `Decision(argv=argv)`: run `argv` with the inherited umask and no
+    /// redirects.
+    pub fn run(argv: Vec<String>) -> Self {
+        Self {
+            argv,
+            umask: None,
+            stdin: None,
+            stdout: None,
+        }
+    }
+
     /// The decision in the fixtures' `expected` form (PLAN.md 7.2), which is
     /// also what `--decide` prints (S4).
     pub fn to_json(&self) -> Value {
