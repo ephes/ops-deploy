@@ -75,3 +75,6 @@ logyard_ready_url: "http://127.0.0.1:{{ logyard_loki_host_port }}/ready"
 logyard_healthcheck_enabled: true
 logyard_healthcheck_retries: 18
 logyard_healthcheck_delay_seconds: 5
+
+# Optional root containing prepared per-container replacement CA stores.
+logyard_ca_store_root: ""

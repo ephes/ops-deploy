@@ -373,3 +373,6 @@ openclaw_weeknotes_s3_todo_cache_refresh_secs: 120
 openclaw_weeknotes_s3_mc_alias: "weeknotes"
 openclaw_weeknotes_s3_mc_host_path: "/usr/local/bin/mc"
 openclaw_weeknotes_s3_mc_container_path: "/usr/local/bin/mc"
+
+# Prepared replacement CA store; empty keeps the image defaults.
+openclaw_ca_store_path: ""
