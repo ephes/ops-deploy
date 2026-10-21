@@ -1,7 +1,10 @@
 # metrics-httpd: Rust port of the small Python HTTP endpoint daemons — plan
 
-Status: plan; the crate exists as the F1 skeleton (`metrics-httpd --version`
-only, `rust/README.md`), slice S1 is next. Campaign "Rust-Ports Runde 2"
+Status: S1 implemented (core: command line of all five modes,
+`--check-config`, server, auth, Python-compatible JSON, meta, clock,
+fixture generator with drift test, `TESTMAP.md`); every mode answers the
+501/404/401 gate of 4.1, a request past the gate gets 500 `internal_error`
+until its slice S2a–S2e lands. Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -402,11 +405,24 @@ metrics-httpd static --bind A --port N --root DIR [--check-config]
 
 Defaults: `--meta replace`, `--path-match exact`, `--missing-message` the
 backup text, `--request-timeout 10`, `--reboot-flag /var/run/reboot-required`.
+`--bind` takes an IP literal (every role binds `tailscale_ip`, a LAN or a
+loopback address; a host name is a usage error, exit 2); `--port 0` binds a
+free port (tests; the startup line names the address). `--request-timeout`
+and `--script-timeout` take seconds with fractions, more than 0 and at most
+86400. `--path` starts with `/`; `--realm` and `--server-name` are printable
+ASCII without `"` and `\`. logyard-health reads the environment like the
+Python module, with Python's `int()`/`float()` spelling rules (whitespace,
+sign, `_` between digits); an invalid number, a port outside 0–65535, a
+non-IP `LOGYARD_HEALTH_BIND` or a timeout that is not a finite positive
+number is a configuration error (exit 2; Python: a traceback at import or a
+failure per request).
 `--check-config` validates everything the process would need (flags, bind
-address syntax, htpasswd file readable with only bcrypt entries, JSON
-file's directory or script executable present, site root a directory, Loki URL
-`http://`, units list) **without binding**, prints a one-line summary (never
-a hash or password) and exits 0 or 2. At normal startup the binary is as
+address syntax, htpasswd file readable and valid as `htpasswd` reads it, at
+least one entry and only `$2y$`/`$2a$` bcrypt entries (D-6), JSON file's
+directory or script an executable file (`access(X_OK)` as the running
+user), site root a directory, Loki URL `http://`, units list (S2d))
+**without binding**, prints a one-line summary to stdout (never a hash or
+password; problems go to stderr, one line each) and exits 0 or 2. At normal startup the binary is as
 lenient as Python: an unreadable htpasswd file or missing JSON file is a
 per-request 401/503, not a startup failure.
 
@@ -454,9 +470,18 @@ per-request 401/503, not a startup failure.
   status line's reason phrase; Rust uses the standard reason phrase and puts
   the stderr text (≤ 1 KiB, control characters replaced) into the body.
 - **D-4 JSON input strictness.** Python accepts `NaN`, `Infinity`,
-  `-Infinity`, lone surrogates and float literals that overflow to
-  infinity (`1e400`, which Python then serves as `Infinity`); Rust rejects
-  all of them → 502 `invalid_json`. No live file contains them (1.1); S2a
+  `-Infinity`, lone surrogates, float literals that overflow to
+  infinity (`1e400`, which Python then serves as `Infinity`) and nesting
+  deeper than 127 levels (`serde_json`'s recursion limit; Python's is its
+  interpreter recursion limit) and an object key spelled
+  `$serde_json::private::Number` (`serde_json`'s internal number marker
+  under `arbitrary_precision`, which would turn the object into a number);
+  Rust rejects all of them → 502 `invalid_json` (`fixtures/pyjson.json`,
+  cases `d4-*`). An overflowing float that a later duplicate key replaces
+  is accepted, as by Python. A file that is not
+  valid UTF-8 crashes the Python handler (`UnicodeDecodeError` is not
+  caught); Rust answers 502 `invalid_json` (D-2). No live file contains any
+  of them (1.1); S2a
   lists every writer and whether it can emit them
   (`json.dumps(..., allow_nan=True)` default).
 - **D-5 JSON output bytes: none.** Rust reproduces sorted keys, Python
@@ -465,8 +490,8 @@ per-request 401/503, not a startup failure.
   is a Python `int` and is written verbatim, at any size (`serde_json`
   `arbitrary_precision` keeps the lexeme), except `-0`, which Python
   writes as `0`; an int lexeme longer than 4300 digits (CPython's
-  `int_max_str_digits` default, a `ValueError` in Python) → 502
-  `invalid_json` in Rust; every other
+  `int_max_str_digits` default, a `ValueError` in Python, also for a value
+  a later duplicate key replaces) → 502 `invalid_json` in Rust; every other
   lexeme is a Python `float`: parsed to the nearest `f64` and written with
   Python's `float.__repr__` rules. Digits: CPython's `repr` (David Gay
   `dtoa` mode 0) takes the shortest digit string that round-trips and,
@@ -495,11 +520,24 @@ per-request 401/503, not a startup failure.
   with exactly these cases; the parity harness compares bytes for every
   200 response and parsed JSON plus the D-3 rules for errors.
 - **D-6 Auth.** In-process bcrypt verification (no subprocess; fixes the
-  password in argv of `metrics_endpoint`'s `htpasswd -vb`). Only `$2a$`,
-  `$2b$`, `$2y$` hashes (all live files are `$2y$`); other schemes → 401 and
-  `--check-config` fails, so a role never switches to Rust with such a file.
-  Base64 decoding is strict (Python silently drops non-alphabet characters).
-  The file is re-read per request (keeps rotation without restart).
+  password in argv of `metrics_endpoint`'s `htpasswd -vb`), with the rules
+  of the `htpasswd` binary pinned by `fixtures/auth.json` (generated with
+  the real binary): file parsing (leading whitespace, comments, blank lines,
+  a line without `:` invalidates the file, every entry of the user must
+  verify), the password rules of `-vi` (json-file, apt-state: at most 255
+  bytes, one trailing `\n`/`\r\n` removed, cut at NUL) and of `-vb`
+  (script mode: at most 255 bytes, verbatim, a NUL crashes Python and is
+  refused). Only `$2y$` and `$2a$` hashes (all live files are `$2y$`; APR's
+  `htpasswd` refuses `$2b$`, so Rust does too); a `$2a$` hash with a
+  non-ASCII password is refused (APR's `$2a$` safety measure may differ from
+  the `bcrypt` crate); other schemes (MD5 `$apr1$`, `{SHA}`, crypt, `$2x$`)
+  → 401 and `--check-config` fails, so a role never switches to Rust with
+  such a file. Base64 decoding is strict (standard alphabet, canonical
+  padding, as `binascii.a2b_base64(..., strict_mode=True)`; Python's default
+  silently drops non-alphabet characters and excess padding). Every
+  difference is a refusal where Python accepts, never the reverse (checked
+  by `tests/test_metrics_httpd_fixtures.py`). The file is re-read per
+  request (keeps rotation without restart).
 - **D-7 Headers/protocol.** `Server: <server-name> metrics-httpd/<version>`
   instead of `<server-name> Python/3.x`; logyard-health and static answer
   HTTP/1.1 with `Content-Length` and keep-alive (Python: HTTP/1.0, the
@@ -527,6 +565,14 @@ per-request 401/503, not a startup failure.
   decodes both the same. Redirects from Loki are not followed (Python's
   `urlopen` follows them; Loki's endpoints do not redirect). Only `http://`
   Loki URLs (live: `http://127.0.0.1:3101`); `https` fails `--check-config`.
+- **D-14 Request parsing.** hyper drops a `#fragment` from the
+  request-target before the handler sees it (a fragment is not valid in a
+  request, RFC 9112), so `<path>#x` matches in exact mode where Python
+  answers 404 (`fixtures/http_common.json`, case `fragment`), and the
+  access line shows the target without it. Requests hyper refuses
+  (malformed request line or headers, oversized headers, the header-read
+  timeout) get hyper's 400/431 or a closed connection without an access
+  line (Python: its own 400 with a log line). Clients never send either.
 
 ---
 
@@ -535,15 +581,20 @@ per-request 401/503, not a startup failure.
 ```
 rust/metrics-httpd/
   Cargo.toml  build.rs                 # build.rs: commit for --version (as mailgun-relay)
-  src/main.rs                          # CLI (clap), mode dispatch, exit codes
+  src/main.rs                          # mode dispatch, --version, --check-config, runtime, exit codes
+  src/lib.rs                           # the modules below, shared by the binary and the fixture replay
+  src/cli.rs                           # the clap definitions of 4.9 (parsed in process by tests/fixtures.rs)
   src/server.rs                        # hyper http1 server: bind, timeouts, conn limit, SIGTERM, access log, 501/404/401 helpers
   src/auth.rs                          # Basic header parsing, htpasswd parsing, bcrypt verify
   src/pyjson.rs                        # PyCompat serde_json Formatter (sorted keys via BTreeMap, ", "/": ", ensure_ascii), py truthiness, `in`, isinstance-int
   src/meta.rs                          # file stat/read, mtime/served/age, ISO formatting, meta replace/merge
+  src/modes/mod.rs                     # shared flags, the 4.1 gate, the Mode trait, --check-config problems
   src/modes/{json_file,script,apt_state,logyard_health,static_site}.rs
   src/clock.rs                         # injectable clock for tests
-  tests/                               # fixture replay, process e2e
-  fixtures/generate.py, fixtures/*.json, fixtures/htpasswd
+  tests/fixtures.rs, tests/binary.rs   # fixture replay (in process, real sockets), process e2e
+  fixtures/generate.py                 # Python oracle (8.2)
+  fixtures/{pyjson,meta,auth,http_common}.json, fixtures/float_repr/part-*.txt
+  fixtures/htpasswd, htpasswd-mixed, htpasswd-invalid   # committed test-only files (bcrypt cost 4)
   parity/run_parity.py, parity/shadow_compare.py
   TESTMAP.md
 ```
@@ -564,8 +615,9 @@ are small and may stay async via `tokio::fs`, subprocesses via
 | URL query encoding | `form_urlencoded` | D-13 |
 | CLI | `clap` 4 (derive, minimal features) | as the precedents |
 | time | `chrono` (`clock`, `std`) | UTC ISO strings, local time for the access log |
-| uname, process-group kill | `rustix` (`system`, `process`) | `os.uname().release` equivalent; D-8 |
-| tests | `tempfile`, `tokio` test-util | |
+| uname, process-group kill, `access(X_OK)` | `rustix` (`fs` from S1; `system`, `process` in S2b/S2c) | `os.uname().release` equivalent; D-8; `--check-config` of the script |
+| JSON serialisation trait | `serde` (no derive) | the `Formatter` writes `serde_json::Value`s |
+| tests | `tempfile`, `httparse` (reading raw responses in the fixture replay) | |
 
 No hand-rolled HTTP, base64, bcrypt or JSON parsing.
 
@@ -711,8 +763,9 @@ test that replays it; reviewers check coverage per slice.
 `rust/metrics-httpd/fixtures/generate.py` (run with the ops-library venv,
 which has jinja2): renders every Python template with its role defaults (as
 `test_monitoring_pipeline_repair.py` does), imports it, starts its server
-class on an ephemeral loopback port in a thread, and drives a case matrix with
-`http.client`: right/wrong/query/absolute path, no/malformed/wrong/right auth
+class on an ephemeral loopback port in a thread, and drives a case matrix
+with raw requests over a socket (exact methods and targets), reading the
+answers with `http.client`: right/wrong/query/absolute path, no/malformed/wrong/right auth
 (a committed test-only htpasswd file with a bcrypt entry, cost 4, verified by
 the real `htpasswd` binary that the scripts call), missing file, directory,
 unreadable file, invalid JSON, non-object JSON, `meta` present/absent/non-object,
@@ -725,9 +778,23 @@ records the request, the input state, status, `Content-Type`,
 `Content-Length`, `WWW-Authenticate`, body, and a `compare` mode (`bytes`,
 `json`, `error_type_only` for D-3, `status_only` for D-2 crash paths with the
 Rust expectation written next to it). `tests/test_metrics_httpd_fixtures.py`
-(in `just test`) regenerates and fails on drift, so a change to a Python
-script without regenerated fixtures is caught. Rust `tests/fixtures.rs`
-replays every case against the Rust service in-process with the same clock.
+(`just test-metrics-httpd-fixtures`, in `just test`) regenerates and fails on
+drift, so a change to a Python script without regenerated fixtures is
+caught; it also requires every Rust/Python difference to name a D item of
+5.2 and no auth difference to widen access. Rust `tests/fixtures.rs`
+replays every case against the Rust service in-process (real loopback
+sockets, raw requests) with the same clock.
+
+Families and commands (S1): `float_repr`, `pyjson`, `meta` (stdlib only)
+and `auth`, `http_common` (rendered templates and the real `htpasswd`).
+`generate.py write` regenerates in place, `check` compares in memory;
+`--stdlib-only` limits both to the stdlib families. `just
+metrics-httpd-fixtures` writes everything in the venv and then requires
+identical stdlib families under CPython 3.12 and 3.13 (the hosts'
+versions); the drift test repeats that 3.12/3.13 check when `uv` has those
+interpreters. The float fixture is split into `float_repr/part-*.txt` below
+the repository's 1000 KB large-file hook. S2a–S2e extend `http_common`
+(or add a family per mode) with the cases past the gate.
 
 ### 8.3 Parity harness (process level)
 

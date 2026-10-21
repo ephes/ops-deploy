@@ -1,0 +1,2311 @@
+[
+ {
+  "variant": "backup",
+  "template": "roles/backup_metrics_endpoint/templates/backup_metrics_httpd.py.j2",
+  "argv": [
+   "json-file",
+   "--path",
+   "/.well-known/backup",
+   "--json-path",
+   "{json}",
+   "--htpasswd-file",
+   "{htpasswd}",
+   "--realm",
+   "backup-metrics",
+   "--server-name",
+   "backup-metrics-httpd/0.1"
+  ],
+  "cases": [
+   {
+    "id": "no-auth",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-password",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "unknown-user",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic bm9ib2R5OnNlY3JldA=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "malformed-token",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic !!!"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "bearer",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Bearer abc"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-scheme",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "first-header-wins",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ],
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-header-name",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-path-with-auth",
+    "method": "GET",
+    "target": "/.well-known/other",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/other HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "trailing-slash",
+    "method": "GET",
+    "target": "/.well-known/backup/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/backup/ HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "root",
+    "method": "GET",
+    "target": "/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET / HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "percent-encoded",
+    "method": "GET",
+    "target": "/.%77ell-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.%77ell-known/backup HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "query",
+    "method": "GET",
+    "target": "/.well-known/backup?x=1",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/backup?x=1 HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "empty-query",
+    "method": "GET",
+    "target": "/.well-known/backup?",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/backup? HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "fragment",
+    "method": "GET",
+    "target": "/.well-known/backup#frag",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "rust_status": 401,
+    "d": "D-14",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/backup#frag HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "double-slash",
+    "method": "GET",
+    "target": "//.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET //.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "triple-slash",
+    "method": "GET",
+    "target": "///.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET ///.well-known/backup HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "absolute-form",
+    "method": "GET",
+    "target": "http://127.0.0.1/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET http://127.0.0.1/.well-known/backup HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "head",
+    "method": "HEAD",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "",
+    "access_log": "\"HEAD /.well-known/backup HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "post",
+    "method": "POST",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('POST').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"POST /.well-known/backup HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "put",
+    "method": "PUT",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('PUT').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"PUT /.well-known/backup HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "delete",
+    "method": "DELETE",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "484",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('DELETE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"DELETE /.well-known/backup HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "options",
+    "method": "OPTIONS",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "485",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('OPTIONS').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"OPTIONS /.well-known/backup HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "lowercase-get",
+    "method": "get",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('get').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"get /.well-known/backup HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "http10",
+    "method": "GET",
+    "target": "/.well-known/backup",
+    "version": "HTTP/1.0",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"backup-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/backup HTTP/1.0\" 401 -",
+    "compare": "bytes"
+   }
+  ]
+ },
+ {
+  "variant": "tailscale",
+  "template": "roles/tailscale_metrics_endpoint/templates/tailscale_metrics_httpd.py.j2",
+  "argv": [
+   "json-file",
+   "--path",
+   "/.well-known/tailscale",
+   "--json-path",
+   "{json}",
+   "--htpasswd-file",
+   "{htpasswd}",
+   "--realm",
+   "tailscale-metrics",
+   "--server-name",
+   "tailscale-metrics-httpd/0.1",
+   "--path-match",
+   "path-only"
+  ],
+  "cases": [
+   {
+    "id": "no-auth",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-password",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "unknown-user",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic bm9ib2R5OnNlY3JldA=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "malformed-token",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic !!!"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "bearer",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Bearer abc"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-scheme",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "first-header-wins",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ],
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-header-name",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-path-with-auth",
+    "method": "GET",
+    "target": "/.well-known/other",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/other HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "trailing-slash",
+    "method": "GET",
+    "target": "/.well-known/tailscale/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/tailscale/ HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "root",
+    "method": "GET",
+    "target": "/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET / HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "percent-encoded",
+    "method": "GET",
+    "target": "/.%77ell-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.%77ell-known/tailscale HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "query",
+    "method": "GET",
+    "target": "/.well-known/tailscale?x=1",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale?x=1 HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "empty-query",
+    "method": "GET",
+    "target": "/.well-known/tailscale?",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale? HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "fragment",
+    "method": "GET",
+    "target": "/.well-known/tailscale#frag",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale#frag HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "double-slash",
+    "method": "GET",
+    "target": "//.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET //.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "triple-slash",
+    "method": "GET",
+    "target": "///.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET ///.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "absolute-form",
+    "method": "GET",
+    "target": "http://127.0.0.1/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET http://127.0.0.1/.well-known/tailscale HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "head",
+    "method": "HEAD",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "",
+    "access_log": "\"HEAD /.well-known/tailscale HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "post",
+    "method": "POST",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('POST').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"POST /.well-known/tailscale HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "put",
+    "method": "PUT",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('PUT').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"PUT /.well-known/tailscale HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "delete",
+    "method": "DELETE",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "484",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('DELETE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"DELETE /.well-known/tailscale HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "options",
+    "method": "OPTIONS",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "485",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('OPTIONS').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"OPTIONS /.well-known/tailscale HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "lowercase-get",
+    "method": "get",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('get').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"get /.well-known/tailscale HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "http10",
+    "method": "GET",
+    "target": "/.well-known/tailscale",
+    "version": "HTTP/1.0",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"tailscale-metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/tailscale HTTP/1.0\" 401 -",
+    "compare": "bytes"
+   }
+  ]
+ },
+ {
+  "variant": "metrics_endpoint",
+  "template": "roles/metrics_endpoint/templates/metrics_httpd.py.j2",
+  "argv": [
+   "script",
+   "--path",
+   "/.well-known/health",
+   "--script",
+   "{script}",
+   "--script-timeout",
+   "10",
+   "--htpasswd-file",
+   "{htpasswd}",
+   "--realm",
+   "metrics",
+   "--server-name",
+   "metrics-httpd/0.1"
+  ],
+  "cases": [
+   {
+    "id": "no-auth",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-password",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "unknown-user",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic bm9ib2R5OnNlY3JldA=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "malformed-token",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic !!!"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "bearer",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Bearer abc"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-scheme",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "first-header-wins",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ],
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-header-name",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-path-with-auth",
+    "method": "GET",
+    "target": "/.well-known/other",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET /.well-known/other HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "trailing-slash",
+    "method": "GET",
+    "target": "/.well-known/health/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET /.well-known/health/ HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "root",
+    "method": "GET",
+    "target": "/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET / HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "percent-encoded",
+    "method": "GET",
+    "target": "/.%77ell-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET /.%77ell-known/health HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "query",
+    "method": "GET",
+    "target": "/.well-known/health?x=1",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET /.well-known/health?x=1 HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "empty-query",
+    "method": "GET",
+    "target": "/.well-known/health?",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET /.well-known/health? HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "fragment",
+    "method": "GET",
+    "target": "/.well-known/health#frag",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "rust_status": 401,
+    "d": "D-14",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET /.well-known/health#frag HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "double-slash",
+    "method": "GET",
+    "target": "//.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET //.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "triple-slash",
+    "method": "GET",
+    "target": "///.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET ///.well-known/health HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "absolute-form",
+    "method": "GET",
+    "target": "http://127.0.0.1/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "455",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+    "access_log": "\"GET http://127.0.0.1/.well-known/health HTTP/1.1\" 404 -",
+    "compare": "html"
+   },
+   {
+    "id": "head",
+    "method": "HEAD",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "",
+    "access_log": "\"HEAD /.well-known/health HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "post",
+    "method": "POST",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('POST').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"POST /.well-known/health HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "put",
+    "method": "PUT",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('PUT').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"PUT /.well-known/health HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "delete",
+    "method": "DELETE",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "484",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('DELETE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"DELETE /.well-known/health HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "options",
+    "method": "OPTIONS",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "485",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('OPTIONS').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"OPTIONS /.well-known/health HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "lowercase-get",
+    "method": "get",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('get').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"get /.well-known/health HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "http10",
+    "method": "GET",
+    "target": "/.well-known/health",
+    "version": "HTTP/1.0",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"metrics\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/health HTTP/1.0\" 401 -",
+    "compare": "bytes"
+   }
+  ]
+ },
+ {
+  "variant": "os_apt",
+  "template": "roles/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2",
+  "argv": [
+   "apt-state",
+   "--path",
+   "/.well-known/os-apt-maintenance",
+   "--json-path",
+   "{json}",
+   "--htpasswd-file",
+   "{htpasswd}",
+   "--freshness-max-age",
+   "1209600",
+   "--state-max-age",
+   "1296000",
+   "--realm",
+   "os-apt-maintenance",
+   "--server-name",
+   "os-apt-maintenance-httpd/0.1"
+  ],
+  "cases": [
+   {
+    "id": "no-auth",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-password",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "unknown-user",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic bm9ib2R5OnNlY3JldA=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "malformed-token",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic !!!"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "bearer",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Bearer abc"
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-scheme",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "first-header-wins",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ],
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "lowercase-header-name",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "authorization",
+      "Basic dXNlcjp3cm9uZw=="
+     ]
+    ],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "wrong-path-with-auth",
+    "method": "GET",
+    "target": "/.well-known/other",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/other HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "trailing-slash",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/os-apt-maintenance/ HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "root",
+    "method": "GET",
+    "target": "/",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET / HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "percent-encoded",
+    "method": "GET",
+    "target": "/.%77ell-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.%77ell-known/os-apt-maintenance HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "query",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance?x=1",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/os-apt-maintenance?x=1 HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "empty-query",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance?",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/os-apt-maintenance? HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "fragment",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance#frag",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "rust_status": 401,
+    "d": "D-14",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET /.well-known/os-apt-maintenance#frag HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "double-slash",
+    "method": "GET",
+    "target": "//.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET //.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "triple-slash",
+    "method": "GET",
+    "target": "///.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET ///.well-known/os-apt-maintenance HTTP/1.1\" 401 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "absolute-form",
+    "method": "GET",
+    "target": "http://127.0.0.1/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "75",
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"not_found\", \"message\": \"Endpoint not found\"}",
+    "access_log": "\"GET http://127.0.0.1/.well-known/os-apt-maintenance HTTP/1.1\" 404 -",
+    "compare": "bytes"
+   },
+   {
+    "id": "head",
+    "method": "HEAD",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "",
+    "access_log": "\"HEAD /.well-known/os-apt-maintenance HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "post",
+    "method": "POST",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('POST').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"POST /.well-known/os-apt-maintenance HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "put",
+    "method": "PUT",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ],
+     [
+      "Content-Length",
+      "0"
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('PUT').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"PUT /.well-known/os-apt-maintenance HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "delete",
+    "method": "DELETE",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "484",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('DELETE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"DELETE /.well-known/os-apt-maintenance HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "options",
+    "method": "OPTIONS",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "485",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('OPTIONS').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"OPTIONS /.well-known/os-apt-maintenance HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "lowercase-get",
+    "method": "get",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.1",
+    "headers": [
+     [
+      "Authorization",
+      "Basic dXNlcjpzZWNyZXQ="
+     ]
+    ],
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('get').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": "\"get /.well-known/os-apt-maintenance HTTP/1.1\" 501 -",
+    "compare": "html"
+   },
+   {
+    "id": "http10",
+    "method": "GET",
+    "target": "/.well-known/os-apt-maintenance",
+    "version": "HTTP/1.0",
+    "headers": [],
+    "status": 401,
+    "response_headers": {
+     "Content-Type": null,
+     "Content-Length": "0",
+     "WWW-Authenticate": "Basic realm=\"os-apt-maintenance\"",
+     "Connection": null
+    },
+    "body": "",
+    "access_log": "\"GET /.well-known/os-apt-maintenance HTTP/1.0\" 401 -",
+    "compare": "bytes"
+   }
+  ]
+ },
+ {
+  "variant": "logyard",
+  "template": "roles/logyard_deploy/templates/logyard_health_httpd.py.j2",
+  "argv": [
+   "logyard-health"
+  ],
+  "env": {
+   "LOGYARD_HEALTH_PATH": "/.well-known/logyard"
+  },
+  "cases": [
+   {
+    "id": "wrong-path",
+    "method": "GET",
+    "target": "/.well-known/other",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "logyard-404",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null,
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\":\"not_found\"}",
+    "access_log": null
+   },
+   {
+    "id": "root",
+    "method": "GET",
+    "target": "/",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "logyard-404",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null,
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\":\"not_found\"}",
+    "access_log": null
+   },
+   {
+    "id": "query",
+    "method": "GET",
+    "target": "/.well-known/logyard?x=1",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "logyard-404",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null,
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\":\"not_found\"}",
+    "access_log": null
+   },
+   {
+    "id": "trailing-slash",
+    "method": "GET",
+    "target": "/.well-known/logyard/",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "logyard-404",
+    "status": 404,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null,
+     "WWW-Authenticate": null,
+     "Connection": null
+    },
+    "body": "{\"error\":\"not_found\"}",
+    "access_log": null
+   },
+   {
+    "id": "head",
+    "method": "HEAD",
+    "target": "/.well-known/logyard",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "html",
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "",
+    "access_log": null
+   },
+   {
+    "id": "post",
+    "method": "POST",
+    "target": "/.well-known/logyard",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "html",
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "482",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('POST').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": null
+   },
+   {
+    "id": "lowercase-get",
+    "method": "get",
+    "target": "/.well-known/logyard",
+    "version": "HTTP/1.1",
+    "headers": [],
+    "compare": "html",
+    "status": 501,
+    "response_headers": {
+     "Content-Type": "text/html;charset=utf-8",
+     "Content-Length": "481",
+     "WWW-Authenticate": null,
+     "Connection": "close"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('get').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+    "access_log": null
+   }
+  ]
+ }
+]

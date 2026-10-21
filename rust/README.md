@@ -7,7 +7,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
-| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | skeleton (F1): only `metrics-httpd --version` |
+| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate, the mode bodies arrive with S2a–S2e ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
 | `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | crate skeleton (S1): `--version`, `--check-policy`, prefilter and tokeniser; every command still refused |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
@@ -28,7 +28,7 @@ rust/
   LICENSE               MIT, packed into every release archive
   scripts/              stdlib Python helpers for CI (ci_excludes.py) and releases
                         (release_checks.py), with tests and testdata/
-  metrics-httpd/        crate + binary `metrics-httpd`
+  metrics-httpd/        crate + binary `metrics-httpd`, plan, TESTMAP, Python-generated fixtures
   echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures
 ```
 

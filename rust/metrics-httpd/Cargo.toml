@@ -12,3 +12,21 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }
+bytes = "1.12.1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio", "server", "server-graceful", "http1"] }
+rustix = { version = "1.1.5", default-features = false, features = ["std", "fs"] }
+serde = { version = "1.0.229", default-features = false, features = ["std"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+tokio = { version = "1.54.0", features = ["rt", "net", "time", "signal", "sync", "macros", "io-util"] }
+
+[dev-dependencies]
+httparse = "1.10.1"
+tempfile = "3.27.0"
