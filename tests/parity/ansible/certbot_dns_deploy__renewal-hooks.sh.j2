@@ -1,0 +1,23 @@
+#!/bin/bash
+set -uo pipefail
+
+# Managed by Ansible - commands run after certificate renewal
+
+{% if certbot_dns_renewal_hooks | length == 0 %}
+exit 0
+{% else %}
+hook_status=0
+{% for hook in certbot_dns_renewal_hooks %}
+(
+  set -e
+{{ hook }}
+)
+hook_rc=$?
+if [ "$hook_rc" -ne 0 ]; then
+  printf 'Certbot renewal hook item {{ loop.index }} failed (rc=%s) lineage=%s\n' \
+    "$hook_rc" "${RENEWED_LINEAGE:-unknown}" >&2
+  hook_status=1
+fi
+{% endfor %}
+exit "$hook_status"
+{% endif %}

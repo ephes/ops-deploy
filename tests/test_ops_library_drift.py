@@ -6,8 +6,8 @@ stop restarting Traefik, skip entries on restore) without touching a
 template. With ``OPS_LIBRARY_PATH`` set to a checkout of ops-library's main
 branch, the tests here fail when
 
-- a role file vendored under ``services/*/files`` differs from the role's or
-  is gone, and
+- a role file vendored under ``services/*/files`` or ``infra/files`` differs
+  from the role's or is gone, and
 - a role a port mirrors changed since the port was last checked against it:
   ``tests/parity/ops_library_roles.json`` records a digest of each role's
   behaviour (tasks, handlers, defaults, vars, files, templates).
@@ -28,15 +28,16 @@ from pathlib import Path
 import pytest
 
 OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
-SERVICES = Path(__file__).parents[1] / "src" / "ops_deploy" / "services"
+PACKAGE = Path(__file__).parents[1] / "src" / "ops_deploy"
 MANIFEST = Path(__file__).parent / "parity" / "ops_library_roles.json"
 # Below a role: what decides its behaviour (not README, meta or Molecule).
 BEHAVIOUR = ("defaults", "files", "handlers", "tasks", "templates", "vars")
-# ``services/<service>/files/<name>``: ``roles/<role>/files/<name>``, byte for byte.
+# ``<package dir>/files/<name>``: ``roles/<role>/files/<name>``, byte for byte.
 VENDORED_FILES = {
-    "delve/files/apple-storekit-root-certs.pem": "delve_deploy",
-    "fastdeploy/files/ensure_token_user.py": "fastdeploy_deploy",
-    "fastdeploy/files/sudoers_blanket_check.py": "fastdeploy_restore",
+    "infra/files/certbot_stray_guard.py": "certbot_dns_deploy",
+    "services/delve/files/apple-storekit-root-certs.pem": "delve_deploy",
+    "services/fastdeploy/files/ensure_token_user.py": "fastdeploy_deploy",
+    "services/fastdeploy/files/sudoers_blanket_check.py": "fastdeploy_restore",
 }
 
 needs_ops_library = pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
@@ -68,7 +69,7 @@ def test_vendored_role_files_match_ops_library(vendored: str) -> None:
     source = Path(OPS_LIBRARY, "roles", VENDORED_FILES[vendored], "files", Path(vendored).name)
 
     assert source.is_file(), f"{source} is gone; the port still ships {vendored}"
-    assert (SERVICES / vendored).read_bytes() == source.read_bytes(), f"{source} changed; re-vendor and re-check"
+    assert (PACKAGE / vendored).read_bytes() == source.read_bytes(), f"{source} changed; re-vendor and re-check"
 
 
 @needs_ops_library
