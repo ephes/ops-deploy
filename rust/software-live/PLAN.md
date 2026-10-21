@@ -766,9 +766,26 @@ software_live_rust_keep_versions: 3
 software_live_rust_shadow: false      # shadow units, section 8.1
 ```
 
-Tasks (`tasks/rust.yml`, `tasks/impl.yml`, `tasks/verify_impl.yml`, after
-the policy and endpoint configuration and before the units):
+Tasks (`tasks/rust.yml`, `tasks/impl.yml`, `tasks/verify_impl.yml`,
+`tasks/rust_pins.yml`, after the policy and endpoint configuration and
+before the units):
 
+0. **Live state** (read only, before any task of this list changes
+   anything): `_software_live_protect` collects every version this host
+   runs or is configured to run right now, each parsed from a path of the
+   form `{{ software_live_install_dir }}/releases/<version>/software-live`:
+   the `ExecStart=` of the existing production drop-ins of step 4 (endpoint
+   and collector `impl.conf`), the `ExecStart=` of the existing shadow units
+   (8.1), and `readlink /proc/<MainPID>/exe` of the running production and
+   shadow endpoints. A Python command contributes nothing. A drop-in or
+   shadow unit that exists but cannot be read, or whose command names a
+   path under `releases/` that does not parse, sets
+   `_software_live_live_unknown`; then step 7 does not prune in this play
+   (fail closed: unknown live state never leads to a deletion).
+   `_software_live_last_live` is the version in the existing
+   `.pins/software-live` (the version last verified live in the production
+   units, step 7), or, when that pin is absent, the version of the running
+   production endpoint's executable, if it is a Rust release.
 1. Assert `software_live_impl in ['python', 'rust']`. **Rollback first:**
    when impl is `python`, the drop-ins of step 4 are removed and the
    handlers are flushed right away (`meta: flush_handlers`: daemon reload,
@@ -818,14 +835,35 @@ the policy and endpoint configuration and before the units):
    and `readlink /proc/<MainPID>/exe` equals the versioned binary (rust), or
    `/proc/<MainPID>/cmdline` contains `software_live.py serve` (python);
    collector `ExecMainStatus=0` and `state.json` newer than the run start.
-7. Only after 6 succeeded, pin and prune with F3: `tasks_from: pin`
-   writes `.pins/software-live` with the version the production units run
-   (impl `rust`) or removes it (impl `python`); with the shadow on,
-   `.pins/software-live-shadow` names the shadow units' version and is
-   removed when the shadow is turned off. Then `tasks_from: prune` with
-   `keep_versions` (asserted ≥ 2, so the previous version stays for a
-   Rust-to-Rust rollback) keeps the newest versions plus every pinned one.
-   F3 never prunes after a failure in the same play.
+7. Only after 6 succeeded, pin and prune with F3 (`tasks/rust_pins.yml`;
+   it executes no release binary, so with impl `python` it runs after the
+   units already run Python and cannot block the rollback):
+   - **Rollback pin first.** When `_software_live_last_live` (step 0) is
+     set and differs from the version now verified live (or impl is
+     `python`), F3's `previous` rollback pin of consumer `software-live`
+     moves to `_software_live_last_live`; otherwise it stays as it is. It
+     never moves in a play whose verification (step 6) failed, so it
+     always names a version that really ran in the production units
+     before the current one. Example: v1 live; switch to v2 → previous v1;
+     roll back to v1 → previous v2; switch to v3 → previous v1. The version
+     a Rust-to-Rust rollback returns to is therefore always installed,
+     independent of `keep_versions` and of the order of installs.
+   - **Pins.** `tasks_from: pin` writes `.pins/software-live` with the
+     version the production units run (impl `rust`) or removes it (impl
+     `python`); with the shadow on, `.pins/software-live-shadow` names the
+     shadow units' version and is removed when the shadow is turned off.
+   - **Prune.** Unless `_software_live_live_unknown` is set,
+     `tasks_from: prune` with `keep_versions` (asserted ≥ 2) and
+     `protect: {{ _software_live_protect }}` (step 0). F3 keeps the newest
+     `keep_versions` versions, every pinned version, the `previous` pin
+     and every protected version, and never prunes after a failure in the
+     same play. The protect list covers live state that no pin names yet,
+     e.g. a drop-in left by an earlier play whose verification failed.
+
+   The mechanism (the `protect` input and the `previous` pin, their file
+   format and F3's own tests) is F3's (7.4, owner decision 2026-10-21);
+   this role only fills them from the live state and moves `previous` only
+   after verification.
 8. `software_live_remove` also removes both drop-in directories and the
    shadow units.
 9. Secrets: no new secret, no `environment:` under `become_user`
@@ -837,6 +875,23 @@ include files unchanged, CHANGELOG entry under "Unreleased" (never bump
 `galaxy.yml`). Tests in `tests/test_software_live_impl.py` render the
 templates and drop-ins for both impls and both variants, check the
 variable validation, and that `nyxmon_checks.py` is installed in every mode.
+An `ansible-playbook` run against localhost (as F3's test, with a temporary
+install directory and fake versioned archives) runs step 0 and
+`tasks/rust_pins.yml` with given drop-ins and verification results and
+asserts:
+
+- the sequence v1 → v2 → v1 (rollback) → v3 with `keep_versions: 2`
+  keeps v1 (the `previous` pin) next to v3 and v2; continuing with v4,
+  v3 stays as `previous` and v1 and v2 are pruned;
+- a production drop-in naming a version that no pin names (left by a play
+  whose verification failed) protects that version from the prune of a
+  later successful play;
+- a failed verification moves neither `.pins/software-live` nor the
+  `previous` pin and prunes nothing;
+- an unreadable or unparseable drop-in or shadow unit skips the prune;
+- switching from `rust` to `python` removes the production pin, sets
+  `previous` to the last Rust version, and keeps that version installed;
+- a re-run with the same version moves nothing and reports no change.
 
 ### 7.4 Requirements on F1, F2 and F3 (to be agreed with the foundation stream)
 
@@ -848,6 +903,22 @@ variable validation, and that `nyxmon_checks.py` is installed in every mode.
   `[licenses.private] ignore` already covers unpublished members), as the
   foundation's "explicit line with the crate that brings it" rule demands.
   `rust/` is excluded from the collection build by F1, not by this stream.
+- **Dependency-graph check** (foundation sections 2 and 9, assigned to
+  this stream; S3d delivers it together with the deny exception). The
+  exception is scoped by crate, not by consumer, so `cargo deny` alone
+  would let any member depend on `rust-apt`. S3d adds a subcommand to
+  F2's `rust/scripts/release_checks.py` (e.g. `apt-isolation`) that reads
+  the `resolve` graph of `cargo metadata --format-version 1 --locked
+  --all-features` (no `--filter-platform`; normal, build and dev edges)
+  and fails when `rust-apt` is reachable from any workspace member other
+  than `software-live-apt`, including through a member that depends on
+  `software-live-apt` itself. CI rejects such a change: the default `rust`
+  job runs the check (`cargo metadata` needs no libapt-pkg, so it runs on
+  `ubuntu-22.04` although that job does not build the helper), and the F2
+  release job runs it before packing. Unit tests with metadata fixtures:
+  a direct, a transitive, a build-only, a dev-only and a feature-gated
+  path from another member each fail; `rust-apt` reachable only from the
+  helper passes; a graph without `rust-apt` passes.
 - **F1** (CI): a job that builds and tests `software-live-apt` inside
   `ubuntu:24.04` and `debian:13` with `libapt-pkg-dev` and a C++ compiler
   (S3d adds it to `rust.yml`); the default `rust` job on `ubuntu-22.04`
@@ -862,6 +933,15 @@ variable validation, and that `nyxmon_checks.py` is installed in every mode.
 - **F3** (install role): an input for additional archive members (here
   `software-live-apt` and `LICENSE.GPL-3.0`) next to `<name>` and `LICENSE`,
   installed with the same ownership and modes.
+- **F3** (version protection, owner decision 2026-10-21, given to F3):
+  `prune` never deletes (a) a version in an explicit `protect` list that
+  the consuming role fills from the live state, or (b) the consumer's
+  separate `previous` rollback pin, which the consumer moves only after a
+  new version is verified live. F3 owns the mechanism (inputs, pin file,
+  its own tests, `PLAN-foundation.md` 6.2); this stream's duties are the
+  consumer side of 7.3 (step 0 fills `protect` from the drop-ins, the
+  shadow units and `/proc/<MainPID>/exe`; step 7 moves `previous` only
+  after step 6) and the S6 tests listed there.
 
 Whatever F2 or F3 does not provide when S6/S7 start, S6 (F3 input) and S7
 (F2 matrix) add to the foundation's files in agreement with the foundation
@@ -893,8 +973,10 @@ install mechanism.
 - Emergency on the host (until S12):
   `rm /etc/systemd/system/software-live-{endpoint,collector}.service.d/impl.conf && systemctl daemon-reload && systemctl restart software-live-endpoint.service && systemctl start software-live-collector.service`,
   then flip the inventory before the next deploy.
-- Rust to Rust: set the previous version and checksums; the version
-  directory is still installed (7.3 step 7).
+- Rust to Rust: set the version and checksums that F3's `previous` pin of
+  consumer `software-live` names (the version the production units ran
+  before the current one); prune never removes it, so its directory is
+  still installed (7.3 step 7).
 - After S12: revert the S12 commit and redeploy (the Python file remains in
   the repository, 9 S12).
 
@@ -1004,12 +1086,12 @@ Hours are for one worker.
 | S3a | Upstream lookups and caches (GitHub, endoflife.date), cross-implementation cache compatibility, TLS via system store | S2 | yes (with S3b–S3e, S4) | no | 3 |
 | S3b | Traefik observation: MainPID, `/proc` link checks, pinned-descriptor execution, identity checks, retry | S2 | yes | no | 3 |
 | S3c | OS and PostgreSQL observation: os-release, lifecycle evaluation, `pg_lsclusters`, pinned postmaster probe | S2 | yes | no | 3 |
-| S3d | `software-live-apt` helper (`rust-apt`, GPL-3.0-or-later, `LICENSE.GPL-3.0`, `cargo-deny` exception) and its invocation from `collect`; variant container CI job (7.4) | S1, S2, F1 | yes | no | 4 |
+| S3d | `software-live-apt` helper (`rust-apt`, GPL-3.0-or-later, `LICENSE.GPL-3.0`, `cargo-deny` exception) and its invocation from `collect`; variant container CI job; the dependency-graph check that CI uses to reject `rust-apt` reachability from every member except `software-live-apt`, with its fixture tests (7.4) | S1, S2, F1, F2 (`release_checks.py`) | yes | no | 5 |
 | S3e | `export-inventory`: safe source read, projection, atomic write with group; Python reader accepts Rust output | S2 | yes | no | 2 |
 | S3f | `collect` orchestration: order, `generated_at_epoch`, atomic state write, `--report-usage` | S3a–S3e | no | no | 2 |
 | S4 | `serve`: endpoint on hyper behind the `Endpoint` boundary (5.4), bind check, Basic auth with bcrypt, `htpasswd` fixtures, freshness | S2 | yes (with S3*) | no | 3 |
 | S5 | Parity harness (6.2) incl. the container collect cases; fixes found by it | S3f, S4 | yes (with S6) | no | 4 |
-| S6 | Role switch (7.3): impl selector, variant detection, install/pin/prune via the F3 role (plus the extra-members input, 7.4, if F3 lacks it), candidate validation, drop-ins, verification, shadow units (8.1), `software_live_remove` update, README, CHANGELOG, tests | F3, S2 (CLI contract) | yes (from S2 on) | no | 4 |
+| S6 | Role switch (7.3): impl selector, variant detection, install/pin/prune via the F3 role (plus the extra-members input, 7.4, if F3 lacks it), live-state `protect` list and `previous` rollback pin (7.3 steps 0 and 7) with the localhost sequence tests, candidate validation, drop-ins, verification, shadow units (8.1), `software_live_remove` update, README, CHANGELOG, tests | F3 (incl. `protect` and `previous`), S2 (CLI contract) | yes (from S2 on) | no | 4 |
 | S7 | Release `software-live-v0.1.0`: F2 workflow extension for the variants and the tag prefix (7.4), release checks, tag | F2, S5 | no | no (GitHub release only) | 3 |
 | S8 | ops-control (7.5): group/host vars with the pins and `impl: python`, shadow flag, version pre-task, runbook in `docs/SOFTWARE_LIVE.md`; the coordinator's collection release commit containing S6 (8.2) is a precondition for S9 | S6, S7 | no | no | 2 |
 | S9 | Shadow on staging, then on macmini, fractal, production (deploy with `shadow: true`, impl python); ≥ 24 h; `shadow_compare.py` reports; lean measurements | S8, coordinator's collection release containing S6 (8.2) | yes (S11 in parallel) | yes (new shadow units only) | 2 + soak |
@@ -1021,7 +1103,8 @@ Parallelism:
 
 - From the start: S1 (spike), and as soon as F1 lands, S2. S6 needs F3,
   S7 needs F2; both foundation slices run in parallel with S2–S5.
-- After S2: S3a, S3b, S3c, S3d (needs S1), S3e, S4 and S6 (needs F3) concurrently
+- After S2: S3a, S3b, S3c, S3d (needs S1 and F2's `release_checks.py`;
+  F2 runs in parallel with S2), S3e, S4 and S6 (needs F3) concurrently
   (up to seven workers; they touch separate modules or the role).
 - After S3a–S3e: S3f; after S3f and S4: S5. S6 can finish meanwhile.
 - After S8: S9 and S11 concurrently; S10 after S9.
@@ -1073,6 +1156,8 @@ allocator is considered.
 | GitHub API rate limit (60/h unauthenticated per IP) | daily cache per host; the shadow adds one request per host and day |
 | endoflife.date schema change | same fail-closed handling as Python (`upstream_unknown`) |
 | APT lists change between the Python and the shadow run | `shadow_compare.py` explains differences by time; repeated runs |
+| Prune removes the version a Rust-to-Rust rollback needs, or one a unit still runs | F3 `previous` pin moved only after verification, `protect` list from the live drop-ins and processes, no prune on unknown live state, localhost sequence tests (7.3) |
+| A member other than the helper pulls in `rust-apt` (GPL) | dependency-graph check in CI and in the release job (7.4, S3d) |
 | Concurrent production work on fractal and production (8.2) | coordinator check before those cutovers |
 | ops-control CI is red at `test-software-inventory` (unrelated eMudhra work) | S8/S11 run the targeted tests and record the pre-existing failure; this stream does not fix it |
 | Graphyard Atlas step open | this stream changes neither `graphyard_vector` nor ingest tokens; the projection format is unchanged |
@@ -1117,4 +1202,11 @@ Campaign-wide decisions that bind this stream:
   stream's production steps do not overlap it (8.2).
 - **Review rounds.** A slice, and a plan, may get a third review round over
   the repair delta of round 2; if round 3 is not clean, the worker stops and
-  reports (section 9).
+  reports (section 9). For this plan the owner allowed one fourth round
+  over the repair delta of round 3 (2026-10-21); the slice rule of
+  section 9 is unchanged.
+- **Version protection** (2026-10-21, built into F3): prune never deletes
+  a version in the consumer's `protect` list (filled from the live state)
+  or the consumer's `previous` rollback pin (moved only after a new
+  version is verified live). This stream fills both (7.3 steps 0 and 7,
+  7.4) and tests the consumer side in S6.
