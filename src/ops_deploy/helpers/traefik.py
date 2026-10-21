@@ -9,6 +9,8 @@ Replaces ``webapp_deploy_internal`` ``traefik_config`` and the per-role
 - The hash already in the deployed file is reused when it still matches the
   password. bcrypt salts are random, so re-hashing every run (what the roles
   do) would rewrite the file and restart Traefik on every deploy.
+- A route file that holds a hash, now or on the host, is written with
+  ``secret_file``: pyinfra's ``--diff`` would print the old and new hash.
 """
 
 from __future__ import annotations
@@ -30,7 +32,9 @@ from pyinfra.facts.files import FileContents
 from pyinfra.operations import files, systemd
 from pyinfra.operations.util import any_changed
 
+from ops_deploy.core.secrets import SecretContent
 from ops_deploy.core.templates import render
+from ops_deploy.ops.secret_file import secret_file
 
 DYNAMIC_DIR = PurePosixPath("/etc/traefik/dynamic")
 BCRYPT_COST = 5  # htpasswd -B default, which the Ansible roles use
@@ -52,6 +56,8 @@ _MIDDLEWARE = r"^[A-Za-z0-9@_-]+$"
 _YAML_SAFE = r"^[^\"\\\n]*$"
 _DURATION = r"^[0-9]+(ms|s|m|h)$"
 _HASH_LINE = re.compile(r'^\s*- "(?P<user>[^:"]+):(?P<hash>\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53})"\s*$')
+# Any htpasswd hash marker (bcrypt, apr1, SHA1), well formed or not: never diffed.
+_HASH_MARK = re.compile(r"\$(2[abxy]?|apr1)\$|\{SHA\}")
 
 Hostname = Annotated[str, Field(pattern=_HOSTNAME, max_length=253)]
 
@@ -178,17 +184,16 @@ RouteRenderer = Callable[[TraefikRoute, str | None], str]
 def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[StringCommand, None, None]:
     # The hash depends on the deployed file, so it is resolved inside the
     # operation (per host, at plan and execution time) rather than up front.
+    current = host.get_fact(FileContents, path=str(route.path))
     auth_hash = None
     if route.basic_auth is not None:
-        current = existing_hash(host.get_fact(FileContents, path=str(route.path)), route.basic_auth.user)
-        auth_hash = resolve_hash(route.basic_auth, current)
-    yield from files.put._inner(
-        src=StringIO(renderer(route, auth_hash)),
-        dest=str(route.path),
-        user="root",
-        group="root",
-        mode="0644",
-    )
+        auth_hash = resolve_hash(route.basic_auth, existing_hash(current, route.basic_auth.user))
+    text = renderer(route, auth_hash)
+    if any(_HASH_MARK.search(line) for line in (*(current or ()), *text.splitlines())):
+        # files.put --diff prints both versions: write it like a secret, which never shows content.
+        yield from secret_file._inner(route.path, SecretContent(text), user="root", group="root", mode="0644")
+        return
+    yield from files.put._inner(src=StringIO(text), dest=str(route.path), user="root", group="root", mode="0644")
 
 
 def traefik_route(

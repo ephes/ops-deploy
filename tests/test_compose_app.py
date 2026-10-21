@@ -313,7 +313,7 @@ def test_secrets_never_reach_commands_uploads_or_op_arguments(cfg: ComposeAppCon
         if key in ("tz", "vpn_forwarded_port", "vpn_addresses", "basic_auth_user"):
             continue
         assert value not in text, key
-    route = run.upload(ROUTE).decode()
+    route = run.written(ROUTE).decode()
     assert SECRET_VALUES["basic_auth_password"] not in route
 
 
@@ -336,7 +336,7 @@ def test_stdin_probe_payloads_are_redacted_in_pyinfra_logs(
 
 def test_second_run_after_a_stamp_is_a_no_op_also_for_the_route(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
     first = deploy(cfg, secrets, {**fakehost.UBUNTU})
-    route = first.upload(ROUTE).decode()
+    route = first.written(ROUTE).decode()
 
     responses = converged(cfg, secrets)
     responses.update(fakehost.file(ROUTE, route))
@@ -726,7 +726,7 @@ def test_port_checks_match_addresses_literally(cfg: ComposeAppConfig, tmp_path: 
 
 def test_the_route_has_no_router_on_the_http_entrypoint(cfg: ComposeAppConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, secrets, {**fakehost.UBUNTU})
-    doc = yaml.safe_load(run.upload(ROUTE).decode())
+    doc = yaml.safe_load(run.written(ROUTE).decode())
 
     assert set(doc["http"]["routers"]) == {"vpnstack-int", "vpnstack-ext"}
     for router in doc["http"]["routers"].values():

@@ -1,9 +1,12 @@
 """Deploy-level scenarios for jellyfin against the fake connector."""
 
+import logging
+import re
 from typing import Any
 
 import pytest
 from pydantic import SecretStr
+from pyinfra.api import Config
 
 from ops_deploy.core import ConfigValidationError
 from ops_deploy.helpers import BasicAuth
@@ -129,7 +132,7 @@ def test_first_run_installs_everything(cfg: JellyfinConfig) -> None:
     assert "jellyfin" in install
     assert "apache2-utils" in install
     assert "jellyfin-ffmpeg6" not in install  # picked by the install step, after the cache refresh
-    assert {LIST, ROUTE} <= set(run.uploaded_paths)
+    assert {LIST, ROUTE} <= set(run.written_paths)
     assert run.upload(LIST).decode() == repository_line(cfg)
     assert f"{P}Install Jellyfin repository key" in run.mutating_changed_ops
     assert "systemctl enable jellyfin.service" in commands
@@ -168,7 +171,7 @@ def test_converged_route_keeps_the_deployed_hash(cfg: JellyfinConfig) -> None:
     second = deploy(cfg, converged(cfg))
 
     assert f"{P}Write Traefik route jellyfin" not in first.changed_ops + second.changed_ops
-    assert ROUTE not in first.uploaded_paths + second.uploaded_paths
+    assert ROUTE not in first.written_paths + second.written_paths
 
 
 def test_password_rotation_only_rewrites_the_route(cfg: JellyfinConfig) -> None:
@@ -177,10 +180,35 @@ def test_password_rotation_only_rewrites_the_route(cfg: JellyfinConfig) -> None:
     run = deploy(cfg, converged(cfg), basic_auth=rotated)
 
     assert run.mutating_changed_ops == changed("Write Traefik route jellyfin")
-    route = run.upload(ROUTE).decode()
+    route = run.written(ROUTE).decode()
     assert _HASH not in route
     assert '          - "admin:$2y$05$' in route
     assert not any("traefik" in c and "systemctl" in c for c in run.executed_commands)
+
+
+@pytest.mark.parametrize("scenario", ["rotated", "drift", "converged"])
+def test_diff_output_never_shows_a_basic_auth_hash(
+    cfg: JellyfinConfig, scenario: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    # What `just pyinfra-check jellyfin` (pyinfra --dry --diff) logs.
+    deployed = render_route(cfg, traefik_config(cfg, AUTH), _HASH)
+    drift = {"drift": fakehost.file(ROUTE, deployed.replace("priority: 120", "priority: 1"))}.get(scenario, {})
+    rotated = BasicAuth(user="admin", password=SecretStr("rotated-fixture-pw"))
+    caplog.set_level(logging.DEBUG)
+
+    run = run_deploy_fake(
+        deploy_jellyfin,
+        cfg,
+        rotated if scenario == "rotated" else AUTH,
+        responses=converged(cfg, **drift),
+        pyinfra_config=Config(DIFF=True),
+    )
+
+    assert run.succeeded, run.error
+    assert not re.search(r"\$2[aby]\$", caplog.text)
+    route_changed = scenario != "converged"
+    assert run.mutating_changed_ops == (changed("Write Traefik route jellyfin") if route_changed else [])
+    assert (ROUTE in run.written_paths) is route_changed
 
 
 def test_route_drift_is_repaired_with_the_same_hash(cfg: JellyfinConfig) -> None:
@@ -190,7 +218,7 @@ def test_route_drift_is_repaired_with_the_same_hash(cfg: JellyfinConfig) -> None
     run = deploy(cfg, converged(cfg, **drift))
 
     assert run.mutating_changed_ops == changed("Write Traefik route jellyfin")
-    assert run.upload(ROUTE).decode() == deployed
+    assert run.written(ROUTE).decode() == deployed
 
 
 def test_missing_ffmpeg_candidate_is_installed_alone(cfg: JellyfinConfig) -> None:
@@ -406,7 +434,7 @@ def test_traefik_disabled_writes_no_route(cfg: JellyfinConfig) -> None:
 
     run = deploy(plain, host_facts(), basic_auth=None)
 
-    assert ROUTE not in run.uploaded_paths
+    assert ROUTE not in run.written_paths
     assert not any("/etc/traefik" in c for c in run.executed_commands)
 
 

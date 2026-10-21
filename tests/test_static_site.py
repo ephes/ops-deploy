@@ -161,7 +161,7 @@ def test_traefik_disabled_writes_no_route(tmp_path: Path) -> None:
     cfg = StaticSiteConfig(source_path=make_source(tmp_path), traefik_enabled=False)
     run = deploy(cfg, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED}))
 
-    assert ROUTE not in run.uploaded_paths
+    assert ROUTE not in run.written_paths
     assert not any("traefik" in c for c in run.executed_commands)
 
 

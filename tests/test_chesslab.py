@@ -144,8 +144,9 @@ def test_first_run_installs_everything(cfg: ChesslabConfig, secrets: SecretValue
     assert len(ensure) == 2
     assert commands.index(migrate) < commands.index(ensure[0]) < commands.index("systemctl start chesslab.service")
     assert "systemctl restart chesslab.service" not in commands
-    # .env, the two users, migrate and the stamp all go over stdin.
-    assert len(run.stdin) == 5
+    # .env, the two users, migrate, the stamp and the route (it holds the basic-auth hash) all go over stdin.
+    assert len(run.stdin) == 6
+    assert ROUTE in [path for path, _ in run.secret_files]
     assert not any(path.endswith(".env") for path in run.uploaded_paths)
     assert [op.name for op in run.ops if op.read_only] == READ_ONLY
     upsert = [c for c in commands if "manage.py shell -c" in c]

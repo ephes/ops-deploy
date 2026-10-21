@@ -295,7 +295,7 @@ def test_traefik_and_health_check_can_be_turned_off(secrets: SecretValues) -> No
     )
     run = deploy(cfg, secrets, {**fakehost.UBUNTU})
 
-    assert ROUTE not in run.uploaded_paths
+    assert ROUTE not in run.written_paths
     assert not any("/alive" in c for c in run.executed_commands)
 
 

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `traefik_route`: a route file that holds a basic-auth hash, in its new or
+  its deployed content, is now written with `secret_file` instead of
+  `files.put`, so `--diff` (ops-control's `just pyinfra-check`, `--dry
+  --diff`) no longer prints the old and new bcrypt hash; such a route shows
+  only as a changed operation. pyinfra 3.10 has no per-operation diff switch
+  (`DIFF` is global). Bytes, `root:root 0644`, hash reuse, change detection
+  and Traefik restarts are unchanged; routes without a hash are still diffed.
+  With `secret_file` an owner- or mode-only difference rewrites the file, a
+  symlinked route path is refused, and every route operation reads the
+  deployed file. Test harness: `run_deploy_fake(..., pyinfra_config=...)` and
+  `FakeRun.secret_files`, `written_paths` and `written(path)`; new
+  `tests/test_traefik_route_diff.py` and jellyfin/homelab `--diff` tests.
+
 - `thermal_monitoring`, `logyard` (the health endpoint) and `static_site`:
   select the endpoint's HTTP server, the role's Python script or the pinned
   Rust `metrics-httpd`, the port of ops-library's `metrics_httpd_switch`

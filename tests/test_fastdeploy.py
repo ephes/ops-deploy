@@ -1,6 +1,5 @@
 """Deploy-level scenarios for fastdeploy against the fake connector."""
 
-import base64
 import hashlib
 import json
 import subprocess
@@ -414,10 +413,10 @@ def test_secrets_never_recorded(cfg: FastdeployConfig, secrets: SecretValues, sc
 def test_env_files_ride_on_stdin_only(cfg: FastdeployConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, secrets)
 
-    env_payloads = [payload for command, payload in run.stdin if command.startswith("python3 -I")]
+    env_payloads = [content for path, content in run.secret_files if path.endswith((".env", ".env.shell"))]
     assert len(env_payloads) == 2
     for payload in env_payloads:
-        assert SECRET_VALUES["postgres_password"].encode() in base64.b64decode("".join(payload.split()))
+        assert SECRET_VALUES["postgres_password"].encode() in payload
 
 
 @pytest.mark.parametrize(

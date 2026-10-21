@@ -1,6 +1,5 @@
 """Deploy-level scenarios for the toyweb service (all P1.4 helpers together)."""
 
-import base64
 from pathlib import Path
 from typing import Any
 
@@ -92,9 +91,9 @@ def test_first_run_installs_everything_and_starts_once(cfg: ToywebConfig, secret
     assert commands.index(UV_SYNC) < commands.index("systemctl start toyweb.service")
     assert commands.index("systemctl daemon-reload") < commands.index("systemctl start toyweb.service")
     assert "systemctl restart toyweb.service" not in commands
-    # The .env goes over stdin via secret_file, never as an upload.
-    assert run.uploaded_paths == ["/home/toyweb/site/pyproject.toml", UNIT, ROUTE]
-    assert len(run.stdin) == 1
+    # The .env and the route (it holds the basic-auth hash) go over stdin via secret_file, never as uploads.
+    assert run.uploaded_paths == ["/home/toyweb/site/pyproject.toml", UNIT]
+    assert [path for path, _ in run.secret_files] == ["/home/toyweb/site/.env", ROUTE]
     assert [op for op in run.ops if op.read_only] == [
         run.op("Deploy toyweb service | Wait for port 127.0.0.1:10098"),
         run.op("Deploy toyweb service | Check http://127.0.0.1:10098/"),
@@ -167,7 +166,7 @@ def test_password_change_rewrites_route_and_restarts_traefik(cfg: ToywebConfig, 
         "Deploy toyweb service | Restart Traefik for toyweb",
     ]
     assert "systemctl restart traefik.service" in run.executed_commands
-    assert _HASH.encode() not in run.upload(ROUTE)
+    assert _HASH.encode() not in run.written(ROUTE)
 
 
 @pytest.mark.parametrize("scenario", ["first", "converged"])
@@ -193,7 +192,7 @@ def test_service_name_with_underscore_deploys() -> None:
 
     run = deploy(cfg, SecretValues(cfg.secrets, {"basic_auth_password": PASSWORD, "django_secret_key": SECRET_KEY}))
 
-    assert "/etc/traefik/dynamic/toy_web.yml" in run.uploaded_paths
+    assert "/etc/traefik/dynamic/toy_web.yml" in run.written_paths
 
 
 def test_source_change_migrates_and_restarts_without_uv_sync(
@@ -229,9 +228,9 @@ def test_unchanged_source_is_a_noop(cfg: ToywebConfig, secrets: SecretValues, tm
 def test_secret_key_rides_on_stdin_only(cfg: ToywebConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, secrets)
 
-    ((command, payload),) = run.stdin
-    assert SECRET_KEY not in command
-    assert SECRET_KEY.encode() in base64.b64decode("".join(payload.split()))
+    (env,) = [content for path, content in run.secret_files if path != ROUTE]
+    assert all(SECRET_KEY not in command for command, _ in run.stdin)
+    assert SECRET_KEY.encode() in env
 
 
 @pytest.mark.parametrize("key", ["has space", "quote'd", "back\\slash", 'dq"x'])

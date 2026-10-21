@@ -123,8 +123,9 @@ def test_first_run_installs_everything(cfg: WorkAppConfig, secrets: SecretValues
     assert commands.index(UV_SYNC) < commands.index(migrate) < commands.index(collect)
     assert commands.index(collect) < commands.index("systemctl start work-app.service")
     assert "systemctl restart work-app.service" not in commands
-    # Only .env goes over stdin; the top-level files are plain uploads.
-    assert len(run.stdin) == 1
+    # .env and the route (it holds the basic-auth hash) go over stdin; the top-level files are plain uploads.
+    assert len(run.stdin) == 2
+    assert ROUTE in [path for path, _ in run.secret_files]
     assert {f"{SITE}/manage.py", f"{SITE}/pyproject.toml", f"{SITE}/uv.lock"} <= set(run.uploaded_paths)
     assert [op.name for op in run.ops if op.read_only] == READ_ONLY
     upsert = [c for c in commands if "manage.py shell -c" in c]
