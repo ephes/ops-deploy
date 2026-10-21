@@ -1,8 +1,8 @@
 # Rust port of `software_live` — implementation plan
 
 Status: plan, not yet implemented; owner questions decided on 2026-10-21
-(section 12). Campaign "Rust-Ports Runde 2", stream `rust-software-live`
-(umbrella item `rust-ports-campaign`).
+(section 12); S1 spike done, report in section 13. Campaign "Rust-Ports
+Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
 This document is the contract for porting the Python program of the
 ops-library role `software_live` (`roles/software_live/files/software_live.py`,
@@ -358,8 +358,10 @@ does). Hashing uses `sha2`.
   `oldest_security_index_age_seconds` = max age or `null`;
   `index_age_limit_seconds`; `index_source` (fixed text).
 - Packages: an in-memory APT cache (`apt.Cache(memonly=True)`: no index
-  refresh, no write of `pkgcache.bin`). For each installed package, the
-  candidates are all versions newer than the installed one
+  refresh, no write of `pkgcache.bin`; libapt-pkg still reads a valid
+  `srcpkgcache.bin` and rewrites it when `/var/cache/apt` is writable,
+  which it is not inside the collector unit, section 13.3). For each
+  installed package, the candidates are all versions newer than the installed one
   (`apt_pkg.version_compare`) with at least one origin that is trusted and
   (origin `Ubuntu`/`Debian` with `security` in the archive, or origin
   starting with `UbuntuESM`, or label `Debian-Security`). The newest
@@ -517,7 +519,9 @@ request path or a policy value other than the host.
 7. **Fatal errors** print one line instead of a traceback; exit codes stay.
 8. **APT failure classes** in `"APT observation failed (<Class>)"` are Rust
    categories (`HelperExit`, `HelperTimeout`, `InvalidHelperOutput`,
-   `CacheOpen`, …).
+   `CacheOpen`, …). The helper reads holds from its own cache instead of
+   running `apt-mark showhold` (5.2; identical output in S1), so a failing
+   or hanging `apt-mark` no longer makes the observation `unknown`.
 9. **New flags** `--version` and `collect --report-usage` (3.1).
 10. **Manual SSH mode on Rust hosts** (S11): `just software-live --host H`
     runs the installed release binary instead of streaming the checkout's
@@ -586,14 +590,41 @@ a timeout (60 s; the unit allows 90 s for everything), or invalid JSON
 makes the main binary emit the "unknown" object (4.2 item 8). The main
 binary finds the helper next to its own executable (`/proc/self/exe`
 directory) and refuses to run it unless it is root-owned and not
-group/world-writable. The helper sets `Dir::Cache::pkgcache ""` (exactly
-what python-apt's `memonly=True` does, `apt/cache.py` of python-apt 2.7.7),
-so it never writes under `/var/cache/apt`; S1 checks with `strace` in the
-containers that no write is attempted (and additionally clears
-`Dir::Cache::srcpkgcache` only if one is). It takes no APT lock and keeps the
-`apt-mark showhold` subprocess for holds. `name` (pretty, native architecture
-omitted) and `fullname` (`name:arch`) follow python-apt's
-`Package.name`/`Package.fullname`; S1 confirms this against python-apt.
+group/world-writable.
+
+Cache files, holds and names (verified by S1, section 13): python-apt's
+`memonly=True` only sets `Dir::Cache::pkgcache ""`; libapt-pkg then still
+reads a valid `srcpkgcache.bin` and, when `/var/cache/apt` is writable for
+the process, rebuilds and writes it, and the `apt-mark showhold` child
+writes both cache files. Inside the collector unit (`ProtectSystem=strict`)
+`/var/cache/apt` is read-only, libapt-pkg's `access(W_OK)` probe fails and
+no write is attempted. The helper therefore:
+
+- sets `Dir::Cache::pkgcache ""` (as python-apt does) and, only when
+  `/var/cache/apt` is writable for it (an unsandboxed root run such as the
+  candidate validation of 7.3 step 3), also `Dir::Cache::srcpkgcache ""`.
+  It never writes under `/var/cache/apt` in any context and still reads the
+  valid `srcpkgcache.bin` inside the unit (0.2–0.3 s instead of 0.6–0.7 s
+  CPU per run in S1);
+- reads holds from the dpkg selection state of its own cache (every package
+  with `SelectedState == Hold`, printed as `FullName(true)`, which is what
+  `apt-mark showhold` prints; identical in S1) instead of running
+  `apt-mark`. That saves a second full cache build per run, and `apt-mark`
+  was the remaining writer outside the sandbox (4.2 item 8);
+- takes no APT lock (S1: no lock file opened, no `fcntl` lock);
+- reports `package` as rust-apt's `fullname(false)` and compares holds
+  against `fullname(true)` and `fullname(false)` (python-apt's
+  `Package.fullname` and `Package.name`; rust-apt's `name()` is the bare
+  name, python-apt's `shortname`);
+- counts an origin as trusted only if its package file is not the dpkg
+  status file (`index_type` `Debian dpkg status file`) and its index is
+  trusted. python-apt looks the index up in the source list only and
+  reports the status file as untrusted; rust-apt also finds the status
+  index, which reports trusted. The status file has no origin, label or
+  security archive, so this changes no result; the helper mirrors
+  python-apt anyway.
+
+Section 13.4 has the complete python-apt to rust-apt mapping.
 
 The rejected alternative was a `deb822`-based re-implementation in the
 main crate (`debian-control`, `deb822-lossless`, `debversion`, with
@@ -786,8 +817,8 @@ before the units):
    cgroup (`ControlGroup=` → `cgroup.procs`; this covers the `MainPID` of
    `collect`, its `software-live-apt` child, and the `ControlPID` of the
    `ExecStartPost=` export) and adds the version of each
-   `readlink /proc/<pid>/exe` (a ` (deleted)` suffix is stripped before
-   parsing; the binary and `software-live-apt` lie in the same
+   `readlink /proc/<pid>/exe` (a suffix `(deleted)` after a space is
+   stripped before parsing; the binary and `software-live-apt` lie in the same
    `releases/<version>/` directory). A PID that exited between listing and
    reading contributes nothing. A Python command contributes nothing. A
    drop-in or shadow unit that exists but cannot be read, a command or
@@ -1164,6 +1195,14 @@ The budget is the memory the program allocates: the unit's cgroup memory
 | `software-live` stripped binary | — | ≤ 6 MiB |
 | `software-live-apt` stripped binary (without shared libs) | — | ≤ 2 MiB |
 
+The collector peak budget is at risk: S1 (13.5) measured the helper's
+`maxrss` at the size of `srcpkgcache.bin` plus 17–20 MiB in every cache
+configuration. With the hosts' caches (49 MB on staging, 61 MB on macmini)
+that predicts about 66 MiB on staging and 77 MiB on macmini: below Python's
+peak, above 64 MiB. libapt-pkg's in-memory cache is the floor. S9 records
+the real peaks per host, and the coordinator decides whether this row is
+re-baselined.
+
 Measured during S9 (shadow) and S10 (after the cutover), recorded in the
 S10 report. If glibc malloc arenas push the endpoint over budget,
 `Environment=MALLOC_ARENA_MAX=2` goes into the drop-in before another
@@ -1246,3 +1285,200 @@ Campaign-wide decisions that bind this stream:
   or the consumer's `previous` rollback pin (moved only after a new
   version is verified live). This stream fills both (7.3 steps 0 and 7,
   7.4) and tests the consumer side in S6.
+
+---
+
+## 13. S1 spike report: rust-apt vs python-apt (2026-10-21)
+
+Result: `rust-apt` 0.11.3 reproduces python-apt's APT observation exactly on
+both variants. The helper's JSON output equals `software_live.observe_apt`
+on the same lists. One cache-file behaviour of `memonly=True` was not as
+5.2 assumed; 5.2 now has the rules that follow from it (13.3). The collector
+memory budget of section 10 is at risk (13.5).
+
+### 13.1 Setup
+
+- **Spike program** (throwaway, not committed): a crate
+  `software-live-apt-spike` with `rust-apt = "=0.11.3"` and `serde_json`,
+  `#![forbid(unsafe_code)]`, the workspace's release profile. It implements
+  `observe_apt`/`security_packages`/`security_origin` one to one with the
+  mapping of 13.4. It also has a dump mode, which prints every installed
+  package with `name`, `fullname`, the installed version, the candidate and
+  every version with every origin (archive, origin, label, component,
+  codename, site, `trusted`, `security_origin`), and a version-compare
+  mode. The python-apt side imports the deployed `software_live.py`
+  (sha256 `1c9fdfc8…`, as on the hosts, 1.1) and calls its own
+  `observe_apt` and `security_origin`; its dump reads the same fields from
+  python-apt objects. Both sides run in the same container on the same
+  lists, with the same `now`.
+- **Images**: `ubuntu:24.04` (apt and `libapt-pkg6.0t64` 2.8.3,
+  python3-apt 2.7.7ubuntu5.3, glibc 2.39) and `debian:13` (apt and
+  `libapt-pkg7.0` 3.0.3, python3-apt 3.0.0, glibc 2.41), the versions the
+  hosts run (1.1), plus `build-essential libapt-pkg-dev` and the pinned
+  toolchain 1.99.1. `rust-apt` 0.11.3 and `cxx` 1.0.205 compile without
+  warnings against both libapt-pkg versions.
+- **Architecture**: arm64. The controller's Docker VM has no amd64
+  emulation, and enabling it would change a shared VM. The distribution
+  releases and package versions are the ones the x86_64 hosts run. The
+  foreign architecture is `armhf` instead of `i386`. x86_64 builds and
+  tests are S3d's variant CI job.
+- **World** (the same for both sides): the image's mirrors after
+  `apt-get update`, with the foreign architecture added. Real packages are
+  downgraded to the release pocket where the security pocket is newer,
+  giving 20 (Ubuntu) and 7 (Debian) real pending security updates. One of
+  them is held (`libexpat1`), and one is pinned to its installed release
+  version with priority 1001 (`libxml2`, `libpng16-16t64`). Fake packages
+  (installed version 1.0) and flat repositories built with
+  `apt-ftparchive` (`[trusted=yes]` or `[allow-insecure=yes]`) cover every
+  branch of `security_origin`:
+
+| Package | Repositories | Result (identical on both sides) |
+| --- | --- | --- |
+| `fakenative` (native arch) | 1.1 trusted, origin `UbuntuESMApps`; 9.9 untrusted, origin `Ubuntu`, archive `<codename>-security` | security 1.1, candidate 9.9 |
+| `fakeforeign` (armhf, held as `fakeforeign:armhf`) | 1.1 trusted ESM | `package` `fakeforeign:armhf`, `held` true |
+| `fakeheld` (held) | 1.1 trusted ESM | `held` true |
+| `fakepin` (pinned to 1.1, priority 1001) | 1.1 and 1.2 trusted ESM | security 1.2, candidate 1.1 |
+| `fakeall` (`Architecture: all`) | 1.1 and 1.3 trusted, origin `Example`, label `Debian-Security`; 1.2 trusted, origin `Debian`, archive `Trixie-SECURITY`; 0.9 trusted, origin `Debian`, archive `<codename>-security` | security 1.3, `package` `fakeall:arm64`; 1.2 counts as a security origin (case-insensitive archive); 0.9 ignored (older) |
+| `fakedual` | the same 2.0 file in an untrusted `Ubuntu` security repository and in trusted ESM | included (one trusted security origin is enough) |
+| `fakemulti` | the same 2.0 file in a trusted `Ubuntu` `-updates` repository and an untrusted `Ubuntu` security repository | excluded (no origin is both trusted and security) |
+| `fakeesmun` | 1.1 untrusted, origin `UbuntuESMInfra` | excluded |
+| `fakelow` | 0.5 trusted, origin `Debian`, security archive | excluded (older) |
+
+### 13.2 Results
+
+| Check | `ubuntu:24.04` | `debian:13` |
+| --- | --- | --- |
+| `observe_apt` vs the Rust observation, four `(max_age, now)` cases (fresh, stale, future index ages) | identical JSON (26 pending, 3 held) | identical JSON (13 pending, 3 held) |
+| packages with versions | 124 742 on both sides | 99 907 on both sides |
+| installed packages / versions / origins in the dump | 210 / 388 / 720, identical except the status file's `trusted` (13.3 item 1) | 187 / 221 / 441, same |
+| `version_compare` signs: 20 hand-picked edge pairs plus 20 000 random pairs over all version strings of the cache | identical (24 815 distinct versions) | identical (25 634 distinct versions) |
+| holds: `apt-mark showhold` vs `SelectedState == Hold` (`FullName(true)`) | identical (`fakeforeign:armhf`, `fakeheld`, `libexpat1`) | identical |
+| index ages (`now - mtime`) | bit-identical floats when the Rust mtime is computed like CPython's `st_mtime`: `mtime() as f64 + mtime_nsec() as f64 * 1e-9` | same |
+
+### 13.3 Differences and findings
+
+1. **`trusted` of the dpkg status file.** python-apt's `Origin.trusted`
+   looks the index up with `SourceList.find_index` only, gets `None` for
+   `/var/lib/dpkg/status` and reports `false`. rust-apt's
+   `PackageFile::index_file()` falls back to `_system->FindIndex`, and the
+   status index reports trusted (`true` on every installed version's `now`
+   origin). The status file has origin `""`, archive `now` and label `""`,
+   so `security_origin` is false either way and every observation is
+   identical. The helper still counts the status file as untrusted (5.2).
+2. **Names.** rust-apt's `Package::name()` is the bare name (python-apt's
+   `shortname`). python-apt's `Package.name` equals rust-apt's
+   `fullname(true)`, and `Package.fullname` equals `fullname(false)`: for
+   example `fakeforeign:armhf` for both, and `fakeall` with
+   `fakeall:arm64` (an `Architecture: all` package carries the native
+   architecture).
+3. **Optional fields.** rust-apt's `archive()`, `origin()` and `label()`
+   return `Option<&str>`, `None` when the field is absent. python-apt
+   returns `""`, so the helper maps `None` to `""`.
+4. **Cache files.** With the stock images, nothing is ever written: their
+   `/etc/apt/apt.conf.d/docker-clean` sets both `Dir::Cache::pkgcache ""`
+   and `Dir::Cache::srcpkgcache ""`. Any container test of the helper
+   (S3d, S5) must remove that file, or it does not test the hosts'
+   configuration (the hosts have no `Dir::Cache` override). Without
+   `docker-clean`, traced with `strace -f` and a before/after snapshot of
+   the file system:
+
+   | Configuration | `/var/cache/apt` writable (root without sandbox) | `/var/cache/apt` read-only (as under `ProtectSystem=strict`) |
+   | --- | --- | --- |
+   | python-apt `memonly=True` (today) | writes `srcpkgcache.bin`; its `apt-mark showhold` child writes `pkgcache.bin` and `srcpkgcache.bin` | nothing written: `faccessat("/var/cache/apt/", W_OK)` fails with `EROFS` and no write is attempted; reads a valid `srcpkgcache.bin` (`apt-mark`: `pkgcache.bin`) |
+   | `pkgcache ""` (rust-apt, same as python-apt) | writes `srcpkgcache.bin` | nothing written; reads a valid `srcpkgcache.bin` |
+   | `pkgcache ""` and `srcpkgcache ""` | nothing written | nothing written; always parses all lists |
+   | `apt-mark showhold` alone | writes both | nothing written |
+
+   Live facts (read-only, 2026-10-21): macmini and staging have no foreign
+   architecture and no `Dir::Cache` override. `pkgcache.bin` and
+   `srcpkgcache.bin` there (61 MB on macmini, 49 MB on staging) were
+   written seconds after the last list refresh. The collector unit has
+   `ProtectSystem=strict` and `PrivateTmp=yes`. Python therefore runs in
+   the read-only column today and reads a warm `srcpkgcache.bin`. 5.2
+   derives the helper's rules from this table: it never writes in either
+   column and still uses the warm cache inside the unit.
+5. **Temporary files.** For each `InRelease`, libapt-pkg extracts the
+   signed message into a temporary file in `$TMPDIR` or `/tmp`. It tries
+   `O_TMPFILE` first and falls back to a named
+   `clearsigned.message.XXXXXX`, which it deletes. Python and Rust behave
+   the same. The collector unit's `PrivateTmp=yes` provides the
+   directory; the helper needs a writable `TMPDIR`.
+6. **Locks.** No variant opens a lock file or takes an `fcntl` lock.
+
+### 13.4 python-apt to rust-apt mapping (for S3d)
+
+| `software_live.py` / python-apt | rust-apt 0.11.3 |
+| --- | --- |
+| `apt.Cache(memonly=True)` | `Config::new()`, then `config.set("Dir::Cache::pkgcache", "")` (plus `srcpkgcache` per 5.2), then `Cache::new::<&str>(&[])`; once `APT::Architecture` is set, `Cache::new` does not initialise the configuration again, so the settings hold (verified by `strace`) |
+| `for package in cache: if package.installed` | `cache.packages(&PackageSort::default().installed())`, `pkg.installed()` |
+| `package.versions` | `pkg.versions()` (same order) |
+| `version.origins` | `ver.package_files()` |
+| `origin.trusted` | `file.index_type() != Some("Debian dpkg status file") && file.index_file().is_trusted()` |
+| `origin.origin` / `.archive` / `.label` | `file.origin()` / `archive()` / `label()`, each `.unwrap_or("")` |
+| `apt_pkg.version_compare(a, b) > 0` | `rust_apt::util::cmp_versions(a, b) == Ordering::Greater` (it runs `init_config_system` on every call, which does no harm at about 600 calls per run; `rust_apt::raw::cmp_versions` skips that) |
+| `package.candidate` | `pkg.candidate()` (depcache policy with preferences and pins) |
+| `package.name` / `package.fullname` | `pkg.fullname(true)` / `pkg.fullname(false)` |
+| `apt-mark showhold` | `cache.packages(&PackageSort::default().include_virtual())` filtered by `selected_state() == PkgSelectedState::Hold`, mapped to `fullname(true)` |
+| `str.lower()` on archive and list names | `to_lowercase()` (Unicode, as Python) |
+| `Path("/var/lib/apt/lists").glob("*InRelease")`, `p.stat().st_mtime` | `read_dir`, names ending in `InRelease` (dot files included, as `pathlib`), `std::fs::metadata` (follows symlinks; a broken one is an error, as in Python); mtime as in 13.2 |
+
+Caveats for S3d:
+
+- `PackageFile::index_file()` (`apt-pkg-c/cache.h`, `find_index`) uses an
+  uninitialised pointer if neither the source list nor the system knows
+  the file. Every package file of a cache built from the configured
+  sources is known, so this cannot happen here. S3d must not add volatile
+  files (`Cache::new` with paths).
+- `PkgSelectedState::from` panics on a selection value outside dpkg's
+  range. A panic exits the helper non-zero, which the main binary reports
+  as `unknown` (fail closed).
+
+### 13.5 Linkage, size, licenses, resources
+
+- `NEEDED`: `libapt-pkg.so.6.0` (Ubuntu) or `libapt-pkg.so.7.0` (Debian),
+  `libstdc++.so.6`, `libgcc_s.so.1`, `libc.so.6`. The Ubuntu build also
+  lists the dynamic loader (`ld-linux-aarch64.so.1` on arm64), so the
+  per-variant allowlist of `release_checks.py` (7.1, 7.4) must allow
+  glibc's loader. The highest `GLIBC_` symbol version is 2.39 in both
+  builds.
+- Stripped size 517 KiB (budget ≤ 2 MiB).
+- Licenses of the helper's dependency tree (`cargo metadata`, target
+  `x86_64-unknown-linux-gnu`): everything is already allowed by
+  `rust/deny.toml` except `rust-apt` and the helper itself
+  (`GPL-3.0-or-later`). The rest is `cxx`, `cxx-build`, `cxxbridge-*`,
+  `cc`, `scratch`, `link-cplusplus` (MIT OR Apache-2.0),
+  `codespan-reporting` (Apache-2.0), `foldhash` (Zlib), `termcolor` and
+  `memchr` (Unlicense OR MIT), and `unicode-ident`
+  ((MIT OR Apache-2.0) AND Unicode-3.0). The S3d exception therefore needs
+  only `GPL-3.0-or-later` for `rust-apt` and `software-live-apt`.
+- Resources. Setup: a host-like world (no foreign architecture, stock
+  sources), `/var/cache/apt` read-only as in the unit, arm64 container,
+  median of three runs. CPU is user plus system time; `maxrss` covers the
+  whole observation including children. "Warm" means a valid cache from
+  the last list refresh, as on the hosts. "Cold" means no cache files.
+
+  | World | python `observe_apt` | helper as in 5.2 | helper with `apt-mark` child | helper, both caches off |
+  | --- | --- | --- | --- | --- |
+  | Ubuntu 24.04, warm (`srcpkgcache.bin` 56 MB) | 0.38 s, 102.9 MiB | 0.23 s, 72.8 MiB | 0.22 s, 72.5 MiB | 0.66 s, 73.8 MiB |
+  | Ubuntu 24.04, cold | 1.38 s, 103.5 MiB | 0.72 s, 73.8 MiB | 1.17 s, 73.8 MiB | 0.69 s, 73.8 MiB |
+  | Debian 13, warm (44 MB) | 0.29 s, 85.0 MiB | 0.20–0.30 s, 60.3 MiB | 0.49 s, 60.3 MiB | 0.59 s, 62.7 MiB |
+  | Debian 13, cold | 1.09 s, 85.8 MiB | 0.54 s, 62.7 MiB | 0.91 s, 62.7 MiB | 0.52 s, 62.7 MiB |
+
+  In every configuration, `maxrss` is the size of `srcpkgcache.bin` plus
+  17–20 MiB. Mapping a valid `pkgcache.bin` instead of building the cache
+  in memory does not lower it. For the hosts' caches that predicts about
+  66 MiB on staging and 77 MiB on macmini (section 10). CPU times come
+  from an Apple-silicon VM shared with other containers and are
+  comparisons, not host predictions.
+
+### 13.6 What later slices take from S1
+
+- S3d: the rules of 5.2 and the mapping of 13.4. Its variant container
+  tests remove `docker-clean` and rebuild the fake-repository matrix of
+  13.1 (all branches of `security_origin`, held foreign package, pinned
+  candidate, same version in trusted and untrusted files). They compare
+  against python-apt with `software_live.py` as the oracle, as S1 did, and
+  run on x86_64.
+- S5: the container `collect` cases (6.2) also remove `docker-clean`.
+- S9/S10: the collector peak of section 10 against the prediction of
+  13.5.
