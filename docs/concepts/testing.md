@@ -119,10 +119,11 @@ branch:
   digest of each role's `defaults`, `files`, `handlers`, `tasks`,
   `templates` and `vars`. It covers the `fastdeploy_*`, `graphyard_*`,
   `homelab_deploy`/`homelab_shared`, `journald_config`, `livekit_deploy`,
-  `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`, `work_app_*`
-  and `zellij_ingress_deploy` roles so far. Entries added later than the
-  recorded commit name the commit they were checked against in their service
-  page (homelab and `uv_install`: `540ede2b`, 2.56.0).
+  `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`,
+  `vaultwarden_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far.
+  Entries added later than the recorded commit name the commit they were
+  checked against in their service page (homelab, `uv_install` and
+  vaultwarden: `540ede2b`, 2.56.0).
 
 After a role change, port it (or document why not), print the new digests
 with `uv run python -m tests.test_ops_library_drift <ops-library>` and update

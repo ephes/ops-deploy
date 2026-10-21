@@ -44,6 +44,7 @@ src/ops_deploy/
   services/work_app/  work_app (port of the work_app_deploy role)
   services/zellij_ingress/ redirect-only Traefik route (port of the zellij_ingress_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
+  services/vaultwarden/ vaultwarden from the vendor's .deb packages (port of the vaultwarden_deploy role)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s

@@ -1,0 +1,57 @@
+# Managed by Ansible - Traefik configuration for Vaultwarden
+#
+# One router. Live sync (/notifications/hub) is served by Vaultwarden on the
+# main Rocket port, so it needs no separate router or service; a dedicated
+# WebSocket router pointing at the old standalone listener sent live sync to a
+# port nothing listens on and answered 502.
+
+http:
+  routers:
+    # Main Vaultwarden router (HTTPS)
+    vaultwarden:
+      rule: "Host(`{{ vaultwarden_hostname }}`)"
+      entryPoints:
+        - {{ vaultwarden_traefik_entrypoint }}
+      middlewares:
+        - vaultwarden-headers
+      service: vaultwarden
+{% if vaultwarden_traefik_certresolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ vaultwarden_traefik_certresolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # HTTP to HTTPS redirect
+    vaultwarden-http:
+      rule: "Host(`{{ vaultwarden_hostname }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - vaultwarden-redirect
+      service: vaultwarden
+
+  middlewares:
+    vaultwarden-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 31536000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ vaultwarden_hostname }}"
+
+    vaultwarden-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    vaultwarden:
+      loadBalancer:
+        servers:
+          - url: "http://{{ vaultwarden_rocket_address }}:{{ vaultwarden_rocket_port }}"
+
