@@ -57,7 +57,8 @@ Comparison rules (PLAN.md 5.2 items the comparer accepts, counted per item
 under ``allowed``):
 
 - D-2: the Python side drops the connection without an answer and Rust
-  answers (json-file/apt-state: a 5xx JSON error; script: any answer).
+  answers as D-2 lists it (json-file/apt-state: 502 ``invalid_json`` or 500
+  ``internal_error``; script: 200 or a 502 page).
 - D-3: the text after ``Invalid JSON in …: ``/``Cannot read …: `` of a 502
   ``invalid_json`` / 503 ``read_error`` message; ``send_error`` HTML pages
   (only status and ``Content-Type`` are compared); logyard error texts.
@@ -123,6 +124,14 @@ STATIC_HEADERS = (
     "X-Content-Type-Options",
     "X-Frame-Options",
 )
+# Rust's answers where the Python handler drops the connection (PLAN.md
+# D-2/D-5): json-file and apt-state answer 502 invalid_json (top-level value
+# not an object, invalid UTF-8, an int over 4300 digits) or 500
+# internal_error (an mtime outside the years 1-9999, apt-state type errors);
+# script mode serves stdout that is not UTF-8 (200) or a 502 page (stderr not
+# UTF-8 or outside latin-1, a script that cannot be started).
+D2_JSON_ANSWERS = ((502, "invalid_json"), (500, "internal_error"))
+D2_SCRIPT_STATUSES = (200, 502)
 # serde_json's recursion limit (PLAN.md D-4): 128 nested containers fail.
 MAX_DEPTH = 127
 RESERVED_KEY = "$serde_json::private::Number"
@@ -356,9 +365,10 @@ def _close_iso(a: Any, b: Any) -> bool:
     try:
         first = datetime.fromisoformat(a)
         second = datetime.fromisoformat(b)
+        # Naive against aware raises TypeError: a difference, not a crash.
+        return abs((first - second).total_seconds()) <= 1
     except (TypeError, ValueError):
         return False
-    return abs((first - second).total_seconds()) <= 1
 
 
 def diff_keys(python: Any, rust: Any, prefix: str = "") -> list[str]:
@@ -516,9 +526,16 @@ def judge(
         out.keys.append("rust_no_answer")
         return out
     if python is None:
-        # D-2: Python's handler raised and closed the connection.
+        # D-2: Python's handler raised and closed the connection; Rust
+        # answers only as PLAN.md D-2 lists it.
         rust_error = _json_error(rust)
-        if mode == "script" or (rust.status >= 500 and rust_error is not None):
+        rust_answer = (
+            rust.status,
+            rust_error.get("error_type") if rust_error is not None else None,
+        )
+        if (mode == "script" and rust.status in D2_SCRIPT_STATUSES) or (
+            mode in ("json-file", "apt-state") and rust_answer in D2_JSON_ANSWERS
+        ):
             out.allowed = "D-2"
         else:
             out.keys.append("python_no_answer")

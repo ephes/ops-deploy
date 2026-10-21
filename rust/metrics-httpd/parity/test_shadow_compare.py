@@ -258,6 +258,27 @@ class ShadowCompareTest(unittest.TestCase):
             line["endpoints"]["backup"]["statuses"]["get"], ["no-answer", 502]
         )
 
+    def test_python_drop_with_another_rust_answer_is_a_difference(self) -> None:
+        for rust_reply in (
+            error(503, "metrics_file_missing", "Metrics file not found"),
+            error(502, "read_error", "Cannot read metrics file: x"),
+            ok(document(1000)),
+        ):
+            with self.subTest(rust_reply[0]):
+                python, rust = self.pair(lambda: DROP, lambda: rust_reply)
+                with python, rust:
+                    code, line = self.compare(python, rust)
+                self.assertEqual(code, 1, line)
+                self.assertEqual(
+                    line["endpoints"]["backup"]["differing"], ["get: python_no_answer"]
+                )
+        python, rust = self.pair(
+            lambda: DROP, lambda: error(500, "internal_error", "Cannot evaluate")
+        )
+        with python, rust:
+            code, line = self.compare(python, rust, mode="apt-state")
+        self.assertEqual((code, line["allowed"]), (0, {"D-2": 1}))
+
     def test_rust_drop_is_a_difference(self) -> None:
         python, rust = self.pair(lambda: ok(document(1000)), lambda: DROP)
         with python, rust:
@@ -461,6 +482,22 @@ class ShadowCompareTest(unittest.TestCase):
             return ok(body())
 
         return FakeServer(answer)
+
+    def test_logyard_generated_at_without_timezone_is_a_difference(self) -> None:
+        python = self.logyard_server(
+            lambda: self.logyard(True, 12.0, "ok", "2026-10-21T10:00:00+00:00")
+        )
+        rust = self.logyard_server(
+            lambda: self.logyard(True, 12.0, "ok", "2026-10-21T10:00:00")
+        )
+        with python, rust:
+            code, line = self.compare(
+                python, rust, mode="logyard-health", path="/.well-known/logyard"
+            )
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            line["endpoints"]["backup"]["differing"], ["get: body.generated_at"]
+        )
 
     def test_logyard_counts_are_volatile_and_texts_compared_by_presence(self) -> None:
         python = self.logyard_server(
