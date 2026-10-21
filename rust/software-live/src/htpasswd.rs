@@ -151,7 +151,8 @@ pub fn verify(contents: &[u8], user: &[u8], input: &[u8], deadline: Instant) -> 
             return false;
         }
     }
-    found
+    // Reading the rest of the file counts too.
+    found && Instant::now() < deadline
 }
 
 /// `apr_password_validate(password, hash) == APR_SUCCESS` for the bcrypt
@@ -279,6 +280,13 @@ mod tests {
         let deadline = Instant::now() + hashing / 4;
         assert!(!verify(single.as_bytes(), b"u", b"pw", deadline));
         assert!(Instant::now() >= deadline);
+        // Reading the lines after the last entry counts as well.
+        let trailing = format!("u:{hash}\n{}", "# comment\n".repeat(4_000_000));
+        let started = Instant::now();
+        assert!(verify(trailing.as_bytes(), b"u", b"pw", far()));
+        let whole = started.elapsed();
+        let deadline = Instant::now() + whole / 2;
+        assert!(!verify(trailing.as_bytes(), b"u", b"pw", deadline));
         // Many entries of the user: the check stops at the deadline.
         let slow = bcrypt::hash_with_salt("pw", 10, [1; 16])
             .unwrap()
