@@ -20,6 +20,13 @@ stripped binary 2,249,216 bytes = 2.14 MiB, highest `GLIBC_2.34`).
 S5a implemented: the internal helper role
 `metrics_httpd_switch` (7.2) and the switch in the five
 `*_metrics_endpoint` roles (7.3), all with `impl: python` by default.
+S5d implemented (ops-control): the fleet pin of 7.1 in
+`group_vars/all.yml` (`metrics_httpd_impl: python`, version `0.1.0` with
+the S4 sha256), the switch in `torrent_vpn_metrics_endpoint` (7.3), the
+runbook `docs/METRICS_HTTPD_RUST.md` and the collection gate of every
+endpoint playbook (`playbooks/common/require_metrics_httpd_switch.yml`;
+section 11 says why it checks the installed collection instead of a
+version number).
 Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
@@ -1337,7 +1344,7 @@ and lists the Python code it ports in its review context.
 | S5a | ops-library | `roles/metrics_httpd_switch` (select/verify, drop-in template) + the five `*_metrics_endpoint` roles; tests; READMEs | F3, S1 (CLI frozen) | S2*, S3, S5d prep | no | 4 h |
 | S5b | ops-library | `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy` (ddns), `openclaw_deploy` | S5a | S5c, S5e | no | 3–4 h |
 | S5c | ops-library | `logyard_deploy`, `static_site_deploy` (Ansible path, also the rollback engine of the pyinfra services) | S5a | S5b, S5e | no | 2 h |
-| S5d | ops-control | `torrent_vpn_metrics_endpoint` switch; fleet vars in `group_vars/all.yml` (impl python, version/sha from S4); runbook `docs/METRICS_HTTPD_RUST.md`; playbook asserts for the collection version | S4, S5a | S5b, S5c, S5e | no | 2–3 h |
+| S5d | ops-control | `torrent_vpn_metrics_endpoint` switch; fleet vars in `group_vars/all.yml` (impl python, version/sha from S4); runbook `docs/METRICS_HTTPD_RUST.md`; playbook asserts for the collection (as built: a gate on the installed collection, see below) | S4, S5a | S5b, S5c, S5e | no | 2–3 h |
 | S5e | ops-deploy + ops-control | pyinfra ports for `thermal_monitoring`, `logyard`, `static_site` (7.4); ops-control mappings + no-silent-ignore test; ops-deploy pin bump | F4, S5a, S5c | S5b, S5d | no | 3–4 h |
 | S6 | ops-control (deploy) | install without switch (10.2) | S4, S5b, S5c, S5d (+ coordinator's collection release, Q2) | — | **yes** | 1 h |
 | S7 | hosts (manual, lock) | shadow 24 h (10.3) on macmini, fractal, staging, production | S6, S3 | — | **yes** (read-only to production units) | 2 h + 24 h |
@@ -1350,6 +1357,20 @@ and lists the Python code it ports in its review context.
 | S10a | ops-library, ops-control, ops-deploy | Python retirement code (10.6) | S9a–S9e + 7 days | — | no | 3–4 h |
 | S10b | ops-control (deploy) | retirement deploys on all hosts | S10a (+ coordinator's collection release) | — | **yes** | 2 h |
 | S10c | ops-library, ops-control, ops-deploy | remove the `*_impl` / `metrics_httpd_impl` variables and mappings (10.6) | S10b + the next collection release | — | no | 1–2 h |
+
+S5d's collection gate (as built): the release that carries the switch is
+the coordinator's collection release before S6 (Q2), so its number is not
+known when S5d lands, and a collection installed from an ops-library
+checkout reports the last released version even when it already has the
+switch. Instead of `version(…, '>=')`, every ops-control play that runs an
+endpoint role imports `playbooks/common/require_metrics_httpd_switch.yml`
+(tagged `always`, before anything changes a host): it reads the collection
+Ansible loads (the first `local/ops_library` under `COLLECTIONS_PATHS`) and
+refuses the deploy unless `roles/metrics_httpd_switch` exists and every
+endpoint role of the play defaults its `<role>_impl` to `metrics_httpd_impl`.
+An older role would ignore the fleet pin and the `<role>_impl` overrides
+silently. Plays with an S5b/S5c role therefore deploy only from a checkout
+in which that slice has merged.
 
 Maximum parallelism: after F1, S1 runs with F2/F3/F4; after S1, S2a–S2e and
 S5a run concurrently (six workers), S3 starts with S2a; S5b, S5c, S5e run
