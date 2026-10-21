@@ -1,0 +1,21 @@
+{
+  "ansible_distribution": "Debian",
+  "ansible_distribution_major_version": "13",
+  "bind_tsig_keys": [
+    {"name": "ns1-ns2-xfer", "algorithm": "hmac-sha256", "secret": "Zml4dHVyZS10cmFuc2Zlci1rZXk="},
+    {"name": "ddns-home", "algorithm": "hmac-sha512", "secret": "Zml4dHVyZS1kZG5zLWtleQ=="},
+    {"name": "acme-home", "secret": "Zml4dHVyZS1hY21lLWtleS0x"}
+  ],
+  "bind_zones": [
+    {"name": "example.org", "file": "db.example.org", "type": "master",
+     "allow_transfer": ["!{ !{ 192.0.2.2; 2001:db8::2; }; any; }", "key \"ns1-ns2-xfer\""],
+     "extra_config": ["also-notify { 192.0.2.2 key \"ns1-ns2-xfer\"; 2001:db8::2 key \"ns1-ns2-xfer\"; };"]},
+    {"name": "home.example.org", "file": "db.home.example.org", "type": "master", "dynamic": true,
+     "update_policy": ["grant \"ddns-home\" name home.example.org. A AAAA",
+                       "grant \"ddns-home\" name *.home.example.org. A AAAA",
+                       "grant \"acme-home\" name _acme-challenge.home.example.org. TXT"],
+     "allow_transfer": ["!{ !{ 192.0.2.2; 2001:db8::2; }; any; }", "key \"ns1-ns2-xfer\""],
+     "extra_config": ["also-notify { 192.0.2.2 key \"ns1-ns2-xfer\"; 2001:db8::2 key \"ns1-ns2-xfer\"; };"]},
+    {"name": "2.0.192.in-addr.arpa", "file": "db.192.0.2", "type": "master"}
+  ]
+}

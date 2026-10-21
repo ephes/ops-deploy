@@ -1,0 +1,31 @@
+// Managed by Ansible (bind_authoritative_deploy)
+{% import 'bind_macros.j2' as bind_macros %}
+
+{% for zone in bind_zones %}
+{% set zone_type = zone.type | default(bind_zone_default_type) %}
+{% set zone_transfer_backed = zone_type in bind_zone_transfer_backed_types %}
+{% set zone_dynamic = zone.dynamic | default(false) | bool %}
+{% set zone_file = zone.file %}
+{% if not zone_file.startswith('/') %}
+{% set zone_file = (bind_working_dir if zone_transfer_backed else (bind_dynamic_zone_dir if zone_dynamic else bind_config_dir)) ~ '/' ~ zone.file %}
+{% endif %}
+zone "{{ zone.name }}" {
+    type {{ zone_type }};
+    file "{{ zone_file }}";
+{% if zone_transfer_backed and zone.primaries | default([]) | length > 0 %}
+    primaries { {{ bind_macros.acl_list(zone.primaries) }}; };
+{% endif %}
+{% if zone_dynamic %}
+    update-policy { {{ bind_macros.acl_list(zone.update_policy) }}; };
+{% endif %}
+{% if zone.allow_transfer is defined %}
+    allow-transfer { {{ bind_macros.acl_list(zone.allow_transfer) }}; };
+{% endif %}
+{% if zone.extra_config is defined %}
+{% for line in zone.extra_config %}
+    {{ line }}
+{% endfor %}
+{% endif %}
+};
+
+{% endfor %}

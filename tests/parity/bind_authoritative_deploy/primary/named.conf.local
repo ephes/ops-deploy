@@ -1,0 +1,22 @@
+// Managed by Ansible (bind_authoritative_deploy)
+
+zone "example.org" {
+    type master;
+    file "/etc/bind/db.example.org";
+    allow-transfer { !{ !{ 192.0.2.2; 2001:db8::2; }; any; }; key "ns1-ns2-xfer"; };
+    also-notify { 192.0.2.2 key "ns1-ns2-xfer"; 2001:db8::2 key "ns1-ns2-xfer"; };
+};
+
+zone "home.example.org" {
+    type master;
+    file "/var/lib/bind/db.home.example.org";
+    update-policy { grant "ddns-home" name home.example.org. A AAAA; grant "ddns-home" name *.home.example.org. A AAAA; grant "acme-home" name _acme-challenge.home.example.org. TXT; };
+    allow-transfer { !{ !{ 192.0.2.2; 2001:db8::2; }; any; }; key "ns1-ns2-xfer"; };
+    also-notify { 192.0.2.2 key "ns1-ns2-xfer"; 2001:db8::2 key "ns1-ns2-xfer"; };
+};
+
+zone "2.0.192.in-addr.arpa" {
+    type master;
+    file "/etc/bind/db.192.0.2";
+};
+

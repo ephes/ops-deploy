@@ -1,0 +1,27 @@
+{
+  "ansible_distribution": "Ubuntu",
+  "ansible_distribution_major_version": "22",
+  "bind_config_dir": "/srv/named/etc",
+  "bind_working_dir": "/srv/named/cache",
+  "bind_dynamic_zone_dir": "/srv/named/dyn",
+  "bind_builtin_zones_file": "/srv/named/etc/zones.rfc1918",
+  "bind_zone_default_type": "primary",
+  "bind_recursion_acl": ["localhost", "10.0.0.0/8", "!192.0.2.66"],
+  "bind_allow_query": "trusted",
+  "bind_allow_query_cache": ["localhost"],
+  "bind_allow_transfer": "none",
+  "bind_dnssec_validation": "no",
+  "bind_listen_on": "127.0.0.1",
+  "bind_listen_on_v6": [],
+  "bind_extra_options": ["minimal-responses yes;", "version \"not disclosed\";"],
+  "bind_tsig_keys_file": "/srv/named/keys/tsig.conf",
+  "bind_tsig_keys": [{"name": "k1", "algorithm": "hmac-sha384", "secret": "azE="}],
+  "bind_zones": [
+    {"name": "example.org", "file": "db.example.org"},
+    {"name": "dyn.example.org", "file": "db.dyn", "dynamic": true, "update_policy": "grant k1 zonesub ANY",
+     "allow_transfer": "none"},
+    {"name": ".", "file": "db.root", "type": "hint"},
+    {"name": "mirror.example.org", "file": "db.mirror", "type": "slave", "primaries": "192.0.2.1",
+     "extra_config": []}
+  ]
+}

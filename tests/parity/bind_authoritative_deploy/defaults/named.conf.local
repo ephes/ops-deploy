@@ -1,0 +1,7 @@
+// Managed by Ansible (bind_authoritative_deploy)
+
+zone "example.org" {
+    type master;
+    file "/etc/bind/db.example.org";
+};
+

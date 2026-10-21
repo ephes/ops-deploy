@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- `bind`: port of the `bind_authoritative_deploy` role (deploy only),
+  checked against ops-library main `56564cce` (2.63.2), as
+  `ops_deploy.infra.bind` (`BindConfig`, `deploy_bind`; its own "BIND" page).
+  The role's five templates ship unchanged and render as Ansible renders
+  them, so `named.conf`, `named.conf.options`, `named.conf.local` and
+  `named.conf.keys` are byte-identical to files Ansible rendered from the
+  role (`tests/parity/bind_authoritative_deploy/`). A read-only host probe
+  compares every candidate (the TSIG key file only on stdin, answered with
+  same/differs) and plans nothing on a converged host. Changes go through
+  one host-side transaction: `named-checkzone` for new zone files, a greater
+  serial for a changed static zone, staged files renamed into place,
+  `named-checkconf` on the result and every file restored on failure, so
+  named is reloaded only onto a configuration that validates. Dynamic
+  (RFC 2136) zone files are only seeded when neither the file nor its
+  journal exists, and never read, replaced or reset; a lone journal, a
+  journal next to a changing static zone and non-regular managed paths are
+  refused before any change. Adds an opt-in Docker test against real named
+  (`BIND_DOCKER_CONTAINER`, including an `nsupdate` followed by deploys that
+  leave the dynamic zone and its journal untouched) and the role's digest to
+  the drift manifest.
+
 - Support optional prepared replacement container CA stores for LiveKit, Graphyard and Logyard without changing application images.
 - LiveKit optionally binds a prepared managed Chrome distrust policy into Egress, with required-file preflight before application changes.
 

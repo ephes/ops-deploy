@@ -117,13 +117,14 @@ branch:
   mirrors changed since it was last checked:
   `tests/parity/ops_library_roles.json` records the ops-library commit and a
   digest of each role's `defaults`, `files`, `handlers`, `tasks`,
-  `templates` and `vars`. It covers the `fastdeploy_*`, `graphyard_*`,
+  `templates` and `vars`. It covers the `bind_authoritative_deploy`, `fastdeploy_*`, `graphyard_*`,
   `gotosocial_deploy`, `homelab_deploy`/`homelab_shared`, `jellyfin_deploy`/`jellyfin_shared`,
   `journald_config`, `livekit_deploy`,
   `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`, `work_app_*`
   and `zellij_ingress_deploy` roles so far. Entries added later than the
   recorded commit name the commit they were checked against in their service
-  page (homelab, jellyfin, `uv_install` and gotosocial: `540ede2b`, 2.56.0).
+  page (homelab, jellyfin, `uv_install` and gotosocial: `540ede2b`, 2.56.0;
+  `bind_authoritative_deploy`: `56564cce`, 2.63.2).
 
 After a role change, port it (or document why not), print the new digests
 with `uv run python -m tests.test_ops_library_drift <ops-library>` and update

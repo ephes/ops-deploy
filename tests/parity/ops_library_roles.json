@@ -1,6 +1,7 @@
 {
   "ops_library": "94047183",
   "roles": {
+    "bind_authoritative_deploy": "c7ca96babe09b5d7894eb58b6ca2af1cb3cf11a4848b9b0fa4134ba179f28963",
     "certbot_dns_deploy": "1328fb6afc757246f8b3c492ab5a93bd65d88ccbcecf435da97da08fec81135c",
     "fastdeploy_backup": "26b1ed9faa815701a9a75b6c2f711e056d85a7b290ae4d4b1dab05b9e7805297",
     "fastdeploy_deploy": "e8129afc42c2d3111df43c55375024031f59de389bb279ee3d41c2a8458443c6",

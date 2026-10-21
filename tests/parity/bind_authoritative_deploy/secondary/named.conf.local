@@ -1,0 +1,20 @@
+// Managed by Ansible (bind_authoritative_deploy)
+
+zone "example.org" {
+    type secondary;
+    file "/var/cache/bind/db.example.org";
+    primaries { 192.0.2.1 key "ns1-ns2-xfer"; 2001:db8::1 key "ns1-ns2-xfer"; };
+};
+
+zone "home.example.org" {
+    type slave;
+    file "/var/cache/bind/db.home.example.org";
+    primaries { 192.0.2.1 key "ns1-ns2-xfer"; };
+};
+
+zone "absolute.example.org" {
+    type secondary;
+    file "/var/cache/bind/sec/db.absolute";
+    primaries { 192.0.2.1; };
+};
+
