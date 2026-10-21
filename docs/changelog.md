@@ -8,7 +8,7 @@
   `RESTORE_POLICIES` (FastDeploy main `8faa9bd`, which refuses API token
   issuance and every restore without them). Each is written only when set, as
   compact JSON in single quotes in `.env` and `.env.shell`, byte-identical to
-  the `fastdeploy_deploy` role of ops-library 2.58.0 (re-vendored
+  the `fastdeploy_deploy` role of ops-library 2.59.0 (re-vendored
   `fastdeploy.env.j2`). The role's drift digest stays at its old value: the
   HSTS preload change (ops-library `abae172`) is still not ported. Invalid
   user names, buckets and prefixes fail the config.

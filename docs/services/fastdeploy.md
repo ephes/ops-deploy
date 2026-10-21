@@ -72,7 +72,7 @@ anything that could contain a quote or that FastDeploy's `RestorePolicy`
 rejects (a non-lowercase bucket, an empty prefix list, a prefix that is
 absolute, has `..` or an empty component, or lacks the trailing `/`). The
 bytes match the role's `fastdeploy_service_token_admin_users` and
-`fastdeploy_restore_policies` (ops-library 2.58.0); the role takes the initial
+`fastdeploy_restore_policies` (ops-library 2.59.0); the role takes the initial
 user by name, so a playbook lists `{{ secrets.initial_user_name }}` where the
 config sets `service_token_admin_initial_user`.
 
