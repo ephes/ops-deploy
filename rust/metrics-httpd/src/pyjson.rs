@@ -54,10 +54,8 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Syntax(error) => write!(f, "{error}"),
-            Self::NonFinite(lexeme) => {
-                let shown: String = lexeme.chars().take(40).collect();
-                write!(f, "number out of range: {shown}")
-            }
+            // Not the lexeme: the text goes to the log (D-9: no file content).
+            Self::NonFinite(_) => write!(f, "number out of range (overflows to infinity)"),
             Self::IntTooLong(digits) => write!(
                 f,
                 "integer has {digits} digits, more than the limit of {INT_MAX_STR_DIGITS}"

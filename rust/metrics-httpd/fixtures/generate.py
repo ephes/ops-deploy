@@ -2500,6 +2500,8 @@ def json_file_row(
                 message_prefix=error["message"].split(": ", 1)[0] + ": ",
                 compare="error_type",
             )
+            # Its Content-Length counts the message, so it is not recorded.
+            row["response_headers"].pop("Content-Length")
         else:
             row.update(body=body, compare="bytes")
     if expected_d is not None:

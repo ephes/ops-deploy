@@ -926,6 +926,9 @@ fn json_file_serves_the_document_and_logs_5xx_causes() {
     std::fs::write(&json, "{\"z\": 1, \"secret-content\": ").unwrap();
     let invalid = get(server.addr, "/.well-known/backup", &auth);
     assert_eq!(invalid.status, 502);
+    std::fs::write(&json, "{\"z\": 1.2345678987654321e999}").unwrap();
+    let overflow = get(server.addr, "/.well-known/backup", &auth);
+    assert_eq!(overflow.status, 502);
     std::fs::write(&json, "{\"z\": 1, \"a\": [2.50]}").unwrap();
     let ok = get(server.addr, "/.well-known/backup", &auth);
     assert_eq!(ok.status, 200);
@@ -947,7 +950,7 @@ fn json_file_serves_the_document_and_logs_5xx_causes() {
         .iter()
         .filter(|line| line.starts_with("metrics-httpd: json-file "))
         .collect();
-    assert_eq!(causes.len(), 2, "{lines:?}");
+    assert_eq!(causes.len(), 3, "{lines:?}");
     let path = json.display().to_string();
     assert!(
         causes[0].starts_with(&format!(
@@ -967,10 +970,19 @@ fn json_file_serves_the_document_and_logs_5xx_causes() {
         .iter()
         .filter(|line| line.contains("\"GET /.well-known/backup HTTP/1.1\""))
         .count();
-    assert_eq!(access, 3, "{lines:?}");
+    assert!(
+        causes[2].starts_with(&format!(
+            "metrics-httpd: json-file {path}: 502 invalid_json: "
+        )),
+        "{}",
+        causes[2]
+    );
+    assert_eq!(access, 4, "{lines:?}");
     for line in &lines {
         assert!(
-            !line.contains("dXNlcjpzZWNyZXQ") && !line.contains("secret-content"),
+            !line.contains("dXNlcjpzZWNyZXQ")
+                && !line.contains("secret-content")
+                && !line.contains("12345678987654321"),
             "{line}"
         );
     }
