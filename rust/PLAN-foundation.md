@@ -1,8 +1,10 @@
 # Rust in ops-library: shared foundation — plan
 
-Status: plan, not yet implemented. Campaign "Rust-Ports Runde 2"
-(umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`, which also
-owns this foundation.
+Status: F1 implemented (workspace, toolchain, cargo-deny policy, LICENSE,
+`metrics-httpd` skeleton, `rust.yml` CI, `build_ignore` test, `just
+rust-check`/`rust-test`; see `rust/README.md`); F2–F4 planned. Campaign
+"Rust-Ports Runde 2" (umbrella item `rust-ports-campaign`), stream
+`rust-metrics-httpd`, which also owns this foundation.
 
 This document is the contract for the shared Rust foundation in ops-library:
 the Cargo workspace under `rust/`, the toolchain and dependency policy, CI,
@@ -65,7 +67,9 @@ rust/
   README.md               # how to build/test/release; links the plans
   PLAN-foundation.md      # this file
   scripts/
-    release_checks.py     # stdlib Python: tag/version, glibc floor, smoke, pack (from mailgun-relay)
+    ci_excludes.py        # stdlib Python (F1): `[workspace.metadata.ci] exclude` → `--exclude <crate>` args
+    test_ci_excludes.py
+    release_checks.py     # stdlib Python (F2): tag/version, glibc floor, smoke, pack (from mailgun-relay)
     test_release_checks.py
   metrics-httpd/          # crate + binary `metrics-httpd`  (stream rust-metrics-httpd)
     Cargo.toml  build.rs  src/  tests/  fixtures/  parity/  PLAN.md  TESTMAP.md
@@ -95,6 +99,9 @@ Rules:
   license = "MIT"
   repository = "https://github.com/ephes/ops-library"
   publish = false
+
+  [workspace.metadata.ci]
+  exclude = []                          # section 3
 
   [workspace.lints.rust]
   unsafe_code = "forbid"
@@ -168,10 +175,13 @@ Rules:
 - Job `rust` on `ubuntu-22.04`, `working-directory: rust`, `shell: bash`:
   `rustup toolchain install` (reads the pin), `cargo fmt --check`,
   `cargo clippy --workspace --all-targets --locked -- -D warnings`,
-  `cargo test --workspace --locked`, `cargo deny check` (cargo-deny
-  installed with `cargo install --locked cargo-deny@<pinned version>` or the
-  pinned `EmbarkStudios/cargo-deny-action` SHA, whichever mailgun-relay's CI
-  uses), and `python3 -I -m unittest discover -s scripts -p 'test_*.py'`.
+  `cargo test --workspace --locked`, `cargo deny --locked check`
+  (cargo-deny 0.20.2 installed as in mailgun-relay's CI: the release
+  tarball from GitHub, checked against a pinned sha256), and `python3 -I -m
+  unittest discover -s scripts -p 'test_*.py'`. As mailgun-relay's CI job,
+  it caches the cargo registry and `rust/target` keyed on
+  `rust-toolchain.toml` and `Cargo.lock` (the release job of section 4 has
+  no cache).
 - Crates may add steps (e.g. `apt-get install apache2-utils` for the
   metrics-httpd parity harness) in later slices; they do not add jobs that run
   the Ansible/Python test suite — that suite stays local (`just test`) as
@@ -181,7 +191,12 @@ Rules:
   `[workspace.metadata.ci] exclude` and left out of the default job with
   `--workspace --exclude <crate>`; its stream adds a Rust-only job that
   builds, lints and tests it inside each variant's container image
-  (section 4). `just rust-check` uses the same exclusion.
+  (section 4). `just rust-check` and `just rust-test` use the same
+  exclusion. F1 implements the mechanism with an empty list:
+  `rust/scripts/ci_excludes.py` turns the `cargo metadata --no-deps` JSON
+  into the `--exclude` arguments and rejects non-members, duplicates and a
+  list that excludes every member. `cargo fmt` and `cargo deny` still cover
+  the whole workspace.
 - `justfile` (F1) gets `rust-check` (the same commands, run from a worktree;
   never in `~/projects`) and `rust-test`. They are **not** dependencies of
   `just test`, so `just test` keeps working without a Rust toolchain.
@@ -343,7 +358,7 @@ checks it).
 
 | Id | Repo | Scope | Depends on | Parallel | Est. |
 | --- | --- | --- | --- | --- | --- |
-| F1 | ops-library | `rust/` workspace (Cargo.toml, toolchain, deny.toml, LICENSE, README, `.gitignore`), `metrics-httpd` crate skeleton (`--version` with commit via `build.rs`, nothing else), `rust.yml` CI, `galaxy.yml` build_ignore + `tests/test_collection_build_ignore.py`, `just rust-check`/`rust-test`, CHANGELOG (Unreleased) | — | first; nothing else needs to wait for more than F1 | 1–2 h |
+| F1 | ops-library | `rust/` workspace (Cargo.toml, toolchain, deny.toml, LICENSE, README, `.gitignore`), `metrics-httpd` crate skeleton (`--version` with commit via `build.rs`, nothing else), `rust.yml` CI, `scripts/ci_excludes.py` (section 3), `galaxy.yml` build_ignore + `tests/test_collection_build_ignore.py`, `just rust-check`/`rust-test`, CHANGELOG (Unreleased) | — | first; nothing else needs to wait for more than F1 | 1–2 h |
 | F2 | ops-library | `rust-release.yml`, `rust/scripts/release_checks.py` + tests (incl. the `release.json` format of 4 with defaults and a variant fixture), README release section; a `workflow_dispatch` dry run for `metrics-httpd` (artifact, no tag) proves the pipeline | F1 | with F3, F4 and all crate slices | 2–3 h |
 | F3 | ops-library | `roles/rust_release_binary` (install/pin/prune), README, tests, CHANGELOG | F1 (naming only) | with F2, F4 and all crate slices | 3–4 h |
 | F4 | ops-deploy | `helpers/rust_release.py` with the 6.1 layout + tests; no service uses it yet | F3 (semantics frozen in its README) | with F2 and all crate slices | 2–3 h |

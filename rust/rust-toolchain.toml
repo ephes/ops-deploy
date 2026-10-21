@@ -1,0 +1,7 @@
+# Pinned toolchain for the Rust workspace (PLAN-foundation.md section 2). The
+# pinned version is also the MSRV (`rust-version` in Cargo.toml). Update both
+# together, in a slice of their own.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

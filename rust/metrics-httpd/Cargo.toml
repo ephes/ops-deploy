@@ -1,0 +1,14 @@
+[package]
+name = "metrics-httpd"
+# Own version (not the workspace's): the binary is released by the tag
+# `metrics-httpd-v<version>` (PLAN-foundation.md section 4).
+version = "0.0.0"
+description = "Small authenticated HTTP endpoints for homelab metrics (Rust port of the Python endpoint daemons)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

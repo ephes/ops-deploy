@@ -1,8 +1,10 @@
 # metrics-httpd: Rust port of the small Python HTTP endpoint daemons — plan
 
-Status: plan, not yet implemented. Campaign "Rust-Ports Runde 2" (umbrella
-item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation (workspace,
-CI, release, install helpers): `rust/PLAN-foundation.md` (slices F1–F4).
+Status: plan; the crate exists as the F1 skeleton (`metrics-httpd --version`
+only, `rust/README.md`), slice S1 is next. Campaign "Rust-Ports Runde 2"
+(umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
+(workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
+F1–F4).
 
 This document is the contract for replacing the family of small Python HTTP
 servers that ops-library roles (and one ops-control role) deploy as
