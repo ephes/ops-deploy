@@ -12,7 +12,13 @@
 //! - No proxy (PLAN.md 4.1; ureq would read `*_proxy` from the environment
 //!   by default), no compression, up to 10 redirects as `urllib`.
 //! - The body is read up to the limit and then cut, as `read(n)` does: a
-//!   longer body is not an error here, its JSON is just incomplete.
+//!   longer body is not an error here, its JSON is just incomplete. A body
+//!   that ends before its `Content-Length` is what arrived, as `http.client`
+//!   returns it from a bounded `read(n)`; a chunked body that ends early is
+//!   an error, as there (`IncompleteRead`).
+//! - The timeout applies to each phase; for the body it is one budget for the
+//!   whole body, where Python's socket timeout restarts with every read
+//!   (PLAN.md 4.2 item 13).
 //! - Errors carry a Python class name (PLAN.md 4.2 item 5): an HTTP status
 //!   of 400 or more and too many redirects `HTTPError`, any timeout
 //!   `TimeoutError`, every other failure before the response head
@@ -116,14 +122,27 @@ impl HttpClient {
             builder = builder.header(*name, *value);
         }
         let response = builder.call().map_err(|error| request_error(&error))?;
+        let chunked = response
+            .headers()
+            .get_all("transfer-encoding")
+            .iter()
+            .any(|value| {
+                value
+                    .to_str()
+                    .is_ok_and(|text| text.to_ascii_lowercase().contains("chunked"))
+            });
         let mut body = Vec::new();
-        response
+        // `read_to_end` keeps what it read before an error.
+        let read = response
             .into_body()
             .into_reader()
             .take(request.limit)
-            .read_to_end(&mut body)
-            .map_err(|error| body_error(ureq::Error::from(error)))?;
-        Ok(body)
+            .read_to_end(&mut body);
+        match read {
+            Ok(_) => Ok(body),
+            Err(error) if !chunked && error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(body),
+            Err(error) => Err(body_error(ureq::Error::from(error))),
+        }
     }
 }
 
@@ -231,6 +250,54 @@ mod tests {
         let body = client.get(&request(&server.url("/"))).unwrap();
         assert_eq!(body.len() as u64, BODY_LIMIT);
         assert_eq!(&body[..], &long[..BODY_LIMIT as usize]);
+    }
+
+    #[test]
+    fn a_body_shorter_than_its_content_length_is_what_arrived() {
+        // http.client's bounded read(n) returns the bytes that came before
+        // the connection closed.
+        let head = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n";
+        let body: &[u8] = b"{\"tag_name\": \"v3.7.12\"}";
+        let server = TestServer::start(vec![Reply::raw(&[head, body], Duration::ZERO)]);
+        let client = HttpClient::with_roots(vec![server.root()]);
+        assert_eq!(client.get(&request(&server.url("/"))).unwrap(), body);
+    }
+
+    #[test]
+    fn a_chunked_body_that_ends_early_is_an_error() {
+        // http.client raises IncompleteRead for it.
+        let head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        let server = TestServer::start(vec![Reply::raw(&[head, b"40\r\n{\"tag"], Duration::ZERO)]);
+        let client = HttpClient::with_roots(vec![server.root()]);
+        let error = client.get(&request(&server.url("/"))).unwrap_err();
+        assert!(matches!(error.class, "OSError" | "URLError"), "{error}");
+    }
+
+    #[test]
+    fn a_complete_chunked_body_is_read() {
+        let head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        let server = TestServer::start(vec![Reply::raw(
+            &[head, b"3\r\n[1]\r\n", b"0\r\n\r\n"],
+            Duration::from_millis(20),
+        )]);
+        let client = HttpClient::with_roots(vec![server.root()]);
+        assert_eq!(client.get(&request(&server.url("/"))).unwrap(), b"[1]");
+    }
+
+    #[test]
+    fn the_body_has_one_budget_not_one_per_read() {
+        // PLAN.md 4.2 item 13: every part arrives within the timeout, the
+        // whole body does not.
+        let head = b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\n";
+        let server = TestServer::start(vec![Reply::raw(
+            &[head, b"[", b"1", b",", b"2", b"]", b" "],
+            Duration::from_millis(150),
+        )]);
+        let client = HttpClient::with_roots(vec![server.root()]);
+        let url = server.url("/");
+        let mut slow = request(&url);
+        slow.timeout = Duration::from_millis(400);
+        assert_eq!(client.get(&slow).unwrap_err().class, "TimeoutError");
     }
 
     #[test]

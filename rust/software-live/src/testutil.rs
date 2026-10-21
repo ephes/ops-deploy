@@ -72,6 +72,9 @@ pub mod https {
         pub status: u16,
         pub headers: Vec<(String, String)>,
         pub body: Vec<u8>,
+        /// Instead of the above: these bytes as they are, one part at a
+        /// time with `pause` between them, then the connection is closed.
+        pub raw: Option<(Vec<Vec<u8>>, std::time::Duration)>,
     }
 
     impl Reply {
@@ -80,6 +83,7 @@ pub mod https {
                 status: 200,
                 headers: Vec::new(),
                 body: body.to_vec(),
+                raw: None,
             }
         }
 
@@ -88,6 +92,7 @@ pub mod https {
                 status,
                 headers: Vec::new(),
                 body: b"{\"message\": \"error\"}".to_vec(),
+                raw: None,
             }
         }
 
@@ -96,6 +101,15 @@ pub mod https {
                 status: 302,
                 headers: vec![("Location".into(), location.into())],
                 body: Vec::new(),
+                raw: None,
+            }
+        }
+
+        /// A raw response written in parts, `pause` apart.
+        pub fn raw(parts: &[&[u8]], pause: std::time::Duration) -> Self {
+            Self {
+                raw: Some((parts.iter().map(|part| part.to_vec()).collect(), pause)),
+                ..Self::ok(b"")
             }
         }
     }
@@ -178,6 +192,19 @@ pub mod https {
         seen.lock()
             .expect("not poisoned")
             .push(String::from_utf8_lossy(&head).into_owned());
+        if let Some((parts, pause)) = &reply.raw {
+            for (index, part) in parts.iter().enumerate() {
+                if index > 0 {
+                    thread::sleep(*pause);
+                }
+                if tls.write_all(part).and_then(|()| tls.flush()).is_err() {
+                    return;
+                }
+            }
+            tls.conn.send_close_notify();
+            let _ = tls.flush();
+            return;
+        }
         let mut out = format!(
             "HTTP/1.1 {} Test\r\nContent-Length: {}\r\nConnection: close\r\n",
             reply.status,

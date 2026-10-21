@@ -101,7 +101,7 @@ match Python step by step.
 | `cache_variant` (`:62-65`) and `pathlib`'s stem and suffix | `upstream::tests::cache_variant_matches_python`, `::cache_variant_follows_python_3_12_and_3_13` | done |
 | Caches Python wrote (`atomic_json` output) are read by Rust | `release_python_written_cache_*`, `lifecycle_python_written_cache_*` | done |
 | Caches Rust wrote are read by Python | `upstream::tests::rust_written_caches_are_committed` keeps `fixtures/rust-caches.json` current; `tests/test_software_live_rust_fixtures.py` (`PythonReadsRustWrittenCaches`) runs the Python program on it | done |
-| `urlopen` over HTTPS with the system store | `http::tests::*` against a local HTTPS server: headers, status errors, redirects, the 1 MiB cut, an untrusted certificate, the system store refusing a self-signed server, a refused connection, a timeout, no proxy | done |
+| `urlopen` over HTTPS with the system store | `http::tests::*` against a local HTTPS server: headers, status errors, redirects, the 1 MiB cut, a body shorter than its `Content-Length` (kept, as `http.client`'s bounded read), a chunked body that ends early (error), the body's single time budget (PLAN.md 4.2 item 13), an untrusted certificate, the system store refusing a self-signed server, a refused connection, a timeout, no proxy | done |
 | `atomic_json` (`:132-146`) | `atomic::tests::*` | done |
 
 ## P3 cases in the fixtures (PLAN.md 4.2)

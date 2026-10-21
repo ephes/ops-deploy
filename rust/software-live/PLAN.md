@@ -358,11 +358,13 @@ underscores between digits, leading zeros, any size, ASCII digits only,
   `null` do not).
 - Both requests (Rust, `src/http.rs`): the 10 s apply to each phase
   (resolution, connection with the TLS handshake, request, response head,
-  body), as `urllib`'s socket timeout applies to each blocking operation;
-  up to 10 redirects as `urllib`; an HTTP status ≥ 400 is an error; the body
-  is read up to 1 MiB and then cut, as `read(1024 * 1024)` does (a longer
-  body is no error, its JSON is just incomplete); no compression is offered;
-  a UTF-8 byte order mark is dropped (`json.loads` of bytes).
+  body; for the body one budget, see 4.2 item 13); up to 10 redirects as
+  `urllib`; an HTTP status ≥ 400 is an error; the body is read up to 1 MiB
+  and then cut, as `read(1024 * 1024)` does (a longer body is no error, its
+  JSON is just incomplete); a body that ends before its `Content-Length` is
+  what arrived (`http.client`'s bounded read returns it), a chunked body
+  that ends early is an error (`IncompleteRead` there); no compression is
+  offered; a UTF-8 byte order mark is dropped (`json.loads` of bytes).
 - Lifecycle: `GET https://endoflife.date/api/<product>.json`
   (`ubuntu`, `debian`, `postgresql`), same User-Agent, 10 s, ≤ 1 MiB; a
   non-empty list; keep each cycle that is an object with a string `cycle`,
@@ -618,6 +620,14 @@ request path or a policy value other than the host.
     `checked_at_epoch` integer too large for a float (`now - checked` →
     `OverflowError`). The Rust code ignores such a cache like any other
     invalid one (and refreshes it). Our writers never produce either.
+13. **Upstream body timeout.** Python's 10 s socket timeout restarts with
+    every read, so a body that arrives in parts less than 10 s apart may take
+    any time. Rust gives the whole body one 10 s budget (ureq's
+    `timeout_recv_body`; every other phase has its own 10 s), so the three
+    lookups of a run stay well inside the collector unit's
+    `TimeoutStartSec=90`; a body trickling in for longer is a `TimeoutError`
+    (`http::tests::the_body_has_one_budget_not_one_per_read`). GitHub and
+    endoflife.date answers are a few kilobytes.
 
 ---
 
