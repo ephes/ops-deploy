@@ -1437,9 +1437,11 @@ Caveats for S3d:
 
 - `NEEDED`: `libapt-pkg.so.6.0` (Ubuntu) or `libapt-pkg.so.7.0` (Debian),
   `libstdc++.so.6`, `libgcc_s.so.1`, `libc.so.6`. The Ubuntu build also
-  lists the dynamic loader (`ld-linux-aarch64.so.1` on arm64), so the
-  per-variant allowlist of `release_checks.py` (7.1, 7.4) must allow
-  glibc's loader. The highest `GLIBC_` symbol version is 2.39 in both
+  lists the dynamic loader (`ld-linux-aarch64.so.1` on arm64). F2's
+  `rust/scripts/release_checks.py` already allows glibc's x86_64 loader
+  (`ld-linux-x86-64.so.2` in `BASE_NEEDED`), so a variant's
+  `extra_needed` (7.1, 7.4) needs only its `libapt-pkg` soname and
+  `libstdc++.so.6`. The highest `GLIBC_` symbol version is 2.39 in both
   builds.
 - Stripped size 517 KiB (budget ≤ 2 MiB).
 - Licenses of the helper's dependency tree (`cargo metadata`, target
