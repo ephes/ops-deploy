@@ -10,9 +10,10 @@
 //! `realpath` and child processes with a timeout. S3b added the
 //! pinned-descriptor operations: open a file, `fstat` and hash it through
 //! its descriptor, and run a child that inherits exactly that descriptor, so
-//! it can be executed as `/proc/self/fd/<fd>` (PLAN.md 3.3, Traefik). The
-//! slices that need them add the rest to this trait with their host and fake
-//! implementations (the upstream HTTPS request and the cache write, S3a).
+//! it can be executed as `/proc/self/fd/<fd>` (PLAN.md 3.3, Traefik). S3a
+//! added the upstream HTTPS request and the atomic JSON write. The slices
+//! that need more add it to this trait with their host and fake
+//! implementations.
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read};
@@ -22,7 +23,7 @@ use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -31,7 +32,10 @@ use sha2::{Digest, Sha256};
 // pair: fine in the collector unit, which restricts no address family.
 use wait_timeout::ChildExt;
 
+use serde_json::Value;
+
 use crate::error::PyError;
+use crate::http::{HttpClient, HttpRequest};
 use crate::version::python_strip;
 
 /// The default timeout of `command()` (`software_live.py:68`).
@@ -181,6 +185,11 @@ pub trait System {
         argv: &[&OsStr],
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError>;
+    /// One HTTPS GET (`urlopen` plus `read(limit)`, see [`crate::http`]);
+    /// the error carries the class the observation reports.
+    fn http_get(&self, request: &HttpRequest<'_>) -> Result<Vec<u8>, PyError>;
+    /// `atomic_json(path, value, group)` (see [`crate::atomic`]).
+    fn write_json(&self, path: &Path, value: &Value, group: Option<u32>) -> io::Result<()>;
 
     /// `Path(path).exists()` of Python 3.12 and 3.13 (the hosts'
     /// versions): `False` for a missing path, a non-directory in the path, a
@@ -360,6 +369,20 @@ impl System for HostSystem {
             // when the observation drops it either way.
             let _ = fcntl_setfd(&file.0, FdFlags::CLOEXEC);
         })
+    }
+
+    fn http_get(&self, request: &HttpRequest<'_>) -> Result<Vec<u8>, PyError> {
+        // The system store is read once per process (collect makes up to
+        // three requests).
+        static CLIENT: OnceLock<Result<HttpClient, PyError>> = OnceLock::new();
+        match CLIENT.get_or_init(HttpClient::system) {
+            Ok(client) => client.get(request),
+            Err(error) => Err(error.clone()),
+        }
+    }
+
+    fn write_json(&self, path: &Path, value: &Value, group: Option<u32>) -> io::Result<()> {
+        crate::atomic::write_json(path, value, group)
     }
 }
 
@@ -603,6 +626,8 @@ pub mod fake {
             "EISDIR" => Errno::ISDIR,
             "EINVAL" => Errno::INVAL,
             "EBADF" => Errno::BADF,
+            "EEXIST" => Errno::EXIST,
+            "EROFS" => Errno::ROFS,
             other => panic!("unknown errno {other} in a fixture world"),
         };
         io::Error::from_raw_os_error(errno.raw_os_error())
@@ -670,6 +695,66 @@ pub mod fake {
         }
     }
 
+    /// A file of the world: text, raw bytes (hex) or an errno.
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged)]
+    pub enum FileEntry {
+        Text { ok: String },
+        Bytes { hex: String },
+        Err { errno: String },
+    }
+
+    impl FileEntry {
+        fn get(&self) -> io::Result<Vec<u8>> {
+            match self {
+                Self::Text { ok } => Ok(ok.clone().into_bytes()),
+                Self::Bytes { hex } => {
+                    Ok(::hex::decode(hex).expect("hex bytes in a fixture world"))
+                }
+                Self::Err { errno: name } => Err(errno(name)),
+            }
+        }
+    }
+
+    /// One expected HTTPS request: its URL, headers (names in lower case)
+    /// and timeout, and the answer — a body (cut at the request's limit,
+    /// as `read(limit)`) or an error class.
+    #[derive(Clone, Debug, Deserialize)]
+    pub struct HttpSpec {
+        pub url: String,
+        pub headers: BTreeMap<String, String>,
+        pub timeout: f64,
+        #[serde(default)]
+        pub body: Option<String>,
+        #[serde(default)]
+        pub body_hex: Option<String>,
+        /// The body continues with `pad` copies of `pad_char` (default a
+        /// space) and then `suffix`, so a fixture can describe a long body.
+        #[serde(default)]
+        pub pad: usize,
+        #[serde(default)]
+        pub pad_char: Option<String>,
+        #[serde(default)]
+        pub suffix: String,
+        #[serde(default)]
+        pub error: Option<String>,
+    }
+
+    impl HttpSpec {
+        pub fn bytes(&self) -> Vec<u8> {
+            let mut bytes = match (&self.body, &self.body_hex) {
+                (Some(text), None) => text.clone().into_bytes(),
+                (None, Some(hex)) => ::hex::decode(hex).expect("hex bytes in a fixture world"),
+                (None, None) => Vec::new(),
+                _ => panic!("a fixture body is text or hex, not both"),
+            };
+            let pad = self.pad_char.as_deref().unwrap_or(" ");
+            bytes.extend(pad.repeat(self.pad).into_bytes());
+            bytes.extend(self.suffix.as_bytes());
+            bytes
+        }
+    }
+
     /// One expected child process: its argv and what it did.
     #[derive(Clone, Debug, Deserialize)]
     pub struct CommandSpec {
@@ -723,7 +808,7 @@ pub mod fake {
         #[serde(default)]
         pub now: Vec<f64>,
         #[serde(default)]
-        pub files: BTreeMap<String, Entry<String>>,
+        pub files: BTreeMap<String, FileEntry>,
         #[serde(default)]
         pub stat: BTreeMap<String, Vec<Entry<StatSpec>>>,
         #[serde(default)]
@@ -739,12 +824,28 @@ pub mod fake {
         /// real path (the fixture generator patches `realpath` the same way).
         #[serde(default)]
         pub realpath: BTreeMap<String, String>,
+        #[serde(default)]
+        pub http: Vec<HttpSpec>,
+        /// Paths whose `write_json` fails with this errno.
+        #[serde(default)]
+        pub write_errors: BTreeMap<String, String>,
+    }
+
+    /// A `write_json` the code under test made.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Write {
+        pub path: String,
+        pub value: Value,
+        pub group: Option<u32>,
     }
 
     pub struct FakeSystem {
         now: RefCell<VecDeque<f64>>,
         last_now: RefCell<f64>,
         world: World,
+        files: RefCell<BTreeMap<String, FileEntry>>,
+        http: RefCell<VecDeque<HttpSpec>>,
+        pub writes: RefCell<Vec<Write>>,
         stat: RefCell<BTreeMap<String, VecDeque<Entry<StatSpec>>>>,
         lstat: RefCell<BTreeMap<String, VecDeque<Entry<StatSpec>>>>,
         readlink: RefCell<BTreeMap<String, VecDeque<Entry<String>>>>,
@@ -784,6 +885,9 @@ pub mod fake {
                 readlink: RefCell::new(queues(&world.readlink)),
                 open: RefCell::new(queues(&world.open)),
                 commands: RefCell::new(world.commands.iter().cloned().collect()),
+                files: RefCell::new(world.files.clone()),
+                http: RefCell::new(world.http.iter().cloned().collect()),
+                writes: RefCell::new(Vec::new()),
                 world,
                 calls: RefCell::new(Vec::new()),
             }
@@ -833,6 +937,21 @@ pub mod fake {
                 }),
             }
         }
+
+        /// HTTPS requests the world expected that were never made.
+        pub fn pending_http(&self) -> usize {
+            self.http.borrow().len()
+        }
+
+        /// Expect these HTTPS requests after the ones already expected.
+        pub fn push_http(&self, specs: &[HttpSpec]) {
+            self.http.borrow_mut().extend(specs.iter().cloned());
+        }
+
+        /// The current bytes of a file of the world (after writes).
+        pub fn file(&self, path: &str) -> Option<io::Result<Vec<u8>>> {
+            self.files.borrow().get(path).map(FileEntry::get)
+        }
     }
 
     impl System for FakeSystem {
@@ -848,8 +967,8 @@ pub mod fake {
 
         fn read_file(&self, path: &Path) -> io::Result<Vec<u8>> {
             self.log(format!("read_file {}", path.display()));
-            match self.world.files.get(&key(path)) {
-                Some(entry) => entry.get().map(String::into_bytes),
+            match self.files.borrow().get(&key(path)) {
+                Some(entry) => entry.get(),
                 None => Err(errno("ENOENT")),
             }
         }
@@ -919,6 +1038,53 @@ pub mod fake {
                 .realpath
                 .get(&key(path))
                 .map_or_else(|| path.to_path_buf(), PathBuf::from))
+        }
+
+        fn http_get(&self, request: &HttpRequest<'_>) -> Result<Vec<u8>, PyError> {
+            self.log(format!("http_get {}", request.url));
+            let spec = self
+                .http
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| panic!("unexpected request {}", request.url));
+            assert_eq!(spec.url, request.url, "the requests ran out of order");
+            let headers: BTreeMap<String, String> = request
+                .headers
+                .iter()
+                .map(|(name, value)| (name.to_ascii_lowercase(), (*value).to_owned()))
+                .collect();
+            assert_eq!(spec.headers, headers, "{}", request.url);
+            assert_eq!(
+                spec.timeout,
+                request.timeout.as_secs_f64(),
+                "{}",
+                request.url
+            );
+            if let Some(class) = &spec.error {
+                let class: &'static str = Box::leak(class.clone().into_boxed_str());
+                return Err(PyError::new(class, "fixture"));
+            }
+            let mut body = spec.bytes();
+            body.truncate(usize::try_from(request.limit).unwrap_or(usize::MAX));
+            Ok(body)
+        }
+
+        fn write_json(&self, path: &Path, value: &Value, group: Option<u32>) -> io::Result<()> {
+            let path = key(path);
+            self.log(format!("write_json {path}"));
+            self.writes.borrow_mut().push(Write {
+                path: path.clone(),
+                value: value.clone(),
+                group,
+            });
+            if let Some(name) = self.world.write_errors.get(&path) {
+                return Err(errno(name));
+            }
+            let text = String::from_utf8(crate::atomic::render(value)).expect("ASCII JSON");
+            self.files
+                .borrow_mut()
+                .insert(path, FileEntry::Text { ok: text });
+            Ok(())
         }
     }
 }

@@ -11,6 +11,11 @@
 //!   separators `", "` and `": "`, `ensure_ascii` escaping with surrogate
 //!   pairs, integers as canonical decimals and every other number as
 //!   Python's float `repr`. It is the input of `policy_sha256`.
+//! - [`dumps_compact`] is what this program writes (caches, state,
+//!   projection): sorted keys, compact separators (PLAN.md 4.2 item 3),
+//!   `ensure_ascii` escaping as Python's `json.dump`, so a Python reader
+//!   decodes it whatever its locale, and every number as the JSON text it
+//!   was read or created with (never rounded).
 //! - [`float_repr`], [`py_str`], [`type_name`] and [`eq_int`] give the
 //!   Python view of a JSON value where `validate_policy` and
 //!   `with_freshness` depend on it.
@@ -282,21 +287,7 @@ impl Formatter for PythonFormatter {
         writer: &mut W,
         fragment: &str,
     ) -> io::Result<()> {
-        // serde_json escapes `"`, `\` and C0 controls itself (write_char_escape);
-        // ensure_ascii also escapes DEL and everything beyond ASCII.
-        let mut start = 0;
-        for (index, c) in fragment.char_indices() {
-            if (' '..='~').contains(&c) {
-                continue;
-            }
-            writer.write_all(&fragment.as_bytes()[start..index])?;
-            let mut units = [0u16; 2];
-            for unit in c.encode_utf16(&mut units) {
-                write!(writer, "\\u{unit:04x}")?;
-            }
-            start = index + c.len_utf8();
-        }
-        writer.write_all(&fragment.as_bytes()[start..])
+        write_ascii_fragment(writer, fragment)
     }
 
     fn write_char_escape<W: ?Sized + io::Write>(
@@ -304,18 +295,7 @@ impl Formatter for PythonFormatter {
         writer: &mut W,
         escape: CharEscape,
     ) -> io::Result<()> {
-        let text: &[u8] = match escape {
-            CharEscape::Quote => b"\\\"",
-            CharEscape::ReverseSolidus => b"\\\\",
-            CharEscape::Solidus => b"/",
-            CharEscape::Backspace => b"\\b",
-            CharEscape::FormFeed => b"\\f",
-            CharEscape::LineFeed => b"\\n",
-            CharEscape::CarriageReturn => b"\\r",
-            CharEscape::Tab => b"\\t",
-            CharEscape::AsciiControl(byte) => return write!(writer, "\\u{byte:04x}"),
-        };
-        writer.write_all(text)
+        write_python_escape(writer, escape)
     }
 
     fn begin_array_value<W: ?Sized + io::Write>(
@@ -344,6 +324,98 @@ impl Formatter for PythonFormatter {
 
     fn begin_object_value<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         writer.write_all(b": ")
+    }
+}
+
+/// `ensure_ascii`: serde_json escapes `"`, `\` and C0 controls itself
+/// ([`write_python_escape`]); this also escapes DEL and everything beyond
+/// ASCII, as UTF-16 units (surrogate pairs above U+FFFF).
+fn write_ascii_fragment<W: ?Sized + io::Write>(writer: &mut W, fragment: &str) -> io::Result<()> {
+    let mut start = 0;
+    for (index, c) in fragment.char_indices() {
+        if (' '..='~').contains(&c) {
+            continue;
+        }
+        writer.write_all(&fragment.as_bytes()[start..index])?;
+        let mut units = [0u16; 2];
+        for unit in c.encode_utf16(&mut units) {
+            write!(writer, "\\u{unit:04x}")?;
+        }
+        start = index + c.len_utf8();
+    }
+    writer.write_all(&fragment.as_bytes()[start..])
+}
+
+/// The escapes of Python's `json` encoder for the characters serde_json
+/// escapes itself.
+fn write_python_escape<W: ?Sized + io::Write>(
+    writer: &mut W,
+    escape: CharEscape,
+) -> io::Result<()> {
+    let text: &[u8] = match escape {
+        CharEscape::Quote => b"\\\"",
+        CharEscape::ReverseSolidus => b"\\\\",
+        CharEscape::Solidus => b"/",
+        CharEscape::Backspace => b"\\b",
+        CharEscape::FormFeed => b"\\f",
+        CharEscape::LineFeed => b"\\n",
+        CharEscape::CarriageReturn => b"\\r",
+        CharEscape::Tab => b"\\t",
+        CharEscape::AsciiControl(byte) => return write!(writer, "\\u{byte:04x}"),
+    };
+    writer.write_all(text)
+}
+
+/// The JSON this program writes: sorted keys, compact separators, ASCII
+/// only (`ensure_ascii`), numbers as their JSON text. Python's `json.loads`
+/// reads it back to equal values (PLAN.md 4.2 item 3).
+pub fn dumps_compact(value: &Value) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut serializer = serde_json::Serializer::with_formatter(&mut out, CompactAsciiFormatter);
+    serde::Serialize::serialize(value, &mut serializer)
+        .expect("serializing a JSON value into memory cannot fail");
+    out
+}
+
+/// The `serde_json` formatter for [`dumps_compact`]: serde_json's compact
+/// layout, number tokens written as they are, strings as [`python_dumps`].
+struct CompactAsciiFormatter;
+
+impl Formatter for CompactAsciiFormatter {
+    fn write_string_fragment<W: ?Sized + io::Write>(
+        &mut self,
+        writer: &mut W,
+        fragment: &str,
+    ) -> io::Result<()> {
+        write_ascii_fragment(writer, fragment)
+    }
+
+    fn write_char_escape<W: ?Sized + io::Write>(
+        &mut self,
+        writer: &mut W,
+        escape: CharEscape,
+    ) -> io::Result<()> {
+        write_python_escape(writer, escape)
+    }
+}
+
+/// Python's truth value of a JSON value (`bool(value)`): `None`, `False`,
+/// zero, and empty strings, lists and dicts are false.
+pub fn truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(flag) => *flag,
+        Value::Number(number) => {
+            let token = number.as_str();
+            if is_int_token(token) {
+                canonical_int(token) != "0"
+            } else {
+                token_f64(token) != 0.0
+            }
+        }
+        Value::String(text) => !text.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => !map.is_empty(),
     }
 }
 

@@ -46,7 +46,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 from unittest import mock
 
 FIXTURES_DIR = Path(__file__).resolve().parent
@@ -1308,6 +1308,519 @@ def gen_cli() -> dict[str, Any]:
             "cases": out}
 
 
+# ------------------------------------------------------------------ upstream
+
+GITHUB_URL = "https://api.github.com/repos/traefik/traefik/releases/latest"
+
+
+class FakeResponse:
+    """What ``urlopen`` returns: a context manager with ``read(n)``."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+    def read(self, n: int = -1) -> bytes:
+        return self.body if n < 0 else self.body[:n]
+
+
+def transport_error(name: str) -> BaseException:
+    """An exception ``urlopen`` raises, by class name (others are made up)."""
+    import urllib.error
+
+    known: dict[str, Callable[[], BaseException]] = {
+        "URLError": lambda: urllib.error.URLError("offline"),
+        "HTTPError": lambda: urllib.error.HTTPError(GITHUB_URL, 503, "unavailable", None, None),  # type: ignore[arg-type]
+        "TimeoutError": lambda: TimeoutError("timed out"),
+        "OSError": lambda: OSError("offline"),
+        "ConnectionResetError": lambda: ConnectionResetError("reset"),
+    }
+    if name in known:
+        return known[name]()
+    return type(name, (Exception,), {})("rust category")
+
+
+def response_bytes(spec: dict[str, Any]) -> bytes:
+    body = bytes.fromhex(spec["body_hex"]) if "body_hex" in spec else spec.get("body", "").encode()
+    return body + (spec.get("pad_char", " ") * spec.get("pad", 0)).encode() + spec.get("suffix", "").encode()
+
+
+def python_cache(data: Any) -> str:
+    """The text ``atomic_json`` writes for ``data`` (a cache Python wrote)."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "cache.json"
+        live.atomic_json(path, data)
+        return path.read_text(encoding="utf-8")
+
+
+def place_files(root: Path, files: dict[str, Any], dirs: list[str]) -> None:
+    for name in dirs:
+        (root / name).mkdir(parents=True)
+    for name, content in files.items():
+        if isinstance(content, bytes):
+            (root / name).write_bytes(content)
+        else:
+            (root / name).write_text(content, encoding="utf-8")
+
+
+def run_lookup(root: Path, call: dict[str, Any], responses: list[dict[str, Any]]) -> dict[str, Any]:
+    """Run one ``upstream``/``lifecycle_upstream`` call in ``root``."""
+    queue = list(responses)
+    http: list[dict[str, Any]] = []
+    writes: list[dict[str, Any]] = []
+
+    def urlopen(request: Any, timeout: Any = None) -> FakeResponse:
+        spec = queue.pop(0)
+        http.append({
+            "url": request.full_url,
+            "headers": {key.lower(): value for key, value in request.header_items()},
+            "timeout": timeout,
+            **{key: value for key, value in spec.items() if key != "raise"},
+        })
+        if "error" in spec:
+            raise transport_error(spec["error"])
+        if "raise" in spec:
+            raise transport_error(spec["raise"])
+        return FakeResponse(response_bytes(spec))
+
+    real = live.atomic_json
+
+    def spy(path: Path, data: Any, group: Any = None) -> None:
+        writes.append({"path": str(path.relative_to(root)), "data": json.dumps(data, sort_keys=True),
+                       "group": group})
+        real(path, data, group)
+
+    # A cache name is relative to the case's directory; "/" stays itself.
+    cache = None
+    if call.get("cache") is not None:
+        cache = Path(call["cache"]) if call["cache"].startswith("/") else root / call["cache"]
+    out: dict[str, Any] = {}
+    with (
+        mock.patch.object(live.urllib.request, "urlopen", side_effect=urlopen),
+        mock.patch.object(live, "atomic_json", side_effect=spy),
+    ):
+        try:
+            if call["function"] == "upstream":
+                result = live.upstream(cache, call["now"])
+            else:
+                result = live.lifecycle_upstream(call["product"], cache, call["now"])
+            out["result"] = result_text(result)
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            out["raises"] = error(exc)
+    # A call that raises may stop before its request.
+    assert not queue or "raises" in out, f"unused responses {queue} in {call}"
+    out["http"] = http
+    out["writes"] = writes
+    return out
+
+
+def result_text(result: Any) -> str:
+    """``json.dumps(result, sort_keys=True)`` with an infinite float as the
+    number ``1e400``, which both JSON readers take for the same float."""
+    import re
+
+    text = json.dumps(result, sort_keys=True)
+    return re.sub(r"(?<=[:,\[] )(-?)Infinity|(?<=\[)(-?)Infinity",
+                  lambda m: (m.group(1) or m.group(2) or "") + "1e400", text)
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+
+def restore(root: Path, files: dict[str, bytes]) -> None:
+    for path in sorted(root.rglob("*"), reverse=True):
+        if path.is_file():
+            path.unlink()
+    for name, data in files.items():
+        (root / name).write_bytes(data)
+
+
+def gen_upstream_case(case: dict[str, Any]) -> dict[str, Any]:
+    """Run the calls of a case in one directory, in order.
+
+    A call may carry ``p3``: the input is one Python handles differently on
+    purpose (PLAN.md 4.2). Its ``rust`` answer is what the Python code gives
+    for the input the Rust code effectively sees: the cache replaced by an
+    unusable one (``cache``), the response replaced by an error of the Rust
+    class (``error``) or another body (``body``).
+    """
+    out_calls = []
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        place_files(root, case.get("files", {}), case.get("dirs", []))
+        for call in case["calls"]:
+            before = snapshot(root)
+            entry = {key: call[key] for key in ("function", "product", "cache", "now") if key in call}
+            entry.update(run_lookup(root, call, call.get("responses", [])))
+            p3 = call.get("p3")
+            if p3:
+                assert call is case["calls"][-1], "a P3 call must be the last of its case"
+                after = snapshot(root)
+                restore(root, before)
+                responses = [dict(spec) for spec in call.get("responses", [])]
+                if p3["kind"] == "cache":
+                    (root / p3["file"]).write_text("not json", encoding="utf-8")
+                    responses = p3["responses"]
+                elif p3["kind"] == "error":
+                    responses[p3.get("index", 0)] = {"error": p3["class"]}
+                elif p3["kind"] == "body":
+                    responses[p3.get("index", 0)] = {"body": p3["body"]}
+                rust = run_lookup(root, call, responses)
+                entry["p3"] = {"tag": p3["tag"], "result": rust.get("result"), "writes": rust["writes"]}
+                assert "raises" not in rust, rust
+                if p3["kind"] == "cache":
+                    entry["p3"]["http"] = rust["http"]
+                restore(root, after)
+            out_calls.append(entry)
+    files = {}
+    for name, content in case.get("files", {}).items():
+        files[name] = {"hex": content.hex()} if isinstance(content, bytes) else {"ok": content}
+    for name in case.get("dirs", []):
+        files[name] = {"errno": "EISDIR"}
+    return {"id": case["id"], "files": files, "write_errors": case.get("write_errors", {}),
+            "calls": out_calls}
+
+
+def release(tag: Any = "v3.7.12", **extra: Any) -> dict[str, str]:
+    return {"body": json.dumps({"tag_name": tag, "draft": False, "prerelease": False, **extra})}
+
+
+CYCLES = [
+    {"cycle": "17", "latest": "17.11", "eol": "2029-11-08", "releaseDate": "2024-09-26",
+     "lts": False, "support": True},
+    {"cycle": "16", "latest": "16.15", "eol": "2028-11-09", "extra": {"nested": [1, 2.5, None]}},
+]
+
+
+def lifecycle_body(cycles: Any) -> dict[str, str]:
+    return {"body": json.dumps(cycles)}
+
+
+def upstream_cases() -> list[dict[str, Any]]:
+    up = lambda now, cache="upstream.json", responses=(), **kw: {
+        "function": "upstream", "cache": cache, "now": now, "responses": list(responses), **kw}
+    lc = lambda product, now, cache="upstream.json", responses=(), **kw: {
+        "function": "lifecycle_upstream", "product": product, "cache": cache, "now": now,
+        "responses": list(responses), **kw}
+    old_release = {"version": "3.7.9", "checked_at_epoch": 1.0}
+    py_release = python_cache({"version": "3.7.9", "checked_at_epoch": 1760000000.25})
+    py_cycles = python_cache({"product": "postgresql", "cycles": CYCLES, "checked_at_epoch": 1760000000.25})
+    T = 1760000000.25
+    cases: list[dict[str, Any]] = [
+        # test_upstream_daily_cache_and_unparseable_release
+        {"id": "release_fetch_then_cached_then_garbage", "calls": [
+            up(100.0, responses=[{"body": '{"tag_name":"v3.7.12"}'}]),
+            up(101.0),
+            up(100000.0, responses=[{"body": '{"tag_name":"garbage"}'}])]},
+        # test_failed_upstream_refresh_retains_old_timestamp_only_as_evidence
+        {"id": "release_failed_refresh_keeps_evidence",
+         "files": {"upstream.json": json.dumps({"version": "3.7.9", "checked_at_epoch": 1})},
+         "calls": [up(100000.0, responses=[{"error": "OSError"}])]},
+        {"id": "release_no_cache", "calls": [up(T, cache=None, responses=[release()])]},
+        {"id": "release_no_cache_failure", "calls": [up(T, cache=None, responses=[{"error": "URLError"}])]},
+        {"id": "release_python_written_cache_fresh", "files": {"upstream.json": py_release},
+         "calls": [up(T + 86399.5)]},
+        {"id": "release_python_written_cache_age_zero", "files": {"upstream.json": py_release},
+         "calls": [up(T)]},
+        {"id": "release_python_written_cache_expired", "files": {"upstream.json": py_release},
+         "calls": [up(T + 86400.0, responses=[release("v3.8.0")])]},
+        {"id": "release_cache_from_the_future", "files": {"upstream.json": py_release},
+         "calls": [up(T - 0.5, responses=[{"error": "TimeoutError"}])]},
+        {"id": "release_cache_extra_keys_are_kept",
+         "files": {"upstream.json": json.dumps({**old_release, "checked_at_epoch": T, "note": ["x", 1]})},
+         "calls": [up(T + 5.0)]},
+        {"id": "release_cache_status_keys_are_replaced",
+         "files": {"upstream.json": json.dumps({**old_release, "checked_at_epoch": T, "status": "unknown",
+                                               "cached": False})},
+         "calls": [up(T + 5.0)]},
+    ]
+    for name, data in {
+        "version_invalid": {"version": "3.7", "checked_at_epoch": T},
+        "version_int": {"version": 3, "checked_at_epoch": T},
+        "version_missing": {"checked_at_epoch": T},
+        "checked_missing": {"version": "3.7.9"},
+        "checked_str": {"version": "3.7.9", "checked_at_epoch": "1760000000"},
+        "checked_null": {"version": "3.7.9", "checked_at_epoch": None},
+        "checked_list": {"version": "3.7.9", "checked_at_epoch": [T]},
+        "list": [old_release],
+        "string": "3.7.9",
+        "null": None,
+        "empty_object": {},
+    }.items():
+        cases.append({"id": f"release_invalid_cache_{name}", "files": {"upstream.json": json.dumps(data)},
+                      "calls": [up(T + 5.0, responses=[{"error": "URLError"}])]})
+    for name, text in {
+        "broken_json": '{"version": "3.7.9", ',
+        "bom": '﻿{"version": "3.7.9", "checked_at_epoch": 1760000000.25}',
+        "trailing_data": '{"version": "3.7.9", "checked_at_epoch": 1760000000.25} x',
+        "empty": "",
+    }.items():
+        cases.append({"id": f"release_invalid_cache_{name}", "files": {"upstream.json": text},
+                      "calls": [up(T + 5.0, responses=[release()])]})
+    cases += [
+        {"id": "release_invalid_cache_not_utf8",
+         "files": {"upstream.json": b'{"version": "3.7.9", "checked_at_epoch": 1760000000.25, "x": "\xff"}'},
+         "calls": [up(T + 5.0, responses=[{"error": "URLError"}])]},
+        {"id": "release_cache_is_a_directory", "dirs": ["upstream.json"],
+         "write_errors": {"upstream.json": "EISDIR"},
+         "calls": [up(T, responses=[release()])]},
+        {"id": "release_cache_directory_missing", "write_errors": {"missing/upstream.json": "ENOENT"},
+         "calls": [up(T, cache="missing/upstream.json", responses=[release()])]},
+        {"id": "release_cache_checked_bool",
+         "files": {"upstream.json": json.dumps({"version": "3.7.9", "checked_at_epoch": True})},
+         "calls": [up(86401.0, responses=[{"error": "URLError"}])]},
+        {"id": "release_cache_checked_bool_fresh",
+         "files": {"upstream.json": json.dumps({"version": "3.7.9", "checked_at_epoch": True})},
+         "calls": [up(86400.5)]},
+        {"id": "release_cache_checked_int",
+         "files": {"upstream.json": json.dumps({"version": "v3.7.9", "checked_at_epoch": 1760000000})},
+         "calls": [up(T)]},
+        {"id": "release_cache_checked_big_int",
+         "files": {"upstream.json": '{"checked_at_epoch": 18446744073709551617, "version": "3.7.9"}'},
+         "calls": [up(T, responses=[{"error": "URLError"}])]},
+        {"id": "release_cache_checked_infinite_float",
+         "files": {"upstream.json": '{"checked_at_epoch": 1e400, "version": "3.7.9"}'},
+         "calls": [up(T, responses=[{"error": "URLError"}])]},
+        {"id": "release_cache_checked_exponent",
+         "files": {"upstream.json": '{"checked_at_epoch": 1.76E9, "version": "3.7.9"}'},
+         "calls": [up(1.76e9 + 1.0)]},
+        {"id": "release_cache_negative_zero",
+         "files": {"upstream.json": '{"checked_at_epoch": -0.0, "version": "3.7.9"}'},
+         "calls": [up(0.0)]},
+        # P3 (PLAN.md 4.2 item 12): Python's own check raises OverflowError,
+        # which nothing catches; the Rust code ignores such a cache.
+        {"id": "p3_release_cache_checked_huge_int",
+         "files": {"upstream.json": '{"checked_at_epoch": 1' + "0" * 400 + ', "version": "3.7.9"}'},
+         "calls": [up(T, responses=[release()],
+                      p3={"tag": "cache-crash", "kind": "cache", "file": "upstream.json",
+                          "responses": [release()]})]},
+        # P3 (PLAN.md 4.2 item 4): NaN in a cache.
+        {"id": "p3_release_cache_checked_nan",
+         "files": {"upstream.json": '{"checked_at_epoch": NaN, "version": "3.7.9"}'},
+         "calls": [up(T, responses=[{"error": "URLError"}],
+                      p3={"tag": "non-standard-json", "kind": "cache", "file": "upstream.json",
+                          "responses": [{"error": "URLError"}]})]},
+    ]
+    # Release responses.
+    for name, response in {
+        "tag_without_v": release("3.7.12"),
+        "tag_short": release("v3.7"),
+        "tag_rc": release("v3.8.0-rc1"),
+        "tag_int": release(3),
+        "tag_null": release(None),
+        "tag_missing": {"body": '{"name": "v3.7.12"}'},
+        "body_list": {"body": '[{"tag_name": "v3.7.12"}]'},
+        "body_string": {"body": '"v3.7.12"'},
+        "body_null": {"body": "null"},
+        "body_number": {"body": "3"},
+        "draft": release(draft=True),
+        "prerelease": release(prerelease=True),
+        "draft_string_false": release(draft="false"),
+        "draft_one": release(draft=1),
+        "draft_zero": release(draft=0),
+        "draft_float_zero": release(draft=0.0),
+        "draft_empty_string": release(draft=""),
+        "draft_empty_list": release(draft=[]),
+        "draft_empty_object": release(draft={}),
+        "draft_list": release(draft=[False]),
+        "prerelease_null": release(prerelease=None),
+        "flags_missing": {"body": '{"tag_name": "v3.7.12"}'},
+        "broken_json": {"body": '{"tag_name": "v3.7.12"'},
+        "empty_body": {"body": ""},
+        "bom": {"body_hex": (b"\xef\xbb\xbf" + b'{"tag_name": "v3.7.12"}').hex()},
+        "not_utf8": {"body_hex": b'{"tag_name": "v3.7.12", "x": "\xff"}'.hex()},
+        "trailing_data": {"body": '{"tag_name": "v3.7.12"} x'},
+        "duplicate_tag": {"body": '{"tag_name": "garbage", "tag_name": "v3.7.12"}'},
+        "big_int_extra": {"body": '{"tag_name": "v3.7.12", "id": 18446744073709551617}'},
+        "int_4301_digits": {"body": '{"tag_name": "v3.7.12", "id": ' + "1" * 4301 + "}"},
+        "long_whitespace_within_limit": {"body": '{"tag_name": "v3.7.12"}', "pad": 1024 * 1024 - 23},
+        "long_body_cut": {"body": '{"tag_name": "v3.7.12", "notes": "', "pad": 1024 * 1024,
+                          "pad_char": "a", "suffix": '"}'},
+        "non_ascii_extra": {"body": '{"tag_name": "v3.7.12", "name": "é\U0001f600"}'},
+    }.items():
+        cases.append({"id": f"release_response_{name}",
+                      "calls": [up(T, responses=[response])]})
+    for name in ("URLError", "HTTPError", "TimeoutError", "OSError", "ConnectionResetError"):
+        cases.append({"id": f"release_transport_{name}", "files": {"upstream.json": py_release},
+                      "calls": [up(T + 86400.0, responses=[{"error": name}])]})
+    cases += [
+        # P3 (PLAN.md 4.2 item 4): non-standard JSON and UTF-16 bodies.
+        {"id": "p3_release_response_nan",
+         "calls": [up(T, responses=[{"body": '{"tag_name": "v3.7.12", "draft": NaN}'}],
+                      p3={"tag": "non-standard-json", "kind": "error", "class": "JSONDecodeError"})]},
+        {"id": "p3_release_response_utf16",
+         "calls": [up(T, responses=[{"body_hex": '{"tag_name": "v3.7.12"}'.encode("utf-16").hex()}],
+                      p3={"tag": "utf16-body", "kind": "error", "class": "UnicodeDecodeError"})]},
+        {"id": "p3_release_response_unicode_digits",
+         "calls": [up(T, responses=[release("v3.7.٩")],
+                      p3={"tag": "unicode-digits", "kind": "error", "class": "ValueError"})]},
+    ]
+
+    # Lifecycle: test_lifecycle_daily_cache_and_failed_refresh_preserves_evidence
+    cases.append({"id": "lifecycle_fetch_then_cached_then_failed_refresh", "calls": [
+        lc("postgresql", 100.0, responses=[{"body": '[{"cycle":"17","latest":"17.11","eol":"2029-11-08"}]'}]),
+        lc("postgresql", 101.0),
+        lc("postgresql", 100000.0, responses=[{"error": "OSError"}])]})
+    # test_lifecycle_refresh_skips_malformed_irrelevant_cycles
+    cases.append({"id": "lifecycle_skips_malformed_irrelevant_cycles", "calls": [
+        lc("postgresql", 100.0, cache=None, responses=[lifecycle_body([
+            {"cycle": "old", "latest": "1.0", "eol": {"bad": "value"}},
+            {"cycle": "17", "latest": "17.11", "eol": "2029-11-08"}])])]})
+    cases += [
+        {"id": "lifecycle_products_have_their_own_caches", "calls": [
+            lc("ubuntu", T, responses=[lifecycle_body([{"cycle": "24.04", "eol": "2029-05-31",
+                                                         "support": "2029-05-31", "lts": True}])]),
+            lc("debian", T, responses=[lifecycle_body([{"cycle": "13", "eol": "2028-08-09"}])]),
+            lc("ubuntu", T + 1.0),
+            lc("debian", T + 1.0),
+            up(T + 1.0, responses=[release()])]},
+        {"id": "lifecycle_python_written_cache_fresh", "files": {"upstream-postgresql.json": py_cycles},
+         "calls": [lc("postgresql", T + 100.0)]},
+        {"id": "lifecycle_python_written_cache_expired_failure",
+         "files": {"upstream-postgresql.json": py_cycles},
+         "calls": [lc("postgresql", T + 86400.0, responses=[{"error": "HTTPError"}])]},
+        {"id": "lifecycle_python_written_cache_expired_refresh",
+         "files": {"upstream-postgresql.json": py_cycles},
+         "calls": [lc("postgresql", T + 86400.0, responses=[lifecycle_body(CYCLES[:1])])]},
+        {"id": "lifecycle_cache_of_another_product", "files": {"upstream-ubuntu.json": py_cycles},
+         "calls": [lc("ubuntu", T + 5.0, responses=[{"error": "URLError"}])]},
+        {"id": "lifecycle_cache_cycles_not_validated",
+         "files": {"upstream-postgresql.json": json.dumps(
+             {"product": "postgresql", "cycles": [1, "x", {"eol": 5}], "checked_at_epoch": T})},
+         "calls": [lc("postgresql", T + 5.0)]},
+        {"id": "lifecycle_cache_empty_cycles",
+         "files": {"upstream-postgresql.json": json.dumps(
+             {"product": "postgresql", "cycles": [], "checked_at_epoch": T})},
+         "calls": [lc("postgresql", T + 5.0)]},
+        {"id": "lifecycle_no_cache_path", "calls": [lc("debian", T, cache=None, responses=[
+            lifecycle_body([{"cycle": "13", "eol": False}])])]},
+        {"id": "lifecycle_cache_without_suffix", "calls": [
+            lc("ubuntu", T, cache="cache", responses=[lifecycle_body([{"cycle": "24.04", "eol": True}])]),
+            lc("ubuntu", T + 1.0, cache="cache")]},
+        {"id": "lifecycle_cache_directory_missing",
+         "write_errors": {"missing/upstream-debian.json": "ENOENT"},
+         "calls": [lc("debian", T, cache="missing/upstream.json",
+                      responses=[lifecycle_body([{"cycle": "13", "eol": "2028-08-09"}])])]},
+        {"id": "lifecycle_cache_is_a_directory", "dirs": ["upstream-debian.json"],
+         "write_errors": {"upstream-debian.json": "EISDIR"},
+         "calls": [lc("debian", T, responses=[lifecycle_body([{"cycle": "13", "eol": "2028-08-09"}])])]},
+        {"id": "lifecycle_cache_path_without_a_name", "calls": [lc("debian", T, cache="/")]},
+    ]
+    for name, data in {
+        "product_missing": {"cycles": [], "checked_at_epoch": T},
+        "product_other": {"product": "ubuntu", "cycles": [], "checked_at_epoch": T},
+        "product_int": {"product": 1, "cycles": [], "checked_at_epoch": T},
+        "cycles_object": {"product": "postgresql", "cycles": {}, "checked_at_epoch": T},
+        "cycles_missing": {"product": "postgresql", "checked_at_epoch": T},
+        "checked_missing": {"product": "postgresql", "cycles": []},
+        "checked_str": {"product": "postgresql", "cycles": [], "checked_at_epoch": "x"},
+    }.items():
+        cases.append({"id": f"lifecycle_invalid_cache_{name}",
+                      "files": {"upstream-postgresql.json": json.dumps(data)},
+                      "calls": [lc("postgresql", T + 5.0, responses=[{"error": "URLError"}])]})
+    cases.append({"id": "lifecycle_stale_cache_checked_bool",
+                  "files": {"upstream-postgresql.json": json.dumps(
+                      {"product": "postgresql", "cycles": ["kept"], "checked_at_epoch": False})},
+                  "calls": [lc("postgresql", T, responses=[{"error": "URLError"}])]})
+    for name, text in {"list": "[]", "string": '"postgresql"', "null": "null", "number": "1"}.items():
+        # P3 (PLAN.md 4.2 item 12): `cached.get` on a non-object raises
+        # AttributeError, which nothing catches.
+        cases.append({"id": f"p3_lifecycle_cache_{name}", "files": {"upstream-postgresql.json": text},
+                      "calls": [lc("postgresql", T, responses=[lifecycle_body(CYCLES)],
+                                   p3={"tag": "cache-crash", "kind": "cache",
+                                       "file": "upstream-postgresql.json",
+                                       "responses": [lifecycle_body(CYCLES)]})]})
+    cases.append({"id": "p3_lifecycle_cache_checked_huge_int",
+                  "files": {"upstream-postgresql.json":
+                            '{"checked_at_epoch": -1' + "0" * 400 + ', "cycles": [], "product": "postgresql"}'},
+                  "calls": [lc("postgresql", T, responses=[{"error": "URLError"}],
+                               p3={"tag": "cache-crash", "kind": "cache", "file": "upstream-postgresql.json",
+                                   "responses": [{"error": "URLError"}]})]})
+    # Lifecycle responses.
+    for name, body in {
+        "not_a_list": {"body": json.dumps({"cycle": "17"})},
+        "empty_list": {"body": "[]"},
+        "null": {"body": "null"},
+        "no_valid_cycle": lifecycle_body([1, "17", None, [], {"cycle": 17}, {"latest": "17.1"}]),
+        "broken_json": {"body": "[{"},
+        "whole_cycles_kept": lifecycle_body(CYCLES + [{"cycle": "15", "eol": "2027-11-11",
+                                                         "n": 18446744073709551617, "f": 1e16,
+                                                         "s": "é\U0001f600"}]),
+        "duplicate_cycles": lifecycle_body([{"cycle": "17", "eol": False}, {"cycle": "17", "eol": True}]),
+        "long_body_cut": {"body": '[{"cycle": "17", "eol": false, "x": "', "pad": 1024 * 1024,
+                          "pad_char": "a", "suffix": '"}]'},
+    }.items():
+        cases.append({"id": f"lifecycle_response_{name}",
+                      "calls": [lc("postgresql", T, responses=[body])]})
+    values: dict[str, Any] = {
+        "true": True, "false": False, "null": None, "date": "2029-11-08", "leap_day": "2024-02-29",
+        "no_leap_day": "2023-02-29", "day_31_in_april": "2029-04-31", "month_13": "2029-13-01",
+        "month_0": "2029-00-10", "day_0": "2029-01-00", "year_0": "0000-01-01", "year_1": "0001-01-01",
+        "year_9999": "9999-12-31", "short_year": "999-01-01", "single_digits": "2029-1-8",
+        "slashes": "2029/11/08", "space": " 2029-11-08", "trailing_space": "2029-11-08 ",
+        "datetime": "2029-11-08T00:00:00", "empty": "", "text": "soon", "int": 2029, "float": 2029.5,
+        "list": ["2029-11-08"], "object": {"date": "2029-11-08"}, "sign": "+2029-11-08",
+    }
+    for key in ("eol", "support"):
+        for name, value in values.items():
+            cycle = {"cycle": "17", key: value} if key == "eol" else {"cycle": "17", "eol": False, key: value}
+            cases.append({"id": f"lifecycle_{key}_{name}",
+                          "calls": [lc("postgresql", T, cache=None,
+                                       responses=[lifecycle_body([cycle, {"cycle": "16", "eol": True}])])]})
+    cases.append({"id": "lifecycle_eol_missing_support_missing",
+                  "calls": [lc("postgresql", T, cache=None, responses=[lifecycle_body([{"cycle": "17"}])])]})
+    # P3 (PLAN.md 4.2 item 6): ISO forms Python 3.11+ reads, endoflife.date never sends.
+    for name, value in {"basic": "20291108", "week": "2029-W45", "week_day": "2029-W45-4",
+                        "basic_week": "2029W45", "basic_week_day": "2029W454"}.items():
+        for key in ("eol", "support"):
+            cycle = {"cycle": "17", key: value} if key == "eol" else {"cycle": "17", "eol": False, key: value}
+            replaced = {**cycle, key: "not a date"}
+            cases.append({"id": f"p3_lifecycle_{key}_{name}",
+                          "calls": [lc("postgresql", T, cache=None,
+                                       responses=[lifecycle_body([cycle, {"cycle": "16", "eol": True}])],
+                                       p3={"tag": "iso-date", "kind": "body",
+                                           "body": json.dumps([replaced, {"cycle": "16", "eol": True}])})]})
+    cases.append({"id": "p3_lifecycle_response_nan",
+                  "calls": [lc("postgresql", T, responses=[{"body": '[{"cycle": "17", "eol": false, "x": NaN}]'}],
+                               p3={"tag": "non-standard-json", "kind": "error", "class": "JSONDecodeError"})]})
+    return cases
+
+
+# Not here: names that end with a dot or start with two (`a.`, `a..`,
+# `..json`, `a.b.`), whose stem and suffix changed in Python 3.14; the Rust
+# code follows 3.12 and 3.13, the hosts' versions
+# (upstream::tests::cache_variant_follows_python_3_12_and_3_13).
+CACHE_VARIANT_PATHS = [
+    "/var/lib/software-live/upstream.json", "/var/lib/software-live/shadow/upstream.json",
+    "upstream.json", "cache", ".hidden", ".hidden.json", "a.tar.gz", "..", "a/..",
+    "a/.", ".", "", "/", "//", "///", "//x/y.json", "///x/y.json", "x/./y.json", "x//y.json",
+    "y.json/", "/a/b.c.d", "/a/./b/../c.json", "a.b.c",
+]
+
+
+def gen_upstream() -> dict[str, Any]:
+    variants = []
+    for path in CACHE_VARIANT_PATHS:
+        case: dict[str, Any] = {"path": path, "name": "ubuntu", "result": None, "error": None}
+        try:
+            case["result"] = str(live.cache_variant(Path(path), "ubuntu"))
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            case["error"] = error(exc)
+        variants.append(case)
+    return {
+        "cache_variant": variants,
+        "cases": [gen_upstream_case(case) for case in upstream_cases()],
+        "constants": {"upstream_url": live.UPSTREAM_URL, "lifecycle_url": live.LIFECYCLE_URL,
+                      "ttl": live.UPSTREAM_TTL},
+    }
+
+
 # ------------------------------------------------------------------ driver
 
 GENERATORS: dict[str, Callable[[], Any]] = {
@@ -1318,6 +1831,7 @@ GENERATORS: dict[str, Callable[[], Any]] = {
     "realpath.json": gen_realpath,
     "traefik.json": gen_traefik,
     "cli.json": gen_cli,
+    "upstream.json": gen_upstream,
 }
 
 

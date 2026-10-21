@@ -2,8 +2,9 @@
 
 Status: S2 implemented (crate skeleton, command line, `validate`, policy
 hash, report types, `System` trait, fixtures, TESTMAP; see `README.md`);
-S3b implemented (Traefik observation, `src/traefik.rs`); S1 spike done,
-report in section 13; the other slices planned. Owner
+S3b implemented (Traefik observation, `src/traefik.rs`); S3a implemented
+(upstream lookups and caches, HTTPS with the system store, atomic JSON
+writes); S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
@@ -352,7 +353,16 @@ underscores between digits, leading zeros, any size, ASCII digits only,
 - Traefik: `GET https://api.github.com/repos/traefik/traefik/releases/latest`,
   headers `User-Agent: ops-library-software-live/1`,
   `Accept: application/vnd.github+json`, 10 s timeout, body ≤ 1 MiB;
-  `tag_name` must match `v?N.N.N`, drafts and prereleases rejected.
+  `tag_name` must match `v?N.N.N`, drafts and prereleases rejected
+  (Python truthiness: `"false"` or `1` rejects, `0`, `""`, `[]`, `{}`,
+  `null` do not).
+- Both requests (Rust, `src/http.rs`): the 10 s apply to each phase
+  (resolution, connection with the TLS handshake, request, response head,
+  body), as `urllib`'s socket timeout applies to each blocking operation;
+  up to 10 redirects as `urllib`; an HTTP status ≥ 400 is an error; the body
+  is read up to 1 MiB and then cut, as `read(1024 * 1024)` does (a longer
+  body is no error, its JSON is just incomplete); no compression is offered;
+  a UTF-8 byte order mark is dropped (`json.loads` of bytes).
 - Lifecycle: `GET https://endoflife.date/api/<product>.json`
   (`ubuntu`, `debian`, `postgresql`), same User-Agent, 10 s, ≤ 1 MiB; a
   non-empty list; keep each cycle that is an object with a string `cycle`,
@@ -361,19 +371,32 @@ underscores between digits, leading zeros, any size, ASCII digits only,
   **whole** (all upstream keys, e.g. `latest`, `lts`, `releaseDate`).
 - Caches: `<cache>` for Traefik (`{"version", "checked_at_epoch"}`) and
   `<cache stem>-<product><suffix>` for lifecycle (`{"product", "cycles",
-  "checked_at_epoch"}`), TTL 86400 s, used only if `0 <= now - checked <
-  86400`. A cache is "valid evidence" only if it parses and validates;
-  invalid caches are ignored. A failed refresh returns
+  "checked_at_epoch"}`; stem and suffix as `pathlib` of Python 3.12 and
+  3.13, which 3.14 changed for names ending with a dot or starting with two),
+  TTL 86400 s, used only if `0 <= now - checked < 86400`. A cache is "valid
+  evidence" only if it parses and validates: a JSON object; Traefik: a
+  `version` string matching `v?N.N.N`; lifecycle: `product` equal to the
+  product and `cycles` a list (its items are not checked); both: a
+  `checked_at_epoch` that is an int, a float or a bool. Every other key is
+  kept and returned. Invalid caches are ignored. A failed refresh returns
   `{"status": "unknown", "error": "<Class>", "last_success": <valid stale
   cache or null>}` and never rewrites or re-dates the cache. A successful
   answer is `{…, "status": "ok", "cached": true|false}`.
 - **Cache files are shared state across implementations (P1):** Rust must
   read caches Python wrote and Python must read caches Rust wrote, so a
   rollback or a roll-forward does not trigger extra upstream requests or
-  lose `last_success` evidence.
+  lose `last_success` evidence. Rust writes them with `atomic_json` (3.5,
+  no group) as sorted, compact, ASCII-only JSON whose numbers keep the text
+  they were read with; `fixtures/rust-caches.json` holds what Rust writes,
+  and `tests/test_software_live_rust_fixtures.py` runs the Python program
+  on it (fresh hit without a request; after the day, the same object as
+  `last_success` and the file unchanged).
 - TLS trust: the system store (`/etc/ssl/certs`), like Python's `urllib`
   with OpenSSL defaults. The ongoing CA-trust work in the fleet
   (eMudhra distrust) therefore applies to both implementations equally.
+  Rust loads it with `rustls-native-certs` (which also honours
+  `SSL_CERT_FILE` and `SSL_CERT_DIR`, as OpenSSL does) once per process and
+  bundles no roots; an empty store makes every request a `URLError`.
 
 #### APT (`security_origin`, `security_packages`, `observe_apt`, `:530-604`)
 
@@ -522,13 +545,15 @@ request path or a policy value other than the host.
    Non-GET methods give 501 with `{"error": "unsupported_method"}` (Python:
    501 with an HTML body). Malformed request lines give 400 (Python: 400 HTML).
 3. **JSON formatting.** State, caches, projection and responses use compact
-   separators (Python: `", "`, `": "`). Keys stay sorted. Floats use the
+   separators (Python: `", "`, `": "`). Keys stay sorted. Files are
+   ASCII-only (`\uXXXX` escapes, as Python's `ensure_ascii`), so a Python
+   reader decodes them in any locale. Floats use the
    shortest round-trip form (same digits as Python's `repr`, possibly
    different exponent spelling). Exception: `policy_sha256` input (3.2) is
    byte-identical.
 4. **Non-standard JSON** (`NaN`, `Infinity`, `-Infinity`) and lone
-   surrogate escapes (`"\ud800"`) in state, caches, policy or endpoint
-   configuration are rejected, as is nesting deeper than 128 levels
+   surrogate escapes (`"\ud800"`) in state, caches, upstream responses,
+   policy or endpoint configuration are rejected, as is nesting deeper than 128 levels
    (serde_json's recursion limit; Python's limit is its interpreter's) and a
    `--config-json` argument that is not UTF-8 (Python decodes argv with
    `surrogateescape`). Python accepts all of these. Our writers never
@@ -540,7 +565,10 @@ request path or a policy value other than the host.
    Python's own limit of 4300 digits per integer is kept, also for a value a
    later duplicate key replaces and for release numbers (`version()`). JSON
    is taken apart through `RawValue`, so an object key equal to serde_json's
-   internal number token stays an ordinary key.
+   internal number token stays an ordinary key. An upstream body must be
+   UTF-8 (a UTF-8 byte order mark is dropped, as in Python); Python's
+   `json.loads` of bytes also detects UTF-16 and UTF-32, Rust refuses them
+   (`UnicodeDecodeError`).
 5. **Error texts.** Messages the Python code raises itself are reproduced
    verbatim with the Python class name (`ValueError: service stopped or
    managed binary missing`, `ValueError: MainPID changed during
@@ -548,7 +576,17 @@ request path or a policy value other than the host.
    texts (file not found, timeouts, TLS, HTTP status) use a stable Rust
    category name in place of the Python class (`OSError`, `Timeout`,
    `HTTPError`, `InvalidJSON`, …), same 240-character bound. Consumers
-   read only `status`, `issues`, `observed` and `summary`.
+   read only `status`, `issues`, `observed` and `summary`. The upstream
+   lookups (3.3) report the class alone, with Python's names where the
+   failure corresponds: an HTTP status ≥ 400 and too many redirects
+   `HTTPError`; any timeout `TimeoutError` (Python: `TimeoutError` while
+   reading, `URLError` while connecting); any other failure before the
+   response head, including TLS and an empty trust store, `URLError`; any
+   other failure while reading the body `OSError` or its subclass (Python
+   may raise `http.client.IncompleteRead` there); invalid JSON
+   `JSONDecodeError`; a body that is not UTF-8 `UnicodeDecodeError`; a
+   failed cache write the OS error's class (`PermissionError`,
+   `FileNotFoundError`, `IsADirectoryError`, …).
 6. **Dates** in lifecycle data: only `YYYY-MM-DD` is accepted. Python 3.11+
    `date.fromisoformat` also accepts `YYYYMMDD` and ISO week dates; a cycle
    with such a value is skipped as invalid. endoflife.date emits
@@ -572,6 +610,14 @@ request path or a policy value other than the host.
     whose version would differ between Python 3.12, 3.13 and the `regex`
     crate. Whitespace (`\s`, `str.strip()`) is Python's exactly: Unicode
     `White_Space` plus U+001C..U+001F (fixture-tested over all code points).
+12. **Malformed caches that stop the Python collector.** Two cache contents
+    make Python's own cache check raise an exception that its `except`
+    clause does not name, so the exception leaves the lookup and `collect`
+    fails until the file is removed: a lifecycle cache that is valid JSON
+    but not an object (`cached.get` → `AttributeError`) and a
+    `checked_at_epoch` integer too large for a float (`now - checked` →
+    `OverflowError`). The Rust code ignores such a cache like any other
+    invalid one (and refreshes it). Our writers never produce either.
 
 ---
 
@@ -589,15 +635,18 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   src/version.rs               version(), numeric_version(), Python whitespace
   src/policy.rs                validate, policy hash (python-compatible formatter)
   src/report.rs                types, summary, freshness
-  src/probe.rs                 trait System (clock, fs, readlink, stat, commands; S3a adds
-                               HTTP and the cache write, S3b/S3c the fd operations)
+  src/probe.rs                 trait System (clock, fs, readlink, stat, commands; HTTPS and
+                               the atomic JSON write since S3a; S3b/S3c add the fd operations)
+  src/http.rs                  the upstream HTTPS request (ureq, rustls, system store; S3a)
   tests/cli.rs                 the binary against the Python program's exit codes
-  src/traefik.rs  src/os.rs  src/postgresql.rs  src/upstream.rs  src/apt.rs (helper invocation)
+  src/upstream.rs              upstream lookups and caches, cache_variant, lifecycle_date (S3a)
+  src/traefik.rs  src/os.rs  src/postgresql.rs  src/apt.rs (helper invocation)
   src/export.rs                inventory projection + safe source read
-  src/atomic.rs                atomic JSON write with group
+  src/atomic.rs                atomic JSON write with group (S3a, for the caches)
   src/serve.rs                 endpoint (hyper behind an `Endpoint` boundary, 5.4)
   fixtures/generate.py         fixture generator (imports the Python oracle)
   fixtures/*.json
+  fixtures/rust-caches.json    caches as the Rust code writes them (read by the Python test)
   parity/run_parity.py         process-level parity harness
   parity/shadow_compare.py     live shadow comparison
 rust/software-live-apt/        crate `software-live-apt` (GPL-3.0-or-later), binary `software-live-apt`
@@ -689,15 +738,16 @@ separate helper (section 12); the alternative is not built.
 | CLI | `clap` (derive) | usage errors exit 2 |
 | JSON | `serde`, `serde_json` (`arbitrary_precision`) | sorted maps by default; lossless numbers; custom `Formatter` for the policy hash (3.2) |
 | float digits | `ryu` | shortest round-trip digits with exact ties to even, as Python's `repr` (Rust's `{:e}` rounds a tie up: `-85917593882605.625` is `…605.62` in Python); the layout (positional for exponents in [-4, 16)) is `pyjson::float_repr` |
-| sha256 | `sha2`, `hex` | |
-| upstream HTTPS | `ureq` 3 (rustls, `rustls-native-certs` for the system store) | synchronous; the collector has no async runtime |
+| sha256 | `sha2` 0.11, `hex` | |
+| upstream HTTPS | `ureq` 3 (feature `rustls-no-provider`: no bundled roots, no gzip), `rustls` 0.23 with `ring` handed to ureq explicitly, `rustls-native-certs` for the system store | synchronous; the collector has no async runtime; `proxy(None)` (4.1) |
 | child processes with timeout | `std::process` plus `wait-timeout` | kill on timeout like `subprocess.run` |
 | fd and stat details | `rustix` (`fcntl_setfd`, `fstat`, `fchown`, `fchmod`, `O_NOFOLLOW`) | |
-| atomic file | `tempfile` (`Builder::prefix(".software-live-")`, `persist`) | plus `fsync` |
+| atomic file | `tempfile` (`Builder::prefix(".software-live-")`, `persist`) | plus `fsync`; mode and group through the descriptor (`std`) |
 | users/groups | `nix::unistd::Group::from_name` or `uzers` | `grp.getgrnam` |
 | os-release | a maintained parser crate if one matches Python's unquoting (fixture-tested); otherwise a 30-line parser with fixtures from `platform._parse_os_release` | decision recorded in S3c |
 | regex | `regex` | the patterns of 3.3 |
-| dates | `time` or `chrono` (date only, UTC) | |
+| dates | `chrono` (date only, UTC; no default features) | `lifecycle_date` since S3a |
+| test HTTPS server | `rcgen` (dev only) | a self-signed certificate for the local test server |
 | endpoint HTTP | `hyper` 1 (`server::conn::http1`) + `tokio` current-thread | see 5.4 |
 | bcrypt | `bcrypt` (MIT) | 4.2 item 1 |
 | base64 | `base64` (strict standard engine, padding required) | `b64decode(validate=True)` |
@@ -754,7 +804,7 @@ software-live handler (404-before-auth order, the 503/401 bodies,
 | `test_os_lifecycle_reports_desired_drift_and_lts_phase`, `test_os_boolean_support_state_is_applied_at_observation_boundary`, `test_boolean_lifecycle_fields_preserve_known_support_state` | `os` fixtures | S3c |
 | `test_postgresql_minor_and_extra_clusters_are_visible`, `test_expected_postgresql_absence_is_healthy`, `test_postgresql_cluster_parser_omits_data_paths`, `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql` fixtures | S3c |
 | `test_security_packages_include_held_and_pinned_versions` | helper tests on a fake APT root in the variant containers; python-apt vs helper comparison | S3d |
-| `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic` tests (mode, group, failure keeps the old file) | S3f |
+| `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic` tests (mode, group, failure keeps the old file) | S3a (the write), S3f (the state write) |
 | `test_invalid_policy_and_public_bind_fail` | `policy` fixtures, `serve` bind tests | S2, S4 |
 | `EndpointTests.test_http_auth_freshness_and_malformed_state` | `serve` integration tests plus endpoint parity (6.2) | S4, S5 |
 | `NyxmonTests.test_idempotent_targeted_upsert_and_reenable` | n/a (`nyxmon_checks.py` stays Python, 4.1) | — |

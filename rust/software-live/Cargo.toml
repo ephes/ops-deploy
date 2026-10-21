@@ -11,10 +11,17 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Lifecycle dates (`date.fromisoformat`, PLAN.md 3.3 and 4.2 item 6).
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 hex = "0.4"
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 rustix = { version = "1", default-features = false, features = ["std"] }
+# The TLS stack of the upstream requests (PLAN.md 5.3): rustls with ring,
+# handed to ureq explicitly; trust comes from the system store only
+# (rustls-native-certs), never from bundled roots.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
 # Shortest float digits with ties to even, as Python's repr (PLAN.md 3.2).
 ryu = "1"
 serde = { version = "1", features = ["derive"] }
@@ -23,10 +30,16 @@ serde = { version = "1", features = ["derive"] }
 # text apart through RawValue (see there).
 serde_json = { version = "1", features = ["arbitrary_precision", "raw_value"] }
 sha2 = { version = "0.11", default-features = false }
+# Atomic JSON writes (`atomic_json`, PLAN.md 3.5).
+tempfile = "3"
+# Upstream HTTPS (GitHub, endoflife.date): synchronous, no proxy, no gzip,
+# no bundled roots (PLAN.md 3.3, 5.3).
+ureq = { version = "3.4.2", default-features = false, features = ["rustls-no-provider"] }
 wait-timeout = "0.2"
 
 [dev-dependencies]
-tempfile = "3"
+# The certificate of the local HTTPS test server (src/testutil.rs).
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
 
 [lints]
 workspace = true

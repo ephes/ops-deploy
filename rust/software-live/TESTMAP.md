@@ -30,12 +30,12 @@ missing from this file.
 | `test_stopped_service_and_probe_errors_are_unknown` | `observation_matches_python` (`stopped_service`, `systemctl_*`, `pid_invalid_*`, `exe_link_*`, `installed_probe_*`, `running_probe_fails`, …); `traefik_host.rs::stopped_service_is_unknown` (Linux) | done (S3b) |
 | `test_expected_absence_and_unexpected_other_path` | `observation_matches_python` (`expected_absence`, `unexpected_process`, `unexpected_other_path`, `unexpected_managed_path`, `not_expected_*`) | done (S3b) |
 | `test_binary_identity_and_in_place_change` | `binary_info_matches_python` (`output_*`, `changed_during_probe`, `final_stat_*`, `unparseable_wins_over_change`); `traefik::tests::real_binary_identity_and_in_place_change` (a real self-modifying script); `traefik_host.rs::binary_info_checks_the_descriptor_target_before_executing` (the same through the descriptor, Linux) | done (S3b) |
-| `test_upstream_failure_warns_without_claiming_local_collection_failed` | `upstream` fixtures plus a local HTTPS fake server | pending S3a |
-| `test_failed_upstream_refresh_retains_old_timestamp_only_as_evidence` | `upstream` fixtures | pending S3a |
-| `test_upstream_daily_cache_and_unparseable_release` | `upstream` fixtures | pending S3a |
-| `test_lifecycle_daily_cache_and_failed_refresh_preserves_evidence` | `upstream` fixtures | pending S3a |
-| `test_lifecycle_refresh_skips_malformed_irrelevant_cycles` | `upstream` fixtures | pending S3a |
-| `test_cached_timestamp_is_used_not_file_touch` | `upstream` fixtures; cross-implementation cache tests | pending S3a |
+| `test_upstream_failure_warns_without_claiming_local_collection_failed` | upstream part: every transport failure is an `unknown` answer, never an error (`upstream::tests::lookups_and_caches_match_python`: `release_transport_*`, `release_no_cache_failure`), real failures through a local HTTPS server (`http::tests::*`, `upstream::tests::lookups_over_https_with_a_local_server`); the Traefik observation with an unknown upstream: `traefik::tests::observation_matches_python` (`unknown_upstream`); `collect` with it | done (S3a, S3b) / pending S3f |
+| `test_failed_upstream_refresh_retains_old_timestamp_only_as_evidence` | `upstream::tests::lookups_and_caches_match_python` (`release_failed_refresh_keeps_evidence`: the Python test's world), `::rust_reads_what_it_wrote` | done (S3a) |
+| `test_upstream_daily_cache_and_unparseable_release` | `upstream::tests::lookups_and_caches_match_python` (`release_fetch_then_cached_then_garbage`: fetch, cached hit without a request, unparseable tag) | done (S3a) |
+| `test_lifecycle_daily_cache_and_failed_refresh_preserves_evidence` | `upstream::tests::lookups_and_caches_match_python` (`lifecycle_fetch_then_cached_then_failed_refresh`) | done (S3a) |
+| `test_lifecycle_refresh_skips_malformed_irrelevant_cycles` | `upstream::tests::lookups_and_caches_match_python` (`lifecycle_skips_malformed_irrelevant_cycles` and the `lifecycle_eol_*`/`lifecycle_support_*` cases) | done (S3a) |
+| `test_cached_timestamp_is_used_not_file_touch` | `report::tests::freshness_matches_python` (`with_freshness` uses `generated_at_epoch`: stale, future, string, NaN, missing summary); the caches' `checked_at_epoch`, never the file time, in `upstream::tests::lookups_and_caches_match_python` (`release_cache_from_the_future`, `release_python_written_cache_*`) | done (S2, S3a) |
 | `test_os_lifecycle_reports_desired_drift_and_lts_phase` | `os` fixtures | pending S3c |
 | `test_os_boolean_support_state_is_applied_at_observation_boundary` | `os` fixtures | pending S3c |
 | `test_boolean_lifecycle_fields_preserve_known_support_state` | `os` fixtures | pending S3c |
@@ -44,7 +44,7 @@ missing from this file.
 | `test_postgresql_cluster_parser_omits_data_paths` | `postgresql` fixtures | pending S3c |
 | `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql` fixtures | pending S3c |
 | `test_security_packages_include_held_and_pinned_versions` | helper tests on a fake APT root in the variant containers; python-apt vs helper comparison | pending S3d |
-| `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic` tests (mode, group, failure keeps the old file) | pending S3f |
+| `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic::tests::*` (mode 0640, group through the descriptor, a failed write keeps the old file and leaves no temporary file); the state write of `collect` | done (S3a) / pending S3f |
 | `test_invalid_policy_and_public_bind_fail` | policy part: `policy::tests::validation_and_hash_match_python` against `fixtures/policy.json` (incl. `/bin/sh` and `/tmp/proxy` as `binary_path`) and `tests/cli.rs` (`validate` exit codes); bind part: `serve` bind tests | done (S2) / pending S4 |
 | `test_http_auth_freshness_and_malformed_state` (`EndpointTests`) | freshness part: `report::tests::freshness_matches_python` against `fixtures/report.json` (stale, `"yes"` in the summary, missing and malformed fields); HTTP part: `serve` integration tests plus endpoint parity | done (S2) / pending S4, S5 |
 | `test_idempotent_targeted_upsert_and_reenable` (`NyxmonTests`) | n/a: `nyxmon_checks.py` stays Python (PLAN.md 4.1) | — |
@@ -92,6 +92,18 @@ match Python step by step.
 | `pass_fds=(fd,)` without `unsafe`: only the probe inherits the descriptor, close-on-exec is set again after the spawn (also after a failed start or a timeout) | `probe::tests::only_run_inheriting_passes_the_descriptor`, `::open_file_is_hashed_and_stated_through_its_descriptor` | done |
 | `observe_traefik` (`:242-319`): order of the issues, what the error keeps (issues of the failed attempt, fields set before the failure), `KeyError`/`TypeError` of a malformed upstream answer, `desired_version` absent vs `null`, a version over Python's int limit | `observation_matches_python` (about 75 cases) | done |
 
+## S3a — upstream lookups and caches without a Python test of their own
+
+| Python behaviour | Rust counterpart | Status |
+| --- | --- | --- |
+| `upstream` (`:149-188`): cache read and validation (version, `checked_at_epoch` int/float/bool, any other content invalid), TTL bounds, extra cache keys, the request (URL, headers, timeout), `read(1024 * 1024)` cutting a long body, `json.loads` of bytes (BOM, not UTF-8, trailing data, 4300 digits), `tag_name` checks, draft/prerelease truthiness, the cache write and its failure, `last_success` | `upstream::tests::lookups_and_caches_match_python` (`fixtures/upstream.json`, about 190 cases; the Python run records every request and every `atomic_json` call) | done |
+| `lifecycle_upstream` (`:191-239`): cache validation (product, `cycles` a list, items unchecked), cycle filter (`cycle` a string, `eol`/`support` bool, null, missing or an ISO date, every invalid date form), whole cycles kept, empty and invalid responses, one cache per product | same test | done |
+| `cache_variant` (`:62-65`) and `pathlib`'s stem and suffix | `upstream::tests::cache_variant_matches_python`, `::cache_variant_follows_python_3_12_and_3_13` | done |
+| Caches Python wrote (`atomic_json` output) are read by Rust | `release_python_written_cache_*`, `lifecycle_python_written_cache_*` | done |
+| Caches Rust wrote are read by Python | `upstream::tests::rust_written_caches_are_committed` keeps `fixtures/rust-caches.json` current; `tests/test_software_live_rust_fixtures.py` (`PythonReadsRustWrittenCaches`) runs the Python program on it | done |
+| `urlopen` over HTTPS with the system store | `http::tests::*` against a local HTTPS server: headers, status errors, redirects, the 1 MiB cut, an untrusted certificate, the system store refusing a self-signed server, a refused connection, a timeout, no proxy | done |
+| `atomic_json` (`:132-146`) | `atomic::tests::*` | done |
+
 ## P3 cases in the fixtures (PLAN.md 4.2)
 
 Fixture cases tagged `p3` are inputs Python accepts and the Rust code
@@ -99,3 +111,12 @@ refuses: `non-standard-json` (`NaN`, `Infinity`, lone surrogates; item 4),
 `nesting` (deeper than 128 levels; item 4) and `unicode-digits` (non-ASCII
 digits; item 11; in `traefik.json` a `MainPID` and a version line). The Rust
 tests assert the refusal.
+
+In `fixtures/upstream.json` a P3 call records both the Python answer and,
+under `p3`, the answer the Rust code must give: what the Python program
+answers for the input the Rust code effectively sees (the cache replaced by
+an unusable one, the response replaced by an error of the Rust class, or a
+cycle's date replaced by an invalid one). Tags: `non-standard-json` and
+`utf16-body` (item 4), `unicode-digits` (item 11), `iso-date` (item 6) and
+`cache-crash` (item 12: a lifecycle cache that is not an object, a
+`checked_at_epoch` beyond the float range).

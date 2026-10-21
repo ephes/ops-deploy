@@ -1,0 +1,5213 @@
+{
+ "cache_variant": [
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "/var/lib/software-live/upstream.json",
+   "result": "/var/lib/software-live/upstream-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "/var/lib/software-live/shadow/upstream.json",
+   "result": "/var/lib/software-live/shadow/upstream-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "upstream.json",
+   "result": "upstream-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "cache",
+   "result": "cache-ubuntu"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": ".hidden",
+   "result": ".hidden-ubuntu"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": ".hidden.json",
+   "result": ".hidden-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "a.tar.gz",
+   "result": "a.tar-ubuntu.gz"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "..",
+   "result": "..-ubuntu"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "a/..",
+   "result": "a/..-ubuntu"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "a/.",
+   "result": "a-ubuntu"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "name": "ubuntu",
+   "path": ".",
+   "result": null
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "name": "ubuntu",
+   "path": "",
+   "result": null
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "name": "ubuntu",
+   "path": "/",
+   "result": null
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "name": "ubuntu",
+   "path": "//",
+   "result": null
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "name": "ubuntu",
+   "path": "///",
+   "result": null
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "//x/y.json",
+   "result": "//x/y-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "///x/y.json",
+   "result": "/x/y-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "x/./y.json",
+   "result": "x/y-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "x//y.json",
+   "result": "x/y-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "y.json/",
+   "result": "y-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "/a/b.c.d",
+   "result": "/a/b.c-ubuntu.d"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "/a/./b/../c.json",
+   "result": "/a/b/../c-ubuntu.json"
+  },
+  {
+   "error": null,
+   "name": "ubuntu",
+   "path": "a.b.c",
+   "result": "a.b-ubuntu.c"
+  }
+ ],
+ "cases": [
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\":\"v3.7.12\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 100.0,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 100.0, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 100.0, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    },
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 101.0,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 100.0, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": []
+    },
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\":\"garbage\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 100000.0,
+     "result": "{\"error\": \"ValueError\", \"last_success\": {\"checked_at_epoch\": 100.0, \"version\": \"3.7.12\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_fetch_then_cached_then_garbage",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "OSError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 100000.0,
+     "result": "{\"error\": \"OSError\", \"last_success\": {\"checked_at_epoch\": 1, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": 1}"
+    }
+   },
+   "id": "release_failed_refresh_keeps_evidence",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_no_cache",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_no_cache_failure",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760086399.75,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_python_written_cache_fresh",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_python_written_cache_age_zero",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.8.0\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760086400.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760086400.25, \"status\": \"ok\", \"version\": \"3.8.0\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760086400.25, \"version\": \"3.8.0\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_python_written_cache_expired",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "TimeoutError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1759999999.75,
+     "result": "{\"error\": \"TimeoutError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_cache_from_the_future",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760000005.25,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"note\": [\"x\", 1], \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": 1760000000.25, \"note\": [\"x\", 1]}"
+    }
+   },
+   "id": "release_cache_extra_keys_are_kept",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760000005.25,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": 1760000000.25, \"status\": \"unknown\", \"cached\": false}"
+    }
+   },
+   "id": "release_cache_status_keys_are_replaced",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7\", \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "release_invalid_cache_version_invalid",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": 3, \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "release_invalid_cache_version_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "release_invalid_cache_version_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "release_invalid_cache_checked_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": \"1760000000\"}"
+    }
+   },
+   "id": "release_invalid_cache_checked_str",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": null}"
+    }
+   },
+   "id": "release_invalid_cache_checked_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": [1760000000.25]}"
+    }
+   },
+   "id": "release_invalid_cache_checked_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "[{\"version\": \"3.7.9\", \"checked_at_epoch\": 1.0}]"
+    }
+   },
+   "id": "release_invalid_cache_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "\"3.7.9\""
+    }
+   },
+   "id": "release_invalid_cache_string",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "null"
+    }
+   },
+   "id": "release_invalid_cache_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{}"
+    }
+   },
+   "id": "release_invalid_cache_empty_object",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000005.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000005.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", "
+    }
+   },
+   "id": "release_invalid_cache_broken_json",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000005.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000005.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "\ufeff{\"version\": \"3.7.9\", \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "release_invalid_cache_bom",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000005.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000005.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": 1760000000.25} x"
+    }
+   },
+   "id": "release_invalid_cache_trailing_data",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000005.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000005.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": ""
+    }
+   },
+   "id": "release_invalid_cache_empty",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000005.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "hex": "7b2276657273696f6e223a2022332e372e39222c2022636865636b65645f61745f65706f6368223a20313736303030303030302e32352c202278223a2022ff227d"
+    }
+   },
+   "id": "release_invalid_cache_not_utf8",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"IsADirectoryError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "errno": "EISDIR"
+    }
+   },
+   "id": "release_cache_is_a_directory",
+   "write_errors": {
+    "upstream.json": "EISDIR"
+   }
+  },
+  {
+   "calls": [
+    {
+     "cache": "missing/upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"FileNotFoundError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "missing/upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_cache_directory_missing",
+   "write_errors": {
+    "missing/upstream.json": "ENOENT"
+   }
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 86401.0,
+     "result": "{\"error\": \"URLError\", \"last_success\": {\"checked_at_epoch\": true, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": true}"
+    }
+   },
+   "id": "release_cache_checked_bool",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 86400.5,
+     "result": "{\"cached\": true, \"checked_at_epoch\": true, \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"3.7.9\", \"checked_at_epoch\": true}"
+    }
+   },
+   "id": "release_cache_checked_bool_fresh",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000, \"status\": \"ok\", \"version\": \"v3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"version\": \"v3.7.9\", \"checked_at_epoch\": 1760000000}"
+    }
+   },
+   "id": "release_cache_checked_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": {\"checked_at_epoch\": 18446744073709551617, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 18446744073709551617, \"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "release_cache_checked_big_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": {\"checked_at_epoch\": 1e400, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1e400, \"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "release_cache_checked_infinite_float",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760000001.0,
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.0, \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1.76E9, \"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "release_cache_checked_exponent",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 0.0,
+     "result": "{\"cached\": true, \"checked_at_epoch\": -0.0, \"status\": \"ok\", \"version\": \"3.7.9\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": -0.0, \"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "release_cache_negative_zero",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+        "headers": {
+         "accept": "application/vnd.github+json",
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+       }
+      ],
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+      "tag": "cache-crash",
+      "writes": [
+       {
+        "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+        "group": null,
+        "path": "upstream.json"
+       }
+      ]
+     },
+     "raises": {
+      "class": "OverflowError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000, \"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "p3_release_cache_checked_huge_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "error": "URLError",
+        "headers": {
+         "accept": "application/vnd.github+json",
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+       }
+      ],
+      "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+      "tag": "non-standard-json",
+      "writes": []
+     },
+     "result": "{\"error\": \"URLError\", \"last_success\": {\"checked_at_epoch\": NaN, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": NaN, \"version\": \"3.7.9\"}"
+    }
+   },
+   "id": "p3_release_cache_checked_nan",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_tag_without_v",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_tag_short",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.8.0-rc1\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_tag_rc",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": 3, \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"TypeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_tag_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": null, \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"TypeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_tag_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"name\": \"v3.7.12\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"KeyError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_tag_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "[{\"tag_name\": \"v3.7.12\"}]",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"TypeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_body_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "\"v3.7.12\"",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"TypeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_body_string",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "null",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"TypeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_body_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "3",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"TypeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_body_number",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": true, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": true}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_prerelease",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": \"false\", \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_string_false",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": 1, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_one",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": 0, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_zero",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": 0.0, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_float_zero",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": \"\", \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_empty_string",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": [], \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_empty_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": {}, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_empty_object",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": [false], \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_draft_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": null}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_prerelease_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_flags_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\"",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_broken_json",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_empty_body",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body_hex": "efbbbf7b227461675f6e616d65223a202276332e372e3132227d",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_bom",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body_hex": "7b227461675f6e616d65223a202276332e372e3132222c202278223a2022ff227d",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"UnicodeDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_not_utf8",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\"} x",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_trailing_data",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"garbage\", \"tag_name\": \"v3.7.12\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_duplicate_tag",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"id\": 18446744073709551617}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_big_int_extra",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"id\": 11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_int_4301_digits",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "pad": 1048553,
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_long_whitespace_within_limit",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"notes\": \"",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "pad": 1048576,
+       "pad_char": "a",
+       "suffix": "\"}",
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "release_response_long_body_cut",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"name\": \"\u00e9\ud83d\ude00\"}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "release_response_non_ascii_extra",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760086400.25,
+     "result": "{\"error\": \"URLError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_transport_URLError",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "HTTPError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760086400.25,
+     "result": "{\"error\": \"HTTPError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_transport_HTTPError",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "TimeoutError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760086400.25,
+     "result": "{\"error\": \"TimeoutError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_transport_TimeoutError",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "OSError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760086400.25,
+     "result": "{\"error\": \"OSError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_transport_OSError",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "error": "ConnectionResetError",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760086400.25,
+     "result": "{\"error\": \"ConnectionResetError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.9\"}\n"
+    }
+   },
+   "id": "release_transport_ConnectionResetError",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": NaN}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+      "tag": "non-standard-json",
+      "writes": []
+     },
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_release_response_nan",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body_hex": "fffe7b0022007400610067005f006e0061006d00650022003a0020002200760033002e0037002e003100320022007d00",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"error\": \"UnicodeDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+      "tag": "utf16-body",
+      "writes": []
+     },
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "p3_release_response_utf16",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.\\u0669\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+      "tag": "unicode-digits",
+      "writes": []
+     },
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"status\": \"ok\", \"version\": \"3.7.\\u0669\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"version\": \"3.7.\\u0669\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "p3_release_response_unicode_digits",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\":\"17\",\"latest\":\"17.11\",\"eol\":\"2029-11-08\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 100.0,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 100.0, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 100.0, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\"}], \"product\": \"postgresql\"}",
+       "group": null,
+       "path": "upstream-postgresql.json"
+      }
+     ]
+    },
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 101.0,
+     "product": "postgresql",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 100.0, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    },
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "OSError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 100000.0,
+     "product": "postgresql",
+     "result": "{\"error\": \"OSError\", \"last_success\": {\"checked_at_epoch\": 100.0, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\"}], \"product\": \"postgresql\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_fetch_then_cached_then_failed_refresh",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"old\", \"latest\": \"1.0\", \"eol\": {\"bad\": \"value\"}}, {\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 100.0,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 100.0, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_skips_malformed_irrelevant_cycles",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"24.04\", \"eol\": \"2029-05-31\", \"support\": \"2029-05-31\", \"lts\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/ubuntu.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "ubuntu",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"24.04\", \"eol\": \"2029-05-31\", \"lts\": true, \"support\": \"2029-05-31\"}], \"product\": \"ubuntu\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"24.04\", \"eol\": \"2029-05-31\", \"lts\": true, \"support\": \"2029-05-31\"}], \"product\": \"ubuntu\"}",
+       "group": null,
+       "path": "upstream-ubuntu.json"
+      }
+     ]
+    },
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/debian.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "debian",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}], \"product\": \"debian\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}], \"product\": \"debian\"}",
+       "group": null,
+       "path": "upstream-debian.json"
+      }
+     ]
+    },
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000001.25,
+     "product": "ubuntu",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"24.04\", \"eol\": \"2029-05-31\", \"lts\": true, \"support\": \"2029-05-31\"}], \"product\": \"ubuntu\", \"status\": \"ok\"}",
+     "writes": []
+    },
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000001.25,
+     "product": "debian",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}], \"product\": \"debian\", \"status\": \"ok\"}",
+     "writes": []
+    },
+    {
+     "cache": "upstream.json",
+     "function": "upstream",
+     "http": [
+      {
+       "body": "{\"tag_name\": \"v3.7.12\", \"draft\": false, \"prerelease\": false}",
+       "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+      }
+     ],
+     "now": 1760000001.25,
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000001.25, \"status\": \"ok\", \"version\": \"3.7.12\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000001.25, \"version\": \"3.7.12\"}",
+       "group": null,
+       "path": "upstream.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_products_have_their_own_caches",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000100.25,
+     "product": "postgresql",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}\n"
+    }
+   },
+   "id": "lifecycle_python_written_cache_fresh",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "HTTPError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760086400.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"HTTPError\", \"last_success\": {\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}\n"
+    }
+   },
+   "id": "lifecycle_python_written_cache_expired_failure",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\", \"lts\": false, \"support\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760086400.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760086400.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760086400.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}], \"product\": \"postgresql\"}",
+       "group": null,
+       "path": "upstream-postgresql.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}\n"
+    }
+   },
+   "id": "lifecycle_python_written_cache_expired_refresh",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/ubuntu.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "ubuntu",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-ubuntu.json": {
+     "ok": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}\n"
+    }
+   },
+   "id": "lifecycle_cache_of_another_product",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"cycles\": [1, \"x\", {\"eol\": 5}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"cycles\": [1, \"x\", {\"eol\": 5}], \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_cache_cycles_not_validated",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"cycles\": [], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"cycles\": [], \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_cache_empty_cycles",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"13\", \"eol\": false}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/debian.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "debian",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"13\", \"eol\": false}], \"product\": \"debian\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_no_cache_path",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "cache",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"24.04\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/ubuntu.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "ubuntu",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"24.04\", \"eol\": true}], \"product\": \"ubuntu\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"24.04\", \"eol\": true}], \"product\": \"ubuntu\"}",
+       "group": null,
+       "path": "cache-ubuntu"
+      }
+     ]
+    },
+    {
+     "cache": "cache",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000001.25,
+     "product": "ubuntu",
+     "result": "{\"cached\": true, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"24.04\", \"eol\": true}], \"product\": \"ubuntu\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_cache_without_suffix",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "missing/upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/debian.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "debian",
+     "result": "{\"error\": \"FileNotFoundError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}], \"product\": \"debian\"}",
+       "group": null,
+       "path": "missing/upstream-debian.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_cache_directory_missing",
+   "write_errors": {
+    "missing/upstream-debian.json": "ENOENT"
+   }
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/debian.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "debian",
+     "result": "{\"error\": \"IsADirectoryError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"13\", \"eol\": \"2028-08-09\"}], \"product\": \"debian\"}",
+       "group": null,
+       "path": "upstream-debian.json"
+      }
+     ]
+    }
+   ],
+   "files": {
+    "upstream-debian.json": {
+     "errno": "EISDIR"
+    }
+   },
+   "id": "lifecycle_cache_is_a_directory",
+   "write_errors": {
+    "upstream-debian.json": "EISDIR"
+   }
+  },
+  {
+   "calls": [
+    {
+     "cache": "/",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "product": "debian",
+     "raises": {
+      "class": "ValueError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_cache_path_without_a_name",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"cycles\": [], \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_product_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"ubuntu\", \"cycles\": [], \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_product_other",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": 1, \"cycles\": [], \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_product_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"cycles\": {}, \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_cycles_object",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"checked_at_epoch\": 1760000000.25}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_cycles_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"cycles\": []}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_checked_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000005.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"cycles\": [], \"checked_at_epoch\": \"x\"}"
+    }
+   },
+   "id": "lifecycle_invalid_cache_checked_str",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "error": "URLError",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"URLError\", \"last_success\": {\"checked_at_epoch\": false, \"cycles\": [\"kept\"], \"product\": \"postgresql\"}, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"product\": \"postgresql\", \"cycles\": [\"kept\"], \"checked_at_epoch\": false}"
+    }
+   },
+   "id": "lifecycle_stale_cache_checked_bool",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "body": "[{\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\", \"lts\": false, \"support\": true}, {\"cycle\": \"16\", \"latest\": \"16.15\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}}]",
+        "headers": {
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://endoflife.date/api/postgresql.json"
+       }
+      ],
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "cache-crash",
+      "writes": [
+       {
+        "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}",
+        "group": null,
+        "path": "upstream-postgresql.json"
+       }
+      ]
+     },
+     "product": "postgresql",
+     "raises": {
+      "class": "AttributeError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "[]"
+    }
+   },
+   "id": "p3_lifecycle_cache_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "body": "[{\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\", \"lts\": false, \"support\": true}, {\"cycle\": \"16\", \"latest\": \"16.15\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}}]",
+        "headers": {
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://endoflife.date/api/postgresql.json"
+       }
+      ],
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "cache-crash",
+      "writes": [
+       {
+        "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}",
+        "group": null,
+        "path": "upstream-postgresql.json"
+       }
+      ]
+     },
+     "product": "postgresql",
+     "raises": {
+      "class": "AttributeError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "\"postgresql\""
+    }
+   },
+   "id": "p3_lifecycle_cache_string",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "body": "[{\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\", \"lts\": false, \"support\": true}, {\"cycle\": \"16\", \"latest\": \"16.15\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}}]",
+        "headers": {
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://endoflife.date/api/postgresql.json"
+       }
+      ],
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "cache-crash",
+      "writes": [
+       {
+        "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}",
+        "group": null,
+        "path": "upstream-postgresql.json"
+       }
+      ]
+     },
+     "product": "postgresql",
+     "raises": {
+      "class": "AttributeError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "null"
+    }
+   },
+   "id": "p3_lifecycle_cache_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "body": "[{\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\", \"lts\": false, \"support\": true}, {\"cycle\": \"16\", \"latest\": \"16.15\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}}]",
+        "headers": {
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://endoflife.date/api/postgresql.json"
+       }
+      ],
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "cache-crash",
+      "writes": [
+       {
+        "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}], \"product\": \"postgresql\"}",
+        "group": null,
+        "path": "upstream-postgresql.json"
+       }
+      ]
+     },
+     "product": "postgresql",
+     "raises": {
+      "class": "AttributeError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "1"
+    }
+   },
+   "id": "p3_lifecycle_cache_number",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [],
+     "now": 1760000000.25,
+     "p3": {
+      "http": [
+       {
+        "error": "URLError",
+        "headers": {
+         "user-agent": "ops-library-software-live/1"
+        },
+        "timeout": 10,
+        "url": "https://endoflife.date/api/postgresql.json"
+       }
+      ],
+      "result": "{\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}",
+      "tag": "cache-crash",
+      "writes": []
+     },
+     "product": "postgresql",
+     "raises": {
+      "class": "OverflowError",
+      "message": null
+     },
+     "writes": []
+    }
+   ],
+   "files": {
+    "upstream-postgresql.json": {
+     "ok": "{\"checked_at_epoch\": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000, \"cycles\": [], \"product\": \"postgresql\"}"
+    }
+   },
+   "id": "p3_lifecycle_cache_checked_huge_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "{\"cycle\": \"17\"}",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_not_a_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_empty_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "null",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[1, \"17\", null, [], {\"cycle\": 17}, {\"latest\": \"17.1\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"ValueError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_no_valid_cycle",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_broken_json",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"latest\": \"17.11\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\", \"lts\": false, \"support\": true}, {\"cycle\": \"16\", \"latest\": \"16.15\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}}, {\"cycle\": \"15\", \"eol\": \"2027-11-11\", \"n\": 18446744073709551617, \"f\": 1e+16, \"s\": \"\\u00e9\\ud83d\\ude00\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}, {\"cycle\": \"15\", \"eol\": \"2027-11-11\", \"f\": 1e+16, \"n\": 18446744073709551617, \"s\": \"\\u00e9\\ud83d\\ude00\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\", \"latest\": \"17.11\", \"lts\": false, \"releaseDate\": \"2024-09-26\", \"support\": true}, {\"cycle\": \"16\", \"eol\": \"2028-11-09\", \"extra\": {\"nested\": [1, 2.5, null]}, \"latest\": \"16.15\"}, {\"cycle\": \"15\", \"eol\": \"2027-11-11\", \"f\": 1e+16, \"n\": 18446744073709551617, \"s\": \"\\u00e9\\ud83d\\ude00\"}], \"product\": \"postgresql\"}",
+       "group": null,
+       "path": "upstream-postgresql.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_whole_cycles_kept",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false}, {\"cycle\": \"17\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false}, {\"cycle\": \"17\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false}, {\"cycle\": \"17\", \"eol\": true}], \"product\": \"postgresql\"}",
+       "group": null,
+       "path": "upstream-postgresql.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_duplicate_cycles",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"x\": \"",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "pad": 1048576,
+       "pad_char": "a",
+       "suffix": "\"}]",
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_response_long_body_cut",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": true}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": true}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_true",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_false",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": null}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": null}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_date",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2024-02-29\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2024-02-29\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_leap_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2023-02-29\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_no_leap_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-04-31\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_day_31_in_april",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-13-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_month_13",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-00-10\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_month_0",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-01-00\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_day_0",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"0000-01-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_year_0",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"0001-01-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"0001-01-01\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_year_1",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"9999-12-31\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"9999-12-31\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_year_9999",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"999-01-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_short_year",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-1-8\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_single_digits",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029/11/08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_slashes",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \" 2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_space",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-11-08 \"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_trailing_space",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-11-08T00:00:00\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_datetime",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_empty",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"soon\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_text",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": 2029}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": 2029.5}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_float",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": [\"2029-11-08\"]}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": {\"date\": \"2029-11-08\"}}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_object",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"+2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_sign",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": true}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": true}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_true",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": false}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": false}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_false",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": null}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": null}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_null",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_date",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2024-02-29\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"2024-02-29\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_leap_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2023-02-29\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_no_leap_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-04-31\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_day_31_in_april",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-13-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_month_13",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-00-10\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_month_0",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-01-00\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_day_0",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"0000-01-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_year_0",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"0001-01-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"0001-01-01\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_year_1",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"9999-12-31\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"9999-12-31\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_year_9999",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"999-01-01\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_short_year",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-1-8\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_single_digits",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029/11/08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_slashes",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \" 2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_space",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-11-08 \"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_trailing_space",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-11-08T00:00:00\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_datetime",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_empty",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"soon\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_text",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": 2029}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_int",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": 2029.5}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_float",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": [\"2029-11-08\"]}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_list",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": {\"date\": \"2029-11-08\"}}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_object",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"+2029-11-08\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_support_sign",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\"}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\"}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "lifecycle_eol_missing_support_missing",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"20291108\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"20291108\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_eol_basic",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"20291108\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"20291108\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_support_basic",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-W45\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-W45\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_eol_week",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-W45\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-W45\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_support_week",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029-W45-4\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029-W45-4\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_eol_week_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-W45-4\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029-W45-4\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_support_week_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029W45\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029W45\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_eol_basic_week",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029W45\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029W45\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_support_basic_week",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": \"2029W454\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": \"2029W454\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_eol_basic_week_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": null,
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029W454\"}, {\"cycle\": \"16\", \"eol\": true}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+      "tag": "iso-date",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"support\": \"2029W454\"}, {\"cycle\": \"16\", \"eol\": true}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": []
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_support_basic_week_day",
+   "write_errors": {}
+  },
+  {
+   "calls": [
+    {
+     "cache": "upstream.json",
+     "function": "lifecycle_upstream",
+     "http": [
+      {
+       "body": "[{\"cycle\": \"17\", \"eol\": false, \"x\": NaN}]",
+       "headers": {
+        "user-agent": "ops-library-software-live/1"
+       },
+       "timeout": 10,
+       "url": "https://endoflife.date/api/postgresql.json"
+      }
+     ],
+     "now": 1760000000.25,
+     "p3": {
+      "result": "{\"error\": \"JSONDecodeError\", \"last_success\": null, \"status\": \"unknown\"}",
+      "tag": "non-standard-json",
+      "writes": []
+     },
+     "product": "postgresql",
+     "result": "{\"cached\": false, \"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"x\": NaN}], \"product\": \"postgresql\", \"status\": \"ok\"}",
+     "writes": [
+      {
+       "data": "{\"checked_at_epoch\": 1760000000.25, \"cycles\": [{\"cycle\": \"17\", \"eol\": false, \"x\": NaN}], \"product\": \"postgresql\"}",
+       "group": null,
+       "path": "upstream-postgresql.json"
+      }
+     ]
+    }
+   ],
+   "files": {},
+   "id": "p3_lifecycle_response_nan",
+   "write_errors": {}
+  }
+ ],
+ "constants": {
+  "lifecycle_url": "https://endoflife.date/api/{product}.json",
+  "ttl": 86400,
+  "upstream_url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+ }
+}

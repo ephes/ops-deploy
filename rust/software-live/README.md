@@ -43,6 +43,22 @@ Slice S3b (Traefik observation, `src/traefik.rs`):
   identity must not change while it is hashed and probed.
 - `collect` does not call it yet (S3f).
 
+Slice S3a (upstream lookups and caches):
+
+- `upstream::upstream` and `upstream::lifecycle_upstream`: the latest
+  stable Traefik release (GitHub) and the release cycles of an
+  endoflife.date product, with the daily caches shared with the Python
+  program: Rust reads the caches Python wrote and Python reads the ones Rust
+  writes (`fixtures/rust-caches.json`, read by the Python test). A failed
+  refresh is an `unknown` answer with the old cache as `last_success` and
+  never rewrites the cache.
+- HTTPS (`src/http.rs`): ureq over rustls, trust from the system store only
+  (`rustls-native-certs`: `SSL_CERT_FILE`/`SSL_CERT_DIR`, else the
+  distribution bundle), no proxy, no bundled roots.
+- `atomic::write_json`: Python's `atomic_json` (mode 0640, optional group,
+  `fsync`, rename; the old file stays on failure).
+- Nothing calls these yet: `collect` comes with S3f.
+
 ## Layout
 
 ```
@@ -57,10 +73,14 @@ software-live/
   src/report.rs               observations, summary, report, with_freshness
   src/probe.rs                trait System, HostSystem, the fixture world (tests)
   src/traefik.rs              observe_traefik, binary_info, main_pid
+  src/http.rs                 the upstream HTTPS request (system trust store)
+  src/upstream.rs             upstream, lifecycle_upstream, cache_variant, lifecycle_date
+  src/atomic.rs               atomic_json
   tests/cli.rs                the binary against the Python program's exit codes
   tests/traefik_host.rs       Linux only: real processes and pinned descriptors
   fixtures/generate.py        writes fixtures/*.json from the Python program
   fixtures/*.json             generated; never edit by hand
+  fixtures/rust-caches.json   caches as the Rust code writes them (see below)
 ```
 
 ## Checks
@@ -77,6 +97,12 @@ just test-software-live-rust-fixtures    # drift check: fixtures and TESTMAP vs 
 
 After a change of `software_live.py`, regenerate the fixtures and update the
 Rust code in the same change; `just test` fails until then.
+
+`fixtures/rust-caches.json` is written by the Rust code, not by the
+generator: after a change of the cache format,
+`SOFTWARE_LIVE_BLESS=1 cargo test -p software-live rust_written` rewrites it,
+then `just test-software-live-rust-fixtures` checks that the Python program
+still reads it.
 
 `--version` takes the commit from `SOFTWARE_LIVE_GIT_COMMIT` (7 to 40
 lowercase hex digits, set by the release workflow), else `git rev-parse

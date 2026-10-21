@@ -52,3 +52,145 @@ pub fn json_eq(left: &Value, right: &Value) -> bool {
         _ => left == right,
     }
 }
+
+/// A local HTTPS server for the upstream tests: a self-signed certificate
+/// for `127.0.0.1` (trusted only by a client built with [`TestServer::root`]),
+/// one canned reply per connection, every request head recorded.
+pub mod https {
+    use std::collections::VecDeque;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::{ServerConfig, ServerConnection, StreamOwned};
+
+    /// One answer: status line, extra headers and body.
+    #[derive(Clone, Debug)]
+    pub struct Reply {
+        pub status: u16,
+        pub headers: Vec<(String, String)>,
+        pub body: Vec<u8>,
+    }
+
+    impl Reply {
+        pub fn ok(body: &[u8]) -> Self {
+            Self {
+                status: 200,
+                headers: Vec::new(),
+                body: body.to_vec(),
+            }
+        }
+
+        pub fn status(status: u16) -> Self {
+            Self {
+                status,
+                headers: Vec::new(),
+                body: b"{\"message\": \"error\"}".to_vec(),
+            }
+        }
+
+        pub fn redirect(location: &str) -> Self {
+            Self {
+                status: 302,
+                headers: vec![("Location".into(), location.into())],
+                body: Vec::new(),
+            }
+        }
+    }
+
+    pub struct TestServer {
+        port: u16,
+        root: CertificateDer<'static>,
+        requests: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl TestServer {
+        /// Serve `replies` in order, one per connection (then 500s).
+        pub fn start(replies: Vec<Reply>) -> Self {
+            let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_owned()])
+                .expect("a test certificate");
+            let root = certified.cert.der().clone();
+            let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                certified.signing_key.serialize_der(),
+            ));
+            let config = ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .expect("default protocol versions")
+            .with_no_client_auth()
+            .with_single_cert(vec![root.clone()], key)
+            .expect("a server certificate");
+            let config = Arc::new(config);
+            let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+            let port = listener.local_addr().expect("a local address").port();
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let seen = Arc::clone(&requests);
+            let mut replies: VecDeque<Reply> = replies.into();
+            thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(stream) = stream else { continue };
+                    let reply = replies.pop_front().unwrap_or_else(|| Reply::status(500));
+                    serve(&config, stream, &reply, &seen);
+                }
+            });
+            Self {
+                port,
+                root,
+                requests,
+            }
+        }
+
+        pub fn url(&self, path: &str) -> String {
+            format!("https://127.0.0.1:{}{path}", self.port)
+        }
+
+        pub fn root(&self) -> CertificateDer<'static> {
+            self.root.clone()
+        }
+
+        /// The request heads received so far.
+        pub fn requests(&self) -> Vec<String> {
+            self.requests.lock().expect("not poisoned").clone()
+        }
+    }
+
+    fn serve(
+        config: &Arc<ServerConfig>,
+        stream: TcpStream,
+        reply: &Reply,
+        seen: &Mutex<Vec<String>>,
+    ) {
+        let Ok(connection) = ServerConnection::new(Arc::clone(config)) else {
+            return;
+        };
+        let mut tls = StreamOwned::new(connection, stream);
+        let mut head = Vec::new();
+        let mut buffer = [0u8; 4096];
+        while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+            match tls.read(&mut buffer) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => head.extend_from_slice(&buffer[..n]),
+            }
+        }
+        seen.lock()
+            .expect("not poisoned")
+            .push(String::from_utf8_lossy(&head).into_owned());
+        let mut out = format!(
+            "HTTP/1.1 {} Test\r\nContent-Length: {}\r\nConnection: close\r\n",
+            reply.status,
+            reply.body.len()
+        )
+        .into_bytes();
+        for (name, value) in &reply.headers {
+            out.extend(format!("{name}: {value}\r\n").into_bytes());
+        }
+        out.extend(b"\r\n");
+        out.extend(&reply.body);
+        let _ = tls.write_all(&out);
+        tls.conn.send_close_notify();
+        let _ = tls.flush();
+    }
+}
