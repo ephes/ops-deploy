@@ -587,7 +587,7 @@ and each entry.
 rust/echoport-command-guard/
   Cargo.toml            # [[bin]] echoport-command-guard; lib for tests
   PLAN.md  TESTMAP.md  README.md
-  src/main.rs           # argv grammar (3.1), exit codes; the binary's GuardEnv until S2
+  src/main.rs           # argv grammar (3.1), exit codes; the binary runs on env::RealEnv (S2)
   src/modes.rs          # forced-command flow, --decide, --shadow over an injectable Host (S4)
   src/policy.rs         # strict JSON tree, typed policy, validation (3.2, 4.2)
   src/prefilter.rs      # 4.1

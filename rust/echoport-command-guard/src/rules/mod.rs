@@ -14,10 +14,9 @@
 //! 4.4).
 
 pub mod files;
+pub mod paths;
 pub mod postgres;
 pub mod sqlite;
-
-pub mod paths;
 
 use crate::decision::{Decision, Refused};
 use crate::env::GuardEnv;

@@ -19,7 +19,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use echoport_command_guard::PROGRAM;
-use echoport_command_guard::env::{FileStat, GuardEnv, OsError};
+use echoport_command_guard::env::RealEnv;
 use echoport_command_guard::exec::SAFE_PATH;
 use echoport_command_guard::modes::{self, Host, PythonGuard};
 use echoport_command_guard::policy::load_policy;
@@ -31,7 +31,9 @@ const COMMIT: &str = env!("ECHOPORT_COMMAND_GUARD_GIT_COMMIT");
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
-    let env = HostEnv;
+    // The host as the binary sees it (S2): geteuid, NSS users, lstat and
+    // `realpath` as `pyrealpath` (PLAN.md 3.3.6-3.3.8).
+    let env = RealEnv;
     let host = Host {
         env: &env,
         log: &SysLog,
@@ -104,42 +106,5 @@ fn check_policy(path: &Path) -> ExitCode {
             eprintln!("{PROGRAM}: invalid policy: {error}");
             ExitCode::FAILURE
         }
-    }
-}
-
-/// The host as the binary sees it. The euid and the NSS user lookups
-/// (`getpwnam_r`, as Python's `pwd.getpwnam`) are real. `lstat` and
-/// `realpath` are S2's (`env::RealEnv` with `pyrealpath.rs`); until that
-/// lands they fail, so every path check refuses (`... not checkable`) and
-/// nothing is accepted on a path the guard has not looked at.
-struct HostEnv;
-
-impl HostEnv {
-    fn not_yet() -> OsError {
-        OsError {
-            errno: "ENOSYS".into(),
-            strerror: "Function not implemented".into(),
-        }
-    }
-}
-
-impl GuardEnv for HostEnv {
-    fn euid(&self) -> u32 {
-        nix::unistd::geteuid().as_raw()
-    }
-
-    fn uid_of(&self, name: &str) -> Option<u32> {
-        match nix::unistd::User::from_name(name) {
-            Ok(Some(user)) => Some(user.uid.as_raw()),
-            Ok(None) | Err(_) => None,
-        }
-    }
-
-    fn lstat(&self, _path: &str) -> Result<Option<FileStat>, OsError> {
-        Err(Self::not_yet())
-    }
-
-    fn realpath(&self, _path: &str) -> Result<String, OsError> {
-        Err(Self::not_yet())
     }
 }
