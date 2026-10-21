@@ -48,6 +48,7 @@ nav:
       - work_app: services/work_app.md
       - zellij_ingress: services/zellij_ingress.md
       - homelab: services/homelab.md
+      - gotosocial: services/gotosocial.md
       - thermal_monitoring: services/thermal_monitoring.md
       - jellyfin: services/jellyfin.md
   - Changelog: changelog.md

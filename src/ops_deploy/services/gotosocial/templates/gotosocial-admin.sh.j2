@@ -1,0 +1,8 @@
+#!/bin/sh
+# Managed by Ansible (ops-library gotosocial_deploy).
+# Run a GoToSocial admin CLI command as the service user with the deployed
+# config, e.g. `gotosocial-admin account create --username show ...`.
+# Some commands (promote, disable, ...) need `systemctl restart {{ gotosocial_service_name }}`.
+set -eu
+cd {{ gotosocial_current_link }}
+exec runuser -u {{ gotosocial_user }} -- {{ gotosocial_current_link }}/gotosocial --config-path {{ gotosocial_config_path }} admin "$@"

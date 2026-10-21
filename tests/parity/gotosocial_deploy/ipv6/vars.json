@@ -1,0 +1,15 @@
+{
+  "gotosocial_host": "example.org",
+  "gotosocial_account_domain": "example.org",
+  "gotosocial_bind_address": "::1",
+  "gotosocial_port": 18080,
+  "gotosocial_user": "gts",
+  "gotosocial_group": "gtsgroup",
+  "gotosocial_service_name": "gts",
+  "gotosocial_install_root": "/srv/gts",
+  "gotosocial_config_dir": "/srv/gts-etc",
+  "gotosocial_data_dir": "/srv/gts-data",
+  "gotosocial_systemd_memory_max": "512M",
+  "gotosocial_traefik_entrypoints": ["websecure", "web-alt"],
+  "gotosocial_traefik_http_entrypoint": "http"
+}

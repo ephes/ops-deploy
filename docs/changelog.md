@@ -41,6 +41,31 @@
   converged host gets read-only operations only. `jellyfin_deploy` and
   `jellyfin_shared` added to the drift manifest.
 
+- `gotosocial`: port of the `gotosocial_deploy` role (deploy only), checked
+  against ops-library main `540ede2b` (2.56.0). `GotosocialConfig` mirrors the
+  role's variables and `validate.yml` assertions; `deploy_gotosocial` ships
+  the role's four templates unchanged and renders them as Ansible does, so
+  `config.yaml` (`to_nice_yaml` over the settings merged with
+  `extra_config`), the unit, the `gotosocial-admin` wrapper and the route are
+  byte-identical to files Ansible rendered from the role
+  (`tests/parity/gotosocial_deploy/`). The domain-layout marker guard refuses
+  a recorded `host account-domain` pair other than the requested one (unless
+  `allow_domain_layout_change`) while planning, before any change, and the
+  pair is recorded after the health check, as in the role; a marker that is
+  not a regular file is refused. A missing release is fetched, checksum
+  verified and unpacked with `tar --no-same-owner` in a staging directory,
+  then renamed into place; `config.yaml` goes through `secret_file` (the
+  optional SMTP password only on stdin); GoToSocial restarts only when the
+  `current` link, `config.yaml` or the unit changed, or when one of them is
+  newer than the running process (microsecond start time against nanosecond
+  mtimes); `/readyz` is checked only when started, in Python like the role's
+  `uri` (no curl needed).
+  Packages install only when missing; Traefik is never reloaded. A converged
+  host gets read-only operations only. New owned systemd Docker fixture test
+  (`tests/test_gotosocial_docker.py`): real install, second run without a
+  change, refused layout change, and the role and the deploy taking turns
+  without a restart. `gotosocial_deploy` added to the drift manifest.
+
 - `homelab`: port of the `homelab_deploy` role (deploy only; with the
   `homelab_shared` defaults), checked against ops-library main `540ede2b`
   (2.56.0). `HomelabConfig` mirrors the role's variables; `deploy_homelab`

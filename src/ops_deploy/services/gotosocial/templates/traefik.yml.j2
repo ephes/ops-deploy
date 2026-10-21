@@ -1,0 +1,55 @@
+# Managed by Ansible (ops-library gotosocial_deploy) - Traefik route for GoToSocial.
+# Public on purpose: federation peers and fediverse clients cannot pass Basic
+# Auth. See the role README (exception to the dual-router policy).
+
+http:
+  routers:
+    gotosocial-secure:
+      rule: "Host(`{{ gotosocial_traefik_host }}`)"
+      entryPoints:
+{% for ep in gotosocial_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - gotosocial-headers
+{% for middleware in gotosocial_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: gotosocial
+{% if gotosocial_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ gotosocial_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    gotosocial-http:
+      rule: "Host(`{{ gotosocial_traefik_host }}`)"
+      entryPoints:
+        - {{ gotosocial_traefik_http_entrypoint }}
+      middlewares:
+        - gotosocial-redirect
+      service: gotosocial
+
+  middlewares:
+    gotosocial-headers:
+      headers:
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # GoToSocial sends X-Frame-Options: DENY itself; never weaken it here.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    gotosocial-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    gotosocial:
+      loadBalancer:
+        servers:
+          - url: "http://{{ '[' ~ gotosocial_bind_address ~ ']' if ':' in gotosocial_bind_address else gotosocial_bind_address }}:{{ gotosocial_port }}"

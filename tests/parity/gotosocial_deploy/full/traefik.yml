@@ -1,0 +1,48 @@
+# Managed by Ansible (ops-library gotosocial_deploy) - Traefik route for GoToSocial.
+# Public on purpose: federation peers and fediverse clients cannot pass Basic
+# Auth. See the role README (exception to the dual-router policy).
+
+http:
+  routers:
+    gotosocial-secure:
+      rule: "Host(`social.example.org`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - gotosocial-headers
+        - ratelimit@file
+        - extra
+      service: gotosocial
+      tls:
+        certResolver: letsencrypt
+
+    gotosocial-http:
+      rule: "Host(`social.example.org`)"
+      entryPoints:
+        - web
+      middlewares:
+        - gotosocial-redirect
+      service: gotosocial
+
+  middlewares:
+    gotosocial-headers:
+      headers:
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # GoToSocial sends X-Frame-Options: DENY itself; never weaken it here.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    gotosocial-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    gotosocial:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10070"
