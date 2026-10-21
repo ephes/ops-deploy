@@ -8,8 +8,8 @@ scripts today. The contract is [PLAN.md](PLAN.md), the test map
 [TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
 hosts run the Python scripts.
 
-Status: **S1** (core), **S2b** (`script` mode) and **S2c** (`apt-state`
-mode). What exists:
+Status: **S1** (core), **S2a** (`json-file` mode), **S2b** (`script`
+mode) and **S2c** (`apt-state` mode). What exists:
 
 - The command line of PLAN.md 4.9 for all five modes (`json-file`,
   `script`, `apt-state`, `logyard-health`, `static`), `--version`
@@ -25,6 +25,14 @@ mode). What exists:
 - Python-compatible JSON (`json.dumps(json.loads(...), sort_keys=True)` byte
   for byte, including `float.__repr__`), the `meta` block helpers and an
   injectable clock.
+- Mode `json-file` (PLAN.md 4.2): serves the JSON file with the `meta`
+  block (`--meta replace`, or `merge` for dns), sorted as Python's
+  `json.dumps`, with the 503/502 answers of the Python scripts; one binary
+  for all eight variants (backup, storage, thermal, tailscale with
+  `--path-match path-only`, dns, openclaw, ddns, torrent-vpn), selected by
+  the flags of PLAN.md 7.3. Each 5xx answer writes one line with its cause
+  to stderr. Which writers could produce JSON that Rust refuses (`NaN`,
+  `Infinity`, lone surrogates): PLAN.md 5.3.
 - `script` mode (S2b, `metrics_endpoint`): runs `--script` per request in
   its own process group and serves its stdout (200), a 502 page with the
   script's stderr or a 504 page after `--script-timeout`, which kills the
@@ -35,7 +43,7 @@ mode). What exists:
   script for every fixture case, and answers with a JSON error where the
   script crashes (D-2).
 - In the other modes a request that passes the gate gets 500
-  `internal_error` until the mode's slice (S2a, S2d, S2e) lands.
+  `internal_error` until the mode's slice (S2d, S2e) lands.
 
 ```bash
 metrics-httpd json-file --bind 127.0.0.1 --port 9103 --path /.well-known/backup \
@@ -57,6 +65,11 @@ their `_check_auth` with the real `htpasswd`, and records CPython's
 just metrics-httpd-fixtures       # regenerate (venv; then 3.12 and 3.13 must agree)
 just test-metrics-httpd-fixtures  # drift test, part of `just test`
 ```
+
+The torrent-vpn json-file script lives in ops-control; the generator reads
+it from `$METRICS_HTTPD_OPS_CONTROL`, a sibling `ops-control` checkout or
+`~/projects/ops-control`, and keeps the committed torrent-vpn cases when
+none is found.
 
 `fixtures/script.json` (S2b) carries the fixture scripts themselves; the
 replay writes them to a temporary directory and runs them.

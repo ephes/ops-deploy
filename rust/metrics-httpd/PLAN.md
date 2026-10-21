@@ -3,11 +3,12 @@
 Status: S1 implemented (core: command line of all five modes,
 `--check-config`, server, auth, Python-compatible JSON, meta, clock,
 fixture generator with drift test, `TESTMAP.md`); every mode answers the
-501/404/401 gate of 4.1. S2b implemented (`script` mode, fixture family
-`script`). S2c implemented (`apt-state` mode, port of
-`EndpointRebootStateTests`, fixture family `apt_state`). In the other modes
-a request past the gate gets 500 `internal_error` until its slice (S2a,
-S2d, S2e) lands. Campaign "Rust-Ports Runde 2"
+501/404/401 gate of 4.1. S2a implemented: the `json-file` mode serves all
+eight variants of 4.3 (fixture `json_file.json`, writer audit in 5.3). S2b
+implemented (`script` mode, fixture family `script`). S2c implemented
+(`apt-state` mode, port of `EndpointRebootStateTests`, fixture family
+`apt_state`). In the other modes a request past the gate gets 500
+`internal_error` until its slice (S2d, S2e) lands. Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -503,9 +504,10 @@ per-request 401/503, not a startup failure.
   is accepted, as by Python. A file that is not
   valid UTF-8 crashes the Python handler (`UnicodeDecodeError` is not
   caught); Rust answers 502 `invalid_json` (D-2). No live file contains any
-  of them (1.1); S2a
-  lists every writer and whether it can emit them
-  (`json.dumps(..., allow_nan=True)` default).
+  of them (1.1); 5.3 lists every writer and whether it can emit them
+  (`json.dumps(..., allow_nan=True)` default). json-file pins each refusal
+  per variant (`fixtures/json_file.json`, cases `nan`, `infinity`,
+  `overflow`, `lone-surrogate`, `depth-128`, `reserved-key`).
 - **D-5 JSON output bytes: none.** Rust reproduces sorted keys, Python
   separators and `\uXXXX` escaping, and Python's number round trip
   (`json.loads` then `json.dumps`): a number lexeme without `.`, `e`, `E`
@@ -574,7 +576,9 @@ per-request 401/503, not a startup failure.
 - **D-9 Logs.** The access line format of 4.1.6 is kept; Python's extra
   `code 404, message …` lines of `send_error` are not reproduced; Rust adds
   one line at startup (mode, bind, version) and one error line per 5xx
-  cause. logyard-health stays silent per request; static logs to stdout.
+  answer with its cause (json-file: `metrics-httpd: json-file <json path>:
+  <status> <error_type>: <cause>`; never a credential or file content).
+  logyard-health stays silent per request; static logs to stdout.
 - **D-10 Bind.** IPv6 bind addresses work in every mode (Python: dns only).
 - **D-11 Static.** Behaviour comes from `tower-http`'s `ServeDir`: MIME
   types from `mime_guess` (Python: `mimetypes` + `/etc/mime.types`), `Range`
@@ -602,6 +606,43 @@ per-request 401/503, not a startup failure.
   timeout) get hyper's 400/431 or a closed connection without an access
   line (Python: its own 400 with a log line). Clients never send either.
 
+### 5.3 Writer audit for D-4 (S2a)
+
+Who writes the files the json-file and apt-state modes serve, and whether a
+writer can produce what Rust refuses (D-4: `NaN`, `Infinity`, `-Infinity`,
+overflowing floats, lone surrogates, nesting deeper than 127, the
+`$serde_json::private::Number` key; D-5: ints over 4300 digits; D-2: a file
+that is not UTF-8). Every writer is Python and serialises with
+`json.dumps`/`json.dump` defaults (`allow_nan=True`, `ensure_ascii=True`),
+so a non-finite float is written as `NaN`/`Infinity` and a lone surrogate
+in a `str` as `\udXXX`; the output is always ASCII (never invalid UTF-8),
+no writer nests deeper than six levels, writes ints anywhere near 4300
+digits or uses the `$serde_json::…` key. Sources at ops-library and
+ops-control `origin/main` of 2026-10-21; thermal on macmini is rendered by
+ops-deploy from the same template.
+
+| Endpoint (file) | Writer (unit) | Non-finite floats | Lone surrogates | Verdict |
+| --- | --- | --- | --- | --- |
+| backup | `backup_metrics_endpoint/templates/backup_metrics_exporter.py.j2` + `files/backup_metrics_usb_health.py` (`backup-metrics-collector`, `print(json.dumps(...))` > tmp, `mv`) | `max_age_hours` of `backup_metrics_endpoint_file_backups` items goes through `float()` (`_parse_max_age_hours`): an inventory value `"nan"`, `"inf"` or YAML `.nan`/`.inf` is written as `NaN`/`Infinity`; other floats are ratios and rounded ages of finite ints | `latest_file` (and `stat_failed`/`glob_failed` errors) are file names from `Path.glob`; a non-UTF-8 name under a file-backup path becomes surrogate escapes | can, only through inventory or file names |
+| storage | `nyxmon_storage_exporter/templates/nyxmon-storage-metrics.py.j2` (`storage-metrics-collector`, stdout > tmp, `mv`) | sizes and percents are regex-checked digits; `temp_c` from `nvme smart-log` JSON (`json.loads` accepts `NaN`, nvme-cli prints integers) | Time Machine bundle paths from `os.scandir` (Samba stores UTF-8 names) | in principle only (nvme-cli, non-UTF-8 bundle names) |
+| thermal | `thermal_metrics_exporter/templates/thermal-metrics-exporter.py.j2` (`thermal-metrics-collector`, stdout > tmp, `mv`) | yes: `_normalize_numeric` runs `float()` on sysfs text and ipmitool readings and passes `sensors -j` numbers through (`json.loads`), and `float("nan")`/`float("inf")` succeed; `scale` from the inventory likewise. Today hwmon gives integers and ipmitool `na` (mapped to an error entry) | no (sysfs paths from inventory globs) | can, if a sensor reports `nan`/`inf` text |
+| tailscale | `tailscale_metrics_endpoint/templates/tailscale_metrics_exporter.py.j2` (`tailscale-metrics-collector`, stdout > tmp, `mv`) | no (`tailscale status --json` from Go's `encoding/json`, which has no `NaN`; computed floats from finite ints) | no (Go replaces invalid UTF-8 with U+FFFD) | cannot |
+| dns | `dns_metrics_endpoint/templates/dns_metrics_collector.py.j2` (`dns-metrics-collector`, stdout > tmp, `mv`) | no (int milliseconds, `round(monotonic, 3)`) | no (`dig` output decoded strictly) | cannot |
+| openclaw | `openclaw_deploy/templates/openclaw-metrics-collector.py.j2` (`openclaw-metrics-collector`, `json.dump` to tmp, `os.replace`) | no float arithmetic; values copied from `openclaw … --json` (Node's `JSON.stringify` writes non-finite numbers as `null`) and the handlers' state files | yes in principle: Node escapes a lone surrogate in a string as `\udXXX` (ES2019), `json.loads` keeps it and the collector re-emits it | in principle only (strings from OpenClaw) |
+| ddns | `dns_deploy/files/ddns_update.py` (`ddns-update`, `json.dump(indent=2)` to tmp, `os.replace`) | no (int epochs and counters) | no (provider and DNS answers are strings from JSON APIs and `dig`-style lookups; the previous status is its own output) | cannot in practice |
+| torrent-vpn | ops-control `roles/torrent_vpn_metrics_endpoint/templates/torrent-vpn-metrics-collect.py.j2` (`torrent-vpn-metrics-collector`, stdout > tmp, `mv`) | no (gluetun's HTTP API and `docker inspect` are Go JSON) | no | cannot |
+| os_apt (apt-state) | `os_apt_maintenance/templates/os_apt_maintenance.py.j2` (`os-apt-maintenance`, `json.dump(indent=2)` to tmp, rename) | no (`round(monotonic, 3)`, int epochs) | no (`apt-get`/`dpkg` output decoded strictly; the previous state is its own output) | cannot |
+
+Result: no writer emits these values today (consistent with 1.1); backup,
+thermal, storage and openclaw can in principle, through inventory values,
+sensor text, file names or upstream strings. With Rust such a file is a 502
+`invalid_json` (and the D-9 line names the cause) where Python served a 200
+whose body is not strict JSON (`NaN`, `Infinity` are not JSON; a lone
+surrogate escape is refused by strict parsers). Making those writers
+refuse or replace such values (`allow_nan=False`, `math.isfinite`,
+`errors="replace"`) is writer work outside this plan (5.1); the shadow run
+(S7) reports any 502 the live files cause.
+
 ---
 
 ## 6. Crate design
@@ -621,7 +662,7 @@ rust/metrics-httpd/
   src/clock.rs                         # injectable clock for tests
   tests/fixtures.rs, tests/apt_state.rs, tests/binary.rs   # fixture replay (in process, real sockets; apt_state family in its own file), process e2e
   fixtures/generate.py                 # Python oracle (8.2)
-  fixtures/{pyjson,meta,auth,http_common,apt_state}.json, fixtures/float_repr/part-*.txt
+  fixtures/{pyjson,meta,auth,http_common,script,apt_state,json_file}.json, fixtures/float_repr/part-*.txt
   fixtures/htpasswd, htpasswd-mixed, htpasswd-invalid   # committed test-only files (bcrypt cost 4)
   parity/run_parity.py, parity/shadow_compare.py
   TESTMAP.md
@@ -835,6 +876,18 @@ temporary reboot flag (the Rust side sets them with `--reboot-flag` and
 (D-3, with the message prefix) and `rust_only` (Python crashes or accepts
 what Rust refuses; the case names the D item and the Rust status and
 `error_type`).
+
+`json_file` (S2a, templates and `htpasswd`): the eight json-file scripts,
+each with the argv of 7.3 (path and dns timeout from the role defaults,
+`--server-name` from the handler's `server_version`), driven through the
+same 39 file states at `--json-path` (documents, `meta` forms, numbers,
+Unicode, mtimes incl. the `st_mtime` rounding, symlinks, missing/directory/
+unreadable/invalid files, the D-2/D-5 crash paths and the D-4 refusals)
+plus five gate cases (realm, path match); the replay also checks the
+`Server` header (D-7). The torrent-vpn script lives in ops-control: the
+generator reads it from `$METRICS_HTTPD_OPS_CONTROL`, a sibling
+`ops-control` or `~/projects/ops-control` and otherwise keeps the
+committed torrent-vpn cases (the drift test reports that as a skip).
 
 ### 8.3 Parity harness (process level)
 

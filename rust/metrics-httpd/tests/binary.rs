@@ -911,3 +911,67 @@ fn apt_state_reads_flag_and_uname_per_request_and_logs_5xx_causes() {
         assert!(!line.contains("dXNlcjpzZWNyZXQ="), "{line}");
     }
 }
+
+/// json-file through the binary (PLAN.md 4.2): the document with its meta
+/// block, and D-9: one line with the cause on stderr per 5xx answer, never
+/// a credential or the document.
+#[test]
+fn json_file_serves_the_document_and_logs_5xx_causes() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("backup.json");
+    let server = Server::start(&json_file_args(dir.path(), &htpasswd()), &[]);
+    let auth = [("Authorization", "Basic dXNlcjpzZWNyZXQ=")]; // user:secret
+    let missing = get(server.addr, "/.well-known/backup", &auth);
+    assert_eq!(missing.status, 503);
+    std::fs::write(&json, "{\"z\": 1, \"secret-content\": ").unwrap();
+    let invalid = get(server.addr, "/.well-known/backup", &auth);
+    assert_eq!(invalid.status, 502);
+    std::fs::write(&json, "{\"z\": 1, \"a\": [2.50]}").unwrap();
+    let ok = get(server.addr, "/.well-known/backup", &auth);
+    assert_eq!(ok.status, 200);
+    assert_eq!(ok.header("Content-Type"), Some("application/json"));
+    let body: Value = serde_json::from_slice(&ok.body).unwrap();
+    assert_eq!(body["a"], serde_json::json!([2.5]));
+    let served = body["meta"]["served_at_epoch"].as_i64().unwrap();
+    let generated = body["meta"]["generated_at_epoch"].as_i64().unwrap();
+    assert_eq!(
+        body["meta"]["age_seconds"].as_i64(),
+        Some(served - generated)
+    );
+    assert!(
+        ok.body
+            .starts_with(b"{\"a\": [2.5], \"meta\": {\"age_seconds\": ")
+    );
+    let lines = server.stop();
+    let causes: Vec<&String> = lines
+        .iter()
+        .filter(|line| line.starts_with("metrics-httpd: json-file "))
+        .collect();
+    assert_eq!(causes.len(), 2, "{lines:?}");
+    let path = json.display().to_string();
+    assert!(
+        causes[0].starts_with(&format!(
+            "metrics-httpd: json-file {path}: 503 metrics_file_missing: "
+        )),
+        "{}",
+        causes[0]
+    );
+    assert!(
+        causes[1].starts_with(&format!(
+            "metrics-httpd: json-file {path}: 502 invalid_json: "
+        )),
+        "{}",
+        causes[1]
+    );
+    let access = lines
+        .iter()
+        .filter(|line| line.contains("\"GET /.well-known/backup HTTP/1.1\""))
+        .count();
+    assert_eq!(access, 3, "{lines:?}");
+    for line in &lines {
+        assert!(
+            !line.contains("dXNlcjpzZWNyZXQ") && !line.contains("secret-content"),
+            "{line}"
+        );
+    }
+}

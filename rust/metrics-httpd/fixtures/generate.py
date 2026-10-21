@@ -36,6 +36,16 @@ one of the rendered Python endpoint scripts produces. The Rust tests
     every branch of the reason check, and its handler on loopback (frozen
     clock, fixed ``uname().release``, a temporary reboot flag) for state
     files covering every branch of PLAN.md 4.5 (S2c).
+``json_file`` (templates, ``htpasswd``; S2a)
+    ``json_file.json``: the eight json-file scripts of PLAN.md 4.3 (seven in
+    ops-library, torrent-vpn in ops-control) served on loopback with a
+    frozen clock, each driven through the same file states at its
+    ``--json-path`` (documents, ``meta`` forms, numbers, Unicode, mtimes,
+    missing/unreadable/invalid files, Python's crash paths and the D-4
+    refusals) plus a few gate cases (realm, path match). The torrent-vpn
+    script is read from an ops-control checkout (``$METRICS_HTTPD_OPS_CONTROL``,
+    else a sibling ``ops-control`` or ``~/projects/ops-control``); without
+    one, ``write`` and ``check`` keep the committed torrent-vpn cases.
 
 Commands: ``write`` regenerates the files in place, ``check`` regenerates in
 memory and fails on any difference (the drift test,
@@ -539,10 +549,10 @@ def build_meta() -> dict[str, str]:
 # rendered templates
 
 
-def render(template: str, variables: dict[str, Any]) -> str:
+def render(template: str, variables: dict[str, Any], root: Path = ROOT) -> str:
     from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-    path = ROOT / template
+    path = root / template
     environment = Environment(
         loader=FileSystemLoader(path.parent),
         undefined=StrictUndefined,
@@ -558,9 +568,17 @@ def load_module(
     variables: dict[str, Any],
     tmp: Path,
     env: dict[str, str] | None = None,
+    root: Path = ROOT,
+    raw: bool = False,
 ):
+    """Import a rendered template (``raw``: a plain file, not rendered)."""
     source = tmp / f"{name}.py"
-    source.write_text(render(template, variables), encoding="utf-8")
+    text = (
+        (root / template).read_text(encoding="utf-8")
+        if raw
+        else render(template, variables, root)
+    )
+    source.write_text(text, encoding="utf-8")
     spec = importlib.util.spec_from_file_location(
         f"metrics_httpd_fixture_{name}", source
     )
@@ -2076,6 +2094,504 @@ def build_apt_state() -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------
+# json_file (S2a)
+
+# The Rust replay's frozen clock (tests/fixtures.rs `start`): Python's
+# `datetime` is frozen at the same second.
+CLOCK_EPOCH = 1_792_576_800
+SECOND = 10**9
+
+# The ops-control checkout that holds the torrent-vpn variant (PLAN.md 1.1:
+# the only json-file script outside ops-library). Without one, `write` and
+# `check` keep the committed torrent-vpn cases.
+OPS_CONTROL_ENV = "METRICS_HTTPD_OPS_CONTROL"
+TORRENT_ROLE = "roles/torrent_vpn_metrics_endpoint"
+TORRENT = f"{TORRENT_ROLE}/templates/torrent_vpn_metrics_httpd.py.j2"
+
+
+def ops_control_checkout() -> Path | None:
+    configured = os.environ.get(OPS_CONTROL_ENV)
+    if configured:
+        root = Path(configured)
+        if not (root / TORRENT).is_file():
+            raise SystemExit(f"{OPS_CONTROL_ENV}={configured}: {TORRENT} not found")
+        return root
+    for root in (ROOT.parent / "ops-control", Path.home() / "projects" / "ops-control"):
+        if (root / TORRENT).is_file():
+            return root
+    return None
+
+
+def role_defaults(root: Path, role: str) -> dict[str, Any]:
+    import yaml
+
+    path = root / "roles" / role / "defaults" / "main.yml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, Any]]:
+    """The eight json-file scripts (PLAN.md 4.3) with the argv of PLAN.md 7.3."""
+    table: list[tuple[str, str, str, str, str, list[str]]] = [
+        # (variant, template, handler, role, path key, extra argv)
+        (
+            "backup",
+            "roles/backup_metrics_endpoint/templates/backup_metrics_httpd.py.j2",
+            "BackupMetricsHandler",
+            "backup_metrics_endpoint",
+            "backup_metrics_endpoint_path",
+            [],
+        ),
+        (
+            "storage",
+            "roles/storage_metrics_endpoint/templates/storage_metrics_httpd.py.j2",
+            "StorageMetricsHandler",
+            "storage_metrics_endpoint",
+            "storage_metrics_endpoint_path",
+            [],
+        ),
+        (
+            "thermal",
+            "roles/thermal_metrics_endpoint/templates/thermal_metrics_httpd.py.j2",
+            "ThermalMetricsHandler",
+            "thermal_metrics_endpoint",
+            "thermal_metrics_endpoint_path",
+            [],
+        ),
+        (
+            "tailscale",
+            TAILSCALE,
+            "TailscaleMetricsHandler",
+            "tailscale_metrics_endpoint",
+            "tailscale_metrics_endpoint_path",
+            ["--path-match", "path-only"],
+        ),
+        (
+            "dns",
+            "roles/dns_metrics_endpoint/templates/dns_metrics_httpd.py.j2",
+            "DnsMetricsHandler",
+            "dns_metrics_endpoint",
+            "dns_metrics_endpoint_path",
+            [
+                "--meta",
+                "merge",
+                "--request-timeout",
+                "{dns_metrics_endpoint_request_timeout}",
+            ],
+        ),
+        (
+            "openclaw",
+            "roles/openclaw_deploy/templates/openclaw-metrics-httpd.py.j2",
+            "OpenClawMetricsHandler",
+            "openclaw_deploy",
+            "openclaw_metrics_endpoint_path",
+            [
+                "--missing-message",
+                "Metrics file not found - collector timer may not have run yet",
+            ],
+        ),
+        (
+            "ddns",
+            "roles/dns_deploy/files/ddns_status_httpd.py",
+            "DdnsStatusHandler",
+            "dns_deploy",
+            "dns_ddns_status_endpoint_path",
+            [
+                "--missing-message",
+                "Status file not found - updater may not have run yet",
+                "--request-timeout",
+                "{handler.timeout}",
+            ],
+        ),
+        (
+            "torrent-vpn",
+            TORRENT,
+            "TorrentVpnMetricsHandler",
+            "torrent_vpn_metrics_endpoint",
+            "torrent_vpn_metrics_endpoint_path",
+            ["--request-timeout", "{handler.timeout}"],
+        ),
+    ]
+    out = []
+    for variant, template, handler_name, role, path_key, extra in table:
+        if variant == "torrent-vpn":
+            if ops_control is None:
+                continue
+            root, repo = ops_control, "ops-control"
+        else:
+            root, repo = ROOT, "ops-library"
+        defaults = role_defaults(root, role)
+        # The templates' only variables: placeholder paths (the server gets
+        # the real ones from its cfg) and the dns template's baked defaults.
+        variables: dict[str, Any] = {
+            f"{name}_metrics_endpoint_{kind}_path": f"/nonexistent/{kind}"
+            for name in ("backup", "storage", "thermal", "tailscale", "dns")
+            + ("openclaw", "torrent_vpn")
+            for kind in ("json", "htpasswd")
+        }
+        for key in (
+            "dns_metrics_endpoint_port",
+            "dns_metrics_endpoint_path",
+            "dns_metrics_endpoint_request_timeout",
+        ):
+            if key in defaults:
+                variables[key] = defaults[key]
+        module = load_module(
+            f"json_file_{variant.replace('-', '_')}",
+            template,
+            variables,
+            tmp,
+            root=root,
+            raw=not template.endswith(".j2"),
+        )
+        handler = getattr(module, handler_name)
+        argv = [
+            "json-file",
+            "--path",
+            defaults[path_key],
+            "--json-path",
+            "{json}",
+            "--htpasswd-file",
+            "{htpasswd}",
+            "--realm",
+            f"{variant}-metrics" if variant not in ("ddns",) else "ddns-status",
+            "--server-name",
+            handler.server_version,
+        ]
+        for arg in extra:
+            if arg == "{handler.timeout}":
+                arg = str(handler.timeout)
+            elif arg.startswith("{") and arg.endswith("}"):
+                arg = str(defaults[arg[1:-1]])
+            argv.append(arg)
+        out.append(
+            {
+                "variant": variant,
+                "repo": repo,
+                "template": template,
+                "module": module,
+                "handler": handler,
+                "path": defaults[path_key],
+                "path_only": "--path-match" in argv,
+                "argv": argv,
+            }
+        )
+    return out
+
+
+def _text(text: str, mtime: int = CLOCK_EPOCH - 100) -> dict[str, Any]:
+    return {"kind": "file", "text": text, "mtime_ns": mtime * SECOND}
+
+
+def _hex(data: bytes) -> dict[str, Any]:
+    return {"kind": "file", "hex": data.hex(), "mtime_ns": (CLOCK_EPOCH - 100) * SECOND}
+
+
+BASIC = '{"c": true, "b": 1, "a": {"y": [1, 2.50, "x"], "x": null}}\n'
+INVALID = {"rust_status": 502, "rust_error_type": "invalid_json"}
+
+# name -> file state at the variant's --json-path (data/metrics.json in the
+# case directory) and, where Rust answers differently, the allowed difference.
+JSON_FILE_STATES: dict[str, dict[str, Any]] = {
+    "basic": _text(BASIC),
+    "meta-object": _text(
+        '{"meta": {"collector_ipv6_capable": true, "age_seconds": "stale", '
+        '"zeta": [1]}, "v": 1}'
+    ),
+    "meta-list": _text('{"meta": [1, 2], "v": 1}'),
+    "meta-null": _text('{"meta": null}'),
+    "meta-string": _text('{"meta": "x", "v": {}}'),
+    "empty-object": _text("{}"),
+    "unicode": _text(
+        '{"z": "snow \\u2603 \\ud83d\\ude00", "ü": "\U0001f600 raw é", '
+        '"esc": "\\"\\\\\\/\\n\\t\\b\\f\\r\\u0001\\u007f", "ä": {"é": 1, "Z": 2}}'
+    ),
+    "numbers": _text(
+        '{"big": 123456789012345678901234567890, "neg0": -0, "e2": 1e2, '
+        '"f": 1.00, "e16": 1e16, "small": 0.00001, "tie": 181703637716804.125, '
+        '"under": 1e-400, "negf": -0.0, "list": [5.0, 1E+2, -12, 0.1, 9007199254740993.0]}'
+    ),
+    "duplicate-keys": _text('{"a": 1, "a": {"b": 2}, "meta": 5, "meta": {"k": 1}}'),
+    "duplicate-overflow": _text('{"a": 1e400, "a": 1}'),
+    "whitespace": _text(' \n\t{"a" : 1 }\r\n\n'),
+    "depth-127": _text('{"a": ' + "[" * 126 + "]" * 126 + "}"),
+    "future-mtime": _text(BASIC, CLOCK_EPOCH + 50),
+    "fractional-mtime": {
+        "kind": "file",
+        "text": BASIC,
+        # st_mtime = sec + nsec * 1e-9 rounds up to the next second.
+        "mtime_ns": (CLOCK_EPOCH - 10) * SECOND + 999_999_990,
+    },
+    "epoch-mtime": _text(BASIC, 0),
+    "symlink": {**_text(BASIC), "kind": "symlink"},
+    "absent": {"kind": "absent"},
+    "directory": {"kind": "directory"},
+    "broken-symlink": {"kind": "broken-symlink"},
+    "parent-is-file": {"kind": "parent-is-file"},
+    "unreadable": {**_text(BASIC), "kind": "unreadable"},
+    "empty-file": _text(""),
+    "syntax-error": _text('{"a": }'),
+    "trailing-data": _text('{"a": 1} {"b": 2}'),
+    "single-quotes": _text("{'a': 1}"),
+    "control-character": _text('{"a": "x\ty"}'),
+    "bom": _hex(b"\xef\xbb\xbf{}"),
+    # Python's handler raises and drops the connection (D-2).
+    "top-level-list": {**_text("[1, 2]"), **INVALID, "d": "D-2"},
+    "top-level-null": {**_text("null"), **INVALID, "d": "D-2"},
+    "top-level-number": {**_text("42"), **INVALID, "d": "D-2"},
+    "top-level-string": {**_text('"meta"'), **INVALID, "d": "D-2"},
+    "invalid-utf8": {**_hex(b'{"a": "\xff"}'), **INVALID, "d": "D-2"},
+    # int() refuses more than 4300 digits with a ValueError the handler
+    # does not catch (D-5).
+    "int-4301-digits": {**_text('{"v": ' + "9" * 4301 + "}"), **INVALID, "d": "D-5"},
+    # Python serves them; Rust refuses (D-4).
+    "nan": {**_text('{"v": NaN}'), **INVALID, "d": "D-4"},
+    "infinity": {**_text('{"v": [Infinity, -Infinity]}'), **INVALID, "d": "D-4"},
+    "overflow": {**_text('{"v": 1e400}'), **INVALID, "d": "D-4"},
+    "lone-surrogate": {**_text('{"v": "\\ud800"}'), **INVALID, "d": "D-4"},
+    "depth-128": {
+        **_text('{"a": ' + "[" * 127 + "]" * 127 + "}"),
+        **INVALID,
+        "d": "D-4",
+    },
+    "reserved-key": {
+        **_text('{"$serde_json::private::Number": "1"}'),
+        **INVALID,
+        "d": "D-4",
+    },
+}
+
+
+def json_file_cases(path: str, path_only: bool) -> list[dict[str, Any]]:
+    ok = [("Authorization", basic("user", "secret"))]
+    gate = [
+        ("no-auth", "GET", path, [], "basic"),
+        (
+            "wrong-password",
+            "GET",
+            path,
+            [("Authorization", basic("user", "wrong"))],
+            "basic",
+        ),
+        ("wrong-path", "GET", "/.well-known/other", ok, "basic"),
+        ("query", "GET", path + "?x=1", ok, "basic"),
+        ("post", "POST", path, ok + [("Content-Length", "0")], "basic"),
+    ]
+    rows = [
+        {
+            "id": case_id,
+            "state": state,
+            "method": method,
+            "target": target,
+            "version": "HTTP/1.1",
+            "headers": headers,
+        }
+        for case_id, method, target, headers, state in gate
+    ]
+    rows += [
+        {
+            "id": state,
+            "state": state,
+            "method": "GET",
+            "target": path,
+            "version": "HTTP/1.1",
+            "headers": ok,
+        }
+        for state in JSON_FILE_STATES
+    ]
+    return rows
+
+
+def prepare_state(base: Path, state: dict[str, Any]) -> Path:
+    """Puts ``state`` at ``base/data/metrics.json`` (the --json-path)."""
+    data = base / "data"
+    if data.is_symlink() or data.is_file():
+        data.unlink()
+    elif data.exists():
+        shutil.rmtree(data)
+    target = data / "metrics.json"
+    kind = state["kind"]
+    if kind == "parent-is-file":
+        data.write_text("not a directory\n", encoding="utf-8")
+        return target
+    data.mkdir()
+    if kind == "absent":
+        return target
+    if kind == "directory":
+        target.mkdir()
+        return target
+    if kind == "broken-symlink":
+        target.symlink_to("nowhere.json")
+        return target
+    content = (
+        bytes.fromhex(state["hex"]) if "hex" in state else state["text"].encode("utf-8")
+    )
+    written = data / "target.json" if kind == "symlink" else target
+    written.write_bytes(content)
+    os.utime(written, ns=(state["mtime_ns"], state["mtime_ns"]))
+    if kind == "symlink":
+        target.symlink_to("target.json")
+    if kind == "unreadable":
+        os.chmod(written, 0)
+    return target
+
+
+def frozen_datetime(epoch: int) -> type:
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return datetime.fromtimestamp(epoch, tz=tz)
+
+    return FrozenDatetime
+
+
+def exchange_or_drop(port: int, case: dict[str, Any]) -> dict[str, Any] | None:
+    """`exchange`, or None when the handler raised and closed the connection."""
+    try:
+        return exchange(port, case)
+    except (http.client.RemoteDisconnected, ConnectionResetError):
+        return None
+
+
+JSON_FILE_RECORDED = (
+    "Content-Type",
+    "Content-Length",
+    "WWW-Authenticate",
+    "Connection",
+)
+
+
+def json_file_row(
+    case: dict[str, Any], state: dict[str, Any], result: dict[str, Any] | None
+) -> dict[str, Any]:
+    row: dict[str, Any] = dict(case)
+    expected_d = state.get("d") if case["id"] == case["state"] else None
+    if result is None:
+        if expected_d is None:
+            raise SystemExit(
+                f"{case['id']}: the Python handler crashed without a named D item"
+            )
+        row.update(status=None, compare="status")
+    else:
+        row.update(
+            status=result["status"],
+            response_headers={
+                k: result["response_headers"][k] for k in JSON_FILE_RECORDED
+            },
+        )
+        body = result["body"]
+        content_type = result["response_headers"]["Content-Type"] or ""
+        error = (
+            json.loads(body)
+            if content_type == "application/json" and result["status"] != 200
+            else None
+        )
+        if content_type.startswith("text/html"):
+            row.update(body=body, compare="html")
+        elif error is not None and error["error_type"] in (
+            "invalid_json",
+            "read_error",
+        ):
+            # D-3: the message after its fixed prefix is the parser's or the
+            # OS's text (it names the temporary path).
+            # Only the prefix is recorded, so the fixture does not drift with
+            # CPython's parser messages.
+            row.update(
+                error_type=error["error_type"],
+                message_prefix=error["message"].split(": ", 1)[0] + ": ",
+                compare="error_type",
+            )
+        else:
+            row.update(body=body, compare="bytes")
+    if expected_d is not None:
+        rust_status = state["rust_status"]
+        if result is not None and result["status"] == rust_status:
+            raise SystemExit(
+                f"{case['id']}: Python answers {rust_status} too; no difference"
+            )
+        row.update(
+            rust_status=rust_status,
+            rust_error_type=state["rust_error_type"],
+            d=expected_d,
+        )
+    return row
+
+
+def build_json_file() -> dict[str, str]:
+    if os.geteuid() == 0:
+        raise SystemExit(
+            "generate the json_file fixtures as an unprivileged user (unreadable-file case)"
+        )
+    htpasswd = str(FIXTURES / "htpasswd")
+    ops_control = ops_control_checkout()
+    captured = _CapturedStderr()
+    variants_out = []
+    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
+        captured
+    ):
+        tmp = Path(tmp_name)
+        for variant in json_file_variants(tmp, ops_control):
+            module = variant["module"]
+            module.datetime = frozen_datetime(CLOCK_EPOCH)
+            base = tmp / f"case-{variant['variant']}"
+            base.mkdir()
+            server = socketserver.TCPServer(("127.0.0.1", 0), variant["handler"])
+            server.cfg = {  # type: ignore[attr-defined]
+                "path": variant["path"],
+                "json_path": str(base / "data" / "metrics.json"),
+                "htpasswd_file": htpasswd,
+            }
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            rows = []
+            try:
+                for case in json_file_cases(variant["path"], variant["path_only"]):
+                    state = JSON_FILE_STATES[case["state"]]
+                    prepare_state(base, state)
+                    result = exchange_or_drop(server.server_address[1], case)
+                    rows.append(json_file_row(case, state, result))
+            finally:
+                server.shutdown()
+                server.server_close()
+                prepare_state(base, {"kind": "absent"})
+            variants_out.append(
+                {
+                    "variant": variant["variant"],
+                    "repo": variant["repo"],
+                    "template": variant["template"],
+                    "server_version": variant["handler"].server_version,
+                    "argv": variant["argv"],
+                    "cases": rows,
+                }
+            )
+    if ops_control is None:
+        committed = FIXTURES / "json_file.json"
+        kept = (
+            [
+                v
+                for v in json.loads(committed.read_text(encoding="utf-8"))["variants"]
+                if v["variant"] == "torrent-vpn"
+            ]
+            if committed.is_file()
+            else []
+        )
+        if not kept:
+            raise SystemExit(
+                f"the torrent-vpn variant needs an ops-control checkout ({OPS_CONTROL_ENV})"
+            )
+        print(
+            "json_file: no ops-control checkout, kept the committed torrent-vpn cases",
+            file=sys.stderr,
+        )
+        variants_out += kept
+    fixture = {
+        "clock_epoch": CLOCK_EPOCH,
+        "states": JSON_FILE_STATES,
+        "variants": variants_out,
+    }
+    return {"json_file.json": dump_json(fixture)}
+
+
+# --------------------------------------------------------------------------
 
 FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "float_repr": (False, build_float_repr),
@@ -2085,6 +2601,7 @@ FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "http_common": (True, build_http_common),
     "script": (True, build_script),
     "apt_state": (True, build_apt_state),
+    "json_file": (True, build_json_file),
 }
 
 

@@ -594,3 +594,189 @@ async fn script_stdout_above_64_mib_is_refused() {
         "{body}"
     );
 }
+
+/// The json-file variants in fixture order (PLAN.md 4.3).
+const JSON_FILE_VARIANTS: [&str; 8] = [
+    "backup",
+    "storage",
+    "thermal",
+    "tailscale",
+    "dns",
+    "openclaw",
+    "ddns",
+    "torrent-vpn",
+];
+
+/// Puts a `json_file.json` state at `dir/data/metrics.json` (the
+/// variant's `--json-path`), as `generate.py` `prepare_state` does.
+fn prepare_json_state(dir: &Path, state: &Value) {
+    let data = dir.join("data");
+    match std::fs::symlink_metadata(&data) {
+        Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(&data).unwrap(),
+        Ok(_) => std::fs::remove_file(&data).unwrap(),
+        Err(_) => {}
+    }
+    let target = data.join("metrics.json");
+    let kind = text(&state["kind"]);
+    if kind == "parent-is-file" {
+        std::fs::write(&data, "not a directory\n").unwrap();
+        return;
+    }
+    std::fs::create_dir(&data).unwrap();
+    match kind {
+        "absent" => return,
+        "directory" => {
+            std::fs::create_dir(&target).unwrap();
+            return;
+        }
+        "broken-symlink" => {
+            std::os::unix::fs::symlink("nowhere.json", &target).unwrap();
+            return;
+        }
+        _ => {}
+    }
+    let content = match state.get("hex") {
+        Some(value) => hex(text(value)),
+        None => text(&state["text"]).as_bytes().to_vec(),
+    };
+    let written = if kind == "symlink" {
+        data.join("target.json")
+    } else {
+        target.clone()
+    };
+    std::fs::write(&written, content).unwrap();
+    let mtime_ns = state["mtime_ns"].as_u64().unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&written)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_nanos(mtime_ns))
+        .unwrap();
+    if kind == "symlink" {
+        std::os::unix::fs::symlink("target.json", &target).unwrap();
+    }
+    if kind == "unreadable" {
+        std::fs::set_permissions(&written, std::fs::Permissions::from_mode(0o000)).unwrap();
+    }
+}
+
+/// PLAN.md 4.2, 4.3: every json-file variant answers each file state as its
+/// Python script does (`fixtures/json_file.json`), except the named
+/// differences (D-2 crash paths answered, D-3 texts, D-4 refusals, D-5).
+#[tokio::test]
+async fn json_file_variants_match_the_python_scripts() {
+    let fixture = load("json_file.json");
+    // The replay's clock (`start`) is the generator's frozen clock.
+    assert_eq!(fixture["clock_epoch"].as_i64(), Some(1_792_576_800));
+    let states = fixture["states"].as_object().unwrap();
+    let variants = fixture["variants"].as_array().unwrap();
+    let names: Vec<&str> = variants.iter().map(|v| text(&v["variant"])).collect();
+    assert_eq!(names, JSON_FILE_VARIANTS);
+    let probe = tempfile::tempdir().unwrap();
+    let probe_file = probe.path().join("probe");
+    std::fs::write(&probe_file, "x").unwrap();
+    std::fs::set_permissions(&probe_file, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let unreadable_works = std::fs::read(&probe_file).is_err(); // false as root
+    let mut checked = 0;
+    for variant in variants {
+        let name = text(&variant["variant"]);
+        let dir = tempfile::tempdir().unwrap();
+        let json_path = dir.path().join("data").join("metrics.json");
+        let argv: Vec<String> = variant["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|arg| match text(arg) {
+                "{htpasswd}" => fixtures().join("htpasswd").display().to_string(),
+                "{json}" => json_path.display().to_string(),
+                other => other.to_owned(),
+            })
+            .collect();
+        let (addr, stop) = start_variant(&argv, &HashMap::new()).await;
+        let server = format!(
+            "{} metrics-httpd/{}",
+            text(&variant["server_version"]),
+            env!("CARGO_PKG_VERSION")
+        );
+        for case in variant["cases"].as_array().unwrap() {
+            let id = format!("{name}/{}", text(&case["id"]));
+            let state = &states[text(&case["state"])];
+            if text(&state["kind"]) == "unreadable" && !unreadable_works {
+                continue;
+            }
+            prepare_json_state(dir.path(), state);
+            let method = text(&case["method"]).to_owned();
+            let headers: Vec<(String, String)> = case["headers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|pair| (text(&pair[0]).to_owned(), text(&pair[1]).to_owned()))
+                .collect();
+            let request = raw_request(
+                &method,
+                text(&case["target"]),
+                text(&case["version"]),
+                &headers,
+            );
+            let response = tokio::task::spawn_blocking(move || exchange(addr, &request, false))
+                .await
+                .unwrap();
+            checked += 1;
+            // D-7: the Server header names the variant and the Rust binary.
+            assert_eq!(response.header("Server"), Some(server.as_str()), "{id}");
+            if let Some(status) = case.get("rust_status") {
+                // A named allowed difference: Rust's status and error_type.
+                assert!(case["d"].is_string(), "{id}");
+                assert_eq!(u64::from(response.status), status.as_u64().unwrap(), "{id}");
+                let body: Value = serde_json::from_slice(&response.body).unwrap();
+                assert_eq!(body["error"], Value::Bool(true), "{id}");
+                assert_eq!(body["error_type"], case["rust_error_type"], "{id}");
+                assert_eq!(response.header("Content-Type"), Some("application/json"));
+                continue;
+            }
+            assert_eq!(
+                u64::from(response.status),
+                case["status"].as_u64().unwrap(),
+                "{id}"
+            );
+            let expected = &case["response_headers"];
+            let compare = text(&case["compare"]);
+            for header in [
+                "Content-Type",
+                "WWW-Authenticate",
+                "Connection",
+                "Content-Length",
+            ] {
+                if header == "Content-Length" && compare != "bytes" {
+                    continue;
+                }
+                assert_eq!(
+                    response.header(header),
+                    expected[header].as_str(),
+                    "{id}: {header}"
+                );
+            }
+            let body = String::from_utf8(response.body.clone()).unwrap();
+            match compare {
+                "bytes" => assert_eq!(body, text(&case["body"]), "{id}"),
+                "html" => assert_eq!(body, without_style(text(&case["body"])), "{id}"),
+                "error_type" => {
+                    // D-3: the parser's or OS's text after the fixed prefix may differ.
+                    let body: Value = serde_json::from_str(&body).unwrap();
+                    let keys: Vec<&String> = body.as_object().unwrap().keys().collect();
+                    assert_eq!(keys, ["error", "error_type", "message"], "{id}");
+                    assert_eq!(body["error"], Value::Bool(true), "{id}");
+                    assert_eq!(body["error_type"], case["error_type"], "{id}");
+                    let message = text(&body["message"]);
+                    assert!(
+                        message.starts_with(text(&case["message_prefix"])),
+                        "{id}: {message}"
+                    );
+                }
+                other => panic!("{id}: unknown compare mode {other}"),
+            }
+        }
+        let _ = stop.send(());
+    }
+    assert!(checked >= 8 * 40, "{checked}");
+}

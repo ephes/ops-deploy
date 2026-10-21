@@ -7,7 +7,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
-| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate, the mode bodies arrive with S2a–S2e ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
+| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c); the other mode bodies arrive with S2d–S2e ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
 | `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | crate skeleton (S1): `--version`, `--check-policy`, prefilter and tokeniser; every command still refused |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
