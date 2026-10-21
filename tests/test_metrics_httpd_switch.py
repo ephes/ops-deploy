@@ -419,6 +419,25 @@ def test_an_unreadable_live_state_blocks_the_prune() -> None:
     assert "--live-state-unknown" in argv_of(result, "prune --name")
 
 
+@pytest.mark.parametrize(("pid", "readable"), [("0", True), ("", True), ("999999999", False)])
+def test_the_live_probe_fails_when_a_running_executable_cannot_be_read(
+    tmp_path: Path, pid: str, readable: bool
+) -> None:
+    systemctl = tmp_path / "systemctl"
+    systemctl.write_text(f"#!/bin/sh\necho '{pid}'\n")
+    systemctl.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+
+    result = subprocess.run(
+        ["sh", "-c", switch.live_command(UNIT)], capture_output=True, text=True, env=env, check=False
+    )
+
+    # No main process: nothing runs. A main process without a readable /proc/<pid>/exe: unknown.
+    assert (result.returncode == 0) is readable
+    if readable:
+        assert result.stdout == ""
+
+
 @pytest.mark.parametrize(
     ("bind", "allow", "host"),
     [("0.0.0.0", ("any",), "127.0.0.1"), ("::", ("any",), "::1"), ("127.0.0.1", ("localhost",), "127.0.0.1")],

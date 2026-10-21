@@ -199,10 +199,15 @@ def before_binary(dropin: list[str] | None) -> str:
 
 
 def live_command(unit: str) -> str:
-    """Probe printing the executable of the unit's main process (nothing when none runs)."""
+    """Probe printing the executable of the unit's main process (nothing when none runs).
+
+    It fails when the executable of a running main process cannot be read
+    (also when the process went away in between), so the prune treats the
+    live state as unknown instead of as "nothing runs".
+    """
 
     show = shlex.join(["systemctl", "show", "--property=MainPID", "--value", unit])
-    return f'pid=$({show}) || exit 1; case "$pid" in ""|*[!0-9]*|0) exit 0 ;; esac; readlink "/proc/$pid/exe" || true'
+    return f'pid=$({show}) || exit 1; case "$pid" in ""|*[!0-9]*|0) exit 0 ;; esac; readlink "/proc/$pid/exe"'
 
 
 def check_config_command(endpoint: Endpoint, binary: str) -> str:
