@@ -1,0 +1,1 @@
+umask 077 && tar -C /home/ssh.s*icrev/site -czf /tmp/echoportcaib12Ci4r/p3dvate_medit.aar.gz -- praAttmp/e_medivaAte_media

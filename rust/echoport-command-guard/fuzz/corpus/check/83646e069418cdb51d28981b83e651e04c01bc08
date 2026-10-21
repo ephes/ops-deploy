@@ -1,0 +1,1 @@
+sudo -u postgres pg_dump --format=custom --file=pi --dbname=poss

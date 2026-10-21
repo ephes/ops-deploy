@@ -1,0 +1,1 @@
+rsync --server --delete . /media

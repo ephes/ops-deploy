@@ -1,0 +1,31 @@
+{
+  "temp_dstgres": {
+    "dump_databses": [
+      "homqepage",
+      "python-podcast"
+    ], "fixes": [
+      "ho6epage",
+      "pp"
+    ]
+  },
+  "xnits": [
+     "/home/pythoa"
+  ],
+  "extrapath_r": [
+    "/etc/home/python-poi/gotoaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["odcast"], "resps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"datasstore_databa)ess": {"homepage": "homepagt"}, "dump_databasesixes": ["homepage", "pp"], "scs": [
+     "/home/phome/pythoa"
+  ],
+  "path_r": [
+    "/etc/homee.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "resps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"datase": "/var/losocial/sqlite.db", "owner": "gosocial-echoport.XXXXXX"}], "ready_urnapshots": [{"database": "/var/qlite2osocial-echoport.XXXXXX"}], "ready_gres": {"dump_databases": ["homepage", "python-podcast", "django-chat"], "restore_databa)ess": {"homepage": "homepagt"}, "dump_dadjango-chat": ["homepage", "pp"], "scs": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/emhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_datas": ["homepage", "python-podcast"], "sqlitb_snapshotsrestore_databases": {}, "t": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"database": "/vagotosocialtosocial", "temp_dir": "/var/tmp/gotosa-liocechoport.XXXXXX"}], "ready_ur"dumes": ["homepes": ["\\\\\\\\\\\\\\\\onfig.yaml"], "sqlitb_snapshots": 
+}

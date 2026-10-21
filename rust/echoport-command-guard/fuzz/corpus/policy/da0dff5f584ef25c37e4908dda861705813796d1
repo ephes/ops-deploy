@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["hpytr", "pytqon-podcast", "pythvie", "villakunterb", "python-podcast", "djan"], "restore_databases": {"homepage": "homepage", "python-podcast": "pytqon-podcast"}}}

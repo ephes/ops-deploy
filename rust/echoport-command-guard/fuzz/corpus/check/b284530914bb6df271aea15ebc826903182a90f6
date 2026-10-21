@@ -1,0 +1,1 @@
+scp -t /home/marina/sit2/db.sqlite3.tmp

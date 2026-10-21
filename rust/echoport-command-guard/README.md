@@ -7,7 +7,9 @@ hosts run the Python guard.
 
 Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
 layer), **S3a** (the rules without filesystem), **S3b** (the rules with
-filesystem), **S4** (runtime and exec) and **S6** (the role switch:
+filesystem), **S4** (runtime and exec), **S5** (the parity gate: decision
+property tests, Layer 2 and Layer 3 against the Python guard on both host
+distributions, fuzzing; see "Parity gate" below) and **S6** (the role switch:
 `roles/echoport_remote_command_guard` installs this binary through
 `rust_release_binary` and selects it with `echoport_remote_command_guard_impl`,
 default `python`; see its README). Every branch of the Python guard's
@@ -84,12 +86,15 @@ default `python`; see its README). Every branch of the Python guard's
 - `parity/gen_fixtures.py`: writes `fixtures/` (below).
 - `parity/allowed_differences.json`: per-case exceptions (empty).
 - `fixtures/`: the Layer-1 cases, generated and committed.
-- `parity/e2e/`: the Layer-2 containers (Ubuntu 24.04 with Python 3.12,
-  Debian 13 with Python 3.13) and, so far, the filesystem comparison
-  `layer2_realpath.py` with the probe `examples/env-probe.rs` (below);
-  `build-local-archive.sh <dest.tar.gz>` builds the guard in the same Debian
-  12 container (target `local-archive`) into a release-layout archive for the
-  role's molecule scenarios.
+- `parity/e2e/`: the Layer-2 and Layer-3 containers (Ubuntu 24.04 with
+  Python 3.12 and OpenSSH 9.6, Debian 13 with Python 3.13 and OpenSSH 10.0):
+  the filesystem comparison `layer2_realpath.py` with the probe
+  `examples/env-probe.rs`, the decision comparison `layer2_decide.py`, and
+  the sshd end-to-end comparison `layer3_sshd.py` with its stub tools
+  `stub-tool.sh` (below); `build-local-archive.sh <dest.tar.gz>` builds the
+  guard in the same Debian 12 container (target `local-archive`) into a
+  release-layout archive for the role's molecule scenarios.
+- `fuzz/`: the cargo-fuzz targets and their committed corpus (below).
 
 ## Build and test
 
@@ -123,6 +128,30 @@ The tests:
   the oracle server, over every fixture command that passes the prefilter
   and over 2,000 seeded random commands (proptest). `PROPTEST_CASES=100000`
   runs more, `PROPTEST_RNG_SEED=<n>` changes the seed.
+- `tests/decisions.rs` (S5, PLAN.md 7.3): random commands against both
+  guards through the oracle server, each in a random virtual host. The
+  commands are an accepted command of the curated fixture sources (with its
+  recorded host) or a tool followed by words of the policies' vocabulary,
+  then up to four mutations (drop, duplicate, swap, replace or insert a
+  word, metacharacter tails, requoting, whitespace, path forms, control,
+  non-ASCII and invalid UTF-8 characters, backslash escapes, lengths around
+  4096); the host gives each path the command names a random `lstat` answer
+  (the seven file types with modes, owners and link counts, absent, `lstat`
+  errors) and `realpath` (itself, another of the paths, a root, outside),
+  runs as root or not, and sometimes lacks a user. A Rust acceptance must
+  equal Python's decision and keep the invariants of
+  `tests/common/invariants.rs` (the executed tool is a guard tool, `sudo`
+  is `sudo -n -u postgres --`, uploads and `mkdir` run as `runuser -u
+  <user>` with a user other than root, every path in the decision is a
+  safe path); a Rust refusal must be Python's, except for the PLAN.md 4.4
+  classes (a command outside the prefilter's alphabet, which the prefilter
+  refuses, and a `check()` crash of Python). 2,000 seeded cases in CI;
+  `PROPTEST_CASES=100000` runs more, `PROPTEST_RNG_SEED=<n>` changes the
+  seed.
+  S5 ran 100,000 cases with the oracle under Python 3.12 and 3.13: 13,846
+  equal acceptances, 65,975 equal refusals, 20,179 prefilter refusals (1,203
+  of them commands Python allows, all through backslash escapes), no
+  difference.
 - `tests/realpath.rs`: `pyrealpath` against `os.path.realpath` through the
   oracle server, over 2,000 random virtual trees (the oracle's `realpath`)
   and 500 random real trees in a temp directory with the real `GuardEnv`
@@ -168,15 +197,20 @@ for changes under `rust/`; a change to the Python guard or a runner template
 alone is caught by `just test-echoport-remote-command-guard` (part of `just
 test`).
 
-## Layer 2: the filesystem layer on real trees
+## Layer 2: real trees in the host distributions
 
 ```bash
 just echoport-command-guard-layer2   # or rust/echoport-command-guard/parity/e2e/run-layer2.sh [ubuntu2404] [debian13]
 ```
 
-Needs Docker; changes nothing outside the containers. It builds
-`examples/env-probe.rs` (the real `GuardEnv` as JSON lines) with the pinned
-toolchain on Debian 12, runs `parity/e2e/layer2_realpath.py` as root in an
+Needs Docker; changes nothing outside the containers. It builds the guard
+and `examples/env-probe.rs` (the real `GuardEnv` as JSON lines) with the
+pinned toolchain on Debian 12, then runs two scripts as root in an Ubuntu
+24.04 (Python 3.12.3) and a Debian 13 (Python 3.13.5) container with the
+policies' users. The Python guard is mounted read-only (it lies outside the
+`rust/` build context).
+
+**The filesystem layer** (S2): `parity/e2e/layer2_realpath.py` runs as root in an
 Ubuntu 24.04 (Python 3.12.3) and a Debian 13 (Python 3.13.5) container with
 the policies' users, and fails on any difference PLAN.md 4.2 does not allow.
 A loop refusal must be confirmed by a resolver without Python's `seen` map.
@@ -198,6 +232,166 @@ loops and the 41-traversal chains, `ENAMETOOLONG`, `EILSEQ`, `EACCES`). Run with
 `--probe <bin> --realpath-only` the same script evaluates another resolver;
 that is how `soft-canonicalize` 0.5.6 was measured (PLAN.md 5.2: 265 of
 1,531 differ, on the corpus before the cached-link chain was added).
+
+**The decisions** (S5): `parity/e2e/layer2_decide.py` runs the Python
+guard's `check()` with the real `os.path.realpath`, `os.lstat`, `pwd` and
+euid and the Rust binary's `--decide` on the same real trees and compares
+the decisions. For every path-taking shape (`scp -f/-t` of dumps, the
+private media archive, read files and root files; the three rsync forms;
+`rm` of `-wal`/`-shm`; the `tar` and `cat >` shapes; the snapshot `cat`
+and `chown`; `chown -R`, `readlink`, `test`, both `mv` forms, `mkdir`,
+`chmod`, `sha256sum`, the `pg_restore < file` redirect), under both fixture
+policies and each root, it materialises every state of the paths the
+command names: the target file (absent, regular and owned by root, postgres,
+the root's owner or nobody, a hard link, a link inside or outside the root,
+dangling, a loop, a fifo, a socket, a device, a directory), a directory the
+guard requires private (`0700`, `0750`, `0777`, someone else's, a link to a
+private directory, absent, a file) and a parent component (a directory, a
+link inside the root, outside it, to `../..`, to the root by its absolute
+path, with `..` in its target, a loop, dangling, a file). It also runs
+`GuardRefusals.test_scp_against_a_real_tree` on a real tree with its own
+policy, seven shapes as `nobody` (real `EACCES`, euid checks) and 200
+seeded random trees under the roots with random commands into them
+(`ECHOPORT_L2_DECIDE_ARGS="--random 1000 --seed 7"` for more). When Rust
+allows, Python must allow with the same decision; when Rust refuses, Python
+must refuse with the same reason, except for the PLAN.md 4.2 realpath
+refusals (a loop confirmed by the resolver without `seen`, `EACCES`,
+`ENAMETOOLONG`, a non-UTF-8 link target) and Python's `check()` crashes.
+
+S5 results (2026-10-21, arm64 Docker host), the same on both distributions:
+1,352 equal acceptances and 487 equal refusals over 28 shapes and 200
+random trees, 127 realpath refusals Python resolves past (123 loops, 4
+`EACCES` as `nobody`), no difference. With 1,000 random trees (seed 7): 4,539 equal acceptances, 1,129 equal
+refusals, 298 realpath refusals (294 loops, 4 `EACCES`), no difference.
+
+## Layer 3: end to end through sshd
+
+```bash
+just echoport-command-guard-layer3   # or rust/echoport-command-guard/parity/e2e/run-layer3.sh [ubuntu2404] [debian13]
+```
+
+Needs Docker; changes nothing outside the containers. The Layer-2 images
+plus `openssh-server`, `openssh-client` and `rsync`
+(`parity/e2e/Dockerfile`, target `layer3`); `parity/e2e/layer3_sshd.py`
+runs as root inside. It binds a syslog receiver to `/dev/log`, starts sshd
+on 127.0.0.1 (the hosts' `SyslogFacility AUTH`, `AcceptEnv LANG LC_*`; no
+PAM in a container) and gives root one `authorized_keys` line per
+implementation and fixture policy, with `restrict` and the forced command of
+PLAN.md 6.2: `python` (`/usr/bin/python3 -I
+/usr/local/sbin/echoport-remote-command-guard <policy>`), `rust` (`<bin>
+<policy>`) and `shadow` (`<bin> --shadow <policy> /usr/bin/python3 -I
+<pyguard> <policy>`), the binary at
+`/usr/local/lib/echoport-command-guard/<version>/echoport-command-guard`.
+Each scenario runs once per implementation from the same fresh state:
+
+- every command the runners send (`fixtures/corpus/runner.jsonl`, 130
+  commands) with `ssh`, in a state where the Python guard allows it (the
+  harness fails otherwise). `systemctl`, `sudo`, `pg_dump`, `pg_restore`,
+  `psql`, `createdb`, `dropdb`, `sqlite3` and `curl` are stubs
+  (`parity/e2e/stub-tool.sh`, in `/usr/local/bin`, which `runuser` keeps on
+  its search path) that record argv, environment, the targets of fds 0-2,
+  the open fds, the signal mask and ignored signals, the umask and the uid,
+  and act just enough like the tool; `runuser`, `scp`, `rsync`, `tar`,
+  `cat`, `mv`, `chown`, `mkdir` and the rest are real;
+- real `scp -O` downloads (a dump, the read file, the private media
+  archive) and uploads (into a root as its owner, a restore dump as
+  postgres, through a symlink), the three rsync forms with the real client
+  (and `-L`, refused), `cat >` with 15 kB of data and onto an existing file,
+  the snapshot `cat` (and of a symlink), the `pg_restore < file` redirect,
+  `tar` with the umask, `mkdir -p` as the owner, refused commands, the
+  PLAN.md 4.1 prefilter (a backslash escape Python allows, `#`, non-ASCII),
+  an interactive session, SFTP, the environment without a client `LANG`,
+  with `LANG=C.UTF-8` and with `LANG=C`, and a missing tool (exit 127).
+
+Compared between `python` and `rust`: exit code, stdout, stderr, the files
+on both sides afterwards (kind, content, owner, group, mode, link count),
+the stub records and the syslog lines (identifier, facility and priority,
+message without the PID). `shadow` must give exactly what `python` gives,
+plus one record under `echoport-remote-command-guard-shadow` with Python's
+verdict and reason (a redirect that fails to open is `allowed` there). For
+the prefilter scenarios Rust must refuse (`command not allowed`, the
+prefilter's reason, nothing run).
+
+Two things the harness normalises, because neither comes from the guard:
+sshd runs the forced command through root's shell (`bash -c`), which sets
+`_` to the program it starts (the guard's own path); and the random names
+`mktemp -d` returns. The stub reads its signal mask before it starts any
+child, because the shell blocks signals while it waits for one.
+
+S5 results (2026-10-21, arm64 Docker host): 161 scenarios on each
+distribution (148 allowed by Python, 12 refused, 1 interactive), Ubuntu
+24.04 (Python 3.12.3, OpenSSH 9.6p1) and Debian 13 (Python 3.13.5, OpenSSH
+10.0p2): no difference between `python`, `rust` and `shadow`.
+
+## Fuzzing
+
+```bash
+just echoport-command-guard-fuzz       # or rust/echoport-command-guard/fuzz/run-fuzz.sh [seconds] [target...]
+rust/echoport-command-guard/fuzz/run-fuzz.sh cmin   # minimise the corpus before committing it
+```
+
+`fuzz/` is a cargo-fuzz project outside the workspace (it needs nightly and
+libFuzzer; CI uses the pinned stable toolchain, so fuzzing is not a CI gate).
+`run-fuzz.sh` builds an image with a pinned nightly (`nightly-2026-10-01`)
+and cargo-fuzz 0.13.2 (`fuzz/Dockerfile`), builds the targets with debug
+assertions and runs each for an hour by default, all four at once, one
+container each, on the committed corpus in `fuzz/corpus/<target>/` (found
+crashes land in `fuzz/artifacts/`, the logs in `fuzz/run-<target>.log`). The
+targets (PLAN.md 7.4):
+
+- `prefilter_tokens`: arbitrary bytes through the pre-checks, the prefilter,
+  the two raw shapes and the tokeniser: no panic, and whatever passes the
+  prefilter is printable ASCII and tab without `\` and `#`, and splits or
+  fails only with `No closing quotation`;
+- `check`: an arbitrary command against either policy, as root or not, in a
+  host the input chooses (every path the command could name gets an
+  `lstat` answer of any kind, mode, owner and link count, or an error, and
+  a `realpath` answer, including errors): no panic, and every acceptance
+  keeps the invariants of `tests/common/invariants.rs`;
+- `policy`: arbitrary bytes as a policy file: no panic, an accepted policy
+  satisfies the validation of PLAN.md 3.2, and decisions under it keep the
+  invariants;
+- `py_repr`: arbitrary bytes through Python's `repr`: no panic, one quoted
+  string of printable ASCII, the same as for the decoded text.
+
+The corpus was seeded from the Layer-1 fixtures (`fuzz/seed_corpus.py`) and
+minimised with `cargo fuzz cmin` after the run. S5 results (2026-10-21,
+arm64 Docker host, `nightly-2026-10-01`, 3,701 seconds per target, all four
+at once): `prefilter_tokens` 207.6 million runs, `check` 11.2 million,
+`policy` 85.2 million, `py_repr` 214.6 million; no crash, no broken
+assertion, so no new Layer-1 fixture. The committed corpus after `cmin`:
+290, 1,328, 2,024 and 228 files (1.7 MB in all).
+
+## Parity gate (S5): the PLAN.md 4.4 review
+
+Every allowed difference is a stricter refusal (PLAN.md 4). S5 reviewed each
+class the generator tags with `p3` and the per-case list:
+
+- `prefilter` (2,902 Layer-1 cases) and `invalid-utf8` (32): the Rust guard
+  refuses all of them in the prefilter; Python refuses all of them too, with
+  other reasons. Python allows a command outside the prefilter's alphabet
+  only through a backslash escape (`systemctl start marina\.service`), which
+  no runner sends (S0's corpus check); the decision property tests generate
+  such escapes and Layer 3 sends one through sshd: Rust refuses, as decided
+  (PLAN.md 4.1, Q2).
+- `python-error` (5): Python's `check()` crashes on an unbalanced quote in
+  the `tar` shape and runs nothing; Rust refuses with `unparsable command:
+  No closing quotation`.
+- `policy-type` (33, of which Python accepts 21) and
+  `policy-trailing-newline` (12, Python accepts 10): policy documents the
+  role never writes (strings for lists, numbers, `false`, pairs, duplicate
+  keys, non-standard JSON, values ending in `\n`); Rust refuses them
+  (PLAN.md 4.2). S9 runs the Rust `--check-policy` on both live policies
+  before anything switches.
+- The realpath refusals of PLAN.md 4.2 do not occur in Layer 1 (it injects
+  `realpath`); Layer 2 meets them on real trees (loops confirmed by the
+  resolver without `seen`, `EACCES`) and finds no other difference.
+- `parity/allowed_differences.json` stays empty: no case needs an exception
+  beyond these classes, for the Python 3.12 and 3.13 decisions alike.
+
+Layer 1 (13,149 decision and 244 policy cases): 3,505 equal acceptances,
+6,710 equal refusals (the 5 `python-error` cases included), 2,934 prefilter
+refusals; 207 equal policy verdicts and 37 `p3` refusals.
 
 ## Fixtures
 

@@ -8,7 +8,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
 | `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c), `static` mode (S2e), `logyard-health` mode (S2d); process-level parity harness and shadow comparer (S3) ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
-| `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | S1–S4: `--version`, `--check-policy`, every branch of the Python guard's `check()` (Layer-1 parity, filesystem layer), forced-command mode, `--decide` and `--shadow`; not released or installed yet ([`TESTMAP.md`](echoport-command-guard/TESTMAP.md)) |
+| `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | S1–S5: `--version`, `--check-policy`, every branch of the Python guard's `check()` (Layer-1 parity, filesystem layer), forced-command mode, `--decide` and `--shadow`; the parity gate (decision property tests, Layers 2 and 3 in containers, fuzzing); not released or installed yet ([`TESTMAP.md`](echoport-command-guard/TESTMAP.md)) |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
 `build_ignore` excludes `rust` and `.github`, and
@@ -29,7 +29,8 @@ rust/
   scripts/              stdlib Python helpers for CI (ci_excludes.py) and releases
                         (release_checks.py), with tests and testdata/
   metrics-httpd/        crate + binary `metrics-httpd`, plan, TESTMAP, Python-generated fixtures
-  echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures
+  echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures,
+                           container harnesses (parity/e2e/) and cargo-fuzz targets (fuzz/, not a member)
 ```
 
 Rules (PLAN-foundation.md section 1):

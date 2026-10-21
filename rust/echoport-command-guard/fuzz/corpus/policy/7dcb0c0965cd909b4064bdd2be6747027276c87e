@@ -1,0 +1,11 @@
+
+ {
+  "sqlite_snapshots": [
+    {
+"database": "/var/lib/gotosocial/sqlite.db",
+     "owner": "gotosocial:gotocial",
+      "temp_dir": "/var/tmp/gocial-echopovvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv.XXXXXX"
+} ],
+  "ra": [
+  ]
+}

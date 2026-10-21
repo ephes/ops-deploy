@@ -1,0 +1,6 @@
+{   "temp_dirs": [
+ "/var/tmp/django-chat-db-restore.XXXXXXXX"
+  ],
+  "units": [
+    "homepage"  ]
+}

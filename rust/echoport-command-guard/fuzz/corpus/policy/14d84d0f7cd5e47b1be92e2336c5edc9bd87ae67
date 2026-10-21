@@ -1,0 +1,20 @@
+{
+  "pot":{
+    "dump_databases": [
+     "p"
+   ]
+  },
+  "temp_dirs": [
+    "/var/tmp/django-chat-db-restore.XXXXXXXX"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/vasocial/sqlitdb",
+      "owner": "gopo:gotosocial",
+      "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"
+    }
+  ],
+  "ready_urls": [
+    "http://127.0.0.1:10070/readyz"
+  ]
+}

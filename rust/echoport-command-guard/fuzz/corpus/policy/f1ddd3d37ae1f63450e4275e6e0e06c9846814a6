@@ -1,0 +1,32 @@
+{
+  "temp_dirpostgres": {
+    "dump_databses": [
+      "hmepage",
+      "python-podcast"
+    ],
+    "fixes": [
+      "homepage",
+      "pp"
+    ]
+  },
+  "xnits": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/etc/gotoaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["at-db-restore.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "restore_databases": {}, "temp_ps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"database": "/var/lgotosocial/sqlite.db", "owner": "gosocial-echoport.XXXXXX"}], "ready_urnapshots": [{"database": "/var/qlite.db", "owner": "gotosocial:gotosociechoport.XXXXXX"}], "ready_urls":{"postgres": {"dump_databases": ["homepage", "python-podcast", "django-chat"], "restore_databa)ses": {"homepage": "homepagt"}, "dump_databasesixes": ["homepage", "pp"], "scs": [
+     "/home/pgotoaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databasestore_databases": {}, "temp_ps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"database": "/var/lgotosocial/sqlite.XXX"}], "ready_urnapshots": [{"datqbase": "/var/qlite.db", "owner": "gotoial-echoport.XXXXXX"}], "ready_urls":{"postgres": {"dump_databases": ["homepast", "django-chat"], "restore_datore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homepage", "homepage", "villakunperbunt-next.serpodcast"], "#estore_datab": ["homepace", "pp"]}, "u{nits": ["gotosocial"], "qrivate_media_paths": ["/home/python-podcast/sivatez_media"], "path_roots": [{"path": "/var/litosocial", "Xowner": "gotosocial:gotosocial"}], "re_aifdles": ["/etc/gotosocial/config.yaml"], "sqlitb_snapshotsratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-romepace", "pp"]}, "u{nits": ["gotosocial"], "qrivate_a_paths": ["/home/python-podcast/site/privatez_media"], "path_roots": [{"path": "/vocial:gotosocial"}], "rennnnnnnnnnnnnnnnnnnnnnn_aifdles": ["/etc/gotosocial/config.yaml"], "sqlitb_snapshots": 
+}

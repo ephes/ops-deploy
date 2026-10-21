@@ -1,0 +1,1 @@
+077 umask && tar -C /home/python-podcast/site -czf /tmp/echoport-pp-private-media.Ab12Cd34/private_media.tar.gz -- private_media

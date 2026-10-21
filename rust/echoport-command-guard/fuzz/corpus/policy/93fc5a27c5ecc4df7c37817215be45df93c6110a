@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["homepawe", "tt", "ja"], "restore_databases": {"hpage": "hmipgt"}}}

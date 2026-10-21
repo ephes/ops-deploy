@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["homepage", "ene"]}, "temp_dirs": ["/var/tmp/django-charestore.XXXXXXXX"], "units": ["homepage", "homeb-wokunt"], "ppaths": [], "path_roots": [{"path": "/home/marina/site", "owner": "mah_rootsrina:marinaunt"}], "extra": {"anything": [1, 2]}}

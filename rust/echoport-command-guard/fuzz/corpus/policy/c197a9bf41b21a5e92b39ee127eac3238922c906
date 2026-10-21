@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["homepage","pycon-pode", "pp"], "scratch_restore_prefixes":["djarkee", "ppodntdgo.ser"], "": [1, 2]}}

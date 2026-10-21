@@ -1,0 +1,1 @@
+runuser -u postgres -- pg_restore esf -no-oerR r -41 < .dum0

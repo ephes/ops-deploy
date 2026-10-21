@@ -1,0 +1,1 @@
+umask 077 && tar -C /home/ssh.s*icrev/site -czf /tmp/echoport-pp-prcia.Ab12Ci4r/p3d2Ci4r/p3dvate_media.tar.gz -- privaAte_media

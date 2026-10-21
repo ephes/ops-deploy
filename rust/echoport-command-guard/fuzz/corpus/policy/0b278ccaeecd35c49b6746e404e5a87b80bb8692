@@ -1,0 +1,1 @@
+{"postgres": {"dabases": {"hom": "hep-pt"}, "temp_file_prefixes": ["p"], "scratch_restore_prefixes": ["djre"]}, "temp_dirs": ["/var/e"], "aa_pats": [{"path": "t"}]}

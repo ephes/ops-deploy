@@ -1,0 +1,19 @@
+{
+  "postgres": {
+    "d_prefixes": [
+      "homepage",
+      "pp"
+    ]
+  },
+  "units": [
+    "gotosocial"
+  ],
+  "private_media_paths": [
+    "/home/python-podcast/site/private_media"
+  ],
+  "path_roots": [
+ 
+  ],
+  "sqy_urls": [ "http://126.0.0.1:10070/readyz"
+  ]
+}

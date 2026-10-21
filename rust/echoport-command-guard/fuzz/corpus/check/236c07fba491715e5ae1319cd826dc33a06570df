@@ -1,0 +1,1 @@
+runuser -u t -- pg_dump t g

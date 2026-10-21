@@ -1,0 +1,11 @@
+{
+    "sqlite_snapshots": [
+   {  "database": "/var/",
+      "owner": "gopial:l",
+      "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXXXX"
+    }
+],
+  "readr_ls": [
+    "ht0z"
+  ]
+}

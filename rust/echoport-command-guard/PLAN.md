@@ -1,6 +1,6 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a, S3b, S4 and S6 implemented (campaign "Rust-Ports Runde
+Status: S0, S1, S2, S3a, S3b, S4, S5 and S6 implemented (campaign "Rust-Ports Runde
 2", stream `rust-echoport-command-guard`; see `README.md`). Nothing in this
 directory is released or deployed yet. This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
@@ -1260,7 +1260,10 @@ Assertions: no panic, and the 7.3 invariants hold.
 
 S5 runs each target for at least 1 hour on nightly. The crashes it finds
 become Layer-1 fixtures, and the corpus is committed. It is not a CI gate,
-because CI uses the pinned stable toolchain. S5 records how to re-run it.
+because CI uses the pinned stable toolchain. S5 records how to re-run it
+(`fuzz/run-fuzz.sh`: a container with a pinned nightly and cargo-fuzz; the
+`check` input chooses the host, every `lstat` and `realpath` answer
+including errors, for the paths the command names).
 
 ### 7.5 Layer 2: live differential on real filesystems (Linux containers, root)
 
@@ -1295,7 +1298,9 @@ component, a non-UTF-8 link target, an `EACCES` case run as `nobody`, and
 must be confirmed by an independent resolver without Python's `seen` map
 (no end, or more than 40 traversals), and a resolved path must need at most
 40. S5 adds
-the `check()`/`--decide` comparison on top.
+the `check()`/`--decide` comparison on top (`layer2_decide.py`: every
+path state of each path-taking shape, the real-tree scp test, shapes as
+`nobody`, random trees).
 
 ### 7.6 Layer 3: end to end through sshd
 
@@ -1304,8 +1309,9 @@ The same containers, extended with sshd and a pinned client key, with
 For a curated list:
 
 - every runner shape, with stub `systemctl`/`sudo`/`pg_*`/`sqlite3`/`curl`
-  in `/usr/local/sbin` that record their argv, environment, fds, `SigIgn`
-  and umask;
+  in `/usr/local/bin` (S5: on `SAFE_PATH` and on the search path of
+  `runuser`, which runs some of them) that record their argv, environment,
+  fds, signal mask, `SigIgn` and umask;
 - real `scp -O` upload and download;
 - the three rsync forms;
 - `cat >` and the snapshot `cat`;
@@ -1323,6 +1329,13 @@ open fds, `SigIgn` and the umask. The journal lines are compared too
 
 This is the gate for 3.5 and 3.6. The role's molecule scenario (6.2) is the
 Ansible-level counterpart.
+
+S5 implemented it as `parity/e2e/layer3_sshd.py` (no PAM in the container;
+a syslog receiver on `/dev/log`). One environment variable differs and is
+not the guard's: sshd starts the forced command through root's shell, and
+`bash -c` sets `_` to the program it runs, so the exec'd command sees the
+guard's own path there (`/usr/bin/python3` or the Rust binary). The harness
+ignores `_`.
 
 ---
 

@@ -1,0 +1,1 @@
+umask 077 && cat > /t/ravstore.Ab1-db-restorCdt.dumt

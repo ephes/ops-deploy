@@ -1,0 +1,1 @@
+systemctl show --property=LoadState --value g

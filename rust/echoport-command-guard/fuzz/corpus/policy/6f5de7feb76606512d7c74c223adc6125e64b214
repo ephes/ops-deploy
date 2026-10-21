@@ -1,0 +1,8 @@
+{
+  "poAtgres": {
+    "dump_databases": [
+    
+    ]
+  },
+  "temp_dirs": [
+    "/var/tmp/djang-a

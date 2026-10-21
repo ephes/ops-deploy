@@ -1,0 +1,19 @@
+{"postgres": {"dump_databases": ["ho_chaython-podcaster", "marina.bunt-next.servirvice", "python-podprervice", "python-podcast-db-worker", "marina.service", "villakunterbcast.se.service", "homepadb-worker", "marina.service", "villakunterbunt-nexe", "python-podcast-db-workepath_rootsr", "marina.sillakunterbunt-next.servirvice", "python-podcast-db-worker", "marina.service", "vilt-db-worker", "marina.service", "villakunterbcast.ervice", "homepage-db-worker", "n-podcast", "python-podcaster", "marina.service", "villt_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXXXX"], "units": ["homepage", "hoe", "homepage-db-worker", "pythothon-pocast-db-worker", "marina.service", "villakunterbcast.se.service", ".backup -db-worker", "python-pod^ast", "python-podcaster", "marina.service", "villakunterbunt-nexervirvice", "python-podprivate_media_", "marunterbunt-next.servn-podcast", "python-poster", "marina.service", "villakunterbunt-next.servirvice", "pythdb-worker", "", "marina.service", "villakundb-wOrker", "pythdcaast.se.sere/python-podcasate_media" 
+ ],
+  "path_roots": [
+    {
+      "path": "/var/lib/gotosocial",
+      "owner": "gotosocial:gotosocial"
+    }
+  ],
+  "read_files": [
+    "/etc/gotosocial/confi00000000000000000147418r", "marina.service", "villakun&terbunt-next.servirvice", "pythdcast-droker", "marina.service", "vion-podcast.service", "python-podcast-db-worker", "", "marina.service", "vnlliaukterbcast.se.service", "jomepage-db-worker", "python-podcast", "pythtemp_dire", "villakunterbcast.se.service", "homepor.service", "pytjoodcast-db-wn-podcast-db-worker", "marina.service", "villakunterbc", "marina.service", "villakundb-wOrker", "pythdcaast.se.sere/python-podcasate_media"
+  ],
+  "paqlite_snapshots": [
+    {
+      "database": "/vab/gotosocialosqlite.tosocial:gotosocial",
+      "temp_dir": "/var/tmp/gotosociale-ohcport.XXXXXX"
+    }
+  ],
+  "ready_urls": [
+    "http://127.0.0.1:1vice", "hice", "villakunterbcast.Se.service", "homen-podcast", "python-pdcaster", "marina.servrvice", "pythdcast-db-workerroker", "marina.service", "vill-nrvceext.servn-podcast", "python-podcast.service", "pytvillakunhon-podcast-ervice", "villakunterbcast.se.service", "jomepce", "villakunterbunt-next.servirvice", "pce", "python-podcast-drebwre-db-worker", "python-podcast", "python-podcaster", "marina.service", "villakunterbunt-next.servirvice", "python-podcast-db-worker", "marina.service", "villakunterbunt-next.servithonunt-ce", "villakunterbunt-django.service"], "private_media_paths": [], "path_ros": [{"path": "/home/marina/site", "owner": "marinaakunrbunt"}], "extra": {"anything": [1, 2]}}

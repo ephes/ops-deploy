@@ -1,0 +1,1 @@
+umask 077 && cat > /vytast-db-restore.Ab12Cdt.dump

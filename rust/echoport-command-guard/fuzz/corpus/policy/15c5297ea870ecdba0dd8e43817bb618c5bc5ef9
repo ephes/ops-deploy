@@ -1,0 +1,1 @@
+{"p": [], "sqlite_snapshots": [{"database": "/var/lib/gotosocial/sqlite.db", "owner": "gotosocial:gotosocial", "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"}], "ready_urls": ["http://127.0.0.1:10070/readyz"]}

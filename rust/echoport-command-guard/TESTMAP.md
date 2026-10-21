@@ -5,6 +5,10 @@ unit or process test, a Layer-1 fixture case, or a Layer-2/3 container case
 (PLAN.md 7). Each slice fills in the rows it covers; S5 requires every row
 filled. Status: `pending (Sn)`, `done (Sn)`, or `n/a` with the reason.
 
+S5 (the parity gate) checked that every row has a counterpart. One row stays
+`pending` because the plan gives it to a later slice: ops-control's policy
+test (S8, PLAN.md 6.3).
+
 Baseline: `tests/test_echoport_remote_command_guard.py` at ops-library
 `19f3ba86` (33 test methods in 6 classes), guard sha256 `ca74405e…`
 (`fixtures/GUARD_SHA256`).
@@ -44,7 +48,7 @@ Kinds:
 | `test_symlink_escape_is_refused` | `unit.jsonl` (realpath recorded) | Layer-1 runner; `rules::paths::tests::roots_as_python`; `rules::files::tests::rm_of_sqlite_side_files_inside_a_root`, `rules::transfer::tests::scp_download_checks_the_resolved_path` | helper done (S2); rules done (S3b) |
 | `test_rsync_options_must_match_exactly` | `unit.jsonl`; `mutation/tools.jsonl` (`rsync-*`) | Layer-1 runner; `rules::transfer::tests::exact_rsync_commands` | done (S0, S3b) |
 | `test_scp_refuses_targets_that_are_not_plain_files` | `unit.jsonl` (lstat recorded); `fs.jsonl` | Layer-1 runner; `rules::paths::tests::plain_file_reasons_as_python`; `rules::transfer::tests` | helper done (S2); rule done (S3b) |
-| `test_scp_against_a_real_tree` | — (real filesystem) | Layer 2 | filesystem part done (S2: `parity/e2e/layer2_realpath.py`, the real `GuardEnv` against Python 3.12 and 3.13); the `scp` decision pending (S5) |
+| `test_scp_against_a_real_tree` | — (real filesystem) | Layer 2: `parity/e2e/layer2_decide.py` `run_real_tree` (the same tree and policy, Python's `check()` against `--decide`, and the expected verdicts) | filesystem part done (S2: `parity/e2e/layer2_realpath.py`); the decision done (S5), on Python 3.12 and 3.13 |
 | `test_mv_only_onto_new_names_within_one_root` | `unit.jsonl`; `fs.jsonl` | Layer-1 runner; `rules::files::tests::mv_only_onto_new_names_within_one_root` | done (S0, S3b) |
 | `test_django_chat_refusals` | `unit.jsonl` | Layer-1 runner; `rules::postgres` unit tests; `rules::files::tests` (`cat >`, `sha256sum`) | fixture done (S0); S3a branches done (S3a); S3b branches done (S3b) |
 | `test_gotosocial_refusals` | `unit.jsonl` | Layer-1 runner; `rules::sqlite` unit tests; `rules::files::tests` (`chown`, snapshot `cat`) | fixture done (S0); S3a branches done (S3a); S3b branches done (S3b) |
@@ -70,29 +74,30 @@ Process tests: the binary itself (`tests/cli.rs`, real `check()` and
 syslog) for everything that refuses, and `tests/flow.rs` for the whole flow
 up to the exec, with a stub `check()`, a probe as the exec target on a test
 search path, and a log file (Linux; PLAN.md 7.1). The real `SAFE_PATH`
-with stub tools is Layer 3 (S5).
+with stub tools, through sshd, is Layer 3 (`parity/e2e/layer3_sshd.py`, S5).
 
 | Python test | Rust counterpart | Status |
 | --- | --- | --- |
-| `test_interactive_session_is_refused` | `tests/cli.rs` `forced_command_mode_refuses`; `tests/flow.rs` `interactive_session_is_refused` (log line, before the policy) | done (S4) |
-| `test_refused_command_is_not_executed` | `tests/cli.rs` `forced_command_mode_refuses`; `tests/flow.rs` `refused_command_is_not_executed`, `real_check_refusals_and_log_text` | done (S4) |
-| `test_allowed_command_is_executed_without_shell` | `tests/flow.rs` `allowed_command_runs_with_the_python_guards_inheritance` (argv, `PATH`, environment, fds, signals, umask, stdin/stdout untouched), `exec_search_is_cpythons` | done (S4) |
+| `test_interactive_session_is_refused` | `tests/cli.rs` `forced_command_mode_refuses`; `tests/flow.rs` `interactive_session_is_refused` (log line, before the policy); Layer 3 `interactive session`, `sftp` | done (S4, S5) |
+| `test_refused_command_is_not_executed` | `tests/cli.rs` `forced_command_mode_refuses`; `tests/flow.rs` `refused_command_is_not_executed`, `real_check_refusals_and_log_text`; Layer 3 `refused ...`, `prefilter: ...` | done (S4, S5) |
+| `test_allowed_command_is_executed_without_shell` | `tests/flow.rs` `allowed_command_runs_with_the_python_guards_inheritance` (argv, `PATH`, environment, fds, signals, umask, stdin/stdout untouched), `exec_search_is_cpythons`; Layer 3: every runner command through sshd with the real `SAFE_PATH` and stub tools, compared with the Python guard (argv, environment, fds, signal mask and ignored signals, umask, uid, files, log lines) | done (S4, S5) |
 | `test_broken_policy_refuses_everything` | `tests/cli.rs` `broken_policy_refuses_everything`; `tests/flow.rs` `broken_policy_refuses_everything` (`policy error (<ExcType>)` lines); the documents are in `policy.jsonl` (source `unit`, label `GuardMain`) | done (S0, S4) |
 | `test_check_policy_mode` | `tests/cli.rs` `check_policy_*`, `broken_policy_refuses_everything` (`<prog> --check-policy` is forced-command mode); `policy.jsonl` | done (S1, S4) |
 
 ## Runners (`RunnerCommandsAreAllowlisted`, 6 tests; `RunnersUseClassicScp`, 1 test)
 
 The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
-`runner.jsonl` (all allowed).
+`runner.jsonl` (all allowed). Layer 3 (S5) sends each of them through sshd
+to the Python, Rust and shadow forced commands and compares what happens.
 
 | Python test | Fixture (S0) | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `test_production_db_runners` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
-| `test_staging_db_runners` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
-| `test_marina_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3b) |
-| `test_villakunterbunt_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3b) |
-| `test_django_chat_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
-| `test_gotosocial_runner` | `runner.jsonl` | Layer-1 runner | done (S0, S3a, S3b) |
+| `test_production_db_runners` | `runner.jsonl` | Layer-1 runner; Layer 3 (`parity/e2e/layer3_sshd.py`) | done (S0, S3a, S3b, S5) |
+| `test_staging_db_runners` | `runner.jsonl` | Layer-1 runner; Layer 3 (`parity/e2e/layer3_sshd.py`) | done (S0, S3a, S3b, S5) |
+| `test_marina_runner` | `runner.jsonl` | Layer-1 runner; Layer 3 (`parity/e2e/layer3_sshd.py`) | done (S0, S3b, S5) |
+| `test_villakunterbunt_runner` | `runner.jsonl` | Layer-1 runner; Layer 3 (`parity/e2e/layer3_sshd.py`) | done (S0, S3b, S5) |
+| `test_django_chat_runner` | `runner.jsonl` | Layer-1 runner; Layer 3 (`parity/e2e/layer3_sshd.py`) | done (S0, S3a, S3b, S5) |
+| `test_gotosocial_runner` | `runner.jsonl` | Layer-1 runner; Layer 3 (`parity/e2e/layer3_sshd.py`) | done (S0, S3a, S3b, S5) |
 | `RunnersUseClassicScp.test_scp_helpers_pass_dash_O` | — | n/a: tests the runner templates, not the guard; stays Python | n/a |
 
 ## Other suites
@@ -117,7 +122,7 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `PrefilterContract.test_p3_tags_follow_the_prefilter_rule` | the `p3` tags of PLAN.md 4.1/4.2 | the Layer-1 runner's tag handling | done (S0, S1) |
 | `PrefilterContract.test_accepted_fixture_commands_are_printable_ascii` | every accepted fixture command is printable ASCII and tab | — | done (S0) |
 | `PrefilterContract.test_python_accepts_only_printable_ascii_and_tab` | seeded random edits: whatever Python accepts is printable ASCII and tab | `prefilter::tests`; the Layer-1 `prefilter` cases | done (S0, S1) |
-| `OracleServer.test_round_trip` | `parity/oracle.py` JSON lines: `ping`, `check`, `split`, `check_policy`, `realpath`, `os_realpath` (S2) | `tests/tokeniser.rs` (`ping`, `split`, S1); `tests/realpath.rs` (`realpath`, `os_realpath`, S2); S5 proptests | done (S0, S2); `split` used (S1); `realpath`, `os_realpath` used (S2) |
+| `OracleServer.test_round_trip` | `parity/oracle.py` JSON lines: `ping`, `check`, `split`, `check_policy`, `realpath`, `os_realpath` (S2) | `tests/tokeniser.rs` (`ping`, `split`, S1); `tests/realpath.rs` (`realpath`, `os_realpath`, S2); `tests/decisions.rs` (`check`, S5) | done (S0, S2); `split` used (S1); `realpath`, `os_realpath` used (S2); `check` used (S5) |
 
 ## New in S1 (Rust)
 
@@ -173,3 +178,13 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `tests/realpath.rs` `real_env_lookups`, `non_utf8_link_target_refuses` | `RealEnv`: kinds, modes, uid and link count from `lstat`, `ENOENT` as absent, `ENOTDIR`/`ENAMETOOLONG` with glibc's texts, `EINVAL` for a NUL byte, euid against `id -u`, `getpwnam_r` for `root` and missing users; a non-UTF-8 link target refuses (Linux) | done (S2) |
 | `pyrealpath::tests`, `rules::paths::tests` | the port without the oracle (cached links count their traversals again towards the limit of 40); the helpers' refusal reasons (`_lstat_or_none`, `_require_plain_file_or_absent`, `_require_private_dir`, `_root_for`, `_require_in_roots`, `_user_uids`) and the `path not checkable` refusal | done (S2) |
 | Layer 2 `parity/e2e/layer2_realpath.py` | as root in Ubuntu 24.04 (Python 3.12.3) and Debian 13 (Python 3.13.5): `realpath`, `lstat`, `getpwnam` and euid of the real `GuardEnv` (`examples/env-probe.rs`) against CPython on the PLAN.md 7.5 scenarios and 300 random trees | done (S2), local (`just echoport-command-guard-layer2`) |
+
+## New in S5 (the parity gate)
+
+| Test | What it pins | Status |
+| --- | --- | --- |
+| `tests/decisions.rs` `random_decisions_match_python` | PLAN.md 7.3 decisions: grammar-aware random commands (curated fixture commands or a tool with policy vocabulary, then the 7.2 mutation operators, backslash escapes, invalid UTF-8) in random virtual hosts (file types, modes, owners, link counts, `lstat` errors, `realpath` maps, euid, missing users), against the Python guard through the oracle's `check`: Rust accepts ⇒ Python accepts the same decision; refusals carry Python's reason except the 4.4 classes. 2,000 seeded cases in CI, 100,000 locally under 3.12 and 3.13 | done (S5) |
+| `tests/common/invariants.rs` | PLAN.md 7.3 invariants of every accepted decision (guard tools only, `sudo -n -u postgres --`, uploads and `mkdir` under `runuser -u <not root>`, safe paths, umask, redirects), used by `tests/decisions.rs` and the fuzz targets | done (S5) |
+| Layer 2 `parity/e2e/layer2_decide.py` | PLAN.md 7.5: Python's `check()` with the real `realpath`/`lstat`/`pwd`/euid against `--decide` on real trees, every path state of 28 path-taking shapes, `test_scp_against_a_real_tree`, shapes as `nobody`, 200 random trees; Ubuntu 24.04 (3.12.3) and Debian 13 (3.13.5) | done (S5), local (`just echoport-command-guard-layer2`) |
+| Layer 3 `parity/e2e/layer3_sshd.py` | PLAN.md 7.6: the `python`, `rust` and `shadow` forced commands through sshd (OpenSSH 9.6 and 10.0): every runner command, real `scp -O` and rsync transfers, `cat >`, snapshot `cat`, `tar` with umask, `mkdir -p` as owner, refusals, prefilter, interactive, SFTP, `LANG` variants, a missing tool; exit codes, stdout, stderr, files, stub records (argv, environment, fds, signals, umask) and syslog lines | done (S5), local (`just echoport-command-guard-layer3`) |
+| `fuzz/` (`prefilter_tokens`, `check`, `policy`, `py_repr`) | PLAN.md 7.4: no panic, the prefilter alphabet, the decision invariants, valid policies only, printable `repr`; at least one hour each on nightly, corpus committed | done (S5), local (`just echoport-command-guard-fuzz`) |

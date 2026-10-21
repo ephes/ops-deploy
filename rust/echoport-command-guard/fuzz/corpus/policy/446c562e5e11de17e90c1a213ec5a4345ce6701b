@@ -1,0 +1,22 @@
+{
+  "postgres": {
+   "dump_databases": [
+      "100.000homege",
+       "pp"
+    ]
+  },
+  "units": [
+    "gotosocial"
+  ],
+  "private_media_paths": [
+    "/home/python-podcast/site/private_medij"
+  ],
+  "path_roshots": [
+    {
+     
+    }
+  ],
+  "ready_urls": [
+    "http://127.0.0.1:10070/readyz"
+  ]
+}

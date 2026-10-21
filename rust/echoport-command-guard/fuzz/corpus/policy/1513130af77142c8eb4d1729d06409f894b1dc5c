@@ -1,0 +1,1 @@
+{"ostgres": {"dumpfilprefxes": ["homep~g}", "pp"]},"sqlite_snapshots": [{"database": "/vaos/h", "owner": "gotosocla:iocial", "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"}], "ready_urls": ["http://127.0.0.1:10070/readyz"]}

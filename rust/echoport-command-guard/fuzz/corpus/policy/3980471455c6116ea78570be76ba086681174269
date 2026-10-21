@@ -1,0 +1,1 @@
+{"postgres": {"dumpfile_prefixes": ["homep~ge", "pp"]},"sqlite_snapshots": [{"database": "/vaos/home/python-hhhhhhhhhhhhdb", "owner": "gotosocial:ocial", "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"}], "ready_urls": ["http://127.0.0.1:10070/readyz"]}

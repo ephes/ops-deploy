@@ -1,0 +1,9 @@
+{
+  "postgres": {
+"dump_databases":[
+"pp"    ]
+  },"units": [
+   "got"
+  ],"private_media_paths": [
+   "/home10070/a"]
+}

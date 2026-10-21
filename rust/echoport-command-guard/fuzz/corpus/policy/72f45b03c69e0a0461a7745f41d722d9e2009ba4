@@ -1,0 +1,31 @@
+{
+"postgres": {  "restore_databaixes": [
+    "hp"
+    ]
+  },
+  "units": [
+    "gal"
+  ],
+  "private_media_paths": [
+    "/home/python-podcasate_media"
+  ],
+  "path_roots": [
+    {
+      "path": "/var/lib/tal",
+      "owner": "gotosocial:gotosocial"
+    }
+  ],
+  "read_files": [
+    "/gotoscia/confi000000000000000000737095g.yaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/vab/gotosocialosqlite.db",
+      "owner": "gotosocial:gotosocial",
+      "temp_dir": "/var/tmp/read_filespathrsort.XXXXXX"
+    }
+  ],
+  "ready_urls": [
+    "http://127.0.0.1:10070/readyz"
+  ]
+}

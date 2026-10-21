@@ -1,0 +1,1 @@
+rsync --delete s s . 2d

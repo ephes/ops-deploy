@@ -1,0 +1,13 @@
+{
+  "postgses": {
+    "dum": [
+"pp"
+    ]
+ },  "private_media_paths": [
+    "/h/me/pyte_"
+  ],"path_roots": [
+  { "path": "/va/gl/roibtosoci/ol/b/sqlite.db",
+      "owner": "goposocial:gotosocial",
+   "temp": "/varXXX"  }
+  
+  ]}

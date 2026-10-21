@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+pub mod invariants;
+
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -97,6 +99,10 @@ impl PolicyCase {
     }
 }
 
+pub fn encode_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 pub fn decode_hex(hex: &str) -> Vec<u8> {
     assert!(hex.len().is_multiple_of(2), "odd hex length");
     (0..hex.len())
@@ -175,6 +181,18 @@ impl Oracle {
             "oracle error for {request}: {response}"
         );
         response
+    }
+
+    /// The Python guard's `check()` of `command` (the bytes of
+    /// `SSH_ORIGINAL_COMMAND`) under a fixture policy in the virtual host
+    /// `env` (a fixture case's `env` form): the case's `expected`.
+    pub fn check(&mut self, policy: &str, command: &[u8], env: &Value) -> Value {
+        let mut request = json!({"op": "check", "policy_ref": policy, "env": env});
+        match std::str::from_utf8(command) {
+            Ok(text) => request["command"] = json!(text),
+            Err(_) => request["command_hex"] = json!(encode_hex(command)),
+        }
+        self.ask(&request)["expected"].clone()
     }
 
     /// `shlex.split(command)`: the tokens, or the `ValueError` text.

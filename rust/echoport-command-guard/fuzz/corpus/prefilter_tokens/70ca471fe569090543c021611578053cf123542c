@@ -1,0 +1,1 @@
+sudo -u pg_restore --exit-on-error --dbname=python-podcast --no-owner --role=python-podcast /tmp/echoport_pp_restore_20261015020000.dump

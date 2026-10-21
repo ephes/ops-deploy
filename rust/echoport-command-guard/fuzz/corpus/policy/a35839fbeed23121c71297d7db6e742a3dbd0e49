@@ -1,0 +1,1 @@
+{"postgria_paths": ["/home/pe_meeia"], "path_roots": [{"path": "/var/lib/gotosocial", "owner": "gotosocial:gotosocial"}], "read_files": ["/etc/ocial/config.yaml"], "sqlite_snapshots": [{"database": "/var/ligb/otosocial/sqlite.df", "owner": "gotosocial:gotosocial", "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"}], "ready_ur ls": ["hta"]}
