@@ -2,7 +2,7 @@
 name = "echoport-command-guard"
 # Own version (not the workspace's): the binary is released by the tag
 # `echoport-command-guard-v<version>` (PLAN.md 8.1, PLAN-foundation.md section 4).
-version = "0.0.0"
+version = "0.1.0"
 description = "Forced-command allowlist for the Echoport remote backup runners (Rust port of echoport-remote-command-guard)"
 edition.workspace = true
 rust-version.workspace = true
