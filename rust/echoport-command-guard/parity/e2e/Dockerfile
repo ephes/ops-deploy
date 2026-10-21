@@ -52,11 +52,14 @@ FROM scratch AS local-archive
 COPY --from=guard-build /echoport-command-guard-local.tar.gz /echoport-command-guard-local.tar.gz
 
 # Layer 3 (PLAN.md 7.6): the same containers with sshd, the ssh/scp/sftp
-# clients and rsync; `run-layer3.sh` runs parity/e2e/layer3_sshd.py in them.
+# clients and rsync; `run-layer3.sh` runs parity/e2e/layer3_sshd.py in them,
+# `run-lean.sh` the lean measurements parity/e2e/lean.py (PLAN.md 8.3; GNU
+# time for the peak RSS).
 FROM layer2 AS layer3
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        openssh-server openssh-client rsync \
+        openssh-server openssh-client rsync time \
     && rm -rf /var/lib/apt/lists/*
 COPY echoport-command-guard/fixtures/corpus/runner.jsonl /e2e/runner.jsonl
-COPY echoport-command-guard/parity/e2e/layer3_sshd.py echoport-command-guard/parity/e2e/stub-tool.sh /e2e/
+COPY echoport-command-guard/parity/e2e/layer3_sshd.py echoport-command-guard/parity/e2e/stub-tool.sh \
+    echoport-command-guard/parity/e2e/lean.py /e2e/
