@@ -6,7 +6,7 @@
 # rejects a glob member that matches a plan-only directory.
 [workspace]
 resolver = "3"
-members = ["echoport-command-guard", "metrics-httpd", "software-live"]
+members = ["echoport-command-guard", "metrics-httpd", "software-live", "software-live-apt"]
 
 [workspace.package]
 edition = "2024"
@@ -20,7 +20,10 @@ publish = false
 # (PLAN-foundation.md section 3); `scripts/ci_excludes.py` turns this list into
 # `--exclude <crate>` arguments. The crate's stream adds its own job for it.
 [workspace.metadata.ci]
-exclude = []
+# software-live-apt links the distribution's libapt-pkg (C++, rust-apt); it is
+# built, linted and tested in the `software-live-apt` job of rust.yml inside
+# ubuntu:24.04 and debian:13 (software-live PLAN.md 7.4).
+exclude = ["software-live-apt"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

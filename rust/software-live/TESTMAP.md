@@ -43,7 +43,7 @@ missing from this file.
 | `test_expected_postgresql_absence_is_healthy` | `postgresql::tests::observe_postgresql_matches_python`, case `expected_absence_is_healthy` | done (S3c) |
 | `test_postgresql_cluster_parser_omits_data_paths` | `postgresql::tests::clusters_match_python`, case `omits_data_paths` | done (S3c) |
 | `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql::tests::clusters_match_python`, case `rejects_unsafe_identity` | done (S3c) |
-| `test_security_packages_include_held_and_pinned_versions` | helper tests on a fake APT root in the variant containers; python-apt vs helper comparison | pending S3d |
+| `test_security_packages_include_held_and_pinned_versions` | `software-live-apt`: `observe::tests::security_packages_include_held_and_pinned_versions` (the same package, compare function and hold), `::newest_security_version_wins_and_order_is_by_package`, `::a_tie_keeps_the_first_newest_version`, `::security_origins_follow_python`; in the variant containers (CI job `software-live-apt`, `just rs-software-live-apt`) `container/compare.py` runs the helper and `observe_apt` with python-apt on the fake APT world of `container/setup-world.sh` (held native and foreign packages, pinned candidate, every `security_origin` branch) and requires identical JSON | done (S3d) |
 | `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic::tests::*` (mode 0640, group through the descriptor, a failed write keeps the old file and leaves no temporary file); the state write of `collect` | done (S3a) / pending S3f |
 | `test_invalid_policy_and_public_bind_fail` | policy part: `policy::tests::validation_and_hash_match_python` against `fixtures/policy.json` (incl. `/bin/sh` and `/tmp/proxy` as `binary_path`) and `tests/cli.rs` (`validate` exit codes); bind part: `serve` bind tests | done (S2) / pending S4 |
 | `test_http_auth_freshness_and_malformed_state` (`EndpointTests`) | freshness part: `report::tests::freshness_matches_python` against `fixtures/report.json` (stale, `"yes"` in the summary, missing and malformed fields); HTTP part: `serve` integration tests plus endpoint parity | done (S2) / pending S4, S5 |
@@ -124,6 +124,16 @@ message where it is the Python code's own or a `KeyError`) and the call log.
 | `observe_postgresql` (`:452-527`): not expected (missing `pg_lsclusters`, unexpected clusters, failures), cluster selection (name, port, `online…` status, first match, `KeyError` order), drift, extra clusters, upstream states, missing cycle and minor, `cycle_eol`, `outdated_minor` (numeric, longer tuples), partial results kept on failure | `postgresql::tests::observe_postgresql_matches_python` (`fixtures/postgresql.json` `observe`, 53 cases) | done |
 | `subprocess`'s `close_fds=True` with `pass_fds=(fd,)` on the host: a child inherits the passed descriptor and no other one, also not one that lost its close-on-exec flag; a plain child inherits neither | `probe::tests::children_inherit_only_the_passed_descriptor` (Linux only; CI) | done |
 | `Path.open()` reads one chunk: the host reads at most the first 8192 bytes of the PID file | `probe::tests::read_head_reads_at_most_the_limit` | done |
+
+## S3d — the APT helper and its invocation
+
+| Python behaviour | Rust counterpart | Status |
+| --- | --- | --- |
+| `observe_apt` (`:574-603`): index ages from `*InRelease` names with `security`, freshness, oldest age, the `ok` and `unknown` objects | `software-live-apt`: `observe::tests::index_ages_follow_pathlib_glob_and_stat`, `::ok_result_has_python_fields`, `::unknown_result_has_python_fields`; container comparison for fresh, stale and future ages and a broken index | done |
+| `apt.Cache(memonly=True)` without writes under `/var/cache/apt`, holds from `apt-mark showhold` | container comparison: no file written as root without caches, an unprivileged run reads the warm `srcpkgcache.bin` and writes nothing; holds of a native and a foreign-architecture package | done |
+| `apt_pkg.version_compare` | `software-live-apt`: `cache::tests::compare_never_reads_past_the_slice`, `::compare_matches_python_apt_on_the_cache` (20 000 pairs of the image's versions against python-apt) | done |
+| the helper's command line (PLAN.md 5.2) | `software-live-apt`: `tests::observe_takes_both_options_in_either_order`, `::usage_errors`, `::version_line_names_the_binary` | done |
+| the main binary's side of the helper contract (PLAN.md 5.2, 4.2 item 8): location next to `/proc/self/exe`, ownership and mode check, argv, timeout, exit, output limit, strict result shape | `apt::tests` (fake `System` world and a real script as the helper) | done |
 
 ## P3 cases in the fixtures (PLAN.md 4.2)
 

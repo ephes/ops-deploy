@@ -3,10 +3,12 @@
 # `just rust-check`. Only the release target is checked. Advisories (RustSec)
 # and yanked crates fail the check; crates come from crates.io only. A new
 # license needs a deliberate line here naming the crate that brings it.
-# Copyleft licenses are not allowed workspace-wide; the only planned
-# exception is a `[[licenses.exceptions]]` entry for `GPL-3.0-or-later`
-# scoped to `rust-apt` and `software-live-apt` (section 9), added by the
-# slice that adds that helper crate.
+# Copyleft licenses are not allowed workspace-wide; the only exception is
+# `GPL-3.0-or-later` for `rust-apt` and the helper crate `software-live-apt`
+# that uses it (section 9, software-live PLAN.md 5.2 and 7.4) in
+# `[[licenses.exceptions]]` below. The exception is scoped by crate, not by
+# consumer: `scripts/release_checks.py apt-isolation` (run by CI and the
+# release job) fails when any other workspace member can reach `rust-apt`.
 [graph]
 targets = ["x86_64-unknown-linux-gnu"]
 all-features = false
@@ -27,6 +29,16 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.93
+
+# GPL-3.0-or-later only for the APT binding and the helper binary that links
+# it (owner decision 2026-10-21; software-live PLAN.md 12, Q1).
+[[licenses.exceptions]]
+crate = "rust-apt"
+allow = ["GPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+crate = "software-live-apt"
+allow = ["GPL-3.0-or-later"]
 
 [bans]
 multiple-versions = "allow"

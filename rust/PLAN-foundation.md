@@ -62,7 +62,7 @@ Facts (read-only, 2026-10-21):
 
 ## 1. Workspace layout
 
-```
+```text
 rust/
   Cargo.toml              # virtual workspace, explicit members, shared profile + lints
   Cargo.lock              # committed; every build and test runs --locked
@@ -125,7 +125,8 @@ Rules:
   the binaries release independently. A crate inherits `license` from the
   workspace (MIT) unless its plan and an owner decision say otherwise; the
   only such crate is `software-live-apt` (`license = "GPL-3.0-or-later"`,
-  its own `rust/software-live-apt/LICENSE` with the GPL text; section 9).
+  its own `rust/software-live-apt/LICENSE.GPL-3.0` with the GPL text, the
+  file name software-live PLAN 5.1 and 12 give it; section 9).
 - Merge conflicts: the three streams touch `members` and `Cargo.lock`. On a
   rebase conflict in `Cargo.lock`, take `origin/main`'s lock, re-add your
   crate (`cargo metadata --format-version 1 >/dev/null` updates the lock for
@@ -164,7 +165,10 @@ Rules:
   workspace member depends on `rust-apt` (a `release_checks.py` subcommand
   over the `resolve` graph of `cargo metadata --format-version 1 --locked`:
   `rust-apt` may be reachable only from `software-live-apt`), so the MIT
-  binaries stay free of GPL code.
+  binaries stay free of GPL code. As implemented (software-live S3d): the
+  entries and `release_checks.py apt-isolation` over `cargo metadata
+  --format-version 1 --locked --all-features`, run by the `rust` CI job and
+  the release `prepare` job.
 - Crate choices follow the campaign rule: maintained crates instead of
   re-implemented libraries or hand-rolled protocols; each plan lists its
   crates with a reason.
@@ -254,7 +258,7 @@ Rules:
   MIT file), `NEEDED` allowlist glibc + libgcc_s, glibc floor 2.35. A
   crate may declare named variants, each with a container image, extra
   build packages, the workspace members to build, the archive members
-  (each with its source path, e.g. `rust/software-live-apt/LICENSE` →
+  (each with its source path, e.g. `rust/software-live-apt/LICENSE.GPL-3.0` →
   `LICENSE.GPL-3.0`, the name of software-live PLAN 7.2), and a
   per-binary `NEEDED` allowlist and glibc ceiling. The release job becomes
   a matrix over the variants of the tagged crate. software-live uses this
@@ -319,7 +323,7 @@ Rules:
 
 ### 6.1 On-host layout (shared by every crate and both engines)
 
-```
+```text
 /opt/<crate>/<version>/<crate>       # root:root 0755, never modified in place
 /opt/<crate>/<version>/LICENSE       # (and any other archive member, 6.2)
 /opt/<crate>/<version>/.archive-sha256
@@ -345,7 +349,7 @@ for every input and fact), with the decisions (pin moves, prune plan, the
 version and consumer grammar) as plain functions in
 `plugins/filter/rust_release.py`, so F4 can make the same decisions on the
 same files. Internal, like `webapp_deploy_internal`; used with `include_role`
-+ `tasks_from` (without `tasks_from` it fails):
+and `tasks_from` (without `tasks_from` it fails):
 
 | tasks_from | Does | Inputs (`rust_release_binary_*`) |
 | --- | --- | --- |
@@ -365,8 +369,8 @@ echoport-guard plan reviews).** Prune never deletes
   from the **live state**: the version or the executable path that the live
   `authorized_keys` forced command, the unit's current `ExecStart`/drop-in or
   a running process names. Entries are versions or absolute executable paths
-  as `readlink /proc/<pid>/exe` prints them (a trailing ` (deleted)` is
-  accepted), so the list can carry the executables of **running oneshot
+  as `readlink /proc/<pid>/exe` prints them (a trailing `(deleted)` after a
+  space is accepted), so the list can carry the executables of **running oneshot
   processes**, e.g. a collector run that still executes vN after its unit
   moved on, and their helper children; `<root>/<version>/<file>` below the
   configured root or its resolved spelling (`realpath`) protects `<version>`,

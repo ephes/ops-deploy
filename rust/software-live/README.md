@@ -24,6 +24,10 @@ Slice S2 (crate skeleton):
   `serve` stops with exit 1 until S4; `export-inventory` checks its
   arguments (`inventory export failed: ValueError`), then stops with exit 1
   until S3e.
+- Slice S3d: `src/apt.rs` runs the APT helper `software-live-apt`
+  (`../software-live-apt`, GPL-3.0-or-later, built per distribution
+  variant) next to the executable and takes its JSON result, or reports the
+  `unknown` object (PLAN.md 5.2); `collect` calls it from S3f on.
 - Library parts for the next slices: policy validation and
   `policy_sha256` (`src/policy.rs`), Python-compatible JSON
   (`src/pyjson.rs`), release numbers (`src/version.rs`), report types,
@@ -75,7 +79,7 @@ is wired in S3f):
 
 ## Layout
 
-```
+```text
 software-live/
   Cargo.toml  build.rs        build.rs embeds the commit for --version
   src/main.rs                 command line, exit codes
@@ -93,6 +97,7 @@ software-live/
   src/http.rs                 the upstream HTTPS request (system trust store)
   src/upstream.rs             upstream, lifecycle_upstream, cache_variant, lifecycle_date
   src/atomic.rs               atomic_json
+  src/apt.rs                  the APT observation through the helper software-live-apt
   tests/cli.rs                the binary against the Python program's exit codes
   tests/traefik_host.rs       Linux only: real processes and pinned descriptors
   fixtures/generate.py        writes fixtures/*.json from the Python program
@@ -110,6 +115,7 @@ just rs-software-live                    # cargo fmt --check, clippy -D warnings
 just rust-check                          # the whole workspace as the CI job runs it
 just rs-software-live-fixtures           # regenerate the fixtures (Python 3.12), check them under 3.13
 just test-software-live-rust-fixtures    # drift check: fixtures and TESTMAP vs the Python program
+just rs-software-live-apt                # the APT helper in its ubuntu:24.04 and debian:13 containers (Docker)
 ```
 
 After a change of `software_live.py`, regenerate the fixtures and update the

@@ -34,6 +34,13 @@ Subcommands:
   mode 0755, and files, mode 0644, at the archive root; root-owned entries,
   the commit time as mtime, gzip header without a name) and its ``.sha256``
   file; print the archive name.
+- ``apt-isolation``: read the full ``cargo metadata --format-version 1
+  --locked --all-features`` output (with its ``resolve`` graph, without
+  ``--filter-platform``) and fail when ``rust-apt`` (GPL-3.0-or-later) is
+  reachable from any workspace member other than ``software-live-apt``,
+  over normal, build and dev edges, also through a member that depends on
+  ``software-live-apt`` (software-live PLAN.md 7.4; the cargo-deny license
+  exception is scoped by crate, this check by consumer).
 
 ``release.json`` (all keys optional; unknown keys are errors)::
 
@@ -49,7 +56,7 @@ Subcommands:
              "extra_smoke": [["--help"]]}],
         "files": [                        # default [{"source": "rust/LICENSE", "name": "LICENSE"}]
             {"source": "rust/LICENSE", "name": "LICENSE"},
-            {"source": "rust/software-live-apt/LICENSE", "name": "LICENSE.GPL-3.0"}]}]}
+            {"source": "rust/software-live-apt/LICENSE.GPL-3.0", "name": "LICENSE.GPL-3.0"}]}]}
 
 Without the file a crate has one unnamed variant built on the runner with
 the defaults above, the base ``NEEDED`` allowlist (glibc and libgcc_s) and
@@ -421,6 +428,78 @@ def ci_excluded_members(metadata: dict[str, Any]) -> list[str]:
         raise CheckError(str(error)) from None
 
 
+# --- rust-apt isolation (software-live PLAN.md 7.4) -------------------------
+
+APT_CRATE = "rust-apt"
+APT_HELPER = "software-live-apt"
+
+
+def apt_paths(metadata: dict[str, Any]) -> list[list[str]]:
+    """One dependency path (package names) from each workspace member other
+    than the helper that reaches `rust-apt`; empty when none does."""
+    if not isinstance(metadata, dict):
+        raise CheckError("cargo metadata is not a JSON object")
+    resolve = metadata.get("resolve")
+    if not isinstance(resolve, dict) or not isinstance(resolve.get("nodes"), list):
+        raise CheckError(
+            "cargo metadata has no dependency graph (run it without --no-deps)"
+        )
+    names = {
+        package.get("id"): package.get("name")
+        for package in metadata.get("packages") or []
+    }
+    edges: dict[str, list[str]] = {}
+    for node in resolve["nodes"]:
+        # `deps` carries every edge kind (normal, build, dev) of every target
+        # platform; `dependencies` is the older flat list of the same ids.
+        targets = [dep.get("pkg") for dep in node.get("deps") or []]
+        targets += list(node.get("dependencies") or [])
+        edges[node.get("id")] = list(dict.fromkeys(targets))
+    apt = {pkg for pkg, name in names.items() if name == APT_CRATE}
+    paths = []
+    for member in metadata.get("workspace_members") or []:
+        if member not in names:
+            raise CheckError(f"workspace member {member!r} is not in packages")
+        if names[member] == APT_HELPER:
+            continue
+        parent: dict[str, str | None] = {member: None}
+        queue = [member]
+        found = None
+        while queue and found is None:
+            current = queue.pop(0)
+            for target in edges.get(current, []):
+                if target in parent:
+                    continue
+                parent[target] = current
+                if target in apt:
+                    found = target
+                    break
+                queue.append(target)
+        if found is not None:
+            path = []
+            step: str | None = found
+            while step is not None:
+                path.append(names.get(step, step))
+                step = parent[step]
+            paths.append(path[::-1])
+    return paths
+
+
+def check_apt_isolation(metadata: dict[str, Any]) -> str:
+    paths = apt_paths(metadata)
+    if paths:
+        shown = "; ".join(" -> ".join(path) for path in paths)
+        raise CheckError(
+            f"{APT_CRATE} (GPL-3.0-or-later) may be reachable only from "
+            f"{APT_HELPER}; reachable via {shown}"
+        )
+    if not any(
+        package.get("name") == APT_CRATE for package in metadata.get("packages") or []
+    ):
+        return f"apt-isolation: no package {APT_CRATE} in the graph"
+    return f"apt-isolation: {APT_CRATE} is reachable only from {APT_HELPER}"
+
+
 # --- binary checks -----------------------------------------------------------
 
 
@@ -684,6 +763,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     pack.add_argument("--out-dir", type=Path, required=True)
 
+    isolation = commands.add_parser("apt-isolation")
+    isolation.add_argument(
+        "--metadata",
+        type=Path,
+        required=True,
+        help="cargo metadata --format-version 1 --locked --all-features (JSON file)",
+    )
+
     args = parser.parse_args(argv)
     try:
         if args.command == "tag":
@@ -723,6 +810,8 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 run_smoke(args.binary, name, args.version, args.commit, extra), end=""
             )
+        elif args.command == "apt-isolation":
+            print(check_apt_isolation(_read_metadata(args.metadata)))
         elif args.command == "verify":
             entry = load_entry(args.entry)
             for binary in entry["binaries"]:

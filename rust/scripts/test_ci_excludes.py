@@ -108,7 +108,8 @@ class ExcludesTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("cargo"), "cargo not on PATH")
     def test_real_workspace(self):
-        """The committed workspace: the list is valid (empty until a crate needs it)."""
+        """The committed workspace: the list is valid and leaves out the
+        libapt-pkg helper (software-live PLAN.md 7.4)."""
         env = dict(os.environ, CARGO_TERM_COLOR="never")
         result = subprocess.run(
             [
@@ -128,7 +129,7 @@ class ExcludesTest(unittest.TestCase):
         )
         data = json.loads(result.stdout)
         self.assertIn("metrics-httpd", ci_excludes.workspace_members(data))
-        ci_excludes.excludes(data)
+        self.assertEqual(list(ci_excludes.excludes(data)), ["software-live-apt"])
 
 
 if __name__ == "__main__":

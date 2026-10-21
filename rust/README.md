@@ -9,7 +9,8 @@ pipeline and the shared install helpers; each crate has its own plan:
 | --- | --- | --- |
 | `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c), `static` mode (S2e), `logyard-health` mode (S2d); process-level parity harness and shadow comparer (S3) ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
 | `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | S1–S7: `--version`, `--check-policy`, every branch of the Python guard's `check()` (Layer-1 parity, filesystem layer), forced-command mode, `--decide` and `--shadow`; the parity gate (decision property tests, Layers 2 and 3 in containers, fuzzing); the role switch (S6); released as `echoport-command-guard-v0.1.0` (S7), a parity port that is never installed (its PLAN.md R12: the hardening slice H1 comes first) ([`TESTMAP.md`](echoport-command-guard/TESTMAP.md)) |
-| `software-live` | [`software-live/PLAN.md`](software-live/PLAN.md) | crate skeleton (S2): `validate`, command line, policy hash, report types, fixtures from the Python program; see [`software-live/README.md`](software-live/README.md) |
+| `software-live` | [`software-live/PLAN.md`](software-live/PLAN.md) | crate skeleton (S2): `validate`, command line, policy hash, report types, fixtures from the Python program; the APT observation through its helper (S3d); see [`software-live/README.md`](software-live/README.md) |
+| `software-live-apt` (no tag of its own; ships in the `software-live` archives) | [`software-live/PLAN.md`](software-live/PLAN.md) 5.2 | APT helper (S3d), GPL-3.0-or-later, built and tested per distribution variant in containers; see [`software-live-apt/README.md`](software-live-apt/README.md) |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
 `build_ignore` excludes `rust` and `.github`, and
@@ -20,7 +21,7 @@ crate's switch slice; merging Rust code changes nothing on any host.
 
 ## Layout
 
-```
+```text
 rust/
   Cargo.toml            virtual workspace: explicit members, shared lints and release profile
   Cargo.lock            committed; every build and test runs with --locked
@@ -33,6 +34,8 @@ rust/
   echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures,
                            container harnesses (parity/e2e/) and cargo-fuzz targets (fuzz/, not a member)
   software-live/        crate + binary `software-live` (Rust port of software_live.py)
+  software-live-apt/    crate + binary `software-live-apt`, the APT helper of software-live
+                        (rust-apt, GPL-3.0-or-later, LICENSE.GPL-3.0; container/ checks)
 ```
 
 Rules (PLAN-foundation.md section 1):
@@ -42,8 +45,10 @@ Rules (PLAN-foundation.md section 1):
   so the binaries release independently; `license`, `edition`,
   `rust-version`, `repository` and `publish = false` come from
   `[workspace.package]`, lints from `[workspace.lints]` (`[lints] workspace =
-  true` in each crate). The one exception is `echoport-command-guard`: its
-  `[lints]` copy the workspace lints with `unsafe_code = "deny"` instead of
+  true` in each crate). `software-live-apt` sets its own
+  `license = "GPL-3.0-or-later"` (owner decision, PLAN-foundation.md section
+  9) and carries the version of `software-live`. The one lint exception is
+  `echoport-command-guard`: its `[lints]` copy the workspace lints with `unsafe_code = "deny"` instead of
   `forbid`, so that its `exec.rs` can allow the libc calls before the exec
   (its PLAN.md 5.3); keep that copy in step when the workspace lints change.
 - `members` in `Cargo.toml` is an explicit list (cargo rejects a glob that
@@ -99,12 +104,14 @@ exclude = ["<crate>"]
 ```
 
 `scripts/ci_excludes.py` reads `cargo metadata --format-version 1 --no-deps`
-and prints the matching `--exclude <crate>` arguments (empty today); it
+and prints the matching `--exclude <crate>` arguments (today
+`--exclude software-live-apt`); it
 rejects names that are not workspace members, duplicates, and a list that
 would exclude every member. The CI job and `just rust-check`/`just rust-test`
 pass them to `cargo clippy --workspace` and `cargo test --workspace`. The
 crate's stream adds its own job that builds, lints and tests it in a suitable
-container (PLAN-foundation.md sections 3 and 4).
+container (PLAN-foundation.md sections 3 and 4): for `software-live-apt` the
+job `software-live-apt` in `rust.yml` (below).
 
 ## Dependency policy
 
@@ -116,7 +123,13 @@ container (PLAN-foundation.md sections 3 and 4).
   crates fail the check, only crates.io, licenses from an explicit allowlist
   (Apache-2.0, BSD-3-Clause, ISC, MIT, Unicode-3.0, Zlib). A new license
   needs its own line naming the crate that brings it. Copyleft licenses are
-  not allowed workspace-wide. While a license on the list is not used by any
+  not allowed workspace-wide; the one exception is `GPL-3.0-or-later` for
+  `rust-apt` and `software-live-apt` (`[[licenses.exceptions]]`). Because
+  that exception is scoped by crate, `scripts/release_checks.py
+  apt-isolation` reads the full `cargo metadata --locked --all-features`
+  graph and fails when any member other than `software-live-apt` can reach
+  `rust-apt` (normal, build or dev edges, also through the helper); the CI
+  job and the release job run it. While a license on the list is not used by any
   crate, cargo-deny prints a `license-not-encountered` warning; that is not a
   failure.
 - Maintained crates instead of re-implemented libraries or hand-rolled
@@ -143,6 +156,14 @@ echoport-command-guard sets up uv with Python 3.12 for its oracle tests
 scripts under CPython 3.12 against the debug binary) and the tests of its
 shadow comparer (`metrics-httpd/README.md`, `just
 rust-parity-metrics-httpd`).
+
+The `rust` job also runs the `rust-apt` isolation check (above). The job
+`software-live-apt` builds the helper per variant on `ubuntu-latest` inside
+`ubuntu:24.04` and `debian:13` (`software-live-apt/container/deps.sh`, then
+`run.sh`): clippy and tests, the release build with its GLIBC ceiling and
+`NEEDED` allowlist, and the comparison with python-apt on a fake APT world
+(`software-live-apt/README.md`). It also runs when
+`roles/software_live/files/software_live.py`, its oracle, changes.
 
 If GitHub retires the `ubuntu-22.04` image, the same steps run in a
 `ubuntu:22.04` container on `ubuntu-latest` (PLAN-foundation.md section 2).
@@ -235,7 +256,7 @@ one becomes its own build job and archive
       ],
       "files": [
         {"source": "rust/LICENSE", "name": "LICENSE"},
-        {"source": "rust/software-live-apt/LICENSE", "name": "LICENSE.GPL-3.0"}
+        {"source": "rust/software-live-apt/LICENSE.GPL-3.0", "name": "LICENSE.GPL-3.0"}
       ]
     }
   ]

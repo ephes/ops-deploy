@@ -5,8 +5,11 @@ hash, report types, `System` trait, fixtures, TESTMAP; see `README.md`);
 S3b implemented (Traefik observation, `src/traefik.rs`); S3a implemented
 (upstream lookups and caches, HTTPS with the system store, atomic JSON
 writes); S3c implemented (OS and PostgreSQL observations, lifecycle
-evaluation, `src/os.rs`, `src/postgresql.rs`, `src/lifecycle.rs`); S1 spike
-done, report in section 13; the other slices planned. Owner
+evaluation, `src/os.rs`, `src/postgresql.rs`, `src/lifecycle.rs`); S3d
+implemented (helper `software-live-apt`, its invocation `apt.rs`, the
+variant container CI job, the `rust-apt` isolation check; see
+`../software-live-apt/README.md`); S1 spike done, report in section 13;
+the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
@@ -619,10 +622,14 @@ request path or a policy value other than the host.
    a string `cycle`, so neither case reaches a report.
 7. **Fatal errors** print one line instead of a traceback; exit codes stay.
 8. **APT failure classes** in `"APT observation failed (<Class>)"` are Rust
-   categories (`HelperExit`, `HelperTimeout`, `InvalidHelperOutput`,
-   `CacheOpen`, …). The helper reads holds from its own cache instead of
-   running `apt-mark showhold` (5.2; identical output in S1), so a failing
-   or hanging `apt-mark` no longer makes the observation `unknown`.
+   categories: from the helper `CacheOpen` (the cache does not open) and the
+   Python class of a failed `stat` of a security index
+   (`FileNotFoundError`, `PermissionError`, `OSError`, …, as Python); from
+   the main binary `HelperMissing`, `HelperUnsafe`, `HelperStart`,
+   `HelperTimeout`, `HelperExit` and `InvalidHelperOutput` (5.2). The
+   helper reads holds from its own cache instead of running `apt-mark
+   showhold` (5.2; identical output in S1), so a failing or hanging
+   `apt-mark` no longer makes the observation `unknown`.
 9. **New flags** `--version` and `collect --report-usage` (3.1).
 10. **Manual SSH mode on Rust hosts** (S11): `just software-live --host H`
     runs the installed release binary instead of streaming the checkout's
@@ -689,7 +696,12 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   parity/shadow_compare.py     live shadow comparison
 rust/software-live-apt/        crate `software-live-apt` (GPL-3.0-or-later), binary `software-live-apt`
   LICENSE.GPL-3.0              the helper's own license file (section 12)
-  src/main.rs                  prints the `apt` observation object (3.3) as JSON
+  README.md
+  src/main.rs                  command line; prints the `apt` observation object (3.3) as JSON
+  src/observe.rs               security_origin, security_packages, index ages, the result objects
+  src/cache.rs                 rust-apt: cache configuration, holds, version comparison (13.4)
+  container/                   deps.sh, run.sh, setup-world.sh, compare.py, docker-check.sh:
+                               the variant container checks (CI job and `just rs-software-live-apt`)
 ```
 
 ### 5.2 APT: a separate helper binary (decided 2026-10-21, section 12)
@@ -721,14 +733,22 @@ soname breaks only the helper: the collector then reports
 variant is released, while the endpoint keeps serving.
 
 Helper contract (P1 for its output): argv
-`software-live-apt observe --max-age <seconds> --now <epoch>`, no stdin,
+`software-live-apt observe --max-age <seconds> --now <epoch>` (`now` as
+Python's float `repr`, which the helper reads back exactly), no stdin,
 JSON object of 3.3 "APT" on stdout (≤ 4 MiB), exit 0 also for
 `status: unknown` results it could produce itself; any other exit,
-a timeout (60 s; the unit allows 90 s for everything), or invalid JSON
-makes the main binary emit the "unknown" object (4.2 item 8). The main
-binary finds the helper next to its own executable (`/proc/self/exe`
-directory) and refuses to run it unless it is root-owned and not
-group/world-writable.
+a timeout (60 s; the unit allows 90 s for everything), invalid JSON, or an
+object whose keys or value types are not exactly those of `observe_apt`'s
+`ok` or `unknown` result (also: `pending_security_count` equal to the list
+length, the list sorted by `package`, `index_age_limit_seconds` equal to
+`--max-age`, the age a float or `null`) makes the main binary emit the
+"unknown" object (4.2 item 8). The main binary finds the helper next to its
+own executable (`/proc/self/exe` directory, also when the link carries the
+suffix `(deleted)` after a space) and refuses to run it unless `lstat` shows a regular
+file (not a symbolic link) owned by root and not group/world-writable.
+`software-live/src/apt.rs` (`apt::observe_apt`) implements this side; S3f
+calls it from `collect` with the policy's `apt_max_age_seconds` and the
+`now` read at the start of `collect`.
 
 Cache files, holds and names (verified by S1, section 13): python-apt's
 `memonly=True` only sets `Dir::Cache::pkgcache ""`; libapt-pkg then still
@@ -842,7 +862,7 @@ software-live handler (404-before-auth order, the 503/401 bodies,
 | `test_upstream_failure_warns_without_claiming_local_collection_failed`, `test_failed_upstream_refresh_retains_old_timestamp_only_as_evidence`, `test_upstream_daily_cache_and_unparseable_release`, `test_lifecycle_daily_cache_and_failed_refresh_preserves_evidence`, `test_lifecycle_refresh_skips_malformed_irrelevant_cycles`, `test_cached_timestamp_is_used_not_file_touch` | `upstream` fixtures plus a local HTTPS fake server; cross-implementation cache tests | S3a |
 | `test_os_lifecycle_reports_desired_drift_and_lts_phase`, `test_os_boolean_support_state_is_applied_at_observation_boundary`, `test_boolean_lifecycle_fields_preserve_known_support_state` | `os` fixtures | S3c |
 | `test_postgresql_minor_and_extra_clusters_are_visible`, `test_expected_postgresql_absence_is_healthy`, `test_postgresql_cluster_parser_omits_data_paths`, `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql` fixtures | S3c |
-| `test_security_packages_include_held_and_pinned_versions` | helper tests on a fake APT root in the variant containers; python-apt vs helper comparison | S3d |
+| `test_security_packages_include_held_and_pinned_versions` | helper unit tests (`observe.rs`) plus the fake APT world in the variant containers, compared with python-apt (`container/compare.py`) | S3d |
 | `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic` tests (mode, group, failure keeps the old file) | S3a (the write), S3f (the state write) |
 | `test_invalid_policy_and_public_bind_fail` | `policy` fixtures, `serve` bind tests | S2, S4 |
 | `EndpointTests.test_http_auth_freshness_and_malformed_state` | `serve` integration tests plus endpoint parity (6.2) | S4, S5 |
@@ -1563,12 +1583,12 @@ memory budget of section 10 is at risk (13.5).
 | `version.origins` | `ver.package_files()` |
 | `origin.trusted` | `file.index_type() != Some("Debian dpkg status file") && file.index_file().is_trusted()` |
 | `origin.origin` / `.archive` / `.label` | `file.origin()` / `archive()` / `label()`, each `.unwrap_or("")` |
-| `apt_pkg.version_compare(a, b) > 0` | `rust_apt::util::cmp_versions(a, b) == Ordering::Greater` (it runs `init_config_system` on every call, which does no harm at about 600 calls per run; `rust_apt::raw::cmp_versions` skips that) |
+| `apt_pkg.version_compare(a, b) > 0` | `rust_apt::raw::cmp_versions(a, b) > 0` on NUL-terminated copies of both strings (corrected by S3d, see the caveats below) |
 | `package.candidate` | `pkg.candidate()` (depcache policy with preferences and pins) |
 | `package.name` / `package.fullname` | `pkg.fullname(true)` / `pkg.fullname(false)` |
 | `apt-mark showhold` | `cache.packages(&PackageSort::default().include_virtual())` filtered by `selected_state() == PkgSelectedState::Hold`, mapped to `fullname(true)` |
 | `str.lower()` on archive and list names | `to_lowercase()` (Unicode, as Python) |
-| `Path("/var/lib/apt/lists").glob("*InRelease")`, `p.stat().st_mtime` | `read_dir`, names ending in `InRelease` (dot files included, as `pathlib`), `std::fs::metadata` (follows symlinks; a broken one is an error, as in Python); mtime as in 13.2 |
+| `Path("/var/lib/apt/lists").glob("*InRelease")`, `p.stat().st_mtime` | `read_dir`, names ending in `InRelease` (dot files included, as `pathlib`); a lists directory that is missing, not a directory or not readable lists nothing (Python 3.12's `glob`); `std::fs::metadata` (follows symlinks; a broken one is an error, as in Python); mtime as in 13.2 |
 
 Caveats for S3d:
 
@@ -1580,6 +1600,24 @@ Caveats for S3d:
 - `PkgSelectedState::from` panics on a selection value outside dpkg's
   range. A panic exits the helper non-zero, which the main binary reports
   as `unknown` (fail closed).
+- **Version comparison (found in S3d).** libapt-pkg's
+  `debVersioningSystem::CmpFragment` expects C strings: it skips leading
+  zeros and walks digit runs without checking the end pointer. python-apt
+  passes CPython's NUL-terminated buffers; rust-apt's `cmp_versions` passes
+  the bytes of a Rust `&str`, so a version ending in a digit is compared
+  together with whatever follows it in memory. S1's comparison passed by
+  chance (its strings lay in the cache's string pool, which is
+  NUL-terminated); with an owned copy of the installed version, the S3d
+  container comparison on Ubuntu 24.04 lost `libsystemd0` from the pending
+  updates, and `compare(x, x)` was not `Equal`, or the process crashed.
+  The helper copies both strings into buffers with a NUL right after the
+  passed slice, and uses `rust_apt::raw::cmp_versions`, because
+  `rust_apt::util::cmp_versions` re-runs `pkgInitSystem` on every call
+  (which re-initialises the dpkg system object under the open cache). Its
+  unit tests compare slices followed by digits and 20 000 pairs of the
+  image's versions against `apt_pkg.version_compare`; the unterminated
+  variant fails them. libapt-pkg's globals are not thread-safe, so the
+  tests that use them run one at a time (the helper is single-threaded).
 
 ### 13.5 Linkage, size, licenses, resources
 

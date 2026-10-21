@@ -1,0 +1,30 @@
+[package]
+name = "software-live-apt"
+# The same version as `software-live`: both binaries ship in the archives of
+# the tag `software-live-v<version>` (software-live PLAN.md 7.2).
+version = "0.0.0"
+description = "APT security-update observation helper of software-live (rust-apt, libapt-pkg)"
+edition.workspace = true
+rust-version.workspace = true
+# Not the workspace's MIT: rust-apt is GPL-3.0-or-later (software-live
+# PLAN.md 5.2 and 12, PLAN-foundation.md section 1). The license text is
+# LICENSE.GPL-3.0 next to this file; rust/deny.toml allows the license for
+# this crate and rust-apt only, and `release_checks.py apt-isolation` keeps
+# rust-apt out of every other workspace member.
+license = "GPL-3.0-or-later"
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Exact pin: rust-apt is pre-1.0 and breaks on minor versions (PLAN.md 11).
+# It links the distribution's libapt-pkg, so the helper is built per variant
+# inside `ubuntu:24.04` and `debian:13` (PLAN.md 7.1).
+rust-apt = "=0.11.3"
+rustix = { version = "1", default-features = false, features = ["std", "fs"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

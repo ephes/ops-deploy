@@ -1,6 +1,7 @@
 //! The library of the `software-live` binary (PLAN.md 5.1): one module per
 //! part of `software_live.py`, so the fixture tests reach every step.
 
+pub mod apt;
 pub mod atomic;
 pub mod error;
 pub mod http;

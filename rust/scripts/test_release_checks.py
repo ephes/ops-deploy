@@ -209,8 +209,9 @@ class TagTest(unittest.TestCase):
             "metrics-httpd-v": "is not semver",
         }
         for tag, message in cases.items():
-            with self.subTest(tag), self.assertRaisesRegex(
-                checks.CheckError, re.escape(message)
+            with (
+                self.subTest(tag),
+                self.assertRaisesRegex(checks.CheckError, re.escape(message)),
             ):
                 checks.resolve_tag(self.members, tag)
 
@@ -221,8 +222,9 @@ class TagTest(unittest.TestCase):
             )
         )
         for tag in ("lib-only-v0.1.0", "other-v0.1.0"):
-            with self.subTest(tag), self.assertRaisesRegex(
-                checks.CheckError, "has no binary"
+            with (
+                self.subTest(tag),
+                self.assertRaisesRegex(checks.CheckError, "has no binary"),
             ):
                 checks.resolve_tag(members, tag)
 
@@ -470,8 +472,9 @@ class MatrixTest(unittest.TestCase):
             ),
         }
         for name, (settings, message) in cases.items():
-            with self.subTest(name), self.assertRaisesRegex(
-                checks.CheckError, re.escape(message)
+            with (
+                self.subTest(name),
+                self.assertRaisesRegex(checks.CheckError, re.escape(message)),
             ):
                 self.entries(settings)
 
@@ -593,8 +596,9 @@ class GlibcTest(unittest.TestCase):
                 OBJDUMP_OK
                 + f"0000000000000000      DF *UND*\t0000000000000000 ({symbol}) foo\n"
             )
-            with self.subTest(symbol), self.assertRaisesRegex(
-                checks.CheckError, re.escape(message)
+            with (
+                self.subTest(symbol),
+                self.assertRaisesRegex(checks.CheckError, re.escape(message)),
             ):
                 checks.check_glibc(text, "2.35")
 
@@ -688,8 +692,9 @@ class SmokeTest(unittest.TestCase):
             f"metrics-httpd 0.1.1 ({COMMIT})\n",
             f"software-live 0.1.0 ({COMMIT})\n",
         ):
-            with self.subTest(stdout), self.assertRaisesRegex(
-                checks.CheckError, "--version printed"
+            with (
+                self.subTest(stdout),
+                self.assertRaisesRegex(checks.CheckError, "--version printed"),
             ):
                 checks.check_version_output(stdout, "metrics-httpd", "0.1.0", COMMIT)
 
@@ -934,6 +939,204 @@ class PackTest(unittest.TestCase):
         self.assertIn("matrix entry has no", result.stderr)
 
 
+def graph(edges: dict[str, list[tuple[str, str | None]]], members: list[str]) -> dict:
+    """`cargo metadata` with a resolve graph: `edges[name]` lists
+    `(dependency, kind)` with kind None (normal), "build" or "dev"."""
+    names = set(edges) | {dep for deps in edges.values() for dep, _ in deps}
+    ident = {name: f"pkg-{name}" for name in names}
+    return {
+        "packages": [{"name": name, "id": ident[name]} for name in sorted(names)],
+        "workspace_members": [ident[name] for name in members],
+        "resolve": {
+            "nodes": [
+                {
+                    "id": ident[name],
+                    "dependencies": [ident[dep] for dep, _ in edges.get(name, [])],
+                    "deps": [
+                        {
+                            "name": dep.replace("-", "_"),
+                            "pkg": ident[dep],
+                            "dep_kinds": [{"kind": kind, "target": None}],
+                        }
+                        for dep, kind in edges.get(name, [])
+                    ],
+                }
+                for name in sorted(names)
+            ],
+            "root": None,
+        },
+    }
+
+
+MEMBERS = ["software-live", "software-live-apt", "metrics-httpd"]
+HELPER_ONLY = {
+    "software-live": [("serde", None), ("sha2", None)],
+    "software-live-apt": [("rust-apt", None), ("tempfile", "dev")],
+    "rust-apt": [("cxx", None), ("cxx-build", "build")],
+    "metrics-httpd": [("serde", None)],
+}
+
+
+class AptIsolationTest(unittest.TestCase):
+    """software-live PLAN.md 7.4: rust-apt only from software-live-apt."""
+
+    @staticmethod
+    def edges(extra: dict[str, list[tuple[str, str | None]]]) -> dict:
+        edges = {name: list(deps) for name, deps in HELPER_ONLY.items()}
+        for name, deps in extra.items():
+            edges.setdefault(name, []).extend(deps)
+        return edges
+
+    def paths(self, extra: dict[str, list[tuple[str, str | None]]]) -> list[list[str]]:
+        return checks.apt_paths(graph(self.edges(extra), MEMBERS))
+
+    def test_only_the_helper_passes(self) -> None:
+        self.assertEqual(self.paths({}), [])
+        self.assertIn(
+            "reachable only from software-live-apt",
+            checks.check_apt_isolation(graph(HELPER_ONLY, MEMBERS)),
+        )
+
+    def test_a_graph_without_rust_apt_passes(self) -> None:
+        edges = {"software-live": [("serde", None)], "metrics-httpd": []}
+        self.assertIn(
+            "no package rust-apt",
+            checks.check_apt_isolation(
+                graph(edges, ["software-live", "metrics-httpd"])
+            ),
+        )
+
+    def test_every_path_from_another_member_fails(self) -> None:
+        cases = {
+            "direct": (
+                {"metrics-httpd": [("rust-apt", None)]},
+                ["metrics-httpd", "rust-apt"],
+            ),
+            "transitive": (
+                {"metrics-httpd": [("wrapper", None)], "wrapper": [("rust-apt", None)]},
+                ["metrics-httpd", "wrapper", "rust-apt"],
+            ),
+            "build-only": (
+                {"software-live": [("gen", "build")], "gen": [("rust-apt", None)]},
+                ["software-live", "gen", "rust-apt"],
+            ),
+            "dev-only": (
+                {"software-live": [("rust-apt", "dev")]},
+                ["software-live", "rust-apt"],
+            ),
+            # With --all-features an optional dependency behind a feature is
+            # an ordinary edge of the resolve graph.
+            "feature-gated": (
+                {
+                    "metrics-httpd": [("apt-feature-crate", None)],
+                    "apt-feature-crate": [("rust-apt", None)],
+                },
+                ["metrics-httpd", "apt-feature-crate", "rust-apt"],
+            ),
+            "through the helper": (
+                {"software-live": [("software-live-apt", None)]},
+                ["software-live", "software-live-apt", "rust-apt"],
+            ),
+            "dev edge to the helper": (
+                {"metrics-httpd": [("software-live-apt", "dev")]},
+                ["metrics-httpd", "software-live-apt", "rust-apt"],
+            ),
+        }
+        for label, (extra, path) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self.paths(extra), [path])
+                with self.assertRaisesRegex(
+                    checks.CheckError, "may be reachable only from"
+                ):
+                    checks.check_apt_isolation(graph(self.edges(extra), MEMBERS))
+
+    def test_two_offending_members_are_both_named(self) -> None:
+        paths = self.paths(
+            {
+                "software-live": [("rust-apt", "dev")],
+                "metrics-httpd": [("rust-apt", None)],
+            }
+        )
+        self.assertEqual(
+            paths, [["software-live", "rust-apt"], ["metrics-httpd", "rust-apt"]]
+        )
+
+    def test_metadata_without_a_graph_is_an_error(self) -> None:
+        data = graph(HELPER_ONLY, MEMBERS)
+        del data["resolve"]
+        with self.assertRaisesRegex(checks.CheckError, "without --no-deps"):
+            checks.apt_paths(data)
+        data["resolve"] = None
+        with self.assertRaisesRegex(checks.CheckError, "without --no-deps"):
+            checks.apt_paths(data)
+
+    def test_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            good = Path(tmp) / "good.json"
+            good.write_text(json.dumps(graph(HELPER_ONLY, MEMBERS)), encoding="utf-8")
+            result = run_script("apt-isolation", "--metadata", str(good))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("reachable only from software-live-apt", result.stdout)
+            edges = dict(HELPER_ONLY, **{"metrics-httpd": [("rust-apt", "build")]})
+            bad = Path(tmp) / "bad.json"
+            bad.write_text(json.dumps(graph(edges, MEMBERS)), encoding="utf-8")
+            result = run_script("apt-isolation", "--metadata", str(bad))
+            self.assertEqual((result.returncode, result.stdout), (1, ""))
+            self.assertIn("metrics-httpd -> rust-apt", result.stderr)
+
+    def test_real_cargo_metadata_of_path_crates(self) -> None:
+        """The real `cargo metadata` shape, offline with path crates: a
+        feature-gated dependency counts only with --all-features, which is
+        why CI passes it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def crate(directory: str, name: str, extra: str = "") -> None:
+                (root / directory / "src").mkdir(parents=True)
+                (root / directory / "Cargo.toml").write_text(
+                    f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2021"\n{extra}',
+                    encoding="utf-8",
+                )
+                (root / directory / "src" / "lib.rs").write_text("", encoding="utf-8")
+
+            # rust-apt outside the workspace directory: a path dependency,
+            # not a member.
+            crate("vendor/rust-apt", "rust-apt")
+            (root / "ws").mkdir()
+            (root / "ws" / "Cargo.toml").write_text(
+                '[workspace]\nresolver = "2"\nmembers = ["helper", "main"]\n',
+                encoding="utf-8",
+            )
+            crate(
+                "ws/helper",
+                "software-live-apt",
+                '[dependencies]\nrust-apt = { path = "../../vendor/rust-apt" }\n',
+            )
+            crate(
+                "ws/main",
+                "software-live",
+                '[dependencies]\nrust-apt = { path = "../../vendor/rust-apt", optional = true }\n'
+                '[features]\napt = ["dep:rust-apt"]\n',
+            )
+
+            def metadata_of(*flags: str) -> dict:
+                result = subprocess.run(
+                    ["cargo", "metadata", "--format-version", "1", "--offline", *flags],
+                    cwd=root / "ws",
+                    env=dict(os.environ, CARGO_TERM_COLOR="never"),
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                return json.loads(result.stdout)
+
+            self.assertEqual(checks.apt_paths(metadata_of()), [])
+            self.assertEqual(
+                checks.apt_paths(metadata_of("--all-features")),
+                [["software-live", "rust-apt"]],
+            )
+
+
 class WorkflowTest(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
@@ -963,6 +1166,8 @@ class WorkflowTest(unittest.TestCase):
             "release_checks.py matrix",
             "release_checks.py verify",
             "release_checks.py pack",
+            "release_checks.py apt-isolation",
+            "cargo metadata --format-version 1 --locked --all-features",
             "scripts/ci_excludes.py",
             "cargo fmt --check",
             'cargo clippy --workspace "${exclude_args[@]}" --all-targets --locked -- -D warnings',
