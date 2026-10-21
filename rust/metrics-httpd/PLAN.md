@@ -831,7 +831,11 @@ inputs once (S5a: as `vars:` of its deploy block):
      or integer without `%` (systemd specifier), `$` (environment
      expansion), `"`, `\` or a control character (newline, tab, …),
      `argv[0]` is a mode and `--check-config` is not in it (the role appends
-     it); the service name is a pin consumer name;
+     it); the service name is a pin consumer name. Only `impl`, the
+     service name and `notify` are asserted for `python`; a problem with an
+     input only the Rust path uses (argv, sandbox, user, group, install
+     root, release) stops `rust` but only warns for `python` and skips the
+     check of step 4, so a broken input never blocks the switch back;
   2. `impl == python`: remove the drop-in first (as mailgun-relay), so the
      switch back never waits on a Rust download or check;
   3. when a version is set (independent of `impl`, so the binary can be
