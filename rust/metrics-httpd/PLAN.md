@@ -32,6 +32,10 @@ section 11 says why it checks the installed collection instead of a
 version number).
 S5c implemented: the switch in `logyard_deploy` (health endpoint) and
 `static_site_deploy` (7.3), `impl: python` by default.
+S5e implemented (ops-deploy + ops-control): the pyinfra ports of the switch
+in `thermal_monitoring`, `logyard` (health endpoint) and `static_site`, the
+ops-control mapping with its no-silent-ignore test and the ops-deploy pin
+bump (7.4, "as built").
 Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
@@ -956,6 +960,31 @@ defaults do. A test in ops-control fails if a pyinfra-registered service that
 renders a metrics-httpd role ignores `metrics_httpd_*` (no silent ignore).
 ops-control bumps its ops-deploy pin (`requirements-ops-deploy.txt`) in the
 same slice, announced to the pyinfra session through the coordinator.
+
+As built (S5e): ops-deploy's shared module `services/_metrics_httpd` (outside
+the size-capped shared layer) holds the fields (`HttpdSwitchFields`; on
+logyard's `HealthEndpoint`), the drop-in template and
+`plugins/filter/metrics_httpd.py` vendored byte for byte as `rules.py`
+(both in the drift checks), select (drop-in removal for `python`, F4
+`install_release` with `fail_hard` only for `rust`, `--check-config` through
+`systemd-run` with the unit's user, group and sandbox, read-only, an ignored
+error for `python`, the drop-in for `rust`) and verify (a stdlib host script
+on stdin: the live process and the unauthenticated probe with the role's
+expectations and retries; then F4 `pin_release` and `prune_releases` with
+the install in `after`). Beyond the role, prune also protects the executable
+the unit ran while planning (an unreadable one blocks the prune), and a
+`python` deploy with a pin that is not a version plus sha256 installs
+nothing (warning). F4's `Install` gained `validated`: a read-only validation
+of an installed version still gates the prune but no longer reruns it, so a
+converged pinned deploy plans no mutating operation. ops-control's
+`pyinfra_support/metrics_httpd.py` maps the inventory for
+`macmini_monitoring`, `logyard`, `logyard_core` and `benchmarks_static`
+(refusing other `metrics_httpd_*` variables and templated values);
+`tests/test_pyinfra_metrics_httpd.py` finds every registered pyinfra service
+whose playbook reaches `metrics_httpd_switch` and requires it to be mapped.
+`logyard_core`/`logyard` have no Ansible fallback while the incident trust
+bindings require pyinfra (`services-metadata.yml`): S9d switches and rolls
+the health endpoint back through pyinfra only.
 
 ### 7.5 Rollback
 
