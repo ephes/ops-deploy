@@ -16,7 +16,7 @@ from typing import Any
 import jinja2
 import pytest
 
-from ops_deploy.services.graphyard import core, ingress, vector
+from ops_deploy.services.graphyard import agent, core, ingress, vector
 from tests.graphyard_fixtures import (
     RELEASE_SOURCES,
     SECRETS,
@@ -257,6 +257,35 @@ def test_core_files_match_the_role(tmp_path: Path, variant: str, template: str) 
     assert core.render(template, cfg, secrets_values()) == render_ansible("graphyard_deploy", template, variables)
 
 
+@pytest.mark.parametrize(
+    ("changes", "overlay"),
+    [
+        (
+            {"agent_rust_version": "0.1.0"},
+            {"graphyard_agent_rust_binary": "/opt/graphyard-agent/0.1.0/graphyard-agent"},
+        ),
+        (
+            {
+                "agent_rust_version": "1.2.3-rc.1",
+                "agent_rust_install_root": "/srv/agents",
+                "site_path": "/srv/gy/app",
+            },
+            {
+                "graphyard_agent_rust_binary": "/srv/agents/1.2.3-rc.1/graphyard-agent",
+                "graphyard_django_path": "/srv/gy/app/src/django",
+            },
+        ),
+    ],
+)
+def test_agent_dropin_matches_the_role(tmp_path: Path, changes: dict[str, Any], overlay: dict[str, Any]) -> None:
+    cfg = core_config(make_source(tmp_path), agent_impl="rust", agent_rust_sha256="0" * 64, **changes)
+    expected = render_ansible("graphyard_deploy", "agent-impl.conf.j2", {**CORE_DEFAULTS, **overlay})
+
+    assert agent.render_dropin(cfg) == expected
+    binary = overlay["graphyard_agent_rust_binary"]
+    assert expected.endswith(f"ExecStart=\nExecStart={binary} --db {cfg.django_path}/db.sqlite3\n")
+
+
 def test_metric_specs_match_the_playbook_and_role(tmp_path: Path) -> None:
     """The playbook's secret injection (written out by hand here) and the role's to_nice_json."""
 
@@ -440,7 +469,10 @@ def test_vector_global_config_is_the_roles_copy_content() -> None:
 @pytest.mark.parametrize(
     ("packaged", "vendored"),
     [
-        *((name, f"graphyard_deploy__{name}") for name in (*CORE_TEMPLATES, "metric-collection-specs.json.j2")),
+        *(
+            (name, f"graphyard_deploy__{name}")
+            for name in (*CORE_TEMPLATES, "metric-collection-specs.json.j2", "agent-impl.conf.j2")
+        ),
         ("traefik-graphyard.yml.j2", "graphyard_ingress_deploy__traefik-graphyard.yml.j2"),
         ("vector.yaml.j2", "graphyard_vector_deploy__vector.yaml.j2"),
     ],

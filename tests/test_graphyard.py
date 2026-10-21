@@ -44,6 +44,7 @@ READ_ONLY = {
     "Wait for the graphyard web port",
     "Query the Graphyard health endpoint",
     "Verify graphyard services are active",
+    "Check graphyard-agent runs the Python agent",
 }
 
 
@@ -459,7 +460,8 @@ def test_skip_django_manage_runs_no_management_command(source: Path) -> None:
 
     run = deploy(cfg, responses)
 
-    assert not any("manage.py" in c for c in run.executed_commands)
+    # The agent check reads the agent's argv (``manage.py start_agent``); it runs nothing.
+    assert not any("manage.py" in c for c in run.executed_commands if "/proc/$pid/cmdline" not in c)
 
 
 def test_resolve_specs_fills_the_playbooks_references() -> None:

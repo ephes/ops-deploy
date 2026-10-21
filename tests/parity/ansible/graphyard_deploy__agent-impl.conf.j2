@@ -1,0 +1,6 @@
+# Managed by Ansible (graphyard_deploy): graphyard_agent_impl=rust.
+# Removed when graphyard_agent_impl=python; the base unit then runs the venv
+# manage.py start_agent again.
+[Service]
+ExecStart=
+ExecStart={{ graphyard_agent_rust_binary }} --db {{ graphyard_django_path }}/db.sqlite3

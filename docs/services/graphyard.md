@@ -70,7 +70,7 @@ connection.
 | `source_path` | required | a Graphyard tree with `src/django`, `src/graphyard`, `pyproject.toml`, `uv.lock` (the role's checks): a checkout or a [git source](../concepts/git-source.md) |
 | `source_commit` | `None` | the git source's commit, recorded in `<site>/.ops-deploy-source` |
 | `user`, `group`, `home`, `site_path`, `env_dir` | `graphyard`, `/opt/apps/graphyard`, `<home>/site`, `/etc/graphyard` | |
-| `source_excludes` | the role's | plus `.inventory-releases.lock`, as the role adds |
+| `source_excludes` | the role's | plus `.inventory-releases.lock`, as the role adds; `agent-rs/target/` (the Rust agent's Cargo output) is one of the role's |
 | `python_version`, `uv_sync_args`, `uv` | `3.12`, `--no-default-groups --no-dev`, `None` | `uv=UvInstallConfig()` runs `uv_install` as the role does; by default uv must be at `/usr/local/bin/uv` |
 | `django` | `Django()` | settings module, allowed hosts, CSRF origins, admin/login URLs, cookie age |
 | `influx` | `Influx()` | image `influxdb:2.7`, container, ports, data and config dirs with their numeric owners, org, bucket, measurement, `retention_apply`/`bucket_retention` |
@@ -78,6 +78,13 @@ connection.
 | `runtime` | `Runtime()` | unit `graphyard-runtime`, Compose project, compose path, Docker network, `migrate_unmanaged_containers`, `docker`; `None` = no runtime |
 | interval, heartbeat and SQLite fields | the role's | the env file's `GRAPHYARD_*` values |
 | `web_*`, `agent_*` | the role's | unit names, bind address, workers, restart delays |
+| `agent_impl` | `python` | the role's `graphyard_agent_impl`: `python` (the venv's `manage.py start_agent`) or `rust`; see [Agent](#agent-python-or-rust) |
+| `agent_rust_version` | `""` | Rust release to install, e.g. `0.1.0`; empty installs, validates and prunes nothing. Required for `rust` |
+| `agent_rust_sha256` | `""` | sha256 of the release archive (64 lowercase hex digits); required with a version unless `agent_rust_local_archive` is set |
+| `agent_rust_release_url` | the GitHub release asset | download URL; `{version}` stands for the version |
+| `agent_rust_local_archive` | none | controller path of an archive with the release layout, uploaded instead of the download; checked against `agent_rust_sha256` when both are set |
+| `agent_rust_install_root` | `/opt/graphyard-agent` | versions go to `<root>/<version>/graphyard-agent`; absolute, not `/`, no trailing slash |
+| `agent_rust_keep_versions` | `3` | newest installed versions the pruning keeps |
 | `healthcheck` | `HealthCheck()` | `None` skips the health checks |
 | `metric_specs` | `None` | `MetricSpecs(specs, prune)`: write and apply the declarative specs |
 | `inventory_release_sources` | `None` | the weekly public release refresh; `None` stops an installed timer |
@@ -113,13 +120,78 @@ connection.
    and `apply_metric_collection_specs` when the file changed, a migration ran
    or Graphyard holds other specs (a read-only probe compares digests of the
    rows with the file's specs as the command normalises them).
-7. Bucket retention: read with `influx bucket list`, updated only when it
+7. With `agent_rust_version` set: the pinned Rust agent release is installed
+   (once) and validated against the migrated database (see
+   [Agent](#agent-python-or-rust)).
+8. Bucket retention: read with `influx bucket list`, updated only when it
    differs.
-8. Release refresh: registry file, `--check` validation (read-only), units and
-   timer.
-9. Web and agent units, restarted when code, venv, dependencies, the env file
-   or their unit changed. Then the health checks (port, `/v1/health` with
-   `X-Forwarded-Proto: https`, both units active) and the source record.
+9. The web and agent unit files and the agent drop-in `agent-impl.conf`
+   (written for `rust`, removed for `python`). Release refresh: registry file,
+   `--check` validation (read-only), units and timer.
+10. Web and agent units started, restarted when code, venv, dependencies, the
+    env file or their unit changed (the agent also when its drop-in changed). Then the
+    check that the agent unit runs the selected agent, the pruning of old Rust
+    agent versions (with a version set), the health checks (port,
+    `/v1/health` with `X-Forwarded-Proto: https`, both units active) and the
+    source record.
+
+### Agent (Python or Rust)
+
+The port of the role's `agent_rust.yml` and `agent_verify.yml` (ops-library
+`08faab6a`; the contract is section 8.3 of graphyard's `agent-rs/PLAN.md`).
+`graphyard-agent.service` runs the Python agent from the venv (`manage.py
+start_agent`) or its Rust port `graphyard-agent`, a single binary published as
+a graphyard GitHub release (`agent-rs-v<version>`). Both use the same
+database, env file, user and working directory, so only one runs at a time.
+The host-side steps are one script, `services/graphyard/files/agent.sh`
+(`install`, `validate`, `prune`), ported from nyxmon's; nyxmon's module is
+left as it is (a shared helper is a later decision).
+
+1. **Install.** With `agent_rust_version` set and `<root>/<version>/` missing,
+   after the migrations: the archive is downloaded on the host with `curl`
+   (or `agent_rust_local_archive` is uploaded), its sha256 must be the pinned
+   one, and `tar --list` must show exactly the regular files `graphyard-agent`
+   and `LICENSE`, once each (links, devices, directories and other members are
+   refused before anything is extracted). It is unpacked into
+   `<root>/.staging/`, made root-owned (`graphyard-agent` `0755`), the
+   checksum is recorded in `<root>/<version>/.archive-sha256`, and the
+   directory is moved into place. A pinned version is installed with either
+   implementation, so the binary can be in place before the switch.
+2. **Validate.** As the service user, by the versioned path and without the
+   env file: `graphyard-agent --version` must print `graphyard-agent <version>
+   (<commit>)` and `graphyard-agent --check-schema --db <django>/db.sqlite3`
+   must pass. A fresh install that fails is removed again and nothing is
+   switched. An installed version is validated read-only on every deploy.
+3. **Never in place.** An installed version whose `.archive-sha256` is not
+   the pinned checksum (or is missing) stops the deploy before any change.
+4. **Select.** `rust` writes
+   `/etc/systemd/system/graphyard-agent.service.d/agent-impl.conf` (an
+   `ExecStart=` override naming the versioned binary with `--db`; the role's
+   template shipped unchanged, see `tests/test_graphyard_parity.py`); `python`
+   removes it. The base unit (`User`, `EnvironmentFile`, `WorkingDirectory`,
+   `Requires=graphyard-runtime.service`) applies to both. The version is part
+   of the file, so a switch or a version change reloads systemd and restarts
+   the agent (not the web unit), and a deploy that changes neither restarts
+   nothing for it. When the selection moves away from a Rust version whose
+   directory still exists, that version is written to
+   `<root>/.previous-version` (the rollback target).
+5. **Check.** After the restarts, every run (read-only, 10 tries 3 s apart):
+   for `rust`, `readlink /proc/<pid>/exe` is the versioned binary; for
+   `python`, the argv holds `<venv>/bin/python`, `manage.py` and
+   `start_agent` and the executable is not below the install root.
+6. **Prune.** With a version set, after the check: version-shaped
+   directories beyond the `agent_rust_keep_versions` newest (by mtime) are
+   removed, except the pinned version, the one in `.previous-version` and the
+   one the live process runs. Other entries are never touched. A dry run
+   plans the pruning; it runs when that finds something, or when this deploy
+   installed a version or changed the drop-in.
+
+Rollback is a switch: `agent_impl="python"` removes the drop-in and restarts
+the agent on the venv's `manage.py start_agent`. The binary stays installed,
+so switching forward again downloads nothing. For a bad release, pin the
+previous version and its checksum again; it is still installed. Emergency on
+the host: remove the drop-in, `systemctl daemon-reload`, restart
+`graphyard-agent`, then set `agent_impl` to `python` before the next deploy.
 
 ## Ingress (`GraphyardIngressConfig`)
 
@@ -221,6 +293,9 @@ it survives; its owner becomes `graphyard` like the rest of the site.
 - On a fresh stack the auth steps cannot read Grafana while planning; they
   check on the host instead, and the datasource URL step restarts Grafana once.
 - Services restart in the order of their steps, not all at the end.
+- The Rust agent archive is downloaded on the host with `curl` (the role uses
+  `get_url`), and the archive checks, staging and validation run as one host
+  script.
 
 ## Tests
 
@@ -228,7 +303,14 @@ it survives; its owner becomes `graphyard` like the rest of the site.
 `tests/test_graphyard_parts.py` (fake connector: first runs, converged
 no-ops, each kind of change and what it restarts, secrets never on a command
 line) and `tests/test_graphyard_scripts.py` (the probes and host scripts run
-through bash and fish). The Ansible/pyinfra coexistence smoke lives in
+through bash and fish). `tests/test_graphyard_agent.py` covers the agent
+settings and every agent transition on the fake connector (pin without
+switch, first Rust deploy, switch both ways, version change, refused
+reinstall, local archive, pruning) and the `validate` step of
+`files/agent.sh` through bash and fish with a fake binary;
+`tests/smoke/test_graphyard_agent_smoke.py` runs `files/agent.sh` as root on
+the smoke VM (install, refused archives and checksums, rejected candidates,
+pruning against a live process). The Ansible/pyinfra coexistence smoke lives in
 ops-control (`just smoke-graphyard-coexistence`).
 
 ## Per-container replacement CA store

@@ -28,7 +28,7 @@ import shlex
 from collections.abc import Sequence
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pyinfra.api import deploy
@@ -64,6 +64,7 @@ from ops_deploy.services.graphyard._common import (
     runuser,
     to_nice_json,
 )
+from ops_deploy.services.graphyard.agent import RELEASE_URL, check_agent, install_agent, prune_agents, select_agent
 
 # The paths the role requires in the source tree before it syncs anything.
 REQUIRED_SOURCE_PATHS = ("src/django", "src/graphyard", "pyproject.toml", "uv.lock")
@@ -88,6 +89,8 @@ SOURCE_EXCLUDES = (
     "src/django/media/",
     "deploy/grafana/dashboards/logyard/",
     "deploy/grafana/provisioning/datasources/logyard.yaml",
+    # Cargo build output of the Rust agent port; never shipped from a local checkout.
+    "agent-rs/target/",
     ".inventory-releases.lock",
     # Not in the role: Docker creates this as the mount point of the dashboards
     # bind mount when Grafana starts; deleting it detaches the mount in the
@@ -380,6 +383,21 @@ class GraphyardConfig(BaseServiceConfig):
     web_workers: int = Field(default=1, ge=1, le=64)
     web_restart_sec: int = Field(default=5, ge=0)
     agent_restart_sec: int = Field(default=5, ge=0)
+    # The role's graphyard_agent_impl and graphyard_agent_rust_*: which agent
+    # the agent unit runs, and the pinned Rust release installed (with either
+    # implementation) below the install root. Empty version: nothing installed.
+    agent_impl: Literal["python", "rust"] = "python"
+    agent_rust_version: Annotated[str, Field(pattern=r"^([0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?)?$")] = ""
+    # sha256 of the release archive; required with a version unless a local archive is set.
+    agent_rust_sha256: Annotated[str, Field(pattern=r"^([0-9a-f]{64})?$")] = ""
+    # ``{version}`` stands for the version.
+    agent_rust_release_url: str = RELEASE_URL
+    # A controller-side archive with the release layout replaces the download.
+    agent_rust_local_archive: Path | None = None
+    agent_rust_install_root: Annotated[str, Field(pattern=r"^/[A-Za-z0-9._/+-]*[A-Za-z0-9._+-]$")] = (
+        "/opt/graphyard-agent"
+    )
+    agent_rust_keep_versions: Annotated[int, Field(ge=1)] = 3
 
     # None: no health verification (``graphyard_healthcheck_enabled: false``).
     healthcheck: HealthCheck | None = HealthCheck()
@@ -412,6 +430,40 @@ class GraphyardConfig(BaseServiceConfig):
         if any(not pattern or pattern.startswith("-") for pattern in value):
             raise ValueError("rsync excludes must not be empty or start with '-'")
         return value
+
+    @field_validator("agent_rust_release_url")
+    @classmethod
+    def _release_url_takes_the_version(cls, value: str) -> str:
+        try:
+            url = value.format(version="0.0.0")
+        except (IndexError, KeyError, ValueError):
+            raise ValueError("agent_rust_release_url may hold no placeholder but {version}") from None
+        if not re.fullmatch(r"https?://[^\s'\"$`\\{}]+", url):
+            raise ValueError("agent_rust_release_url must be an http(s) URL without whitespace, quotes, $, ` or \\")
+        return value
+
+    @field_validator("agent_rust_keep_versions", mode="before")
+    @classmethod
+    def _keep_versions_is_a_whole_number(cls, value: object) -> object:
+        # The role refuses booleans and anything but digits; pydantic would take True or 1.0 as 1.
+        if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)):
+            raise ValueError("agent_rust_keep_versions must be a whole number")
+        return value
+
+    @model_validator(mode="after")
+    def _agent_settings(self) -> GraphyardConfig:
+        """The role's "Validate agent implementation settings"."""
+
+        version, local = self.agent_rust_version, self.agent_rust_local_archive
+        if self.agent_impl == "rust" and not version:
+            raise ValueError("agent_impl rust needs agent_rust_version")
+        if version and not self.agent_rust_sha256 and local is None:
+            raise ValueError("agent_rust_version needs agent_rust_sha256 (or agent_rust_local_archive)")
+        if (self.agent_rust_sha256 or local is not None) and not version:
+            raise ValueError("agent_rust_sha256 and agent_rust_local_archive need agent_rust_version")
+        if local is not None and not local.is_file():
+            raise ValueError("agent_rust_local_archive is not a file")
+        return self
 
     @model_validator(mode="after")
     def _distinct_units(self) -> GraphyardConfig:
@@ -464,6 +516,14 @@ class GraphyardConfig(BaseServiceConfig):
     @property
     def dashboards_path(self) -> PurePosixPath:
         return self.grafana.dashboards_path or self.site_path / "deploy/grafana/dashboards"
+
+    @property
+    def agent_rust_binary(self) -> str:
+        return f"{self.agent_rust_install_root}/{self.agent_rust_version}/graphyard-agent"
+
+    @property
+    def agent_rust_url(self) -> str:
+        return self.agent_rust_release_url.format(version=self.agent_rust_version)
 
     @property
     def health_url(self) -> str:
@@ -1071,6 +1131,8 @@ def core_steps(cfg: GraphyardConfig, secrets: SecretValues, rsync: RsyncRunner) 
     venv, deps = _python(cfg, [code, owned])
     changed = [code, venv, deps]
     env = _django(cfg, secrets, changed, specs)
+    # The role's agent_rust.yml: after the migrations, so --check-schema sees the schema the agent runs against.
+    installed = install_agent(cfg)
     if cfg.influx.retention_apply:
         _retention(cfg)
 
@@ -1081,10 +1143,16 @@ def core_steps(cfg: GraphyardConfig, secrets: SecretValues, rsync: RsyncRunner) 
             (cfg.agent_service_name, "graphyard-agent.service.j2"),
         )
     }
+    # Every switch and version change rewrites the agent drop-in: reload and restart.
+    selected = select_agent(cfg)
     _inventory_releases(cfg, secrets)
     # The role's handlers, flushed before the health checks.
     for name, unit in units.items():
-        service_rollout(name, units=[unit], restart_when=[*present(changed), env])
+        rolled = [unit, selected] if name == cfg.agent_service_name else [unit]
+        service_rollout(name, units=rolled, restart_when=[*present(changed), env])
+    # The role's agent_verify.yml: the live process is the selected agent, then old versions go.
+    check_agent(cfg)
+    prune_agents(cfg, [installed, selected])
 
     if cfg.healthcheck is not None:
         _health(cfg, cfg.healthcheck)
