@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import errno
 import importlib.util
 import json
 import os
@@ -152,6 +153,63 @@ def python_decide_as(user: str, guard_path: str, policy_path: str, command: str)
 # --- comparison --------------------------------------------------------------
 
 
+def realpath_error(path: str) -> str | None:
+    """The error a component-by-component resolution of ``path`` meets, as
+    the stricter Rust resolver reports it (PLAN.md 4.2), found independently
+    of both guards: an ``lstat`` error other than ``ENOENT``/``ENOTDIR``, a
+    ``readlink`` error, a link target that is not UTF-8, or a loop (no end,
+    or more than 40 traversals). ``None`` when there is none."""
+    if is_eloop(path):
+        return "Too many levels of symbolic links"
+    stack = path.split("/")[::-1]
+    resolved = "/"
+    links = 0
+    while stack:
+        name = stack.pop()
+        if not name or name == ".":
+            continue
+        if name == "..":
+            resolved = resolved[: resolved.rindex("/")] or "/"
+            continue
+        newpath = resolved + name if resolved == "/" else resolved + "/" + name
+        try:
+            is_link = stat.S_ISLNK(os.lstat(newpath).st_mode)
+        except OSError as exc:
+            if exc.errno in (errno.ENOENT, errno.ENOTDIR):
+                resolved = newpath
+                continue
+            return exc.strerror
+        if not is_link:
+            resolved = newpath
+            continue
+        links += 1
+        if links > 10_000:
+            return "Too many levels of symbolic links"
+        try:
+            raw = os.readlink(os.fsencode(newpath))
+        except OSError as exc:
+            return exc.strerror
+        try:
+            target = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return "link target is not valid UTF-8"
+        if target.startswith("/"):
+            resolved = "/"
+        stack.extend(target.split("/")[::-1])
+    return None
+
+
+def realpath_error_as(user: str | None, path: str) -> str | None:
+    if user is None:
+        return realpath_error(path)
+    here = os.path.dirname(os.path.abspath(__file__))
+    code = ("import json, sys; sys.path.insert(0, sys.argv[1]); from layer2_decide import realpath_error; "
+            "print(json.dumps(realpath_error(sys.argv[2])))")
+    result = subprocess.run(["runuser", "-u", user, "--", sys.executable, "-I", "-c", code, here, path],
+                            capture_output=True, text=True, check=True, timeout=30)
+    return json.loads(result.stdout)
+
+
 @dataclass
 class Report:
     allowed_equal: int = 0
@@ -162,7 +220,8 @@ class Report:
     shapes: dict[str, list[int]] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
 
-    def compare(self, label: str, command: str, python: dict[str, Any], rust: dict[str, Any]) -> None:
+    def compare(self, label: str, command: str, python: dict[str, Any], rust: dict[str, Any],
+                user: str | None = None) -> None:
         verdict = rust.get("verdict")
         counts = self.shapes.setdefault(label.split(" ", 1)[0], [0, 0])
         counts[0 if verdict == "allowed" else 1] += 1
@@ -180,8 +239,11 @@ class Report:
                 return
             match = NOT_CHECKABLE.match(reason)
             if match and match.group(2) in P3_STRERRORS:
+                # Only when the error is real: an independent resolution of
+                # the path, as the same user, must meet it (a loop: without
+                # Python's `seen` map, and more than 40 links).
                 path = ast.literal_eval(match.group(1))
-                if match.group(2) != "Too many levels of symbolic links" or is_eloop(path):
+                if realpath_error_as(user, path) == match.group(2):
                     self.p3_realpath[match.group(2)] = self.p3_realpath.get(match.group(2), 0) + 1
                     return
         self.failures.append(f"{label}: {command!r}: Rust {rust}, Python {python}")
@@ -219,6 +281,7 @@ def make_roots() -> None:
         for name in NAMES:
             write_file(f"{root}/inner/{name}", user)
     os.makedirs("/etc/gotosocial", exist_ok=True)
+    reset("/etc/gotosocial/config.yaml")
     write_file("/etc/gotosocial/config.yaml", "root", 0o644)
 
 
@@ -291,7 +354,8 @@ def templates() -> list[Template]:
         Template("scp-f-dump", "production", f"scp -f {dump}", files=[dump], default_file="reg-postgres"),
         Template("scp-f-archive", "production", f"scp -f {archive}", files=[archive], default_file="reg-root",
                  private_dir=PRIVATE_MEDIA_TMP),
-        Template("scp-f-read-file", "production", "scp -f /etc/gotosocial/config.yaml"),
+        Template("scp-f-read-file", "production", "scp -f /etc/gotosocial/config.yaml",
+                 files=["/etc/gotosocial/config.yaml"], default_file="reg-root"),
         Template("scp-t-restore", "production", f"scp -t {restore}", files=[restore]),
         Template("tar", "production",
                  f"umask 077 && tar -C {MEDIA_PARENT} -czf {archive} -- private_media",
@@ -422,7 +486,7 @@ def run_as_nobody(guard: Any, args: argparse.Namespace, report: Report) -> None:
     ):
         python = python_decide_as("nobody", args.guard, policy, command)
         rust = rust_decide(args.binary, policy, command, user="nobody")
-        report.compare("as-nobody", command, python, rust)
+        report.compare("as-nobody", command, python, rust, user="nobody")
 
 
 def random_tree(rng: random.Random, root: str, index: int) -> str:

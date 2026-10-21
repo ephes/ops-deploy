@@ -203,6 +203,9 @@ enum Tail {
 #[derive(Debug, Clone)]
 enum Base {
     Fixture(Index),
+    /// One of the raw `umask 077 && ...` shapes among the fixture bases,
+    /// which are too few to be drawn often otherwise.
+    RawShape(Index),
     Grammar(bool, Index, Vec<Index>),
 }
 
@@ -255,6 +258,7 @@ fn tail() -> impl Strategy<Value = Tail> {
 fn base() -> impl Strategy<Value = Base> {
     prop_oneof![
         4 => any::<Index>().prop_map(Base::Fixture),
+        1 => any::<Index>().prop_map(Base::RawShape),
         1 => (any::<bool>(), any::<Index>(), prop::collection::vec(any::<Index>(), 0..6))
             .prop_map(|(staging, tool, words)| Base::Grammar(staging, tool, words)),
     ]
@@ -316,8 +320,15 @@ fn shlex_quote(word: &str) -> String {
     format!("'{}'", word.replace('\'', "'\"'\"'"))
 }
 
+/// The operator words of the raw shapes (`umask 077 && tar ...`, `umask 077
+/// && cat > ...`) and the `< file` of `runuser`: written bare unless a
+/// mutation requotes them, so that a fixture base keeps its shape.
+/// `shlex.split` (no punctuation characters) splits them like any word.
+const OPERATORS: [&str; 6] = ["&&", ">", "<", ";", "|", "&"];
+
 fn render(word: &str, quote: &Quote) -> String {
     match quote {
+        Quote::Auto if OPERATORS.contains(&word) => word.to_owned(),
         Quote::Single if !word.contains('\'') => format!("'{word}'"),
         Quote::Double if !word.contains(['"', '$', '`']) => format!("\"{word}\""),
         Quote::Trailing => format!("{}''", shlex_quote(word)),
@@ -345,6 +356,15 @@ fn build_command(corpus: &Corpus, case: &Case) -> (Vec<u8>, String, Value) {
     let (mut policy, mut words, env) = match &case.base {
         Base::Fixture(index) => {
             let (policy, words, env) = &corpus.bases[index.index(corpus.bases.len())];
+            (policy.clone(), words.clone(), env.clone())
+        }
+        Base::RawShape(index) => {
+            let raw: Vec<_> = corpus
+                .bases
+                .iter()
+                .filter(|(_, words, _)| words.first().is_some_and(|w| w == "umask"))
+                .collect();
+            let (policy, words, env) = raw[index.index(raw.len())];
             (policy.clone(), words.clone(), env.clone())
         }
         Base::Grammar(staging, tool, rest) => {
@@ -581,6 +601,10 @@ struct Tally {
     /// Of those, the ones Python allows (PLAN.md 4.1: backslash escapes).
     p3_python_allows: usize,
     python_error: usize,
+    /// Equal acceptances of the raw `umask 077 && tar ...` shape.
+    tar_allowed: usize,
+    /// Equal acceptances of the raw `umask 077 && cat > ...` shape.
+    cat_to_file_allowed: usize,
 }
 
 fn judge(
@@ -600,6 +624,13 @@ fn judge(
                 ));
             }
             tally.allowed_equal += 1;
+            if decision.umask.is_some() {
+                match decision.argv[0].as_str() {
+                    "tar" => tally.tar_allowed += 1,
+                    "cat" => tally.cat_to_file_allowed += 1,
+                    _ => {}
+                }
+            }
         }
         Err(refused) => match verdict {
             "refused" if python["reason"].as_str() == Some(refused.reason()) => {
@@ -681,4 +712,9 @@ fn random_decisions_match_python() {
     // only the prefilter.
     assert!(tally.allowed_equal * 10 >= total, "{tally:?}");
     assert!(tally.refused_equal * 3 >= total, "{tally:?}");
+    // Both raw shapes reach their acceptance, not only their refusals.
+    assert!(
+        tally.tar_allowed > 0 && tally.cat_to_file_allowed > 0,
+        "{tally:?}"
+    );
 }

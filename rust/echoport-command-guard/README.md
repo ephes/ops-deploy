@@ -148,10 +148,11 @@ The tests:
   refuses, and a `check()` crash of Python). 2,000 seeded cases in CI;
   `PROPTEST_CASES=100000` runs more, `PROPTEST_RNG_SEED=<n>` changes the
   seed.
-  S5 ran 100,000 cases with the oracle under Python 3.12 and 3.13: 13,846
-  equal acceptances, 65,975 equal refusals, 20,179 prefilter refusals (1,203
-  of them commands Python allows, all through backslash escapes), no
-  difference.
+  Raw `umask 077 && ...` shapes keep their operators unquoted, and the test
+  requires acceptances of both of them. S5 ran 100,000 cases with the oracle
+  under Python 3.12 and 3.13: 12,284 equal acceptances (411 `tar`, 399 `cat
+  >`), 67,597 equal refusals, 20,119 prefilter refusals (1,011 of them
+  commands Python allows, all through backslash escapes), no difference.
 - `tests/realpath.rs`: `pyrealpath` against `os.path.realpath` through the
   oracle server, over 2,000 random virtual trees (the oracle's `realpath`)
   and 500 random real trees in a temp directory with the real `GuardEnv`
@@ -255,14 +256,17 @@ seeded random trees under the roots with random commands into them
 (`ECHOPORT_L2_DECIDE_ARGS="--random 1000 --seed 7"` for more). When Rust
 allows, Python must allow with the same decision; when Rust refuses, Python
 must refuse with the same reason, except for the PLAN.md 4.2 realpath
-refusals (a loop confirmed by the resolver without `seen`, `EACCES`,
-`ENAMETOOLONG`, a non-UTF-8 link target) and Python's `check()` crashes.
+refusals (a loop, `EACCES`, `ENAMETOOLONG`, a non-UTF-8 link target), each
+confirmed by an independent component-by-component resolution of the path
+as the same user (without Python's `seen` map for loops), and Python's
+`check()` crashes.
 
 S5 results (2026-10-21, arm64 Docker host), the same on both distributions:
-1,352 equal acceptances and 487 equal refusals over 28 shapes and 200
-random trees, 127 realpath refusals Python resolves past (123 loops, 4
-`EACCES` as `nobody`), no difference. With 1,000 random trees (seed 7): 4,539 equal acceptances, 1,129 equal
-refusals, 298 realpath refusals (294 loops, 4 `EACCES`), no difference.
+1,359 equal acceptances and 492 equal refusals over 28 shapes and 200
+random trees, 128 realpath refusals Python resolves past (124 loops, 4
+`EACCES` as `nobody`), no difference. With 1,000 random trees (seed 7):
+4,546 equal acceptances, 1,134 equal refusals, 299 realpath refusals (295
+loops, 4 `EACCES`), no difference.
 
 ## Layer 3: end to end through sshd
 
