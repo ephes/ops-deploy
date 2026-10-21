@@ -112,11 +112,14 @@ fn child(mode: &str) -> ExitCode {
     let search_path = std::env::var(SEARCH_PATH).unwrap();
     let policy = std::env::var_os(POLICY).unwrap();
     let log_path = PathBuf::from(std::env::var_os(LOG).unwrap());
-    // What this process inherited, for the signal assertions (glibc's
-    // `posix_spawn`, which `Command` uses, may leave its internal signals
-    // ignored; sshd's fork and exec does not).
+    // What this process inherited, for the signal and fd assertions:
+    // glibc's `posix_spawn`, which `Command` uses, may leave its internal
+    // signals ignored (sshd's fork and exec does not), and a CI runner passes
+    // its own open fds down the process tree, as sshd may (PLAN.md 3.5).
     if cfg!(target_os = "linux") {
         std::fs::write(log_path.with_extension("sigign"), own_status("SigIgn")).unwrap();
+        let fds: Vec<String> = open_fds().iter().map(u32::to_string).collect();
+        std::fs::write(log_path.with_extension("fds"), fds.join("\n")).unwrap();
     }
     let log = FileLog(log_path);
     let host = Host {
@@ -267,7 +270,8 @@ impl Fixture {
     /// The fds the command inherited: the exec'd `ls`'s fds without its
     /// own directory fd.
     fn probe_fds(&self) -> Vec<u32> {
-        self.probe("fds")
+        let mut fds: Vec<u32> = self
+            .probe("fds")
             .unwrap()
             .lines()
             .filter_map(|line| {
@@ -276,7 +280,19 @@ impl Fixture {
                 let own_dir = target.starts_with("/proc/") && target.ends_with("/fd");
                 (!own_dir).then_some(fd)
             })
-            .collect()
+            .collect();
+        fds.sort_unstable();
+        fds
+    }
+
+    /// The fds the guard child had when it started: 0-2 and whatever its
+    /// parent passed on. The command must get exactly these, no fd of the
+    /// guard's own.
+    fn inherited_fds(&self) -> Vec<u32> {
+        let text = std::fs::read_to_string(self.log.with_extension("fds")).unwrap();
+        let fds: Vec<u32> = text.lines().map(|line| line.parse().unwrap()).collect();
+        assert!(fds.starts_with(&[0, 1, 2]), "{fds:?}");
+        fds
     }
 
     /// The targets of the command's fds 0, 1 and 2.
@@ -356,8 +372,13 @@ fn allowed_command_runs_with_the_python_guards_inheritance() {
             "allowed from 192.0.2.10: 'systemctl start marina.service'"
         )]
     );
-    // Only fds 0-2 reach the command.
-    assert_eq!(f.probe_fds(), [0, 1, 2], "{}", f.probe("fds").unwrap());
+    // Only fds 0-2 and what the guard inherited reach the command.
+    assert_eq!(
+        f.probe_fds(),
+        f.inherited_fds(),
+        "{}",
+        f.probe("fds").unwrap()
+    );
     assert_eq!(f.probe_std().len(), 3);
     // SIGPIPE and SIGXFSZ ignored, as by CPython; the rest as inherited.
     let inherited = std::fs::read_to_string(f.log.with_extension("sigign")).unwrap();
@@ -367,6 +388,22 @@ fn allowed_command_runs_with_the_python_guards_inheritance() {
     assert_eq!(sigign & !(inherited | SIGPIPE_BIT | SIGXFSZ_BIT), 0);
     // The umask is inherited when the decision has none.
     assert_eq!(f.probe_status("Umask"), own_status("Umask"));
+}
+
+/// This process's open fds, sorted, without the directory fd that lists
+/// them.
+fn open_fds() -> Vec<u32> {
+    let mut fds: Vec<u32> = std::fs::read_dir("/proc/self/fd")
+        .unwrap()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let target = std::fs::read_link(entry.path()).ok()?;
+            let own_dir = target.starts_with("/proc/") && target.ends_with("fd");
+            (!own_dir).then(|| entry.file_name().to_str()?.parse().ok())?
+        })
+        .collect();
+    fds.sort_unstable();
+    fds
 }
 
 fn own_status(key: &str) -> String {
@@ -400,7 +437,12 @@ fn create_redirect_with_umask() {
     assert_eq!(f.probe_status("Umask"), "0077");
     assert_eq!(f.probe("stdin").unwrap(), "payload");
     assert_eq!(f.probe_std()[1], target.to_str().unwrap());
-    assert_eq!(f.probe_fds(), [0, 1, 2], "{}", f.probe("fds").unwrap());
+    assert_eq!(
+        f.probe_fds(),
+        f.inherited_fds(),
+        "{}",
+        f.probe("fds").unwrap()
+    );
 }
 
 /// `runuser ... pg_restore < <file>`: the file as fd 0.
@@ -419,7 +461,12 @@ fn read_redirect() {
     assert_eq!(f.probe("stdin").unwrap(), "dump bytes");
     assert_eq!(run.stdout, b"probe stdout\n");
     assert_eq!(f.probe_std()[0], dir.join("db.dump").to_str().unwrap());
-    assert_eq!(f.probe_fds(), [0, 1, 2], "{}", f.probe("fds").unwrap());
+    assert_eq!(
+        f.probe_fds(),
+        f.inherited_fds(),
+        "{}",
+        f.probe("fds").unwrap()
+    );
 }
 
 /// A redirect that cannot be opened refuses with Python's `OSError` text.
