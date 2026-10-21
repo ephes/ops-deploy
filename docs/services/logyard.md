@@ -59,7 +59,7 @@ digests, never the stored password.
 | `docker` | `DockerInstallConfig()` | |
 | `loki` | `Loki()` | image `grafana/loki:3.5.11`, container, ports 3101/3100, data dir and its numeric owner `10001`, retention `336h`, schema, cache |
 | `grafana` | `GrafanaWiring()` | `None` skips the wiring; container `graphyard-grafana`, datasource and dashboards paths in the Graphyard tree |
-| `health` | `HealthEndpoint()` | `None` skips the endpoint; `127.0.0.1:9105/.well-known/logyard`, selector, freshness windows, `units` reported under `$.units.<id>` |
+| `health` | `HealthEndpoint()` | `None` skips the endpoint; `127.0.0.1:9105/.well-known/logyard`, selector, freshness windows, `units` reported under `$.units.<id>`; `httpd_impl` (`python`), `httpd_rust_version`, `httpd_rust_sha256` select its HTTP server (the role's `logyard_health_impl` and the release pin, see [metrics-httpd switch](metrics_httpd.md)) |
 | `ready_checks` | `ReadyChecks()` | 18 tries, 5 s; `None` skips |
 | `nyxmon` | required | `NyxmonChecks`: database path/user, service name, health URL, interval, suppression URL and reason |
 
@@ -85,7 +85,12 @@ digests, never the stored password.
    dashboards on the host after the sync; here they are put from the
    controller's checkout (the same bytes), so a change is known while
    planning.
-6. Health endpoint script and unit; restarted when either changed.
+6. Health endpoint script and unit, and the HTTP server switch's select
+   step ([metrics-httpd switch](metrics_httpd.md); `metrics-httpd
+   logyard-health --check-config` runs as `logyard` with exactly the unit's
+   `Environment=` lines); restarted when the script, the unit or the drop-in
+   changed. Then the switch's verify step: the unit runs the selected server
+   and answers 200 with a JSON `status`; then the pin and the prune.
 7. Read-only: Loki `/ready`, and the endpoint reporting `loki.ready`.
 8. The playbook's post task: the three json-metrics checks in Nyxmon's SQLite
    database (skipped when `/home/nyxmon/site/db.sqlite3` is missing, as

@@ -64,6 +64,8 @@ class Install:
 
     op: OperationMeta
     binary: str
+    # An installed version was only validated (read-only): it gates later steps but changed nothing.
+    validated: bool = False
 
     def failed(self) -> bool:
         """Whether a ``fail_hard=False`` install was rejected (use it in ``_if`` callbacks)."""
@@ -140,19 +142,20 @@ def install_release(
         commands=[command],
         **stdin_arguments(HOST_SCRIPT),
     )
-    return Install(mark_read_only(op) if installed else op, f"{root}/{version}/{name}")
+    return Install(mark_read_only(op) if installed else op, f"{root}/{version}/{name}", validated=installed)
 
 
 def _gated(name: str, command: str, after: Iterable[OperationMeta | Install] = ()) -> tuple[str, OperationMeta]:
     """Run ``command`` if its ``--check`` probe asks for a change, failed, or a step in ``after`` changed.
 
-    Never after a failed ``Install`` in ``after``. Returns the probe's output and the operation.
+    Never after a failed ``Install`` in ``after``; a validated one (an installed version) is no change.
+    Returns the probe's output and the operation.
     """
 
     check = f"{command} --check"
     pending = probe(check, name=name, stdin=HOST_SCRIPT)
     lines = (pending or "").splitlines()
-    ops = [a.op if isinstance(a, Install) else a for a in after]
+    ops = [a.op if isinstance(a, Install) else a for a in after if not (isinstance(a, Install) and a.validated)]
     installs = [a for a in after if isinstance(a, Install)]
     for line in lines:
         if line.startswith("blocked "):
@@ -222,7 +225,8 @@ def prune_releases(
     an ``Install`` in ``after`` failed in this run. Unlike the role, nothing
     remembers failed installs by itself: pass every ``Install`` of this crate
     from this deploy in ``after``. An operation in ``after``
-    that changed makes it run again even if the planning probe found nothing.
+    that changed makes it run again even if the planning probe found nothing;
+    an ``Install`` that only validated an installed version is no change.
     Returns the planning probe's output.
     """
 

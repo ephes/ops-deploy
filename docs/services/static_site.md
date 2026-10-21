@@ -49,6 +49,8 @@ Defaults follow the role's `defaults/main.yml`; `user`, `site_path` and
 | `traefik_cert_resolver` | `""` | empty: `tls: {}` |
 | `traefik_allowed_networks` | `()` | strict CIDRs; non-empty adds an `ipAllowList` to both routers (403 before any redirect) |
 | `verify_public`, `public_healthcheck_retries`, `public_healthcheck_delay` | `false`, `20`, `3` | HTTPS check from the host, certificate validated |
+| `httpd_impl` | `python` | the HTTP server: the role's Python script or the pinned Rust `metrics-httpd static` (the role's `static_site_impl`); see [metrics-httpd switch](metrics_httpd.md) |
+| `httpd_rust_version`, `httpd_rust_sha256` | `""`, `""` | the release pin (`metrics_httpd_rust_version`/`_sha256`); with a version the release is installed and checked even on Python; `rust` needs both |
 
 ## What the deploy does
 
@@ -65,11 +67,16 @@ Defaults follow the role's `defaults/main.yml`; `user`, `site_path` and
 4. Content: `sync_tree` with `--checksum`, `--chown=root:<group>` and
    `--chmod=D0755,F0644` (private: `D0750,F0640`). It is only a change when
    content, ownership or a mode differs.
-5. Server script (`0755 root:root`), systemd unit, Traefik route
-   (`/etc/traefik/dynamic/<service_name>.yml`, the role's own template).
-   Traefik is not restarted; its file provider watches the directory.
-6. `service_rollout`: daemon-reload on unit change; restart when the unit or
-   the server script changed (a content update never restarts the server).
+5. Server script (`0755 root:root`), systemd unit, the HTTP server switch's
+   select step ([metrics-httpd switch](metrics_httpd.md); `--check-config`
+   runs as the service user with every hardening line of the unit), Traefik
+   route (`/etc/traefik/dynamic/<service_name>.yml`, the role's own
+   template). Traefik is not restarted; its file provider watches the
+   directory.
+6. `service_rollout`: daemon-reload when the unit or the drop-in changed;
+   restart when either or the server script changed (a content update never
+   restarts the server). Then the switch's verify step: the unit runs the
+   selected server and answers 200 for `/`; then the pin and the prune.
 7. Read-only checks: loopback `GET /` answers 200 (10 tries, 1 s apart) with
    the marker; with `verify_public` the HTTPS route likewise; with `private`
    no entry is accessible to others.

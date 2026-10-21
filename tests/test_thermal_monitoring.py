@@ -26,6 +26,7 @@ from ops_deploy.services.thermal_monitoring import (
 from ops_deploy.services.thermal_monitoring import deploy as thermal
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
+from tests.metrics_httpd_fixtures import verify_op, without_switch
 
 VENDORED = Path(__file__).parent / "parity" / "ansible"
 PACKAGED = Path(__file__).parents[1] / "src/ops_deploy/services/thermal_monitoring/templates"
@@ -403,11 +404,12 @@ def test_converged_host_plans_only_read_only_checks() -> None:
     assert result.mutating_changed_ops == []
     assert [op.name for op in result.ops if op.changed] == [
         f"{P}Require an armed {TIMER}",
+        verify_op(P, "thermal-metrics-endpoint"),
         f"{P}Require a private Nyxmon database for Example Thermal Freshness",
     ]
     assert not any("restart" in c or "systemctl start" in c for c in result.executed_commands)
     assert result.uploads == []
-    assert result.stdin == []
+    assert without_switch(result.stdin) == []
 
 
 FRESH = {**fakehost.UBUNTU, "tailscale ip --4": [TAILSCALE_IP], NYXMON_PROBE: ["service absent"]}
@@ -549,7 +551,7 @@ def test_a_verifying_htpasswd_gets_its_owner_and_mode_back_without_a_rewrite(gro
     result = run(responses)
 
     assert result.mutating_changed_ops == [f"{P}Ensure owner and mode of {HTPASSWD}"]
-    assert result.stdin == []
+    assert without_switch(result.stdin) == []
     assert set(result.executed_commands) & {f"chmod 640 {HTPASSWD}", f"chown root:metrics {HTPASSWD}"}
 
 

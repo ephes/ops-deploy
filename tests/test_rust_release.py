@@ -736,6 +736,41 @@ def test_prune_is_skipped_after_a_failed_soft_install() -> None:
     assert [c.split()[3] for c in result.executed_commands] == ["install"]
 
 
+def test_a_validated_install_gates_the_prune_but_is_no_change() -> None:
+    def body() -> None:
+        installed = install_release("metrics-httpd", "0.2.0", sha256=SHA, fail_hard=False)
+        assert installed.validated
+        prune_releases("metrics-httpd", after=[installed])
+
+    prune_key = f"prune --name metrics-httpd --root {ROOT} --keep-versions 3 --check"
+    converged = run(body, fakehost.directory(f"{ROOT}/0.2.0"))
+    assert converged.succeeded, converged.error
+    # Only the read-only validation runs: an installed version changes nothing to prune.
+    assert [c.split()[3] for c in converged.executed_commands] == ["install"]
+    assert converged.mutating_changed_ops == []
+
+    pending = run(body, {**fakehost.directory(f"{ROOT}/0.2.0"), prune_key: [f"remove {ROOT}/0.0.1"]})
+    assert [c.split()[3] for c in pending.executed_commands] == ["install", "prune"]
+
+    failed = run(
+        body,
+        {
+            **fakehost.directory(f"{ROOT}/0.2.0"),
+            prune_key: [f"remove {ROOT}/0.0.1"],
+            "install --name metrics-httpd": {"stdout": ["failed --version printed something else"]},
+        },
+    )
+    assert failed.succeeded, failed.error
+    assert [c.split()[3] for c in failed.executed_commands] == ["install"]
+
+
+def test_a_fresh_install_is_not_validated() -> None:
+    def body() -> None:
+        assert not install_release("metrics-httpd", "0.2.0", sha256=SHA).validated
+
+    assert run(body).succeeded
+
+
 def test_prune_warns_while_planning_when_blocked(caplog: pytest.LogCaptureFixture) -> None:
     probe_key = f"prune --name metrics-httpd --root {ROOT} --keep-versions 3 --live-state-unknown --check"
     result = run(

@@ -33,6 +33,7 @@ from tests.logyard_fixtures import (
     make_source,
     secrets_values,
 )
+from tests.metrics_httpd_fixtures import verify_op, without_switch
 from tests.test_infra_docker_vector import docker_converged
 
 PREFIX = "Deploy logyard core | "
@@ -43,6 +44,7 @@ READ_ONLY = [
     PREFIX + "Require the Graphyard Grafana container",
     PREFIX + "Wait for Loki /ready",
     PREFIX + "Wait for the Logyard health endpoint",
+    verify_op(PREFIX, "logyard-health-endpoint"),
 ]
 
 
@@ -182,7 +184,7 @@ def test_first_run_installs_everything(cfg: LogyardConfig) -> None:
     assert "systemctl start logyard-health-endpoint.service" in commands
     assert "docker restart graphyard-grafana" in commands
     # The checks come last; the database exists on the fixture host only when it says so.
-    assert run.stdin == []
+    assert without_switch(run.stdin) == []
 
 
 def test_second_run_changes_nothing(cfg: LogyardConfig) -> None:
@@ -192,7 +194,7 @@ def test_second_run_changes_nothing(cfg: LogyardConfig) -> None:
     assert run.mutating_changed_ops == []
     assert [op for op in run.changed_ops if op not in READ_ONLY] == []
     assert run.uploaded_paths == []
-    assert run.stdin == []
+    assert without_switch(run.stdin) == []
     assert [call for call in rsync.calls if "--dry-run" not in call] == []
 
 
@@ -415,7 +417,7 @@ def test_drifted_nyxmon_check_is_upserted_with_the_password_on_stdin(cfg: Logyar
     run = deploy(cfg, responses)
 
     assert run.mutating_changed_ops == [PREFIX + "Upsert Nyxmon Logyard json-metrics checks"]
-    ((command, stdin),) = run.stdin
+    ((command, stdin),) = without_switch(run.stdin)
     assert command.startswith("runuser -u nyxmon -- env ")
     assert "'NYXMON_SERVICE_NAME=Logyard (macmini)'" in command
     assert command.rstrip().endswith("apply >/dev/null")
@@ -429,7 +431,7 @@ def test_new_password_is_upserted(cfg: LogyardConfig) -> None:
 
     assert run.mutating_changed_ops == [PREFIX + "Upsert Nyxmon Logyard json-metrics checks"]
     assert "rotated-fixture-password" not in run.all_text()
-    assert "rotated-fixture-password" in run.stdin[0][1]
+    assert "rotated-fixture-password" in without_switch(run.stdin)[0][1]
 
 
 def test_missing_nyxmon_database_skips_the_checks(cfg: LogyardConfig) -> None:
@@ -439,7 +441,7 @@ def test_missing_nyxmon_database_skips_the_checks(cfg: LogyardConfig) -> None:
     run = deploy(cfg, responses)
 
     assert run.mutating_changed_ops == []
-    assert run.stdin == []
+    assert without_switch(run.stdin) == []
     assert not any("nyxmon" in c for c in run.executed_commands)
 
 

@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- `thermal_monitoring`, `logyard` (the health endpoint) and `static_site`:
+  select the endpoint's HTTP server, the role's Python script or the pinned
+  Rust `metrics-httpd`, the port of ops-library's `metrics_httpd_switch`
+  (`rust/metrics-httpd/PLAN.md` 7.2 and 7.4, slice S5e). New config fields
+  `httpd_impl` (`python` | `rust`, default `python`), `httpd_rust_version`
+  and `httpd_rust_sha256` (on `ThermalMonitoringConfig`,
+  `StaticSiteConfig` and logyard's `HealthEndpoint`). With a version the
+  release is installed through `helpers.rust_release` and its
+  `--check-config` runs as the unit's user in the unit's sandbox, also on
+  Python (a failure there only warns); `rust` writes the drop-in
+  `<unit>.service.d/metrics-httpd-impl.conf` (the role's template, vendored
+  in `tests/parity/ansible` and checked like the other copies), which
+  reloads systemd and restarts the unit. After the restart every run checks,
+  read-only, that the unit runs the selected server and answers an
+  unauthenticated request as the role expects; then the unit's pin moves
+  and old releases are pruned. The shared module is
+  `services/_metrics_httpd` (outside the size-capped layer) with ops-library's
+  `plugins/filter/metrics_httpd.py` vendored byte for byte as `rules.py`
+  (`tests/test_ops_library_drift.py`). The default (`python`, no version)
+  installs nothing and renders the same files as before; every run now adds
+  one read-only check of the endpoint unit. The drift manifest records
+  `thermal_metrics_endpoint` and `metrics_httpd_switch` at ops-library main
+  `be348cdb`. See [metrics-httpd switch](services/metrics_httpd.md).
+
+- `helpers.rust_release`: an `Install` that only validated an installed
+  version (`Install.validated`) still skips `prune_releases(after=[...])`
+  when it failed, but no longer counts as a change that reruns the prune, so
+  a converged deploy of a pinned release plans no mutating operation.
+
 - Size cap on the shared layer raised from 1,500 to 1,650 code lines (owner
   decision 2026-10-21), to make room for `helpers.rust_release`, which all
   Rust ports share; the shared layer is at 1,633 code lines. See

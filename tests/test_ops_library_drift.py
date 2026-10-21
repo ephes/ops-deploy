@@ -43,6 +43,7 @@ VENDORED_FILES = {
 # ``<package path>``: a file of ops-library outside the roles, byte for byte.
 VENDORED_LIBRARY_FILES = {
     "helpers/templates/rust_release.py.txt": "plugins/filter/rust_release.py",
+    "services/_metrics_httpd/rules.py": "plugins/filter/metrics_httpd.py",
 }
 
 needs_ops_library = pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")

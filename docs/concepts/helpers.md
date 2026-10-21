@@ -275,9 +275,9 @@ so Ansible and pyinfra can take turns on a host:
 <root>/.staging-<version>/           transient
 ```
 
-`<root>` defaults to `/opt/<name>`. No service uses the helper yet; the
-metrics-httpd switch of `thermal_monitoring`, `logyard` and `static_site`
-(slice S5e) will be the first.
+`<root>` defaults to `/opt/<name>`. The [metrics-httpd
+switch](../services/metrics_httpd.md) of `thermal_monitoring`, `logyard` and
+`static_site` (slice S5e) is its first user.
 
 ```python
 installed = install_release(
@@ -294,8 +294,9 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
 
 - `install_release(name, version, *, sha256="", install_root="", release_url="",
   local_archive=None, members=(), executables=(), validate_user="nobody",
-  fail_hard=True)` returns an `Install` (`op`, `binary`). An installed version
-  is only validated, as a read-only operation; a different archive for it is
+  fail_hard=True)` returns an `Install` (`op`, `binary`, `validated`). An
+  installed version is only validated (`validated` is true), as a read-only
+  operation; a different archive for it is
   refused (an installed version is never replaced in place). A new version is
   downloaded from `release_url` (default: the ops-library GitHub release
   `<name>-v<version>`) or uploaded from `local_archive` (checked against
@@ -332,7 +333,8 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
   `live_state_unknown` is set or a pin, the pin directory or a `protect` entry
   cannot be interpreted. It is skipped when an `Install` in `after` failed in
   this run, and it runs again, even when the planning probe found nothing,
-  after an operation in `after` changed. Unlike the role, nothing remembers a
+  after an operation in `after` changed (an `Install` that only validated an
+  installed version is no change). Unlike the role, nothing remembers a
   failed install by itself (the role's sticky
   `rust_release_binary_failed_names`): pass every `Install` of the crate from
   the same deploy in `after`.

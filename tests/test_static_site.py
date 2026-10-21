@@ -11,6 +11,7 @@ from ops_deploy.services.static_site import StaticSiteConfig, StaticSiteSourceEr
 from ops_deploy.services.static_site.deploy import render_route, render_server, render_unit
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
+from tests.metrics_httpd_fixtures import verify_op
 from tests.static_site_fixtures import make_source
 
 HOST = "static.test.example"
@@ -20,7 +21,10 @@ ROUTE = "/etc/traefik/dynamic/static-site.yml"
 SERVER = "/usr/local/libexec/static-site-httpd.py"
 ROOT = "/srv/static-sites/static-site"
 ITEMIZED = [">f+++++++++ index.html"]
-READ_ONLY = ["Deploy static site | Check loopback static service"]
+READ_ONLY = [
+    "Deploy static site | Check loopback static service",
+    verify_op("Deploy static site | ", "static-site"),
+]
 
 
 @pytest.fixture

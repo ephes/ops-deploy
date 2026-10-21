@@ -8,6 +8,10 @@ The role's templates are shipped unchanged and rendered the way Ansible's
 the role's (``tests/test_logyard_parity.py``) and Ansible and ops-deploy can
 take turns on a host without churn.
 
+The health endpoint's HTTP server is the role's Python script or the pinned
+Rust ``metrics-httpd logyard-health`` (``health.httpd_impl``; the role's
+``metrics_httpd_switch``, see :mod:`ops_deploy.services._metrics_httpd`).
+
 No data is touched: Loki's data directory only gets its owner and mode, the
 Docker network and the Grafana container are only connected or restarted, and
 the Nyxmon checks are upserted like the playbook does (one service, three
@@ -19,6 +23,8 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import math
+import re
 import shlex
 from collections.abc import Callable, Sequence
 from io import StringIO
@@ -39,6 +45,7 @@ from ops_deploy.helpers.container_ca import require_container_ca_stores
 from ops_deploy.infra import DockerInstallConfig, docker_steps
 from ops_deploy.infra._common import directory
 from ops_deploy.ops import secret_stdin, sync_tree
+from ops_deploy.services import _metrics_httpd as metrics_httpd
 from ops_deploy.services.logyard._common import (
     FILES,
     Hostname,
@@ -123,8 +130,12 @@ class GrafanaWiring(Part):
         return self.dashboards_root / "logyard"
 
 
-class HealthEndpoint(Part):
-    """The Nyxmon-facing health endpoint (a small Python HTTP server under systemd)."""
+class HealthEndpoint(Part, metrics_httpd.HttpdSwitchFields):
+    """The Nyxmon-facing health endpoint (a small HTTP server under systemd).
+
+    ``httpd_impl``, ``httpd_rust_version`` and ``httpd_rust_sha256`` select
+    the server (the role's ``logyard_health_impl`` and the fleet pin).
+    """
 
     service_name: ServiceName = "logyard-health-endpoint"
     bind_host: Annotated[str, Field(pattern=r"^[0-9.]+$")] = "127.0.0.1"
@@ -314,6 +325,33 @@ def render_health_unit(cfg: LogyardConfig) -> str:
 
 
 # -- Nyxmon checks (the playbook's post_tasks) -------------------------------------
+
+
+def health_httpd_endpoint(cfg: LogyardConfig, health: HealthEndpoint) -> metrics_httpd.Endpoint:
+    """The role's ``metrics_httpd_switch`` inputs for the health endpoint.
+
+    ``metrics-httpd logyard-health`` reads the unit's ``LOGYARD_*``
+    environment, so the ``--check-config`` sandbox is exactly the rendered
+    unit's ``Environment=`` lines (the unit has no other hardening and no IP
+    filter). One answer waits for Loki ``/ready`` and two queries, then for
+    ``systemctl`` per listed unit: the probe timeout covers all of them.
+    """
+
+    environment = tuple(re.findall(r"(?m)^Environment=.*$", render_health_unit(cfg)))
+    timeout = health.timeout_seconds * 3 + health.systemctl_timeout_seconds * len(health.units) + 5
+    return metrics_httpd.Endpoint(
+        service_name=health.service_name,
+        argv=("logyard-health",),
+        user=cfg.user,
+        group=cfg.group,
+        sandbox=environment,
+        python_script=str(health.script_path),
+        probe_bind=health.bind_host,
+        probe_port=health.port,
+        probe_path=health.path,
+        probe_expect="logyard-health",
+        probe_timeout=math.ceil(timeout),
+    )
 
 
 def nyxmon_checks(cfg: NyxmonChecks, password: str) -> list[dict[str, Any]]:
@@ -623,7 +661,11 @@ def core_steps(cfg: LogyardConfig, secrets: SecretValues, rsync: RsyncRunner) ->
             mode="0755",
         )
         health_unit = systemd_unit(health.service_name, render_health_unit(cfg))
-        service_rollout(health.service_name, units=[health_unit], restart_when=[script])
+        # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf).
+        selection = metrics_httpd.select(health_httpd_endpoint(cfg, health), health)
+        service_rollout(health.service_name, units=[health_unit, selection.dropin], restart_when=[script])
+        # The unit runs the selected server and answers 200 with a JSON status; then pin and prune.
+        metrics_httpd.verify(selection)
 
     if cfg.grafana is not None:
         # The role's handler, which runs after everything above.

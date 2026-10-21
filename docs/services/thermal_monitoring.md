@@ -74,6 +74,8 @@ role's defaults:
 | `timer_on_calendar` | `*:0/5` | the wall-clock backstop |
 | `exporter` | see below | the `thermal_metrics_exporter_*` variables |
 | `nyxmon_check` | none | the Nyxmon json-metrics check (`JsonMetricsCheck`), see below |
+| `httpd_impl` | `python` | the endpoint's HTTP server: the role's Python script or the pinned Rust `metrics-httpd` (the role's `thermal_metrics_endpoint_impl`); see [metrics-httpd switch](metrics_httpd.md) |
+| `httpd_rust_version`, `httpd_rust_sha256` | `""`, `""` | the release pin (`metrics_httpd_rust_version`/`_sha256`); with a version the release is installed and checked even on Python; `rust` needs both |
 
 `exporter` (`ThermalExporter`): `packages` (`python3`, `lm-sensors`,
 `ipmitool`), `bin_path` (`/usr/local/bin/thermal-metrics-exporter`, also the
@@ -133,7 +135,11 @@ address. Validation errors never echo the input.
    mode are brought back to `root:<group> 0640` (the endpoint reads it as
    its user), without a restart.
 4. The collector `.service`, `.timer` and the endpoint unit (`root:root
-   0644`), then one `daemon-reload` if any of them changed.
+   0644`); the HTTP server switch's select step ([metrics-httpd
+   switch](metrics_httpd.md): `python` removes the drop-in, a pinned release
+   is installed and its `--check-config` runs as `metrics` in the unit's
+   sandbox, `rust` writes the drop-in); then one `daemon-reload` if any unit
+   or the drop-in changed.
 5. The collector runs once (`systemctl start <timer_name>.service`) while
    there is no `thermal.json` yet or the exporter or the collector unit
    changed.
@@ -143,12 +149,16 @@ address. Validation errors never echo the input.
    restarted (the role's re-arm). Every run then reads the timer again, up
    to six times 2 s apart, and fails if it still has no next elapse.
 7. The endpoint is enabled and started, and restarted when its unit, the
-   server script or the htpasswd file changed (not right after it was
-   started by this run).
+   server script, the htpasswd file or the drop-in changed (not right after
+   it was started by this run). Then the switch's verify step: the unit runs
+   the selected server and answers an unauthenticated `GET` with 401 and
+   realm `thermal-metrics`; only then the `metrics-httpd` pin of the unit
+   moves and old releases are pruned.
 8. With `nyxmon_check`: the shared json-metrics upsert below.
 
-A converged host gets read-only operations only: the armed-timer check and,
-with a check, the Nyxmon database privacy check.
+A converged host gets read-only operations only: the armed-timer check, the
+HTTP server check (and, with a pinned release, its validation and
+`--check-config`) and, with a check, the Nyxmon database privacy check.
 
 ## The json-metrics check upsert
 
@@ -191,7 +201,9 @@ templates, shipped unchanged and rendered like Ansible's `template` module
 compares them with the vendored copies under `tests/parity/ansible`, which
 `test_traefik_parity.test_vendored_templates_match_ops_library` keeps equal
 to ops-library, and `tests/parity/ops_library_roles.json` records both
-roles' digests. Intended differences:
+roles' digests (`thermal_metrics_endpoint` with its metrics-httpd switch,
+ops-library `be348cdb`). Intended differences (for the HTTP server switch see
+[metrics-httpd switch](metrics_httpd.md#differences-from-the-role)):
 
 - The password is checked against the bcrypt hash on the controller, so the
   host never sees it on a command line, and an unchanged password never
