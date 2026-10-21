@@ -13,6 +13,8 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 workspace=$(cd "$here/../../.." && pwd)
 suffix=${ECHOPORT_E2E_SUFFIX:-}
+# (The `${extra[@]+...}` form below keeps an empty array safe under `set -u`
+# in macOS's Bash 3.2.)
 read -r -a extra <<< "${ECHOPORT_L2_ARGS:-}"
 distros=("$@")
 if [ ${#distros[@]} -eq 0 ]; then
@@ -31,7 +33,7 @@ for distro in "${distros[@]}"; do
         --target layer2 --tag "$name" "$workspace" > /dev/null
     echo "== $distro ($base)"
     if ! docker run --rm --name "$name" "$name" \
-        python3 -I /e2e/layer2_realpath.py --probe /usr/local/bin/env-probe "${extra[@]}"; then
+        python3 -I /e2e/layer2_realpath.py --probe /usr/local/bin/env-probe ${extra[@]+"${extra[@]}"}; then
         status=1
     fi
 done

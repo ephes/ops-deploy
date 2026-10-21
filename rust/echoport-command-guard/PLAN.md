@@ -493,9 +493,11 @@ Justification:
 - **realpath errors.** While resolving, these refuse with `path not
   checkable: <path!r>: <strerror>`:
   - a symlink loop, where Python returns a partly resolved path (which
-    differs between 3.12 and 3.13), and a chain of more than 40 links
+    differs between 3.12 and 3.13), and more than 40 symlink traversals
     (Linux's `MAXSYMLINKS`; the kernel itself refuses to open such a path),
-    which Python resolves;
+    which Python resolves. They are counted as the kernel counts them: a
+    link Python answers from its `seen` map costs every traversal of its
+    first resolution again (`<dir>/a/a/…` with `a -> .` and 41 `a`s);
   - an `lstat` error other than `ENOENT`/`ENOTDIR`, for example
     `ENAMETOOLONG` or `EACCES`, where Python treats the component as "not a
     link" and appends it unchecked;
@@ -1259,12 +1261,14 @@ both CPython versions.
 `layer2_realpath.py`, `run-layer2.sh`; `just echoport-command-guard-layer2`,
 local, needs Docker). The probe `examples/env-probe.rs` answers the real
 `GuardEnv`'s lookups as JSON lines; the script builds the scenarios above
-under the policies' path roots (plus a 40/41-link chain, an `ENAMETOOLONG`
+under the policies' path roots (plus 40/41-link chains, an `ENAMETOOLONG`
 component, a non-UTF-8 link target, an `EACCES` case run as `nobody`, and
 300 seeded random trees) and compares `realpath` with `os.path.realpath`,
 `lstat` with `os.lstat` (kind, mode, uid, link count, or errno and
-`strerror`), `uid_of` with `pwd.getpwnam` and the euid. A loop refusal must
-be confirmed by an independent resolver without Python's `seen` map. S5 adds
+`strerror`), `uid_of` with `pwd.getpwnam` and the euid. An `ELOOP` refusal
+must be confirmed by an independent resolver without Python's `seen` map
+(no end, or more than 40 traversals), and a resolved path must need at most
+40. S5 adds
 the `check()`/`--decide` comparison on top.
 
 ### 7.6 Layer 3: end to end through sshd

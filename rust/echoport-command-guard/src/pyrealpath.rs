@@ -20,8 +20,11 @@
 //! component it could not check:
 //!
 //! - a symlink loop (`ELOOP`; Python 3.12 and 3.13 return different
-//!   partial paths), and more than [`MAX_LINKS`] symlinks, the kernel's
-//!   limit (`ELOOP`);
+//!   partial paths), and more than [`MAX_LINKS`] symlink traversals, the
+//!   kernel's limit (`ELOOP`), counted as the kernel counts them: a link
+//!   answered from the `seen` map costs again every traversal its first
+//!   resolution made (so `/a/a/…/a` with `/a -> .` and 41 `a`s refuses,
+//!   where Python resolves it to `/`);
 //! - an `lstat` error other than `ENOENT`/`ENOTDIR`, for example
 //!   `ENAMETOOLONG` or `EACCES` (Python treats the component as "not a
 //!   link" and goes on);
@@ -36,8 +39,9 @@ use std::collections::HashMap;
 
 use crate::env::{FileKind, FileStat, OsError};
 
-/// The most symlinks one resolution follows: Linux's `MAXSYMLINKS` (40). A
-/// longer chain is one the kernel itself refuses to open (`ELOOP`).
+/// The most symlink traversals one resolution makes: Linux's `MAXSYMLINKS`
+/// (40). A path that needs more is one the kernel itself refuses to open
+/// (`ELOOP`).
 pub const MAX_LINKS: usize = 40;
 
 /// The two lookups `realpath` makes.
@@ -57,10 +61,11 @@ pub fn eloop() -> OsError {
 }
 
 /// One entry of the stack of unprocessed parts: a path component, or the
-/// marker that the link pushed with it is now resolved.
+/// marker that the link pushed with it is now resolved, with the traversal
+/// count before it was followed.
 enum Part {
     Name(String),
-    Resolved(String),
+    Resolved(String, usize),
 }
 
 /// The components of `text`, in the order the stack pops them.
@@ -93,14 +98,16 @@ pub fn realpath(fs: &dyn ResolveFs, path: &str) -> Result<String, OsError> {
     }
     let mut stack: Vec<Part> = Vec::new();
     push_parts(&mut stack, path);
-    let mut seen: HashMap<String, Option<String>> = HashMap::new();
+    // link → `None` while it is being resolved, then its resolved path and
+    // the traversals that took (itself included).
+    let mut seen: HashMap<String, Option<(String, usize)>> = HashMap::new();
     let mut resolved = String::from("/");
     let mut links = 0usize;
 
     while let Some(part) = stack.pop() {
         let name = match part {
-            Part::Resolved(link) => {
-                seen.insert(link, Some(resolved.clone()));
+            Part::Resolved(link, before) => {
+                seen.insert(link, Some((resolved.clone(), links - before)));
                 continue;
             }
             Part::Name(name) => name,
@@ -124,7 +131,11 @@ pub fn realpath(fs: &dyn ResolveFs, path: &str) -> Result<String, OsError> {
             continue;
         }
         match seen.get(&newpath) {
-            Some(Some(cached)) => {
+            Some(Some((cached, cost))) => {
+                links += cost;
+                if links > MAX_LINKS {
+                    return Err(eloop());
+                }
                 resolved = cached.clone();
                 continue;
             }
@@ -132,6 +143,7 @@ pub fn realpath(fs: &dyn ResolveFs, path: &str) -> Result<String, OsError> {
             Some(None) => return Err(eloop()),
             None => {}
         }
+        let before = links;
         links += 1;
         if links > MAX_LINKS {
             return Err(eloop());
@@ -141,7 +153,7 @@ pub fn realpath(fs: &dyn ResolveFs, path: &str) -> Result<String, OsError> {
             resolved = String::from("/");
         }
         seen.insert(newpath.clone(), None);
-        stack.push(Part::Resolved(newpath));
+        stack.push(Part::Resolved(newpath, before));
         push_parts(&mut stack, &target);
     }
     Ok(resolved)
@@ -215,6 +227,24 @@ mod tests {
         );
         assert_eq!(resolve(&tree, "/").as_deref(), Ok("/"));
         assert_eq!(resolve(&tree, "/x/../..").as_deref(), Ok("/"));
+    }
+
+    /// A link met again costs its traversals again, as in the kernel.
+    #[test]
+    fn cached_links_count_towards_the_limit() {
+        let tree = [
+            ("/a", Some(".")),
+            ("/d", None),
+            ("/d/b", Some("/c")),
+            ("/c", Some("/d")),
+        ];
+        let path = |count: usize| format!("/{}", vec!["a"; count].join("/"));
+        assert_eq!(resolve(&tree, &path(40)).as_deref(), Ok("/"));
+        assert_eq!(resolve(&tree, &path(41)), Err("ELOOP".to_owned()));
+        // /d/b costs 2 (b, then c): 20 of them resolve, 21 do not.
+        let chain = |count: usize| format!("/d{}", "/b".repeat(count));
+        assert_eq!(resolve(&tree, &chain(20)).as_deref(), Ok("/d"));
+        assert_eq!(resolve(&tree, &chain(21)), Err("ELOOP".to_owned()));
     }
 
     #[test]

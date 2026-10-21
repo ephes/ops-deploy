@@ -61,7 +61,7 @@ exec). What exists:
     (`geteuid`, `getpwnam_r` through NSS, `lstat` with glibc's `strerror`
     texts, `realpath`); `pyrealpath`, a port of CPython's non-strict
     `os.path.realpath` over `lstat`/`readlink` that refuses loops, more than
-    40 links, `lstat` errors other than `ENOENT`/`ENOTDIR`, `readlink`
+    40 symlink traversals (counted as the kernel counts them), `lstat` errors other than `ENOENT`/`ENOTDIR`, `readlink`
     errors and non-UTF-8 link targets (PLAN.md 4.2); and `rules::paths`, the
     helpers of `check()` (`_root_for`, `_require_in_roots`,
     `_lstat_or_none`, `_require_plain_file_or_absent`,
@@ -165,23 +165,25 @@ Needs Docker; changes nothing outside the containers. It builds
 toolchain on Debian 12, runs `parity/e2e/layer2_realpath.py` as root in an
 Ubuntu 24.04 (Python 3.12.3) and a Debian 13 (Python 3.13.5) container with
 the policies' users, and fails on any difference PLAN.md 4.2 does not allow.
+A loop refusal must be confirmed by a resolver without Python's `seen` map.
 The script builds real trees under the policies' path roots: links in and
 out of a root, dangling links, `..` in targets, loops, a replaced
 directory, files below which nothing exists (`ENOTDIR`), hard links, a fifo,
-foreign owners, a 40- and a 41-link chain, an `ENAMETOOLONG` component, a
+foreign owners, 40- and 41-link chains (one of them through a single cached
+link), an `ENAMETOOLONG` component, a
 non-UTF-8 link target, an `EACCES` case run as `nobody`, and 300 seeded
 random trees (`ECHOPORT_L2_ARGS="--random 3000 --seed 7"` for more). It
 compares `realpath`, `lstat` (kind, mode, uid, link count, or errno and
 `strerror`), user lookups and the euid. `ECHOPORT_E2E_SUFFIX` is appended to
 the image and container names.
 
-S2 results (2026-10-21, arm64 Docker host): 1,531 `realpath` and 1,640
-`lstat` comparisons per distribution (15,031 and 15,140 with 3,000 random
-trees), no difference; the refusals were the expected ones (`ELOOP` for the
-loops and the 41-link chain, `ENAMETOOLONG`, `EILSEQ`, `EACCES`). Run with
+S2 results (2026-10-21, arm64 Docker host): 1,533 `realpath` and 1,727
+`lstat` comparisons per distribution (also clean with 3,000 random trees,
+seed 7), no difference; the refusals were the expected ones (`ELOOP` for the
+loops and the 41-traversal chains, `ENAMETOOLONG`, `EILSEQ`, `EACCES`). Run with
 `--probe <bin> --realpath-only` the same script evaluates another resolver;
 that is how `soft-canonicalize` 0.5.6 was measured (PLAN.md 5.2: 265 of
-1,531 differ).
+1,531 differ, on the corpus before the cached-link chain was added).
 
 ## Fixtures
 

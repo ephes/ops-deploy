@@ -300,15 +300,16 @@ pub fn posix_dirname(path: &str) -> &str {
     if trimmed.is_empty() { head } else { trimmed }
 }
 
-/// An independent check for the loop refusals: Python's non-strict
+/// An independent check for the `ELOOP` refusals: Python's non-strict
 /// resolution without its `seen` map, following at most `budget` links.
-/// `None` when the budget runs out, which for the small test trees means the
-/// resolution never ends (a loop).
+/// The resolved path and the number of symlink traversals it took (each
+/// link followed counts, as in the kernel), or `None` when the budget runs
+/// out, which for the small test trees means the resolution never ends.
 pub fn naive_realpath(
     fs: &dyn echoport_command_guard::pyrealpath::ResolveFs,
     path: &str,
     budget: usize,
-) -> Option<String> {
+) -> Option<(String, usize)> {
     use echoport_command_guard::env::FileKind;
     let mut stack: Vec<String> = path.split('/').rev().map(str::to_owned).collect();
     let mut resolved = String::from("/");
@@ -342,5 +343,5 @@ pub fn naive_realpath(
         }
         stack.extend(target.split('/').rev().map(str::to_owned));
     }
-    Some(resolved)
+    Some((resolved, links))
 }

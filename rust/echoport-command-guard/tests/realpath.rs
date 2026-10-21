@@ -28,7 +28,7 @@ use serde_json::{Map, Value, json};
 use common::{Oracle, VirtualTree, naive_realpath};
 use echoport_command_guard::env::{GuardEnv, RealEnv};
 use echoport_command_guard::policy::is_safe_path;
-use echoport_command_guard::pyrealpath::{ResolveFs, realpath};
+use echoport_command_guard::pyrealpath::{MAX_LINKS, ResolveFs, realpath};
 
 fn runner(divisor: u32) -> TestRunner {
     let cases: u32 = std::env::var("PROPTEST_CASES")
@@ -160,8 +160,9 @@ fn virtual_tree(nodes: &[Option<Node>]) -> Map<String, Value> {
     fs
 }
 
-/// The 4.2 rule for one path. A loop refusal must be one: the naive
-/// resolver (no `seen` map) must not finish with 10,000 links.
+/// The 4.2 rule for one path. An `ELOOP` refusal must be one: the naive
+/// resolver (no `seen` map, every traversal counted) must not finish with
+/// 10,000 links, or need more than 40; a resolved path must need at most 40.
 fn compare(
     fs: &dyn ResolveFs,
     path: &str,
@@ -170,12 +171,22 @@ fn compare(
     tally: &mut Tally,
 ) -> Result<(), String> {
     let rust = realpath(fs, path).map_err(|error| error.errno);
+    let naive = || naive_realpath(fs, path, 10_000);
     match (&rust, &python) {
-        (Ok(rust), Ok(python)) if rust == python => tally.equal += 1,
+        (Ok(rust), Ok(python)) if rust == python => {
+            if let Some((_, links)) = naive()
+                && links > MAX_LINKS
+            {
+                return Err(format!("{path}: Rust resolves after {links} traversals"));
+            }
+            tally.equal += 1;
+        }
         (Err(errno), Ok(_)) if errno == "ELOOP" => {
-            if let Some(naive) = naive_realpath(fs, path, 10_000) {
+            if let Some((naive, links)) = naive()
+                && links <= MAX_LINKS
+            {
                 return Err(format!(
-                    "{path}: Rust refuses a loop, but it resolves to {naive:?}"
+                    "{path}: Rust refuses a loop, but it resolves to {naive:?} after {links} traversals"
                 ));
             }
             tally.refused_loop += 1;
@@ -335,28 +346,30 @@ fn link_limit() {
     }
 }
 
-/// Builds `nodes` under `base` on the real filesystem (dirs before what is
-/// inside them; a node under a non-directory is skipped). Absolute link
-/// targets are made absolute below `base`.
+/// Builds `nodes` under `base` on the real filesystem, only below
+/// directories it made itself (never through a link, whose target may lie
+/// outside `base`). Absolute link targets are made absolute below `base`;
+/// an empty target (which Linux refuses) becomes `.`.
 fn build_real_tree(base: &Path, nodes: &[Option<Node>]) {
-    for (path, node) in tree_paths().into_iter().zip(nodes) {
-        let real = base.join(path.trim_start_matches('/'));
-        // Never through a link: a relative target can point out of `base`.
-        let parent_is_dir = real
-            .parent()
-            .unwrap()
-            .symlink_metadata()
-            .is_ok_and(|metadata| metadata.is_dir());
-        if !parent_is_dir || real.symlink_metadata().is_ok() {
+    let mut made_dirs = std::collections::BTreeSet::from(["/r".to_owned()]);
+    std::fs::create_dir(base.join("r")).unwrap();
+    for (path, node) in tree_paths().into_iter().zip(nodes).skip(1) {
+        let parent = path.rsplit_once('/').map(|(parent, _)| parent).unwrap();
+        if !made_dirs.contains(parent) {
             continue;
         }
+        let real = base.join(path.trim_start_matches('/'));
         match node {
             None | Some(Node::Error(_)) => {}
-            Some(Node::Dir) => std::fs::create_dir(&real).unwrap(),
+            Some(Node::Dir) => {
+                std::fs::create_dir(&real).unwrap();
+                made_dirs.insert(path.clone());
+            }
             Some(Node::File) => std::fs::write(&real, b"x").unwrap(),
             Some(Node::Link(target)) => {
                 let target = match target.strip_prefix('/') {
                     Some(rest) => format!("{}/{rest}", base.display()),
+                    None if target.is_empty() => ".".to_owned(),
                     None => target.clone(),
                 };
                 std::os::unix::fs::symlink(target, &real).unwrap();

@@ -129,9 +129,14 @@ def _errno_name(code: int | None) -> str:
     return errno.errorcode.get(code or 0, "?")
 
 
-def naive_realpath(path: str, budget: int = 10_000) -> str | None:
+MAX_LINKS = 40  # pyrealpath::MAX_LINKS, Linux's MAXSYMLINKS
+
+
+def naive_realpath(path: str, budget: int = 10_000) -> tuple[str, int] | None:
     """Python's non-strict resolution without its ``seen`` map, following at
-    most ``budget`` links: ``None`` means the resolution does not end."""
+    most ``budget`` links: the path and the symlink traversals it took (every
+    link followed counts, as in the kernel), or ``None`` when the resolution
+    does not end."""
     stack = path.split("/")[::-1]
     resolved = "/"
     links = 0
@@ -157,7 +162,13 @@ def naive_realpath(path: str, budget: int = 10_000) -> str | None:
         if target.startswith("/"):
             resolved = "/"
         stack.extend(target.split("/")[::-1])
-    return resolved
+    return resolved, links
+
+
+def is_eloop(path: str) -> bool:
+    """Whether an ELOOP refusal is right: a loop, or more than 40 traversals."""
+    naive = naive_realpath(path)
+    return naive is None or naive[1] > MAX_LINKS
 
 
 # --- trees ----------------------------------------------------------------------
@@ -215,6 +226,7 @@ def build_curated() -> list[dict[str, Any]]:
     link("loop-b", f"{site}/loop-a")
     link("loop-a", f"{site}/loop-b")
     link("self", f"{site}/self")
+    link(".", f"{site}/dot")
     link(f"{site}/parent-loop/..", f"{site}/parent-loop")
     # A replaced directory: the media directory is now a link elsewhere.
     os.makedirs(f"{gts}/storage", exist_ok=True)
@@ -272,7 +284,10 @@ def build_curated() -> list[dict[str, Any]]:
         {"path": f"{media}/foreign/x", "expect": "same"},
         {"path": f"{media}/open", "expect": "same"},
         {"path": "/srv/echoport-l2-long/c40/l0/deep", "expect": "same"},
-        {"path": "/srv/echoport-l2-long/c41/l0/deep", "expect": "ELOOP", "chain": True},
+        {"path": "/srv/echoport-l2-long/c41/l0/deep", "expect": "ELOOP"},
+        # 41 traversals of one cached link: refused, Python resolves.
+        {"path": f"{site}/dot" + "/dot" * 40, "expect": "ELOOP"},
+        {"path": f"{site}/dot" + "/dot" * 39, "expect": "same"},
         {"path": f"{site}/{long_name}/x", "expect": "ENAMETOOLONG"},
         {"path": f"{site}/not-utf8", "expect": "EILSEQ"},
         {"path": f"{site}/closed/inner/x", "expect": "same"},
@@ -356,17 +371,17 @@ for line in sys.stdin:
 
 
 def compare_realpath(report: Report, path: str, rust: dict[str, Any], python: dict[str, Any], expect: str,
-                     label: str, chain: bool = False) -> None:
+                     label: str) -> None:
     report.count("realpath")
-    if expect == "same":
+    if expect == "same" or (expect == "loop?" and "resolved" in rust):
         if rust != python or "resolved" not in rust:
             report.failures.append(f"{label}: realpath({path!r}): Rust {rust}, Python {python}")
+        elif is_eloop(path):
+            report.failures.append(f"{label}: realpath({path!r}): resolved after more than 40 traversals")
         return
     if expect == "loop?":
-        if rust == python and "resolved" in rust:
-            return
         errno = rust.get("error", {}).get("errno")
-        if errno == "ELOOP" and "resolved" in python and naive_realpath(path) is None:
+        if errno == "ELOOP" and "resolved" in python and is_eloop(path):
             report.refused("ELOOP")
             return
         report.failures.append(f"{label}: realpath({path!r}): Rust {rust}, Python {python}")
@@ -376,8 +391,7 @@ def compare_realpath(report: Report, path: str, rust: dict[str, Any], python: di
         report.failures.append(f"{label}: realpath({path!r}): expected a Rust {expect} refusal and a Python path, "
                                f"got Rust {rust}, Python {python}")
         return
-    # A loop must be one; a chain of more than 40 links is not a loop.
-    if expect == "ELOOP" and (naive_realpath(path) is not None) != chain:
+    if expect == "ELOOP" and not is_eloop(path):
         report.failures.append(f"{label}: realpath({path!r}): Rust refuses a loop that resolves")
         return
     report.refused(expect)
@@ -422,7 +436,7 @@ def main(argv: list[str]) -> int:
         if not (is_safe_path(path)):
             raise AssertionError(f"curated probe is not a safe path: {path!r}")
         compare_realpath(report, path, probe.ask({"op": "realpath", "path": path}), py_realpath(path),
-                         case["expect"], f"{label} curated", case.get("chain", False))
+                         case["expect"], f"{label} curated")
         if not args.realpath_only:
             for prefix in every_prefix(path):
                 compare_lstat(report, probe, prefix, f"{label} curated")
