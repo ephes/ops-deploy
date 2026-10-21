@@ -68,6 +68,13 @@ SOURCE_EXCLUDES = ("__pycache__", "*.pyc", ".pytest_cache", ".coverage", "htmlco
 SOURCE_FILES = (("manage.py", "0755"), ("pyproject.toml", "0644"), ("uv.lock", "0644"))
 MEDIA_EXCLUDES = (".gitkeep",)
 PLACEHOLDER = "CHANGEME"
+# For the planning probes that run Python as the service user. They must
+# leave nothing behind: an existing service user may have another primary
+# group than ``group`` (the role only appends ``group``), so a bytecode cache a
+# probe writes into the venv or ``src`` would carry that group and the next
+# run's ownership probe would find it. The steps that change the host, the
+# unit and the service's environment do not get it (the role's end state).
+PROBE_ENV = {"PYTHONDONTWRITEBYTECODE": "1"}
 
 # Written unquoted into ``.env``, which systemd reads and bash sources (the
 # role's ``set -a; . .env``): a value must mean the same to both, so no
@@ -316,24 +323,29 @@ def _in_site(cfg: HomelabConfig, argv: Sequence[str], env: dict[str, str] | None
     return f"cd {shlex.quote(str(cfg.site_path))} && {_as_user(cfg.user, cfg.home, env or {}, argv)}"
 
 
-def _manage(cfg: HomelabConfig, *args: str) -> str:
-    """The role's ``set -a; . .env; set +a; .venv/bin/python manage.py ...`` (bash), as the service user."""
+def _manage(cfg: HomelabConfig, *args: str, probe: bool = False) -> str:
+    """The role's ``set -a; . .env; set +a; .venv/bin/python manage.py ...`` (bash), as the service user.
+
+    ``probe``: a read-only planning probe (no bytecode written, ``PROBE_ENV``).
+    """
 
     script = (
         f"set -a; . {shlex.quote(str(cfg.env_path))}; set +a; "
         f"exec {shlex.join([str(cfg.venv_bin / 'python'), 'manage.py', *args])}"
     )
-    return _in_site(cfg, ["bash", "-c", script], {"DJANGO_SETTINGS_MODULE": cfg.django_settings_module})
+    env = {"DJANGO_SETTINGS_MODULE": cfg.django_settings_module, **(PROBE_ENV if probe else {})}
+    return _in_site(cfg, ["bash", "-c", script], env)
 
 
 def _manage_shell(cfg: HomelabConfig, code: str) -> str:
-    """``manage.py shell -c <code>`` with ``.env`` loaded; the code is an argument, not interpolated."""
+    """``manage.py shell -c <code>`` with ``.env`` loaded, as a probe; the code is an argument, not interpolated."""
 
     script = (
         f"set -a; . {shlex.quote(str(cfg.env_path))}; set +a; "
         f'exec {shlex.quote(str(cfg.venv_bin / "python"))} manage.py shell -c "$1"'
     )
-    return _in_site(cfg, ["bash", "-c", script, "bash", code], {"DJANGO_SETTINGS_MODULE": cfg.django_settings_module})
+    env = {"DJANGO_SETTINGS_MODULE": cfg.django_settings_module, **PROBE_ENV}
+    return _in_site(cfg, ["bash", "-c", script, "bash", code], env)
 
 
 def _changed(planned: bool, triggers: Sequence[OperationMeta | None]) -> Callable[[], bool]:
@@ -351,6 +363,10 @@ def _site_owned(cfg: HomelabConfig, triggers: Sequence[OperationMeta | None]) ->
 
     Probed while planning; also run after a directory was created this run
     (``mkdir -p`` leaves new parents, such as ``media``, owned by root).
+    As in the role it comes before the Python steps: files they create (the
+    venv, packages, bytecode, collected static files) carry the service
+    user's primary group, which the next run sets right. A converged run
+    runs none of them, and the planning probes write nothing (``PROBE_ENV``).
     """
 
     site = shlex.quote(str(cfg.site_path))
@@ -377,7 +393,7 @@ def _venv(cfg: HomelabConfig) -> OperationMeta | None:
     Returns the create step when the venv is (re)created this run.
     """
 
-    version = _quiet_probe(_as_user(cfg.user, cfg.home, {}, [str(cfg.venv_bin / "python"), "--version"]))
+    version = _quiet_probe(_as_user(cfg.user, cfg.home, PROBE_ENV, [str(cfg.venv_bin / "python"), "--version"]))
     match = re.match(r"^Python (\d+\.\d+)", version)
     if match is not None and match.group(1) == cfg.python_version:
         return None
@@ -405,7 +421,7 @@ def _uv_sync(cfg: HomelabConfig, venv: OperationMeta | None, triggers: Sequence[
     sync = [str(cfg.uv_path), "sync", "--frozen"]
     check = when_present(
         [cfg.venv_bin / "python", cfg.site_path / "uv.lock"],
-        uv_sync_state(_in_site(cfg, [*sync, "--check"], env)),
+        uv_sync_state(_in_site(cfg, [*sync, "--check"], {**env, **PROBE_ENV})),
         otherwise="pending",
     )
     state = probe(check, name="homelab dependencies")
@@ -432,9 +448,8 @@ def _django(
     db = shlex.quote(str(cfg.db_path))
     changed = [code, *triggers, env]
 
-    migrations_check = when_present(
-        (cfg.db_path, *needed), migrations_state(_manage(cfg, "migrate", "--check", "--plan")), otherwise="pending"
-    )
+    plan = _manage(cfg, "migrate", "--check", "--plan", probe=True)
+    migrations_check = when_present((cfg.db_path, *needed), migrations_state(plan), otherwise="pending")
     migrations = probe(migrations_check, name="homelab migrations")
     migrate = server.shell(
         name="Run Django migrations",
@@ -456,7 +471,7 @@ def _django(
     # ``--dry-run`` copies nothing; "0 static files copied" means current.
     static_check = when_present(
         needed,
-        f"out=$( {_manage(cfg, 'collectstatic', '--noinput', '--dry-run')} ) || exit 1; "
+        f"out=$( {_manage(cfg, 'collectstatic', '--noinput', '--dry-run', probe=True)} ) || exit 1; "
         "if printf '%s\\n' \"$out\" | grep -Eq '(^|[^0-9])0 static files copied'; "
         "then echo current; else echo pending; fi",
         otherwise="pending",

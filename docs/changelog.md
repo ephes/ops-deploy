@@ -22,6 +22,16 @@
   step. `django_secret_key` must be a value systemd and bash read alike.
   `homelab_deploy`, `homelab_shared` and `uv_install` added to the drift
   manifest.
+- `homelab`: the planning probes that run Python as the service user
+  (venv `python --version`, `uv sync --check`, `migrate --check --plan`,
+  `collectstatic --dry-run`, the default-services probe; also when probed
+  again) run with `PYTHONDONTWRITEBYTECODE=1`. An existing service user whose
+  primary group is not `group` wrote bytecode caches with that group while
+  planning, so the next run's ownership probe planned a `chown` on a converged
+  host. Steps that change the host, the unit and `.env` are unchanged (the
+  role's end state); the owner fix stays before the Python steps, as in the
+  role. Regression tests cover the probe environment and that an ownership
+  and route repair runs no Python as the service user.
 
 - `thermal_monitoring`: port of the `thermal_metrics_exporter` and
   `thermal_metrics_endpoint` roles (checked against ops-library 2.56.0
