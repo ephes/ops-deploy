@@ -1433,6 +1433,13 @@ The numbers go into the S7 and S9 reports and the README. Exceeding the
 binary budget means checking the dependencies (`regex-lite`, `serde_json`
 features) before relaxing it.
 
+S7 (README "Lean measurements"): `parity/e2e/lean.py`, run by `just
+echoport-command-guard-lean` and by the `rust` workflow's manual job on its
+x86_64 runner. On an arm64 Docker host the Rust guard stays well inside every
+budget on both distributions: stripped binary 661,272 bytes, peak RSS
+1.88–2.12 MiB, wall time 0.27–0.49 ms (Python: 13.25–13.62 MiB, 17.75–22.12
+ms).
+
 ---
 
 ## 9. Owner decisions (2026-10-21)

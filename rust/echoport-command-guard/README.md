@@ -102,6 +102,39 @@ the Python guard's `check()` is ported. What exists:
   release-layout archive for the role's molecule scenarios.
 - `fuzz/`: the cargo-fuzz targets and their committed corpus (below).
 
+## Lean measurements (S7)
+
+```bash
+just echoport-command-guard-lean   # or rust/echoport-command-guard/parity/e2e/run-lean.sh [ubuntu2404] [debian13]
+```
+
+Needs Docker; changes nothing outside the containers. `parity/e2e/lean.py`
+runs as root in each Layer-3 container (PLAN.md 8.3) and starts the Python
+and the Rust guard the way sshd starts the forced command, 20 times per case
+after one warm-up run: `--check-policy` on the production fixture policy, a
+refusal (`id`) and an allowed command (`test -d`, so the figure includes the
+exec'd tool). It reports the median (and min-max) wall time from spawn to
+exit and the peak RSS as GNU `time -f %M` prints it, plus the size of the
+stripped Rust binary, and exits 1 when the Rust guard exceeds a budget
+(binary 2 MiB, peak RSS 4 MiB for `--check-policy` and the refusal, wall
+time 5 ms) or a run has an unexpected exit status or stderr. The recorded
+numbers come from the x86_64 runner of the `rust` workflow started by hand
+(`gh workflow run rust.yml --ref <ref>`, job "echoport-command-guard lean
+measurements"; the report is the job summary).
+
+S7 results (2026-10-21), median of 20 runs:
+
+| Where | Guard | `--check-policy` | Refusal | Allowed (with `test -d`) | Stripped binary |
+|---|---|---|---|---|---|
+| arm64 Docker host, Ubuntu 24.04 | Python 3.12.3 | 19.96 ms, 13.25 MiB | 22.12 ms, 13.38 MiB | 17.75 ms, 13.38 MiB | |
+| arm64 Docker host, Ubuntu 24.04 | Rust | 0.27 ms, 2.00 MiB | 0.30 ms, 2.12 MiB | 0.44 ms, 2.12 MiB | 661,272 bytes |
+| arm64 Docker host, Debian 13 | Python 3.13.5 | 20.73 ms, 13.36 MiB | 20.66 ms, 13.48 MiB | 18.24 ms, 13.62 MiB | |
+| arm64 Docker host, Debian 13 | Rust | 0.32 ms, 1.88 MiB | 0.34 ms, 2.00 MiB | 0.49 ms, 2.12 MiB | 661,272 bytes |
+
+The x86_64 runner's numbers are added here when the manual workflow run has
+been made on the release commit. Memory at rest is zero for both guards (no
+resident process). S9 measures `--check-policy` again on both hosts.
+
 ## Release
 
 The binary is released by the tag `echoport-command-guard-v<version>`
