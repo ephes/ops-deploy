@@ -104,8 +104,9 @@ fn pieces(contents: &[u8]) -> impl Iterator<Item = &[u8]> {
 }
 
 /// Whether `htpasswd -vi` exits 0 for this file content, user and stdin.
-/// An entry reached after `deadline` fails the check, as the Python
-/// endpoint's `htpasswd` is killed after 5 seconds; a cost of at most
+/// A check that has not finished by `deadline` fails, as the Python
+/// endpoint's `htpasswd` is killed after 5 seconds: no hash starts after
+/// it, and a hash that ends after it does not count; a cost of at most
 /// [`MAX_COST`] keeps the one hash under way when it passes short.
 pub fn verify(contents: &[u8], user: &[u8], input: &[u8], deadline: Instant) -> bool {
     if user.len() > MAX_ARGUMENT_BYTES || user.contains(&b':') || user.contains(&0) {
@@ -143,7 +144,10 @@ pub fn verify(contents: &[u8], user: &[u8], input: &[u8], deadline: Instant) -> 
         let Some(password) = *key.get_or_insert_with(|| stdin_password(input)) else {
             return false;
         };
-        if Instant::now() >= deadline || !bcrypt_matches(password, hash) {
+        if Instant::now() >= deadline
+            || !bcrypt_matches(password, hash)
+            || Instant::now() >= deadline
+        {
             return false;
         }
     }
@@ -264,6 +268,17 @@ mod tests {
         let file = format!("u:{hash}\n");
         assert!(verify(file.as_bytes(), b"u", b"pw", far()));
         assert!(!verify(file.as_bytes(), b"u", b"pw", Instant::now()));
+        // The last hash ends after the deadline: a timeout, not a success.
+        let one = bcrypt::hash_with_salt("pw", 10, [2; 16])
+            .unwrap()
+            .format_for_version(bcrypt::Version::TwoY);
+        let single = format!("u:{one}\n");
+        let started = Instant::now();
+        assert!(verify(single.as_bytes(), b"u", b"pw", far()));
+        let hashing = started.elapsed();
+        let deadline = Instant::now() + hashing / 4;
+        assert!(!verify(single.as_bytes(), b"u", b"pw", deadline));
+        assert!(Instant::now() >= deadline);
         // Many entries of the user: the check stops at the deadline.
         let slow = bcrypt::hash_with_salt("pw", 10, [1; 16])
             .unwrap()

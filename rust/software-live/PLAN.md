@@ -600,10 +600,11 @@ request path or a policy value other than the host.
    password (APR's `$2a$` safety measure can compute another hash than the
    correct algorithm), and a cost above 16 (cost 17 takes longer than
    Python's 5 s `htpasswd` timeout on the hosts). That timeout becomes a
-   deadline: an entry of the user reached more than 5 s after the check
-   started fails it (401, as Python's `TimeoutExpired`), so a file with many
-   entries cannot keep a check going; the check runs on tokio's blocking
-   pool and never holds up other connections. `fixtures/htpasswd.json` records 89 cases
+   deadline: a check not finished 5 s after it started fails (401, as
+   Python's `TimeoutExpired`) — no hash starts after it and a hash ending
+   after it does not count, so neither a slow entry nor a file with many
+   entries passes late; the check runs on tokio's blocking pool and never
+   holds up other connections. `fixtures/htpasswd.json` records 89 cases
    (empty, 72+ byte, 255/256 byte, non-ASCII, `\r`, NUL, prefixes,
    non-canonical characters, long and broken lines, duplicates) with the
    real `htpasswd -vi` of `debian:13` and `ubuntu:24.04` (apache2-utils
