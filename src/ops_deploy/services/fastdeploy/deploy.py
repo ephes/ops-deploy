@@ -20,7 +20,7 @@ from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Annotated, ClassVar, Literal, Self
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
@@ -61,6 +61,10 @@ Url = Annotated[str, Field(pattern=r"^(https?|wss?)://[^\s'\"$`\\]+$")]
 Identifier = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]{0,62}$")]
 TokenUser = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,254}$")]
 Days = Annotated[int, Field(ge=1)]
+# FastDeploy's RestorePolicy (src/deploy/config.py). None of these allow a
+# quote: the JSON is rendered in single quotes.
+RestoreService = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")]
+RestorePrefix = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*/$")]
 # validate_service_token_settings.yml: ISO 8601 with a UTC offset; "T" or a space.
 _TIMESTAMP = (
     r"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[T ]([01][0-9]|2[0-3]):[0-5][0-9]"
@@ -71,6 +75,16 @@ NODESOURCE_KEYRING = "/etc/apt/keyrings/nodesource.gpg"
 NODESOURCE_URL = "https://deb.nodesource.com"
 # Written next to the build output after a build; holds the digest of its inputs.
 BUILD_STAMP = ".ops-deploy-build"
+
+
+class RestorePolicy(BaseModel):
+    """The bucket and key prefixes one FastDeploy service's Echoport restores may read."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    bucket: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$")]
+    # One runner service can serve several Echoport targets, each under its own prefix.
+    prefixes: tuple[RestorePrefix, ...] = Field(min_length=1)
 
 
 class FastdeployConfig(BaseServiceConfig):
@@ -133,6 +147,15 @@ class FastdeployConfig(BaseServiceConfig):
     legacy_service_tokens_accepted_until: Annotated[str, Field(pattern=rf"{_TIMESTAMP}|^$")] = ""
     service_token_max_expire_days: Days | None = None
     service_token_retention_days: Days | None = None
+    # SERVICE_TOKEN_ADMIN_USERS: who may issue service tokens through the API
+    # (also the web UI deploy button). With ``service_token_admin_initial_user``
+    # the initial user (a secret) comes first. Empty: not rendered, FastDeploy
+    # refuses API token issuance to everyone (403).
+    service_token_admin_users: tuple[TokenUser, ...] = ()
+    service_token_admin_initial_user: bool = False
+    # RESTORE_POLICIES, keyed by FastDeploy service name. Empty: not rendered,
+    # FastDeploy refuses every restore (422).
+    restore_policies: dict[RestoreService, RestorePolicy] = Field(default_factory=dict)
     # Temporary bridge for legacy service tokens: FastDeploy users without a usable password.
     legacy_token_users: tuple[TokenUser, ...] = ()
     create_initial_user: bool = True
@@ -206,9 +229,15 @@ class FastdeployConfig(BaseServiceConfig):
 
     @property
     def service_token_settings(self) -> bool:
-        return bool(self.legacy_service_tokens_accepted_until) or any(
-            days is not None for days in (self.service_token_max_expire_days, self.service_token_retention_days)
+        return (
+            bool(self.legacy_service_tokens_accepted_until)
+            or self.service_token_admins
+            or any(days is not None for days in (self.service_token_max_expire_days, self.service_token_retention_days))
         )
+
+    @property
+    def service_token_admins(self) -> bool:
+        return self.service_token_admin_initial_user or bool(self.service_token_admin_users)
 
     @property
     def build_env(self) -> dict[str, str]:
@@ -260,7 +289,25 @@ def traefik_config(cfg: FastdeployConfig, secrets: SecretValues) -> TraefikRoute
 def render_env(cfg: FastdeployConfig, secrets: SecretValues, *, shell: bool) -> SecretContent:
     """``.env`` (systemd ``EnvironmentFile`` and FastDeploy's settings) or, with ``shell``, ``.env.shell``."""
 
-    return SecretContent(render(TEMPLATE_PACKAGE, "fastdeploy.env.j2", cfg=cfg, secrets=secrets, shell=shell))
+    admins = [secrets["initial_user_name"]] if cfg.service_token_admin_initial_user else []
+    admins += cfg.service_token_admin_users
+    policies = {name: policy.model_dump(mode="json") for name, policy in cfg.restore_policies.items()}
+    return SecretContent(
+        render(
+            TEMPLATE_PACKAGE,
+            "fastdeploy.env.j2",
+            cfg=cfg,
+            secrets=secrets,
+            shell=shell,
+            # The role's to_json(sort_keys=True, separators=(',', ':')).
+            admin_users_json=_compact_json(admins) if admins else "",
+            restore_policies_json=_compact_json(policies) if policies else "",
+        )
+    )
+
+
+def _compact_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def frontend_digest(cfg: FastdeployConfig) -> str:

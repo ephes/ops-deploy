@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -461,6 +462,21 @@ def test_source_must_be_a_fastdeploy_checkout(tmp_path: Path) -> None:
         {"postgres_user": "Fast-Deploy"},
         {"postgres_host": "db.example.com"},
         {"postgres_port": 5433},
+        {"service_token_admin_users": ("it's",)},
+        {"service_token_admin_users": ("admin\n",)},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ()}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("archive",)}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("/archive/",)}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("../archive/",)}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("a//b/",)}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("it's/",)}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("archive/\n",)}}},
+        {"restore_policies": {"svc": {"bucket": "Backups", "prefixes": ("archive/",)}}},
+        {"restore_policies": {"svc": {"prefixes": ("archive/",)}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefix": "archive/"}}},
+        {"restore_policies": {"svc": {"bucket": "backups", "prefixes": ("archive/",), "extra": 1}}},
+        {"restore_policies": {"svc'": {"bucket": "backups", "prefixes": ("archive/",)}}},
+        {"restore_policies": {"-svc": {"bucket": "backups", "prefixes": ("archive/",)}}},
     ],
 )
 def test_role_validations(tmp_path: Path, overrides: dict[str, Any]) -> None:
@@ -501,3 +517,37 @@ def test_fastdeploy_owned_leftovers_below_the_services_root_go_to_root(
     services = "/home/fastdeploy/site/services"
     assert f"find {services} -mindepth 1 ! -user root -exec chown -h root {{}} +" in run.executed_commands
     assert f"find {services} -mindepth 1 -group fastdeploy -exec chgrp -h root {{}} +" in run.executed_commands
+
+
+def test_admins_and_restore_policies_reach_both_env_files_intact(tmp_path: Path) -> None:
+    cfg = FastdeployConfig(
+        source_path=make_source(tmp_path),
+        secrets=SecretRef("secrets/prod/fastdeploy.yml"),
+        service_token_admin_initial_user=True,
+        service_token_admin_users=("ops@example.com",),
+        restore_policies={"echoport-backup": {"bucket": "backups", "prefixes": ("archive/", "nyxmon/")}},
+    )
+    expected = {
+        "SERVICE_TOKEN_ADMIN_USERS": ["admin", "ops@example.com"],
+        "RESTORE_POLICIES": {"echoport-backup": {"bucket": "backups", "prefixes": ["archive/", "nyxmon/"]}},
+    }
+    env = render_env(cfg, values(cfg, initial_user_name="admin"), shell=False).reveal().decode()
+    # systemd EnvironmentFile and dotenv strip the single quotes and keep the rest literally.
+    plain = dict(line.split("=", 1) for line in env.splitlines() if line.startswith(tuple(expected)))
+    assert {key: json.loads(value.removeprefix("'").removesuffix("'")) for key, value in plain.items()} == expected
+    assert all(value.startswith("'") and value.endswith("'") for value in plain.values())
+
+    shell_env = tmp_path / ".env.shell"
+    shell_env.write_bytes(render_env(cfg, values(cfg, initial_user_name="admin"), shell=True).reveal())
+    script = 'set -a; . "$1"; printf "%s\\n%s" "$SERVICE_TOKEN_ADMIN_USERS" "$RESTORE_POLICIES"'
+    out = subprocess.run(["sh", "-c", script, "sh", str(shell_env)], capture_output=True, text=True, check=True)
+    admins, restore = out.stdout.split("\n")
+    assert {"SERVICE_TOKEN_ADMIN_USERS": json.loads(admins), "RESTORE_POLICIES": json.loads(restore)} == expected
+
+
+def test_admins_and_restore_policies_are_not_rendered_by_default(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    for shell in (False, True):
+        env = render_env(cfg, secrets, shell=shell).reveal().decode()
+        assert "SERVICE_TOKEN_ADMIN_USERS" not in env
+        assert "RESTORE_POLICIES" not in env
+        assert "# Restores" not in env
