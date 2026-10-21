@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Size cap on the shared layer raised from 1,500 to 1,650 code lines (owner
+  decision 2026-10-21), to make room for `helpers.rust_release`, which all
+  Rust ports share; the shared layer is at 1,633 code lines. See
+  [development](development.md#size-cap-on-the-shared-layer).
+
 - New helper `ops_deploy.helpers.rust_release` (`install_release`,
   `pin_release`, `prune_releases`), the pyinfra side of ops-library's
   `rust_release_binary` role (ops-library `rust/PLAN-foundation.md` 6.3,
