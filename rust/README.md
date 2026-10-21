@@ -26,7 +26,8 @@ rust/
   rust-toolchain.toml   pinned toolchain 1.99.1 (= MSRV, `rust-version`)
   deny.toml             cargo-deny policy for the whole workspace
   LICENSE               MIT, packed into every release archive
-  scripts/              stdlib Python helpers for CI and releases, with tests
+  scripts/              stdlib Python helpers for CI (ci_excludes.py) and releases
+                        (release_checks.py), with tests and testdata/
   metrics-httpd/        crate + binary `metrics-httpd`
   echoport-command-guard/  plan, Python oracle and fixtures; crate + binary from its S1
 ```
@@ -130,6 +131,113 @@ If GitHub retires the `ubuntu-22.04` image, the same steps run in a
 
 ## Releases
 
-Not yet: the release workflow (`rust-release.yml`, per-binary tags
-`<crate>-v<semver>`) and `scripts/release_checks.py` arrive with slice F2
-(PLAN-foundation.md section 4).
+`.github/workflows/rust-release.yml` builds and publishes one binary crate
+per tag (PLAN-foundation.md section 4). Nothing installs a release on a host
+by itself; the roles pin a version and its sha256 (section 6).
+
+### Cutting a release
+
+1. Bump `version` in `rust/<crate>/Cargo.toml` (each crate has its own),
+   update `Cargo.lock` (`cargo metadata --format-version 1 >/dev/null`), merge
+   to `main`.
+2. Tag that commit `<crate>-v<version>` (e.g. `metrics-httpd-v0.1.0`) and
+   push the tag. The workflow runs for the prefixes `metrics-httpd-v*`,
+   `echoport-command-guard-v*` and `software-live-v*`; a crate that is not
+   yet a workspace member fails in the first step.
+3. The GitHub release `<crate> <version>` appears at
+   `https://github.com/ephes/ops-library/releases/tag/<crate>-v<version>`
+   with the archive(s) and `.sha256` files; the job summary prints each
+   sha256 and the member sizes (the stripped binary). The release is never
+   marked "latest" (`--latest=false`); a semver pre-release version
+   (`0.2.0-rc.1`) becomes a GitHub pre-release.
+
+A dry run without tag or release: *Actions → Rust release → Run workflow*
+with a crate (or `gh workflow run rust-release.yml -f crate=metrics-httpd`);
+the archives are uploaded as workflow artifacts. Collection tags, if the
+collection ever gets any, are `v<semver>` or `<semver>` and never match a
+binary prefix.
+
+### What the workflow checks
+
+- `prepare` (ubuntu-22.04): `scripts/release_checks.py tag` resolves the
+  crate: the longest workspace member whose `<member>-v` prefixes the tag
+  (`software-live-v1.0.0` is `software-live`, never `software-live-apt`),
+  which must have a binary of its own name and exactly the tag's version
+  (semver without build metadata). Then `release_checks.py matrix` (below),
+  `cargo fmt --check`, clippy `-D warnings` and `cargo test` over the
+  workspace without the `[workspace.metadata.ci] exclude` members (as
+  `rust.yml`), and the `rust/scripts` tests. No cargo cache.
+- `build`, one job per variant: `cargo build --release --locked --target
+  x86_64-unknown-linux-gnu -p <member>...` with `<CRATE>_GIT_COMMIT` set to
+  the full commit for every built member's `build.rs`; then
+  `release_checks.py verify` runs for every binary of the variant the glibc
+  check (`objdump -T`/`-p`: no `GLIBC_*` symbol version above the binary's
+  ceiling, default 2.35, and no `NEEDED` library outside glibc, libgcc_s and
+  the binary's `extra_needed`) and the smoke test (`<binary> --version` must
+  print `<binary> <version> (<full commit>)`, then every `extra_smoke`
+  command must exit 0 with an empty environment in an empty directory).
+  `release_checks.py pack` writes the deterministic archive (exactly the
+  declared regular files at the archive root, binaries 0755, other files
+  0644, root-owned, the commit time as mtime, a gzip header without a name,
+  so a re-run on the same commit and image gives the same bytes) and its
+  `.sha256`; both are uploaded as a workflow artifact.
+- `publish` (tags only, the only job with `contents: write`): downloads the
+  artifacts, requires exactly the archives of the matrix, checks every
+  sha256 and creates the release with `gh release create --verify-tag`.
+
+### Archive names and `release.json`
+
+Without `rust/<crate>/release.json` a crate has one unnamed variant built on
+the `ubuntu-22.04` runner (glibc 2.35, runs on every Linux host):
+`<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` with `<crate>` and
+`LICENSE` (`rust/LICENSE`). A crate that needs more declares variants; each
+one becomes its own build job and archive
+`<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`:
+
+```json
+{
+  "variants": [
+    {
+      "name": "ubuntu24.04",
+      "image": "ubuntu:24.04",
+      "packages": ["libapt-pkg-dev", "g++"],
+      "build": ["software-live", "software-live-apt"],
+      "binaries": [
+        {"name": "software-live"},
+        {
+          "name": "software-live-apt",
+          "glibc_max": "2.39",
+          "extra_needed": ["libapt-pkg.so.6.0", "libstdc++.so.6"],
+          "extra_smoke": [["--help"]]
+        }
+      ],
+      "files": [
+        {"source": "rust/LICENSE", "name": "LICENSE"},
+        {"source": "rust/software-live-apt/LICENSE", "name": "LICENSE.GPL-3.0"}
+      ]
+    }
+  ]
+}
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `name` | none (allowed only for a single variant) | archive suffix, `[a-z0-9][a-z0-9._-]*`, unique |
+| `image` | the runner | container image (Debian/Ubuntu: the job installs `binutils ca-certificates curl gcc git libc6-dev python3`, rustup 1.29.1 sha256-checked, then the pinned toolchain) |
+| `packages` | `[]` | extra apt packages; only with `image` |
+| `build` | `[<crate>]` | workspace members to build (must include the crate); a CI-excluded member is allowed only with an `image` and is linted and tested inside it |
+| `binaries` | `[{"name": <crate>}]` | archive binaries (mode 0755), each a binary of a `build` member; must include `<crate>` |
+| `binaries[].glibc_max` | `"2.35"` | glibc ceiling of that binary |
+| `binaries[].extra_needed` | `[]` | sonames allowed in addition to glibc and libgcc_s |
+| `binaries[].extra_smoke` | `[]` | argument lists of extra smoke commands |
+| `files` | `[{"source": "rust/LICENSE", "name": "LICENSE"}]` | other archive members (mode 0644); `source` relative to the repository root, a regular file |
+
+Unknown keys, duplicate names and anything outside these rules fail the
+`matrix` step before anything is built. `scripts/test_release_checks.py`
+checks the defaults and a two-variant fixture
+(`scripts/testdata/release-two-variants.json`) and asserts that every
+releasable member of the committed workspace yields a valid matrix.
+
+`release_checks.py glibc-floor [--max 2.35] [--allow <soname>] <binary>` and
+`release_checks.py smoke --binary <path> --version <v> --commit <sha>
+[--extra '["--arg"]']` run the same checks by hand on a Linux build.

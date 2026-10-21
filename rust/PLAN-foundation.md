@@ -2,7 +2,10 @@
 
 Status: F1 implemented (workspace, toolchain, cargo-deny policy, LICENSE,
 `metrics-httpd` skeleton, `rust.yml` CI, `build_ignore` test, `just
-rust-check`/`rust-test`; see `rust/README.md`); F2–F4 planned. Campaign
+rust-check`/`rust-test`; see `rust/README.md`); F2 implemented
+(`rust-release.yml`, `rust/scripts/release_checks.py` with the
+`release.json` format and tests; `rust/README.md` "Releases"); F3–F4
+planned. Campaign
 "Rust-Ports Runde 2" (umbrella item `rust-ports-campaign`), stream
 `rust-metrics-httpd`, which also owns this foundation.
 
@@ -245,13 +248,28 @@ Rules:
   crate may declare named variants, each with a container image, extra
   build packages, the workspace members to build, the archive members
   (each with its source path, e.g. `rust/software-live-apt/LICENSE` →
-  `LICENSE-software-live-apt`), and a per-binary `NEEDED` allowlist and
-  glibc ceiling. The release job becomes a matrix over the variants of
-  the tagged crate. software-live uses this for `ubuntu24.04`
-  (`ubuntu:24.04`, `libapt-pkg.so.6.0`) and `debian13` (`debian:13`,
-  `libapt-pkg.so.7.0`); its plan (7.1, 7.4) owns the values. F2 ships the
-  format with tests for the default and a two-variant fixture; it adds no
-  real variant crate.
+  `LICENSE.GPL-3.0`, the name of software-live PLAN 7.2), and a
+  per-binary `NEEDED` allowlist and glibc ceiling. The release job becomes
+  a matrix over the variants of the tagged crate. software-live uses this
+  for `ubuntu24.04` (`ubuntu:24.04`, `libapt-pkg.so.6.0`) and `debian13`
+  (`debian:13`, `libapt-pkg.so.7.0`); its plan (7.1, 7.4) owns the values.
+  F2 ships the format with tests for the default and a two-variant fixture;
+  it adds no real variant crate.
+- As implemented in F2 (the keys and their defaults are in `rust/README.md`
+  "Archive names and `release.json`"): `release.json` has one key
+  `variants`; a variant has `name`, `image`, `packages`, `build`,
+  `binaries` (`name`, `glibc_max`, `extra_needed` = sonames allowed in
+  addition to glibc/libgcc_s, `extra_smoke` = argument lists) and `files`
+  (`source` relative to the repository root, `name`). The `matrix` step
+  validates it against `cargo metadata` before anything is built. Every
+  binary of a variant is built inside that variant's image and smoke-tested
+  with `<binary> --version` = `<binary> <version> (<commit>)`, each with its
+  own ceiling and allowlist. software-live PLAN 7.2 wants the *same*
+  `software-live` build (from the runner, glibc 2.35) in both variant
+  archives; that needs a cross-job artifact the F2 matrix does not have yet
+  — in F2 each variant builds its own `software-live` in its image, with
+  the 2.35 ceiling still enforced on it. Adding the shared runner build is
+  left to software-live S7 (its 7.4 last paragraph), in this workflow.
 - Archive: `<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` (with
   variants: `<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`;
   this name wins over any other spelling in a crate plan) holding
@@ -266,7 +284,10 @@ Rules:
   prefixes of each other — `software-live` vs `software-live-apt` —,
   version mismatch, glibc floor parse fixtures, per-binary `NEEDED`
   allowlists, `release.json` defaults and a two-variant fixture,
-  deterministic pack).
+  deterministic pack). Subcommands as implemented: `tag` (`--tag` or, for
+  `workflow_dispatch`, `--crate`), `matrix`, `glibc-floor`, `smoke`,
+  `verify` (glibc check + smoke for every binary of a matrix entry) and
+  `pack`.
 
 ## 5. Collection packaging
 
