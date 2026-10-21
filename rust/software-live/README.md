@@ -20,12 +20,12 @@ Slice S2 (crate skeleton):
   parser: options with every mode, in any order, `--opt=value`, unique
   prefixes, the last occurrence winning; usage errors exit 2.
   `--version` prints `software-live <version> (<commit>)`.
-- `collect` validates its policy, then stops with exit 1 until S3f;
-  `serve` stops with exit 1 until S4.
+- `collect` works from S3f on (see below); `serve` stops with exit 1
+  until S4.
 - Slice S3d: `src/apt.rs` runs the APT helper `software-live-apt`
   (`../software-live-apt`, GPL-3.0-or-later, built per distribution
   variant) next to the executable and takes its JSON result, or reports the
-  `unknown` object (PLAN.md 5.2); `collect` calls it from S3f on.
+  `unknown` object (PLAN.md 5.2); `collect` calls it (S3f).
 - Library parts for the next slices: policy validation and
   `policy_sha256` (`src/policy.rs`), Python-compatible JSON
   (`src/pyjson.rs`), release numbers (`src/version.rs`), report types,
@@ -43,7 +43,7 @@ Slice S3b (Traefik observation, `src/traefik.rs`):
   path, and the probe executes `/proc/self/fd/<fd>` with exactly that
   descriptor inherited (`System::run_inheriting`, no `unsafe`). The file
   identity must not change while it is hashed and probed.
-- `collect` does not call it yet (S3f).
+- `collect` calls it (S3f).
 
 Slice S3a (upstream lookups and caches):
 
@@ -59,10 +59,9 @@ Slice S3a (upstream lookups and caches):
   distribution bundle), no proxy, no bundled roots.
 - `atomic::write_json`: Python's `atomic_json` (mode 0640, optional group,
   `fsync`, rename; the old file stays on failure).
-- Nothing calls these yet: `collect` comes with S3f.
+- `collect` calls them (S3f).
 
-Slice S3c (OS and PostgreSQL observations, library only until `collect`
-is wired in S3f):
+Slice S3c (OS and PostgreSQL observations, called by `collect` since S3f):
 
 - `os::observe_os` with Python's os-release parser (`os::freedesktop_os_release`)
   and `postgresql::observe_postgresql` with `pg_lsclusters` parsing and the
@@ -92,6 +91,40 @@ Slice S3e (inventory export, `src/export.rs`):
   the `software_estate` reader accepts it (`fixtures/rust-export.json`,
   read by the Python test, see below).
 
+Slice S3f (`collect`, `src/collect.rs`, `src/usage.rs`):
+
+- `software-live collect --config P | --config-json J [--cache C]
+  [--output O [--group G]] [--report-usage]` works as the Python program
+  does: the policy is validated (exit 1 if invalid), then the steps run in
+  Python's order (the clock, the Traefik upstream if Traefik is expected,
+  Traefik, the OS lifecycle upstream, the OS, the PostgreSQL lifecycle
+  upstream if PostgreSQL is expected, PostgreSQL, APT through the helper)
+  and `generated_at_epoch` is the clock read after the last observation.
+  With `--output` the report is written atomically (mode 0640, group `G`
+  through the descriptor when `G` is given and not empty; the group is
+  looked up after the collection, an unknown group exits 1 and the previous
+  state stays, as does any failed write); without it the report with its
+  freshness is printed on stdout (the manual SSH mode). Exit 0 for every
+  valid report, also when software needs attention; nothing on stdout with
+  `--output`.
+- `--cache` and `--output` are taken as Python's `pathlib.Path` spells them;
+  a cache path without a name (`/`) stops `collect` with exit 1, as in
+  Python.
+- `--report-usage` (new, for the shadow units) adds one stderr line after
+  the run, also after a failed one:
+  `software-live: usage wall_s=… cpu_s=… maxrss_kib=… self_cpu_s=…
+  self_maxrss_kib=… children_cpu_s=… children_maxrss_kib=…` (`getrusage`
+  of the process and of its children; CPU is user plus system time; the
+  total peak is the sum of both peaks, the bound of PLAN.md 10's collector
+  peak). Other modes ignore the flag.
+- Tests: `collect::tests` replay Python's `collect` with every step patched
+  (`fixtures/report.json`, the order and the arguments of every step) and
+  end to end in recorded worlds (`fixtures/collect.json`: the Traefik, OS
+  and PostgreSQL worlds together, the upstream answers, the APT helper; the
+  call log of every host access), and the state write on a real file
+  system. `tests/cli.rs` runs no successful `collect`: it would read the
+  host and ask GitHub and endoflife.date.
+
 ## Layout
 
 ```text
@@ -114,6 +147,8 @@ software-live/
   src/atomic.rs               atomic_json
   src/apt.rs                  the APT observation through the helper software-live-apt
   src/export.rs               inventory_projection, export_inventory
+  src/collect.rs              collect: the steps in Python's order, the state write, the manual output
+  src/usage.rs                the --report-usage line (getrusage)
   tests/cli.rs                the binary against the Python program's exit codes
   tests/traefik_host.rs       Linux only: real processes and pinned descriptors
   fixtures/generate.py        writes fixtures/*.json from the Python program

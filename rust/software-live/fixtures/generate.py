@@ -524,6 +524,7 @@ def summary_cases() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
             "postgresql": {"expected": False, "observed": True, "present": True, "status": "warning",
                            "issues": ["unexpected_cluster"], "clusters": [{"major": "16"}]},
             "apt": APT_OK}),
+        ("apt_max_age_from_policy", {**BASE, "apt_max_age_seconds": 3600}, all_ok),
         ("everything_unknown", BASE, {
             name: {"observed": False, "status": "unknown", "issues": [], "error": "OSError: x"}
             for name in ("traefik", "os", "postgresql")} | {"apt": APT_UNKNOWN}),
@@ -531,27 +532,45 @@ def summary_cases() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
     return cases
 
 
-def run_collect(policy: dict[str, Any], observations: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+COLLECT_CACHE = "/var/lib/software-live/upstream.json"
+
+
+def call_text(name: str, args: tuple[Any, ...]) -> str:
+    """A step call as ``collect::tests`` logs it: the name and every argument
+    as ``json.dumps(arg, sort_keys=True)`` (a path as its text)."""
+    rendered = (json.dumps(str(a) if isinstance(a, Path) else a, sort_keys=True) for a in args)
+    return f"{name}({', '.join(rendered)})"
+
+
+def run_collect(policy: dict[str, Any], observations: dict[str, Any],
+                cache: str | None) -> tuple[dict[str, Any], list[str]]:
+    """``collect(policy, cache)`` with every step patched: the report and the
+    steps in the order Python called them, with their arguments (PLAN.md
+    3.3: the order, the time read before and after the observations)."""
     calls: list[str] = []
 
-    def record(name: str, value: Any) -> Callable[..., Any]:
-        def answer(*args: Any) -> Any:
-            calls.append(name + "".join(f":{a}" for a in args if isinstance(a, str)))
-            return json.loads(json.dumps(value))
-        return answer
+    def record(name: str, answer: Callable[..., Any]) -> Callable[..., Any]:
+        def step(*args: Any) -> Any:
+            calls.append(call_text(name, args))
+            return json.loads(json.dumps(answer(*args)))
+        return step
 
+    fixed = lambda value: lambda *args: value
     times = iter([1_760_000_000.25, 1_760_000_042.75])
     with (
-        mock.patch.object(live, "upstream", side_effect=record("upstream", {"status": "ok", "version": "3.7.9"})),
-        mock.patch.object(live, "lifecycle_upstream", side_effect=record("lifecycle_upstream", {"status": "ok"})),
-        mock.patch.object(live, "observe_traefik", side_effect=record("observe_traefik", observations["traefik"])),
-        mock.patch.object(live, "observe_os", side_effect=record("observe_os", observations["os"])),
+        mock.patch.object(live, "upstream", side_effect=record(
+            "upstream", fixed({"status": "ok", "version": "3.7.9", "cached": True}))),
+        mock.patch.object(live, "lifecycle_upstream", side_effect=record(
+            "lifecycle_upstream", lambda product, *rest: {"status": "ok", "product": product})),
+        mock.patch.object(live, "observe_traefik", side_effect=record(
+            "observe_traefik", fixed(observations["traefik"]))),
+        mock.patch.object(live, "observe_os", side_effect=record("observe_os", fixed(observations["os"]))),
         mock.patch.object(live, "observe_postgresql",
-                          side_effect=record("observe_postgresql", observations["postgresql"])),
-        mock.patch.object(live, "observe_apt", side_effect=record("observe_apt", observations["apt"])),
+                          side_effect=record("observe_postgresql", fixed(observations["postgresql"]))),
+        mock.patch.object(live, "observe_apt", side_effect=record("observe_apt", fixed(observations["apt"]))),
         mock.patch.object(live.time, "time", side_effect=lambda: (calls.append("time"), next(times))[1]),
     ):
-        return live.collect(json.loads(json.dumps(policy))), calls
+        return live.collect(json.loads(json.dumps(policy)), None if cache is None else Path(cache)), calls
 
 
 FRESH_SUMMARY = {key: True for key in (
@@ -602,11 +621,13 @@ def freshness_cases() -> list[tuple[str, str, float]]:
 
 def gen_report() -> dict[str, Any]:
     summary = []
-    for case_id, policy, observations in summary_cases():
-        report, calls = run_collect(policy, observations)
+    for index, (case_id, policy, observations) in enumerate(summary_cases()):
+        cache = COLLECT_CACHE if index % 2 else None
+        report, calls = run_collect(policy, observations, cache)
         summary.append({
             "id": case_id,
             "policy": json.dumps(policy),
+            "cache": cache,
             "observations": observations,
             "generated_at_epoch": report["generated_at_epoch"],
             "report_keys": sorted(report),
@@ -2950,6 +2971,161 @@ def gen_upstream() -> dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------------ collect
+#
+# `collect(policy, cache)` end to end (PLAN.md 3.3, slice S3f): the worlds of
+# the Traefik, OS and PostgreSQL fixtures put together, the upstream answers
+# through a patched `urlopen`, the clock through a patched `time.time`. Python
+# observes APT with python-apt, the Rust collector through its helper
+# (PLAN.md 5.2): `observe_apt` is patched to return the helper's result, and
+# the case adds the helper's link, `lstat` and run to the Rust world and to
+# the call log at that point. The call log is the one `FakeSystem` keeps, so
+# the Rust test compares the order of every host access, not only results.
+
+COLLECT_TIMES = [1_789_344_000.25, 1_789_344_003.5]
+APT_EXE = "/usr/local/lib/software-live/releases/0.1.0/software-live"
+APT_HELPER = "/usr/local/lib/software-live/releases/0.1.0/software-live-apt"
+COLLECT_APT = {
+    "status": "ok",
+    "pending_security_count": 1,
+    "pending_security_updates": [
+        {"package": "openssl:amd64", "installed": "3.0.13-0ubuntu3.5", "security_version": "3.0.13-0ubuntu3.6",
+         "candidate": "3.0.13-0ubuntu3.6", "held": False},
+    ],
+    "indexes_fresh": True,
+    "oldest_security_index_age_seconds": 7200.5,
+    "index_age_limit_seconds": 172800,
+    "index_source": "cached security InRelease publication mtimes; no refresh performed",
+}
+
+
+def merge_worlds(*worlds: dict[str, Any]) -> dict[str, Any]:
+    """One world from several: commands in order, every other key once."""
+    out: dict[str, Any] = {}
+    for world in worlds:
+        for kind, value in world.items():
+            if kind == "commands":
+                out.setdefault(kind, []).extend(copy.deepcopy(value))
+                continue
+            target = out.setdefault(kind, {})
+            for key, answer in value.items():
+                assert key not in target, (kind, key)
+                target[key] = copy.deepcopy(answer)
+    return out
+
+
+def endoflife(product: str) -> str:
+    return live.LIFECYCLE_URL.format(product=product)
+
+
+def collect_cases() -> list[dict[str, Any]]:
+    """(id, policy, world, responses by URL, APT result, cache)."""
+    not_expected = {**BASE, "traefik": {**BASE["traefik"], "expected": False},
+                    "postgresql": {"expected": False}}
+    debian = {**not_expected, "os": DEBIAN_POLICY, "apt_max_age_seconds": 3600}
+    all_expected_world = merge_worlds(attempt(Builder()).build(), os_world(UBUNTU_RELEASE), observed_world())
+    absent_world = merge_worlds(Builder().pid("0").build(), os_world(DEBIAN_13),
+                                {"commands": [lsclusters(error="ENOENT")]})
+    release_body = {"body": json.dumps({"tag_name": "v3.7.9", "draft": False, "prerelease": False})}
+    all_answers = {
+        GITHUB_URL: release_body,
+        endoflife("ubuntu"): lifecycle_body(UBUNTU_CYCLES),
+        endoflife("postgresql"): lifecycle_body(PG_CYCLES),
+    }
+    return [
+        {"id": "all_expected", "policy": BASE, "world": all_expected_world, "http": all_answers,
+         "apt": COLLECT_APT},
+        # tests/test_software_live.py
+        # test_upstream_failure_warns_without_claiming_local_collection_failed, end to end
+        {"id": "upstream_unavailable", "policy": BASE, "world": all_expected_world,
+         "http": {GITHUB_URL: {"error": "URLError"}, endoflife("ubuntu"): {"error": "TimeoutError"},
+                  endoflife("postgresql"): {"error": "HTTPError"}},
+         "apt": COLLECT_APT},
+        # An observation that fails keeps its fields; the report is still written.
+        {"id": "traefik_probe_fails", "policy": {**BASE, "postgresql": {"expected": False}},
+         "world": merge_worlds(Builder().pid("", exit=1).build(), os_world(UBUNTU_RELEASE),
+                               {"commands": [lsclusters(error="ENOENT")]}),
+         "http": {GITHUB_URL: release_body, endoflife("ubuntu"): lifecycle_body(UBUNTU_CYCLES)},
+         "apt": COLLECT_APT},
+        {"id": "nothing_expected", "policy": debian, "world": absent_world,
+         "http": {endoflife("debian"): lifecycle_body(DEBIAN_CYCLES)},
+         "apt": {**COLLECT_APT, "pending_security_count": 0, "pending_security_updates": [],
+                 "index_age_limit_seconds": 3600}},
+        {"id": "apt_unknown", "policy": debian, "world": absent_world,
+         "http": {endoflife("debian"): lifecycle_body(DEBIAN_CYCLES)},
+         "apt": {"status": "unknown", "error": "APT observation failed (CacheOpen)", "indexes_fresh": False,
+                 "pending_security_count": None}},
+        # A cache path without a name: `cache_variant` raises outside the
+        # lookup's boundary, so `collect` stops before the OS observation.
+        {"id": "cache_without_name", "policy": not_expected, "world": Builder().pid("0").build(),
+         "http": {}, "apt": COLLECT_APT, "cache": "/"},
+    ]
+
+
+def run_collect_case(case: dict[str, Any]) -> dict[str, Any]:
+    policy = case["policy"]
+    world = copy.deepcopy(case["world"])
+    host = TextHost(world)
+    http: list[dict[str, Any]] = []
+    rust_world = copy.deepcopy(world)
+
+    def urlopen(request: Any, timeout: Any = None) -> FakeResponse:
+        host.calls.append(f"http_get {request.full_url}")
+        spec = case["http"][request.full_url]
+        http.append({"url": request.full_url,
+                     "headers": {key.lower(): value for key, value in request.header_items()},
+                     "timeout": timeout, **spec})
+        if "error" in spec:
+            raise transport_error(spec["error"])
+        return FakeResponse(response_bytes(spec))
+
+    def observe_apt(max_age: int, now: float) -> dict[str, Any]:
+        argv = [APT_HELPER, "observe", "--max-age", str(max_age), "--now", repr(now)]
+        host.calls.extend(["readlink /proc/self/exe", f"lstat {APT_HELPER}", "run " + " ".join(argv)])
+        for kind, key, answer in (("readlink", "/proc/self/exe", ok(APT_EXE)),
+                                  ("lstat", APT_HELPER, ok({"mode": 0o100755}))):
+            assert key not in rust_world.get(kind, {}), (kind, key)
+            rust_world.setdefault(kind, {})[key] = [answer]
+        rust_world.setdefault("commands", []).append({"argv": argv, "stdout": json.dumps(case["apt"])})
+        return copy.deepcopy(case["apt"])
+
+    def clock() -> float:
+        host.calls.append("now")
+        return times.pop(0)
+
+    times = list(COLLECT_TIMES)
+    out: dict[str, Any] = {"id": case["id"], "policy": json.dumps(policy), "cache": case.get("cache")}
+    cache = None if case.get("cache") is None else Path(case["cache"])
+    with (
+        host.patched(),
+        mock.patch.object(live.urllib.request, "urlopen", side_effect=urlopen),
+        mock.patch.object(live, "observe_apt", side_effect=observe_apt),
+        mock.patch.object(live.time, "time", side_effect=clock),
+    ):
+        try:
+            report = live.collect(copy.deepcopy(policy), cache)
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            out["error"] = error(exc)
+        else:
+            errors = {}
+            for name in ("traefik", "os", "postgresql"):
+                text = report[name].pop("error", None)
+                if text is not None:
+                    errors[name] = split_error(text)
+            out["report"] = json.dumps(report, sort_keys=True)
+            out["errors"] = errors
+    assert len(http) == len(case["http"]), (case["id"], http)
+    rust_world["now"] = list(COLLECT_TIMES)
+    rust_world["http"] = http
+    out["world"] = rust_world
+    out["calls"] = host.calls
+    return out
+
+
+def gen_collect() -> list[dict[str, Any]]:
+    return [run_collect_case(case) for case in collect_cases()]
+
+
 # ------------------------------------------------------------------ driver
 
 GENERATORS: dict[str, Callable[[], Any]] = {
@@ -2965,6 +3141,7 @@ GENERATORS: dict[str, Callable[[], Any]] = {
     "os.json": gen_os,
     "postgresql.json": gen_postgresql,
     "export.json": gen_export,
+    "collect.json": gen_collect,
 }
 
 

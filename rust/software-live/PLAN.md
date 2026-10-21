@@ -9,7 +9,8 @@ evaluation, `src/os.rs`, `src/postgresql.rs`, `src/lifecycle.rs`); S3d
 implemented (helper `software-live-apt`, its invocation `apt.rs`, the
 variant container CI job, the `rust-apt` isolation check; see
 `../software-live-apt/README.md`); S3e implemented (`export-inventory`,
-`src/export.rs`); S1 spike done, report in section 13;
+`src/export.rs`); S3f implemented (`collect`, `src/collect.rs`,
+`--report-usage` in `src/usage.rs`); S1 spike done, report in section 13;
 the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -201,7 +202,14 @@ the Python program. New and only
 additive: `--version` (prints `software-live <version> (<commit>)`), and
 `collect --report-usage` (one stderr line with wall time, CPU time and
 `maxrss` of self plus children; used only by the shadow units, section
-6.2).
+6.2). The line (S3f) is `software-live: usage wall_s=<s> cpu_s=<s>
+maxrss_kib=<KiB> self_cpu_s=<s> self_maxrss_kib=<KiB> children_cpu_s=<s>
+children_maxrss_kib=<KiB>` from `getrusage(RUSAGE_SELF)` and
+`getrusage(RUSAGE_CHILDREN)`: CPU is user plus system time, `cpu_s` and
+`maxrss_kib` are the sums of self and children (the children's peak is the
+largest child's). It is printed after the run, also after a failed one;
+other modes accept the flag and ignore it, as every option is accepted
+with every mode.
 
 ### 3.2 Policy and validation (P1, `validate_policy`, `:607-641`)
 
@@ -582,7 +590,8 @@ request path or a policy value other than the host.
    `HTTP/1.1` with `Connection: close`, `Date`, and no `Server` banner.
    Non-GET methods give 501 with `{"error": "unsupported_method"}` (Python:
    501 with an HTML body). Malformed request lines give 400 (Python: 400 HTML).
-3. **JSON formatting.** State, caches, projection and responses use compact
+3. **JSON formatting.** State, caches, projection, responses and the
+   stdout of `collect` without `--output` use compact
    separators (Python: `", "`, `": "`). Keys stay sorted. Files are
    ASCII-only (`\uXXXX` escapes, as Python's `ensure_ascii`), so a Python
    reader decodes them in any locale. Floats use the
@@ -706,7 +715,10 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   src/lifecycle.rs             lifecycle_ended/_cycle/_evidence, the UTC date of `now` (S3c)
   src/traefik.rs  src/os.rs  src/postgresql.rs  src/apt.rs (helper invocation)
   src/export.rs                inventory projection + safe source read
-  src/atomic.rs                atomic JSON write with group (S3a: caches; S3e: the projection)
+  src/atomic.rs                atomic JSON write with group (S3a: caches; S3e: the projection; S3f: the state)
+  src/collect.rs               collect: the steps in order (a `Steps` trait the tests replace),
+                               the state write, the manual stdout output (S3f)
+  src/usage.rs                 the `--report-usage` line (`getrusage`, S3f)
   src/serve.rs                 endpoint (hyper behind an `Endpoint` boundary, 5.4)
   fixtures/generate.py         fixture generator (imports the Python oracle)
   fixtures/*.json
@@ -768,8 +780,8 @@ length, the list sorted by `package`, `index_age_limit_seconds` equal to
 own executable (`/proc/self/exe` directory, also when the link carries the
 suffix `(deleted)` after a space) and refuses to run it unless `lstat` shows a regular
 file (not a symbolic link) owned by root and not group/world-writable.
-`software-live/src/apt.rs` (`apt::observe_apt`) implements this side; S3f
-calls it from `collect` with the policy's `apt_max_age_seconds` and the
+`software-live/src/apt.rs` (`apt::observe_apt`) implements this side;
+`collect` (S3f) calls it with the policy's `apt_max_age_seconds` and the
 `now` read at the start of `collect`.
 
 Cache files, holds and names (verified by S1, section 13): python-apt's
@@ -825,6 +837,7 @@ separate helper (section 12); the alternative is not built.
 | fd and stat details | `rustix` (`fcntl_setfd`, `fstat`, `fchown`, `fchmod`, `O_NOFOLLOW`) | |
 | atomic file | `tempfile` (`Builder::prefix(".software-live-")`, `persist`) | plus `fsync`; mode and group through the descriptor (`std`) |
 | users/groups | `nix::unistd::Group::from_name` (`user` feature; chosen in S3e, already in the workspace) | `grp.getgrnam` |
+| resource usage | `nix::sys::resource::getrusage` (`resource` feature, S3f) | `--report-usage` |
 | os-release | own 30-line parser (`os.rs`) with fixtures from `platform._parse_os_release` | decided in S3c: neither crate follows Python's rule — `etc-os-release` 0.1.1 strips an unmatched opening quote and undoes every backslash escape, `os-release` 0.1.0 (unmaintained since 2018) trims lines and reads known keys only — which would change `id`, `cycle`, `codename` or `pretty_name` |
 | regex | `regex` | the patterns of 3.3 |
 | dates | `chrono` (date only, UTC; no default features) | `lifecycle_date` since S3a; the UTC date of `now` and its comparisons (S3c) |

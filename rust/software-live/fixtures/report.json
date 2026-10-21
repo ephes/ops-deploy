@@ -276,15 +276,16 @@
  ],
  "summary": [
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -349,15 +350,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -424,15 +426,16 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -498,15 +501,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -572,15 +576,16 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -643,15 +648,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -718,15 +724,16 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -793,15 +800,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -863,15 +871,16 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -940,15 +949,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1013,15 +1023,16 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1086,15 +1097,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1159,15 +1171,16 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1232,15 +1245,16 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1305,13 +1319,14 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "observe_postgresql",
-    "observe_apt",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": false, \"unit\": \"traefik.service\"}, {\"status\": \"not_applicable\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_postgresql({\"expected\": false}, {\"status\": \"not_applicable\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1372,13 +1387,14 @@
    }
   },
   {
+   "cache": "/var/lib/software-live/upstream.json",
    "calls": [
     "time",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "observe_postgresql",
-    "observe_apt",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": false, \"unit\": \"traefik.service\"}, {\"status\": \"not_applicable\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_postgresql({\"expected\": false}, {\"status\": \"not_applicable\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,
@@ -1449,15 +1465,90 @@
    }
   },
   {
+   "cache": null,
    "calls": [
     "time",
-    "upstream",
-    "observe_traefik",
-    "lifecycle_upstream:ubuntu",
-    "observe_os",
-    "lifecycle_upstream:postgresql",
-    "observe_postgresql",
-    "observe_apt",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(3600, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_max_age_from_policy",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3600}",
+   "policy_sha256": "274a9a3bd0be8660cd67ba69a05868270ec9d47b3fd776c7e151f6d5e20eab1b",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
     "time"
    ],
    "generated_at_epoch": 1760000042.75,

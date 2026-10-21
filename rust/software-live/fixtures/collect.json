@@ -1,0 +1,919 @@
+[
+ {
+  "cache": null,
+  "calls": [
+   "now",
+   "http_get https://api.github.com/repos/traefik/traefik/releases/latest",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "stat /usr/local/bin/traefik",
+   "readlink /proc/11/exe",
+   "realpath /usr/local/bin/traefik",
+   "realpath /usr/local/bin/traefik",
+   "open /usr/local/bin/traefik",
+   "fstat 3",
+   "sha256 3",
+   "run /usr/local/bin/traefik version",
+   "fstat 3",
+   "stat /usr/local/bin/traefik",
+   "open /proc/11/exe",
+   "readlink /proc/self/fd/4",
+   "realpath /usr/local/bin/traefik",
+   "fstat 4",
+   "sha256 4",
+   "run /proc/self/fd/4 version pass_fds=4",
+   "fstat 4",
+   "stat /proc/11/exe",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "readlink /proc/11/exe",
+   "http_get https://endoflife.date/api/ubuntu.json",
+   "read_file /etc/os-release",
+   "http_get https://endoflife.date/api/postgresql.json",
+   "run /usr/bin/pg_lsclusters --no-header",
+   "read_head /var/run/postgresql/17-main.pid",
+   "open /proc/4242/exe",
+   "readlink /proc/self/fd/7",
+   "realpath /usr/lib/postgresql/17/bin/postgres",
+   "fstat 7",
+   "run /proc/self/fd/7 --version pass_fds=7",
+   "fstat 7",
+   "stat /proc/4242/exe",
+   "read_head /var/run/postgresql/17-main.pid",
+   "readlink /proc/self/exe",
+   "lstat /usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+   "run /usr/local/lib/software-live/releases/0.1.0/software-live-apt observe --max-age 172800 --now 1789344000.25",
+   "now"
+  ],
+  "errors": {},
+  "id": "all_expected",
+  "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+  "report": "{\"apt\": {\"index_age_limit_seconds\": 172800, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\", \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"pending_security_count\": 1, \"pending_security_updates\": [{\"candidate\": \"3.0.13-0ubuntu3.6\", \"held\": false, \"installed\": \"3.0.13-0ubuntu3.5\", \"package\": \"openssl:amd64\", \"security_version\": \"3.0.13-0ubuntu3.6\"}], \"status\": \"ok\"}, \"generated_at_epoch\": 1789344003.5, \"host\": \"example\", \"os\": {\"codename\": \"noble\", \"cycle\": \"24.04\", \"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"id\": \"ubuntu\", \"issues\": [], \"lifecycle\": {\"eol\": \"2029-05-31\", \"latest_release\": \"24.04.5\", \"newest_cycle\": \"25.10\", \"support_end\": \"2029-05-31\"}, \"observed\": true, \"pretty_name\": \"Ubuntu 24.04.5 LTS\", \"status\": \"ok\", \"upstream\": {\"cached\": false, \"checked_at_epoch\": 1789344000.25, \"product\": \"ubuntu\", \"status\": \"ok\"}}, \"policy_sha256\": \"a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c\", \"postgresql\": {\"cluster\": {\"major\": \"17\", \"name\": \"main\", \"owner\": \"postgres\", \"port\": 5432, \"status\": \"online\"}, \"clusters\": [{\"major\": \"17\", \"name\": \"main\", \"owner\": \"postgres\", \"port\": 5432, \"status\": \"online\"}], \"desired_major\": \"17\", \"expected\": true, \"issues\": [], \"lifecycle\": {\"eol\": \"2029-11-08\", \"latest_minor\": \"17.6\", \"newest_major\": \"18\"}, \"major\": \"17\", \"observed\": true, \"server_version\": \"17.6\", \"status\": \"ok\", \"upstream\": {\"cached\": false, \"checked_at_epoch\": 1789344000.25, \"product\": \"postgresql\", \"status\": \"ok\"}}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": false, \"traefik_ok\": true}, \"traefik\": {\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"installed\": {\"sha256\": \"98a8cf32aaf5a0813bb7e80a2ac8728d2c79f710fc1264c00cff2cca32ab0d3c\", \"version\": \"3.7.9\"}, \"issues\": [], \"main_pid\": 11, \"observed\": true, \"running\": {\"sha256\": \"98a8cf32aaf5a0813bb7e80a2ac8728d2c79f710fc1264c00cff2cca32ab0d3c\", \"version\": \"3.7.9\"}, \"running_path\": \"/usr/local/bin/traefik\", \"status\": \"ok\", \"upstream\": {\"cached\": false, \"checked_at_epoch\": 1789344000.25, \"status\": \"ok\", \"version\": \"3.7.9\"}}}",
+  "world": {
+   "commands": [
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "11"
+    },
+    {
+     "argv": [
+      "/usr/local/bin/traefik",
+      "version"
+     ],
+     "stdout": "Version: 3.7.9"
+    },
+    {
+     "argv": [
+      "/proc/self/fd/4",
+      "version"
+     ],
+     "pass_fds": [
+      4
+     ],
+     "stdout": "Version: 3.7.9"
+    },
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "11"
+    },
+    {
+     "argv": [
+      "/usr/bin/pg_lsclusters",
+      "--no-header"
+     ],
+     "stdout": "17  main    5432 online postgres /var/lib/postgresql/17/main /var/log/postgresql/postgresql-17-main.log"
+    },
+    {
+     "argv": [
+      "/proc/self/fd/7",
+      "--version"
+     ],
+     "pass_fds": [
+      7
+     ],
+     "stdout": "postgres (PostgreSQL) 17.6 (Ubuntu 17.6-1.pgdg24.04+1)\n"
+    },
+    {
+     "argv": [
+      "/usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+      "observe",
+      "--max-age",
+      "172800",
+      "--now",
+      "1789344000.25"
+     ],
+     "stdout": "{\"status\": \"ok\", \"pending_security_count\": 1, \"pending_security_updates\": [{\"package\": \"openssl:amd64\", \"installed\": \"3.0.13-0ubuntu3.5\", \"security_version\": \"3.0.13-0ubuntu3.6\", \"candidate\": \"3.0.13-0ubuntu3.6\", \"held\": false}], \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"index_age_limit_seconds\": 172800, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\"}"
+    }
+   ],
+   "files": {
+    "/etc/os-release": {
+     "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+    },
+    "/var/run/postgresql/17-main.pid": {
+     "ok": "4242\n/var/lib/postgresql/17/main\n1760000000\n5432\n/var/run/postgresql\n*\n  1234567 0\nready\n"
+    }
+   },
+   "http": [
+    {
+     "body": "{\"tag_name\": \"v3.7.9\", \"draft\": false, \"prerelease\": false}",
+     "headers": {
+      "accept": "application/vnd.github+json",
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+    },
+    {
+     "body": "[{\"cycle\": \"25.10\", \"lts\": false, \"releaseDate\": \"2025-10-09\", \"support\": \"2026-07-09\", \"eol\": \"2026-07-09\", \"latest\": \"25.10\"}, {\"cycle\": \"24.04\", \"lts\": true, \"releaseDate\": \"2024-04-25\", \"support\": \"2029-05-31\", \"eol\": \"2029-05-31\", \"extendedSupport\": \"2036-04-25\", \"latest\": \"24.04.5\"}]",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/ubuntu.json"
+    },
+    {
+     "body": "[{\"cycle\": \"18\", \"latest\": \"18.1\", \"eol\": \"2030-11-14\", \"releaseDate\": \"2025-09-25\"}, {\"cycle\": \"17\", \"latest\": \"17.6\", \"eol\": \"2029-11-08\", \"releaseDate\": \"2024-09-26\"}, {\"cycle\": \"16\", \"latest\": \"16.10\", \"eol\": \"2028-11-09\"}]",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/postgresql.json"
+    }
+   ],
+   "lstat": {
+    "/usr/local/lib/software-live/releases/0.1.0/software-live-apt": [
+     {
+      "ok": {
+       "mode": 33261
+      }
+     }
+    ]
+   },
+   "now": [
+    1789344000.25,
+    1789344003.5
+   ],
+   "open": {
+    "/proc/11/exe": [
+     {
+      "ok": {
+       "data": "traefik 3.7.9 bytes",
+       "fd": 4,
+       "fstat": [
+        {
+         "ok": {
+          "ctime_ns": 1760000000123456789,
+          "dev": 2049,
+          "ino": 101,
+          "mode": 33261,
+          "mtime_ns": 1760000000123456789,
+          "size": 19
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "/proc/4242/exe": [
+     {
+      "ok": {
+       "data": "",
+       "fd": 7,
+       "fstat": [
+        {
+         "ok": {
+          "ctime_ns": 1760000001000000000,
+          "dev": 2049,
+          "ino": 1311,
+          "mode": 33261,
+          "mtime_ns": 1760000000123456789,
+          "size": 9876543
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "/usr/local/bin/traefik": [
+     {
+      "ok": {
+       "data": "traefik 3.7.9 bytes",
+       "fd": 3,
+       "fstat": [
+        {
+         "ok": {
+          "ctime_ns": 1760000000123456789,
+          "dev": 2049,
+          "ino": 101,
+          "mode": 33261,
+          "mtime_ns": 1760000000123456789,
+          "size": 19
+         }
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "readlink": {
+    "/proc/11/exe": [
+     {
+      "ok": "/usr/local/bin/traefik"
+     },
+     {
+      "ok": "/usr/local/bin/traefik"
+     }
+    ],
+    "/proc/self/exe": [
+     {
+      "ok": "/usr/local/lib/software-live/releases/0.1.0/software-live"
+     }
+    ],
+    "/proc/self/fd/4": [
+     {
+      "ok": "/usr/local/bin/traefik"
+     }
+    ],
+    "/proc/self/fd/7": [
+     {
+      "ok": "/usr/lib/postgresql/17/bin/postgres"
+     }
+    ]
+   },
+   "stat": {
+    "/proc/11/exe": [
+     {
+      "ok": {
+       "ctime_ns": 1760000000123456789,
+       "dev": 2049,
+       "ino": 101,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 19
+      }
+     }
+    ],
+    "/proc/4242/exe": [
+     {
+      "ok": {
+       "ctime_ns": 1760000001000000000,
+       "dev": 2049,
+       "ino": 1311,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 9876543
+      }
+     }
+    ],
+    "/usr/local/bin/traefik": [
+     {
+      "ok": {
+       "ctime_ns": 1760000000123456789,
+       "dev": 2049,
+       "ino": 101,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 19
+      }
+     },
+     {
+      "ok": {
+       "ctime_ns": 1760000000123456789,
+       "dev": 2049,
+       "ino": 101,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 19
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "cache": null,
+  "calls": [
+   "now",
+   "http_get https://api.github.com/repos/traefik/traefik/releases/latest",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "stat /usr/local/bin/traefik",
+   "readlink /proc/11/exe",
+   "realpath /usr/local/bin/traefik",
+   "realpath /usr/local/bin/traefik",
+   "open /usr/local/bin/traefik",
+   "fstat 3",
+   "sha256 3",
+   "run /usr/local/bin/traefik version",
+   "fstat 3",
+   "stat /usr/local/bin/traefik",
+   "open /proc/11/exe",
+   "readlink /proc/self/fd/4",
+   "realpath /usr/local/bin/traefik",
+   "fstat 4",
+   "sha256 4",
+   "run /proc/self/fd/4 version pass_fds=4",
+   "fstat 4",
+   "stat /proc/11/exe",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "readlink /proc/11/exe",
+   "http_get https://endoflife.date/api/ubuntu.json",
+   "read_file /etc/os-release",
+   "http_get https://endoflife.date/api/postgresql.json",
+   "run /usr/bin/pg_lsclusters --no-header",
+   "read_head /var/run/postgresql/17-main.pid",
+   "open /proc/4242/exe",
+   "readlink /proc/self/fd/7",
+   "realpath /usr/lib/postgresql/17/bin/postgres",
+   "fstat 7",
+   "run /proc/self/fd/7 --version pass_fds=7",
+   "fstat 7",
+   "stat /proc/4242/exe",
+   "read_head /var/run/postgresql/17-main.pid",
+   "readlink /proc/self/exe",
+   "lstat /usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+   "run /usr/local/lib/software-live/releases/0.1.0/software-live-apt observe --max-age 172800 --now 1789344000.25",
+   "now"
+  ],
+  "errors": {},
+  "id": "upstream_unavailable",
+  "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+  "report": "{\"apt\": {\"index_age_limit_seconds\": 172800, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\", \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"pending_security_count\": 1, \"pending_security_updates\": [{\"candidate\": \"3.0.13-0ubuntu3.6\", \"held\": false, \"installed\": \"3.0.13-0ubuntu3.5\", \"package\": \"openssl:amd64\", \"security_version\": \"3.0.13-0ubuntu3.6\"}], \"status\": \"ok\"}, \"generated_at_epoch\": 1789344003.5, \"host\": \"example\", \"os\": {\"codename\": \"noble\", \"cycle\": \"24.04\", \"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"id\": \"ubuntu\", \"issues\": [\"upstream_unknown\"], \"observed\": true, \"pretty_name\": \"Ubuntu 24.04.5 LTS\", \"status\": \"unknown\", \"upstream\": {\"error\": \"TimeoutError\", \"status\": \"unknown\"}}, \"policy_sha256\": \"a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c\", \"postgresql\": {\"cluster\": {\"major\": \"17\", \"name\": \"main\", \"owner\": \"postgres\", \"port\": 5432, \"status\": \"online\"}, \"clusters\": [{\"major\": \"17\", \"name\": \"main\", \"owner\": \"postgres\", \"port\": 5432, \"status\": \"online\"}], \"desired_major\": \"17\", \"expected\": true, \"issues\": [\"upstream_unknown\"], \"major\": \"17\", \"observed\": true, \"server_version\": \"17.6\", \"status\": \"unknown\", \"upstream\": {\"error\": \"HTTPError\", \"status\": \"unknown\"}}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"observation_ok\": true, \"os_ok\": false, \"postgresql_ok\": false, \"security_updates_ok\": false, \"traefik_ok\": false}, \"traefik\": {\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"installed\": {\"sha256\": \"98a8cf32aaf5a0813bb7e80a2ac8728d2c79f710fc1264c00cff2cca32ab0d3c\", \"version\": \"3.7.9\"}, \"issues\": [\"upstream_unknown\"], \"main_pid\": 11, \"observed\": true, \"running\": {\"sha256\": \"98a8cf32aaf5a0813bb7e80a2ac8728d2c79f710fc1264c00cff2cca32ab0d3c\", \"version\": \"3.7.9\"}, \"running_path\": \"/usr/local/bin/traefik\", \"status\": \"unknown\", \"upstream\": {\"error\": \"URLError\", \"last_success\": null, \"status\": \"unknown\"}}}",
+  "world": {
+   "commands": [
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "11"
+    },
+    {
+     "argv": [
+      "/usr/local/bin/traefik",
+      "version"
+     ],
+     "stdout": "Version: 3.7.9"
+    },
+    {
+     "argv": [
+      "/proc/self/fd/4",
+      "version"
+     ],
+     "pass_fds": [
+      4
+     ],
+     "stdout": "Version: 3.7.9"
+    },
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "11"
+    },
+    {
+     "argv": [
+      "/usr/bin/pg_lsclusters",
+      "--no-header"
+     ],
+     "stdout": "17  main    5432 online postgres /var/lib/postgresql/17/main /var/log/postgresql/postgresql-17-main.log"
+    },
+    {
+     "argv": [
+      "/proc/self/fd/7",
+      "--version"
+     ],
+     "pass_fds": [
+      7
+     ],
+     "stdout": "postgres (PostgreSQL) 17.6 (Ubuntu 17.6-1.pgdg24.04+1)\n"
+    },
+    {
+     "argv": [
+      "/usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+      "observe",
+      "--max-age",
+      "172800",
+      "--now",
+      "1789344000.25"
+     ],
+     "stdout": "{\"status\": \"ok\", \"pending_security_count\": 1, \"pending_security_updates\": [{\"package\": \"openssl:amd64\", \"installed\": \"3.0.13-0ubuntu3.5\", \"security_version\": \"3.0.13-0ubuntu3.6\", \"candidate\": \"3.0.13-0ubuntu3.6\", \"held\": false}], \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"index_age_limit_seconds\": 172800, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\"}"
+    }
+   ],
+   "files": {
+    "/etc/os-release": {
+     "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+    },
+    "/var/run/postgresql/17-main.pid": {
+     "ok": "4242\n/var/lib/postgresql/17/main\n1760000000\n5432\n/var/run/postgresql\n*\n  1234567 0\nready\n"
+    }
+   },
+   "http": [
+    {
+     "error": "URLError",
+     "headers": {
+      "accept": "application/vnd.github+json",
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+    },
+    {
+     "error": "TimeoutError",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/ubuntu.json"
+    },
+    {
+     "error": "HTTPError",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/postgresql.json"
+    }
+   ],
+   "lstat": {
+    "/usr/local/lib/software-live/releases/0.1.0/software-live-apt": [
+     {
+      "ok": {
+       "mode": 33261
+      }
+     }
+    ]
+   },
+   "now": [
+    1789344000.25,
+    1789344003.5
+   ],
+   "open": {
+    "/proc/11/exe": [
+     {
+      "ok": {
+       "data": "traefik 3.7.9 bytes",
+       "fd": 4,
+       "fstat": [
+        {
+         "ok": {
+          "ctime_ns": 1760000000123456789,
+          "dev": 2049,
+          "ino": 101,
+          "mode": 33261,
+          "mtime_ns": 1760000000123456789,
+          "size": 19
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "/proc/4242/exe": [
+     {
+      "ok": {
+       "data": "",
+       "fd": 7,
+       "fstat": [
+        {
+         "ok": {
+          "ctime_ns": 1760000001000000000,
+          "dev": 2049,
+          "ino": 1311,
+          "mode": 33261,
+          "mtime_ns": 1760000000123456789,
+          "size": 9876543
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "/usr/local/bin/traefik": [
+     {
+      "ok": {
+       "data": "traefik 3.7.9 bytes",
+       "fd": 3,
+       "fstat": [
+        {
+         "ok": {
+          "ctime_ns": 1760000000123456789,
+          "dev": 2049,
+          "ino": 101,
+          "mode": 33261,
+          "mtime_ns": 1760000000123456789,
+          "size": 19
+         }
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "readlink": {
+    "/proc/11/exe": [
+     {
+      "ok": "/usr/local/bin/traefik"
+     },
+     {
+      "ok": "/usr/local/bin/traefik"
+     }
+    ],
+    "/proc/self/exe": [
+     {
+      "ok": "/usr/local/lib/software-live/releases/0.1.0/software-live"
+     }
+    ],
+    "/proc/self/fd/4": [
+     {
+      "ok": "/usr/local/bin/traefik"
+     }
+    ],
+    "/proc/self/fd/7": [
+     {
+      "ok": "/usr/lib/postgresql/17/bin/postgres"
+     }
+    ]
+   },
+   "stat": {
+    "/proc/11/exe": [
+     {
+      "ok": {
+       "ctime_ns": 1760000000123456789,
+       "dev": 2049,
+       "ino": 101,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 19
+      }
+     }
+    ],
+    "/proc/4242/exe": [
+     {
+      "ok": {
+       "ctime_ns": 1760000001000000000,
+       "dev": 2049,
+       "ino": 1311,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 9876543
+      }
+     }
+    ],
+    "/usr/local/bin/traefik": [
+     {
+      "ok": {
+       "ctime_ns": 1760000000123456789,
+       "dev": 2049,
+       "ino": 101,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 19
+      }
+     },
+     {
+      "ok": {
+       "ctime_ns": 1760000000123456789,
+       "dev": 2049,
+       "ino": 101,
+       "mode": 33261,
+       "mtime_ns": 1760000000123456789,
+       "size": 19
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "cache": null,
+  "calls": [
+   "now",
+   "http_get https://api.github.com/repos/traefik/traefik/releases/latest",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "http_get https://endoflife.date/api/ubuntu.json",
+   "read_file /etc/os-release",
+   "run /usr/bin/pg_lsclusters --no-header",
+   "readlink /proc/self/exe",
+   "lstat /usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+   "run /usr/local/lib/software-live/releases/0.1.0/software-live-apt observe --max-age 172800 --now 1789344000.25",
+   "now"
+  ],
+  "errors": {
+   "traefik": {
+    "class": "CalledProcessError",
+    "message": null
+   }
+  },
+  "id": "traefik_probe_fails",
+  "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": false}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+  "report": "{\"apt\": {\"index_age_limit_seconds\": 172800, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\", \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"pending_security_count\": 1, \"pending_security_updates\": [{\"candidate\": \"3.0.13-0ubuntu3.6\", \"held\": false, \"installed\": \"3.0.13-0ubuntu3.5\", \"package\": \"openssl:amd64\", \"security_version\": \"3.0.13-0ubuntu3.6\"}], \"status\": \"ok\"}, \"generated_at_epoch\": 1789344003.5, \"host\": \"example\", \"os\": {\"codename\": \"noble\", \"cycle\": \"24.04\", \"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"id\": \"ubuntu\", \"issues\": [], \"lifecycle\": {\"eol\": \"2029-05-31\", \"latest_release\": \"24.04.5\", \"newest_cycle\": \"25.10\", \"support_end\": \"2029-05-31\"}, \"observed\": true, \"pretty_name\": \"Ubuntu 24.04.5 LTS\", \"status\": \"ok\", \"upstream\": {\"cached\": false, \"checked_at_epoch\": 1789344000.25, \"product\": \"ubuntu\", \"status\": \"ok\"}}, \"policy_sha256\": \"9cd960095644d4e4da4a21f1c6c1bc8f9daf1624cdfcd24b3e71de63169159d5\", \"postgresql\": {\"clusters\": [], \"desired_major\": null, \"expected\": false, \"issues\": [], \"observed\": true, \"present\": false, \"status\": \"ok\"}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"observation_ok\": false, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": false, \"traefik_ok\": false}, \"traefik\": {\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"issues\": [], \"observed\": false, \"status\": \"unknown\"}}",
+  "world": {
+   "commands": [
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "exit": 1,
+     "stdout": ""
+    },
+    {
+     "argv": [
+      "/usr/bin/pg_lsclusters",
+      "--no-header"
+     ],
+     "error": "ENOENT",
+     "stdout": ""
+    },
+    {
+     "argv": [
+      "/usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+      "observe",
+      "--max-age",
+      "172800",
+      "--now",
+      "1789344000.25"
+     ],
+     "stdout": "{\"status\": \"ok\", \"pending_security_count\": 1, \"pending_security_updates\": [{\"package\": \"openssl:amd64\", \"installed\": \"3.0.13-0ubuntu3.5\", \"security_version\": \"3.0.13-0ubuntu3.6\", \"candidate\": \"3.0.13-0ubuntu3.6\", \"held\": false}], \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"index_age_limit_seconds\": 172800, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\"}"
+    }
+   ],
+   "files": {
+    "/etc/os-release": {
+     "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+    }
+   },
+   "http": [
+    {
+     "body": "{\"tag_name\": \"v3.7.9\", \"draft\": false, \"prerelease\": false}",
+     "headers": {
+      "accept": "application/vnd.github+json",
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://api.github.com/repos/traefik/traefik/releases/latest"
+    },
+    {
+     "body": "[{\"cycle\": \"25.10\", \"lts\": false, \"releaseDate\": \"2025-10-09\", \"support\": \"2026-07-09\", \"eol\": \"2026-07-09\", \"latest\": \"25.10\"}, {\"cycle\": \"24.04\", \"lts\": true, \"releaseDate\": \"2024-04-25\", \"support\": \"2029-05-31\", \"eol\": \"2029-05-31\", \"extendedSupport\": \"2036-04-25\", \"latest\": \"24.04.5\"}]",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/ubuntu.json"
+    }
+   ],
+   "lstat": {
+    "/usr/local/lib/software-live/releases/0.1.0/software-live-apt": [
+     {
+      "ok": {
+       "mode": 33261
+      }
+     }
+    ]
+   },
+   "now": [
+    1789344000.25,
+    1789344003.5
+   ],
+   "readlink": {
+    "/proc/self/exe": [
+     {
+      "ok": "/usr/local/lib/software-live/releases/0.1.0/software-live"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "cache": null,
+  "calls": [
+   "now",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "stat /usr/local/bin/traefik",
+   "stat /usr/bin/traefik",
+   "stat /usr/local/bin/traefik",
+   "http_get https://endoflife.date/api/debian.json",
+   "read_file /etc/os-release",
+   "run /usr/bin/pg_lsclusters --no-header",
+   "readlink /proc/self/exe",
+   "lstat /usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+   "run /usr/local/lib/software-live/releases/0.1.0/software-live-apt observe --max-age 3600 --now 1789344000.25",
+   "now"
+  ],
+  "errors": {},
+  "id": "nothing_expected",
+  "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"debian\", \"desired_cycle\": \"13\", \"product\": \"debian\"}, \"postgresql\": {\"expected\": false}, \"traefik\": {\"expected\": false, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3600}",
+  "report": "{\"apt\": {\"index_age_limit_seconds\": 3600, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\", \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"pending_security_count\": 0, \"pending_security_updates\": [], \"status\": \"ok\"}, \"generated_at_epoch\": 1789344003.5, \"host\": \"example\", \"os\": {\"codename\": \"trixie\", \"cycle\": \"13\", \"desired_cycle\": \"13\", \"expected_id\": \"debian\", \"id\": \"debian\", \"issues\": [], \"lifecycle\": {\"eol\": \"2030-06-30\", \"latest_release\": null, \"newest_cycle\": \"13\", \"support_end\": \"2028-08-09\"}, \"observed\": true, \"pretty_name\": \"Debian GNU/Linux 13 (trixie)\", \"status\": \"ok\", \"upstream\": {\"cached\": false, \"checked_at_epoch\": 1789344000.25, \"product\": \"debian\", \"status\": \"ok\"}}, \"policy_sha256\": \"e9d6d5fa136c95781ed7e90152ec4158f412288ccce0fbaf0464bd911210c799\", \"postgresql\": {\"clusters\": [], \"desired_major\": null, \"expected\": false, \"issues\": [], \"observed\": true, \"present\": false, \"status\": \"ok\"}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}, \"traefik\": {\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": false, \"issues\": [], \"observed\": true, \"present\": false, \"status\": \"ok\"}}",
+  "world": {
+   "commands": [
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "0"
+    },
+    {
+     "argv": [
+      "/usr/bin/pg_lsclusters",
+      "--no-header"
+     ],
+     "error": "ENOENT",
+     "stdout": ""
+    },
+    {
+     "argv": [
+      "/usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+      "observe",
+      "--max-age",
+      "3600",
+      "--now",
+      "1789344000.25"
+     ],
+     "stdout": "{\"status\": \"ok\", \"pending_security_count\": 0, \"pending_security_updates\": [], \"indexes_fresh\": true, \"oldest_security_index_age_seconds\": 7200.5, \"index_age_limit_seconds\": 3600, \"index_source\": \"cached security InRelease publication mtimes; no refresh performed\"}"
+    }
+   ],
+   "files": {
+    "/etc/os-release": {
+     "ok": "ID=debian\nVERSION_ID=\"13\"\nVERSION_CODENAME=trixie\nPRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\n"
+    }
+   },
+   "http": [
+    {
+     "body": "[{\"cycle\": \"13\", \"support\": \"2028-08-09\", \"eol\": \"2030-06-30\"}, {\"cycle\": \"12\", \"latest\": \"12.15\", \"support\": \"2026-07-11\", \"eol\": \"2028-06-30\"}]",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/debian.json"
+    }
+   ],
+   "lstat": {
+    "/usr/local/lib/software-live/releases/0.1.0/software-live-apt": [
+     {
+      "ok": {
+       "mode": 33261
+      }
+     }
+    ]
+   },
+   "now": [
+    1789344000.25,
+    1789344003.5
+   ],
+   "readlink": {
+    "/proc/self/exe": [
+     {
+      "ok": "/usr/local/lib/software-live/releases/0.1.0/software-live"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "cache": null,
+  "calls": [
+   "now",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "stat /usr/local/bin/traefik",
+   "stat /usr/bin/traefik",
+   "stat /usr/local/bin/traefik",
+   "http_get https://endoflife.date/api/debian.json",
+   "read_file /etc/os-release",
+   "run /usr/bin/pg_lsclusters --no-header",
+   "readlink /proc/self/exe",
+   "lstat /usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+   "run /usr/local/lib/software-live/releases/0.1.0/software-live-apt observe --max-age 3600 --now 1789344000.25",
+   "now"
+  ],
+  "errors": {},
+  "id": "apt_unknown",
+  "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"debian\", \"desired_cycle\": \"13\", \"product\": \"debian\"}, \"postgresql\": {\"expected\": false}, \"traefik\": {\"expected\": false, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3600}",
+  "report": "{\"apt\": {\"error\": \"APT observation failed (CacheOpen)\", \"indexes_fresh\": false, \"pending_security_count\": null, \"status\": \"unknown\"}, \"generated_at_epoch\": 1789344003.5, \"host\": \"example\", \"os\": {\"codename\": \"trixie\", \"cycle\": \"13\", \"desired_cycle\": \"13\", \"expected_id\": \"debian\", \"id\": \"debian\", \"issues\": [], \"lifecycle\": {\"eol\": \"2030-06-30\", \"latest_release\": null, \"newest_cycle\": \"13\", \"support_end\": \"2028-08-09\"}, \"observed\": true, \"pretty_name\": \"Debian GNU/Linux 13 (trixie)\", \"status\": \"ok\", \"upstream\": {\"cached\": false, \"checked_at_epoch\": 1789344000.25, \"product\": \"debian\", \"status\": \"ok\"}}, \"policy_sha256\": \"e9d6d5fa136c95781ed7e90152ec4158f412288ccce0fbaf0464bd911210c799\", \"postgresql\": {\"clusters\": [], \"desired_major\": null, \"expected\": false, \"issues\": [], \"observed\": true, \"present\": false, \"status\": \"ok\"}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": false, \"observation_ok\": false, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": false, \"traefik_ok\": true}, \"traefik\": {\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": false, \"issues\": [], \"observed\": true, \"present\": false, \"status\": \"ok\"}}",
+  "world": {
+   "commands": [
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "0"
+    },
+    {
+     "argv": [
+      "/usr/bin/pg_lsclusters",
+      "--no-header"
+     ],
+     "error": "ENOENT",
+     "stdout": ""
+    },
+    {
+     "argv": [
+      "/usr/local/lib/software-live/releases/0.1.0/software-live-apt",
+      "observe",
+      "--max-age",
+      "3600",
+      "--now",
+      "1789344000.25"
+     ],
+     "stdout": "{\"status\": \"unknown\", \"error\": \"APT observation failed (CacheOpen)\", \"indexes_fresh\": false, \"pending_security_count\": null}"
+    }
+   ],
+   "files": {
+    "/etc/os-release": {
+     "ok": "ID=debian\nVERSION_ID=\"13\"\nVERSION_CODENAME=trixie\nPRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\n"
+    }
+   },
+   "http": [
+    {
+     "body": "[{\"cycle\": \"13\", \"support\": \"2028-08-09\", \"eol\": \"2030-06-30\"}, {\"cycle\": \"12\", \"latest\": \"12.15\", \"support\": \"2026-07-11\", \"eol\": \"2028-06-30\"}]",
+     "headers": {
+      "user-agent": "ops-library-software-live/1"
+     },
+     "timeout": 10,
+     "url": "https://endoflife.date/api/debian.json"
+    }
+   ],
+   "lstat": {
+    "/usr/local/lib/software-live/releases/0.1.0/software-live-apt": [
+     {
+      "ok": {
+       "mode": 33261
+      }
+     }
+    ]
+   },
+   "now": [
+    1789344000.25,
+    1789344003.5
+   ],
+   "readlink": {
+    "/proc/self/exe": [
+     {
+      "ok": "/usr/local/lib/software-live/releases/0.1.0/software-live"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "cache": "/",
+  "calls": [
+   "now",
+   "run systemctl show traefik.service --property=MainPID --value",
+   "stat /usr/local/bin/traefik",
+   "stat /usr/bin/traefik",
+   "stat /usr/local/bin/traefik"
+  ],
+  "error": {
+   "class": "ValueError",
+   "message": null
+  },
+  "id": "cache_without_name",
+  "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": false}, \"traefik\": {\"expected\": false, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+  "world": {
+   "commands": [
+    {
+     "argv": [
+      "systemctl",
+      "show",
+      "traefik.service",
+      "--property=MainPID",
+      "--value"
+     ],
+     "stdout": "0"
+    }
+   ],
+   "http": [],
+   "now": [
+    1789344000.25,
+    1789344003.5
+   ]
+  }
+ }
+]

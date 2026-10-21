@@ -130,19 +130,55 @@ fn the_error_line_never_quotes_a_policy_value() {
 }
 
 #[test]
-fn modes_of_later_slices_stop_with_exit_1() {
-    let valid =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/cli.json"))
+fn serve_stops_with_exit_1_until_its_slice() {
+    let output = Command::new(binary())
+        .args(["serve", "--config-json", "{}"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("not implemented yet"), "{stderr}");
+}
+
+/// `collect --report-usage` (PLAN.md 3.1): one usage line on stderr after
+/// the run, also after a failed one; other modes ignore the flag. (A
+/// successful `collect` is not run here: it would read this host and ask
+/// GitHub and endoflife.date; `collect::tests` run it in recorded worlds.)
+#[test]
+fn report_usage_adds_one_line_to_collect() {
+    let usage = regex::Regex::new(
+        r"^software-live: usage wall_s=\d+\.\d{3} cpu_s=\d+\.\d{3} maxrss_kib=\d+ self_cpu_s=\d+\.\d{3} self_maxrss_kib=\d+ children_cpu_s=\d+\.\d{3} children_maxrss_kib=\d+$",
+    )
+    .unwrap();
+    for flag in ["--report-usage", "--rep"] {
+        let output = Command::new(binary())
+            .args(["collect", flag, "--config-json", r#"{"host": ""}"#])
+            .output()
             .unwrap();
-    let fixtures: Fixtures = serde_json::from_str(&valid).unwrap();
-    let policy = &fixtures.files["valid.json"];
-    for argv in [
-        vec!["collect", "--config-json", policy.as_str()],
-        vec!["serve", "--config-json", "{}"],
-    ] {
-        let output = Command::new(binary()).args(&argv).output().unwrap();
-        assert_eq!(output.status.code(), Some(1), "{argv:?}");
+        assert_eq!(output.status.code(), Some(1), "{flag}");
         let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains("not implemented yet"), "{argv:?}: {stderr}");
+        let lines: Vec<_> = stderr.lines().collect();
+        assert_eq!(lines.len(), 2, "{stderr}");
+        assert!(lines[0].starts_with("software-live: invalid policy: ValueError"));
+        assert!(usage.is_match(lines[1]), "{stderr}");
+    }
+    let output = Command::new(binary())
+        .args([
+            "validate",
+            "--report-usage",
+            "--config-json",
+            r#"{"host": ""}"#,
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8(output.stderr).unwrap().lines().count(), 1);
+    // A flag, not an option with a value; a usage error as in argparse.
+    for argv in [
+        &["collect", "--report-usage=yes"][..],
+        &["collect", "--group", "--report-usage"],
+    ] {
+        let output = Command::new(binary()).args(argv).output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{argv:?}");
     }
 }

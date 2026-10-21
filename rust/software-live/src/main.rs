@@ -7,27 +7,32 @@
 //! `--config`, `--config-json`, `--output`, `--cache`, `--group`, accepted
 //! with every mode, in any order, as `--opt value` or `--opt=value`, by any
 //! unambiguous prefix, the last occurrence winning. Usage errors exit 2.
-//! New and only additive: `--version` (`software-live <version> (<commit>)`).
+//! New and only additive: `--version` (`software-live <version> (<commit>)`)
+//! and `--report-usage` (`collect` prints one stderr line with its wall
+//! time, CPU time and peak memory, [`software_live::usage`]).
 //!
-//! `validate` (S2) and `export-inventory` (S3e) are complete; `collect`
-//! validates its policy and `serve` reads its configuration, then both stop
-//! with exit 1 until their slices (S3f, S4).
+//! `validate` (S2), `export-inventory` (S3e) and `collect` (S3f) are
+//! complete; `serve` reads its configuration, then stops with exit 1 until
+//! its slice (S4).
 
 use std::ffi::OsString;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
-
 use std::sync::LazyLock;
+use std::time::Instant;
 
 use clap::{ArgAction, CommandFactory, Parser, ValueEnum};
 use regex::Regex;
 use serde_json::Value;
 
+use software_live::collect;
 use software_live::error::PyError;
-use software_live::export;
+use software_live::export::{self, PyPath};
 use software_live::policy::{self, Policy};
 use software_live::probe::{HostSystem, System};
 use software_live::pyjson;
+use software_live::usage;
 
 const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -72,13 +77,18 @@ struct Cli {
     cache: Option<PathBuf>,
     #[arg(long, value_name = "GROUP", allow_hyphen_values = true)]
     group: Option<OsString>,
+    /// collect: print one stderr line with wall time, CPU time and peak
+    /// memory (self plus children).
+    #[arg(long = "report-usage", action = ArgAction::SetTrue)]
+    report_usage: bool,
     /// Print the version and the commit it was built from.
     #[arg(long, action = ArgAction::Version)]
     version: Option<bool>,
 }
 
-/// The long options; `--version` is the only one argparse does not have.
-const LONG_OPTIONS: [&str; 7] = [
+/// The long options; `--version` and `--report-usage` are the ones
+/// argparse does not have.
+const LONG_OPTIONS: [&str; 8] = [
     "--config",
     "--config-json",
     "--output",
@@ -86,6 +96,7 @@ const LONG_OPTIONS: [&str; 7] = [
     "--group",
     "--help",
     "--version",
+    "--report-usage",
 ];
 const VALUE_OPTIONS: [&str; 5] = [
     "--config",
@@ -284,6 +295,30 @@ fn load_config(cli: &Cli, system: &impl System) -> Result<Value, Fatal> {
     Ok(pyjson::loads(&text)?)
 }
 
+/// `collect` (`software_live.py:922-929`): validate the policy, collect,
+/// then write the state atomically to `--output` with the group `--group`
+/// (none if it is absent or empty), or, without `--output`, print the
+/// report with its freshness on stdout (the manual SSH mode; no `--cache`
+/// means no cache read or write). The paths are taken as `pathlib.Path`
+/// spells them (argparse's `type=Path`).
+fn collect(cli: &Cli, system: &impl System, config: serde_json::Value) -> Result<(), Fatal> {
+    let policy = Policy::new(config).map_err(|error| Fatal(format!("invalid policy: {error}")))?;
+    let cache = cli.cache.as_deref().map(|path| PyPath::new(path).path());
+    let report = collect::collect(system, &policy, cache.as_deref())?;
+    if let Some(output) = &cli.output {
+        let output = PyPath::new(output).path();
+        collect::write_state(system, &output, &report, cli.group.as_deref())?;
+        return Ok(());
+    }
+    let text = collect::manual_output(system, &report)?;
+    let mut stdout = std::io::stdout().lock();
+    stdout
+        .write_all(&text)
+        .and_then(|()| stdout.flush())
+        .map_err(|error| PyError::os(&error))?;
+    Ok(())
+}
+
 fn not_implemented(mode: &str, slice: &str) -> Fatal {
     Fatal(format!(
         "{mode} is not implemented yet (PLAN.md slice {slice})"
@@ -317,16 +352,14 @@ fn run(cli: &Cli, system: &impl System) -> Result<(), Fatal> {
             policy::validate(&config).map_err(|error| Fatal(format!("invalid policy: {error}")))?;
             Ok(())
         }
-        Mode::Collect => {
-            Policy::new(config).map_err(|error| Fatal(format!("invalid policy: {error}")))?;
-            Err(not_implemented("collect", "S3f"))
-        }
+        Mode::Collect => collect(cli, system, config),
         Mode::Serve => Err(not_implemented("serve", "S4")),
         Mode::ExportInventory => unreachable!("handled above"),
     }
 }
 
 fn main() -> ExitCode {
+    let start = Instant::now();
     // Help and --version exit 0, usage errors 2 (as argparse).
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     if let Err(message) = check_option_values(&args) {
@@ -335,7 +368,8 @@ fn main() -> ExitCode {
             .exit();
     }
     let cli = Cli::parse();
-    match run(&cli, &HostSystem) {
+    let result = run(&cli, &HostSystem);
+    let code = match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(Fatal(line)) => {
             if line.starts_with("inventory export failed: ") {
@@ -345,7 +379,12 @@ fn main() -> ExitCode {
             }
             ExitCode::FAILURE
         }
+    };
+    // Last, so it covers the whole run, also one that failed.
+    if cli.report_usage && cli.mode == Mode::Collect {
+        eprintln!("{}", usage::report(start.elapsed()));
     }
+    code
 }
 
 #[cfg(test)]

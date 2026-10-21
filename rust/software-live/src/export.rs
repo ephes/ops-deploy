@@ -290,13 +290,15 @@ fn safe_source(stat: &FileStat, root: u32) -> bool {
 /// 3.12 and 3.13): empty and `.` parts dropped, a trailing slash removed,
 /// exactly two leading slashes kept, `.` for nothing. `Path(p).parent`
 /// drops the last part (the root's and `.`'s parent are themselves).
-struct PyPath {
+/// `collect` takes its `--output` and `--cache` the same way (argparse's
+/// `type=Path`).
+pub struct PyPath {
     root: &'static [u8],
     parts: Vec<Vec<u8>>,
 }
 
 impl PyPath {
-    fn new(path: &Path) -> Self {
+    pub fn new(path: &Path) -> Self {
         let bytes = path.as_os_str().as_bytes();
         let root: &'static [u8] = if bytes.starts_with(b"//") && !bytes.starts_with(b"///") {
             b"//"
@@ -322,11 +324,11 @@ impl PyPath {
         PathBuf::from(std::ffi::OsString::from_vec(bytes))
     }
 
-    fn path(&self) -> PathBuf {
+    pub fn path(&self) -> PathBuf {
         Self::render(self.root, &self.parts)
     }
 
-    fn parent(&self) -> PathBuf {
+    pub fn parent(&self) -> PathBuf {
         let keep = self.parts.len().saturating_sub(1);
         Self::render(self.root, &self.parts[..keep])
     }
@@ -356,8 +358,8 @@ fn open_source(path: &Path) -> Result<(File, FileStat), PyError> {
 }
 
 /// `grp.getgrnam(name).gr_gid`; any failure to find the group is Python's
-/// `KeyError`.
-fn group_id(name: &OsStr) -> Result<u32, PyError> {
+/// `KeyError` (also the state group of `collect`).
+pub fn group_id(name: &OsStr) -> Result<u32, PyError> {
     let not_found = || {
         PyError::new(
             "KeyError",

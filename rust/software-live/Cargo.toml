@@ -17,8 +17,9 @@ chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 close_fds = "0.3.2"
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 hex = "0.4"
-# `grp.getgrnam` of the export group (PLAN.md 3.6, 5.3).
-nix = { version = "0.31.3", default-features = false, features = ["user"] }
+# `grp.getgrnam` of the export and state groups (PLAN.md 3.6, 5.3);
+# `getrusage` of `collect --report-usage` (PLAN.md 3.1).
+nix = { version = "0.31.3", default-features = false, features = ["user", "resource"] }
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 # `fs`: the export's `open(O_RDONLY|O_NOFOLLOW|O_NONBLOCK)` (PLAN.md 3.6).
 rustix = { version = "1", default-features = false, features = ["std", "fs"] }

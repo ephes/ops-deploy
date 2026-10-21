@@ -3,6 +3,7 @@
 
 pub mod apt;
 pub mod atomic;
+pub mod collect;
 pub mod error;
 pub mod export;
 pub mod http;
@@ -15,6 +16,7 @@ pub mod pyjson;
 pub mod report;
 pub mod traefik;
 pub mod upstream;
+pub mod usage;
 pub mod version;
 
 #[cfg(test)]
