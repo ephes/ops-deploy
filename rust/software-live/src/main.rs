@@ -137,14 +137,72 @@ fn argparse_reads_as_option(arg: &str) -> bool {
     !(NEGATIVE_NUMBER.is_match(arg) || arg.contains(' '))
 }
 
-/// `-h` (also with something attached, `-hx`), `--help`, `--version` or an
-/// unambiguous prefix of them, without `=value`.
-fn shows_help_or_version(word: &str) -> bool {
+/// What a word that names help or `--version` does where it stands.
+#[derive(Debug, PartialEq, Eq)]
+enum HelpWord {
+    /// Help or the version is shown; later words are not looked at.
+    Shown,
+    /// argparse's usage error `ignored explicit argument` with this
+    /// argument (`-h=x`, `--help=x`, `-h-x`).
+    IgnoredArgument(String),
+}
+
+/// `--help`, `--version` or an unambiguous prefix of them, and `-h` with
+/// whatever is attached, as `consume_optional` of argparse (Python 3.12
+/// and 3.13) reads it: each further `h` is help again; after an `h`, `=`
+/// starts an explicit argument and a `-` is one, both usage errors; any
+/// other character ends the word as unknown options after help (`-hx`,
+/// `-hx=y`). `--version=x` is left to clap, which refuses it as argparse
+/// (which has no `--version`) does.
+fn help_word(word: &str) -> Option<HelpWord> {
     if word.starts_with("--") {
-        !word.contains('=') && matches!(resolve_long(word), Some("--help" | "--version"))
-    } else {
-        word.starts_with("-h")
+        let (name, value) = match word.split_once('=') {
+            Some((name, value)) => (name, Some(value)),
+            None => (word, None),
+        };
+        return match (resolve_long(name), value) {
+            (Some("--help"), Some(value)) => Some(HelpWord::IgnoredArgument(value.into())),
+            (Some("--help" | "--version"), None) => Some(HelpWord::Shown),
+            _ => None,
+        };
     }
+    let mut rest = word.strip_prefix("-h")?;
+    loop {
+        match rest.chars().next() {
+            Some('h') => rest = &rest[1..],
+            Some('=') => return Some(HelpWord::IgnoredArgument(rest[1..].into())),
+            Some('-') => return Some(HelpWord::IgnoredArgument(rest.into())),
+            _ => return Some(HelpWord::Shown),
+        }
+    }
+}
+
+/// Python's `repr` of a string, as argparse puts it into a message.
+fn py_repr(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::from(quote);
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if u32::from(c) < 0x20 || c == '\x7f' => {
+                out.push_str(&format!("\\x{:02x}", u32::from(c)));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
 }
 
 /// argparse takes the value of `--opt value` only from a word it does not
@@ -158,9 +216,20 @@ fn check_option_values(args: &[OsString]) -> Result<(), String> {
     while index < words.len() {
         let word = &words[index];
         // argparse acts on the words in order: help (and our --version)
-        // ends the command line before any later word is looked at.
-        if word == "--" || shows_help_or_version(word) {
+        // ends the command line before any later word is looked at, and
+        // help with an explicit argument is a usage error right there.
+        if word == "--" {
             break;
+        }
+        match help_word(word) {
+            Some(HelpWord::Shown) => break,
+            Some(HelpWord::IgnoredArgument(argument)) => {
+                return Err(format!(
+                    "argument -h/--help: ignored explicit argument {}",
+                    py_repr(&argument)
+                ));
+            }
+            None => {}
         }
         let value_option = (word.starts_with("--") && !word.contains('='))
             .then(|| resolve_long(word))
@@ -319,6 +388,10 @@ mod tests {
             &["-hx", "--group"],
             &["validate", "--he", "--group", "-x"],
             &["--vers", "--config"],
+            &["-hx", "--config"],
+            &["-hx=y", "--config"],
+            &["-hh", "--config"],
+            &["--help", "-h=x"],
         ] {
             assert_eq!(check(ok), Ok(()), "{ok:?}");
         }
@@ -336,8 +409,72 @@ mod tests {
             &["--co", "x", "--cache", "-y"],
             &["--config", "--help"],
             &["--help=x", "--group", "-x"],
+            &["-h=x"],
+            &["-h="],
+            &["-h=x", "--config"],
+            &["-h=", "--config"],
+            &["validate", "-h=x"],
+            &["-hh=x"],
+            &["-h-x"],
+            &["--help=", "--config"],
         ] {
             assert!(check(bad).is_err(), "{bad:?}");
         }
+        // argparse's message, at the help word before a later error.
+        assert_eq!(
+            check(&["-h=x", "--config"]),
+            Err("argument -h/--help: ignored explicit argument 'x'".into())
+        );
+        assert_eq!(
+            check(&["--he=", "--group", "-x"]),
+            Err("argument -h/--help: ignored explicit argument ''".into())
+        );
+    }
+
+    #[test]
+    fn help_words_follow_argparse() {
+        let ignored = |argument: &str| Some(HelpWord::IgnoredArgument(argument.into()));
+        for shown in [
+            "-h",
+            "-hx",
+            "-hx=y",
+            "-hx=",
+            "-hh",
+            "-h x",
+            "--help",
+            "--h",
+            "--version",
+            "--vers",
+        ] {
+            assert_eq!(help_word(shown), Some(HelpWord::Shown), "{shown:?}");
+        }
+        assert_eq!(help_word("-h=x"), ignored("x"));
+        assert_eq!(help_word("-h="), ignored(""));
+        assert_eq!(help_word("-hh=x"), ignored("x"));
+        assert_eq!(help_word("-hhh="), ignored(""));
+        assert_eq!(help_word("-h-x"), ignored("-x"));
+        assert_eq!(help_word("-hh-"), ignored("-"));
+        assert_eq!(help_word("--help=x"), ignored("x"));
+        assert_eq!(help_word("--he="), ignored(""));
+        for other in [
+            "-x",
+            "--version=x",
+            "--group",
+            "--",
+            "--bogus=x",
+            "validate",
+            "-",
+        ] {
+            assert_eq!(help_word(other), None, "{other:?}");
+        }
+    }
+
+    #[test]
+    fn repr_follows_python() {
+        assert_eq!(py_repr("x"), "'x'");
+        assert_eq!(py_repr(""), "''");
+        assert_eq!(py_repr("it's"), "\"it's\"");
+        assert_eq!(py_repr("'\""), "'\\'\"'");
+        assert_eq!(py_repr("a\\b\n\x01"), "'a\\\\b\\n\\x01'");
     }
 }

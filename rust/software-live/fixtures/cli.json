@@ -417,6 +417,92 @@
   },
   {
    "argv": [
+    "--help=",
+    "--config"
+   ],
+   "exit": 2,
+   "id": "help_with_empty_value_before_missing_value"
+  },
+  {
+   "argv": [
+    "-h=x"
+   ],
+   "exit": 2,
+   "id": "help_short_with_value"
+  },
+  {
+   "argv": [
+    "-h="
+   ],
+   "exit": 2,
+   "id": "help_short_with_empty_value"
+  },
+  {
+   "argv": [
+    "-h=x",
+    "--config"
+   ],
+   "exit": 2,
+   "id": "help_short_with_value_before_missing_value"
+  },
+  {
+   "argv": [
+    "-h=",
+    "--config"
+   ],
+   "exit": 2,
+   "id": "help_short_with_empty_value_before_missing_value"
+  },
+  {
+   "argv": [
+    "validate",
+    "--config-json",
+    "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+    "-h=x"
+   ],
+   "exit": 2,
+   "id": "help_short_with_value_after_mode"
+  },
+  {
+   "argv": [
+    "-hh=x"
+   ],
+   "exit": 2,
+   "id": "help_repeated_with_value"
+  },
+  {
+   "argv": [
+    "-h-x"
+   ],
+   "exit": 2,
+   "id": "help_short_with_dash"
+  },
+  {
+   "argv": [
+    "-hx",
+    "--config"
+   ],
+   "exit": 0,
+   "id": "help_attached_before_missing_config"
+  },
+  {
+   "argv": [
+    "-hx=y",
+    "--config"
+   ],
+   "exit": 0,
+   "id": "help_attached_with_equals"
+  },
+  {
+   "argv": [
+    "--help",
+    "-h=x"
+   ],
+   "exit": 0,
+   "id": "help_before_help_with_value"
+  },
+  {
+   "argv": [
     "--help",
     "--bogus"
    ],

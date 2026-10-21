@@ -183,7 +183,10 @@ but may be a negative number (`-1`, `-.5`; argparse of Python 3.12 and
 3.13, the hosts' versions — 3.14 also takes `-1e5` and `-1.`) or contain a
 space; with `--opt=value` any value is taken. Help (`-h`, `-h…`, `--help`
 or a prefix) acts where it stands: what follows is not looked at, a missing
-value before it is still a usage error. `--config-json` takes precedence
+value before it is still a usage error. Help with an explicit argument
+(`-h=x`, `-h=`, `-hh=x`, `-h-x`, `--help=x`) is a usage error where it
+stands; `-hx` and `-hx=y` are help (argparse reads the rest as unknown
+options after help). `--config-json` takes precedence
 over `--config` (`:904-906`) unless it is empty (`args.config_json if
 args.config_json else …`). `fixtures/cli.json` pins these exit codes against
 the Python program. New and only
