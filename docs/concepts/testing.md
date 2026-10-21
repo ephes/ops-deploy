@@ -125,6 +125,12 @@ branch:
   recorded commit name the commit they were checked against in their service
   page (homelab, jellyfin, `uv_install` and gotosocial: `540ede2b`, 2.56.0).
 
+Policy carried over from ops-library is checked without a checkout:
+`tests/test_traefik_hsts.py` fails when any template under `src/` or
+`tests/parity/` sets `stsPreload` (HSTS preload, removed from the roles in
+`abae172`), and each service's tests check its rendered route with
+`tests/hsts.py`.
+
 After a role change, port it (or document why not), print the new digests
 with `uv run python -m tests.test_ops_library_drift <ops-library>` and update
 the manifest and its commit. Without `OPS_LIBRARY_PATH` these tests are

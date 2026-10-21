@@ -57,6 +57,7 @@ from tests.compose_app_fixtures import (
     stamp_document,
     values,
 )
+from tests.hsts import hsts_headers
 
 PREFIX = "Deploy vpnstack | "
 STOP_DEPENDENTS = f"{PREFIX}Stop client, indexer before their network namespace is replaced"
@@ -808,3 +809,17 @@ def test_http_checks_take_their_retries(cfg: ComposeAppConfig, secrets: SecretVa
     check = next(c for c in run.executed_commands if "http://127.0.0.1:18080/" in c and "curl" in c)
     assert "seq 1 42" in check
     assert HttpCheck(url="http://x.example.org/").retries == 10
+
+
+@pytest.mark.parametrize("access", ["internal", "internal_or_basic_auth"])
+def test_route_sends_hsts_without_preload(cfg: ComposeAppConfig, secrets: SecretValues, access: str) -> None:
+    from ops_deploy.services.compose_app.deploy import route_config, route_without_http
+
+    route = cfg.route
+    assert route is not None
+    changed = cfg.model_copy(update={"route": route.model_copy(update={"access": access})})
+    rendered = route_config(changed, secrets)
+    assert rendered is not None
+
+    auth_hash = "$2y$05$" + "a" * 53 if rendered.basic_auth else None
+    assert len(hsts_headers(route_without_http(rendered, auth_hash))) == 1

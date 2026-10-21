@@ -14,6 +14,7 @@ from ops_deploy.services.archive.deploy import _django_hash, admin_current, rend
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 from tests.archive_fixtures import make_source
+from tests.hsts import hsts_headers
 
 SITE = "/home/archive/site"
 SECRET_VALUES = {
@@ -493,3 +494,9 @@ def test_venv_version_is_probed_as_the_service_user(cfg: ArchiveConfig) -> None:
     run = deploy(cfg, values(cfg))
     probe = next(c for c in run.fact_commands if "sys.version_info" in c)
     assert f"; then cd {SITE} && runuser -u archive -- " in probe
+
+
+def test_route_sends_hsts_without_preload(cfg: ArchiveConfig) -> None:
+    secrets = values(cfg)
+
+    assert len(hsts_headers(render_role("archive.traefik.yml.j2", resolve(cfg, secrets), secrets))) == 1

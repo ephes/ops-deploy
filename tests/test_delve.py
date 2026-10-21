@@ -21,6 +21,7 @@ from ops_deploy.services.delve.deploy import (
 )
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
+from tests.hsts import hsts_headers
 
 REF = SecretRef("secrets/prod/delve.yml")
 SECRET_VALUES = {"session_secret": "delve-fixture-session-secret", "dogfood_token": "delve-fixture-dogfood"}
@@ -586,3 +587,7 @@ def test_detector_keys_llama_server_reads_whole_are_accepted(analysis: DelveConf
 def test_detector_key_pattern_is_the_roles() -> None:
     # ops-library's llama_server_deploy / delve_deploy use the same string.
     assert DETECTOR_API_KEY_PATTERN == r"^[A-Za-z0-9._~+/=-]{32,}\Z"
+
+
+def test_route_sends_hsts_without_preload(cfg: DelveConfig) -> None:
+    assert len(hsts_headers(render_route(cfg, traefik_config(cfg), None), seconds=31536000)) == 1
