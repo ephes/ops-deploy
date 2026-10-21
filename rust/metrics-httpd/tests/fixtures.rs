@@ -780,3 +780,218 @@ async fn json_file_variants_match_the_python_scripts() {
     }
     assert!(checked >= 8 * 40, "{checked}");
 }
+
+/// The headers `static-site-httpd.py.j2`'s `end_headers` adds to every
+/// answer, as the fixture recorded them.
+const STATIC_SITE_HEADERS: [&str; 4] = [
+    "Cache-Control",
+    "Referrer-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+];
+
+/// Writes the sample tree of `static.json` below `base`; returns the site
+/// root.
+fn write_static_tree(fixture: &Value, base: &Path) -> PathBuf {
+    let mtime =
+        std::time::UNIX_EPOCH + std::time::Duration::from_secs(fixture["mtime"].as_u64().unwrap());
+    let entries = fixture["tree"].as_array().unwrap();
+    for entry in entries {
+        let path = base.join(text(&entry[1]));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        match text(&entry[0]) {
+            "file" => {
+                std::fs::write(&path, text(&entry[2])).unwrap();
+                let file = std::fs::File::options().write(true).open(&path).unwrap();
+                file.set_modified(mtime).unwrap();
+            }
+            "dir" => std::fs::create_dir_all(&path).unwrap(),
+            "symlink" => std::os::unix::fs::symlink(text(&entry[2]), &path).unwrap(),
+            other => panic!("unknown tree entry {other}"),
+        }
+    }
+    for entry in entries {
+        if text(&entry[0]) == "file" {
+            let mode = u32::try_from(entry[3].as_u64().unwrap()).unwrap();
+            std::fs::set_permissions(
+                base.join(text(&entry[1])),
+                std::fs::Permissions::from_mode(mode),
+            )
+            .unwrap();
+        }
+    }
+    base.join("site")
+}
+
+fn static_argv(fixture: &Value, root: &Path) -> Vec<String> {
+    fixture["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| match text(arg) {
+            "{root}" => root.display().to_string(),
+            other => other.to_owned(),
+        })
+        .collect()
+}
+
+fn case_headers(case: &Value) -> Vec<(String, String)> {
+    case["headers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pair| (text(&pair[0]).to_owned(), text(&pair[1]).to_owned()))
+        .collect()
+}
+
+/// PLAN.md 4.7, D-11: the static mode against `static-site-httpd.py.j2` on
+/// the fixture's sample tree.
+#[tokio::test]
+async fn static_mode_matches_static_site_httpd_py() {
+    let fixture = load("static.json");
+    let cases = fixture["cases"].as_array().unwrap();
+    assert!(cases.len() >= 60);
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_static_tree(&fixture, &dir.path().join("tree"));
+    let as_root = rustix::process::geteuid().is_root();
+    let (addr, stop) = start_variant(&static_argv(&fixture, &root), &HashMap::new()).await;
+    for case in cases {
+        let id = text(&case["id"]);
+        if id == "unreadable" && as_root {
+            // root reads a 0000 file; Python run as root would too.
+            continue;
+        }
+        let method = text(&case["method"]).to_owned();
+        // A 304 has no body either (and Rust keeps the connection open).
+        let head = method == "HEAD" || case["status"] == 304 || case["rust_status"] == 304;
+        let request = raw_request(
+            &method,
+            text(&case["target"]),
+            text(&case["version"]),
+            &case_headers(case),
+        );
+        let response = tokio::task::spawn_blocking(move || exchange(addr, &request, head))
+            .await
+            .unwrap();
+        // Every answer, also errors, redirects and 304, carries the four
+        // headers of `end_headers`.
+        for name in STATIC_SITE_HEADERS {
+            let expected = case["response_headers"]
+                .get(name)
+                .and_then(Value::as_str)
+                .unwrap_or(match name {
+                    "Cache-Control" => "no-cache",
+                    "Referrer-Policy" => "no-referrer",
+                    "X-Content-Type-Options" => "nosniff",
+                    _ => "SAMEORIGIN",
+                });
+            assert_eq!(response.header(name), Some(expected), "{id}: {name}");
+        }
+        // D-11: no ETag (Python sends none and Rust ignores If-None-Match).
+        assert_eq!(response.header("ETag"), None, "{id}");
+        let compare = text(&case["compare"]);
+        if matches!(compare, "status" | "no-response") {
+            // Python drops the connection or the plan allows a difference:
+            // the Rust expectation is written next to the case.
+            assert!(case["d"].is_string(), "{id}");
+            assert_eq!(
+                u64::from(response.status),
+                case["rust_status"].as_u64().unwrap(),
+                "{id}"
+            );
+            match response.status {
+                206 => {
+                    // D-11: `Range` is honoured (Python sends the whole file).
+                    let full = text(&case["body"]).as_bytes();
+                    assert_eq!(response.body, full[..5], "{id}");
+                    assert_eq!(
+                        response.header("Content-Range"),
+                        Some(format!("bytes 0-4/{}", full.len()).as_str()),
+                        "{id}"
+                    );
+                }
+                404 => {
+                    let body = String::from_utf8(response.body.clone()).unwrap();
+                    assert!(body.contains(&message_line("File not found")), "{id}");
+                }
+                _ => {}
+            }
+            continue;
+        }
+        assert_eq!(
+            u64::from(response.status),
+            case["status"].as_u64().unwrap(),
+            "{id}"
+        );
+        let expected = &case["response_headers"];
+        let body = String::from_utf8(response.body.clone()).unwrap();
+        match compare {
+            "bytes" => {
+                for name in ["Content-Length", "Last-Modified", "Location"] {
+                    assert_eq!(
+                        response.header(name),
+                        expected[name].as_str(),
+                        "{id}: {name}"
+                    );
+                }
+                assert_eq!(
+                    response.header("Content-Type"),
+                    expected["Content-Type"].as_str(),
+                    "{id}: Content-Type"
+                );
+                if response.status == 200 {
+                    // D-11: ServeDir announces byte ranges.
+                    assert_eq!(response.header("Accept-Ranges"), Some("bytes"), "{id}");
+                }
+                assert_eq!(body, text(&case["body"]), "{id}");
+            }
+            "html" => {
+                for name in ["Content-Type", "Connection"] {
+                    assert_eq!(
+                        response.header(name),
+                        expected[name].as_str(),
+                        "{id}: {name}"
+                    );
+                }
+                assert_eq!(body, without_style(text(&case["body"])), "{id}");
+            }
+            other => panic!("{id}: unknown compare mode {other}"),
+        }
+    }
+    let _ = stop.send(());
+    // The site is read-only: the PUT and POST cases wrote nothing.
+    assert!(!root.join("new.txt").exists());
+}
+
+/// D-11 on the real benchmark site: `static_real_site.json` is what the
+/// deployed Python server on staging (CPython 3.13, Debian's `mime.types`)
+/// answered for every published file (`parity/static_site.py --record`,
+/// PLAN.md 4.7); Rust serves the same names with the same `Content-Type`.
+/// Bodies and statuses of the real content were compared by that run.
+#[tokio::test]
+async fn static_types_match_the_real_site() {
+    let record = load("static_real_site.json");
+    let files = record["files"].as_array().unwrap();
+    assert!(!files.is_empty());
+    let dir = tempfile::tempdir().unwrap();
+    for file in files {
+        std::fs::write(dir.path().join(text(&file["path"])), text(&file["sha256"])).unwrap();
+    }
+    let argv = ["static", "--root", &dir.path().display().to_string()].map(str::to_owned);
+    let (addr, stop) = start_variant(&argv, &HashMap::new()).await;
+    for file in files {
+        let path = text(&file["path"]);
+        let request = raw_request("GET", &format!("/{path}"), "HTTP/1.1", &[]);
+        let response = tokio::task::spawn_blocking(move || exchange(addr, &request, false))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200, "{path}");
+        assert_eq!(
+            response.header("Content-Type"),
+            file["content_type"].as_str(),
+            "{path}"
+        );
+        assert_eq!(response.body, text(&file["sha256"]).as_bytes(), "{path}");
+    }
+    let _ = stop.send(());
+}

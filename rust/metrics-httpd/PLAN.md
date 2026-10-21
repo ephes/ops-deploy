@@ -7,8 +7,10 @@ fixture generator with drift test, `TESTMAP.md`); every mode answers the
 eight variants of 4.3 (fixture `json_file.json`, writer audit in 5.3). S2b
 implemented (`script` mode, fixture family `script`). S2c implemented
 (`apt-state` mode, port of `EndpointRebootStateTests`, fixture family
-`apt_state`). In the other modes a request past the gate gets 500
-`internal_error` until its slice (S2d, S2e) lands. Campaign "Rust-Ports Runde 2"
+`apt_state`). S2e implemented (`static` mode, fixture family `static`,
+`parity/static_site.py` and the real-site record of D-11). In the other
+modes a request past the gate gets 500 `internal_error` until its slice
+(S2d) lands. Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -381,6 +383,13 @@ index → 404 (`list_directory` overridden: "Directory listing is disabled");
 carries `Cache-Control: no-cache`, `Referrer-Policy: no-referrer`,
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`
 (`end_headers` override). Access log to **stdout**: `<client> - <message>`.
+Python evaluates only `If-Modified-Since` (and not when `If-None-Match` is
+present), ignores `If-Match`, `If-Unmodified-Since` and `Range`, sends no
+`ETag`, and its 301 and 304 carry no `Last-Modified`; the 301 has
+`Content-Length: 0` and `Location` = the path + `/` and the query
+(`urlunsplit`). The deployed site (`benchmarks-static`, staging) has
+exactly three files at the root (`static_site_restrict_to_required_files`:
+`index.html`, `report.md`, `snapshot.json`, 0.4–0.7 MB each).
 Pinned by `tests/test_static_site_deploy.py`
 (`test_rendered_server_serves_files_without_listing_or_writes`,
 `test_server_binds_loopback_and_disables_directory_listing`).
@@ -479,7 +488,8 @@ per-request 401/503, not a startup failure.
   outside latin-1 (Python: `UnicodeEncodeError` writing it into the status
   line) → 502; a script that cannot be started (missing, not executable;
   Python: `OSError` from `subprocess.run`) → 502 `send_error` "Cannot run
-  metrics script"; logyard unexpected Loki responses (non-object body,
+  metrics script"; static: a `%00` in the target (Python: `ValueError`
+  from `open()`) → Python's 404 page; logyard unexpected Loki responses (non-object body,
   disconnects not covered by the caught exceptions) → the caught-error path
   (ready false / ingest `error`) with the error text; openclaw/os_apt htpasswd
   timeout → not applicable (in-process verification).
@@ -580,12 +590,27 @@ per-request 401/503, not a startup failure.
   <status> <error_type>: <cause>`; never a credential or file content).
   logyard-health stays silent per request; static logs to stdout.
 - **D-10 Bind.** IPv6 bind addresses work in every mode (Python: dns only).
-- **D-11 Static.** Behaviour comes from `tower-http`'s `ServeDir`: MIME
-  types from `mime_guess` (Python: `mimetypes` + `/etc/mime.types`), `Range`
-  requests supported (Python 3.13 ignores `Range`), and the directory
-  redirect may use 307 instead of 301 if `ServeDir` offers no 301; S2e pins
-  the actual differences on the real benchmark site content and the parity
-  harness requires identical status and body for every published file.
+- **D-11 Static.** Behaviour comes from `tower-http`'s `ServeDir`; the mode
+  keeps Python's answers around it where that is a header or status
+  mapping (GET/HEAD only, leading `//` collapsed, non-origin-form target
+  404, `If-Match`/`If-Unmodified-Since` ignored, `If-None-Match` disabling
+  `If-Modified-Since`, no `ETag`, Python's 301 with its `Location` instead
+  of `ServeDir`'s 307, Python's 404 page, no `Last-Modified` on 304). The
+  remaining differences, pinned by `fixtures/static.json` (S2e): MIME types
+  from `mime_guess` (Python: `mimetypes` + the host's `/etc/mime.types`;
+  equal for every extension of the sample tree and of the real site);
+  `Range` honoured (one range → 206 with `Content-Range`, an unsatisfiable
+  or malformed one → 416; several ranges → the whole file as from Python)
+  and `Accept-Ranges: bytes` on 200; a directory with only `index.htm` →
+  404 (Python serves it); `..` or `%2e%2e` segments → 404 (Python resolves
+  them lexically inside the root); an `If-Modified-Since` that is not an
+  HTTP date (e.g. a numeric zone `+0000`) is ignored (200; Python: 304).
+  Real site: `parity/static_site.py` against the deployed Python server
+  (staging, CPython 3.13.5, 2026-10-21) found identical status, body,
+  `Content-Type`, `Content-Length`, `Last-Modified` and `end_headers`
+  headers for every published file, `/` and the conditional GETs
+  (`fixtures/static_real_site.json` records the files and their types;
+  `tests/fixtures.rs` checks the Rust types against it), so S9e stays.
 - **D-12 Size limits.** JSON files larger than 64 MiB → 502 `invalid_json`
   (Python: unbounded; live ≤ 24 KB); script stdout capped at 64 MiB → 502
   "Metrics script output too large" and the process group is killed; of the
@@ -658,13 +683,15 @@ rust/metrics-httpd/
   src/pyjson.rs                        # PyCompat serde_json Formatter (sorted keys via BTreeMap, ", "/": ", ensure_ascii), py truthiness, `in`, isinstance-int
   src/meta.rs                          # file stat/read, mtime/served/age, ISO formatting, meta replace/merge
   src/modes/mod.rs                     # shared flags, the 4.1 gate, the Mode trait, --check-config problems
-  src/modes/{json_file,script,apt_state,logyard_health,static_site}.rs
+  src/modes/{json_file,script,apt_state,logyard_health,static_site}.rs  # static_site: tower-http ServeDir
   src/clock.rs                         # injectable clock for tests
   tests/fixtures.rs, tests/apt_state.rs, tests/binary.rs   # fixture replay (in process, real sockets; apt_state family in its own file), process e2e
   fixtures/generate.py                 # Python oracle (8.2)
   fixtures/{pyjson,meta,auth,http_common,script,apt_state,json_file}.json, fixtures/float_repr/part-*.txt
+  fixtures/{static,static_real_site}.json   # S2e
   fixtures/htpasswd, htpasswd-mixed, htpasswd-invalid   # committed test-only files (bcrypt cost 4)
   parity/run_parity.py, parity/shadow_compare.py
+  parity/static_site.py                # S2e: static mode against a Python server on a site directory
   TESTMAP.md
 ```
 
@@ -677,7 +704,7 @@ are small and may stay async via `tokio::fs`, subprocesses via
 | HTTP server | `hyper` 1 (`server`, `http1`) + `hyper-util` (`tokio`, `server`) + `http-body-util` | one route per process, raw request-target access for the exact path match, `header_read_timeout`; no router needed |
 | runtime | `tokio` (`rt`, `net`, `time`, `signal`, `process`, `fs`, `io-util`, `macros`) | |
 | HTTP client (Loki) | `hyper-util` `client-legacy` (http only) | already in the tree; no TLS needed (D-13) |
-| static files | `tower-http` (`fs`, `set-header`) + `tower` | maintained file serving with conditional requests and path sanitising (D-11) |
+| static files | `tower-http` (`fs`; `ServeDir::try_call`, so no `tower`) | maintained file serving with conditional requests and path sanitising (D-11); the file is streamed, so the response body of every mode is a boxed body (`server::ResponseBody`) |
 | JSON | `serde_json` (`arbitrary_precision`; default `BTreeMap` map = sorted keys) with a custom `Formatter` | D-5 |
 | bcrypt | `bcrypt` (verify only) | D-6 |
 | base64 | `base64` | |
@@ -889,13 +916,23 @@ generator reads it from `$METRICS_HTTPD_OPS_CONTROL`, a sibling
 `ops-control` or `~/projects/ops-control` and otherwise keeps the
 committed torrent-vpn cases (the drift test reports that as a skip).
 
+S2e added the family `static` (`static.json`: the rendered
+`static-site-httpd.py.j2` serving a sample tree that the fixture describes
+and the replay rebuilds, with `mimetypes`' built-in table so the host's
+`mime.types` files do not leak in; same D-item convention as `script`) and
+`static_real_site.json` (not generated: the record of the real-site run of
+D-11).
+
 ### 8.3 Parity harness (process level)
 
 `rust/metrics-httpd/parity/run_parity.py` (stdlib) starts the rendered Python
 script and the Rust binary side by side on loopback with identical inputs and
 runs the matrix over real sockets, plus: keep-alive reuse, a slow client
 holding a connection while another request arrives (expected D-1
-difference), concurrent requests, SIGTERM exit code. Time fields
+difference), concurrent requests, SIGTERM exit code. The static mode's part exists
+since S2e as `parity/static_site.py` (stdlib; `--site DIR --binary BIN`,
+optionally `--reference-url` for a deployed Python server, `--record`):
+S3 runs it in CI on a sample tree. Time fields
 (`served_at_epoch`, `age_seconds`, logyard `generated_at`) are compared with
 ±1 s tolerance; everything else per the case's `compare` mode. `just
 rust-parity-metrics-httpd`; the `rust` CI job runs it (installs
@@ -1180,7 +1217,7 @@ to the coordinator of the campaign) and accepted every recommended answer:
 3. **Q3 Static site in scope: yes, as the last cutover (S9e).** S2e and S9e
    are dropped only if the parity run on the real site shows a status or
    body difference that `ServeDir` cannot avoid (10.5); S4 therefore waits
-   for S2e.
+   for S2e. S2e's run (2026-10-21) found none (D-11): S9e stays.
 4. **Q4 Retirement soak: 7 days.** Python is retired 7 days after the last
    cutover (S10a/S10b), keeping the `*_impl` variables for one more
    collection release (S10c removes them; 10.6).

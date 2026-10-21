@@ -9,7 +9,8 @@ scripts today. The contract is [PLAN.md](PLAN.md), the test map
 hosts run the Python scripts.
 
 Status: **S1** (core), **S2a** (`json-file` mode), **S2b** (`script`
-mode) and **S2c** (`apt-state` mode). What exists:
+mode), **S2c** (`apt-state` mode) and **S2e** (`static` mode). What
+exists:
 
 - The command line of PLAN.md 4.9 for all five modes (`json-file`,
   `script`, `apt-state`, `logyard-health`, `static`), `--version`
@@ -42,8 +43,15 @@ mode) and **S2c** (`apt-state` mode). What exists:
   reboot flag and `uname` are read per request), answers like the Python
   script for every fixture case, and answers with a JSON error where the
   script crashes (D-2).
+
+- `static` mode (S2e, `static_site_deploy`): the site root served
+  read-only by `tower-http`'s `ServeDir` (streamed files, `index.html`,
+  `If-Modified-Since`, `Range`) with the answers of
+  `static-site-httpd.py.j2` kept around it: GET/HEAD only, Python's 301
+  for a directory without `/`, its 404 page, the four `end_headers`
+  headers on every answer, the access line on stdout (PLAN.md 4.7, D-11).
 - In the other modes a request that passes the gate gets 500
-  `internal_error` until the mode's slice (S2d, S2e) lands.
+  `internal_error` until the mode's slice (S2d) lands.
 
 ```bash
 metrics-httpd json-file --bind 127.0.0.1 --port 9103 --path /.well-known/backup \
@@ -73,6 +81,26 @@ none is found.
 
 `fixtures/script.json` (S2b) carries the fixture scripts themselves; the
 replay writes them to a temporary directory and runs them.
+`fixtures/static.json` (S2e) describes its sample site tree the same way.
+`fixtures/static_real_site.json` is not generated: it records the deployed
+benchmark site's files and types from the run below.
+
+## Static-site parity
+
+`parity/static_site.py` (stdlib) serves a site directory with the Rust
+binary and compares every file (GET, HEAD, conditional GET) and directory
+with the Python side: the rendered `static-site-httpd.py.j2` started on the
+same directory, or a deployed server (`--reference-url`, read-only). For
+the real benchmark site (S2e, 2026-10-21; no difference):
+
+```bash
+mkdir site && for f in index.html report.md snapshot.json; do
+  curl -sSR -o "site/$f" "https://benchmarks.staging.django-cast.com/$f"; done
+python3 -I rust/metrics-httpd/parity/static_site.py --site site \
+    --binary rust/target/release/metrics-httpd \
+    --reference-url https://benchmarks.staging.django-cast.com \
+    --record rust/metrics-httpd/fixtures/static_real_site.json
+```
 
 `fixtures/htpasswd*` are committed test-only files (bcrypt cost 4; the
 passwords are in `generate.py`), created once with `htpasswd -nbB -C 4`.

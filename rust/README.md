@@ -7,7 +7,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
-| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c); the other mode bodies arrive with S2d–S2e ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
+| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c), `static` mode (S2e); the `logyard-health` body arrives with S2d ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
 | `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | S1–S4: `--version`, `--check-policy`, every branch of the Python guard's `check()` (Layer-1 parity, filesystem layer), forced-command mode, `--decide` and `--shadow`; not released or installed yet ([`TESTMAP.md`](echoport-command-guard/TESTMAP.md)) |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`

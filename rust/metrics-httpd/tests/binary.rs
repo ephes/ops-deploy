@@ -987,3 +987,101 @@ fn json_file_serves_the_document_and_logs_5xx_causes() {
         );
     }
 }
+
+/// PLAN.md 4.7, D-9: the static mode logs Python's access line
+/// (`<client> - "<request line>" <status> -`) to stdout, the lines of
+/// `static.json`; stderr has the startup line only.
+#[test]
+fn static_mode_logs_access_lines_to_stdout() {
+    let fixture: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixtures().join("static.json")).unwrap())
+            .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("index.html"), "index\n").unwrap();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    let mut child = Command::new(BINARY)
+        .args(["static", "--bind", "127.0.0.1", "--port", "0", "--root"])
+        .arg(dir.path())
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    let mut startup = String::new();
+    stderr.read_line(&mut startup).unwrap();
+    let addr: SocketAddr = startup
+        .trim_end()
+        .rsplit(' ')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mut expected = Vec::new();
+    for id in [
+        "root",
+        "index-head",
+        "missing",
+        "dir-redirect",
+        "put",
+        "lowercase-get",
+    ] {
+        let case = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["id"] == id)
+            .unwrap();
+        let headers: Vec<(String, String)> = case["headers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| {
+                (
+                    pair[0].as_str().unwrap().to_owned(),
+                    pair[1].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        let method = case["method"].as_str().unwrap();
+        let request = raw_request(
+            method,
+            case["target"].as_str().unwrap(),
+            case["version"].as_str().unwrap(),
+            &headers,
+        );
+        let response = exchange(addr, &request, method == "HEAD");
+        assert_eq!(
+            u64::from(response.status),
+            case["status"].as_u64().unwrap(),
+            "{id}"
+        );
+        assert_eq!(
+            response.header("Server"),
+            Some(format!("SimpleHTTP/0.6 metrics-httpd/{}", env!("CARGO_PKG_VERSION")).as_str()),
+            "{id}"
+        );
+        expected.push(format!(
+            "127.0.0.1 - {}",
+            case["access_log"].as_str().unwrap()
+        ));
+    }
+    let status = Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let mut out = String::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut out)
+        .unwrap();
+    let mut rest = String::new();
+    stderr.read_to_string(&mut rest).unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+    assert_eq!(out.lines().collect::<Vec<_>>(), expected);
+    assert_eq!(rest, "", "stderr after the startup line");
+}

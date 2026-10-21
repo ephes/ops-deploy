@@ -1,0 +1,27 @@
+{
+ "reference": "https://benchmarks.staging.django-cast.com (deployed)",
+ "recorded": "2026-10-21",
+ "files": [
+  {
+   "path": "index.html",
+   "size": 577728,
+   "sha256": "c12a4a322853b22cffd3afdaccf7a154d229b39b794c6fa3c078b45b293b7b9d",
+   "content_type": "text/html",
+   "last_modified": "Sat, 03 Oct 2026 13:57:50 GMT"
+  },
+  {
+   "path": "report.md",
+   "size": 436804,
+   "sha256": "c50f94d7a3b3af52e388a826beb4ab8e14aa0a87d7f14aa40e72d0a9600472a4",
+   "content_type": "text/markdown",
+   "last_modified": "Sat, 03 Oct 2026 13:57:50 GMT"
+  },
+  {
+   "path": "snapshot.json",
+   "size": 688314,
+   "sha256": "440d352f626ca724e2570a361ecc5e1fb155cba18e8bf8c44cc6f8eca3b8ea69",
+   "content_type": "application/json",
+   "last_modified": "Sat, 03 Oct 2026 13:57:50 GMT"
+  }
+ ]
+}

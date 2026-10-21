@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use chrono::{DateTime, Local};
-use http_body_util::Full;
+use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::{BodyExt as _, Full};
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Method, Response, StatusCode, Version};
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -30,8 +31,19 @@ pub const MAX_CONNECTIONS: usize = 64;
 pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const LISTEN_BACKLOG: u32 = 128;
 
+/// The body of every response: a buffered body (every mode's answers) or
+/// a file streamed in chunks (`static`, `tower-http`'s `ServeDir`).
+pub type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
+
 /// The response type of every handler.
-pub type HttpResponse = Response<Full<Bytes>>;
+pub type HttpResponse = Response<ResponseBody>;
+
+/// A buffered response body.
+pub fn full_body(body: impl Into<Bytes>) -> ResponseBody {
+    Full::new(body.into())
+        .map_err(|never| match never {})
+        .boxed_unsync()
+}
 
 /// What a handler sees of a request (the body is never read).
 #[derive(Debug, Clone)]
@@ -277,7 +289,7 @@ pub fn log_line(line: &str) {
 }
 
 fn response(status: StatusCode, content_type: Option<&'static str>, body: Vec<u8>) -> HttpResponse {
-    let mut response = Response::new(Full::new(Bytes::from(body)));
+    let mut response = Response::new(full_body(body));
     *response.status_mut() = status;
     if let Some(content_type) = content_type {
         response

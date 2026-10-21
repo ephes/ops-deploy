@@ -46,6 +46,13 @@ one of the rendered Python endpoint scripts produces. The Rust tests
     script is read from an ops-control checkout (``$METRICS_HTTPD_OPS_CONTROL``,
     else a sibling ``ops-control`` or ``~/projects/ops-control``); without
     one, ``write`` and ``check`` keep the committed torrent-vpn cases.
+``static`` (templates)
+    ``static.json``: ``static-site-httpd.py.j2`` (S2e) serving a sample tree
+    (written by the replay from the fixture) with ``mimetypes``' built-in
+    table: files, directories, redirects, conditional and range requests,
+    path forms, methods; the Rust expectation next to every case where
+    Python drops the connection or the plan allows a difference (D-2, D-3,
+    D-11).
 
 Commands: ``write`` regenerates the files in place, ``check`` regenerates in
 memory and fails on any difference (the drift test,
@@ -2595,6 +2602,283 @@ def build_json_file() -> dict[str, str]:
 
 # --------------------------------------------------------------------------
 
+# static (S2e): static-site-httpd.py.j2 on a sample tree (PLAN.md 4.7, D-11)
+
+STATIC = "roles/static_site_deploy/templates/static-site-httpd.py.j2"
+STATIC_ARGV = ["static", "--root", "{root}"]
+# Every file's mtime: the live site's Last-Modified (2026-10-03 13:57:50 UTC).
+STATIC_MTIME = 1_791_035_870
+STATIC_DATE = "Sat, 03 Oct 2026 13:57:50 GMT"
+# (kind, path below the tree, content or link target, mode). The site root
+# is `site/`; `outside.txt` lies next to it.
+STATIC_TREE: list[tuple[str, str, str, int]] = [
+    ("file", "site/index.html", "<!doctype html><title>benchpack registry snapshot</title>\n", 0o644),
+    ("file", "site/report.md", "# Report\n\nbenchpack registry snapshot ünicode\n", 0o644),
+    ("file", "site/snapshot.json", '{"benchmarks": [1, 2, 3]}\n', 0o644),
+    ("file", "site/style.css", "body { margin: 0 }\n", 0o644),
+    ("file", "site/app.js", "console.log(1);\n", 0o644),
+    ("file", "site/notes.txt", "plain text\n", 0o644),
+    ("file", "site/logo.svg", '<svg xmlns="http://www.w3.org/2000/svg"/>\n', 0o644),
+    ("file", "site/data.csv", "a,b\n1,2\n", 0o644),
+    ("file", "site/page.htm", "htm page\n", 0o644),
+    ("file", "site/data", "no extension\n", 0o644),
+    ("file", "site/archive.tar.gz", "not really gzip\n", 0o644),
+    ("file", "site/UPPER.HTML", "upper-case extension\n", 0o644),
+    ("file", "site/a b.txt", "space in the name\n", 0o644),
+    ("file", "site/ü.txt", "non-ASCII name\n", 0o644),
+    ("file", "site/.hidden", "dot file\n", 0o644),
+    ("file", "site/empty.txt", "", 0o644),
+    ("file", "site/private.txt", "unreadable\n", 0o000),
+    ("file", "site/sub/index.html", "sub index\n", 0o644),
+    ("file", "site/sub/page.html", "sub page\n", 0o644),
+    ("file", "site/htm/index.htm", "htm index\n", 0o644),
+    ("dir", "site/empty", "", 0o755),
+    ("file", "outside.txt", "outside the root\n", 0o644),
+    ("symlink", "site/link.txt", "../outside.txt", 0),
+    ("symlink", "site/linkdir", "sub", 0),
+]
+STATIC_HEADERS = (
+    "Content-Type",
+    "Content-Length",
+    "Last-Modified",
+    "Location",
+    "Connection",
+    "Cache-Control",
+    "Referrer-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+)
+STATIC_ACCESS_LINE = re.compile(r'^127\.0\.0\.1 - (".*" \d{3} -)$')
+
+
+def static_cases() -> list[dict[str, Any]]:
+    """(id, method, target, headers[, version]) plus the Rust expectation
+    where the plan allows a difference."""
+    ims = [("If-Modified-Since", STATIC_DATE)]
+    later = [("If-Modified-Since", "Sat, 03 Oct 2026 14:57:50 GMT")]
+    earlier = [("If-Modified-Since", "Sat, 03 Oct 2026 13:57:49 GMT")]
+    cases: list[tuple[Any, ...]] = [
+        ("root", "GET", "/", []),
+        ("root-head", "HEAD", "/", []),
+        ("index", "GET", "/index.html", []),
+        ("index-head", "HEAD", "/index.html", []),
+        ("report-md", "GET", "/report.md", []),
+        ("snapshot-json", "GET", "/snapshot.json", []),
+        ("css", "GET", "/style.css", []),
+        ("js", "GET", "/app.js", []),
+        ("txt", "GET", "/notes.txt", []),
+        ("svg", "GET", "/logo.svg", []),
+        ("csv", "GET", "/data.csv", []),
+        ("htm", "GET", "/page.htm", []),
+        ("no-extension", "GET", "/data", []),
+        ("gz", "GET", "/archive.tar.gz", []),
+        ("upper-case-extension", "GET", "/UPPER.HTML", []),
+        ("space-encoded", "GET", "/a%20b.txt", []),
+        ("non-ascii-encoded", "GET", "/%C3%BC.txt", []),
+        ("hidden", "GET", "/.hidden", []),
+        ("empty-file", "GET", "/empty.txt", []),
+        ("query", "GET", "/index.html?x=1", []),
+        ("empty-query", "GET", "/index.html?", []),
+        ("double-slash", "GET", "//index.html", []),
+        ("inner-double-slash", "GET", "/sub//page.html", []),
+        ("dot-segment", "GET", "/./index.html", []),
+        ("encoded-slash", "GET", "/sub%2Fpage.html", []),
+        ("sub-index", "GET", "/sub/", []),
+        ("sub-page", "GET", "/sub/page.html", []),
+        ("dir-redirect", "GET", "/sub", []),
+        ("dir-redirect-head", "HEAD", "/sub", []),
+        ("dir-redirect-query", "GET", "/sub?x=1", []),
+        ("dir-redirect-empty-query", "GET", "/sub?", []),
+        ("dir-redirect-double-slash", "GET", "//sub", []),
+        ("dir-redirect-encoded", "GET", "/s%75b", []),
+        ("empty-dir-redirect", "GET", "/empty", []),
+        ("symlink-dir", "GET", "/linkdir/page.html", []),
+        ("symlink-outside", "GET", "/link.txt", []),
+        ("htm-index", "GET", "/htm/", [], "HTTP/1.1", {"rust_status": 404, "d": "D-11"}),
+        # list_directory's "Directory listing is disabled" page; Rust sends
+        # the "File not found" page (ServeDir does not say why).
+        ("empty-dir", "GET", "/empty/", [], "HTTP/1.1", {"rust_status": 404, "d": "D-3"}),
+        ("missing", "GET", "/missing.html", []),
+        ("missing-head", "HEAD", "/missing.html", []),
+        ("missing-dir", "GET", "/missing/", []),
+        ("file-trailing-slash", "GET", "/index.html/", []),
+        ("file-as-dir", "GET", "/index.html/x", []),
+        ("unreadable", "GET", "/private.txt", []),
+        ("parent-escape", "GET", "/../outside.txt", []),
+        ("parent-inside", "GET", "/sub/../index.html", [], "HTTP/1.1", {"rust_status": 404, "d": "D-11"}),
+        ("encoded-parent", "GET", "/sub/%2e%2e/index.html", [], "HTTP/1.1", {"rust_status": 404, "d": "D-11"}),
+        ("backslash", "GET", "/sub%5Cpage.html", []),
+        ("nul", "GET", "/index.html%00", [], "HTTP/1.1", {"rust_status": 404, "d": "D-2"}),
+        ("invalid-utf8", "GET", "/%FF", []),
+        ("absolute-form", "GET", "http://127.0.0.1/index.html", []),
+        ("ims-equal", "GET", "/index.html", ims),
+        ("ims-equal-head", "HEAD", "/index.html", ims),
+        ("ims-later", "GET", "/index.html", later),
+        ("ims-earlier", "GET", "/index.html", earlier),
+        ("ims-directory-index", "GET", "/", ims),
+        ("ims-invalid", "GET", "/index.html", [("If-Modified-Since", "yesterday")]),
+        (
+            "ims-numeric-zone",
+            "GET",
+            "/index.html",
+            [("If-Modified-Since", "Sat, 03 Oct 2026 13:57:50 +0000")],
+            "HTTP/1.1",
+            {"rust_status": 200, "d": "D-11"},
+        ),
+        ("ims-with-if-none-match", "GET", "/index.html", ims + [("If-None-Match", '"x"')]),
+        ("if-none-match-star", "GET", "/index.html", [("If-None-Match", "*")]),
+        ("if-match", "GET", "/index.html", [("If-Match", '"nope"')]),
+        ("if-unmodified-since", "GET", "/index.html", [("If-Unmodified-Since", "Sat, 03 Oct 2026 12:00:00 GMT")]),
+        ("range", "GET", "/index.html", [("Range", "bytes=0-4")], "HTTP/1.1", {"rust_status": 206, "d": "D-11"}),
+        ("range-multi", "GET", "/index.html", [("Range", "bytes=0-1,3-4")]),
+        ("range-unsatisfiable", "GET", "/index.html", [("Range", "bytes=9999-")], "HTTP/1.1", {"rust_status": 416, "d": "D-11"}),
+        ("range-malformed", "GET", "/index.html", [("Range", "lines=1-2")], "HTTP/1.1", {"rust_status": 416, "d": "D-11"}),
+        ("post", "POST", "/index.html", [("Content-Length", "0")]),
+        ("put", "PUT", "/new.txt", [("Content-Length", "0")]),
+        ("delete", "DELETE", "/index.html", []),
+        ("options", "OPTIONS", "/index.html", []),
+        ("lowercase-get", "get", "/index.html", []),
+        ("http10", "GET", "/index.html", [], "HTTP/1.0"),
+        ("http10-missing", "GET", "/missing.html", [], "HTTP/1.0"),
+    ]
+    rows = []
+    for case in cases:
+        case_id, method, target, headers = case[:4]
+        row: dict[str, Any] = {
+            "id": case_id,
+            "method": method,
+            "target": target,
+            "version": case[4] if len(case) > 4 else "HTTP/1.1",
+            "headers": headers,
+        }
+        row.update(case[5] if len(case) > 5 else {})
+        rows.append(row)
+    return rows
+
+
+def build_static_tree(base: Path) -> Path:
+    for kind, name, content, mode in STATIC_TREE:
+        path = base / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "file":
+            path.write_text(content, encoding="utf-8")
+        elif kind == "dir":
+            path.mkdir(exist_ok=True)
+        else:
+            path.symlink_to(content)
+    for kind, name, _content, mode in STATIC_TREE:
+        path = base / name
+        if kind == "file":
+            os.utime(path, (STATIC_MTIME, STATIC_MTIME))
+            path.chmod(mode)
+    return base / "site"
+
+
+def static_exchange(port: int, case: dict[str, Any]) -> dict[str, Any]:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+            sock.sendall(raw_request(case))
+            response = http.client.HTTPResponse(sock, method=case["method"])
+            response.begin()
+            body = response.read()
+    except (http.client.HTTPException, ConnectionError):
+        # The handler raised: socketserver closes the connection unanswered.
+        return {"status": None}
+    return {
+        "status": response.status,
+        "response_headers": {name: response.getheader(name) for name in STATIC_HEADERS},
+        "body": body.decode("utf-8"),
+    }
+
+
+@contextlib.contextmanager
+def builtin_mimetypes():
+    """``mimetypes`` without the host's ``/etc/mime.types``-style files, so
+    the fixture does not depend on the machine that generates it (the live
+    site's types are pinned from staging, ``parity/static_real_site.json``)."""
+    import mimetypes
+
+    saved = mimetypes.knownfiles
+    mimetypes.knownfiles = []
+    mimetypes.init()
+    try:
+        yield
+    finally:
+        mimetypes.knownfiles = saved
+        mimetypes.init()
+
+
+def build_static() -> dict[str, str]:
+    import functools
+
+    out = []
+    captured_out = _CapturedStderr()
+    captured_err = _CapturedStderr()
+    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stdout(
+        captured_out
+    ), contextlib.redirect_stderr(captured_err), builtin_mimetypes():
+        tmp = Path(tmp_name)
+        root = build_static_tree(tmp / "tree")
+        module = load_module(
+            "static_site",
+            STATIC,
+            {
+                "static_site_path": str(root),
+                "static_site_bind_host": "127.0.0.1",
+                "static_site_port": 0,
+            },
+            tmp,
+        )
+        handler = functools.partial(module.StaticHandler, directory=str(root))
+        server = module.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for case in static_cases():
+                captured_out.take()
+                result = static_exchange(server.server_address[1], case)
+                access = [
+                    m.group(1)
+                    for line in captured_out.take().splitlines()
+                    if (m := STATIC_ACCESS_LINE.match(line))
+                ]
+                captured_err.take()
+                row = {**case, **result, "access_log": access[0] if access else None}
+                if result["status"] is None:
+                    compare = "no-response"
+                elif "rust_status" in case:
+                    compare = "status"
+                elif (result["response_headers"]["Content-Type"] or "").startswith(
+                    "text/html;charset=utf-8"
+                ):
+                    # send_error's page (D-3): compared without the <style>
+                    # block CPython 3.14 added; Content-Length not compared.
+                    compare = "html"
+                else:
+                    compare = "bytes"
+                row["compare"] = compare
+                out.append(row)
+        finally:
+            server.shutdown()
+            server.server_close()
+            for _kind, name, _content, mode in STATIC_TREE:
+                if mode == 0o000:
+                    (tmp / "tree" / name).chmod(0o644)
+    return {
+        "static.json": dump_json(
+            {
+                "template": STATIC,
+                "argv": STATIC_ARGV,
+                "mtime": STATIC_MTIME,
+                "tree": [list(entry) for entry in STATIC_TREE],
+                "cases": out,
+            }
+        )
+    }
+
+
+# --------------------------------------------------------------------------
+
 FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "float_repr": (False, build_float_repr),
     "pyjson": (False, build_pyjson),
@@ -2604,6 +2888,8 @@ FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "script": (True, build_script),
     "apt_state": (True, build_apt_state),
     "json_file": (True, build_json_file),
+
+    "static": (True, build_static),
 }
 
 
