@@ -4,8 +4,9 @@ Status: F1 implemented (workspace, toolchain, cargo-deny policy, LICENSE,
 `metrics-httpd` skeleton, `rust.yml` CI, `build_ignore` test, `just
 rust-check`/`rust-test`; see `rust/README.md`); F2 implemented
 (`rust-release.yml`, `rust/scripts/release_checks.py` with the
-`release.json` format and tests; `rust/README.md` "Releases"); F3–F4
-planned. Campaign
+`release.json` format and tests; `rust/README.md` "Releases"); F3 implemented
+(`roles/rust_release_binary` with the `protect` list and the `previous`
+rollback pin, 6.2); F4 planned. Campaign
 "Rust-Ports Runde 2" (umbrella item `rust-ports-campaign`), stream
 `rust-metrics-httpd`, which also owns this foundation.
 
@@ -314,9 +315,10 @@ Rules:
 
 ```
 /opt/<crate>/<version>/<crate>       # root:root 0755, never modified in place
-/opt/<crate>/<version>/LICENSE
+/opt/<crate>/<version>/LICENSE       # (and any other archive member, 6.2)
 /opt/<crate>/<version>/.archive-sha256
-/opt/<crate>/.pins/<consumer>        # root:root 0644, one line: the version this consumer runs
+/opt/<crate>/.pins/<consumer>        # root:root 0644, "<version>\n": the version this consumer runs, verified live
+/opt/<crate>/.pins/<consumer>.previous  # root:root 0644, "<version>\n": the rollback pin (6.2)
 /opt/<crate>/.staging-<version>/     # transient, removed on success and on failure
 ```
 
@@ -325,37 +327,85 @@ independent consumers (for metrics-httpd up to nine roles/units on one host)
 share one install root, so pruning may never remove a version another
 consumer still runs. A consumer writes its pin only after it verified that its
 unit (or other entry point) runs that version, and removes its pin when it
-switches back to Python.
+switches back to Python. Consumer names have no dot, so `<consumer>.previous`
+never collides with another consumer's pin. A version (directory name, pin
+content) is `MAJOR.MINOR.PATCH` with an optional pre-release and no build
+metadata, the grammar of the tag `<crate>-v<version>`.
 
 ### 6.2 Ansible: internal helper role `rust_release_binary` (F3)
 
-New role `roles/rust_release_binary/` (internal, like
-`webapp_deploy_internal`), used with `include_role` + `tasks_from`:
+Implemented in F3: `roles/rust_release_binary/` (its README is the reference
+for every input and fact), with the decisions (pin moves, prune plan, the
+version and consumer grammar) as plain functions in
+`plugins/filter/rust_release.py`, so F4 can make the same decisions on the
+same files. Internal, like `webapp_deploy_internal`; used with `include_role`
++ `tasks_from` (without `tasks_from` it fails):
 
 | tasks_from | Does | Inputs (`rust_release_binary_*`) |
 | --- | --- | --- |
-| `install` | the mailgun-relay `tasks/rust.yml` sequence, generalised: stat; refuse a different archive for an installed version; download with `get_url` + `checksum: sha256:` (or copy `local_archive` after checking its sha256 on the controller); list members and require exactly the regular files of `members` (default `[<name>, LICENSE]`); unpack into the staging dir; chown/chmod; record `.archive-sha256`; `mv --no-target-directory` into place; run `<binary> --version` as `validate_user` and assert `<name> <version> (`; `rescue` removes a fresh install and fails (when `fail_hard`) or sets `rust_release_binary_failed` and warns via an ignored `fail` (mailgun-relay's pattern, so the Python rollback is never blocked) | `name`, `version`, `sha256`, `members`, `release_url` (default `https://github.com/ephes/ops-library/releases/download/{{ name }}-v{{ version }}/{{ name }}-{{ version }}-x86_64-unknown-linux-gnu.tar.gz`), `local_archive`, `install_root` (default `/opt/{{ name }}`), `validate_user`, `fail_hard` |
-| `pin` | write or remove `.pins/<consumer>` | `name`, `install_root`, `consumer`, `version` or `state: absent` |
-| `prune` | keep the `keep_versions` (default 3) newest version directories by mtime **plus** every version named in any `.pins/*`; never runs after a failure in the same play | `name`, `install_root`, `keep_versions` |
+| `install` | the mailgun-relay `tasks/rust.yml` sequence, generalised: stat; refuse a different archive for an installed version; download with `get_url` + `checksum: sha256:` (or copy `local_archive` after checking its sha256 on the controller); list members and require exactly the regular files of `members` at the archive root, once each; unpack with `tar --no-same-owner` (not `unarchive`, which needs GNU tar on the controller side of the tests) into the staging dir; chown/chmod (`executables` 0755, other members 0644); record `.archive-sha256`; `mv --no-target-directory` into place; run `<binary> --version` as `validate_user` and assert the first line starts with `<name> <version> (`; `rescue` removes a fresh install of this include (never a directory that existed before) and fails (when `fail_hard`) or sets `rust_release_binary_failed` and warns via an ignored `fail` (mailgun-relay's pattern, so the Python rollback is never blocked; input validation is inside the guarded block for the same reason). Never moves a pin, never deletes another version | `name`, `version`, `sha256`, `members` (default `[<name>, LICENSE]`; software-live passes its helper and its GPL license file, its plan 7.4), `executables` (default `[<name>]`), `release_url` (default `https://github.com/ephes/ops-library/releases/download/{{ name }}-v{{ version }}/{{ name }}-{{ version }}-x86_64-unknown-linux-gnu.tar.gz`; a variant archive URL is passed here), `local_archive`, `install_root` (default `/opt/{{ name }}`), `validate_user` (default `nobody`), `fail_hard` (default `true`), `owner`/`group` (default root; only the tests change them) |
+| `pin` | write or remove `.pins/<consumer>` and move the rollback pin `.pins/<consumer>.previous`: pinning `V` while the current pin names `C ≠ V` makes `C` the previous pin; pinning the current version again moves nothing; `state: absent` removes the current pin and keeps its version as the previous pin (unless `keep_previous: false`); an explicit `previous` replaces the automatic choice (for a consumer without a current pin that knows the live version). The previous pin is written before the current pin changes. `state: present` requires the version to be installed; a pin file that is not a regular file holding exactly one version fails the task and changes nothing | `name`, `install_root`, `consumer`, `version` or `state: absent`, `previous`, `keep_previous` (default `true`) |
+| `prune` | keep the `keep_versions` (default 3) newest version directories by mtime (ties by name) **plus** every version named in any `.pins/*` (current and previous pins of every consumer) **plus** every version in `protect`; never touches symlinks, hidden entries or directories not named like a version. **Fails closed** (deletes nothing, warns with an ignored `fail`, never fails the play) when `live_state_unknown` is true, when an install of this crate failed earlier in the run, when a `protect` entry cannot be interpreted, or when a pin file is not a regular file holding exactly one version | `name`, `install_root`, `keep_versions`, `protect`, `live_state_unknown` (default `false`) |
 
-Outputs (facts): `rust_release_binary_path`
-(`<root>/<version>/<name>`), `rust_release_binary_failed`.
+Outputs (facts): `rust_release_binary_path` (`<root>/<version>/<name>`),
+`rust_release_binary_failed`, `rust_release_binary_failed_names` (sticky for
+the run), `rust_release_binary_pins` (`{current, previous}`),
+`rust_release_binary_prune` (`{skipped, versions, keep, removed}`).
 
-Constraints the role must keep (and its tests assert):
+**Version protection (owner decision 2026-10-21, after the software-live and
+echoport-guard plan reviews).** Prune never deletes
+
+- (a) a version in the explicit `protect` list, which the consuming role fills
+  from the **live state**: the version or the executable path that the live
+  `authorized_keys` forced command, the unit's current `ExecStart`/drop-in or
+  a running process names. Entries are versions or absolute executable paths
+  as `readlink /proc/<pid>/exe` prints them (a trailing ` (deleted)` is
+  accepted), so the list can carry the executables of **running oneshot
+  processes**, e.g. a collector run that still executes vN after its unit
+  moved on, and their helper children; `<root>/<version>/<file>` below the
+  configured root or its resolved spelling (`realpath`) protects `<version>`,
+  a path elsewhere (`/usr/bin/python3`) protects nothing, and a path that lies
+  under the root but not as `<version>/<file>`, is not normalised, or names
+  the binary outside both spellings of the root makes the live state unknown;
+- (b) the separate `previous` rollback pin, which moves only when the
+  consumer pins a new version, i.e. only after that version is verified live.
+
+When the consumer marks its live state as unknown (`live_state_unknown:
+true`: a drop-in, unit, cgroup or executable it needs could not be read),
+prune deletes nothing. When to pin, what to protect and when the state is
+unknown is the consumer's side (software-live plan 7.3, echoport-command-guard
+plan 6.2); the mechanism and its tests are F3's.
+
+Constraints the role keeps (and its tests assert):
 
 - No secret is passed through `environment:` under `become_user`
   (`tests/test_become_environment_secrets.py`, ops-library ≥ 2.55.0); the
-  helper handles no secrets at all.
+  helper handles no secrets at all and sets no `environment:`.
 - `check_mode`: no download/unpack; an existing version is still validated
-  (as mailgun-relay).
-- Idempotent: a second run with the same pin reports no change.
-- Tests: `tests/test_rust_release_binary.py` (static: task names, no
-  `environment:` with secrets, archive member check present, prune honours
-  pins) plus an `ansible-playbook` run against localhost with a locally built
-  fake archive (a shell script named `<name>` that prints the version),
-  covering install, idempotent re-run, different-archive refusal, pin, prune
-  with pins, and the warn-and-continue path. `just test-rust-release-binary`,
-  wired into `just test`.
+  (as mailgun-relay); pin and prune change nothing.
+- Idempotent: a second run with the same version, pin and prune reports no
+  change.
+- Tests: `tests/test_rust_release_binary.py` (`just
+  test-rust-release-binary`, wired into `just test`): static checks (task
+  names, no `environment:`, no shell, only the version check becomes another
+  user, verified download, archive member check before extraction, prune
+  honours pins, `protect` and unknown state, previous pin written before the
+  current one), unit tests of the filters, and `ansible-playbook` runs
+  against localhost with locally built fake archives (a shell script named
+  `<name>` that prints the version) in a temporary root, covering install,
+  idempotent re-run, extra members, download with checksum,
+  different-archive refusal, member refusals (extra, missing, duplicate,
+  nested, symlink, directory, `..`), the warn-and-continue path (and prune
+  blocked after it in the same run), check mode, pin moves, prune with the
+  pins of two consumers and `protect`, the rollback sequence (install v2,
+  roll back to v1, switch to v3 keeps v1 as the previous pin; v4 keeps v1
+  only while it is protected), switch to Python keeping the last Rust
+  version, repeated failed deploys with different targets that never prune
+  the live version (failed verification, failed install, unknown live
+  state, lost pins with the live executable protected), the executables of a
+  still-running oneshot run under a symlinked root, and the fail-closed
+  cases. The role targets GNU coreutils; on macOS the playbook runs use
+  Homebrew's `gmv` as `mv`.
 
 The existing `mailgun_relay_deploy` and `nyxmon_deploy` roles are **not**
 migrated to the helper in this campaign (non-goal; they work and have their
@@ -369,8 +419,10 @@ same install semantics from ops-deploy (`github.com/ephes/ops-deploy`, pinned
 by ops-control in `requirements-ops-deploy.txt`). F4 extracts the install/
 verify/prune logic of `src/ops_deploy/services/nyxmon/agent.py` into
 `src/ops_deploy/helpers/rust_release.py` with the on-host layout of 6.1
-(including `.pins`), so Ansible and pyinfra can take turns on a host without
-churn: same paths, same `.archive-sha256`, same pin files, same prune rule.
+(including `.pins` with the `.previous` rollback pins), so Ansible and
+pyinfra can take turns on a host without churn: same paths, same
+`.archive-sha256`, same pin files and pin moves, same prune rule with the
+same `protect` input and fail-closed cases (6.2).
 nyxmon's agent keeps its own code in this campaign unless the extraction is a
 pure refactor with its tests unchanged (the F4 worker decides; the review
 checks it).
@@ -381,7 +433,7 @@ checks it).
 | --- | --- | --- | --- | --- | --- |
 | F1 | ops-library | `rust/` workspace (Cargo.toml, toolchain, deny.toml, LICENSE, README, `.gitignore`), `metrics-httpd` crate skeleton (`--version` with commit via `build.rs`, nothing else), `rust.yml` CI, `scripts/ci_excludes.py` (section 3), `galaxy.yml` build_ignore + `tests/test_collection_build_ignore.py`, `just rust-check`/`rust-test`, CHANGELOG (Unreleased) | — | first; nothing else needs to wait for more than F1 | 1–2 h |
 | F2 | ops-library | `rust-release.yml`, `rust/scripts/release_checks.py` + tests (incl. the `release.json` format of 4 with defaults and a variant fixture), README release section; a `workflow_dispatch` dry run for `metrics-httpd` (artifact, no tag) proves the pipeline | F1 | with F3, F4 and all crate slices | 2–3 h |
-| F3 | ops-library | `roles/rust_release_binary` (install/pin/prune), README, tests, CHANGELOG | F1 (naming only) | with F2, F4 and all crate slices | 3–4 h |
+| F3 | ops-library | `roles/rust_release_binary` (install/pin/prune with the `previous` rollback pin and the live-state `protect` list), `plugins/filter/rust_release.py`, README, tests, CHANGELOG | F1 (naming only) | with F2, F4 and all crate slices | 3–4 h |
 | F4 | ops-deploy | `helpers/rust_release.py` with the 6.1 layout + tests; no service uses it yet | F3 (semantics frozen in its README) | with F2 and all crate slices | 2–3 h |
 
 After F1 is merged the three streams start their own first slices; after F2
@@ -400,9 +452,15 @@ CI job):
   `software-live`/`software-live-apt` prefix pair; the variant fixture
   yields one archive name per variant.
 - **F3**: the localhost playbook test passes all cases of 6.2, including a
-  second consumer's pin protecting a version from prune.
+  second consumer's pin protecting a version from prune, the previous pin
+  keeping the rollback target through v1 → v2 → v1 → v3, protected live
+  versions (also as running oneshot executables) surviving prune, repeated
+  failed deploys never pruning the live version, and prune deleting nothing
+  on unknown live state.
 - **F4**: ops-deploy tests pass; a test asserts byte-identical pin/sha files
-  and the same prune decisions as F3 on the same fixture tree.
+  (current and `.previous` pins) and the same prune decisions as F3 on the
+  same fixture tree, including `protect` entries and the fail-closed cases
+  (F3's `plugins/filter/rust_release.py` holds the reference decisions).
 
 ## 8. Review and delivery rules (all slices, all three streams)
 

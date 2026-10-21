@@ -251,3 +251,16 @@ releasable member of the committed workspace yields a valid matrix.
 `release_checks.py glibc-floor [--max 2.35] [--allow <soname>] <binary>` and
 `release_checks.py smoke --binary <path> --version <v> --commit <sha>
 [--extra '["--arg"]']` run the same checks by hand on a Linux build.
+
+## Installing a release on a host
+
+Roles install a pinned release with the internal helper role
+[`rust_release_binary`](../roles/rust_release_binary/README.md) (slice F3,
+PLAN-foundation.md section 6): `install` puts the archive's files into
+`/opt/<crate>/<version>/` (checksum-verified, never modified in place),
+`pin` records which version each consumer runs (`.pins/<consumer>`) and the
+version it ran before (`.pins/<consumer>.previous`, the rollback target),
+and `prune` removes old versions except the newest few, every pinned
+version and every version the consumer's live state still uses (`protect`),
+deleting nothing when that live state is unknown. No role uses it yet; each
+crate's switch slice does.
