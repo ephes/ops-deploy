@@ -93,6 +93,34 @@
   `pg_dump` as `postgres`, as ops-library's role does, the Graphyard
   bootstrap user, Django admin users).
 
+- `infra.certbot_dns`: port of the `certbot_dns_deploy` role as of
+  ops-library 2.51.0 (checked against main `540ede2b`, 2.56.0; the frozen
+  2.48.1 reference predates the stray-dir removal). `CertbotDnsConfig` and
+  `deploy_certbot_dns(cfg, secret)` install certbot and the `gandi` or
+  `rfc2136` plugin, write the provider credentials (`secret_file`, root
+  `0600`) and the deploy hook byte for byte as the role's templates, keep
+  `certbot.timer` running, switch the lineage with `certbot reconfigure` when
+  its authenticator differs, drop the old provider's settings and remove its
+  unused credentials file after the role's `grep -l` scan, and delete listed
+  `stray_config_dirs` only after the role's vendored `certbot_stray_guard.py`
+  accepts them. A read-only probe (renewal configuration, live links,
+  archive, certificate dates, names and key type through `openssl`) makes
+  certbot 2.9's renewal decision while planning, so `certonly` (the role's
+  argv) runs only when certbot would act and a converged host gets no certbot
+  command and no mutating operation; steps that depend on an earlier step of
+  the same run check again on the host. A guard refusal fails before any
+  change. New read-only checks `single_lineage` (symlinked `renewal/*.conf`
+  entries count, as certbot renews them) and `consumer_units` port a consumer
+  playbook's post tasks. `config_dir` accepts only `/etc/letsencrypt` (the
+  role's certbot commands pass no `--config-dir`); a renewal configuration
+  configobj might read otherwise (duplicate keys, stray lines, inline
+  comments) counts as due. Templates vendored for parity,
+  `certbot_dns_deploy` added to the drift manifest and the guard to its
+  vendored files (keys now relative to the package); `infra/files` is
+  excluded from ruff and mypy like `services/*/files`. Tests: fake connector,
+  the host script on temp trees, and an owned Docker fixture with real
+  certbot (no network) whose own decision the probe must match.
+
 - `work_app` and `nyxmon` backups: the SQLite copy follows ops-library
   2.53.0's SQLite runners. Every `sqlite3 .backup` passes `.timeout 30000`
   first (a committing writer is waited for instead of failing with "database

@@ -37,7 +37,7 @@ dev = [
 line-length = 120
 target-version = "py312"
 # Scripts run on the host with a service's own interpreter (some vendored from ops-library).
-extend-exclude = ["src/ops_deploy/services/*/files"]
+extend-exclude = ["src/ops_deploy/services/*/files", "src/ops_deploy/infra/files"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PT", "TID"]
@@ -51,7 +51,7 @@ strict = true
 mypy_path = "src"
 packages = ["ops_deploy", "tests"]
 plugins = ["pydantic.mypy"]
-exclude = ["src/ops_deploy/services/[^/]+/files/"]
+exclude = ["src/ops_deploy/services/[^/]+/files/", "src/ops_deploy/infra/files/"]
 # pyinfra ships type hints but leaves parts of its API unannotated.
 untyped_calls_exclude = ["pyinfra"]
 
