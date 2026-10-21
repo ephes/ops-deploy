@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- `jellyfin`: port of the `jellyfin_deploy` role (deploy only; with the
+  `jellyfin_shared` defaults), checked against ops-library main `540ede2b`
+  (2.56.0). `JellyfinConfig` mirrors the role's variables, except that the
+  repository's distribution, release and architecture are configuration the
+  deploy checks against the host's os-release and `uname -m` (mapped as the
+  role maps its facts) before any operation. `deploy_jellyfin` keeps a
+  dearmored keyring and downloads the key (with `curl` and `gpg`, which must
+  be on the host then; checked while planning) only while it is missing or
+  armored, writes the role's one-line `jellyfin.list`, refreshes the apt
+  cache only before an install or after a repository change, installs
+  missing packages without upgrading and never removes one
+  (`--no-remove`), and treats an installed `jellyfin-ffmpeg*` (current
+  `jellyfin` depends on `-ffmpeg7`/`-ffmpeg8`, which conflict with the
+  role's candidates) as the ffmpeg pick; otherwise it picks the first
+  candidate with `apt-cache policy` as the role's pick is written (while
+  planning, or after the base install). It enforces the
+  data, config and log directories and the configured media directories
+  with exactly the configured mode (`chmod =<mode>` after a `stat` compare,
+  so special bits are set and cleared as Ansible's `file` does),
+  ships the role's Traefik template unchanged with the deployed bcrypt hash
+  kept while it matches, never reloads Traefik or restarts Jellyfin, and
+  ends with read-only port and HTTP checks. `mounts_required` (not in the
+  role) stops the deploy before any change when a mount is missing. A
+  converged host gets read-only operations only. `jellyfin_deploy` and
+  `jellyfin_shared` added to the drift manifest.
+
 - `homelab`: port of the `homelab_deploy` role (deploy only; with the
   `homelab_shared` defaults), checked against ops-library main `540ede2b`
   (2.56.0). `HomelabConfig` mirrors the role's variables; `deploy_homelab`

@@ -44,6 +44,7 @@ src/ops_deploy/
   services/work_app/  work_app (port of the work_app_deploy role)
   services/zellij_ingress/ redirect-only Traefik route (port of the zellij_ingress_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
+  services/jellyfin/   Jellyfin from its apt repository behind Traefik (port of the jellyfin_deploy role, deploy only)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share
   testing/harness.py  run_deploy_fake(): in-process runs against @fake
 tests/                pytest, no network, well under 10 s
