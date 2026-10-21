@@ -816,7 +816,14 @@ arriving, os-apt-maintenance suppression still evaluates), record memory.
 - S9d macmini pyinfra (2): `macmini_monitoring`, `logyard_core`; pyinfra
   rollback drill on `thermal-metrics-endpoint` (flip, deploy, verify Python,
   flip forward).
-- S9e staging static: `benchmarks_static` (if Q3 = yes).
+- S9e staging static: `benchmarks_static`, the **last** cutover (owner
+  decision Q3, section 13), after S9a–S9d. It is dropped together with
+  S2e only if the parity run on the real site content (D-11) shows a
+  status or body difference that `ServeDir` cannot avoid. The S2e worker
+  reports that to the coordinator before S4; then S4 releases without the
+  `static` mode, the `static_site` parts of S5c/S5e and S9e fall away, the
+  static unit stays Python and outside S10, and the coordinator records it
+  as a separate item.
 
 Two entry points always cover several hosts: `just deploy-one tailscale
 macmini` targets the whole `tailscale` group, and `os_apt_maintenance` always
@@ -826,9 +833,24 @@ the preview of 10.1 must confirm.
 
 When all hosts run Rust, `metrics_httpd_impl: rust` moves to
 `group_vars/all.yml` and the per-host/per-role overrides are removed (last
-step of the last S9 slice).
+step of the last S9 slice, S9e).
+
+No metrics-httpd production or staging step (S6–S10b) runs while an
+`echoport-command-guard` production/staging step is in progress: the
+owner scheduled that port last in the campaign and never alongside other
+production/staging changes; the coordinator sequences the two streams.
 
 ### 10.6 Python retirement (S10, ≥ 7 days after the last cutover, Q4)
+
+Owner decision Q4 (section 13): S10a starts no earlier than 7 days after
+the last cutover (S9e, or the last of S9a–S9d if S9e was dropped). Until S10b deploys the retirement, every role still
+has both implementations, so a rollback is one inventory flip away. The
+retirement is its own collection release (the coordinator's release commit
+right before S10b; never bundled with the release the cutovers ran on).
+The `*_impl` variables survive that release: they are still read, accept
+only `rust`, and `python` fails with the message below, so inventories
+keep working unchanged. S10c removes the variables in the next collection
+release.
 
 ops-library: each role's base unit `ExecStart` becomes the Rust binary (the
 drop-in disappears), the Python scripts are removed from templates/files and
@@ -837,15 +859,22 @@ only `rust` (a clear failure message names the last collection version that
 had Python), READMEs/CHANGELOG; ops-control torrent role likewise; ops-deploy
 updates its vendored copies and services. `python3` and `apache2-utils`
 packages stay (writers and htpasswd generation need them). Deploy every entry
-point of section 2 under the lock. Split in S10a (code, three repos) and S10b
-(deploys).
+point of section 2 under the lock. Split in S10a (code, three repos), S10b
+(deploys) and S10c (code only, after the next collection release: remove the
+`<role>_impl` variables, `metrics_httpd_impl` and the pyinfra mappings of
+7.4 from ops-library, ops-control inventories/`pyinfra_support` and
+ops-deploy; renders nothing different, so no deploy beyond the next normal
+one).
 
 ---
 
 ## 11. Slices
 
 Rules: one branch and worktree per slice, codex review loop with
-`gpt-6.1-sol` (high) before merge, merge to the default branch and push.
+`gpt-6.1-sol` (high) before merge, at most three rounds (round 1 over the
+slice, rounds 2 and 3 over the repair delta; if round 3 is not clean, stop
+and report to the coordinator — owner rule 2026-10-21), merge to the
+default branch and push.
 Merging Rust code is always safe (nothing deploys `rust/`). Each slice keeps
 `just test`, `just lint` and the `rust` CI job green, updates `TESTMAP.md`
 and lists the Python code it ports in its review context.
@@ -860,28 +889,29 @@ and lists the Python code it ports in its review context.
 | S2d | ops-library | `logyard-health` mode; fake Loki/systemctl fixtures | S1 | S2a–S2c, S2e | no | 3–4 h |
 | S2e | ops-library | `static` mode (tower-http) + fixtures on a sample tree and the D-11 list | S1 | S2a–S2d | no | 2–3 h |
 | S3 | ops-library | parity harness + CI step + `just rust-parity-metrics-httpd`; `shadow_compare.py` | S2a (grows with S2b–S2e) | S2b–S2e | no | 3 h |
-| S4 | ops-library | release `metrics-httpd-v0.1.0` (version bump in the crate, tag, verify release + sha256, record size) | F2, S2a–S2d, S3 (S2e if Q3 = yes) | S5a–S5c | no | 1 h |
+| S4 | ops-library | release `metrics-httpd-v0.1.0` (version bump in the crate, tag, verify release + sha256, record size) | F2, S2a–S2e, S3 | S5a–S5c | no | 1 h |
 | S5a | ops-library | `roles/metrics_httpd_switch` (select/verify, drop-in template) + the five `*_metrics_endpoint` roles; tests; READMEs | F3, S1 (CLI frozen) | S2*, S3, S5d prep | no | 4 h |
 | S5b | ops-library | `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy` (ddns), `openclaw_deploy` | S5a | S5c, S5e | no | 3–4 h |
 | S5c | ops-library | `logyard_deploy`, `static_site_deploy` (Ansible path, also the rollback engine of the pyinfra services) | S5a | S5b, S5e | no | 2 h |
 | S5d | ops-control | `torrent_vpn_metrics_endpoint` switch; fleet vars in `group_vars/all.yml` (impl python, version/sha from S4); runbook `docs/METRICS_HTTPD_RUST.md`; playbook asserts for the collection version | S4, S5a | S5b, S5c, S5e | no | 2–3 h |
 | S5e | ops-deploy + ops-control | pyinfra ports for `thermal_monitoring`, `logyard`, `static_site` (7.4); ops-control mappings + no-silent-ignore test; ops-deploy pin bump | F4, S5a, S5c | S5b, S5d | no | 3–4 h |
-| S6 | ops-control (deploy) | install without switch (10.2) | S4, S5b, S5d (+ collection release, Q2) | — | **yes** | 1 h |
+| S6 | ops-control (deploy) | install without switch (10.2) | S4, S5b, S5c, S5d (+ coordinator's collection release, Q2) | — | **yes** | 1 h |
 | S7 | hosts (manual, lock) | shadow 24 h (10.3) on macmini, fractal, staging, production | S6, S3 | — | **yes** (read-only to production units) | 2 h + 24 h |
 | S8 | ops-control (deploy) | canary on staging + Ansible rollback drill + emergency drill + 24 h soak (10.4) | S7 | — | **yes** | 2 h + 24 h |
-| S9a | ops-control (deploy) | cutover fractal | S8, coordinator OK | S9b–S9e (deploy steps serialised by the lock) | **yes** | 1–2 h |
-| S9b | ops-control (deploy) | cutover production | S8, coordinator OK | S9a, S9c–S9e | **yes** | 1 h |
-| S9c | ops-control (deploy) | cutover macmini Ansible units | S8 | S9a, S9b, S9d, S9e | **yes** | 2 h |
-| S9d | ops-control (deploy) | cutover macmini pyinfra units + pyinfra rollback drill | S8, S5e | S9a–S9c, S9e | **yes** | 1–2 h |
-| S9e | ops-control (deploy) | cutover staging static | S8, S5e, S2e | S9a–S9d | **yes** | 1 h |
+| S9a | ops-control (deploy) | cutover fractal | S8, coordinator OK | S9b–S9d (deploy steps serialised by the lock) | **yes** | 1–2 h |
+| S9b | ops-control (deploy) | cutover production | S8, coordinator OK | S9a, S9c, S9d | **yes** | 1 h |
+| S9c | ops-control (deploy) | cutover macmini Ansible units | S8 | S9a, S9b, S9d | **yes** | 2 h |
+| S9d | ops-control (deploy) | cutover macmini pyinfra units + pyinfra rollback drill | S8, S5e | S9a–S9c | **yes** | 1–2 h |
+| S9e | ops-control (deploy) | cutover staging static (last cutover, Q3) | S9a–S9d, S5e, S2e | — | **yes** | 1 h |
 | S10a | ops-library, ops-control, ops-deploy | Python retirement code (10.6) | S9a–S9e + 7 days | — | no | 3–4 h |
-| S10b | ops-control (deploy) | retirement deploys on all hosts | S10a (+ collection release) | — | **yes** | 2 h |
+| S10b | ops-control (deploy) | retirement deploys on all hosts | S10a (+ coordinator's collection release) | — | **yes** | 2 h |
+| S10c | ops-library, ops-control, ops-deploy | remove the `*_impl` / `metrics_httpd_impl` variables and mappings (10.6) | S10b + the next collection release | — | no | 1–2 h |
 
 Maximum parallelism: after F1, S1 runs with F2/F3/F4; after S1, S2a–S2e and
 S5a run concurrently (six workers), S3 starts with S2a; S5b, S5c, S5e run
 concurrently after S5a; S5d after S4. Production slices are sequential up to
-S8, then the four hosts' cutovers run in parallel (each deploy step under the
-lock).
+S8, then S9a–S9d run in parallel (each deploy step under the lock); S9e
+follows as the last cutover.
 
 Acceptance criteria (beyond the green checks):
 
@@ -899,6 +929,8 @@ Acceptance criteria (beyond the green checks):
   in `environment:` under `become_user`.
 - **S6–S10b**: reports in ops-control `docs/deployments/` with the exact
   commands, lock times, verification output and memory numbers.
+- **S10c**: no `metrics_httpd_impl`/`*_impl` reference left in the three
+  repos (grep test); rendered units unchanged against S10b.
 
 ---
 
@@ -911,30 +943,48 @@ Acceptance criteria (beyond the green checks):
 | Shared install root: one role prunes a version another unit runs | `.pins/<unit>` + prune honours pins (foundation 6.1, F3 test) |
 | Large playbooks (openclaw, dns) touch more than the endpoint | mandatory preview; `--tags ddns` for DNS; stop on unexpected diff |
 | Cutover windows collide with ops coordination plans (fractal MinIO TLS, production Traefik ACME until 2026-10-30) | S9a/S9b require the coordinator's OK first |
-| Collection version guard blocks deploys (workers must not bump `galaxy.yml`) | Q2: coordinator release commit before S6 and S10b |
+| Collection version guard blocks deploys (workers must not bump `galaxy.yml`) | Q2 (decided): coordinator release commit right before S6, S10b and any other production slice whose role change is not yet in a released collection version |
 | Rust stricter than Python on odd inputs (D-4, D-6) | live inputs checked; writer audit (S2a); `--check-config` blocks the switch for non-bcrypt htpasswd |
 | Tailscale address not yet up at boot → bind fails | same as Python: exit 1, `Restart=` retries |
 | `ubuntu-22.04` runner retired | container fallback (foundation 2) |
 | ops-control CI red at `test-software-inventory` (unrelated eMudhra work) | not ours to fix; S5d/S5e note it in their reports if it shows up; local `just test` targets of the touched areas must be green |
 | Logyard journal volume if access logs were added to logyard-health | contract 4.6: no per-request log; e2e test asserts silence |
 
-## 13. Owner questions (each with the recommended answer)
+## 13. Owner decisions (2026-10-21)
 
-1. **Q1: GitHub Actions in ops-library.** F1/F2 add the repository's first
-   workflows (`rust.yml` CI for `rust/` only; `rust-release.yml` with
-   `contents: write` only in the publish job; releases with binaries on the
-   public ops-library repository). *Recommended: yes* — it is the precedents'
-   release path and the only reproducible glibc-2.35 build.
-2. **Q2: Collection releases for deploys.** Workers may not bump
-   `galaxy.yml`, but ops-control refuses deploys of a collection whose version
-   differs from the checkout's. *Recommended: the coordinator makes a release
-   commit (version bump + CHANGELOG heading) on ops-library `main` right
-   before S6 and before S10b.*
-3. **Q3: Static site in scope?** `benchmarks-static` on staging is a 20 MiB
-   Python file server behind Traefik; the Rust version differs in small,
-   documented ways (D-11). *Recommended: yes, as the last cutover (S9e); drop
-   S2e/S9e if the parity run on the real site shows a status or body
-   difference that ServeDir cannot avoid.*
-4. **Q4: Retirement soak.** *Recommended: retire Python 7 days after the last
-   cutover (S10), keeping the `*_impl` variable for one more collection
-   release so a rollback stays one inventory flip away until then.*
+The owner answered the questions of this plan on 2026-10-21 (given in chat
+to the coordinator of the campaign) and accepted every recommended answer:
+
+1. **Q1 GitHub Actions in ops-library: yes.** F1/F2 add the repository's
+   first workflows: `rust.yml` (CI for `rust/` only) and `rust-release.yml`
+   with `contents: write` only in the publish job; binary releases are
+   published on the public ops-library repository
+   (`rust/PLAN-foundation.md` sections 3, 4, 9).
+2. **Q2 Collection releases for deploys: the coordinator releases.** The
+   coordinator makes a collection release commit (`galaxy.yml` bump +
+   CHANGELOG heading) on ops-library `main` right before the production
+   deploys that need it: S6 (the S5a–S5c role changes), S10b (the
+   retirement), and any other production slice whose role change is not yet
+   in a released version (each such slice checks the installed collection
+   version first and asks the coordinator if it is missing). Workers never
+   bump `galaxy.yml`. S10c's variable removal ships in the release after
+   S10b's.
+3. **Q3 Static site in scope: yes, as the last cutover (S9e).** S2e and S9e
+   are dropped only if the parity run on the real site shows a status or
+   body difference that `ServeDir` cannot avoid (10.5); S4 therefore waits
+   for S2e.
+4. **Q4 Retirement soak: 7 days.** Python is retired 7 days after the last
+   cutover (S10a/S10b), keeping the `*_impl` variables for one more
+   collection release (S10c removes them; 10.6).
+
+Further owner decisions of the same day that affect this stream:
+
+- **Review rounds:** a slice and a plan may get a third review round over
+  the repair delta; if round 3 is not clean, stop and report (section 11).
+- **echoport-command-guard** is scheduled last in the campaign and never
+  alongside other production/staging changes; metrics-httpd production
+  steps do not overlap with it (10.5).
+- **software-live** keeps its GPL `rust-apt` code in a separate helper
+  binary `software-live-apt`; the foundation's license, CI and release
+  rules for that are in `rust/PLAN-foundation.md` section 9. metrics-httpd
+  stays MIT and must not depend on `rust-apt` (the foundation's CI check).

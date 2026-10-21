@@ -14,7 +14,7 @@ release binary. Three streams build on it in parallel:
 | --- | --- | --- |
 | `metrics-httpd` | `rust/metrics-httpd/PLAN.md` | the Python HTTP endpoint daemons of the `*_metrics_endpoint`, `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy` (DDNS status), `openclaw_deploy`, `logyard_deploy`, `static_site_deploy` roles and ops-control's `torrent_vpn_metrics_endpoint` |
 | `echoport-command-guard` | `rust/echoport-command-guard/PLAN.md` | `echoport_remote_command_guard` |
-| `software-live` | `rust/software-live/PLAN.md` | `software_live` |
+| `software-live` (+ helper `software-live-apt`, GPL, see 9) | `rust/software-live/PLAN.md` | `software_live` |
 
 The precedents are mailgun-relay (`~/projects/mailgun-relay/rust/`,
 `.github/workflows/rust-release.yml`, `scripts/release_checks.py`) and the
@@ -71,6 +71,8 @@ rust/
     Cargo.toml  build.rs  src/  tests/  fixtures/  parity/  PLAN.md  TESTMAP.md
   echoport-command-guard/ # crate + binary `echoport-command-guard` (its stream adds it)
   software-live/          # crate + binary `software-live` (its stream adds it)
+  software-live-apt/      # crate + helper binary `software-live-apt`, GPL-3.0-or-later,
+                          # own LICENSE file; released inside the software-live archives (9)
 ```
 
 Rules:
@@ -108,7 +110,10 @@ Rules:
   ```
 
   Each crate has its **own** `version` (not `workspace.package.version`), so
-  the binaries release independently.
+  the binaries release independently. A crate inherits `license` from the
+  workspace (MIT) unless its plan and an owner decision say otherwise; the
+  only such crate is `software-live-apt` (`license = "GPL-3.0-or-later"`,
+  its own `rust/software-live-apt/LICENSE` with the GPL text; section 9).
 - Merge conflicts: the three streams touch `members` and `Cargo.lock`. On a
   rebase conflict in `Cargo.lock`, take `origin/main`'s lock, re-add your
   crate (`cargo metadata --format-version 1 >/dev/null` updates the lock for
@@ -138,7 +143,16 @@ Rules:
   deny, licenses allowlist starting with Apache-2.0, MIT, BSD-3-Clause, ISC,
   Unicode-3.0, Zlib; `unknown-registry`/`unknown-git` = deny; only crates.io;
   `[graph] targets = ["x86_64-unknown-linux-gnu"]`). A new license needs an
-  explicit line with the crate that brings it, as there.
+  explicit line with the crate that brings it, as there. Copyleft licenses
+  are not in the allowlist; the one exception (owner decision 2026-10-21,
+  section 9) is a `[[licenses.exceptions]]` entry for `GPL-3.0-or-later`
+  scoped to the crates `rust-apt` and `software-live-apt`, added by the
+  software-live stream in the slice that adds the helper crate, never a
+  workspace-wide allow. That slice also adds a CI check that no other
+  workspace member depends on `rust-apt` (a `release_checks.py` subcommand
+  over the `resolve` graph of `cargo metadata --format-version 1 --locked`:
+  `rust-apt` may be reachable only from `software-live-apt`), so the MIT
+  binaries stay free of GPL code.
 - Crate choices follow the campaign rule: maintained crates instead of
   re-implemented libraries or hand-rolled protocols; each plan lists its
   crates with a reason.
@@ -161,7 +175,13 @@ Rules:
 - Crates may add steps (e.g. `apt-get install apache2-utils` for the
   metrics-httpd parity harness) in later slices; they do not add jobs that run
   the Ansible/Python test suite — that suite stays local (`just test`) as
-  today.
+  today. A crate that needs system build dependencies the runner image
+  does not have (`software-live-apt`: `libapt-pkg-dev` of a specific
+  distro, a C++ compiler) is listed in the workspace's
+  `[workspace.metadata.ci] exclude` and left out of the default job with
+  `--workspace --exclude <crate>`; its stream adds a Rust-only job that
+  builds, lints and tests it inside each variant's container image
+  (section 4). `just rust-check` uses the same exclusion.
 - `justfile` (F1) gets `rust-check` (the same commands, run from a worktree;
   never in `~/projects`) and `rust-test`. They are **not** dependencies of
   `just test`, so `just test` keeps working without a Rust toolchain.
@@ -172,9 +192,9 @@ Rules:
 `rust-release.yml`:
 
 - Triggers: `push` of tags `metrics-httpd-v*`, `echoport-command-guard-v*`,
-  `software-live-v*` (a stream adds its prefix to this list in the slice that
-  adds its crate), and `workflow_dispatch` with an input `crate` (build +
-  checks + workflow artifact, no release).
+  `software-live-v*` (all three from F2 on; a tag whose crate is not yet a
+  workspace member fails in the tag step), and `workflow_dispatch` with an
+  input `crate` (build + checks + workflow artifact, no release).
 - Tag grammar: `<crate>-v<semver>`. `release_checks.py tag --tag <ref>
   --metadata <cargo metadata json>` resolves the crate by the longest
   matching workspace member name, requires the member to have a `[[bin]]` of
@@ -196,15 +216,36 @@ Rules:
   else `git rev-parse HEAD`, else `unknown`, as mailgun-relay), and a
   crate-specific extra smoke command if the crate's plan defines one
   (`release_checks.py smoke --extra ...`).
-- Archive: `<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` holding
-  exactly the regular files `<crate>` and `LICENSE` at its root,
+- Per-crate release settings (F2 defines the format and the defaults, a
+  stream fills its own file): an optional `rust/<crate>/release.json`
+  read by `release_checks.py`. Defaults, used when the file is absent:
+  one variant without a name, built on the `ubuntu-22.04` runner itself,
+  binaries `[<crate>]`, extra archive files `[LICENSE]` (the workspace
+  MIT file), `NEEDED` allowlist glibc + libgcc_s, glibc floor 2.35. A
+  crate may declare named variants, each with a container image, extra
+  build packages, the workspace members to build, the archive members
+  (each with its source path, e.g. `rust/software-live-apt/LICENSE` →
+  `LICENSE-software-live-apt`), and a per-binary `NEEDED` allowlist and
+  glibc ceiling. The release job becomes a matrix over the variants of
+  the tagged crate. software-live uses this for `ubuntu24.04`
+  (`ubuntu:24.04`, `libapt-pkg.so.6.0`) and `debian13` (`debian:13`,
+  `libapt-pkg.so.7.0`); its plan (7.1, 7.4) owns the values. F2 ships the
+  format with tests for the default and a two-variant fixture; it adds no
+  real variant crate.
+- Archive: `<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` (with
+  variants: `<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`;
+  this name wins over any other spelling in a crate plan) holding
+  exactly the regular files `<crate>` and `LICENSE` at its root (or the
+  members the variant declares),
   deterministic (root-owned entries, commit time as mtime, gzip header
   without name), plus `<archive>.sha256`; both attached to the release
   `https://github.com/ephes/ops-library/releases/tag/<crate>-v<version>`.
   The job summary prints the sha256 and the stripped binary size.
 - `rust/scripts/release_checks.py` is stdlib-only and unit-tested in
   `rust/scripts/test_release_checks.py` (tag parsing incl. prefixes that are
-  prefixes of each other, version mismatch, glibc floor parse fixtures,
+  prefixes of each other — `software-live` vs `software-live-apt` —,
+  version mismatch, glibc floor parse fixtures, per-binary `NEEDED`
+  allowlists, `release.json` defaults and a two-variant fixture,
   deterministic pack).
 
 ## 5. Collection packaging
@@ -221,7 +262,10 @@ Rules:
 - `galaxy.yml` `version` is never bumped by stream workers (campaign rule);
   CHANGELOG entries go under "Unreleased". A collection release (bump) is
   needed before a role change can be deployed, because ops-control checks
-  the installed version (owner question Q2 in the metrics-httpd plan).
+  the installed version. Owner decision 2026-10-21 (section 9): the
+  coordinator makes that release commit (`galaxy.yml` bump + CHANGELOG
+  heading) on ops-library `main` right before the production deploys that
+  need it; each stream's plan names those slices.
 
 ## 6. Installing a pinned release binary
 
@@ -249,7 +293,7 @@ New role `roles/rust_release_binary/` (internal, like
 
 | tasks_from | Does | Inputs (`rust_release_binary_*`) |
 | --- | --- | --- |
-| `install` | the mailgun-relay `tasks/rust.yml` sequence, generalised: stat; refuse a different archive for an installed version; download with `get_url` + `checksum: sha256:` (or copy `local_archive` after checking its sha256 on the controller); list members and require exactly the regular files `<name>` and `LICENSE`; unpack into the staging dir; chown/chmod; record `.archive-sha256`; `mv --no-target-directory` into place; run `<binary> --version` as `validate_user` and assert `<name> <version> (`; `rescue` removes a fresh install and fails (when `fail_hard`) or sets `rust_release_binary_failed` and warns via an ignored `fail` (mailgun-relay's pattern, so the Python rollback is never blocked) | `name`, `version`, `sha256`, `release_url` (default `https://github.com/ephes/ops-library/releases/download/{{ name }}-v{{ version }}/{{ name }}-{{ version }}-x86_64-unknown-linux-gnu.tar.gz`), `local_archive`, `install_root` (default `/opt/{{ name }}`), `validate_user`, `fail_hard` |
+| `install` | the mailgun-relay `tasks/rust.yml` sequence, generalised: stat; refuse a different archive for an installed version; download with `get_url` + `checksum: sha256:` (or copy `local_archive` after checking its sha256 on the controller); list members and require exactly the regular files of `members` (default `[<name>, LICENSE]`); unpack into the staging dir; chown/chmod; record `.archive-sha256`; `mv --no-target-directory` into place; run `<binary> --version` as `validate_user` and assert `<name> <version> (`; `rescue` removes a fresh install and fails (when `fail_hard`) or sets `rust_release_binary_failed` and warns via an ignored `fail` (mailgun-relay's pattern, so the Python rollback is never blocked) | `name`, `version`, `sha256`, `members`, `release_url` (default `https://github.com/ephes/ops-library/releases/download/{{ name }}-v{{ version }}/{{ name }}-{{ version }}-x86_64-unknown-linux-gnu.tar.gz`), `local_archive`, `install_root` (default `/opt/{{ name }}`), `validate_user`, `fail_hard` |
 | `pin` | write or remove `.pins/<consumer>` | `name`, `install_root`, `consumer`, `version` or `state: absent` |
 | `prune` | keep the `keep_versions` (default 3) newest version directories by mtime **plus** every version named in any `.pins/*`; never runs after a failure in the same play | `name`, `install_root`, `keep_versions` |
 
@@ -295,7 +339,7 @@ checks it).
 | Id | Repo | Scope | Depends on | Parallel | Est. |
 | --- | --- | --- | --- | --- | --- |
 | F1 | ops-library | `rust/` workspace (Cargo.toml, toolchain, deny.toml, LICENSE, README, `.gitignore`), `metrics-httpd` crate skeleton (`--version` with commit via `build.rs`, nothing else), `rust.yml` CI, `galaxy.yml` build_ignore + `tests/test_collection_build_ignore.py`, `just rust-check`/`rust-test`, CHANGELOG (Unreleased) | — | first; nothing else needs to wait for more than F1 | 1–2 h |
-| F2 | ops-library | `rust-release.yml`, `rust/scripts/release_checks.py` + tests, README release section; a `workflow_dispatch` dry run for `metrics-httpd` (artifact, no tag) proves the pipeline | F1 | with F3, F4 and all crate slices | 2–3 h |
+| F2 | ops-library | `rust-release.yml`, `rust/scripts/release_checks.py` + tests (incl. the `release.json` format of 4 with defaults and a variant fixture), README release section; a `workflow_dispatch` dry run for `metrics-httpd` (artifact, no tag) proves the pipeline | F1 | with F3, F4 and all crate slices | 2–3 h |
 | F3 | ops-library | `roles/rust_release_binary` (install/pin/prune), README, tests, CHANGELOG | F1 (naming only) | with F2, F4 and all crate slices | 3–4 h |
 | F4 | ops-deploy | `helpers/rust_release.py` with the 6.1 layout + tests; no service uses it yet | F3 (semantics frozen in its README) | with F2 and all crate slices | 2–3 h |
 
@@ -311,7 +355,9 @@ CI job):
   `metrics-httpd 0.0.0 (<commit>)`.
 - **F2**: the dry run produces an archive whose glibc check reports ≤ 2.35,
   the smoke test passes, the archive is byte-identical when the job is re-run
-  on the same commit; tag parsing tests cover all three prefixes.
+  on the same commit; tag parsing tests cover all three prefixes and the
+  `software-live`/`software-live-apt` prefix pair; the variant fixture
+  yields one archive name per variant.
 - **F3**: the localhost playbook test passes all cases of 6.2, including a
   second consumer's pin protecting a version from prune.
 - **F4**: ops-deploy tests pass; a test asserts byte-identical pin/sha files
@@ -320,8 +366,45 @@ CI job):
 ## 8. Review and delivery rules (all slices, all three streams)
 
 - Each slice: own branch and worktree, review with the codex review loop
-  (`gpt-6.1-sol`, high), fix, merge to `main`, push.
+  (`gpt-6.1-sol`, high), fix, merge to `main`, push. At most three review
+  rounds per slice (owner rule change 2026-10-21): round 1 over the whole
+  slice, rounds 2 and 3 over the repair delta; if round 3 is not clean, the
+  worker stops and reports to the coordinator instead of merging. The same
+  limit applies to plan reviews.
 - Merging Rust code is always safe: nothing deploys `rust/` (excluded from the
   collection) and no role installs a binary until its switch slice.
 - Commit messages without tool/AI mentions; CHANGELOG under "Unreleased";
   never bump `galaxy.yml`.
+
+## 9. Owner decisions (2026-10-21)
+
+The owner answered the open questions of the campaign's plans on
+2026-10-21 (given in chat to the coordinator) and accepted every
+recommended answer. The ones that bind this foundation:
+
+- **GitHub Actions in ops-library** (metrics-httpd Q1): yes. F1 adds
+  `rust.yml` (CI for `rust/` only, `permissions: contents: read`), F2 adds
+  `rust-release.yml` with `contents: write` only in the publish job; binary
+  releases are published on the public `ephes/ops-library` repository.
+- **Collection releases for deploys** (metrics-httpd Q2): the coordinator
+  makes a collection release commit (`galaxy.yml` bump + CHANGELOG heading)
+  on ops-library `main` right before the production deploys that need it.
+  Workers never bump `galaxy.yml` (section 5).
+- **software-live APT binding** (software-live plan, Q1): `rust-apt`
+  (GPL-3.0-or-later) is allowed, but only in a separate small helper binary
+  `software-live-apt`, built per distro variant (`ubuntu24.04` with
+  `libapt-pkg.so.6.0`, `debian13` with `libapt-pkg.so.7.0`), with its own
+  GPL license file. The main `software-live` binary stays MIT and free of
+  libapt. For the foundation this means: the license override of section 1,
+  the scoped cargo-deny exception and the no-`rust-apt` CI check of
+  section 2, and the variant matrix and per-binary `NEEDED` allowlists of
+  section 4 (F2 provides the mechanism; the software-live stream adds its
+  crate, its `release.json`, the deny exception and the check). The
+  release tag stays `software-live-v<semver>`; `software-live-apt` has no
+  tags of its own.
+- **echoport-command-guard** is ported, scheduled last in the campaign and
+  never alongside other production/staging changes. The foundation slices
+  are not affected (they change nothing in production); its tag prefix
+  `echoport-command-guard-v*` is in F2's trigger list (section 4).
+- **Review rounds**: a slice and a plan may get a third review round over
+  the repair delta; if round 3 is not clean, stop and report (section 8).
