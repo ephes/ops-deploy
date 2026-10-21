@@ -754,13 +754,17 @@ Tasks (`tasks/rust.yml`, `tasks/impl.yml`, `tasks/verify_impl.yml`, after
 the policy and endpoint configuration and before the units):
 
 1. Assert `software_live_impl in ['python', 'rust']`. **Rollback first:**
-   when impl is `python`, the drop-ins of step 4 are removed (and the
-   handlers notified) before any Rust task runs, and every Rust task below
-   is skipped unless the shadow is on. A pinned but broken release (does not
-   start, reports `unknown`, wrong checksum, missing variant) therefore never
-   blocks the Python rollback. S6 tests exactly this: impl `python` with a
-   pinned version whose archive is missing or whose candidate fails
-   validation still converges to Python.
+   when impl is `python`, the drop-ins of step 4 are removed and the
+   handlers are flushed right away (`meta: flush_handlers`: daemon reload,
+   restart of the endpoint and the timer), so the production units run
+   Python **before** any Rust task. Only then do shadow tasks (8.1) run, if
+   the shadow is on; they touch only the shadow units and directory, so
+   their failure cannot leave or put a Rust process in the production
+   units. A pinned but broken release (does not start, reports `unknown`,
+   wrong checksum, missing variant) therefore never blocks the Python
+   rollback. S6 tests both cases: impl `python` with shadow off and with
+   shadow on, each with a pinned version whose archive is missing or whose
+   candidate fails validation, converge to Python in the production units.
 2. For impl `rust` or shadow `true`: a version and a 64-hex checksum for
    this host's variant (or a local archive). The variant comes from
    `/etc/os-release` (`ubuntu` + `24.04` → `ubuntu24.04`, `debian` + `13` →
@@ -838,7 +842,8 @@ second release workflow.
 
 ### 7.6 Rollback
 
-- Normal: `software_live_impl: python` in the host vars, then
+- Normal: `software_live_impl: python` and `software_live_rust_shadow: false`
+  in the host vars (the shadow is off after S10 anyway), then
   `just deploy-one software_live <host>` (under the deploy lock, in tmux).
   The role removes the drop-ins, reloads systemd, restarts the endpoint and
   the timer, and runs no Rust task, so it works even when the pinned release
