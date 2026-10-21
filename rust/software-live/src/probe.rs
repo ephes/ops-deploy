@@ -11,8 +11,10 @@
 //! pinned-descriptor operations: open a file, `fstat` and hash it through
 //! its descriptor, and run a child that inherits exactly that descriptor, so
 //! it can be executed as `/proc/self/fd/<fd>` (PLAN.md 3.3, Traefik). S3a
-//! added the upstream HTTPS request and the atomic JSON write. The slices
-//! that need more add it to this trait with their host and fake
+//! added the upstream HTTPS request and the atomic JSON write. S3c added
+//! the head of a text file (`read_head`, the PostgreSQL PID file) and
+//! closes every other descriptor for each child, as `subprocess` does. The
+//! slices that need more add it to this trait with their host and fake
 //! implementations.
 
 use std::ffi::{OsStr, OsString};
@@ -159,6 +161,14 @@ pub trait System {
     fn now(&self) -> f64;
     /// The bytes of a file (`Path.read_bytes()`).
     fn read_file(&self, path: &Path) -> io::Result<Vec<u8>>;
+    /// At most the first `limit` bytes of a file (a text-mode `open(path)`
+    /// reads and decodes one chunk before it returns the first line). The
+    /// host reads no more than that.
+    fn read_head(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+        let mut bytes = self.read_file(path)?;
+        bytes.truncate(limit);
+        Ok(bytes)
+    }
     /// `os.stat(path)` (follows symbolic links).
     fn stat(&self, path: &Path) -> io::Result<FileStat>;
     /// `os.lstat(path)`.
@@ -227,11 +237,17 @@ fn is_ignored_exists_error(error: &io::Error) -> bool {
         .is_some_and(|code| ignored.iter().any(|errno| errno.raw_os_error() == code))
 }
 
-/// `subprocess.run(text=True)` decoding: strict UTF-8, universal newlines.
-fn decode_text(bytes: Vec<u8>) -> Result<String, PyError> {
+/// Text-mode decoding of `subprocess.run(text=True)` and `open(path)`:
+/// strict UTF-8, universal newlines.
+pub fn decode_text(bytes: Vec<u8>) -> Result<String, PyError> {
     let text = String::from_utf8(bytes)
         .map_err(|error| PyError::new("UnicodeDecodeError", error.to_string()))?;
-    Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
+    Ok(translate_newlines(&text))
+}
+
+/// Universal newlines: `\r\n` and a lone `\r` read as `\n`.
+pub fn translate_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 /// `command(argv, timeout)` of `software_live.py:68-77`. As
@@ -310,6 +326,14 @@ impl System for HostSystem {
         std::fs::read(path)
     }
 
+    fn read_head(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?
+            .take(u64::try_from(limit).unwrap_or(u64::MAX))
+            .read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
     fn stat(&self, path: &Path) -> io::Result<FileStat> {
         std::fs::metadata(path).map(|m| FileStat::from_metadata(&m))
     }
@@ -323,7 +347,7 @@ impl System for HostSystem {
     }
 
     fn run(&self, argv: &[&OsStr], timeout: Duration) -> Result<CommandOutput, CommandError> {
-        spawn_and_wait(argv, timeout, || {})
+        spawn_and_wait(argv, timeout, &[], || {})
     }
 
     fn open(&self, path: &Path) -> io::Result<HostFile> {
@@ -364,7 +388,7 @@ impl System for HostSystem {
         use rustix::io::{FdFlags, fcntl_setfd};
         fcntl_setfd(&file.0, FdFlags::empty())
             .map_err(|errno| CommandError::Spawn(errno.into()))?;
-        spawn_and_wait(argv, timeout, || {
+        spawn_and_wait(argv, timeout, &[file.fd()], || {
             // Cannot fail on a descriptor that is open; the file is closed
             // when the observation drops it either way.
             let _ = fcntl_setfd(&file.0, FdFlags::CLOEXEC);
@@ -389,15 +413,24 @@ impl System for HostSystem {
 /// Start `argv` (no stdin, both streams captured), call `after_spawn` as
 /// soon as the spawn has returned (whether it worked or not), then wait for
 /// the child until `timeout` passes.
+///
+/// As `subprocess.run` (`close_fds=True`), the child gets no descriptor of
+/// this process beyond its standard streams and `keep`: every other
+/// descriptor from 3 up is set close-on-exec right before the spawn. The
+/// program opens all its files close-on-exec anyway; this covers what it
+/// inherited without the flag. (`close_fds::set_fds_cloexec` is a safe API;
+/// doing it here needs `unsafe`, which the workspace forbids.)
 fn spawn_and_wait(
     argv: &[&OsStr],
     timeout: Duration,
+    keep: &[RawFd],
     after_spawn: impl FnOnce(),
 ) -> Result<CommandOutput, CommandError> {
     let (program, args) = argv
         .split_first()
         .ok_or_else(|| CommandError::Spawn(io::Error::other("empty command")))?;
     let deadline = Instant::now() + timeout;
+    close_fds::set_fds_cloexec(3, keep);
     let spawned = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -628,6 +661,8 @@ pub mod fake {
             "EBADF" => Errno::BADF,
             "EEXIST" => Errno::EXIST,
             "EROFS" => Errno::ROFS,
+            "EIO" => Errno::IO,
+            "EPERM" => Errno::PERM,
             other => panic!("unknown errno {other} in a fixture world"),
         };
         io::Error::from_raw_os_error(errno.raw_os_error())
@@ -807,8 +842,15 @@ pub mod fake {
     pub struct World {
         #[serde(default)]
         pub now: Vec<f64>,
+        /// File contents for `read_file` and `read_head`; a list of
+        /// answers is read in order.
         #[serde(default)]
         pub files: BTreeMap<String, FileEntry>,
+        /// Files whose reads answer in order (the last answer repeats),
+        /// e.g. a PID file that changes between two reads; a path here is
+        /// read from this list, not from `files`.
+        #[serde(default)]
+        pub reads: BTreeMap<String, Vec<FileEntry>>,
         #[serde(default)]
         pub stat: BTreeMap<String, Vec<Entry<StatSpec>>>,
         #[serde(default)]
@@ -846,6 +888,7 @@ pub mod fake {
         files: RefCell<BTreeMap<String, FileEntry>>,
         http: RefCell<VecDeque<HttpSpec>>,
         pub writes: RefCell<Vec<Write>>,
+        reads: RefCell<BTreeMap<String, VecDeque<FileEntry>>>,
         stat: RefCell<BTreeMap<String, VecDeque<Entry<StatSpec>>>>,
         lstat: RefCell<BTreeMap<String, VecDeque<Entry<StatSpec>>>>,
         readlink: RefCell<BTreeMap<String, VecDeque<Entry<String>>>>,
@@ -880,6 +923,7 @@ pub mod fake {
             Self {
                 now: RefCell::new(world.now.iter().copied().collect()),
                 last_now: RefCell::new(0.0),
+                reads: RefCell::new(queues(&world.reads)),
                 stat: RefCell::new(queues(&world.stat)),
                 lstat: RefCell::new(queues(&world.lstat)),
                 readlink: RefCell::new(queues(&world.readlink)),
@@ -900,6 +944,19 @@ pub mod fake {
         /// Commands the world expected that were never run.
         pub fn pending_commands(&self) -> usize {
             self.commands.borrow().len()
+        }
+
+        /// A read of a file: the next answer of `reads`, else the file's
+        /// current content in `files`.
+        fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+            let path = key(path);
+            if let Some(entry) = next(&self.reads, &path) {
+                return entry.get();
+            }
+            match self.files.borrow().get(&path) {
+                Some(entry) => entry.get(),
+                None => Err(errno("ENOENT")),
+            }
         }
 
         /// The next expected command; its argv and inherited descriptors
@@ -967,10 +1024,14 @@ pub mod fake {
 
         fn read_file(&self, path: &Path) -> io::Result<Vec<u8>> {
             self.log(format!("read_file {}", path.display()));
-            match self.files.borrow().get(&key(path)) {
-                Some(entry) => entry.get(),
-                None => Err(errno("ENOENT")),
-            }
+            self.read(path)
+        }
+
+        fn read_head(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+            self.log(format!("read_head {}", path.display()));
+            let mut bytes = self.read(path)?;
+            bytes.truncate(limit);
+            Ok(bytes)
         }
 
         fn stat(&self, path: &Path) -> io::Result<FileStat> {
@@ -1293,6 +1354,49 @@ mod tests {
             command_inheriting(&HostSystem, &file, &argv, COMMAND_TIMEOUT).unwrap(),
             "pinned bytes"
         );
+    }
+
+    #[test]
+    fn read_head_reads_at_most_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pid");
+        std::fs::write(&file, b"4242\nrest").unwrap();
+        assert_eq!(HostSystem.read_head(&file, 5).unwrap(), b"4242\n");
+        assert_eq!(HostSystem.read_head(&file, 100).unwrap(), b"4242\nrest");
+        let missing = HostSystem.read_head(&dir.path().join("missing"), 5);
+        assert_eq!(missing.unwrap_err().kind(), io::ErrorKind::NotFound);
+    }
+
+    /// `pass_fds`/`close_fds` of `subprocess`: a child inherits the pinned
+    /// descriptor and nothing else of this process, even a descriptor that
+    /// lost its close-on-exec flag (as one inherited from a parent may);
+    /// the pinned one is close-on-exec again afterwards.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn children_inherit_only_the_passed_descriptor() {
+        use rustix::io::{FdFlags, fcntl_getfd, fcntl_setfd};
+        let _serial = spawn_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let stray_path = dir.path().join("stray");
+        let pinned_path = dir.path().join("pinned");
+        std::fs::write(&stray_path, b"").unwrap();
+        std::fs::write(&pinned_path, b"").unwrap();
+        let stray = std::fs::File::open(&stray_path).unwrap();
+        fcntl_setfd(&stray, FdFlags::empty()).unwrap();
+        let pinned = HostSystem.open(&pinned_path).unwrap();
+        let script = format!(
+            "readlink /proc/$$/fd/{} || echo closed; readlink /proc/$$/fd/{} || echo closed",
+            pinned.fd(),
+            stray.as_raw_fd()
+        );
+        let argv = [OsStr::new("/bin/sh"), OsStr::new("-c"), OsStr::new(&script)];
+        let output = command_inheriting(&HostSystem, &pinned, &argv, COMMAND_TIMEOUT).unwrap();
+        let real = std::fs::canonicalize(&pinned_path).unwrap();
+        assert_eq!(output, format!("{}\nclosed", real.display()));
+        assert!(fcntl_getfd(&pinned.0).unwrap().contains(FdFlags::CLOEXEC));
+        // A plain child gets neither.
+        let output = command(&HostSystem, &argv, COMMAND_TIMEOUT).unwrap();
+        assert_eq!(output, "closed\nclosed");
     }
 
     #[test]

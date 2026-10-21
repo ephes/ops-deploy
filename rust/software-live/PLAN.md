@@ -4,7 +4,9 @@ Status: S2 implemented (crate skeleton, command line, `validate`, policy
 hash, report types, `System` trait, fixtures, TESTMAP; see `README.md`);
 S3b implemented (Traefik observation, `src/traefik.rs`); S3a implemented
 (upstream lookups and caches, HTTPS with the system store, atomic JSON
-writes); S1 spike done, report in section 13; the other slices planned. Owner
+writes); S3c implemented (OS and PostgreSQL observations, lifecycle
+evaluation, `src/os.rs`, `src/postgresql.rs`, `src/lifecycle.rs`); S1 spike
+done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
@@ -299,8 +301,13 @@ the spawn returns — `std::process::Command::spawn` returns only after the
 child has executed its program (or failed to), so the child holds the
 descriptor under the same number and no later child inherits it. The
 parent keeps the file open for the `fstat` after the probe and closes it at
-the end of `binary_info`, as Python's `with` block does. Together this is
-the equivalent of `pass_fds`. It needs no
+the end of `binary_info`, as Python's `with` block does. Every other
+descriptor from 3 up is set close-on-exec right before each spawn
+(`close_fds::set_fds_cloexec`, a safe API; S3c), so a child gets no
+descriptor the program inherited without the flag, as `subprocess`'s
+`close_fds=True` guarantees. Together this is the equivalent of
+`pass_fds` (`System::run_inheriting`, used by both the Traefik and the
+PostgreSQL probe). It needs no
 `unsafe` (`pre_exec` is unsafe, and F1's workspace lints set
 `unsafe_code = "forbid"`); it is race-free because `collect` is
 single-threaded and spawns no other child while the descriptor is
@@ -312,9 +319,17 @@ underscores between digits, leading zeros, any size, ASCII digits only,
 
 #### OS (`observe_os`, `:346-390`)
 
-- `platform.freedesktop_os_release()`: `/etc/os-release`, else
-  `/usr/lib/os-release`, shell-style quoting and escapes. `ID` lowercased,
-  `VERSION_ID` required, `VERSION_CODENAME`/`PRETTY_NAME` optional (`null`).
+- `platform.freedesktop_os_release()`: `/etc/os-release`, else (on any
+  `OSError`) `/usr/lib/os-release`; when neither can be read, the
+  `OSError` of the last errno (`FileNotFoundError`, `PermissionError`, …).
+  Strict UTF-8 with universal newlines; a file that is not UTF-8 is a
+  `UnicodeDecodeError` without fallback. Python's own line rule, not shell
+  quoting: a line counts only if it is exactly `NAME=VALUE` with `NAME` of
+  `[a-zA-Z0-9_]+` and `VALUE` optionally inside one matching pair of `"` or
+  `'` (an unmatched quote stays in the value); only `\\`, `\$`, `\"`, `\'`
+  and `` \` `` are unescaped; later lines win; defaults `NAME=Linux`,
+  `ID=linux`, `PRETTY_NAME=Linux`. `ID` lowercased, `VERSION_ID` required
+  (`KeyError`), `VERSION_CODENAME`/`PRETTY_NAME` optional (`null`).
 - ID ≠ `expected_id` → `ValueError: operating system does not match
   policy` (observed stays false). Cycle ≠ `desired_cycle` →
   `desired_cycle_drift`. Lifecycle upstream not ok → `upstream_unknown`,
@@ -328,9 +343,11 @@ underscores between digits, leading zeros, any size, ASCII digits only,
 
 #### PostgreSQL (`postgres_clusters`, `postgresql_server_version`, `observe_postgresql`, `:393-527`)
 
-- `/usr/bin/pg_lsclusters --no-header`; each line split on whitespace into
-  at most 8 fields; fewer than 6 → error; `major` `\d+`, `name`
-  `[a-zA-Z_][a-zA-Z0-9_-]*`, port 1–65535; keep `major, name, port, status,
+- `/usr/bin/pg_lsclusters --no-header`; `str.splitlines()` (also `\v`,
+  `\f`, `\x1c`–`\x1e`, `\x85`, U+2028/2029), each line split on Python
+  whitespace into at most 8 fields; fewer than 6 → error; `major` `\d+`,
+  `name` `[a-zA-Z_][a-zA-Z0-9_-]*`, port `int()` (sign, `_` between
+  digits) in 1–65535; keep `major, name, port, status,
   owner` (data and log paths are dropped). A missing `pg_lsclusters`
   executable means "no clusters" only when PostgreSQL is not expected.
 - Not expected: `present`, `status` warning plus `unexpected_cluster` when
@@ -338,7 +355,10 @@ underscores between digits, leading zeros, any size, ASCII digits only,
 - Expected: select the cluster with the policy name and port and a status
   starting with `online`; none → `expected PostgreSQL cluster is not
   online`. Server version: PID file
-  `/var/run/postgresql/<major>-<name>.pid`, first line (≤ 32 bytes)
+  `/var/run/postgresql/<major>-<name>.pid`, first line as a text-mode
+  `readline(32)` reads it (at most 32 characters; the first 8192-byte
+  chunk is decoded as strict UTF-8, so an invalid byte anywhere in it
+  fails; universal newlines), stripped, must be
   `[1-9]\d*`; open `/proc/<pid>/exe`, require the descriptor target ==
   `realpath(/usr/lib/postgresql/<major>/bin/postgres)`, execute the
   descriptor with `--version`, re-read the PID file and compare identities
@@ -591,8 +611,12 @@ request path or a policy value other than the host.
    `FileNotFoundError`, `IsADirectoryError`, …).
 6. **Dates** in lifecycle data: only `YYYY-MM-DD` is accepted. Python 3.11+
    `date.fromisoformat` also accepts `YYYYMMDD` and ISO week dates; a cycle
-   with such a value is skipped as invalid. endoflife.date emits
-   `YYYY-MM-DD` only.
+   with such a value is skipped as invalid, and where such a value reaches
+   the evaluation of a cycle (`lifecycle_ended`) it is a `ValueError`
+   (observation `unknown`). endoflife.date emits `YYYY-MM-DD` only. A cycle
+   whose `cycle` is a list or an object never matches an observed cycle
+   (Python compares its `repr`); the upstream lookup keeps only cycles with
+   a string `cycle`, so neither case reaches a report.
 7. **Fatal errors** print one line instead of a traceback; exit codes stay.
 8. **APT failure classes** in `"APT observation failed (<Class>)"` are Rust
    categories (`HelperExit`, `HelperTimeout`, `InvalidHelperOutput`,
@@ -608,7 +632,9 @@ request path or a policy value other than the host.
     the `desired_cycle`/`desired_major` patterns and the version patterns
     of tool output) and `int()` also accept other Unicode decimal digits
     (`"٢٤.٠٤"`); the Rust code accepts `0-9` only, so such a policy is
-    invalid and such a version unparseable. This avoids a Unicode table
+    invalid and such a version unparseable (also the `pg_lsclusters` major
+    and port and the postmaster PID: such a line or PID is an error). This
+    avoids a Unicode table
     whose version would differ between Python 3.12, 3.13 and the `regex`
     crate. Whitespace (`\s`, `str.strip()`) is Python's exactly: Unicode
     `White_Space` plus U+001C..U+001F (fixture-tested over all code points).
@@ -646,10 +672,12 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   src/policy.rs                validate, policy hash (python-compatible formatter)
   src/report.rs                types, summary, freshness
   src/probe.rs                 trait System (clock, fs, readlink, stat, commands; HTTPS and
-                               the atomic JSON write since S3a; S3b/S3c add the fd operations)
+                               the atomic JSON write since S3a; the fd operations since S3b;
+                               `read_head` and close_fds for every child since S3c)
   src/http.rs                  the upstream HTTPS request (ureq, rustls, system store; S3a)
   tests/cli.rs                 the binary against the Python program's exit codes
   src/upstream.rs              upstream lookups and caches, cache_variant, lifecycle_date (S3a)
+  src/lifecycle.rs             lifecycle_ended/_cycle/_evidence, the UTC date of `now` (S3c)
   src/traefik.rs  src/os.rs  src/postgresql.rs  src/apt.rs (helper invocation)
   src/export.rs                inventory projection + safe source read
   src/atomic.rs                atomic JSON write with group (S3a, for the caches)
@@ -751,12 +779,13 @@ separate helper (section 12); the alternative is not built.
 | sha256 | `sha2` 0.11, `hex` | |
 | upstream HTTPS | `ureq` 3 (feature `rustls-no-provider`: no bundled roots, no gzip), `rustls` 0.23 with `ring` handed to ureq explicitly, `rustls-native-certs` for the system store | synchronous; the collector has no async runtime; `proxy(None)` (4.1) |
 | child processes with timeout | `std::process` plus `wait-timeout` | kill on timeout like `subprocess.run` |
+| `close_fds=True` of every child | `close_fds` (`set_fds_cloexec`, a safe API: every descriptor from 3 up except the passed one close-on-exec before the spawn) | S3c; the workspace forbids the `unsafe` a raw descriptor needs; the crate's last release is 0.3.2 (2021), small and feature-complete (Linux `close_range` or `/proc/self/fd`) |
 | fd and stat details | `rustix` (`fcntl_setfd`, `fstat`, `fchown`, `fchmod`, `O_NOFOLLOW`) | |
 | atomic file | `tempfile` (`Builder::prefix(".software-live-")`, `persist`) | plus `fsync`; mode and group through the descriptor (`std`) |
 | users/groups | `nix::unistd::Group::from_name` or `uzers` | `grp.getgrnam` |
-| os-release | a maintained parser crate if one matches Python's unquoting (fixture-tested); otherwise a 30-line parser with fixtures from `platform._parse_os_release` | decision recorded in S3c |
+| os-release | own 30-line parser (`os.rs`) with fixtures from `platform._parse_os_release` | decided in S3c: neither crate follows Python's rule — `etc-os-release` 0.1.1 strips an unmatched opening quote and undoes every backslash escape, `os-release` 0.1.0 (unmaintained since 2018) trims lines and reads known keys only — which would change `id`, `cycle`, `codename` or `pretty_name` |
 | regex | `regex` | the patterns of 3.3 |
-| dates | `chrono` (date only, UTC; no default features) | `lifecycle_date` since S3a |
+| dates | `chrono` (date only, UTC; no default features) | `lifecycle_date` since S3a; the UTC date of `now` and its comparisons (S3c) |
 | test HTTPS server | `rcgen` (dev only) | a self-signed certificate for the local test server |
 | endpoint HTTP | `hyper` 1 (`server::conn::http1`) + `tokio` current-thread | see 5.4 |
 | bcrypt | `bcrypt` (MIT) | 4.2 item 1 |

@@ -59,6 +59,20 @@ Slice S3a (upstream lookups and caches):
   `fsync`, rename; the old file stays on failure).
 - Nothing calls these yet: `collect` comes with S3f.
 
+Slice S3c (OS and PostgreSQL observations, library only until `collect`
+is wired in S3f):
+
+- `os::observe_os` with Python's os-release parser (`os::freedesktop_os_release`)
+  and `postgresql::observe_postgresql` with `pg_lsclusters` parsing and the
+  postmaster's version probe through a pinned descriptor, both keeping the
+  fields observed before a failure.
+- `lifecycle`: `lifecycle_ended` (on S3a's `upstream::lifecycle_date`), the
+  cycle lookup and its evidence, the UTC date of the observation time.
+- The PostgreSQL probe uses S3b's pinned-descriptor operations
+  (`System::open`, `fstat`, `run_inheriting`). `System` gained `read_head`
+  (the PID file), and every child now inherits no descriptor beyond its
+  standard streams and the passed one (`subprocess`'s `close_fds`).
+
 ## Layout
 
 ```
@@ -71,6 +85,9 @@ software-live/
   src/policy.rs               validate_policy, policy_sha256
   src/version.rs              version(), numeric_version()
   src/report.rs               observations, summary, report, with_freshness
+  src/lifecycle.rs            lifecycle dates, end states, cycle lookup, evidence
+  src/os.rs                   os-release, observe_os
+  src/postgresql.rs           pg_lsclusters, postmaster version probe, observe_postgresql
   src/probe.rs                trait System, HostSystem, the fixture world (tests)
   src/traefik.rs              observe_traefik, binary_info, main_pid
   src/http.rs                 the upstream HTTPS request (system trust store)

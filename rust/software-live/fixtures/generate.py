@@ -31,7 +31,9 @@ import argparse
 import ast
 import collections
 import contextlib
+import copy
 import errno
+import functools
 import hashlib
 import importlib.util
 import io
@@ -1194,6 +1196,737 @@ def gen_traefik() -> dict[str, Any]:
     return {"binary_info": binary_info, "observe": observe}
 
 
+# ------------------------------------------------------------------ os, postgresql: world
+#
+# The OS and PostgreSQL cases run the real Python functions on ``TextHost``
+# (``FakeHost`` of the Traefik section plus text files), with the same world
+# format and call log as ``probe::fake::FakeSystem``.
+
+
+FAKE_ERRNOS.update({name: getattr(errno, name) for name in ("EIO", "EPERM")})
+
+
+def text_file(data: Any) -> dict[str, Any]:
+    """A file of the world: ``{"ok": text}``, or ``{"hex": …}`` for bytes
+    that are not UTF-8 (given as ``{"hex": …}``)."""
+    return dict(data) if isinstance(data, dict) else {"ok": data}
+
+
+class TextHost(FakeHost):
+    """``FakeHost`` plus text files: ``platform``'s ``open(candidate,
+    encoding="utf-8")`` (logged as ``read_file``) and ``Path.open()`` of the
+    PostgreSQL PID file (logged as ``read_head``), both with Python's real
+    text-mode decoding of the bytes. ``files`` maps a path to ``{"ok":
+    text}``, ``{"hex": …}`` or ``{"errno": …}`` (``FileEntry`` of the Rust
+    fake); ``reads`` maps a path to answers of that form consumed in order
+    (the last one repeats), for a file that changes between two reads."""
+
+    def __init__(self, world: dict[str, Any]) -> None:
+        super().__init__(world)
+        self.reads = {path: collections.deque(answers) for path, answers in world.get("reads", {}).items()}
+
+    def file_bytes(self, path: str) -> bytes:
+        entry = self.take(self.reads.get(path)) if path in self.reads else self.world.get("files", {}).get(path)
+        if entry is None:
+            raise fake_os_error("ENOENT", path)
+        if "errno" in entry:
+            raise fake_os_error(entry["errno"], path)
+        return bytes.fromhex(entry["hex"]) if "hex" in entry else entry["ok"].encode("utf-8")
+
+    def text_open(self, path: Any, mode: str = "r", *args: Any, encoding: str | None = None,
+                  **kwargs: Any) -> io.TextIOWrapper:
+        assert mode == "r" and not args and not kwargs, (mode, args, kwargs)
+        self.calls.append(f"read_file {path}")
+        return io.TextIOWrapper(io.BytesIO(self.file_bytes(str(path))), encoding=encoding)
+
+    def path_open(self, path: Any, mode: str = "r", *args: Any, **kwargs: Any) -> io.TextIOWrapper:
+        assert mode == "r" and not args and not kwargs, (mode, args, kwargs)
+        self.calls.append(f"read_head {path}")
+        return io.TextIOWrapper(io.BytesIO(self.file_bytes(str(path))), encoding="utf-8")
+
+    @contextlib.contextmanager
+    def patched(self) -> Any:
+        with (
+            super().patched(),
+            mock.patch.object(live.platform, "open", self.text_open, create=True),
+            mock.patch.object(live.platform, "_os_release_cache", None),
+            # A function, so the Path instance binds as its first argument.
+            mock.patch.object(live.Path, "open", lambda path, *a, **k: self.path_open(path, *a, **k)),
+        ):
+            yield self
+
+
+def outcome(function: Callable[[], Any], world: dict[str, Any]) -> dict[str, Any]:
+    """Run ``function`` in ``world``: its result or exception, and the calls."""
+    case: dict[str, Any] = {"world": world}
+    host = TextHost(world)
+    with host.patched():
+        try:
+            case["result"] = function()
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            case["error"] = error(exc)
+    case["calls"] = host.calls
+    return case
+
+
+def observation(function: Callable[[], dict[str, Any]], world: dict[str, Any]) -> dict[str, Any]:
+    """An ``observe_*`` result; its ``error`` text is split into class and
+    contract message like any other exception (PLAN.md 4.2 item 5)."""
+    case = outcome(function, world)
+    result = case["result"]
+    text = result.pop("error", None)
+    if text is not None:
+        cls, _, message = text.partition(": ")
+        contract = cls == "KeyError" or message in OWN_MESSAGES
+        case["error"] = {"class": cls, "message": message if contract else None}
+    return case
+
+
+# ------------------------------------------------------------------ lifecycle
+
+LIFECYCLE_DATES: list[tuple[Any, str | None]] = [
+    ("2028-08-09", None), ("2028-02-29", None), ("2027-02-29", None), ("0001-01-01", None),
+    ("9999-12-31", None), ("0000-01-01", None), ("2028-13-01", None), ("2028-00-10", None),
+    ("2028-01-32", None), ("2028-04-31", None), ("2028-8-9", None), (" 2028-08-09", None),
+    ("2028-08-09 ", None), ("2028-08-09T00:00", None), ("+2028-08-09", None), ("2028/08/09", None),
+    ("", None), ("x", None), ("\uff12\uff10\uff12\uff18-08-09", None), ("\u0662028-08-09", None),
+    (None, None), (True, None), (False, None), (0, None), (1.5, None), ([], None), ({}, None),
+    ("20280809", "iso-date"), ("2028-W32", "iso-date"), ("2028-W32-3", "iso-date"),
+    ("2028W32", "iso-date"), ("2028W323", "iso-date"),
+]
+TODAY = "2026-09-15"
+LIFECYCLE_ENDED_VALUES: list[Any] = [
+    True, False, None, "2026-09-14", "2026-09-15", "2026-09-16", "2026-13-01", 20260915, ["x"],
+]
+NOW_DATES: list[float] = [
+    0.0, 1_789_344_000.0, 1_789_430_399.999999, 1_789_430_399.9999996, 1_789_430_399.9999994,
+    1_789_430_400.0, -0.5, -0.0000004, -0.0000006, -86_400.0, -1.0, 1e9 + 0.5,
+    253_402_300_799.0, 253_402_300_800.0, -62_135_596_800.0, -62_135_596_801.0,
+]
+
+
+def gen_lifecycle() -> dict[str, Any]:
+    dates = []
+    for value, p3 in LIFECYCLE_DATES:
+        case: dict[str, Any] = {"value": value}
+        try:
+            parsed = live.lifecycle_date(value)
+            case["result"] = None if parsed is None else parsed.isoformat()
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            case["error"] = error(exc)
+        if p3:
+            assert "result" in case, value
+            case["p3"] = p3
+        dates.append(case)
+    today = live.date.fromisoformat(TODAY)
+    ended = []
+    for value in LIFECYCLE_ENDED_VALUES:
+        for flag in (True, False):
+            case = {"value": value, "today": TODAY, "true_means_ended": flag}
+            try:
+                case["result"] = live.lifecycle_ended(value, today, true_means_ended=flag)
+            except Exception as exc:  # noqa: BLE001 - the oracle's answer
+                case["error"] = error(exc)
+            ended.append(case)
+    now_dates = []
+    for now in NOW_DATES:
+        case = {"now": now}
+        try:
+            case["date"] = live.datetime.fromtimestamp(now, live.UTC).date().isoformat()
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            case["error"] = error(exc)
+        now_dates.append(case)
+    evidence_inputs = [
+        {"status": "ok", "product": "ubuntu", "cycles": [{"cycle": "24.04"}], "checked_at_epoch": 99.5,
+         "cached": True, "other": 1},
+        {"status": "unknown", "error": "URLError", "last_success": {"product": "debian",
+                                                                     "checked_at_epoch": 12}},
+        {"status": "unknown", "error": "HTTPError", "last_success": None},
+        {"status": "unknown", "error": "x", "last_success": {"cycles": []}},
+        {"status": "unknown", "last_success": [{"checked_at_epoch": 1}]},
+        {"status": "not_applicable"},
+        {},
+        {"cached": False, "error": None, "last_success": {"checked_at_epoch": None}},
+    ]
+    evidence = [{"latest": latest, "result": live.lifecycle_evidence(latest)} for latest in evidence_inputs]
+    cycle_inputs: list[tuple[Any, str]] = [
+        ({"status": "ok", "cycles": [{"cycle": "13"}, {"cycle": "12", "latest": "12.15"}]}, "12"),
+        ({"status": "ok", "cycles": [{"cycle": "13"}, {"cycle": "13", "latest": "second"}]}, "13"),
+        ({"status": "ok", "cycles": [{"cycle": "13"}]}, "12"),
+        ({"status": "ok", "cycles": []}, "12"),
+        ({"status": "unknown", "cycles": [{"cycle": "12"}]}, "12"),
+        ({"cycles": [{"cycle": "12"}]}, "12"),
+        ({"status": "ok"}, "12"),
+        ({"status": "ok", "cycles": [{"cycle": 12}]}, "12"),
+        ({"status": "ok", "cycles": [{"cycle": 24.04}]}, "24.04"),
+        ({"status": "ok", "cycles": [{"cycle": 24.1}]}, "24.10"),
+        ({"status": "ok", "cycles": [{"cycle": None}]}, "None"),
+        ({"status": "ok", "cycles": [{"cycle": True}]}, "True"),
+        ({"status": "ok", "cycles": [{}]}, "None"),
+        ({"status": "ok", "cycles": [{"other": 1}, {"cycle": "12"}]}, "12"),
+        ({"status": "ok", "cycles": ["12"]}, "12"),
+        ({"status": "ok", "cycles": [{"cycle": "12"}, "13"]}, "12"),
+        ({"status": "ok", "cycles": [{"cycle": "11"}, None]}, "12"),
+        ({"status": "ok", "cycles": {}}, "12"),
+        ({"status": "ok", "cycles": {"12": {}}}, "12"),
+        ({"status": "ok", "cycles": ""}, "12"),
+        ({"status": "ok", "cycles": "12"}, "12"),
+        ({"status": "ok", "cycles": None}, "12"),
+        ({"status": "ok", "cycles": 12}, "12"),
+    ]
+    cycles = []
+    for latest, cycle in cycle_inputs:
+        case = {"latest": latest, "cycle": cycle}
+        try:
+            case["result"] = live.lifecycle_cycle(latest, cycle)
+        except Exception as exc:  # noqa: BLE001 - the oracle's answer
+            case["error"] = error(exc)
+        cycles.append(case)
+    return {"dates": dates, "ended": ended, "now_dates": now_dates, "evidence": evidence,
+            "cycles": cycles}
+
+
+# ------------------------------------------------------------------ os
+
+UBUNTU_RELEASE = (
+    'PRETTY_NAME="Ubuntu 24.04.5 LTS"\nNAME="Ubuntu"\nVERSION_ID="24.04"\n'
+    'VERSION="24.04.5 LTS (Noble Numbat)"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\n'
+    'HOME_URL="https://www.ubuntu.com/"\nUBUNTU_CODENAME=noble\n'
+    'LOGO=ubuntu-logo\n'
+)
+DEBIAN_RELEASE = (
+    'PRETTY_NAME="Debian GNU/Linux 13 (trixie)"\nNAME="Debian GNU/Linux"\nVERSION_ID="13"\n'
+    'VERSION="13 (trixie)"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\n'
+    'HOME_URL="https://www.debian.org/"\n'
+)
+OS_RELEASE_TEXTS: dict[str, Any] = {
+    "ubuntu": UBUNTU_RELEASE,
+    "debian": DEBIAN_RELEASE,
+    "empty": "",
+    "no_trailing_newline": "ID=ubuntu\nVERSION_ID=24.04",
+    "crlf": "ID=ubuntu\r\nVERSION_ID=\"24.04\"\r\n",
+    "cr_only": "ID=ubuntu\rVERSION_ID=24.04\r",
+    "double_quotes": 'A="x"\nB="x y"\nC=""\nD="\nE="x\nF=x"\nG="x"y"\nH="x"\'\n',
+    "single_quotes": "A='x'\nB='x \"y\"'\nC=''\nD='\nE='x\"\nF=\"x'\n",
+    "escapes": 'A="a\\"b"\nB=a\\\\b\nC=\\$HOME\nD=\\`x\\`\nE=\\\'x\nF=a\\nb\nG=trailing\\\nH=\\\\\\"\nI=\\x\\\\\\\\\n',
+    "names": "lower=1\n9DIGIT=2\n_U=3\nA-B=4\nA.B=5\n=6\n Ä=7\nÄ=8\nA B=9\n",
+    "spacing": "A = b\n B=c\nC=d \nD=\te\nexport E=f\n#F=g\n# comment\n\n   \n",
+    "equals_in_value": "A=b=c\nB==\nC='='\n",
+    "duplicates": "ID=debian\nID=ubuntu\nVERSION_ID=1\nVERSION_ID=24.04\n",
+    "defaults_only": "OTHER=1\n",
+    "unicode_values": "PRETTY_NAME=\"\u00dcbuntu \u65e5\u672c \U0001f600\"\nA=\u2028x\u2029\nB=\x0bx\x0c\nC=\x1cx\x1d\x85\nD=a\x00b\n",
+    "bom": "\ufeffID=ubuntu\nVERSION_ID=24.04\n",
+    "uppercase_id": "ID=Ubuntu\nVERSION_ID=24.04\n",
+    "tab_after_value": "ID=ubuntu\t\nVERSION_ID=24.04\n",
+    "invalid_utf8": {"hex": "49443d7562756e74750a56455253494f4e5f49443d32342e30340aff0a"},
+    "invalid_utf8_late": {"hex": "49443d7562756e74750a" + "41" * 9000 + "c3"},
+    "latin1": {"hex": "4e414d453d22c3bc220a50524554545f4e414d453d22fc220a"},
+}
+
+
+def gen_os_release() -> list[dict[str, Any]]:
+    cases = []
+    for case_id, data in OS_RELEASE_TEXTS.items():
+        world = {"files": {"/etc/os-release": text_file(data)}}
+        cases.append({"id": case_id, **outcome(live.platform.freedesktop_os_release, world)})
+    fallbacks: dict[str, dict[str, Any]] = {
+        "fallback_missing": {"/usr/lib/os-release": {"ok": DEBIAN_RELEASE}},
+        "fallback_denied": {"/etc/os-release": {"errno": "EACCES"}, "/usr/lib/os-release": {"ok": UBUNTU_RELEASE}},
+        "fallback_directory": {"/etc/os-release": {"errno": "EISDIR"}, "/usr/lib/os-release": {"ok": UBUNTU_RELEASE}},
+        "fallback_io_error": {"/etc/os-release": {"errno": "EIO"}, "/usr/lib/os-release": {"ok": UBUNTU_RELEASE}},
+        "no_fallback_after_decode_error": {"/etc/os-release": {"hex": "ff"},
+                                           "/usr/lib/os-release": {"ok": UBUNTU_RELEASE}},
+        "both_missing": {},
+        "denied_then_missing": {"/etc/os-release": {"errno": "EACCES"}},
+        "missing_then_denied": {"/usr/lib/os-release": {"errno": "EACCES"}},
+        "missing_then_directory": {"/usr/lib/os-release": {"errno": "EISDIR"}},
+        "missing_then_loop": {"/usr/lib/os-release": {"errno": "ELOOP"}},
+    }
+    for case_id, files in fallbacks.items():
+        cases.append({"id": case_id, **outcome(live.platform.freedesktop_os_release, {"files": files})})
+    return cases
+
+
+def os_world(text: Any) -> dict[str, Any]:
+    return {"files": {"/etc/os-release": text_file(text)}}
+
+
+def lifecycle_ok(product: str, cycles: list[Any], **extra: Any) -> dict[str, Any]:
+    return {"status": "ok", "product": product, "cycles": cycles, "checked_at_epoch": 1_789_000_000.5,
+            "cached": True, **extra}
+
+
+UBUNTU_CYCLES = [
+    {"cycle": "25.10", "lts": False, "releaseDate": "2025-10-09", "support": "2026-07-09",
+     "eol": "2026-07-09", "latest": "25.10"},
+    {"cycle": "24.04", "lts": True, "releaseDate": "2024-04-25", "support": "2029-05-31",
+     "eol": "2029-05-31", "extendedSupport": "2036-04-25", "latest": "24.04.5"},
+]
+DEBIAN_CYCLES = [
+    {"cycle": "13", "support": "2028-08-09", "eol": "2030-06-30"},
+    {"cycle": "12", "latest": "12.15", "support": "2026-07-11", "eol": "2028-06-30"},
+]
+UBUNTU_POLICY = {"expected_id": "ubuntu", "desired_cycle": "24.04", "product": "ubuntu"}
+DEBIAN_POLICY = {"expected_id": "debian", "desired_cycle": "13", "product": "debian"}
+DEBIAN_12 = 'ID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\nPRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\n'
+DEBIAN_13 = 'ID=debian\nVERSION_ID="13"\nVERSION_CODENAME=trixie\nPRETTY_NAME="Debian GNU/Linux 13 (trixie)"\n'
+UNKNOWN_LATEST = {"status": "unknown", "error": "URLError", "last_success": None}
+STALE_LATEST = {"status": "unknown", "error": "HTTPError",
+                "last_success": lifecycle_ok("ubuntu", UBUNTU_CYCLES)}
+
+
+def os_cases() -> list[tuple[str, Any, dict[str, Any], Any, float]]:
+    """(id, os-release data or a files map, policy, latest, now)."""
+    now = 1_789_344_000.0  # 2026-09-14
+    ubuntu = lifecycle_ok("ubuntu", UBUNTU_CYCLES)
+    debian = lifecycle_ok("debian", DEBIAN_CYCLES)
+    cycles = lambda *items: lifecycle_ok("debian", list(items))
+    return [
+        # tests/test_software_live.py
+        ("desired_drift_and_lts_phase", DEBIAN_12, {"expected_id": "debian", "desired_cycle": "13"},
+         {"status": "ok", "cycles": DEBIAN_CYCLES}, 1_789_344_000),
+        ("boolean_support_false_warns", DEBIAN_13, {"expected_id": "debian", "desired_cycle": "13"},
+         {"status": "ok", "cycles": [{"cycle": "13", "support": False, "eol": False}]}, 1_789_430_400),
+        ("boolean_support_true_is_ok", DEBIAN_13, {"expected_id": "debian", "desired_cycle": "13"},
+         {"status": "ok", "cycles": [{"cycle": "13", "support": True, "eol": False}]}, 1_789_430_400),
+        # the hosts
+        ("ubuntu_ok", UBUNTU_RELEASE, UBUNTU_POLICY, ubuntu, now),
+        ("debian_ok", DEBIAN_RELEASE, DEBIAN_POLICY, debian, now),
+        ("fallback_to_usr_lib", {"/usr/lib/os-release": {"ok": UBUNTU_RELEASE}}, UBUNTU_POLICY, ubuntu, now),
+        ("uppercase_id", "ID=UBUNTU\nVERSION_ID=24.04\n", UBUNTU_POLICY, ubuntu, now),
+        ("no_codename_or_pretty_name", "ID=ubuntu\nVERSION_ID=24.04\n", UBUNTU_POLICY, ubuntu, now),
+        # failures
+        ("id_mismatch", DEBIAN_RELEASE, UBUNTU_POLICY, ubuntu, now),
+        ("id_default_linux", "VERSION_ID=24.04\n", UBUNTU_POLICY, ubuntu, now),
+        ("id_with_tab", "ID=ubuntu\t\nVERSION_ID=24.04\n", UBUNTU_POLICY, ubuntu, now),
+        ("version_id_missing", "ID=ubuntu\n", UBUNTU_POLICY, ubuntu, now),
+        ("version_id_missing_and_id_mismatch", "ID=debian\n", UBUNTU_POLICY, ubuntu, now),
+        ("os_release_unreadable", {}, UBUNTU_POLICY, ubuntu, now),
+        ("os_release_denied", {"/etc/os-release": {"errno": "EACCES"},
+                               "/usr/lib/os-release": {"errno": "EACCES"}}, UBUNTU_POLICY, ubuntu, now),
+        ("os_release_not_utf8", {"hex": "49443d7562756e74750aff"}, UBUNTU_POLICY, ubuntu, now),
+        # policy values
+        ("desired_cycle_float", UBUNTU_RELEASE, {**UBUNTU_POLICY, "desired_cycle": 24.04}, ubuntu, now),
+        ("desired_cycle_int", DEBIAN_RELEASE, {**DEBIAN_POLICY, "desired_cycle": 13}, debian, now),
+        ("desired_cycle_other", UBUNTU_RELEASE, {**UBUNTU_POLICY, "desired_cycle": "26.04"}, ubuntu, now),
+        # upstream
+        ("upstream_unknown", UBUNTU_RELEASE, UBUNTU_POLICY, UNKNOWN_LATEST, now),
+        ("upstream_unknown_with_stale_evidence", UBUNTU_RELEASE, UBUNTU_POLICY, STALE_LATEST, now),
+        ("upstream_unknown_and_drift", DEBIAN_12, DEBIAN_POLICY, UNKNOWN_LATEST, now),
+        ("upstream_not_applicable", UBUNTU_RELEASE, UBUNTU_POLICY, {"status": "not_applicable"}, now),
+        ("cycle_missing", 'ID=ubuntu\nVERSION_ID="22.04"\n', {**UBUNTU_POLICY, "desired_cycle": "22.04"},
+         ubuntu, now),
+        ("cycles_key_missing", DEBIAN_RELEASE, DEBIAN_POLICY, {"status": "ok"}, now),
+        ("cycles_not_a_list", DEBIAN_RELEASE, DEBIAN_POLICY, {"status": "ok", "cycles": "13"}, now),
+        ("cycle_number", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": 13, "eol": False}), now),
+        ("cycle_float_number", UBUNTU_RELEASE, UBUNTU_POLICY,
+         lifecycle_ok("ubuntu", [{"cycle": 24.04, "eol": False}]), now),
+        # lifecycle evaluation
+        ("eol_reached", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "support": "2026-01-01", "eol": "2026-09-14"}), now),
+        ("eol_tomorrow_support_ended", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "support": "2026-09-14", "eol": "2026-09-15"}), now),
+        ("support_tomorrow", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "support": "2026-09-15", "eol": "2030-06-30"}), now),
+        ("eol_true", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": "13", "support": True, "eol": True}), now),
+        ("eol_false_support_absent", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": "13", "eol": False}), now),
+        ("eol_null_support_null", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "eol": None, "support": None}), now),
+        ("eol_missing", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": "13"}), now),
+        ("eol_invalid_date", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": "13", "eol": "2030-02-30"}), now),
+        ("eol_number", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": "13", "eol": 2030}), now),
+        ("support_invalid_after_eol_check", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "eol": "2030-06-30", "support": "soon"}), now),
+        ("eol_reached_hides_invalid_support", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "eol": True, "support": "soon"}), now),
+        ("newest_cycle_without_cycle_key", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"latest": "x"}, {"cycle": "13", "eol": False}), now),
+        ("newest_cycle_number", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": 14}, {"cycle": "13", "eol": False}), now),
+        ("today_rounds_to_the_next_day", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "eol": "2026-09-15"}), 1_789_430_399.9999996),
+        ("today_stays_before_midnight", DEBIAN_RELEASE, DEBIAN_POLICY,
+         cycles({"cycle": "13", "eol": "2026-09-15"}), 1_789_430_399.9999994),
+        ("now_out_of_range", DEBIAN_RELEASE, DEBIAN_POLICY, cycles({"cycle": "13", "eol": False}),
+         253_402_300_800.0),
+    ]
+
+
+def gen_os() -> dict[str, Any]:
+    observe = []
+    seen = set()
+    for case_id, data, policy, latest, now in os_cases():
+        assert case_id not in seen, case_id
+        seen.add(case_id)
+        is_files_map = isinstance(data, dict) and "hex" not in data
+        world = {"files": data} if is_files_map else os_world(data)
+        case = observation(
+            functools.partial(live.observe_os, copy.deepcopy(policy), copy.deepcopy(latest), now), world)
+        observe.append({"id": case_id, "policy": policy, "latest": latest, "now": now, **case})
+    return {"release": gen_os_release(), "observe": observe}
+
+
+# ------------------------------------------------------------------ postgresql
+
+PG_LSCLUSTERS = ["/usr/bin/pg_lsclusters", "--no-header"]
+CLUSTER_MAIN = "17  main    5432 online postgres /var/lib/postgresql/17/main /var/log/postgresql/postgresql-17-main.log"
+
+
+def lsclusters(stdout: str = "", **spec: Any) -> dict[str, Any]:
+    return {"argv": PG_LSCLUSTERS, "stdout": stdout, **spec}
+
+
+LSCLUSTERS_OUTPUTS: dict[str, Any] = {
+    # tests/test_software_live.py
+    "omits_data_paths": (
+        "17 main 5432 online postgres /var/lib/postgresql/17/main "
+        "/var/log/postgresql/postgresql-17-main.log\n"
+        "16 old 5433 down,binaries_missing postgres "
+        "/var/lib/postgresql/16/old /var/log/postgresql/postgresql-16-old.log"
+    ),
+    "rejects_unsafe_identity": "17 ../main 5432 online postgres /var/lib/postgresql/17/main",
+    # layout
+    "host_output": CLUSTER_MAIN + "\n",
+    "empty": "",
+    "whitespace_only": " \n\t ",
+    "six_fields": "17 main 5432 online postgres /data",
+    "five_fields": "17 main 5432 online postgres",
+    "many_fields": "17 main 5432 online,recovery postgres /data /log extra  fields\there ",
+    "blank_line_between": "17 main 5432 online postgres /d /l\n\n16 old 5433 down postgres /d /l",
+    "crlf": "17 main 5432 online postgres /d /l\r\n16 old 5433 down postgres /d /l\r\n",
+    "cr": "17 main 5432 online postgres /d /l\r16 old 5433 down postgres /d /l",
+    "python_line_breaks": "17 a 1 online p /d\x0b17 b 2 online p /d\x0c17 c 3 online p /d\x1c17 d 4 online p /d"
+                          "\x1d17 e 5 online p /d\x1e17 f 6 online p /d\x85"
+                          "17 g 7 online p /d\u202817 h 8 online p /d\u202917 i 9 online p /d",
+    "python_whitespace_separators": "17\x1fmain\u30005432\u00a0online\u2003postgres\x1f/d",
+    "python_line_break_inside_fields": "17\x1fmain\u30005432\u00a0online\u2003postgres\x1c/d",
+    "tabs": "17\tmain\t5432\tonline\tpostgres\t/d\t/l",
+    "unicode_status_and_owner": "17 main 5432 \u00f6nline p\u00f6stgres /d",
+    # identity
+    "major_with_letter": "17a main 5432 online postgres /d",
+    "major_negative": "-17 main 5432 online postgres /d",
+    "name_digit_first": "17 9main 5432 online postgres /d",
+    "name_dash_underscore": "17 _m-1 5432 online postgres /d",
+    "name_dot": "17 m.1 5432 online postgres /d",
+    "name_non_ascii": "17 m\u00e4in 5432 online postgres /d",
+    # port
+    "port_underscore": "17 main 5_432 online postgres /d",
+    "port_double_underscore": "17 main 5__432 online postgres /d",
+    "port_plus": "17 main +5432 online postgres /d",
+    "port_leading_zeros": "17 main 0005432 online postgres /d",
+    "port_zero": "17 main 0 online postgres /d",
+    "port_negative_zero": "17 main -0 online postgres /d",
+    "port_max": "17 main 65535 online postgres /d",
+    "port_over": "17 main 65536 online postgres /d",
+    "port_negative": "17 main -1 online postgres /d",
+    "port_word": "17 main x online postgres /d",
+    "port_float": "17 main 5432.0 online postgres /d",
+    "port_hex": "17 main 0x10 online postgres /d",
+    "port_huge": "17 main 123456789012345678901234567890 online postgres /d",
+    "port_4300_digits": "17 main " + "1" * 4300 + " online postgres /d",
+    "port_4301_digits": "17 main " + "1" * 4301 + " online postgres /d",
+    "unsafe_identity_before_port": "17 ../x port online postgres /d",
+    "port_error_after_good_line": "17 main 5432 online postgres /d\n16 old 0 down postgres /d",
+}
+LSCLUSTERS_P3 = {
+    "major_unicode_digits": "\u0661\u0667 main 5432 online postgres /d",
+    "port_unicode_digits": "17 main \u0665\u0664\u0663\u0662 online postgres /d",
+}
+LSCLUSTERS_FAILURES: dict[str, dict[str, Any]] = {
+    "missing": lsclusters(error="ENOENT"),
+    "denied": lsclusters(error="EACCES"),
+    "fails": lsclusters("17 main 5432 online postgres /d", exit=1),
+    "times_out": lsclusters(error="timeout"),
+}
+
+
+def gen_clusters() -> list[dict[str, Any]]:
+    cases = []
+    for case_id, stdout in LSCLUSTERS_OUTPUTS.items():
+        cases.append({"id": case_id, **outcome(live.postgres_clusters, {"commands": [lsclusters(stdout)]})})
+    for case_id, stdout in LSCLUSTERS_P3.items():
+        case = {"id": case_id, **outcome(live.postgres_clusters, {"commands": [lsclusters(stdout)]})}
+        assert "result" in case, case_id
+        cases.append({**case, "p3": "unicode-digits"})
+    for case_id, spec in LSCLUSTERS_FAILURES.items():
+        cases.append({"id": case_id, **outcome(live.postgres_clusters, {"commands": [spec]})})
+    return cases
+
+
+PG_PID = "/var/run/postgresql/17-main.pid"
+PG_EXE = "/proc/4242/exe"
+PG_FD = 7
+PG_BINARY = "/usr/lib/postgresql/17/bin/postgres"
+PG_IMAGE = {"mode": 0o100755, "dev": 2049, "ino": 1311, "size": 9_876_543,
+            "mtime_ns": 1_760_000_000_123_456_789, "ctime_ns": 1_760_000_001_000_000_000}
+PG_PID_TEXT = "4242\n/var/lib/postgresql/17/main\n1760000000\n5432\n/var/run/postgresql\n*\n  1234567 0\nready\n"
+PG_VERSION = "postgres (PostgreSQL) 17.6 (Ubuntu 17.6-1.pgdg24.04+1)\n"
+MAIN_CLUSTER = {"major": "17", "name": "main", "port": 5432, "status": "online", "owner": "postgres"}
+
+
+def version_probe(stdout: str = PG_VERSION, **spec: Any) -> dict[str, Any]:
+    return {"argv": [f"/proc/self/fd/{PG_FD}", "--version"], "pass_fds": [PG_FD], "stdout": stdout, **spec}
+
+
+def pg_image(fd: int = PG_FD, *fstat: dict[str, Any]) -> dict[str, Any]:
+    """``open(/proc/<pid>/exe, "rb")``: descriptor ``fd`` and its ``fstat`` answers."""
+    return {"ok": {"fd": fd, "data": "", "fstat": list(fstat) or [{"ok": PG_IMAGE}]}}
+
+
+def pg_world(**changes: Any) -> dict[str, Any]:
+    """The world of a running ``17/main`` postmaster; ``changes`` replace keys."""
+    world: dict[str, Any] = {
+        "files": {PG_PID: {"ok": PG_PID_TEXT}},
+        "open": {PG_EXE: [pg_image()]},
+        "readlink": {f"/proc/self/fd/{PG_FD}": [{"ok": PG_BINARY}]},
+        "stat": {PG_EXE: [{"ok": PG_IMAGE}]},
+        "commands": [version_probe()],
+    }
+    world.update(changes)
+    return world
+
+
+def server_version_cases() -> list[tuple[str, dict[str, Any], dict[str, Any] | None]]:
+    """(id, world, cluster or None for MAIN_CLUSTER)."""
+    changed = dict(PG_IMAGE, mtime_ns=PG_IMAGE["mtime_ns"] + 1)
+    moved = dict(PG_IMAGE, ino=PG_IMAGE["ino"] + 1)
+    not_run: dict[str, Any] = {"commands": []}
+    pid = lambda text, **more: pg_world(files={PG_PID: text_file(text)}, **more)
+    return [
+        ("running_postmaster", pg_world(), None),
+        ("version_without_suffix", pg_world(commands=[version_probe("postgres (PostgreSQL) 17.6")]), None),
+        ("version_three_parts", pg_world(commands=[version_probe("postgres (PostgreSQL) 9.6.24\n")]), None),
+        ("version_second_line", pg_world(commands=[version_probe("postgres (PostgreSQL) 17.6\nmore text")]), None),
+        ("version_python_space", pg_world(commands=[version_probe("postgres (PostgreSQL) 17.6\x1cx")]), None),
+        ("version_stripped", pg_world(commands=[version_probe("  postgres (PostgreSQL) 17.6  \n\n")]), None),
+        ("version_leading_zero_major", pg_world(commands=[version_probe("postgres (PostgreSQL) 017.6")]), None),
+        ("version_one_part", pg_world(commands=[version_probe("postgres (PostgreSQL) 17")]), None),
+        ("version_beta", pg_world(commands=[version_probe("postgres (PostgreSQL) 18beta1")]), None),
+        ("version_suffix_without_space", pg_world(commands=[version_probe("postgres (PostgreSQL) 17.6beta")]), None),
+        ("version_suffix_then_line", pg_world(commands=[version_probe("postgres (PostgreSQL) 17.6 a\nb")]), None),
+        ("version_other_program", pg_world(commands=[version_probe("pg (PostgreSQL) 17.6")]), None),
+        ("version_empty", pg_world(commands=[version_probe("")]), None),
+        ("version_probe_fails", pg_world(commands=[version_probe(exit=1)]), None),
+        ("version_probe_times_out", pg_world(commands=[version_probe(error="timeout")]), None),
+        ("version_probe_cannot_start", pg_world(commands=[version_probe(error="ENOENT")]), None),
+        # the image
+        ("symlinked_install", pg_world(
+            readlink={f"/proc/self/fd/{PG_FD}": [{"ok": "/opt/postgresql/17/bin/postgres"}]},
+            realpath={PG_BINARY: "/opt/postgresql/17/bin/postgres"}), None),
+        ("deleted_image", pg_world(readlink={f"/proc/self/fd/{PG_FD}": [{"ok": PG_BINARY + " (deleted)"}]},
+                                   **not_run), None),
+        ("other_image", pg_world(readlink={f"/proc/self/fd/{PG_FD}": [{"ok": "/usr/bin/python3.12"}]},
+                                 **not_run), None),
+        ("other_major_image", pg_world(readlink={f"/proc/self/fd/{PG_FD}": [{"ok": "/usr/lib/postgresql/16/bin/postgres"}]},
+                                       **not_run), None),
+        ("descriptor_target_unreadable", pg_world(readlink={f"/proc/self/fd/{PG_FD}": [{"errno": "EACCES"}]},
+                                                  **not_run), None),
+        ("process_gone", pg_world(open={PG_EXE: [{"errno": "ENOENT"}]}, **not_run), None),
+        ("process_image_denied", pg_world(open={PG_EXE: [{"errno": "EACCES"}]}, **not_run), None),
+        ("image_changed_during_probe", pg_world(open={PG_EXE: [pg_image(PG_FD, {"ok": PG_IMAGE}, {"ok": changed})]}),
+         None),
+        ("image_replaced_at_path", pg_world(stat={PG_EXE: [{"ok": moved}]}), None),
+        ("process_gone_after_probe", pg_world(stat={PG_EXE: [{"errno": "ENOENT"}]}), None),
+        ("fstat_fails", pg_world(open={PG_EXE: [pg_image(PG_FD, {"errno": "EIO"})]}, **not_run), None),
+        # the PID file
+        ("pid_file_missing", pg_world(files={}, open={}, readlink={}, stat={}, **not_run), None),
+        ("pid_file_denied", pg_world(files={PG_PID: {"errno": "EACCES"}}, **not_run), None),
+        ("pid_only", pid("4242"), None),
+        ("pid_padded", pid("  4242 \t\n"), None),
+        ("pid_crlf", pid("4242\r\nrest"), None),
+        ("pid_cr", pid("4242\rrest"), None),
+        ("pid_python_space", pid("\x1c4242\x1d\n"), None),
+        ("pid_zero", pid("0\n", **not_run), None),
+        ("pid_leading_zero", pid("04242\n", **not_run), None),
+        ("pid_negative", pid("-1\n", **not_run), None),
+        ("pid_word", pid("abc\n", **not_run), None),
+        ("pid_empty", pid("", **not_run), None),
+        ("pid_blank_first_line", pid("\n4242\n", **not_run), None),
+        ("pid_path_traversal", pid("../1\n", **not_run), None),
+        ("pid_line_over_32_chars", pid("1" * 40 + "\n", open={"/proc/" + "1" * 32 + "/exe": [{"errno": "ENOENT"}]},
+                                       **not_run), None),
+        ("pid_not_utf8", pid({"hex": "34323432ff0a"}, **not_run), None),
+        ("pid_not_utf8_in_first_chunk", pid({"hex": "343234320a" + "61" * 100 + "ff"}, **not_run), None),
+        ("pid_not_utf8_at_first_chunk_end", pid({"hex": "343234320a" + "61" * 8186 + "ff"}, **not_run), None),
+        ("pid_not_utf8_after_first_chunk", pid({"hex": "343234320a" + "61" * 8187 + "ff"}), None),
+        ("pid_incomplete_char_after_line", pid({"hex": "343234320ae282"}), None),
+        ("pid_incomplete_char_in_line", pid({"hex": "34323432e282"}, **not_run), None),
+        ("pid_non_ascii_after_line", pid("4242\n\u00e9\u65e5\n"), None),
+        ("pid_changed", pg_world(files={}, reads={PG_PID: [{"ok": PG_PID_TEXT}, {"ok": "4243\n"}]}), None),
+        ("pid_file_gone_after_probe", pg_world(files={}, reads={PG_PID: [{"ok": PG_PID_TEXT}, {"errno": "ENOENT"}]}),
+         None),
+        ("pid_file_rewritten_same_pid", pg_world(files={}, reads={PG_PID: [{"ok": PG_PID_TEXT}, {"ok": "4242\nother\n"}]}),
+         None),
+        ("other_cluster_paths", pg_world(
+            files={"/var/run/postgresql/16-old_1.pid": {"ok": "99\n"}},
+            open={"/proc/99/exe": [pg_image(5)]},
+            readlink={"/proc/self/fd/5": [{"ok": "/usr/lib/postgresql/16/bin/postgres"}]},
+            stat={"/proc/99/exe": [{"ok": PG_IMAGE}]},
+            commands=[{"argv": ["/proc/self/fd/5", "--version"], "pass_fds": [5],
+                       "stdout": "postgres (PostgreSQL) 16.10\n"}]),
+         {"major": "16", "name": "old_1", "port": 5433, "status": "online", "owner": "postgres"}),
+    ]
+
+
+# Python reads non-ASCII digits as digits; the Rust code refuses them
+# (PLAN.md 4.2 item 11).
+SERVER_VERSION_P3: list[tuple[str, dict[str, Any]]] = [
+    ("pid_unicode_digits", pg_world(files={PG_PID: {"ok": "4\u0662\n"}}, open={"/proc/4\u0662/exe": [pg_image()]},
+                                    stat={"/proc/4\u0662/exe": [{"ok": PG_IMAGE}]})),
+    ("version_unicode_digits", pg_world(commands=[version_probe("postgres (PostgreSQL) 1\u0667.6\n")])),
+]
+
+
+def gen_server_version() -> list[dict[str, Any]]:
+    cases = []
+    seen = set()
+    for case_id, world, cluster in server_version_cases():
+        assert case_id not in seen, case_id
+        seen.add(case_id)
+        cluster = cluster or MAIN_CLUSTER
+        case = outcome(functools.partial(live.postgresql_server_version, copy.deepcopy(cluster)), world)
+        cases.append({"id": case_id, "cluster": cluster, **case})
+    for case_id, world in SERVER_VERSION_P3:
+        case = outcome(functools.partial(live.postgresql_server_version, copy.deepcopy(MAIN_CLUSTER)), world)
+        assert "result" in case, case_id
+        cases.append({"id": case_id, "cluster": MAIN_CLUSTER, **case, "p3": "unicode-digits"})
+    return cases
+
+
+PG_POLICY = {"expected": True, "desired_major": "17", "cluster": "main", "port": 5432}
+PG_CYCLES = [
+    {"cycle": "18", "latest": "18.1", "eol": "2030-11-14", "releaseDate": "2025-09-25"},
+    {"cycle": "17", "latest": "17.6", "eol": "2029-11-08", "releaseDate": "2024-09-26"},
+    {"cycle": "16", "latest": "16.10", "eol": "2028-11-09"},
+]
+PG_OLD = "16 old 5433 down,binaries_missing postgres /var/lib/postgresql/16/old /var/log/postgresql/old.log"
+
+
+def pg_latest(cycles: list[Any] = PG_CYCLES, **extra: Any) -> dict[str, Any]:
+    return lifecycle_ok("postgresql", cycles, **extra)
+
+
+def observed_world(lines: str = CLUSTER_MAIN, version: str = PG_VERSION, **changes: Any) -> dict[str, Any]:
+    """``pg_lsclusters`` lists ``lines``; 17/main runs and reports ``version``."""
+    world = pg_world(commands=[lsclusters(lines), version_probe(version)])
+    world.update(changes)
+    return world
+
+
+def postgresql_cases() -> list[tuple[str, dict[str, Any], dict[str, Any], Any, float]]:
+    """(id, world, policy, latest, now)."""
+    now = 1_789_344_000.0  # 2026-09-14
+    listed = lambda lines: {"commands": [lsclusters(lines)]}
+    not_expected = {"expected": False}
+    not_applicable = {"status": "not_applicable"}
+    v = lambda text: f"postgres (PostgreSQL) {text}\n"
+    return [
+        # tests/test_software_live.py
+        ("minor_and_extra_clusters", observed_world(CLUSTER_MAIN + "\n" + PG_OLD, v("17.10")), PG_POLICY,
+         {"status": "ok", "cycles": [{"cycle": "18", "latest": "18.6", "eol": "2030-11-14"},
+                                     {"cycle": "17", "latest": "17.11", "eol": "2029-11-08"}]}, 1_789_344_000),
+        ("expected_absence_is_healthy", {"commands": [lsclusters(error="ENOENT")]}, not_expected,
+         not_applicable, 1),
+        ("boolean_eol_true", observed_world(version=v("17.11")), PG_POLICY,
+         {"status": "ok", "cycles": [{"cycle": "17", "latest": "17.11", "eol": True}]}, 1_789_430_400),
+        # not expected
+        ("not_expected_no_clusters", listed(""), not_expected, not_applicable, now),
+        ("not_expected_with_cluster", listed(CLUSTER_MAIN), not_expected, not_applicable, now),
+        ("not_expected_with_stopped_cluster", listed(PG_OLD), not_expected, not_applicable, now),
+        ("not_expected_full_policy", listed(""), {"expected": False, "desired_major": None}, not_applicable, now),
+        ("not_expected_lsclusters_fails", {"commands": [lsclusters(exit=1)]}, not_expected, not_applicable, now),
+        ("not_expected_lsclusters_denied", {"commands": [lsclusters(error="EACCES")]}, not_expected,
+         not_applicable, now),
+        ("not_expected_unparseable", listed("garbage"), not_expected, not_applicable, now),
+        # expected
+        ("expected_ok", observed_world(), PG_POLICY, pg_latest(), now),
+        ("expected_lsclusters_missing", {"commands": [lsclusters(error="ENOENT")]}, PG_POLICY, pg_latest(), now),
+        ("expected_lsclusters_times_out", {"commands": [lsclusters(error="timeout")]}, PG_POLICY, pg_latest(), now),
+        ("expected_no_clusters", listed(""), PG_POLICY, pg_latest(), now),
+        ("expected_cluster_down", listed(PG_OLD.replace("16 old 5433", "17 main 5432")), PG_POLICY,
+         pg_latest(), now),
+        ("expected_other_port", listed(CLUSTER_MAIN.replace("5432", "5433", 1)), PG_POLICY, pg_latest(), now),
+        ("expected_other_name", listed(CLUSTER_MAIN.replace("main ", "other ", 1)), PG_POLICY, pg_latest(), now),
+        ("expected_online_recovery", observed_world(CLUSTER_MAIN.replace("online", "online,recovery")),
+         PG_POLICY, pg_latest(), now),
+        ("expected_status_prefix_only", observed_world(CLUSTER_MAIN.replace("online", "onlineish")),
+         PG_POLICY, pg_latest(), now),
+        ("expected_first_matching_line", observed_world(CLUSTER_MAIN + "\n" + CLUSTER_MAIN), PG_POLICY,
+         pg_latest(), now),
+        ("expected_down_line_before_online", observed_world(
+            PG_OLD.replace("16 old 5433", "17 main 5432") + "\n" + CLUSTER_MAIN), PG_POLICY, pg_latest(), now),
+        ("expected_port_float_policy", observed_world(), {**PG_POLICY, "port": 5432.0}, pg_latest(), now),
+        ("expected_cluster_key_missing", listed(CLUSTER_MAIN), {k: v for k, v in PG_POLICY.items() if k != "cluster"},
+         pg_latest(), now),
+        ("expected_cluster_key_missing_no_clusters", listed(""),
+         {k: v for k, v in PG_POLICY.items() if k != "cluster"}, pg_latest(), now),
+        ("expected_port_key_missing", listed(CLUSTER_MAIN), {k: v for k, v in PG_POLICY.items() if k != "port"},
+         pg_latest(), now),
+        ("expected_port_key_missing_other_name", listed(CLUSTER_MAIN.replace("main ", "other ", 1)),
+         {k: v for k, v in PG_POLICY.items() if k != "port"}, pg_latest(), now),
+        ("expected_desired_major_key_missing", observed_world(),
+         {k: v for k, v in PG_POLICY.items() if k != "desired_major"}, pg_latest(), now),
+        ("server_version_refused", observed_world(
+            readlink={f"/proc/self/fd/{PG_FD}": [{"ok": PG_BINARY + " (deleted)"}]},
+            commands=[lsclusters(CLUSTER_MAIN)]), PG_POLICY, pg_latest(), now),
+        ("server_version_pid_missing", {"commands": [lsclusters(CLUSTER_MAIN)]}, PG_POLICY, pg_latest(), now),
+        # versions and drift
+        ("desired_major_drift", observed_world(CLUSTER_MAIN.replace("17 ", "16 ", 1), v("16.10"),
+                                               files={"/var/run/postgresql/16-main.pid": {"ok": "4242\n"}},
+                                               readlink={f"/proc/self/fd/{PG_FD}": [{"ok": "/usr/lib/postgresql/16/bin/postgres"}]}),
+         PG_POLICY, pg_latest(), now),
+        ("desired_major_int_policy", observed_world(), {**PG_POLICY, "desired_major": 17}, pg_latest(), now),
+        ("leading_zero_major", observed_world(version=v("017.6")), PG_POLICY, pg_latest(), now),
+        ("newer_than_upstream", observed_world(version=v("17.7")), PG_POLICY, pg_latest(), now),
+        ("outdated_minor", observed_world(version=v("17.5")), PG_POLICY, pg_latest(), now),
+        ("outdated_patch_level", observed_world(version=v("17.6")), PG_POLICY,
+         pg_latest([{"cycle": "17", "latest": "17.6.1", "eol": False}]), now),
+        ("longer_local_version", observed_world(version=v("17.6.0")), PG_POLICY, pg_latest(), now),
+        ("numeric_not_lexical", observed_world(version=v("17.9")), PG_POLICY,
+         pg_latest([{"cycle": "17", "latest": "17.10", "eol": False}]), now),
+        # upstream
+        ("upstream_unknown", observed_world(), PG_POLICY, UNKNOWN_LATEST, now),
+        ("upstream_unknown_with_stale_evidence", observed_world(CLUSTER_MAIN + "\n" + PG_OLD), PG_POLICY,
+         {"status": "unknown", "error": "TimeoutError", "last_success": pg_latest()}, now),
+        ("upstream_not_applicable_but_expected", observed_world(), PG_POLICY, not_applicable, now),
+        ("cycle_missing", observed_world(), PG_POLICY, pg_latest([{"cycle": "18", "latest": "18.1"}]), now),
+        ("cycle_missing_keeps_drift", observed_world(version=v("16.10"), readlink={
+            f"/proc/self/fd/{PG_FD}": [{"ok": PG_BINARY}]}), PG_POLICY, pg_latest([{"cycle": "18"}]), now),
+        ("latest_minor_missing", observed_world(), PG_POLICY, pg_latest([{"cycle": "17", "eol": False}]), now),
+        ("latest_minor_number", observed_world(), PG_POLICY,
+         pg_latest([{"cycle": "17", "latest": 17.6, "eol": False}]), now),
+        ("latest_minor_missing_after_eol", observed_world(), PG_POLICY,
+         pg_latest([{"cycle": "17", "eol": "2026-01-01"}]), now),
+        ("latest_minor_unparseable", observed_world(), PG_POLICY,
+         pg_latest([{"cycle": "17", "latest": "17", "eol": False}]), now),
+        ("eol_reached", observed_world(), PG_POLICY, pg_latest([{"cycle": "17", "latest": "17.6",
+                                                                  "eol": "2026-09-14"}]), now),
+        ("eol_tomorrow", observed_world(), PG_POLICY, pg_latest([{"cycle": "17", "latest": "17.6",
+                                                                   "eol": "2026-09-15"}]), now),
+        ("eol_and_outdated", observed_world(version=v("17.1")), PG_POLICY,
+         pg_latest([{"cycle": "17", "latest": "17.6", "eol": True}]), now),
+        ("eol_invalid", observed_world(), PG_POLICY, pg_latest([{"cycle": "17", "latest": "17.6", "eol": "never"}]),
+         now),
+        ("eol_number", observed_world(), PG_POLICY, pg_latest([{"cycle": "17", "latest": "17.6", "eol": 2029}]), now),
+        ("newest_major_absent", observed_world(), PG_POLICY,
+         pg_latest([{"latest": "x"}, {"cycle": "17", "latest": "17.6", "eol": False}]), now),
+        ("cycles_not_a_list", observed_world(), PG_POLICY, {"status": "ok", "cycles": {"17": {}}}, now),
+    ]
+
+
+def gen_postgresql() -> dict[str, Any]:
+    observe = []
+    seen = set()
+    for case_id, world, policy, latest, now in postgresql_cases():
+        assert case_id not in seen, case_id
+        seen.add(case_id)
+        case = observation(
+            functools.partial(live.observe_postgresql, copy.deepcopy(policy), copy.deepcopy(latest), now),
+            world)
+        observe.append({"id": case_id, "policy": policy, "latest": latest, "now": now, **case})
+    return {"clusters": gen_clusters(), "server_version": gen_server_version(), "observe": observe}
+
+
 # ------------------------------------------------------------------ cli
 
 CLI_FILES = {
@@ -1832,6 +2565,9 @@ GENERATORS: dict[str, Callable[[], Any]] = {
     "traefik.json": gen_traefik,
     "cli.json": gen_cli,
     "upstream.json": gen_upstream,
+    "lifecycle.json": gen_lifecycle,
+    "os.json": gen_os,
+    "postgresql.json": gen_postgresql,
 }
 
 

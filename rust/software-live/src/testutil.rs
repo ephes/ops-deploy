@@ -5,6 +5,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::PyError;
+use crate::probe::fake::FakeSystem;
+use crate::report::{ERROR_LIMIT, Observation};
 
 /// A Python exception as a fixture records it: the class always; the
 /// message only where the Python code raises it itself (`own`), since the
@@ -24,6 +26,14 @@ impl ErrorSpec {
             assert_eq!(&error.message, message, "{id}");
         }
     }
+}
+
+/// `#[serde(default, deserialize_with = "present")]`: a field that is
+/// present is `Some`, also when it is `null` (a result of `None`).
+pub fn present<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
 }
 
 /// JSON equality where numbers compare by value: integers by their
@@ -220,4 +230,65 @@ pub mod https {
         tls.conn.send_close_notify();
         let _ = tls.flush();
     }
+}
+
+/// A step's outcome against the fixture: its JSON result or its exception.
+pub fn assert_outcome(
+    actual: Result<Value, PyError>,
+    result: Option<&Value>,
+    error: Option<&ErrorSpec>,
+    id: &str,
+) {
+    match (result, error) {
+        (Some(expected), None) => {
+            let actual = actual.unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert!(json_eq(&actual, expected), "{id}: {actual} != {expected}");
+        }
+        (None, Some(expected)) => match actual {
+            Ok(value) => panic!("{id}: expected {expected:?}, got {value}"),
+            Err(error) => expected.assert_matches(&error, id),
+        },
+        _ => panic!("{id}: fixture needs a result or an error"),
+    }
+}
+
+/// An observation against the fixture: every field but `error` equal, and
+/// `error` of the recorded class, with the recorded text where the message
+/// is part of the contract (PLAN.md 4.2 item 5).
+pub fn assert_observation(
+    actual: &Observation,
+    result: &Value,
+    error: Option<&ErrorSpec>,
+    id: &str,
+) {
+    let mut fields = actual.as_map().clone();
+    let text = fields.remove("error");
+    let fields = Value::Object(fields);
+    assert!(json_eq(&fields, result), "{id}: {fields} != {result}");
+    match (error, text) {
+        (None, None) => {}
+        (Some(expected), Some(Value::String(text))) => {
+            let prefix = format!("{}: ", expected.class);
+            assert!(
+                text.starts_with(&prefix),
+                "{id}: {text:?} is not a {}",
+                expected.class
+            );
+            if let Some(message) = &expected.message {
+                let full: String = format!("{prefix}{message}")
+                    .chars()
+                    .take(ERROR_LIMIT)
+                    .collect();
+                assert_eq!(text, full, "{id}");
+            }
+        }
+        (expected, text) => panic!("{id}: error {text:?}, expected {expected:?}"),
+    }
+}
+
+/// The world was asked exactly what Python asked, in the same order, and
+/// every expected command ran.
+pub fn assert_calls(fake: &FakeSystem, expected: &[String], id: &str) {
+    assert_eq!(&*fake.calls.borrow(), expected, "{id}: calls");
+    assert_eq!(fake.pending_commands(), 0, "{id}: commands never run");
 }

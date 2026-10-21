@@ -36,13 +36,13 @@ missing from this file.
 | `test_lifecycle_daily_cache_and_failed_refresh_preserves_evidence` | `upstream::tests::lookups_and_caches_match_python` (`lifecycle_fetch_then_cached_then_failed_refresh`) | done (S3a) |
 | `test_lifecycle_refresh_skips_malformed_irrelevant_cycles` | `upstream::tests::lookups_and_caches_match_python` (`lifecycle_skips_malformed_irrelevant_cycles` and the `lifecycle_eol_*`/`lifecycle_support_*` cases) | done (S3a) |
 | `test_cached_timestamp_is_used_not_file_touch` | `report::tests::freshness_matches_python` (`with_freshness` uses `generated_at_epoch`: stale, future, string, NaN, missing summary); the caches' `checked_at_epoch`, never the file time, in `upstream::tests::lookups_and_caches_match_python` (`release_cache_from_the_future`, `release_python_written_cache_*`) | done (S2, S3a) |
-| `test_os_lifecycle_reports_desired_drift_and_lts_phase` | `os` fixtures | pending S3c |
-| `test_os_boolean_support_state_is_applied_at_observation_boundary` | `os` fixtures | pending S3c |
-| `test_boolean_lifecycle_fields_preserve_known_support_state` | `os` fixtures | pending S3c |
-| `test_postgresql_minor_and_extra_clusters_are_visible` | `postgresql` fixtures | pending S3c |
-| `test_expected_postgresql_absence_is_healthy` | `postgresql` fixtures | pending S3c |
-| `test_postgresql_cluster_parser_omits_data_paths` | `postgresql` fixtures | pending S3c |
-| `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql` fixtures | pending S3c |
+| `test_os_lifecycle_reports_desired_drift_and_lts_phase` | `os::tests::observe_os_matches_python`, case `desired_drift_and_lts_phase` of `fixtures/os.json` | done (S3c) |
+| `test_os_boolean_support_state_is_applied_at_observation_boundary` | `os::tests::observe_os_matches_python`, cases `boolean_support_false_warns`, `boolean_support_true_is_ok` | done (S3c) |
+| `test_boolean_lifecycle_fields_preserve_known_support_state` | `lifecycle::tests::ended_matches_python` (`fixtures/lifecycle.json`, both flags for every kind of value) and `postgresql::tests::observe_postgresql_matches_python`, case `boolean_eol_true` | done (S3c) |
+| `test_postgresql_minor_and_extra_clusters_are_visible` | `postgresql::tests::observe_postgresql_matches_python`, case `minor_and_extra_clusters` of `fixtures/postgresql.json` | done (S3c) |
+| `test_expected_postgresql_absence_is_healthy` | `postgresql::tests::observe_postgresql_matches_python`, case `expected_absence_is_healthy` | done (S3c) |
+| `test_postgresql_cluster_parser_omits_data_paths` | `postgresql::tests::clusters_match_python`, case `omits_data_paths` | done (S3c) |
+| `test_postgresql_cluster_parser_rejects_unsafe_identity` | `postgresql::tests::clusters_match_python`, case `rejects_unsafe_identity` | done (S3c) |
 | `test_security_packages_include_held_and_pinned_versions` | helper tests on a fake APT root in the variant containers; python-apt vs helper comparison | pending S3d |
 | `test_atomic_state_permissions_and_failure_preserves_previous` | `atomic::tests::*` (mode 0640, group through the descriptor, a failed write keeps the old file and leaves no temporary file); the state write of `collect` | done (S3a) / pending S3f |
 | `test_invalid_policy_and_public_bind_fail` | policy part: `policy::tests::validation_and_hash_match_python` against `fixtures/policy.json` (incl. `/bin/sh` and `/tmp/proxy` as `binary_path`) and `tests/cli.rs` (`validate` exit codes); bind part: `serve` bind tests | done (S2) / pending S4 |
@@ -104,13 +104,36 @@ match Python step by step.
 | `urlopen` over HTTPS with the system store | `http::tests::*` against a local HTTPS server: headers, status errors, redirects, the 1 MiB cut, a body shorter than its `Content-Length` (kept, as `http.client`'s bounded read), a chunked body that ends early (error), the body's single time budget (PLAN.md 4.2 item 13), an untrusted certificate, the system store refusing a self-signed server, a refused connection, a timeout, no proxy | done |
 | `atomic_json` (`:132-146`) | `atomic::tests::*` | done |
 
+## S3c — OS and PostgreSQL observations
+
+The cases run the real Python functions on `TextHost` in
+`fixtures/generate.py`: S3b's `FakeHost` (`open`, `fstat`, `readlink`,
+`realpath`, `stat` and the child processes) plus the text files (the
+os-release candidates and the PID file, read with Python's real text-mode
+decoding). The Rust tests replay the same world through
+`probe::fake::FakeSystem` and compare the result, the error class (and the
+message where it is the Python code's own or a `KeyError`) and the call log.
+
+| Python behaviour | Rust counterpart | Status |
+| --- | --- | --- |
+| `platform.freedesktop_os_release()`: fallback to `/usr/lib/os-release` on any `OSError` (missing, `EACCES`, `EISDIR`, `EIO`), the errno class when neither can be read, no fallback after a `UnicodeDecodeError`, `_parse_os_release` (quotes, unmatched quotes, the five escapes, names, spacing, comments, CR/CRLF, BOM, duplicates, defaults, non-ASCII and control characters) | `os::tests::os_release_matches_python` (`fixtures/os.json` `release`, 31 cases) | done |
+| `observe_os` (`:346-390`): ID and cycle checks, `KeyError` for a missing `VERSION_ID`, desired-cycle drift (also a number in the policy), upstream unknown with and without stale evidence, a missing cycle, `cycle_eol` before `standard_support_ended`, boolean and date states, invalid dates, `newest_cycle`, the UTC date of `now` at midnight | `os::tests::observe_os_matches_python` (`fixtures/os.json` `observe`, 44 cases) | done |
+| `lifecycle_date` (S3a's `upstream::lifecycle_date`) as `lifecycle_ended` uses it, `lifecycle_ended`, `lifecycle_cycle`, `lifecycle_evidence`, `datetime.fromtimestamp(now, UTC).date()` (half-even microsecond rounding, negative times, years 1 and 9999) | `lifecycle::tests::*` (`fixtures/lifecycle.json`) | done |
+| `postgres_clusters` (`:393-417`): `splitlines` and `split` on Python's line breaks and whitespace, field counts, identities, `int()` of the port (sign, `_`, leading zeros, 4300 digits), range, command failures | `postgresql::tests::clusters_match_python` (`fixtures/postgresql.json` `clusters`, 45 cases) | done |
+| `postgresql_server_version` (`:420-449`): PID file `readline(32)` (text decoding of the first chunk, universal newlines, `strip()`), the PID pattern, the pinned image (symlinked install, deleted or other image refused before any execution), `pass_fds`, the identity checks before, after and at the path, a changed or vanished PID file, the version pattern | `postgresql::tests::server_version_matches_python` (`fixtures/postgresql.json` `server_version`, 55 cases) | done |
+| `observe_postgresql` (`:452-527`): not expected (missing `pg_lsclusters`, unexpected clusters, failures), cluster selection (name, port, `online…` status, first match, `KeyError` order), drift, extra clusters, upstream states, missing cycle and minor, `cycle_eol`, `outdated_minor` (numeric, longer tuples), partial results kept on failure | `postgresql::tests::observe_postgresql_matches_python` (`fixtures/postgresql.json` `observe`, 53 cases) | done |
+| `subprocess`'s `close_fds=True` with `pass_fds=(fd,)` on the host: a child inherits the passed descriptor and no other one, also not one that lost its close-on-exec flag; a plain child inherits neither | `probe::tests::children_inherit_only_the_passed_descriptor` (Linux only; CI) | done |
+| `Path.open()` reads one chunk: the host reads at most the first 8192 bytes of the PID file | `probe::tests::read_head_reads_at_most_the_limit` | done |
+
 ## P3 cases in the fixtures (PLAN.md 4.2)
 
 Fixture cases tagged `p3` are inputs Python accepts and the Rust code
 refuses: `non-standard-json` (`NaN`, `Infinity`, lone surrogates; item 4),
-`nesting` (deeper than 128 levels; item 4) and `unicode-digits` (non-ASCII
-digits; item 11; in `traefik.json` a `MainPID` and a version line). The Rust
-tests assert the refusal.
+`nesting` (deeper than 128 levels; item 4), `unicode-digits` (non-ASCII
+digits; item 11; in `traefik.json` a `MainPID` and a version line, in
+`postgresql.json` `pg_lsclusters` output, the postmaster PID and its version
+line) and `iso-date` (`YYYYMMDD` and ISO week dates; item 6). The Rust tests
+assert the refusal.
 
 In `fixtures/upstream.json` a P3 call records both the Python answer and,
 under `p3`, the answer the Rust code must give: what the Python program

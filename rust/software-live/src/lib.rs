@@ -4,7 +4,10 @@
 pub mod atomic;
 pub mod error;
 pub mod http;
+pub mod lifecycle;
+pub mod os;
 pub mod policy;
+pub mod postgresql;
 pub mod probe;
 pub mod pyjson;
 pub mod report;

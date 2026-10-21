@@ -1,0 +1,815 @@
+{
+ "cycles": [
+  {
+   "cycle": "12",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "13"
+     },
+     {
+      "cycle": "12",
+      "latest": "12.15"
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": "12",
+    "latest": "12.15"
+   }
+  },
+  {
+   "cycle": "13",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "13"
+     },
+     {
+      "cycle": "13",
+      "latest": "second"
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": "13"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "ValueError",
+    "message": "observed cycle missing from lifecycle upstream"
+   },
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "13"
+     }
+    ],
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "ValueError",
+    "message": "observed cycle missing from lifecycle upstream"
+   },
+   "latest": {
+    "cycles": [],
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "ValueError",
+    "message": "lifecycle upstream unavailable"
+   },
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "12"
+     }
+    ],
+    "status": "unknown"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "ValueError",
+    "message": "lifecycle upstream unavailable"
+   },
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "12"
+     }
+    ]
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "KeyError",
+    "message": "'cycles'"
+   },
+   "latest": {
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": 12
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": 12
+   }
+  },
+  {
+   "cycle": "24.04",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": 24.04
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": 24.04
+   }
+  },
+  {
+   "cycle": "24.10",
+   "error": {
+    "class": "ValueError",
+    "message": "observed cycle missing from lifecycle upstream"
+   },
+   "latest": {
+    "cycles": [
+     {
+      "cycle": 24.1
+     }
+    ],
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "None",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": null
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": null
+   }
+  },
+  {
+   "cycle": "True",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": true
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": true
+   }
+  },
+  {
+   "cycle": "None",
+   "latest": {
+    "cycles": [
+     {}
+    ],
+    "status": "ok"
+   },
+   "result": {}
+  },
+  {
+   "cycle": "12",
+   "latest": {
+    "cycles": [
+     {
+      "other": 1
+     },
+     {
+      "cycle": "12"
+     }
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": "12"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "AttributeError",
+    "message": null
+   },
+   "latest": {
+    "cycles": [
+     "12"
+    ],
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "12"
+     },
+     "13"
+    ],
+    "status": "ok"
+   },
+   "result": {
+    "cycle": "12"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "AttributeError",
+    "message": null
+   },
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "11"
+     },
+     null
+    ],
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "ValueError",
+    "message": "observed cycle missing from lifecycle upstream"
+   },
+   "latest": {
+    "cycles": {},
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "AttributeError",
+    "message": null
+   },
+   "latest": {
+    "cycles": {
+     "12": {}
+    },
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "ValueError",
+    "message": "observed cycle missing from lifecycle upstream"
+   },
+   "latest": {
+    "cycles": "",
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "AttributeError",
+    "message": null
+   },
+   "latest": {
+    "cycles": "12",
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "latest": {
+    "cycles": null,
+    "status": "ok"
+   }
+  },
+  {
+   "cycle": "12",
+   "error": {
+    "class": "TypeError",
+    "message": null
+   },
+   "latest": {
+    "cycles": 12,
+    "status": "ok"
+   }
+  }
+ ],
+ "dates": [
+  {
+   "result": "2028-08-09",
+   "value": "2028-08-09"
+  },
+  {
+   "result": "2028-02-29",
+   "value": "2028-02-29"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2027-02-29"
+  },
+  {
+   "result": "0001-01-01",
+   "value": "0001-01-01"
+  },
+  {
+   "result": "9999-12-31",
+   "value": "9999-12-31"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "0000-01-01"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-13-01"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-00-10"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-01-32"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-04-31"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-8-9"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": " 2028-08-09"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-08-09 "
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028-08-09T00:00"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "+2028-08-09"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "2028/08/09"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": ""
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "x"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "\uff12\uff10\uff12\uff18-08-09"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "value": "\u0662028-08-09"
+  },
+  {
+   "result": null,
+   "value": null
+  },
+  {
+   "result": null,
+   "value": true
+  },
+  {
+   "result": null,
+   "value": false
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "value": 0
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "value": 1.5
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "value": []
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "value": {}
+  },
+  {
+   "p3": "iso-date",
+   "result": "2028-08-09",
+   "value": "20280809"
+  },
+  {
+   "p3": "iso-date",
+   "result": "2028-08-07",
+   "value": "2028-W32"
+  },
+  {
+   "p3": "iso-date",
+   "result": "2028-08-09",
+   "value": "2028-W32-3"
+  },
+  {
+   "p3": "iso-date",
+   "result": "2028-08-07",
+   "value": "2028W32"
+  },
+  {
+   "p3": "iso-date",
+   "result": "2028-08-09",
+   "value": "2028W323"
+  }
+ ],
+ "ended": [
+  {
+   "result": true,
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": true
+  },
+  {
+   "result": false,
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": true
+  },
+  {
+   "result": false,
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": false
+  },
+  {
+   "result": true,
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": false
+  },
+  {
+   "result": false,
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": null
+  },
+  {
+   "result": false,
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": null
+  },
+  {
+   "result": true,
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": "2026-09-14"
+  },
+  {
+   "result": true,
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": "2026-09-14"
+  },
+  {
+   "result": true,
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": "2026-09-15"
+  },
+  {
+   "result": true,
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": "2026-09-15"
+  },
+  {
+   "result": false,
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": "2026-09-16"
+  },
+  {
+   "result": false,
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": "2026-09-16"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": "2026-13-01"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": "2026-13-01"
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": 20260915
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": 20260915
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "today": "2026-09-15",
+   "true_means_ended": true,
+   "value": [
+    "x"
+   ]
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "today": "2026-09-15",
+   "true_means_ended": false,
+   "value": [
+    "x"
+   ]
+  }
+ ],
+ "evidence": [
+  {
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 99.5,
+    "cycles": [
+     {
+      "cycle": "24.04"
+     }
+    ],
+    "other": 1,
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "result": {
+    "cached": true,
+    "checked_at_epoch": 99.5,
+    "product": "ubuntu",
+    "status": "ok"
+   }
+  },
+  {
+   "latest": {
+    "error": "URLError",
+    "last_success": {
+     "checked_at_epoch": 12,
+     "product": "debian"
+    },
+    "status": "unknown"
+   },
+   "result": {
+    "error": "URLError",
+    "last_success_checked_at_epoch": 12,
+    "status": "unknown"
+   }
+  },
+  {
+   "latest": {
+    "error": "HTTPError",
+    "last_success": null,
+    "status": "unknown"
+   },
+   "result": {
+    "error": "HTTPError",
+    "status": "unknown"
+   }
+  },
+  {
+   "latest": {
+    "error": "x",
+    "last_success": {
+     "cycles": []
+    },
+    "status": "unknown"
+   },
+   "result": {
+    "error": "x",
+    "status": "unknown"
+   }
+  },
+  {
+   "latest": {
+    "last_success": [
+     {
+      "checked_at_epoch": 1
+     }
+    ],
+    "status": "unknown"
+   },
+   "result": {
+    "status": "unknown"
+   }
+  },
+  {
+   "latest": {
+    "status": "not_applicable"
+   },
+   "result": {
+    "status": "not_applicable"
+   }
+  },
+  {
+   "latest": {},
+   "result": {}
+  },
+  {
+   "latest": {
+    "cached": false,
+    "error": null,
+    "last_success": {
+     "checked_at_epoch": null
+    }
+   },
+   "result": {
+    "cached": false,
+    "error": null,
+    "last_success_checked_at_epoch": null
+   }
+  }
+ ],
+ "now_dates": [
+  {
+   "date": "1970-01-01",
+   "now": 0.0
+  },
+  {
+   "date": "2026-09-14",
+   "now": 1789344000.0
+  },
+  {
+   "date": "2026-09-14",
+   "now": 1789430399.999999
+  },
+  {
+   "date": "2026-09-15",
+   "now": 1789430399.9999995
+  },
+  {
+   "date": "2026-09-14",
+   "now": 1789430399.9999993
+  },
+  {
+   "date": "2026-09-15",
+   "now": 1789430400.0
+  },
+  {
+   "date": "1969-12-31",
+   "now": -0.5
+  },
+  {
+   "date": "1970-01-01",
+   "now": -4e-07
+  },
+  {
+   "date": "1969-12-31",
+   "now": -6e-07
+  },
+  {
+   "date": "1969-12-31",
+   "now": -86400.0
+  },
+  {
+   "date": "1969-12-31",
+   "now": -1.0
+  },
+  {
+   "date": "2001-09-09",
+   "now": 1000000000.5
+  },
+  {
+   "date": "9999-12-31",
+   "now": 253402300799.0
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "now": 253402300800.0
+  },
+  {
+   "date": "0001-01-01",
+   "now": -62135596800.0
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "now": -62135596801.0
+  }
+ ]
+}
