@@ -352,9 +352,9 @@ impl Mode for LogyardConfig {
                 "LOGYARD_LOKI_URL {:?} is not an http:// URL",
                 self.loki_url
             ));
-        } else if format!("{}/ready", self.loki_url).parse::<Uri>().is_err() {
+        } else if let Err(error) = loki_uri(&format!("{}/ready", self.loki_url)) {
             problems.push(format!(
-                "LOGYARD_LOKI_URL {:?} is not a valid URL",
+                "LOGYARD_LOKI_URL {:?} is not a valid URL: {error}",
                 self.loki_url
             ));
         }
@@ -427,9 +427,7 @@ impl LogyardHealth {
     /// Python's `except` turns into a payload field. Redirects are not
     /// followed (D-13); the timeout covers the whole exchange.
     async fn fetch(&self, url: &str) -> Result<(u16, Bytes), String> {
-        let uri: Uri = url
-            .parse()
-            .map_err(|error| format!("<urlopen error {error}>"))?;
+        let uri = loki_uri(url).map_err(|error| format!("<urlopen error {error}>"))?;
         let exchange = async {
             let response = self.client.get(uri).await.map_err(client_error)?;
             let status = response.status();
@@ -723,6 +721,32 @@ impl Out {
     }
 }
 
+/// Parses a Loki URL. An explicit port must be a number in 0–65535 (or
+/// empty): `http::Uri` would accept `:abc` or `:99999` and treat the port as
+/// absent, so the client would connect to port 80; Python's `http.client`
+/// refuses both (`InvalidURL`, `OverflowError`).
+fn loki_uri(url: &str) -> Result<Uri, String> {
+    let uri: Uri = url.parse().map_err(|error| format!("{error}"))?;
+    let authority = uri.authority().ok_or("no host given")?;
+    let host_and_port = authority
+        .as_str()
+        .rsplit_once('@')
+        .map_or(authority.as_str(), |(_, rest)| rest);
+    let port = host_and_port
+        .strip_prefix(authority.host())
+        .ok_or_else(|| format!("cannot read the host of {:?}", authority.as_str()))?;
+    match port.strip_prefix(':') {
+        None if port.is_empty() => Ok(uri),
+        Some("") => Ok(uri),
+        Some(digits)
+            if digits.bytes().all(|b| b.is_ascii_digit()) && digits.parse::<u16>().is_ok() =>
+        {
+            Ok(uri)
+        }
+        _ => Err(format!("invalid port in {:?}", authority.as_str())),
+    }
+}
+
 /// `_unit_unknown(unit, error)` (l.95–110).
 fn unit_unknown(unit: &str, error: &str) -> Value {
     let mut status = Map::new();
@@ -1010,8 +1034,29 @@ mod tests {
         }
         let https = config(&[("LOGYARD_LOKI_URL", "https://loki")]).unwrap();
         assert!(https.check_config().is_err(), "D-13");
-        let bad = config(&[("LOGYARD_LOKI_URL", "http://bad host:3100")]).unwrap();
-        assert!(bad.check_config().is_err());
+        for bad in [
+            "http://bad host:3100",
+            "http://127.0.0.1:abc",
+            "http://127.0.0.1:99999",
+            "http://127.0.0.1:-1",
+            "http://[::1]:x",
+            "http://user@127.0.0.1:3101x",
+        ] {
+            let bad = config(&[("LOGYARD_LOKI_URL", bad)]).unwrap();
+            assert!(bad.check_config().is_err(), "{bad:?}");
+        }
+        for good in [
+            "http://127.0.0.1:3101",
+            "http://127.0.0.1",
+            "http://127.0.0.1:",
+            "http://[::1]:3101",
+            "http://loki:0",
+            "http://user@loki:65535/prefix",
+        ] {
+            let good = config(&[("LOGYARD_LOKI_URL", good)]).unwrap();
+            assert!(good.check_config().is_ok(), "{good:?}");
+        }
+        assert!(loki_uri("http://127.0.0.1:99999/ready").is_err());
     }
 
     #[test]

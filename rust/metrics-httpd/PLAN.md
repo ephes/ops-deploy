@@ -463,7 +463,9 @@ failure per request).
 address syntax, htpasswd file readable and valid as `htpasswd` reads it, at
 least one entry and only `$2y$`/`$2a$` bcrypt entries (D-6), JSON file's
 directory or script an executable file (`access(X_OK)` as the running
-user), site root a directory, Loki URL `http://` and a valid URI, units
+user), site root a directory, Loki URL `http://` and a valid URI whose explicit port, if any, is a
+number in 0–65535 (Python's `http.client` refuses `:abc` and `:99999`;
+`http::Uri` would read them as no port, i.e. port 80), units
 list: every entry Python would put under `units_rejected` is a problem,
 one line each, `LOGYARD_HEALTH_UNITS_B64: entry rejected (<reason>) …`)
 **without binding**, prints a one-line summary to stdout (never a hash or
@@ -672,7 +674,10 @@ per-request 401/503, not a startup failure.
   (connect, headers, body); Python's applies to each socket operation. No
   proxy is taken from the environment (`urlopen` would honour
   `http_proxy`; the unit sets none). A sample value spelled with non-ASCII
-  decimal digits, which Python's `float()` reads, counts 0.0.
+  decimal digits, which Python's `float()` reads, counts 0.0. A Loki URL
+  with an invalid explicit port (Python: an uncaught `InvalidURL` or
+  `OverflowError` per request) is the caught-error path at runtime and
+  fails `--check-config`.
 - **D-14 Request parsing.** hyper drops a `#fragment` from the
   request-target before the handler sees it (a fragment is not valid in a
   request, RFC 9112), so `<path>#x` matches in exact mode where Python

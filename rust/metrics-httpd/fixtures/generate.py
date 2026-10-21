@@ -3362,10 +3362,11 @@ def build_logyard_http(tmp: Path, loki: FakeLoki) -> list[dict[str, Any]]:
                 target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
             ).start()
             saved_path = os.environ["PATH"]
+            # "missing": no systemctl at all, not the host's own.
             os.environ["PATH"] = (
-                str(FAKE_BIN if systemctl == "fake" else empty_bin)
-                + os.pathsep
-                + saved_path
+                str(FAKE_BIN) + os.pathsep + saved_path
+                if systemctl == "fake"
+                else str(empty_bin)
             )
             try:
                 with contextlib.redirect_stderr(stderr):
