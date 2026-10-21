@@ -442,9 +442,11 @@ drift test compares the two. The steps run on the host at execution time, in
 a standard-library script sent on stdin to `/usr/bin/python3 -I -` as root,
 with `--check` probes while planning. pyinfra has no rescue, so with
 `fail_hard=False` a rejected install warns and the deploy goes on;
-`Install.failed()` gates later `_if` callbacks, and prune is skipped after a
-failed install in the same run. ops-deploy's `tests/test_rust_release.py`
-runs this role on a twin tree when `OPS_LIBRARY_PATH` and `ansible-playbook`
+`Install.failed()` gates later `_if` callbacks. The role's sticky
+`rust_release_binary_failed_names` has no automatic counterpart: prune is
+skipped after a failed install only when the consumer passes that `Install`
+in `prune_releases(after=[...])`, which every consumer must do. ops-deploy's
+`tests/test_rust_release.py` runs this role on a twin tree when `OPS_LIBRARY_PATH` and `ansible-playbook`
 are available, and asserts byte-identical trees and the same prune decisions
 (acceptance in 7). nyxmon's and graphyard's agents keep their own code. They
 use `.staging` and `.previous-version` and have no `.pins`, so moving them to
