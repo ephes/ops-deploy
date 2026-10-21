@@ -1,7 +1,8 @@
 # PostgreSQL and Redis
 
 `ops_deploy.infra` ports the shared host services of ops-library:
-`postgres_install` and `redis_install`. Like the [base deploys](base.md) each is
+`postgres_install` and `redis_install` (and `docker_install`, `vector_apt_install`
+and `certbot_dns`, below). Like the [base deploys](base.md) each is
 a frozen, strict config plus a `@deploy` function, outside the size-capped
 helpers/ops/core layer. Passwords are deploy arguments, never config fields,
 so a config can be printed and compared without exposing anything.
@@ -176,3 +177,194 @@ channel. Fields are the role's (`package_name`, `repo_url`, `repo_channel`,
 `repo_version`, `repo_key_url`, `repo_key_tmp`, `repo_keyring_path`,
 `repo_list_file`).
 
+
+## certbot_dns
+
+`deploy_certbot_dns(cfg, secret)`: port of the `certbot_dns_deploy` role
+(ops-library 2.51.0 and later, checked against `540ede2b`, 2.56.0): certbot
+with the DNS-01 plugin, one lineage (apex and wildcard by default), its deploy
+hook and `certbot.timer`. `secret` is the provider credential, a Gandi LiveDNS
+API key or the base64 TSIG secret; it is written with
+[`secret_file`](concepts/operations.md) and never put on a command line, in a
+diff or in an error.
+
+```python
+from pydantic import SecretStr
+from ops_deploy.infra import CertbotDnsConfig, deploy_certbot_dns
+
+deploy_certbot_dns(
+    CertbotDnsConfig(
+        provider="rfc2136",
+        domain="home.example.org",
+        email="admin@example.org",
+        rfc2136_server="192.0.2.53",
+        rfc2136_key_name="acme-key",
+        renewal_hooks=("systemctl restart traefik",),
+        consumer_units=("traefik",),
+        single_lineage=True,
+    ),
+    SecretStr(tsig_secret),
+)
+```
+
+| Field | Default | |
+|---|---|---|
+| `provider` | `gandi` | `gandi` or `rfc2136` |
+| `domain`, `email` | required | lowercase DNS name (the lineage's `--cert-name`); one address. The role's defaults are one site's values, so there are none here |
+| `rfc2136_server`, `rfc2136_port` | `None`, `53` | an IP address (the plugin does not resolve names); required for `rfc2136` |
+| `rfc2136_key_name`, `rfc2136_key_algorithm` | `None`, `HMAC-SHA256` | TSIG key name (required for `rfc2136`); `HMAC-SHA256/384/512`, any case |
+| `wildcard`, `include_base`, `additional_domains` | `True`, `True`, `()` | the requested names: base, `*.<domain>`, extras (duplicates dropped) |
+| `key_type`, `staging`, `propagation_seconds` | `ecdsa`, `False`, `120` | |
+| `config_dir` | `/etc/letsencrypt` | the only value accepted: the role's certbot commands pass no `--config-dir` |
+| `credentials_file`, `rfc2136_credentials_file` | `<config_dir>/dns-credentials.ini`, `<config_dir>/dns-rfc2136-credentials.ini` | one file per provider, `root:root 0600` |
+| `renewal_hook_path`, `renewal_hooks` | `<config_dir>/renewal-hooks/deploy/reload-services.sh`, `()` | the role's hook script, one isolated block per item |
+| `reconfigure_on_provider_change` | `True` | `certbot reconfigure` when the lineage's authenticator differs |
+| `remove_unused_credentials` | `True` | delete the other provider's file once no renewal configuration names it |
+| `stray_config_dirs` | `()` | leftover certbot trees to delete (see below) |
+| `package_state` | `present` | or `latest` |
+| `single_lineage` | `False` | read-only check: `renewal/*.conf` (every entry, symlinks included, as certbot's glob) is only `<domain>.conf` |
+| `consumer_units` | `()` | read-only check: each unit is loaded and active |
+
+`single_lineage` and `consumer_units` are not role variables: they port the
+post-task assertions a consumer's playbook runs after the role (a host-wide
+deploy hook is only safe for one lineage; the certificate's readers must be
+running).
+
+### Steps
+
+1. A read-only probe (`files/certbot_dns_host.py probe`, `python3 -I` as root)
+   reads the lineage's `renewal/<domain>.conf`, its live links and archive,
+   the live certificate's dates, names and key type (`openssl x509 -dates
+   -text`; the private key is never read), the other provider's credentials
+   file with the role's `grep -l` scan, and which stray dirs exist. It
+   contacts nothing but the local `openssl` and `grep`.
+2. With the lineage in place and `stray_config_dirs` set, the role's vendored
+   `certbot_stray_guard.py` runs read-only; any refusal fails the deploy here,
+   before any change (the role refuses after it requested the certificate).
+3. `certbot` and the plugin package; `<config_dir>` `root:root 0755`; the
+   credentials file, byte-identical to the role's template.
+4. `certbot certonly` with the role's argv, byte for byte (including each
+   domain as one `-d <name>` word), **only when certbot would act** (below).
+5. `certbot reconfigure` when the probe saw another authenticator; the step
+   reads the authenticator again when it runs and does nothing if `certonly`
+   already switched it, as the role's later task does.
+6. Cleanup (`remove_unused_credentials`): the other providers'
+   `dns_<provider>_*` lines leave the managed lineage once its authenticator
+   is the configured one (written through a symlink, owner and mode kept,
+   like `lineinfile`), then the other provider's file is removed when the
+   role's scan, run again at that point, exits 1. Exit 0 (in use) and 2 (scan
+   error, for example no `*.conf`) keep it; anything else fails. The step is
+   planned only when the file exists and either the scan already exits 1 (or
+   fails otherwise) or an earlier step of this run can change the answer.
+7. Stray dirs: the guard runs again and only its decision is applied (the
+   role's assertion, then `rmtree` of each removable dir).
+8. The hook directory `root:root 0755`, the hook `root:root 0755`
+   byte-identical to the role's template, `certbot.timer` enabled and started.
+9. Read-only checks: the hook is a regular file with mode 0755, then
+   `single_lineage` (every non-hidden `renewal/*.conf` entry counts, a
+   symlink too, since certbot's glob renews it) and each consumer unit
+   (`LoadState=loaded` and `ActiveState=active` as whole lines).
+
+### When certonly runs
+
+The role runs `certonly --keep-until-expiring --expand` on every run and lets
+certbot decide; certbot fetches the ACME directory each time, even when
+nothing is due. Here the probe makes certbot 2.9's decision while planning,
+and `certonly` runs only for:
+
+- no `renewal/<domain>.conf` yet, or one whose `archive_dir`, `cert`,
+  `chain`, `fullchain` or `privkey` is not the standard path, or one configobj
+  might read otherwise or reject (a duplicate key or section, a line that is
+  no comment, `[section]` or `key = value`, an inline comment, an unbalanced
+  or triple-quoted value; certbot ignores such a lineage);
+- a missing live certificate;
+- certificate names (CN and SANs, compared as sets, case-insensitive) other
+  than the requested ones (`--expand`);
+- another key type than `key_type` (certbot renews at once when
+  `--key-type` and `--cert-name` are both given);
+- live links that are broken, point at another kind or are not on the latest
+  complete archive version (certbot relinks);
+- otherwise a certificate inside its renewal window, unless the lineage sets
+  `autorenew = False`. The window is the lineage's `renew_before_expiry` (a
+  number of days or weeks; another form counts as due) or, when unset, the
+  longer of 30 days (certbot 2.x) and a third of the lifetime (newer
+  certbot), so it errs towards running `certonly`.
+
+Anything the probe cannot read exactly (a failed probe, an unknown
+`autorenew` value) counts as due: `certonly` then decides, as in the role,
+and a probe that failed is run again at the end and fails the deploy if it
+still fails. A converged host gets no certbot command and no mutating
+operation. Not modelled: OCSP revocation and ACME renewal information (ARI);
+`certbot.timer` (`certbot renew`, twice a day) still acts on both. When
+`certonly` runs but certbot finds nothing to do, the step is still reported
+as changed (the role keys its changed state on certbot's "not yet due"
+output).
+
+### Stray certbot dirs
+
+`stray_config_dirs` lists certbot trees outside `config_dir` to delete (for
+example `/letsencrypt` an earlier restore extracted into `/`). As in the role,
+each path must be absolute and normalized (letters, digits, `.`, `_`, `-`,
+`/`, no `.`/`..` segments, no `//`, no trailing slash) and must not be equal
+to, inside or above `config_dir`, `/etc/letsencrypt`, `/var/lib/letsencrypt`
+or `/var/log/letsencrypt`; both are checked when the config is built. The
+guard, vendored byte for byte from the role (`infra/files/certbot_stray_guard.py`,
+checked by `tests/test_ops_library_drift.py`), also checks after resolving
+symlinks, requires a real directory with a real `renewal/`, and refuses
+everything unless the live trees use only literal paths (no symlinks besides
+certbot's lineage links, plain paths inside the live dirs in every renewal
+configuration) and are readable. A missing path is skipped; a removed tree
+gives no operation on the next run.
+
+### Differences from the role, on purpose
+
+- `certonly` runs only when certbot would act (above); the role contacts the
+  ACME server on every run.
+- A guard refusal fails before any change instead of after `certonly`.
+- `config_dir` must be `/etc/letsencrypt` (the role accepts another value but
+  its certbot commands would still use the default tree).
+- `single_lineage` counts symlinked `renewal/*.conf` entries; the playbook's
+  `find` (`file_type: file`) skipped them although certbot renews them.
+- `domain` and `email` have no defaults; `domain`, extra names, `email`, the
+  TSIG key name and server are checked strictly (the server with Python's
+  `ipaddress`), the credential must not be empty, `CHANGEME` or contain
+  control characters (a newline would add settings to the file), and a hook
+  must not contain NUL.
+- A directory or other special file at the other provider's credentials path
+  is refused (the role would delete it recursively once unused).
+- Debian-family hosts with systemd only (the role's `package` module would
+  also take other package managers).
+- The consumer check requires the exact `ActiveState=active` line; the
+  playbook's substring test also accepted `activating`.
+
+### Tests
+
+`tests/test_infra_certbot_dns.py` renders the vendored role templates
+(`tests/parity/ansible/certbot_dns_deploy__*`) and compares, pins the
+`certonly` and `reconfigure` argv, and runs the deploy on the fake connector:
+fresh host, converged host (no certbot command, credentials only on stdin),
+due certificate, provider switch, the cleanup scan's exit codes, stray
+removal, refusal and first-run cases, a failed probe, and the read-only
+checks. `tests/test_infra_certbot_dns_host.py` runs the host script and the
+guard for real on temp trees with `openssl`-made certificates.
+`tests/test_infra_certbot_dns_docker.py` runs against real certbot 2.9,
+openssl and systemd in an owned Docker container and is skipped unless
+`CERTBOT_DNS_DOCKER_CONTAINER` holds its full ID. The container must be named
+`ops-deploy-certbot-dns-20261020`, carry the labels
+`ops-deploy.fixture=certbot-dns` and
+`ops-deploy.run=pyinfra-certbot-dns-20261020`, and run systemd as PID 1 with
+`--network none` (no ACME server is reachable), no binds, ports or devices, a
+private cgroup namespace and `SYS_ADMIN` as its only added capability (an
+Ubuntu 24.04 image with `systemd systemd-sysv certbot
+python3-certbot-dns-rfc2136 openssl python3`, `/sbin/init` after remounting
+`/sys/fs/cgroup` writable; `--security-opt apparmor=unconfined --tmpfs /run
+--tmpfs /run/lock`). It checks that the planned `certonly` agrees with
+certbot's own decision (`_find_lineage_for_domains_and_certname` and
+`has_pending_deployment` on the same tree) for not-due, due, renamed,
+key-type, relinked and `autorenew = False` lineages; that a first run writes
+the credentials and hook and removes an unused old file and a stray tree,
+and a second run changes nothing and starts no certbot (certbot writes its
+log on every start); the leftover-settings cleanup on the real file; an old
+file another lineage uses is kept; a guard refusal changes nothing; and the
+final checks fail on a second lineage (also a symlinked one) or a missing
+consumer.

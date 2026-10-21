@@ -31,7 +31,7 @@ src/ops_deploy/
   base/               host-level deploys: hostname, unit masks, headless mode, authorized keys, uv, Node.js, shell basics,
                       SSH guard, dpkg foreign architectures
   infra/              shared host services: PostgreSQL (server, config, databases), Redis,
-                      Traefik (deploy, backup, restore, remove)
+                      Traefik (deploy, backup, restore, remove), certbot DNS-01 lineage
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
