@@ -3,16 +3,16 @@
 zone "example.org" {
     type master;
     file "/etc/bind/db.example.org";
-    allow-transfer { !{ !{ 192.0.2.2; 2001:db8::2; }; any; }; key "ns1-ns2-xfer"; };
-    also-notify { 192.0.2.2 key "ns1-ns2-xfer"; 2001:db8::2 key "ns1-ns2-xfer"; };
+    allow-transfer { !{ !{ 192.0.2.2; 2001:db8::2; }; any; }; key "xfer-key"; };
+    also-notify { 192.0.2.2 key "xfer-key"; 2001:db8::2 key "xfer-key"; };
 };
 
 zone "home.example.org" {
     type master;
     file "/var/lib/bind/db.home.example.org";
-    update-policy { grant "ddns-home" name home.example.org. A AAAA; grant "ddns-home" name *.home.example.org. A AAAA; grant "acme-home" name _acme-challenge.home.example.org. TXT; };
-    allow-transfer { !{ !{ 192.0.2.2; 2001:db8::2; }; any; }; key "ns1-ns2-xfer"; };
-    also-notify { 192.0.2.2 key "ns1-ns2-xfer"; 2001:db8::2 key "ns1-ns2-xfer"; };
+    update-policy { grant "ddns-key" name home.example.org. A AAAA; grant "ddns-key" name *.home.example.org. A AAAA; grant "acme-key" name _acme-challenge.home.example.org. TXT; };
+    allow-transfer { !{ !{ 192.0.2.2; 2001:db8::2; }; any; }; key "xfer-key"; };
+    also-notify { 192.0.2.2 key "xfer-key"; 2001:db8::2 key "xfer-key"; };
 };
 
 zone "2.0.192.in-addr.arpa" {
