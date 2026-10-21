@@ -59,6 +59,14 @@ os_apt_maintenance_endpoint_enabled: false
 os_apt_maintenance_endpoint_user: metrics
 os_apt_maintenance_endpoint_group: "{{ os_apt_maintenance_endpoint_user }}"
 os_apt_maintenance_endpoint_service_name: os-apt-maintenance-endpoint
+# HTTP server implementation of the endpoint (rust/metrics-httpd/PLAN.md 7.1):
+# python runs os_apt_maintenance_endpoint_server_path; rust runs the pinned
+# metrics-httpd release (fleet variables metrics_httpd_rust_version /
+# metrics_httpd_rust_sha256) through the drop-in
+# /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf (internal
+# helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+os_apt_maintenance_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
 os_apt_maintenance_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
 os_apt_maintenance_endpoint_port: 9106
 os_apt_maintenance_endpoint_path: "/.well-known/os-apt-maintenance"

@@ -20,6 +20,9 @@ stripped binary 2,249,216 bytes = 2.14 MiB, highest `GLIBC_2.34`).
 S5a implemented: the internal helper role
 `metrics_httpd_switch` (7.2) and the switch in the five
 `*_metrics_endpoint` roles (7.3), all with `impl: python` by default.
+S5b implemented: the switch in `metrics_endpoint`, `os_apt_maintenance`,
+`dns_deploy` (DDNS status endpoint) and `openclaw_deploy` (metrics
+endpoint), `impl: python` by default.
 S5d implemented (ops-control): the fleet pin of 7.1 in
 `group_vars/all.yml` (`metrics_httpd_impl: python`, version `0.1.0` with
 the S4 sha256), the switch in `torrent_vpn_metrics_endpoint` (7.3), the
@@ -825,10 +828,17 @@ Implemented in S5a: `roles/metrics_httpd_switch/` (its README is the
 reference for every input), with the argv, sandbox and probe-coverage checks
 as plain functions in `plugins/filter/metrics_httpd.py`. Used by each
 consumer role with `include_role` (`tasks_from`); the consumer sets the
-inputs once (S5a: as `vars:` of its deploy block):
+inputs once (S5a: as `vars:` of its deploy block; S5b: of the block that
+deploys the endpoint — `os_apt_maintenance`'s whole deploy block with
+`when: os_apt_maintenance_endpoint_enabled` on both includes, the
+`DDNS | Status endpoint` block of `dns_deploy` `tasks/ddns.yml`, which runs
+under `--tags ddns`, and the deploy block of `openclaw_deploy`
+`tasks/metrics.yml`):
 
 - `select.yml` (after the unit file and the files `--check-config` reads,
-  before the role's "enable and start" task). Inputs: `impl`,
+  before the role's "enable and start" task; `os_apt_maintenance`: after
+  the state file is initialised, because the unit's and the check's
+  `ReadOnlyPaths=` name the file itself). Inputs: `impl`,
   `service_name` (= consumer for the pin), `argv` (list after the binary,
   e.g. `["json-file", "--bind", …]`), `validate_user`, `validate_group`
   (the unit's `User=`/`Group=`), `unit_sandbox` (the `systemd-run --property`
@@ -970,7 +980,7 @@ same slice, announced to the pyinfra session through the coordinator.
 | `tests/test_monitoring_pipeline_repair.py::EndpointRebootStateTests` (persisted kernel signal served; reboot into new kernel clears it; live marker alone; both reasons; old state files; handler serves merged state) | `apt_state` unit tests + `fixtures/apt_state.json` cases with the same inputs | S2c |
 | `tests/test_static_site_deploy.py::test_rendered_server_serves_files_without_listing_or_writes`, `::test_server_binds_loopback_and_disables_directory_listing` | `static` fixture cases + e2e test (GET file, dir listing 404, PUT/POST 501, headers on errors) | S2e |
 | `tests/test_logyard_deploy.yml` (template list rendering) | stays (role test); S5c adds the drop-in template | S5c |
-| Molecule verify scenarios that curl endpoints (`metrics_endpoint`, `tailscale_metrics_endpoint`, `mail_monitoring`) | unchanged with `impl: python` (the `tailscale_metrics_endpoint` scenario now also runs select/verify of the switch against real systemd); S5a/S5b add drop-in render tests for `impl: rust` (S5a: `tests/test_metrics_httpd_switch.py`) | S5a, S5b |
+| Molecule verify scenarios that curl endpoints (`metrics_endpoint`, `tailscale_metrics_endpoint`, `mail_monitoring`) | unchanged with `impl: python` (the `tailscale_metrics_endpoint` scenario now also runs select/verify of the switch against real systemd); S5a/S5b add drop-in render tests for `impl: rust` (`tests/test_metrics_httpd_switch.py`; the `metrics_endpoint` and `os_apt_maintenance` scenarios run select/verify with `impl: python` against real systemd since S5b; `mail_monitoring` does not deploy an endpoint of this plan) | S5a, S5b |
 | No Python tests exist for the json-file and script handlers | fixtures generated from the eight json-file scripts and `metrics_httpd.py.j2` (8.2) | S2a, S2b |
 
 `TESTMAP.md` lists every fixture family with its Python source and the Rust

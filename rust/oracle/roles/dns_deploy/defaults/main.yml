@@ -123,6 +123,15 @@ dns_ddns_status_endpoint_auth_password: "CHANGE_ME"
 dns_ddns_status_endpoint_server_path: "/usr/local/bin/ddns_status_httpd.py"
 dns_ddns_status_endpoint_htpasswd_dir: "/etc/ddns-status-endpoint"
 dns_ddns_status_endpoint_htpasswd_path: "{{ dns_ddns_status_endpoint_htpasswd_dir }}/htpasswd"
+# HTTP server implementation of the status endpoint
+# (rust/metrics-httpd/PLAN.md 7.1): python runs
+# dns_ddns_status_endpoint_server_path; rust runs the pinned metrics-httpd
+# release (fleet variables metrics_httpd_rust_version /
+# metrics_httpd_rust_sha256) through the drop-in
+# /etc/systemd/system/ddns-status-endpoint.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+dns_ddns_status_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
 
 # Forward Zones Configuration
 # Forward specific domains to designated upstream DNS servers

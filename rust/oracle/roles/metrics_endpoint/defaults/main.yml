@@ -7,6 +7,14 @@ metrics_endpoint_user: metrics
 metrics_endpoint_group: "{{ metrics_endpoint_user }}"
 metrics_endpoint_service_name: metrics-endpoint
 
+# HTTP server implementation (rust/metrics-httpd/PLAN.md 7.1): python runs
+# metrics_endpoint_server_path; rust runs the pinned metrics-httpd release
+# (fleet variables metrics_httpd_rust_version / metrics_httpd_rust_sha256)
+# through the drop-in /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+metrics_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
+
 # Network / auth
 metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
 metrics_endpoint_port: 9100

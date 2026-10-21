@@ -157,6 +157,15 @@ openclaw_metrics_endpoint_enabled: false
 openclaw_metrics_endpoint_user: metrics
 openclaw_metrics_endpoint_group: "{{ openclaw_metrics_endpoint_user }}"
 openclaw_metrics_endpoint_service_name: openclaw-metrics-endpoint
+# HTTP server implementation of the metrics endpoint
+# (rust/metrics-httpd/PLAN.md 7.1): python runs
+# openclaw_metrics_endpoint_server_path; rust runs the pinned metrics-httpd
+# release (fleet variables metrics_httpd_rust_version /
+# metrics_httpd_rust_sha256) through the drop-in
+# /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf (internal
+# helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+openclaw_metrics_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
 openclaw_metrics_endpoint_timer_name: openclaw-metrics-collector
 openclaw_metrics_endpoint_bind: "127.0.0.1"
 openclaw_metrics_endpoint_port: 9104
