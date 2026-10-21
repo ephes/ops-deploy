@@ -1,12 +1,14 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a, S3b, S4, S5, S6 and S7 implemented (campaign "Rust-Ports
-Runde 2", stream `rust-echoport-command-guard`; see `README.md`). S7 releases
-0.1.0 as a parity port with a pre-existing race accepted for that release
-only (4.5, R12); nothing is installed or deployed, and no host gets the Rust
-guard before the hardening slice H1 is merged (section 11). This file is the contract for the implementers and
-reviewers of every slice below; a slice that wants to deviate changes this
-file first, in its own reviewed diff.
+Status: S0, S1, S2, S3a, S3b, S4, S5, S6 and S7 implemented (campaign
+"Rust-Ports Runde 2", stream `rust-echoport-command-guard`; see `README.md`).
+S7 released 0.1.0 (tag `echoport-command-guard-v0.1.0` at `5b734af5`, archive
+sha256 `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9`) as a
+parity port with a pre-existing race accepted for that release only (4.5, R12);
+nothing is installed or deployed, and no host gets the Rust guard before the
+hardening slice H1 is merged (section 11). This file is the contract for the
+implementers and reviewers of every slice below; a slice that wants to deviate
+changes this file first, in its own reviewed diff.
 
 Source of truth for behaviour: the Python guard
 `roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py`

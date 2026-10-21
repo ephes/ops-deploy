@@ -155,7 +155,7 @@ The role pins a version and that sha256
 
 | Version | Tag (commit) | Archive sha256 | Stripped binary |
 |---|---|---|---|
-| 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` | recorded after the release | |
+| 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` (`5b734af5`) | `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9` | 668,632 bytes (0.64 MiB), highest `GLIBC_2.34` |
 
 ## Security review (S7)
 
