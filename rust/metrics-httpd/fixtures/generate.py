@@ -2888,7 +2888,6 @@ FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "script": (True, build_script),
     "apt_state": (True, build_apt_state),
     "json_file": (True, build_json_file),
-
     "static": (True, build_static),
 }
 
