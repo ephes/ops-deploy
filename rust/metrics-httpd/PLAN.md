@@ -893,8 +893,10 @@ inputs once (S5a: as `vars:` of its deploy block):
   `/proc/<pid>/cmdline` contains the role's Python script path (input
   `python_script`). Then an unauthenticated `GET
   http://<bind>:<port><path>` from the host (inputs `probe_bind`,
-  `probe_port`, `probe_path`, `probe_expect`, `probe_realm`; no proxy, no
-  redirects): 401 with `WWW-Authenticate: Basic realm="<realm>"` (json-file,
+  `probe_port`, `probe_path`, `probe_expect`, `probe_realm`, `probe_timeout`
+  (5 s; S5c: logyard raises it to its Loki and `systemctl` timeouts); no
+  proxy, no redirects; a host-name bind, which only Python accepts, is not
+  probed): 401 with `WWW-Authenticate: Basic realm="<realm>"` (json-file,
   script, apt-state), 200 with a JSON object containing `status`
   (logyard-health), 200 for `/` (static) — skipped with a message when the
   unit's `IPAddressAllow` (input `ip_address_allow`; the symbolic names
