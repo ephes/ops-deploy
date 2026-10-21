@@ -7,6 +7,10 @@ systemd unit on loopback behind a Traefik route. The unit, the server script
 and the route are byte-identical to the role's
 (``tests/test_static_site_parity.py``), so Ansible and ops-deploy can take
 turns on one host.
+
+The HTTP server is the role's Python script or the pinned Rust
+``metrics-httpd static`` (``httpd_impl``; the role's ``metrics_httpd_switch``,
+see :mod:`ops_deploy.services._metrics_httpd`).
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from ops_deploy.core.templates import render
 from ops_deploy.helpers import TraefikRoute, mark_read_only, service_rollout, systemd_unit, traefik_route
 from ops_deploy.helpers.traefik import Hostname
 from ops_deploy.ops import sync_tree
+from ops_deploy.services import _metrics_httpd as metrics_httpd
 
 TEMPLATE_PACKAGE = "ops_deploy.services.static_site"
 
@@ -44,7 +49,9 @@ class StaticSiteSourceError(ValueError):
     """The publication source on the controller is missing or unsafe."""
 
 
-class StaticSiteConfig(BaseServiceConfig):
+class StaticSiteConfig(BaseServiceConfig, metrics_httpd.HttpdSwitchFields):
+    """The ``static_site_deploy`` role's variables; ``httpd_*`` select its HTTP server (``static_site_impl``)."""
+
     # The role's defaults all follow ``service_name``: user, group, document
     # root and server script are filled in from it when not given.
     service_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{1,62}$")] = "static-site"
@@ -210,6 +217,51 @@ def render_route(cfg: StaticSiteConfig) -> str:
     return render(TEMPLATE_PACKAGE, "static-site.traefik.yml.j2", cfg=cfg)
 
 
+# The unit's [Service] lines besides Type, User, Group, ExecStart, Restart and
+# RestartSec (templates/static-site.service.j2): the --check-config sandbox.
+UNIT_SANDBOX = (
+    "UMask=0027",
+    "TasksMax=128",
+    "MemoryMax=256M",
+    "NoNewPrivileges=true",
+    "PrivateDevices=true",
+    "PrivateTmp=true",
+    "ProtectClock=true",
+    "ProtectControlGroups=true",
+    "ProtectHome=true",
+    "ProtectHostname=true",
+    "ProtectKernelLogs=true",
+    "ProtectKernelModules=true",
+    "ProtectKernelTunables=true",
+    "ProtectSystem=strict",
+    "RestrictAddressFamilies=AF_UNIX AF_INET",
+    "RestrictNamespaces=true",
+    "RestrictRealtime=true",
+    "RestrictSUIDSGID=true",
+    "LockPersonality=true",
+    "MemoryDenyWriteExecute=true",
+    "CapabilityBoundingSet=",
+    "AmbientCapabilities=",
+)
+
+
+def httpd_endpoint(cfg: StaticSiteConfig) -> metrics_httpd.Endpoint:
+    """The role's ``metrics_httpd_switch`` inputs: ``static --bind --port --root`` in the unit's sandbox."""
+
+    return metrics_httpd.Endpoint(
+        service_name=cfg.service_name,
+        argv=("static", "--bind", cfg.bind_host, "--port", str(cfg.port), "--root", str(cfg.site_path)),
+        user=cfg.user,
+        group=cfg.group_name,
+        sandbox=(*UNIT_SANDBOX, f"ReadOnlyPaths={cfg.site_path}"),
+        python_script=str(cfg.server_path),
+        probe_bind=cfg.bind_host,
+        probe_port=cfg.port,
+        probe_path="/",
+        probe_expect="static",
+    )
+
+
 def _service_account(cfg: StaticSiteConfig) -> None:
     """The role's user.yml: a system group and a no-login system user without a home directory.
 
@@ -307,6 +359,8 @@ def deploy_static_site(cfg: StaticSiteConfig, rsync: RsyncRunner = subprocess_rs
         mode="0755",
     )
     unit = systemd_unit(cfg.service_name, render_unit(cfg))
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf).
+    selection = metrics_httpd.select(httpd_endpoint(cfg), cfg)
     if cfg.traefik_enabled:
         assert cfg.traefik_host is not None
         route = TraefikRoute(
@@ -318,7 +372,9 @@ def deploy_static_site(cfg: StaticSiteConfig, rsync: RsyncRunner = subprocess_rs
         )
         # The role has no reload handler for the route; the file provider watches the directory.
         traefik_route(route, renderer=lambda _route, _hash: render_route(cfg), restart="none")
-    service_rollout(cfg.service_name, units=[unit], restart_when=[server_script])
+    service_rollout(cfg.service_name, units=[unit, selection.dropin], restart_when=[server_script])
+    # The unit runs the selected server and answers 200 for /; then pin and prune.
+    metrics_httpd.verify(selection)
 
     _probe(cfg, f"http://{cfg.bind_host}:{cfg.port}/", retries=10, delay=1, label="loopback static service")
     if cfg.traefik_enabled and cfg.verify_public:

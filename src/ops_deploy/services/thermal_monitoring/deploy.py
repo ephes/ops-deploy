@@ -9,6 +9,10 @@ unchanged and are rendered the way Ansible's ``template`` module renders
 them, so every file is byte-identical to the roles' and the tools can take
 turns on a host without churn.
 
+The endpoint's HTTP server is the role's Python script or the pinned Rust
+``metrics-httpd`` (``httpd_impl``; the role's ``metrics_httpd_switch``, see
+:mod:`ops_deploy.services._metrics_httpd`).
+
 The endpoint password reaches the host only inside the htpasswd file
 (``secret_file``) and the Nyxmon check data (the upsert's stdin): it is
 compared with the installed bcrypt hash on the controller, so an unchanged
@@ -44,6 +48,7 @@ from ops_deploy.helpers import mark_read_only, service_rollout, systemd_unit
 from ops_deploy.helpers.probes import probe
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.ops import secret_file
+from ops_deploy.services import _metrics_httpd as metrics_httpd
 from ops_deploy.services._nyxmon_json_metrics import JsonMetricsCheck, upsert_json_metrics_check
 from ops_deploy.services.nyxmon_site_checks.deploy import PlainPath
 
@@ -144,13 +149,15 @@ class ThermalExporter(_Part):
     ipmi_sensors: tuple[IpmiSensor, ...] = ()
 
 
-class ThermalMonitoringConfig(BaseServiceConfig):
+class ThermalMonitoringConfig(BaseServiceConfig, metrics_httpd.HttpdSwitchFields):
     """The ``thermal_metrics_endpoint`` role's variables, the exporter and the optional Nyxmon check.
 
     ``service_name`` is the endpoint's unit, ``user`` its system user and
     ``site_path`` its data directory (the role's ``data_dir``). ``bind`` is
     an IPv4 address or ``"tailscale"``: the address ``tailscale ip --4``
-    prints on the host.
+    prints on the host. ``httpd_impl``, ``httpd_rust_version`` and
+    ``httpd_rust_sha256`` select the HTTP server (the role's
+    ``thermal_metrics_endpoint_impl`` and the fleet pin).
     """
 
     required_secret_keys: ClassVar[tuple[str, ...]] = (PASSWORD_KEY,)
@@ -260,6 +267,34 @@ def render_collector_timer(cfg: ThermalMonitoringConfig) -> str:
 
 def render_endpoint_unit(cfg: ThermalMonitoringConfig, bind: str) -> str:
     return render_role("thermal-metrics-endpoint.service.j2", cfg, bind)
+
+
+def httpd_endpoint(cfg: ThermalMonitoringConfig, bind: str) -> metrics_httpd.Endpoint:
+    """The role's ``metrics_httpd_switch`` inputs; argv, sandbox and IP filter mirror the endpoint unit."""
+
+    return metrics_httpd.Endpoint(
+        service_name=cfg.service_name,
+        argv=(
+            *("json-file", "--bind", bind, "--port", str(cfg.port), "--path", cfg.path),
+            *("--json-path", str(cfg.json_path), "--htpasswd-file", str(cfg.htpasswd_path)),
+            *("--realm", "thermal-metrics", "--server-name", "thermal-metrics-httpd/0.1"),
+        ),
+        user=cfg.user,
+        group=cfg.group_name,
+        sandbox=(
+            "NoNewPrivileges=yes",
+            "ProtectSystem=strict",
+            "ProtectHome=yes",
+            "PrivateTmp=yes",
+            f"ReadOnlyPaths={cfg.site_path}",
+        ),
+        python_script=str(cfg.server_path),
+        probe_bind=bind,
+        probe_port=cfg.port,
+        probe_path=cfg.path,
+        probe_realm="thermal-metrics",
+        ip_address_allow=("localhost", "100.64.0.0/10"),
+    )
 
 
 def _password(secrets: SecretValues) -> str:
@@ -447,13 +482,17 @@ def deploy_thermal_monitoring(cfg: ThermalMonitoringConfig, secrets: SecretValue
     collector_unit = systemd_unit(f"{cfg.timer_name}.service", render_collector_service(cfg))
     timer_unit = systemd_unit(f"{cfg.timer_name}.timer", render_collector_timer(cfg))
     endpoint_unit = systemd_unit(cfg.service_name, render_endpoint_unit(cfg, bind))
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf).
+    selection = metrics_httpd.select(httpd_endpoint(cfg, bind), cfg)
     systemd.daemon_reload(
         name="Reload systemd for the thermal metrics units",
-        _if=any_changed(collector_unit, timer_unit, endpoint_unit),
+        _if=any_changed(collector_unit, timer_unit, endpoint_unit, selection.dropin),
     )
     _collector(cfg, [exporter_file, collector_unit])
     _timer(cfg, timer_unit)
-    service_rollout(cfg.service_name, restart_when=[endpoint_unit, httpd, *credentials])
+    service_rollout(cfg.service_name, restart_when=[endpoint_unit, httpd, *credentials, selection.dropin])
+    # The unit runs the selected server and answers 401 with its realm; then pin and prune.
+    metrics_httpd.verify(selection)
 
     # The play's tasks: the Nyxmon freshness check of this endpoint.
     check = cfg.nyxmon_check

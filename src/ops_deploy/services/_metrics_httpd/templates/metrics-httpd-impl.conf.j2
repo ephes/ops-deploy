@@ -1,0 +1,5 @@
+# Managed by ops-library metrics_httpd_switch: selects the Rust metrics-httpd.
+# Remove this file (daemon-reload, restart) to fall back to Python.
+[Service]
+ExecStart=
+ExecStart={{ metrics_httpd_impl_binary }}{% for arg in metrics_httpd_impl_argv %} {{ ('"' ~ arg ~ '"') if (' ' in arg or "'" in arg or ';' in arg) else arg }}{% endfor +%}

@@ -35,6 +35,7 @@ nav:
       - delve: services/delve.md
       - recorder: services/recorder.md
       - static_site: services/static_site.md
+      - metrics-httpd switch: services/metrics_httpd.md
       - django_site: services/django_site.md
       - compose_app: services/compose_app.md
       - livekit: services/livekit.md
