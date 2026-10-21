@@ -158,6 +158,17 @@ and stopped. Then a backup with ACME state, a restore over a damaged store,
 and a removal that keeps routes and certificates, run twice (the second
 without change).
 
+`test_jellyfin_smoke.py` installs [jellyfin](../services/jellyfin.md) from
+the real upstream repository (network needed; the reset purges the
+`jellyfin*` packages first) with throwaway media directories, group and
+route host: a fresh run, a second run with only the read-only checks (route
+file and Jellyfin's PID unchanged), a password rotation that rewrites only
+the route, an armored keyring that is repaired (key, cache refresh, ffmpeg
+step) and a converged run after it. It checks the list file, the keyring,
+the installed packages (an installed `jellyfin-ffmpeg*` satisfies the pick),
+the directories' owners and modes, a foreign media directory left alone, and
+that Traefik asks a client outside the internal ranges for basic auth.
+
 `test_secret_file_smoke.py` exercises `secret_file`'s failure handling on a
 real host:
 
