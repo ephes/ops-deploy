@@ -26,6 +26,7 @@ changes, renames or removes the entry relative to the directory it opened.
 
 from __future__ import annotations
 
+import ctypes
 import errno
 import grp
 import json
@@ -701,15 +702,21 @@ def open_redirect(redirect: Redirect, create: bool) -> int:
 # It opens / and then each directory of the path with O_NOFOLLOW|O_DIRECTORY,
 # so a symlink anywhere on the path is refused (ELOOP/ENOTDIR) instead of
 # followed, and it works on the last entry relative to the directory it
-# opened: renameat/unlinkat on the name, or fchmod/fchown on a descriptor
-# opened with O_NOFOLLOW whose inode must be the one lstat saw. chown -R walks
+# opened: renameat (renameat2 RENAME_NOREPLACE when the target must not
+# exist)/unlinkat on the name, or fchmod/fchown on a descriptor opened with
+# O_NOFOLLOW whose inode must be the one lstat saw. chown -R walks
 # the tree the same way, one directory descriptor per level, and leaves
 # symlinks in it as they are. A regular file to change must have one link,
 # so a hard link cannot bring a file from outside the root into it.
 #
+# Paths in the reasons are ascii(): a name in a tree the service user filled
+# is escaped like everything else that reaches the log. chown -R visits names
+# in byte order.
+#
 # `hook(event, path)`, for the tests only: called with ("dir", <path>) after
-# each directory on the way was opened and with ("stat", <path>) after an
-# entry passed lstat, right before it is opened.
+# each directory on the way was opened, with ("stat", <path>) after an entry
+# passed lstat, right before it is opened, and with ("rename", <target>)
+# right before mv renames.
 
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _NODE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY
@@ -719,7 +726,7 @@ class _OsRefused(Refused):
     """Refused because of an OS error; `errno` tells rm -f a missing path."""
 
     def __init__(self, what: str, path: str, exc: OSError) -> None:
-        super().__init__(f"{what}: {path!r}: {exc.strerror}")
+        super().__init__(f"{what}: {path!a}: {exc.strerror}")
         self.errno = exc.errno
 
 
@@ -734,7 +741,7 @@ def _is_link(dir_fd: int, name: str) -> bool:
 def _open_parent(path: str, hook) -> tuple[int, str]:
     """Open the directory holding `path` from /, following no symlink: (fd, name)."""
     parts = path.split("/")[1:]
-    _require(path.startswith("/") and parts and all(p not in ("", ".", "..") for p in parts), f"unsafe path: {path!r}")
+    _require(path.startswith("/") and parts and all(p not in ("", ".", "..") for p in parts), f"unsafe path: {path!a}")
     try:
         fd = os.open("/", _DIR_FLAGS)
     except OSError as exc:
@@ -747,7 +754,7 @@ def _open_parent(path: str, hook) -> tuple[int, str]:
                 next_fd = os.open(part, _DIR_FLAGS, dir_fd=fd)
             except OSError as exc:
                 if _is_link(fd, part):
-                    raise Refused(f"symbolic link in the path: {prefix!r}") from exc
+                    raise Refused(f"symbolic link in the path: {prefix!a}") from exc
                 raise _OsRefused("cannot open", prefix, exc) from exc
             os.close(fd)
             fd = next_fd
@@ -770,24 +777,24 @@ def _open_entry(dir_fd: int, name: str, path: str, op: str, hook, skip_links: bo
     if stat.S_ISLNK(seen.st_mode):
         if skip_links:
             return None
-        raise Refused(f"{op} target is a symbolic link: {path!r}")
+        raise Refused(f"{op} target is a symbolic link: {path!a}")
     is_dir = stat.S_ISDIR(seen.st_mode)
-    _require(is_dir or stat.S_ISREG(seen.st_mode), f"{op} target is not a regular file or directory: {path!r}")
+    _require(is_dir or stat.S_ISREG(seen.st_mode), f"{op} target is not a regular file or directory: {path!a}")
     if hook is not None:
         hook("stat", path)
     try:
         fd = os.open(name, _NODE_FLAGS | (os.O_DIRECTORY if is_dir else 0), dir_fd=dir_fd)
     except OSError as exc:
         if _is_link(dir_fd, name):
-            raise Refused(f"{op} target is a symbolic link: {path!r}") from exc
+            raise Refused(f"{op} target is a symbolic link: {path!a}") from exc
         raise _OsRefused("cannot open", path, exc) from exc
     try:
         try:
             st = os.fstat(fd)
         except OSError as exc:
             raise _OsRefused("cannot stat", path, exc) from exc
-        _require((st.st_dev, st.st_ino) == (seen.st_dev, seen.st_ino), f"{op} target was replaced: {path!r}")
-        _require(stat.S_ISDIR(st.st_mode) or st.st_nlink == 1, f"{op} target has other hard links: {path!r}")
+        _require((st.st_dev, st.st_ino) == (seen.st_dev, seen.st_ino), f"{op} target was replaced: {path!a}")
+        _require(stat.S_ISDIR(st.st_mode) or st.st_nlink == 1, f"{op} target has other hard links: {path!a}")
     except BaseException:
         os.close(fd)
         raise
@@ -799,7 +806,7 @@ def _owner_ids(owner: str) -> tuple[int, int]:
     try:
         return pwd.getpwnam(user).pw_uid, grp.getgrnam(group).gr_gid
     except KeyError:
-        raise Refused(f"unknown owner: {owner!r}") from None
+        raise Refused(f"unknown owner: {owner!a}") from None
 
 
 def _fchown(fd: int, uid: int, gid: int, path: str) -> None:
@@ -814,7 +821,7 @@ def _chown_tree(top_fd: int, top: str, uid: int, gid: int, hook) -> None:
 
     def entries(fd: int, path: str):
         try:
-            return iter(sorted(os.listdir(fd)))
+            return iter(sorted(os.listdir(fd), key=os.fsencode))
         except OSError as exc:
             raise _OsRefused("cannot list", path, exc) from exc
 
@@ -850,7 +857,7 @@ def _chown_tree(top_fd: int, top: str, uid: int, gid: int, hook) -> None:
 def _change(mutation: Mutation, hook) -> None:
     """chmod or chown of one path (chown -R: and everything below it)."""
     _require(len(mutation.paths) == 1 and (mutation.op == "chown" or mutation.mode is not None),
-             f"unusable mutation: {mutation.op!r}")
+             f"unusable mutation: {mutation.op!a}")
     path = mutation.paths[0]
     uid, gid = _owner_ids(mutation.owner or "") if mutation.op == "chown" else (-1, -1)
     dir_fd, name = _open_parent(path, hook)
@@ -869,13 +876,30 @@ def _change(mutation: Mutation, hook) -> None:
             # Still the fresh snapshot temp dir check() saw: root's, no group/other access.
             _require(
                 stat.S_ISDIR(st.st_mode) and st.st_uid == os.geteuid() and not st.st_mode & 0o077,
-                f"not a private directory: {path!r}",
+                f"not a private directory: {path!a}",
             )
         _fchown(fd, uid, gid, path)
         if mutation.recursive and stat.S_ISDIR(st.st_mode):
             _chown_tree(fd, path, uid, gid, hook)
     finally:
         os.close(fd)
+
+
+def _rename_noreplace(source_fd: int, source: str, target_fd: int, target: str) -> None:
+    """renameat2(RENAME_NOREPLACE): EEXIST instead of replacing an existing
+    target, in one step (macOS, for the tests: renameatx_np(RENAME_EXCL))."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    for symbol, flag in (("renameat2", 1), ("renameatx_np", 4)):
+        function = getattr(libc, symbol, None)
+        if function is not None:
+            break
+    else:
+        raise OSError(errno.ENOSYS, os.strerror(errno.ENOSYS))
+    function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    function.restype = ctypes.c_int
+    if function(source_fd, os.fsencode(source), target_fd, os.fsencode(target), flag) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
 
 
 def _rename(mutation: Mutation, hook) -> None:
@@ -885,19 +909,18 @@ def _rename(mutation: Mutation, hook) -> None:
     try:
         target_fd, target_name = _open_parent(target, hook)
         try:
-            if not mutation.replace:
-                try:
-                    os.stat(target_name, dir_fd=target_fd, follow_symlinks=False)
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    raise _OsRefused("mv target not checkable", target, exc) from exc
-                else:
-                    raise Refused(f"mv target exists: {target!r}")
+            if hook is not None:
+                hook("rename", target)
             try:
-                os.rename(source_name, target_name, src_dir_fd=source_fd, dst_dir_fd=target_fd)
+                if mutation.replace:
+                    os.rename(source_name, target_name, src_dir_fd=source_fd, dst_dir_fd=target_fd)
+                else:
+                    # A rename onto a name that does not exist yet: never replaces one.
+                    _rename_noreplace(source_fd, source_name, target_fd, target_name)
             except OSError as exc:
-                raise Refused(f"mv failed: {source!r} -> {target!r}: {exc.strerror}") from exc
+                if exc.errno == errno.EEXIST and not mutation.replace:
+                    raise Refused(f"mv target exists: {target!a}") from exc
+                raise Refused(f"mv failed: {source!a} -> {target!a}: {exc.strerror}") from exc
         finally:
             os.close(target_fd)
     finally:
@@ -932,7 +955,7 @@ def perform(mutation: Mutation, hook=None) -> None:
     elif mutation.op == "rm":
         _remove(mutation, hook)
     else:
-        raise Refused(f"unknown mutation: {mutation.op!r}")
+        raise Refused(f"unknown mutation: {mutation.op!a}")
 
 
 def _log(priority: int, message: str) -> None:

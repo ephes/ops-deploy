@@ -225,7 +225,9 @@ both:
 - `mv`: one `renameat` between the two directories walked to; the target is
   replaced as a name, never followed into (coreutils moved into a target
   that is a directory or a link to one), and there is no copy across
-  filesystems. Without the `.tmp` form the target must still not exist;
+  filesystems. Without the `.tmp` form the rename is
+  `renameat2(RENAME_NOREPLACE)` (`rustix`; the Python guard calls it through
+  `ctypes`), so a target that appears after `check()` is never replaced;
 - `rm -f`: `unlinkat` on the name; a missing file or directory on the way is
   fine, a symlink is removed itself.
 
@@ -236,11 +238,16 @@ success with no output; a failure is exit 1 with `command not allowed` on
 stderr (the tool's own message before) and a `refused from` log line with
 the reason (before, a failed tool still logged `allowed from`).
 
-The race regressions are a table both guards run, `parity/races.json`: 43
+Paths in the reasons are escaped as Python's `ascii()`, and `chown -R`
+visits names in byte order, so both guards give the same reason and stop at
+the same entry also for names that are not UTF-8.
+
+The race regressions are a table both guards run, `parity/races.json`: 46
 scenarios over all four commands, with a symlink (or a renamed directory,
-a hard link, a fifo) put in place between `check()` and the change, and at
-exact points during the walk through a test hook (`dir` after a directory on
-the way was opened, `stat` right before an entry is opened). Each asserts
+a hard link, a fifo, a new target) put in place between `check()` and the
+change, and at exact points during the walk through a test hook (`dir`
+after a directory on the way was opened, `stat` right before an entry is
+opened, `rename` right before `mv` renames). Each asserts
 the outcome, the reason word for word, and the files inside and outside the
 root afterwards. `just test-echoport-remote-command-guard` runs it against
 the Python guard, `cargo test` against the Rust guard, and `run-layer2.sh`

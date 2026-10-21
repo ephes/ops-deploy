@@ -73,6 +73,8 @@ def act(action: list[str]) -> None:
         Path(path).write_text("new")
     elif kind == "fifo":
         os.mkfifo(path)
+    elif kind == "fifo_hex":
+        os.mkfifo(os.fsencode(path) + b"/" + bytes.fromhex(rest[0]))
     elif kind == "link":
         os.symlink(rest[0], path)
     elif kind == "hardlink":
@@ -124,6 +126,8 @@ def check_after(after: list[list[str]], sub: Any, before: dict[str, tuple[int, i
             ok = stat.S_ISDIR(st.st_mode)
         elif kind == "link":
             ok = stat.S_ISLNK(st.st_mode) and os.readlink(path) == rest[0]
+        elif kind == "content":
+            ok = stat.S_ISREG(st.st_mode) and Path(path).read_text() == rest[0]
         elif kind == "exists":
             ok = True
         else:
@@ -215,7 +219,8 @@ def run_all(guard: Any, races_path: Path = RACES) -> tuple[list[str], list[str]]
     owner, new_ids = chown_target(guard)
     failures, skipped = [], []
     for scenario in races["scenarios"]:
-        if needs_chown(scenario) and new_ids is None:
+        platforms = scenario.get("platforms")
+        if (needs_chown(scenario) and new_ids is None) or (platforms and sys.platform not in platforms):
             skipped.append(scenario["id"])
             continue
         for error in run_scenario(guard, races["tree"], scenario, owner, new_ids):

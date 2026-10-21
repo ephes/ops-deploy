@@ -8,15 +8,18 @@
 //! `check()`. It opens `/` and then each directory of the path with
 //! `O_NOFOLLOW|O_DIRECTORY`, so a symlink anywhere on the path is refused
 //! instead of followed, and works on the last entry relative to the
-//! directory it opened: `renameat`/`unlinkat` on the name, or
+//! directory it opened: `renameat` (`renameat2` with `RENAME_NOREPLACE` when
+//! the target must not exist) or `unlinkat` on the name, or
 //! `fchmod`/`fchown` on a descriptor opened with `O_NOFOLLOW` whose inode
 //! must be the one `lstat` saw. `chown -R` walks the tree the same way, one
-//! directory descriptor per level, and leaves symlinks in it as they are. A
-//! regular file to change must have one link, so a hard link cannot bring a
-//! file from outside the root into it.
+//! directory descriptor per level, names in byte order, and leaves symlinks
+//! in it as they are. A regular file to change must have one link, so a hard
+//! link cannot bring a file from outside the root into it.
 //!
-//! Refusal reasons are the Python guard's, word for word; both guards run
-//! the race table `parity/races.json` (`tests/mutations.rs`).
+//! Refusal reasons are the Python guard's, word for word, with paths as
+//! Python's `ascii()` of the `surrogateescape`-decoded name
+//! ([`py_repr_bytes`]); both guards run the race table `parity/races.json`
+//! (`tests/mutations.rs`).
 
 use std::ffi::OsStr;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -28,17 +31,24 @@ use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat};
 use nix::unistd::{Gid, Group, Uid, UnlinkatFlags, dup, fchown, unlinkat};
+use rustix::fs::{RenameFlags, renameat_with};
 
 use crate::decision::{Mutation, Refused};
 use crate::env::GuardEnv;
 use crate::exec::strerror;
-use crate::repr::py_repr;
+use crate::repr::py_repr_bytes;
 
 /// The test hook (the Python guard's `hook(event, path)`): called with
-/// `("dir", <path>)` after each directory on the way was opened and with
+/// `("dir", <path>)` after each directory on the way was opened, with
 /// `("stat", <path>)` after an entry passed `lstat`, right before it is
-/// opened. The guard passes a hook that does nothing.
+/// opened, and with `("rename", <target>)` right before `mv` renames. The
+/// guard passes a hook that does nothing.
 pub type Hook<'a> = dyn FnMut(&str, &str) + 'a;
+
+/// A path in a reason: Python's `ascii()` of it.
+fn show(path: &[u8]) -> String {
+    py_repr_bytes(path)
+}
 
 /// Why a mutation stopped: the refusal reason, and the errno when an OS
 /// error caused it (`rm -f` skips a missing directory on the way).
@@ -56,10 +66,10 @@ impl Failure {
         }
     }
 
-    /// `_OsRefused(what, path, exc)`: `<what>: <path!r>: <strerror>`.
-    fn os(what: &str, path: &str, errno: Errno) -> Self {
+    /// `_OsRefused(what, path, exc)`: `<what>: <path!a>: <strerror>`.
+    fn os(what: &str, path: &[u8], errno: Errno) -> Self {
         Self {
-            reason: format!("{what}: {}: {}", py_repr(path), strerror(errno)),
+            reason: format!("{what}: {}: {}", show(path), strerror(errno)),
             errno: Some(errno),
         }
     }
@@ -88,14 +98,15 @@ fn is_link<P: ?Sized + NixPath>(dir_fd: BorrowedFd<'_>, name: &P) -> bool {
 fn open_parent<'p>(path: &'p str, hook: &mut Hook<'_>) -> Result<(OwnedFd, &'p str), Failure> {
     // `path.split("/")[1:]`
     let parts: Vec<&str> = path.split('/').skip(1).collect();
+    let unsafe_path = || Failure::refused(format!("unsafe path: {}", show(path.as_bytes())));
     let Some((name, directories)) = parts.split_last() else {
-        return Err(Failure::refused(format!("unsafe path: {}", py_repr(path))));
+        return Err(unsafe_path());
     };
     if !path.starts_with('/') || parts.iter().any(|part| matches!(*part, "" | "." | "..")) {
-        return Err(Failure::refused(format!("unsafe path: {}", py_repr(path))));
+        return Err(unsafe_path());
     }
     let mut fd =
-        open("/", dir_flags(), Mode::empty()).map_err(|e| Failure::os("cannot open", "/", e))?;
+        open("/", dir_flags(), Mode::empty()).map_err(|e| Failure::os("cannot open", b"/", e))?;
     let mut prefix = String::new();
     for part in directories {
         prefix.push('/');
@@ -106,10 +117,10 @@ fn open_parent<'p>(path: &'p str, hook: &mut Hook<'_>) -> Result<(OwnedFd, &'p s
                 if is_link(fd.as_fd(), *part) {
                     return Err(Failure::refused(format!(
                         "symbolic link in the path: {}",
-                        py_repr(&prefix)
+                        show(prefix.as_bytes())
                     )));
                 }
-                return Err(Failure::os("cannot open", &prefix, errno));
+                return Err(Failure::os("cannot open", prefix.as_bytes(), errno));
             }
         };
         hook("dir", &prefix);
@@ -124,7 +135,7 @@ fn open_parent<'p>(path: &'p str, hook: &mut Hook<'_>) -> Result<(OwnedFd, &'p s
 fn open_entry(
     dir_fd: BorrowedFd<'_>,
     name: &OsStr,
-    path: &str,
+    path: &[u8],
     op: &str,
     hook: &mut Hook<'_>,
     skip_links: bool,
@@ -138,17 +149,17 @@ fn open_entry(
         }
         return Err(Failure::refused(format!(
             "{op} target is a symbolic link: {}",
-            py_repr(path)
+            show(path)
         )));
     }
     let is_dir = seen_kind == SFlag::S_IFDIR;
     if !is_dir && seen_kind != SFlag::S_IFREG {
         return Err(Failure::refused(format!(
             "{op} target is not a regular file or directory: {}",
-            py_repr(path)
+            show(path)
         )));
     }
-    hook("stat", path);
+    hook("stat", &String::from_utf8_lossy(path));
     let flags = if is_dir {
         entry_flags() | OFlag::O_DIRECTORY
     } else {
@@ -160,7 +171,7 @@ fn open_entry(
             if is_link(dir_fd, name) {
                 return Err(Failure::refused(format!(
                     "{op} target is a symbolic link: {}",
-                    py_repr(path)
+                    show(path)
                 )));
             }
             return Err(Failure::os("cannot open", path, errno));
@@ -170,13 +181,13 @@ fn open_entry(
     if (st.st_dev, st.st_ino) != (seen.st_dev, seen.st_ino) {
         return Err(Failure::refused(format!(
             "{op} target was replaced: {}",
-            py_repr(path)
+            show(path)
         )));
     }
     if kind(&st) != SFlag::S_IFDIR && st.st_nlink != 1 {
         return Err(Failure::refused(format!(
             "{op} target has other hard links: {}",
-            py_repr(path)
+            show(path)
         )));
     }
     Ok(Some((fd, st)))
@@ -193,17 +204,18 @@ fn owner_ids(owner: &str, env: &dyn GuardEnv) -> Result<(Uid, Gid), Failure> {
         (Some(uid), Some(gid)) => Ok((Uid::from_raw(uid), gid)),
         _ => Err(Failure::refused(format!(
             "unknown owner: {}",
-            py_repr(owner)
+            show(owner.as_bytes())
         ))),
     }
 }
 
-fn change_owner(fd: &OwnedFd, (uid, gid): (Uid, Gid), path: &str) -> Result<(), Failure> {
+fn change_owner(fd: &OwnedFd, (uid, gid): (Uid, Gid), path: &[u8]) -> Result<(), Failure> {
     fchown(fd, Some(uid), Some(gid)).map_err(|e| Failure::os("chown failed", path, e))
 }
 
-/// `sorted(os.listdir(fd))`: the names in a directory, by their bytes.
-fn names(dir_fd: BorrowedFd<'_>, path: &str) -> Result<Vec<Vec<u8>>, Failure> {
+/// `sorted(os.listdir(fd), key=os.fsencode)`: the names in a directory, in
+/// byte order.
+fn names(dir_fd: BorrowedFd<'_>, path: &[u8]) -> Result<Vec<Vec<u8>>, Failure> {
     let cannot_list = |e| Failure::os("cannot list", path, e);
     let mut dir = Dir::from_fd(dup(dir_fd).map_err(cannot_list)?).map_err(cannot_list)?;
     let mut names = Vec::new();
@@ -221,7 +233,7 @@ fn names(dir_fd: BorrowedFd<'_>, path: &str) -> Result<Vec<Vec<u8>>, Failure> {
 struct Level {
     /// `None`: the top directory, which the caller holds open.
     fd: Option<OwnedFd>,
-    path: String,
+    path: Vec<u8>,
     names: std::vec::IntoIter<Vec<u8>>,
 }
 
@@ -233,9 +245,10 @@ fn chown_tree(
     ids: (Uid, Gid),
     hook: &mut Hook<'_>,
 ) -> Result<(), Failure> {
+    let top_path = top_path.as_bytes();
     let mut stack = vec![Level {
         fd: None,
-        path: top_path.to_owned(),
+        path: top_path.to_vec(),
         names: names(top.as_fd(), top_path)?.into_iter(),
     }];
     while let Some(level) = stack.last_mut() {
@@ -243,7 +256,9 @@ fn chown_tree(
             stack.pop();
             continue;
         };
-        let path = format!("{}/{}", level.path, String::from_utf8_lossy(&name));
+        let mut path = level.path.clone();
+        path.push(b'/');
+        path.extend_from_slice(&name);
         let dir_fd = level.fd.as_ref().map_or(top.as_fd(), AsFd::as_fd);
         let opened = open_entry(dir_fd, OsStr::from_bytes(&name), &path, "chown", hook, true)?;
         // A symlink: neither followed nor changed.
@@ -267,7 +282,7 @@ fn chown_tree(
 /// below it).
 fn change(mutation: &Mutation, env: &dyn GuardEnv, hook: &mut Hook<'_>) -> Result<(), Failure> {
     let op = mutation.op.as_str();
-    let unusable = || Failure::refused(format!("unusable mutation: {}", py_repr(op)));
+    let unusable = || Failure::refused(format!("unusable mutation: {}", show(op.as_bytes())));
     let [path] = mutation.paths.as_slice() else {
         return Err(unusable());
     };
@@ -283,12 +298,19 @@ fn change(mutation: &Mutation, env: &dyn GuardEnv, hook: &mut Hook<'_>) -> Resul
         None
     };
     let (dir_fd, name) = open_parent(path, hook)?;
-    let opened = open_entry(dir_fd.as_fd(), OsStr::new(name), path, op, hook, false)?;
+    let opened = open_entry(
+        dir_fd.as_fd(),
+        OsStr::new(name),
+        path.as_bytes(),
+        op,
+        hook,
+        false,
+    )?;
     drop(dir_fd);
     let Some((fd, st)) = opened else {
         return Err(Failure::refused(format!(
             "{op} target is a symbolic link: {}",
-            py_repr(path)
+            show(path.as_bytes())
         )));
     };
     let Some(ids) = ids else {
@@ -297,7 +319,7 @@ fn change(mutation: &Mutation, env: &dyn GuardEnv, hook: &mut Hook<'_>) -> Resul
             .and_then(|mode| libc::mode_t::try_from(mode).ok())
             .ok_or_else(unusable)?;
         return fchmod(&fd, Mode::from_bits_truncate(mode))
-            .map_err(|e| Failure::os("chmod failed", path, e));
+            .map_err(|e| Failure::os("chmod failed", path.as_bytes(), e));
     };
     if mutation.private {
         // Still the fresh snapshot temp dir check() saw: root's, no
@@ -307,42 +329,49 @@ fn change(mutation: &Mutation, env: &dyn GuardEnv, hook: &mut Hook<'_>) -> Resul
         if !private {
             return Err(Failure::refused(format!(
                 "not a private directory: {}",
-                py_repr(path)
+                show(path.as_bytes())
             )));
         }
     }
-    change_owner(&fd, ids, path)?;
+    change_owner(&fd, ids, path.as_bytes())?;
     if mutation.recursive && kind(&st) == SFlag::S_IFDIR {
         chown_tree(&fd, path, ids, hook)?;
     }
     Ok(())
 }
 
-/// `_rename`: `mv <source> <target>` as one `renameat` between the two
-/// directories walked to.
+/// `_rename`: `mv <source> <target>` as one rename between the two
+/// directories walked to: `renameat` for `<p>.tmp` into place (`replace`),
+/// else `renameat2(RENAME_NOREPLACE)`, which never replaces a target that
+/// appeared after `check()` (`renameatx_np(RENAME_EXCL)` on macOS, for the
+/// tests).
 fn rename(mutation: &Mutation, hook: &mut Hook<'_>) -> Result<(), Failure> {
     let [source, target] = mutation.paths.as_slice() else {
         return Err(Failure::refused("unusable mutation: 'mv'".to_owned()));
     };
     let (source_fd, source_name) = open_parent(source, hook)?;
     let (target_fd, target_name) = open_parent(target, hook)?;
-    if !mutation.replace {
-        match fstatat(&target_fd, target_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-            Err(Errno::ENOENT) => {}
-            Err(errno) => return Err(Failure::os("mv target not checkable", target, errno)),
-            Ok(_) => {
-                return Err(Failure::refused(format!(
-                    "mv target exists: {}",
-                    py_repr(target)
-                )));
-            }
+    hook("rename", target);
+    let result = if mutation.replace {
+        renameat(&source_fd, source_name, &target_fd, target_name)
+    } else {
+        renameat_with(
+            &source_fd,
+            source_name,
+            &target_fd,
+            target_name,
+            RenameFlags::NOREPLACE,
+        )
+        .map_err(|e| Errno::from_raw(e.raw_os_error()))
+    };
+    result.map_err(|errno| {
+        if errno == Errno::EEXIST && !mutation.replace {
+            return Failure::refused(format!("mv target exists: {}", show(target.as_bytes())));
         }
-    }
-    renameat(&source_fd, source_name, &target_fd, target_name).map_err(|errno| {
         Failure::refused(format!(
             "mv failed: {} -> {}: {}",
-            py_repr(source),
-            py_repr(target),
+            show(source.as_bytes()),
+            show(target.as_bytes()),
             strerror(errno)
         ))
     })
@@ -361,7 +390,7 @@ fn remove(mutation: &Mutation, hook: &mut Hook<'_>) -> Result<(), Failure> {
         };
         match unlinkat(&dir_fd, name, UnlinkatFlags::NoRemoveDir) {
             Ok(()) | Err(Errno::ENOENT) => {}
-            Err(errno) => return Err(Failure::os("rm failed", path, errno)),
+            Err(errno) => return Err(Failure::os("rm failed", path.as_bytes(), errno)),
         }
     }
     Ok(())
@@ -380,7 +409,7 @@ pub fn perform(
         "rm" => remove(mutation, hook),
         op => Err(Failure::refused(format!(
             "unknown mutation: {}",
-            py_repr(op)
+            show(op.as_bytes())
         ))),
     };
     result.map_err(|failure| Refused::new(failure.reason))

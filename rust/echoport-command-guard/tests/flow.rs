@@ -105,7 +105,8 @@ fn stub_check(command: &[u8], policy: &Policy, env: &dyn GuardEnv) -> Result<Dec
         umask: spec["umask"].as_u64().map(|m| u32::try_from(m).unwrap()),
         stdin: redirect(&spec["stdin"]),
         stdout: redirect(&spec["stdout"]),
-        mutation: None,
+        mutation: serde_json::from_value(spec.get("mutation").cloned().unwrap_or(Value::Null))
+            .unwrap(),
     })
 }
 
@@ -524,6 +525,63 @@ fn refused_command_is_not_executed() {
     );
 }
 
+/// A mutation (H1): the guard makes the change itself, logs `allowed from`
+/// and exits 0 without executing anything; a symlink in its way is refused
+/// and logged with the reason, and nothing outside changes.
+fn mutation_is_made_without_exec() {
+    let f = Fixture::new();
+    let root = f.root.join("site");
+    std::fs::create_dir(&root).unwrap();
+    let db = root.join("db");
+    let outside = f.root.join("outside");
+    for file in [&db, &outside] {
+        std::fs::write(file, "x").unwrap();
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    let db_text = db.to_str().unwrap().to_owned();
+    let decision = json!({"argv": [], "umask": null, "stdin": null, "stdout": null,
+        "mutation": {"op": "chmod", "paths": [db_text], "mode": 384}});
+    let run_chmod = || {
+        let mut command = f.command("forced");
+        command
+            .env("SSH_ORIGINAL_COMMAND", "chmod 0600 x")
+            .env(DECISION, decision.to_string());
+        spawn(command, b"data")
+    };
+    let mode_of = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    let run = run_chmod();
+    assert_eq!(run.code, Some(0), "{}", run.stderr);
+    assert!(run.stderr.is_empty() && run.stdout.is_empty());
+    assert!(!f.probe_ran());
+    assert_eq!(mode_of(&db), 0o600);
+    assert_eq!(
+        f.log_lines(),
+        [guard_line(
+            "info",
+            "allowed from 192.0.2.10: 'chmod 0600 x'"
+        )]
+    );
+    std::fs::remove_file(&db).unwrap();
+    std::os::unix::fs::symlink(&outside, &db).unwrap();
+    let run = run_chmod();
+    assert_eq!(run.code, Some(1));
+    assert_eq!(
+        run.stderr,
+        "echoport-remote-command-guard: command not allowed\n"
+    );
+    assert!(!f.probe_ran());
+    assert_eq!(mode_of(&outside), 0o644);
+    assert_eq!(
+        f.log_lines()[1],
+        guard_line(
+            "warning",
+            &format!(
+                "refused from 192.0.2.10: chmod target is a symbolic link: '{db_text}': 'chmod 0600 x'"
+            )
+        )
+    );
+}
+
 /// The real `check()` on a command that is not UTF-8: refused after the
 /// pre-checks, logged with Python's `surrogateescape` repr; a long command
 /// is cut at 1000 characters.
@@ -799,7 +857,8 @@ fn decide_prints_the_decision() {
     let f = Fixture::new();
     let dir = f.private_dir("dump.abcdef");
     let decision = json!({"argv": ["probe"], "umask": 63,
-        "stdin": null, "stdout": {"directory": dir, "name": "db.dump", "owners": []}});
+        "stdin": null, "stdout": {"directory": dir, "name": "db.dump", "owners": []},
+        "mutation": null});
     let mut command = f.command("decide");
     command
         .env("SSH_ORIGINAL_COMMAND", "umask 077 && cat > x")
@@ -927,6 +986,10 @@ const TESTS: &[(&str, fn())] = &[
         locale_coercion_matches_cpython,
     ),
     ("decide_prints_the_decision", decide_prints_the_decision),
+    (
+        "mutation_is_made_without_exec",
+        mutation_is_made_without_exec,
+    ),
     (
         "shadow_logs_then_execs_python",
         shadow_logs_then_execs_python,

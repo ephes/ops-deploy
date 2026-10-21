@@ -14,6 +14,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -45,6 +46,8 @@ struct Tree {
 #[serde(deny_unknown_fields)]
 struct Scenario {
     id: String,
+    #[serde(default)]
+    platforms: Vec<String>,
     command: Option<String>,
     mutation: Option<Value>,
     #[serde(default)]
@@ -159,6 +162,14 @@ fn act(action: &[String]) {
         ("mkdir", []) => fs::create_dir(path).unwrap(),
         ("file", []) => fs::write(path, "new").unwrap(),
         ("fifo", []) => mkfifo(path, Mode::from_bits_truncate(0o600)).unwrap(),
+        ("fifo_hex", [hex]) => {
+            let name: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            let full = Path::new(path).join(std::ffi::OsStr::from_bytes(&name));
+            mkfifo(&full, Mode::from_bits_truncate(0o600)).unwrap();
+        }
         ("link", [target]) => symlink(target, path).unwrap(),
         ("hardlink", [existing]) => fs::hard_link(existing, path).unwrap(),
         ("remove", []) => fs::remove_file(path).unwrap(),
@@ -222,6 +233,9 @@ fn assert_after(
             ("link", [target]) => {
                 assert_eq!(fs::read_link(path).unwrap(), Path::new(target), "{what}");
             }
+            ("content", [text]) => {
+                assert_eq!(&fs::read_to_string(path).unwrap(), text, "{what}");
+            }
             ("exists", []) => {}
             _ => panic!("unknown assertion {what}"),
         }
@@ -229,6 +243,12 @@ fn assert_after(
 }
 
 fn run(tree: &Tree, scenario: &Scenario) -> Result<(), String> {
+    if !scenario.platforms.is_empty()
+        && !scenario.platforms.iter().any(|p| p == std::env::consts::OS)
+    {
+        eprintln!("{}: skipped on {}", scenario.id, std::env::consts::OS);
+        return Ok(());
+    }
     let tmp = tempfile::tempdir().unwrap();
     // macOS: /var is a symlink; the guard walks the canonical path.
     let base = fs::canonicalize(tmp.path()).unwrap();

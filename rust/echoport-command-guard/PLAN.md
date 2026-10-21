@@ -368,10 +368,14 @@ S4/S5 enforce each item.
   a directory), require the inode `lstat` saw and one link for a regular
   file, then `fchmod`/`fchown` (the snapshot temp dir: still root's, no
   group/other access); `chown -R` walks with one directory descriptor per
-  level, sorted names, symlinks neither followed nor changed, special files
-  refused; `mv` is one `renameat` (without `replace`, the target must still
-  be absent); `rm -f` is `unlinkat` (a missing file or directory on the way
-  is fine). The owner of `chown` is resolved with `getpwnam`/`getgrnam`. A
+  level, names in byte order, symlinks neither followed nor changed,
+  special files refused; `mv` is one `renameat`, or without `replace` one
+  `renameat2(RENAME_NOREPLACE)` (Python through `ctypes`, Rust through
+  `rustix`), so a target that appears after `check()` is never replaced
+  (`mv target exists`); `rm -f` is `unlinkat` (a missing file or directory
+  on the way is fine). Paths in the reasons are Python's `ascii()` (Rust's
+  `py_repr_bytes`), so names from a tree the service user filled are
+  escaped the same way in both guards. The owner of `chown` is resolved with `getpwnam`/`getgrnam`. A
   failure refuses (`refused from` line with the reason, `command not
   allowed`, exit 1); success logs `allowed from` and exits 0. The reasons
   are the same in both guards (`parity/races.json`).

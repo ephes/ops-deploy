@@ -418,6 +418,7 @@ dependencies = [
  "nix",
  "proptest",
  "regex-lite",
+ "rustix",
  "serde",
  "serde_json",
  "shlex",
