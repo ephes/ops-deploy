@@ -50,6 +50,7 @@ from ops_deploy.helpers import (
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.postgres import postgres_database
 from ops_deploy.helpers.probes import probe, verify_probe
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import DYNAMIC_DIR
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services.django_site import frontend
@@ -302,6 +303,8 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         (w, render("worker.sh.j2", cfg, worker=w), render("worker.service.j2", cfg, worker=w)) for w in cfg.workers
     ]
     next_texts = (render("next.sh.j2", cfg), render("unit.service.j2", cfg, frontend_unit=True)) if front else ("", "")
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source.path / cfg.app.app_dir, f"{name} source", root=cfg.source.path)
 
     if isinstance(cfg.database, PostgresDb):
         db = cfg.database
@@ -427,6 +430,7 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
     )
     if deps_state is None:
         verify_probe(deps_check, name=f"{cfg.user} dependencies", expect="current")
+    verify_trust(cfg.venv_bin / "python", user=cfg.user, home=cfg.home, name=name)
     if cfg.fish:
         files.link(
             name="Link venv to .venv",

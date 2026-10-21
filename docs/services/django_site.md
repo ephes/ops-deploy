@@ -306,7 +306,10 @@ right after the migrations (heis's content reconcilers), the default
 
 ## What the deploy does
 
-1. Checks the secrets and renders every file (fails before any operation).
+1. Checks the secrets and renders every file, and refuses a source `uv.lock`
+   (the app directory's, or a workspace root's above it in the source) that
+   locks certifi below 2026.10.19 or pip below 26.2.2 (`require_lock_floors`;
+   fails before any operation).
 2. `apt_packages`, then `system_user` (an existing user is left alone), `site`, the cache
    directory; with `fish` the fish config (a missing `~/.config` is created,
    an existing one is never touched).
@@ -329,7 +332,9 @@ right after the migrations (heis's content reconcilers), the default
    only with `source.delete`), and a recursive `chown` of the site only when a
    read-only `find` sees another owner.
 5. `uv sync` when the source changed, the venv is missing or a read-only
-   `uv sync --dry-run` does not say "Would make no changes"; the `venv` link.
+   `uv sync --dry-run` does not say "Would make no changes"; then, on every
+   run, the read-only `verify_trust` of the venv (certifi/pip floors, no
+   distrusted root in their bundles); the `venv` link.
 6. `.ops-deploy-restart-<unit>` is written when `.env`, the launcher or the
    unit will change, or one is left over. Then `.env` through `secret_file`.
 7. `migrate` when the source or the dependencies changed or a read-only
@@ -405,7 +410,8 @@ converged deploy reads it and changes nothing.
   same mutating operations (renamed ones mapped; the documented reload and
   marker differences listed per scenario), restarts, management, build and
   purge commands, uploads (the documented files carry django_site's render)
-  and stdin (`.env` as the same keys and values); and the switch from the
+  and stdin (`.env` as the same keys and values; the read-only certifi/pip
+  trust check is new in django_site and not a mutating operation); and the switch from the
   old module's host state: the documented rewrites, one restart per unit,
   then nothing. It goes with the vendored module once the site has run on
   django_site for a while.
