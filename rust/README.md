@@ -39,7 +39,10 @@ Rules (PLAN-foundation.md section 1):
   so the binaries release independently; `license`, `edition`,
   `rust-version`, `repository` and `publish = false` come from
   `[workspace.package]`, lints from `[workspace.lints]` (`[lints] workspace =
-  true` in each crate).
+  true` in each crate). The one exception is `echoport-command-guard`: its
+  `[lints]` copy the workspace lints with `unsafe_code = "deny"` instead of
+  `forbid`, so that its `exec.rs` can allow the libc calls before the exec
+  (its PLAN.md 5.3); keep that copy in step when the workspace lints change.
 - `members` in `Cargo.toml` is an explicit list (cargo rejects a glob that
   matches a plan-only directory). A stream appends its crate in its own first
   slice.

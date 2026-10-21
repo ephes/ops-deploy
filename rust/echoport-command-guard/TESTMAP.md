@@ -51,28 +51,34 @@ Kinds:
 
 ## Redirects (`GuardRedirects`, 5 tests)
 
-Real temp directories (Linux CI; macOS development skips with a reason).
+`redirect::tests` on real temporary directories (macOS and Linux; the exact
+`OSError` texts are checked on Linux), with a virtual `GuardEnv` for the
+euid and owner lookups, as the Python test patches `os.geteuid`. The full
+flow with redirects onto fds 0 and 1 is `tests/flow.rs`.
 
 | Python test | Rust counterpart | Status |
 | --- | --- | --- |
-| `test_create_is_exclusive_and_private` | `redirect.rs` tests | pending (S4) |
-| `test_read_plain_file` | `redirect.rs` tests | pending (S4) |
-| `test_refuses_links_and_special_files` | `redirect.rs` tests | pending (S4) |
-| `test_refuses_a_shared_or_foreign_directory` | `redirect.rs` tests | pending (S4) |
-| `test_refuses_a_symlinked_directory` | `redirect.rs` tests | pending (S4) |
+| `test_create_is_exclusive_and_private` | `redirect::tests::create_is_exclusive_and_private`; `tests/flow.rs` `create_redirect_with_umask` | done (S4) |
+| `test_read_plain_file` | `redirect::tests::read_plain_file` (blocking again, close-on-exec); `tests/flow.rs` `read_redirect` | done (S4) |
+| `test_refuses_links_and_special_files` | `redirect::tests::refuses_links_and_special_files` (also a directory opened for create, a missing file) | done (S4) |
+| `test_refuses_a_shared_or_foreign_directory` | `redirect::tests::refuses_a_shared_or_foreign_directory` (also an owner from the decision, and one that does not exist) | done (S4) |
+| `test_refuses_a_symlinked_directory` | `redirect::tests::refuses_a_symlinked_directory` | done (S4) |
 
 ## Forced-command flow (`GuardMain`, 5 tests)
 
-Process tests of the binary (`tests/cli.rs`) with a fake exec target in
-`SAFE_PATH`, run in a container.
+Process tests: the binary itself (`tests/cli.rs`, real `check()` and
+syslog) for everything that refuses, and `tests/flow.rs` for the whole flow
+up to the exec, with a stub `check()`, a probe as the exec target on a test
+search path, and a log file (Linux; PLAN.md 7.1). The real `SAFE_PATH`
+with stub tools is Layer 3 (S5).
 
 | Python test | Rust counterpart | Status |
 | --- | --- | --- |
-| `test_interactive_session_is_refused` | process test | pending (S4) |
-| `test_refused_command_is_not_executed` | process test | pending (S4) |
-| `test_allowed_command_is_executed_without_shell` | process test | pending (S4) |
-| `test_broken_policy_refuses_everything` | process test; the documents are in `policy.jsonl` (source `unit`, label `GuardMain`) | fixture done (S0); Rust pending (S4) |
-| `test_check_policy_mode` | process test (`tests/cli.rs`); `policy.jsonl` | `--check-policy` done (S1); forced-command part pending (S4) |
+| `test_interactive_session_is_refused` | `tests/cli.rs` `forced_command_mode_refuses`; `tests/flow.rs` `interactive_session_is_refused` (log line, before the policy) | done (S4) |
+| `test_refused_command_is_not_executed` | `tests/cli.rs` `forced_command_mode_refuses`; `tests/flow.rs` `refused_command_is_not_executed`, `real_check_refusals_and_log_text` | done (S4) |
+| `test_allowed_command_is_executed_without_shell` | `tests/flow.rs` `allowed_command_runs_with_the_python_guards_inheritance` (argv, `PATH`, environment, fds, signals, umask, stdin/stdout untouched), `exec_search_is_cpythons` | done (S4) |
+| `test_broken_policy_refuses_everything` | `tests/cli.rs` `broken_policy_refuses_everything`; `tests/flow.rs` `broken_policy_refuses_everything` (`policy error (<ExcType>)` lines); the documents are in `policy.jsonl` (source `unit`, label `GuardMain`) | done (S0, S4) |
+| `test_check_policy_mode` | `tests/cli.rs` `check_policy_*`, `broken_policy_refuses_everything` (`<prog> --check-policy` is forced-command mode); `policy.jsonl` | done (S1, S4) |
 
 ## Runners (`RunnerCommandsAreAllowlisted`, 6 tests; `RunnersUseClassicScp`, 1 test)
 
@@ -120,7 +126,7 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `tests/layer1.rs` `policy_fixtures` | every `--check-policy` document: Python's verdict, normalized policy and error type (message for printable `Refused`/`KeyError`); `p3` documents may only be refused more | done (S1) |
 | `tests/tokeniser.rs` `fixture_commands_split_like_python` | every distinct fixture command past the prefilter splits as `shlex.split` | done (S1) |
 | `tests/tokeniser.rs` `random_commands_split_like_python` | 2,000 seeded random commands (quotes, whitespace, metacharacters, `\`, `#`, control and non-ASCII): past the prefilter, the tokens or the error equal Python's | done (S1) |
-| `tests/cli.rs` | argv grammar (usage exit 2), `--version`, `--check-policy`, forced-command mode refusing until S4 | done (S1) |
+| `tests/cli.rs` | argv grammar (usage exit 2), `--version`, `--check-policy` (forced-command mode refusing until S4; replaced by the S4 tests) | done (S1) |
 | `prefilter::tests`, `tokens::tests`, `repr::tests`, `env::tests`, `policy::tests`, `rules::tests` | the pre-checks and prefilter (4.1), the raw shapes, Python `repr` (4.3), `normpath`, the strict policy types (4.2), the dispatcher | done (S1) |
 
 ## New in S3a (Rust)
@@ -132,3 +138,16 @@ The recorded commands are `fixtures/corpus/runner.jsonl`; their decisions are
 | `rules::files::tests` | `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du`, the `sh -c` probe (and that a path `shlex.quote` would change allows no script) | done (S3a) |
 | `rules::tests` | `sudo`, `runuser`, `systemctl`, `curl`, `_is_temp_dump`, `_split_in_dir`; only the S3b branches are stubs | done (S3a) |
 | `policy::tests` `scratch_databases`, `mktemp_results` | `Policy.scratch_database`, `_temp_dir_re`, `private_temp_dir`, `snapshot_for_temp_dir` (first match wins) | done (S3a) |
+
+## New in S4 (Rust)
+
+| Test | What it pins | Status |
+| --- | --- | --- |
+| `tests/flow.rs` `allowed_command_runs_with_the_python_guards_inheritance` | an allowed command: `allowed from` line, `PATH = SAFE_PATH` (the test's search path), other variables unchanged, only fds 0-2, SIGPIPE and SIGXFSZ added to the inherited ignored set, umask inherited, the guard reads no stdin and writes no stdout (PLAN.md 3.1, 3.5) | done (S4) |
+| `tests/flow.rs` `create_redirect_with_umask`, `read_redirect`, `redirect_failure_refuses` | `umask 077` before the create, the file on fd 1 or 0 and mode `0600`, Python's `[Errno 17] File exists: 'db.dump'` reason, nothing run | done (S4) |
+| `tests/flow.rs` `exec_search_is_cpythons` | CPython's `os.execvp`: a shebang-less only candidate is `Exec format error` (127) and never run by a shell; the search goes on after `ENOEXEC`/`EACCES`; the first such error is reported; a directory is `Permission denied`; missing is `No such file or directory`; an argv[0] with `/` is executed as is | done (S4) |
+| `tests/flow.rs` `locale_coercion_matches_cpython` | PEP 538: the exported `LC_CTYPE` equals what `python3 -I` exports, for nine environments (none, `LANG=C.UTF-8`/`C`, `LC_ALL=C`/empty, `LC_CTYPE=POSIX`, `LC_CTYPE=C` with `LANG`, an unknown locale, `LC_CTYPE=C.UTF-8`); run against CPython 3.12.3 (Ubuntu 24.04) and 3.13.5 (Debian 13) | done (S4) |
+| `tests/flow.rs` `panic_never_execs`, `real_check_refusals_and_log_text` | a panic refuses (`internal error: ...`) with nothing on stderr but `command not allowed`; invalid UTF-8 is logged as `\udcNN`; lines are cut at 1000 characters; `-` without `SSH_CLIENT` | done (S4) |
+| `tests/flow.rs` `decide_prints_the_decision`, `shadow_logs_then_execs_python` | `--decide` JSON and exit codes, no redirect, log or exec; `--shadow` logs the record under its own identifier and execs the Python guard with the same PID, the environment and umask unchanged, also after a panic | done (S4) |
+| `tests/cli.rs` `decide_prints_the_decision_only`, `shadow_requires_the_python_guards_forced_command`, `shadow_execs_the_python_guard_with_the_same_pid` | the binary's `--decide` with the real `check()`; the `--shadow` argv rule (exit 2); its exec (same PID, environment unchanged) and exec failure (127) | done (S4) |
+| `redirect::tests::os_error_text_is_pythons`, `exec::tests`, `syslog::tests`, `repr::tests::undecodable_bytes_as_surrogate_escapes` | `str(OSError)`, glibc `strerror` texts, `os.path.join`, failing searches, `message[:1000]`, `repr` of `surrogateescape` text | done (S4) |

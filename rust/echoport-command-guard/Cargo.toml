@@ -12,6 +12,11 @@ publish.workspace = true
 
 # Crate choices: PLAN.md 5.2.
 [dependencies]
+# `setlocale`/`nl_langinfo` for the PEP 538 locale coercion (PLAN.md 3.5).
+libc = "0.2.191"
+# `openat`/`fstat`/`fcntl`/`dup2`/`umask`/`execv`/`sigaction`, the libc
+# `openlog`/`syslog` wrapper, `geteuid`/`getpwnam_r` (PLAN.md 3.5, 3.6, 5.2).
+nix = { version = "0.31.3", default-features = false, features = ["fs", "process", "signal", "syslog", "user"] }
 regex-lite = "0.1.9"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -21,5 +26,18 @@ shlex = "2.0.1"
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 
-[lints]
-workspace = true
+# The workspace lints (rust/Cargo.toml) with one change: `unsafe_code` is
+# `deny` instead of `forbid`, so that `exec.rs` alone can allow it for
+# `setlocale`, `nl_langinfo`, `set_var` and `sigaction` before the exec
+# (PLAN.md 5.3). Keep the rest in step with `[workspace.lints]`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+
+# A process test with its own `main` (no libtest threads, no libtest output),
+# so that its child process can exec like the guard (PLAN.md 3.5, S4).
+[[test]]
+name = "flow"
+harness = false

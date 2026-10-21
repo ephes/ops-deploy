@@ -5,8 +5,8 @@ The plan and contract are in [PLAN.md](PLAN.md), the test map in
 [TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
 hosts run the Python guard.
 
-Status: **S1** (crate skeleton, policy, tokeniser) and **S3a** (the rules
-without filesystem). What exists:
+Status: **S1** (crate skeleton, policy, tokeniser), **S3a** (the rules
+without filesystem) and **S4** (runtime and exec). What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
   the binary `echoport-command-guard`.
@@ -16,10 +16,37 @@ without filesystem). What exists:
   - `--check-policy <file>` validates a policy file as the Python guard does
     (exit 0, or `echoport-remote-command-guard: invalid policy: <detail>` on
     stderr and exit 1), with the stricter types of PLAN.md 4.2.
-  - Any other argv is the Python guard's usage error (exit 2), except
-    `<prog> <policy>`: forced-command mode is S4, so until then it refuses
-    every command (`echoport-remote-command-guard: command not allowed`,
-    exit 1) and never executes anything.
+  - `<prog> <policy>` is forced-command mode, the Python guard's flow
+    (PLAN.md 3.1; `src/modes.rs`): an unset `SSH_ORIGINAL_COMMAND` is
+    refused before the policy is read (`interactive sessions are not
+    allowed`), a policy error refuses (`policy error`), then `check()`, the
+    umask, the redirects (`src/redirect.rs`: `O_NOFOLLOW` opens relative to
+    a checked private directory), the `allowed from` log line, and the exec
+    (`src/exec.rs`): `PATH` set to `SAFE_PATH`, CPython's PEP 538 `LC_CTYPE`
+    coercion, SIGPIPE and SIGXFSZ ignored, and CPython's `os.execvp` search
+    (no `/bin/sh` fallback; `cannot run <tool>: <strerror>`, exit 127).
+    Every refusal is exit 1 with `command not allowed`; a panic refuses and
+    never execs. Log lines go to syslog as the Python guard's
+    (`openlog("echoport-remote-command-guard", LOG_PID, LOG_AUTH)`, Python's
+    `repr` of the command, cut at 1000 characters; `src/syslog.rs`).
+  - `--decide <policy>` prints the decision for `SSH_ORIGINAL_COMMAND` as
+    one JSON line on stdout and exits 0 when it is allowed, else 1. The
+    verdicts are `allowed` (with `argv`, `umask`, `stdin`, `stdout`, the
+    fixtures' form), `refused` (`reason`), `interactive`, `policy-error`
+    (`error_type`, `message`) and `panic` (`reason`). It never opens a
+    redirect, logs or executes anything.
+  - `--shadow <policy> </abs/python> -I </abs/guard> <policy>` logs the same
+    JSON record under the identifier `echoport-remote-command-guard-shadow`
+    (priority info; `check()` only, so a redirect that later fails to open
+    is still `allowed` there), then always `execv`s `<python> -I <guard>
+    <policy>` with the environment unchanged; the PID stays, so the two
+    log lines pair up by `_PID`. Any other tail (not absolute, not `-I`,
+    another policy path, extra arguments) is exit 2 and executes nothing.
+  - Any other argv is the Python guard's usage error (exit 2).
+  - Until S2 lands, the binary's `GuardEnv` has the real euid and NSS user
+    lookups but no `lstat`/`realpath`: those fail, so a rule that looks at
+    the filesystem refuses (`... not checkable`). S2 replaces it with the
+    real one.
   - `check()` ports the pre-checks, the prefilter (PLAN.md 4.1), the two raw
     shapes (detected only), the tokeniser and the tool dispatcher (S1), and
     the branches that need no filesystem (S3a, `src/rules/`): `sudo -u
@@ -68,7 +95,31 @@ The tests:
   the oracle server, over every fixture command that passes the prefilter
   and over 2,000 seeded random commands (proptest). `PROPTEST_CASES=100000`
   runs more, `PROPTEST_RNG_SEED=<n>` changes the seed.
-- `tests/cli.rs`: the binary's argv grammar, `--version`, `--check-policy`.
+- `src/redirect.rs` tests (`GuardRedirects`): on real temporary
+  directories; the exact `OSError` texts are checked on Linux.
+- `tests/cli.rs`: the binary's argv grammar, `--version`, `--check-policy`,
+  forced-command refusals (interactive, refused commands, broken policies),
+  `--decide` with the real `check()`, and `--shadow`'s argv rule and its
+  exec of a stand-in Python guard with the same PID. On Linux these runs write a few
+  refusal lines to the system log of the machine that runs them.
+- `tests/flow.rs` (own `main`, no libtest): the forced-command flow,
+  `--decide` and `--shadow` in a real child process with a stub `check()`
+  that returns the decision a test asks for, a test search path instead of
+  `SAFE_PATH` and a log file instead of syslog. The exec target is a probe
+  script that records what it inherited: argv, environment (`PATH`,
+  `LC_CTYPE` compared with what the CPython of `$ECHOPORT_ORACLE_PYTHON`
+  exports for the same environment), umask, ignored signals, open fds,
+  stdin, stdout. Also the exec search (`ENOEXEC`, `EACCES`, `ENOENT`, a
+  later valid candidate, no shell), the redirect failures, panics and the
+  log texts. The probes read `/proc`: on Linux they run (CI), elsewhere the
+  test prints a skip line. On macOS run them in a container, for example
+  from the repository root:
+
+  ```bash
+  docker run --rm -v "$PWD":/work:ro -v ep-guard-target:/target \
+    -e CARGO_TARGET_DIR=/target -w /work/rust rust:1.99.1-bookworm \
+    cargo test -p echoport-command-guard --locked --test flow
+  ```
 
 The oracle tests run `$ECHOPORT_ORACLE_PYTHON -I parity/oracle.py`
 (default `python3`; CI uses Python 3.12, production's, from uv:

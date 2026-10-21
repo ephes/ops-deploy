@@ -11,10 +11,14 @@
 
 pub mod decision;
 pub mod env;
+pub mod exec;
+pub mod modes;
 pub mod policy;
 pub mod prefilter;
+pub mod redirect;
 pub mod repr;
 pub mod rules;
+pub mod syslog;
 pub mod tokens;
 
 /// The name in every message and log line, whatever the binary is called

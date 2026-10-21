@@ -1,6 +1,6 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1 and S3a implemented (campaign "Rust-Ports Runde 2", stream
+Status: S0, S1, S3a and S4 implemented (campaign "Rust-Ports Runde 2", stream
 `rust-echoport-command-guard`; see `README.md`). Nothing in this directory is
 released or deployed yet. This file is the contract for the implementers and
 reviewers of every slice below; a slice that wants to deviate changes this
@@ -328,7 +328,15 @@ S4/S5 enforce each item.
   - `fstat` the file: it must be regular with `nlink == 1`;
   - `dup2` onto fd 0 or 1.
   All fds are close-on-exec (Python's default), so only 0/1/2 reach the
-  command, plus whatever sshd passed.
+  command, plus whatever sshd passed. If the open returns the target number
+  itself (sshd started the guard with fd 0 or 1 closed), the Rust guard
+  only clears its close-on-exec flag; Python's `dup2(fd, fd)` plus `close`
+  would leave it closed. sshd always passes 0/1/2, so this is not reached;
+  besides, Rust std opens `/dev/null` on a closed fd 0, 1 or 2 at startup,
+  where CPython leaves it closed (also unreachable under sshd).
+  - The `OSError` text in the `refused from` line is Python's `str(exc)`:
+    `[Errno <n>] <strerror>: <repr(filename)>` (the directory for its open,
+    the name for the `openat`), with the C library's `strerror`.
 - `umask(0o077)` is set before the redirects are opened for the
   `umask 077 && …` shapes. Otherwise the umask is inherited.
 - Environment: inherited unchanged except `PATH = SAFE_PATH`.
@@ -338,14 +346,21 @@ S4/S5 enforce each item.
   set it adds nothing. The Rust guard reproduces the coercion rule of the
   hosts' CPython (3.12/3.13 `_Py_CoerceLegacyLocale`: when `LC_ALL` is unset
   or empty and the `LC_CTYPE` locale is `C`/`POSIX`, set `LC_CTYPE` to the
-  first of `C.UTF-8`, `C.utf8`, `UTF-8` that `setlocale` accepts). The S4
-  implementer checks this against the CPython source of both versions.
+  first of `C.UTF-8`, `C.utf8`, `UTF-8` that `setlocale` accepts and whose
+  `nl_langinfo(CODESET)` is not empty). S4 checked this against
+  `Python/pylifecycle.c` and `Python/preconfig.c` of 3.12 and 3.13 (the same
+  code; `-I` ignores `PYTHONCOERCECLOCALE`), and `tests/flow.rs` compares
+  the exported `LC_CTYPE` with CPython 3.12.3 (Ubuntu 24.04) and 3.13.5
+  (Debian 13) for nine environments.
 - Signal dispositions: CPython ignores **SIGPIPE and SIGXFSZ**, and
   `execvp` keeps them ignored. **Measured:** `SigIgn: 0000000001001000` in
   the exec'd command against `0` from a shell. So `cat`, `tar`, `pg_dump` and
-  scp get `EPIPE` instead of being killed. The Rust guard execs with exactly
-  these two ignored. Rust std already ignores SIGPIPE; SIGXFSZ is set
-  explicitly.
+  scp get `EPIPE` instead of being killed. The Rust guard adds exactly
+  these two to the ignored set it inherited, as CPython does (S4 sets both
+  explicitly; Rust std also ignores SIGPIPE). Found by S4: glibc 2.37+'s
+  `posix_spawn` (which Rust's `Command` uses) leaves glibc's internal
+  signals 32 and 33 ignored in the child; sshd forks and execs, so the hosts
+  are not affected, and the S4 test compares with what the guard inherited.
 - `exec` follows **CPython's `os.execvp`** (`os._execvpe`), which is **not**
   libc `execvp`:
   - When `argv[0]` contains `/`, it is a single `execv`.
@@ -398,7 +413,10 @@ Modes a client cannot reach. They are additions: argv is fixed by the
 - `--decide <policy>`: reads `SSH_ORIGINAL_COMMAND` and prints the decision
   as JSON on stdout. It never opens redirects, never logs and never execs.
   It is used by the parity harness (Layer 2) and later by the runner-shape
-  tests (S13).
+  tests (S13). One JSON line; verdicts `allowed` (`argv`, `umask`,
+  `stdin`, `stdout`, the fixtures' form), `refused` (`reason`),
+  `interactive`, `policy-error` (`error_type`, `message`) and `panic`
+  (`reason`). Exit 0 for `allowed`, else 1.
 - `--shadow <policy> <python> -I <pyguard> <policy>`:
   - computes the Rust decision (`check()` only; no redirect open, no umask
     change, no exec of the target);
@@ -409,6 +427,12 @@ Modes a client cannot reach. They are additions: argv is fixed by the
     `panic = "unwind"`), logged and the exec still happens.
   - The tail must be exactly an absolute interpreter, `-I`, an absolute
     guard path and the same policy path. Anything else exits 2 without exec.
+  - The record is the `--decide` JSON at priority INFO, not cut at 1000
+    characters (it must stay valid JSON). It covers `check()` only, so a
+    redirect that fails to open later is `allowed` in the shadow line and
+    refused in the Python line; the S8 compare script must allow for that.
+  - If the `execv` of the Python guard fails: `cannot run <python>:
+    <strerror>` and exit 127; nothing else runs.
   - Because the PID survives `execv`, the Rust shadow line and the Python
     line pair up by `_PID`.
 
@@ -545,7 +569,8 @@ and each entry.
 rust/echoport-command-guard/
   Cargo.toml            # [[bin]] echoport-command-guard; lib for tests
   PLAN.md  TESTMAP.md  README.md
-  src/main.rs           # argv grammar (3.1), the modes, exit codes
+  src/main.rs           # argv grammar (3.1), exit codes; the binary's GuardEnv until S2
+  src/modes.rs          # forced-command flow, --decide, --shadow over an injectable Host (S4)
   src/policy.rs         # strict JSON tree, typed policy, validation (3.2, 4.2)
   src/prefilter.rs      # 4.1
   src/tokens.rs         # shlex crate wrapper + _TAR_RE/_CAT_TO_FILE_RE
@@ -556,12 +581,17 @@ rust/echoport-command-guard/
   src/redirect.rs       # openat/fstat/dup2 (3.5)
   src/exec.rs           # umask, PATH, locale coercion, signals, execvp
   src/repr.rs           # py_repr (4.3), used by refusal reasons and log lines
-  src/syslog.rs         # libc openlog/syslog wrapper (3.6)
+  src/syslog.rs         # openlog/syslog through nix's libc wrapper (3.6)
   parity/gen_fixtures.py  parity/oracle.py  parity/allowed_differences.json
   parity/e2e/           # Dockerfiles + scripts for Layers 2 and 3
   fixtures/             # generated, committed (7.2)
   fuzz/                 # cargo-fuzz targets (not a workspace member)
 ```
+
+The modes in `modes.rs` take a `Host` (the `GuardEnv`, a `Logger`, the
+`check` function and the exec search path), so `tests/flow.rs` runs the
+real flow in a child process with a stub `check()`, a test search path and
+a log file (S4). `main.rs` passes the real ones (`SAFE_PATH`, syslog).
 
 `check()` takes `&dyn GuardEnv`, so the Layer-1 fixtures run against a
 virtual filesystem and user table, the way the Python tests inject `realpath`
@@ -577,7 +607,9 @@ map (default `normpath`). Production uses the real implementation, whose
 | Regexes | `regex-lite` | Only ASCII classes are needed after the prefilter. Smaller than `regex`. |
 | JSON policy | `serde` + `serde_json` into a strict JSON tree (a `Deserialize` visitor that refuses duplicate keys anywhere), then a typed conversion in `Policy.from_dict`'s order | Strict types (4.2); a missing entry key is a `KeyError` and a wrong type a `TypeError` in Python's order, which typed `serde` structs cannot give. Unknown keys are ignored (3.2). |
 | Syscalls (`openat`, `fstat`, `fcntl`, `dup2`, `umask`, `execvp`, `getpwnam_r`, `geteuid`, `sigaction`) | `nix` | Maintained. One crate covers everything. |
-| syslog, `setlocale` | `libc` (two thin `unsafe` wrappers) | Parity with CPython, which calls the same libc functions (3.6, 3.5). |
+| syslog | `nix::syslog` (`openlog`, `syslog(priority, "%s", msg)`) | Parity with CPython, which calls the same libc functions (3.6). nix's wrapper is exactly these two calls, so no `unsafe` of our own (S4). |
+| `setlocale`, `nl_langinfo` | `libc` (thin `unsafe` calls in `exec.rs`) | PEP 538 parity (3.5); nix has no wrapper. |
+| `strerror` texts | std's `io::Error` (glibc `strerror_r`) | `nix::Errno::desc` is nix's own table and differs from glibc for some codes (`EBADF`: "Bad file number"). |
 | Non-strict realpath | own `pyrealpath.rs`, about 60 lines, a port of CPython's `posixpath` algorithm over `GuardEnv` | `std::fs::canonicalize` is strict (it fails on missing paths and dangling links). S2 first evaluates the `soft-canonicalize` crate against the Python oracle on the real-tree corpus. If it matches every case that is reachable after `_is_safe_path`, the crate is used and the port is dropped. Q3. |
 | Tests | `proptest`, `tempfile`, `serde_json` | |
 | Fuzzing | `cargo-fuzz` (nightly, outside the workspace) | Section 7.4. |
@@ -594,9 +626,12 @@ No async runtime, no TLS, no CLI parser, no logging framework.
   makes at the same point.
 - In forced-command mode any internal error refuses (exit 1) and never execs.
   A panic never results in an exec.
-- `unsafe` appears only in `syslog.rs` and `exec.rs` (libc
-  `syslog`/`setlocale`, `set_var` before exec in a single-threaded process),
-  each block with a `// SAFETY:` comment.
+- `unsafe` appears only in `exec.rs` (libc `setlocale`/`nl_langinfo`,
+  `set_var` and `sigaction` right before the exec, in the single-threaded
+  guard), each block with a `// SAFETY:` comment and an
+  `#[allow(unsafe_code)]` on its function. The crate's `[lints]` copy the
+  workspace lints with `unsafe_code = "deny"` instead of `forbid` (which
+  no `allow` can lift); everything else stays as in `[workspace.lints]`.
 
 ---
 
@@ -1027,7 +1062,7 @@ slice fills in its rows, and S5 requires every row filled. Mapping by class
 | `GuardAllowsRunnerShapes` (7) | `rules::*` unit tests and the Layer-1 fixtures with source `unit` |
 | `GuardRefusals` (9) | `rules::*` unit tests and the Layer-1 fixtures. `test_scp_against_a_real_tree` → Layer 2 |
 | `GuardRedirects` (5) | `redirect.rs` tests on real temp dirs (Linux CI; macOS dev skips with a reason) |
-| `GuardMain` (5) | process tests of the binary (`tests/cli.rs`) with a fake exec target in `SAFE_PATH`, run in a container |
+| `GuardMain` (5) | process tests: the binary (`tests/cli.rs`) for refusals, `--decide` and `--shadow`; the flow with a stub `check()` and a probe as the exec target on a test search path (`tests/flow.rs`, Linux; S4). The real `SAFE_PATH` with stub tools is Layer 3 |
 | `RunnerCommandsAreAllowlisted` (6) and `RecordingHosts` | Layer-1 corpus source `runner`: every command each runner sends for backup and restore, recorded by the existing harness and replayed against both guards |
 | `RunnersUseClassicScp` (1) | stays Python (it tests runner templates, not the guard) |
 | `tests/test_sqlite_backup_runners.py` (`.timeout`) | Layer-1 cases `.timeout` 1, 30000, 999999 accepted; 0, 1000000, `01`, `-1`, extra space and missing `.backup` refused |
@@ -1398,7 +1433,7 @@ Rules, as in the precedents:
 | S2 | Filesystem layer | Real `GuardEnv` (`lstat`, `readlink`, `getpwnam_r`, `geteuid`), `pyrealpath.rs` or `soft-canonicalize` (decision with evidence), plain-file and private-dir helpers, Layer-2 container harness for realpath against 3.12 and 3.13. | S1 | with S3a, S4, S6 | no | 3 |
 | S3a | Rules without filesystem | `sudo`/`runuser` postgres (all branches), `sqlite3` including `.timeout`, `systemctl`, `curl`, `sh -c` probe, `du`, `mktemp`, `rm -f` dumps and `rm -rf --` temp dirs; their Layer-1 cases green. | S1 | with S2, S4, S6 | no | 3 |
 | S3b | Rules with filesystem | `scp -f/-t`, rsync, `mv`, `mkdir`, `chmod`, `chown`, `rm` wal/shm, `test`, `readlink`, snapshot `cat`, `cat >`, `sha256sum`, `tar`; redirect decisions; their Layer-1 cases green (with S3a: all of Layer 1). | S1, S2 | with S3a, S4, S6 | no | 4 |
-| S4 | Runtime and exec | Forced-command flow (3.1), syslog and `py_repr` (3.6, 4.3), `redirect.rs` (3.5), umask, `PATH`, locale coercion, SIGPIPE/SIGXFSZ, fd hygiene, exit codes, `--decide`, `--shadow`; `tests/cli.rs` process tests in a container. | S1 | with S2, S3a, S3b, S6 | no | 4 |
+| S4 | Runtime and exec | Forced-command flow (3.1), syslog and `py_repr` (3.6, 4.3), `redirect.rs` (3.5), umask, `PATH`, locale coercion, SIGPIPE/SIGXFSZ, fd hygiene, exit codes, `--decide`, `--shadow`; process tests (`tests/cli.rs`, `tests/flow.rs`; on Linux CI directly, in a container on macOS). | S1 | with S2, S3a, S3b, S6 | no | 4 |
 | S5 | Parity gate | All of Layer 1 green, the 4.4 list reviewed, decision proptests (7.3), Layer 2 complete, Layer 3 sshd e2e on both distros, fuzz targets with at least 1 hour each and the corpus committed, TESTMAP complete. | S2, S3a, S3b, S4 | with S6 | no | 4 |
 | S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts, dual validate, forced command per impl, `confirm_live.yml` (verify the written line, protect list from the live `authorized_keys`, F3 pin and previous pin, F3 prune with `protect`) with its parse filter and unit test, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), the `pins` scenario (repeated failed deployments with different targets and the other 6.2 cases), README/docs/CHANGELOG (Unreleased). | F3 (install role with `protect` and the previous pin), S4 (CLI surface) | with S2–S5 | no | 5 |
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
