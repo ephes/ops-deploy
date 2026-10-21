@@ -10,8 +10,11 @@ implemented (helper `software-live-apt`, its invocation `apt.rs`, the
 variant container CI job, the `rust-apt` isolation check; see
 `../software-live-apt/README.md`); S3e implemented (`export-inventory`,
 `src/export.rs`); S3f implemented (`collect`, `src/collect.rs`,
-`--report-usage` in `src/usage.rs`); S1 spike done, report in section 13;
-the other slices planned. Owner
+`--report-usage` in `src/usage.rs`); S6 implemented (role switch of 7.3 and
+shadow units of 8.1:
+`roles/software_live/tasks/{impl_inputs,live_state,impl,rust,shadow,verify_impl,rust_pins}.yml`,
+`plugins/filter/software_live_impl.py`, `tests/test_software_live_impl.py`);
+S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
 
@@ -1032,14 +1035,25 @@ before the units):
    play (fail closed: unknown live state never leads to a deletion). A
    collector run that starts after step 0 executes the drop-in's version,
    which step 0 already protects (old drop-in) or which is pinned (new
-   drop-in, step 4).
+   drop-in, step 4). As implemented (S6, `tasks/live_state.yml` and
+   `software_live_live_state` in `plugins/filter/software_live_impl.py`), step 0
+   reads the processes of all four units the same way (MainPID, ControlPID
+   and, in a running state, which includes systemd 257's `refreshing`, every
+   PID of the control group; also for the endpoints), adds the executables
+   of systemd's loaded `ExecStart=`/`ExecStartPost=` (a drop-in edit that
+   was not reloaded yet), treats a release executable's name outside
+   `releases/` as unknown, and also reads the shadow pin
+   (`.pins/software-live-shadow`); a pin file that does not hold exactly one
+   version makes the live state unknown.
    `_software_live_last_live` is the version in the existing
    `.pins/software-live` (the version last verified live in the production
    units, step 7), or, when that pin is absent, the version of the running
    production endpoint's executable, if it is a Rust release.
 1. Assert `software_live_impl in ['python', 'rust']`. **Rollback first:**
    when impl is `python`, the drop-ins of step 4 are removed and the
-   handlers are flushed right away (`meta: flush_handlers`: daemon reload,
+   handlers are flushed right away (`meta: flush_handlers`, in a file that
+   is included only when a drop-in was removed, so a first deploy never
+   restarts units that do not exist yet: daemon reload,
    restart of the endpoint and the timer), so the production units run
    Python **before** any Rust task. Only then do shadow tasks (8.1) run, if
    the shadow is on; they touch only the shadow units and directory, so
@@ -1080,12 +1094,21 @@ before the units):
    (Python commands) until S12. Any drop-in change notifies the existing
    handlers (daemon reload, restart endpoint, restart timer).
 5. The task "Validate software observation policy" (`tasks/main.yml:101-110`)
-   uses the Rust candidate when impl is `rust`.
+   runs the Python program only when impl is `python`; with impl `rust`
+   the Rust candidate validates the same `policy.json` in step 3, before
+   anything points at it (`tasks/rust.yml`).
 6. After the handlers and the initial collection (`tasks/main.yml:214-219`):
    verify the running implementation, retrying up to 30 s: endpoint active
    and `readlink /proc/<MainPID>/exe` equals the versioned binary (rust), or
    `/proc/<MainPID>/cmdline` contains `software_live.py serve` (python);
-   collector `ExecMainStatus=0` and `state.json` newer than the run start.
+   collector `ExecMainStatus=0` and `state.json` newer than the run start
+   (implemented as: its mtime is newer than right before the initial
+   collection). Before the initial collection the role waits (up to about
+   120 s) while a collector run the timer started earlier is still in
+   progress: it executes the previous program, and `systemd_service` would
+   take it for the requested start; also systemd's loaded collector `ExecStart=` names the
+   selected program, and with the shadow on the shadow endpoint is active
+   and executes the binary (`tasks/verify_impl.yml`).
 7. Only after 6 succeeded, pin and prune with F3 (`tasks/rust_pins.yml`;
    it executes no release binary, so with impl `python` it runs after the
    units already run Python and cannot block the rollback):
@@ -1103,6 +1126,9 @@ before the units):
      version the production units run (impl `rust`) or removes it (impl
      `python`); with the shadow on, `.pins/software-live-shadow` names the
      shadow units' version and is removed when the shadow is turned off.
+     The shadow keeps no rollback pin: when its version changes or the
+     shadow is turned off, both shadow pin files are removed first
+     (`state: absent`, `keep_previous: false`).
    - **Prune.** Unless `_software_live_live_unknown` is set,
      `tasks_from: prune` with `keep_versions` (asserted ≥ 2) and
      `protect: {{ _software_live_protect }}` (step 0). F3 keeps the newest
@@ -1254,21 +1280,25 @@ untouched Python units:
   `ReadWritePaths=/var/lib/software-live/shadow`) running the Rust
   `collect --report-usage` with `--output /var/lib/software-live/shadow/state.json
   --cache /var/lib/software-live/shadow/upstream.json --group metrics`, then
-  `-export-inventory` into `/var/lib/software-live/shadow/software-health.json`.
+  `-export-inventory` into `/var/lib/software-live/shadow/software-health.json`
+  (as in production, only with `software_live_inventory_export`, with the
+  same group).
   Separate caches, so the shadow never touches the production caches; that
   costs one extra GitHub and endoflife.date request per host and day.
   `software-live-shadow-collector.timer` at `*:7/15` (between the
   production runs).
 - `software-live-shadow-endpoint.service` as `metrics`, bound to
   `127.0.0.1:9119`, `IPAddressAllow=localhost` only, serving the
-  **production** (Python-written) `state.json` through the Rust endpoint.
+  **production** (Python-written) `state.json` through the Rust endpoint
+  (configuration `/etc/software-live/shadow-endpoint.json`, root:metrics
+  0640, with the production user and `htpasswd`).
   In shadow mode the deploy playbook fetches both endpoints on the host
   (`ansible.builtin.uri`, `no_log: true`, as the existing verification) and
   asserts equal bodies except `meta.age_seconds`, and 401 without
   credentials on the shadow port.
 
 `/var/lib/software-live/shadow/` is root:metrics 0750. Removing the flag
-removes the shadow units and the directory.
+removes the shadow units, their endpoint configuration and the directory.
 
 ### 8.2 Order and windows
 

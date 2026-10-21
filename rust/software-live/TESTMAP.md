@@ -176,3 +176,23 @@ cycle's date replaced by an invalid one). Tags: `non-standard-json` and
 `utf16-body` (item 4), `unicode-digits` (item 11), `iso-date` (item 6) and
 `cache-crash` (item 12: a lifecycle cache that is not an object, a
 `checked_at_epoch` beyond the float range).
+
+## Role switch (S6, PLAN.md 7.3 and 8.1)
+
+The role side has no Python test to map; its tests are in
+`tests/test_software_live_impl.py` (`just test-software-live-impl`, part of
+`just test`):
+
+| PLAN.md 7.3 requirement | Test | Status |
+| --- | --- | --- |
+| drop-ins and shadow units for both impls and both variants; base units keep Python | `TemplateTests` | done (S6) |
+| variable validation; variant from `/etc/os-release` | `VariantTests`, `SwitchPlaybookTests.test_variable_validation`, `test_rust_refusals_change_nothing` | done (S6) |
+| `nyxmon_checks.py` installed in every mode | `RoleStaticTests.test_nyxmon_checks_installed_in_every_mode` | done (S6) |
+| rollback first: impl python with the shadow off and on, a missing archive or a refused candidate, converges to Python | `test_python_rollback_with_*` (five cases) | done (S6) |
+| v1 → v2 → v1 → v3 with `keep_versions: 2` keeps v1 (previous) next to v3 and v2; v4 keeps v3 and prunes v1 and v2 | `test_rollback_pin_sequence_with_keep_versions_2` | done (S6) |
+| a drop-in left by a failed play protects its version; a failed verification moves no pin and prunes nothing | `test_dropin_of_a_failed_play_protects_its_release` | done (S6) |
+| an unreadable or unparseable drop-in or shadow unit skips the prune | `test_unreadable_or_unparseable_dropin_skips_the_prune`, `LiveStateTests` | done (S6) |
+| **mandatory**: a collector run (and its `software-live-apt` child) still executing v1 after the unit, the endpoint and both pins moved on keeps v1; an unresolvable running collector skips the prune | `test_running_collector_keeps_its_release`, `test_running_shadow_collector_keeps_its_release`, `test_unresolvable_running_collector_skips_the_prune`, `test_running_unit_without_listable_cgroup_skips_the_prune`, `LiveStateTests.test_running_collector_and_its_apt_child_are_protected` | done (S6) |
+| rust → python removes the production pin, sets `previous` to the last Rust version and keeps it installed; a re-run moves nothing and reports no change | `test_switch_to_rust_and_back_to_python`, `test_python_first_deploy_and_rerun` | done (S6) |
+| shadow units on and off, shadow pin without a rollback pin | `test_shadow_on_and_off`, `test_rust_with_shadow_pins_both` | done (S6) |
+| verification of the running implementation | `VerifyTests`, `test_dropin_of_a_failed_play_protects_its_release` | done (S6) |
