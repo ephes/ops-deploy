@@ -2043,6 +2043,10 @@ def projection_cases() -> list[tuple[str, str, str | None]]:
         ("issues_null_item", export_text(("postgresql.issues", [None])), None),
         ("time_integer", export_text(("generated_at_epoch", 1_760_000_000)), None),
         ("time_exponent", export_text(("generated_at_epoch", RawToken("1.76E9"))), None),
+        # Written as the parsed float: the projection stays below the reader's 64 KiB.
+        ("time_long_spelling",
+         export_text(("generated_at_epoch", RawToken("1760000000.5" + "0" * 66_000 + "1"))), None),
+        ("time_float_with_integral_value", export_text(("generated_at_epoch", RawToken("17600000E2"))), None),
         ("time_smallest_positive", export_text(("generated_at_epoch", RawToken("5e-324"))), None),
         ("time_underflow_to_zero", export_text(("generated_at_epoch", RawToken("1e-400"))), None),
         ("time_zero", export_text(("generated_at_epoch", 0)), None),

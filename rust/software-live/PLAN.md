@@ -509,8 +509,11 @@ On failure the previous `state.json` stays untouched (test
   host, time, then `os`, `postgresql`, `traefik`, then `apt`), the group
   lookup (`KeyError`), the write. Both paths are taken as `pathlib.Path`
   spells them (a trailing slash, `.` parts and double slashes dropped).
-  `observed_at_epoch` is the source's number as read (an integer stays an
-  integer); a security count of `-0` is written as `0`.
+  `observed_at_epoch` is the source's number as Python parses it: an
+  integer stays that integer, a float is written in its shortest
+  round-trip form (never the source's spelling, which could be up to the
+  1 MiB bound long and push the projection past the reader's 64 KiB); a
+  security count of `-0` is written as `0`.
 
 ### 3.7 systemd units (P1)
 

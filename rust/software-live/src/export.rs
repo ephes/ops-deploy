@@ -89,6 +89,23 @@ fn check_time(value: Option<&Value>) -> Result<(), PyError> {
     Ok(())
 }
 
+/// `observed_at_epoch` as Python writes the parsed value: an integer
+/// exactly as read (canonical), a float as its shortest round-trip form. A
+/// float token is never copied, so a long spelling of a valid time (up to
+/// the 1 MiB source bound) cannot make the projection exceed the reader's
+/// 64 KiB limit. Only called after [`check_time`] accepted the value.
+fn observed_at_epoch(value: Option<&Value>) -> Value {
+    let Some(Value::Number(number)) = value else {
+        return Value::Null;
+    };
+    let token = number.as_str();
+    if is_int_token(token) {
+        Value::Number(Number::from_str(canonical_int(token)).expect("an integer token"))
+    } else {
+        pyjson::number_from_f64(token_f64(token)).map_or(Value::Null, Value::Number)
+    }
+}
+
 /// The security count: `None`, or an `int` (not `bool`) that is not
 /// negative; `None` only when the APT status is not `ok`.
 fn check_count(count: Option<&Value>, status_ok: bool) -> Result<Value, PyError> {
@@ -173,7 +190,7 @@ fn project_check(name: &str, item: Option<&Value>) -> Result<Value, PyError> {
 
 /// `inventory_projection(data)`: the allowlisted metadata of a report, or
 /// the error of the first check that fails. `observed_at_epoch` is the
-/// source's `generated_at_epoch` as it was read.
+/// source's `generated_at_epoch` as Python reads it ([`observed_at_epoch`]).
 pub fn inventory_projection(data: &Value) -> Result<Value, PyError> {
     let Value::Object(data) = data else {
         // `data.get(...)` on a list, string, number or None.
@@ -224,10 +241,7 @@ pub fn inventory_projection(data: &Value) -> Result<Value, PyError> {
         format!("software-live/{SCHEMA_VERSION}").into(),
     );
     projection.insert("host".into(), host.into());
-    projection.insert(
-        "observed_at_epoch".into(),
-        observed.cloned().unwrap_or(Value::Null),
-    );
+    projection.insert("observed_at_epoch".into(), observed_at_epoch(observed));
     projection.insert("max_age_seconds".into(), MAX_REPORT_AGE.into());
     projection.insert("checks".into(), Value::Object(checks));
     projection.insert("apt".into(), Value::Object(apt));
@@ -521,8 +535,6 @@ mod tests {
         source["apt"]["pending_security_count"] = pyjson::loads("18446744073709551617").unwrap();
         let projection = inventory_projection(&source).unwrap();
         let text = String::from_utf8(pyjson::dumps_compact(&projection)).unwrap();
-        // serde_json spells a number token in its own way (`1.76e+9`); the
-        // value is unchanged, not rounded through a float repr.
         assert_eq!(
             token_f64(
                 projection["observed_at_epoch"]
@@ -535,6 +547,18 @@ mod tests {
         assert!(
             text.contains("\"pending_security_count\":18446744073709551617"),
             "{text}"
+        );
+        // A long spelling of a valid time is written as the float it is, so
+        // the projection stays within the reader's 64 KiB.
+        let mut long = source.clone();
+        long["generated_at_epoch"] =
+            pyjson::loads(&format!("1760000000.5{}1", "0".repeat(70_000))).unwrap();
+        let long = pyjson::dumps_compact(&inventory_projection(&long).unwrap());
+        let long = String::from_utf8(long).unwrap();
+        assert!(long.len() < 2048, "{}", long.len());
+        assert!(
+            long.contains("\"observed_at_epoch\":1760000000.5,"),
+            "{long}"
         );
         for secret in [
             "synthetic-never-export",
