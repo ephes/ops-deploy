@@ -777,6 +777,22 @@ class _Strict:
         return value
 
 
+# serde_json refuses a document nested deeper than this many arrays and
+# objects (the top level included); Python's json accepts it.
+SERDE_JSON_MAX_DEPTH = 127
+
+
+def _depth(value: Any) -> int:
+    """Nesting depth in arrays and objects (iterative: documents may be deep)."""
+    deepest, stack = 0, [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            deepest = max(deepest, depth)
+            stack.extend((child, depth + 1) for child in (item.values() if isinstance(item, dict) else item))
+    return deepest
+
+
 def _walk_strings(value: Any) -> Iterator[str]:
     if isinstance(value, str):
         yield value
@@ -799,6 +815,8 @@ def policy_p3(data: bytes) -> list[str]:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return []  # both guards refuse a file that is not JSON
     tags = strict.tags
+    if _depth(document) > SERDE_JSON_MAX_DEPTH:
+        tags.add(P3_POLICY_TYPE)
     for value in _walk_strings(document):
         try:
             value.encode("utf-8")
@@ -981,6 +999,8 @@ def policy_documents(policies: dict[str, dict[str, Any]]) -> list[tuple[str, byt
         ("raw-escaped-unit", b'{"units": ["\\u0061"]}'),
         ("raw-big-number", b'{"extra": 1e400}'),
         ("raw-big-integer", b'{"extra": 1' + b"0" * 400 + b"}"),
+        ("raw-nesting-127", b'{"postgres": {"extra": ' + b"[" * 125 + b"]" * 125 + b"}}"),
+        ("raw-nesting-128", b'{"postgres": {"extra": ' + b"[" * 126 + b"]" * 126 + b"}}"),
         ("raw-crlf", b'{\r\n"units": ["a"]\r\n}\r\n'),
         ("raw-nul", b'{"units": ["a\\u0000"]}'),
     ]

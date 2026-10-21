@@ -4,9 +4,10 @@
 //!
 //! 1. UTF-8 (`UnicodeDecodeError`), then JSON with `serde_json` into a strict
 //!    tree ([`Json`]): duplicate keys anywhere refuse (`TypeError`), and
-//!    `serde_json` itself refuses `NaN`, `Infinity` and lone surrogate
-//!    escapes (`JSONDecodeError`), all of which Python's `json` accepts
-//!    (PLAN.md 4.2).
+//!    `serde_json` itself refuses `NaN`, `Infinity`, lone surrogate escapes,
+//!    numbers outside the double range and documents nested deeper than 127
+//!    arrays and objects (`JSONDecodeError`), all of which Python's `json`
+//!    accepts (PLAN.md 4.2).
 //! 2. The typed policy, built in the order `Policy.from_dict` builds it, so a
 //!    missing entry key is a `KeyError` and a wrong type a `TypeError` as in
 //!    Python. Values must have the JSON type the role writes: lists of
@@ -599,6 +600,18 @@ mod tests {
             error(r#"{"x": Infinity}"#).kind,
             PolicyErrorKind::JsonDecode
         );
+    }
+
+    #[test]
+    fn nesting_is_limited_to_127_containers() {
+        // serde_json's recursion limit (PLAN.md 4.2); the top-level object
+        // counts.
+        let nested = |containers: usize| {
+            let inner = containers - 1;
+            format!("{{\"x\": {}{}}}", "[".repeat(inner), "]".repeat(inner))
+        };
+        assert_eq!(parse_policy(nested(127).as_bytes()), Ok(Policy::default()));
+        assert_eq!(error(&nested(128)).kind, PolicyErrorKind::JsonDecode);
     }
 
     #[test]

@@ -471,10 +471,12 @@ Justification:
 - **Non-standard JSON in the policy** (found by S0, S1): Python's `json`
   accepts `NaN`, `Infinity`, lone surrogate escapes such as `"\ud800"` and
   numbers outside the double range such as `1e400` (as `inf`, or as an
-  unbounded int), also under unknown keys, and keeps the last of duplicate
-  keys anywhere in the document. Rust refuses these (`serde_json` refuses all
-  but the duplicates as malformed JSON, the strict tree of 5.2 the
-  duplicates as a type error); the fixtures tag them `policy-type`.
+  unbounded int) and documents nested deeper than 127 arrays and objects
+  (top level included; `serde_json`'s recursion limit), also under unknown
+  keys, and keeps the last of duplicate keys anywhere in the document. Rust
+  refuses these (`serde_json` refuses all but the duplicates as malformed
+  JSON, the strict tree of 5.2 the duplicates as a type error); the fixtures
+  tag them `policy-type`.
 - **Python crashes in `check()`** (found by S0). The `umask 077 && tar …`
   shape matches `_TAR_RE` on the raw string and then calls `shlex.split` on
   the group without a guard (`guard.py:459`), so an unbalanced quote or a
