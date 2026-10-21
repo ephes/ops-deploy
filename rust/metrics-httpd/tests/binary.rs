@@ -690,3 +690,150 @@ fn every_mode_answers_the_gate() {
     assert_eq!(put.status, 501);
     server.stop();
 }
+
+/// script flags with every required option.
+fn script_args(script: &Path, timeout: &str) -> Vec<String> {
+    [
+        "script",
+        "--bind",
+        "127.0.0.1",
+        "--port",
+        "0",
+        "--path",
+        "/.well-known/health",
+        "--script",
+        &script.display().to_string(),
+        "--script-timeout",
+        timeout,
+        "--htpasswd-file",
+        &htpasswd(),
+        "--realm",
+        "metrics",
+        "--server-name",
+        "metrics-httpd/0.1",
+    ]
+    .map(str::to_owned)
+    .to_vec()
+}
+
+fn write_script(path: &Path, content: &str) {
+    std::fs::write(path, content).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+const USER_SECRET: &str = "Basic dXNlcjpzZWNyZXQ="; // user:secret (fixtures/htpasswd)
+
+/// D-9: one error line per 5xx cause next to the access line; a 200 logs
+/// only the access line.
+#[test]
+fn script_mode_logs_one_error_line_per_5xx() {
+    let dir = tempfile::tempdir().unwrap();
+    let ok = dir.path().join("ok.sh");
+    let failing = dir.path().join("failing.sh");
+    write_script(&ok, "#!/bin/sh\necho '{\"ok\": true}'\n");
+    write_script(&failing, "#!/bin/sh\necho 'disk <full>' >&2\nexit 3\n");
+    let server = Server::start(&script_args(&ok, "5"), &[]);
+    let response = get(
+        server.addr,
+        "/.well-known/health",
+        &[("Authorization", USER_SECRET)],
+    );
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, b"{\"ok\": true}\n");
+    assert_eq!(response.header("Content-Type"), Some("application/json"));
+    let lines = server.stop();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines[1].ends_with("\"GET /.well-known/health HTTP/1.1\" 200 -"));
+
+    let server = Server::start(&script_args(&failing, "5"), &[]);
+    let response = get(
+        server.addr,
+        "/.well-known/health",
+        &[("Authorization", USER_SECRET)],
+    );
+    assert_eq!(response.status, 502);
+    assert!(
+        String::from_utf8(response.body)
+            .unwrap()
+            .contains("<p>Message: disk &lt;full&gt;.</p>")
+    );
+    let lines = server.stop();
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert_eq!(
+        lines[1],
+        format!(
+            "metrics-httpd script: {} failed (exit status: 3): disk <full>",
+            failing.display()
+        )
+    );
+    assert!(lines[2].ends_with("\"GET /.well-known/health HTTP/1.1\" 502 -"));
+    for line in &lines {
+        assert!(!line.contains("secret") && !line.contains("dXNlcjpzZWNyZXQ="));
+    }
+}
+
+/// D-8 at shutdown: SIGTERM while a script runs exits 0 after the grace
+/// period and kills the script's process group.
+#[test]
+fn sigterm_kills_a_running_script_group() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("slow.sh");
+    let pid_file = dir.path().join("slow.pid");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\nsleep 60 &\necho $! > '{}'\nwait\n",
+            pid_file.display()
+        ),
+    );
+    let path = std::env::var("PATH").unwrap_or_default();
+    let server = Server::start(&script_args(&script, "60"), &[("PATH", &path)]);
+    let addr = server.addr;
+    let client = std::thread::spawn(move || {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .write_all(&raw_request(
+                "GET",
+                "/.well-known/health",
+                "HTTP/1.1",
+                &[("Authorization".into(), USER_SECRET.into())],
+            ))
+            .unwrap();
+        let mut rest = Vec::new();
+        let _ = stream.read_to_end(&mut rest);
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let pid = loop {
+        if let Some(pid) = std::fs::read_to_string(&pid_file)
+            .ok()
+            .and_then(|text| text.trim().parse::<i32>().ok())
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "the script did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    server.signal("TERM");
+    let (code, lines) = server.wait(Duration::from_secs(15));
+    assert_eq!(code, Some(0), "{lines:?}");
+    client.join().unwrap();
+    let pid = rustix::process::Pid::from_raw(pid).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let gone = rustix::process::test_kill_process(pid).is_err()
+            || std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero())).is_ok_and(
+                |stat| {
+                    stat.rsplit_once(')')
+                        .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z'))
+                },
+            );
+        if gone {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the script's sleep survived SIGTERM"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

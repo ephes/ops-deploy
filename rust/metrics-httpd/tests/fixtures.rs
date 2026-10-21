@@ -1,7 +1,8 @@
 //! Replays the Python-generated fixtures (`fixtures/generate.py`, PLAN.md
 //! 8.2) against the Rust modules: the JSON formatter and value semantics
-//! (D-4, D-5), the meta helpers, the auth decisions (D-2, D-6) and the
-//! 501/404/401 gate of every mode over real sockets (PLAN.md 4.1).
+//! (D-4, D-5), the meta helpers, the auth decisions (D-2, D-6), the
+//! 501/404/401 gate of every mode over real sockets (PLAN.md 4.1) and the
+//! script mode past the gate (PLAN.md 4.4, D-2, D-3, D-8, D-12).
 
 mod support;
 
@@ -345,4 +346,251 @@ async fn gate_answers_match_the_python_scripts() {
         }
         let _ = stop.send(());
     }
+}
+
+/// Script cases spawn processes; they run one test at a time, so a script
+/// written by one test is never open for writing while another test's
+/// server forks (`ETXTBSY` on Linux).
+static SCRIPT_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// The script-mode argv of `script.json` for one script and timeout.
+fn script_argv(fixture: &Value, script: &Path, timeout: &str) -> Vec<String> {
+    fixture["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| match text(arg) {
+            "{htpasswd}" => fixtures().join("htpasswd").display().to_string(),
+            "{script}" => script.display().to_string(),
+            "{timeout}" => timeout.to_owned(),
+            other => other.to_owned(),
+        })
+        .collect()
+}
+
+/// The authenticated request every `script.json` case sends.
+fn script_request(fixture: &Value) -> Vec<u8> {
+    let request = &fixture["request"];
+    let headers: Vec<(String, String)> = request["headers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pair| (text(&pair[0]).to_owned(), text(&pair[1]).to_owned()))
+        .collect();
+    raw_request(
+        text(&request["method"]),
+        text(&request["target"]),
+        text(&request["version"]),
+        &headers,
+    )
+}
+
+fn write_script(path: &Path, content: &str, mode: u32) {
+    std::fs::write(path, content).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+/// The `send_error` page line that carries the message.
+fn message_line(message: &str) -> String {
+    let escaped = message
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!("<p>Message: {escaped}.</p>")
+}
+
+async fn script_exchange(argv: &[String], request: Vec<u8>) -> support::Exchange {
+    let (addr, stop) = start_variant(argv, &HashMap::new()).await;
+    let response = tokio::task::spawn_blocking(move || exchange(addr, &request, false))
+        .await
+        .unwrap();
+    let _ = stop.send(());
+    response
+}
+
+#[tokio::test]
+async fn script_mode_matches_metrics_httpd_py() {
+    let _serial = SCRIPT_TESTS.lock().await;
+    let fixture = load("script.json");
+    let cases = fixture["cases"].as_array().unwrap();
+    assert!(cases.len() >= 20);
+    let dir = tempfile::tempdir().unwrap();
+    // Every script is written before any server forks.
+    for case in cases {
+        if let Some(script) = case["script"].as_str() {
+            let mode = u32::from_str_radix(text(&case["mode"]), 8).unwrap();
+            write_script(
+                &dir.path().join(format!("{}.sh", text(&case["id"]))),
+                script,
+                mode,
+            );
+        }
+    }
+    for case in cases {
+        let id = text(&case["id"]);
+        let script = dir.path().join(format!("{id}.sh"));
+        let argv = script_argv(&fixture, &script, text(&case["timeout"]));
+        let response = script_exchange(&argv, script_request(&fixture)).await;
+        let compare = text(&case["compare"]);
+        if matches!(compare, "status" | "no-response") {
+            // Python drops the connection or the plan allows a difference:
+            // the Rust expectation is written next to the case.
+            assert!(case["d"].is_string(), "{id}");
+            assert_eq!(
+                u64::from(response.status),
+                case["rust_status"].as_u64().unwrap(),
+                "{id}"
+            );
+            if let Some(message) = case.get("rust_message") {
+                assert_eq!(
+                    response.header("Content-Type"),
+                    Some("text/html;charset=utf-8"),
+                    "{id}"
+                );
+                assert_eq!(response.header("Connection"), Some("close"), "{id}");
+                let body = String::from_utf8(response.body.clone()).unwrap();
+                assert!(body.contains(&message_line(text(message))), "{id}: {body}");
+            }
+            if let Some(hex) = case.get("rust_body_hex") {
+                assert_eq!(
+                    response.header("Content-Type"),
+                    Some("application/json"),
+                    "{id}"
+                );
+                assert_eq!(response.body, hex_bytes(text(hex)), "{id}");
+            }
+            continue;
+        }
+        assert_eq!(
+            u64::from(response.status),
+            case["status"].as_u64().unwrap(),
+            "{id}"
+        );
+        let expected = &case["response_headers"];
+        for name in [
+            "Content-Type",
+            "WWW-Authenticate",
+            "Connection",
+            "Content-Length",
+        ] {
+            if name == "Content-Length" && compare != "bytes" {
+                continue;
+            }
+            assert_eq!(
+                response.header(name),
+                expected[name].as_str(),
+                "{id}: {name}"
+            );
+        }
+        let body = String::from_utf8(response.body.clone()).unwrap();
+        match compare {
+            "bytes" => assert_eq!(body, text(&case["body"]), "{id}"),
+            "html" => assert_eq!(body, without_style(text(&case["body"])), "{id}"),
+            other => panic!("{id}: unknown compare mode {other}"),
+        }
+    }
+}
+
+/// Whether `pid` is gone (or a zombie nobody reaped yet).
+fn process_gone(pid: i32) -> bool {
+    let Some(pid) = rustix::process::Pid::from_raw(pid) else {
+        return true;
+    };
+    if rustix::process::test_kill_process(pid).is_err() {
+        return true;
+    }
+    std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero()))
+        .ok()
+        .and_then(|stat| {
+            stat.rsplit_once(')')
+                .map(|(_, rest)| rest.trim_start().starts_with('Z'))
+        })
+        .unwrap_or(false)
+}
+
+/// D-8: a timeout kills the script's whole process group, so a grandchild
+/// holding the stdout pipe neither delays the 504 (Python waits for it)
+/// nor survives.
+#[tokio::test]
+async fn script_timeout_kills_the_process_group() {
+    let _serial = SCRIPT_TESTS.lock().await;
+    let fixture = load("script.json");
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("grandchild.sh");
+    let pid_file = dir.path().join("grandchild.pid");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\nsleep 30 &\necho $! > '{}'\nwait\n",
+            pid_file.display()
+        ),
+        0o755,
+    );
+    let argv = script_argv(&fixture, &script, "0.5");
+    let started = std::time::Instant::now();
+    let response = script_exchange(&argv, script_request(&fixture)).await;
+    assert_eq!(response.status, 504);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    let body = String::from_utf8(response.body).unwrap();
+    assert!(
+        body.contains(&message_line("Metrics script timeout")),
+        "{body}"
+    );
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !process_gone(pid) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the grandchild {pid} survived the timeout"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+/// D-12: stdout above 64 MiB answers 502 and the script is killed.
+#[tokio::test]
+async fn script_stdout_above_64_mib_is_refused() {
+    let _serial = SCRIPT_TESTS.lock().await;
+    let fixture = load("script.json");
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("large.sh");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\nhead -c {} /dev/zero\nsleep 30\n",
+            metrics_httpd::modes::script::MAX_STDOUT_BYTES + 1
+        ),
+        0o755,
+    );
+    let argv = script_argv(&fixture, &script, "60");
+    let started = std::time::Instant::now();
+    let response = script_exchange(&argv, script_request(&fixture)).await;
+    assert_eq!(response.status, 502);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "{:?}",
+        started.elapsed()
+    );
+    let body = String::from_utf8(response.body).unwrap();
+    assert!(
+        body.contains(&message_line(
+            metrics_httpd::modes::script::TOO_LARGE_MESSAGE
+        )),
+        "{body}"
+    );
 }

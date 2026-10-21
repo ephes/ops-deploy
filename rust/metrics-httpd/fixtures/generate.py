@@ -25,6 +25,11 @@ one of the rendered Python endpoint scripts produces. The Rust tests
     ``http_common.json``: the rendered scripts' handlers served on loopback
     and driven with raw requests: the 501/404/401 gate of PLAN.md 4.1 for
     every mode the scripts share (S1); later slices extend the matrix.
+``script`` (templates, ``htpasswd``)
+    ``script.json``: ``metrics_httpd.py.j2`` past the gate (S2b): the
+    fixture scripts' stdout, exit codes, stderr and timeout as the handler
+    answers them, with the Rust expectation next to every case where Python
+    drops the connection or the plan allows a difference (D-2, D-3).
 
 Commands: ``write`` regenerates the files in place, ``check`` regenerates in
 memory and fails on any difference (the drift test,
@@ -1098,6 +1103,252 @@ def build_http_common() -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------
+# script (S2b): metrics_endpoint past the gate (PLAN.md 4.4)
+
+SCRIPT_PATH = "/.well-known/health"
+SCRIPT_ARGV = [
+    "script",
+    "--path",
+    SCRIPT_PATH,
+    "--script",
+    "{script}",
+    "--script-timeout",
+    "{timeout}",
+    "--htpasswd-file",
+    "{htpasswd}",
+    "--realm",
+    "metrics",
+    "--server-name",
+    "metrics-httpd/0.1",
+]
+# More than a pipe buffer (64 KiB) on both pipes at once: the server must
+# drain them together.
+LARGE_SCRIPT = r"""#!/bin/sh
+i=0
+while [ "$i" -lt 1100 ]; do
+  printf '{"line": %d, "pad": "................................................................"}\n' "$i"
+  printf 'stderr line %d ................................................................\n' "$i" >&2
+  i=$((i + 1))
+done
+"""
+STDERR_LONG_SCRIPT = r"""#!/bin/sh
+i=0
+while [ "$i" -lt 300 ]; do
+  printf 'err%04d ' "$i" >&2
+  i=$((i + 1))
+done
+exit 1
+"""
+
+# (id, script text or None for a missing file, file mode, timeout seconds,
+#  Rust expectation when Python has none or differs: {"d", "rust_status",
+#  "rust_message" or "rust_body_hex"})
+SCRIPT_CASES: list[tuple[str, str | None, int, str, dict[str, Any]]] = [
+    (
+        "json-unchanged",
+        '#!/bin/sh\nprintf \'%s\\n\' \'{"z": 1.50, "a": ["\\u00fc", 12345678901234567890]}\'\n',
+        0o755,
+        "10",
+        {},
+    ),
+    ("not-json", "#!/bin/sh\nprintf 'plain text, not JSON'\n", 0o755, "10", {}),
+    ("empty-stdout", "#!/bin/sh\nexit 0\n", 0o755, "10", {}),
+    ("universal-newlines", "#!/bin/sh\nprintf 'a\\r\\nb\\rc\\n\\r'\n", 0o755, "10", {}),
+    (
+        "utf8-multibyte",
+        '#!/bin/sh\nprintf \'{"t": "\\342\\202\\254 \\360\\237\\230\\200"}\'\n',
+        0o755,
+        "10",
+        {},
+    ),
+    (
+        "stderr-ignored-on-success",
+        "#!/bin/sh\nprintf '{}'\nprintf 'warning\\n' >&2\n",
+        0o755,
+        "10",
+        {},
+    ),
+    ("no-arguments", '#!/bin/sh\nprintf \'{"argc": %s}\' "$#"\n', 0o755, "10", {}),
+    ("large-output-both-pipes", LARGE_SCRIPT, 0o755, "10", {}),
+    ("exit-3-stderr", "#!/bin/sh\nprintf 'boom\\n' >&2\nexit 3\n", 0o755, "10", {}),
+    ("exit-1-no-stderr", "#!/bin/sh\nexit 1\n", 0o755, "10", {}),
+    (
+        "exit-whitespace-stderr",
+        "#!/bin/sh\nprintf ' \\t\\n\\r\\n' >&2\nexit 1\n",
+        0o755,
+        "10",
+        {},
+    ),
+    (
+        # str.strip() also strips the information separators U+001C-U+001F.
+        "exit-separator-stderr",
+        "#!/bin/sh\nprintf '\\037\\034 \\n' >&2\nexit 1\n",
+        0o755,
+        "10",
+        {},
+    ),
+    (
+        "exit-padded-html-stderr",
+        "#!/bin/sh\nprintf '\\n  failed: <disk> & co  \\n\\n' >&2\nexit 2\n",
+        0o755,
+        "10",
+        {},
+    ),
+    (
+        "exit-stdout-ignored",
+        "#!/bin/sh\nprintf '{\"partial\": true}'\nexit 1\n",
+        0o755,
+        "10",
+        {},
+    ),
+    (
+        "exit-latin1-stderr",
+        "#!/bin/sh\nprintf 'Fehler: \\303\\274berlauf\\n' >&2\nexit 1\n",
+        0o755,
+        "10",
+        {},
+    ),
+    ("killed-by-signal", "#!/bin/sh\nkill -TERM $$\nsleep 5\n", 0o755, "10", {}),
+    ("timeout", "#!/bin/sh\nexec sleep 5\n", 0o755, "0.5", {}),
+    (
+        # A newline in the stderr text breaks Python's status line (the
+        # message is the reason phrase); Rust keeps it in the body only.
+        "exit-multiline-stderr",
+        "#!/bin/sh\nprintf 'line1\\nline2\\n' >&2\nexit 1\n",
+        0o755,
+        "10",
+        {"d": "D-3", "rust_status": 502, "rust_message": "line1 line2"},
+    ),
+    (
+        "exit-long-stderr",
+        STDERR_LONG_SCRIPT,
+        0o755,
+        "10",
+        {
+            "d": "D-3",
+            "rust_status": 502,
+            "rust_message": " ".join(f"err{i:04d}" for i in range(300))[:1024],
+        },
+    ),
+    (
+        # Python: UnicodeEncodeError for the latin-1 status line, no response.
+        "exit-stderr-outside-latin1",
+        "#!/bin/sh\nprintf 'kaputt \\342\\202\\254\\n' >&2\nexit 1\n",
+        0o755,
+        "10",
+        {"d": "D-2", "rust_status": 502, "rust_message": "kaputt \u20ac"},
+    ),
+    (
+        # Python: UnicodeDecodeError in subprocess.run, no response.
+        "exit-stderr-not-utf8",
+        "#!/bin/sh\nprintf 'bad \\377\\n' >&2\nexit 1\n",
+        0o755,
+        "10",
+        {"d": "D-2", "rust_status": 502, "rust_message": "bad \ufffd"},
+    ),
+    (
+        "stdout-not-utf8",
+        '#!/bin/sh\nprintf \'{"x": "\\377"}\\r\\n\'\n',
+        0o755,
+        "10",
+        {"d": "D-2", "rust_status": 200, "rust_body_hex": b'{"x": "\xff"}\n'.hex()},
+    ),
+    (
+        # Python: FileNotFoundError / PermissionError from subprocess.run.
+        "missing-script",
+        None,
+        0o755,
+        "10",
+        {"d": "D-2", "rust_status": 502, "rust_message": "Cannot run metrics script"},
+    ),
+    (
+        "not-executable",
+        "#!/bin/sh\nprintf '{}'\n",
+        0o644,
+        "10",
+        {"d": "D-2", "rust_status": 502, "rust_message": "Cannot run metrics script"},
+    ),
+]
+
+
+SCRIPT_REQUEST = {
+    "method": "GET",
+    "target": SCRIPT_PATH,
+    "version": "HTTP/1.1",
+    "headers": [["Authorization", basic("user", "secret")]],
+}
+
+
+def script_exchange(port: int) -> dict[str, Any]:
+    try:
+        result = exchange(port, SCRIPT_REQUEST)
+    except (http.client.HTTPException, ConnectionError):
+        # The handler raised: socketserver closes the connection unanswered.
+        return {"status": None}
+    return result
+
+
+def build_script() -> dict[str, str]:
+    htpasswd = str(FIXTURES / "htpasswd")
+    out = []
+    captured = _CapturedStderr()
+    with tempfile.TemporaryDirectory() as tmp_name, contextlib.redirect_stderr(
+        captured
+    ):
+        tmp = Path(tmp_name)
+        module = load_module("metrics_script", METRICS, PLACEHOLDER_VARS, tmp)
+        server = socketserver.TCPServer(("127.0.0.1", 0), module.MetricsHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for case_id, script, mode, timeout, rust in SCRIPT_CASES:
+                path = tmp / f"{case_id}.sh"
+                if script is not None:
+                    path.write_text(script, encoding="ascii")
+                    path.chmod(mode)
+                # Single-threaded server, one request at a time.
+                server.cfg = {  # type: ignore[attr-defined]
+                    "path": SCRIPT_PATH,
+                    "script": str(path),
+                    "htpasswd_file": htpasswd,
+                    "script_timeout": float(timeout),
+                }
+                result = script_exchange(server.server_address[1])
+                row: dict[str, Any] = {
+                    "id": case_id,
+                    "script": script,
+                    "mode": f"{mode:04o}",
+                    "timeout": timeout,
+                    "status": result["status"],
+                }
+                if result["status"] is None:
+                    compare = "no-response"
+                elif rust:
+                    compare = "status"
+                elif (result["response_headers"]["Content-Type"] or "").startswith(
+                    "text/html"
+                ):
+                    compare = "html"
+                else:
+                    compare = "bytes"
+                if compare in ("bytes", "html"):
+                    row["response_headers"] = result["response_headers"]
+                    row["body"] = result["body"]
+                row["compare"] = compare
+                row.update(rust)
+                out.append(row)
+                captured.take()
+        finally:
+            server.shutdown()
+            server.server_close()
+    return {
+        "script.json": dump_json(
+            {"argv": SCRIPT_ARGV, "request": SCRIPT_REQUEST, "cases": out}
+        )
+    }
+
+
+# --------------------------------------------------------------------------
 
 FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "float_repr": (False, build_float_repr),
@@ -1105,6 +1356,7 @@ FAMILIES: dict[str, tuple[bool, Callable[[], dict[str, str]]]] = {
     "meta": (False, build_meta),
     "auth": (True, build_auth),
     "http_common": (True, build_http_common),
+    "script": (True, build_script),
 }
 
 

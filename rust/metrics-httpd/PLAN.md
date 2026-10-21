@@ -4,7 +4,8 @@ Status: S1 implemented (core: command line of all five modes,
 `--check-config`, server, auth, Python-compatible JSON, meta, clock,
 fixture generator with drift test, `TESTMAP.md`); every mode answers the
 501/404/401 gate of 4.1, a request past the gate gets 500 `internal_error`
-until its slice S2a–S2e lands. Campaign "Rust-Ports Runde 2"
+until its slice S2a–S2e lands. S2b implemented (`script` mode, fixture
+family `script`). Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -270,12 +271,17 @@ application/json`.
 ### 4.4 Mode `script` (`metrics_endpoint`, `metrics_httpd.py.j2` l.30–52)
 
 After 4.1: run `--script` (no shell, no arguments, inherited environment,
-working directory from the unit, `/usr/local/bin`) with `--script-timeout`
-seconds. Timeout → **504** (`send_error(504, "Metrics script timeout")`).
-Exit ≠ 0 → **502** (`send_error(502, stderr.strip() or "Metrics script
-failed")`). Exit 0 → **200**, body = the script's stdout unchanged (no JSON
-validation), `Content-Type: application/json`. The script itself
-(`mail-metrics.sh.j2`) is unchanged and out of scope.
+working directory from the unit, `/usr/local/bin`; stdin is the unit's,
+i.e. `/dev/null`, which Rust passes explicitly) with `--script-timeout`
+seconds (`subprocess.run(..., capture_output=True, text=True)`). Timeout →
+**504** (`send_error(504, "Metrics script timeout")`). Exit ≠ 0, including
+death by a signal → **502** (`send_error(502, stderr.strip() or "Metrics
+script failed")`; `str.strip()` also strips U+001C–U+001F). Exit 0 →
+**200**, body = the script's stdout as text mode reads it: UTF-8 with
+universal newlines (`\r\n` and a lone `\r` become `\n`), otherwise
+unchanged (no JSON validation), `Content-Type: application/json`; stderr is
+ignored. 502 and 504 are `send_error` pages with `Connection: close`. The
+script itself (`mail-metrics.sh.j2`) is unchanged and out of scope.
 
 ### 4.5 Mode `apt-state` (`os_apt_maintenance_httpd.py.j2`)
 
@@ -453,13 +459,19 @@ per-request 401/503, not a startup failure.
   keep-alive client blocks the endpoint today). Header-read and keep-alive
   idle timeout = `--request-timeout` (10 s; dns 15 s via the flag; static
   10 s); at most 64 concurrent connections per process (more wait in the
-  accept queue).
+  accept queue). In script mode concurrent requests therefore run the script
+  concurrently (Python runs one at a time).
 - **D-2 Python crash paths get answers.** Where Python raises inside the
   handler and drops the connection without a response, Rust answers:
   top-level JSON not an object (json-file, apt-state) → 502 `invalid_json`;
   apt-state type errors (e.g. `reasons` a number) → 500 `{"error": true,
   "error_type": "internal_error", …}`; script stdout not UTF-8 → passed
-  through with 200; logyard unexpected Loki responses (non-object body,
+  through with 200 (newlines translated as in 4.4); script stderr not UTF-8
+  (exit ≠ 0) → 502 with the text decoded lossily; a script stderr text
+  outside latin-1 (Python: `UnicodeEncodeError` writing it into the status
+  line) → 502; a script that cannot be started (missing, not executable;
+  Python: `OSError` from `subprocess.run`) → 502 `send_error` "Cannot run
+  metrics script"; logyard unexpected Loki responses (non-object body,
   disconnects not covered by the caught exceptions) → the caught-error path
   (ready false / ingest `error`) with the error text; openclaw/os_apt htpasswd
   timeout → not applicable (in-process verification).
@@ -467,8 +479,11 @@ per-request 401/503, not a startup failure.
   `message` texts after the fixed prefixes (parser error details, OS error
   details), HTML bodies of `send_error`, reason phrases and the 501 body may
   differ. `metrics_endpoint` 502: Python puts the script's stderr into the
-  status line's reason phrase; Rust uses the standard reason phrase and puts
-  the stderr text (≤ 1 KiB, control characters replaced) into the body.
+  status line's reason phrase (a newline in it breaks Python's response);
+  Rust uses the standard reason phrase and puts the stderr text (stripped
+  as Python strips it, cut to ≤ 1 KiB at a character boundary, control
+  characters replaced by spaces) into the page's message, as Python does
+  for a short single-line text.
 - **D-4 JSON input strictness.** Python accepts `NaN`, `Infinity`,
   `-Infinity`, lone surrogates, float literals that overflow to
   infinity (`1e400`, which Python then serves as `Infinity`) and nesting
@@ -544,7 +559,10 @@ per-request 401/503, not a startup failure.
   logyard 404 without `Content-Length`).
 - **D-8 Script timeout** kills the script's whole process group (Python
   kills only the direct child and can then hang on a grandchild holding the
-  pipe).
+  pipe). The script runs in its own process group (`setpgid`); the group is
+  also killed when the request is abandoned at shutdown (SIGTERM after the
+  5 s grace). A script that exits normally is not touched: a background job
+  that closed its pipes keeps running, as with Python.
 - **D-9 Logs.** The access line format of 4.1.6 is kept; Python's extra
   `code 404, message …` lines of `send_error` are not reproduced; Rust adds
   one line at startup (mode, bind, version) and one error line per 5xx
@@ -557,8 +575,10 @@ per-request 401/503, not a startup failure.
   the actual differences on the real benchmark site content and the parity
   harness requires identical status and body for every published file.
 - **D-12 Size limits.** JSON files larger than 64 MiB → 502 `invalid_json`
-  (Python: unbounded; live ≤ 24 KB); script stdout capped at 64 MiB → 502;
-  request headers capped by hyper's defaults.
+  (Python: unbounded; live ≤ 24 KB); script stdout capped at 64 MiB → 502
+  "Metrics script output too large" and the process group is killed; of the
+  script's stderr the first 64 KiB are kept for the 502 message, the rest
+  is read and discarded; request headers capped by hyper's defaults.
 - **D-13 Loki query encoding.** The query string is
   `application/x-www-form-urlencoded` by `form_urlencoded` (Python
   `urlencode`/`quote_plus`): `*` and `~` may be encoded differently; Loki
@@ -794,7 +814,11 @@ identical stdlib families under CPython 3.12 and 3.13 (the hosts'
 versions); the drift test repeats that 3.12/3.13 check when `uv` has those
 interpreters. The float fixture is split into `float_repr/part-*.txt` below
 the repository's 1000 KB large-file hook. S2a–S2e extend `http_common`
-(or add a family per mode) with the cases past the gate.
+(or add a family per mode) with the cases past the gate. S2b added the
+family `script` (`script.json`: one fixture script per case behind the
+rendered `metrics_httpd.py.j2` handler; cases where Python drops the
+connection or the plan allows a difference carry the D item and the Rust
+status, message or body).
 
 ### 8.3 Parity harness (process level)
 

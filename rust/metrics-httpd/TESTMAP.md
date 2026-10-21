@@ -25,6 +25,7 @@ Kinds:
 | `pyjson.json` `values` | `bool(v)`, `isinstance(v, int)`, `int(v)`, `"stale_kernel" in v` (apt-state's checks, PLAN.md 4.5) | 35 values (bool/int/float/str/list/dict, i128 limits) | `fixtures::value_semantics_match_python` | done (S1) |
 | `meta.json` | `datetime.fromtimestamp(e, tz=timezone.utc).isoformat()`; `int(os.stat(f).st_mtime)` after `os.utime(f, ns=…)` | 318 epochs (years 1 and 9999 limits, outside → Python raises); 41 mtimes incl. the double rounding of `sec + nsec * 1e-9` | `fixtures::meta_helpers_match_python` | done (S1) |
 | `auth.json` | rendered `backup_metrics_httpd.py.j2` `_check_auth` (`htpasswd -vi`) and `metrics_httpd.py.j2` `_check_auth` (`htpasswd -vb`), real `htpasswd` binary, committed test-only `htpasswd*` files | 68 headers × file: scheme spelling, whitespace splitting (latin-1 `str.split()`), base64 strictness (D-6), UTF-8, colon, password newline/NUL/length rules per source, bcrypt `$2y$`/`$2a$`/`$2b$`/72-byte limit, empty user, leading whitespace and duplicate entries, non-bcrypt schemes (D-6), invalid/missing/unreadable file | `fixtures::auth_decisions_match_htpasswd` (both password sources; strict base64 = `strict_mode=True`) | done (S1) |
+| `script.json` (S2b) | rendered `metrics_httpd.py.j2` `MetricsHandler` past the gate, one fixture script per case, real `htpasswd` | 24 cases: stdout unchanged (not JSON, empty, not reformatted, multibyte, no arguments), universal newlines, stderr ignored on success, both pipes above 64 KiB at once, exit ≠ 0 with stderr (stripped incl. U+001C–U+001F, HTML-escaped, latin-1), without stderr, killed by a signal, 504 timeout; Rust expectations for D-2 (missing / not executable script, stdout or stderr not UTF-8, stderr outside latin-1) and D-3 (multi-line and long stderr) | `fixtures::script_mode_matches_metrics_httpd_py` | done (S2b) |
 | `http_common.json` | the handlers of the rendered backup (json-file exact), tailscale (path-only), `metrics_endpoint` (script, HTML 404), os_apt (apt-state) and logyard-health scripts on loopback | 25 gate cases per authenticated variant (auth failures, path forms incl. query, fragment, `//`, absolute form, percent-encoding, methods incl. HEAD and lowercase `get`, HTTP/1.0) + 7 logyard 404/501 cases | `fixtures::gate_answers_match_the_python_scripts` (in-process server, raw requests over loopback); access lines in `binary::access_log_matches_the_python_lines_and_hides_credentials` | done (S1) |
 
 ## Common HTTP behaviour (PLAN.md 4.1)
@@ -44,7 +45,7 @@ Kinds:
 | Python behaviour / test | Rust counterpart | Status |
 | --- | --- | --- |
 | 4.2 json-file: missing/unreadable/invalid file, meta replace/merge, sorted output, 8 variants | unit `meta::tests` (read outcomes, replace/merge, ISO, mtime) and `pyjson::tests` (S1); fixtures from the 8 scripts | core done (S1); mode pending (S2a) |
-| 4.4 script: stdout, 502 with stderr, 504 timeout, process group kill (D-8) | fixtures from `metrics_httpd.py.j2` | gate done (S1); mode pending (S2b) |
+| 4.4 script: stdout, 502 with stderr, 504 timeout, process group kill (D-8) | fixture `script` (`fixtures::script_mode_matches_metrics_httpd_py`); unit `modes::script::tests` (newline translation, `str.strip()`, D-3 message); process `binary::script_mode_logs_one_error_line_per_5xx` | done (S2b) |
 | 4.5 apt-state, `tests/test_monitoring_pipeline_repair.py::EndpointRebootStateTests` (6 tests) | `apt_state` unit tests + fixtures with the same inputs; `pyjson` `values` (truthiness, `in`, isinstance-int) | value semantics done (S1); mode pending (S2c) |
 | 4.6 logyard-health: environment, units list, payload, no access log | unit `modes::logyard_health::tests` (environment as the module reads it); process `binary::logyard_health_is_silent_per_request`; fixture `http_common` logyard 404/501 | environment, 404/501 and silence done (S1); payload pending (S2d) |
 | 4.7 static, `tests/test_static_site_deploy.py::test_rendered_server_serves_files_without_listing_or_writes`, `::test_server_binds_loopback_and_disables_directory_listing` | `static` fixture cases + e2e test | 501 for non-GET/HEAD done (S1, process `binary::every_mode_answers_the_gate`); mode pending (S2e) |
@@ -66,17 +67,17 @@ Kinds:
 
 | Item | Pinned by | Status |
 | --- | --- | --- |
-| D-1 concurrency, timeouts, 64 connections | process `binary::request_timeout_closes_silent_and_idle_connections`, `binary::connection_limit_is_64`; harness slow client (S3) | done (S1); harness pending (S3) |
-| D-2 crash paths answered | fixtures `pyjson` (invalid UTF-8), `auth` (NUL in user, NUL in a `-vb` password); per mode in S2a–S2d | core done (S1); modes pending (S2a–S2d) |
-| D-3 texts | fixture `http_common` compare mode `html` (CPython 3.14's `<style>` block removed; Rust writes the 3.12/3.13 page) | gate done (S1); modes pending (S2a–S2d) |
+| D-1 concurrency, timeouts, 64 connections (script mode: scripts run concurrently) | process `binary::request_timeout_closes_silent_and_idle_connections`, `binary::connection_limit_is_64`; harness slow client (S3) | done (S1); harness pending (S3) |
+| D-2 crash paths answered | fixtures `pyjson` (invalid UTF-8), `auth` (NUL in user, NUL in a `-vb` password), `script` (`missing-script`, `not-executable`, `stdout-not-utf8`, `exit-stderr-not-utf8`, `exit-stderr-outside-latin1`); per mode in S2a, S2c, S2d | core done (S1); script done (S2b); modes pending (S2a, S2c, S2d) |
+| D-3 texts | fixture `http_common` compare mode `html` (CPython 3.14's `<style>` block removed; Rust writes the 3.12/3.13 page); fixture `script` (`exit-multiline-stderr`, `exit-long-stderr`: message in the body, ≤ 1 KiB, control characters as spaces); unit `modes::script::tests::stderr_message_follows_python_strip_and_d3` | gate done (S1); script done (S2b); modes pending (S2a, S2c, S2d) |
 | D-4 JSON input strictness | fixture `pyjson` `d4-*` cases and random overflows | done (S1) |
 | D-5 JSON output bytes | fixtures `float_repr`, `pyjson`; unit `pyjson::tests` | done (S1) |
 | D-6 auth | fixture `auth` (every difference is a refusal; `tests/test_metrics_httpd_fixtures.py` checks it); process `binary::check_config_exit_codes` | done (S1) |
 | D-7 headers/protocol | fixture `http_common` (`logyard-404` compare: Rust adds `Content-Length`); process `binary::access_log_matches_the_python_lines_and_hides_credentials` (`Server`) | done (S1) |
-| D-8 script timeout kills the process group | pending (S2b) | pending (S2b) |
-| D-9 logs | process `binary::access_log_matches_the_python_lines_and_hides_credentials`, `binary::logyard_health_is_silent_per_request` | done (S1); 5xx error lines pending (S2a–S2d) |
+| D-8 script timeout kills the process group | `fixtures::script_timeout_kills_the_process_group` (a grandchild holding the pipe: 504 after the timeout, grandchild gone); process `binary::sigterm_kills_a_running_script_group` | done (S2b) |
+| D-9 logs | process `binary::access_log_matches_the_python_lines_and_hides_credentials`, `binary::logyard_health_is_silent_per_request`, `binary::script_mode_logs_one_error_line_per_5xx` | done (S1); script 5xx error lines done (S2b); 5xx error lines pending (S2a, S2c, S2d) |
 | D-10 IPv6 in every mode | process `binary::ipv6_bind_works_in_every_mode` | done (S1) |
 | D-11 static via `ServeDir` | pending (S2e) | pending (S2e) |
-| D-12 size limits | unit `meta` (`MAX_DOCUMENT_BYTES`; tested with the mode in S2a) | pending (S2a, S2b) |
+| D-12 size limits | unit `meta` (`MAX_DOCUMENT_BYTES`; tested with the mode in S2a); `fixtures::script_stdout_above_64_mib_is_refused` | script done (S2b); JSON pending (S2a) |
 | D-13 Loki query encoding, `http://` only | process `binary::check_config_exit_codes`, unit `modes::logyard_health::tests` (`https` refused) | `https` refusal done (S1); encoding pending (S2d) |
 | D-14 request parsing (fragment, hyper's 400) | fixture `http_common` `fragment` (`rust_status` 401 in exact mode) | done (S1) |
