@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- `graphyard` core: select the agent implementation, the port of
+  `graphyard_deploy`'s `agent_rust.yml` and `agent_verify.yml` (ops-library
+  `08faab6a`, graphyard `agent-rs/PLAN.md` 8.3). New `GraphyardConfig` fields
+  `agent_impl` (`python` | `rust`, default `python`), `agent_rust_version`,
+  `agent_rust_sha256`, `agent_rust_release_url`, `agent_rust_local_archive`,
+  `agent_rust_install_root` (`/opt/graphyard-agent`) and
+  `agent_rust_keep_versions` (`3`), validated like the role's settings. A
+  pinned release is installed after the migrations with either
+  implementation, validated as the service user (`--version`,
+  `--check-schema`), selected by the drop-in
+  `graphyard-agent.service.d/agent-impl.conf` (the role's template, vendored
+  in `tests/parity/ansible`), verified by `/proc/<pid>/exe` (Rust) or argv
+  (Python) after the restarts, and old versions are pruned after that check.
+  The module `services/graphyard/agent.py` and its host script
+  `files/agent.sh` are ported from nyxmon's, which stays unchanged.
+  `agent-rs/target/` joins `SOURCE_EXCLUDES`. The default (`python`, no
+  version) installs nothing; every run now adds one read-only check that the
+  agent unit runs the venv's `manage.py start_agent`. The drift manifest
+  records `graphyard_deploy` at ops-library main `6342a60c`.
+
 - `django_site` (and so every site deployed through it): refuse a source
   `uv.lock` that locks certifi below 2026.10.19 or upstream pip below 26.2.2
   before any operation, and verify after the dependency sync, read-only and on
