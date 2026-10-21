@@ -28,11 +28,11 @@ ARCHES = {"x86_64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
 
 class UvInstallConfig(RoleConfig):
     # Version and checksums change together (the role's defaults).
-    version: Version = "0.13.0"
+    version: Version = "0.13.4"
     checksums: dict[str, Sha256] = Field(
         default_factory=lambda: {
-            "x86_64-unknown-linux-gnu": "1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154",
-            "aarch64-unknown-linux-gnu": "3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3",
+            "x86_64-unknown-linux-gnu": "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f",
+            "aarch64-unknown-linux-gnu": "1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab",
         }
     )
     # Must be world-readable: every service user runs uv from here.
@@ -52,7 +52,7 @@ class UvInstallConfig(RoleConfig):
 
 
 def installed_version(binary: str) -> str:
-    """``uv 0.13.0 (...)`` -> ``0.13.0``; empty when missing or broken."""
+    """``uv 0.13.4 (...)`` -> ``0.13.4``; empty when missing or broken."""
 
     match = re.match(r"^uv ([0-9.]+)", output(f"{binary} --version"))
     return match.group(1) if match else ""

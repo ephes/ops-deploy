@@ -146,7 +146,7 @@ deploy instead.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `0.13.0` | change together with `checksums` |
+| `version` | `0.13.4` | change together with `checksums` |
 | `checksums` | the role's sha256 for x86_64 and aarch64 Linux | keyed by release target |
 | `install_dir` | `/usr/local/bin` | not `/` |
 | `owner`, `group` | `root` | |

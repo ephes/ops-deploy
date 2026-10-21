@@ -367,7 +367,7 @@ def test_uv_install_runs_only_when_configured(tmp_path: Path) -> None:
     run = deploy(cfg, secrets, responses)
 
     # The role's pinned uv replaces another version, then the deploy itself is converged.
-    assert run.mutating_changed_ops == changed("Install uv | Install uv 0.13.0 to /usr/local/bin")
+    assert run.mutating_changed_ops == changed("Install uv | Install uv 0.13.4 to /usr/local/bin")
 
 
 def test_uv_already_pinned_is_left_alone(tmp_path: Path) -> None:
@@ -378,7 +378,7 @@ def test_uv_already_pinned_is_left_alone(tmp_path: Path) -> None:
     responses = {
         **converged(cfg, secrets),
         **fakehost.directory("/usr/local/bin"),
-        "/usr/local/bin/uv --version": ["uv 0.13.0 (abc 2026-09-01)"],
+        "/usr/local/bin/uv --version": ["uv 0.13.4 (abc 2026-09-01)"],
         **fakehost.stat("/usr/local/bin/uvx"),
     }
 

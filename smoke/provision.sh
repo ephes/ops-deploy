@@ -10,7 +10,7 @@
 set -euo pipefail
 
 PUBKEY="$1"
-UV_VERSION="0.13.0"
+UV_VERSION="0.13.4"
 TRAEFIK_VERSION="3.7.14"  # what macmini runs
 POSTGRES_VERSION="17"  # what macmini runs
 

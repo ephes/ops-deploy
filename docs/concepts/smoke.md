@@ -39,7 +39,7 @@ of the test suite that touches a network or a host.
   service deploy expects to find, pinned to what macmini runs: rsync and
   python3, `build-essential` (some wheels, such as asyncpg for Python 3.14,
   do not exist for arm64 and are built from source, as macmini can), uv
-  0.13.0 in `/usr/local/bin`, Traefik 3.7.14 as `traefik.service` with the
+  0.13.4 in `/usr/local/bin`, Traefik 3.7.14 as `traefik.service` with the
   file provider on `/etc/traefik/dynamic` and the `web-secure` entry point on
   `:443` (Traefik's default certificate), and PostgreSQL 17 from the PGDG
   repository (in the repository file `postgres_install` writes). Root's login

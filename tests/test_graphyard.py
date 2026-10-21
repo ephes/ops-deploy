@@ -122,7 +122,7 @@ def converged(cfg: GraphyardConfig, secrets: SecretValues | None = None, /, **dr
         f"test -e {SITE}/.venv/bin/python": ["present"],
         f"test -e {DB}": ["present"],
         f"stat -c '%U:%G %a' {DB}": ["graphyard:graphyard 640"],
-        "/usr/local/bin/uv --version": ["uv 0.13.0 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uv --version": ["uv 0.13.4 (x86_64-unknown-linux-gnu)"],
         **fakehost.file("/usr/local/bin/uvx", "uvx"),
         **fakehost.directory("/usr/local/bin"),
     }

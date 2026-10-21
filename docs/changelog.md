@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pin the managed uv installer to 0.13.4 with verified Linux release checksums and refresh certifi to 2026.10.19 for the eMudhra trust incident. The updated `uv_install` mirror digest is from the paired incident ops-library branch; other digests retain their recorded source baseline.
+
 - `homelab`: port of the `homelab_deploy` role (deploy only; with the
   `homelab_shared` defaults), checked against ops-library main `540ede2b`
   (2.56.0). `HomelabConfig` mirrors the role's variables; `deploy_homelab`
