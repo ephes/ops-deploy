@@ -21,9 +21,7 @@ Slice S2 (crate skeleton):
   prefixes, the last occurrence winning; usage errors exit 2.
   `--version` prints `software-live <version> (<commit>)`.
 - `collect` validates its policy, then stops with exit 1 until S3f;
-  `serve` stops with exit 1 until S4; `export-inventory` checks its
-  arguments (`inventory export failed: ValueError`), then stops with exit 1
-  until S3e.
+  `serve` stops with exit 1 until S4.
 - Slice S3d: `src/apt.rs` runs the APT helper `software-live-apt`
   (`../software-live-apt`, GPL-3.0-or-later, built per distribution
   variant) next to the executable and takes its JSON result, or reports the
@@ -77,6 +75,23 @@ is wired in S3f):
   (the PID file), and every child now inherits no descriptor beyond its
   standard streams and the passed one (`subprocess`'s `close_fds`).
 
+Slice S3e (inventory export, `src/export.rs`):
+
+- `software-live export-inventory --config STATE --output O --group G`
+  works as the Python program does: the export directory must be a
+  root-owned directory writable by root alone; the state file is opened
+  with `O_NOFOLLOW|O_NONBLOCK` and must be a regular, root-owned file with
+  one link, writable by root alone, at most 1 MiB; the projection keeps the
+  allowlisted fields only and is written with S3a's `atomic::write_json`
+  (temporary file `.software-live-*` in the target directory, mode 0640,
+  group `G` set through the descriptor, `fsync`, rename). Any failure prints
+  `inventory export failed: <Class>`, exits 1 and leaves the previous
+  projection as it was. It never reads `--config-json`, collects or
+  connects.
+- The projection is compact JSON with sorted keys (PLAN.md 4.2 item 3);
+  the `software_estate` reader accepts it (`fixtures/rust-export.json`,
+  read by the Python test, see below).
+
 ## Layout
 
 ```text
@@ -98,11 +113,13 @@ software-live/
   src/upstream.rs             upstream, lifecycle_upstream, cache_variant, lifecycle_date
   src/atomic.rs               atomic_json
   src/apt.rs                  the APT observation through the helper software-live-apt
+  src/export.rs               inventory_projection, export_inventory
   tests/cli.rs                the binary against the Python program's exit codes
   tests/traefik_host.rs       Linux only: real processes and pinned descriptors
   fixtures/generate.py        writes fixtures/*.json from the Python program
   fixtures/*.json             generated; never edit by hand
   fixtures/rust-caches.json   caches as the Rust code writes them (see below)
+  fixtures/rust-export.json   projections as the Rust code writes them (see below)
 ```
 
 ## Checks
@@ -126,6 +143,15 @@ generator: after a change of the cache format,
 `SOFTWARE_LIVE_BLESS=1 cargo test -p software-live rust_written` rewrites it,
 then `just test-software-live-rust-fixtures` checks that the Python program
 still reads it.
+
+`fixtures/rust-export.json` is written by the Rust code, not by the
+generator: `export::tests::rust_written_exports_are_committed` runs the real
+export for every source the Python projection accepts and fails when the
+committed file differs (`SOFTWARE_LIVE_BLESS=1 cargo test -p software-live
+rust_written` rewrites it). `tests/test_software_live_rust_fixtures.py`
+(`PythonReaderAcceptsRustExport`) then runs the `software_estate` reader on
+each file and requires the value Python's own projection of the same source
+gives.
 
 `--version` takes the commit from `SOFTWARE_LIVE_GIT_COMMIT` (7 to 40
 lowercase hex digits, set by the release workflow), else `git rev-parse

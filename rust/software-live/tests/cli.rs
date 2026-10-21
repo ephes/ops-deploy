@@ -139,15 +139,6 @@ fn modes_of_later_slices_stop_with_exit_1() {
     for argv in [
         vec!["collect", "--config-json", policy.as_str()],
         vec!["serve", "--config-json", "{}"],
-        vec![
-            "export-inventory",
-            "--config",
-            "s",
-            "--output",
-            "o",
-            "--group",
-            "g",
-        ],
     ] {
         let output = Command::new(binary()).args(&argv).output().unwrap();
         assert_eq!(output.status.code(), Some(1), "{argv:?}");

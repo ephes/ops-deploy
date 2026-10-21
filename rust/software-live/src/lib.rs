@@ -4,6 +4,7 @@
 pub mod apt;
 pub mod atomic;
 pub mod error;
+pub mod export;
 pub mod http;
 pub mod lifecycle;
 pub mod os;

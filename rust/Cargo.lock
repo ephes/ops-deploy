@@ -1253,6 +1253,7 @@ dependencies = [
  "clap",
  "close_fds",
  "hex",
+ "nix",
  "rcgen",
  "regex",
  "rustix",

@@ -123,14 +123,9 @@ fn iso_date(text: &str) -> Option<NaiveDate> {
     NaiveDate::from_ymd_opt(i32::try_from(year).ok()?, month, day)
 }
 
-/// `json.loads(response.read(…))`: the bytes are UTF-8, a UTF-8 byte order
-/// mark is dropped (Python decodes bytes as `utf-8-sig`); UTF-16 and UTF-32
-/// bodies, which Python would detect, are refused (PLAN.md 4.2 item 4).
+/// `json.loads(response.read(…))` ([`pyjson::loads_bytes`]).
 fn loads_body(body: &[u8]) -> Result<Value, PyError> {
-    let body = body.strip_prefix(b"\xef\xbb\xbf").unwrap_or(body);
-    let text = std::str::from_utf8(body)
-        .map_err(|error| PyError::new("UnicodeDecodeError", error.to_string()))?;
-    pyjson::loads(text)
+    pyjson::loads_bytes(body)
 }
 
 /// `json.loads(path.read_text())` of a cache file as a JSON object, or

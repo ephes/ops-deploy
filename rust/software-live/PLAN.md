@@ -8,7 +8,8 @@ writes); S3c implemented (OS and PostgreSQL observations, lifecycle
 evaluation, `src/os.rs`, `src/postgresql.rs`, `src/lifecycle.rs`); S3d
 implemented (helper `software-live-apt`, its invocation `apt.rs`, the
 variant container CI job, the `rust-apt` isolation check; see
-`../software-live-apt/README.md`); S1 spike done, report in section 13;
+`../software-live-apt/README.md`); S3e implemented (`export-inventory`,
+`src/export.rs`); S1 spike done, report in section 13;
 the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -501,6 +502,15 @@ On failure the previous `state.json` stays untouched (test
   this is a hard contract.
 - Failure: stderr `inventory export failed: <Class>`, exit 1, no change to
   the existing projection. The unit ignores the exit status (`-` prefix).
+- Order (S3e follows it, so the same input fails with the same class):
+  `lstat` of the output's parent, `open`, `os.fdopen` (which refuses a
+  directory with `IsADirectoryError` before the file checks), the file
+  checks, the size bound, `json.loads`, the projection checks (schema,
+  host, time, then `os`, `postgresql`, `traefik`, then `apt`), the group
+  lookup (`KeyError`), the write. Both paths are taken as `pathlib.Path`
+  spells them (a trailing slash, `.` parts and double slashes dropped).
+  `observed_at_epoch` is the source's number as read (an integer stays an
+  integer); a security count of `-0` is written as `0`.
 
 ### 3.7 systemd units (P1)
 
@@ -593,7 +603,10 @@ request path or a policy value other than the host.
    internal number token stays an ordinary key. An upstream body must be
    UTF-8 (a UTF-8 byte order mark is dropped, as in Python); Python's
    `json.loads` of bytes also detects UTF-16 and UTF-32, Rust refuses them
-   (`UnicodeDecodeError`).
+   (`UnicodeDecodeError`). The `export-inventory` source is read the same
+   way; Python also passes UTF-8-encoded surrogates there
+   (`surrogatepass`). A `--group` name that is not UTF-8 is not looked up
+   (`KeyError`; Python looks up the original bytes).
 5. **Error texts.** Messages the Python code raises itself are reproduced
    verbatim with the Python class name (`ValueError: service stopped or
    managed binary missing`, `ValueError: MainPID changed during
@@ -621,6 +634,9 @@ request path or a policy value other than the host.
    (Python compares its `repr`); the upstream lookup keeps only cycles with
    a string `cycle`, so neither case reaches a report.
 7. **Fatal errors** print one line instead of a traceback; exit codes stay.
+   `export-inventory` prints its line `inventory export failed: <Class>`
+   for every failure, also where Python leaves a traceback (an integer
+   `generated_at_epoch` beyond the float range: `OverflowError`).
 8. **APT failure classes** in `"APT observation failed (<Class>)"` are Rust
    categories: from the helper `CacheOpen` (the cache does not open) and the
    Python class of a failed `stat` of a security index
@@ -687,11 +703,12 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   src/lifecycle.rs             lifecycle_ended/_cycle/_evidence, the UTC date of `now` (S3c)
   src/traefik.rs  src/os.rs  src/postgresql.rs  src/apt.rs (helper invocation)
   src/export.rs                inventory projection + safe source read
-  src/atomic.rs                atomic JSON write with group (S3a, for the caches)
+  src/atomic.rs                atomic JSON write with group (S3a: caches; S3e: the projection)
   src/serve.rs                 endpoint (hyper behind an `Endpoint` boundary, 5.4)
   fixtures/generate.py         fixture generator (imports the Python oracle)
   fixtures/*.json
   fixtures/rust-caches.json    caches as the Rust code writes them (read by the Python test)
+  fixtures/rust-export.json    projections as the Rust code writes them (read by the Python test)
   parity/run_parity.py         process-level parity harness
   parity/shadow_compare.py     live shadow comparison
 rust/software-live-apt/        crate `software-live-apt` (GPL-3.0-or-later), binary `software-live-apt`
@@ -804,7 +821,7 @@ separate helper (section 12); the alternative is not built.
 | `close_fds=True` of every child | `close_fds` (`set_fds_cloexec`, a safe API: every descriptor from 3 up except the passed one close-on-exec before the spawn) | S3c; the workspace forbids the `unsafe` a raw descriptor needs; the crate's last release is 0.3.2 (2021), small and feature-complete (Linux `close_range` or `/proc/self/fd`) |
 | fd and stat details | `rustix` (`fcntl_setfd`, `fstat`, `fchown`, `fchmod`, `O_NOFOLLOW`) | |
 | atomic file | `tempfile` (`Builder::prefix(".software-live-")`, `persist`) | plus `fsync`; mode and group through the descriptor (`std`) |
-| users/groups | `nix::unistd::Group::from_name` or `uzers` | `grp.getgrnam` |
+| users/groups | `nix::unistd::Group::from_name` (`user` feature; chosen in S3e, already in the workspace) | `grp.getgrnam` |
 | os-release | own 30-line parser (`os.rs`) with fixtures from `platform._parse_os_release` | decided in S3c: neither crate follows Python's rule — `etc-os-release` 0.1.1 strips an unmatched opening quote and undoes every backslash escape, `os-release` 0.1.0 (unmaintained since 2018) trims lines and reads known keys only — which would change `id`, `cycle`, `codename` or `pretty_name` |
 | regex | `regex` | the patterns of 3.3 |
 | dates | `chrono` (date only, UTC; no default features) | `lifecycle_date` since S3a; the UTC date of `now` and its comparisons (S3c) |

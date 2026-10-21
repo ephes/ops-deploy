@@ -48,11 +48,11 @@ missing from this file.
 | `test_invalid_policy_and_public_bind_fail` | policy part: `policy::tests::validation_and_hash_match_python` against `fixtures/policy.json` (incl. `/bin/sh` and `/tmp/proxy` as `binary_path`) and `tests/cli.rs` (`validate` exit codes); bind part: `serve` bind tests | done (S2) / pending S4 |
 | `test_http_auth_freshness_and_malformed_state` (`EndpointTests`) | freshness part: `report::tests::freshness_matches_python` against `fixtures/report.json` (stale, `"yes"` in the summary, missing and malformed fields); HTTP part: `serve` integration tests plus endpoint parity | done (S2) / pending S4, S5 |
 | `test_idempotent_targeted_upsert_and_reenable` (`NyxmonTests`) | n/a: `nyxmon_checks.py` stays Python (PLAN.md 4.1) | — |
-| `test_allowlisted_projection_roundtrip_preserves_time_and_unknowns` | `export` fixtures and tests | pending S3e |
-| `test_projection_rejects_invalid_source_not_manufacture_success` | `export` fixtures and tests | pending S3e |
-| `test_export_atomic_permissions_and_failure_preserves_prior_file` | `export` tests | pending S3e |
-| `test_export_mode_never_collects_or_connects` | `export` tests | pending S3e |
-| `test_reader_rejects_stale_future_cross_host_and_extra_fields` | n/a: reader side (software_estate); S3e runs this reader on Rust output | pending S3e |
+| `test_allowlisted_projection_roundtrip_preserves_time_and_unknowns` | `export::tests::projection_matches_python` against `fixtures/export.json` (`base` with private fields, `apt_unknown_and_postgresql_not_expected`, the time kept as read, …); `::projection_keeps_numbers_as_read_and_copies_nothing_else`; the round trip through the reader: `PythonReaderAcceptsRustExport` (below) | done (S3e) |
+| `test_projection_rejects_invalid_source_not_manufacture_success` | `projection_matches_python` (every rejection in Python's order: `schema_*`, `host_*`, `time_*` incl. `OverflowError` of a huge integer, `check_*`, `issues_*`, `apt_*`, a non-object source) | done (S3e) |
+| `test_export_atomic_permissions_and_failure_preserves_prior_file` | `export::tests::export_files_match_python` (`fixtures/export.json` `files`: the real `export_inventory` on disk with root ownership emulated as in the Python test; mode 0640, group, new inode, the prior file kept and no temporary file left on every failure: unsafe modes and owners, symlink, hard link, FIFO, directory, size bound, missing group); `::a_failed_write_keeps_the_previous_projection` (`fchown` and rename failures) | done (S3e) |
+| `test_export_mode_never_collects_or_connects` | `main::export_inventory` takes no `System` (it cannot collect or connect) and reads only `--config`; `tests/cli.rs::exit_codes_match_python` (`export_ignores_config_json`, `export_missing_*`, `export_source_directory`, with Python's stderr line) | done (S3e) |
+| `test_reader_rejects_stale_future_cross_host_and_extra_fields` | n/a: reader side (software_estate). The reader runs on Rust output: `tests/test_software_live_rust_fixtures.py` (`PythonReaderAcceptsRustExport`) reads every projection in `fixtures/rust-export.json` (written by `export::tests::rust_written_exports_are_committed`) and requires the value Python's own projection of the same source gives | done (S3e) |
 | `test_reader_refuses_nonroot_writable_or_linked_paths` | n/a: reader side (software_estate) | — |
 | `test_unavailable_health_is_explicit_partial_failure_and_opt_in` | n/a: reader side (software_estate) | — |
 
@@ -135,15 +135,29 @@ message where it is the Python code's own or a `KeyError`) and the call log.
 | the helper's command line (PLAN.md 5.2) | `software-live-apt`: `tests::observe_takes_both_options_in_either_order`, `::usage_errors`, `::version_line_names_the_binary` | done |
 | the main binary's side of the helper contract (PLAN.md 5.2, 4.2 item 8): location next to `/proc/self/exe`, ownership and mode check, argv, timeout, exit, output limit, strict result shape | `apt::tests` (fake `System` world and a real script as the helper) | done |
 
+## S3e — inventory export contract parts
+
+| Python behaviour | Rust counterpart | Status |
+| --- | --- | --- |
+| `inventory_projection` (`:764-863`): key sets, `text()` (non-empty strings only, cut to 160 code points), the issue bound (20, `issues_truncated`), `os.expected` always true, the version fields per check (`cycle`; `server_version`; `installed`/`running`/`upstream.version` only from objects), the security count (`-0`, big integers, `bool`), `observed_at_epoch` as read | `export::tests::projection_matches_python` (about 100 cases) | done |
+| `json.loads(raw)` of the source bytes (S3a's reader, `pyjson::loads_bytes`): UTF-8 with or without a byte order mark, invalid UTF-8, empty and trailing data | `export::tests::source_bytes_are_read_like_python` | done |
+| `export_inventory` (`:866-881`): the order directory → open → `fdopen` (`IsADirectoryError` for a directory) → file checks → size → JSON → projection → group → write; `pathlib` spelling of both paths (trailing slash, `.` and double slashes) | `export_files_match_python`; `::python_paths_are_normalised_like_pathlib`; `::ownership_and_modes_are_checked_like_python` | done |
+| `main()` export branch (`:895-902`): the argument check and the one stderr line | `tests/cli.rs::exit_codes_match_python` | done |
+
 ## P3 cases in the fixtures (PLAN.md 4.2)
 
 Fixture cases tagged `p3` are inputs Python accepts and the Rust code
 refuses: `non-standard-json` (`NaN`, `Infinity`, lone surrogates; item 4),
-`nesting` (deeper than 128 levels; item 4), `unicode-digits` (non-ASCII
+`nesting` (deeper than 128 levels; item 4), `encoding` (an export source
+in UTF-16 or UTF-32, or with UTF-8-encoded surrogates; item 4),
+`unicode-digits` (non-ASCII
 digits; item 11; in `traefik.json` a `MainPID` and a version line, in
 `postgresql.json` `pg_lsclusters` output, the postmaster PID and its version
 line) and `iso-date` (`YYYYMMDD` and ISO week dates; item 6). The Rust tests
 assert the refusal.
+In `fixtures/export.json`, `time_nan` and `time_infinity` are refused by
+both (Python with `ValueError: invalid source time`, Rust while reading the
+JSON).
 
 In `fixtures/upstream.json` a P3 call records both the Python answer and,
 under `p3`, the answer the Rust code must give: what the Python program

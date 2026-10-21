@@ -9,10 +9,9 @@
 //! unambiguous prefix, the last occurrence winning. Usage errors exit 2.
 //! New and only additive: `--version` (`software-live <version> (<commit>)`).
 //!
-//! Slice S2 implements `validate` and the shared parts of the other modes
-//! (configuration loading and policy validation for `collect`, the argument
-//! check of `export-inventory`); `collect` (S3f), `serve` (S4) and
-//! `export-inventory` (S3e) then stop with exit 1.
+//! `validate` (S2) and `export-inventory` (S3e) are complete; `collect`
+//! validates its policy and `serve` reads its configuration, then both stop
+//! with exit 1 until their slices (S3f, S4).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -25,6 +24,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use software_live::error::PyError;
+use software_live::export;
 use software_live::policy::{self, Policy};
 use software_live::probe::{HostSystem, System};
 use software_live::pyjson;
@@ -290,16 +290,26 @@ fn not_implemented(mode: &str, slice: &str) -> Fatal {
     ))
 }
 
+/// `export-inventory` (`software_live.py:895-902`): it reads only the
+/// state file named by `--config` (never `--config-json`), so it takes no
+/// [`System`]: it neither collects nor connects. Any failure is the one
+/// line `inventory export failed: <Class>`, also for the failures Python
+/// leaves to a traceback (PLAN.md 4.2 item 7).
+fn export_inventory(cli: &Cli) -> Result<(), Fatal> {
+    let failed = |class: &str| Fatal(format!("inventory export failed: {class}"));
+    let (Some(source), Some(output), Some(group)) = (
+        cli.config.as_ref(),
+        cli.output.as_ref(),
+        cli.group.as_ref().filter(|group| !group.is_empty()),
+    ) else {
+        return Err(failed("ValueError"));
+    };
+    export::export_inventory(source, output, group).map_err(|error| failed(error.class))
+}
+
 fn run(cli: &Cli, system: &impl System) -> Result<(), Fatal> {
     if cli.mode == Mode::ExportInventory {
-        // `software_live.py:895-902`: any failure is this one line.
-        let missing = cli.config.is_none()
-            || cli.output.is_none()
-            || cli.group.as_ref().is_none_or(|group| group.is_empty());
-        if missing {
-            return Err(Fatal("inventory export failed: ValueError".into()));
-        }
-        return Err(not_implemented("export-inventory", "S3e"));
+        return export_inventory(cli);
     }
     let config = load_config(cli, system)?;
     match cli.mode {

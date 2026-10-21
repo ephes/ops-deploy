@@ -57,6 +57,17 @@ pub fn loads(text: &str) -> Result<Value, PyError> {
     convert(raw, 0)
 }
 
+/// `json.loads(raw)` of bytes: UTF-8, with a UTF-8 byte order mark dropped
+/// (Python decodes such bytes as `utf-8-sig`). Python also detects UTF-16
+/// and UTF-32 and decodes UTF-8 with `surrogatepass`; this program refuses
+/// both (PLAN.md 4.2 item 4). Its own writers write ASCII.
+pub fn loads_bytes(raw: &[u8]) -> Result<Value, PyError> {
+    let raw = raw.strip_prefix(b"\xef\xbb\xbf").unwrap_or(raw);
+    let text = std::str::from_utf8(raw)
+        .map_err(|error| PyError::new("UnicodeDecodeError", error.to_string()))?;
+    loads(text)
+}
+
 /// The members of a JSON object in text order, duplicates included.
 struct Members<'a>(Vec<(String, &'a RawValue)>);
 

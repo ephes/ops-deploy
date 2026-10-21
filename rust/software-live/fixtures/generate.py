@@ -34,6 +34,7 @@ import contextlib
 import copy
 import errno
 import functools
+import grp
 import hashlib
 import importlib.util
 import io
@@ -41,6 +42,7 @@ import json
 import math
 import os
 import random
+import stat
 import struct
 import subprocess
 import sys
@@ -1927,6 +1929,385 @@ def gen_postgresql() -> dict[str, Any]:
     return {"clusters": gen_clusters(), "server_version": gen_server_version(), "observe": observe}
 
 
+# ------------------------------------------------------------------ export
+
+EXPORT_EPOCH = 1_760_000_000.5
+EXPORT_CHECK = {"status": "ok", "observed": True, "expected": True, "issues": []}
+EXPORT_SOURCE = {
+    "schema_version": 2,
+    "host": "example",
+    "generated_at_epoch": EXPORT_EPOCH,
+    "policy_sha256": "0" * 64,
+    "os": {**EXPORT_CHECK, "cycle": "24.04", "id": "ubuntu", "lifecycle": {"status": "ok"}},
+    "postgresql": {**EXPORT_CHECK, "server_version": "17.7", "clusters": [{"name": "main"}]},
+    "traefik": {
+        **EXPORT_CHECK,
+        "binary_path": "/private/path",
+        "installed": {"version": "3.7.9", "path": "/usr/local/bin/traefik", "sha256": "1" * 64},
+        "running": {"version": "3.7.8", "pid": 11},
+        "upstream": {"version": "3.7.9", "status": "ok", "request_headers": "synthetic-never-export"},
+    },
+    "apt": {
+        "status": "ok",
+        "indexes_fresh": True,
+        "pending_security_count": 2,
+        "pending_security_updates": [{"package": "openssl"}, {"package": "libc6"}],
+    },
+    "summary": {"observation_ok": True},
+    "private_config": {"opaque_fixture": "synthetic-never-export"},
+}
+
+
+def export_text(*edits: tuple[str, Any]) -> str:
+    """EXPORT_SOURCE with each dotted path set to its value (MISSING deletes
+    it; a ``RawToken`` is written as that JSON text), as text."""
+    data = json.loads(json.dumps(EXPORT_SOURCE))
+    raws = {}
+    for index, (path, value) in enumerate(edits):
+        *parents, last = path.split(".")
+        target = data
+        for part in parents:
+            target = target[part]
+        if value is MISSING:
+            del target[last]
+        elif isinstance(value, RawToken):
+            marker = f"__RAW_TOKEN_{index}__"
+            raws[f'"{marker}"'] = value.text
+            target[last] = marker
+        else:
+            target[last] = value
+    text = json.dumps(data)
+    for marker, raw in raws.items():
+        text = text.replace(marker, raw)
+    return text
+
+
+class RawToken:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+def export_error(exc: BaseException) -> dict[str, Any]:
+    """The class always; the message only where the Python code raises it itself."""
+    message = str(exc)
+    return {"class": type(exc).__name__, "message": message if message in OWN_MESSAGES else None}
+
+
+def projection_cases() -> list[tuple[str, str, str | None]]:
+    long_text = "é" * 100 + "\U0001f600" * 100
+    issues = [f"issue-{n}-" + "x" * 200 for n in range(25)]
+    cases: list[tuple[str, str, str | None]] = [
+        ("base", export_text(), None),
+        ("apt_unknown_and_postgresql_not_expected", export_text(
+            ("apt", {"status": "unknown", "indexes_fresh": False, "pending_security_count": None}),
+            ("postgresql", {"status": "ok", "observed": True, "expected": False, "issues": []})), None),
+        ("statuses_warning_and_unknown", export_text(
+            ("os.status", "warning"), ("traefik.status", "unknown"), ("traefik.observed", False),
+            ("os.issues", ["os_cycle_drift", ""]), ("apt.pending_security_count", 0)), None),
+        ("duplicate_keys_last_wins",
+         '{"host": "bad host", ' + export_text()[1:], None),
+        ("os_expected_is_always_true", export_text(("os.expected", "yes")), None),
+        ("os_expected_missing", export_text(("os.expected", MISSING)), None),
+        ("os_running_version_is_used", export_text(("os.running", {"version": "6.8.0"})), None),
+        ("os_installed_and_upstream_ignored", export_text(
+            ("os.installed", {"version": "26.04"}), ("os.upstream", {"version": "26.04"})), None),
+        ("os_cycle_not_a_string", export_text(("os.cycle", 24.04)), None),
+        ("os_cycle_missing", export_text(("os.cycle", MISSING)), None),
+        ("postgresql_installed_and_running_ignored", export_text(
+            ("postgresql.installed", {"version": "17.6"}), ("postgresql.running", {"version": "17.5"}),
+            ("postgresql.upstream", {"version": "18.0"})), None),
+        ("postgresql_server_version_missing", export_text(("postgresql.server_version", MISSING)), None),
+        ("postgresql_server_version_empty", export_text(("postgresql.server_version", "")), None),
+        ("traefik_versions_missing", export_text(
+            ("traefik.installed", MISSING), ("traefik.running", MISSING), ("traefik.upstream", MISSING)), None),
+        ("traefik_versions_not_objects", export_text(
+            ("traefik.installed", "3.7.9"), ("traefik.running", ["3.7.8"]), ("traefik.upstream", None)), None),
+        ("traefik_versions_not_strings", export_text(
+            ("traefik.installed", {"version": 3.7}), ("traefik.running", {"version": True}),
+            ("traefik.upstream", {"version": ["3.7.9"]})), None),
+        ("traefik_versions_empty", export_text(
+            ("traefik.installed", {"version": ""}), ("traefik.running", {}), ("traefik.upstream", {"version": None})),
+         None),
+        ("texts_cut_to_160_code_points", export_text(
+            ("traefik.installed", {"version": long_text}), ("traefik.running", {"version": "r" * 161}),
+            ("traefik.upstream", {"version": "u" * 160}), ("os.cycle", "é" * 161),
+            ("postgresql.server_version", "\U0001f600" * 170)), None),
+        ("issues_cut_to_20_of_160", export_text(("traefik.issues", issues), ("os.issues", issues[:20]),
+                                                 ("postgresql.issues", issues[:21])), None),
+        ("issues_non_ascii_cut", export_text(("os.issues", [long_text, "\u0000\n", ""])), None),
+        ("issues_missing", export_text(("traefik.issues", MISSING)), None),
+        ("issues_null", export_text(("traefik.issues", None)), None),
+        ("issues_not_a_list", export_text(("os.issues", "os_cycle_drift")), None),
+        ("issues_an_object", export_text(("os.issues", {"a": "b"})), None),
+        ("issues_not_strings", export_text(("postgresql.issues", ["a", 1])), None),
+        ("issues_null_item", export_text(("postgresql.issues", [None])), None),
+        ("time_integer", export_text(("generated_at_epoch", 1_760_000_000)), None),
+        ("time_exponent", export_text(("generated_at_epoch", RawToken("1.76E9"))), None),
+        ("time_smallest_positive", export_text(("generated_at_epoch", RawToken("5e-324"))), None),
+        ("time_underflow_to_zero", export_text(("generated_at_epoch", RawToken("1e-400"))), None),
+        ("time_zero", export_text(("generated_at_epoch", 0)), None),
+        ("time_zero_float", export_text(("generated_at_epoch", 0.0)), None),
+        ("time_negative", export_text(("generated_at_epoch", -1.5)), None),
+        ("time_overflow_float", export_text(("generated_at_epoch", RawToken("1e400"))), None),
+        ("time_huge_integer", export_text(("generated_at_epoch", RawToken("1" + "0" * 400))), None),
+        ("time_huge_negative_integer", export_text(("generated_at_epoch", RawToken("-1" + "0" * 400))), None),
+        ("time_big_integer_in_range", export_text(("generated_at_epoch", RawToken("1" + "0" * 300))), None),
+        ("time_bool", export_text(("generated_at_epoch", True)), None),
+        ("time_string", export_text(("generated_at_epoch", "1760000000")), None),
+        ("time_null", export_text(("generated_at_epoch", None)), None),
+        ("time_missing", export_text(("generated_at_epoch", MISSING)), None),
+        ("time_nan", export_text(("generated_at_epoch", RawToken("NaN"))), "non-standard-json"),
+        ("time_infinity", export_text(("generated_at_epoch", RawToken("Infinity"))), "non-standard-json"),
+        ("schema_float", export_text(("schema_version", 2.0)), None),
+        ("schema_bool", export_text(("schema_version", True)), None),
+        ("schema_other", export_text(("schema_version", 99)), None),
+        ("schema_one", export_text(("schema_version", 1)), None),
+        ("schema_string", export_text(("schema_version", "2")), None),
+        ("schema_missing", export_text(("schema_version", MISSING)), None),
+        ("schema_big_integer", export_text(("schema_version", RawToken("18446744073709551618"))), None),
+        ("host_empty", export_text(("host", "")), None),
+        ("host_128", export_text(("host", "h" * 128)), None),
+        ("host_129", export_text(("host", "h" * 129)), None),
+        ("host_all_classes", export_text(("host", "Web-1.example_X")), None),
+        ("host_space", export_text(("host", "exa mple")), None),
+        ("host_slash", export_text(("host", "ex/ample")), None),
+        ("host_newline", export_text(("host", "example\n")), None),
+        ("host_non_ascii", export_text(("host", "éxample")), None),
+        ("host_number", export_text(("host", 1)), None),
+        ("host_missing", export_text(("host", MISSING)), None),
+        ("check_missing", export_text(("traefik", MISSING)), None),
+        ("check_not_an_object", export_text(("os", ["ok"])), None),
+        ("check_status_missing", export_text(("os.status", MISSING)), None),
+        ("check_status_other", export_text(("postgresql.status", "failed")), None),
+        ("check_status_not_a_string", export_text(("postgresql.status", ["ok"])), None),
+        ("check_observed_missing", export_text(("traefik.observed", MISSING)), None),
+        ("check_observed_string", export_text(("os.observed", "yes")), None),
+        ("check_observed_integer", export_text(("os.observed", 1)), None),
+        ("check_expected_missing", export_text(("postgresql.expected", MISSING)), None),
+        ("check_expected_null", export_text(("traefik.expected", None)), None),
+        ("check_expected_integer", export_text(("traefik.expected", 0)), None),
+        ("check_order_os_first", export_text(("os.observed", None), ("traefik", MISSING)), None),
+        ("apt_missing", export_text(("apt", MISSING)), None),
+        ("apt_not_an_object", export_text(("apt", [])), None),
+        ("apt_status_warning", export_text(("apt.status", "warning")), None),
+        ("apt_status_missing", export_text(("apt.status", MISSING)), None),
+        ("apt_indexes_fresh_integer", export_text(("apt.indexes_fresh", 1)), None),
+        ("apt_indexes_fresh_missing", export_text(("apt.indexes_fresh", MISSING)), None),
+        ("apt_count_missing_when_ok", export_text(("apt.pending_security_count", MISSING)), None),
+        ("apt_count_null_when_ok", export_text(("apt.pending_security_count", None)), None),
+        ("apt_count_missing_when_unknown", export_text(
+            ("apt.status", "unknown"), ("apt.pending_security_count", MISSING)), None),
+        ("apt_count_when_unknown", export_text(("apt.status", "unknown"), ("apt.pending_security_count", 3)),
+         None),
+        ("apt_count_negative", export_text(("apt.pending_security_count", -1)), None),
+        ("apt_count_negative_zero", export_text(("apt.pending_security_count", RawToken("-0"))), None),
+        ("apt_count_bool", export_text(("apt.pending_security_count", True)), None),
+        ("apt_count_float", export_text(("apt.pending_security_count", 1.0)), None),
+        ("apt_count_string", export_text(("apt.pending_security_count", "1")), None),
+        ("apt_count_big_integer", export_text(("apt.pending_security_count", RawToken("18446744073709551617"))),
+         None),
+        ("source_a_list", "[]", None),
+        ("source_null", "null", None),
+        ("source_a_string", '"example"', None),
+        ("source_a_number", "2", None),
+        ("extra_lone_surrogate", export_text(("private_config", RawToken('"\\ud800"'))), "non-standard-json"),
+        ("extra_nested_200_levels", export_text(("private_config", RawToken("[" * 200 + "]" * 200))), "nesting"),
+    ]
+    return cases
+
+
+def source_bytes_cases() -> list[tuple[str, bytes, str | None]]:
+    text = export_text().encode()
+    return [
+        ("utf8", text, None),
+        ("utf8_bom", b"\xef\xbb\xbf" + text, None),
+        ("utf8_non_ascii", export_text(("host", "example"), ("os.cycle", "é\U0001f600")).encode(), None),
+        ("invalid_utf8", text.replace(b'"opaque_fixture"', b'"opaque\xff"'), None),
+        ("latin1", export_text(("os.cycle", "é")).encode("latin-1").replace(b"\\u00e9", b"\xe9"), None),
+        ("empty", b"", None),
+        ("whitespace_only", b" \n", None),
+        ("trailing_garbage", text + b" x", None),
+        ("utf8_encoded_surrogate", text.replace(b'"opaque_fixture"', b'"opaque\xed\xa0\x80"'), "encoding"),
+        ("utf16_bom", text.decode().encode("utf-16"), "encoding"),
+        ("utf16le_without_bom", text.decode().encode("utf-16-le"), "encoding"),
+        ("utf32_bom", text.decode().encode("utf-32"), "encoding"),
+    ]
+
+
+def project(text: str | bytes) -> dict[str, Any]:
+    try:
+        return {"result": live.inventory_projection(json.loads(text))}
+    except Exception as exc:  # noqa: BLE001 - the oracle's answer
+        return {"error": export_error(exc)}
+
+
+# The export directory and source on disk, run through the real
+# ``export_inventory`` with root ownership emulated the way
+# tests/test_software_health_bridge.py does it (uid 0 from ``Path.lstat`` and
+# ``os.fstat``; "other" reports uid 99 instead). Everything else is real:
+# descriptors, O_NOFOLLOW, modes, link counts, the size bound, the group
+# lookup, the temporary file and the rename.
+EXPORT_FILE_DEFAULTS = {
+    "source": "file",  # file | symlink | dangling_symlink | hardlink | directory | fifo | missing
+    "source_mode": 0o640,
+    "text": None,  # export_text() unless given (``default_source``)
+    "pad_to": None,  # spaces appended up to this many bytes
+    "directory": "dir",  # dir | missing | file | symlink
+    "directory_mode": 0o750,
+    "directory_owner": "root",
+    "source_owner": "root",
+    "source_path": "{root}/state.json",
+    "output_path": "{root}/out/software-health.json",
+    "group": "{own}",
+}
+MISSING_GROUP = "software-live-no-such-group"
+
+
+def export_file_cases() -> list[dict[str, Any]]:
+    cases: list[tuple[str, dict[str, Any]]] = [
+        ("written", {}),
+        ("written_mode_0600_source", {"source_mode": 0o600}),
+        ("written_mode_0644_source", {"source_mode": 0o644}),
+        ("written_directory_0755", {"directory_mode": 0o755}),
+        ("written_directory_0700", {"directory_mode": 0o700}),
+        ("written_exactly_1_mib", {"pad_to": 1024 * 1024}),
+        ("written_source_path_trailing_slash", {"source_path": "{root}/state.json/"}),
+        ("written_paths_with_dot_and_double_slash",
+         {"source_path": "{root}/./state.json", "output_path": "{root}//out/./software-health.json"}),
+        ("written_unknowns", {"text": export_text(
+            ("apt", {"status": "unknown", "indexes_fresh": False, "pending_security_count": None}),
+            ("generated_at_epoch", 1_760_000_000))}),
+        ("source_too_large", {"pad_to": 1024 * 1024 + 1}),
+        ("source_group_writable", {"source_mode": 0o660}),
+        ("source_world_writable", {"source_mode": 0o602}),
+        ("source_symlink", {"source": "symlink"}),
+        ("source_dangling_symlink", {"source": "dangling_symlink"}),
+        ("source_hard_link", {"source": "hardlink"}),
+        ("source_directory", {"source": "directory"}),
+        ("source_fifo", {"source": "fifo"}),
+        ("source_missing", {"source": "missing"}),
+        ("source_not_root", {"source_owner": "other"}),
+        ("source_invalid_json", {"text": "{broken"}),
+        ("source_invalid_projection", {"text": export_text(("host", ""))}),
+        ("source_not_utf8", {"text": "{\"host\": \"\udce9\"}"}),
+        ("directory_group_writable", {"directory_mode": 0o770}),
+        ("directory_world_writable", {"directory_mode": 0o752}),
+        ("directory_sticky_world_writable", {"directory_mode": 0o1777}),
+        ("directory_not_root", {"directory_owner": "other"}),
+        ("directory_missing", {"directory": "missing"}),
+        ("directory_a_file", {"directory": "file"}),
+        ("directory_a_symlink", {"directory": "symlink"}),
+        ("directory_checked_before_source", {"directory_mode": 0o770, "source": "missing"}),
+        ("group_missing", {"group": MISSING_GROUP}),
+        ("projection_before_group", {"group": MISSING_GROUP, "text": export_text(("apt", MISSING))}),
+    ]
+    return [{"id": case_id, **EXPORT_FILE_DEFAULTS, **spec} for case_id, spec in cases]
+
+
+def export_source_bytes(case: dict[str, Any]) -> bytes:
+    text = case["text"] if case["text"] is not None else export_text()
+    data = text.encode("utf-8", "surrogateescape")
+    if case["pad_to"] is not None:
+        data += b" " * (case["pad_to"] - len(data))
+    return data
+
+
+def build_export_world(root: Path, case: dict[str, Any]) -> None:
+    """The files of one export case under ``root`` (the Rust test builds the same)."""
+    out = root / "out"
+    if case["directory"] == "dir":
+        out.mkdir()
+        (out / "software-health.json").write_bytes(b"prior")
+        (out / "software-health.json").chmod(0o600)
+        out.chmod(case["directory_mode"])
+    elif case["directory"] == "file":
+        out.write_bytes(b"not a directory")
+    elif case["directory"] == "symlink":
+        (root / "out-target").mkdir(mode=0o750)
+        out.symlink_to("out-target")
+    source = root / "state.json"
+    kind = case["source"]
+    data = export_source_bytes(case)
+    if kind in ("file", "hardlink"):
+        source.write_bytes(data)
+        source.chmod(case["source_mode"])
+        if kind == "hardlink":
+            os.link(source, root / "alias.json")
+    elif kind == "symlink":
+        (root / "state-target.json").write_bytes(data)
+        (root / "state-target.json").chmod(case["source_mode"])
+        source.symlink_to("state-target.json")
+    elif kind == "dangling_symlink":
+        source.symlink_to("missing.json")
+    elif kind == "directory":
+        source.mkdir(mode=0o750)
+    elif kind == "fifo":
+        os.mkfifo(source, 0o640)
+
+
+def run_export_case(case: dict[str, Any]) -> dict[str, Any]:
+    own_group = grp.getgrgid(os.getgid()).gr_name
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        build_export_world(root, case)
+        owners = {"root": 0, "other": 99}
+        lstat, fstat = Path.lstat, os.fstat
+
+        def emulated(value: os.stat_result, owner: str) -> os.stat_result:
+            fields = list(value)
+            fields[4] = owners[owner]
+            return os.stat_result(fields)
+
+        source = Path(case["source_path"].replace("{root}", directory))
+        output = Path(case["output_path"].replace("{root}", directory))
+        group = own_group if case["group"] == "{own}" else case["group"]
+        outcome: dict[str, Any] = {}
+        with (
+            mock.patch.object(Path, "lstat", lambda p: emulated(lstat(p), case["directory_owner"])),
+            mock.patch.object(os, "fstat", lambda fd: emulated(fstat(fd), case["source_owner"])),
+        ):
+            try:
+                live.export_inventory(source, output, group)
+            except Exception as exc:  # noqa: BLE001 - the oracle's answer
+                outcome["error"] = export_error(exc)
+        out = root / "out"
+        if case["directory"] == "dir":
+            out.chmod(0o750)
+            names = sorted(p.name for p in out.iterdir())
+            target = out / "software-health.json"
+            if "error" in outcome:
+                assert target.read_bytes() == b"prior", case["id"]
+            else:
+                st = target.stat()
+                assert stat.S_IMODE(st.st_mode) == 0o640 and st.st_gid == os.getgid(), case["id"]
+                outcome["result"] = json.loads(target.read_bytes())
+            outcome["files"] = names
+        return outcome
+
+
+def gen_export() -> dict[str, Any]:
+    projection = []
+    for case_id, text, p3 in projection_cases():
+        case = {"id": case_id, "source": text, **project(text)}
+        if p3:
+            case["p3"] = p3
+        projection.append(case)
+    source_bytes = []
+    for case_id, data, p3 in source_bytes_cases():
+        case = {"id": case_id, "hex": data.hex(), **project(data)}
+        if p3:
+            assert "result" in case, case_id
+            case["p3"] = p3
+        source_bytes.append(case)
+    files = []
+    for case in export_file_cases():
+        text = case.pop("text")
+        source_hex = None if text is None else text.encode("utf-8", "surrogateescape").hex()
+        files.append({**case, "source_hex": source_hex, **run_export_case({**case, "text": text})})
+    return {"projection": projection, "source_bytes": source_bytes, "default_source": export_text(),
+            "files": files}
+
+
 # ------------------------------------------------------------------ cli
 
 CLI_FILES = {
@@ -2010,6 +2391,17 @@ def cli_cases() -> list[dict[str, Any]]:
         ("export_without_group", ["export-inventory", "--config", "x", "--output", "y"]),
         ("export_empty_group", ["export-inventory", "--config", "x", "--output", "y", "--group", ""]),
         ("export_without_output", ["export-inventory", "--config", "x", "--group", "g"]),
+        # Failures that do not depend on who runs the test: `/` is root-owned
+        # and not group/world-writable everywhere, and nothing is written.
+        ("export_missing_directory", ["export-inventory", "--config", "{dir}/valid.json",
+                                      "--output", "{dir}/missing/software-health.json", "--group", "g"]),
+        ("export_missing_source", ["export-inventory", "--config", "{dir}/missing.json",
+                                   "--output", "/software-live-never-written.json", "--group", "g"]),
+        ("export_source_directory", ["export-inventory", "--config", "{dir}",
+                                     "--output", "/software-live-never-written.json", "--group", "g"]),
+        ("export_ignores_config_json", ["export-inventory", "--config-json", "{", "--config",
+                                        "{dir}/missing.json", "--output", "/software-live-never-written.json",
+                                        "--group", "g"]),
         ("collect_invalid_policy", ["collect", "--config", "{dir}/invalid.json"]),
         ("collect_without_config", ["collect"]),
         ("collect_broken_json", ["collect", "--config-json", "{"]),
@@ -2568,6 +2960,7 @@ GENERATORS: dict[str, Callable[[], Any]] = {
     "lifecycle.json": gen_lifecycle,
     "os.json": gen_os,
     "postgresql.json": gen_postgresql,
+    "export.json": gen_export,
 }
 
 

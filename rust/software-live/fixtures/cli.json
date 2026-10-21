@@ -608,6 +608,64 @@
   },
   {
    "argv": [
+    "export-inventory",
+    "--config",
+    "{dir}/valid.json",
+    "--output",
+    "{dir}/missing/software-health.json",
+    "--group",
+    "g"
+   ],
+   "exit": 1,
+   "id": "export_missing_directory",
+   "stderr": "inventory export failed: FileNotFoundError\n"
+  },
+  {
+   "argv": [
+    "export-inventory",
+    "--config",
+    "{dir}/missing.json",
+    "--output",
+    "/software-live-never-written.json",
+    "--group",
+    "g"
+   ],
+   "exit": 1,
+   "id": "export_missing_source",
+   "stderr": "inventory export failed: FileNotFoundError\n"
+  },
+  {
+   "argv": [
+    "export-inventory",
+    "--config",
+    "{dir}",
+    "--output",
+    "/software-live-never-written.json",
+    "--group",
+    "g"
+   ],
+   "exit": 1,
+   "id": "export_source_directory",
+   "stderr": "inventory export failed: IsADirectoryError\n"
+  },
+  {
+   "argv": [
+    "export-inventory",
+    "--config-json",
+    "{",
+    "--config",
+    "{dir}/missing.json",
+    "--output",
+    "/software-live-never-written.json",
+    "--group",
+    "g"
+   ],
+   "exit": 1,
+   "id": "export_ignores_config_json",
+   "stderr": "inventory export failed: FileNotFoundError\n"
+  },
+  {
+   "argv": [
     "collect",
     "--config",
     "{dir}/invalid.json"
