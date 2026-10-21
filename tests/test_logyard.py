@@ -569,3 +569,20 @@ def test_missing_shared_directories_are_created_without_an_owner(source: Path) -
         c.startswith("chown") and c.endswith(" /opt/apps/graphyard/site/deploy/grafana/dashboards")
         for c in run.executed_commands
     )
+
+
+def test_loki_replacement_ca_store_rendering(cfg: LogyardConfig) -> None:
+    protected = cfg.model_copy(
+        update={"loki": cfg.loki.model_copy(update={"ca_store_root": Path("/var/lib/managed-container-ca")})}
+    )
+    text = core_module.render_compose(protected)
+    assert "create_host_path: false" in text
+    assert "SSL_CERT_FILE" in text
+    assert "SSL_CERT_DIR" in text
+    assert "/logyard-loki" in text
+    assert cfg.loki.image in text
+
+
+def test_loki_rejects_relative_ca_store() -> None:
+    with pytest.raises(ValidationError):
+        Loki(ca_store_root=Path("relative"))

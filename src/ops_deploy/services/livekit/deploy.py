@@ -41,6 +41,7 @@ from ops_deploy.services.compose_app import (
     Directory,
     EnvEntry,
     HttpCheck,
+    RequiredPath,
     Secret,
     SecretKeyed,
     deploy_compose_app,
@@ -97,6 +98,9 @@ class LivekitConfig(BaseServiceConfig):
     s3_endpoint: Url = "http://127.0.0.1:9001"
     s3_bucket: Bucket = "recorder"
     traefik_host: Hostname | None
+    # Optional prepared per-container CA stores, retaining pinned application images.
+    ca_store_root: PlainPath | None = None
+    egress_chrome_policy_path: PlainPath | None = None
     # Seconds the HTTP check waits for the server after a run that applied.
     healthcheck_timeout: int = Field(default=60, ge=1, le=600)
 
@@ -198,6 +202,42 @@ class LivekitConfig(BaseServiceConfig):
             cap_add=("SYS_ADMIN",),
             binds=(Bind(source=self.egress_config_path, target=EGRESS_CONFIG, read_only=True),),
         )
+        if self.ca_store_root is not None:
+            ca_root = self.ca_store_root
+
+            def with_ca(service: ComposeService) -> ComposeService:
+                return service.model_copy(
+                    update={
+                        "environment": (
+                            *service.environment,
+                            EnvEntry(key="SSL_CERT_FILE", value="/run/managed-ca/bundle.pem"),
+                            EnvEntry(key="SSL_CERT_DIR", value="/run/managed-ca/empty"),
+                        ),
+                        "binds": (
+                            *service.binds,
+                            Bind(
+                                source=ca_root / service.name,
+                                target=PurePosixPath("/run/managed-ca"),
+                                read_only=True,
+                            ),
+                        ),
+                    }
+                )
+
+            server, egress = with_ca(server), with_ca(egress)
+        if self.egress_chrome_policy_path is not None:
+            egress = egress.model_copy(
+                update={
+                    "binds": (
+                        *egress.binds,
+                        Bind(
+                            source=self.egress_chrome_policy_path,
+                            target=PurePosixPath("/etc/opt/chrome/policies/managed/99-emudhra.json"),
+                            read_only=True,
+                        ),
+                    )
+                }
+            )
         return ComposeAppConfig(
             service_name=self.service_name,
             title=self.title,
@@ -206,7 +246,11 @@ class LivekitConfig(BaseServiceConfig):
             user="root",
             site_path=self.site_path,
             secrets=self.secrets,
-            directories=(Directory(path=self.site_path), Directory(path=self.config_dir)),
+            directories=(
+                Directory(path=self.site_path),
+                Directory(path=self.config_dir),
+                *((Directory(path=PurePosixPath(self.ca_store_root)),) if self.ca_store_root is not None else ()),
+            ),
             config_files=(
                 # The server runs as root.
                 ConfigFile(
@@ -223,6 +267,13 @@ class LivekitConfig(BaseServiceConfig):
                     data=self.egress_config(),
                     mode="0640",
                     restarts=(EGRESS,),
+                ),
+            ),
+            paths_required=(
+                *(
+                    (RequiredPath(path=self.egress_chrome_policy_path, hint="prepare with chrome_ca_distrust"),)
+                    if self.egress_chrome_policy_path is not None
+                    else ()
                 ),
             ),
             services=(server, egress),

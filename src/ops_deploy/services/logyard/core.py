@@ -74,6 +74,7 @@ def _absolute(value: PurePosixPath) -> PurePosixPath:
 class Loki(Part):
     """The Loki container and its config (the role's ``logyard_loki_*`` and retention variables)."""
 
+    ca_store_root: PurePosixPath | None = None
     image: ImageRef = "grafana/loki:3.5.11"
     container_name: Word = "logyard-loki"
     host_port: Port = 3101
@@ -92,6 +93,11 @@ class Loki(Part):
     @classmethod
     def _data_dir_absolute(cls, value: PurePosixPath) -> PurePosixPath:
         return _absolute(value)
+
+    @field_validator("ca_store_root")
+    @classmethod
+    def _ca_store_absolute(cls, value: PurePosixPath | None) -> PurePosixPath | None:
+        return None if value is None else _absolute(value)
 
 
 class GrafanaWiring(Part):
@@ -259,6 +265,7 @@ def role_vars(cfg: LogyardConfig) -> dict[str, Any]:
         "logyard_compose_path": str(cfg.compose_path),
         "logyard_config_path": str(cfg.config_path),
         "logyard_docker_network_name": cfg.docker_network_name,
+        "logyard_ca_store_root": str(cfg.loki.ca_store_root) if cfg.loki.ca_store_root is not None else "",
         "logyard_loki_image": cfg.loki.image,
         "logyard_loki_container_name": cfg.loki.container_name,
         "logyard_loki_host_port": cfg.loki.host_port,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import PurePosixPath
 from typing import Any
 
 import pytest
@@ -349,3 +350,33 @@ def test_the_stamp_records_the_pins_and_both_config_files(cfg: LivekitConfig, se
     assert set(stamp["files"]) == {"/opt/livekit/docker-compose.yml", SERVER_YAML, EGRESS_YAML}
     assert set(stamp["services"]) == {"livekit-server", "livekit-egress"}
     assert render_compose(cfg.compose_app()).count("@sha256:") == 2
+
+
+def test_replacement_ca_store_keeps_images_and_mounts(cfg: LivekitConfig) -> None:
+    original = cfg.compose_app()
+    protected = cfg.model_copy(update={"ca_store_root": PurePosixPath("/var/lib/managed-container-ca")}).compose_app()
+    for before, after in zip(original.services, protected.services, strict=True):
+        assert after.image == before.image
+        assert after.binds[:-1] == before.binds
+        assert after.binds[-1].read_only
+        assert str(after.binds[-1].source).endswith(after.name)
+        assert {entry.key: entry.value for entry in after.environment}["SSL_CERT_DIR"] == "/run/managed-ca/empty"
+
+
+def test_chrome_policy_only_binds_egress(cfg: LivekitConfig) -> None:
+    path = PurePosixPath("/var/lib/managed-container-ca/chrome/99-emudhra.json")
+    protected = cfg.model_copy(update={"egress_chrome_policy_path": path}).compose_app()
+    baseline = cfg.compose_app()
+    assert protected.services[0] == baseline.services[0]
+    assert protected.services[1].image == baseline.services[1].image
+    assert protected.services[1].binds[:-1] == baseline.services[1].binds
+    policy = protected.services[1].binds[-1]
+    assert policy.source == path
+    assert policy.target == PurePosixPath("/etc/opt/chrome/policies/managed/99-emudhra.json")
+    assert policy.read_only
+
+    assert protected.paths_required[0].path == path
+    assert protected.directories == baseline.directories
+    combined = cfg.model_copy(update={"ca_store_root": path.parent, "egress_chrome_policy_path": path}).compose_app()
+    assert combined.paths_required[0].path == path
+    assert len({entry.path for entry in combined.directories}) == len(combined.directories)

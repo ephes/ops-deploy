@@ -546,3 +546,26 @@ def test_duration_seconds_follows_to_time_unit() -> None:
     assert core_module.duration_seconds("180d") == 15552000
     assert core_module.duration_seconds("0s") == 0
     assert core_module.duration_seconds("2w") == 1209600
+
+
+def test_runtime_replacement_ca_store_rendering(source: Path) -> None:
+    cfg = macmini_core_config(source)
+    assert cfg.runtime is not None
+    protected = cfg.model_copy(
+        update={"runtime": cfg.runtime.model_copy(update={"ca_store_root": Path("/var/lib/managed-container-ca")})}
+    )
+    text = core_module.render("docker-compose.yml.j2", protected, secrets_values())
+    assert text.count("create_host_path: false") == 2
+    assert text.count("SSL_CERT_FILE") == 2
+    assert text.count("SSL_CERT_DIR") == 2
+    assert "/graphyard-influxdb" in text
+    assert "/graphyard-grafana" in text
+
+
+def test_runtime_rejects_relative_ca_store() -> None:
+    from pydantic import ValidationError
+
+    from ops_deploy.services.graphyard.core import Runtime
+
+    with pytest.raises(ValidationError):
+        Runtime(ca_store_root=Path("relative"))

@@ -136,3 +136,20 @@ guess before it reaches the running service, and the next run corrects it.
 (fake connector: first runs, converged no-ops, each kind of change and what it
 restarts, secret handling, config validation). The Ansible/pyinfra coexistence
 smoke lives in ops-control (`just smoke-logyard-coexistence`).
+
+## Per-container replacement CA store
+
+`loki.ca_store_root` optionally names an absolute host directory containing prepared
+`<container-name>/bundle.pem` and `<container-name>/empty` stores. The
+container retains its pinned application image and receives a read-only mount
+at `/run/managed-ca`, with `SSL_CERT_FILE` and `SSL_CERT_DIR` pointing there.
+Prepare from each image’s own trust material before deployment, verify the
+specific runtime honors the overrides, and refresh preparation after image or
+custom CA changes. The default is unset and preserves existing image behavior.
+This option replaces default native trust paths; explicit application CA
+overrides still require a separate audit.
+
+Refreshing store files alone does not trigger compose change detection. Explicitly
+restart/recreate affected containers to discard loaded trust contexts, then repeat
+negative and positive TLS probes. The preparation role owns root:root 0755 for
+the managed store root; LiveKit declares the same metadata for bind validation.

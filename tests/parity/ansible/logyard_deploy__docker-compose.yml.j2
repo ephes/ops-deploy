@@ -5,9 +5,22 @@ services:
     command:
       - "-config.file=/etc/loki/config.yml"
     restart: unless-stopped
+{% if logyard_ca_store_root | default('') %}
+    environment:
+      SSL_CERT_FILE: "/run/managed-ca/bundle.pem"
+      SSL_CERT_DIR: "/run/managed-ca/empty"
+{% endif %}
     ports:
       - "127.0.0.1:{{ logyard_loki_host_port }}:{{ logyard_loki_http_port }}"
     volumes:
+{% if logyard_ca_store_root | default('') %}
+      - type: bind
+        source: "{{ logyard_ca_store_root }}/{{ logyard_loki_container_name }}"
+        target: /run/managed-ca
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
       - "{{ logyard_config_path }}:/etc/loki/config.yml:ro"
       - "{{ logyard_loki_data_dir }}:/var/lib/loki"
     logging:

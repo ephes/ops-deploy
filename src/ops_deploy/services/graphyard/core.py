@@ -283,12 +283,13 @@ class Runtime(Part):
     compose_project_name: Word = "graphyard-runtime"
     # None: ``<home>/docker-compose.yml``.
     compose_path: PurePosixPath | None = None
+    ca_store_root: PurePosixPath | None = None
     docker_network_name: Word = "graphyard-monitoring"
     # Remove containers with the runtime's names that Compose does not own.
     migrate_unmanaged_containers: bool = True
     docker: DockerInstallConfig = DockerInstallConfig()
 
-    @field_validator("compose_path")
+    @field_validator("compose_path", "ca_store_root")
     @classmethod
     def _absolute_compose(cls, value: PurePosixPath | None) -> PurePosixPath | None:
         return None if value is None else absolute(value)
@@ -576,6 +577,7 @@ def role_vars(cfg: GraphyardConfig, secrets: SecretValues) -> dict[str, Any]:
         "graphyard_compose_project_name": runtime.compose_project_name,
         "graphyard_compose_path": str(cfg.compose_path),
         "graphyard_docker_network_name": runtime.docker_network_name,
+        "graphyard_ca_store_root": str(runtime.ca_store_root) if runtime.ca_store_root is not None else "",
         "graphyard_influx_image": influx.image,
         "graphyard_influx_container_name": influx.container_name,
         "graphyard_influx_host_bind_address": influx.host_bind_address,

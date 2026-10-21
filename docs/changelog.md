@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Support optional prepared replacement container CA stores for LiveKit, Graphyard and Logyard without changing application images.
+- LiveKit optionally binds a prepared managed Chrome distrust policy into Egress, with required-file preflight before application changes.
+
 - `fastdeploy`: `service_token_admin_users` (with
   `service_token_admin_initial_user` for the secret initial user) and
   `restore_policies` write FastDeploy's `SERVICE_TOKEN_ADMIN_USERS` and
