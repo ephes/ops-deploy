@@ -2055,6 +2055,9 @@ def build_apt_state() -> dict[str, str]:
                         result["body"] = result["body"].replace(
                             json.dumps(str(tmp))[1:-1], "{tmp}"
                         )
+                        # The length depends on the message (and the
+                        # temporary path in it): not recorded, not compared.
+                        result["response_headers"]["Content-Length"] = None
                 http_rows.append({**row, **result, "compare": compare})
         finally:
             server.shutdown()

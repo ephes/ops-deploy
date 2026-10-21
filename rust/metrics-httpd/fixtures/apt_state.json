@@ -1134,7 +1134,7 @@
     "status": 502,
     "response_headers": {
      "Content-Type": "application/json",
-     "Content-Length": "131"
+     "Content-Length": null
     },
     "body": "{\"error\": true, \"error_type\": \"invalid_json\", \"message\": \"Invalid JSON in state file: Expecting value: line 1 column 17 (char 16)\"}",
     "message_prefix": "Invalid JSON in state file: ",
@@ -1149,7 +1149,7 @@
     "status": 502,
     "response_headers": {
      "Content-Type": "application/json",
-     "Content-Length": "129"
+     "Content-Length": null
     },
     "body": "{\"error\": true, \"error_type\": \"invalid_json\", \"message\": \"Invalid JSON in state file: Expecting value: line 1 column 1 (char 0)\"}",
     "message_prefix": "Invalid JSON in state file: ",
@@ -1164,7 +1164,7 @@
     "status": 502,
     "response_headers": {
      "Content-Type": "application/json",
-     "Content-Length": "159"
+     "Content-Length": null
     },
     "body": "{\"error\": true, \"error_type\": \"invalid_json\", \"message\": \"Invalid JSON in state file: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)\"}",
     "message_prefix": "Invalid JSON in state file: ",
@@ -1277,7 +1277,7 @@
     "status": 503,
     "response_headers": {
      "Content-Type": "application/json",
-     "Content-Length": "194"
+     "Content-Length": null
     },
     "body": "{\"error\": true, \"error_type\": \"read_error\", \"message\": \"Cannot read state file: [Errno 13] Permission denied: '{tmp}/case-046/state.json'\"}",
     "message_prefix": "Cannot read state file: ",
