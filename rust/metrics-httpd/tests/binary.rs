@@ -982,7 +982,7 @@ fn json_file_serves_the_document_and_logs_5xx_causes() {
         assert!(
             !line.contains("dXNlcjpzZWNyZXQ")
                 && !line.contains("secret-content")
-                && !line.contains("12345678987654321"),
+                && !line.contains("2345678987654321"),
             "{line}"
         );
     }
