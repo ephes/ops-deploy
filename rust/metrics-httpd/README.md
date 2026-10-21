@@ -9,8 +9,9 @@ scripts today. The contract is [PLAN.md](PLAN.md), the test map
 hosts run the Python scripts.
 
 Status: **S1** (core), **S2a** (`json-file` mode), **S2b** (`script`
-mode), **S2c** (`apt-state` mode), **S2d** (`logyard-health` mode) and
-**S2e** (`static` mode). What exists:
+mode), **S2c** (`apt-state` mode), **S2d** (`logyard-health` mode),
+**S2e** (`static` mode) and **S3** (parity harness, shadow
+comparer). What exists:
 
 - The command line of PLAN.md 4.9 for all five modes (`json-file`,
   `script`, `apt-state`, `logyard-health`, `static`), `--version`
@@ -119,4 +120,47 @@ From `rust/` in a worktree (never in a shared checkout; this writes
 
 ```bash
 cargo test -p metrics-httpd --locked
+```
+
+## Parity harness and shadow comparer
+
+`parity/run_parity.py` (PLAN.md 8.3) starts each rendered Python endpoint
+script and the binary side by side on loopback, sends both the requests of
+the fixture matrix (`http_common`, `json_file`, `script`, `apt_state`) over
+real sockets with the same file states, and compares the two live answers
+by each case's `compare` mode; cases with an allowed difference (D item)
+require Python's recorded answer and Rust's expectation. Then keep-alive,
+concurrent requests, the slow-client D-1 difference, the SIGTERM exit codes
+and `shadow_compare.py` against live pairs. From the repository root:
+
+```bash
+just rust-parity-metrics-httpd   # build, harness (CPython 3.12 endpoints), comparer tests
+```
+
+or by hand (the repo venv renders the templates; `htpasswd` must be on
+`PATH`):
+
+```bash
+(cd rust && cargo build --locked -p metrics-httpd)
+.venv/bin/python rust/metrics-httpd/parity/run_parity.py \
+    --binary rust/target/debug/metrics-httpd --python "$(uv python find 3.12)" \
+    [--family gate|json_file|script|apt_state|process|shadow ...] [-v]
+```
+
+The `rust` CI job runs the same step (with `apache2-utils`). Without an
+ops-control checkout the torrent-vpn variant is reported as skipped. The
+logyard-health payload and the static mode join the harness with S2d and
+S2e.
+
+`parity/shadow_compare.py` (PLAN.md 10.3, stdlib, copied to the hosts for
+the S7 shadow run) compares the Python and Rust shadow units of one host:
+`run --config <json>` appends one report line (counts, probe statuses and
+differing keys, never a payload or the credential) and exits 1 on a
+difference outside PLAN.md 5.2, `preflight --config <json>` checks that no
+authenticated shadow answers 401, `summary --report <jsonl>...` totals the
+reports. The configuration format and the comparison rules are in its
+docstring; `parity/test_shadow_compare.py` tests it against fake pairs:
+
+```bash
+cd rust/metrics-httpd && python3 -I -m unittest discover -s parity -p 'test_*.py'
 ```

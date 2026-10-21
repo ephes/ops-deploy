@@ -7,7 +7,7 @@ pipeline and the shared install helpers; each crate has its own plan:
 
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
-| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c), `static` mode (S2e); the `logyard-health` body arrives with S2d ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
+| `metrics-httpd` | [`metrics-httpd/PLAN.md`](metrics-httpd/PLAN.md) | core (S1): command line of all five modes, `--check-config`, server, auth, Python-compatible JSON; every mode answers the 501/404/401 gate; `json-file` mode for all eight variants (S2a), `script` mode (S2b), `apt-state` mode (S2c), `static` mode (S2e), `logyard-health` mode (S2d); process-level parity harness and shadow comparer (S3) ([`TESTMAP.md`](metrics-httpd/TESTMAP.md)) |
 | `echoport-command-guard` | [`echoport-command-guard/PLAN.md`](echoport-command-guard/PLAN.md) | S1–S4: `--version`, `--check-policy`, every branch of the Python guard's `check()` (Layer-1 parity, filesystem layer), forced-command mode, `--decide` and `--shadow`; not released or installed yet ([`TESTMAP.md`](echoport-command-guard/TESTMAP.md)) |
 
 Nothing in this directory is part of the Ansible collection: `galaxy.yml`
@@ -122,8 +122,9 @@ container (PLAN-foundation.md sections 3 and 4).
 ## CI
 
 `.github/workflows/rust.yml` runs on pushes to `main` and on pull requests
-that touch `rust/**` or `.github/workflows/rust*.yml`, and on
-`workflow_dispatch`. One job on `ubuntu-22.04` (`permissions: contents:
+that touch `rust/**`, `.github/workflows/rust*.yml` or the Python endpoint
+scripts `roles/**/*httpd*` (metrics-httpd's parity harness runs them), and
+on `workflow_dispatch`. One job on `ubuntu-22.04` (`permissions: contents:
 read`, actions pinned by commit SHA): the pinned toolchain, a cargo cache
 keyed on `rust-toolchain.toml` and `Cargo.lock`, the CI exclusions, then
 `cargo fmt --check`, clippy with `-D warnings`, `cargo test`, cargo-deny
@@ -134,7 +135,11 @@ keyed on `rust-toolchain.toml` and `Cargo.lock`, the CI exclusions, then
 Crate steps in the same job (PLAN-foundation.md section 3 allows them):
 echoport-command-guard sets up uv with Python 3.12 for its oracle tests
 (`ECHOPORT_ORACLE_PYTHON`) and runs its fixture drift check
-(`echoport-command-guard/README.md`).
+(`echoport-command-guard/README.md`); metrics-httpd installs
+`apache2-utils` and runs its parity harness (the rendered Python endpoint
+scripts under CPython 3.12 against the debug binary) and the tests of its
+shadow comparer (`metrics-httpd/README.md`, `just
+rust-parity-metrics-httpd`).
 
 If GitHub retires the `ubuntu-22.04` image, the same steps run in a
 `ubuntu:22.04` container on `ubuntu-latest` (PLAN-foundation.md section 2).

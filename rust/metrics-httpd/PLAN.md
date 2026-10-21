@@ -10,7 +10,10 @@ implemented (`script` mode, fixture family `script`). S2c implemented
 `apt_state`). S2e implemented (`static` mode, fixture family `static`,
 `parity/static_site.py` and the real-site record of D-11). S2d implemented
 (`logyard-health` mode, fixture family `logyard_health` with a fake Loki
-and the fake `systemctl` of `fixtures/fake-bin/`). Campaign "Rust-Ports Runde 2"
+and the fake `systemctl` of `fixtures/fake-bin/`). S3 implemented: the process-level parity harness
+(`parity/run_parity.py`, `just rust-parity-metrics-httpd`, a step of the
+`rust` CI job) for every mode and the shadow comparer
+`parity/shadow_compare.py` of 10.3. Campaign "Rust-Ports Runde 2"
 (umbrella item `rust-ports-campaign`), stream `rust-metrics-httpd`. Foundation
 (workspace, CI, release, install helpers): `rust/PLAN-foundation.md` (slices
 F1–F4).
@@ -747,7 +750,7 @@ rust/metrics-httpd/
   fixtures/{static,static_real_site}.json   # S2e
   fixtures/fake-bin/systemctl          # test-only `systemctl show` with canned answers per unit name
   fixtures/htpasswd, htpasswd-mixed, htpasswd-invalid   # committed test-only files (bcrypt cost 4)
-  parity/run_parity.py, parity/shadow_compare.py
+  parity/run_parity.py, parity/shadow_compare.py, parity/test_shadow_compare.py
   parity/static_site.py                # S2e: static mode against a Python server on a site directory
   TESTMAP.md
 ```
@@ -984,7 +987,7 @@ D-11).
 
 ### 8.3 Parity harness (process level)
 
-`rust/metrics-httpd/parity/run_parity.py` (stdlib) starts the rendered Python
+`rust/metrics-httpd/parity/run_parity.py` starts the rendered Python
 script and the Rust binary side by side on loopback with identical inputs and
 runs the matrix over real sockets, plus: keep-alive reuse, a slow client
 holding a connection while another request arrives (expected D-1
@@ -996,6 +999,58 @@ S3 runs it in CI on a sample tree. Time fields
 ±1 s tolerance; everything else per the case's `compare` mode. `just
 rust-parity-metrics-httpd`; the `rust` CI job runs it (installs
 `apache2-utils`).
+
+As built (S3): the harness itself uses only the stdlib, but it renders the
+templates through `fixtures/generate.py` (jinja2, PyYAML), so it runs in the
+repository venv; the endpoint scripts run as their own processes under
+`--python` (CPython 3.12, the production hosts' version, in CI and in the
+just recipe) as the units start them (`python <script> --bind … --port …`
+plus the flags the script takes), the Rust binary with the argv of the
+fixture (`--port 0`, the port read from its startup line). The matrix is the
+fixture files' cases: `http_common.json` (family `gate`, including the
+logyard 404/501 cases), `json_file.json` (the eight variants; torrent-vpn
+only with an ops-control checkout as in 8.2, otherwise reported as skipped),
+`script.json` (one `--script` path whose content changes per case,
+`--script-timeout 2` on both sides because Python's flag is an `int`) and
+`apt_state.json` `http` (the os_apt script copy reads a temporary reboot
+flag instead of `/var/run/reboot-required`, as Rust does with
+`--reboot-flag`; the real `uname().release` replaces the case's release in
+the state text). A case without a D item compares the two live answers:
+status, `Content-Type`, `WWW-Authenticate`, `Connection`, and per `compare`
+mode the body bytes and `Content-Length` (`bytes`), the `send_error` page
+without CPython 3.14's `<style>` block (`html`), `error_type` and the
+message prefix (`error_type`, `error_type_only`, D-3) or the logyard 404
+(`logyard-404`, D-7); json-file answers also carry `Server: <server_version>
+metrics-httpd/<version>` (D-7). A case with a D item requires Python's live
+status (or dropped connection) to be the recorded one and Rust's answer to
+be the case's `rust_*` expectation. The clock is real: mtimes and the epochs
+inside the apt-state documents that the fixtures place relative to the
+generator's clock are moved to the same distance from now (the epoch-0
+mtime stays; when Python serves in the second the inputs were moved to, its
+`age_seconds` and the apt-state freshness, run and reboot fields must equal
+the fixture's recorded answer, so the move keeps every case's branch), and
+each request pair is repeated up to three times until both documents carry
+the same `served_at_epoch`; then the bytes must be
+identical, otherwise the time fields may differ by 1 s and Rust's bytes must
+still be Python's `json.dumps(..., sort_keys=True)` of its document.
+Process checks: three requests on one keep-alive connection; four
+concurrent requests (within the scripts' listen backlog of 5, beyond which
+Linux drops and macOS resets connections); a slow client that sends half a
+request while a second client asks: the single-threaded backup script
+answers the second client only after the slow client got its answer and
+closed its keep-alive connection, Rust answers at once (D-1), and the
+threaded dns script shows no difference; SIGTERM with an idle keep-alive
+connection open (Rust exits 0 within the grace period). Every pair is
+stopped with SIGTERM: Rust must exit 0, Python dies by the signal (status
+−15; systemd counts both as a clean stop), and neither log may contain the
+test credential. The family `shadow` runs `shadow_compare.py` (10.3) against
+a live backup pair: equal documents, a D-4 and a D-2 file state (allowed,
+counted), a wrong password (counted as a 401 difference) and `preflight`.
+The logyard-health payload (S2d) and the static mode (S2e) are not in the
+harness yet; their slices add a family each (logyard against a fake Loki
+and `systemctl`, static on the sample tree and the real site content of
+D-11). The `rust` CI job also runs on changes to `roles/**/*httpd*` (the
+endpoint scripts), so a template change runs the harness.
 
 ### 8.4 Process e2e (Rust only)
 
@@ -1082,6 +1137,27 @@ logyard-health shadow uses the unit's environment with the port changed. `parity
 (stdlib, copied to the host) runs every 5 min from a transient timer and
 writes a JSONL report (counts and differing keys only, no payloads) to
 `/var/lib/metrics-httpd-shadow/`. Teardown removes units, timer, files.
+
+`shadow_compare.py` as built (S3; usage in its docstring, tests in
+`parity/test_shadow_compare.py`): a root-only JSON config names the host,
+the shadow user, the throwaway password file, the report file and per
+endpoint `name`, `mode`, `path` (static: `paths`), `realm`, the `python`
+and `rust` addresses and optionally the two shadow units. `run` sends each
+pair the probes of its mode (authenticated modes: an authenticated `GET`,
+an unauthenticated `GET` that must be 401 with the realm, a wrong path,
+`HEAD`; logyard-health: `GET` and a wrong path; static: `GET` of each
+listed path), compares by the rules of section 4 with the allowed
+differences D-2, D-3, D-4, D-7, D-11 and the 1 s time tolerance (logyard's
+Loki window counts by type only, its error texts by presence), repeats a
+differing probe once after a second (a collector may have replaced the
+file in between; a difference that goes away counts as `transient`), counts
+a 401 on the authenticated probe and an unreachable side as differences,
+records `MemoryCurrent`/`MemoryPeak` and the main process's
+`VmRSS`/`RssAnon`/`RssFile`/`Threads` of the units for section 9, appends
+one line to the report (mode 0600) and exits 1 on a difference.
+`preflight` is the setup assertion above (exit 1 on a 401 or an
+unreachable side); `summary` totals report files for the S7 report (exit 0
+iff there was at least one run and no difference).
 Pass: zero differences outside section 5.2 over 24 h, and the lean numbers
 of section 9 recorded per host. Report in ops-control
 `docs/deployments/<date>-metrics-httpd-shadow.md`.

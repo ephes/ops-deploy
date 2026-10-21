@@ -16,7 +16,10 @@ Kinds:
   test-metrics-httpd-fixtures`, part of `just test`) fails on drift.
 - **unit**: `#[cfg(test)]` tests in `src/**`.
 - **process**: `tests/binary.rs` against the built binary.
-- **harness**: the parity harness of PLAN.md 8.3 (S3).
+- **harness**: the parity harness of PLAN.md 8.3 (S3,
+  `parity/run_parity.py`, `just rust-parity-metrics-httpd`, a step of the
+  `rust` CI job): the rendered Python scripts and the binary as processes
+  side by side; check names are `<family>/<variant>/<case>`.
 
 ## Fixture families (S1)
 
@@ -76,7 +79,7 @@ Kinds:
 
 | Item | Pinned by | Status |
 | --- | --- | --- |
-| D-1 concurrency, timeouts, 64 connections (script mode: scripts run concurrently) | process `binary::request_timeout_closes_silent_and_idle_connections`, `binary::connection_limit_is_64`; harness slow client (S3) | done (S1); harness pending (S3) |
+| D-1 concurrency, timeouts, 64 connections (script mode: scripts run concurrently) | process `binary::request_timeout_closes_silent_and_idle_connections`, `binary::connection_limit_is_64`; harness `process/slow-client-single-threaded` (the backup script stalls behind a slow client, Rust answers; nothing else differs) and `process/slow-client-threaded` (dns: no difference), `process/concurrent` | done (S1, harness S3) |
 | D-2 crash paths answered | fixtures `pyjson` (invalid UTF-8), `json_file` (`top-level-*` and `invalid-utf8` → 502 `invalid_json`; the unit test `mtime_outside_python_datetime_is_an_internal_error` in `src/modes/json_file.rs` → 500), `apt_state` (`reasons-int` and `reasons-true-other-kernel` → 500 `internal_error`; `top-level-list`, `top-level-null` and `not-utf8` → 502 `invalid_json`; the unit test `an_mtime_outside_python_datetime_is_an_internal_error` in `src/modes/apt_state.rs`), `auth` (NUL in user, NUL in a `-vb` password), `script` (`missing-script`, `not-executable`, `stdout-not-utf8`, `exit-stderr-not-utf8`, `exit-stderr-outside-latin1`), `logyard_health` (`http` cases with `python: crash`: `ready-closes`, `ready-not-utf8`, `query-list-body`, `query-data-null`, `query-huge-int`, `units-output-not-utf8`, `units-nul-in-name`, answered from the script with every exception caught; the `counts` cases Python does not catch; `unit_lists` `int-too-long`); `static` (`nul` → Python's 404 page) | core done (S1); json-file done (S2a); script done (S2b); apt-state done (S2c); logyard-health done (S2d); static done (S2e) |
 | D-3 texts | fixture `http_common` compare mode `html` (CPython 3.14's `<style>` block removed; Rust writes the 3.12/3.13 page); fixture `script` (`exit-multiline-stderr`, `exit-long-stderr`: message in the body, ≤ 1 KiB, control characters as spaces); unit `modes::script::tests::stderr_message_follows_python_strip_and_d3`; fixture `apt_state` compare mode `error_type_only` (parser and OS error details after the fixed prefix); fixture `json_file` compare mode `error_type` (`invalid_json`, `read_error`: same `error_type`, message prefix); fixture `static` (`empty-dir`: "File not found" instead of "Directory listing is disabled"); fixture `logyard_health` (`texts`: exception texts by presence; `HTTP Error <code>: <reason>` and `systemctl` output texts byte for byte; `unit_lists` `detail` by presence) | gate done (S1); json-file done (S2a); script done (S2b); apt-state done (S2c); logyard-health done (S2d); static done (S2e) |
 | D-4 JSON input strictness | fixture `pyjson` `d4-*` cases and random overflows; fixture `apt_state` `nan` (502 in apt-state); fixture `json_file` `nan`, `infinity`, `overflow`, `lone-surrogate`, `depth-128`, `reserved-key` per variant (Python 200, Rust 502); writer audit PLAN.md 5.3; fixture `logyard_health` `unit_lists` `nan-element`, `lone-surrogate`, `deeper-than-128` (Rust rejects the list) and `counts` `nan-token`, `overflow-token` (Rust: ingest error) | done (S1, S2a, S2c, S2d) |
@@ -90,3 +93,26 @@ Kinds:
 | D-12 size limits | unit `modes::json_file::tests::files_over_the_size_limit_are_refused` (`MAX_DOCUMENT_BYTES` + 1, sparse file → 502); `fixtures::script_stdout_above_64_mib_is_refused`; `logyard_health::loki_answers_over_64_mib_take_the_error_path` | done (S2a, S2b, S2d) |
 | D-13 Loki query encoding, `http://` only, no redirects, whole-exchange timeout, ASCII digits | process `binary::check_config_exit_codes`, unit `modes::logyard_health::tests` (`https` refused); fixture `logyard_health` (`requests`: the decoded queries of every case incl. `selector-and-windows` with `*`, `~`, `+`, `&`, `%`, `=`, `/`, `?`, `#` and `ü`; `ready-redirect`; `ready-timeout`, `query-timeout`, `critical-timeout`; `counts` `arabic-indic-digits`) | done (S1, S2d) |
 | D-14 request parsing (fragment, hyper's 400) | fixture `http_common` `fragment` (`rust_status` 401 in exact mode) | done (S1) |
+
+## Parity harness (PLAN.md 8.3, S3)
+
+Every row compares the live Python script and the live binary; a case with
+a D item requires Python's recorded answer and Rust's expectation.
+
+| Family / check | Python side | Cases | Status |
+| --- | --- | --- | --- |
+| `gate/<variant>/<case>` | backup, tailscale, `metrics_endpoint`, os_apt, logyard-health scripts | every `http_common.json` case (D-14 `fragment` as the Rust expectation; logyard 404 with D-7 `Content-Length`) | done (S3) |
+| `json_file/<variant>/<case>` | the eight json-file scripts (torrent-vpn with an ops-control checkout, else skipped) | every `json_file.json` case with the state's mtime moved to now; `Server` header (D-7); D-2/D-4/D-5 as Rust expectations | done (S3) |
+| `script/<case>` | `metrics_httpd.py.j2` with one `--script` path, `--script-timeout 2` | every `script.json` case (D-2, D-3 as Rust expectations) | done (S3) |
+| `apt_state/<case>` | `os_apt_maintenance_httpd.py.j2` reading a temporary reboot flag | every `apt_state.json` `http` case with epochs moved to now and the real `uname().release` | done (S3) |
+| `process/keep-alive`, `process/concurrent`, `process/slow-client-*`, `process/sigterm-idle-keep-alive` | backup (single-threaded), dns (threaded) | three requests per connection; four concurrent requests; D-1; Rust exit 0 with an idle connection open | done (S3) |
+| `<pair>/sigterm-and-logs` | every pair | Rust exits 0 and Python dies by SIGTERM; no credential in either log | done (S3) |
+| `shadow/*` | backup | `shadow_compare.py` against the live pair: equal documents, D-4 and D-2 counted as allowed, a wrong password counted as a 401 difference, `preflight` | done (S3) |
+| logyard-health payload, static mode | — | added by their slices | pending (S2d, S2e) |
+
+`parity/shadow_compare.py` (PLAN.md 10.3) is tested by
+`parity/test_shadow_compare.py` against fake pairs: time tolerance, value
+and byte differences named by key without values, D-2, D-3, D-4, D-11,
+401 and unreachable sides, transient differences, logyard volatile
+fields, summary, preflight, configuration errors, report mode 0600, memory
+sampling.

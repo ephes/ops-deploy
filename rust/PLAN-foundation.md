@@ -174,6 +174,8 @@ Rules:
 
 - Triggers: `push` to `main` and `pull_request`, both with `paths:
   ["rust/**", ".github/workflows/rust*.yml"]`; `workflow_dispatch`.
+  metrics-httpd S3 adds `roles/**/*httpd*` (the Python endpoint scripts its
+  parity harness runs against the binary).
 - `permissions: contents: read`; actions pinned by commit SHA (the SHAs
   mailgun-relay's workflows use).
 - Job `rust` on `ubuntu-22.04`, `working-directory: rust`, `shell: bash`:
