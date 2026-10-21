@@ -5,13 +5,14 @@ One Rust binary for the small authenticated HTTP endpoint daemons that the
 (DDNS status), `openclaw_deploy`, `logyard_deploy` and `static_site_deploy`
 roles (and ops-control's `torrent_vpn_metrics_endpoint`) run as Python
 scripts today. The contract is [PLAN.md](PLAN.md), the test map
-[TESTMAP.md](TESTMAP.md). Nothing here is released or deployed yet; the
+[TESTMAP.md](TESTMAP.md). Version 0.1.0 is released (tag
+`metrics-httpd-v0.1.0`, see "Release" below); nothing is deployed yet, the
 hosts run the Python scripts.
 
 Status: **S1** (core), **S2a** (`json-file` mode), **S2b** (`script`
 mode), **S2c** (`apt-state` mode), **S2d** (`logyard-health` mode),
-**S2e** (`static` mode) and **S3** (parity harness, shadow
-comparer). What exists:
+**S2e** (`static` mode), **S3** (parity harness, shadow
+comparer) and **S4** (release 0.1.0). What exists:
 
 - The command line of PLAN.md 4.9 for all five modes (`json-file`,
   `script`, `apt-state`, `logyard-health`, `static`), `--version`
@@ -112,6 +113,22 @@ python3 -I rust/metrics-httpd/parity/static_site.py --site site \
 
 `fixtures/htpasswd*` are committed test-only files (bcrypt cost 4; the
 passwords are in `generate.py`), created once with `htpasswd -nbB -C 4`.
+
+## Release
+
+The binary is released by the tag `metrics-httpd-v<version>` through
+`.github/workflows/rust-release.yml` (`rust/README.md` "Releases",
+PLAN-foundation.md section 4). The crate has no `release.json`: one archive
+`metrics-httpd-<version>-x86_64-unknown-linux-gnu.tar.gz` with
+`metrics-httpd` and `LICENSE`, built on `ubuntu-22.04` (glibc floor 2.35),
+plus its `.sha256`, attached to
+`https://github.com/ephes/ops-library/releases/tag/metrics-httpd-v<version>`.
+The roles pin a version and that sha256 (`metrics_httpd_rust_version`,
+`metrics_httpd_rust_sha256`, PLAN.md 7.1); no release installs itself.
+
+| Version | Tag | Release |
+|---|---|---|
+| 0.1.0 (S4) | `metrics-httpd-v0.1.0` | first release, all five modes |
 
 ## Build and test
 
