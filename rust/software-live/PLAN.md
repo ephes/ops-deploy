@@ -26,6 +26,12 @@ S7 done (release `software-live-v0.1.0` from commit `98c68001`:
 `release.json`, the `shared` runner build of `software-live` in F2's
 `rust-release.yml` and `release_checks.py`, version 0.1.0 of both crates;
 archive sha256 in 7.2);
+S8 implemented in ops-control (7.5: the pin of 0.1.0 in
+`group_vars/all.yml`, `software_live_impl: python` and
+`software_live_rust_shadow: false` in the four hosts' `host_vars`, the
+collection gate 2.65.0 and the shadow check of 8.1 in
+`playbooks/deploy-software-live.yml`, the runbook section "Rust port" of
+`docs/SOFTWARE_LIVE.md`, `tests/test_software_live_rust.py`);
 S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -1383,6 +1389,18 @@ install mechanism.
 - `docs/SOFTWARE_LIVE.md`: shadow, cutover, verification, rollback runbook;
   CHANGELOG entry.
 
+As implemented (S8): the gate is the playbook's first pre-task and requires
+2.65.0, the collection release that contains S6 (no `software_live` role
+change since), so the precondition of S9 named in section 9 is met. The four
+hosts' `host_vars` set `software_live_impl: python` and
+`software_live_rust_shadow: false`; no other inventory file and no playbook
+sets the switch or the pin. The shadow check is a third play after the Nyxmon
+registration (`tasks/software-live-shadow-check.yml`), so a shadow mismatch
+fails the run without holding back the production checks; it runs only on
+hosts with the shadow on whose production endpoint the first play verified.
+`software-sources.yml` registers `software_live_rust_version` for
+`scripts/software-inventory`.
+
 ### 7.6 Rollback
 
 - Normal: `software_live_impl: python` and `software_live_rust_shadow: false`
@@ -1430,7 +1448,11 @@ untouched Python units:
   In shadow mode the deploy playbook fetches both endpoints on the host
   (`ansible.builtin.uri`, `no_log: true`, as the existing verification) and
   asserts equal bodies except `meta.age_seconds`, and 401 without
-  credentials on the shadow port.
+  credentials on the shadow port. As implemented (S8), it fetches the
+  production endpoint before and after the shadow endpoint and requires the
+  shadow body to equal one of the two, so a collector run that replaces
+  `state.json` between two requests cannot fail the check; the 401 must carry
+  `{"error": "unauthorized"}` and realm `software-live`.
 
 `/var/lib/software-live/shadow/` is root:metrics 0750. Removing the flag
 removes the shadow units, their endpoint configuration and the directory.

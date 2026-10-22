@@ -8,9 +8,11 @@ authenticated JSON endpoint that serves them, and their inventory projection.
 Python test to its Rust counterpart.
 
 Nothing here is deployed yet: the role can switch to a pinned release
-(PLAN.md 7.3, slice S6), and the release `software-live-v0.1.0` (S7, see
-"Release") exists, but no inventory pins it before S8, so every host keeps
-running the Python program.
+(PLAN.md 7.3, slice S6, collection 2.65.0), the release
+`software-live-v0.1.0` (S7, see "Release") exists, and the ops-control
+inventory pins it (S8, PLAN.md 7.5) with every host on `software_live_impl:
+python` and the shadow off, so every host keeps running the Python program
+until the shadow (S9) and the cutover (S10).
 
 ## Status
 
