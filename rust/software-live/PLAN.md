@@ -32,6 +32,9 @@ S8 implemented in ops-control (7.5: the pin of 0.1.0 in
 collection gate 2.65.0 and the shadow check of 8.1 in
 `playbooks/deploy-software-live.yml`, the runbook section "Rust port" of
 `docs/SOFTWARE_LIVE.md`, `tests/test_software_live_rust.py`);
+S11 implemented in ops-control (the manual CLI `scripts/software-live.py`
+runs the installed release on hosts with impl `rust`, 7.5 and 4.2 item 10;
+`tests/test_software_live.py`, `docs/SOFTWARE_LIVE.md` "Manual checks");
 S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -725,7 +728,11 @@ request path or a policy value other than the host.
 10. **Manual SSH mode on Rust hosts** (S11): `just software-live --host H`
     runs the installed release binary instead of streaming the checkout's
     Python file. It therefore reports with the deployed program, not with
-    the ops-library checkout.
+    the ops-library checkout. As implemented (S11): the binary is
+    `<software_live_install_dir>/releases/<software_live_rust_version>/software-live`
+    from the inventory pin (a host whose installed version differs, e.g. a
+    pin moved ahead of the deploy, reports `unknown`: exit 127 means "not
+    installed"), and nothing is sent on stdin.
 11. **ASCII digits only.** Python's `\d` (in `version`, `numeric_version`,
     the `desired_cycle`/`desired_major` patterns and the version patterns
     of tool output) and `int()` also accept other Unicode decimal digits
@@ -1400,6 +1407,21 @@ fails the run without holding back the production checks; it runs only on
 hosts with the shadow on whose production endpoint the first play verified.
 `software-sources.yml` registers `software_live_rust_version` for
 `scripts/software-inventory`.
+
+As implemented (S11): `scripts/software-live.py` (`just software-live
+--host H`) reads each selected host's `software_live_impl` from its
+`host_vars` and the pin from `group_vars/all.yml` (a `host_vars` value
+wins, as in Ansible; `software_live_install_dir` is the role default
+unless the inventory sets it). For `rust` it runs
+`<install_dir>/releases/<version>/software-live collect --config-json
+'<policy>'` over SSH with stdin from `/dev/null`; `python` hosts keep
+streaming the checkout's `software_live.py`. The policy resolution, the
+controller allowlist (`controller_refusal`), the SSH options, the 120 s
+limit and the result checks (exit status, `schema_version` 2, `host`) are
+unchanged. An unknown `software_live_impl`, a missing or malformed version
+or a non-plain install directory is a configuration error (exit 2). The
+text output names each host's collector; the JSON output lists them under
+`collectors`.
 
 ### 7.6 Rollback
 

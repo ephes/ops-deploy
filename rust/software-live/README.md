@@ -12,7 +12,9 @@ Nothing here is deployed yet: the role can switch to a pinned release
 `software-live-v0.1.0` (S7, see "Release") exists, and the ops-control
 inventory pins it (S8, PLAN.md 7.5) with every host on `software_live_impl:
 python` and the shadow off, so every host keeps running the Python program
-until the shadow (S9) and the cutover (S10).
+until the shadow (S9) and the cutover (S10). The ops-control manual CLI
+`just software-live --host H` runs the installed release on hosts switched to
+`rust` (S11, PLAN.md 4.2 item 10) and the Python file on the others.
 
 ## Status
 
