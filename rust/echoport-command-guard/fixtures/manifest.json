@@ -1,6 +1,6 @@
 {
   "guard": "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py",
-  "guard_sha256": "49088e4bfa27c9a4432eb3cbf8fe4abd33e5cbe10b1405792cf0b54d7e85a83d",
+  "guard_sha256": "0f93ba320f8469866a94ab55fd1bc58e0a76444497d578a6f6ebb3fe5d7ab0d5",
   "decision_files": [
     "fs.jsonl",
     "journal.jsonl",

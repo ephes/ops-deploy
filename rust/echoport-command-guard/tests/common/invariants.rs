@@ -16,7 +16,8 @@
 //!   safe path and mode `0o600`/`0o700`, `chown` with one safe path and a
 //!   `<user>:<group>` owner that is not `root`'s (`private` only without
 //!   `recursive`), `mv` with two safe paths, `rm` with two safe paths ending
-//!   in `-wal`/`-shm`; a path never ends in `/`.
+//!   in `-wal`/`-shm`; a path never ends in `/`; `chmod`, `mv` and `rm` run
+//!   as a safe user that is not `root`, `chown` as root (no `user`).
 
 use echoport_command_guard::decision::{Decision, Mutation};
 use echoport_command_guard::policy::{is_safe_name, is_safe_path};
@@ -58,6 +59,13 @@ fn mutation_invariants(decision: &Decision, mutation: &Mutation) -> Result<(), S
         .any(|path| !is_safe_path(path) || path.ends_with('/'))
     {
         return Err(format!("unsafe mutation path in {mutation:?}"));
+    }
+    let as_user = mutation
+        .user
+        .as_deref()
+        .is_some_and(|user| user != "root" && is_safe_name(user));
+    if as_user == (mutation.op == "chown") || (mutation.op == "chown" && mutation.user.is_some()) {
+        return Err(format!("mutation user in {mutation:?}"));
     }
     let only_paths = mutation.mode.is_none()
         && mutation.owner.is_none()

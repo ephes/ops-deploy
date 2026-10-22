@@ -204,9 +204,15 @@ install (S9 depends on it); see the next section.
 Since H1 the guards no longer run `chmod 0600|0700`, `chown [-R]`, `mv` or
 `rm -f <db>-wal <db>-shm` as root on a pathname. `check()` decides a
 `Mutation` (`op`, `paths`, `mode`, `owner`, `recursive`, `private`,
-`replace`) with an empty `argv`, and the guard makes the change itself
-(`perform()` in the Python guard, `src/mutate.rs` here), the same way in
-both:
+`replace`, `user`) with an empty `argv`, and the guard makes the change
+itself (`perform()` in the Python guard, `src/mutate.rs` here), the same way
+in both:
+
+- `chmod`, `mv` and `rm` run as the root's owner: the guard drops to that
+  user for good (`setgroups`, `setgid`, `setuid`) before it starts, so the
+  kernel checks them with that user's own rights, also when the user moves
+  a directory the guard has already opened out of the root. `chown` needs
+  root and keeps it;
 
 - every path is walked from `/` one directory at a time with
   `O_NOFOLLOW|O_DIRECTORY`, so a symlink anywhere on the path, also one
@@ -233,7 +239,8 @@ both:
 
 `check()` additionally requires each changed path to lie inside its root as
 written (no trailing `/`, no detour through a symlink outside the root).
-Runner-facing, nothing changes for the shapes the runners send: exit 0 on
+Runner-facing, nothing changes for the shapes the runners send (their
+files and directories belong to the root's owner on the hosts): exit 0 on
 success with no output; a failure is exit 1 with `command not allowed` on
 stderr (the tool's own message before) and a `refused from` log line with
 the reason (before, a failed tool still logged `allowed from`).
@@ -242,7 +249,7 @@ Paths in the reasons are escaped as Python's `ascii()`, and `chown -R`
 visits names in byte order, so both guards give the same reason and stop at
 the same entry also for names that are not UTF-8.
 
-The race regressions are a table both guards run, `parity/races.json`: 46
+The race regressions are a table both guards run, `parity/races.json`: 47
 scenarios over all four commands, with a symlink (or a renamed directory,
 a hard link, a fifo, a new target) put in place between `check()` and the
 change, and at exact points during the walk through a test hook (`dir`

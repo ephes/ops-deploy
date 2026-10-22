@@ -113,9 +113,12 @@ pub fn rm(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Decisi
             return Err(Refused::new("unexpected rm arguments"));
         };
         require_in_roots(policy, database, env)?;
-        require_mutable(policy, wal, env)?;
+        let root = require_mutable(policy, wal, env)?;
         require_mutable(policy, shm, env)?;
-        return Ok(Decision::mutate(Mutation::new("rm", &[wal, shm])));
+        return Ok(Decision::mutate(Mutation {
+            user: Some(owner_user(&root.owner).to_owned()),
+            ..Mutation::new("rm", &[wal, shm])
+        }));
     }
     if args.len() == 4 && args[1..3] == ["-rf", "--"] {
         let target = &args[3];
@@ -266,6 +269,7 @@ pub fn mv(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Decisi
     }
     Ok(Decision::mutate(Mutation {
         replace,
+        user: Some(owner_user(&target_root.owner).to_owned()),
         ..Mutation::new("mv", &[source, target])
     }))
 }
@@ -291,9 +295,10 @@ pub fn chmod(policy: &Policy, args: &[String], env: &dyn GuardEnv) -> Result<Dec
         Some("0700") if args.len() == 3 => 0o700,
         _ => return Err(Refused::new("unexpected chmod arguments")),
     };
-    require_mutable(policy, &args[2], env)?;
+    let root = require_mutable(policy, &args[2], env)?;
     Ok(Decision::mutate(Mutation {
         mode: Some(mode),
+        user: Some(owner_user(&root.owner).to_owned()),
         ..Mutation::new("chmod", &[&args[2]])
     }))
 }
@@ -625,13 +630,16 @@ mod tests {
         let command = "rm -f /var/lib/gotosocial/sqlite.db-wal /var/lib/gotosocial/sqlite.db-shm";
         assert_eq!(
             decide(command).unwrap(),
-            Decision::mutate(Mutation::new(
-                "rm",
-                &[
-                    "/var/lib/gotosocial/sqlite.db-wal",
-                    "/var/lib/gotosocial/sqlite.db-shm"
-                ]
-            ))
+            Decision::mutate(Mutation {
+                user: Some("gotosocial".into()),
+                ..Mutation::new(
+                    "rm",
+                    &[
+                        "/var/lib/gotosocial/sqlite.db-wal",
+                        "/var/lib/gotosocial/sqlite.db-shm",
+                    ],
+                )
+            })
         );
         // Through a symlink into the root: resolved inside, not inside as
         // written (H1).
@@ -693,6 +701,7 @@ mod tests {
             mutation("chmod 0600 /home/marina/site/db.sqlite3"),
             Mutation {
                 mode: Some(0o600),
+                user: Some("marina".into()),
                 ..Mutation::new("chmod", &["/home/marina/site/db.sqlite3"])
             }
         );
@@ -750,6 +759,7 @@ mod tests {
                 decision,
                 Decision::mutate(Mutation {
                     replace: true,
+                    user: Some("marina".into()),
                     ..Mutation::new("mv", &paths)
                 })
             );
@@ -757,7 +767,10 @@ mod tests {
         assert!(mutation("mv /home/marina/site.tmp /home/marina/site").replace);
         assert_eq!(
             mutation("mv /home/marina/site/a /home/marina/site/b"),
-            Mutation::new("mv", &["/home/marina/site/a", "/home/marina/site/b"])
+            Mutation {
+                user: Some("marina".into()),
+                ..Mutation::new("mv", &["/home/marina/site/a", "/home/marina/site/b"])
+            }
         );
         let exists = serde_json::from_str::<VirtualEnv>(
             r#"{"lstat": {"/home/marina/site/b": {"kind": "dir", "mode": 493, "uid": 1000, "nlink": 2}}}"#,

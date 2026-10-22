@@ -206,6 +206,9 @@ class Mutation:
     own user with no group/other access), ``mv`` (`paths` is source and
     target; `replace`: the target may exist) or ``rm`` (``-f``: missing paths
     are fine). Every path is walked from / without following symlinks.
+    `user`: main() drops to this user (the root's owner) before perform(), so
+    chmod, mv and rm only ever do what that user could do itself; chown keeps
+    root (`user` None).
     """
 
     op: str
@@ -215,6 +218,7 @@ class Mutation:
     recursive: bool = False
     private: bool = False
     replace: bool = False
+    user: str | None = None
 
 
 @dataclass
@@ -567,9 +571,9 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
             wal, shm = args[2], args[3]
             _require(wal.endswith("-wal") and shm.endswith("-shm") and wal[:-4] == shm[:-4], "unexpected rm arguments")
             _require_in_roots(policy, wal[:-4], realpath)
-            _require_mutable(policy, wal, realpath)
+            _root, owner = _require_mutable(policy, wal, realpath)
             _require_mutable(policy, shm, realpath)
-            return Decision(argv=[], mutation=Mutation("rm", [wal, shm]))
+            return Decision(argv=[], mutation=Mutation("rm", [wal, shm], user=owner.split(":", 1)[0]))
         if args[1:3] == ["-rf", "--"] and len(args) == 4:
             target = args[3]
             _require(
@@ -640,7 +644,8 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
             # within one root onto a name that does not exist yet.
             _require(source_root == target_root, "mv across roots not allowed")
             _require(_lstat_or_none(target, lstat, "mv target") is None, f"mv target exists: {target!r}")
-        return Decision(argv=[], mutation=Mutation("mv", [source, target], replace=replace))
+        return Decision(argv=[], mutation=Mutation("mv", [source, target], replace=replace,
+                                                   user=target_root[1].split(":", 1)[0]))
 
     if tool == "mkdir":
         # As the root's owner, like the uploads that fill the directory.
@@ -650,8 +655,9 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
 
     if tool == "chmod":
         _require(len(args) == 3 and args[1] in _CHMOD_MODES, "unexpected chmod arguments")
-        _require_mutable(policy, args[2], realpath)
-        return Decision(argv=[], mutation=Mutation("chmod", [args[2]], mode=int(args[1], 8)))
+        _root, owner = _require_mutable(policy, args[2], realpath)
+        return Decision(argv=[], mutation=Mutation("chmod", [args[2]], mode=int(args[1], 8),
+                                                   user=owner.split(":", 1)[0]))
 
     if tool == "chown":
         return Decision(argv=[], mutation=_check_chown(policy, args, realpath, lstat))
@@ -946,6 +952,23 @@ def _remove(mutation: Mutation, hook) -> None:
             os.close(dir_fd)
 
 
+def become(user: str) -> None:
+    """Drop to `user` for good (supplementary groups, gid, uid), when running as
+    root: chmod, mv and rm then only do what the root's owner could do itself,
+    whatever it changes in its tree meanwhile. Not root (tests): unchanged."""
+    if os.geteuid() != 0:
+        return
+    try:
+        entry = pwd.getpwnam(user)
+    except KeyError:
+        raise Refused(f"unknown user: {user!a}") from None
+    _require(entry.pw_uid != 0, f"will not run as root: {user!a}")
+    os.setgroups([entry.pw_gid])
+    os.setgid(entry.pw_gid)
+    os.setuid(entry.pw_uid)
+    _require(os.geteuid() == entry.pw_uid and os.getuid() == entry.pw_uid, f"cannot run as {user!a}")
+
+
 def perform(mutation: Mutation, hook=None) -> None:
     """Make the change a mutation decision describes; raise Refused if it cannot."""
     if mutation.op in ("chmod", "chown"):
@@ -1003,7 +1026,10 @@ def main(argv: list[str]) -> int:
     try:
         decision = check(command, policy)
         if decision.mutation is not None:
-            # Made here, on file descriptors; nothing is executed.
+            # Made here, on file descriptors; nothing is executed. chmod, mv and
+            # rm as the root's owner, chown as root.
+            if decision.mutation.user is not None:
+                become(decision.mutation.user)
             perform(decision.mutation)
         if decision.umask is not None:
             os.umask(decision.umask)

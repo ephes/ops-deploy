@@ -22,7 +22,9 @@ pub struct Redirect {
 /// directory of the guard's own user with no group or other access), `mv`
 /// (`paths` is source and target; `replace`: the target may exist) or `rm`
 /// (`-f`: missing paths are fine). Every path is walked from `/` without
-/// following symlinks (PLAN.md 4.5, H1).
+/// following symlinks (PLAN.md 4.5, H1). `user`: the forced-command flow
+/// drops to this user (the root's owner) before the change, so `chmod`, `mv`
+/// and `rm` only do what that user could do itself; `chown` keeps root.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Mutation {
@@ -38,6 +40,8 @@ pub struct Mutation {
     pub private: bool,
     #[serde(default)]
     pub replace: bool,
+    #[serde(default)]
+    pub user: Option<String>,
 }
 
 impl Mutation {
@@ -161,7 +165,7 @@ mod tests {
             json!({"verdict": "allowed", "argv": [], "umask": null, "stdin": null, "stdout": null,
                    "mutation": {"op": "chown", "paths": ["/home/marina/site/media"], "mode": null,
                                 "owner": "marina:marina", "recursive": true, "private": false,
-                                "replace": false}})
+                                "replace": false, "user": null}})
         );
     }
 }

@@ -485,6 +485,14 @@ def scenarios(runner_commands: list[tuple[str, str]]) -> list[Scenario]:
                  f"mv {SITE}/gone {SITE}/gone2", expect_allowed=False),
         Scenario("rm -f of missing side files", "staging", ssh(f"rm -f {SITE}/none-wal {SITE}/none-shm"),
                  f"rm -f {SITE}/none-wal {SITE}/none-shm", expect_allowed=True),
+        # chmod, mv and rm run as the root's owner: root's files are not theirs.
+        Scenario("chmod of a root-owned file inside the root", "staging", ssh(f"chmod 0600 {SITE}/root-owned"),
+                 f"chmod 0600 {SITE}/root-owned", prepare=lambda: put(f"{SITE}/root-owned", "root\n", "root", 0o644),
+                 expect_allowed=False),
+        Scenario("mv into a root-owned directory inside the root", "staging",
+                 ssh(f"mv {SITE}/db.sqlite3 {SITE}/root-dir/db.sqlite3"),
+                 f"mv {SITE}/db.sqlite3 {SITE}/root-dir/db.sqlite3", prepare=lambda: mkdir(f"{SITE}/root-dir"),
+                 expect_allowed=False),
         Scenario("mkdir -p as owner", "staging", ssh(f"mkdir -p {SITE}/media/new/deeper"),
                  f"mkdir -p {SITE}/media/new/deeper", expect_allowed=True),
         # Refusals.

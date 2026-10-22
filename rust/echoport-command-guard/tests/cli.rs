@@ -229,7 +229,7 @@ fn decide_prints_the_decision_only() {
     assert_eq!(
         text(&output.stdout),
         format!(
-            "{{\"argv\":[],\"mutation\":{{\"mode\":384,\"op\":\"chmod\",\"owner\":null,\"paths\":[\"{root}/db\"],\"private\":false,\"recursive\":false,\"replace\":false}},\"stdin\":null,\"stdout\":null,\"umask\":null,\"verdict\":\"allowed\"}}\n"
+            "{{\"argv\":[],\"mutation\":{{\"mode\":384,\"op\":\"chmod\",\"owner\":null,\"paths\":[\"{root}/db\"],\"private\":false,\"recursive\":false,\"replace\":false,\"user\":\"marina\"}},\"stdin\":null,\"stdout\":null,\"umask\":null,\"verdict\":\"allowed\"}}\n"
         )
     );
     assert!(output.stderr.is_empty());

@@ -294,8 +294,9 @@ to one, **in the same order of checks** so that the refusal reasons match
 - `stdin` and `stdout`, each a `Redirect` (`directory`, `name`, `owners`)
   or none;
 - `mutation` (H1): a `Mutation` (`op`, `paths`, `mode`, `owner`,
-  `recursive`, `private`, `replace`) the guard makes itself, with an empty
-  `argv`, or none.
+  `recursive`, `private`, `replace`, `user`) the guard makes itself, with an
+  empty `argv`, or none. `user` is the root's owner for `chmod`, `mv` and
+  `rm` (none for `chown`).
 
 Three families of decision:
 
@@ -359,7 +360,13 @@ S4/S5 enforce each item.
     `[Errno <n>] <strerror>: <repr(filename)>` (the directory for its open,
     the name for the `openat`), with the C library's `strerror`.
 - Mutations (H1; Python `perform()`, Rust `src/mutate.rs`): nothing is
-  executed. Each path is walked from `/` with
+  executed. For `chmod`, `mv` and `rm` the guard first drops to the root's
+  owner for good (`setgroups([gid])`, `setgid`, `setuid`; `become()` /
+  `mutate::become_user`; a root owner or an unknown user refuses), so the
+  kernel checks them with that user's own rights: whatever the user moves in
+  its tree meanwhile (a directory the guard already opened, renamed out of
+  the root), these changes can only do what it could do itself. `chown`
+  needs root and keeps it. Each path is walked from `/` with
   `O_RDONLY|O_DIRECTORY|O_NOFOLLOW` one component at a time (a symlink is
   refused: `symbolic link in the path: <prefix>`), and the last entry is
   handled relative to the directory opened: `chmod`/`chown` `lstat` it
@@ -636,11 +643,22 @@ and each entry.
   link count checked, `chown -R` without following links) and added the
   "inside its root as written" rule to `check()`; the Python guard first
   (fixtures and `GUARD_SHA256` regenerated), then the Rust guard, with the
-  race table `parity/races.json` both run. Its release, 0.2.0, is the
+  race table `parity/races.json` both run. The dedicated security review
+  of H1 (Daybreak Blue) added the drop to the root's owner for `chmod`, `mv`
+  and `rm`: a directory already opened can be renamed out of the root by
+  that user, and with the owner's rights that gains it nothing. `chown`
+  keeps root; what remains there is bounded by what the policy grants
+  anyway: it changes the owner only of an entry reached through the root
+  (an inode with a single link at that moment), and the service user can
+  only bring an inode there, or carry an opened directory away, by renaming
+  within directories it can already write, which `chown -R` of its tree
+  covers by design. Its release, 0.2.0, is the
   one S8 pins and S9 installs. Allowed behaviour differences to the tools
   the guards ran before, the same in both guards: a symlink anywhere on a
   changed path is refused even when it resolves inside the root; a regular
   file with more than one link, a fifo, socket or device is not changed;
+  `chmod`, `mv` and `rm` run as the root's owner, so a root-owned file or
+  directory in the root is no longer theirs to change;
   `chown -R` leaves symlinks in the tree as they are (coreutils changed the
   link's own owner); `mv` replaces the target name and never moves into a
   target directory or across filesystems; a failure is `command not

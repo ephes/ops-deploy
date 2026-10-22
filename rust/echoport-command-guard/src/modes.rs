@@ -153,8 +153,15 @@ pub fn forced_command(host: &Host<'_>, policy_path: &OsStr) -> ExitCode {
         }
     };
     if let Some(mutation) = &decision.mutation {
-        // Made here, on file descriptors; nothing is executed (H1).
-        match guarded(|| mutate::perform(mutation, host.env, &mut |_, _| {})) {
+        // Made here, on file descriptors; nothing is executed (H1). `chmod`,
+        // `mv` and `rm` as the root's owner, `chown` as root.
+        let made = guarded(|| {
+            if let Some(user) = &mutation.user {
+                mutate::become_user(user, host.env)?;
+            }
+            mutate::perform(mutation, host.env, &mut |_, _| {})
+        });
+        match made {
             Ok(Ok(())) => {}
             Ok(Err(refused)) => return refuse(host, &client, refused.reason(), &command),
             Err(panic) => {

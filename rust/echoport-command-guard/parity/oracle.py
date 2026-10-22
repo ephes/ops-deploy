@@ -177,6 +177,7 @@ def encode_mutation(mutation: Any) -> dict[str, Any] | None:
         "recursive": mutation.recursive,
         "private": mutation.private,
         "replace": mutation.replace,
+        "user": mutation.user,
     }
 
 

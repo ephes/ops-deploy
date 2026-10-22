@@ -117,7 +117,8 @@ def python_decide(guard: Any, policy_path: str, command: str) -> dict[str, Any]:
             "stdin": encode_redirect(decision.stdin), "stdout": encode_redirect(decision.stdout),
             "mutation": None if mutation is None else {
                 "op": mutation.op, "paths": list(mutation.paths), "mode": mutation.mode, "owner": mutation.owner,
-                "recursive": mutation.recursive, "private": mutation.private, "replace": mutation.replace}}
+                "recursive": mutation.recursive, "private": mutation.private, "replace": mutation.replace,
+                "user": mutation.user}}
 
 
 def rust_decide(binary: str, policy_path: str, command: str, user: str | None = None) -> dict[str, Any]:

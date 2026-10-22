@@ -30,7 +30,9 @@ use nix::dir::Dir;
 use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat};
-use nix::unistd::{Gid, Group, Uid, UnlinkatFlags, dup, fchown, unlinkat};
+use nix::unistd::{
+    Gid, Group, Uid, UnlinkatFlags, User, dup, fchown, geteuid, getuid, setgid, setuid, unlinkat,
+};
 use rustix::fs::{RenameFlags, renameat_with};
 
 use crate::decision::{Mutation, Refused};
@@ -392,6 +394,45 @@ fn remove(mutation: &Mutation, hook: &mut Hook<'_>) -> Result<(), Failure> {
             Ok(()) | Err(Errno::ENOENT) => {}
             Err(errno) => return Err(Failure::os("rm failed", path.as_bytes(), errno)),
         }
+    }
+    Ok(())
+}
+
+/// `str(OSError(errno, strerror))` of a failed credential call, as the Python
+/// guard's `main()` logs it.
+fn os_error_text(errno: Errno) -> Refused {
+    Refused::new(format!("[Errno {}] {}", errno as i32, strerror(errno)))
+}
+
+/// `become(user)`: drop to `user` for good (supplementary groups, gid, uid)
+/// when running as root, so `chmod`, `mv` and `rm` only do what the root's
+/// owner could do itself, whatever it changes in its tree meanwhile. Not
+/// root (tests): unchanged.
+pub fn become_user(user: &str, env: &dyn GuardEnv) -> Result<(), Refused> {
+    if env.euid() != 0 {
+        return Ok(());
+    }
+    let Ok(Some(entry)) = User::from_name(user) else {
+        return Err(Refused::new(format!(
+            "unknown user: {}",
+            show(user.as_bytes())
+        )));
+    };
+    if entry.uid.is_root() {
+        return Err(Refused::new(format!(
+            "will not run as root: {}",
+            show(user.as_bytes())
+        )));
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    nix::unistd::setgroups(&[entry.gid]).map_err(os_error_text)?;
+    setgid(entry.gid).map_err(os_error_text)?;
+    setuid(entry.uid).map_err(os_error_text)?;
+    if geteuid() != entry.uid || getuid() != entry.uid {
+        return Err(Refused::new(format!(
+            "cannot run as {}",
+            show(user.as_bytes())
+        )));
     }
     Ok(())
 }

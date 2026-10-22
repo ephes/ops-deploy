@@ -21,7 +21,11 @@
     "Assertions: [mode, p, mode], [owner, p, new|old] (new: the uid/gid of {owner}; old: as before",
     "check()), [exists, p], [absent, p], [file, p], [dir, p], [link, p, target], [content, p, text]",
     "(the tree's files hold their relative path). `platforms` limits a scenario (non-UTF-8 names:",
-    "linux). Events of the hook: dir, stat, and rename (right before mv renames, path = target)."
+    "linux). Events of the hook: dir, stat, and rename (right before mv renames, path = target).",
+    "perform() is called directly, as the test user (root in the Layer-2 containers); the guard's",
+    "main() drops to the root's owner first for chmod, mv and rm (Layer 3, molecule). The scenario",
+    "chown-recursive-subdir-moved-out-after-open pins the accepted chown residual (PLAN.md 4.5): an",
+    "entry the guard reached through the root is changed even if its directory is renamed away."
   ],
   "tree": {
     "dirs": [
@@ -117,6 +121,10 @@
                 "actions": [["rename", "{root}/media/a", "{root}/media/a2"], ["link", "{root}/media/a", "{outside}/dir"]]}],
      "expect": {"done": true},
      "after": [["owner", "{root}/media/a2/x", "new"], ["owner", "{outside}/dir", "old"], ["owner", "{outside}/dir/f", "old"]]},
+    {"id": "chown-recursive-subdir-moved-out-after-open", "command": "chown -R {owner} {root}/media",
+     "hooks": [{"event": "stat", "path": "{root}/media/a/x", "actions": [["rename", "{root}/media/a", "{outside}/moved-a"]]}],
+     "expect": {"done": true},
+     "after": [["owner", "{outside}/moved-a/x", "new"], ["owner", "{outside}/secret", "old"], ["owner", "{outside}/dir/f", "old"]]},
     {"id": "chown-recursive-hard-link", "command": "chown -R {owner} {root}/media",
      "setup": [["hardlink", "{root}/media/hl", "{outside}/secret"]],
      "expect": {"refused": "chown target has other hard links: '{root}/media/hl'"},
