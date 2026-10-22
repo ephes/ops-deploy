@@ -126,7 +126,12 @@ connection.
 8. Bucket retention: read with `influx bucket list`, updated only when it
    differs.
 9. The web and agent unit files and the agent drop-in `agent-impl.conf`
-   (written for `rust`, removed for `python`). Release refresh: registry file,
+   (written for `rust`, removed for `python`). With a runtime, both units
+   have `Wants=` and `After=` on it, not `Requires=`. A restart, a stop and
+   start, or a failed start of `graphyard-runtime` leaves web and agent
+   running. The container CA activation stops and starts that unit, and with
+   `Requires=` web and agent stayed down afterwards. The role README's
+   "Unit dependencies" section has the comparison and its systemd test. Release refresh: registry file,
    `--check` validation (read-only), units and timer.
 10. Web and agent units started, restarted when code, venv, dependencies, the
     env file or their unit changed (the agent also when its drop-in changed). Then the
@@ -169,7 +174,7 @@ left as it is (a shared helper is a later decision).
    `ExecStart=` override naming the versioned binary with `--db`; the role's
    template shipped unchanged, see `tests/test_graphyard_parity.py`); `python`
    removes it. The base unit (`User`, `EnvironmentFile`, `WorkingDirectory`,
-   `Requires=graphyard-runtime.service`) applies to both. The version is part
+   `Wants=`/`After=graphyard-runtime.service`) applies to both. The version is part
    of the file, so a switch or a version change reloads systemd and restarts
    the agent (not the web unit), and a deploy that changes neither restarts
    nothing for it. When the selection moves away from a Rust version whose

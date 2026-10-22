@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `graphyard` core: `graphyard-web.service` and `graphyard-agent.service`
+  declare `Wants=` + `After=` on `graphyard-runtime.service` instead of
+  `Requires=`. The role templates are shipped unchanged (ops-library
+  `graphyard_deploy`, "Unit dependencies"). Before, the container CA
+  activation's stop and start of the runtime stopped web and agent and did not
+  start them again (macmini, 2026-10-21, four hours down). Now a restart, a
+  stop and start or a failed start of the runtime leaves both running. The Rust agent
+  drop-in is unchanged. The first deploy with this change rewrites both unit
+  files and restarts web and agent once. Vendored parity templates and
+  `tests/parity/ops_library_roles.json` (`graphyard_deploy`) follow ops-library
+  main `d8eba948`.
+
 - `traefik_route`: a route file that holds a basic-auth hash, in its new or
   its deployed content, is now written with `secret_file` instead of
   `files.put`, so `--diff` (ops-control's `just pyinfra-check`, `--dry

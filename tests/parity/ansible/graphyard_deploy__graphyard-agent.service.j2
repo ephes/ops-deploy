@@ -2,7 +2,11 @@
 Description=graphyard agent (HA polling + condition evaluation)
 After=network-online.target{{ (" " ~ graphyard_runtime_service_name ~ ".service") if (graphyard_runtime_enabled | bool) else "" }}
 Wants=network-online.target
-{{ ("Requires=" ~ graphyard_runtime_service_name ~ ".service") if (graphyard_runtime_enabled | bool) else "" }}
+{% if graphyard_runtime_enabled | bool %}
+# Wants=, not Requires=/PartOf=/BindsTo=: a stop, restart or failed start of
+# the runtime leaves this unit running (role README, "Unit dependencies").
+Wants={{ graphyard_runtime_service_name }}.service
+{% endif %}
 
 [Service]
 Type=simple

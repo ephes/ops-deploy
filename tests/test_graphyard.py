@@ -441,6 +441,24 @@ def test_without_a_runtime_there_is_no_docker(source: Path) -> None:
     assert "Requires=" not in run.upload(f"{UNITS}/graphyard-web.service").decode()
 
 
+def test_app_units_want_the_runtime_without_stopping_with_it(cfg: GraphyardConfig) -> None:
+    # The role's Wants= + After=: a stop, restart or failed start of the
+    # runtime (the container CA activation stops and starts it) leaves web and
+    # agent running; ops-library's runtime_deps Molecule scenario checks it
+    # against systemd.
+    run = deploy(cfg)
+
+    for unit in ("graphyard-web.service", "graphyard-agent.service"):
+        head = run.upload(f"{UNITS}/{unit}").decode().split("[Service]", 1)[0]
+        lines = [line for line in head.splitlines() if line and not line.startswith("#")]
+        assert "Wants=graphyard-runtime.service" in lines, unit
+        after = [line.split("=", 1)[1].split() for line in lines if line.startswith("After=")]
+        assert len(after) == 1, unit
+        assert "graphyard-runtime.service" in after[0], unit
+        tied = {"Requires", "Requisite", "BindsTo", "PartOf"}
+        assert not [line for line in lines if line.split("=", 1)[0] in tied], unit
+
+
 def test_release_refresh_off_stops_an_installed_timer(source: Path) -> None:
     cfg = macmini_core_config(source, inventory_release_sources=None)
     responses = converged(cfg)
