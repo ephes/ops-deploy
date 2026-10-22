@@ -37,7 +37,9 @@ all four hosts since 2026-10-22, see ops-control `docs/SOFTWARE_LIVE.md`;
 measurements in section 10; the at least 24 h evaluation is open);
 S9b implemented (collector CPU: the Traefik binary hashed once per
 attempt with `ring`'s SHA-256, 4.2 item 15; benchmark and budget
-decisions of 2026-10-22 in section 10; release 0.1.1);
+decisions of 2026-10-22 in section 10; release `software-live-v0.1.1`
+from commit `2f6091e9`, archive sha256 in 7.2; the ops-control pin is
+moved by S9);
 S11 implemented in ops-control (the manual CLI `scripts/software-live.py`
 runs the installed release on hosts with impl `rust`, 7.5 and 4.2 item 10;
 `tests/test_software_live.py`, `docs/SOFTWARE_LIVE.md` "Manual checks");
@@ -1183,6 +1185,19 @@ Release 0.1.0 (tag `software-live-v0.1.0`, commit `98c68001`, workflow run
 (`debian13`). Every binary needs at most `GLIBC_2.34` and nothing outside
 its `NEEDED` allowlist.
 
+Release 0.1.1 (S9b: the Traefik binary hashed once per run with `ring`,
+4.2 item 15; tag `software-live-v0.1.1`, commit `2f6091e9`, workflow run
+39758508442): archive sha256 `ubuntu24.04`
+`65be5aa98574b73f87e385610d4fa9ffebad99d4ecf64238991abeef5662fc10`
+(1,853,941 bytes), `debian13`
+`502663e0d25bdb750996801c28bc6dfc8d5e5b5e7bc0910c89d2cb62d889aec4`
+(1,853,355 bytes). `software-live` is the same file in both (3,454,264
+bytes, sha256
+`2b91b7f9fecbfe483668794bd28135ef8d7709ce52716520e71fb163c8ac3e14`);
+`software-live-apt` is 464,144 bytes (`ubuntu24.04`) and 461,984 bytes
+(`debian13`). Every binary needs at most `GLIBC_2.34`. The ops-control pin
+stays at 0.1.0 until the shadow is moved to 0.1.1 (S9).
+
 ### 7.3 Role `software_live` (ops-library)
 
 New defaults:
@@ -1653,7 +1668,7 @@ The budget is the memory the program allocates: the unit's cgroup memory
 | Endpoint startup to listening | — | ≤ 100 ms |
 | Collector peak (self + children `maxrss`, from `--report-usage`; on staging also the systemd "memory peak") | 80.7 MB cgroup peak on staging | below Python's peak on each host (coordinator decision 2026-10-22; the first budget, ≤ 64 MiB, is below libapt-pkg's in-memory cache on the Ubuntu hosts) |
 | Collector CPU per run incl. export | 0.50–1.88 s | not above Python's on any host, the gate for S10 (coordinator decision 2026-10-22); goal ≤ 1.0 s on macmini |
-| `software-live` stripped binary | — | ≤ 6 MiB (0.1.0: 3,464,320 bytes = 3.30 MiB) |
+| `software-live` stripped binary | — | ≤ 6 MiB (0.1.0: 3,464,320 bytes = 3.30 MiB; 0.1.1: 3,454,264 bytes) |
 | `software-live-apt` stripped binary (without shared libs) | — | ≤ 2 MiB (0.1.0: 464,144 / 461,984 bytes = 0.44 MiB) |
 
 The collector peak budget is at risk: S1 (13.5) measured the helper's

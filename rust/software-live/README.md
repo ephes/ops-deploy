@@ -8,11 +8,12 @@ authenticated JSON endpoint that serves them, and their inventory projection.
 Python test to its Rust counterpart.
 
 Nothing here is deployed yet: the role can switch to a pinned release
-(PLAN.md 7.3, slice S6, collection 2.65.0), the release
-`software-live-v0.1.0` (S7, see "Release") exists, and the ops-control
-inventory pins it (S8, PLAN.md 7.5) with every host on `software_live_impl:
-python` and the shadow off, so every host keeps running the Python program
-until the shadow (S9) and the cutover (S10). The ops-control manual CLI
+(PLAN.md 7.3, slice S6, collection 2.65.0), the releases
+`software-live-v0.1.0` (S7) and `software-live-v0.1.1` (S9b, see "Release")
+exist, and the ops-control inventory pins 0.1.0 (S8, PLAN.md 7.5) with
+every host on `software_live_impl: python` and the shadow off, so every
+host keeps running the Python program until the shadow (S9) and the
+cutover (S10). The ops-control manual CLI
 `just software-live --host H` runs the installed release on hosts switched to
 `rust` (S11, PLAN.md 4.2 item 10) and the Python file on the others.
 
@@ -204,6 +205,7 @@ no release installs itself.
 | Version | Tag (commit) | Archive sha256 | Binaries (stripped) |
 |---|---|---|---|
 | 0.1.0 (S7, first release: `validate`, `collect`, `serve`, `export-inventory`) | `software-live-v0.1.0` (`98c68001`) | `ubuntu24.04`: `89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765`; `debian13`: `9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3` | `software-live` 3,464,320 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
+| 0.1.1 (S9b: the Traefik binary hashed once per run, SHA-256 from `ring`; reports unchanged) | `software-live-v0.1.1` (`2f6091e9`) | `ubuntu24.04`: `65be5aa98574b73f87e385610d4fa9ffebad99d4ecf64238991abeef5662fc10`; `debian13`: `502663e0d25bdb750996801c28bc6dfc8d5e5b5e7bc0910c89d2cb62d889aec4` | `software-live` 3,454,264 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
 
 ## Layout
 
