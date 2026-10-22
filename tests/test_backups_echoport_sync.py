@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import subprocess
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -315,8 +317,37 @@ def test_timeout_kills_group_members_that_ignore_sigterm(tmp_path: Path) -> None
     with pytest.raises(RemoteCommandError, match="stopped"):
         runner(script, [str(pid_file)], 1)
     pid = int(pid_file.read_text())
-    with pytest.raises(ProcessLookupError):
+    # The member was reparented when the leader died; until its new parent
+    # reaps it, a killed member is a zombie that still answers signal 0 (Linux).
+    deadline = time.monotonic() + 5
+    while not _process_ended(pid):
+        assert time.monotonic() < deadline, f"group member {pid} still runs after the stop"
+        time.sleep(0.05)
+
+
+def _process_ended(pid: int) -> bool:
+    """Whether ``pid`` is gone or a zombie, i.e. can never run again."""
+
+    try:
         os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    if Path("/proc/self/stat").exists():
+        try:
+            fields = (Path("/proc") / str(pid) / "stat").read_text().rpartition(")")[2].split()
+        except FileNotFoundError:
+            return True
+        return fields[0] in ("Z", "X")
+    ps = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False)
+    state = ps.stdout.strip()
+    if not state:
+        # Gone between the two probes, or ps failed: only signal 0 can tell.
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        return False
+    return state.startswith("Z")
 
 
 # --- the real scripts, with stubs --------------------------------------------
