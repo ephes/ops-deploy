@@ -26,6 +26,7 @@ nav:
   - PostgreSQL and Redis: infra.md
   - Traefik: traefik.md
   - BIND: bind.md
+  - OpenThread Border Router: otbr.md
   - Backups before a deploy: backups.md
   - Services:
       - toy: services/toy.md

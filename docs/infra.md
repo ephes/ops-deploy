@@ -368,3 +368,7 @@ log on every start); the leftover-settings cleanup on the real file; an old
 file another lineage uses is kept; a guard refusal changes nothing; and the
 final checks fail on a second lineage (also a symlinked one) or a missing
 consumer.
+
+## OpenThread Border Router
+
+See [OTBR](otbr.md) for the gated pinned-source deploy candidate and its unsupported variants.
