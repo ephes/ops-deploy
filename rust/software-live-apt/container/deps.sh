@@ -4,7 +4,10 @@
 # and a C++ compiler for rust-apt, python3-apt for the python-apt oracle,
 # apt-utils (apt-ftparchive) for the fake repositories, binutils for the
 # NEEDED/GLIBC check, and rustup (pinned release, sha256 checked; the
-# toolchain itself comes from rust/rust-toolchain.toml).
+# toolchain itself comes from rust/rust-toolchain.toml). The software-live
+# parity harness (software-live/parity/container-run.sh, PLAN.md 6.2) also
+# needs apache2-utils (the Python endpoint runs htpasswd) and openssl (the
+# certificates of its fake upstream servers).
 #
 # Used by the `software-live-apt` job of .github/workflows/rust.yml and by
 # container/docker-check.sh. Runs as root in a throwaway container only.
@@ -18,8 +21,8 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-    apt-utils binutils ca-certificates curl g++ gcc git libapt-pkg-dev \
-    libc6-dev python3 python3-apt
+    apache2-utils apt-utils binutils ca-certificates curl g++ gcc git \
+    libapt-pkg-dev libc6-dev openssl python3 python3-apt
 
 RUSTUP_VERSION=1.29.1
 case "$(uname -m)" in

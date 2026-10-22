@@ -17,6 +17,11 @@ fixtures `serve.json` and `htpasswd.json`); S6 implemented (role switch of
 7.3 and shadow units of 8.1:
 `roles/software_live/tasks/{impl_inputs,live_state,impl,rust,shadow,verify_impl,rust_pins}.yml`,
 `plugins/filter/software_live_impl.py`, `tests/test_software_live_impl.py`);
+S5 implemented (the parity harness of 6.2: `parity/run_parity.py` with
+`parity/world.py` and `parity/compare.py`, run as root in the variant
+containers by the CI job `software-live-apt` and `just
+rs-software-live-parity`; fixes found by it: the endpoint's head limits,
+4.2 item 2);
 S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -621,7 +626,18 @@ request path or a policy value other than the host.
    without an answer). The request-target is read from the request line as
    sent, so a `#fragment` makes it differ from the path (404), as in Python. Header
    values lose trailing spaces and tabs (RFC 9110 field values; Python keeps
-   them, so `Basic <token> ` is a 401 there and a 200 here). Python serves
+   them, so `Basic <token>` is a 401 there and a 200 here). Head limits
+   (found by the S5 parity harness, which pins them): both take at most 99
+   header lines (Python's `http.client` counts the empty line that ends the
+   head and refuses more than 100 lines with 431; hyper is set to 99). Rust
+   refuses any request head (request line plus headers) longer than 64 KiB
+   with 431, however the bytes arrive (the stream hands hyper no more than
+   that before the head is parsed; hyper's own `max_buf_size` alone let a
+   head of up to about twice that through when it came in one read).
+   Python limits lines, not the head: a request line over 64 KiB is 414
+   there (431 here), a header line over 64 KiB 431 in both, and a head of
+   several lines each below 64 KiB but longer than 64 KiB together is
+   served by Python and a 431 here. Python serves
    one connection at a time with a 5 s socket timeout per read or write;
    Rust serves up to 16 connections at once (more wait in the listen
    queue): the request head must arrive within 5 s of the accept, the
@@ -772,7 +788,12 @@ rust/software-live/            crate `software-live` (MIT), binary `software-liv
   fixtures/rust-caches.json    caches as the Rust code writes them (read by the Python test)
   fixtures/rust-export.json    projections as the Rust code writes them (read by the Python test)
   fixtures/htpasswd.py         records htpasswd.json with the real `htpasswd -vi` in containers (S4)
-  parity/run_parity.py         process-level parity harness
+  parity/run_parity.py         process-level parity harness (S5)
+  parity/world.py              its container world: fake Traefik/PostgreSQL, shims, HTTPS upstream
+  parity/compare.py            P1/P2 comparison of the two programs' JSON (tests: test_compare.py)
+  parity/fakeproc.c            the fake server binaries
+  parity/container-run.sh      builds and runs the harness inside a variant image
+  parity/docker-parity.sh      the same in Docker (`just rs-software-live-parity`)
   parity/shadow_compare.py     live shadow comparison
 rust/software-live-apt/        crate `software-live-apt` (GPL-3.0-or-later), binary `software-live-apt`
   LICENSE.GPL-3.0              the helper's own license file (section 12)
@@ -960,19 +981,33 @@ software-live handler (404-before-auth order, the 503/401 bodies,
 
 ### 6.2 Parity harness (both implementations, identical inputs)
 
-`parity/run_parity.py` (stdlib Python, runs in CI and locally on Linux):
+`parity/run_parity.py` (stdlib Python; as built in S5 it runs as root in a
+throwaway `ubuntu:24.04` or `debian:13` container, after
+`software-live-apt/container/setup-world.sh`: in CI as the last step of the
+`software-live-apt` job, locally `just rs-software-live-parity` in Docker;
+`parity/container-run.sh` builds both release binaries into
+`/opt/software-live-parity` and starts it). The Python side is the image's
+`python3` with python-apt (3.12 on Ubuntu, 3.13 on Debian, as on the hosts).
+Every check compares the two live programs; the fixtures supply the inputs
+and the Python verdicts the live Python run must reproduce:
 
 - **validate**: a policy matrix (valid, each invalid rule, extra keys,
-  non-ASCII) → equal exit codes; equal `policy_sha256` via
-  `collect --config-json` in a fake world.
+  non-ASCII; `fixtures/policy.json`) → equal exit codes; equal
+  `policy_sha256` (and equal reports) via `collect --config-json` in the
+  container world. The start-up matrix of `serve` (`fixtures/serve.json`
+  `config`): both serve or both exit 1.
 - **endpoint**: start Python `serve` and Rust `serve` on loopback with the
   same `endpoint.json`, `htpasswd` (generated with `htpasswd -niB`) and
   state file; a request matrix (paths, query string, missing/malformed/
   wrong auth, oversized header, wrong user, `\n` in password, valid auth;
   states: valid, stale, future, schema 1, `2.0`, missing summary key, bool
-  timestamp, missing file, malformed JSON) → equal status codes, equal JSON
+  timestamp, missing file, malformed JSON; the 97 raw requests of
+  `fixtures/serve.json` plus the head limits) → equal status codes, equal JSON
   bodies except `meta.age_seconds` (P2), the 401 header present; P3 item 2
-  differences are expected.
+  differences are expected. The real `htpasswd -vi` decides on the Python
+  side, so a case where the fixture's password table and `htpasswd` disagree
+  (a NUL after the password, where `htpasswd` cuts) is reported as a note,
+  and Rust must answer as `htpasswd` does.
 - **export-inventory**: the same source files (valid, each rejection,
   unsafe modes, symlink, hard link, oversized) → equal exit codes and
   identical projection objects; the Python reader from software_estate
@@ -981,13 +1016,25 @@ software-live handler (404-before-auth order, the 503/401 bodies,
   a Python-written state; each implementation consumes the other's caches
   (fresh, stale, invalid) with the same `cached`/`last_success` outcome.
 - **collect in a container**: in `ubuntu:24.04` and `debian:13` images with
-  real APT lists, a fake ELF `traefik` (built by the test, prints
-  `Version: 3.7.9`) started as a process whose PID a `systemctl` shim in
-  `PATH` reports, a `pg_lsclusters` shim, and a local fake upstream server
-  via a test-only base-URL override available only in test builds: run
+  real APT lists (plus the fake repositories of `setup-world.sh`, without
+  `docker-clean`, 13.6), a fake ELF `traefik` (built by the test from
+  `parity/fakeproc.c`, prints `Version: 3.7.9`) started as a process whose
+  PID a `systemctl` shim in `PATH` reports, a fake ELF `postgres` with its
+  PID file and a `pg_lsclusters` shim, and a local fake upstream server: run
   Python `collect` and Rust `collect` on the same policy and compare under
   P1/P2 (`generated_at_epoch`, ages, upstream `checked_at_epoch` are P2;
-  `apt.pending_security_updates` must be identical).
+  `apt.pending_security_updates` must be identical). As built in S5 there
+  is no base-URL override in either program: `api.github.com` and
+  `endoflife.date` resolve to 127.0.0.1 through `/etc/hosts`, where an
+  HTTPS server presents a certificate of a throwaway CA added to the
+  container's system trust store, so both programs use their real URLs,
+  TLS stacks and the system store (`parity/world.py`). Scenarios: the full
+  world with the state file and group, the manual stdout mode, upstream
+  errors and garbage, an OS mismatch, Traefik stopped or replaced on disk
+  while running, nothing expected (present and absent), PostgreSQL absent
+  or down, and every valid policy of `fixtures/policy.json`. Each scenario
+  also checks the Python report against what the world must produce, so a
+  broken world cannot pass as parity.
 
 ### 6.3 Shadow comparison (live)
 
@@ -1006,8 +1053,10 @@ compared the same way.
 `just rs-software-live` (fmt, clippy `-D warnings`, tests),
 `just rs-software-live-fixtures` (regenerate fixtures),
 `just test-software-live-rust-fixtures` (the drift test of 6.1),
-`just rs-software-live-parity` (parity harness; needs Docker for the
-container cases), wired into the F1 CI workflow. `just test-software-live`
+`just rs-software-live-parity` (parity harness in Docker, both variants;
+`parity/docker-parity.sh`), wired into the F1 CI workflow (the
+`software-live-apt` job; the comparator's own tests `parity/test_compare.py`
+run in the workspace job). `just test-software-live`
 keeps running the Python tests unchanged.
 
 ---
@@ -1485,6 +1534,20 @@ that predicts about 66 MiB on staging and 77 MiB on macmini: below Python's
 peak, above 64 MiB. libapt-pkg's in-memory cache is the floor. S9 records
 the real peaks per host, and the coordinator decides whether this row is
 re-baselined.
+
+S5 measured the parity containers (arm64 Docker VM, the image's lists plus
+the fake repositories, root without a sandbox, so `/var/cache/apt` is
+writable and the helper parses every list instead of reading
+`srcpkgcache.bin`, 5.2): `collect --report-usage` gave `maxrss_kib` 131 104
+on Ubuntu 24.04 (helper 102 756, which has `universe` in its lists) and
+121 716 on Debian 13 (helper 92 004), against 142 756 and 122 424 KiB for
+the Python collector (`wait4`). These are not the hosts' numbers: Linux
+keeps a process's RSS high-water mark across `exec`, so `self_maxrss_kib`
+(and through it every child's figure) includes the RSS of the process that
+spawned it — 23 MiB when the harness's Python spawned the collector, 5 MiB
+from a shell, with the same work. Under systemd the spawner is the small
+`systemd-executor`, and the cgroup's "memory peak" of S9 stays the
+authoritative figure; the budget is unchanged.
 
 Measured during S9 (shadow) and S10 (after the cutover), recorded in the
 S10 report. If glibc malloc arenas push the endpoint over budget,

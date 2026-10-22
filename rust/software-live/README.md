@@ -51,6 +51,31 @@ Slice S4 (`serve`, the endpoint):
   connections at a time); `src/htpasswd.rs` is `htpasswd -vi` in process (PLAN.md 4.2 item 1),
   checked against the real `htpasswd` (`fixtures/htpasswd.json`).
 
+Slice S5 (parity harness, PLAN.md 6.2):
+
+- `parity/run_parity.py` runs the Python program and the Rust release
+  binaries side by side on identical inputs and compares what they produce:
+  `validate` for the whole policy matrix, the `serve` start-up matrix, every
+  raw request of the endpoint fixture against both live servers (the real
+  `htpasswd -vi` on the Python side), `export-inventory` with real root
+  ownership, and `collect` on a real host — a fake Traefik and PostgreSQL
+  (`parity/fakeproc.c`) running as processes, `systemctl` and
+  `pg_lsclusters` shims, GitHub and endoflife.date served over HTTPS on
+  127.0.0.1 through `/etc/hosts` with a throwaway CA in the system trust
+  store (`parity/world.py`; neither program has a test-only override), APT
+  on the image's real lists and the fake repositories of
+  `software-live-apt/container/setup-world.sh` — including each program on
+  the other's caches and state files and the software_estate reader on the
+  Rust projections. `parity/compare.py` holds the P1/P2 rules.
+- It runs as root in throwaway `ubuntu:24.04` and `debian:13` containers
+  only: in CI as the last step of the `software-live-apt` job, locally
+  with `just rs-software-live-parity` (Docker).
+- Found and fixed: the endpoint takes at most 99 header lines (as Python's
+  `http.client`) and refuses every request head over 64 KiB with 431
+  however the bytes arrive (hyper alone let heads of up to about 128 KiB
+  through when they came in one read); PLAN.md 4.2 item 2 now lists the
+  head limits exactly.
+
 Slice S3b (Traefik observation, `src/traefik.rs`):
 
 - `traefik::observe` is `observe_traefik`: `MainPID` from `systemctl`, the
@@ -178,6 +203,12 @@ software-live/
   fixtures/rust-caches.json   caches as the Rust code writes them (see below)
   fixtures/rust-export.json   projections as the Rust code writes them (see below)
   fixtures/htpasswd.py        records fixtures/htpasswd.json with the real htpasswd (Docker)
+  parity/run_parity.py        the parity harness (both programs side by side; container only)
+  parity/world.py             its host: fake Traefik/PostgreSQL processes, shims, HTTPS upstream
+  parity/compare.py           P1/P2 comparison of the two programs' JSON (test_compare.py)
+  parity/fakeproc.c           the fake server binaries
+  parity/container-run.sh     build both release binaries and run the harness in a variant image
+  parity/docker-parity.sh     the same in Docker for both variants
 ```
 
 ## Checks
@@ -191,7 +222,13 @@ just rust-check                          # the whole workspace as the CI job run
 just rs-software-live-fixtures           # regenerate the fixtures (Python 3.12), check them under 3.13
 just test-software-live-rust-fixtures    # drift check: fixtures and TESTMAP vs the Python program
 just rs-software-live-apt                # the APT helper in its ubuntu:24.04 and debian:13 containers (Docker)
+just rs-software-live-parity             # the parity harness in both containers (Docker); `-- -v` lists every check
 ```
+
+`just rs-software-live-parity ubuntu24.04 -- --section endpoint -v` runs one
+variant and one section (`validate`, `config`, `endpoint`, `export`,
+`collect`). The harness refuses to run outside a container: it changes
+`/etc/hosts`, the trust store, `/usr` and the APT configuration.
 
 After a change of `software_live.py`, regenerate the fixtures and update the
 Rust code in the same change; `just test` fails until then.

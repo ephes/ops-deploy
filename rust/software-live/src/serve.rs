@@ -780,6 +780,57 @@ mod tests {
         assert_eq!(answer.status, 200);
     }
 
+    /// What the client sees: the status, or `None` when the server reset
+    /// the connection before the answer arrived (it closes with the unread
+    /// rest of an oversized head).
+    fn status_or_reset(server: &Running, raw: &[u8]) -> Option<u16> {
+        let mut stream = TcpStream::connect(server.address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        let _ = stream.write_all(raw);
+        let mut bytes = Vec::new();
+        let _ = stream.read_to_end(&mut bytes);
+        (!bytes.is_empty()).then(|| Answer::parse(&bytes).status)
+    }
+
+    #[test]
+    fn head_limits_are_deterministic_and_follow_python() {
+        // PLAN.md 4.2 item 2: Python's http.client takes at most 99 header
+        // lines (431 "Too many headers" from the 100th) and a header line of
+        // up to 64 KiB (431 "Line too long" beyond); here the whole head is
+        // at most 64 KiB, so a head of several long lines is also a 431.
+        let server = Running::start(Fixed);
+        let head = |headers: usize, value: usize| {
+            let mut raw = b"GET / HTTP/1.1\r\nHost: x\r\n".to_vec();
+            for index in 1..headers {
+                raw.extend_from_slice(format!("X-{index}: {}\r\n", "v".repeat(value)).as_bytes());
+            }
+            raw.extend_from_slice(b"\r\n");
+            raw
+        };
+        assert_eq!(server.send(&head(endpoint::MAX_HEADERS, 1)).status, 200);
+        assert_eq!(server.send(&head(endpoint::MAX_HEADERS + 1, 1)).status, 431);
+        // Just below the limit in one piece: taken.
+        let mut fits = b"GET / HTTP/1.1\r\nX: ".to_vec();
+        fits.resize(endpoint::MAX_HEAD_BYTES - 4, b'a');
+        fits.extend_from_slice(b"\r\n\r\n");
+        assert_eq!(fits.len(), endpoint::MAX_HEAD_BYTES);
+        assert_eq!(server.send(&fits).status, 200);
+        // One byte more, or a few lines of 20 000 bytes each (Python reads
+        // those): 431 every time, however the bytes arrive.
+        let mut over = fits.clone();
+        over.insert(20, b'a');
+        for _ in 0..5 {
+            assert_eq!(status_or_reset(&server, &over), Some(431));
+            assert_eq!(status_or_reset(&server, &head(5, 20_000)), Some(431));
+        }
+        // A request with a body behind a small head is still answered.
+        let mut body = b"GET / HTTP/1.1\r\nContent-Length: 100000\r\n\r\n".to_vec();
+        body.resize(body.len() + 100_000, b'b');
+        assert!(matches!(status_or_reset(&server, &body), Some(200) | None));
+    }
+
     #[test]
     fn run_reports_a_bind_failure() {
         let taken = TcpListener::bind("127.0.0.1:0").unwrap();

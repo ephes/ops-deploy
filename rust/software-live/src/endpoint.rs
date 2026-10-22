@@ -14,9 +14,10 @@
 //! gives up after [`VERIFY_BUDGET`] (Python's `htpasswd` timeout; the request
 //! is then a 401); no connection lives longer than [`CONNECTION_LIMIT`]. At
 //! most [`MAX_CONNECTIONS`] connections are served at a time (Python serves
-//! one at a time), request heads up to [`MAX_HEAD_BYTES`]; every response is
-//! JSON with `Content-Type`, `Content-Length` and `Cache-Control: no-store`.
-//! Malformed requests get hyper's 400 (431 for an oversized head). The
+//! one at a time), request heads up to [`MAX_HEAD_BYTES`] and [`MAX_HEADERS`]
+//! header lines; every response is JSON with `Content-Type`,
+//! `Content-Length` and `Cache-Control: no-store`. Malformed requests get
+//! hyper's 400 (431 for an oversized head or too many headers). The
 //! request-target is taken from the request line as sent, as Python's
 //! `self.path` is (hyper's `Uri` drops a `#fragment`). Nothing is logged: no
 //! request line, path, header or credential ever reaches the journal.
@@ -59,8 +60,16 @@ pub const VERIFY_BUDGET: Duration = Duration::from_secs(5);
 pub const CONNECTION_LIMIT: Duration = Duration::from_secs(15);
 /// Connections served at once; more wait in the listen queue.
 pub const MAX_CONNECTIONS: usize = 16;
-/// The largest request head hyper reads (request line plus headers).
+/// The largest request head (request line plus headers): a longer one is
+/// a 431, whatever its lines (PLAN.md 4.2 item 2). hyper's own limit,
+/// `max_buf_size`, is only checked after a read that left the head
+/// incomplete, and a read may fill more than it, so [`RecordingStream`]
+/// hands hyper no more than this many bytes before the head is parsed.
 pub const MAX_HEAD_BYTES: usize = 64 * 1024;
+/// The most header lines a request may have: Python's `http.client` refuses
+/// a head of more than 100 lines counting the empty one that ends it
+/// (431 "Too many headers"); hyper's default is 100.
+pub const MAX_HEADERS: usize = 99;
 /// `len(header) > 4096` is refused before decoding (`software_live.py:727`).
 pub const MAX_AUTHORIZATION_BYTES: usize = 4096;
 
@@ -303,11 +312,18 @@ async fn accept_loop<H: Handler + 'static>(
 }
 
 /// A connection's stream that keeps a copy of the first bytes read, up to
-/// the end of the request line: hyper's parsed `Uri` drops a `#fragment`,
-/// Python's `self.path` keeps it.
+/// the end of the request line (hyper's parsed `Uri` drops a `#fragment`,
+/// Python's `self.path` keeps it), and hands hyper at most
+/// [`MAX_HEAD_BYTES`] until the head is parsed: hyper refuses a head that
+/// fills its read buffer of that size with 431, so a longer head is always
+/// a 431 and never depends on how the bytes arrive.
 struct RecordingStream {
     stream: TcpStream,
     head: Rc<RefCell<Vec<u8>>>,
+    /// Set by the service once hyper has parsed the head.
+    parsed: Rc<Cell<bool>>,
+    delivered: usize,
+    scratch: Vec<u8>,
 }
 
 impl AsyncRead for RecordingStream {
@@ -317,15 +333,30 @@ impl AsyncRead for RecordingStream {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let this = self.get_mut();
-        let before = buf.filled().len();
-        let poll = Pin::new(&mut this.stream).poll_read(cx, buf);
+        if this.parsed.get() {
+            this.scratch = Vec::new();
+            return Pin::new(&mut this.stream).poll_read(cx, buf);
+        }
+        let room = MAX_HEAD_BYTES
+            .saturating_sub(this.delivered)
+            .min(buf.remaining());
+        if room == 0 {
+            // Only after hyper consumed empty lines before the request line
+            // and still has no complete head: close without an answer.
+            return Poll::Ready(Err(io::Error::other("request head too large")));
+        }
+        this.scratch.resize(room, 0);
+        let mut limited = ReadBuf::new(&mut this.scratch);
+        let poll = Pin::new(&mut this.stream).poll_read(cx, &mut limited);
         if let Poll::Ready(Ok(())) = poll {
+            let new = limited.filled();
+            this.delivered += new.len();
             let mut head = this.head.borrow_mut();
             if request_target(&head).is_none() && head.len() < MAX_HEAD_BYTES {
-                let new = &buf.filled()[before..];
                 let room = MAX_HEAD_BYTES - head.len();
                 head.extend_from_slice(&new[..new.len().min(room)]);
             }
+            buf.put_slice(new);
         }
         poll
     }
@@ -352,7 +383,10 @@ impl AsyncWrite for RecordingStream {
 async fn connection<H: Handler + 'static>(stream: TcpStream, handler: Arc<H>) {
     let head = Rc::new(RefCell::new(Vec::new()));
     let recorded = head.clone();
+    let parsed = Rc::new(Cell::new(false));
+    let head_parsed = parsed.clone();
     let service = hyper::service::service_fn(move |request: hyper::Request<_>| {
+        head_parsed.set(true);
         let (parts, _body) = request.into_parts();
         // hyper accepted the head, so the request line is complete; without
         // one, no path can match.
@@ -381,7 +415,17 @@ async fn connection<H: Handler + 'static>(stream: TcpStream, handler: Arc<H>) {
         .keep_alive(false)
         .title_case_headers(true)
         .max_buf_size(MAX_HEAD_BYTES)
-        .serve_connection(TokioIo::new(RecordingStream { stream, head }), service)
+        .max_headers(MAX_HEADERS)
+        .serve_connection(
+            TokioIo::new(RecordingStream {
+                stream,
+                head,
+                parsed,
+                delivered: 0,
+                scratch: Vec::new(),
+            }),
+            service,
+        )
         .await;
 }
 

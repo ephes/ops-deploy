@@ -75,6 +75,11 @@ run, inside a throwaway `ubuntu:24.04` or `debian:13` container,
    root, and an unprivileged run (as in the unit) reading the warm cache
    without writing; a broken security index gives the same `unknown` result.
 
+The CI job then runs, in the same container and on the same APT world, the
+software-live parity harness (`../software-live/parity/container-run.sh`,
+software-live PLAN.md 6.2; locally `just rs-software-live-parity`), which
+is why `container/deps.sh` also installs `apache2-utils` and `openssl`.
+
 The scripts refuse to run outside a container (`/.dockerenv` or
 `SOFTWARE_LIVE_APT_CONTAINER=yes`): `setup-world.sh` rewrites the APT
 configuration.
