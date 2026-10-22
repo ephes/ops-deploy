@@ -14,6 +14,11 @@
   `tests/parity/ops_library_roles.json` (`graphyard_deploy`) follow ops-library
   main `d8eba948`.
 
+- `ssh_guard`: `SshGuardConfig.fail2ban_maxretry` is a strict int. A bool,
+  string or float was coerced (`True` to `1`, `"03"` to `3`), so the jail file
+  differed from the role's render of the same value; such a value is now
+  refused when the config is built. Ints render as before.
+
 - `traefik_route`: a route file that holds a basic-auth hash, in its new or
   its deployed content, is now written with `secret_file` instead of
   `files.put`, so `--diff` (ops-control's `just pyinfra-check`, `--dry

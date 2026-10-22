@@ -256,6 +256,15 @@ def test_maxretry_must_be_positive_when_fail2ban_is_enabled(maxretry: int) -> No
     SshGuardConfig(fail2ban_enabled=False, fail2ban_maxretry=maxretry)
 
 
+@pytest.mark.parametrize("maxretry", [True, "3", "03", " 3", 3.0])
+def test_maxretry_is_not_coerced(maxretry: object) -> None:
+    # The role renders these as given ("True", "03", "3.0"); a coerced int
+    # would write a different jail file, so they are refused instead.
+    with pytest.raises(ValidationError, match="fail2ban_maxretry"):
+        SshGuardConfig(fail2ban_maxretry=maxretry)
+    assert "maxretry = 3\n" in render_jail(SshGuardConfig(fail2ban_maxretry=3))
+
+
 def test_per_source_max_startups_none_is_refused_when_the_dropin_is_enabled() -> None:
     with pytest.raises(ValidationError, match="PerSourceMaxStartups"):
         SshGuardConfig(per_source_max_startups=None)
