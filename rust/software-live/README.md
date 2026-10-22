@@ -239,10 +239,38 @@ software-live/
   parity/run_parity.py        the parity harness (both programs side by side; container only)
   parity/world.py             its host: fake Traefik/PostgreSQL processes, shims, HTTPS upstream
   parity/compare.py           P1/P2 comparison of the two programs' JSON (test_compare.py)
+  parity/shadow_compare.py    a host's production vs shadow observation, read-only over ssh (S9; test_shadow_compare.py)
   parity/fakeproc.c           the fake server binaries
   parity/container-run.sh     build both release binaries and run the harness in a variant image
   parity/docker-parity.sh     the same in Docker for both variants
 ```
+
+Slice S9 (shadow comparison, PLAN.md 6.3, 8.1):
+
+- `parity/shadow_compare.py --ssh root@<host>` fetches, read-only in one
+  `ssh` (a small Python program on the host that only reads), the production
+  and the shadow `state.json`, both projections (`software-health.json`), both
+  sides' upstream caches and two change times (`/var/lib/dpkg/status`, the
+  Traefik binary). It fails (exit 1) unless both states have the same `host`
+  and `policy_sha256`, each `summary` follows from its observations (3.3),
+  and each projection is exactly what the Python program's
+  `inventory_projection` makes of that side's state. It then lists every
+  difference between the two observations: ignored (time fields, the
+  separate caches' `cached`/`checked_at_epoch`/`last_success*`), explained
+  by a change between the two observation times with its evidence (the
+  sides' cached upstream data differ or only the Python lookup failed; a
+  Traefik restart; a dpkg or Traefik binary change; an APT index refresh;
+  the index age crossing its limit, for `apt.indexes_fresh` only), or
+  unexplained. Verdict: `match` (exit 0) only without any difference beyond
+  the ignored fields; `mismatch` (exit 1) with an unexplained difference or a
+  failed hard check; `inconclusive` (exit 3) with explained differences only —
+  an explanation never makes a sample pass, so repeat it after the next runs
+  of both collectors; inconclusive samples do not count for the shadow period.
+  `--save-bundle F` keeps what was fetched, `--bundle F` compares a saved
+  one, `--json` prints the report as JSON; exit 2 when nothing could be read.
+- Its tests (`test_shadow_compare.py`, synthetic data) run with the other
+  comparator tests in the `rust` CI job under Python 3.12 (the projection
+  check imports the Python program, which needs 3.11 or later).
 
 ## Checks
 
@@ -256,6 +284,9 @@ just rs-software-live-fixtures           # regenerate the fixtures (Python 3.12)
 just test-software-live-rust-fixtures    # drift check: fixtures and TESTMAP vs the Python program
 just rs-software-live-apt                # the APT helper in its ubuntu:24.04 and debian:13 containers (Docker)
 just rs-software-live-parity             # the parity harness in both containers (Docker); `-- -v` lists every check
+uv run --python 3.12 --no-project python -I -m unittest discover -s rust/software-live/parity -p 'test_*.py'
+                                         # the comparators (compare.py, shadow_compare.py)
+python3 rust/software-live/parity/shadow_compare.py --ssh root@<host>   # one live shadow sample (read-only)
 ```
 
 `just rs-software-live-parity ubuntu24.04 -- --section endpoint -v` runs one

@@ -32,6 +32,8 @@ S8 implemented in ops-control (7.5: the pin of 0.1.0 in
 collection gate 2.65.0 and the shadow check of 8.1 in
 `playbooks/deploy-software-live.yml`, the runbook section "Rust port" of
 `docs/SOFTWARE_LIVE.md`, `tests/test_software_live_rust.py`);
+S9 in progress (`parity/shadow_compare.py`, 6.3; the shadow of 8.1 on the
+four hosts, see ops-control `docs/SOFTWARE_LIVE.md`);
 S11 implemented in ops-control (the manual CLI `scripts/software-live.py`
 runs the installed release on hosts with impl `rust`, 7.5 and 4.2 item 10;
 `tests/test_software_live.py`, `docs/SOFTWARE_LIVE.md` "Manual checks");
@@ -1064,6 +1066,29 @@ refresh, a Traefik or PostgreSQL restart, an upstream release); each such
 case is listed with its evidence. `policy_sha256` must be identical. The
 projections (`software-health.json` vs the shadow projection) are
 compared the same way.
+
+As implemented (S9): `parity/shadow_compare.py --ssh root@<host>` fetches
+both states, both projections, both sides' upstream caches and the change
+times of `/var/lib/dpkg/status` and the Traefik binary in one read-only
+`ssh`. Hard checks: same `host` and `policy_sha256`, each `summary` as 3.3
+derives it from its observations, each projection exactly the Python
+program's `inventory_projection` of its own state (so the projections differ
+only where the states do, and only the states are compared with each other).
+Every difference in `os`, `postgresql`, `traefik` and `apt` is ignored (time
+fields; the separate caches' `cached`, `checked_at_epoch`, `last_success*`),
+explained with its evidence (the sides' cached upstream data differ or only
+the Python lookup failed: `upstream`, `lifecycle`, `issues`, `status`; a
+changed Traefik `main_pid`: the running fields; a dpkg or Traefik binary
+change between the two observation times: versions, clusters, OS release
+fields and `apt`; an APT security index refreshed between them: `apt`; the
+index age crossing the limit: `apt.indexes_fresh` only), or unexplained. A
+failed shadow lookup is never explained. An explanation never makes a sample
+pass: the verdict is `match` (exit 0) only without any difference beyond the
+ignored fields, `mismatch` (exit 1) with an unexplained difference or a failed
+hard check, and `inconclusive` (exit 3) with explained differences only; an
+inconclusive sample is repeated after the next runs of both collectors and
+does not count towards the shadow period's evidence. Exit 2 when nothing could
+be read; tests in `parity/test_shadow_compare.py`.
 
 ### 6.4 CI and just recipes
 
