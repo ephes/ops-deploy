@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- New service `os_lifecycle`: a read-only OS lifecycle report per Debian or
+  Ubuntu host (support and EOL horizon from `distro-info-data` with an
+  embedded endoflife.date snapshot as the second source, upgrade due, pending
+  security updates and the age of the oldest, security index age, held
+  packages, unattended-upgrades enabled and last success, reboot required and
+  since when, uptime), written hourly by a sandboxed collector timer. Hosts on
+  the monitoring network serve it on an authenticated endpoint (port 9113,
+  metrics-httpd `json-file` through the shared switch, reused unchanged, or a
+  Python fallback); hosts that must not join that network get no listener,
+  only a root-owned `authorized_keys` line `restrict,command="... show"` for
+  a dedicated collector key, and an endpoint host pulls their reports over
+  SSH with pinned host keys and serves the combined file (port 9114).
+  Unit names and `/etc/os-lifecycle` are fixed; a deploy refuses a host that
+  keeps units or secrets of a mode its configuration leaves (`ssh` after
+  `endpoint`, an endpoint without `remote` after one with it).
+  `deploy_os_lifecycle_checks` upserts one Nyxmon json-metrics check per
+  host with the design's thresholds (`Thresholds`, `endpoint_rules`,
+  `remote_rules`). See `docs/services/os_lifecycle.md`.
+
 - `graphyard` core: `graphyard-web.service` and `graphyard-agent.service`
   declare `Wants=` + `After=` on `graphyard-runtime.service` instead of
   `Requires=`. The role templates are shipped unchanged (ops-library

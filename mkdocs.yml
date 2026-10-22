@@ -51,6 +51,7 @@ nav:
       - homelab: services/homelab.md
       - gotosocial: services/gotosocial.md
       - thermal_monitoring: services/thermal_monitoring.md
+      - os_lifecycle: services/os_lifecycle.md
       - jellyfin: services/jellyfin.md
       - vaultwarden: services/vaultwarden.md
   - Changelog: changelog.md
