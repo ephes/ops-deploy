@@ -6,8 +6,11 @@ S7 released 0.1.0 (tag `echoport-command-guard-v0.1.0` at `5b734af5`, archive
 sha256 `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9`) as a
 parity port with a pre-existing race accepted for that release only (4.5, R12);
 0.1.0 is never installed. H1 fixed that race in both guards (the root-run
-mutations are made on file descriptors) and releases 0.2.0, the version S8
-pins and S9 installs. Nothing is installed or deployed yet (section 11). This file is the contract for the
+mutations are made on file descriptors, `chmod`/`mv`/`rm` as the root's
+owner) and released 0.2.0 (tag `echoport-command-guard-v0.2.0` at
+`966d178e`, archive sha256
+`24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`), the
+version S8 pins and S9 installs. Nothing is installed or deployed yet (section 11). This file is the contract for the
 implementers and reviewers of every slice below; a slice that wants to deviate
 changes this file first, in its own reviewed diff.
 
