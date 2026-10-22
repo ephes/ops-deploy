@@ -194,9 +194,9 @@ its image. The role pins a version and the sha256 of each variant's archive
 (`software_live_rust_version`, `software_live_rust_sha256`, PLAN.md 7.3);
 no release installs itself.
 
-| Version | Tag | Release |
-|---|---|---|
-| 0.1.0 (S7) | `software-live-v0.1.0` | first release: `validate`, `collect`, `serve`, `export-inventory` |
+| Version | Tag (commit) | Archive sha256 | Binaries (stripped) |
+|---|---|---|---|
+| 0.1.0 (S7, first release: `validate`, `collect`, `serve`, `export-inventory`) | `software-live-v0.1.0` (`98c68001`) | `ubuntu24.04`: `89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765`; `debian13`: `9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3` | `software-live` 3,464,320 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
 
 ## Layout
 

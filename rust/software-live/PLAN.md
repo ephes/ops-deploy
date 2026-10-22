@@ -22,9 +22,10 @@ S5 implemented (the parity harness of 6.2: `parity/run_parity.py` with
 containers by the CI job `software-live-apt` and `just
 rs-software-live-parity`; fixes found by it: the endpoint's head limits,
 4.2 item 2);
-S7 implemented (release `software-live-v0.1.0`: `release.json`, the
-`shared` runner build of `software-live` in F2's `rust-release.yml` and
-`release_checks.py`, version 0.1.0 of both crates; 7.2);
+S7 done (release `software-live-v0.1.0` from commit `98c68001`:
+`release.json`, the `shared` runner build of `software-live` in F2's
+`rust-release.yml` and `release_checks.py`, version 0.1.0 of both crates;
+archive sha256 in 7.2);
 S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -1109,6 +1110,18 @@ Both crates are at 0.1.0; a test (`test_real_workspace` in
 smoke test rejects a helper whose `--version` differs from the tag.
 `rust/README.md` "Releases" documents the `shared` key.
 
+Release 0.1.0 (tag `software-live-v0.1.0`, commit `98c68001`, workflow run
+39735723220): archive sha256 `ubuntu24.04`
+`89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765`
+(1,860,898 bytes), `debian13`
+`9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3`
+(1,860,314 bytes) — the values of `software_live_rust_sha256` (7.3, 7.5).
+`software-live` is the same file in both (3,464,320 bytes, sha256
+`97cef45813f9c74ac6d59f0edc77f62fb391bf0eabb64de65f097599709bdf32`);
+`software-live-apt` is 464,144 bytes (`ubuntu24.04`) and 461,984 bytes
+(`debian13`). Every binary needs at most `GLIBC_2.34` and nothing outside
+its `NEEDED` allowlist.
+
 ### 7.3 Role `software_live` (ops-library)
 
 New defaults:
@@ -1547,8 +1560,8 @@ The budget is the memory the program allocates: the unit's cgroup memory
 | Endpoint startup to listening | — | ≤ 100 ms |
 | Collector peak (self + children `maxrss`, from `--report-usage`; on staging also the systemd "memory peak") | 80.7 MB cgroup peak on staging | ≤ 64 MiB (dominated by libapt-pkg's in-memory cache) |
 | Collector CPU per run incl. export | 0.50–1.88 s | ≤ 1.0 s on macmini |
-| `software-live` stripped binary | — | ≤ 6 MiB |
-| `software-live-apt` stripped binary (without shared libs) | — | ≤ 2 MiB |
+| `software-live` stripped binary | — | ≤ 6 MiB (0.1.0: 3,464,320 bytes = 3.30 MiB) |
+| `software-live-apt` stripped binary (without shared libs) | — | ≤ 2 MiB (0.1.0: 464,144 / 461,984 bytes = 0.44 MiB) |
 
 The collector peak budget is at risk: S1 (13.5) measured the helper's
 `maxrss` at the size of `srcpkgcache.bin` plus 17–20 MiB in every cache
