@@ -485,7 +485,8 @@ def scenarios(runner_commands: list[tuple[str, str]]) -> list[Scenario]:
                  f"mv {SITE}/gone {SITE}/gone2", expect_allowed=False),
         Scenario("rm -f of missing side files", "staging", ssh(f"rm -f {SITE}/none-wal {SITE}/none-shm"),
                  f"rm -f {SITE}/none-wal {SITE}/none-shm", expect_allowed=True),
-        # chmod, mv and rm run as the root's owner: root's files are not theirs.
+        # chmod, mv and rm run as the root's owner: no chmod of root's files, no
+        # mv/rm in a directory that user cannot write.
         Scenario("chmod of a root-owned file inside the root", "staging", ssh(f"chmod 0600 {SITE}/root-owned"),
                  f"chmod 0600 {SITE}/root-owned", prepare=lambda: put(f"{SITE}/root-owned", "root\n", "root", 0o644),
                  expect_allowed=False),

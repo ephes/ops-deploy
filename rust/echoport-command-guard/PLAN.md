@@ -657,8 +657,10 @@ and each entry.
   the guards ran before, the same in both guards: a symlink anywhere on a
   changed path is refused even when it resolves inside the root; a regular
   file with more than one link, a fifo, socket or device is not changed;
-  `chmod`, `mv` and `rm` run as the root's owner, so a root-owned file or
-  directory in the root is no longer theirs to change;
+  `chmod`, `mv` and `rm` run as the root's owner, so they fail where that
+  user may not act: `chmod` of a file it does not own, `mv`/`rm` in a
+  directory it cannot write (`rename`/`unlink` follow the directory's
+  permissions, not the entry's owner);
   `chown -R` leaves symlinks in the tree as they are (coreutils changed the
   link's own owner); `mv` replaces the target name and never moves into a
   target directory or across filesystems; a failure is `command not
