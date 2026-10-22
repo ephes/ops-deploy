@@ -1,5 +1,7 @@
 # nyxmon_restore: validate, prepare, restore (rollback on failure), verify,
 # and always clean up. The caller prepends the settings (see lifecycle.py).
+# The mount check comes before the cleanup trap: a rejected path is never removed.
+if [ -n "$REQUIRED_MOUNT" ]; then require_mount "$REQUIRED_MOUNT" "$STAGING_BASE"; fi
 staging="$STAGING_BASE/$STAMP"
 safety=""
 

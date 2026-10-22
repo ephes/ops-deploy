@@ -257,6 +257,8 @@ def nyxmon(
     tmp_path: Path, env: dict[str, str], *, stop: bool = False, delay: str = "0"
 ) -> subprocess.CompletedProcess[str]:
     values = {
+        "REQUIRED_MOUNT": "",
+        "RECORD": "0",
         "ROOT": str(tmp_path / "backups"),
         "DIR": str(tmp_path / "backups" / "manual"),
         "DB": str(tmp_path / "db.sqlite3"),

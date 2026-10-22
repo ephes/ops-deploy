@@ -12,6 +12,10 @@ services start again whatever the copy did, a failed restore puts the safety
 snapshot back and starts them, and the staging directory always goes. Like the
 roles, every backup and restore reports a change. Removal is planned from what
 the host has, so a second run changes nothing.
+
+``required_mount`` keeps the backup root and the restore's staging directory
+on an external disk, and ``retain_count``/``retain_days`` limit the snapshots
+a backup keeps (:mod:`ops_deploy.services._lifecycle.local_backup`).
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ from ops_deploy.services._lifecycle import (
     script,
     stop_disable,
 )
+from ops_deploy.services._lifecycle.local_backup import MountGuard, SnapshotRetention, retention
 
 FILES = Path(__file__).parent / "files"
 Prefix = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
@@ -53,7 +58,7 @@ START_ORDER = ("nyxmon.service", "nyxmon-monitor.service")
 SQLITE_BACKUP_SETTINGS = {"SQLITE_TIMEOUT_MS": "30000", "SQLITE_ATTEMPTS": "3", "SQLITE_RETRY_DELAY": "5"}
 
 
-class NyxmonBackupConfig(RoleConfig):
+class NyxmonBackupConfig(SnapshotRetention):
     # The metadata's ``host`` (Ansible's ``inventory_hostname``).
     host_name: Hostname
     root: AbsolutePath = "/opt/backups/nyxmon"
@@ -78,8 +83,11 @@ class NyxmonBackupConfig(RoleConfig):
     def python_bin(self) -> str:
         return f"{self.site_path}/.venv/bin/python"
 
+    def guarded_paths(self) -> dict[str, str]:
+        return {"root": self.root}
 
-class NyxmonRestoreConfig(RoleConfig):
+
+class NyxmonRestoreConfig(MountGuard):
     host_name: Hostname
     archive: ArchiveName = "latest"
     search_root: AbsolutePath = "/opt/backups/nyxmon"
@@ -104,6 +112,9 @@ class NyxmonRestoreConfig(RoleConfig):
     safety_backup_prefix: Prefix = "pre-restore"
     safety_rsync_delete: bool = True
     cleanup_safety_backup: bool = True
+
+    def guarded_paths(self) -> dict[str, str]:
+        return {"staging_dir": self.staging_dir}
 
 
 class NyxmonRemoveConfig(RoleConfig):
@@ -174,6 +185,8 @@ def deploy_nyxmon_backup(cfg: NyxmonBackupConfig) -> None:
             script(
                 FILES / "backup.sh",
                 {
+                    "REQUIRED_MOUNT": cfg.required_mount or "",
+                    "RECORD": flag(cfg.retention),
                     "ROOT": cfg.root,
                     "DIR": backup_dir,
                     "DB": f"{site}/db.sqlite3",
@@ -212,14 +225,19 @@ def deploy_nyxmon_backup(cfg: NyxmonBackupConfig) -> None:
             ],
             _shell_executable="bash",
         )
-    if not cfg.create_archive:
-        return
     archive = f"{backup_dir}.tar.gz"
-    server.shell(
-        name=f"Create {archive}",
-        commands=[f"cd {shlex.quote(cfg.root)} && tar -C {shlex.quote(cfg.root)} -czf {name}.tar.gz {name}"],
-    )
-    if cfg.fetch_local:
+    if cfg.create_archive:
+        server.shell(
+            name=f"Create {archive}",
+            commands=[f"cd {shlex.quote(cfg.root)} && tar -C {shlex.quote(cfg.root)} -czf {name}.tar.gz {name}"],
+        )
+    if cfg.retention:
+        server.shell(
+            name="Prune local snapshots",
+            commands=[retention(cfg, cfg.root, name, stamp)],
+            _shell_executable="bash",
+        )
+    if cfg.create_archive and cfg.fetch_local:
         local_dir = str(cfg.local_dir or Path.home() / "backups" / "nyxmon")
         python.call(name=f"Ensure {local_dir} (0700)", function=private_local_dir, path=local_dir)
         files.get(name="Fetch the backup archive", src=archive, dest=f"{local_dir}/{name}.tar.gz")
@@ -239,6 +257,7 @@ def deploy_nyxmon_restore(cfg: NyxmonRestoreConfig) -> None:
             script(
                 FILES / "restore.sh",
                 {
+                    "REQUIRED_MOUNT": cfg.required_mount or "",
                     "HOST_NAME": cfg.host_name,
                     "STAMP": stamp,
                     "ARCHIVE": cfg.archive,

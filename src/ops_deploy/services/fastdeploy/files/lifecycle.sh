@@ -55,6 +55,8 @@ fd_backup() {
     [ -e "$B_RUNNERS" ] && usage+=("$B_RUNNERS")
     [ "$B_INCLUDE_WORKSPACE" = 1 ] && [ -e "$B_WORKSPACE" ] && usage+=("$B_WORKSPACE")
 
+    if [ -n "$B_MOUNT" ]; then require_mount "$B_MOUNT" "$B_ROOT"; fi
+    if [ "$B_RECORD" = 1 ]; then require_new_snapshot "$B_ROOT" "${B_DIR##*/}"; fi
     ensure_dir root "$PG_ADMIN" 0750 "$B_ROOT"
     ensure_dir root "$PG_ADMIN" 0750 "$B_DIR"
     local sub
@@ -165,6 +167,8 @@ META
         fi
         if [ "$B_FETCH" = 1 ]; then chmod 0644 "$artifact"; fi
     fi
+    if [ "$B_RECORD" = 1 ]; then record_snapshot "$B_ROOT" "$name"; fi
+    if [ "$B_PRUNE" = 1 ]; then prune_snapshots "$B_ROOT" "$B_KEEP" "$B_CUTOFF" "$name"; fi
     if [ "$B_REPORT_SIZE" = 1 ]; then
         echo "Backup complete: $artifact"
         echo "Size: $(du -sh "$artifact")"
@@ -260,7 +264,13 @@ restore_database() {
     fi
     local passfile_env=()
     if [ -n "$PGPW" ]; then
-        pgpass_dir=$(as_postgres mktemp -d /tmp/fastdeploy_restore-pgpass-XXXXXXXXXX)
+        # With a required mount the passfile stays below the guarded temp directory too.
+        local pgpass_parent=/tmp
+        if [ -n "$R_MOUNT" ]; then
+            ensure_dir "$PG_ADMIN" "$PG_ADMIN" 0750 "$R_TEMP"
+            pgpass_parent=$R_TEMP
+        fi
+        pgpass_dir=$(as_postgres mktemp -d "$pgpass_parent/fastdeploy_restore-pgpass-XXXXXXXXXX")
         pgpass_line "$PGPW" | as_postgres sh -c 'umask 077; cat > "$1"' _ "$pgpass_dir/pgpass"
         passfile_env=(env "PGPASSFILE=$pgpass_dir/pgpass")
     fi
@@ -407,6 +417,7 @@ fd_restore() {
     snapshot="" safety_dir="" pgpass_dir="" extracted=0 rollback_executed=False
     includes_database=1 includes_workspace=0 services_expected=0
     trap 'restore_finish $?' EXIT
+    if [ -n "$R_MOUNT" ]; then require_mount "$R_MOUNT" "$R_TEMP"; fi
     validate_phase
     if [ "$R_DRY_RUN" != 1 ]; then
         if [ "$R_SAFETY" = 1 ]; then safety_phase; fi

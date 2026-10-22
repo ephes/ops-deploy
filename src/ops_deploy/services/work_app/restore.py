@@ -7,10 +7,12 @@ config back. Everything that can be wrong with the archive (missing, wrong
 slug, missing metadata fields, an ops-library version mismatch) is found while
 planning from the archive's listing and metadata, before any change.
 
-Differences from the role: when a step fails after the service was stopped,
-the staging directory stays (``0700``, root-only) until the next restore resets
-it, instead of being removed by an ``always`` block; the safety snapshot is
-kept then, as in the role.
+The staging directory goes as soon as the last file has been taken from it,
+and with ``cleanup`` (the default) every step that runs while it exists
+removes it when that step fails, as the role's ``always`` block does; the
+safety snapshot is kept then, as in the role. ``required_mount`` keeps the
+staging directory on an external disk
+(:mod:`ops_deploy.services._lifecycle.local_backup`).
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from pyinfra.operations import server
 from ops_deploy.base._common import AbsolutePath, output
 from ops_deploy.helpers import http_check, mark_read_only
 from ops_deploy.helpers.python import _as_user
+from ops_deploy.services._lifecycle.local_backup import MountGuard, mount_check
 from ops_deploy.services.work_app._lifecycle import SLUG, WorkAppPaths
 
 # ``latest``, an archive name below ``root``, or an absolute path.
@@ -35,7 +38,7 @@ ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._/+-]+\.tar\.
 REQUIRED_METADATA = ("slug", "timestamp", "host")
 
 
-class WorkAppRestoreConfig(WorkAppPaths):
+class WorkAppRestoreConfig(WorkAppPaths, MountGuard):
     archive: ArchiveName = "latest"
     root: AbsolutePath = "/opt/backups/work_app"
     dry_run: bool = False
@@ -66,6 +69,9 @@ class WorkAppRestoreConfig(WorkAppPaths):
     ops_library_version: str = Field(default="unknown", pattern=r"^[A-Za-z0-9._+-]+$")
     # A timestamp for the safety snapshot's name (Ansible's ``iso8601_basic_short`` on the host).
     timestamp: str | None = Field(default=None, pattern=r"^[0-9]{8}T[0-9]{6}$")
+
+    def guarded_paths(self) -> dict[str, str]:
+        return {"staging_dir": self.staging_dir}
 
 
 def _selected_archive(cfg: WorkAppRestoreConfig) -> str:
@@ -166,16 +172,28 @@ def deploy_work_app_restore(cfg: WorkAppRestoreConfig) -> None:
 
     staging = shlex.quote(cfg.staging_dir)
     payload = shlex.quote(f"{cfg.staging_dir}/{payload_name}")
+
+    def step(name: str, command: str) -> None:
+        """A step while the staging directory exists: with ``cleanup`` a failure removes it."""
+
+        if cfg.cleanup:
+            # A subshell, so an ``exit`` inside the command still reaches the removal.
+            command = f"( {command} ) || {{ rc=$?; rm -rf {staging}; exit $rc; }}"
+        server.shell(name=name, commands=[command])
+
+    if cfg.required_mount:
+        server.shell(
+            name=f"Check {cfg.required_mount} is mounted",
+            commands=[mount_check(cfg.required_mount, cfg.staging_dir)],
+            _shell_executable="bash",
+        )
     server.shell(
         name="Reset the staging directory",
         commands=[f"rm -rf {staging} && mkdir -m 0700 {staging}"],
     )
-    server.shell(
-        name=f"Extract {posixpath.basename(archive)}",
-        commands=[f"tar -xzf {shlex.quote(archive)} -C {staging}"],
-    )
+    step(f"Extract {posixpath.basename(archive)}", f"tar -xzf {shlex.quote(archive)} -C {staging}")
     if cfg.validate_checksums and has["manifest"]:
-        server.shell(name="Validate the checksum manifest", commands=[f"cd {payload} && sha256sum -c manifest.sha256"])
+        step("Validate the checksum manifest", f"cd {payload} && sha256sum -c manifest.sha256")
 
     def cleanup() -> None:
         if cfg.cleanup:
@@ -186,12 +204,10 @@ def deploy_work_app_restore(cfg: WorkAppRestoreConfig) -> None:
         return
 
     if has["database"]:
-        server.shell(
-            name="Check sqlite3 is available",
-            commands=[
-                "command -v sqlite3 >/dev/null || "
-                "{ echo 'sqlite3 is required on the target to verify the restored database' >&2; exit 1; }"
-            ],
+        step(
+            "Check sqlite3 is available",
+            "command -v sqlite3 >/dev/null || "
+            "{ echo 'sqlite3 is required on the target to verify the restored database' >&2; exit 1; }",
         )
     site = shlex.quote(cfg.site_path)
     snapshot = ""
@@ -200,55 +216,45 @@ def deploy_work_app_restore(cfg: WorkAppRestoreConfig) -> None:
         snapshot = f"{cfg.site_path}.{cfg.safe_snapshot_prefix}-{stamp}"
     # Stop first (and fail if that fails): neither the snapshot nor the database
     # replacement may run against a live SQLite database.
-    server.shell(name="Stop work-app", commands=[f"systemctl stop {shlex.quote(cfg.unit)}"])
+    step("Stop work-app", f"systemctl stop {shlex.quote(cfg.unit)}")
     if snapshot:
-        server.shell(
-            name="Create the safety snapshot",
-            commands=[
-                f"install -d -o {cfg.user} -g {cfg.group} -m 0750 {shlex.quote(snapshot)} && "
-                f"rsync -a {site}/ {shlex.quote(snapshot)}/"
-            ],
+        step(
+            "Create the safety snapshot",
+            f"install -d -o {cfg.user} -g {cfg.group} -m 0750 {shlex.quote(snapshot)} && "
+            f"rsync -a {site}/ {shlex.quote(snapshot)}/",
         )
     static = shlex.quote(cfg.static_root)
-    server.shell(
-        name="Ensure the static directory",
-        commands=[f"install -d -o {cfg.user} -g {cfg.group} -m 0750 {static}"],
-    )
+    step("Ensure the static directory", f"install -d -o {cfg.user} -g {cfg.group} -m 0750 {static}")
     if has["static"] and not cfg.rebuild_static:
         delete = " --delete" if cfg.use_rsync_delete else ""
-        server.shell(name="Restore the static files", commands=[f"rsync -a{delete} {payload}/static/ {static}/"])
+        step("Restore the static files", f"rsync -a{delete} {payload}/static/ {static}/")
     db = shlex.quote(cfg.database_path)
     if has["database"]:
-        server.shell(
-            name="Remove stale SQLite journal files",
-            commands=["rm -f " + " ".join(shlex.quote(cfg.database_path + s) for s in ("-wal", "-shm", "-journal"))],
+        step(
+            "Remove stale SQLite journal files",
+            "rm -f " + " ".join(shlex.quote(cfg.database_path + s) for s in ("-wal", "-shm", "-journal")),
         )
         source = shlex.quote(f"{cfg.staging_dir}/{payload_name}/database/{posixpath.basename(cfg.database_path)}")
-        server.shell(
-            name="Restore the SQLite database",
-            commands=[f"install -o {cfg.user} -g {cfg.group} -m 0600 {source} {db}"],
-        )
+        step("Restore the SQLite database", f"install -o {cfg.user} -g {cfg.group} -m 0600 {source} {db}")
     if cfg.restore_env and has["env"]:
-        server.shell(
-            name="Restore .env",
-            commands=[
-                f"install -o {cfg.user} -g {cfg.group} -m {cfg.env_mode} {payload}/env/.env {shlex.quote(cfg.env_file)}"
-            ],
+        step(
+            "Restore .env",
+            f"install -o {cfg.user} -g {cfg.group} -m {cfg.env_mode} {payload}/env/.env {shlex.quote(cfg.env_file)}",
         )
     if has["systemd"]:
         reload = "systemctl daemon-reload" if cfg.reload_systemd else "true"
-        server.shell(
-            name="Restore the systemd unit",
-            commands=[
-                _install_config(f"{payload}/configs/{shlex.quote(cfg.unit)}", shlex.quote(cfg.unit_path), reload)
-            ],
+        step(
+            "Restore the systemd unit",
+            _install_config(f"{payload}/configs/{shlex.quote(cfg.unit)}", shlex.quote(cfg.unit_path), reload),
         )
     if has["traefik"]:
         reload = "systemctl reload traefik || true" if cfg.reload_traefik else "true"
-        server.shell(
-            name="Restore the Traefik config",
-            commands=[_install_config(f"{payload}/configs/traefik.yml", shlex.quote(cfg.traefik_config_path), reload)],
+        step(
+            "Restore the Traefik config",
+            _install_config(f"{payload}/configs/traefik.yml", shlex.quote(cfg.traefik_config_path), reload),
         )
+    # Nothing below reads the staging directory.
+    cleanup()
     if cfg.rebuild_static:
         server.shell(name="Rebuild the static files", commands=[_django(cfg, "collectstatic", "--noinput")])
     if cfg.fix_permissions:
@@ -283,7 +289,6 @@ def deploy_work_app_restore(cfg: WorkAppRestoreConfig) -> None:
                 commands=[f"if [ -d {shlex.quote(snapshot)} ]; then echo {shlex.quote(kept)}; fi"],
             )
         )
-    cleanup()
 
 
 def _http_check(cfg: WorkAppRestoreConfig, url: str) -> None:

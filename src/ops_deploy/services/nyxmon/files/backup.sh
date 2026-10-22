@@ -29,6 +29,8 @@ sqlite_backup() {
     return 1
 }
 
+if [ -n "$REQUIRED_MOUNT" ]; then require_mount "$REQUIRED_MOUNT" "$ROOT"; fi
+if [ "$RECORD" = 1 ]; then require_new_snapshot "$ROOT" "${DIR##*/}"; fi
 ensure_dir root root 0700 "$ROOT"
 ensure_dir root root 0700 "$DIR"
 for sub in database media static cache logs config systemd traefik; do ensure_dir root root 0700 "$DIR/$sub"; done

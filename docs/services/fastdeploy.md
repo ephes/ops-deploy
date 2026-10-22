@@ -222,15 +222,27 @@ as `fastdeploy`. Then:
   `manifest.sha256`, packs `.tar.gz` or `.tar.zst` and fetches it into
   `~/backups/fastdeploy` (`0700`).
 
+`required_mount` makes the backup check, before it creates the root, that the
+mount is there and the root resolves below it; `retain_count`/`retain_days`
+record the snapshot and prune the recorded ones after packing, before the
+fetch ([Local backups](../concepts/local-backups.md)).
+
 **Restore.** It follows the role and `restore_pilot_internal`:
 
 - **Validate.** `latest` is the newest `.tar.gz`/`.tar.zst` under the root,
   skipping `pre-restore-*` safety backups while others exist. A name is
   tried as given, below the root, and with each suffix; a directory is used
-  as a snapshot. An archive is unpacked into
-  `/tmp/fastdeploy-restore/fastdeploy-restore-<timestamp>`. The metadata and
-  `manifest.sha256` are required.
-- **Safety backup.** A full backup with prefix `pre-restore`, not fetched.
+  as a snapshot. With `required_mount`, the mount and `temp_dir` are checked
+  first. An archive is unpacked into
+  `<temp_dir>/fastdeploy-restore-<timestamp>` (default `temp_dir`
+  `/tmp/fastdeploy-restore`). The metadata and `manifest.sha256` are
+  required.
+- **Safety backup.** A full backup with prefix `pre-restore` into
+  `safety_backup_root` (`/opt/backups/fastdeploy`), not fetched, under the
+  same `required_mount`. It is never pruned during the restore; with
+  `safety_backup_retention` it is recorded for the retention of later
+  backups. With `required_mount` the database passfile directory is made
+  below `temp_dir` instead of `/tmp`.
 - **Restore.** Stop the service, `dropdb`/`createdb --owner=fastdeploy` and
   replay the dump as `fastdeploy` (`SET ROLE`). Sync `services/`, the runners
   and (when backed up) the workspace with `--delete` and fix their owners.

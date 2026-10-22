@@ -178,6 +178,12 @@ def cfg_restore(**changes: Any) -> WorkAppRestoreConfig:
     return WorkAppRestoreConfig(ops_library_version="2.31.40", **changes)
 
 
+def staged(command: str, staging: str = "/tmp/work-app-restore") -> str:
+    """A step while the staging directory exists: a failure removes it (``cleanup``)."""
+
+    return f"( {command} ) || {{ rc=$?; rm -rf {staging}; exit $rc; }}"
+
+
 def test_restore_of_the_latest_archive_runs_the_roles_sequence() -> None:
     run = restore(cfg_restore())
 
@@ -187,16 +193,20 @@ def test_restore_of_the_latest_archive_runs_the_roles_sequence() -> None:
     payload = f"{staging}/{PAYLOAD}"
     expected = [
         f"rm -rf {staging} && mkdir -m 0700 {staging}",
-        f"tar -xzf {ARCHIVE} -C {staging}",
-        f"cd {payload} && sha256sum -c manifest.sha256",
-        "systemctl stop work-app.service",
-        "install -d -o work -g work -m 0750 /home/work/site.pre-restore-20261015T120000 && "
-        "rsync -a /home/work/site/ /home/work/site.pre-restore-20261015T120000/",
-        "install -d -o work -g work -m 0750 /home/work/site/staticfiles",
-        f"rsync -a --delete {payload}/static/ /home/work/site/staticfiles/",
-        "rm -f /home/work/site/db.sqlite3-wal /home/work/site/db.sqlite3-shm /home/work/site/db.sqlite3-journal",
-        f"install -o work -g work -m 0600 {payload}/database/db.sqlite3 /home/work/site/db.sqlite3",
-        f"install -o work -g work -m 0600 {payload}/env/.env /home/work/site/.env",
+        staged(f"tar -xzf {ARCHIVE} -C {staging}"),
+        staged(f"cd {payload} && sha256sum -c manifest.sha256"),
+        staged("systemctl stop work-app.service"),
+        staged(
+            "install -d -o work -g work -m 0750 /home/work/site.pre-restore-20261015T120000 && "
+            "rsync -a /home/work/site/ /home/work/site.pre-restore-20261015T120000/"
+        ),
+        staged("install -d -o work -g work -m 0750 /home/work/site/staticfiles"),
+        staged(f"rsync -a --delete {payload}/static/ /home/work/site/staticfiles/"),
+        staged(
+            "rm -f /home/work/site/db.sqlite3-wal /home/work/site/db.sqlite3-shm /home/work/site/db.sqlite3-journal"
+        ),
+        staged(f"install -o work -g work -m 0600 {payload}/database/db.sqlite3 /home/work/site/db.sqlite3"),
+        staged(f"install -o work -g work -m 0600 {payload}/env/.env /home/work/site/.env"),
     ]
     positions = [commands.index(c) for c in expected]
     assert positions == sorted(positions)
@@ -205,12 +215,16 @@ def test_restore_of_the_latest_archive_runs_the_roles_sequence() -> None:
     assert any("PRAGMA integrity_check" in c for c in commands)
     restart = commands.index("systemctl restart work-app.service")
     assert commands.index(expected[-1]) < restart
-    assert commands[-2:] == [
+    # The staging directory goes right after the last step that reads it (the Traefik config).
+    removal = commands.index(f"rm -rf {staging}")
+    route = next(i for i, c in enumerate(commands) if "traefik.yml" in c and "cmp -s" in c)
+    assert removal == route + 1
+    assert removal < commands.index("systemctl restart work-app.service")
+    assert commands[-1] == (
         "if [ -d /home/work/site.pre-restore-20261015T120000 ]; then echo 'Pre-restore copy of /home/work/site "
         "(database and .env included) kept at /home/work/site.pre-restore-20261015T120000. Nothing removes it; "
-        "prune it by hand once the restored Work app is confirmed.'; fi",
-        f"rm -rf {staging}",
-    ]
+        "prune it by hand once the restored Work app is confirmed.'; fi"
+    )
     assert "chown -R work:work /home/work/site/staticfiles" in commands
 
 
@@ -250,7 +264,7 @@ def test_cleanup_and_snapshot_flags() -> None:
     run = restore(cfg_restore(cleanup=False, safe_snapshot_delete=False))
 
     assert not any(c.startswith("rm -rf") and "pre-restore" in c for c in run.executed_commands)
-    assert run.executed_commands[-1] != "rm -rf /tmp/work-app-restore"
+    assert not any("rm -rf /tmp/work-app-restore" in c for c in run.executed_commands[1:])
     none = restore(cfg_restore(create_safe_snapshot=False))
     assert not any("pre-restore" in c for c in none.executed_commands)
 
@@ -356,7 +370,19 @@ def test_failing_step_stops_the_restore_after_the_stop() -> None:
     run = restore(cfg_restore(), responses)
 
     assert not run.succeeded
-    assert "rm -rf /tmp/work-app-restore" not in run.executed_commands[-1:]
+    assert run.executed_commands[-1] == "systemctl restart work-app.service"
+    # The staging directory was already gone: nothing after the Traefik config reads it.
+    assert "rm -rf /tmp/work-app-restore" in run.executed_commands
+
+
+@pytest.mark.parametrize("cleanup", [True, False])
+def test_a_failing_step_removes_the_staging_directory_with_cleanup(cleanup: bool) -> None:
+    stop = staged("systemctl stop work-app.service") if cleanup else "systemctl stop work-app.service"
+    run = restore(cfg_restore(cleanup=cleanup), restore_responses(**{stop: {"success": False}}))
+
+    assert not run.succeeded
+    assert run.executed_commands[-1] == stop
+    assert ("rm -rf /tmp/work-app-restore; exit $rc" in stop) is cleanup
 
 
 def test_expected_content_is_checked() -> None:

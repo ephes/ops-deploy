@@ -173,6 +173,10 @@ controller. Directories are `0700 root`, copied files `0600 root`.
   the `host` field.
 - Differences: the archive is packed with `umask 077` (it holds `.env`); only
   `tar.gz`.
+- `required_mount` checks, before the first directory is made, that the mount
+  is there and `root` resolves below it; `retain_count`/`retain_days` record
+  the snapshot and prune the recorded ones after packing, before the fetch
+  ([Local backups](../concepts/local-backups.md)).
 
 ### Restore
 
@@ -182,7 +186,8 @@ listing and `metadata.yml` (nothing is unpacked yet), it refuses before any
 change: a missing archive, no payload directory, unreadable metadata, another
 slug, a missing `slug`/`timestamp`/`host`, and an `ops_library_version`
 different from the config's (unless `allow_version_mismatch`). Then, as the
-role does: reset and fill `/tmp/work-app-restore` (`0700`), check
+role does: check `required_mount` (when set), reset and fill `staging_dir`
+(default `/tmp/work-app-restore`, `0700`), check
 `manifest.sha256`, stop work-app (a failing stop aborts), copy the site to
 `<site>.pre-restore-<timestamp>`, restore static files (`rsync --delete`),
 remove stale `-wal`/`-shm`/`-journal` files, restore the database (`0600
@@ -190,16 +195,18 @@ work`) and `.env`, restore the unit and the Traefik config when they differ
 (`daemon-reload`, `reload traefik`), fix ownership of the static files, run
 `check --deploy` and `showmigrations` when `.env` exists, check
 `PRAGMA integrity_check`, restart work-app and check its login page. The
-staging directory is removed after a success. The pre-restore copy (database
+staging directory is removed right after the Traefik config, the last step
+that reads it. The pre-restore copy (database
 and `.env` included) is kept and its path reported, as the role does since
 ops-library a811bc16; nothing prunes these copies, so delete old ones by hand.
 `safe_snapshot_delete=True` deletes it after a success instead. `dry_run`
 stops after the checks. `restore_env`, `rebuild_static`, `verify_http` and the
 other role switches are config fields too.
 
-Difference: when a step fails after work-app was stopped, the staging
-directory (`0700`, root-only) and the safety snapshot stay; the role removes
-the staging directory in an `always` block. The next restore resets it.
+With `cleanup` (the default), a step that fails while the staging directory
+exists removes it before the run stops, as the role's `always` block does; the
+safety snapshot stays, as in the role. `cleanup=False` keeps the staging
+directory in both cases; the next restore resets it.
 
 ### Remove
 

@@ -9,6 +9,12 @@ Only regular files/directories are supported for dynamic snapshots: symlinks
 and special entries refuse rather than follow data outside the selected tree.
 Restore is unchanged, ACME-only, has no dry-run contract and refuses
 transaction-managed hosts. It never publishes archived dynamic routes.
+
+``required_mount`` keeps the backup root (and the restore's staging
+directory) on an external disk and ``retain_count``/``retain_days`` limit the
+snapshots a backup keeps (:mod:`ops_deploy.services._lifecycle.local_backup`).
+The restore's staging directory is removed whether the restore succeeds or
+fails.
 """
 
 from __future__ import annotations
@@ -25,16 +31,23 @@ from pyinfra import host
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, python, server
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, output
+from ops_deploy.base._common import AbsolutePath, output
 from ops_deploy.infra._common import directory
 from ops_deploy.infra.traefik_deploy import refuse_transaction_managed
+from ops_deploy.services._lifecycle.local_backup import (
+    MountGuard,
+    SnapshotRetention,
+    backup_preflight,
+    mount_check,
+    retention,
+)
 
 Prefix = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
 # An archive name below the backup root, or an absolute path.
 ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._/+-]+\.tar\.gz)$")]
 
 
-class TraefikBackupConfig(RoleConfig):
+class TraefikBackupConfig(SnapshotRetention):
     root: AbsolutePath = "/opt/backups/traefik"
     prefix: Prefix = "manual"
     acme_path: AbsolutePath = "/etc/traefik/acme/acme.json"
@@ -56,8 +69,11 @@ class TraefikBackupConfig(RoleConfig):
                 raise ValueError("dynamic source and backup root must not overlap")
         return self
 
+    def guarded_paths(self) -> dict[str, str]:
+        return {"root": self.root}
 
-class TraefikRestoreConfig(RoleConfig):
+
+class TraefikRestoreConfig(MountGuard):
     # ``latest``: the newest ``*.tar.gz`` in ``root`` by modification time.
     archive: ArchiveName = "latest"
     root: AbsolutePath = "/opt/backups/traefik"
@@ -66,6 +82,9 @@ class TraefikRestoreConfig(RoleConfig):
     include_acme: bool = False
     # Transaction-managed hosts are refused, as by the role.
     transaction_required: bool = False
+
+    def guarded_paths(self) -> dict[str, str]:
+        return {"staging_dir": self.staging_dir}
 
 
 def _exists(path: str) -> bool:
@@ -178,6 +197,9 @@ def deploy_traefik_backup(cfg: TraefikBackupConfig) -> None:
         if output(f"if [ -e {quoted} ] || [ -L {quoted} ]; then echo exists; fi").strip():
             raise DeployError("traefik_backup: backup attempt already exists; choose another prefix or timestamp")
 
+    preflight = backup_preflight(cfg, root_dir, name)
+    if preflight:
+        server.shell(name="Check the backup root and name", commands=[preflight], _shell_executable="bash")
     for path in (root_dir, backup_dir, f"{backup_dir}/acme", f"{backup_dir}/dynamic"):
         directory(path, user="root", group="root", mode="0700")
     if cfg.include_acme:
@@ -203,16 +225,21 @@ def deploy_traefik_backup(cfg: TraefikBackupConfig) -> None:
         group="root",
         mode="0600",
     )
-    if not cfg.create_archive:
-        return
-    server.shell(
-        name=f"Create {archive}",
-        commands=[
-            f"(umask 077 && tar -czf {shlex.quote(archive)} -C {shlex.quote(root_dir)} -- {shlex.quote(name)} "
-            f"&& chmod 0600 {shlex.quote(archive)})"
-        ],
-    )
-    if cfg.fetch_local:
+    if cfg.create_archive:
+        server.shell(
+            name=f"Create {archive}",
+            commands=[
+                f"(umask 077 && tar -czf {shlex.quote(archive)} -C {shlex.quote(root_dir)} -- {shlex.quote(name)} "
+                f"&& chmod 0600 {shlex.quote(archive)})"
+            ],
+        )
+    if cfg.retention:
+        server.shell(
+            name="Prune local snapshots",
+            commands=[retention(cfg, root_dir, name, stamp)],
+            _shell_executable="bash",
+        )
+    if cfg.create_archive and cfg.fetch_local:
         local_dir = str(cfg.local_dir or Path.home() / "backups" / "traefik")
         python.call(name=f"Ensure {local_dir} (0700)", function=_private_local_dir, path=local_dir)
         python.call(
@@ -249,6 +276,12 @@ def deploy_traefik_restore(cfg: TraefikRestoreConfig) -> None:
 
     refuse_transaction_managed(cfg.transaction_required, "traefik_restore")
     archive = _selected_archive(cfg)
+    if cfg.required_mount:
+        server.shell(
+            name=f"Check {cfg.required_mount} is mounted",
+            commands=[mount_check(cfg.required_mount, cfg.staging_dir)],
+            _shell_executable="bash",
+        )
     staging = shlex.quote(cfg.staging_dir)
     acme = PurePosixPath(cfg.acme_path)
     put_back = ""
@@ -262,11 +295,11 @@ def deploy_traefik_restore(cfg: TraefikRestoreConfig) -> None:
     server.shell(
         name=f"Restore from {archive}",
         commands=[
-            f"set -e; rm -rf {staging}; mkdir -m 0700 {staging}; "
+            f"set -e; rm -rf {staging}; trap {shlex.quote(f'rm -rf {staging}')} EXIT; mkdir -m 0700 {staging}; "
             f"tar -xzf {shlex.quote(archive)} -C {staging}; "
             f"payload=$(find {staging} -mindepth 1 -maxdepth 1 -type d | head -n 1); "
             '[ -n "$payload" ] || { echo "no payload directory in the archive" >&2; exit 1; }; '
-            f"{put_back}rm -rf {staging}"
+            f"{put_back}"
         ],
     )
     if not cfg.include_acme:

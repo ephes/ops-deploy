@@ -21,6 +21,7 @@ nav:
       - Deploy helpers: concepts/helpers.md
       - Testing deploys: concepts/testing.md
       - Smoke target: concepts/smoke.md
+      - Local backups: concepts/local-backups.md
   - Base deploys: base.md
   - PostgreSQL and Redis: infra.md
   - Traefik: traefik.md

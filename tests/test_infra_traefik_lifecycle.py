@@ -95,11 +95,13 @@ def test_restore_of_latest_archive_puts_acme_back() -> None:
     assert result.succeeded, result.error
     (script,) = result.executed_commands
     assert script.startswith(
-        "set -e; rm -rf /tmp/traefik-restore; mkdir -m 0700 /tmp/traefik-restore; "
-        "tar -xzf /opt/backups/traefik/manual-2.tar.gz -C /tmp/traefik-restore; "
+        "set -e; rm -rf /tmp/traefik-restore; trap 'rm -rf /tmp/traefik-restore' EXIT; "
+        "mkdir -m 0700 /tmp/traefik-restore; tar -xzf /opt/backups/traefik/manual-2.tar.gz -C /tmp/traefik-restore; "
     )
-    assert 'install -o root -g root -m 0600 "$payload"/acme/acme.json /etc/traefik/acme/acme.json' in script
-    assert script.endswith("rm -rf /tmp/traefik-restore")
+    # The EXIT trap removes the staging directory whether the restore succeeds or fails.
+    assert script.rstrip().endswith(
+        'install -o root -g root -m 0600 "$payload"/acme/acme.json /etc/traefik/acme/acme.json;'
+    )
 
 
 def test_restore_without_acme_restores_nothing() -> None:

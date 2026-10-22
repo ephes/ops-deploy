@@ -184,6 +184,9 @@ fields are the roles' defaults under shorter names: `prefix`, `root`,
 `include_logs`, `include_cache`, `include_static`, `use_sqlite_backup`,
 `fetch_local` and `local_dir` for the backup; `archive`, `dry_run`,
 `create_safety_backup`, `verify_http` and `health_url` for the restore.
+`required_mount` (both) and `retain_count`/`retain_days` (backup) keep the
+backup root and the restore's staging directory on an external disk and
+bound the snapshots kept ([Local backups](../concepts/local-backups.md)).
 
 **Backup.** It refuses to start when the site directory, `.env`, the
 database, `staticfiles` (when `include_static` is set) or the logs (when
@@ -200,13 +203,16 @@ otherwise the copy is removed and the backup fails. Everything there is
 copy does, the services are started again (the role's `always`). Then the
 backup writes the role's `metadata.yml` (`to_nice_yaml`) and
 `manifest.sha256`, packs `<dir>.tar.gz` and fetches the archive into
-`~/backups/nyxmon` (`0700`).
+`~/backups/nyxmon` (`0700`). With `required_mount`, the copy script first
+checks the mount and stops before creating anything otherwise; with
+retention, the recorded snapshots are pruned after packing, before the fetch.
 
 **Restore.** One bash script on the host runs the role's phases in order:
 
-1. Validate. Pick `latest` (the newest `*.tar.gz` under the root) or a name
-   below the root, unpack it under `/tmp/nyxmon-restore/<timestamp>`, check
-   the metadata fields and `manifest.sha256`.
+1. Validate. With `required_mount`, check the mount first. Pick `latest`
+   (the newest `*.tar.gz` under the root) or a name below the root, unpack
+   it under `<staging_dir>/<timestamp>` (default `/tmp/nyxmon-restore`),
+   check the metadata fields and `manifest.sha256`.
 2. Check disk space (twice the archive size).
 3. With `dry_run`, stop here.
 4. Take a safety copy of the site directory (`<site>.pre-restore-<timestamp>`).

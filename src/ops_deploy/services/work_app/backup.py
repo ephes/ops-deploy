@@ -11,6 +11,10 @@ Ansible's.
 
 Differences from the role: the archive is packed with ``umask 077`` (it holds
 ``.env``); only ``tar.gz`` archives exist.
+
+``required_mount`` keeps the backup root on an external disk and
+``retain_count``/``retain_days`` limit the snapshots a backup keeps
+(:mod:`ops_deploy.services._lifecycle.local_backup`).
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, python, server
 
 from ops_deploy.base._common import AbsolutePath, output
+from ops_deploy.services._lifecycle.local_backup import SnapshotRetention, backup_preflight, retention
 from ops_deploy.services.work_app._lifecycle import SLUG, WorkAppPaths
 
 SUBDIRECTORIES = ("database", "static", "configs", "env")
@@ -31,7 +36,7 @@ SUBDIRECTORIES = ("database", "static", "configs", "env")
 SQLITE_BUSY_TIMEOUT_MS = 30000
 
 
-class WorkAppBackupConfig(WorkAppPaths):
+class WorkAppBackupConfig(WorkAppPaths, SnapshotRetention):
     root: AbsolutePath = "/opt/backups/work_app"
     prefix: str = Field(default="manual", pattern=r"^[A-Za-z0-9._-]+$")
     include_static: bool = True
@@ -50,6 +55,9 @@ class WorkAppBackupConfig(WorkAppPaths):
     ops_library_version: str = Field(default="unknown", pattern=r"^[A-Za-z0-9._+-]+$")
     # The inventory name of the host, written to metadata.yml.
     inventory_name: str = Field(default="macmini", pattern=r"^[A-Za-z0-9._-]+$")
+
+    def guarded_paths(self) -> dict[str, str]:
+        return {"root": self.root}
 
 
 def _exists(path: str) -> bool:
@@ -155,6 +163,9 @@ def deploy_work_app_backup(cfg: WorkAppBackupConfig) -> None:
     quoted = shlex.quote(backup_dir)
     mode_file = f"{backup_dir}/database/.mode"
 
+    preflight = backup_preflight(cfg, cfg.root, name)
+    if preflight:
+        server.shell(name="Check the backup root and name", commands=[preflight], _shell_executable="bash")
     for path in (cfg.root, backup_dir, *(f"{backup_dir}/{sub}" for sub in SUBDIRECTORIES)):
         files.directory(name=f"Ensure {path}", path=path, user="root", group="root", mode="0700")
 
@@ -189,13 +200,18 @@ def deploy_work_app_backup(cfg: WorkAppBackupConfig) -> None:
             "find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256"
         )
         server.shell(name="Generate the checksum manifest", commands=[f"bash -c {shlex.quote(script)}"])
-    if not cfg.create_archive:
-        return
-    server.shell(
-        name=f"Create {archive}",
-        commands=[f"(umask 077 && tar -C {shlex.quote(cfg.root)} -czf {shlex.quote(archive)} {shlex.quote(name)})"],
-    )
-    if cfg.fetch_local:
+    if cfg.create_archive:
+        server.shell(
+            name=f"Create {archive}",
+            commands=[f"(umask 077 && tar -C {shlex.quote(cfg.root)} -czf {shlex.quote(archive)} {shlex.quote(name)})"],
+        )
+    if cfg.retention:
+        server.shell(
+            name="Prune local snapshots",
+            commands=[retention(cfg, cfg.root, name, stamp)],
+            _shell_executable="bash",
+        )
+    if cfg.create_archive and cfg.fetch_local:
         local_dir = str(cfg.local_dir or Path.home() / "backups" / "work_app")
         python.call(name=f"Ensure {local_dir} (0700)", function=_private_local_dir, path=local_dir)
         files.get(name="Fetch the backup archive", src=archive, dest=f"{local_dir}/{name}.tar.gz")

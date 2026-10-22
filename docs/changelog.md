@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Local backups and restore work directories (`nyxmon`, `fastdeploy`,
+  `work_app`, `traefik`): new `required_mount` on the backup and restore
+  configs and `retain_count`/`retain_days` on the backup configs (new
+  "Local backups" concept page). With `required_mount` the run checks on the
+  host, before its first write, that the mount point carries a real
+  filesystem (`findmnt --types noautofs`, an automount alone does not count)
+  and that the backup root, the restore's work directory and FastDeploy's
+  safety-backup root resolve below it, and stops otherwise; the configs
+  refuse such paths outside the mount. With retention, each backup records
+  its snapshot in `<root>/.ops-deploy-snapshots/` and prunes recorded ones
+  beyond the newest `retain_count` per prefix or older than `retain_days`;
+  such a backup refuses a name already taken (directory, either archive or
+  record); the snapshot just written and unrecorded snapshots (Ansible's,
+  older ones) are never removed, and a restore never prunes
+  (`FastdeployRestoreConfig.safety_backup_retention` records its safety
+  backup). `FastdeployRestoreConfig.safety_backup_root` names the safety
+  backup's root (default unchanged); with `required_mount` the FastDeploy
+  restore's passfile directory moves from `/tmp` below `temp_dir`. Restore
+  work directories now go on
+  failure too: the Traefik restore traps `EXIT` (nyxmon checks the mount
+  before its cleanup trap), and the work_app restore
+  removes its staging directory right after the last step that reads it and,
+  with `cleanup`, when any step before that fails (formerly it stayed until
+  the next restore). Defaults are unchanged otherwise: no mount check, no
+  retention, same archive contents and restore semantics.
 - `bind`: port of the `bind_authoritative_deploy` role (deploy only),
   checked against ops-library main `06394c81` (2.64.5), as
   `ops_deploy.infra.bind` (`BindConfig`, `deploy_bind`; its own "BIND" page).

@@ -141,7 +141,9 @@ Differences from the role, on purpose:
 (`/opt/backups/traefik`), `prefix` (`manual`), `dynamic_dir`
 (`/etc/traefik/dynamic`), `include_dynamic` (`True`, matching ops-library
 2.48.1), `acme_path`, `include_acme` (`False`), `create_archive` (`True`),
-`fetch_local` (`True`) and `local_dir` (`None`: `~/backups/traefik`).
+`fetch_local` (`True`), `local_dir` (`None`: `~/backups/traefik`), and
+`required_mount`, `retain_count`, `retain_days` (`None`, `0`, `0`; see
+[Local backups](concepts/local-backups.md)).
 
 The default now captures the **whole dynamic directory**, including nested,
 hidden and non-YAML files, into `dynamic/` regardless of the source directory's
@@ -178,7 +180,11 @@ a dangling link, refuses before writes rather than overwriting history. Use a tr
 tree: unlike the role's recursive copy, this implementation refuses symlinks
 and special entries rather than following them outside the chosen tree, and
 rechecks the copied tree before allowing an archive. A failed copy never packs
-or fetches the partial payload. No retention or pruning policy is added.
+or fetches the partial payload. With `required_mount` the run first checks
+that the mount is there and `root` resolves below it, and stops before any
+write otherwise; with `retain_count`/`retain_days` it prunes the snapshots it
+recorded after packing (also without an archive), never the one just written
+and never an unrecorded one ([Local backups](concepts/local-backups.md)).
 
 **Backup coverage does not qualify restoration.** Dynamic payloads are never
 published by `deploy_traefik_restore`: it remains ACME-only, has no `dry_run`
@@ -191,14 +197,16 @@ deployment or positive restore/removal qualification is implied by this change.
 
 `deploy_traefik_restore(cfg)`; `TraefikRestoreConfig` fields: `archive`
 (`latest`, a name below `root` or an absolute path), `root`, `staging_dir`
-(`/tmp/traefik-restore`), `acme_path`, `include_acme` (`False`) and
-`transaction_required`.
+(`/tmp/traefik-restore`), `acme_path`, `include_acme` (`False`),
+`transaction_required` and `required_mount` (`None`; `staging_dir` must lie
+below it, and the mount is checked before the staging directory is made).
 
 `latest` picks the newest `*.tar.gz` in `root` by modification time. The
 archive is unpacked into a fresh `staging_dir` (`0700`), its first top-level
 directory is the payload, and with `include_acme` its `acme/acme.json` is put
-back as `root:root 0600` (directory `0700`); `staging_dir` is removed. As in
-the role, Traefik is not restarted. Without `include_acme` nothing is
+back as `root:root 0600` (directory `0700`); `staging_dir` is removed
+whether the restore succeeds or fails (an `EXIT` trap). As in the role,
+Traefik is not restarted. Without `include_acme` nothing is
 restored.
 
 ## deploy_traefik_remove

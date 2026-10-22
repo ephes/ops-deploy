@@ -18,6 +18,12 @@ privilege reduction retired (``retired_entries``, ``retired_sudoers``) or a
 sudoers file the role's ``sudoers_blanket_check.py`` rejects. The database
 password reaches the script on stdin only. Removal is planned from what the
 host has, so a second run changes nothing.
+
+``required_mount`` keeps the backup root, the restore's work directory and its
+safety backup on an external disk, and ``retain_count``/``retain_days`` limit
+the snapshots a backup keeps (:mod:`ops_deploy.services._lifecycle.local_backup`).
+A restore never prunes; with ``safety_backup_retention`` its safety backup is
+recorded, so later backups prune it by their limits.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ from ops_deploy.services._lifecycle import (
     script,
     stop_disable,
 )
+from ops_deploy.services._lifecycle.local_backup import MountGuard, SnapshotRetention
 
 LIFECYCLE = Path(__file__).parent / "files" / "lifecycle.sh"
 # The fastdeploy_restore role's check (vendored): prints the sudoers files a restore must not copy back.
@@ -61,7 +68,7 @@ Url = Annotated[str, Field(pattern=r"^https?://[A-Za-z0-9.:/_-]+$")]
 ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*)$")]
 
 
-class FastdeployBackupConfig(RoleConfig):
+class FastdeployBackupConfig(SnapshotRetention):
     # The metadata's ``host`` (Ansible's ``inventory_hostname``).
     host_name: Hostname
     prefix: Prefix = "manual"
@@ -102,8 +109,11 @@ class FastdeployBackupConfig(RoleConfig):
     rsync_delete: bool = True
     runner_excludes: tuple[Annotated[str, Field(pattern=r"^[A-Za-z0-9._/*-]+$")], ...] = (".config/sops/age/keys.txt",)
 
+    def guarded_paths(self) -> dict[str, str]:
+        return {"root": self.root}
 
-class FastdeployRestoreConfig(RoleConfig):
+
+class FastdeployRestoreConfig(MountGuard):
     host_name: Hostname
     archive: ArchiveName = "latest"
     search_root: AbsolutePath = "/opt/backups/fastdeploy"
@@ -113,6 +123,10 @@ class FastdeployRestoreConfig(RoleConfig):
     create_safety_backup: bool = True
     # ``latest`` passes over safety backups (``<prefix>-`` in the path) while other archives exist.
     safety_backup_prefix: Prefix = "pre-restore"
+    # Where the safety backup goes (the backup role's default root).
+    safety_backup_root: AbsolutePath = "/opt/backups/fastdeploy"
+    # Record the safety backup for the retention of later backups into the same root.
+    safety_backup_retention: bool = False
     user: UnixUser = "fastdeploy"
     group: UnixUser = "fastdeploy"
     site_path: AbsolutePath = "/home/fastdeploy/site"
@@ -155,6 +169,9 @@ class FastdeployRestoreConfig(RoleConfig):
     def deploy_home(self) -> str:
         return f"/home/{self.deploy_user}"
 
+    def guarded_paths(self) -> dict[str, str]:
+        return {"temp_dir": self.temp_dir, "safety_backup_root": self.safety_backup_root}
+
 
 class FastdeployRemoveConfig(RoleConfig):
     confirm: bool = False
@@ -189,11 +206,19 @@ def _stamp(what: str) -> str:
     return stamp
 
 
-def backup_values(cfg: FastdeployBackupConfig, backup_dir: str) -> dict[str, str | tuple[str, ...]]:
-    """The ``B_*`` settings of ``fd_backup`` in ``files/lifecycle.sh``."""
+def backup_values(cfg: FastdeployBackupConfig, backup_dir: str, *, stamp: str = "") -> dict[str, str | tuple[str, ...]]:
+    """The ``B_*`` settings of ``fd_backup`` in ``files/lifecycle.sh``.
+
+    ``stamp`` (the host's time) dates the retention cutoff; without it nothing is pruned.
+    """
 
     return {
         "PG_ADMIN": cfg.postgres_admin,
+        "B_MOUNT": cfg.required_mount or "",
+        "B_RECORD": flag(cfg.retention),
+        "B_PRUNE": flag(cfg.retention and bool(stamp)),
+        "B_KEEP": str(cfg.retain_count),
+        "B_CUTOFF": cfg.cutoff(stamp) if stamp else "",
         "B_HOST": cfg.host_name,
         "B_ROOT": cfg.root,
         "B_DIR": backup_dir,
@@ -243,9 +268,10 @@ def deploy_fastdeploy_backup(cfg: FastdeployBackupConfig, secrets: SecretValues 
     """Dump the database, copy FastDeploy's state into a backup directory, pack and fetch it."""
 
     password = _password(secrets)
-    name = f"{cfg.prefix}-{_stamp('fastdeploy_backup')}"
+    stamp = _stamp("fastdeploy_backup")
+    name = f"{cfg.prefix}-{stamp}"
     backup_dir = f"{cfg.root}/{name}"
-    _run(f"Back up FastDeploy into {backup_dir}", backup_values(cfg, backup_dir), "fd_backup", password)
+    _run(f"Back up FastDeploy into {backup_dir}", backup_values(cfg, backup_dir, stamp=stamp), "fd_backup", password)
     if cfg.create_archive and cfg.fetch_local:
         local_dir = str(cfg.local_dir or Path.home() / "backups" / "fastdeploy")
         python.call(name=f"Ensure {local_dir} (0700)", function=private_local_dir, path=local_dir)
@@ -262,6 +288,10 @@ def deploy_fastdeploy_restore(cfg: FastdeployRestoreConfig, secrets: SecretValue
     safety = FastdeployBackupConfig(
         host_name=cfg.host_name,
         prefix=cfg.safety_backup_prefix,
+        root=cfg.safety_backup_root,
+        required_mount=cfg.required_mount,
+        # Recorded only (a restore never prunes): see ``backup_values``.
+        retain_count=1 if cfg.safety_backup_retention else 0,
         postgres_user=cfg.postgres_admin,
         postgres_admin=cfg.postgres_admin,
         fetch_local=False,
@@ -273,6 +303,7 @@ def deploy_fastdeploy_restore(cfg: FastdeployRestoreConfig, secrets: SecretValue
         # The safety backup (its B_DIR and B_INCLUDE_WORKSPACE are set at run time).
         **backup_values(safety, ""),
         "STAMP": stamp,
+        "R_MOUNT": cfg.required_mount or "",
         "R_ARCHIVE": cfg.archive,
         "R_SEARCH_ROOT": cfg.search_root,
         "R_TEMP": cfg.temp_dir,
