@@ -3,7 +3,7 @@
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
-SSH guard, dpkg foreign architectures), the others are steps a service deploy
+SSH guard, dpkg foreign architectures, unattended upgrades), the others are steps a service deploy
 calls (uv, Node.js):
 
 ```python
@@ -32,6 +32,7 @@ change.
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
 | `ssh_guard` | `ssh_guard_deploy` | `SshGuardConfig` | `deploy_ssh_guard` |
 | `dpkg_arch_remove` | `dpkg_arch_remove` | `DpkgArchRemoveConfig` | `deploy_dpkg_arch_remove` |
+| `unattended_upgrades` | none (new) | `UnattendedUpgradesConfig` | `deploy_unattended_upgrades` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -301,6 +302,83 @@ either field is refused when the config is built, so the deploy behaves like
 the role with its defaults, which fail on such packages. Remove the packages
 deliberately first (or use the role).
 
+## unattended_upgrades
+
+Daily security updates with the distribution's `unattended-upgrades`, plus
+needrestart for the service restarts afterwards. There is no ops-library role
+to port: hosts ran the package defaults, and one bootstrap playbook wrote
+`20auto-upgrades` once. Defaults are security updates only, no reboots.
+
+| Field | Default | |
+|---|---|---|
+| `debian_point_releases` | `False` | Debian only: also take the main archive's point-release updates (Debian's packaged default); refused on Ubuntu |
+| `package_blacklist` | `()` | package name regexes never upgraded (`Package-Blacklist`; letters, digits and `.+*^$_:-`) |
+| `remove_unused_kernel_packages` | `True` | `Remove-Unused-Kernel-Packages` |
+| `remove_unused_dependencies` | `False` | `Remove-Unused-Dependencies` |
+| `automatic_reboot` | `False` | `Automatic-Reboot`: reboot when a run left `/var/run/reboot-required` |
+| `automatic_reboot_time` | `"04:30"` | `Automatic-Reboot-Time`, `HH:MM` (the reboot waits for this time after the run) |
+| `autoclean_interval_days` | `7` | `APT::Periodic::AutocleanInterval` (0 to 365; 0: never) |
+| `needrestart` | `automatic` | needrestart after an upgrade: `automatic` restarts affected services, `list` only lists them, `unmanaged` leaves needrestart alone |
+| `needrestart_skip_services` | `()` | `*.service` names needrestart never restarts (it already skips docker, dbus, networking, getty and the apt units) |
+
+The policy lives in two drop-ins; no packaged file is touched, so a package
+upgrade never meets a modified conffile:
+
+- `/etc/apt/apt.conf.d/52ops-deploy-unattended-upgrades` sets
+  `APT::Periodic::Update-Package-Lists "1"`, `Unattended-Upgrade "1"` and
+  `AutocleanInterval`, then clears the packaged `Allowed-Origins`,
+  `Origins-Pattern` and `Package-Blacklist` (`#clear`) and writes its own,
+  followed by the cleanup, reboot and `SyslogEnable` settings. apt reads it
+  after `20auto-upgrades` and `50unattended-upgrades`, so its values win. A
+  host whose `20auto-upgrades` disables the daily run is enabled by it.
+- `/etc/needrestart/conf.d/60-ops-deploy-unattended-upgrades.conf` sets
+  `$nrconf{restart}` (`a` or `l`) and one `override_rc` entry per skipped
+  service. needrestart runs from apt's `DPkg::Post-Invoke` hook, so also after
+  an unattended upgrade, and the mode applies to every apt run on the host
+  (manual or scheduled upgrades too). With `needrestart="unmanaged"` the
+  drop-in is removed (needrestart itself stays installed).
+
+Both are `root:root 0644`. A drop-in path that holds anything other than a
+regular file (a symlink included) is refused before any change.
+
+Origins, as `Unattended-Upgrade::Origins-Pattern` entries
+(unattended-upgrade substitutes `${distro_codename}`):
+
+| Release | Origins |
+|---|---|
+| Debian 12, 13 | `origin=Debian,codename=${distro_codename}-security,label=Debian-Security`; with `debian_point_releases` also `origin=Debian,codename=${distro_codename},label=Debian` |
+| Ubuntu 24.04 | `origin=Ubuntu,archive=${distro_codename}` (the release pocket, frozen at release: only new dependencies of security updates), `-security`, and the ESM pockets `UbuntuESMApps` `-apps-security` and `UbuntuESM` `-infra-security` (used only with Ubuntu Pro). `-updates` is never taken, as in Ubuntu's own default |
+
+Compared with the package defaults this drops Debian's point-release origin
+(unless asked for) and the Debian pre-bullseye security origin; Ubuntu's
+origins are unchanged. Packages from other repositories (PGDG, Docker,
+Tailscale, vendor kernels) are never upgraded by it.
+
+Missing `unattended-upgrades` (and `needrestart`, unless unmanaged) are
+installed after an `apt-get update` (cache older than an hour). Installed
+packages are not refreshed or upgraded, so a converged host plans no change.
+After the drop-ins a read-only check (reported separately, see
+[read-only checks](concepts/helpers.md)) compares the managed keys of
+`apt-config dump` (origins, any leftover `Allowed-Origins`, blacklist,
+periodic, cleanup and reboot values) with the policy as sorted lists, so
+another drop-in that adds an origin (also as a named entry such as
+`Origins-Pattern::extra`, which unattended-upgrade reads too) or overrides a
+value fails the deploy. It
+also fails when `APT::Periodic::Enable` is `0`, when `unattended-upgrade` is
+missing, or when `apt-daily.timer` or `apt-daily-upgrade.timer` is not
+enabled; the deploy never enables or unmasks them itself.
+
+Supported: Debian 12 and 13 and Ubuntu 24.04 (`ID` and `VERSION_ID` of
+`/etc/os-release`), with systemd as PID 1. Any other release is refused
+before any change; a new release needs its packaged defaults checked and the
+Docker test below run against it first.
+
+What it does not do: no unattended upgrades outside the daily
+`apt-daily-upgrade.timer` run, no timer changes, no reboot window by weekday
+(`Automatic-Reboot-Time` only picks the time of day), and no
+`dpkg-reconfigure`. To hand a host back to the package defaults, delete both
+drop-ins.
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
@@ -343,3 +421,23 @@ CLI is wrapped so it can only inspect, exec and copy. The test covers the
 first run, a converged run, jail drift (restart only), drop-in drift (check
 and reload only), a value `sshd -t` rejects (drop-in removed, deploy failed,
 no reload, sshd still running) and recovery, and a stopped ssh.
+
+`tests/test_base_unattended_upgrades_docker.py` runs
+`deploy_unattended_upgrades` against real apt, unattended-upgrades and
+needrestart, once per container in `UNATTENDED_UPGRADES_DOCKER_CONTAINERS`
+(full IDs, space separated; skipped when unset). Each container is named
+`ops-deploy-uu-*`, labelled `ops-deploy.fixture=unattended-upgrades`, runs
+systemd as PID 1 with `--network none`, not privileged and without mounts,
+and is built from `debian:12`, `debian:13` or `ubuntu:24.04` with
+`systemd systemd-sysv unattended-upgrades needrestart` installed and the
+image's `docker-clean` and `docker-disable-periodic-update` apt files removed
+(started like the ssh_guard fixture: `--cgroupns private --cap-add SYS_ADMIN
+--security-opt apparmor=unconfined --tmpfs /run --tmpfs /run/lock`, an entry
+point that remounts `/sys/fs/cgroup` writable and execs `/sbin/init`). The
+test checks that `unattended-upgrade --dry-run --debug` resolves exactly the
+security origins for the release's codename and the blacklist, needrestart
+evaluates the drop-in (`restart` `a`, the skipped service), the packaged
+`20auto-upgrades` and `50unattended-upgrades` keep owner, mode, inode, mtime
+and content, a converged run changes nothing, an origin added by another
+drop-in fails the check without a change, and `needrestart="unmanaged"`
+removes only its drop-in.

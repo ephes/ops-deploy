@@ -32,6 +32,24 @@
   an `nsupdate` followed by deploys that leave the dynamic zone and its
   journal untouched) and the role's digest to the drift manifest.
 
+- New base deploy `unattended_upgrades` (`UnattendedUpgradesConfig`,
+  `deploy_unattended_upgrades`): daily security updates with the
+  distribution's `unattended-upgrades` and needrestart, on Debian 12 and 13
+  and Ubuntu 24.04 under systemd (other releases are refused). It writes two
+  drop-ins and no packaged file: `/etc/apt/apt.conf.d/52ops-deploy-unattended-upgrades`
+  (daily run on, the packaged origin lists replaced with `#clear`:
+  Debian `-security` only, optionally the point-release archive; Ubuntu
+  release, `-security` and ESM security pockets, never `-updates`; blacklist,
+  kernel cleanup, automatic reboot off by default) and
+  `/etc/needrestart/conf.d/60-ops-deploy-unattended-upgrades.conf`
+  (`automatic` restarts by default, `list`, or `unmanaged`). Missing packages
+  are installed; nothing else is updated, so a converged host plans no
+  change. A read-only check compares `apt-config dump` with the policy and
+  requires the `apt-daily` timers to be enabled. There is no ops-library role
+  to port. Fake-connector tests and an opt-in Docker test against real
+  Debian 12, Debian 13 and Ubuntu 24.04 containers. See
+  [base deploys](base.md#unattended_upgrades).
+
 - `graphyard` core: `graphyard-web.service` and `graphyard-agent.service`
   declare `Wants=` + `After=` on `graphyard-runtime.service` instead of
   `Requires=`. The role templates are shipped unchanged (ops-library
