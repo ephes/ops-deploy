@@ -11,8 +11,9 @@ reloaded (and a message about the key file is withheld), a reload a run never
 reached is made by the next run, an unbumped serial and a lone journal are
 refused, removing the keys removes the key file, a missed reload is noticed
 even in the second named last loaded its configuration, only the run holding
-the lock removes staged files, the check tree never writes through a
-symlinked directory, a secondary validates, and
+the lock removes staged files, a symlinked directory in the configuration
+directory is never written, a clock behind named's last load is refused
+before any change, a secondary validates, and
 (with ``OPS_LIBRARY_PATH``) the role and this deploy take turns without a
 change or a reload.
 """
@@ -133,9 +134,11 @@ class Fixture:
         assert self.sh("cat /proc/1/comm") == "systemd"
         assert self.sh("named -v").startswith("BIND 9.")
 
-    def docker(self, *args: str, check: bool = True, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    def docker(
+        self, *args: str, check: bool = True, stdin: str | None = None, timeout: float = 600
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [self.binary, *args], input=stdin, capture_output=True, text=True, check=check, timeout=600
+            [self.binary, *args], input=stdin, capture_output=True, text=True, check=check, timeout=timeout
         )
 
     def sh(self, command: str, stdin: str | None = None) -> str:
@@ -440,23 +443,52 @@ def test_only_the_lock_holder_removes_staged_files(fixture: Fixture, zones_dir: 
     assert fixture.configured() == configured
 
 
-def test_a_symlinked_directory_in_the_config_tree_is_not_written_through(fixture: Fixture, zones_dir: Path) -> None:
-    keys = "/etc/bind/keys/tsig.conf"
-    cfg = primary(zones_dir, tsig_keys_file=keys)
+def test_a_symlinked_directory_in_the_config_dir_is_never_written(fixture: Fixture, zones_dir: Path) -> None:
+    cfg = primary(zones_dir)
     fixture.sh(
         "mkdir -p /srv/bind-keys && echo LIVE > /srv/bind-keys/tsig.conf && ln -sfn /srv/bind-keys /etc/bind/keys"
     )
     try:
-        broken = primary(zones_dir, tsig_keys_file=keys, extra_options=("not-a-bind-option yes;",))
+        broken = primary(zones_dir, extra_options=("not-a-bind-option yes;",))
         with pytest.raises(PyinfraError, match="unknown option 'not-a-bind-option'"):
             fixture.deploy(broken)
-        assert fixture.sh("cat /srv/bind-keys/tsig.conf") == "LIVE"
-
         fixture.deploy(cfg)
-        assert fixture.read("/srv/bind-keys/tsig.conf") == render_keys(cfg, SECRETS).reveal().decode()
         assert mutating(fixture.deploy(cfg)) == []
+        assert fixture.sh("ls -A /srv/bind-keys && cat /srv/bind-keys/tsig.conf") == "tsig.conf\nLIVE"
     finally:
         fixture.sh("rm -rf /etc/bind/keys /srv/bind-keys")
+
+
+def test_a_clock_behind_the_last_load_is_refused_before_any_change(fixture: Fixture, zones_dir: Path) -> None:
+    cfg = primary(zones_dir)
+    fixture.deploy(cfg)
+    snapshot = fixture.files()
+    (zones_dir / "db.example.test").write_text(ZONE.format(serial=2026102102, last=84))
+    sources = {zone.name: (zones_dir / zone.file).read_bytes() for zone in cfg.zones}
+    files = entries(cfg, builtin_zones_file(cfg, "ubuntu", 24), SECRETS, sources)
+    # rndc reports a load 20 seconds ahead of the clock, as after the clock was set back.
+    rndc = '#!/bin/sh\necho "last configured: $(date -u -d "+20 seconds" "+%a, %d %b %Y %H:%M:%S GMT")"\n'
+    fixture.sh("mkdir -p /root/fake-rndc && cat > /root/fake-rndc/rndc && chmod 0755 /root/fake-rndc/rndc", stdin=rndc)
+    try:
+        result = fixture.docker(
+            "exec",
+            "-i",
+            fixture.identifier,
+            "sh",
+            "-c",
+            "PATH=/root/fake-rndc:$PATH " + host_command(cfg, "apply", files),
+            stdin=payload(files),
+            check=False,
+            timeout=15,
+        )
+    finally:
+        fixture.sh("rm -rf /root/fake-rndc")
+
+    assert result.returncode == 1
+    assert "the clock is behind named's last configuration load; nothing was changed" in result.stderr
+    assert fixture.files() == snapshot
+    assert not fixture.sh("ls -A /etc/bind /var/lib/bind /run | grep ops-deploy || true")
+    assert mutating(fixture.deploy(cfg)) == [INSTALL, RELOAD]
 
 
 def test_an_unbumped_serial_is_refused_and_nothing_changes(fixture: Fixture, zones_dir: Path) -> None:

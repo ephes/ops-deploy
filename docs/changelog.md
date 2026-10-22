@@ -22,7 +22,12 @@
   named's last configuration load). Dynamic (RFC 2136) zone files are only
   seeded when neither the file nor its journal exists, and never read,
   replaced or reset; a lone journal, a journal next to a changing static
-  zone and non-regular managed paths are refused before any change. Adds an
+  zone, non-regular managed paths and a clock behind named's last
+  configuration load are refused before any change. Only the role's default
+  paths (`/etc/bind`, `/var/cache/bind`, `/var/lib/bind`, `named.conf.keys`,
+  the role's builtin zones file) and zone files that are `db.*` names of their
+  own (no `.jnl`, none of the package's zone files) are deployed; anything
+  else is refused before the host is contacted. Adds an
   opt-in Docker test against real named (`BIND_DOCKER_CONTAINER`, including
   an `nsupdate` followed by deploys that leave the dynamic zone and its
   journal untouched) and the role's digest to the drift manifest.

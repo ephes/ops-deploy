@@ -13,12 +13,14 @@ before the first file is touched: ``named-checkzone`` for changed zone files
 and ``named-checkconf -t`` on a copy of the configuration tree with the
 candidates in place. Only then are the changed files renamed into place, so a
 configuration named rejects leaves the installed files as they were and is
-never reloaded. Differences from the role, all refusals: a changed static
-zone needs a greater serial; a dynamic zone file is not seeded next to a
-leftover journal; a static zone file with a journal is not replaced; managed
-paths must be regular files. There is no rollback: an I/O error during the
-renames leaves the files installed so far (each one checked as part of the
-whole set), as the role would, and the next run installs the rest.
+never reloaded. Differences from the role, all refusals: only the role's
+default paths and ``db.*`` zone files of their own (:func:`check_layout`); a
+changed static zone needs a greater serial; a dynamic zone file is not seeded
+next to a leftover journal; a static zone file with a journal is not
+replaced; managed paths must be regular files. There is no rollback: an I/O
+error during the renames leaves the files installed so far (each one checked
+as part of the whole set), as the role would, and the next run installs the
+rest.
 
 Dynamic zones (RFC 2136 ``UPDATE`` into a ``.jnl`` journal) are named's: an
 existing file is never read, replaced or chmodded and its journal is never
@@ -55,6 +57,50 @@ from ops_deploy.ops.secret_file import secret_stdin
 
 HOST_SCRIPT = (Path(__file__).parent / "files" / "bind_config.sh").read_text()
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
+# The role's default paths: the only layout this deploy writes into.
+DEFAULT_PATHS = {"config_dir": "/etc/bind", "working_dir": "/var/cache/bind", "dynamic_zone_dir": "/var/lib/bind"}
+# "db." and dot-separated labels (Debian's naming): never a named.conf* file,
+# rndc.key, bind.keys, zones.rfc1918 or a staged ".ops-deploy-new." file.
+_ZONE_FILE = re.compile(r"db\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*")
+# The zone files the bind9 package ships in /etc/bind (Debian 12, Ubuntu), which its builtin zones load.
+PACKAGED_ZONE_FILES = ("db.0", "db.127", "db.255", "db.empty", "db.local")
+
+
+def check_layout(cfg: BindConfig) -> None:
+    """Refuse other paths than the role's defaults and zone files that are not ``db.*`` names of their own.
+
+    Every file the deploy writes or removes is then one of the four
+    ``named.conf`` files in ``/etc/bind``, a static zone file there, or a
+    dynamic zone file it seeds (never replaces) in ``/var/lib/bind``. Each zone
+    file name (all zone types) is used once, holds no ``.jnl`` and is not one
+    of the package's zone files, so no two of these files are one file, and
+    none of them is the builtin zones file, a staged file, a journal or a zone
+    file of the package. Checked before the host is contacted.
+    """
+
+    moved = [name for name, path in DEFAULT_PATHS.items() if getattr(cfg, name) != path]
+    if cfg.tsig_keys_file not in (None, f"{DEFAULT_PATHS['config_dir']}/named.conf.keys"):
+        moved.append("tsig_keys_file")
+    if cfg.builtin_zones_file is not None:
+        moved.append("builtin_zones_file")
+    if moved:
+        raise DeployError(
+            f"bind: only the role's default paths are supported, refusing the changed {', '.join(moved)} "
+            "(deploy such a host with the role)"
+        )
+    files = [zone.file for zone in cfg.zones]
+    refused = sorted(
+        {
+            name
+            for name in files
+            if not _ZONE_FILE.fullmatch(name) or name in PACKAGED_ZONE_FILES or ".jnl" in name or files.count(name) > 1
+        }
+    )
+    if refused:
+        raise DeployError(
+            "bind: each zone needs a db.* file name of its own, without .jnl and none of "
+            f"{', '.join(PACKAGED_ZONE_FILES)} (the package's zone files): {', '.join(refused)}"
+        )
 
 
 def check_secrets(cfg: BindConfig, secrets: Mapping[str, SecretStr] | None) -> dict[str, SecretStr]:
@@ -212,6 +258,7 @@ def deploy_bind(cfg: BindConfig, tsig_secrets: Mapping[str, SecretStr] | None = 
 
     if not cfg.enabled:
         return
+    check_layout(cfg)
     require_linux("bind")
     if not host.get_fact(Which, command="apt-get"):
         raise DeployError("bind needs a Debian-family host")
