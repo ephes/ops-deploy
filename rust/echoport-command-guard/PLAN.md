@@ -1092,8 +1092,10 @@ The tasks:
     playbook, the joint rollout of 6.4 included, installs 0.2.0 next to the
     Python guard with impl `python` (non-fatal, no switch) and runs
     `confirm_live.yml`. A run that must not install the Rust guard passes
-    `-e echoport_remote_command_guard_rust_version=` (empty: no Rust step;
-    `confirm_live.yml` still verifies the line). The runbook says so.
+    `-e echoport_remote_command_guard_rust_version=`: empty, it installs and
+    checks no release, but `confirm_live.yml` still verifies the line and,
+    once the install root exists (from S9 on), still moves the pins as for
+    impl `python` and prunes under 6.2's protections. The runbook says so.
   - The pre-probe's `failed_when` starts with
     `deploy_backup_route_probe_fatal | bool and`; a failure with the switch
     off is reported by an ignored failed task with the probe's rc and
@@ -1110,15 +1112,22 @@ The tasks:
     of a bad policy, so a stub cannot pass.
   - The compare script (`scripts/echoport_guard_shadow_compare.py`, `just
     echoport-guard-shadow-compare HOST SINCE ...`) pairs by `_BOOT_ID` and
-    `_PID` with the closest timestamp within `--max-gap` (default 5 s; a
-    long `chown -R` can need more), reads with `journalctl --all` (fields
+    `_PID` in journal order: one login is one process, so per PID the lines
+    must alternate shadow, guard; a guard line pairs only with the shadow
+    line right before it, at most `--max-gap` later (default 5 s; a long
+    `chown -R` can need more), and never across logins (the closest-
+    timestamp rule above could swap two logins of a reused PID and hide two
+    mismatches; found by the S8 review). It reads with `journalctl --all` (fields
     over 4096 bytes are not cut to null), accepts `MESSAGE` as a byte array,
     and has `--input` (a saved journal export) and `--json` (the report for
     the deployment record). An allowed shadow record with a Python refusal
     counts as an **execution refusal**, not a mismatch, only when the record
     has a redirect (`stdin`/`stdout`) or a `mutation` and the Python reason
-    is one the Python guard gives at that stage for that kind (`open_redirect()`,
-    `become()`, `perform()`), and only the reasons that depend on the tree
+    is one the Python guard can give at that stage for that redirect or for
+    that mutation's `op` and flags (`open_redirect()`; `become()` only with a
+    `user`; `perform()`: `not a private directory` only for a `private`
+    `chown`, `mv target exists` only without `replace`, `cannot list` only
+    for `chown -R`), and only the reasons that depend on the tree
     or the user database at that moment (`perform()`'s `unsafe path` and
     `unusable`/`unknown mutation` stay mismatches). The tests check these
     reasons against failures of the real Python guard and against every
