@@ -145,6 +145,7 @@ def test_ssh_authorized_keys_allow_login(smoke_host: SmokeHost, smoke_user: str,
 
 def test_uv_install(smoke_host: SmokeHost) -> None:
     install_dir = f"{SCRATCH}/uv"
+    smoke_host.run(f"install -d -m 0755 {SCRATCH}")
     try:
         first, _ = twice(smoke_host, "uv install", deploy_uv_install, UvInstallConfig(install_dir=install_dir))
         assert first.mutating_changed_ops

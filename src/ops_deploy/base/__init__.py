@@ -17,7 +17,7 @@ from ops_deploy.base.shell_basics import ShellBasicsConfig, deploy_shell_basics
 from ops_deploy.base.ssh_authorized_keys import AuthorizedKey, SshAuthorizedKeysConfig, deploy_ssh_authorized_keys
 from ops_deploy.base.ssh_guard import SshGuardConfig, deploy_ssh_guard
 from ops_deploy.base.systemd_unit_masks import SystemdUnitMasksConfig, UnitMask, deploy_systemd_unit_masks
-from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
+from ops_deploy.base.uv_install import UvAliasConfig, UvInstallConfig, deploy_uv_install
 
 __all__ = [
     "AuthorizedKey",
@@ -32,6 +32,7 @@ __all__ = [
     "SshGuardConfig",
     "SystemdUnitMasksConfig",
     "UnitMask",
+    "UvAliasConfig",
     "UvInstallConfig",
     "deploy_dpkg_arch_remove",
     "deploy_headless_mode",

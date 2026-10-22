@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Converge both managed Linux uv binaries, including wrong/missing uvx and file
+  ownership/mode drift. Refuse stale-pin downgrades, unsafe ancestors and
+  unexpected canonical links/owners; add explicit digest-approved compatibility
+  aliases with legacy backups. Darwin remains excluded to preserve Homebrew bytes.
+
 - Local backups and restore work directories (`nyxmon`, `fastdeploy`,
   `work_app`, `traefik`): new `required_mount` on the backup and restore
   configs and `retain_count`/`retain_days` on the backup configs (new

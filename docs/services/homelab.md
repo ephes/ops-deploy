@@ -170,8 +170,9 @@ Differences:
   rewrite source files once and restart homelab; later runs are quiet.
 - The bcrypt hash is computed on the controller; the role's
   `apache2-utils` package (`htpasswd`) is not installed.
-- `uv_install` runs only when `uv` is set. The role pins uv (0.13.4 today)
-  and replaces any other version on every run; with `uv` unset the deploy
+- `uv_install` runs only when `uv` is set. It converges the pinned uv/uvx pair
+  (default 0.13.4) and refuses a newer installed version, even when forced.
+  With `uv` unset the deploy
   uses the uv it finds at `uv_path` and refuses before any Python step when
   there is none (as the graphyard port).
 - A new user is a system user (`useradd -r`); an existing one is untouched.

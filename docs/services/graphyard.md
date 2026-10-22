@@ -290,8 +290,8 @@ it survives; its owner becomes `graphyard` like the rest of the site.
 - `rsync` is installed with apt when missing (the role assumes it).
 - The sync excludes `deploy/grafana/provisioning/dashboards-json/`, and the
   ownership step skips Logyard's files (see above).
-- `uv_install` does not run unless `uv` is set: the role installs its pinned
-  uv (0.13.4) on every deploy and so replaces a newer uv on the host.
+- `uv_install` runs only when `uv` is set. It converges the pinned uv/uvx pair
+  (default 0.13.4) and refuses a newer installed version, even when forced.
 - In the stack, the auth step also plans the provisioning file rewrite when
   the file the source sync installs needs one (the role's sync and rewrite
   then take turns on every run, as here).

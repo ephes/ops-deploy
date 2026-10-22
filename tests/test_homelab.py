@@ -425,9 +425,17 @@ def test_uv_install_runs_only_when_configured(tmp_path: Path) -> None:
     secrets = values(cfg)
     responses = {
         **converged(cfg, secrets),
-        **fakehost.directory("/usr/local/bin"),
-        "/usr/local/bin/uv --version": ["uv 0.14.1 (abc 2026-10-01)"],
-        **fakehost.stat("/usr/local/bin/uvx"),
+        **{
+            key: value
+            for path in ("/", "/usr", "/usr/local", "/usr/local/bin")
+            for key, value in fakehost.directory(path).items()
+        },
+        **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
+        "/usr/local/bin/uvx --version": ["uvx 0.13.4 (fixture)"],
+        "command -v dpkg-query": ["/usr/bin/dpkg-query"],
+        "if dpkg-query -S": ["unowned"],
+        "/usr/local/bin/uv --version": ["uv 0.13.0 (abc 2026-10-01)"],
+        **fakehost.file("/usr/local/bin/uvx", "binary", mode="-rwxr-xr-x"),
         "uname -m": ["x86_64"],
         "command -v curl": ["/usr/bin/curl"],
     }
@@ -445,9 +453,17 @@ def test_uv_already_pinned_is_left_alone(tmp_path: Path) -> None:
     secrets = values(cfg)
     responses = {
         **converged(cfg, secrets),
-        **fakehost.directory("/usr/local/bin"),
+        **{
+            key: value
+            for path in ("/", "/usr", "/usr/local", "/usr/local/bin")
+            for key, value in fakehost.directory(path).items()
+        },
+        **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
+        "/usr/local/bin/uvx --version": ["uvx 0.13.4 (fixture)"],
+        "command -v dpkg-query": ["/usr/bin/dpkg-query"],
+        "if dpkg-query -S": ["unowned"],
         "/usr/local/bin/uv --version": ["uv 0.13.4 (abc 2026-09-01)"],
-        **fakehost.stat("/usr/local/bin/uvx"),
+        **fakehost.file("/usr/local/bin/uvx", "binary", mode="-rwxr-xr-x"),
     }
 
     run = deploy(cfg, secrets, responses)

@@ -148,20 +148,67 @@ deploy instead.
 |---|---|---|
 | `version` | `0.13.4` | change together with `checksums` |
 | `checksums` | the role's sha256 for x86_64 and aarch64 Linux | keyed by release target |
-| `install_dir` | `/usr/local/bin` | not `/` |
-| `owner`, `group` | `root` | |
-| `update_existing` | `True` | replace another installed version |
-| `force_reinstall` | `False` | |
+| `install_dir` | `/usr/local/bin` | normalized absolute path other than `/`; parent must already exist |
+| `owner`, `group` | `root` | converge both binaries to these identities and mode `0755` |
+| `update_existing` | `True` | replace another installed version; never downgrade a newer version |
+| `force_reinstall` | `False` | reinstall the pinned pair; still refuses downgrades |
+| `previous_owners` | `()` | explicit trusted previous canonical owners to adopt |
+| `aliases` | `()` | explicit `UvAliasConfig` entries; no discovery or cleanup |
 
-Installs when `uv` or `uvx` is missing, `uv` is a symlink, is another version (with
-`update_existing`) or `force_reinstall` is set. One shell step downloads the
-release archive into a private temp directory with `curl`, checks the sha256,
-unpacks it and renames `uv`/`uvx` into place, then runs `uv --version`. `curl` is installed with apt first when missing.
-Linux only (the role also handles macOS; macOS hosts are a later phase). The
-role's deprecated `uv_create_symlinks`/`uv_symlink_dir` are not ported.
-Planning (`pyinfra-check`) only reads, which matches the role's `--check`
-since ops-library 2.48.2: a host with the pinned version plans no step, a
-pending install or update shows as the one install step.
+Manages `uv` and `uvx` as a pair. A missing, broken, non-executable, group/other
+writable or wrong-version binary triggers a checksum-verified install of both.
+The existing version/checksum map remains the sole release source. Other owned
+metadata drift converges with file operations even when both versions match.
+With `update_existing=False`, an existing matching pair is preserved; an
+inconsistent pair or repair requiring a different existing version fails closed
+unless `force_reinstall=True` explicitly requests replacement.
+A newer installed version refuses replacement even with `force_reinstall`.
+
+Before executing any managed binary or scheduling mutations, explicitly managed
+leaf paths must be unowned by each available package manager (`dpkg-query` and/or
+`rpm` with its exact unowned-file result, including its absent-path fallback
+only when the path is actually absent). Missing tools, failed/unknown queries and
+package-owned paths fail closed, including absent files still in package records.
+Every ancestor must
+be a real root-owned directory without group/other write access. Only the final
+install directory may be absent. Canonical binaries must be regular files owned
+by root, `owner`, or an explicitly trusted `previous_owners` entry. Canonical
+symlinks, foreign owners, directories and occupied staging paths fail closed;
+this intentionally replaces the old automatic symlink replacement behavior.
+`previous_owners` authorizes trusting and executing that owner's existing bytes;
+use it only after establishing provenance. Group/other-writable binaries are
+reinstalled without executing their existing bytes.
+
+One shell step downloads into a private temp directory, checks the pinned sha256,
+unpacks and renames both binaries, then verifies both installed versions before
+aliases run. `curl` is installed with apt first when missing. Planning only reads.
+An unchanged pair with correct metadata and aliases plans no mutations.
+
+Aliases are individually configured; their parent directories must already meet
+the same root-owned safety checks. For example:
+
+```python
+from ops_deploy.base import UvAliasConfig, UvInstallConfig
+
+uv = UvInstallConfig(
+    aliases=(
+        UvAliasConfig(path="/usr/local/uv", binary="uv"),
+        UvAliasConfig(path="/usr/local/uvx", binary="uvx"),
+    )
+)
+```
+
+An absent alias becomes a root-owned link to the verified canonical binary.
+An already-correct root-owned link is preserved. Unexpected links are refused.
+Replacing a named regular legacy file additionally requires its exact
+`replace_sha256` and `replace_owner` (default `root`); pyinfra retains its normal
+backup before creating the link. These approvals do not authorize other paths,
+directory removal, caller discovery, cache/venv deletion or package cleanup.
+No aliases are created by default, including the old role's deprecated symlinks.
+
+Linux only. Darwin is refused before any path/version operation, preserving
+Homebrew links and Cellar ownership/bytes. macOS package/alias policy and shared
+lifecycle drift detection belong to their separate integration work.
 `tests/parity/ops_library_roles.json` records the role (`uv_install`, checked
 against ops-library main `540ede2b`, 2.56.0).
 [homelab](services/homelab.md) and [graphyard](services/graphyard.md) run it

@@ -114,7 +114,7 @@ class HomelabConfig(BaseServiceConfig):
     django_debug: bool = False
     uv_path: PurePosixPath = DEFAULT_UV
     python_version: Annotated[str, Field(pattern=r"^3\.[0-9]{1,2}$")] = "3.14"
-    # The role's ``uv_install`` (pins its uv and replaces any other version);
+    # Pinned uv/uvx convergence, refusing newer installed versions;
     # None: not run, uv must already be at ``uv_path``.
     uv: UvInstallConfig | None = None
     traefik_host: Hostname = "home.example.com"

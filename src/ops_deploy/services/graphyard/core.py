@@ -356,8 +356,8 @@ class GraphyardConfig(BaseServiceConfig):
     foreign_paths: tuple[Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")], ...] = LOGYARD_PATHS
     python_version: Annotated[str, Field(pattern=r"^3\.[0-9]{1,2}$")] = "3.12"
     uv_sync_args: tuple[Annotated[str, Field(pattern=r"^--[a-z-]+$")], ...] = ("--no-default-groups", "--no-dev")
-    # The role runs uv_install (its pinned uv, also replacing a newer one); like
-    # the other ports, the default is not to: uv must be at /usr/local/bin/uv.
+    # Optional pinned uv/uvx convergence; newer installed versions fail closed.
+    # By default uv must already be at /usr/local/bin/uv.
     uv: UvInstallConfig | None = None
     django: Django = Django()
     influx: Influx = Influx()
