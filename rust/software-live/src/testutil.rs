@@ -1,11 +1,14 @@
 //! Helpers shared by the fixture tests (`fixtures/*.json`, written by
 //! `fixtures/generate.py` from the Python oracle).
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::PyError;
-use crate::probe::fake::FakeSystem;
+use crate::probe::fake::{FakeSystem, World};
+use crate::probe::{FileStat, Identity};
 use crate::report::{ERROR_LIMIT, Observation};
 
 /// A Python exception as a fixture records it: the class always; the
@@ -291,4 +294,44 @@ pub fn assert_observation(
 pub fn assert_calls(fake: &FakeSystem, expected: &[String], id: &str) {
     assert_eq!(&*fake.calls.borrow(), expected, "{id}: calls");
     assert_eq!(fake.pending_commands(), 0, "{id}: commands never run");
+}
+
+/// Python's calls without the `sha256 <fd>` of a running image that was
+/// opened with the identity the installed file had when it was hashed:
+/// Rust gives that image the installed file's digest instead of reading
+/// it again (PLAN.md 4.2 item 15). The identities come from the world:
+/// the `n`-th `open` of a path takes the `n`-th answer (the last one
+/// repeats), and the first `fstat` answer of an open is the identity
+/// `binary_info` checks before hashing.
+pub fn without_reused_hashes(python: &[String], world: &World, binary_path: &str) -> Vec<String> {
+    let mut opened: HashMap<&str, usize> = HashMap::new();
+    let mut descriptors: HashMap<String, (&str, Option<Identity>)> = HashMap::new();
+    let mut installed = None;
+    let mut expected = Vec::new();
+    for call in python {
+        if let Some(path) = call.strip_prefix("open ")
+            && let Some(answers) = world.open.get(path)
+        {
+            let count = opened.entry(path).or_default();
+            let answer = &answers[(*count).min(answers.len() - 1)];
+            *count += 1;
+            if let Ok(spec) = answer.get() {
+                let identity = spec
+                    .fstat
+                    .first()
+                    .and_then(|stat| stat.get().ok())
+                    .map(|stat| FileStat::from(stat).identity());
+                descriptors.insert(spec.fd.to_string(), (path, identity));
+            }
+        } else if let Some(fd) = call.strip_prefix("sha256 ") {
+            let (path, identity) = descriptors[fd];
+            if path == binary_path {
+                installed = identity;
+            } else if identity.is_some() && identity == installed {
+                continue;
+            }
+        }
+        expected.push(call.clone());
+    }
+    expected
 }

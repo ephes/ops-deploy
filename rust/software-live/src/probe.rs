@@ -30,7 +30,6 @@ use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use sha2::{Digest, Sha256};
 // wait-timeout installs a SIGCHLD handler and waits on an AF_UNIX socket
 // pair: fine in the collector unit, which restricts no address family.
 use wait_timeout::ChildExt;
@@ -56,6 +55,11 @@ pub struct FileStat {
     pub size: u64,
     pub mtime_ns: i128,
     pub ctime_ns: i128,
+}
+
+/// `hashlib.sha256(data).hexdigest()`.
+pub fn sha256_hex(data: &[u8]) -> String {
+    hex::encode(ring::digest::digest(&ring::digest::SHA256, data))
 }
 
 /// `file_identity(stat)` of `software_live.py:80-87`.
@@ -393,7 +397,7 @@ impl System for HostSystem {
     }
 
     fn sha256(&self, file: &mut HostFile) -> io::Result<String> {
-        let mut hasher = Sha256::new();
+        let mut hasher = ring::digest::Context::new(&ring::digest::SHA256);
         let mut buffer = vec![0; 1 << 18];
         loop {
             match file.0.read(&mut buffer) {
@@ -403,7 +407,7 @@ impl System for HostSystem {
                 Err(error) => return Err(error),
             }
         }
-        Ok(hex::encode(hasher.finalize()))
+        Ok(hex::encode(hasher.finish()))
     }
 
     /// The equivalent of `pass_fds` without `pre_exec` (which is `unsafe`):
@@ -759,7 +763,7 @@ pub mod fake {
     }
 
     impl<T: Clone> Entry<T> {
-        fn get(&self) -> io::Result<T> {
+        pub fn get(&self) -> io::Result<T> {
             match (&self.ok, &self.errno) {
                 (Some(ok), None) => Ok(ok.clone()),
                 (None, Some(name)) => Err(errno(name)),
@@ -1159,7 +1163,7 @@ pub mod fake {
 
         fn sha256(&self, file: &mut FakeFile) -> io::Result<String> {
             self.log(format!("sha256 {}", file.fd));
-            Ok(hex::encode(Sha256::digest(&file.data)))
+            Ok(sha256_hex(&file.data))
         }
 
         fn run_inheriting(
@@ -1376,7 +1380,7 @@ mod tests {
         // sha256(b"unexpected bytes"), as the Python test computes it.
         assert_eq!(
             HostSystem.sha256(&mut file).unwrap(),
-            hex::encode(Sha256::digest(b"unexpected bytes"))
+            sha256_hex(b"unexpected bytes")
         );
         // Replacing the path leaves the descriptor on the old inode (whose
         // ctime may move as its last link goes).

@@ -197,7 +197,7 @@ mod tests {
     use super::*;
     use crate::probe::HostSystem;
     use crate::probe::fake::{FakeSystem, World};
-    use crate::testutil::{ErrorSpec, json_eq};
+    use crate::testutil::{ErrorSpec, json_eq, without_reused_hashes};
     use serde::Deserialize;
     use std::cell::RefCell;
     use std::collections::{BTreeMap, VecDeque};
@@ -425,7 +425,14 @@ mod tests {
             let policy = Policy::new(pyjson::loads(&case.policy).unwrap()).unwrap();
             let system = FakeSystem::new(case.world.clone());
             let result = collect(&system, &policy, case.cache.as_deref().map(Path::new));
-            assert_eq!(*system.calls.borrow(), case.calls, "{id}");
+            // The running Traefik image's digest is reused where it is the
+            // installed file (PLAN.md 4.2 item 15).
+            let binary_path = pyjson::loads(&case.policy).unwrap()["traefik"]["binary_path"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
+            let calls = without_reused_hashes(&case.calls, &case.world, &binary_path);
+            assert_eq!(*system.calls.borrow(), calls, "{id}");
             assert_eq!(system.pending_commands(), 0, "{id}");
             assert_eq!(system.pending_http(), 0, "{id}");
             match (&case.report, &case.error) {

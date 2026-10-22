@@ -35,6 +35,9 @@ collection gate 2.65.0 and the shadow check of 8.1 in
 S9 in progress (`parity/shadow_compare.py`, 6.3; the shadow of 8.1 runs on
 all four hosts since 2026-10-22, see ops-control `docs/SOFTWARE_LIVE.md`;
 measurements in section 10; the at least 24 h evaluation is open);
+S9b implemented (collector CPU: the Traefik binary hashed once per
+attempt with `ring`'s SHA-256, 4.2 item 15; benchmark and budget
+decisions of 2026-10-22 in section 10; release 0.1.1);
 S11 implemented in ops-control (the manual CLI `scripts/software-live.py`
 runs the installed release on hosts with impl `rust`, 7.5 and 4.2 item 10;
 `tests/test_software_live.py`, `docs/SOFTWARE_LIVE.md` "Manual checks");
@@ -351,7 +354,9 @@ PostgreSQL probe). It needs no
 `unsafe_code = "forbid"`); it is race-free because `collect` is
 single-threaded and spawns no other child while the descriptor is
 inheritable. Timeouts kill the child (as `subprocess.run(timeout=…)`
-does). Hashing uses `sha2`. `MainPID` is read as `int()` reads it (sign,
+does). Hashing uses `ring`'s SHA-256 (`ring::digest`, S9b; section 10 has
+the benchmark), and the running image is hashed only when its identity
+differs from the installed file's (4.2 item 15). `MainPID` is read as `int()` reads it (sign,
 underscores between digits, leading zeros, any size, ASCII digits only,
 4.2 item 11) and kept as its decimal text, so `/proc/<pid>/exe` and
 `main_pid` are what Python would use.
@@ -770,6 +775,23 @@ request path or a policy value other than the host.
     key). Rust requires all four to be strings at startup and exits 1
     otherwise (`fixtures/serve.json`, tag `startup-config`). The role always
     writes them as strings.
+15. **The running Traefik image is hashed only when it is another file**
+    (S9b). Python hashes the installed binary and then the running image
+    (`/proc/<pid>/exe`) in every attempt, normally the same 185 MB file
+    twice. Rust gives the running image the installed binary's digest when
+    the image's identity `(st_dev, st_ino, st_mtime_ns, st_ctime_ns,
+    st_size)` before the hash equals the identity the installed binary kept
+    from before its hash to its final `stat` in the same attempt; otherwise
+    it reads the image as Python does. Everything else is unchanged: the
+    image is still opened, its descriptor target checked, probed through
+    the descriptor and its identity checked after the probe and in the final
+    `stat` (3.3), so an image that changes is still `binary changed during
+    observation`. The reports are identical, because both programs already
+    rely on "same identity, same bytes" within `binary_info`; the
+    difference is the system calls (no second `sha256 <fd>` in the
+    fixtures' call lists, `testutil::without_reused_hashes`), and a
+    read error of the second file, which can no longer occur for that file.
+    It halves the collector's hashing work.
 
 ---
 
@@ -919,7 +941,7 @@ separate helper (section 12); the alternative is not built.
 | CLI | `clap` (derive) | usage errors exit 2 |
 | JSON | `serde`, `serde_json` (`arbitrary_precision`) | sorted maps by default; lossless numbers; custom `Formatter` for the policy hash (3.2) |
 | float digits | `ryu` | shortest round-trip digits with exact ties to even, as Python's `repr` (Rust's `{:e}` rounds a tie up: `-85917593882605.625` is `…605.62` in Python); the layout (positional for exponents in [-4, 16)) is `pyjson::float_repr` |
-| sha256 | `sha2` 0.11, `hex` | |
+| sha256 | `ring` 0.17 (`digest`), `hex` | S9b: replaces `sha2` 0.11, whose software backend took 0.71 s per 185 MB on x86_64 without the SHA extensions (Python/OpenSSL 0.40 s, `ring` 0.43 s; section 10); `ring` is already in the tree through `rustls` (ISC and Apache-2.0) |
 | upstream HTTPS | `ureq` 3 (feature `rustls-no-provider`: no bundled roots, no gzip), `rustls` 0.23 with `ring` handed to ureq explicitly, `rustls-native-certs` for the system store | synchronous; the collector has no async runtime; `proxy(None)` (4.1) |
 | child processes with timeout | `std::process` plus `wait-timeout` | kill on timeout like `subprocess.run` |
 | `close_fds=True` of every child | `close_fds` (`set_fds_cloexec`, a safe API: every descriptor from 3 up except the passed one close-on-exec before the spawn) | S3c; the workspace forbids the `unsafe` a raw descriptor needs; the crate's last release is 0.3.2 (2021), small and feature-complete (Linux `close_range` or `/proc/self/fd`) |
@@ -1591,7 +1613,8 @@ Hours are for one worker.
 | S7 | Release `software-live-v0.1.0`: F2 workflow extension for the variants and the tag prefix (7.4), release checks, tag | F2, S5 | no | no (GitHub release only) | 3 |
 | S8 | ops-control (7.5): group/host vars with the pins and `impl: python`, shadow flag, version pre-task, runbook in `docs/SOFTWARE_LIVE.md`; the coordinator's collection release commit containing S6 (8.2) is a precondition for S9 | S6, S7 | no | no | 2 |
 | S9 | Shadow on staging, then on macmini, fractal, production (deploy with `shadow: true`, impl python); ≥ 24 h; `shadow_compare.py` reports; lean measurements | S8, coordinator's collection release containing S6 (8.2) | yes (S11 in parallel) | yes (new shadow units only) | 2 + soak |
-| S10 | Cutover staging → macmini → fractal → production with verification (8.3) and the rollback drill on staging (8.4); shadow off afterwards | S9, coordinator check (8.2) | no | yes | 3 |
+| S9b | Collector CPU at most Python's (coordinator decision 2026-10-22, section 10): the running Traefik image hashed only when it is another file (4.2 item 15), SHA-256 through `ring`; benchmark against Python's `hashlib`; release 0.1.1 (the shadow moves to it in ops-control) | S9 | yes | no | 2 |
+| S10 | Cutover staging → macmini → fractal → production with verification (8.3) and the rollback drill on staging (8.4); shadow off afterwards | S9, S9b (its release in the shadow, CPU at most Python's on every host), coordinator check (8.2) | no | yes | 3 |
 | S11 | Manual CLI in ops-control: for hosts with impl `rust`, run the installed versioned `software-live collect --config-json` over SSH (path from the inventory pins) instead of streaming Python; keep the controller allowlist and timeouts; update ops-control `tests/test_software_live.py` and docs | S8 | yes (with S9/S10) | no | 2 |
 | S12 | Python retirement, ≥ 7 days after S10 on all four hosts without a rollback (section 12): role default `rust`, base templates render the Rust commands (drop-ins removed), stop installing `software_live.py` and remove the deployed copy and `__pycache__` (keep `nyxmon_checks.py`), drop `python3-apt` from `software_live_packages` (no uninstall), keep `software_live.py` in the repository as the oracle for fixtures and parity, docs and CHANGELOG; merge, then the coordinator's collection release commit (8.2), then deploy to all four hosts | S10 + soak, S11 | no | yes | 3 |
 
@@ -1603,11 +1626,11 @@ Parallelism:
   F2 runs in parallel with S2), S3e, S4 and S6 (needs F3) concurrently
   (up to seven workers; they touch separate modules or the role).
 - After S3a–S3e: S3f; after S3f and S4: S5. S6 can finish meanwhile.
-- After S8: S9 and S11 concurrently; S10 after S9.
+- After S8: S9 and S11 concurrently; S9b during S9; S10 after S9 and S9b.
 - S12 waits for the soak.
 
 Critical path: F1 → S2 → S3d (or the slowest S3*) → S3f → S5 → S7 (needs
-F2) → S8 → collection release → S9 (24 h) → S10 → 7 days → S12.
+F2) → S8 → collection release → S9 (24 h; S9b's release in the shadow) → S10 → 7 days → S12.
 
 Review gate per slice: the reviewer checks the slice against the sections
 of this plan it names, the TESTMAP rows it changes, and the P3 list (no
@@ -1628,8 +1651,8 @@ The budget is the memory the program allocates: the unit's cgroup memory
 | Endpoint `RssAnon` | 8.9–13.7 MiB | ≤ 2 MiB |
 | Endpoint `ps` RSS | 17.6–25.6 MiB | ≤ 8 MiB |
 | Endpoint startup to listening | — | ≤ 100 ms |
-| Collector peak (self + children `maxrss`, from `--report-usage`; on staging also the systemd "memory peak") | 80.7 MB cgroup peak on staging | ≤ 64 MiB (dominated by libapt-pkg's in-memory cache) |
-| Collector CPU per run incl. export | 0.50–1.88 s | ≤ 1.0 s on macmini |
+| Collector peak (self + children `maxrss`, from `--report-usage`; on staging also the systemd "memory peak") | 80.7 MB cgroup peak on staging | below Python's peak on each host (coordinator decision 2026-10-22; the first budget, ≤ 64 MiB, is below libapt-pkg's in-memory cache on the Ubuntu hosts) |
+| Collector CPU per run incl. export | 0.50–1.88 s | not above Python's on any host, the gate for S10 (coordinator decision 2026-10-22); goal ≤ 1.0 s on macmini |
 | `software-live` stripped binary | — | ≤ 6 MiB (0.1.0: 3,464,320 bytes = 3.30 MiB) |
 | `software-live-apt` stripped binary (without shared libs) | — | ≤ 2 MiB (0.1.0: 464,144 / 461,984 bytes = 0.44 MiB) |
 
@@ -1684,6 +1707,63 @@ and costs about the same there (1.6–1.9 s per run). The `maxrss_kib` of the
 usage line (99–111 MiB) is above the cgroup peak because Linux carries a
 process's RSS high-water mark across `exec` and the line sums self and
 children (5.2, S5 note above); the cgroup figure is the authoritative one.
+
+Coordinator decisions of 2026-10-22 on these measurements: (1) the
+collector peak budget is re-baselined to "below Python's peak on each
+host" (met on all four hosts, 21–31 % below; the 64 MiB row was below
+libapt-pkg's floor on the Ubuntu hosts); (2) before the cutover S10 the
+Rust collector must not use more CPU than Python on any host. S9b does
+that work for the CPU.
+
+S9b (2026-10-22): `ring` instead of `sha2`, and the running image hashed
+only when it is another file than the installed binary (4.2 item 15), so a
+run hashes the 185 MB binary once instead of twice. Benchmark: CPU seconds
+(user + system, `getrusage` / `time.process_time`) per SHA-256 of a 185 MB
+file in the page cache, read in 256 KiB pieces as `probe.rs` and
+`hashlib.file_digest` do, best of 5; release profile of the workspace
+(`opt-level = "s"`, thin LTO). Three GitHub runner jobs (`ubuntu-24.04`,
+AMD EPYC 7763: `sha_ni`, `avx2`, `avx`, `ssse3`; Python 3.12.3, OpenSSL
+3.0.13; Rust 1.99.1) agreed within 0.007 s; the first job's figures. "SHA
+hidden" is the code a CPU without the SHA extensions runs: OpenSSL and
+AWS-LC with `OPENSSL_ia32cap=:~0x20000000` (CPUID.7 EBX bit 29), `ring` as
+a benchmark-only copy of 0.17.14 whose CPU detection ignores that bit, and
+`sha2` with its software backend (`--cfg sha2_256_backend="soft"`, what its
+runtime detection picks without SHA).
+
+| SHA-256 of 185 MB, CPU s | EPYC 7763 | EPYC 7763, SHA hidden |
+| --- | --- | --- |
+| reading only | 0.014 | — |
+| `sha2` 0.11.1 (0.1.0) | 0.143 | 0.707 (0.675 at `opt-level = 3`) |
+| `ring` 0.17.14 | 0.131 | 0.431 (SSSE3 code) |
+| `aws-lc-rs` 1.18.2 | 0.131 | 0.431 |
+| Python `hashlib` (OpenSSL 3.0.13) | 0.132 | 0.401 (AVX2 code; 0.436 with AVX2 hidden too) |
+
+`ring` runs its AVX code only on Intel CPUs (on AMD it takes SSSE3; forced
+onto the EPYC its AVX code took 0.83 s, which says nothing about Intel).
+The hosts without the SHA extensions are Intel, so their figures come from
+the hosts themselves, read-only: Python's `hashlib` on the installed Traefik
+binary (185,000,098 bytes), best of 3, with OpenSSL's default code (AVX2)
+and with AVX2 hidden (`OPENSSL_ia32cap=:~0x20`), which leaves OpenSSL the
+AVX code of the same CRYPTOGAMS origin that `ring` runs there — a proxy for
+`ring` on these CPUs, not a measurement of it.
+
+| Host (CPU; flags) | Python, OpenSSL | AVX2 code | AVX code (≈ `ring`) |
+| --- | --- | --- | --- |
+| staging (Xeon E3-1275 v5; no `sha_ni`, `avx2`, `avx`, `ssse3`, `bmi2`) | 3.13.5, 3.5.7 | 0.383 s | 0.432 s |
+| macmini (Core i5-8500B; same flags) | 3.12.3, 3.0.13 | 0.444 s | 0.507 s |
+
+So per hash `ring` is as fast as AWS-LC and 7–15 % slower than OpenSSL,
+and hashing once makes the Rust collector's hashing about 0.43–0.51 s per
+run against Python's 0.77–0.89 s (two hashes) on staging and macmini,
+instead of about 1.7 s with `sha2`. Expected collector CPU per run with
+0.1.1, from the S9 figures less the saved hashing: about 0.7 s on staging
+and 0.8 s on macmini (Python 1.62 and 1.87 s), below 0.96 s on production
+(SHA extensions), fractal unchanged (no Traefik). The shadow on 0.1.1
+measures it before S10. `ring` was chosen because it is maintained,
+already in the tree through `rustls` (no new license, `deny.toml`
+unchanged) and as fast as `aws-lc-rs`, which would add a second C crypto
+library to the build for no gain; `sha2` 0.11 has no assembly backend and
+`opt-level = 3` gains it only 5 %.
 
 Measured again in S10 (after the cutover), recorded in the S10 report. If glibc malloc arenas push the endpoint over budget,
 `Environment=MALLOC_ARENA_MAX=2` goes into the drop-in before another

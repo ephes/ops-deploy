@@ -12,7 +12,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::error::PyError;
 use crate::pyjson::{self, py_str, token_i128, type_name};
@@ -178,7 +177,7 @@ pub fn validate(policy: &Value) -> Result<(), PyError> {
 
 /// `policy_sha256`: sha256 of `json.dumps(policy, sort_keys=True)`.
 pub fn sha256(policy: &Value) -> String {
-    hex::encode(Sha256::digest(pyjson::python_dumps(policy)))
+    crate::probe::sha256_hex(&pyjson::python_dumps(policy))
 }
 
 /// The fields of a policy that [`validate`] has accepted, for the collector.

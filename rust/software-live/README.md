@@ -93,6 +93,9 @@ Slice S3b (Traefik observation, `src/traefik.rs`):
   path, and the probe executes `/proc/self/fd/<fd>` with exactly that
   descriptor inherited (`System::run_inheriting`, no `unsafe`). The file
   identity must not change while it is hashed and probed.
+- Since S9b the running image is hashed only when its identity differs
+  from the installed binary's; otherwise it gets the installed binary's
+  digest (PLAN.md 4.2 item 15). SHA-256 is `ring`'s (`ring::digest`).
 - `collect` calls it (S3f).
 
 Slice S3a (upstream lookups and caches):
@@ -271,6 +274,15 @@ Slice S9 (shadow comparison, PLAN.md 6.3, 8.1):
 - Its tests (`test_shadow_compare.py`, synthetic data) run with the other
   comparator tests in the `rust` CI job under Python 3.12 (the projection
   check imports the Python program, which needs 3.11 or later).
+
+Slice S9b (collector CPU at most Python's, PLAN.md section 10):
+
+- The collector hashes the 185 MB Traefik binary once per run instead of
+  twice (4.2 item 15) and with `ring`'s SHA-256 instead of `sha2`, whose
+  software code on CPUs without the SHA extensions (staging, macmini) made
+  the Rust collector use more CPU than Python. Benchmark and the
+  coordinator's budget decisions of 2026-10-22 in PLAN.md section 10.
+  Reports are unchanged; release 0.1.1.
 
 ## Checks
 

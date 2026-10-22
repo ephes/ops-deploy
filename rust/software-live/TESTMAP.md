@@ -83,7 +83,16 @@ every call in the same format. The Rust tests replay each world and require
 the same result and **the same call log** (opens, descriptor and `/proc`
 link reads, `realpath`, `fstat`, hashes, `stat`, and every command with the
 descriptors it inherits), so the order of the checks and what is executed
-match Python step by step.
+match Python step by step. One difference since S9b (PLAN.md 4.2 item 15):
+where the running image was opened with the identity the installed binary
+kept while it was hashed, Rust reuses that digest, so
+`observation_matches_python` and `collect::tests::collect_matches_python_end_to_end`
+expect Python's log without that image's `sha256 <fd>`
+(`testutil::without_reused_hashes` derives it from the world's `open` and
+`fstat` answers); `observation_matches_python` also requires both kinds
+of case to occur (41 reused hashes, 12 cases that still hash twice);
+`traefik_host.rs` counts the hashes of real files (one for a matching
+process, two for a replaced binary or a foreign image).
 
 | Python behaviour | Rust counterpart | Status |
 | --- | --- | --- |

@@ -2,7 +2,7 @@
 name = "software-live-apt"
 # The same version as `software-live`: both binaries ship in the archives of
 # the tag `software-live-v<version>` (software-live PLAN.md 7.2).
-version = "0.1.0"
+version = "0.1.1"
 description = "APT security-update observation helper of software-live (rust-apt, libapt-pkg)"
 edition.workspace = true
 rust-version.workspace = true

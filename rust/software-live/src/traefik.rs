@@ -9,6 +9,10 @@
 //! The file identity must not change while it is hashed and probed, and
 //! the whole observation is accepted only when `MainPID` and the link
 //! target are unchanged afterwards (two attempts).
+//!
+//! The running image is hashed only when its identity differs from the
+//! installed file's: an image with the installed file's identity is that
+//! file, unchanged, and gets its digest (PLAN.md 4.2 item 15).
 
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
@@ -20,7 +24,9 @@ use serde_json::{Map, Value};
 
 use crate::error::PyError;
 use crate::policy::{TRAEFIK_BINARIES, subscript};
-use crate::probe::{COMMAND_TIMEOUT, FileStat, OpenFile, System, command, command_inheriting};
+use crate::probe::{
+    COMMAND_TIMEOUT, FileStat, Identity, OpenFile, System, command, command_inheriting,
+};
 use crate::pyjson::{INT_MAX_STR_DIGITS, int_digits_error, type_name};
 use crate::report::Observation;
 use crate::version::{Release, python_strip, version};
@@ -74,6 +80,24 @@ pub fn binary_info<S: System>(
     expected_target: Option<&Path>,
     probe_version: bool,
 ) -> Result<BinaryInfo, PyError> {
+    binary_info_reusing(system, path, expected_target, probe_version, None).map(|(info, _)| info)
+}
+
+/// A digest [`binary_info_reusing`] computed and the identity the file kept
+/// from before the hash to the final `stat`.
+type KnownDigest<'a> = (&'a Identity, &'a str);
+
+/// [`binary_info`], also returning the file's identity. With `known`, a
+/// file whose identity before the hash equals the known one is not read
+/// again: it gets the known digest (PLAN.md 4.2 item 15). Everything else
+/// (the descriptor check, the probe, the identity checks) is unchanged.
+fn binary_info_reusing<S: System>(
+    system: &S,
+    path: &Path,
+    expected_target: Option<&Path>,
+    probe_version: bool,
+    known: Option<KnownDigest<'_>>,
+) -> Result<(BinaryInfo, Identity), PyError> {
     let mut file = system.open(path).map_err(os_error)?;
     let descriptor = OsString::from(format!("/proc/self/fd/{}", file.fd()));
     if let Some(expected) = expected_target {
@@ -86,7 +110,10 @@ pub fn binary_info<S: System>(
         }
     }
     let before = system.fstat(&file).map_err(os_error)?;
-    let digest = system.sha256(&mut file).map_err(os_error)?;
+    let digest = match known {
+        Some((identity, digest)) if *identity == before.identity() => digest.to_owned(),
+        _ => system.sha256(&mut file).map_err(os_error)?,
+    };
     let output = match (probe_version, expected_target) {
         (false, _) => String::new(),
         (true, Some(_)) => command_inheriting(
@@ -114,10 +141,13 @@ pub fn binary_info<S: System>(
     if !same_identity(&before, &after) || !same_identity(&before, &last) {
         return Err(PyError::value("binary changed during observation"));
     }
-    Ok(BinaryInfo {
-        version,
-        sha256: digest,
-    })
+    Ok((
+        BinaryInfo {
+            version,
+            sha256: digest,
+        },
+        before.identity(),
+    ))
 }
 
 fn same_identity(a: &FileStat, b: &FileStat) -> bool {
@@ -302,11 +332,12 @@ fn observe_into<S: System>(
             result.push_issue("running_path_mismatch");
         }
         let refuse_execution = target != system.realpath(path).map_err(os_error)?.into_os_string();
-        let installed = binary_info(system, path, None, true)?;
-        let running = if refuse_execution {
-            binary_info(system, running_path, None, false)?
+        let (installed, identity) = binary_info_reusing(system, path, None, true, None)?;
+        let known = Some((&identity, installed.sha256.as_str()));
+        let (running, _) = if refuse_execution {
+            binary_info_reusing(system, running_path, None, false, known)?
         } else {
-            binary_info(system, running_path, Some(path), true)?
+            binary_info_reusing(system, running_path, Some(path), true, known)?
         };
         if main_pid(system, policy.unit)? == pid
             && system.readlink(running_path).map_err(os_error)? == target
@@ -366,7 +397,7 @@ fn observe_into<S: System>(
 mod tests {
     use super::*;
     use crate::probe::fake::{FakeSystem, World};
-    use crate::testutil::{ErrorSpec, json_eq};
+    use crate::testutil::{ErrorSpec, json_eq, without_reused_hashes};
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -452,8 +483,17 @@ mod tests {
     fn observation_matches_python() {
         let cases = fixtures().observe;
         assert!(cases.len() >= 40, "{}", cases.len());
+        let (mut reused, mut hashed_twice) = (0, 0);
         for case in cases {
             let id = &case.id;
+            let binary_path = case.policy["binary_path"].as_str().unwrap_or_default();
+            let expected_calls = without_reused_hashes(&case.calls, &case.world, binary_path);
+            let hashes =
+                |calls: &[String]| calls.iter().filter(|c| c.starts_with("sha256 ")).count();
+            reused += hashes(&case.calls) - hashes(&expected_calls);
+            if hashes(&expected_calls) >= 2 {
+                hashed_twice += 1;
+            }
             let fake = FakeSystem::new(case.world);
             let result = observe(&fake, &case.policy, &case.latest);
             let mut actual = result.as_map().clone();
@@ -490,9 +530,13 @@ mod tests {
                 }
                 (spec, error) => panic!("{id}: expected {spec:?}, got {error:?}"),
             }
-            assert_eq!(calls(&fake), case.calls, "{id}");
+            assert_eq!(calls(&fake), expected_calls, "{id}");
             assert_eq!(fake.pending_commands(), 0, "{id}");
         }
+        // Both paths are exercised: images whose digest is reused and
+        // images that are read again.
+        assert!(reused >= 30, "{reused}");
+        assert!(hashed_twice >= 10, "{hashed_twice}");
     }
 
     fn script(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
@@ -514,10 +558,7 @@ mod tests {
         let info = binary_info(&HostSystem, &proxy, None, true).unwrap();
         assert_eq!(info.version.as_deref(), Some("3.7.9"));
         let bytes = std::fs::read(&proxy).unwrap();
-        assert_eq!(
-            info.sha256,
-            hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&bytes))
-        );
+        assert_eq!(info.sha256, crate::probe::sha256_hex(&bytes));
         let changing = script(
             dir.path(),
             "changing",

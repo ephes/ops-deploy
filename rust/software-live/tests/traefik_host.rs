@@ -15,6 +15,7 @@
 //! [`HostSystem`].
 #![cfg(target_os = "linux")]
 
+use std::cell::Cell;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -24,7 +25,6 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use software_live::error::PyError;
 use software_live::http::HttpRequest;
 use software_live::probe::{
@@ -76,6 +76,17 @@ fn serial() -> MutexGuard<'static, ()> {
 /// the given PID.
 struct Host {
     pid: u32,
+    /// How many files were hashed.
+    hashes: Cell<usize>,
+}
+
+impl Host {
+    fn new(pid: u32) -> Self {
+        Self {
+            pid,
+            hashes: Cell::new(0),
+        }
+    }
 }
 
 impl System for Host {
@@ -124,6 +135,7 @@ impl System for Host {
         HostSystem.fstat(file)
     }
     fn sha256(&self, file: &mut HostFile) -> io::Result<String> {
+        self.hashes.set(self.hashes.get() + 1);
         HostSystem.sha256(file)
     }
     fn run_inheriting(
@@ -175,7 +187,7 @@ fn workdir() -> tempfile::TempDir {
 }
 
 fn sha256_of(path: &Path) -> String {
-    hex::encode(Sha256::digest(std::fs::read(path).unwrap()))
+    software_live::probe::sha256_hex(&std::fs::read(path).unwrap())
 }
 
 /// Install `bytes` at `path` as an executable, replacing what is there by a
@@ -229,7 +241,7 @@ fn matching_process_is_probed_through_its_pinned_descriptor() {
     let dir = workdir();
     let path = fake_traefik(dir.path());
     let traefik = serve(&path);
-    let host = Host { pid: traefik.pid() };
+    let host = Host::new(traefik.pid());
     let result = observe(&host, &policy(&path), &latest()).into_value();
     assert_eq!(result["status"], "ok", "{result:#}");
     assert_eq!(result["observed"], true);
@@ -245,6 +257,9 @@ fn matching_process_is_probed_through_its_pinned_descriptor() {
         json!({"version": "3.7.9", "sha256": digest})
     );
     assert_eq!(result["upstream"], latest());
+    // The running image is the installed file with the identity it had
+    // when it was hashed: its digest is reused (PLAN.md 4.2 item 15).
+    assert_eq!(host.hashes.get(), 1);
 }
 
 #[test]
@@ -258,7 +273,7 @@ fn replaced_binary_is_reported_and_the_old_image_is_never_executed() {
     let mut newer = std::fs::read(&path).unwrap();
     newer.extend_from_slice(b"padding of the newer build");
     install(&path, &newer);
-    let host = Host { pid: traefik.pid() };
+    let host = Host::new(traefik.pid());
     let result = observe(&host, &policy(&path), &latest()).into_value();
     assert_eq!(result["status"], "warning", "{result:#}");
     assert_eq!(
@@ -278,6 +293,8 @@ fn replaced_binary_is_reported_and_the_old_image_is_never_executed() {
         result["running"],
         json!({"version": null, "sha256": old_digest})
     );
+    // Another inode: both files are read.
+    assert_eq!(host.hashes.get(), 2);
 }
 
 #[test]
@@ -289,7 +306,7 @@ fn foreign_process_image_is_hashed_but_never_executed() {
     // and turn the observation unknown, so a warning proves it never ran.
     let sleep = std::fs::canonicalize("/bin/sleep").unwrap();
     let other = Running::start(&sleep, &["120"]);
-    let host = Host { pid: other.pid() };
+    let host = Host::new(other.pid());
     let result = observe(&host, &policy(&path), &latest()).into_value();
     assert_eq!(result["status"], "warning", "{result:#}");
     assert_eq!(
@@ -301,6 +318,7 @@ fn foreign_process_image_is_hashed_but_never_executed() {
         result["running"],
         json!({"version": null, "sha256": sha256_of(&sleep)})
     );
+    assert_eq!(host.hashes.get(), 2);
 }
 
 #[test]
@@ -308,7 +326,7 @@ fn stopped_service_is_unknown() {
     let _serial = serial();
     let dir = workdir();
     let path = fake_traefik(dir.path());
-    let result = observe(&Host { pid: 0 }, &policy(&path), &latest()).into_value();
+    let result = observe(&Host::new(0), &policy(&path), &latest()).into_value();
     assert_eq!(result["status"], "unknown");
     assert_eq!(
         result["error"],
