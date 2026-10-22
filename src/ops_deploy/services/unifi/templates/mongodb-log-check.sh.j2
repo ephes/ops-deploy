@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/mongodb/mongod.log"
+MAX_SIZE=$(({{ unifi_mongodb_log_max_size_mb }} * 1024 * 1024))
+
+if [[ -f "${LOG_FILE}" ]]; then
+  SIZE=$(stat -c%s "${LOG_FILE}")
+  if [[ "${SIZE}" -gt "${MAX_SIZE}" ]]; then
+    echo "MongoDB log larger than {{ unifi_mongodb_log_max_size_mb }}MB ($((SIZE / 1024 / 1024))MB)" | logger -t mongodb-log-check
+    /usr/sbin/logrotate -f "{{ unifi_mongodb_logrotate_path }}" || true
+  fi
+fi

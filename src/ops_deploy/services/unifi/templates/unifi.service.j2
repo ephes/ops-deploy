@@ -1,0 +1,67 @@
+[Unit]
+Description=UniFi Network Application
+After=network-online.target mongod.service
+Wants=network-online.target
+Requires=mongod.service
+
+[Service]
+Type=simple
+User={{ unifi_user }}
+Group={{ unifi_group }}
+WorkingDirectory={{ unifi_install_dir }}
+
+Environment="JAVA_HOME={{ unifi_java_home }}"
+Environment="PATH={{ unifi_java_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="JVM_INIT_HEAP_SIZE={{ unifi_jvm_min_heap_mb }}M"
+Environment="JVM_MAX_HEAP_SIZE={{ unifi_jvm_max_heap_mb }}M"
+Environment="UNIFI_JVM_OPTS={{ unifi_java_opts }}"
+{% for env in unifi_systemd_extra_env %}
+Environment="{{ env }}"
+{% endfor %}
+
+# The Mongo URI (with credentials) is read from a root:{{ unifi_group }} 0640
+# Java @argfile so it stays out of this world-readable unit, `systemctl show`
+# and the process command line.
+ExecStart=/usr/bin/java \
+    @{{ unifi_mongodb_jvm_args_path }} \
+    --add-opens java.base/java.time=ALL-UNNAMED \
+    --add-opens java.base/java.lang=ALL-UNNAMED \
+    -Xms{{ unifi_jvm_min_heap_mb }}M \
+    -Xmx{{ unifi_jvm_max_heap_mb }}M \
+    -Djava.awt.headless=true \
+    -Dfile.encoding=UTF-8 \
+    -Dunifi.core.enabled=false \
+    -Dunifi.mongodb.service.enabled=false \
+    -Dlog4j2.formatMsgNoLookups=true \
+    -Ddb.mongo.local=false \
+    -Dunifi.db.name={{ unifi_mongodb_database }} \
+    -jar {{ unifi_install_dir }}/lib/ace.jar start
+
+ExecStop=/usr/bin/java -jar {{ unifi_install_dir }}/lib/ace.jar stop
+
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+StandardOutput=journal
+StandardError=journal
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=false
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

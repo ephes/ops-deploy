@@ -46,6 +46,7 @@ src/ops_deploy/
   services/zellij_ingress/ redirect-only Traefik route (port of the zellij_ingress_deploy role)
   services/gotosocial/ GoToSocial from a pinned release (port of the gotosocial_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
+  services/unifi/      UniFi configuration convergence on an existing installation (no bootstrap or upgrades)
   services/jellyfin/   Jellyfin from its apt repository behind Traefik (port of the jellyfin_deploy role, deploy only)
   services/vaultwarden/ vaultwarden from the vendor's .deb packages (port of the vaultwarden_deploy role)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share

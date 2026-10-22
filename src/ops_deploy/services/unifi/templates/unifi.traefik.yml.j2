@@ -1,0 +1,40 @@
+http:
+  routers:
+    unifi:
+      rule: "Host(`{{ unifi_external_hostname }}`)"
+      entryPoints:
+{% for entrypoint in unifi_traefik_entrypoints %}
+        - "{{ entrypoint }}"
+{% endfor %}
+      service: unifi
+{% if unifi_traefik_ip_allowlist | length > 0 %}
+      middlewares:
+        - unifi-ipallow
+{% endif %}
+{% if unifi_traefik_certresolver | default('') | length > 0 %}
+      tls:
+        certResolver: "{{ unifi_traefik_certresolver }}"
+{% else %}
+      tls: {}
+{% endif %}
+{% if unifi_traefik_ip_allowlist | length > 0 %}
+
+  middlewares:
+    unifi-ipallow:
+      ipAllowList:
+        sourceRange:
+{% for cidr in unifi_traefik_ip_allowlist %}
+          - "{{ cidr }}"
+{% endfor %}
+{% endif %}
+
+  services:
+    unifi:
+      loadBalancer:
+        servers:
+          - url: "https://{{ unifi_controller_bind_address }}:{{ unifi_port_https }}"
+        serversTransport: unifi-transport
+
+  serversTransports:
+    unifi-transport:
+      insecureSkipVerify: true
