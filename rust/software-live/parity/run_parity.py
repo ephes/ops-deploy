@@ -269,7 +269,11 @@ def section_validate(ctx: Context) -> None:
 def start_outcome(
     argv: list[str], env: dict[str, str], address: list[Any] | None
 ) -> str:
-    """``serving`` or the exit code of a ``serve`` start."""
+    """``serving``, ``exit <code>`` or ``no listener`` for a ``serve`` start.
+
+    ``serving`` needs a connection to the configured address; only for port
+    0 (an ephemeral port nobody can name) a process still running after the
+    wait counts as serving."""
     process = subprocess.Popen(  # noqa: S603 - the programs under test
         argv,
         stdin=subprocess.DEVNULL,
@@ -278,15 +282,16 @@ def start_outcome(
         env=env,
     )
     try:
-        deadline = time.monotonic() + 3.0
+        known_port = bool(address and address[1])
+        deadline = time.monotonic() + (10.0 if known_port else 3.0)
         while time.monotonic() < deadline:
             code = process.poll()
             if code is not None:
                 return f"exit {code}"
-            if address and address[1] and connectable(address[0], int(address[1])):
+            if known_port and connectable(address[0], int(address[1])):
                 return "serving"
             time.sleep(0.02)
-        return "serving"
+        return "no listener" if known_port else "serving"
     finally:
         stop(process)
 
@@ -907,7 +912,9 @@ class Collect:
                 )
             self.ctx.results.check(f"collect {name}", problems, p3)
             return
-        if pair.python.code != pair.rust.code:
+        if pair.python.code != 0 or pair.rust.code != 0:
+            # Every scenario is a valid policy: both must collect (observation
+            # failures are part of the report, never an exit code).
             problems.append(
                 f"exit Python {pair.python.code}, Rust {pair.rust.code}: "
                 f"{pair.rust.last_line()!r} / {pair.python.last_line()!r}"
