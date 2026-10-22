@@ -7,8 +7,10 @@ and its algorithm, the secrets are deploy arguments (``tsig_secrets``).
 Stricter than the role, on purpose (each value is rendered verbatim into
 ``named.conf*``): no control characters in any rendered string, zone names and
 key names from a fixed character set, zone files a single path component below
-their directory and one file per zone, normalized absolute paths, known zone
-types and HMAC algorithms only.
+their directory (an absolute path only for transfer-backed zones), known zone
+types and HMAC algorithms only. What the deploy itself accepts is narrower
+still: the role's default paths and ``db.*`` zone files of their own
+(:func:`ops_deploy.infra.bind.deploy.check_layout`).
 """
 
 from __future__ import annotations
@@ -58,15 +60,7 @@ def _match(pattern: re.Pattern[str], what: str) -> AfterValidator:
     return AfterValidator(check)
 
 
-def _normal(value: str) -> str:
-    # Paths are compared as strings below: one spelling per path.
-    if value == "/" or value.startswith("//") or posixpath.normpath(value) != value:
-        raise ValueError(f"not a normalized absolute path below /: {value!r}")
-    return value
-
-
 Line = Annotated[str, AfterValidator(_line)]
-NormalPath = Annotated[AbsolutePath, AfterValidator(_normal)]
 # The role's ``acl_list`` macro takes a string (rendered as is) or a list (joined with "; ").
 AclList = Annotated[str | tuple[Line, ...], AfterValidator(_lines)]
 Owner = Annotated[str, _match(_OWNER, "user or group name")]
@@ -109,11 +103,11 @@ class BindConfig(RoleConfig):
         "dnsutils",
     )
     service_name: Annotated[str, _match(re.compile(r"[A-Za-z0-9@_.-]+"), "unit name")] = "named"
-    config_dir: NormalPath = "/etc/bind"
-    working_dir: NormalPath = "/var/cache/bind"
+    config_dir: AbsolutePath = "/etc/bind"
+    working_dir: AbsolutePath = "/var/cache/bind"
     # None: the role's choice from the host's distribution (named.conf.root-hints on
     # Debian 13 and later, named.conf.default-zones elsewhere).
-    builtin_zones_file: NormalPath | None = None
+    builtin_zones_file: AbsolutePath | None = None
     # Controller directory holding the zone files (the role's ``bind_zone_files_dir``).
     zone_files_dir: str
     config_owner: Owner = "root"
@@ -123,7 +117,7 @@ class BindConfig(RoleConfig):
     zone_default_type: ZoneType = "master"
     zone_transfer_backed_types: tuple[ZoneType, ...] = ("slave", "secondary")
     zones: tuple[BindZone, ...] = Field(min_length=1)
-    dynamic_zone_dir: NormalPath = "/var/lib/bind"
+    dynamic_zone_dir: AbsolutePath = "/var/lib/bind"
     recursion: StrictBool = True
     recursion_acl: tuple[Line, ...] = ("localhost", "localnets")
     allow_query: AclList = ("any",)
@@ -142,7 +136,7 @@ class BindConfig(RoleConfig):
     extra_options: tuple[Line, ...] = ()
     tsig_keys: tuple[TsigKey, ...] = ()
     # None: <config_dir>/named.conf.keys, as the role's default.
-    tsig_keys_file: NormalPath | None = None
+    tsig_keys_file: AbsolutePath | None = None
     tsig_keys_mode: Mode = "0640"
 
     @model_validator(mode="after")
@@ -178,28 +172,6 @@ class BindConfig(RoleConfig):
         keys = [key.name for key in self.tsig_keys]
         if len(set(keys)) != len(keys):
             raise ValueError("bind tsig keys: each key name may appear once")
-        # Stricter than the role: every file the deploy writes or removes has one
-        # purpose. Each zone has a file of its own (the role would also install one
-        # static file for several zones), and neither a zone file nor a named.conf
-        # file may be another zone's journal, a named.conf file or the builtin zones.
-        paths = [self.zone_path(zone) for zone in self.zones]
-        journals = {f"{path}.jnl" for path in paths}
-        config = list(self.config_files)
-        builtin = (
-            {self.builtin_zones_file}
-            if self.builtin_zones_file
-            else {f"{self.config_dir}/named.conf.default-zones", f"{self.config_dir}/named.conf.root-hints"}
-        )
-        if (
-            len(set(paths)) != len(paths)
-            or len(set(config)) != len(config)
-            or set(paths) & (journals | set(config))
-            or set(config) & (journals | builtin)
-        ):
-            raise ValueError(
-                "bind zones: each zone needs a file of its own, and no zone file, journal, named.conf file or "
-                "builtin zones file may be another one of these"
-            )
         return self
 
     # -- the role's derived values ------------------------------------------------
@@ -239,17 +211,6 @@ class BindConfig(RoleConfig):
     @property
     def keys_file(self) -> str:
         return self.tsig_keys_file or f"{self.config_dir}/named.conf.keys"
-
-    @property
-    def config_files(self) -> tuple[str, ...]:
-        """``named.conf`` and the files it includes that the role renders."""
-
-        return (
-            f"{self.config_dir}/named.conf",
-            f"{self.config_dir}/named.conf.options",
-            f"{self.config_dir}/named.conf.local",
-            self.keys_file,
-        )
 
     @property
     def query_cache_acl(self) -> str | tuple[str, ...]:

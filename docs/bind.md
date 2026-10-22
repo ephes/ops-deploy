@@ -40,8 +40,8 @@ The role's `bind_*` variables without the prefix, with the role's defaults:
 | `enabled` | `True` | `False` makes the deploy a no-op, like the role |
 | `packages` | `bind9`, `bind9-utils`, `dnsutils` | installed when missing |
 | `service_name` | `named` | |
-| `config_dir`, `working_dir`, `dynamic_zone_dir` | `/etc/bind`, `/var/cache/bind`, `/var/lib/bind` | static zones, transfer-backed zones and dynamic zones live there |
-| `builtin_zones_file` | `None` | `None`: the role's choice, `named.conf.root-hints` on Debian 13 and later, else `named.conf.default-zones` (read from `/etc/os-release`, as Ansible's facts are) |
+| `config_dir`, `working_dir`, `dynamic_zone_dir` | `/etc/bind`, `/var/cache/bind`, `/var/lib/bind` | static zones, transfer-backed zones and dynamic zones live there; the deploy refuses other values (see [Paths and zone files](#paths-and-zone-files)) |
+| `builtin_zones_file` | `None` | `None`: the role's choice, `named.conf.root-hints` on Debian 13 and later, else `named.conf.default-zones` (read from `/etc/os-release`, as Ansible's facts are); the deploy refuses a set value |
 | `zone_files_dir` | required | controller directory with the zone files (the role's default derives it from the playbook directory) |
 | `config_owner`, `config_group`, `config_mode`, `service_user` | `root`, `bind`, `0644`, `bind` | |
 | `zone_default_type`, `zone_transfer_backed_types` | `master`, `slave`/`secondary` | |
@@ -50,12 +50,37 @@ The role's `bind_*` variables without the prefix, with the role's defaults:
 | `listen_on`, `listen_on_v6`, `extra_options` | `()`, `any`, `()` | |
 | `verify_enabled`, `verify_server`, `verify_zone_types`, `verify_retries`, `verify_delay` | `True`, `127.0.0.1`, master/primary/slave/secondary, `12`, `5` | the `dig` check |
 | `firewall_check_enabled` | `True` | UFW warnings |
-| `tsig_keys`, `tsig_keys_file`, `tsig_keys_mode` | `()`, `<config_dir>/named.conf.keys`, `0640` | key `name` and `algorithm` (default `hmac-sha256`); the secrets are the deploy's second argument |
+| `tsig_keys`, `tsig_keys_file`, `tsig_keys_mode` | `()`, `<config_dir>/named.conf.keys`, `0640` | key `name` and `algorithm` (default `hmac-sha256`); the secrets are the deploy's second argument; the deploy refuses another key file |
 
 The role's `validate.yml` assertions are config validation here: at least one
 zone, non-empty `primaries` for transfer-backed zones, `dynamic` only on
 `master`/`primary` zones with a non-empty `update_policy`, a non-empty
 `allow_transfer`, and (while planning) every controller zone file present.
+
+### Paths and zone files
+
+`BindConfig` takes the role's paths as the role does (the templates render
+them), but the deploy only writes into the role's default layout. Before it
+contacts the host it refuses:
+
+- a `config_dir`, `working_dir` or `dynamic_zone_dir` other than `/etc/bind`,
+  `/var/cache/bind` and `/var/lib/bind`, a `tsig_keys_file` other than
+  `/etc/bind/named.conf.keys` and any `builtin_zones_file` (a host with
+  another layout stays on the role);
+- a zone `file`, of any zone type, that is not `db.` followed by
+  dot-separated labels of letters, digits, `-` and `_` (Debian's naming, as in
+  `db.example.org` or `db.192.0.2`), that another zone uses too, that holds
+  `.jnl`, or that is one of the `bind9` package's own zone files in
+  `/etc/bind` (`db.0`, `db.127`, `db.255`, `db.empty`, `db.local`, which its
+  builtin zones load). An absolute `file`, which the role allows for a
+  transfer-backed zone, is refused as well.
+
+So every file the deploy writes or removes is one of the four `named.conf`
+files in `/etc/bind`, a static zone file there, or a dynamic zone file it
+seeds (and never replaces) in `/var/lib/bind`; no two of them can be the same
+file, and none of them is the builtin zones file, a staged
+`.ops-deploy-new.*` file, a journal, `rndc.key`, `bind.keys` or a zone file of
+the package.
 
 ## Steps
 
@@ -63,7 +88,9 @@ The steps follow the role's order and do what it does. The files are compared
 and installed by one small bash script, `files/bind_config.sh`, run as root
 with `bash -c` (paths, owners, modes and sizes as arguments, the file
 contents as base64 lines on stdin). It uses standard tools only: `cmp`,
-`stat`, `named-checkzone`, `named-checkconf`, `install`, `mv`, `ln`.
+`stat`, `named-checkzone`, `named-checkconf`, `install`, `mv`, `ln`. Before
+any of the steps, the paths and zone file names are checked (see
+[Paths and zone files](#paths-and-zone-files)).
 
 1. A read-only probe (`bind_config.sh probe`) decodes the candidates into a
    private directory under `/run` and compares each with the installed file
@@ -119,8 +146,11 @@ modification times of the installed configuration and static zone files with
 named's last configuration load (`rndc status`, "last configured", whole
 seconds) and plans a reload if one is newer. So that a file installed in the
 same second as that load still counts as newer, the install step waits for
-the next second before it writes. It keeps no state of its own. The staged
-files are shared between runs: only the run holding the lock removes them.
+the next second before it writes (two seconds at most: a clock behind named's
+last load, as after the clock was set back, is refused before any change;
+restarting named, or waiting, clears it). It keeps no state of its own. The
+staged files are shared between runs: only the run holding the lock removes
+them.
 
 ## Dynamic zones
 
@@ -171,12 +201,10 @@ a secret).
   (the role would seed it, and named would refuse the zone); a static zone
   file that would change while a `.jnl` exists next to it; a managed path
   that is not a regular file (a symlink, a directory).
-- Each zone has a file of its own (the role would install one static file
-  for several zones), and no file the deploy writes or removes (zone files,
-  the `named.conf` files) may be another zone's file or `.jnl` journal, another
-  `named.conf` file or the builtin zones file. Directories and absolute paths
-  must be normalized (no `.`, `..`, `//` or trailing `/`), so the comparison
-  holds.
+- Only the role's default paths, and zone files that are `db.*` names of
+  their own (see [Paths and zone files](#paths-and-zone-files)); the role
+  writes wherever its variables point, also one static file for several
+  zones.
 - A run that ended after its files and before its reload is followed by a
   reload on the next run (`reload-pending`); the role's handler is lost then
   and needs `rndc reload` by hand.
@@ -202,8 +230,9 @@ a secret).
   order and seed semantics against the role.
 - `tests/test_infra_bind.py`: the deploy on the fake connector (converged,
   fresh, changed file, refusals, `reload-pending`, leftovers, secrets only on
-  stdin, fish-safe command lines, no keys, secondary, verify, UFW, Debian 13)
-  and the config validation.
+  stdin, fish-safe command lines, no keys, secondary, verify, UFW, Debian 13,
+  other paths and zone file names refused before the host is contacted) and
+  the config validation.
 - `tests/test_infra_bind_docker.py`: real named 9.18, `named-checkconf`,
   `named-checkzone`, `nsupdate` and `rndc` in an owned systemd container,
   skipped unless `BIND_DOCKER_CONTAINER` holds the full ID of a running
@@ -225,7 +254,10 @@ a secret).
   configuration `named-checkconf` rejects, neither installed nor reloaded,
   with nothing left under `/etc/bind`, `/var/lib/bind` or `/run`; the host
   script refusing a broken key stanza with the message withheld; a missed
-  reload made by the next run; an unbumped serial and a lone journal refused
-  without a change; removing the keys; a secondary configuration; and with
+  reload made by the next run, also one in the second of named's last load;
+  only the lock holder removing staged files; a symlinked directory in
+  `/etc/bind` never written; a clock behind named's last load refused before
+  any change; an unbumped serial and a lone journal refused without a change;
+  removing the keys; a secondary configuration; and with
   `OPS_LIBRARY_PATH` the role (`bind_packages: []`, the fixture has no
   network) and this deploy taking turns without a change or a reload.

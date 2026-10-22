@@ -19,10 +19,10 @@
 # probe prints "change PATH", "leftover PATH", "refuse MESSAGE",
 # "reload-pending" (an installed file is newer, in whole seconds, than named's
 # last configuration load, so a run ended before its reload; apply waits for
-# the next second after that load before it writes) and exits 0; it fails
-# only on an error of its own. apply holds an flock on CONFIG_DIR, fails on a
-# refusal before changing anything and prints "installed PATH" for each file
-# it changed.
+# the next second after that load before it writes, and refuses when the clock
+# is behind it) and exits 0; it fails only on an error of its own. apply holds
+# an flock on CONFIG_DIR, fails on a refusal before changing anything and
+# prints "installed PATH" for each file it changed.
 
 set -euo pipefail
 shopt -s inherit_errexit
@@ -200,10 +200,17 @@ if [ ${#refusals[@]} -gt 0 ]; then
     exit 1
 fi
 # Installed files must be newer (in whole seconds) than named's last load, so a
-# probe can tell that a reload is missing if this run ends before it.
+# probe can tell that a reload is missing if this run ends before it. A clock
+# behind that load (it was set back since) is refused, not waited for.
 loaded=$(last_loaded)
 if [ ${#changes[@]} -gt 0 ] && [ -n "$loaded" ]; then
-    while [ "$(date +%s)" -le "$loaded" ]; do sleep 0.2; done
+    waited=0
+    while [ "$(date +%s)" -le "$loaded" ] && [ "$waited" -lt 10 ]; do sleep 0.2; waited=$((waited + 1)); done
+    if [ "$(date +%s)" -le "$loaded" ]; then
+        echo "bind-config: the clock is behind named's last configuration load; nothing was changed" \
+            "(restart $service, or wait)" >&2
+        exit 1
+    fi
 fi
 for i in "${changes[@]}"; do
     path=${paths[i]} new=$(staged "${paths[i]}")

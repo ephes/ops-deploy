@@ -439,22 +439,6 @@ def test_defaults_are_the_roles(zones_dir: Path) -> None:
         ([{"name": 'a"org', "file": "db.a"}], "not a zone name"),
         ([{"name": "a.org", "file": "db.a", "extra_config": ("x;\ny;",)}], "control characters"),
         ([{"name": "a.org", "file": "db.a", "type": "bogus"}], "Input should be"),
-        ([{"name": "a.org", "file": "db.a"}, {"name": "b.org", "file": "db.a"}], "a file of its own"),
-        (
-            [
-                {"name": "a.org", "file": "db.a", "dynamic": True, "update_policy": "grant k zonesub ANY"},
-                {"name": "b.org", "file": "db.a", "dynamic": True, "update_policy": "grant k zonesub ANY"},
-            ],
-            "a file of its own",
-        ),
-        ([{"name": "a.org", "file": "named.conf.local"}], r"no zone file, journal, named\.conf file"),
-        (
-            [
-                {"name": "a.org", "file": "db.a"},
-                {"name": "b.org", "file": "db.a.jnl"},
-            ],
-            r"no zone file, journal, named\.conf file",
-        ),
         ([{"name": "a.org", "file": "/var/cache/bind/../x", "type": "slave", "primaries": "1"}], "transfer-backed"),
     ],
 )
@@ -463,33 +447,68 @@ def test_invalid_zones_are_refused(zones_dir: Path, zones: list[dict[str, Any]],
         config(zones_dir, zones=zones)
 
 
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"dynamic_zone_dir": "/etc/bind/."},
-        {"config_dir": "/etc/bind/"},
-        {"working_dir": "/var//cache"},
-        {"config_dir": "/"},
-        {"tsig_keys_file": "/etc/bind/../keys"},
-    ],
-)
-def test_paths_must_be_normalized(zones_dir: Path, changes: dict[str, str]) -> None:
-    with pytest.raises(ValidationError, match="not a normalized absolute path"):
-        config(zones_dir, **changes)
+# -- what the deploy writes into: the role's default paths, db.* zone files of their own ---
 
 
 @pytest.mark.parametrize(
-    "changes",
+    ("changes", "moved"),
     [
-        {"tsig_keys_file": "/var/lib/bind/db.home.example.org.jnl"},
-        {"tsig_keys_file": "/etc/bind/named.conf.default-zones"},
-        {"tsig_keys_file": "/etc/bind/named.conf.local"},
-        {"tsig_keys_file": "/x/hints", "builtin_zones_file": "/x/hints"},
+        ({"config_dir": "/srv/bind"}, "config_dir"),
+        ({"config_dir": "/etc/bind/"}, "config_dir"),
+        ({"dynamic_zone_dir": "/etc/bind"}, "dynamic_zone_dir"),
+        ({"working_dir": "/var//cache/bind"}, "working_dir"),
+        # Another name for the dynamic zone through a symlinked directory, a staged
+        # file's name, a journal: never a place for the key file.
+        ({"tsig_keys_file": "/etc/bind/keys/db.home.example.org"}, "tsig_keys_file"),
+        ({"tsig_keys_file": "/etc/bind/.ops-deploy-new.named.conf"}, "tsig_keys_file"),
+        ({"tsig_keys_file": "/var/lib/bind/db.home.example.org.jnl"}, "tsig_keys_file"),
+        ({"builtin_zones_file": "/etc/bind/named.conf.default-zones"}, "builtin_zones_file"),
     ],
 )
-def test_the_key_file_has_one_purpose(zones_dir: Path, changes: dict[str, str]) -> None:
-    with pytest.raises(ValidationError, match=r"no zone file, journal, named\.conf file or builtin zones file"):
-        config(zones_dir, **changes)
+def test_only_the_roles_default_paths_are_deployed(zones_dir: Path, changes: dict[str, str], moved: str) -> None:
+    cfg = config(zones_dir, **changes)
+
+    result = failed(cfg, host(cfg))
+
+    message = f"bind: only the role's default paths are supported, refusing the changed {moved} ("
+    assert str(result.error).startswith(message)
+    assert result.events == []
+
+
+@pytest.mark.parametrize(
+    "zones",
+    [
+        # Never a zone file: the builtin zones file, a named.conf file, rndc.key, a package zone file.
+        [{"name": "a.org", "file": "named.conf.default-zones"}],
+        [{"name": "a.org", "file": "named.conf.local"}],
+        [{"name": "a.org", "file": "rndc.key"}],
+        [{"name": "localhost", "file": "db.local"}],
+        [{"name": "a.org", "file": "a.org.zone"}],
+        # Another zone's journal, and one file for two zones, also across directories.
+        [{"name": "a.org", "file": "db.a"}, {"name": "b.org", "file": "db.a.jnl"}],
+        [{"name": "a.org", "file": "db.a"}, {"name": "b.org", "file": "db.a"}],
+        [
+            {"name": "a.org", "file": "db.a"},
+            {"name": "b.org", "file": "db.a", "dynamic": True, "update_policy": "grant k zonesub ANY"},
+        ],
+        [{"name": "a.org", "file": "db.a"}, {"name": "b.org", "file": "db.a", "type": "slave", "primaries": "1"}],
+        # An absolute file, which the role allows for a transfer-backed zone.
+        [{"name": "a.org", "file": "/var/cache/bind/db.a", "type": "slave", "primaries": "192.0.2.1"}],
+    ],
+)
+def test_zone_files_are_db_names_of_their_own(zones_dir: Path, zones: list[dict[str, Any]]) -> None:
+    cfg = config(zones_dir, zones=zones, tsig_keys=[])
+
+    result = failed(cfg, host(cfg), secrets={})
+
+    assert "each zone needs a db.* file name of its own" in str(result.error)
+    assert result.events == []
+
+
+def test_the_default_key_file_may_be_spelled_out(zones_dir: Path) -> None:
+    cfg = config(zones_dir, tsig_keys_file="/etc/bind/named.conf.keys")
+
+    assert run(cfg, host(cfg)).mutating_changed_ops == []
 
 
 def test_other_settings_are_validated(zones_dir: Path) -> None:
