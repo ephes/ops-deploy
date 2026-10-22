@@ -31,6 +31,7 @@ REPO = RUST.parent
 SCRIPT = SCRIPTS / "release_checks.py"
 WORKFLOW = REPO / ".github" / "workflows" / "rust-release.yml"
 TWO_VARIANTS = SCRIPTS / "testdata" / "release-two-variants.json"
+SOFTWARE_LIVE_RELEASE = RUST / "software-live" / "release.json"
 COMMIT = "27cf52e7bd2525d6f8ba4b2f9be42a880c2f6e1a"  # pragma: allowlist secret
 TARGET = "x86_64-unknown-linux-gnu"
 RELEASE_CRATES = ("metrics-httpd", "echoport-command-guard", "software-live")
@@ -134,6 +135,7 @@ class RepoTree:
         for relative, text in (
             ("rust/LICENSE", "MIT License\n"),
             ("rust/software-live-apt/LICENSE", "GNU GENERAL PUBLIC LICENSE\n"),
+            ("rust/software-live-apt/LICENSE.GPL-3.0", "GNU GENERAL PUBLIC LICENSE\n"),
         ):
             path = self.root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,6 +318,8 @@ class MatrixTest(unittest.TestCase):
                         "extra_smoke": [],
                     }
                 ],
+                "shared_binaries": [],
+                "shared_artifact": "",
                 "files": [{"source": "rust/LICENSE", "name": "LICENSE"}],
                 "archive": f"metrics-httpd-0.2.0-{TARGET}.tar.gz",
                 "artifact": f"metrics-httpd-0.2.0-{TARGET}",
@@ -506,10 +510,12 @@ class MatrixTest(unittest.TestCase):
             "matrix", "--metadata", str(path), "--crate", "software-live"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(
-            result.stdout.startswith("matrix=") and result.stdout.count("\n") == 1
-        )
-        matrix = json.loads(result.stdout[len("matrix=") :])
+        matrix_line, shared_line = result.stdout.splitlines()
+        self.assertTrue(result.stdout.endswith("\n"))
+        self.assertTrue(matrix_line.startswith("matrix="))
+        # Without a `shared` section the shared job has nothing to build.
+        self.assertEqual(shared_line, "shared=")
+        matrix = json.loads(matrix_line[len("matrix=") :])
         self.assertEqual(
             [entry["variant"] for entry in matrix["include"]],
             ["ubuntu24.04", "debian13"],
@@ -518,7 +524,9 @@ class MatrixTest(unittest.TestCase):
             "matrix", "--metadata", str(path), "--crate", "metrics-httpd"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        (entry,) = json.loads(result.stdout[len("matrix=") :])["include"]
+        (entry,) = json.loads(result.stdout.splitlines()[0][len("matrix=") :])[
+            "include"
+        ]
         self.assertEqual(entry["archive"], f"metrics-httpd-0.2.0-{TARGET}.tar.gz")
         (crate_dir / "release.json").write_text("{not json", encoding="utf-8")
         result = run_script(
@@ -549,6 +557,11 @@ class MatrixTest(unittest.TestCase):
         data = json.loads(result.stdout)
         members = checks.workspace_packages(data)
         self.assertIn("metrics-httpd", members)
+        # software-live PLAN.md 7.2: the helper carries the version of the
+        # tag it ships under (its --version is checked against it).
+        self.assertEqual(
+            members["software-live-apt"]["version"], members["software-live"]["version"]
+        )
         for crate in RELEASE_CRATES:
             if crate not in members:
                 continue
@@ -565,6 +578,342 @@ class MatrixTest(unittest.TestCase):
                     checks.ci_excluded_members(data),
                 )
                 self.assertTrue(entries)
+
+
+class SharedBuildTest(unittest.TestCase):
+    """`shared` of release.json: binaries built once on the runner and packed
+    into every variant's archive (software-live PLAN.md 7.1, 7.2)."""
+
+    def setUp(self) -> None:
+        self.repo = RepoTree()
+        self.addCleanup(self.repo.cleanup)
+
+    def plan(self, settings: dict | None, data: dict = SOFTWARE_LIVE):
+        return checks.release_plan(
+            data,
+            "software-live",
+            "0.1.0",
+            settings,
+            self.repo.root,
+            checks.ci_excluded_members(data),
+        )
+
+    def test_committed_software_live_release_json(self) -> None:
+        """PLAN.md 7.1/7.2: one runner build of software-live (glibc 2.35, glibc
+        and libgcc_s only) in both archives; the helper per variant inside
+        its image with its own ceiling and libapt-pkg soname; exactly the
+        four members."""
+        settings = json.loads(SOFTWARE_LIVE_RELEASE.read_text(encoding="utf-8"))
+        shared, entries = self.plan(settings)
+        main = {
+            "name": "software-live",
+            "glibc_max": "2.35",
+            "needed": sorted(checks.BASE_NEEDED),
+            "extra_smoke": [],
+        }
+        self.assertEqual(
+            shared,
+            {
+                "crate": "software-live",
+                "version": "0.1.0",
+                "build_args": "-p software-live",
+                "commit_env": "SOFTWARE_LIVE_GIT_COMMIT",
+                "binaries": [main],
+                "artifact": "shared-software-live-0.1.0",
+            },
+        )
+        expected = {
+            "ubuntu24.04": ("ubuntu:24.04", "2.39", "libapt-pkg.so.6.0"),
+            "debian13": ("debian:13", "2.41", "libapt-pkg.so.7.0"),
+        }
+        self.assertEqual([entry["variant"] for entry in entries], list(expected))
+        for entry in entries:
+            image, ceiling, libapt = expected[entry["variant"]]
+            with self.subTest(entry["variant"]):
+                self.assertEqual(
+                    entry["archive"],
+                    f"software-live-0.1.0-{TARGET}-{entry['variant']}.tar.gz",
+                )
+                self.assertEqual(entry["image"], image)
+                self.assertEqual(entry["build_args"], "-p software-live-apt")
+                self.assertEqual(entry["container_checks"], "-p software-live-apt")
+                self.assertEqual(entry["commit_env"], "SOFTWARE_LIVE_APT_GIT_COMMIT")
+                # The helper's tests compare against python-apt.
+                self.assertEqual(
+                    set(entry["packages"].split()),
+                    {"g++", "libapt-pkg-dev", "python3-apt"},
+                )
+                (helper,) = entry["binaries"]
+                self.assertEqual(helper["name"], "software-live-apt")
+                self.assertEqual(helper["glibc_max"], ceiling)
+                self.assertEqual(
+                    set(helper["needed"]) - checks.BASE_NEEDED,
+                    {libapt, "libstdc++.so.6"},
+                )
+                self.assertTrue(
+                    all(argv[0] == "observe" for argv in helper["extra_smoke"])
+                )
+                self.assertEqual(entry["shared_binaries"], [main])
+                self.assertEqual(entry["shared_artifact"], shared["artifact"])
+                self.assertEqual(
+                    entry["files"],
+                    [
+                        {"source": "rust/LICENSE", "name": "LICENSE"},
+                        {
+                            "source": "rust/software-live-apt/LICENSE.GPL-3.0",
+                            "name": "LICENSE.GPL-3.0",
+                        },
+                    ],
+                )
+                self.assertFalse(
+                    entry["artifact"].startswith(shared["artifact"])
+                    or shared["artifact"].startswith("software-live-0.1.0-")
+                )
+
+    def test_crate_only_in_shared_needs_no_variant_build(self) -> None:
+        shared, (entry,) = self.plan(
+            {
+                "shared": {
+                    "build": ["software-live"],
+                    "binaries": [{"name": "software-live"}],
+                },
+                "variants": [{"name": "plain"}],
+            }
+        )
+        self.assertEqual(shared["build_args"], "-p software-live")
+        # Nothing to build in the variant job (the workflow skips the step).
+        self.assertEqual(
+            (entry["build_args"], entry["binaries"], entry["commit_env"]), ("", [], "")
+        )
+        self.assertEqual(
+            [binary["name"] for binary in entry["shared_binaries"]], ["software-live"]
+        )
+
+    def test_rejects(self) -> None:
+        good_variant = {
+            "name": "a",
+            "image": "ubuntu:24.04",
+            "build": ["software-live-apt"],
+            "binaries": [{"name": "software-live-apt"}],
+        }
+
+        def settings(shared: object, **changes: object) -> dict:
+            variant = {
+                k: v for k, v in dict(good_variant, **changes).items() if v is not None
+            }
+            return {"shared": shared, "variants": [variant]}
+
+        good_shared = {
+            "build": ["software-live"],
+            "binaries": [{"name": "software-live"}],
+        }
+        cases = {
+            "not an object": (settings([]), "must be a JSON object"),
+            "unknown key": (settings(dict(good_shared, image="x")), "unknown key"),
+            "no build": (
+                settings({"binaries": good_shared["binaries"]}),
+                "needs build",
+            ),
+            "no binaries": (settings({"build": ["software-live"]}), "needs build"),
+            "empty build": (
+                settings({"build": [], "binaries": good_shared["binaries"]}),
+                "non-empty list",
+            ),
+            "empty binaries": (
+                settings({"build": ["software-live"], "binaries": []}),
+                "non-empty list",
+            ),
+            "non-member": (
+                settings(dict(good_shared, build=["software-live", "serde"])),
+                "not a workspace member",
+            ),
+            "CI-excluded member on the runner": (
+                settings(
+                    {
+                        "build": ["software-live", "software-live-apt"],
+                        "binaries": good_shared["binaries"],
+                    },
+                    build=[],
+                    binaries=[],
+                ),
+                "only be built inside",
+            ),
+            "binary not built": (
+                settings(dict(good_shared, binaries=[{"name": "software-live-apt"}])),
+                "not a binary of the build members",
+            ),
+            "bad ceiling": (
+                settings(
+                    dict(
+                        good_shared,
+                        binaries=[{"name": "software-live", "glibc_max": "x"}],
+                    )
+                ),
+                "not a glibc version",
+            ),
+            "built twice": (
+                settings(good_shared, build=["software-live", "software-live-apt"]),
+                "already built once",
+            ),
+            "variant packs a shared binary of its own": (
+                settings(
+                    good_shared,
+                    binaries=[{"name": "software-live"}],
+                ),
+                "not a binary of the build members",
+            ),
+            "member name taken by a file": (
+                settings(
+                    good_shared,
+                    files=[{"source": "rust/LICENSE", "name": "software-live"}],
+                ),
+                "unique",
+            ),
+            "crate in neither": (
+                {
+                    "shared": {
+                        "build": ["metrics-httpd"],
+                        "binaries": [{"name": "metrics-httpd"}],
+                    },
+                    "variants": [good_variant],
+                },
+                "must include the released crate",
+            ),
+        }
+        for name, (value, message) in cases.items():
+            with (
+                self.subTest(name),
+                self.assertRaisesRegex(checks.CheckError, re.escape(message)),
+            ):
+                self.plan(value)
+
+    def entry_and_dirs(self) -> tuple[dict, Path, Path, dict[str, str]]:
+        settings = json.loads(SOFTWARE_LIVE_RELEASE.read_text(encoding="utf-8"))
+        _, (ubuntu, _) = self.plan(settings)
+        own = self.repo.root / "rust" / "target" / TARGET / "release"
+        own.mkdir(parents=True)
+        shared_dir = self.repo.root / "shared-bin"
+        shared_dir.mkdir()
+        fake_binary(own, "software-live-apt")
+        main = fake_binary(shared_dir, "software-live")
+        sha = {"software-live": hashlib.sha256(main.read_bytes()).hexdigest()}
+        return ubuntu, own, shared_dir, sha
+
+    @unittest.skipUnless(os.name == "posix", "POSIX shell script fakes")
+    def test_cli_checksums_verify_and_pack_with_shared_binaries(self) -> None:
+        ubuntu, own, shared_dir, sha = self.entry_and_dirs()
+        # The shared job: its entry's checksums.
+        settings = json.loads(SOFTWARE_LIVE_RELEASE.read_text(encoding="utf-8"))
+        shared, _ = self.plan(settings)
+        result = run_script(
+            "checksums", "--entry", json.dumps(shared), "--bin-dir", str(shared_dir)
+        )
+        self.assertEqual(
+            (result.returncode, result.stdout),
+            (0, "sha256=" + json.dumps(sha, separators=(",", ":")) + "\n"),
+            result.stderr,
+        )
+
+        bin_dir = self.repo.root / "fakebin"
+        bin_dir.mkdir()
+        objdump = bin_dir / "objdump"
+        objdump.write_text(FAKE_OBJDUMP, encoding="utf-8")
+        objdump.chmod(0o755)
+        fixture = self.repo.root / "objdump.txt"
+        fixture.write_text(OBJDUMP_OK, encoding="utf-8")
+        env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "OBJDUMP_FIXTURE": str(fixture)}
+        ubuntu["binaries"][0]["extra_smoke"] = [["--env-empty"]]
+        verify = ["verify", "--entry", json.dumps(ubuntu), "--bin-dir", str(own)]
+        verify += ["--commit", COMMIT]
+        shared_args = ["--shared-bin-dir", str(shared_dir)]
+        shared_args += ["--shared-sha256", json.dumps(sha)]
+        result = run_script(*verify, *shared_args, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("NEEDED within the allowlist"), 2)
+        self.assertIn(f"software-live 0.1.0 ({COMMIT})\n", result.stdout)
+        self.assertIn(f"software-live-apt 0.1.0 ({COMMIT})\n", result.stdout)
+        # Without the shared binaries' directory and checksums.
+        result = run_script(*verify, env=env)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "--shared-bin-dir and --shared-sha256 are required", result.stderr
+        )
+
+        def pack(*extra: str, out: str = "out") -> subprocess.CompletedProcess:
+            return run_script(
+                "pack",
+                "--entry",
+                json.dumps(ubuntu),
+                "--bin-dir",
+                str(own),
+                "--repo-root",
+                str(self.repo.root),
+                "--mtime",
+                "1700000000",
+                "--out-dir",
+                str(self.repo.root / out),
+                *extra,
+            )
+
+        result = pack(*shared_args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        name = f"software-live-0.1.0-{TARGET}-ubuntu24.04.tar.gz"
+        with tarfile.open(self.repo.root / "out" / name, mode="r:gz") as archive:
+            found = {
+                m.name: (m.mode, archive.extractfile(m).read())
+                for m in archive.getmembers()
+            }
+        self.assertEqual(
+            {member: mode for member, (mode, _) in found.items()},
+            {
+                "LICENSE": 0o644,
+                "LICENSE.GPL-3.0": 0o644,
+                "software-live": 0o755,
+                "software-live-apt": 0o755,
+            },
+        )
+        self.assertEqual(
+            found["software-live"][1], (shared_dir / "software-live").read_bytes()
+        )
+        self.assertEqual(
+            found["software-live-apt"][1], (own / "software-live-apt").read_bytes()
+        )
+
+        # A shared binary that is not the one the shared job built.
+        other = {"software-live": "0" * 64}
+        for command in (verify, None):
+            args = shared_args[:2] + ["--shared-sha256", json.dumps(other)]
+            result = (
+                run_script(*command, *args, env=env)
+                if command
+                else pack(*args, out="bad")
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("the shared build recorded", result.stderr)
+        self.assertFalse((self.repo.root / "bad").exists())
+        for bad, message in (
+            ("not json", "not valid JSON"),
+            ('{"software-live": "abc"}', "64 hex digits"),
+            ("{}", "expected the shared binaries"),
+            (json.dumps(dict(sha, extra="0" * 64)), "expected the shared binaries"),
+        ):
+            with self.subTest(bad):
+                result = pack(*shared_args[:2], "--shared-sha256", bad, out="bad")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(message, result.stderr)
+        (shared_dir / "software-live").unlink()
+        result = pack(*shared_args, out="bad")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("cannot read shared binary", result.stderr)
+
+    def test_shared_options_need_shared_binaries(self) -> None:
+        (entry,) = checks.variant_entries(
+            SOFTWARE_LIVE, "metrics-httpd", "0.2.0", None, self.repo.root, []
+        )
+        with self.assertRaisesRegex(checks.CheckError, "has no shared binaries"):
+            checks.binary_paths(entry, self.repo.root, self.repo.root, None)
+        with self.assertRaisesRegex(checks.CheckError, "has no shared binaries"):
+            checks.binary_paths(entry, self.repo.root, None, {})
 
 
 class GlibcTest(unittest.TestCase):
@@ -1181,11 +1530,53 @@ class WorkflowTest(unittest.TestCase):
             "--latest=false",
             "--prerelease",
             'echo "${name}=${GITHUB_SHA}"',
-            "if: github.event_name == 'push' && github.ref_type == 'tag'",
+            "github.event_name == 'push' && github.ref_type == 'tag'",
             "persist-credentials: false",
         ):
             self.assertIn(needle, self.text, needle)
         self.assertNotIn("actions/cache", self.text)
+
+    def test_shared_binaries_are_built_once_and_checked_by_sha256(self) -> None:
+        """software-live PLAN.md 7.2: the same runner build in every archive."""
+        shared = self.section("\n  shared:\n", "\n  build:\n")
+        for needle in (
+            "if: needs.prepare.outputs.shared != ''",
+            "runs-on: ubuntu-22.04",
+            "release_checks.py verify",
+            "release_checks.py checksums",
+            'tee -a "$GITHUB_OUTPUT"',
+            "sha256: ${{ steps.checksums.outputs.sha256 }}",
+            "name: ${{ fromJSON(needs.prepare.outputs.shared).artifact }}",
+        ):
+            self.assertIn(needle, shared, needle)
+        self.assertNotIn("container:", shared)
+        build = self.section("\n  build:\n", "\n  publish:\n")
+        for needle in (
+            "needs: [prepare, shared]",
+            "needs.shared.result == 'success' || needs.shared.result == 'skipped'",
+            "SHARED_SHA256: ${{ needs.shared.outputs.sha256 }}",
+            "name: ${{ matrix.shared_artifact }}",
+            "if: matrix.build_args != ''",
+            '--shared-bin-dir "$GITHUB_WORKSPACE/release-shared" --shared-sha256 "$SHARED_SHA256"',
+        ):
+            self.assertIn(needle, build, needle)
+        self.assertEqual(build.count('"${shared_args[@]}"'), 2)
+        # A skipped shared job must not skip the release.
+        publish = self.text.split("\n  publish:\n", 1)[1]
+        self.assertIn(
+            "needs.prepare.result == 'success' && needs.build.result == 'success'",
+            publish,
+        )
+        # The shared artifact never matches the publish job's download pattern.
+        self.assertIn(
+            "pattern: ${{ needs.prepare.outputs.crate }}-${{ needs.prepare.outputs.version }}-*",
+            publish,
+        )
+        self.assertFalse(
+            checks.shared_artifact_name("software-live", "0.1.0").startswith(
+                "software-live-0.1.0-"
+            )
+        )
 
     def test_only_the_publish_job_may_write(self) -> None:
         code = "\n".join(

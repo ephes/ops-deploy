@@ -2,7 +2,7 @@
 name = "software-live"
 # Own version (not the workspace's): the binary is released by the tag
 # `software-live-v<version>` (PLAN.md 7.2, PLAN-foundation.md section 4).
-version = "0.0.0"
+version = "0.1.0"
 description = "Read-only Linux software observations and their authenticated endpoint (Rust port of software_live.py)"
 edition.workspace = true
 rust-version.workspace = true

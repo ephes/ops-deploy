@@ -21,7 +21,11 @@ Subcommands:
   validate it against ``cargo metadata`` and print ``matrix=<json>`` with one
   entry per variant: image, build packages, workspace members to build,
   binaries with their ``NEEDED`` allowlist, glibc ceiling and extra smoke
-  commands, archive files, archive and artifact names.
+  commands, the shared binaries, archive files, archive and artifact names;
+  then ``shared=<json>``, the build of the ``shared`` section (empty
+  without one).
+- ``checksums``: print ``sha256=<json>``, the sha256 of every binary of the
+  shared entry (``{"<binary>": "<hex>"}``), for the variant jobs.
 - ``glibc-floor``: require every glibc symbol version a binary needs to be at
   most ``--max`` and every shared library it links to be glibc, libgcc_s or
   one given with ``--allow`` (``objdump -T`` and ``objdump -p``).
@@ -29,11 +33,16 @@ Subcommands:
   <version> (<commit>)``; then run each ``--extra`` command (a JSON argv
   list) with an empty environment in an empty directory and require exit 0.
 - ``verify``: ``glibc-floor`` and ``smoke`` for every binary of a matrix
-  entry, with that binary's settings.
-- ``pack``: write the deterministic archive of a matrix entry (its binaries,
-  mode 0755, and files, mode 0644, at the archive root; root-owned entries,
-  the commit time as mtime, gzip header without a name) and its ``.sha256``
-  file; print the archive name.
+  entry (or of the shared entry), with that binary's settings.
+- ``pack``: write the deterministic archive of a matrix entry (its binaries
+  and the shared ones, mode 0755, and files, mode 0644, at the archive root;
+  root-owned entries, the commit time as mtime, gzip header without a name)
+  and its ``.sha256`` file; print the archive name.
+
+``verify`` and ``pack`` of an entry with shared binaries take them from
+``--shared-bin-dir`` and first require each one's sha256 to equal
+``--shared-sha256`` (the ``checksums`` output), so every archive holds the
+one build of the shared job.
 - ``apt-isolation``: read the full ``cargo metadata --format-version 1
   --locked --all-features`` output (with its ``resolve`` graph, without
   ``--filter-platform``) and fail when ``rust-apt`` (GPL-3.0-or-later) is
@@ -44,23 +53,29 @@ Subcommands:
 
 ``release.json`` (all keys optional; unknown keys are errors)::
 
-    {"variants": [{
+    {"shared": {                          # optional: built once on the runner
+        "build": ["software-live"],       # (ubuntu-22.04), packed into every variant
+        "binaries": [{"name": "software-live"}]},
+     "variants": [{
         "name": "ubuntu24.04",            # archive suffix; optional for a single variant
         "image": "ubuntu:24.04",          # container image (Debian/Ubuntu); default: the runner
         "packages": ["libapt-pkg-dev"],   # apt packages for the image (needs "image")
-        "build": ["software-live", "software-live-apt"],   # members to build; default [<crate>]
-        "binaries": [                     # default [{"name": <crate>}]
-            {"name": "software-live"},
+        "build": ["software-live-apt"],   # members to build; default [<crate>] ([] if shared)
+        "binaries": [                     # default [{"name": <crate>}] ([] if shared)
             {"name": "software-live-apt", "glibc_max": "2.39",
              "extra_needed": ["libapt-pkg.so.6.0", "libstdc++.so.6"],
-             "extra_smoke": [["--help"]]}],
+             "extra_smoke": [["observe", "--max-age", "172800", "--now", "1767225600"]]}],
         "files": [                        # default [{"source": "rust/LICENSE", "name": "LICENSE"}]
             {"source": "rust/LICENSE", "name": "LICENSE"},
             {"source": "rust/software-live-apt/LICENSE.GPL-3.0", "name": "LICENSE.GPL-3.0"}]}]}
 
 Without the file a crate has one unnamed variant built on the runner with
 the defaults above, the base ``NEEDED`` allowlist (glibc and libgcc_s) and
-the glibc ceiling 2.35.
+the glibc ceiling 2.35. With ``shared``, both of its keys are required, its
+members must not be CI-excluded, and a variant's ``build`` and
+``binaries`` default to ``[]`` when the shared build has the crate; a
+variant may not build a shared member again, and the crate's binary must be
+among the shared or the variant's binaries.
 """
 
 from __future__ import annotations
@@ -238,20 +253,115 @@ def _repo_file(repo_root: Path, source: Any, where: str) -> str:
     return relative.as_posix()
 
 
-def variant_entries(
+def _binaries(
+    raw: Any, where: str, built_binaries: set[str], *, may_be_empty: bool
+) -> list[dict[str, Any]]:
+    """The `binaries` list of a variant or of `shared`, validated."""
+    if not isinstance(raw, list) or (not raw and not may_be_empty):
+        raise CheckError(f"{where}: binaries must be a non-empty list")
+    binaries = []
+    for position, item in enumerate(raw):
+        spot = f"{where} binaries[{position}]"
+        binary = _object(
+            item, spot, {"name", "glibc_max", "extra_needed", "extra_smoke"}
+        )
+        binary_name = binary.get("name")
+        if not isinstance(binary_name, str) or binary_name not in built_binaries:
+            raise CheckError(
+                f"{spot}: {binary_name!r} is not a binary of the build members"
+            )
+        glibc_max = binary.get("glibc_max", GLIBC_FLOOR)
+        if not isinstance(glibc_max, str):
+            raise CheckError(
+                f"{spot}: glibc_max must be a string such as {GLIBC_FLOOR!r}"
+            )
+        parse_version(glibc_max)
+        extra = _strings(
+            binary.get("extra_needed", []), f"{spot} extra_needed", SONAME, "soname"
+        )
+        binaries.append(
+            {
+                "name": binary_name,
+                "glibc_max": glibc_max,
+                "needed": sorted(BASE_NEEDED | set(extra)),
+                "extra_smoke": _argv_lists(
+                    binary.get("extra_smoke", []), f"{spot} extra_smoke"
+                ),
+            }
+        )
+    return binaries
+
+
+def _build_members(
+    raw: Any, where: str, members: dict[str, dict[str, Any]]
+) -> list[str]:
+    build = _strings(raw, f"{where} build", PACKAGE_NAME, "package name")
+    for member in build:
+        if member not in members:
+            raise CheckError(
+                f"{where}: build member {member!r} is not a workspace member"
+            )
+    return build
+
+
+def shared_artifact_name(crate: str, version: str) -> str:
+    """The workflow artifact of the shared binaries. It must not match the
+    publish job's download pattern `<crate>-<version>-*`."""
+    return f"shared-{crate}-{version}"
+
+
+def release_plan(
     metadata: dict[str, Any],
     crate: str,
     version: str,
     settings: dict[str, Any] | None,
     repo_root: Path,
     ci_excluded: list[str],
-) -> list[dict[str, Any]]:
-    """The build matrix entries of a crate (one per variant)."""
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """The shared build (or None) and the build matrix entries of a crate
+    (one per variant)."""
     members = workspace_packages(metadata)
     release_crate(members, crate)
     if settings is None:
         settings = {"variants": [{}]}
-    settings = _object(settings, RELEASE_JSON, {"variants"})
+    settings = _object(settings, RELEASE_JSON, {"shared", "variants"})
+    shared = None
+    shared_build: list[str] = []
+    shared_binaries: list[dict[str, Any]] = []
+    if "shared" in settings:
+        where = f"{RELEASE_JSON} shared"
+        raw_shared = _object(settings["shared"], where, {"build", "binaries"})
+        if "build" not in raw_shared or "binaries" not in raw_shared:
+            raise CheckError(f"{where}: needs build and binaries")
+        shared_build = _build_members(raw_shared["build"], where, members)
+        if not shared_build:
+            raise CheckError(f"{where}: build must be a non-empty list")
+        excluded = [member for member in shared_build if member in ci_excluded]
+        if excluded:
+            raise CheckError(
+                f"{where}: CI-excluded member(s) {', '.join(excluded)} can only be "
+                "built inside a variant image"
+            )
+        shared_binaries = _binaries(
+            raw_shared["binaries"],
+            where,
+            {
+                name
+                for member in shared_build
+                for name in binary_targets(members[member])
+            },
+            may_be_empty=False,
+        )
+        shared = {
+            "crate": crate,
+            "version": version,
+            "build_args": " ".join(f"-p {member}" for member in shared_build),
+            "commit_env": " ".join(commit_env(member) for member in shared_build),
+            "binaries": shared_binaries,
+            "artifact": shared_artifact_name(crate, version),
+        }
+    shared_names = [binary["name"] for binary in shared_binaries]
+    crate_is_shared = crate in shared_build
     variants = settings.get("variants")
     if not isinstance(variants, list) or not variants:
         raise CheckError(f"{RELEASE_JSON}: variants must be a non-empty list")
@@ -279,21 +389,19 @@ def variant_entries(
         )
         if packages and not image:
             raise CheckError(f"{where}: packages need an image (the runner gets none)")
-        build = _strings(
-            variant.get("build", [crate]),
-            f"{where} build",
-            PACKAGE_NAME,
-            "package name",
+        build = _build_members(
+            variant.get("build", [] if crate_is_shared else [crate]), where, members
         )
-        if crate not in build:
+        twice = [member for member in build if member in shared_build]
+        if twice:
+            raise CheckError(
+                f"{where}: build member(s) {', '.join(twice)} are already built "
+                "once for every variant (shared)"
+            )
+        if crate not in build and not crate_is_shared:
             raise CheckError(
                 f"{where}: build must include the released crate {crate!r}"
             )
-        for member in build:
-            if member not in members:
-                raise CheckError(
-                    f"{where}: build member {member!r} is not a workspace member"
-                )
         excluded = [member for member in build if member in ci_excluded]
         if excluded and not image:
             raise CheckError(
@@ -303,40 +411,13 @@ def variant_entries(
         built_binaries = {
             name for member in build for name in binary_targets(members[member])
         }
-        binaries_raw = variant.get("binaries", [{"name": crate}])
-        if not isinstance(binaries_raw, list) or not binaries_raw:
-            raise CheckError(f"{where}: binaries must be a non-empty list")
-        binaries = []
-        for position, item in enumerate(binaries_raw):
-            spot = f"{where} binaries[{position}]"
-            binary = _object(
-                item, spot, {"name", "glibc_max", "extra_needed", "extra_smoke"}
-            )
-            binary_name = binary.get("name")
-            if not isinstance(binary_name, str) or binary_name not in built_binaries:
-                raise CheckError(
-                    f"{spot}: {binary_name!r} is not a binary of the build members"
-                )
-            glibc_max = binary.get("glibc_max", GLIBC_FLOOR)
-            if not isinstance(glibc_max, str):
-                raise CheckError(
-                    f"{spot}: glibc_max must be a string such as {GLIBC_FLOOR!r}"
-                )
-            parse_version(glibc_max)
-            extra = _strings(
-                binary.get("extra_needed", []), f"{spot} extra_needed", SONAME, "soname"
-            )
-            binaries.append(
-                {
-                    "name": binary_name,
-                    "glibc_max": glibc_max,
-                    "needed": sorted(BASE_NEEDED | set(extra)),
-                    "extra_smoke": _argv_lists(
-                        binary.get("extra_smoke", []), f"{spot} extra_smoke"
-                    ),
-                }
-            )
-        if crate not in [binary["name"] for binary in binaries]:
+        binaries = _binaries(
+            variant.get("binaries", [] if crate_is_shared else [{"name": crate}]),
+            where,
+            built_binaries,
+            may_be_empty=bool(shared_binaries),
+        )
+        if crate not in [binary["name"] for binary in binaries] + shared_names:
             raise CheckError(f"{where}: binaries must include {crate!r}")
         files_raw = variant.get("files", list(DEFAULT_FILES))
         if not isinstance(files_raw, list):
@@ -358,9 +439,11 @@ def variant_entries(
                     "name": member_name,
                 }
             )
-        names = [binary["name"] for binary in binaries] + [
-            entry["name"] for entry in files
-        ]
+        names = (
+            shared_names
+            + [binary["name"] for binary in binaries]
+            + [entry["name"] for entry in files]
+        )
         if len(set(names)) != len(names):
             raise CheckError(
                 f"{where}: archive member names must be unique, got {names}"
@@ -377,6 +460,8 @@ def variant_entries(
                 "container_checks": " ".join(f"-p {member}" for member in excluded),
                 "commit_env": " ".join(commit_env(member) for member in build),
                 "binaries": binaries,
+                "shared_binaries": shared_binaries,
+                "shared_artifact": shared["artifact"] if shared else "",
                 "files": files,
                 "archive": archive,
                 "artifact": archive[: -len(".tar.gz")],
@@ -385,7 +470,19 @@ def variant_entries(
     names = [entry["variant"] for entry in entries]
     if len(set(names)) != len(names):
         raise CheckError(f"{RELEASE_JSON}: variant names must be unique, got {names}")
-    return entries
+    return shared, entries
+
+
+def variant_entries(
+    metadata: dict[str, Any],
+    crate: str,
+    version: str,
+    settings: dict[str, Any] | None,
+    repo_root: Path,
+    ci_excluded: list[str],
+) -> list[dict[str, Any]]:
+    """The build matrix entries of a crate (one per variant)."""
+    return release_plan(metadata, crate, version, settings, repo_root, ci_excluded)[1]
 
 
 def commit_env(member: str) -> str:
@@ -670,12 +767,82 @@ def verify_archive(data: bytes, members: dict[str, tuple[bytes, int]]) -> None:
                 )
 
 
+def binary_paths(
+    entry: dict[str, Any],
+    bin_dir: Path,
+    shared_bin_dir: Path | None,
+    shared_sha256: dict[str, str] | None,
+) -> list[tuple[dict[str, Any], Path]]:
+    """Every binary of a matrix entry with its path: its own build in
+    `bin_dir`, the shared ones in `shared_bin_dir`, each of which must have
+    exactly the sha256 the shared job recorded (`checksums`)."""
+    paths = [(binary, bin_dir / binary["name"]) for binary in entry["binaries"]]
+    shared = entry.get("shared_binaries") or []
+    if not shared:
+        if shared_bin_dir is not None or shared_sha256 is not None:
+            raise CheckError("the matrix entry has no shared binaries")
+        return paths
+    if shared_bin_dir is None or shared_sha256 is None:
+        raise CheckError(
+            "the matrix entry has shared binaries: --shared-bin-dir and "
+            "--shared-sha256 are required"
+        )
+    if sorted(shared_sha256) != sorted(binary["name"] for binary in shared):
+        raise CheckError(
+            f"--shared-sha256 names {sorted(shared_sha256)}, expected the shared "
+            f"binaries {sorted(binary['name'] for binary in shared)}"
+        )
+    for binary in shared:
+        path = shared_bin_dir / binary["name"]
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as error:
+            raise CheckError(f"cannot read shared binary {path}: {error}") from None
+        if digest != shared_sha256[binary["name"]]:
+            raise CheckError(
+                f"shared binary {binary['name']} has sha256 {digest}, the shared "
+                f"build recorded {shared_sha256[binary['name']]}"
+            )
+        paths.append((binary, path))
+    return paths
+
+
+def load_sha256_map(text: str) -> dict[str, str]:
+    """`{"<binary>": "<64 hex>"}` (the `checksums` output of the shared job)."""
+    try:
+        value = json.loads(text)
+    except ValueError as error:
+        raise CheckError(f"--shared-sha256 is not valid JSON: {error}") from None
+    if not isinstance(value, dict) or not all(
+        isinstance(name, str)
+        and isinstance(digest, str)
+        and re.fullmatch(r"[0-9a-f]{64}", digest)
+        for name, digest in value.items()
+    ):
+        raise CheckError("--shared-sha256 must map binary names to 64 hex digits")
+    return value
+
+
+def binary_checksums(entry: dict[str, Any], bin_dir: Path) -> dict[str, str]:
+    """sha256 of every binary of an entry (the shared job's output)."""
+    return {
+        binary["name"]: hashlib.sha256(
+            (bin_dir / binary["name"]).read_bytes()
+        ).hexdigest()
+        for binary in entry["binaries"]
+    }
+
+
 def archive_members(
-    entry: dict[str, Any], bin_dir: Path, repo_root: Path
+    entry: dict[str, Any],
+    bin_dir: Path,
+    repo_root: Path,
+    shared_bin_dir: Path | None = None,
+    shared_sha256: dict[str, str] | None = None,
 ) -> dict[str, tuple[bytes, int]]:
     members = {}
-    for binary in entry["binaries"]:
-        members[binary["name"]] = ((bin_dir / binary["name"]).read_bytes(), 0o755)
+    for binary, path in binary_paths(entry, bin_dir, shared_bin_dir, shared_sha256):
+        members[binary["name"]] = (path.read_bytes(), 0o755)
     for item in entry["files"]:
         members[item["name"]] = ((repo_root / item["source"]).read_bytes(), 0o644)
     return members
@@ -686,15 +853,18 @@ def checksum_line(data: bytes, name: str) -> str:
     return f"{hashlib.sha256(data).hexdigest()}  {name}\n"
 
 
-def load_entry(text: str) -> dict[str, Any]:
-    """A matrix entry (`toJSON(matrix)` in the workflow)."""
+def load_entry(
+    text: str,
+    keys: tuple[str, ...] = ("crate", "version", "archive", "binaries", "files"),
+) -> dict[str, Any]:
+    """A matrix entry (`toJSON(matrix)` in the workflow) or the shared entry."""
     try:
         entry = json.loads(text)
     except ValueError as error:
         raise CheckError(f"matrix entry is not valid JSON: {error}") from None
     if not isinstance(entry, dict):
         raise CheckError("matrix entry is not a JSON object")
-    for key in ("crate", "version", "archive", "binaries", "files"):
+    for key in keys:
         if key not in entry:
             raise CheckError(f"matrix entry has no {key!r}")
     return entry
@@ -708,6 +878,11 @@ def _read_metadata(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise CheckError(f"cannot read cargo metadata {path}: {error}") from None
+
+
+def _sha256_option(args: argparse.Namespace) -> dict[str, str] | None:
+    text = args.shared_sha256
+    return None if text is None else load_sha256_map(text)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -749,14 +924,31 @@ def main(argv: list[str] | None = None) -> int:
         help="JSON argv list of an extra smoke command",
     )
 
+    def shared_arguments(command: argparse.ArgumentParser) -> None:
+        command.add_argument(
+            "--shared-bin-dir",
+            type=Path,
+            help="directory of the shared binaries (the shared job's artifact)",
+        )
+        command.add_argument(
+            "--shared-sha256",
+            help='{"<binary>": "<sha256>"} printed by the shared job (checksums)',
+        )
+
     verify = commands.add_parser("verify")
-    verify.add_argument("--entry", required=True, help="matrix entry JSON")
+    verify.add_argument("--entry", required=True, help="matrix or shared entry JSON")
     verify.add_argument("--bin-dir", type=Path, required=True)
     verify.add_argument("--commit", required=True)
+    shared_arguments(verify)
+
+    checksums = commands.add_parser("checksums")
+    checksums.add_argument("--entry", required=True, help="shared entry JSON")
+    checksums.add_argument("--bin-dir", type=Path, required=True)
 
     pack = commands.add_parser("pack")
     pack.add_argument("--entry", required=True, help="matrix entry JSON")
     pack.add_argument("--bin-dir", type=Path, required=True)
+    shared_arguments(pack)
     pack.add_argument("--repo-root", type=Path, required=True)
     pack.add_argument(
         "--mtime", type=int, required=True, help="Unix time for all entries"
@@ -784,7 +976,7 @@ def main(argv: list[str] | None = None) -> int:
             metadata = _read_metadata(args.metadata)
             crate, version = release_crate(workspace_packages(metadata), args.crate)
             workspace_root = Path(metadata["workspace_root"])
-            entries = variant_entries(
+            shared, entries = release_plan(
                 metadata,
                 crate,
                 version,
@@ -793,6 +985,10 @@ def main(argv: list[str] | None = None) -> int:
                 ci_excluded_members(metadata),
             )
             print("matrix=" + json.dumps({"include": entries}, separators=(",", ":")))
+            print(
+                "shared="
+                + (json.dumps(shared, separators=(",", ":")) if shared else "")
+            )
         elif args.command == "glibc-floor":
             parse_version(args.max)
             for soname in args.allow:
@@ -813,9 +1009,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "apt-isolation":
             print(check_apt_isolation(_read_metadata(args.metadata)))
         elif args.command == "verify":
-            entry = load_entry(args.entry)
-            for binary in entry["binaries"]:
-                path = args.bin_dir / binary["name"]
+            entry = load_entry(args.entry, ("version", "binaries"))
+            for binary, path in binary_paths(
+                entry, args.bin_dir, args.shared_bin_dir, _sha256_option(args)
+            ):
                 print(
                     run_glibc_floor(
                         path, binary["glibc_max"], frozenset(binary["needed"])
@@ -831,9 +1028,23 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     end="",
                 )
+        elif args.command == "checksums":
+            entry = load_entry(args.entry, ("version", "binaries"))
+            print(
+                "sha256="
+                + json.dumps(
+                    binary_checksums(entry, args.bin_dir), separators=(",", ":")
+                )
+            )
         else:
             entry = load_entry(args.entry)
-            members = archive_members(entry, args.bin_dir, args.repo_root)
+            members = archive_members(
+                entry,
+                args.bin_dir,
+                args.repo_root,
+                args.shared_bin_dir,
+                _sha256_option(args),
+            )
             data = build_archive(members, args.mtime)
             verify_archive(data, members)
             name = entry["archive"]
