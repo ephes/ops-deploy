@@ -1,0 +1,25 @@
+// Managed by Ansible (bind_authoritative_deploy)
+
+zone "example.org" {
+    type primary;
+    file "/srv/named/etc/db.example.org";
+};
+
+zone "dyn.example.org" {
+    type primary;
+    file "/srv/named/dyn/db.dyn";
+    update-policy { grant k1 zonesub ANY; };
+    allow-transfer { none; };
+};
+
+zone "." {
+    type hint;
+    file "/srv/named/etc/db.root";
+};
+
+zone "mirror.example.org" {
+    type slave;
+    file "/srv/named/cache/db.mirror";
+    primaries { 192.0.2.1; };
+};
+

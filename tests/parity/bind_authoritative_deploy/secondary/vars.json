@@ -1,0 +1,16 @@
+{
+  "ansible_distribution": "Debian",
+  "ansible_distribution_major_version": "12",
+  "bind_recursion": false,
+  "bind_allow_transfer": ["none"],
+  "bind_allow_query": ["any"],
+  "bind_tsig_keys": [{"name": "xfer-key", "algorithm": "hmac-sha256", "secret": "Zml4dHVyZS10cmFuc2Zlci1rZXk="}],
+  "bind_zones": [
+    {"name": "example.org", "file": "db.example.org", "type": "secondary",
+     "primaries": ["192.0.2.1 key \"xfer-key\"", "2001:db8::1 key \"xfer-key\""]},
+    {"name": "home.example.org", "file": "db.home.example.org", "type": "slave",
+     "primaries": "192.0.2.1 key \"xfer-key\""},
+    {"name": "absolute.example.org", "file": "/var/cache/bind/sec/db.absolute", "type": "secondary",
+     "primaries": ["192.0.2.1"]}
+  ]
+}

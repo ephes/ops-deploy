@@ -1,0 +1,24 @@
+// Managed by Ansible (bind_authoritative_deploy)
+
+acl "trusted" {
+    localhost;
+    10.0.0.0/8;
+    !192.0.2.66;
+};
+
+options {
+    directory "/srv/named/cache";
+
+    dnssec-validation no;
+    listen-on { 127.0.0.1; };
+
+    recursion yes;
+    allow-recursion { localhost; 10.0.0.0/8; !192.0.2.66; };
+    allow-query-cache { localhost; };
+
+    allow-query { trusted; };
+    allow-transfer { none; };
+
+    minimal-responses yes;
+    version "not disclosed";
+};

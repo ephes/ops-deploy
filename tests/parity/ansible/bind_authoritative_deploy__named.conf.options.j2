@@ -1,0 +1,36 @@
+// Managed by Ansible (bind_authoritative_deploy)
+{% import 'bind_macros.j2' as bind_macros %}
+
+acl "trusted" {
+{% for entry in bind_recursion_acl %}
+    {{ entry }};
+{% endfor %}
+};
+
+options {
+    directory "{{ bind_working_dir }}";
+
+    dnssec-validation {{ bind_dnssec_validation }};
+{% if bind_listen_on | length > 0 %}
+    listen-on { {{ bind_macros.acl_list(bind_listen_on) }}; };
+{% endif %}
+{% if bind_listen_on_v6 | length > 0 %}
+    listen-on-v6 { {{ bind_macros.acl_list(bind_listen_on_v6) }}; };
+{% endif %}
+
+    recursion {{ "yes" if bind_recursion else "no" }};
+{% if bind_recursion %}
+    allow-recursion { {{ bind_macros.acl_list(bind_recursion_acl) }}; };
+    allow-query-cache { {{ bind_macros.acl_list(bind_allow_query_cache) }}; };
+{% else %}
+    allow-recursion { none; };
+    allow-query-cache { none; };
+{% endif %}
+
+    allow-query { {{ bind_macros.acl_list(bind_allow_query) }}; };
+    allow-transfer { {{ bind_macros.acl_list(bind_allow_transfer) }}; };
+
+{% for line in bind_extra_options %}
+    {{ line }}
+{% endfor %}
+};

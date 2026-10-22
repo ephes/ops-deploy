@@ -24,6 +24,7 @@ nav:
   - Base deploys: base.md
   - PostgreSQL and Redis: infra.md
   - Traefik: traefik.md
+  - BIND: bind.md
   - Services:
       - toy: services/toy.md
       - toyweb: services/toyweb.md

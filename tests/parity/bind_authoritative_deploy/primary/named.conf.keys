@@ -1,0 +1,19 @@
+// Managed by Ansible (bind_authoritative_deploy)
+// Contains TSIG key material. Kept out of named.conf.options/named.conf.local
+// because those are world-readable; this file is not.
+
+key "xfer-key" {
+    algorithm hmac-sha256;
+    secret "Zml4dHVyZS10cmFuc2Zlci1rZXk=";
+};
+
+key "ddns-key" {
+    algorithm hmac-sha512;
+    secret "Zml4dHVyZS1kZG5zLWtleQ==";
+};
+
+key "acme-key" {
+    algorithm hmac-sha256;
+    secret "Zml4dHVyZS1hY21lLWtleS0x";
+};
+

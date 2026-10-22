@@ -122,14 +122,15 @@ branch:
   mirrors changed since it was last checked:
   `tests/parity/ops_library_roles.json` records the ops-library commit and a
   digest of each role's `defaults`, `files`, `handlers`, `tasks`,
-  `templates` and `vars`. It covers the `fastdeploy_*`, `graphyard_*`,
+  `templates` and `vars`. It covers the `bind_authoritative_deploy`, `fastdeploy_*`, `graphyard_*`,
   `gotosocial_deploy`, `homelab_deploy`/`homelab_shared`, `jellyfin_deploy`/`jellyfin_shared`,
   `journald_config`, `livekit_deploy`,
   `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`,
   `vaultwarden_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far.
   Entries added later than the recorded commit name the commit they were
   checked against in their service page (homelab, jellyfin, `uv_install`,
-  gotosocial and vaultwarden: `540ede2b`, 2.56.0).
+  gotosocial and vaultwarden: `540ede2b`, 2.56.0; `bind_authoritative_deploy`:
+  `06394c81`, 2.64.5).
 
 Policy carried over from ops-library is checked without a checkout:
 `tests/test_traefik_hsts.py` fails when any template under `src/` or
