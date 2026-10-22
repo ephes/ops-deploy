@@ -541,3 +541,57 @@ and the standard object-storage references cannot opt out of required values.
 `EnvEntry(omit_empty=True)` omits that env line when resolved empty; the default
 retains it. Optional/default resolution belongs in the private control plane;
 this module adds no object-storage provider or lifecycle behavior.
+
+## Optional Echoport backups
+
+Set `DjangoSiteConfig.echoport` to an `EchoportTarget` (exported from
+`ops_deploy.services.django_site`) or a mapping. The default is `None`:
+no Echoport probe or operation runs. Echoport must already be deployed on the
+same host at `/home/echoport/site`, using the `echoport` user. Registration
+runs after the site's health checks, recording the source commit, and
+clearing pending markers, so a registration failure does not repeat site steps
+on retry. A matching target causes no write; a missing
+Echoport installation fails registration.
+
+For example, the mapping below can be included in an ops-control
+`SiteSpec.config` once its pinned ops-deploy revision includes this feature:
+
+```python
+"echoport": {
+    "name": "example-backup",
+    "description": "Example site data",
+    "db_path": "/home/example/site/db.sqlite3",
+    "backup_files": (
+        "/home/example/site/media",
+        "/home/example/site/private",
+    ),
+    "schedule": "30 3 * * *",
+    "update_schedule": False,
+},
+```
+
+`name`, `description`, and the five-field numeric cron `schedule` are required;
+`icon` defaults to `archive`. `db_path` is optional and uses SQLite's online
+backup; `backup_files` defaults to an empty tuple and copies files or whole
+directories as-is. Supply at least one path. PostgreSQL sites can use a
+files-only target; this integration does not dump PostgreSQL databases.
+Paths must be absolute under `/home/`, `/opt/`, `/var/lib/`, or
+`/mnt/cryptdata/` (Echoport's default allowed prefixes), have unique basenames,
+and must not overlap. Do not include SQLite sidecars or `manifest.json`.
+Choose paths that source syncing already preserves; registering a target does
+not change sync exclusions or create backups immediately.
+
+`service_name` defaults to the site's resolved web unit plus `.service`;
+`restore_owner` defaults to `user:group` using the site's resolved group.
+Both can be overridden explicitly, for example `example-site.service` and
+`example:webdata`. Echoport stops that one service during restore and chowns
+restored paths to that owner; additional worker/frontend units need their own
+restore coordination. Keep restore contents limited to data suitable for that
+owner. `update_schedule=False` preserves an existing schedule edited in
+Echoport; `True` resets it on each deploy. Removing this config stops managing
+the target; it does not delete an existing Echoport target.
+
+ops-control's builder accepts this nested mapping directly, and inventory
+fields may use dotted destinations such as `echoport.name`,
+`echoport.db_path`, `echoport.backup_files`, and `echoport.schedule` in
+`SiteSpec.fields`.

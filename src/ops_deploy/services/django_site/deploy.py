@@ -53,6 +53,7 @@ from ops_deploy.helpers.probes import probe, verify_probe
 from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import DYNAMIC_DIR
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services._echoport import upsert_target
 from ops_deploy.services.django_site import frontend
 from ops_deploy.services.django_site.config import (
     DjangoSiteConfig,
@@ -591,7 +592,7 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         wait_port(front.port, host="127.0.0.1", retries=cfg.checks.port_retries)
         http_check(f"http://127.0.0.1:{front.port}{front.check_path}", status=front.check_statuses)
     public_checks(cfg)
-    # Last: only a deploy that came up healthy records its commit and clears its markers.
+    # Only a deploy that came up healthy records its commit and clears its markers.
     record_source(cfg.site_path, cfg.source.commit, user=cfg.user, group=cfg.group_name)
     marks = [*worker_marks, pending, restart_mark, *([next_mark] if next_mark else []), *([built] if built else [])]
     server.shell(
@@ -609,6 +610,23 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         ],
         _if=lambda: any(op.did_change() for op in marks) or restarting_static(),
     )
+
+    if (echoport_target := cfg.echoport) is not None:
+        upsert_target(
+            {
+                "name": echoport_target.name,
+                "description": echoport_target.description,
+                "icon": echoport_target.icon,
+                "service_name": echoport_target.service_name or f"{cfg.unit_name}.service",
+                "restore_owner": echoport_target.restore_owner or f"{cfg.user}:{cfg.group_name}",
+                "db_path": str(echoport_target.db_path or ""),
+                "backup_files": [str(path) for path in echoport_target.backup_files],
+                "schedule": echoport_target.schedule,
+                "schedule_policy": "set" if echoport_target.update_schedule else "keep",
+            },
+            name=f"Upsert Echoport backup target {echoport_target.name}",
+            missing=f"Echoport must be deployed on this host before {cfg.service_name} can register its backup target",
+        )
 
 
 def _next_marker(cfg: DjangoSiteConfig) -> list[str]:

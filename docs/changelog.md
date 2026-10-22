@@ -15,6 +15,12 @@
   `FakeRun.secret_files`, `written_paths` and `written(path)`; new
   `tests/test_traefik_route_diff.py` and jellyfin/homelab `--diff` tests.
 
+- `django_site`: optional `echoport: EchoportTarget | None` registers a generic
+  paths backup target through the shared Echoport upsert after health checks.
+  Configure SQLite online backup and/or file/directory paths, restore service
+  and owner, and schedule policy. Unset keeps the existing deploy behavior.
+  See [optional Echoport backups](services/django_site.md#optional-echoport-backups).
+
 - `thermal_monitoring`, `logyard` (the health endpoint) and `static_site`:
   select the endpoint's HTTP server, the role's Python script or the pinned
   Rust `metrics-httpd`, the port of ops-library's `metrics_httpd_switch`

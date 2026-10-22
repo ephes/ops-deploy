@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.git_source import CommitSha
@@ -450,6 +450,59 @@ class DbWorker(Part):
     extra_args: tuple[ManageArg, ...] = ()
 
 
+# The prefixes Echoport accepts for a target's paths (its default
+# ``ECHOPORT_ALLOWED_PATH_PREFIXES``); checked here so a wrong path fails before any operation.
+ECHOPORT_PATH_PREFIXES = ("/home/", "/opt/", "/var/lib/", "/mnt/cryptdata/")
+
+
+class EchoportTarget(Part):
+    """An optional generic-paths target on an existing Echoport installation.
+
+    SQLite databases use online backup; backup_files are copied as-is.
+    Restore stops service_name and chowns restored paths to restore_owner.
+    """
+
+    name: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")]
+    description: Label
+    icon: Annotated[str, Field(pattern=r"^[a-z0-9-]{1,50}$")] = "archive"
+    db_path: Annotated[PurePosixPath, AfterValidator(plain_path)] | None = None
+    backup_files: tuple[Annotated[PurePosixPath, AfterValidator(plain_path)], ...] = ()
+    # Default: the app's unit.
+    service_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,62}\.service$")] | None = None
+    # ``user:group``; default: the site's user and resolved group.
+    restore_owner: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}:[a-z_][a-z0-9_-]{0,31}$")] | None = None
+    schedule: Annotated[str, Field(pattern=r"^[0-9*/,-]+( [0-9*/,-]+){4}$")]
+    # A schedule changed in the Echoport UI is kept unless this is set.
+    update_schedule: bool = False
+
+    @model_validator(mode="after")
+    def _paths(self) -> Self:
+        paths = self.paths
+        if not paths:
+            raise ValueError("an echoport target needs a db_path or backup_files")
+        if len({p.name for p in paths}) != len(paths):
+            raise ValueError("echoport paths must have unique basenames")
+        for path in paths:
+            # A directory around another path (the database above all) copies it raw and restores it twice.
+            outer = next((o for o in paths if o != path and path.is_relative_to(o)), None)
+            if outer is not None:
+                raise ValueError(f"echoport: {path} is inside {outer}")
+        if self.db_path is not None:
+            sidecars = {self.db_path.with_name(self.db_path.name + s) for s in ("-wal", "-shm", "-journal")}
+            if sidecars & set(self.backup_files):
+                raise ValueError("echoport: the database's -wal/-shm/-journal files come from the online backup")
+        for path in paths:
+            if path.name == "manifest.json":
+                raise ValueError("echoport: manifest.json is the archive's own file")
+            if not any(str(path).startswith(prefix) for prefix in ECHOPORT_PATH_PREFIXES):
+                raise ValueError(f"echoport: {path} is outside {', '.join(ECHOPORT_PATH_PREFIXES)}")
+        return self
+
+    @property
+    def paths(self) -> tuple[PurePosixPath, ...]:
+        return ((self.db_path,) if self.db_path is not None else ()) + self.backup_files
+
+
 class DjangoSiteConfig(BaseServiceConfig):
     service_name: ServiceName
     # systemd ``Description=<title> web application``.
@@ -477,6 +530,7 @@ class DjangoSiteConfig(BaseServiceConfig):
     frontend: NextStandalone | None = None
     route: Route
     checks: Checks = Checks()
+    echoport: EchoportTarget | None = None
     # The systemd sandbox (ProtectSystem=strict and friends); "strict" also
     # makes the home read-only and adds the kernel and address-family limits.
     hardening: bool | Literal["strict"] = False
