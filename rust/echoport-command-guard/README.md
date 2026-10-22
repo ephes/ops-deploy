@@ -23,7 +23,7 @@ measurements, the security review of the whole crate, the tag; see "Lean
 measurements", "Security review (S7)" and "Release" below) and **H1** (the
 TOCTOU hardening of the root-run mutations in both guards, release 0.2.0;
 see "TOCTOU hardening (H1)" below) and **S8** (the ops-control wiring: the
-0.2.0 pin, impl `python` on both hosts, `confirm_live.yml` after the
+impl `python` on both hosts, no Rust pin until S9, `confirm_live.yml` after the
 playbook's post-probe, the rollback switch, the strict shadow compare and
 the runbook; collection floor 2.66.1). Every branch of the Python guard's
 `check()` is ported. What exists:
@@ -183,7 +183,7 @@ The role pins a version and that sha256
 | Version | Tag (commit) | Archive sha256 | Stripped binary |
 |---|---|---|---|
 | 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` (`5b734af5`) | `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9` | 668,632 bytes (0.64 MiB), highest `GLIBC_2.34` |
-| 0.2.0 (H1, TOCTOU hardening; the release S8 pins and S9 installs) | `echoport-command-guard-v0.2.0` (`966d178e`) | `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f` | 705,952 bytes (0.67 MiB), highest `GLIBC_2.34` |
+| 0.2.0 (H1, TOCTOU hardening; the release S9 pins and installs) | `echoport-command-guard-v0.2.0` (`966d178e`) | `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f` | 705,952 bytes (0.67 MiB), highest `GLIBC_2.34` |
 
 ## Security review (S7)
 
