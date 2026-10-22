@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- `ops_deploy.backups` (new package, outside the size-capped shared layer):
+  the steps a deploy or an explicit backup command runs before it changes
+  anything, from the controller over ssh (script on stdin, `BatchMode=yes`).
+  `run_echoport_backup` runs a registered Echoport target synchronously
+  (`manage.py backup <target> --triggered-by <label>` as the Echoport user),
+  parses run ID, object and size (and a checksum when Echoport prints one),
+  checks the object with `mc stat` through Echoport's mc alias (exact size;
+  with a checksum also `sha256sum` over the object) and returns the run ID
+  with a restore hint; any failure raises `EchoportBackupError`.
+  `require_mount` (`findmnt`, optionally fstype/source, read-write) raises
+  `MountMissingError` and never creates anything. `local_snapshot` writes a
+  rollback `tar.gz` only under an explicitly configured directory on a
+  mounted disk (walked down from the mount point without following any
+  symlink, each missing level created alone with mode 0700, then checked with
+  `pwd -P` and `findmnt --target`), through an exclusive `mktemp` partial
+  file that a failed or interrupted run removes, with retention by count and
+  age that never removes the new archive or files of another name and fails
+  the run when a listing fails. A timeout stops the work: the local process
+  group gets `SIGTERM`, then `SIGKILL`, and over ssh the remote command runs
+  under coreutils `timeout`. The guard and the snapshot also come as pyinfra
+  commands.
+  See the new "Backups before a deploy" page.
+
 - `bind`: port of the `bind_authoritative_deploy` role (deploy only),
   checked against ops-library main `06394c81` (2.64.5), as
   `ops_deploy.infra.bind` (`BindConfig`, `deploy_bind`; its own "BIND" page).

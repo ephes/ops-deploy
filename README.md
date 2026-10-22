@@ -14,7 +14,8 @@ harness, two toy services, the nyxmon, fastdeploy, delve and thermal monitoring 
 base deploys (hostname, unit masks, headless mode, journald, authorized keys, uv,
 Node.js, shell basics, SSH guard, dpkg foreign architectures) and the shared host services PostgreSQL, Redis,
 Traefik (deploy, backup, restore, remove), certbot DNS-01 certificates and
-authoritative BIND.
+authoritative BIND, and pre-deploy backup steps (a synchronous, verified
+Echoport backup, a mount guard and local rollback snapshots with retention).
 
 ## Requirements
 
