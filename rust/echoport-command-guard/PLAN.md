@@ -1008,10 +1008,12 @@ The tasks:
 
 ### 6.3 ops-control changes (S8)
 
-- `inventories/prod/group_vars/all.yml`:
-  `echoport_remote_command_guard_rust_version` and `_sha256` (one pin for
-  both hosts). host_vars `production.yml` and `staging.yml`:
-  `echoport_remote_command_guard_impl: python` at first.
+- host_vars `production.yml` and `staging.yml`:
+  `echoport_remote_command_guard_impl: python` at first. **No Rust pin in
+  S8** (owner decision 2026-10-22): `inventories/prod/group_vars/all.yml`
+  gets `echoport_remote_command_guard_rust_version` and `_sha256` (one pin
+  for both hosts) in **S9**, so no run of the playbook before S9, the joint
+  rollout of 6.4 included, installs the Rust guard (see "As built (S8)").
 - `playbooks/authorize-root-ssh.yml`:
   - Raise the minimum ops-library version to the release containing S6.
   - The post-probe stays as it is: every impl prints the same
@@ -1706,7 +1708,7 @@ Rules, as in the precedents:
 | S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts, dual validate, forced command per impl, `confirm_live.yml` (verify the written line, protect list from the live `authorized_keys`, F3 pin and previous pin, F3 prune with `protect`) with its parse filter and unit test, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), the `pins` scenario (repeated failed deployments with different targets and the other 6.2 cases), README/docs/CHANGELOG (Unreleased). | F3 (install role with `protect` and the previous pin), S4 (CLI surface) | with S2–S5 | no | 5 |
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
 | H1 | TOCTOU hardening (work item `echoport-guard-toctou-hardening`, R12) | 4.5: the root-run mutations (`chmod`, `chown [-R]`, both `mv` forms, `rm -f` of `-wal`/`-shm`) bound to file descriptors opened without following symlinks, in the Python guard first (the oracle; fixtures and `GUARD_SHA256` regenerated), then in the Rust guard; new Layer-1/Layer-2 fixtures and a race regression test; a new release that S9 pins instead of 0.1.0. **Done:** `perform()` / `src/mutate.rs`, `parity/races.json`, release 0.2.0. | S7 | no | no | (H1's own plan) |
-| S8 | ops-control wiring | 6.3: pins (filled after S7, then H1's release), impl `python`, tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. **Done:** wiring without a Rust pin (S9 sets it), collection floor 2.66.1 (6.3 "As built (S8)"). | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
+| S8 | ops-control wiring | 6.3: impl `python` (no Rust pin: S9 adds it), tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. **Done:** wiring without a Rust pin (S9 sets it), collection floor 2.66.1 (6.3 "As built (S8)"). | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
 | S9 | Install only | Adds the 0.2.0 pin to ops-control's group_vars (6.3 "As built (S8)"), then 6.5 step 1, staging then production, read-only lean measurement on the hosts. Installs H1's release (0.2.0), never 0.1.0 (R12). | S7, **H1 merged and released**, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
