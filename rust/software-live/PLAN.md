@@ -32,8 +32,9 @@ S8 implemented in ops-control (7.5: the pin of 0.1.0 in
 collection gate 2.65.0 and the shadow check of 8.1 in
 `playbooks/deploy-software-live.yml`, the runbook section "Rust port" of
 `docs/SOFTWARE_LIVE.md`, `tests/test_software_live_rust.py`);
-S9 in progress (`parity/shadow_compare.py`, 6.3; the shadow of 8.1 on the
-four hosts, see ops-control `docs/SOFTWARE_LIVE.md`);
+S9 in progress (`parity/shadow_compare.py`, 6.3; the shadow of 8.1 runs on
+all four hosts since 2026-10-22, see ops-control `docs/SOFTWARE_LIVE.md`;
+measurements in section 10; the at least 24 h evaluation is open);
 S11 implemented in ops-control (the manual CLI `scripts/software-live.py`
 runs the installed release on hosts with impl `rust`, 7.5 and 4.2 item 10;
 `tests/test_software_live.py`, `docs/SOFTWARE_LIVE.md` "Manual checks");
@@ -1654,8 +1655,37 @@ from a shell, with the same work. Under systemd the spawner is the small
 `systemd-executor`, and the cgroup's "memory peak" of S9 stays the
 authoritative figure; the budget is unchanged.
 
-Measured during S9 (shadow) and S10 (after the cutover), recorded in the
-S10 report. If glibc malloc arenas push the endpoint over budget,
+Measured in S9 (2026-10-22, shadow on all four hosts, release 0.1.0; the
+budget is unchanged, the coordinator decides on the rows over budget). The
+collector peak is the unit's cgroup `memory.peak` (collect plus export, page
+cache included): from systemd 257's journal line on staging and, on the
+systemd 255 hosts, sampled every 20 ms during a run (on staging the sampling
+gave the journal's figure). Two timer runs each, Python at 08:30 and 09:15
+UTC, Rust (shadow unit) at 08:52 and 09:07. The endpoints right after the
+deploy (the shadow endpoint had served only the deploy check).
+
+| Host | Collector peak Python | Collector peak Rust | Collector CPU Python / Rust (s, systemd or usage line) | Endpoint `MemoryCurrent` Python / Rust | `RssAnon` Python / Rust | `ps` RSS Python / Rust |
+| --- | --- | --- | --- | --- | --- | --- |
+| staging (Debian 13) | 80.3, 80.5 MiB | 60.7, 60.9 MiB | 1.62 / 1.93–1.98 | 13.96 / 0.55 MiB | 13.72 / 0.38 MiB | 25.57 / 3.89 MiB |
+| macmini | 98.0, 98.0 MiB | 74.7, 74.5 MiB | 1.87 / 1.96–2.01 | 9.25 / 0.55 MiB | 8.96 / 0.36 MiB | 17.63 / 4.07 MiB |
+| fractal | 93.4, 93.3 MiB | 70.1, 70.3 MiB | 0.50 / 0.24 | 13.16 / 0.54 MiB | 12.91 / 0.36 MiB | 24.12 / 4.16 MiB |
+| production | 104.5, 96.1 MiB | 73.6, 73.2 MiB | 1.46 / 0.96 | 13.93 / 0.58 MiB | 12.99 / 0.40 MiB | 24.17 / 4.05 MiB |
+
+The endpoint rows are far inside their budgets. The collector peak is 21–31 %
+below Python's on every host but above 64 MiB on the three Ubuntu hosts
+(70–75 MiB, as 13.5 predicted: libapt-pkg's cache is the floor), within it on
+staging. The collector CPU budget (≤ 1.0 s on macmini) is not met: on staging
+and macmini the program's own CPU is about 1.7 s of the run, by all evidence
+SHA-256 of the 185 MB Traefik binary, hashed twice (installed and running,
+3.3): those CPUs (Xeon E3-1275 v5, Core i5-8500B) lack the SHA extensions,
+production's Ryzen has them (0.34 s there), and fractal, which expects no
+Traefik, needs 0.03 s. Python hashes with OpenSSL
+and costs about the same there (1.6–1.9 s per run). The `maxrss_kib` of the
+usage line (99–111 MiB) is above the cgroup peak because Linux carries a
+process's RSS high-water mark across `exec` and the line sums self and
+children (5.2, S5 note above); the cgroup figure is the authoritative one.
+
+Measured again in S10 (after the cutover), recorded in the S10 report. If glibc malloc arenas push the endpoint over budget,
 `Environment=MALLOC_ARENA_MAX=2` goes into the drop-in before another
 allocator is considered.
 
