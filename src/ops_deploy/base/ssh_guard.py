@@ -15,7 +15,7 @@ from io import StringIO
 from pathlib import PurePosixPath
 from typing import Annotated
 
-from pydantic import Field, model_validator
+from pydantic import Field, StrictInt, model_validator
 from pyinfra import host
 from pyinfra.api import DeployError, deploy
 from pyinfra.facts.server import Which
@@ -44,7 +44,9 @@ class SshGuardConfig(RoleConfig):
     fail2ban_backend: Line = "systemd"
     fail2ban_filter: Line = "sshd"
     fail2ban_port: Line = "ssh"
-    fail2ban_maxretry: int = 5
+    # Strict: the role renders the value as given, so ``True``, ``"03"`` or
+    # ``3.0`` would be written differently from a coerced int; they are refused.
+    fail2ban_maxretry: StrictInt = 5
     fail2ban_findtime: Line = "10m"
     fail2ban_bantime: Line = "1h"
     # Empty: no ``ignoreip`` line.

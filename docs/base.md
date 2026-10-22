@@ -227,7 +227,7 @@ last owns the file.
 | `fail2ban_package`, `fail2ban_service_name` | `fail2ban` | |
 | `fail2ban_jail_name` | `sshd` | letters, digits, `_ . @ -` |
 | `fail2ban_backend`, `fail2ban_filter`, `fail2ban_port` | `systemd`, `sshd`, `ssh` | |
-| `fail2ban_maxretry` | `5` | must be > 0 while fail2ban is enabled |
+| `fail2ban_maxretry` | `5` | an int (not a bool, string or float), > 0 while fail2ban is enabled |
 | `fail2ban_findtime`, `fail2ban_bantime` | `10m`, `1h` | |
 | `fail2ban_ignoreip` | `127.0.0.1/8 ::1 100.64.0.0/10` | empty: no `ignoreip` line |
 | `sshd_dropin_enabled` | `True` | `False` skips the drop-in, check and reload |
