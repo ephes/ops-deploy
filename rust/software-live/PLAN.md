@@ -22,6 +22,9 @@ S5 implemented (the parity harness of 6.2: `parity/run_parity.py` with
 containers by the CI job `software-live-apt` and `just
 rs-software-live-parity`; fixes found by it: the endpoint's head limits,
 4.2 item 2);
+S7 implemented (release `software-live-v0.1.0`: `release.json`, the
+`shared` runner build of `software-live` in F2's `rust-release.yml` and
+`release_checks.py`, version 0.1.0 of both crates; 7.2);
 S1 spike done, report in section 13; the other slices planned. Owner
 questions decided on 2026-10-21 (section 12). Campaign "Rust-Ports
 Runde 2", stream `rust-software-live` (umbrella item `rust-ports-campaign`).
@@ -1087,6 +1090,25 @@ helper crate carries the same version. The `software-live` binary is the same
 build in both archives. Deterministic archives, `--version` smoke test
 against the tag commit, as in nyxmon 8.2.
 
+As implemented (S7): `release.json` next to this file. Its `shared`
+section has F2's workflow build `software-live` once on the `ubuntu-22.04`
+runner (glibc ceiling 2.35, `NEEDED` glibc and libgcc_s only) and hand it
+with its sha256 to both variant jobs, which pack exactly that file (the
+sha256 is checked before `verify` and `pack`) and run its `--version`
+again inside their image. Each variant job (`ubuntu:24.04`, `debian:13`,
+packages `g++ libapt-pkg-dev python3-apt`; python3-apt for the helper's
+version-comparison test) runs clippy and the tests of `software-live-apt`,
+builds it, checks its ceiling (2.39 / 2.41) and `NEEDED` (glibc,
+libgcc_s, `libstdc++.so.6` and `libapt-pkg.so.6.0` / `.so.7.0`), its
+`--version`, and as an extra smoke command `observe --max-age 172800
+--now 4102444800` with an empty environment as root in the job's
+container (exit 0, so libapt-pkg opens the image's cache), then packs
+`software-live`, `software-live-apt`, `LICENSE` and `LICENSE.GPL-3.0`.
+Both crates are at 0.1.0; a test (`test_real_workspace` in
+`rust/scripts/test_release_checks.py`) keeps their versions equal, and the
+smoke test rejects a helper whose `--version` differs from the tag.
+`rust/README.md` "Releases" documents the `shared` key.
+
 ### 7.3 Role `software_live` (ops-library)
 
 New defaults:
@@ -1312,7 +1334,8 @@ asserts:
   packs one archive per variant with the members of 7.2; per-binary
   `NEEDED` allowlists and glibc floors in `release_checks.py` (7.1); the
   release job's workspace checks exclude the helper as the CI job does (it
-  is built and tested in its variant images).
+  is built and tested in its variant images). F2 delivered all of this
+  except the one shared `software-live` build, which S7 added (7.2).
 - **F3** (install role): an input for additional archive members (here
   `software-live-apt` and `LICENSE.GPL-3.0`) next to `<name>` and `LICENSE`,
   installed with the same ownership and modes.

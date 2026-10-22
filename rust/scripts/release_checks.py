@@ -64,7 +64,7 @@ one build of the shared job.
         "binaries": [                     # default [{"name": <crate>}] ([] if shared)
             {"name": "software-live-apt", "glibc_max": "2.39",
              "extra_needed": ["libapt-pkg.so.6.0", "libstdc++.so.6"],
-             "extra_smoke": [["observe", "--max-age", "172800", "--now", "1767225600"]]}],
+             "extra_smoke": [["observe", "--max-age", "172800", "--now", "4102444800"]]}],
         "files": [                        # default [{"source": "rust/LICENSE", "name": "LICENSE"}]
             {"source": "rust/LICENSE", "name": "LICENSE"},
             {"source": "rust/software-live-apt/LICENSE.GPL-3.0", "name": "LICENSE.GPL-3.0"}]}]}

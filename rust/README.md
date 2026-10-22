@@ -210,11 +210,20 @@ binary prefix.
   `cargo fmt --check`, clippy `-D warnings` and `cargo test` over the
   workspace without the `[workspace.metadata.ci] exclude` members (as
   `rust.yml`), and the `rust/scripts` tests. No cargo cache.
+- `shared` (only with a `shared` section in `release.json`, on
+  `ubuntu-22.04` itself): builds those members once, runs `release_checks.py
+  verify` on their binaries, prints their sizes and sha256 in the job
+  summary and hands them to the variant jobs as a workflow artifact
+  (`shared-<crate>-<version>`) with their sha256 (`release_checks.py
+  checksums`, a job output).
 - `build`, one job per variant: `cargo build --release --locked --target
   x86_64-unknown-linux-gnu -p <member>...` with `<CRATE>_GIT_COMMIT` set to
-  the full commit for every built member's `build.rs`; then
-  `release_checks.py verify` runs for every binary of the variant the glibc
-  check (`objdump -T`/`-p`: no `GLIBC_*` symbol version above the binary's
+  the full commit for every built member's `build.rs` (skipped when the
+  variant builds nothing itself); with shared binaries, it downloads them and
+  `verify` and `pack` first require each one's sha256 to equal the `shared`
+  job's, so every archive holds that one build. Then
+  `release_checks.py verify` runs, for every binary of the variant (the
+  shared ones again, inside the variant's image), the glibc check (`objdump -T`/`-p`: no `GLIBC_*` symbol version above the binary's
   ceiling, default 2.35, and no `NEEDED` library outside glibc, libgcc_s and
   the binary's `extra_needed`) and the smoke test (`<binary> --version` must
   print `<binary> <version> (<full commit>)`, then every `extra_smoke`
@@ -235,23 +244,30 @@ the `ubuntu-22.04` runner (glibc 2.35, runs on every Linux host):
 `<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` with `<crate>` and
 `LICENSE` (`rust/LICENSE`). A crate that needs more declares variants; each
 one becomes its own build job and archive
-`<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`:
+`<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`. Binaries that
+every variant shares go into `shared`: they are built once on the runner and
+packed into every variant's archive. `software-live/release.json` (one
+`software-live` build with the glibc floor 2.35 in both archives, the helper
+per distribution; software-live PLAN.md 7.1, 7.2):
 
 ```json
 {
+  "shared": {
+    "build": ["software-live"],
+    "binaries": [{"name": "software-live"}]
+  },
   "variants": [
     {
       "name": "ubuntu24.04",
       "image": "ubuntu:24.04",
-      "packages": ["libapt-pkg-dev", "g++"],
-      "build": ["software-live", "software-live-apt"],
+      "packages": ["g++", "libapt-pkg-dev", "python3-apt"],
+      "build": ["software-live-apt"],
       "binaries": [
-        {"name": "software-live"},
         {
           "name": "software-live-apt",
           "glibc_max": "2.39",
           "extra_needed": ["libapt-pkg.so.6.0", "libstdc++.so.6"],
-          "extra_smoke": [["--help"]]
+          "extra_smoke": [["observe", "--max-age", "172800", "--now", "4102444800"]]
         }
       ],
       "files": [
@@ -263,13 +279,17 @@ one becomes its own build job and archive
 }
 ```
 
+(abridged: the second variant `debian13` is the same with `debian:13`, the
+ceiling 2.41 and `libapt-pkg.so.7.0`.)
+
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `shared` | none | `build` (members, not CI-excluded) and `binaries` (as below) built once on the runner and packed into every variant's archive; both keys required |
 | `name` | none (allowed only for a single variant) | archive suffix, `[a-z0-9][a-z0-9._-]*`, unique |
 | `image` | the runner | container image (Debian/Ubuntu: the job installs `binutils ca-certificates curl gcc git libc6-dev python3`, rustup 1.29.1 sha256-checked, then the pinned toolchain) |
 | `packages` | `[]` | extra apt packages; only with `image` |
-| `build` | `[<crate>]` | workspace members to build (must include the crate); a CI-excluded member is allowed only with an `image` and is linted and tested inside it |
-| `binaries` | `[{"name": <crate>}]` | archive binaries (mode 0755), each a binary of a `build` member; must include `<crate>` |
+| `build` | `[<crate>]`, `[]` when `shared` builds the crate | workspace members to build (must include the crate unless `shared` builds it; never a `shared` member); a CI-excluded member is allowed only with an `image` and is linted and tested inside it |
+| `binaries` | `[{"name": <crate>}]`, `[]` when `shared` builds the crate | archive binaries (mode 0755), each a binary of a `build` member; together with the `shared` binaries they must include `<crate>` |
 | `binaries[].glibc_max` | `"2.35"` | glibc ceiling of that binary |
 | `binaries[].extra_needed` | `[]` | sonames allowed in addition to glibc and libgcc_s |
 | `binaries[].extra_smoke` | `[]` | argument lists of extra smoke commands |
@@ -277,9 +297,12 @@ one becomes its own build job and archive
 
 Unknown keys, duplicate names and anything outside these rules fail the
 `matrix` step before anything is built. `scripts/test_release_checks.py`
-checks the defaults and a two-variant fixture
-(`scripts/testdata/release-two-variants.json`) and asserts that every
-releasable member of the committed workspace yields a valid matrix.
+checks the defaults, a two-variant fixture
+(`scripts/testdata/release-two-variants.json`, each variant building its own
+binaries), the `shared` rules and the committed
+`software-live/release.json` against software-live PLAN.md 7.1/7.2, and
+asserts that every releasable member of the committed workspace yields a
+valid matrix.
 
 `release_checks.py glibc-floor [--max 2.35] [--allow <soname>] <binary>` and
 `release_checks.py smoke --binary <path> --version <v> --commit <sha>

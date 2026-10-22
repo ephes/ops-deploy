@@ -14,7 +14,7 @@
           "name": "software-live-apt",
           "glibc_max": "2.39",
           "extra_needed": ["libapt-pkg.so.6.0", "libstdc++.so.6"],
-          "extra_smoke": [["observe", "--max-age", "172800", "--now", "1767225600"]]
+          "extra_smoke": [["observe", "--max-age", "172800", "--now", "4102444800"]]
         }
       ],
       "files": [
@@ -32,7 +32,7 @@
           "name": "software-live-apt",
           "glibc_max": "2.41",
           "extra_needed": ["libapt-pkg.so.7.0", "libstdc++.so.6"],
-          "extra_smoke": [["observe", "--max-age", "172800", "--now", "1767225600"]]
+          "extra_smoke": [["observe", "--max-age", "172800", "--now", "4102444800"]]
         }
       ],
       "files": [

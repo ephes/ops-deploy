@@ -7,8 +7,10 @@ authenticated JSON endpoint that serves them, and their inventory projection.
 [`PLAN.md`](PLAN.md) is the contract; [`TESTMAP.md`](TESTMAP.md) maps every
 Python test to its Rust counterpart.
 
-Nothing here is deployed yet: the role keeps running the Python program
-until its switch slice (PLAN.md 7.3, slice S6) and a release (S7).
+Nothing here is deployed yet: the role can switch to a pinned release
+(PLAN.md 7.3, slice S6), and the release `software-live-v0.1.0` (S7, see
+"Release") exists, but no inventory pins it before S8, so every host keeps
+running the Python program.
 
 ## Status
 
@@ -168,6 +170,33 @@ Slice S3f (`collect`, `src/collect.rs`, `src/usage.rs`):
   call log of every host access), and the state write on a real file
   system. `tests/cli.rs` runs no successful `collect`: it would read the
   host and ask GitHub and endoflife.date.
+
+## Release
+
+The tag `software-live-v<version>` (the version of this crate and of
+`software-live-apt`, which must be equal) makes `.github/workflows/rust-release.yml`
+publish two archives (PLAN.md 7.1, 7.2; settings in
+[`release.json`](release.json), the format in `../README.md` "Releases"):
+
+```text
+software-live-<version>-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz  (+ .sha256)
+software-live-<version>-x86_64-unknown-linux-gnu-debian13.tar.gz     (+ .sha256)
+```
+
+each with exactly `software-live`, `software-live-apt`, `LICENSE` (MIT)
+and `LICENSE.GPL-3.0`. `software-live` is one build on the `ubuntu-22.04`
+runner (glibc ceiling 2.35), the same file in both archives (the variant
+jobs check its sha256 before packing it); `software-live-apt` is built and
+tested inside `ubuntu:24.04` (glibc ≤ 2.39, `libapt-pkg.so.6.0`) or
+`debian:13` (glibc ≤ 2.41, `libapt-pkg.so.7.0`). Every binary's `--version`
+must name the tag's version and commit; the helper also runs `observe` in
+its image. The role pins a version and the sha256 of each variant's archive
+(`software_live_rust_version`, `software_live_rust_sha256`, PLAN.md 7.3);
+no release installs itself.
+
+| Version | Tag | Release |
+|---|---|---|
+| 0.1.0 (S7) | `software-live-v0.1.0` | first release: `validate`, `collect`, `serve`, `export-inventory` |
 
 ## Layout
 

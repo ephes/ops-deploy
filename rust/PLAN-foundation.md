@@ -4,7 +4,8 @@ Status: F1 implemented (workspace, toolchain, cargo-deny policy, LICENSE,
 `metrics-httpd` skeleton, `rust.yml` CI, `build_ignore` test, `just
 rust-check`/`rust-test`; see `rust/README.md`); F2 implemented
 (`rust-release.yml`, `rust/scripts/release_checks.py` with the
-`release.json` format and tests; `rust/README.md` "Releases"); F3 implemented
+`release.json` format and tests; `rust/README.md` "Releases"; the `shared`
+runner build added by software-live S7, section 4); F3 implemented
 (`roles/rust_release_binary` with the `protect` list and the `previous`
 rollback pin, 6.2); F4 implemented in ops-deploy
 (`ops_deploy.helpers.rust_release`, 6.3). Campaign
@@ -281,6 +282,16 @@ Rules:
   — in F2 each variant builds its own `software-live` in its image, with
   the 2.35 ceiling still enforced on it. Adding the shared runner build is
   left to software-live S7 (its 7.4 last paragraph), in this workflow.
+  As implemented in software-live S7: `release.json` may have a second key
+  `shared` (`build`, `binaries`); the job `shared` builds those members once
+  on the `ubuntu-22.04` runner, checks them (`verify`) and passes them as a
+  workflow artifact `shared-<crate>-<version>` with their sha256
+  (`release_checks.py checksums`, a job output) to every variant job, whose
+  `verify` and `pack` require exactly that sha256 (`--shared-bin-dir`,
+  `--shared-sha256`) and check the binary again inside the variant's
+  image. A variant then builds only its own members (`software-live-apt`);
+  without `shared` nothing changes. `rust/software-live/release.json` uses
+  it.
 - Archive: `<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` (with
   variants: `<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`;
   this name wins over any other spelling in a crate plan) holding

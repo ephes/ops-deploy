@@ -9,9 +9,11 @@ of the workspace (MIT). The main binary `software-live` links neither
 libapt-pkg nor this crate; it runs the helper as a child process
 (`software-live/src/apt.rs`).
 
-Nothing installs or runs it yet: the release (S7) packs it into the
-`software-live` archives, the role switch (S6) installs it next to
-`software-live`.
+The release `software-live-v<version>` (S7) packs it, built inside each
+variant's image, into that variant's `software-live` archive
+(`../software-live/README.md` "Release"); the role switch (S6) installs it
+next to `software-live`. No inventory pins a release yet, so nothing runs
+it on a host.
 
 ## Contract
 
