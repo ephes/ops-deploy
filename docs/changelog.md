@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `unifi` existing-install configuration convergence with strict MongoDB/HA
+  admission, secret Java argument file, role-identical unit/route/log templates,
+  change-gated restart and optional UFW rules. No installation, upgrade, database
+  provisioning or lifecycle support; check mode uses a private temporary mongosh
+  HOME. Ansible remains the default until separately authorized live proof.
+
 - Local backups and restore work directories (`nyxmon`, `fastdeploy`,
   `work_app`, `traefik`): new `required_mount` on the backup and restore
   configs and `retain_count`/`retain_days` on the backup configs (new

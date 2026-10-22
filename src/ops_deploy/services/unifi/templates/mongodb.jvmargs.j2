@@ -1,0 +1,3 @@
+# Managed by Ansible (unifi_deploy). Contains MongoDB credentials.
+# Java @argfile read by the {{ unifi_service_name }} service at start-up.
+"-Ddb.mongo.uri={{ ('mongodb://' ~ unifi_mongodb_user ~ ':' ~ unifi_mongodb_password ~ '@' ~ unifi_mongodb_host ~ ':' ~ unifi_mongodb_port ~ '/' ~ unifi_mongodb_database ~ '?authSource=admin') | replace('\\', '\\\\') | replace('"', '\\"') }}"
