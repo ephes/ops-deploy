@@ -205,7 +205,7 @@ The root-run mutations (`chmod`, `chown [-R]`, `mv`, `rm -f` of
 
 | Rust test | What it pins | Status |
 | --- | --- | --- |
-| `tests/mutations.rs` `race_scenarios_of_both_guards` | 47 scenarios: a symlink (or a renamed directory, a hard link, a fifo, a new `mv` target) between `check()` and the change, and at exact points of the walk (hook events `dir`, `stat`, `rename`); names that are not UTF-8 (Linux); the outcome, the reason word for word, the files inside and outside the root afterwards | done (H1) |
+| `tests/mutations.rs` `race_scenarios_of_both_guards` | 49 scenarios (two only when not root: what the guard, as the root's owner, refuses for unreadable entries): a symlink (or a renamed directory, a hard link, a fifo, a new `mv` target) between `check()` and the change, and at exact points of the walk (hook events `dir`, `stat`, `rename`); names that are not UTF-8 (Linux); the outcome, the reason word for word, the files inside and outside the root afterwards | done (H1) |
 | `tests/flow.rs` `mutation_is_made_without_exec` | forced-command mode with a mutation decision: made, `allowed from` line, exit 0, nothing executed; a symlink in its way: refused with the reason, nothing outside changed (Linux) | done (H1) |
 | `tests/mutations.rs` `perform_with_an_empty_hook` | the guard's own call of `perform` (a hook that does nothing) | done (H1) |
 | `tests/common/invariants.rs` (H1 part) | a mutation decision has an empty argv and nothing else; its op, paths, mode and owner; `mv`, `chmod` and `chown` are no longer among the executed tools | done (H1) |

@@ -210,6 +210,9 @@ def run_scenario(guard: Any, tree: dict[str, Any], scenario: dict[str, Any], own
                 errors.append(f"hook never reached: {spec['event']} {spec['path']}")
         return errors + check_after(scenario.get("after", []), sub, before, new_ids)
     finally:
+        for rel, _mode in tree["dirs"]:
+            with contextlib.suppress(OSError):
+                os.chmod(base / rel, 0o700)
         shutil.rmtree(base, ignore_errors=True)
 
 
@@ -220,7 +223,8 @@ def run_all(guard: Any, races_path: Path = RACES) -> tuple[list[str], list[str]]
     failures, skipped = [], []
     for scenario in races["scenarios"]:
         platforms = scenario.get("platforms")
-        if (needs_chown(scenario) and new_ids is None) or (platforms and sys.platform not in platforms):
+        if ((needs_chown(scenario) and new_ids is None) or (platforms and sys.platform not in platforms)
+                or (scenario.get("unprivileged") and os.geteuid() == 0)):
             skipped.append(scenario["id"])
             continue
         for error in run_scenario(guard, races["tree"], scenario, owner, new_ids):

@@ -660,7 +660,11 @@ and each entry.
   `chmod`, `mv` and `rm` run as the root's owner, so they fail where that
   user may not act: `chmod` of a file it does not own, `mv`/`rm` in a
   directory it cannot write (`rename`/`unlink` follow the directory's
-  permissions, not the entry's owner);
+  permissions, not the entry's owner); and because the guard opens every
+  directory on the path and the entry it changes for reading, also `chmod`
+  of a file and `mv`/`rm` in a directory the owner cannot read (mode `0000`,
+  `0300`), which the tools would do (the runners' files and directories are
+  readable by their owner);
   `chown -R` leaves symlinks in the tree as they are (coreutils changed the
   link's own owner); `mv` replaces the target name and never moves into a
   target directory or across filesystems; a failure is `command not

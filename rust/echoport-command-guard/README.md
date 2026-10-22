@@ -212,7 +212,9 @@ in both:
   user for good (`setgroups`, `setgid`, `setuid`) before it starts, so the
   kernel checks them with that user's own rights, also when the user moves
   a directory the guard has already opened out of the root. `chown` needs
-  root and keeps it;
+  root and keeps it. As the owner, the guard also refuses a `chmod` of a
+  file and `mv`/`rm` in a directory that user cannot read (it opens them for
+  reading), which the tools would allow; the runners' files are readable;
 
 - every path is walked from `/` one directory at a time with
   `O_NOFOLLOW|O_DIRECTORY`, so a symlink anywhere on the path, also one
@@ -249,7 +251,7 @@ Paths in the reasons are escaped as Python's `ascii()`, and `chown -R`
 visits names in byte order, so both guards give the same reason and stop at
 the same entry also for names that are not UTF-8.
 
-The race regressions are a table both guards run, `parity/races.json`: 47
+The race regressions are a table both guards run, `parity/races.json`: 49
 scenarios over all four commands, with a symlink (or a renamed directory,
 a hard link, a fifo, a new target) put in place between `check()` and the
 change, and at exact points during the walk through a test hook (`dir`

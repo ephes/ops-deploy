@@ -48,6 +48,8 @@ struct Scenario {
     id: String,
     #[serde(default)]
     platforms: Vec<String>,
+    #[serde(default)]
+    unprivileged: bool,
     command: Option<String>,
     mutation: Option<Value>,
     #[serde(default)]
@@ -190,7 +192,11 @@ fn owners(base: &Path) -> BTreeMap<PathBuf, (u32, u32)> {
     let mut out = BTreeMap::new();
     let mut stack = vec![base.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).unwrap() {
+        // A directory the test made unreadable is skipped, as os.walk does.
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries {
             let path = entry.unwrap().path();
             let meta = fs::symlink_metadata(&path).unwrap();
             out.insert(path.clone(), (meta.uid(), meta.gid()));
@@ -249,9 +255,23 @@ fn run(tree: &Tree, scenario: &Scenario) -> Result<(), String> {
         eprintln!("{}: skipped on {}", scenario.id, std::env::consts::OS);
         return Ok(());
     }
+    if scenario.unprivileged && geteuid().is_root() {
+        eprintln!("{}: skipped as root", scenario.id);
+        return Ok(());
+    }
     let tmp = tempfile::tempdir().unwrap();
     // macOS: /var is a symlink; the guard walks the canonical path.
     let base = fs::canonicalize(tmp.path()).unwrap();
+    let result = run_in(tree, scenario, &base);
+    // Unreadable directories would keep the temp dir from being removed.
+    for (rel, _) in &tree.dirs {
+        let _ = fs::set_permissions(base.join(rel), fs::Permissions::from_mode(0o700));
+    }
+    result
+}
+
+fn run_in(tree: &Tree, scenario: &Scenario, base: &Path) -> Result<(), String> {
+    let base = base.to_path_buf();
     let (owner, new_ids) = chown_target(&base);
     let needs_chown = scenario.mutation.is_some()
         || scenario
