@@ -1,0 +1,11 @@
+// Managed by Ansible (bind_authoritative_deploy)
+// Contains TSIG key material. Kept out of named.conf.options/named.conf.local
+// because those are world-readable; this file is not.
+
+{% for tsig_key in bind_tsig_keys %}
+key "{{ tsig_key.name }}" {
+    algorithm {{ tsig_key.algorithm | default('hmac-sha256') }};
+    secret "{{ tsig_key.secret }}";
+};
+
+{% endfor %}

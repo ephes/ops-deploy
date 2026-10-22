@@ -32,6 +32,7 @@ src/ops_deploy/
                       SSH guard, dpkg foreign architectures
   infra/              shared host services: PostgreSQL (server, config, databases), Redis,
                       Traefik (deploy, backup, restore, remove), certbot DNS-01 lineage
+  infra/bind/         authoritative BIND primary/secondary (port of the bind_authoritative_deploy role, deploy only)
   services/toy/       toy service exercising the pieces above
   services/toyweb/    toy uv/Django service using every helper
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)

@@ -13,7 +13,8 @@ references, the `sync_tree` and `secret_file` operations, deploy helpers
 harness, two toy services, the nyxmon, fastdeploy, delve and thermal monitoring services and host-level
 base deploys (hostname, unit masks, headless mode, journald, authorized keys, uv,
 Node.js, shell basics, SSH guard, dpkg foreign architectures) and the shared host services PostgreSQL, Redis,
-Traefik (deploy, backup, restore, remove) and certbot DNS-01 certificates.
+Traefik (deploy, backup, restore, remove), certbot DNS-01 certificates and
+authoritative BIND.
 
 ## Requirements
 

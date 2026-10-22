@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- `bind`: port of the `bind_authoritative_deploy` role (deploy only),
+  checked against ops-library main `06394c81` (2.64.5), as
+  `ops_deploy.infra.bind` (`BindConfig`, `deploy_bind`; its own "BIND" page).
+  The role's five templates ship unchanged and render as Ansible renders
+  them, so `named.conf`, `named.conf.options`, `named.conf.local` and
+  `named.conf.keys` are byte-identical to files Ansible rendered from the
+  role (`tests/parity/bind_authoritative_deploy/`). A small bash script
+  (`files/bind_config.sh`, standard tools only) compares the files on the
+  host (the TSIG key file only on stdin) and plans nothing on a converged
+  host. Before it changes a file it runs `named-checkzone` on changed zone
+  files (with a greater serial for a changed static zone) and
+  `named-checkconf -t` on a copy of the configuration tree with every
+  candidate in place; only then are the changed files renamed into place in
+  the role's order, so a configuration named rejects is never installed or
+  reloaded. No backups or rollback: an I/O error between renames leaves the
+  files installed so far, as the role would, and the next run completes them;
+  a reload a run never reached is made by the next run (a file newer than
+  named's last configuration load). Dynamic (RFC 2136) zone files are only
+  seeded when neither the file nor its journal exists, and never read,
+  replaced or reset; a lone journal, a journal next to a changing static
+  zone and non-regular managed paths are refused before any change. Adds an
+  opt-in Docker test against real named (`BIND_DOCKER_CONTAINER`, including
+  an `nsupdate` followed by deploys that leave the dynamic zone and its
+  journal untouched) and the role's digest to the drift manifest.
+
 - `traefik_route`: a route file that holds a basic-auth hash, in its new or
   its deployed content, is now written with `secret_file` instead of
   `files.put`, so `--diff` (ops-control's `just pyinfra-check`, `--dry

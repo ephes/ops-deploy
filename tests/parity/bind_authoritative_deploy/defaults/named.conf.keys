@@ -1,0 +1,4 @@
+// Managed by Ansible (bind_authoritative_deploy)
+// Contains TSIG key material. Kept out of named.conf.options/named.conf.local
+// because those are world-readable; this file is not.
+
