@@ -266,14 +266,38 @@ def section_validate(ctx: Context) -> None:
 # serve: start-up configuration
 
 
+def listening_sockets(pid: int) -> set[tuple[str, int]]:
+    """The IPv4 TCP sockets of a process in LISTEN state (``/proc``)."""
+    inodes = set()
+    try:
+        for fd in Path(f"/proc/{pid}/fd").iterdir():
+            try:
+                target = os.readlink(fd)
+            except OSError:
+                continue
+            if target.startswith("socket:["):
+                inodes.add(target[len("socket:[") : -1])
+    except OSError:
+        return set()
+    found = set()
+    for line in Path("/proc/net/tcp").read_text(encoding="ascii").splitlines()[1:]:
+        fields = line.split()
+        if fields[3] != "0A" or fields[9] not in inodes:
+            continue
+        address, port = fields[1].split(":")
+        octets = bytes.fromhex(address)[::-1]
+        found.add((".".join(str(octet) for octet in octets), int(port, 16)))
+    return found
+
+
 def start_outcome(
     argv: list[str], env: dict[str, str], address: list[Any] | None
 ) -> str:
     """``serving``, ``exit <code>`` or ``no listener`` for a ``serve`` start.
 
-    ``serving`` needs a connection to the configured address; only for port
-    0 (an ephemeral port nobody can name) a process still running after the
-    wait counts as serving."""
+    ``serving`` needs a listening socket of the process on the configured
+    address (any port for port 0); a connection would not do, as nothing can
+    connect to 127.255.255.255."""
     process = subprocess.Popen(  # noqa: S603 - the programs under test
         argv,
         stdin=subprocess.DEVNULL,
@@ -282,16 +306,18 @@ def start_outcome(
         env=env,
     )
     try:
-        known_port = bool(address and address[1])
-        deadline = time.monotonic() + (10.0 if known_port else 3.0)
+        deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline:
             code = process.poll()
             if code is not None:
                 return f"exit {code}"
-            if known_port and connectable(address[0], int(address[1])):
-                return "serving"
+            for host, port in listening_sockets(process.pid):
+                if address is None or (
+                    host == address[0] and (port == address[1] or not address[1])
+                ):
+                    return "serving"
             time.sleep(0.02)
-        return "no listener" if known_port else "serving"
+        return "no listener"
     finally:
         stop(process)
 
@@ -312,6 +338,11 @@ def section_config(ctx: Context) -> None:
         # Python serves when its start-up checks pass; an address the
         # container does not have (Tailscale) fails at bind() in both.
         problems = []
+        # A process that neither exits nor listens is a failure on either
+        # side, also when both do it.
+        for side, outcome in (("Python", python), ("Rust", rust)):
+            if outcome == "no listener":
+                problems.append(f"{side} runs but does not listen")
         if case["error"] is not None and python != "exit 1":
             problems.append(
                 f"Python {python}, the fixture says {case['error']['class']}"
