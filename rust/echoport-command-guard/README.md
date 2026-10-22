@@ -22,7 +22,10 @@ default `python`; see its README) and **S7** (release 0.1.0: the lean
 measurements, the security review of the whole crate, the tag; see "Lean
 measurements", "Security review (S7)" and "Release" below) and **H1** (the
 TOCTOU hardening of the root-run mutations in both guards, release 0.2.0;
-see "TOCTOU hardening (H1)" below). Every branch of the Python guard's
+see "TOCTOU hardening (H1)" below) and **S8** (the ops-control wiring: the
+0.2.0 pin, impl `python` on both hosts, `confirm_live.yml` after the
+playbook's post-probe, the rollback switch, the strict shadow compare and
+the runbook; collection floor 2.66.1). Every branch of the Python guard's
 `check()` is ported. What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and

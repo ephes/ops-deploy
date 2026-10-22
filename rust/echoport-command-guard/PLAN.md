@@ -1,6 +1,6 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a, S3b, S4, S5, S6, S7 and H1 implemented (campaign
+Status: S0, S1, S2, S3a, S3b, S4, S5, S6, S7, H1 and S8 implemented (campaign
 "Rust-Ports Runde 2", stream `rust-echoport-command-guard`; see `README.md`).
 S7 released 0.1.0 (tag `echoport-command-guard-v0.1.0` at `5b734af5`, archive
 sha256 `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9`) as a
@@ -10,7 +10,10 @@ mutations are made on file descriptors, `chmod`/`mv`/`rm` as the root's
 owner) and released 0.2.0 (tag `echoport-command-guard-v0.2.0` at
 `966d178e`, archive sha256
 `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`), the
-version S8 pins and S9 installs. Nothing is installed or deployed yet (section 11). This file is the contract for the
+version S8 pins and S9 installs. S8 wired ops-control (6.3: the 0.2.0 pin,
+impl `python` on both hosts, `confirm_live.yml`, the rollback switch, the
+strict shadow compare, the runbook); its floor for `authorize-root-ssh.yml` is
+collection 2.66.1, the first release with both S6 and H1. Nothing is installed or deployed yet (section 11). This file is the contract for the
 implementers and reviewers of every slice below; a slice that wants to deviate
 changes this file first, in its own reviewed diff.
 
@@ -1077,6 +1080,54 @@ The tasks:
 - ops-control main CI is currently red at `test-software-inventory`, which
   is unrelated. S8 runs `just test-echoport-remote-command-guard-policy` and
   the touched tests locally and does not fix the inventory test.
+- **As built (S8):**
+  - The minimum collection of `authorize-root-ssh.yml` is **2.66.1**
+    (`a54ec56f`): the first release whose commit contains both S6 (impl
+    selector, `confirm_live.yml`) and H1 (`966d178e`; its guard role is the
+    same as at S8's merge). 2.65.0 and 2.66.0 contain S6 but not H1, and the
+    floor must exclude a guard with the root-run mutation race (4.5, R12).
+    So S8 needed no collection release of its own (the coordinator release
+    commit of 6.1 and section 11 was already there).
+  - The pin lives in group_vars, so from S8's merge on every run of the
+    playbook, the joint rollout of 6.4 included, installs 0.2.0 next to the
+    Python guard with impl `python` (non-fatal, no switch) and runs
+    `confirm_live.yml`. A run that must not install the Rust guard passes
+    `-e echoport_remote_command_guard_rust_version=` (empty: no Rust step;
+    `confirm_live.yml` still verifies the line). The runbook says so.
+  - The pre-probe's `failed_when` starts with
+    `deploy_backup_route_probe_fatal | bool and`; a failure with the switch
+    off is reported by an ignored failed task with the probe's rc and
+    stderr. The switch is a play variable (only `-e` overrides it) and must
+    be `true` or `false`. The tests run the pre-probe, that warning and the
+    post-probe through `ansible-playbook` on localhost with a fake `ssh`.
+  - `confirm_live.yml` is the last post-task, right after the post-probe,
+    with `when: root_ssh_deploy_backup_key_pinned` only and
+    `echoport_remote_command_guard_confirm_public_key` from the deploy key
+    secret.
+  - The pin test also checks the version and sha256 against this crate's
+    README release table and refuses 0.1.0. The Rust `--check-policy` test
+    renders both policies as `to_nice_json` does and also requires a refusal
+    of a bad policy, so a stub cannot pass.
+  - The compare script (`scripts/echoport_guard_shadow_compare.py`, `just
+    echoport-guard-shadow-compare HOST SINCE ...`) pairs by `_BOOT_ID` and
+    `_PID` with the closest timestamp within `--max-gap` (default 5 s; a
+    long `chown -R` can need more), reads with `journalctl --all` (fields
+    over 4096 bytes are not cut to null), accepts `MESSAGE` as a byte array,
+    and has `--input` (a saved journal export) and `--json` (the report for
+    the deployment record). An allowed shadow record with a Python refusal
+    counts as an **execution refusal**, not a mismatch, only when the record
+    has a redirect (`stdin`/`stdout`) or a `mutation` and the Python reason
+    is one the Python guard gives at that stage for that kind (`open_redirect()`,
+    `become()`, `perform()`), and only the reasons that depend on the tree
+    or the user database at that moment (`perform()`'s `unsafe path` and
+    `unusable`/`unknown mutation` stay mismatches). The tests check these
+    reasons against failures of the real Python guard and against every
+    `check()` refusal of the Layer-1 fixtures: only `not a private
+    directory` and `mv target exists` come from both stages, and both
+    describe the tree at that moment. The shape families of
+    `--require-shapes staging|production` are the S10a and S10b windows of
+    6.5 (staging also one refused probe), each checked against the runner
+    corpus and the live-journal fixtures.
 
 ### 6.4 Ordering with the `.timeout` rollout (item `sqlite-backup-runners-timeout`)
 
@@ -1637,7 +1688,7 @@ Rules, as in the precedents:
 | S6 | Role switch | 6.2: the impl selector, Rust install through F3's role with the permission asserts, dual validate, forced command per impl, `confirm_live.yml` (verify the written line, protect list from the live `authorized_keys`, F3 pin and previous pin, F3 prune with `protect`) with its parse filter and unit test, molecule impl × {Ubuntu 24.04, Debian 13} with a local archive, the rollback-independence case (a broken Rust binary with impl `python` converges), the `pins` scenario (repeated failed deployments with different targets and the other 6.2 cases), README/docs/CHANGELOG (Unreleased). | F3 (install role with `protect` and the previous pin), S4 (CLI surface) | with S2–S5 | no | 5 |
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
 | H1 | TOCTOU hardening (work item `echoport-guard-toctou-hardening`, R12) | 4.5: the root-run mutations (`chmod`, `chown [-R]`, both `mv` forms, `rm -f` of `-wal`/`-shm`) bound to file descriptors opened without following symlinks, in the Python guard first (the oracle; fixtures and `GUARD_SHA256` regenerated), then in the Rust guard; new Layer-1/Layer-2 fixtures and a race regression test; a new release that S8 pins instead of 0.1.0. **Done:** `perform()` / `src/mutate.rs`, `parity/races.json`, release 0.2.0. | S7 | no | no | (H1's own plan) |
-| S8 | ops-control wiring | 6.3: pins (filled after S7, then H1's release), impl `python`, tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
+| S8 | ops-control wiring | 6.3: pins (filled after S7, then H1's release), impl `python`, tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. **Done:** pin 0.2.0, collection floor 2.66.1 (6.3 "As built (S8)"). | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
 | S9 | Install only | 6.5 step 1, staging then production, read-only lean measurement on the hosts. Installs H1's release (0.2.0), never 0.1.0 (R12). | S7, **H1 merged and released**, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
