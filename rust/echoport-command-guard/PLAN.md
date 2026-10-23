@@ -11,7 +11,9 @@ owner) and released 0.2.0 (tag `echoport-command-guard-v0.2.0` at
 `966d178e`, archive sha256
 `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`). A1
 ported the Python guard's `ALTER SCHEMA public OWNER TO "<role>"` form of
-`psql` (the staging refresh after `createdb`) and releases 0.3.0, the
+`psql` (the staging refresh after `createdb`) and released 0.3.0 (tag
+`echoport-command-guard-v0.3.0` at `49e67ffe`, archive sha256
+`15f86397373de6b07517413d92934cbb3cfcfc4d978d63d90023eadb8026de2e`), the
 version S9 pins and installs (0.2.0 refuses that runner command). S8 wired ops-control (6.3: impl `python` on
 both hosts, no Rust pin yet (S9 sets it), `confirm_live.yml`, the rollback switch, the
 strict shadow compare, the runbook); its floor for `authorize-root-ssh.yml` is

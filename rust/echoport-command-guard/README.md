@@ -189,7 +189,7 @@ The role pins a version and that sha256
 |---|---|---|---|
 | 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` (`5b734af5`) | `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9` | 668,632 bytes (0.64 MiB), highest `GLIBC_2.34` |
 | 0.2.0 (H1, TOCTOU hardening; refuses the runners' `ALTER SCHEMA`, so not for S9) | `echoport-command-guard-v0.2.0` (`966d178e`) | `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f` | 705,952 bytes (0.67 MiB), highest `GLIBC_2.34` |
-| 0.3.0 (A1, the `ALTER SCHEMA public OWNER` form; the release S9 pins and installs) | `echoport-command-guard-v0.3.0` | (recorded after the release) | |
+| 0.3.0 (A1, the `ALTER SCHEMA public OWNER` form; the release S9 pins and installs) | `echoport-command-guard-v0.3.0` (`49e67ffe`) | `15f86397373de6b07517413d92934cbb3cfcfc4d978d63d90023eadb8026de2e` | 706,592 bytes (0.67 MiB), highest `GLIBC_2.34` |
 
 ## Security review (S7)
 
