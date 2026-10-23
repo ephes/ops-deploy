@@ -139,7 +139,7 @@ to the Python, Rust and shadow forced commands and compares what happens.
 
 | Test | What it pins | Status |
 | --- | --- | --- |
-| `rules::postgres::tests` | every `_check_postgres` branch (`pg_dump` both forms, `dropdb`, `createdb` both forms, `pg_restore` from a temp dump and the scratch restore with its `< file` redirect, `psql` `SELECT 1` and the three runner queries), with Python's reasons | done (S3a) |
+| `rules::postgres::tests` | every `_check_postgres` branch (`pg_dump` both forms, `dropdb`, `createdb` both forms, `pg_restore` from a temp dump and the scratch restore with its `< file` redirect, `psql` `SELECT 1`, the three runner queries and, since A1, `ALTER SCHEMA public OWNER TO "<role>"` in `public_schema_owner`), with Python's reasons | done (S3a, A1) |
 | `rules::sqlite::tests` | `.backup`, `.timeout` 1/30000/999999 and its refused variants, the integrity check, the per-user snapshot match | done (S3a) |
 | `rules::files::tests` | `rm -f` of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du`, the `sh -c` probe (and that a path `shlex.quote` would change allows no script) | done (S3a) |
 | `rules::tests` | `sudo`, `runuser`, `systemctl`, `curl`, `_is_temp_dump`, `_split_in_dir`; the S3b branches were stubs until S3b | done (S3a) |
@@ -209,3 +209,19 @@ The root-run mutations (`chmod`, `chown [-R]`, `mv`, `rm -f` of
 | `tests/flow.rs` `mutation_is_made_without_exec` | forced-command mode with a mutation decision: made, `allowed from` line, exit 0, nothing executed; a symlink in its way: refused with the reason, nothing outside changed (Linux) | done (H1) |
 | `tests/mutations.rs` `perform_with_an_empty_hook` | the guard's own call of `perform` (a hook that does nothing) | done (H1) |
 | `tests/common/invariants.rs` (H1 part) | a mutation decision has an empty argv and nothing else; its op, paths, mode and owner; `mv`, `chmod` and `chown` are no longer among the executed tools | done (H1) |
+
+## New in A1 (public schema owner after `createdb`, both guards)
+
+The runners send `psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA
+public OWNER TO "<role>"'` right after `createdb` (PLAN.md 3, slice A1).
+New Python tests and their Rust counterparts:
+
+| Python test | Rust counterpart | Status |
+| --- | --- | --- |
+| `GuardAllowsRunnerShapes.test_public_schema_owner_after_createdb` | `unit.jsonl`, `runner.jsonl`, `journal.jsonl` (Layer-1 runner); `rules::postgres::tests::public_schema_owner` (both `sudo` and `runuser`, the role from `restore_databases` rather than the database name) | done (A1) |
+| `GuardRefusals.test_public_schema_owner_only_in_its_exact_shape` | `unit.jsonl` and the `psql-alter` vectors of `mutation/tools.jsonl` (Layer-1 runner); `rules::postgres::tests::public_schema_owner` (each of `unexpected psql arguments`, `psql on '<db>' not allowed` and `psql statement not allowed` in Python's order; the 8-argument `-qAt` form falls into the runner queries) | done (A1) |
+| `RunnerCommandsAreAllowlisted` (the production-DB runners' restore sends the statement after `createdb`) | `runner.jsonl` | done (A1) |
+
+The role's molecule verify sends two refused `ALTER SCHEMA` commands
+(another role; a database outside `restore_databases`) through sshd for
+every impl.

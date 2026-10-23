@@ -1,6 +1,6 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
-Status: S0, S1, S2, S3a, S3b, S4, S5, S6, S7, H1 and S8 implemented (campaign
+Status: S0, S1, S2, S3a, S3b, S4, S5, S6, S7, H1, S8 and A1 implemented (campaign
 "Rust-Ports Runde 2", stream `rust-echoport-command-guard`; see `README.md`).
 S7 released 0.1.0 (tag `echoport-command-guard-v0.1.0` at `5b734af5`, archive
 sha256 `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9`) as a
@@ -9,8 +9,10 @@ parity port with a pre-existing race accepted for that release only (4.5, R12);
 mutations are made on file descriptors, `chmod`/`mv`/`rm` as the root's
 owner) and released 0.2.0 (tag `echoport-command-guard-v0.2.0` at
 `966d178e`, archive sha256
-`24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`), the
-version S9 pins and installs. S8 wired ops-control (6.3: impl `python` on
+`24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`). A1
+ported the Python guard's `ALTER SCHEMA public OWNER TO "<role>"` form of
+`psql` (the staging refresh after `createdb`) and releases 0.3.0, the
+version S9 pins and installs (0.2.0 refuses that runner command). S8 wired ops-control (6.3: impl `python` on
 both hosts, no Rust pin yet (S9 sets it), `confirm_live.yml`, the rollback switch, the
 strict shadow compare, the runbook); its floor for `authorize-root-ssh.yml` is
 collection 2.66.1, the first release with both S6 and H1. Nothing is installed or deployed yet (section 11). This file is the contract for the
@@ -22,7 +24,8 @@ Source of truth for behaviour: the Python guard
 at ops-library `a6ed074e` (2.53.0, 721 lines, sha256 `ca74405e…`), cited below
 as `guard.py:<line>`. H1 changed the Python guard (its mutations, 3.4, 3.5,
 4.5); the line citations stay those of `a6ed074e`, and the H1 code is cited
-by function name (`perform()`, `_require_mutable`). The Python guard is the
+by function name (`perform()`, `_require_mutable`). A1 added one `psql`
+branch to `_check_postgres`, cited by its constant `_PSQL_ALTER_PREFIX`. The Python guard is the
 **oracle** for every decision:
 the Rust guard must not accept anything the Python guard refuses, and must make
 the same decision for everything the runners send. It is a **security
@@ -322,7 +325,12 @@ Three families of decision:
 The shapes the runners send today (journal, last 24 hours) all appear in
 the fixture corpus:
 
-- `sudo -u postgres pg_dump/dropdb/createdb/pg_restore/psql`;
+- `sudo -u postgres pg_dump/dropdb/createdb/pg_restore/psql` (since A1
+  also `psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER TO
+  "<role>"'` right after `createdb`, `<role>` = `restore_databases[<db>]`
+  byte for byte; Python's order: the argument shape (`unexpected psql
+  arguments`), then the database (`psql on '<db>' not allowed`), then the
+  statement (`psql statement not allowed`));
 - `runuser -u postgres -- pg_dump/psql/createdb/pg_restore <`;
 - `runuser -u gotosocial -- sqlite3 … '.backup …'` and `'PRAGMA integrity_check;'`;
 - `systemctl show/start/stop`;
@@ -658,8 +666,8 @@ and each entry.
   (an inode with a single link at that moment), and the service user can
   only bring an inode there, or carry an opened directory away, by renaming
   within directories it can already write, which `chown -R` of its tree
-  covers by design. Its release, 0.2.0, is the
-  one S9 pins and installs. Allowed behaviour differences to the tools
+  covers by design. Its release was 0.2.0; S9 pins and installs a later
+  one with the same code (0.3.0, A1). Allowed behaviour differences to the tools
   the guards ran before, the same in both guards: a symlink anywhere on a
   changed path is refused even when it resolves inside the root; a regular
   file with more than one link, a fifo, socket or device is not changed;
@@ -1097,7 +1105,7 @@ The tasks:
     `echoport_remote_command_guard_rust_version` unset, so every run of the
     playbook skips every Rust step (`confirm_live.yml` still verifies the
     line; without an install root it moves no pin and prunes nothing). **S9
-    adds the pin** (0.2.0 and its archive sha256) to ops-control's
+    adds the pin** (0.3.0, A1, and its archive sha256) to ops-control's
     group_vars; the runbook (`docs/ROOT_SSH_KEY_ROLLOUT.md`, "Install (S9)")
     gives the two lines, and `test_rust_guard_is_not_pinned_before_s9`
     keeps the pin out until S9 replaces it. (S8's first merge, `55fd3d77`,
@@ -1669,7 +1677,7 @@ the coordinator clears with the other production work (6.1).
 | R8 | Collisions with other production work: Traefik ACME (production, until 2026-10-30), the `.timeout` rollout (6.4), opsgate key rotation (macmini only, different playbook). | Coordinator's go for the production steps; the shared deploy lock; 6.4 ordering. |
 | R9 | The foundation (F1–F3) is late or differs from what 8.1 assumes. | S0 needs no foundation slice; S1 adapts to F1's actual layout, S6 to F3's, S7 to F2's; any gap goes back to the foundation stream (`rust-metrics-httpd`), without a parallel pipeline here. |
 | R10 | Public repo: fixtures could leak private data. | Fixtures use only the policies that are already public in the tests, and synthetic stamps; no tailnet addresses (the `SSH_CLIENT` in tests uses a documentation address). |
-| R12 | **Root-run mutations race with a symlink swap** (4.5): `chmod`, `chown [-R]`, `mv` and `rm -f` of `-wal`/`-shm` were checked on the resolved path but executed as root on the original pathname; the root's service user could redirect them outside the root (service user → root). Pre-existing in the Python guard; found by the S7 security review. | **Fixed in H1** (work item `echoport-guard-toctou-hardening`): both guards make these changes themselves on file descriptors (4.5), the Python guard first; new fixtures, the race table `parity/races.json` (both guards, also as root in the Layer-2 containers), Layer-3 and molecule cases, and a dedicated security review of the whole mutation path in both guards. 0.1.0 (accepted for that release only, owner decision 2026-10-21) is never installed; S9 installs 0.2.0. The hosts keep the race until the hardened Python guard is deployed (one joint rollout with the `.timeout` item, 6.4, by the ops coordination). |
+| R12 | **Root-run mutations race with a symlink swap** (4.5): `chmod`, `chown [-R]`, `mv` and `rm -f` of `-wal`/`-shm` were checked on the resolved path but executed as root on the original pathname; the root's service user could redirect them outside the root (service user → root). Pre-existing in the Python guard; found by the S7 security review. | **Fixed in H1** (work item `echoport-guard-toctou-hardening`): both guards make these changes themselves on file descriptors (4.5), the Python guard first; new fixtures, the race table `parity/races.json` (both guards, also as root in the Layer-2 containers), Layer-3 and molecule cases, and a dedicated security review of the whole mutation path in both guards. 0.1.0 (accepted for that release only, owner decision 2026-10-21) is never installed; S9 installs 0.3.0 (0.2.0 plus A1). The hosts keep the race until the hardened Python guard is deployed (one joint rollout with the `.timeout` item, 6.4, by the ops coordination). |
 | R11 | ops-library has no CI today (no `.github/workflows`), and F1's `rust.yml` covers only `rust/`. | `rust.yml` comes with F1 (owner decision 2026-10-21); until then the slices run `cargo test` and `just test-echoport-remote-command-guard` locally and record this in the review. The Ansible/Python suite stays local (`just test`), including the `GUARD_SHA256` comparison (7.2). |
 
 ---
@@ -1709,7 +1717,8 @@ Rules, as in the precedents:
 | S7 | Release 0.1.0 | Lean measurements (8.3), README, security-focused review of the whole crate, tag `echoport-command-guard-v0.1.0` through F2's workflow, archive sha256 recorded. | S5, S6, F2 (release workflow) | with S8 prep | no | 2 |
 | H1 | TOCTOU hardening (work item `echoport-guard-toctou-hardening`, R12) | 4.5: the root-run mutations (`chmod`, `chown [-R]`, both `mv` forms, `rm -f` of `-wal`/`-shm`) bound to file descriptors opened without following symlinks, in the Python guard first (the oracle; fixtures and `GUARD_SHA256` regenerated), then in the Rust guard; new Layer-1/Layer-2 fixtures and a race regression test; a new release that S9 pins instead of 0.1.0. **Done:** `perform()` / `src/mutate.rs`, `parity/races.json`, release 0.2.0. | S7 | no | no | (H1's own plan) |
 | S8 | ops-control wiring | 6.3: impl `python` (no Rust pin: S9 adds it), tests, playbook minimum version, `confirm_live.yml` after the post-probe with its position test, the `deploy_backup_route_probe_fatal` rollback switch with its test, the strict shadow-compare script and its tests, runbooks. **Done:** wiring without a Rust pin (S9 sets it), collection floor 2.66.1 (6.3 "As built (S8)"). | S6 merged plus a collection release commit by the coordinator, S7 (pin values) | prep with S7 | no | 3 |
-| S9 | Install only | Adds the 0.2.0 pin to ops-control's group_vars (6.3 "As built (S8)"), then 6.5 step 1, staging then production, read-only lean measurement on the hosts. Installs H1's release (0.2.0), never 0.1.0 (R12). | S7, **H1 merged and released**, S8, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
+| A1 | Public schema owner after `createdb` (work item `w-staging-refresh-owner`, Rust port `rust-echoport-command-guard`) | The runners send `psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER TO "<role>"'` right after `createdb`; the Python guard allows exactly that shape for `restore_databases` (fixtures and `GUARD_SHA256` regenerated), and the Rust guard ports it in the same merge with Python's order of reasons (3, `rules::postgres`); no allowed difference. **Done:** release 0.3.0. | H1, S8 | no | no | 0.5 |
+| S9 | Install only | Adds the 0.3.0 pin to ops-control's group_vars (6.3 "As built (S8)"), then 6.5 step 1, staging then production, read-only lean measurement on the hosts. Installs A1's release (0.3.0: H1's hardening plus the `ALTER SCHEMA` form the runners send), never 0.1.0 (R12) and not 0.2.0 (it refuses that runner command). | S7, **H1 merged and released**, S8, **A1 released**, 6.4 (`.timeout` item), coordinator go (6.1 scheduling: last in the campaign, no other production/staging change in flight) | no | **yes** | 1.5 |
 | S10a | Shadow, staging | 6.5 step 2, compare report in ops-control `docs/deployments/`. | S9 | no | **yes** | 1.5 + 72 h soak |
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
 | S11a | Cutover, staging, and rollback drills | 6.5 step 4, drills (a)–(c). | S10a (gate), S10b running | no | **yes** | 2 + 72 h soak |
@@ -1725,7 +1734,7 @@ Rules, as in the precedents:
 4. S3b (after S2) ∥ the rest of wave 3.
 5. S5 ∥ S6.
 6. S7 ∥ S8 prep.
-7. H1 (right after S7; must be merged before S9).
+7. H1 (right after S7; must be merged before S9), then A1 (released before S9).
 8. The production chain S9 → S10a → (S10b overlapping) → S11a → S11b → S12
    → S13.
 

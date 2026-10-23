@@ -8,8 +8,11 @@ the Python guard (the root-run `chmod`, `chown`, `mv` and `rm -f` of
 `-wal`/`-shm`, PLAN.md 4.5 and R12) and must never be installed. Version
 0.2.0 is the hardening slice H1 (work item `echoport-guard-toctou-hardening`,
 see "TOCTOU hardening (H1)" below): both guards make those changes
-themselves on file descriptors, and 0.2.0 is the first release a host may
-get (S9).
+themselves on file descriptors. Version 0.3.0 (A1) adds the runners'
+`psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER TO
+"<role>"'` after `createdb` (allowed only for `postgres.restore_databases`
+with `<role>` its value, byte for byte, as in the Python guard); 0.2.0
+refuses that command, so 0.3.0 is the first release a host may get (S9).
 
 Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
 layer), **S3a** (the rules without filesystem), **S3b** (the rules with
@@ -25,7 +28,9 @@ TOCTOU hardening of the root-run mutations in both guards, release 0.2.0;
 see "TOCTOU hardening (H1)" below) and **S8** (the ops-control wiring: the
 impl `python` on both hosts, no Rust pin until S9, `confirm_live.yml` after the
 playbook's post-probe, the rollback switch, the strict shadow compare and
-the runbook; collection floor 2.66.1). Every branch of the Python guard's
+the runbook; collection floor 2.66.1) and **A1** (the public schema owner
+statement of the staging refresh, ported in the same merge as the Python
+guard's form, release 0.3.0). Every branch of the Python guard's
 `check()` is ported. What exists:
 
 - The crate (a member of the `rust/` workspace): the library that decides and
@@ -183,7 +188,8 @@ The role pins a version and that sha256
 | Version | Tag (commit) | Archive sha256 | Stripped binary |
 |---|---|---|---|
 | 0.1.0 (S7, parity port; **never install**, PLAN.md R12) | `echoport-command-guard-v0.1.0` (`5b734af5`) | `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9` | 668,632 bytes (0.64 MiB), highest `GLIBC_2.34` |
-| 0.2.0 (H1, TOCTOU hardening; the release S9 pins and installs) | `echoport-command-guard-v0.2.0` (`966d178e`) | `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f` | 705,952 bytes (0.67 MiB), highest `GLIBC_2.34` |
+| 0.2.0 (H1, TOCTOU hardening; refuses the runners' `ALTER SCHEMA`, so not for S9) | `echoport-command-guard-v0.2.0` (`966d178e`) | `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f` | 705,952 bytes (0.67 MiB), highest `GLIBC_2.34` |
+| 0.3.0 (A1, the `ALTER SCHEMA public OWNER` form; the release S9 pins and installs) | `echoport-command-guard-v0.3.0` | (recorded after the release) | |
 
 ## Security review (S7)
 

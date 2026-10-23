@@ -13,6 +13,8 @@ use crate::tokens::constant_regex;
 
 /// `_PSQL_RUNNER_PREFIX` (`guard.py:63`).
 const PSQL_RUNNER_PREFIX: [&str; 5] = ["-X", "-v", "ON_ERROR_STOP=1", "-qAt", "-d"];
+/// `_PSQL_ALTER_PREFIX`: the public schema owner statement after `createdb`.
+const PSQL_ALTER_PREFIX: [&str; 4] = ["-X", "-v", "ON_ERROR_STOP=1", "-d"];
 /// `_SQL_SERVER_VERSION` (`guard.py:64`).
 const SQL_SERVER_VERSION: &str = "SHOW server_version;";
 
@@ -185,9 +187,31 @@ fn pg_restore(policy: &Policy, rest: &[String]) -> Result<(), Refused> {
     )
 }
 
-/// `psql -d <db> -c 'SELECT 1'` and the read-only queries of
-/// django_chat_staging_db_backup.py.j2 (`guard.py:348-367`).
+/// `psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER TO
+/// "<role>"'`, `psql -d <db> -c 'SELECT 1'` and the read-only queries of
+/// django_chat_staging_db_backup.py.j2 (`guard.py:348-367`; the `ALTER
+/// SCHEMA` branch is cited by its constant `_PSQL_ALTER_PREFIX`).
 fn psql(policy: &Policy, rest: &[String]) -> Result<(), Refused> {
+    if rest.len() == 7 {
+        // Give the restored database's public schema to its owner right
+        // after createdb (createdb copies template1, whose public schema
+        // may still belong to postgres; pg_restore --no-owner leaves it).
+        require(
+            rest[..4] == PSQL_ALTER_PREFIX && rest[5] == "-c",
+            "unexpected psql arguments",
+        )?;
+        let (database, sql) = (&rest[4], &rest[6]);
+        let Some(role) = policy.restore_databases.get(database) else {
+            return Err(Refused::new(format!(
+                "psql on {} not allowed",
+                py_repr(database)
+            )));
+        };
+        return require(
+            *sql == format!("ALTER SCHEMA public OWNER TO \"{role}\""),
+            "psql statement not allowed",
+        );
+    }
     if rest.len() == 4 {
         require(
             rest[0] == "-d" && rest[2..] == ["-c", "SELECT 1"],
@@ -399,6 +423,177 @@ mod tests {
         for (command, expected) in cases {
             assert_eq!(reason(command), expected, "{command}");
         }
+    }
+
+    /// The public schema owner statement after `createdb`: both runner
+    /// forms, the role from `restore_databases` (not the database name),
+    /// and each of Python's three reasons in its order.
+    #[test]
+    fn public_schema_owner() {
+        let alter = |prefix: &str, database: &str, sql: &str| {
+            format!("{prefix} psql -X -v ON_ERROR_STOP=1 -d {database} -c '{sql}'")
+        };
+        for prefix in ["sudo -u postgres", "runuser -u postgres --"] {
+            for (database, role) in [("homepage", "homepage"), ("marina", "marina_owner")] {
+                let command = alter(
+                    prefix,
+                    database,
+                    &format!("ALTER SCHEMA public OWNER TO \"{role}\""),
+                );
+                let tail = [
+                    "psql",
+                    "-X",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-d",
+                    database,
+                    "-c",
+                    &format!("ALTER SCHEMA public OWNER TO \"{role}\""),
+                ]
+                .map(str::to_owned);
+                let head: &[&str] = if prefix.starts_with("sudo") {
+                    &["sudo", "-n", "-u", "postgres", "--"]
+                } else {
+                    &["runuser", "-u", "postgres", "--"]
+                };
+                let mut expected: Vec<String> = head.iter().map(|s| (*s).to_owned()).collect();
+                expected.extend(tail);
+                assert_eq!(decide(&command), Ok(Decision::run(expected)), "{command}");
+            }
+            for (database, sql, expected) in [
+                // Not a restore database: dump-only, scratch, unknown.
+                (
+                    "djangochat",
+                    "ALTER SCHEMA public OWNER TO \"djangochat\"",
+                    "psql on 'djangochat' not allowed",
+                ),
+                (
+                    "djangochat_restore_3",
+                    "ALTER SCHEMA public OWNER TO \"homepage\"",
+                    "psql on 'djangochat_restore_3' not allowed",
+                ),
+                (
+                    "postgres",
+                    "ALTER SCHEMA public OWNER TO \"postgres\"",
+                    "psql on 'postgres' not allowed",
+                ),
+                // The database is checked before the statement.
+                ("template1", "SELECT 1", "psql on 'template1' not allowed"),
+                // The role of another database, or the database name
+                // instead of its role.
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"marina_owner\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "marina",
+                    "ALTER SCHEMA public OWNER TO \"marina\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"postgres\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO homepage",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"homepage\";",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"homepage\" ",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    " ALTER SCHEMA public OWNER TO \"homepage\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "alter schema public owner to \"homepage\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA \"public\" OWNER TO \"homepage\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA pg_catalog OWNER TO \"homepage\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"homepage\"; DROP TABLE x",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"Homepage\"",
+                    "psql statement not allowed",
+                ),
+                (
+                    "homepage",
+                    "ALTER SCHEMA public OWNER TO \"homepage\"\"",
+                    "psql statement not allowed",
+                ),
+                ("homepage", "SELECT 1", "psql statement not allowed"),
+                ("homepage", "", "psql statement not allowed"),
+            ] {
+                let command = alter(prefix, database, sql);
+                assert_eq!(reason(&command), expected, "{command}");
+            }
+            let good = "'ALTER SCHEMA public OWNER TO \"homepage\"'";
+            for args in [
+                format!("-v ON_ERROR_STOP=1 -X -d homepage -c {good}"),
+                format!("-X -v ON_ERROR_STOP=0 -d homepage -c {good}"),
+                format!("-X -v ON_ERROR_STOP=1 --dbname=homepage -c {good}"),
+                format!("-X -v ON_ERROR_STOP=1 -d homepage --command {good}"),
+                format!("-X -v ON_ERROR_STOP=1 -d homepage -f {good}"),
+                format!("-X -v ON_ERROR_STOP=1 -d homepage -c {good} -c {good}"),
+                format!("-X -v ON_ERROR_STOP=1 -d homepage -c {good} -o /tmp/x"),
+                format!("-X -v ON_ERROR_STOP=1 -h evil -d homepage -c {good}"),
+                format!("-X -X -v ON_ERROR_STOP=1 -d homepage -c {good}"),
+                format!("-v ON_ERROR_STOP=1 -d homepage -c {good}"),
+                format!("-X -d homepage -c {good}"),
+                format!("-d homepage -c {good}"),
+                format!("-X -v ON_ERROR_STOP=1 -d homepage {good}"),
+                format!("-X -v ON_ERROR_STOP=1 -d homepage -c {good}; id"),
+                // A wrong prefix is refused before the database is looked at.
+                format!("-X -v ON_ERROR_STOP=0 -d nothere -c {good}"),
+            ] {
+                let command = format!("{prefix} psql {args}");
+                assert_eq!(reason(&command), "unexpected psql arguments", "{command}");
+            }
+        }
+        // Eight arguments are the runner queries' shape, not this one.
+        assert_eq!(
+            reason(
+                "sudo -u postgres psql -X -v ON_ERROR_STOP=1 -qAt -d homepage -c 'ALTER SCHEMA public OWNER TO \"homepage\"'"
+            ),
+            "psql query not allowed"
+        );
+        assert_eq!(
+            reason(
+                "sudo -u homepage psql -X -v ON_ERROR_STOP=1 -d homepage -c 'ALTER SCHEMA public OWNER TO \"homepage\"'"
+            ),
+            "only sudo -u postgres is allowed"
+        );
+        assert_eq!(
+            reason(
+                "runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d homepage -c 'ALTER SCHEMA public OWNER TO \"homepage\"' < /var/tmp/djangochat-restore.Ab12Cd34/db.dump"
+            ),
+            "input redirection not allowed here"
+        );
     }
 
     #[test]
