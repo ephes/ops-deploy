@@ -571,3 +571,258 @@ def test_the_script_is_fish_safe_and_keeps_new_files_private() -> None:
     assert "\\" not in SCRIPT
     assert "os.umask(0o077)" in SCRIPT
     assert 'cur.execute("BEGIN IMMEDIATE")' in SCRIPT
+
+
+# -- removing checks ------------------------------------------------------------------
+
+REMOVED = "Example Retired Check"
+# Nyxmon's tables that hold a check's rows, as its migrations create them.
+DEPENDENT_SCHEMA = """
+CREATE TABLE check_result (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status varchar(10) NOT NULL,
+    data text NOT NULL,
+    health_check_id bigint NOT NULL REFERENCES health_check (id) DEFERRABLE INITIALLY DEFERRED
+);
+CREATE TABLE check_notification_state (
+    check_id integer NOT NULL PRIMARY KEY REFERENCES health_check (id) ON DELETE CASCADE,
+    failure_count integer NOT NULL
+);
+"""
+
+
+def make_remove_cfg(**changes: Any) -> NyxmonSiteChecksConfig:
+    return NyxmonSiteChecksConfig.model_validate(
+        {"service_name": "example-site", "remove_checks": [REMOVED], **changes}
+    )
+
+
+def test_a_removal_only_config_needs_no_checks() -> None:
+    cfg = make_remove_cfg()
+
+    assert cfg.checks == ()
+    assert cfg.remove_checks == (REMOVED,)
+    assert json.loads(checks_json(cfg)) == {"checks": [], "remove": [REMOVED]}
+
+
+def test_without_removals_the_payload_stays_the_playbooks_list() -> None:
+    assert json.loads(checks_json(make_cfg())) == CHECKS
+    both = make_cfg(remove_checks=[REMOVED])
+    assert json.loads(checks_json(both)) == {"checks": CHECKS, "remove": [REMOVED]}
+
+
+@pytest.mark.parametrize(
+    ("remove", "message"),
+    [
+        ([REMOVED, REMOVED], "unique"),
+        ([CHECKS[0]["name"]], "both"),
+        ([""], "remove_checks"),
+        (["   "], "remove_checks"),
+        (["a\nb"], "remove_checks"),
+        (["a\\b"], "remove_checks"),
+        (["x" * 256], "remove_checks"),
+        ([b"Example"], "remove_checks"),
+        ("Example", "remove_checks"),
+    ],
+)
+def test_bad_removals_are_refused(remove: Any, message: str) -> None:
+    with pytest.raises(ConfigValidationError, match=message):
+        make_cfg(remove_checks=remove)
+
+
+def test_neither_checks_nor_removals_is_refused() -> None:
+    with pytest.raises(ConfigValidationError, match="at least one"):
+        make_remove_cfg(remove_checks=[])
+
+
+def test_a_converged_removal_plans_only_the_guard() -> None:
+    run = deploy(make_remove_cfg(), {PROBE: ["changed=false"]})
+
+    assert run.succeeded
+    assert run.mutating_changed_ops == []
+    assert all(op.read_only for op in run.ops)
+
+
+def test_a_pending_removal_runs_one_apply_with_the_names_on_stdin() -> None:
+    cfg = make_remove_cfg()
+    run = deploy(cfg, {PROBE: ["changed=true"]})
+
+    assert run.succeeded
+    assert run.mutating_changed_ops == ["Provision Nyxmon site checks | Upsert Nyxmon checks for example-site"]
+    assert run.stdin[-1] == (site_checks_command(cfg, "apply"), checks_json(cfg) + "\n")
+    assert REMOVED not in " ".join(run.executed_commands)
+
+
+def with_dependents(db: Path) -> Path:
+    with sqlite3.connect(db) as conn:
+        conn.executescript(DEPENDENT_SCHEMA)
+    conn.close()
+    return db
+
+
+def payload_script(
+    db: Path, mode: str, payload: Any, service: str = "example-site"
+) -> subprocess.CompletedProcess[str]:
+    env = {"PATH": os.environ.get("PATH", ""), "NYXMON_DB_PATH": str(db), "NYXMON_SERVICE_NAME": service}
+    return subprocess.run(
+        [sys.executable, "-I", "-c", SCRIPT, mode],
+        env=env,
+        input=json.dumps(payload) + "\n",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+
+def payload_answer(db: Path, mode: str, payload: Any, service: str = "example-site") -> str:
+    result = payload_script(db, mode, payload, service)
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def add_check(db: Path, name: str, service_id: int, status: str = "idle") -> int:
+    with sqlite3.connect(db) as conn:
+        cursor = conn.execute(
+            "INSERT INTO health_check (name, service_id, check_type, url, check_interval, status,"
+            " next_check_time, processing_started_at, disabled, data)"
+            " VALUES (?, ?, 'http', 'https://r.example.invalid/', 300, ?, 7, 0, 0, '{}')",
+            (name, service_id, status),
+        )
+        check_id = cursor.lastrowid
+    conn.close()
+    assert check_id is not None
+    return check_id
+
+
+def add_history(db: Path, check_id: int) -> None:
+    with sqlite3.connect(db) as conn:
+        for status in ("ok", "error"):
+            conn.execute(
+                "INSERT INTO check_result (status, data, health_check_id) VALUES (?, '{}', ?)", (status, check_id)
+            )
+        conn.execute("INSERT INTO check_notification_state (check_id, failure_count) VALUES (?, 1)", (check_id,))
+    conn.close()
+
+
+def table(db: Path, name: str) -> list[tuple[Any, ...]]:
+    with sqlite3.connect(db) as conn:
+        found = conn.execute(f"SELECT * FROM {name} ORDER BY 1").fetchall()
+    conn.close()
+    return found
+
+
+def test_removal_deletes_the_check_its_results_and_its_notification_state(db: Path) -> None:
+    with_dependents(db)
+    answer(db, "apply")
+    sql(db, "INSERT INTO service (name) VALUES ('other')")
+    doomed = add_check(db, REMOVED, 1)
+    namesake = add_check(db, REMOVED, 2)  # the same name in another service stays
+    add_history(db, doomed)
+    add_history(db, namesake)
+    add_history(db, 1)
+    keep = {name: table(db, name) for name in ("health_check", "check_result", "check_notification_state")}
+    before = db.read_bytes()
+    payload = {"checks": CHECKS, "remove": [REMOVED]}
+
+    assert payload_answer(db, "check", payload) == "changed=true"
+    assert db.read_bytes() == before
+    assert payload_answer(db, "apply", payload) == "changed=true"
+
+    assert [row for row in keep["health_check"] if row[0] != doomed] == table(db, "health_check")
+    assert [row for row in keep["check_result"] if row[3] != doomed] == table(db, "check_result")
+    assert [row for row in keep["check_notification_state"] if row[0] != doomed] == table(
+        db, "check_notification_state"
+    )
+    assert len(table(db, "check_result")) == 4
+    assert payload_answer(db, "check", payload) == "changed=false"
+    assert payload_answer(db, "apply", payload) == "changed=false"
+
+
+def test_every_row_of_a_removed_name_goes(db: Path) -> None:
+    with_dependents(db)
+    sql(db, "INSERT INTO service (name) VALUES ('example-site')")
+    first = add_check(db, REMOVED, 1)
+    second = add_check(db, REMOVED, 1)
+    add_history(db, first)
+    add_history(db, second)
+
+    assert payload_answer(db, "apply", {"checks": [], "remove": [REMOVED]}) == "changed=true"
+
+    assert table(db, "health_check") == []
+    assert table(db, "check_result") == []
+    assert table(db, "check_notification_state") == []
+
+
+def test_removal_without_the_dependent_tables_deletes_the_check_row(db: Path) -> None:
+    sql(db, "INSERT INTO service (name) VALUES ('example-site')")
+    add_check(db, REMOVED, 1)
+    add_check(db, "Kept", 1)
+
+    assert payload_answer(db, "apply", {"checks": [], "remove": [REMOVED]}) == "changed=true"
+    assert [row[0] for row in rows(db)] == ["Kept"]
+
+
+def test_an_absent_removal_is_converged_and_never_creates_the_service(db: Path) -> None:
+    payload = {"checks": [], "remove": [REMOVED]}
+
+    assert payload_answer(db, "check", payload) == "changed=false"
+    assert payload_answer(db, "apply", payload) == "changed=false"
+    assert table(db, "service") == []
+    sql(db, "INSERT INTO service (name) VALUES ('example-site')")
+    add_check(db, "Kept", 1)
+    before = db.read_bytes()
+    assert payload_answer(db, "apply", payload) == "changed=false"
+    assert db.read_bytes() == before
+
+
+def test_an_unknown_dependent_table_refuses_the_removal(db: Path) -> None:
+    with_dependents(db)
+    sql(db, "INSERT INTO service (name) VALUES ('example-site')")
+    doomed = add_check(db, REMOVED, 1)
+    add_history(db, doomed)
+    sql(db, "CREATE TABLE check_lease (id INTEGER PRIMARY KEY, check_id bigint REFERENCES health_check (id))")
+    before = db.read_bytes()
+
+    for mode in ("check", "apply"):
+        result = payload_script(db, mode, {"checks": CHECKS, "remove": [REMOVED]})
+        assert result.returncode != 0
+        assert "check_lease.check_id references health_check" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_an_unknown_dependent_table_does_not_block_plain_upserts(db: Path) -> None:
+    sql(db, "CREATE TABLE check_lease (id INTEGER PRIMARY KEY, check_id bigint REFERENCES health_check (id))")
+
+    assert payload_answer(db, "apply", {"checks": CHECKS, "remove": [REMOVED]}) == "changed=true"
+    assert payload_answer(db, "apply", {"checks": CHECKS, "remove": [REMOVED]}) == "changed=false"
+
+
+def test_a_check_claimed_by_an_agent_is_not_removed(db: Path) -> None:
+    with_dependents(db)
+    sql(db, "INSERT INTO service (name) VALUES ('example-site')")
+    add_check(db, REMOVED, 1, status="processing")
+    before = db.read_bytes()
+
+    for mode in ("check", "apply"):
+        result = payload_script(db, mode, {"checks": CHECKS, "remove": [REMOVED]})
+        assert result.returncode != 0
+        assert "being processed" in result.stderr
+    assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"checks": CHECKS, "remove": [CHECKS[0]["name"]]},
+        {"checks": CHECKS, "remove": REMOVED},
+        {"checks": CHECKS, "remove": [1]},
+        {"checks": CHECKS},
+        {"checks": {"name": "x"}, "remove": []},
+    ],
+)
+def test_malformed_payloads_write_nothing(db: Path, payload: Any) -> None:
+    before = db.read_bytes()
+
+    assert payload_script(db, "apply", payload).returncode != 0
+    assert db.read_bytes() == before

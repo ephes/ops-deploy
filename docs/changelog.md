@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `nyxmon_site_checks`: new `remove_checks`, names of checks of the service to
+  delete. A named check goes with its `check_result` and
+  `check_notification_state` rows, as Nyxmon's dashboard deletes one
+  (`HealthCheck.delete()`); a name that is not there is converged. The run
+  refuses before any write when another table references `health_check` or
+  when a check to delete is claimed by an agent (`status='processing'`).
+  `checks` may now be empty when `remove_checks` names a check, and a missing
+  service row is then not created. Configs without `remove_checks` send the
+  same stdin payload (the plain list of checks) and behave as before.
+
 - Add `unifi` existing-install configuration convergence with strict MongoDB/HA
   admission, secret Java argument file, role-identical unit/route/log templates,
   change-gated restart and optional UFW rules. No installation, upgrade, database

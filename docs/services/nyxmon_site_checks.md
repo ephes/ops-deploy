@@ -2,8 +2,8 @@
 
 One Nyxmon service and its health checks, written straight into Nyxmon's
 SQLite database on the Nyxmon host: the service row is created if it is
-missing, and each listed check is inserted or brought back to the listed
-settings. It is the pyinfra counterpart of site-check provisioning playbooks
+missing, each listed check is inserted or brought back to the listed
+settings, and each check named in `remove_checks` is deleted. It is the pyinfra counterpart of site-check provisioning playbooks
 that run on the Nyxmon host only: the monitored sites are never contacted,
 Nyxmon itself is not restarted, and no secrets are involved.
 
@@ -30,6 +30,8 @@ cfg = NyxmonSiteChecksConfig(
     ),
     # Optional: only write the checks once the deployed Nyxmon understands them.
     require_literal={"path": "/home/nyxmon/site/src/nyxmon/domain/http_config.py", "literal": "expected_location"},
+    # Optional: delete checks of this service that are retired.
+    remove_checks=("Example Retired Check",),
 )
 deploy_nyxmon_site_checks(cfg)
 ```
@@ -42,7 +44,8 @@ deploy_nyxmon_site_checks(cfg)
 | `user` | `nyxmon` | user the upsert runs as (`runuser -u`) |
 | `site_path` | `/home/nyxmon/site` | Nyxmon's site directory (informational) |
 | `db_path` | `/home/nyxmon/site/db.sqlite3` | Nyxmon's database; letters, digits, `.`, `_`, `-`, `/` only |
-| `checks` | (required, at least one) | the `health_check` rows, see below; names must be unique |
+| `checks` | `()` | the `health_check` rows, see below; names must be unique |
+| `remove_checks` | `()` | names of the service's checks to delete; unique, plain text (as a check name), none also in `checks`. `checks` and `remove_checks` together must name at least one check |
 | `require_literal` | none | `{path, literal}`: `grep -Fq` must find `literal` in `path` before anything is written |
 
 A check (`SiteCheck`) has `name` (at most 255 characters), `check_type`
@@ -81,10 +84,22 @@ input.
       is not JSON is compared as text) or `disabled` differs is updated,
       re-enabled (`disabled=0`) and reset to `status='idle'`,
       `next_check_time=0`, `processing_started_at=0`;
-    - checks of the service that are not listed, and other services, are
-      left alone.
-   The checks reach the script as JSON on stdin, in the check pass, the
-   upsert and the repeated probe alike: never in an environment variable or
+    - each check of the service named in `remove_checks` (every row with
+      that name) is deleted the way Nyxmon's dashboard deletes one
+      (`HealthCheck.delete()`): its `check_result` and
+      `check_notification_state` rows first (where those tables exist), then
+      the `health_check` row. A name that is not there is converged. Before
+      any write the run stops when another table has a foreign key on
+      `health_check` (a dependent this deploy does not know) or when a check
+      to delete is claimed by an agent (`status='processing'`, whose result
+      would outlive the check); rerun it once the agent is done;
+    - a missing service row is inserted only when there are checks to write:
+      removals alone never create it;
+    - checks of the service that are neither listed nor named in
+      `remove_checks`, and other services, are left alone.
+   The checks reach the script as JSON on stdin (the playbooks' plain list
+   of checks, or `{"checks": [...], "remove": [...]}` when `remove_checks`
+   is set), in the check pass, the upsert and the repeated probe alike: never in an environment variable or
    on a command line, which every local user can read while it runs (check
    data can carry a monitor login). The playbooks' `NYXMON_CHECKS_JSON` is
    gone from the pyinfra path.
@@ -113,6 +128,8 @@ differences:
   that someone else converged the rows between plan and apply.
 - Only `http`, `json-metrics` and `tcp` checks, unique check names and plain
   values are accepted (see above); the playbooks do not validate.
+- `remove_checks` has no playbook counterpart (the playbooks never delete);
+  its operation keeps the name `Upsert Nyxmon checks for <service>`.
 
 ## Tests
 
@@ -130,4 +147,12 @@ differences:
   URL, interval, data type (`10` vs `10.0`) and non-JSON data, re-enabling a
   disabled check, key-order-insensitive data, unlisted checks and other
   services untouched, a missing database never created, and a failed apply
-  rolled back.
+  rolled back. For `remove_checks`: config refusals, the payload (the plain
+  list without removals), the plan (converged: only the guards; pending: one
+  apply), and on a real file with Nyxmon's dependent tables: the check, its
+  results and notification state deleted while the same name in another
+  service, other checks and their rows stay, every row of a name, a database
+  without the dependent tables, an absent name converged without creating
+  the service, refusal (nothing written, both modes) on an unknown table
+  referencing `health_check` or a check being processed, and malformed
+  payloads.

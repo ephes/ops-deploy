@@ -4,10 +4,12 @@ Port of the site-check provisioning playbooks on the private side: a play
 on the Nyxmon host that requires the Nyxmon database (and optionally a
 literal in a deployed Nyxmon source file, so checks that need a newer
 Nyxmon are never written for an older one) and upserts one service row and
-its checks as the Nyxmon user. Nothing else is touched: no service restart,
-no other service's rows, and checks that are not listed stay. The checks
-reach the script on stdin, never on a command line or in an environment
-(check data can carry a monitor login).
+its checks as the Nyxmon user. Checks named in ``remove_checks`` are deleted
+from that service with their results and notification state, as Nyxmon's
+dashboard deletes a check. Nothing else is touched: no service restart, no
+other service's rows, and checks that are neither listed nor named stay.
+The checks reach the script on stdin, never on a command line or in an
+environment (check data can carry a monitor login).
 
 While planning, ``files/site_checks.py check`` runs the apply's comparison
 on a read-only connection; a converged database gets no mutating operation.
@@ -158,21 +160,37 @@ class NyxmonSiteChecksConfig(BaseServiceConfig):
     user: UnixUser = "nyxmon"
     site_path: PurePosixPath = PurePosixPath("/home/nyxmon/site")
     db_path: PlainPath = PurePosixPath("/home/nyxmon/site/db.sqlite3")
-    checks: tuple[SiteCheck, ...] = Field(min_length=1)
+    checks: tuple[SiteCheck, ...] = ()
+    # Names of checks of this service to delete (with their results and
+    # notification state); a name that is not there is already converged.
+    remove_checks: tuple[Annotated[Text, Field(max_length=255)], ...] = ()
     require_literal: SourceLiteral | None = None
 
     @model_validator(mode="after")
     def _unique_check_names(self) -> NyxmonSiteChecksConfig:
+        if not self.checks and not self.remove_checks:
+            raise ValueError("checks or remove_checks must name at least one check")
         names = [check.name for check in self.checks]
         if len(set(names)) != len(names):
             raise ValueError("check names must be unique")
+        if len(set(self.remove_checks)) != len(self.remove_checks):
+            raise ValueError("remove_checks names must be unique")
+        if set(names) & set(self.remove_checks):
+            raise ValueError("a check must not be both in checks and in remove_checks")
         return self
 
 
 def checks_json(cfg: NyxmonSiteChecksConfig) -> str:
-    """The checks in config order, as ``files/site_checks.py`` reads them from stdin."""
+    """The checks in config order, as ``files/site_checks.py`` reads them from stdin.
 
-    return json.dumps([check.as_json() for check in cfg.checks])
+    Without ``remove_checks`` this is the plain list the playbooks pass;
+    with it, an object ``{"checks": [...], "remove": [...]}``.
+    """
+
+    checks = [check.as_json() for check in cfg.checks]
+    if not cfg.remove_checks:
+        return json.dumps(checks)
+    return json.dumps({"checks": checks, "remove": list(cfg.remove_checks)})
 
 
 def site_checks_command(cfg: NyxmonSiteChecksConfig, mode: Literal["check", "apply"]) -> str:

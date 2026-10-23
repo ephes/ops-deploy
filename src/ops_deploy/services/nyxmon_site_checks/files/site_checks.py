@@ -1,7 +1,9 @@
 # Run on the host as the Nyxmon user: ``python3 -I -c <this file> check|apply``
 # with NYXMON_DB_PATH and NYXMON_SERVICE_NAME in the environment and the checks
-# (a JSON list of {name, check_type, url, check_interval, data}) on stdin, never
-# in the environment or the arguments: check data can carry a monitor login.
+# on stdin, never in the environment or the arguments: check data can carry a
+# monitor login. stdin is either a JSON list of checks ({name, check_type,
+# url, check_interval, data}) or an object {"checks": [...], "remove": [...]}
+# whose "remove" names checks of the service to delete.
 #
 # ``apply`` upserts the service row and its checks the way the private
 # site-check provisioning playbooks do: a missing service or check is
@@ -9,9 +11,19 @@
 # disabled all 0); an existing check whose type, url, interval, data (as
 # sorted JSON) or disabled flag differs is updated, re-enabled and reset to
 # 'idle' with next_check_time and processing_started_at 0. Rows of checks
-# that are not listed are left alone. ``check`` runs the same comparison on a
-# read-only connection and writes nothing. Both print "changed=true" when an
-# apply wrote something (or, in check mode, would), else "changed=false".
+# that are neither listed nor named in "remove" are left alone. A missing
+# service row is only inserted when there are checks to write.
+#
+# A check named in "remove" is deleted the way Nyxmon's dashboard deletes one
+# (HealthCheck.delete()): its check_result and check_notification_state rows
+# first, then the health_check row. The run refuses, before any write, when
+# another table references health_check (a dependent this script does not
+# know), or when a check to delete is claimed by an agent (status
+# 'processing'), whose result write would otherwise outlive the check.
+#
+# ``check`` runs the same comparison on a read-only connection and writes
+# nothing. Both print "changed=true" when an apply wrote something (or, in
+# check mode, would), else "changed=false".
 #
 # Intended differences to the playbooks: umask 077 for any file SQLite
 # creates (journal or WAL sidecars), BEGIN IMMEDIATE so the compare and the
@@ -23,6 +35,10 @@ import pathlib
 import sqlite3
 import sys
 
+# The tables (and their column) that hold rows of a health check, as
+# Nyxmon's models cascade them on delete.
+DEPENDENTS = (("check_result", "health_check_id"), ("check_notification_state", "check_id"))
+
 mode = sys.argv[1] if len(sys.argv) == 2 else ""
 if mode not in ("check", "apply"):
     sys.exit("usage: site_checks.py check|apply")
@@ -30,7 +46,17 @@ apply = mode == "apply"
 
 db_path = os.environ["NYXMON_DB_PATH"]
 service_name = os.environ["NYXMON_SERVICE_NAME"]
-checks = json.load(sys.stdin)
+payload = json.load(sys.stdin)
+if isinstance(payload, list):
+    checks = payload
+    remove = []
+else:
+    checks = payload["checks"]
+    remove = payload["remove"]
+if not isinstance(checks, list) or not isinstance(remove, list) or not all(isinstance(n, str) for n in remove):
+    sys.exit("stdin must hold a list of checks, or an object with the lists 'checks' and 'remove'")
+if set(remove) & {check["name"] for check in checks}:
+    sys.exit("a check must not be both listed and removed")
 
 os.umask(0o077)
 uri = pathlib.PurePosixPath(db_path).as_uri() + ("?mode=rw" if apply else "?mode=ro")
@@ -42,14 +68,42 @@ changed = False
 
 cur.execute("SELECT id FROM service WHERE name = ?", (service_name,))
 row = cur.fetchone()
-if row is None:
+service_id = None if row is None else row[0]
+
+doomed = []
+if remove and service_id is not None:
+    for name in remove:
+        cur.execute(
+            "SELECT id, status FROM health_check WHERE service_id = ? AND name = ? ORDER BY id",
+            (service_id, name),
+        )
+        for check_id, status in cur.fetchall():
+            if status == "processing":
+                sys.exit(f"check {check_id} is being processed by an agent; nothing written, run again")
+            doomed.append(check_id)
+
+present = set()
+if doomed:
+    tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()]
+    for table in tables:
+        for fk in cur.execute("SELECT * FROM pragma_foreign_key_list(?)", (table,)).fetchall():
+            if fk[2].lower() == "health_check":
+                if (table, fk[3]) not in DEPENDENTS:
+                    sys.exit(f"{table}.{fk[3]} references health_check; nothing written")
+                present.add((table, fk[3]))
     changed = True
-    service_id = None
+    if apply:
+        for check_id in doomed:
+            for table, column in DEPENDENTS:
+                if (table, column) in present:
+                    cur.execute(f"DELETE FROM {table} WHERE {column} = ?", (check_id,))
+            cur.execute("DELETE FROM health_check WHERE id = ?", (check_id,))
+
+if service_id is None and checks:
+    changed = True
     if apply:
         cur.execute("INSERT INTO service (name) VALUES (?)", (service_name,))
         service_id = cur.lastrowid
-else:
-    service_id = row[0]
 
 for check in checks:
     check_name = check["name"]
