@@ -1,0 +1,6 @@
+#!/bin/bash
+# Managed Forge startup wrapper (minecraft_java_deploy)
+set -euo pipefail
+
+cd "{{ minecraft_java_server_dir }}"
+exec /usr/bin/java @user_jvm_args.txt "@libraries/net/minecraftforge/forge/{{ minecraft_java_forge_version }}/unix_args.txt" nogui "$@"

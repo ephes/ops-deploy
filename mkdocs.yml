@@ -55,4 +55,5 @@ nav:
       - thermal_monitoring: services/thermal_monitoring.md
       - jellyfin: services/jellyfin.md
       - vaultwarden: services/vaultwarden.md
+      - minecraft_java: services/minecraft_java.md
   - Changelog: changelog.md
