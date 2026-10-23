@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `ops_deploy.infra.traefik_tx.engine`: new `rebaseline` action (ops-deploy
+  only; the reference engine refuses it as unknown). On a `clear` record whose
+  identity differs from the live one only in the dynamic route tree hash, and
+  once the baseline probe passes, it writes a new `clear` record with
+  `rebaselined_from`, the previous and new route digests and the names of the
+  added, modified and removed route files (from the last rebaseline's
+  `route-inventory.json` or the previous transaction's `prechange.tar.gz`,
+  each used only when it reproduces the previous digest exactly; otherwise
+  `unavailable`). Pending, recovery and degraded records, any binary, static
+  config, unit or machine drift, no route drift, a failing probe and a change
+  during the probe are refused without writing anything. Never restarts
+  Traefik. Nothing calls it yet. Tests: `tests/test_traefik_tx_rebaseline.py`.
+
 - `ops_deploy.infra.traefik_tx.engine` (new): the host side of the guarded
   Traefik transaction workflow, ported from ops-library's
   `traefik_transaction.py` (3110a0f1) for `inspect`, `binary` and `resume`.

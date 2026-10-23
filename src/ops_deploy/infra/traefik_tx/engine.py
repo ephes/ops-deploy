@@ -1,7 +1,8 @@
 """Fail-closed Traefik binary transactions on a Linux host. Requests are trusted operator policy.
 
 A port of ops-library's transaction engine (``roles/traefik_deploy/files/traefik_transaction.py``
-at 3110a0f1) for the actions ``inspect``, ``binary`` and ``resume``. It runs on the host as
+at 3110a0f1) for the actions ``inspect``, ``binary`` and ``resume``, plus ``rebaseline``, which
+only this engine has. It runs on the host as
 root, with the standard library only, under ``/usr/bin/python3`` 3.11 or newer::
 
     python3 engine.py --request request.json
@@ -9,6 +10,12 @@ root, with the standard library only, under ``/usr/bin/python3`` 3.11 or newer::
 and prints one JSON object. Exit 0: done (``changed`` says whether anything was written);
 1: the transaction failed and was rolled back (``state.phase`` is ``recovery``) or the
 rollback did not verify (``degraded``); 2: refused or an error, with ``error``.
+
+``rebaseline`` reconciles route-only drift without a review: when the record is ``clear`` and
+the live identity differs from it only in ``dynamic_sha256`` (the ``/etc/traefik/dynamic``
+tree that service deploys rewrite), and the baseline probe passes, it writes a new ``clear``
+record for the live identity. Any other drift and any other phase stay with a reviewed
+``resume``.
 
 It keeps the reference engine's state directory, lock, record schema, request format and
 refusal messages, so records written by either engine load unchanged in the other, both
@@ -33,7 +40,8 @@ import tempfile
 import time
 import tomllib
 import uuid
-from pathlib import Path
+import zlib
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 STATE_ROOT = Path("/var/lib/traefik-transactions")
@@ -41,6 +49,10 @@ LOCK = Path("/run/lock/traefik-transaction.lock")
 # The reference engine's actions; only PORTED run here.
 ACTIONS = ("inspect", "enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume")
 PORTED = ("inspect", "binary", "resume")
+# Actions only this engine has; the reference engine refuses them as unknown.
+OWN = ("rebaseline",)
+# Per-file digests of the route tree at the last rebaseline, the basis for the next one's file list.
+ROUTE_INVENTORY = "route-inventory.json"
 PHASES = frozenset({"clear", "pending", "recovery", "degraded"})
 
 
@@ -129,8 +141,8 @@ def version(path: Path) -> tuple[int, int, int]:
     return major, minor, patch
 
 
-def inventory_tree(root: Path) -> str:
-    """Digest of every file below ``root`` (relative path and content); symlinks are refused."""
+def route_files(root: Path) -> list[tuple[str, str]]:
+    """Relative path and SHA256 of every file below ``root``, sorted; symlinks are refused."""
 
     require(root.is_dir() and not root.is_symlink(), f"expected ordinary directory: {root}")
     items = []
@@ -139,7 +151,13 @@ def inventory_tree(root: Path) -> str:
         if path.is_file():
             trusted_file(path)
             items.append((str(path.relative_to(root)), digest(path)))
-    return canonical(items)
+    return items
+
+
+def inventory_tree(root: Path) -> str:
+    """Digest of every file below ``root`` (relative path and content); symlinks are refused."""
+
+    return canonical(route_files(root))
 
 
 def validate_arguments(args: list[bytes], binary: Path, config: Path) -> None:
@@ -341,6 +359,113 @@ def resume(
     return {"changed": True, "state": resumed}
 
 
+def recorded_route_files(dynamic_sha256: str) -> list[tuple[str, str]] | None:
+    """The route files the last rebaseline saw, if they are exactly the tree ``dynamic_sha256`` names."""
+
+    path = STATE_ROOT / ROUTE_INVENTORY
+    try:
+        if not path.exists():
+            return None
+        trusted_file(path)
+        value = json.loads(path.read_text())
+    except (OSError, ValueError, Refused):
+        return None
+    files = value.get("files") if isinstance(value, dict) else None
+    if not isinstance(files, list) or not all(
+        isinstance(item, list) and len(item) == 2 and all(isinstance(part, str) for part in item) for item in files
+    ):
+        return None
+    if canonical(files) != dynamic_sha256:
+        return None
+    return [(name, sha) for name, sha in files]
+
+
+def archived_route_files(record: dict[str, Any], dynamic: str) -> list[tuple[str, str]] | None:
+    """The route files in the record's transaction ``prechange.tar.gz``, if they are its exact tree.
+
+    A ``clear`` record from ``binary`` names its transaction directory, whose archive holds
+    ``/etc/traefik`` as it was when that record's identity was taken.
+    """
+
+    transaction = record.get("transaction")
+    if not isinstance(transaction, str):
+        return None
+    directory = Path(transaction)
+    uuid_name = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    if str(directory.parent) != str(STATE_ROOT) or not re.fullmatch(uuid_name, directory.name):
+        return None
+    prefix = dynamic.lstrip("/") + "/"
+    files: dict[str, str] = {}
+    try:
+        archive = directory / "prechange.tar.gz"
+        trusted_file(archive)
+        with tarfile.open(archive, "r:gz") as bundle:
+            for member in bundle:
+                if member.isfile() and member.name.startswith(prefix):
+                    stream = bundle.extractfile(member)
+                    if stream is None:
+                        return None
+                    content = hashlib.sha256()
+                    while chunk := stream.read(1 << 20):
+                        content.update(chunk)
+                    files[member.name[len(prefix) :]] = content.hexdigest()
+    except (OSError, EOFError, ValueError, tarfile.TarError, zlib.error, Refused):
+        return None
+    # In ``route_files`` order: by path components, as ``sorted`` orders paths ("a/b" before "a.yml").
+    items = sorted(files.items(), key=lambda item: PurePosixPath(item[0]))
+    return items if canonical(items) == record["identity"]["dynamic_sha256"] else None
+
+
+def rebaseline(
+    request: dict[str, Any], policy: dict[str, Any], state: dict[str, Any], live: dict[str, Any], state_path: Path
+) -> dict[str, Any]:
+    """Route-only reconciliation: a new clear record when only the dynamic tree differs and the baseline passes."""
+
+    require(state["phase"] == "clear", "rebaseline requires a clear record; anything else needs a reviewed resume")
+    recorded = state["identity"]
+    require(isinstance(recorded, dict) and isinstance(recorded.get("dynamic_sha256"), str), "invalid recovery state")
+    drift = sorted(
+        key for key in set(recorded) | set(live) if key != "dynamic_sha256" and recorded.get(key) != live.get(key)
+    )
+    require(not drift, f"rebaseline reconciles route drift only; also differs: {', '.join(drift)}")
+    require(recorded.get("dynamic_sha256") != live["dynamic_sha256"], "no route drift to rebaseline")
+    check_probe(request["baseline_probe"])
+    files = route_files(Path(policy["dynamic_path"]))
+    require(canonical(files) == live["dynamic_sha256"], "route tree changed during rebaseline")
+    require(identity(policy) == live, "identity changed during rebaseline probe")
+    basis, before = "route_inventory", recorded_route_files(recorded["dynamic_sha256"])
+    if before is None:
+        basis, before = "prechange_archive", archived_route_files(state, policy["dynamic_path"])
+    if before is None:
+        basis = "unavailable"
+    changed: dict[str, list[str]] | None = None
+    if before is not None:
+        old, new = dict(before), dict(files)
+        changed = {
+            "added": sorted(new.keys() - old.keys()),
+            "modified": sorted(name for name in old.keys() & new.keys() if old[name] != new[name]),
+            "removed": sorted(old.keys() - new.keys()),
+        }
+    # The inventory first: one that does not match the record it follows is ignored next time.
+    save(STATE_ROOT / ROUTE_INVENTORY, {"dynamic_sha256": live["dynamic_sha256"], "files": files})
+    rebaselined = state_for(
+        policy,
+        "clear",
+        live,
+        owner=request["evidence"]["owner"],
+        rebaselined_from=state["revision"],
+        rebaseline={
+            "previous_dynamic_sha256": recorded["dynamic_sha256"],
+            "dynamic_sha256": live["dynamic_sha256"],
+            "changed_files": changed,
+            "changed_files_basis": basis,
+            "review_reference": request["evidence"]["review_reference"],
+        },
+    )
+    save(state_path, rebaselined)
+    return {"changed": True, "state": rebaselined}
+
+
 def replace_binary(
     request: dict[str, Any], policy: dict[str, Any], state: dict[str, Any], live: dict[str, Any], state_path: Path
 ) -> dict[str, Any]:
@@ -443,8 +568,11 @@ def replace_binary(
 def execute(request: dict[str, Any]) -> dict[str, Any]:
     policy, action = request["policy"], request["action"]
     validate_policy(policy)
-    require(action in ACTIONS, "unknown action")
-    require(action in PORTED, f"action not ported to ops-deploy, use the Ansible transaction path: {action}")
+    require(action in ACTIONS or action in OWN, "unknown action")
+    require(
+        action in PORTED or action in OWN,
+        f"action not ported to ops-deploy, use the Ansible transaction path: {action}",
+    )
     state_path = STATE_ROOT / "state.json"
     if action == "inspect":
         return {"identity": identity(policy), "state": load_state(state_path)}
@@ -467,11 +595,15 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
             raise Refused("missing or wrong host enrollment")
         if action == "resume":
             return resume(request, policy, state, live, state_path)
+        if action == "rebaseline":
+            return rebaseline(request, policy, state, live, state_path)
         return replace_binary(request, policy, state, live, state_path)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Guarded Traefik binary transaction (inspect, binary, resume).")
+    parser = argparse.ArgumentParser(
+        description="Guarded Traefik binary transaction (inspect, binary, resume, rebaseline)."
+    )
     parser.add_argument("--request", type=Path, required=True)
     args = parser.parse_args(argv)
     os.umask(0o077)

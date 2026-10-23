@@ -50,7 +50,8 @@ ported.
 
 `ops_deploy.infra.traefik_tx.engine` is the host side of that workflow: a port
 of ops-library's `roles/traefik_deploy/files/traefik_transaction.py` at
-`3110a0f1` for the actions `inspect`, `binary` and `resume`. It is one program,
+`3110a0f1` for the actions `inspect`, `binary` and `resume`, plus a
+`rebaseline` action of its own. It is one program,
 standard library only (under 1,500 lines), that runs as root under
 `/usr/bin/python3` 3.11 or newer:
 
@@ -66,10 +67,12 @@ ops-library's Ansible transaction entry, which runs the reference engine.
 | `inspect` | read-only: the live identity and the host record |
 | `binary` | replaces only the executable with a checksum-pinned release, restarts and verifies; any failure puts the original back |
 | `resume` | reviewed reconciliation: a new `clear` record for the live identity once the baseline probe passes |
+| `rebaseline` | route-only reconciliation without a review: a new `clear` record when only the dynamic tree changed and the baseline probe passes (below); ops-deploy only |
 | `enroll`, `alias`, `metrics_bind`, `acme_storage` | refused before anything is read or written; they stay with the Ansible entry |
 
 **Same state, same records.** State directory `/var/lib/traefik-transactions`
-(`state.json` plus one directory per transaction), lock
+(`state.json`, one directory per transaction and, after a `rebaseline`,
+`route-inventory.json`), lock
 `/run/lock/traefik-transaction.lock` (exclusive, non-blocking `flock`), record
 schema 1 with the phases `clear`, `pending`, `recovery` and `degraded`. Records
 written by either engine load unchanged in the other, a controller journal
@@ -81,7 +84,8 @@ one in ops-library's `TRANSACTIONS.md` (`action`, `policy`, `controller_state`,
 `release.arch` is not read, the caller fetches the archive.
 
 **Output.** One JSON object on stdout. Exit 0: `inspect` prints `identity` and
-`state`; `binary` and `resume` print `changed` and the new record as `state`.
+`state`; `binary`, `resume` and `rebaseline` print `changed` and the new
+record as `state`.
 Exit 1: the binary transaction failed after its `pending` record was written;
 the original binary was put back and verified (`recovery`), or that did not
 verify (`degraded`). Exit 2: refused (always before the binary is touched) or
@@ -119,7 +123,50 @@ an unexpected error, as `error`.
    restart, baseline and cleanup probes: `recovery` with `review_due`; if any of
    that fails: `degraded`. Both wait for a reviewed `resume`.
 
-Differences from the reference engine, on purpose: only the three actions; a
+### Route-only rebaseline
+
+Every service deploy rewrites files in `/etc/traefik/dynamic`, so the dynamic
+tree hash in the live identity soon differs from the host record, and `binary`
+refuses with `active recovery or unreviewed baseline drift` until a reviewed
+`resume`. `rebaseline` reconciles exactly that drift and nothing else (owner
+decision for unattended patch updates). After the common checks (policy, root,
+state directory, lock, host record, live identity, evidence at most an hour old
+and tied to the live identity, controller copy equal to the host record,
+enrollment) it requires, in this order:
+
+1. the record is `clear`; `pending`, `recovery` and `degraded` are refused
+   (`rebaseline requires a clear record; anything else needs a reviewed
+   resume`);
+2. every identity field but `dynamic_sha256` equals the record's: machine ID,
+   binary path, hash and version, static config path and hash, unit hash; any
+   other difference is refused and named (`rebaseline reconciles route drift
+   only; also differs: binary_sha256, version`);
+3. `dynamic_sha256` does differ (`no route drift to rebaseline` otherwise);
+4. the request's `baseline_probe` passes; capturing a fresh probe set for the
+   current routes is the caller's job;
+5. the route tree and the whole identity are unchanged after the probe.
+
+Then it writes `route-inventory.json` (relative path and SHA256 of every route
+file, `0600`) and the new `clear` record for the live identity, with
+`rebaselined_from` (the previous revision), `owner`, and `rebaseline`: the
+previous and new `dynamic_sha256`, the evidence's `review_reference`, and
+`changed_files` (`added`, `modified`, `removed`: file names only, never
+contents). The file names come from the first basis that reproduces the
+previous record's `dynamic_sha256` exactly: the inventory of the last
+rebaseline (`changed_files_basis: route_inventory`), else the route files in
+the `prechange.tar.gz` of the transaction the previous record names
+(`prechange_archive`); with neither, `changed_files` is `null` and the basis
+`unavailable`. Refusals write nothing and leave Traefik alone; a rebaseline
+never restarts Traefik or touches the binary. Exit codes as above (0 or 2).
+
+The reference engine refuses `rebaseline` as `unknown action`, and the Ansible
+controller (`traefik_control.py`) does not offer it; the reference engine loads
+the rebaselined record unchanged and runs `binary` on it.
+`tests/test_traefik_tx_rebaseline.py` covers each refusal, the bases and the
+hand-over to both engines.
+
+Differences from the reference engine, on purpose: only the three actions (and
+`rebaseline`); a
 host record that is valid JSON but not an object is refused as `invalid
 recovery state` (the reference engine stops with an uncaught `AttributeError`);
 `main` takes its arguments for tests.
@@ -127,8 +174,7 @@ recovery state` (the reference engine stops with an uncaught `AttributeError`);
 Not part of the port yet: the transport, with detached execution so a lost
 session cannot interrupt replace, verify and rollback, and a safe-restore unit
 for a killed engine (until then a lost result leaves the record `pending`, as
-with the reference engine); the compatibility proof, route-only rebaselining,
-the probe programs and the release resolver. The pre-change archive stays where
+with the reference engine); the compatibility proof, the probe programs and the release resolver. The pre-change archive stays where
 the reference engine writes it, in the transaction directory on the system
 disk, and is never pruned; its place and retention change before the engine
 runs unattended.
