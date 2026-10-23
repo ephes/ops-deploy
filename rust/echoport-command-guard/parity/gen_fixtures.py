@@ -421,6 +421,9 @@ JOURNAL: dict[str, list[str]] = {
          f"/tmp/echoport_homepage_restore_{RESTORE_STAMP}.dump"),
         ("sudo -u postgres pg_restore --exit-on-error --dbname=python-podcast --no-owner --role=python-podcast "
          f"/tmp/echoport_pp_restore_{RESTORE_STAMP}.dump"),
+        "sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -c 'ALTER SCHEMA public OWNER TO \"homepage\"'",
+        ("sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d python-podcast "
+         "-c 'ALTER SCHEMA public OWNER TO \"python-podcast\"'"),
         "sudo -u postgres psql -d homepage -c 'SELECT 1'",
         "sudo -u postgres psql -d python-podcast -c 'SELECT 1'",
         "systemctl show --property=LoadState --value homepage-db-worker",
@@ -618,6 +621,31 @@ def per_tool_commands() -> dict[str, list[tuple[str, str]]]:
             staging.append(("psql", f"{psql} {database} -c {shlex.quote(sql)}"))
     for sql in ("SELECT 1", "SELECT 1; DROP TABLE x", "SELECT 2", "select 1", "SELECT 1 "):
         staging.append(("psql", f"sudo -u postgres psql -d homepage -c {shlex.quote(sql)}"))
+    # psql: the public schema owner statement after createdb (restore_databases only).
+    alter = "psql -X -v ON_ERROR_STOP=1 -d"
+    for sql in (
+        'ALTER SCHEMA public OWNER TO "homepage"', 'ALTER SCHEMA public OWNER TO "python-podcast"',
+        'ALTER SCHEMA public OWNER TO "postgres"', "ALTER SCHEMA public OWNER TO homepage",
+        'ALTER SCHEMA public OWNER TO "homepage";', 'ALTER SCHEMA public OWNER TO "homepage" ',
+        'ALTER SCHEMA  public OWNER TO "homepage"', 'alter schema public owner to "homepage"',
+        'ALTER SCHEMA "public" OWNER TO "homepage"', 'ALTER SCHEMA pg_catalog OWNER TO "homepage"',
+        'ALTER SCHEMA public OWNER TO "homepage"; DROP TABLE x', 'ALTER SCHEMA public OWNER TO "Homepage"',
+        'ALTER SCHEMA public OWNER TO "homepage""', 'ALTER DATABASE homepage OWNER TO "homepage"', "SELECT 1",
+    ):
+        for database in ("homepage", "python-podcast", "django-chat", "postgres", "django_chat_restore_42"):
+            staging.append(("psql-alter", f"sudo -u postgres {alter} {database} -c {shlex.quote(sql)}"))
+    good = shlex.quote('ALTER SCHEMA public OWNER TO "homepage"')
+    for args in (
+        "-v ON_ERROR_STOP=1 -X -d homepage", "-X -v ON_ERROR_STOP=0 -d homepage",
+        "-X -v ON_ERROR_STOP=1 -qAt -d homepage", "-X -v ON_ERROR_STOP=1 --dbname=homepage",
+        "-X -v ON_ERROR_STOP=1 -h evil -d homepage", "-X -d homepage", "-d homepage",
+    ):
+        staging.append(("psql-alter", f"sudo -u postgres psql {args} -c {good}"))
+    staging.append(("psql-alter", f"sudo -u postgres {alter} homepage --command {good}"))
+    staging.append(("psql-alter", f"sudo -u postgres {alter} homepage -c {good} -c {good}"))
+    staging.append(("psql-alter", f"sudo -u homepage {alter} homepage -c {good}"))
+    staging.append(("psql-alter", f"runuser -u postgres -- {alter} homepage -c {good}"))
+    production.append(("psql-alter", f"sudo -u postgres {alter} homepage -c {good}"))
     # sqlite3 .timeout and .backup (PLAN.md 7.1, test_sqlite_backup_runners.py).
     sqlite = "runuser -u gotosocial -- sqlite3 /var/lib/gotosocial/sqlite.db"
     backup = shlex.quote(f".backup '{GTS_TMP}/sqlite.db'")

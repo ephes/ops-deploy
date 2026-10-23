@@ -1,6 +1,6 @@
 {
   "guard": "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py",
-  "guard_sha256": "0f93ba320f8469866a94ab55fd1bc58e0a76444497d578a6f6ebb3fe5d7ab0d5",
+  "guard_sha256": "229340ece8847626c15afe43e7ff938af1c37657a545c4e9398ee4c6a3eae7a2",
   "decision_files": [
     "fs.jsonl",
     "journal.jsonl",
@@ -21,42 +21,42 @@
   ],
   "cases": {
     "fs.jsonl": 762,
-    "journal.jsonl": 70,
-    "mutation/append.jsonl": 2016,
-    "mutation/characters.jsonl": 2397,
+    "journal.jsonl": 72,
+    "mutation/append.jsonl": 2044,
+    "mutation/characters.jsonl": 2429,
     "mutation/edges.jsonl": 84,
     "mutation/paths.jsonl": 1006,
-    "mutation/requote.jsonl": 1986,
-    "mutation/tokens.jsonl": 1914,
-    "mutation/tools.jsonl": 275,
-    "mutation/vocabulary.jsonl": 1580,
-    "mutation/whitespace.jsonl": 1006,
+    "mutation/requote.jsonl": 2070,
+    "mutation/tokens.jsonl": 2008,
+    "mutation/tools.jsonl": 357,
+    "mutation/vocabulary.jsonl": 1608,
+    "mutation/whitespace.jsonl": 1020,
     "policy.jsonl": 244,
-    "runner.jsonl": 130,
-    "unit.jsonl": 273
+    "runner.jsonl": 132,
+    "unit.jsonl": 322
   },
-  "total": 13743,
+  "total": 14158,
   "accepted": {
     "fs.jsonl": 196,
-    "journal.jsonl": 69,
+    "journal.jsonl": 71,
     "mutation/append.jsonl": 0,
     "mutation/characters.jsonl": 0,
     "mutation/edges.jsonl": 12,
     "mutation/paths.jsonl": 39,
-    "mutation/requote.jsonl": 1909,
+    "mutation/requote.jsonl": 1985,
     "mutation/tokens.jsonl": 18,
-    "mutation/tools.jsonl": 7,
-    "mutation/vocabulary.jsonl": 144,
-    "mutation/whitespace.jsonl": 951,
-    "runner.jsonl": 130,
-    "unit.jsonl": 57
+    "mutation/tools.jsonl": 8,
+    "mutation/vocabulary.jsonl": 146,
+    "mutation/whitespace.jsonl": 961,
+    "runner.jsonl": 132,
+    "unit.jsonl": 59
   },
   "p3": {
-    "prefilter": 2985,
+    "prefilter": 3027,
     "invalid-utf8": 32,
     "python-error": 5,
     "policy-type": 33,
     "policy-trailing-newline": 12
   },
-  "decisions": 13499
+  "decisions": 13914
 }
