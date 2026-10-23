@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `ops_deploy.infra.traefik_release` (new): a pure patch-line release
+  resolver for unattended Traefik binary updates. From a decoded GitHub
+  release list, a `PatchPolicy(line, cooldown_hours)`, the installed version
+  and `now` it picks the newest release `v<line>.<n>` above the installed
+  patch that is neither draft nor prerelease, is at least `cooldown_hours`
+  old, has the Linux archive and `checksums.txt` at their canonical GitHub
+  download URLs and exactly one well-formed sha256 line for the archive (the
+  checksums text comes from an injected callable, newest candidate first).
+  It never downgrades or reinstalls, ignores older lines such as the
+  interleaved 2.11.x and only reports a newer minor or major
+  (`minor_available`). Every passed-over patch is listed with a closed skip
+  reason; bad policy, version or release data raise. Nothing installs from
+  it yet; the transaction workflow stays the only binary write path. Tests
+  use fixtures only (no network). See "Patch-line release resolver" on the
+  Traefik page.
+
 - `nyxmon_site_checks`: new `remove_checks`, names of checks of the service to
   delete. A named check goes with its `check_result` and
   `check_notification_state` rows, as Nyxmon's dashboard deletes one

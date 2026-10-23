@@ -225,3 +225,72 @@ entries is left in it (the role's `find` skips hidden entries; never `/etc`);
 the log directory and log rotation; the UFW rules for the HTTP, HTTPS and
 dashboard ports; every non-hidden `/tmp/traefik*` entry. Each step runs only
 when there is something to remove, so a second run changes nothing.
+
+## Patch-line release resolver
+
+`ops_deploy.infra.traefik_release` decides which Traefik release an
+unattended binary update of a transaction-managed host may install. It is a
+pure function: it neither opens a socket nor reads a file nor the clock, and
+its tests (`tests/test_infra_traefik_release.py`) use fixture release lists
+only. The caller fetches the release list and the checksums text; nothing
+here installs anything, and the guarded transaction workflow above stays the
+only path that changes the binary.
+
+```python
+from datetime import UTC, datetime
+
+from ops_deploy.infra.traefik_release import PatchPolicy, parse_releases, resolve_patch_release
+
+releases = parse_releases(github_json)  # decoded GET /repos/traefik/traefik/releases
+result = resolve_patch_release(
+    releases,
+    PatchPolicy(line="3.7", cooldown_hours=72),
+    installed="3.7.14",
+    now=datetime.now(UTC),
+    fetch_checksums=fetch_text,  # url -> text of traefik_v<version>_checksums.txt
+)
+if result.status == "update":
+    pin = (result.target.version, result.target.archive_url, result.target.sha256)
+```
+
+A release is eligible when:
+
+- its tag is exactly `v<line>.<n>` (no suffix such as `-rc.1`, no leading
+  zeros), it is neither a draft nor a prerelease, and `n` is greater than the
+  installed patch: never a downgrade, never a reinstall;
+- its `published_at` (with a UTC offset) is at least `cooldown_hours` before
+  `now`; the boundary counts as old enough;
+- it has the `traefik_v<version>_linux_<arch>.tar.gz` archive and the
+  `traefik_v<version>_checksums.txt` asset, each at its canonical
+  `https://github.com/traefik/traefik/releases/download/v<version>/` URL;
+- the checksums text has exactly one line naming that archive, and it is a
+  well-formed `<sha256>  <name>` line (an optional `*` before the name;
+  upper-case hex is lowered); a second line for it, or one in another shape,
+  skips the release.
+
+The newest eligible release is chosen, so a host may go from 3.7.14 straight
+to 3.7.16. The checksums text is fetched only for a release that passed every
+other check, newest first, and no more once one yields a digest; an exception
+from `fetch_checksums` propagates unchanged (the caller reports it as
+"unavailable"). The digest is pinned in the result; the host verifies the
+archive against it again.
+
+`Resolution` fields:
+
+| Field | |
+|---|---|
+| `status` | `update` (`target` is set), `cooldown` (nothing is eligible yet, but a newer patch of the line waits out its cooldown) or `current` |
+| `installed` | the parsed installed `Version` |
+| `target` | `Candidate(version, arch, published_at, archive_url, checksums_url, sha256)` or `None` |
+| `minor_available` | a stable release of a newer minor or major (`3.8.0`, `4.0.0`) exists; it is only reported, never a candidate. Changing the line is an owner decision |
+| `skipped` | newer patches of the line that were passed over, newest first, each with a closed reason: `draft`, `prerelease`, `invalid_published_at`, `cooldown`, `missing_archive_asset`, `missing_checksums_asset`, `unexpected_asset_url`, `checksum_entry_missing`, `checksum_entry_ambiguous`, `checksum_entry_malformed` |
+
+Releases of an older line (the interleaved `2.11.x`) are ignored. Refusals
+raise instead of resolving: `PolicyError` for a patch line that is not
+`major.minor`, a `cooldown_hours` that is not an int in `0..8760`, an
+installed version that is not plain `major.minor.patch` or not on the line,
+a naive `now` or an arch other than `amd64`/`arm64`; `ReleaseDataError` for
+a release list that is not the API's shape (a non-string tag or asset field,
+a non-boolean `draft`/`prerelease`, assets that are not a list of objects)
+or that names a version or an asset twice. Entries with any other tag are
+dropped before their other fields are read.
