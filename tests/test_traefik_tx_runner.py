@@ -1134,25 +1134,116 @@ def test_poll_after_the_whole_unit_was_killed(box: Box) -> None:
 
 
 def test_a_safe_restore_starting_during_the_poll_is_not_missed(box: Box) -> None:
-    """The safe-restore unit starts right after the poll looked at the files: still restoring.
+    """The safe-restore unit starts right after systemd answered the poll's query about it.
 
-    Read the other way round (units first), the poll would see the safe-restore's start
-    marker with an inactive unit and take it for a restore that ended, and cleanup
-    would remove the files the starting restore still needs.
+    Its start marker then appears while the unit was reported inactive: taken at face
+    value, a restore that ended without an outcome (final), and cleanup would remove the
+    files the starting restore still needs.
     """
 
     run_killed(box, kill_engine(box))
+    queries = 0
 
     def restore_starts(unit: str) -> None:
-        if unit == R and not (box.dir() / runner.RESTORE_STARTED).exists():
-            runner.write_json(box.dir() / runner.RESTORE_STARTED, {"schema": 1})
+        nonlocal queries
+        if unit == R:
+            queries += 1
+            if queries == 1:  # answered "inactive"; the unit starts right after
+                runner.write_json(box.dir() / runner.RESTORE_STARTED, {"schema": 1})
+            else:
+                box.units[R] = ("loaded", "active")
 
     box.on_show = restore_starts
     assert runner.poll(TX)["status"] == "restoring"
-    box.units[R] = ("loaded", "active")
     with pytest.raises(runner.Refused, match=r"^transaction is still running or restoring$"):
         runner.cleanup(TX)
     assert box.dir().exists()
+
+
+def test_a_run_that_starts_and_fails_during_the_poll_is_not_missed(box: Box) -> None:
+    """The unit writes its start marker, runs and fails right after the poll looked at the files.
+
+    The poll must not take the stale "never started" for a transaction that can be removed.
+    """
+
+    run_killed(box, kill_engine(box))
+    moved = {name: (box.dir() / name).read_bytes() for name in (runner.STARTED, runner.RESULT)}
+    for name in moved:
+        (box.dir() / name).unlink()
+
+    def run_happens(unit: str) -> None:
+        if unit == M and not (box.dir() / runner.STARTED).exists():
+            for name, data in moved.items():
+                (box.dir() / name).write_bytes(data)
+
+    box.on_show = run_happens
+    assert runner.poll(TX)["status"] == "restoring"
+    with pytest.raises(runner.Refused, match=r"^transaction is still running or restoring$"):
+        runner.cleanup(TX)
+    assert box.dir().exists()
+
+
+def test_a_transaction_that_keeps_moving_is_still_in_progress(box: Box) -> None:
+    run_killed(box, kill_engine(box))
+    count = 0
+
+    def restore_progresses(unit: str) -> None:
+        nonlocal count
+        count += 1
+        runner.write_json(box.dir() / runner.RESTORED, {"schema": 1, "step": count})
+
+    box.on_show = restore_progresses
+    assert runner.poll(TX)["status"] == "running"
+    box.on_show = None
+    assert runner.poll(TX)["status"] == "finished"
+
+
+def test_the_transaction_lock(box: Box) -> None:
+    box.stage()
+    held = runner.lock_transport(box.dir(), 0)
+    try:
+        for wait in (0, 0.3):
+            with pytest.raises(runner.Refused, match=r"^transaction is busy$"):
+                runner.lock_transport(box.dir(), wait)
+        with pytest.raises(runner.Refused, match=r"^transaction is busy$"):
+            runner.cleanup(TX)
+        assert box.dir().exists()
+    finally:
+        os.close(held)
+    os.close(runner.lock_transport(box.dir(), 0))
+
+
+def test_a_lock_on_a_removed_or_replaced_directory_refuses(box: Box) -> None:
+    box.stage()
+    real_lstat = os.lstat
+
+    def replaced(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        info = real_lstat(path, *args, **kwargs)
+        if Path(path) == box.dir():
+            return real_lstat(box.transport, *args, **kwargs)  # another directory now
+        return info
+
+    with patch("os.lstat", replaced), pytest.raises(runner.Refused, match=r"^transaction is not staged$"):
+        runner.lock_transport(box.dir(), 0)
+    shutil.rmtree(box.dir())
+    with pytest.raises(runner.Refused, match=r"^transaction is not staged$"):
+        runner.lock_transport(box.dir(), 0)
+
+
+@pytest.mark.parametrize(("main", "wait"), [("run_transaction", 60), ("safe_restore", 60), ("cleanup", 0)])
+def test_the_unit_programs_and_cleanup_hold_the_lock(box: Box, main: str, wait: float) -> None:
+    box.stage()
+    real = runner.lock_transport
+    calls: list[tuple[Path, float]] = []
+
+    def lock(directory: Path, wait: float) -> int:
+        calls.append((directory, wait))
+        return real(directory, 0)
+
+    with patch.object(runner, "lock_transport", lock):
+        getattr(runner, main)(TX)
+
+    assert calls == [(box.dir(), wait)]
 
 
 def test_cleanup_refuses_while_running_or_restoring(box: Box) -> None:

@@ -35,9 +35,11 @@ unit run it. Subcommands, each printing one JSON object (exit 0) or
     it did.
 ``poll ID``
     Read-only: the transaction's status (below) with ``result.json`` and
-    ``safe-restore.json``.
+    ``safe-restore.json``, from marker files that did not change while systemd was asked
+    about the units.
 ``cleanup ID``
-    Remove the transport directory, refused while the transaction is ``running`` or
+    Remove the transport directory under the transaction's lock (which ``run`` and
+    ``safe-restore`` hold while they run), refused while the transaction is ``running`` or
     ``restoring``.
 ``inspect SOURCE``
     Read-only, in the foreground: the engine's ``inspect`` on SOURCE's request.
@@ -261,6 +263,38 @@ def transport_dir(transaction_id: str) -> Path:
     return directory
 
 
+def lock_transport(directory: Path, wait: float) -> int:
+    """Take the transaction's own lock, an exclusive ``flock`` on its directory; the descriptor holds it.
+
+    The unit programs hold it while they run, so cleanup never removes a directory one of
+    them uses, and a program that gets it only after a cleanup finds the directory gone.
+    Waits up to ``wait`` seconds.
+    """
+
+    try:
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        fail("transaction is not staged")
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                fail("transaction is busy")
+            time.sleep(0.1)
+    try:
+        current: os.stat_result | None = os.lstat(directory)
+    except FileNotFoundError:
+        current = None
+    if current is None or not os.path.samestat(os.fstat(fd), current):
+        os.close(fd)
+        fail("transaction is not staged")
+    return fd
+
+
 def load_engine(path: Path) -> Engine:
     """The engine module from ``path`` itself, never from the import path."""
 
@@ -475,6 +509,14 @@ def run_transaction(transaction_id: str) -> int:
     exit_on_stop()
     require_root()
     directory = transport_dir(transaction_id)
+    lock = lock_transport(directory, 60)
+    try:
+        return _run(transaction_id, directory)
+    finally:
+        os.close(lock)
+
+
+def _run(transaction_id: str, directory: Path) -> int:
     require(not (directory / STARTED).exists(), "transaction already started")
     verify_staged(directory)
     # Durable before the engine starts: without it the engine never ran.
@@ -626,16 +668,21 @@ def safe_restore(transaction_id: str) -> dict[str, Any]:
     exit_on_stop()
     require_root()
     directory = transport_dir(transaction_id)
-    begun = {"schema": 1, "id": transaction_id, "invocation_id": os.environ.get("INVOCATION_ID")}
-    write_json(directory / RESTORE_STARTED, {**begun, "started_at": int(time.time())})
+    lock = lock_transport(directory, 60)
     try:
-        outcome = restore(load_engine(directory / ENGINE), directory, read_json(directory / REQUEST), transaction_id)
-    except Exception as exc:
-        # Raised before anything was changed: every failure after a change is caught in restore().
-        outcome = {**skipped("error"), "error": type(exc).__name__}
-    result = {"schema": 1, "id": transaction_id, **outcome, "finished_at": int(time.time())}
-    write_json(directory / RESTORED, result)
-    return result
+        begun = {"schema": 1, "id": transaction_id, "invocation_id": os.environ.get("INVOCATION_ID")}
+        write_json(directory / RESTORE_STARTED, {**begun, "started_at": int(time.time())})
+        try:
+            engine = load_engine(directory / ENGINE)
+            outcome = restore(engine, directory, read_json(directory / REQUEST), transaction_id)
+        except Exception as exc:
+            # Raised before anything was changed: every failure after a change is caught in restore().
+            outcome = {**skipped("error"), "error": type(exc).__name__}
+        result = {"schema": 1, "id": transaction_id, **outcome, "finished_at": int(time.time())}
+        write_json(directory / RESTORED, result)
+        return result
+    finally:
+        os.close(lock)
 
 
 def classify(
@@ -669,6 +716,18 @@ def classify(
     return "staged" if staged else "incomplete"
 
 
+def markers(directory: Path) -> tuple[bool, bool, Any, bool, Any]:
+    """``staged``, ``started``, ``result.json``, ``restore-started``, ``safe-restore.json``."""
+
+    return (
+        (directory / STAGED).exists(),
+        (directory / STARTED).exists(),
+        read_json(directory / RESULT),
+        (directory / RESTORE_STARTED).exists(),
+        read_json(directory / RESTORED),
+    )
+
+
 def poll(transaction_id: str) -> dict[str, Any]:
     directory = TRANSPORT_ROOT / check_id(transaction_id)
     if not os.path.lexists(directory):
@@ -682,14 +741,20 @@ def poll(transaction_id: str) -> dict[str, Any]:
             "safe_restore": None,
         }
     private_dir(directory)
-    # The files first, then the units: a final status needs both units inactive after the files
-    # were read, so a safe-restore that starts in between is never taken for one that ended.
-    staged, started = (directory / STAGED).exists(), (directory / STARTED).exists()
-    result, restore_started = read_json(directory / RESULT), (directory / RESTORE_STARTED).exists()
-    restored = read_json(directory / RESTORED)
-    main = unit_state(main_unit(transaction_id))[1]
-    restoring = unit_state(restore_unit(transaction_id))
-    status = classify(True, main, restoring, staged, started, result, restore_started, restored is not None)
+    # A status only from markers that did not change while systemd was asked about the units:
+    # otherwise a unit that starts, writes a marker or ends in between is missed.
+    status = "running"
+    for _ in range(5):
+        seen = markers(directory)
+        main = unit_state(main_unit(transaction_id))[1]
+        restoring = unit_state(restore_unit(transaction_id))
+        now = markers(directory)
+        if now == seen:
+            staged, started, result, restore_started, restored = now
+            status = classify(True, main, restoring, staged, started, result, restore_started, restored is not None)
+            break
+    # Otherwise the transaction moved on during every look: it is still in progress.
+    staged, started, result, _, restored = now
     return {
         "schema": 1,
         "id": transaction_id,
@@ -703,11 +768,17 @@ def poll(transaction_id: str) -> dict[str, Any]:
 
 def cleanup(transaction_id: str) -> dict[str, Any]:
     require_root()
-    status = poll(transaction_id)["status"]
-    if status == "absent":
+    directory = TRANSPORT_ROOT / check_id(transaction_id)
+    if not os.path.lexists(directory):
         return {"schema": 1, "id": transaction_id, "removed": False}
-    require(status not in ("running", "restoring"), "transaction is still running or restoring")
-    shutil.rmtree(TRANSPORT_ROOT / transaction_id)
+    private_dir(directory)
+    lock = lock_transport(directory, 0)
+    try:
+        status = poll(transaction_id)["status"]
+        require(status not in ("running", "restoring"), "transaction is still running or restoring")
+        shutil.rmtree(directory)
+    finally:
+        os.close(lock)
     return {"schema": 1, "id": transaction_id, "removed": True}
 
 
