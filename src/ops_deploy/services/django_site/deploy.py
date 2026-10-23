@@ -51,7 +51,7 @@ from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.postgres import postgres_database
 from ops_deploy.helpers.probes import probe, verify_probe
 from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
-from ops_deploy.helpers.traefik import DYNAMIC_DIR
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, route_put
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import upsert_target
 from ops_deploy.services.django_site import frontend
@@ -571,13 +571,11 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
             restart_when=[next_mark, built],
         )
     if cfg.route.noindex:
-        files.put(
+        route_put(
             name="Write noindex response middleware",
-            src=StringIO(render("noindex.traefik.yml.j2", cfg)),
+            src=render("noindex.traefik.yml.j2", cfg),
             dest=str(DYNAMIC_DIR / f"{cfg.route_name}-noindex.traefik.yml"),
             mode="0644",
-            user="root",
-            group="root",
         )
 
     # Never a Traefik restart: its file provider watches the directory.

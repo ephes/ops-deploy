@@ -43,6 +43,9 @@ unit run it. Subcommands, each printing one JSON object (exit 0) or
     ``restoring``.
 ``inspect SOURCE``
     Read-only, in the foreground: the engine's ``inspect`` on SOURCE's request.
+``retention SOURCE``
+    In the foreground: ``retention.py`` (next to the engine in SOURCE) on SOURCE's request,
+    a read-only listing of the local rollback set or, with ``apply``, its retention.
 
 Statuses: ``absent`` (no transport directory), ``incomplete`` (staging did not finish),
 ``staged`` (never started), ``running``, ``restoring`` (the safe-restore unit runs or is
@@ -90,6 +93,7 @@ ACTIVE = frozenset({"active", "activating", "deactivating", "reloading", "refres
 TRANSACTION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 
 ENGINE, RUNNER, REQUEST, ARCHIVE = "engine.py", "runner.py", "request.json", "release.tar.gz"
+RETENTION = "retention.py"
 STAGED, STARTED, RESULT = "staged.json", "started.json", "result.json"
 RESTORE_STARTED, RESTORED, ENGINE_STDERR = "restore-started.json", "safe-restore.json", "engine.stderr"
 
@@ -794,6 +798,18 @@ def inspect(source: Path) -> dict[str, Any]:
     return {"schema": 1, "engine_exit": process.returncode, "response": response}
 
 
+def retention(source: Path) -> dict[str, Any]:
+    private_dir(source, parents=False)
+    request = read_json(source / REQUEST)
+    require(isinstance(request, dict) and request.get("action") == "retention", "only retention runs here")
+    process = command(
+        [PYTHON, "-I", str(source / RETENTION), "--request", str(source / REQUEST)], timeout=600, check=False
+    )
+    response = parse_response(process.stdout)
+    require(response is not None, "retention gave no result")
+    return {"schema": 1, "engine_exit": process.returncode, "response": response}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Detached Traefik transactions (host side).")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -806,6 +822,7 @@ def main(argv: list[str] | None = None) -> int:
     starting.add_argument("id")
     starting.add_argument("seconds", type=int)
     commands.add_parser("inspect").add_argument("source", type=Path)
+    commands.add_parser("retention").add_argument("source", type=Path)
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
@@ -821,6 +838,8 @@ def main(argv: list[str] | None = None) -> int:
             result = poll(args.id)
         elif args.command == "cleanup":
             result = cleanup(args.id)
+        elif args.command == "retention":
+            result = retention(args.source)
         else:
             result = inspect(args.source)
     except Refused as exc:

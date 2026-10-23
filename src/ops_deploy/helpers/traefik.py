@@ -11,16 +11,23 @@ Replaces ``webapp_deploy_internal`` ``traefik_config`` and the per-role
   do) would rewrite the file and restart Traefik on every deploy.
 - A route file that holds a hash, now or on the host, is written with
   ``secret_file``: pyinfra's ``--diff`` would print the old and new hash.
+
+Every write or removal of a dynamic file through this module (:func:`traefik_route`,
+:func:`route_put`, :func:`route_absent`) first runs :data:`ROUTE_GUARD_SCRIPT`, which
+refuses while a Traefik transaction holds its host lock (a changed route tree during
+a binary update's acceptance would roll the update back). The guard runs only when the
+operation changes something, so an unchanged deploy stays free of changes.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import re
-from collections.abc import Callable, Generator
+import shlex
+from collections.abc import Callable, Generator, Iterable
 from io import StringIO
 from pathlib import PurePosixPath
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import bcrypt
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -37,6 +44,34 @@ from ops_deploy.core.templates import render
 from ops_deploy.ops.secret_file import secret_file
 
 DYNAMIC_DIR = PurePosixPath("/etc/traefik/dynamic")
+# The transaction engines' host lock (ops-library's and ops_deploy.infra.traefik_tx's).
+TRANSACTION_LOCK = "/run/lock/traefik-transaction.lock"
+
+# $1 the lock file, $2 the kernel's lock table (/proc/locks). Exit 1 while any process
+# holds (or waits for) an flock on the lock file; exit 0 when there is none or no file.
+# It only reads: taking the lock, even shared for an instant, could make a starting
+# transaction refuse. /proc/locks names a lock by the file system's device (hex
+# major:minor) and inode, decoded here from stat's device number as glibc does. No
+# backslashes or single quotes, so pyinfra's sh -c wrapping leaves it unchanged.
+ROUTE_GUARD_SCRIPT = """set -euo pipefail
+lock=$1
+table=$2
+if [ ! -e "$lock" ]; then
+    exit 0
+fi
+read -r dev ino < <(stat -L -c "%d %i" -- "$lock")
+major=$(( ((dev >> 8) & 0xfff) | ((dev >> 32) & ~0xfff) ))
+minor=$(( (dev & 0xff) | ((dev >> 12) & ~0xff) ))
+key=$(printf "%02x:%02x:%d" "$major" "$minor" "$ino")
+while read -r line; do
+    case " $line " in
+        *" FLOCK "*" $key "*)
+            echo "traefik route guard: a Traefik transaction holds $lock; not changing routes" >&2
+            exit 1
+            ;;
+    esac
+done <"$table"
+"""
 BCRYPT_COST = 5  # htpasswd -B default, which the Ansible roles use
 
 # Defaults from the Ansible roles (nyxmon_internal_ip_ranges and friends).
@@ -180,8 +215,44 @@ def render_route(route: TraefikRoute, auth_hash: str | None) -> str:
 RouteRenderer = Callable[[TraefikRoute, str | None], str]
 
 
+def route_guard_command(lock: str = TRANSACTION_LOCK, table: str = "/proc/locks") -> str:
+    """:data:`ROUTE_GUARD_SCRIPT` as one shell command; it fails while ``lock`` is held."""
+
+    return shlex.join(["bash", "-c", ROUTE_GUARD_SCRIPT, "traefik-route-guard", lock, table])
+
+
+def guarded(commands: Iterable[Any]) -> Generator[Any, None, None]:
+    """``commands``, preceded by the transaction-lock guard when there is any to run."""
+
+    items = iter(commands)
+    first = next(items, None)
+    if first is None:
+        return
+    yield StringCommand(route_guard_command())
+    yield first
+    yield from items
+
+
 @operation()
-def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[StringCommand, None, None]:
+def route_put(src: str, dest: str, mode: str = "0644", create_remote_dir: bool = True) -> Generator[Any, None, None]:
+    """``files.put`` of a Traefik dynamic file (root-owned), refused while a transaction holds the lock."""
+
+    yield from guarded(
+        files.put._inner(
+            src=StringIO(src), dest=dest, user="root", group="root", mode=mode, create_remote_dir=create_remote_dir
+        )
+    )
+
+
+@operation()
+def route_absent(path: str) -> Generator[Any, None, None]:
+    """Remove a Traefik dynamic file if present, refused while a transaction holds the lock."""
+
+    yield from guarded(files.file._inner(path=path, present=False))
+
+
+@operation()
+def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[Any, None, None]:
     # The hash depends on the deployed file, so it is resolved inside the
     # operation (per host, at plan and execution time) rather than up front.
     current = host.get_fact(FileContents, path=str(route.path))
@@ -191,9 +262,11 @@ def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[Strin
     text = renderer(route, auth_hash)
     if any(_HASH_MARK.search(line) for line in (*(current or ()), *text.splitlines())):
         # files.put --diff prints both versions: write it like a secret, which never shows content.
-        yield from secret_file._inner(route.path, SecretContent(text), user="root", group="root", mode="0644")
+        yield from guarded(secret_file._inner(route.path, SecretContent(text), user="root", group="root", mode="0644"))
         return
-    yield from files.put._inner(src=StringIO(text), dest=str(route.path), user="root", group="root", mode="0644")
+    yield from guarded(
+        files.put._inner(src=StringIO(text), dest=str(route.path), user="root", group="root", mode="0644")
+    )
 
 
 def traefik_route(

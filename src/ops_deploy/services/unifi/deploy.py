@@ -14,6 +14,7 @@ from pyinfra.operations import files, server, systemd
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import mark_read_only, service_rollout, systemd_unit
 from ops_deploy.helpers.probes import probe, verify_probe
+from ops_deploy.helpers.traefik import route_put
 from ops_deploy.ops import secret_file
 
 from .config import UnifiConfig
@@ -139,7 +140,12 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
             group="root",
             mode="0755",
         )
-        _put(cfg, "unifi.traefik.yml.j2", "/etc/traefik/dynamic/unifi.yml")
+        route_put(
+            name="Configure /etc/traefik/dynamic/unifi.yml",
+            src=render_template(cfg, "unifi.traefik.yml.j2"),
+            dest="/etc/traefik/dynamic/unifi.yml",
+            mode="0644",
+        )
     if cfg.manage_firewall:
         _firewall()
     # Recover an earlier write that failed before daemon-reload, even if the

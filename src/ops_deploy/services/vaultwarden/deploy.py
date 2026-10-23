@@ -48,7 +48,7 @@ from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import http_check, mark_read_only, service_rollout
 from ops_deploy.helpers.probes import probe, stdin_arguments, verify_probe
-from ops_deploy.helpers.traefik import DYNAMIC_DIR
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, route_put
 from ops_deploy.infra._common import codename, directory
 from ops_deploy.ops import secret_file
 
@@ -505,14 +505,7 @@ def deploy_vaultwarden(cfg: VaultwardenConfig, secrets: SecretValues) -> None:
         files.directory(
             name="Ensure Traefik dynamic directory", path=str(DYNAMIC_DIR), user="root", group="root", mode="0755"
         )
-        files.put(
-            name="Write Traefik route vaultwarden",
-            src=StringIO(render_route(cfg)),
-            dest=str(ROUTE),
-            user="root",
-            group="root",
-            mode="0644",
-        )
+        route_put(name="Write Traefik route vaultwarden", src=render_route(cfg), dest=str(ROUTE), mode="0644")
 
     # service.yml and the role's handlers.
     restart = [op for op in (install, env, smtp) if op is not None]

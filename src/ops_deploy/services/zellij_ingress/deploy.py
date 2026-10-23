@@ -18,7 +18,6 @@ from __future__ import annotations
 import ipaddress
 import re
 from functools import cache
-from io import StringIO
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
@@ -29,7 +28,7 @@ from pyinfra.api import deploy
 from pyinfra.operations import files
 
 from ops_deploy.base import RoleConfig
-from ops_deploy.helpers.traefik import DYNAMIC_DIR
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, route_put
 
 TEMPLATE_PACKAGE = "ops_deploy.services.zellij_ingress"
 TEMPLATE = "zellij-traefik.yml.j2"
@@ -198,11 +197,4 @@ def deploy_zellij_ingress(cfg: ZellijIngressConfig) -> None:
         group="root",
         mode="0755",
     )
-    files.put(
-        name="Write Traefik route zellij",
-        src=StringIO(render_route(cfg)),
-        dest=cfg.traefik_config_path,
-        user="root",
-        group="root",
-        mode="0644",
-    )
+    route_put(name="Write Traefik route zellij", src=render_route(cfg), dest=cfg.traefik_config_path, mode="0644")

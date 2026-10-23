@@ -11,12 +11,13 @@ from __future__ import annotations
 import os
 import shlex
 from collections.abc import Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pyinfra.operations import server
 
 from ops_deploy.base._common import output
 from ops_deploy.base._units import ACTIVE, ENABLED, unit_states
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, route_guard_command
 
 COMMON = Path(__file__).parent / "common.sh"
 
@@ -49,9 +50,12 @@ def private_local_dir(path: str) -> None:
 
 
 def remove_path(path: str) -> bool:
+    """Remove ``path`` if it exists; below the Traefik dynamic directory only while no transaction holds its lock."""
+
     if not exists(path):
         return False
-    server.shell(name=f"Remove {path}", commands=[f"rm -rf {shlex.quote(path)}"])
+    guard = [route_guard_command()] if PurePosixPath(path).is_relative_to(DYNAMIC_DIR) else []
+    server.shell(name=f"Remove {path}", commands=[*guard, f"rm -rf {shlex.quote(path)}"])
     return True
 
 
