@@ -16,6 +16,7 @@ from ops_deploy.core.secrets import SecretValues
 from ops_deploy.helpers import mark_read_only, service_rollout, systemd_unit
 from ops_deploy.helpers.probes import probe
 from ops_deploy.ops.secret_file import encode_payload
+from ops_deploy.services._traefik_routes import route_put
 from ops_deploy.services.mastodon.config import MastodonConfig
 from ops_deploy.services.mastodon.render import render, render_env
 
@@ -89,12 +90,10 @@ def deploy_mastodon(cfg: MastodonConfig, secrets: SecretValues) -> None:
             restart_when=[nginx] if component == "nginx" else [],
             always_restart=restart_owed[component],
         )
-    files.put(
+    route_put(
         name="Write Mastodon Traefik route",
-        src=StringIO(content["traefik.yml.j2"]),
+        src=content["traefik.yml.j2"],
         dest="/etc/traefik/dynamic/mastodon.yml",
-        user="root",
-        group="root",
         mode="0644",
         create_remote_dir=False,
     )

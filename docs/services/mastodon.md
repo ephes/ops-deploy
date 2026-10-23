@@ -36,3 +36,9 @@ No live qualification has been performed. A future staging window needs a
 reviewed manifest, verified synchronous Echoport backup, read-only baseline,
 plan, first run, application health and data/key invariants, and an actual
 second run with zero mutations. Registration alone must not switch an engine.
+
+A changed Traefik route uses the shared guarded writer and refuses while a
+Traefik transaction holds or waits for its host lock. An unchanged route runs
+no guard and stays free of mutating operations. This is a read-only check with
+the same bounded race as the other service route writers; coordinate deployment
+and transaction windows as described in the Traefik guide.

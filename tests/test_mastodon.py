@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.helpers.probes import FAILED
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.mastodon import MastodonConfig, deploy_mastodon
 from ops_deploy.services.mastodon.render import SECRET_KEYS, render, render_env, role_vars
 from ops_deploy.testing import run_deploy_fake
@@ -70,9 +71,23 @@ def test_converged_has_zero_mutations_and_no_secret_in_commands() -> None:
     run = run_deploy_fake(deploy_mastodon, cfg=cfg, secrets=secrets(), responses=converged(cfg))
     assert run.succeeded, run.error
     assert run.mutating_changed_ops == []
+    assert route_guard_command() not in run.executed_commands
     assert "fixture-secret-sentinel" not in repr(run.events)
     assert "fixture-secret-sentinel" not in repr(run.ops)
     assert not any("db:migrate" in command or "assets:precompile" in command for command in run.executed_commands)
+
+
+def test_transaction_lock_refuses_changed_route_before_upload() -> None:
+    cfg = config()
+    facts = {
+        **converged(cfg),
+        **fakehost.file("/etc/traefik/dynamic/mastodon.yml", "old route\n"),
+        "traefik-route-guard": {"success": False},
+    }
+    run = run_deploy_fake(deploy_mastodon, cfg=cfg, secrets=secrets(), responses=facts)
+    assert not run.succeeded
+    assert route_guard_command() in run.executed_commands
+    assert run.uploaded_paths == []
 
 
 def test_admission_failure_plans_no_operation() -> None:

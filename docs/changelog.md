@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Mastodon configuration convergence now refuses a changed Traefik route while
+  a transaction holds its host lock, through the existing guarded route writer.
+  An unchanged route runs no guard and remains free of mutations.
+
 - Traefik rollback set (`ops_deploy.infra.traefik_tx`): an optional policy key
   `rollback_archive` (`root` below `mount`) makes the engine's `binary` write
   its full pre-change archive to `<root>/<transaction>.tar.gz` on an external
