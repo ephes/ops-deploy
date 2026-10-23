@@ -71,6 +71,7 @@ RSYNC_SERVER_ARGS = {
 }
 
 _PSQL_RUNNER_PREFIX = ["-X", "-v", "ON_ERROR_STOP=1", "-qAt", "-d"]
+_PSQL_ALTER_PREFIX = ["-X", "-v", "ON_ERROR_STOP=1", "-d"]
 _SQL_SERVER_VERSION = "SHOW server_version;"
 _SQL_DB_EXISTS_RE = re.compile(r"^SELECT 1 FROM pg_database WHERE datname = '([a-z0-9_]+)';$")
 _SQL_COUNT_RE = re.compile(r"^SELECT count\(\*\) FROM public\.[a-z_][a-z0-9_]*;$")
@@ -394,6 +395,19 @@ def _check_postgres(policy: Policy, args: list[str], stdin_path: str | None) -> 
         _require(_is_temp_dump(policy, dump_file, ("restore",)), f"pg_restore source not allowed: {dump_file!r}")
         return None
     if tool == "psql":
+        if len(rest) == 7:
+            # Give the restored database's public schema to its owner right
+            # after createdb (createdb copies template1, whose public schema
+            # may still belong to postgres; pg_restore --no-owner leaves it).
+            _require(
+                rest[:4] == _PSQL_ALTER_PREFIX and rest[5] == "-c",
+                "unexpected psql arguments",
+            )
+            database, sql = rest[4], rest[6]
+            role = policy.restore_databases.get(database)
+            _require(role is not None, f"psql on {database!r} not allowed")
+            _require(sql == f'ALTER SCHEMA public OWNER TO "{role}"', "psql statement not allowed")
+            return None
         if len(rest) == 4:
             _require(rest[0] == "-d" and rest[2:] == ["-c", "SELECT 1"], "unexpected psql arguments")
             _require(
