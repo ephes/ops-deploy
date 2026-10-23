@@ -331,7 +331,7 @@ real_run = engine.run
 def host(tmp_path: Path) -> ProofHost:
     previous = os.umask(0o022)
     try:
-        return ProofHost(tmp_path)
+        return ProofHost(tmp_path.resolve())  # no symlink in the paths (macOS: /var -> /private/var)
     finally:
         os.umask(previous)
 
@@ -769,6 +769,7 @@ def test_log_directories_that_cannot_be_replaced_are_refused(tmp_path: Path, pat
 
 
 def test_acme_stores_are_the_approved_existing_ones(tmp_path: Path) -> None:
+    tmp_path = tmp_path.resolve()
     (tmp_path / "acme.json").write_text("{}")
     (tmp_path / "other.json").write_text("{}")
     static = {
@@ -801,6 +802,7 @@ def test_acme_stores_are_the_approved_existing_ones(tmp_path: Path) -> None:
 def test_acme_stores_outside_the_policy_are_refused(
     tmp_path: Path, storage: str | None, approved: list[str], error: str
 ) -> None:
+    tmp_path = tmp_path.resolve()
     (tmp_path / "dir").mkdir()
     acme = {} if storage is None else {"storage": storage.format(root=tmp_path)}
     static = {"certificatesResolvers": {"le": {"acme": acme}}}
@@ -808,6 +810,22 @@ def test_acme_stores_outside_the_policy_are_refused(
 
     with pytest.raises(engine.Refused, match=f"^{error.format(root=tmp_path)}$"):
         proof.acme_stores(static, policy, tmp_path)
+
+
+@pytest.mark.parametrize("link", ["directory", "leaf", "dangling leaf"])
+def test_an_acme_store_path_through_a_symlink_is_refused(tmp_path: Path, link: str) -> None:
+    root = tmp_path.resolve()
+    (root / "real").mkdir()
+    (root / "real" / "acme.json").write_text("{}")
+    if link == "directory":
+        (root / "link").symlink_to(root / "real")
+        store = root / "link" / "absent.json"
+    else:
+        store = root / "acme.json"
+        store.symlink_to(root / "real" / ("acme.json" if link == "leaf" else "absent.json"))
+
+    with pytest.raises(engine.Refused, match=f"^ACME store path is not canonical: {re.escape(str(store))}$"):
+        proof.acme_stores({}, {"acme_paths": [str(store)]}, root)
 
 
 def test_routers_are_shown_with_their_kind_when_needed() -> None:
