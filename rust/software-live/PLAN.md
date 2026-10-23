@@ -32,14 +32,19 @@ S8 implemented in ops-control (7.5: the pin of 0.1.0 in
 collection gate 2.65.0 and the shadow check of 8.1 in
 `playbooks/deploy-software-live.yml`, the runbook section "Rust port" of
 `docs/SOFTWARE_LIVE.md`, `tests/test_software_live_rust.py`);
-S9 in progress (`parity/shadow_compare.py`, 6.3; the shadow of 8.1 runs on
-all four hosts since 2026-10-22, see ops-control `docs/SOFTWARE_LIVE.md`;
-measurements in section 10; the at least 24 h evaluation is open);
+S9 done (`parity/shadow_compare.py`, 6.3; the shadow of 8.1 ran on all
+four hosts from 2026-10-22, with 0.1.1 from 10:27–10:30 UTC; the 24 h
+evaluation passed on 2026-10-23, figures in section 10);
 S9b implemented (collector CPU: the Traefik binary hashed once per
 attempt with `ring`'s SHA-256, 4.2 item 15; benchmark and budget
 decisions of 2026-10-22 in section 10; release `software-live-v0.1.1`
 from commit `2f6091e9`, archive sha256 in 7.2; the ops-control pin is
 moved by S9);
+S10 done except one drill check (cutover of all four hosts to 0.1.1 on
+2026-10-23 with the rollback drill on staging, shadow off afterwards; report
+in section 10; open: Python reading caches the Rust program wrote, 8.4, after
+the first daily cache refresh by Rust; the 7-day soak of 8.5 runs from the
+last cutover, production 13:33 UTC);
 S11 implemented in ops-control (the manual CLI `scripts/software-live.py`
 runs the installed release on hosts with impl `rust`, 7.5 and 4.2 item 10;
 `tests/test_software_live.py`, `docs/SOFTWARE_LIVE.md` "Manual checks");
@@ -1780,9 +1785,119 @@ unchanged) and as fast as `aws-lc-rs`, which would add a second C crypto
 library to the build for no gain; `sha2` 0.11 has no assembly backend and
 `opt-level = 3` gains it only 5 %.
 
-Measured again in S10 (after the cutover), recorded in the S10 report. If glibc malloc arenas push the endpoint over budget,
+S9 evaluation (2026-10-23, release 0.1.1 in the shadow for 24 h on every
+host, window 2026-10-22 10:38 to 2026-10-23 10:38 UTC): passed (8.1, 8.2).
+On every host 96 of 96 shadow collector runs exited 0 (96 starts, 96
+`Deactivated successfully`, no `Failed`), as did the 96 production runs;
+`journalctl -u 'software-live*' -p warning` had no entry; the production
+units still ran Python (no drop-ins) and the Nyxmon checks "Software health
+(HOST)" stayed `warning` on all four hosts in all 25 hourly results of the
+window (Traefik drift on staging, macmini and production, pending security
+updates on fractal and production: real findings, the same in both
+programs). `shadow_compare.py` gave `match` (exit 0) on every host at 10:39
+and 11:12 UTC, with no difference beyond time and cache fields; no sample of
+the period was `mismatch` or `inconclusive` (none was recorded before these
+two). The shadow endpoints ran 24 h without a restart.
+
+| Host | Collector CPU per run, Python (journal, n = 96, min / median / max) | Rust `collect` CPU (usage line, n = 96, min / median / max) | Python / Rust incl. export (unit `CPUUsageNSec`, 2 runs) | Collector peak Python / Rust (cgroup, 2 runs) | Endpoint `MemoryCurrent` / `RssAnon` Python / Rust after 24 h |
+| --- | --- | --- | --- | --- | --- |
+| staging | 1.55 / 1.59 / 1.69 s | 0.69 / 0.72 / 0.78 s | 1.68, 1.65 / 0.79, 0.78 s | 80.4, 80.6 / 60.0, 60.0 MiB | 13.96 MiB, 13.7 MiB / 0.54 MiB, 0.37 MiB |
+| macmini | 1.84 / 1.90 / 2.13 s | 0.77 / 0.80 / 1.13 s | 1.91, 1.88 / 0.89, 0.90 s | 98.5, 98.7 / 74.8, 75.1 MiB | 13.21 MiB, 12.9 MiB / 1.00 MiB, 0.36 MiB |
+| fractal | below 1 s (not logged) | 0.11 / 0.23 / 0.51 s | 0.51, 0.52 / 0.26, 0.26 s | 93.6, 93.3 / 70.1, 70.0 MiB | 13.17 MiB, 12.9 MiB / 0.54 MiB, 0.36 MiB |
+| production | 1.36 / 1.40 / 1.49 s | 0.75 / 0.77 / 0.82 s | 1.47, 1.47 / 0.83, 0.81 s | 95.9, 96.0 / 73.5, 73.1 MiB | 13.96 MiB, 13.0 MiB / 0.57 MiB, 0.39 MiB |
+
+The Python column is systemd's `Consumed … CPU time` line, which systemd
+logs at info level only for a run of at least 1 s CPU (systemd 257 on
+staging also for a memory peak of at least 64 MiB; systemd 255 on the
+Ubuntu hosts does not, so fractal's Python runs, about 0.5 s, are not in
+the journal). No shadow run on staging, fractal and production was logged
+(each took less than 1 s including the export, and on staging peaked below
+64 MiB); on macmini 10 of 96 were (1.01–1.25 s, against Python's minimum
+of 1.84 s there). The 2-run columns are the runs of
+10:45–11:07 UTC, the cgroup's `memory.peak` sampled every 20 ms during each
+run (on staging equal to systemd's `MemoryPeak`). With 0.1.1 the Rust
+collector uses 47–56 % of Python's CPU per run on every host (the S10 gate
+of section 10: met) and its peak is 24–25 % below Python's (the
+re-baselined budget: met); the expected 0.7 s on staging and 0.8 s on
+macmini were measured. The endpoint rows stay far inside their budgets.
+
+If glibc malloc arenas push the endpoint over budget,
 `Environment=MALLOC_ARENA_MAX=2` goes into the drop-in before another
-allocator is considered.
+allocator is considered (not needed: see the S10 report).
+
+S10 report (2026-10-23, release 0.1.1, ops-control
+`docs/SOFTWARE_LIVE.md`). Each host was switched with `software_live_impl:
+rust` and `just deploy-one software_live <host>` under the deploy lock, the
+check-mode preview showing only the two drop-ins, the pin and the restart
+of the endpoint and the timer. Cutover (endpoint started on
+`releases/0.1.1/software-live`), all UTC: staging 11:16:03 (final 12:02:36,
+after the drill), macmini 12:32:00, fractal 13:02:20, production 13:33:22.
+On every host the playbook's checks passed (anonymous 401, schema 2, host,
+fresh, OS and PostgreSQL observed; the shadow check while the shadow was
+on), the endpoint ran as `metrics` from the versioned binary, listening only
+on the host's Tailscale address port 9110, without a restart; the
+deploy's initial collection and the next two timer runs exited 0 and
+refreshed `state.json` (root:metrics 0640) and `software-health.json`
+(root:software-estate-publisher 0640, new `observed_at_epoch`); the caches
+(root:root 0640) were not due for their daily refresh. The summaries did
+not change (`observation_ok` true everywhere) and the Nyxmon checks
+"Software health (HOST)" stayed `warning` (their state before and during the
+shadow) in every hourly result after each cutover. The software-estate
+publishers' next inventory scan is due after the cutover (their weekly
+scan; on staging last on 2026-10-19), so its `software_live` coverage is
+checked in the soak.
+
+| Host | Collector CPU per run, timer runs after the cutover (Python before) | Collector peak (cgroup) Rust (Python before) | Endpoint `MemoryCurrent` / `RssAnon` / `ps` RSS |
+| --- | --- | --- | --- |
+| staging | 0.73, 0.77, 0.75, 0.75 s (1.55–1.69 s) | 60.3, 60.1, 61.1, 61.0 MiB (80.3–82.1 MiB) | 0.58 MiB / 0.38 MiB / 4.0 MiB |
+| macmini | 0.88, 0.90 s (1.84–2.13 s) | 74.9 MiB (98.5–98.7 MiB) | 0.60 MiB / 0.38 MiB / 4.0 MiB |
+| fractal | 0.26, 0.27 s (0.51–0.52 s) | 70.1, 70.2 MiB (93.3–93.6 MiB) | 0.58 MiB / 0.37 MiB / 4.0 MiB |
+| production | 0.81, 0.81 s (1.36–1.49 s) | 73.3, 73.1 MiB (95.9–104.5 MiB) | 0.64 MiB / 0.43 MiB / 4.0 MiB |
+
+The memory and CPU budgets of the table above are met after the cutover:
+endpoint cgroup memory 0.6 MiB (budget 4 MiB), `RssAnon` 0.4 MiB (2 MiB),
+`ps` RSS 4 MiB (8 MiB); the collector at about half of Python's CPU and
+24–25 % below its peak. The endpoint's startup time was not measured
+separately.
+
+Rollback drill on staging (8.4), all 2026-10-23 UTC, each state verified as
+in 8.3:
+
+1. Forward: `rust` deployed 11:15:35–11:16:19; endpoint on the release
+   from 11:16:03; collections 11:16:04 and 11:30:07 exit 0.
+2. Back: `python` deployed 11:41:49–11:42:36. The role removed both
+   drop-ins and restarted the units with Python before any Rust task;
+   endpoint `/usr/bin/python3.13` as `metrics` on the Tailscale address from
+   11:42:07, collections 11:42:19 and 11:45:25 exit 0 (1.59 s, 80.6 MiB as
+   before), Python serving the state the Rust program had written; the
+   shadow check passed. `.pins/software-live` was removed and
+   `.pins/software-live.previous` set to 0.1.1. The three upstream caches
+   kept their content (same md5) and change time: no extra upstream request.
+   They had last been written by Python (2026-10-22 21:45 and 22:00 UTC, the
+   daily refresh), so the drill showed Rust reading Python's caches and
+   Python reading its own after Rust ran. The check 8.4 asks for, Python
+   reading caches the Rust program wrote with `last_success` intact and
+   without extra upstream requests, is **open**: it needs staging's caches
+   after their first refresh by Rust (due about 21:45–22:00 UTC on
+   2026-10-23) and is to be done during the soak (the parity harness, 6.2,
+   covers it only in the containers).
+3. Forward again: `rust` deployed 11:46:38–11:47:27; endpoint on the
+   release from 11:47:06; collections 11:47:08 and 12:00:35 exit 0;
+   `.pins/software-live` 0.1.1 again (`.previous` stays 0.1.1, the version
+   that ran before the Python interlude).
+4. Emergency path (7.6) at 12:01:06 on the host: the drop-ins removed,
+   `daemon-reload`, endpoint restarted, collector started; Python endpoint
+   from 12:01:07, collection 12:01:07–12:01:08 exit 0, anonymous 401.
+5. Redeploy `rust` 12:02:06–12:02:55 (preview: the two drop-ins and the
+   restarts only); endpoint on the release from 12:02:36; collections
+   12:02:38, 12:15:05 and 12:30:15 exit 0.
+
+After production, `software_live_rust_shadow: false` was deployed host by
+host (preview: only stopping and removing the shadow units, their
+configuration, `/var/lib/software-live/shadow` and the shadow pin; the
+production endpoint kept its process): staging 13:34:45, macmini 13:36:12,
+fractal 13:37:12, production 14:10:07. `releases/0.1.0/` and
+`releases/0.1.1/` stay installed.
 
 ---
 

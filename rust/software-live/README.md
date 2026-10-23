@@ -7,15 +7,15 @@ authenticated JSON endpoint that serves them, and their inventory projection.
 [`PLAN.md`](PLAN.md) is the contract; [`TESTMAP.md`](TESTMAP.md) maps every
 Python test to its Rust counterpart.
 
-Nothing here is deployed yet: the role can switch to a pinned release
-(PLAN.md 7.3, slice S6, collection 2.65.0), the releases
-`software-live-v0.1.0` (S7) and `software-live-v0.1.1` (S9b, see "Release")
-exist, and the ops-control inventory pins 0.1.0 (S8, PLAN.md 7.5) with
-every host on `software_live_impl: python` and the shadow off, so every
-host keeps running the Python program until the shadow (S9) and the
-cutover (S10). The ops-control manual CLI
-`just software-live --host H` runs the installed release on hosts switched to
-`rust` (S11, PLAN.md 4.2 item 10) and the Python file on the others.
+Release `software-live-v0.1.1` (S9b, see "Release") runs in production on
+all four hosts since 2026-10-23 (cutover S10, PLAN.md 8.2 and section 10):
+the ops-control inventory pins 0.1.1 and sets `software_live_impl: rust`
+with the shadow off on fractal, macmini, staging and production; the role
+(PLAN.md 7.3, slice S6, collection 2.65.0 or later) points both units at
+the release with systemd drop-ins. The Python program stays installed as
+the rollback (PLAN.md 7.6) until its retirement (S12), after a 7-day soak.
+The ops-control manual CLI `just software-live --host H` runs the installed
+release on hosts switched to `rust` (S11, PLAN.md 4.2 item 10).
 
 ## Status
 
