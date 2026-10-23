@@ -4,8 +4,9 @@ Only the role's full deploy is ported. Hosts enrolled in the guarded Traefik
 transaction workflow (``transaction_required``, or a
 ``/var/lib/traefik-transactions`` directory) are refused before any change,
 exactly as the role's ``guard.yml`` refuses them. The role's transaction engine
-is ported as :mod:`ops_deploy.infra.traefik_tx.engine`, which no deploy runs yet;
-its prepare and health-probe entries are not ported.
+is ported as :mod:`ops_deploy.infra.traefik_tx.engine` (run detached by
+:mod:`ops_deploy.infra.traefik_tx.transport`, which no deploy uses); its prepare
+and health-probe entries are not ported.
 
 Nothing reaches the live proxy unchecked: the static config and the
 file-provider certificate list are parsed on the controller before any
