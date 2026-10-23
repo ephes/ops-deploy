@@ -354,7 +354,8 @@ candidate that does not run natively, an `api.insecure = false` or an `[api]`
 layout the override cannot edit with certainty, an entrypoint on an address
 other than a wildcard or loopback (an empty network has no other), a log
 directory that would hide configuration, an ACME store outside `acme_paths`,
-an absent approved store below `/dev`, `/proc` or `/sys` (the only trees
+an approved store path with a symlink in it (a dangling one included), an
+absent approved store below `/dev`, `/proc` or `/sys` (the only trees
 `ProtectSystem=strict` leaves writable, so Traefik could create it there),
 unreadable dynamic YAML, or a failing transient unit. Other absent stores stay
 unbound: the read-only file system keeps Traefik from creating them.

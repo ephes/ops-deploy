@@ -191,7 +191,9 @@ def acme_stores(static: dict[str, Any], policy: dict[str, Any], cwd: Path) -> li
             store = cwd / acme.get("storage", "acme.json")
             require(store in approved, f"ACME store of resolver {name} is not an approved acme_paths entry")
     for path in approved:
-        require(not path.exists() or (path.is_file() and not path.is_symlink()), f"ACME store is not a file: {path}")
+        # A symlink anywhere in the path (a dangling leaf included) could lead into a writable tree.
+        require(os.path.realpath(path) == str(path), f"ACME store path is not canonical: {path}")
+        require(not path.exists() or path.is_file(), f"ACME store is not a file: {path}")
         # An absent store stays unbound; Traefik must not be able to create it there.
         require(
             path.exists() or not any(tree == path or tree in path.parents for tree in WRITABLE_IN_UNIT),
