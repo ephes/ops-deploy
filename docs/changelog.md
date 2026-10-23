@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Traefik health probes (`ops_deploy.infra.traefik_probes`): port of the
+  `health_probe_capture` and `health_probe` task entries of ops-library's
+  `traefik_deploy` role, checked against ops-library `3110a0f1`. The probe
+  program is vendored byte for byte (`infra/files/traefik_health_probe.py`,
+  also in the drift test). `capture_traefik_health_probes` captures a fresh
+  baseline read-only from a private temporary directory;
+  `deploy_traefik_health_probes` installs program and baseline under
+  `/var/lib/traefik-update-probes` (`checks.json` byte-identical to the role's,
+  through `secret_file`) and verifies live ingress with a read-only check;
+  `verify_traefik_health_probes` checks the installed probes, runs `health`
+  and returns the argv/SHA256 commands of a transaction request. Capture and
+  verify run through a `Runner` and report fixed reasons, never the probed
+  hosts. Specs are strict (addresses must be IP literals) and an empty probe
+  list is refused. No transaction, prepare or live wiring; see the Traefik
+  page.
+
 - `nyxmon_site_checks`: new `remove_checks`, names of checks of the service to
   delete. A named check goes with its `check_result` and
   `check_notification_state` rows, as Nyxmon's dashboard deletes one

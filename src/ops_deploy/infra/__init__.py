@@ -23,6 +23,16 @@ from ops_deploy.infra.traefik_backup import (
     deploy_traefik_restore,
 )
 from ops_deploy.infra.traefik_deploy import FileCertificate, TraefikDeployConfig, deploy_traefik
+from ops_deploy.infra.traefik_probes import (
+    ProbeBaseline,
+    ProbeCommands,
+    ProbeError,
+    ProbeSpec,
+    TraefikHealthProbesConfig,
+    capture_traefik_health_probes,
+    deploy_traefik_health_probes,
+    verify_traefik_health_probes,
+)
 from ops_deploy.infra.traefik_remove import TraefikRemoveConfig, deploy_traefik_remove
 from ops_deploy.infra.vector_apt_install import VectorAptInstallConfig, deploy_vector_apt_install, vector_apt_steps
 
@@ -34,21 +44,29 @@ __all__ = [
     "FileCertificate",
     "PgHbaRule",
     "PostgresInstallConfig",
+    "ProbeBaseline",
+    "ProbeCommands",
+    "ProbeError",
+    "ProbeSpec",
     "RedisInstallConfig",
     "TraefikBackupConfig",
     "TraefikDeployConfig",
+    "TraefikHealthProbesConfig",
     "TraefikRemoveConfig",
     "TraefikRestoreConfig",
     "VectorAptInstallConfig",
+    "capture_traefik_health_probes",
     "deploy_certbot_dns",
     "deploy_docker_install",
     "deploy_postgres_install",
     "deploy_redis_install",
     "deploy_traefik",
     "deploy_traefik_backup",
+    "deploy_traefik_health_probes",
     "deploy_traefik_remove",
     "deploy_traefik_restore",
     "deploy_vector_apt_install",
     "docker_steps",
     "vector_apt_steps",
+    "verify_traefik_health_probes",
 ]
