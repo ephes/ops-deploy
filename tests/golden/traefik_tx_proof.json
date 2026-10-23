@@ -1,0 +1,40 @@
+{
+  "host": "canary",
+  "version": "3.7.16",
+  "architecture": "x86_64",
+  "candidate_binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "live_config_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "router_count": 5,
+  "disabled": [],
+  "api_reachable": true,
+  "isolation_override": "api.insecure=true only",
+  "missing": [],
+  "unexpected": [],
+  "same_routers_as_baseline": true,
+  "baseline_pair": {
+    "version": "3.7.14",
+    "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "router_count": 5,
+    "disabled": [],
+    "missing": [],
+    "unexpected": [],
+    "api_reachable": true
+  },
+  "passed": true,
+  "baseline_pair_passed": true,
+  "baseline": {
+    "machine_id": "0123456789abcdef0123456789abcdef",
+    "binary_path": "/usr/local/bin/traefik",
+    "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "version": "3.7.14",
+    "config_path": "/etc/traefik/traefik.toml",
+    "config_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "dynamic_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "unit_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "isolation": "systemd PrivateNetwork and read-only bind mounts",
+  "started_at": "2026-10-23T08:05:00+00:00",
+  "finished_at": "2026-10-23T08:05:21+00:00",
+  "report_reference": "/var/lib/traefik-update-proofs/3.7.16-20261023-canary.json",
+  "error": null
+}

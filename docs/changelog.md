@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `ops_deploy.infra.traefik_tx.proof` (new): the isolated native
+  compatibility proof the transaction engine's `binary` action requires. On
+  the host, as root and standard library only, it holds the transaction lock,
+  copies the static config (only `api.insecure = true` added), the dynamic
+  tree and the approved ACME stores into a work directory, takes the
+  candidate from the checksum-pinned archive, and starts the installed and the
+  candidate executable, both checked to be native builds, each in a transient
+  systemd unit with `PrivateNetwork=yes`, a read-only file system and the
+  copies bound over the live paths. A pair passes when every router is
+  `enabled` and the `@file` routers are exactly the ones the dynamic files
+  define; the proof passes when both pass with the same routers and the live
+  identity is unchanged. The proof file under
+  `/var/lib/traefik-update-proofs/` keeps the 2026-09 format's keys first and
+  is never overwritten; `proof.compatibility()` turns it into the engine's
+  block. Golden format test, tests that run the whole proof with a stand-in
+  Traefik, and a VM proof with real Traefik 3.7.14/3.7.16 (broken route,
+  undecodable file, interrupts, engine update with the resulting block).
+  Nothing uploads or runs it yet; no deploy changes.
+
 - `ops_deploy.infra.traefik_tx.transport` and `.runner` (new): detached Traefik
   transactions. `stage_transaction` puts engine, host program and request into
   a root-only `/var/lib/traefik-transport/<id>` and has the host download the
