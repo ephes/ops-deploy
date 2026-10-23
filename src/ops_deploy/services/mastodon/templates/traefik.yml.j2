@@ -1,0 +1,73 @@
+# Managed by Ansible - Mastodon Traefik config
+
+http:
+  routers:
+    mastodon-streaming:
+      rule: "Host(`{{ mastodon_traefik_host }}`) && PathPrefix(`/api/v1/streaming`)"
+      entryPoints:
+{% for entrypoint in mastodon_traefik_entrypoints %}
+        - {{ entrypoint }}
+{% endfor %}
+      service: {{ mastodon_traefik_service_streaming }}
+      priority: 20
+{% if mastodon_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ mastodon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% if mastodon_traefik_middlewares | length > 0 %}
+      middlewares:
+{% for middleware in mastodon_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+{% endif %}
+
+    mastodon-web:
+      rule: "Host(`{{ mastodon_traefik_host }}`)"
+      entryPoints:
+{% for entrypoint in mastodon_traefik_entrypoints %}
+        - {{ entrypoint }}
+{% endfor %}
+      service: {{ mastodon_traefik_service_web }}
+      priority: 10
+{% if mastodon_traefik_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ mastodon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% if mastodon_traefik_middlewares | length > 0 %}
+      middlewares:
+{% for middleware in mastodon_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+{% endif %}
+
+{% if mastodon_traefik_local_domain_wellknown | bool %}
+    mastodon-local-wellknown:
+      rule: "Host(`{{ mastodon_local_domain }}`) && (Path(`/.well-known/webfinger`) || Path(`/.well-known/host-meta`) || Path(`/.well-known/nodeinfo`))"
+      entryPoints:
+{% for entrypoint in mastodon_traefik_entrypoints %}
+        - {{ entrypoint }}
+{% endfor %}
+      service: {{ mastodon_traefik_service_web }}
+      priority: {{ mastodon_traefik_local_domain_priority }}
+{% if mastodon_traefik_local_domain_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ mastodon_traefik_local_domain_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+{% endif %}
+  services:
+    {{ mastodon_traefik_service_web }}:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ mastodon_nginx_port if (mastodon_nginx_enabled | bool) else mastodon_web_port }}"
+
+    {{ mastodon_traefik_service_streaming }}:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ mastodon_nginx_port if (mastodon_nginx_enabled | bool) else mastodon_streaming_port }}"

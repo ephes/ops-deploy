@@ -1,0 +1,111 @@
+# Managed by Ansible - Mastodon nginx proxy
+
+worker_processes auto;
+pid /run/mastodon-nginx/nginx.pid;
+error_log /var/log/mastodon-nginx/error.log warn;
+
+events {
+    worker_connections 4096;
+}
+
+http {
+    client_body_temp_path /var/lib/mastodon-nginx/body;
+
+    sendfile on;
+    tcp_nopush on;
+    types_hash_max_size 2048;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/javascript
+        application/javascript
+        application/json
+        application/xml
+        application/rss+xml
+        image/svg+xml;
+
+    map $http_x_forwarded_proto $mastodon_forwarded_proto {
+        default $http_x_forwarded_proto;
+        '' $scheme;
+    }
+
+    map $http_x_forwarded_host $mastodon_forwarded_host {
+        default $http_x_forwarded_host;
+        '' $host;
+    }
+
+    map $http_upgrade $mastodon_connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    upstream mastodon-web {
+        server "127.0.0.1:10040";
+    }
+
+    upstream mastodon-streaming {
+        server "127.0.0.1:10041";
+    }
+
+
+    server {
+        listen 127.0.0.1:10044;
+        listen [::1]:10044;
+        server_name _;
+
+        root /srv/mastodon/live/public;
+        index index.html;
+
+        access_log /var/log/mastodon-nginx/access.log;
+        error_log /var/log/mastodon-nginx/error.log;
+
+        client_max_body_size 100M;
+        charset utf-8;
+
+        proxy_set_header Host $mastodon_forwarded_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $mastodon_forwarded_proto;
+        proxy_set_header X-Forwarded-Host $mastodon_forwarded_host;
+        proxy_set_header X-Forwarded-Server $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+
+        location /api/v1/streaming {
+            proxy_set_header Connection $mastodon_connection_upgrade;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_read_timeout 90s;
+            proxy_buffering off;
+            proxy_pass http://mastodon-streaming;
+        }
+
+        location ~ ^/(assets|packs|emoji)/ {
+            try_files $uri @proxy;
+            access_log off;
+            add_header Cache-Control "public, max-age=31536000, immutable";
+        }
+
+        location /system/ {
+            try_files $uri @proxy;
+            access_log off;
+            add_header Cache-Control "public, max-age=604800";
+        }
+
+        location / {
+            try_files $uri @proxy;
+        }
+
+        location @proxy {
+            proxy_buffering off;
+            proxy_pass http://mastodon-web;
+        }
+
+    }
+}

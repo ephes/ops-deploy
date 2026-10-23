@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add bounded Mastodon existing-install configuration convergence. Source,
+  environment, dependencies and assets must already match; bootstrap, upgrades,
+  migrations and lifecycle operations remain unsupported. No live proof yet.
+
 - Local backups and restore work directories (`nyxmon`, `fastdeploy`,
   `work_app`, `traefik`): new `required_mount` on the backup and restore
   configs and `retain_count`/`retain_days` on the backup configs (new

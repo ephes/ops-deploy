@@ -1,0 +1,30 @@
+# Managed by Ansible - Mastodon Traefik config
+
+http:
+  routers:
+    mastodon-streaming:
+      rule: "Host(`social.example.org`) && PathPrefix(`/api/v1/streaming`)"
+      entryPoints:
+        - web-secure
+      service: mastodon-streaming
+      priority: 20
+      tls: {}
+
+    mastodon-web:
+      rule: "Host(`social.example.org`)"
+      entryPoints:
+        - web-secure
+      service: mastodon-web
+      priority: 10
+      tls: {}
+
+  services:
+    mastodon-web:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10044"
+
+    mastodon-streaming:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10044"
