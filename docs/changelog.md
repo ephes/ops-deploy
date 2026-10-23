@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- `ops_deploy.infra.traefik_tx.transport` and `.runner` (new): detached Traefik
+  transactions. `stage_transaction` puts engine, host program and request into
+  a root-only `/var/lib/traefik-transport/<id>` and has the host download the
+  exact release archive (refused unless it has the approved SHA256, before any
+  `pending` record is needed); `start_transaction` launches
+  `traefik-tx-<id>.service` with `systemd-run` (`RuntimeMaxSec`, `--collect`),
+  so an SSH drop or a killed controller no longer interrupts replace, verify
+  and rollback; `poll_transaction`/`wait_for_transaction` read the result over
+  new connections; `cleanup_transaction` and a read-only `inspect_host`. When
+  the unit fails (killed, timed out, stopped, no usable result, record left
+  `pending`), `OnFailure=` runs `traefik-tx-safe-restore@<id>.service`: only
+  for this transport's own `pending` binary transaction with the `original`
+  binary at hand and a live binary that differs, it puts the original back,
+  restarts and probes like the engine's rollback and records `recovery` (or
+  `degraded`), never `clear`. Each step is a script on stdin over a new
+  connection; errors are fixed reasons without host names. Nothing calls the
+  transport yet; no deploy changes.
+
 - Traefik health probes (`ops_deploy.infra.traefik_probes`): port of the
   `health_probe_capture` and `health_probe` task entries of ops-library's
   `traefik_deploy` role, checked against ops-library `3110a0f1`. The probe

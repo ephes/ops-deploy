@@ -43,9 +43,9 @@ with `transaction_required` set, or when `/var/lib/traefik-transactions`
 exists on the host, `deploy_traefik`, `deploy_traefik_restore` and
 `deploy_traefik_remove` stop while planning, before any change. Backup only
 reads and is allowed everywhere. The role's transaction engine is ported (next
-section) but no deploy runs it yet, and its prepare entries are not ported. Its
-health-probe entries are ported (see [Health probes](#health-probes)) and are
-allowed on these hosts.
+section) with a transport that runs it detached on the host, but no deploy runs
+it yet, and its prepare entries are not ported. Its health-probe entries are
+ported (see [Health probes](#health-probes)) and are allowed on these hosts.
 
 ## Transaction engine
 
@@ -60,8 +60,10 @@ standard library only (under 1,500 lines), that runs as root under
 python3 engine.py --request request.json
 ```
 
-Nothing in ops-deploy uploads or starts it yet. Binary updates still go through
-ops-library's Ansible transaction entry, which runs the reference engine.
+[Detached transactions](#detached-transactions) below upload it and run it on
+the host, out of reach of the session that started it. Nothing calls that
+transport yet: binary updates still go through ops-library's Ansible
+transaction entry, which runs the reference engine.
 
 | Action | What it does |
 |---|---|
@@ -172,13 +174,12 @@ host record that is valid JSON but not an object is refused as `invalid
 recovery state` (the reference engine stops with an uncaught `AttributeError`);
 `main` takes its arguments for tests.
 
-Not part of the port yet: the transport, with detached execution so a lost
-session cannot interrupt replace, verify and rollback, and a safe-restore unit
-for a killed engine (until then a lost result leaves the record `pending`, as
-with the reference engine); the compatibility proof and the release resolver. The pre-change archive stays where
-the reference engine writes it, in the transaction directory on the system
-disk, and is never pruned; its place and retention change before the engine
-runs unattended.
+Not part of the port yet: the compatibility proof (the release resolver is a
+module of its own, see
+[Patch-line release resolver](#patch-line-release-resolver)). The pre-change
+archive stays where the reference engine writes it, in the transaction directory
+on the system disk, and is never pruned; its place and retention change before
+the engine runs unattended.
 
 `tests/test_traefik_tx_parity.py` runs this engine and the reference one
 (vendored byte for byte under `tests/parity/traefik_deploy/`;
@@ -187,6 +188,104 @@ through the same requests on the same fake host. Results, refusals and the
 files left behind (records, transaction directory, binary) must be identical
 byte for byte, and so must identity, policy, evidence, archive, backup-set,
 probe and command-line behaviour, compared function by function.
+
+## Detached transactions
+
+`ops_deploy.infra.traefik_tx.transport` (controller side) and
+`ops_deploy.infra.traefik_tx.runner` (host side, a standard-library program like
+the engine) run the engine's `binary`, `resume` and `rebaseline` actions in a
+transient systemd unit on the host. The Ansible entry runs the engine inside the SSH
+session, so a dropped connection or a killed controller between the binary
+replacement and its acceptance leaves a new binary, a `pending` record and no
+rollback. Here nothing outside the host takes part once the unit runs: the
+controller polls the result over new connections, and when the unit fails, an
+`OnFailure=` unit puts the original binary back. Nothing calls the transport
+yet; the controller journal stays with its caller (ops-control).
+
+```python
+from ops_deploy.backups.remote import SshTarget, ssh_runner
+from ops_deploy.infra.traefik_tx import transport
+
+runner = ssh_runner(SshTarget(hostname="canary.example", user="root"))
+tx = transport.new_transaction_id()
+transport.stage_transaction(runner, request, tx)  # before the controller's pending record
+# ... the controller writes its pending record ...
+transport.start_transaction(runner, tx, runtime_max_sec=900)
+status = transport.wait_for_transaction(runner, tx, timeout=1560)
+record = status.host_record  # None: the outcome is unknown, keep the pending record
+transport.cleanup_transaction(runner, tx)
+```
+
+Each step is one bash script over a new connection (a
+`ops_deploy.backups.remote.Runner`, as the backups use). It carries the host
+program and, for staging, the engine and the request, base64-encoded into a
+private `mktemp -d` directory that it removes again; the request (evidence,
+probe commands) never appears on a command line. Failures are `TransportError`
+with a fixed reason and no host name.
+
+| Call | On the host |
+|---|---|
+| `stage_transaction(runner, request, id)` | `/var/lib/traefik-transport/<id>/` (root, `0700`) with `engine.py`, `runner.py`, `request.json` (`binary`, `resume` or `rebaseline`); for `binary` the host downloads the release archive from GitHub (`release.version` for `release.arch`, which must be the host's) and refuses it unless it has exactly `release.sha256`, and `archive_path` is set to it; the safe-restore unit template (below), with `systemctl daemon-reload` when it was missing or differed; last `staged.json` with the files' SHA256, which must be the ones sent. A refusal leaves no directory, and nothing ran: it needs no `pending` record |
+| `start_transaction(runner, id, runtime_max_sec=900)` | the staged files unchanged and never started, then `systemd-run --unit=traefik-tx-<id>.service --collect` with `Type=exec`, `RuntimeMaxSec=<n>` (60 to 3600), `TimeoutStopSec=30`, `KillMode=control-group` and `OnFailure=traefik-tx-safe-restore@<id>.service`; returns once the unit runs. A failure here does not prove that nothing started: poll |
+| the unit | `started.json` (written durably before the engine starts), the engine on `request.json`, then `result.json` (`engine_exit`, `response` = the engine's JSON, `host_phase`, `restore_expected`); the archive is deleted afterwards. The unit fails, and so starts the safe-restore unit, when the engine gave no usable result or left the host record `pending`; a timeout, a kill and a stop (its `SIGTERM` exits 143, not as a clean stop) fail it too |
+| `poll_transaction(runner, id)` | read-only status; `wait_for_transaction(runner, id, timeout=..., interval=5)` polls until the status is final or `timeout` has passed, and takes a failed poll as "ask again" |
+| `cleanup_transaction(runner, id)` | removes the transport directory; refused while `running` or `restoring` |
+| `inspect_host(runner, policy)` | the engine's read-only `inspect` (identity and host record), in the foreground; it writes nothing but the private directory |
+
+Statuses: `absent` (no transport directory), `incomplete` (staging did not
+finish), `staged` (never started: the engine did not run), `running`,
+`restoring` (the safe-restore unit runs or is due), `finished` (the engine's
+result is final), `interrupted` (the engine gave no result); `unknown` from
+`wait_for_transaction` when no poll answered. `absent`, `finished` and
+`interrupted` are final. `started` tells whether the engine was started.
+`host_record` is the record the host returned: the safe-restore unit's when it
+acted, else the engine's `state` once finished. `None` (a refusal, an
+interrupted run that was not restored) means the outcome names no record, and
+the controller keeps its `pending` one, as ops-library's controller does.
+
+**Safe-restore.** `traefik-tx-safe-restore@.service` is a runtime template in
+`/run/systemd/system` (`Type=oneshot`, `TimeoutStartSec=600`) that runs the
+transaction's `runner.py safe-restore <id>`. It acts only when, under the
+engine lock:
+
+- the host record is `pending` for a `binary` operation;
+- its transaction directory is below `/var/lib/traefik-transactions` and holds
+  exactly this transport's request (with this transport's archive path), and
+  the record's `previous_revision` is the request's controller record: a
+  transaction of the Ansible entry or of another transport is never touched;
+- that directory has the `original` binary;
+- the installed or the running binary differs from it (no running Traefik
+  counts as different).
+
+Then it does what the engine's rollback does: cleanup probe, `original` put
+back (if the installed binary differs), restart, the pre-transaction identity
+within 15 tries, baseline and cleanup probes. That gives `recovery` (`reason:
+EngineInterrupted`, `safe_restore: <id>`, `review_due` an hour later), or
+`degraded` with `recovery_error` when any of it failed, a stop or the unit's
+timeout included; never `clear`.
+Otherwise it writes nothing: a record left `pending` with the original binary in
+place (an engine killed before the replacement) waits for a reviewed `resume`,
+as before. `safe-restore.json` says what it did (`acted`, `reason`, `phase`,
+`state`). Both engines load its records, refuse a binary update on them and
+resume from them.
+
+**Time budget.** The engine allows each probe 120 s and each restart 60 s;
+`runtime_max_sec` bounds the whole run, after which systemd stops the unit and
+the safe-restore unit (up to 600 s) takes over. Wait at least
+`runtime_max_sec` plus 600 s and a poll interval before taking a missing result
+as unknown.
+
+Only root can read the transport directory: the request holds the evidence and
+the probe commands. The staged archive is deleted once the engine ran;
+`cleanup_transaction` removes the rest. The engine's transaction directory and
+its pre-change archive are unchanged (see above).
+
+`tests/test_traefik_tx_runner.py` runs the host program with the real engine
+on the engine tests' fake host (systemd, the download and root faked),
+including engines killed before the replacement, before the restart, during
+acceptance and inside their own rollback; `tests/test_traefik_tx_transport.py`
+covers the controller side with a fake runner and the real scripts in a local
+bash.
 
 ## Nothing unchecked goes live
 
