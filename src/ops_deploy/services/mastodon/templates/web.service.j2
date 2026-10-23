@@ -1,0 +1,63 @@
+# Managed by Ansible - Mastodon web
+
+[Unit]
+Description=Mastodon web service
+After=network.target
+
+[Service]
+Type=simple
+User={{ mastodon_user }}
+Group={{ mastodon_group }}
+WorkingDirectory={{ mastodon_site_path }}
+EnvironmentFile={{ mastodon_env_file }}
+Environment=RBENV_ROOT={{ mastodon_rbenv_root }}
+Environment=RBENV_VERSION={{ mastodon_ruby_version_effective }}
+Environment=NVM_DIR={{ mastodon_nvm_dir }}
+Environment=PATH={{ mastodon_runtime_path }}
+Environment=PORT={{ mastodon_web_port }}
+{% if mastodon_ld_preload | length > 0 %}
+Environment=LD_PRELOAD={{ mastodon_ld_preload }}
+{% endif %}
+ExecStart=/bin/bash -lc 'cd {{ mastodon_site_path }} && bundle exec puma -C config/puma.rb'
+ExecReload=/bin/kill -SIGUSR1 $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+# Proc filesystem
+ProcSubset=pid
+ProtectProc=invisible
+# Capabilities
+CapabilityBoundingSet=
+# Security
+NoNewPrivileges=true
+# Sandboxing
+ProtectSystem=strict
+PrivateTmp=true
+PrivateDevices=true
+PrivateUsers=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET
+RestrictAddressFamilies=AF_INET6
+RestrictAddressFamilies=AF_NETLINK
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+PrivateMounts=true
+ProtectClock=true
+# System Call Filtering
+SystemCallArchitectures=native
+SystemCallFilter=~@cpu-emulation @debug @keyring @ipc @mount @obsolete @privileged @setuid
+SystemCallFilter=@chown
+SystemCallFilter=pipe
+SystemCallFilter=pipe2
+ReadWritePaths={{ mastodon_site_path }}
+
+[Install]
+WantedBy=multi-user.target

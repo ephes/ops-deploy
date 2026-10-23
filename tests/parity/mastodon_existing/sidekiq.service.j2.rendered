@@ -1,0 +1,59 @@
+# Managed by Ansible - Mastodon Sidekiq
+
+[Unit]
+Description=Mastodon Sidekiq
+After=network.target
+
+[Service]
+Type=simple
+User=mastodon
+Group=mastodon
+WorkingDirectory=/srv/mastodon/live
+EnvironmentFile=/srv/mastodon/live/.env.production
+Environment=RBENV_ROOT=/srv/mastodon/.rbenv
+Environment=RBENV_VERSION=4.0.5
+Environment=NVM_DIR=/srv/mastodon/.nvm
+Environment=PATH=/srv/mastodon/.nvm/versions/node/v24.17.0/bin:/srv/mastodon/.rbenv/bin:/srv/mastodon/.rbenv/shims:/usr/local/bin:/usr/bin:/bin
+Environment=LD_PRELOAD=libjemalloc.so
+ExecStart=/bin/bash -lc 'cd /srv/mastodon/live && bundle exec sidekiq -c 25'
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+# Proc filesystem
+ProcSubset=pid
+ProtectProc=invisible
+# Capabilities
+CapabilityBoundingSet=
+# Security
+NoNewPrivileges=true
+# Sandboxing
+ProtectSystem=strict
+PrivateTmp=true
+PrivateDevices=true
+PrivateUsers=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET
+RestrictAddressFamilies=AF_INET6
+RestrictAddressFamilies=AF_NETLINK
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+PrivateMounts=true
+ProtectClock=true
+# System Call Filtering
+SystemCallArchitectures=native
+SystemCallFilter=~@cpu-emulation @debug @keyring @ipc @mount @obsolete @privileged @setuid
+SystemCallFilter=@chown
+SystemCallFilter=pipe
+SystemCallFilter=pipe2
+ReadWritePaths=/srv/mastodon/live
+
+[Install]
+WantedBy=multi-user.target
