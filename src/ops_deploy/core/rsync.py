@@ -13,6 +13,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+_NONEMPTY = "cannot delete non-empty directory: "
+
 
 @dataclass(frozen=True)
 class RsyncResult:
@@ -22,9 +24,19 @@ class RsyncResult:
 
     @property
     def itemized_lines(self) -> list[str]:
-        """Non-empty output lines, one per itemized change."""
+        """Candidate changes, excluding known nonempty-directory refusals.
 
-        return [line for line in self.stdout.splitlines() if line.strip()]
+        Our ``%i %n%L`` format emits ``*deleting   path/`` even when an
+        excluded descendant prevents deleting that directory. The exact
+        refusal diagnostic and its exact directory candidate are not changes;
+        standalone ancestor refusals are not changes either. Unmatched deletes
+        and unknown stdout remain candidates. Raw stdout/stderr are untouched,
+        and ``run_checked`` still refuses every nonzero exit before planning.
+        """
+
+        lines = [line for line in self.stdout.splitlines() if line.strip()]
+        blocked = {f"*deleting   {line[len(_NONEMPTY) :]}/" for line in lines if line.startswith(_NONEMPTY)}
+        return [line for line in lines if not line.startswith(_NONEMPTY) and line not in blocked]
 
 
 class RsyncError(RuntimeError):

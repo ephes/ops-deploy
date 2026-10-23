@@ -292,3 +292,98 @@ def test_mode_only_difference_itemizes_with_chmod(tmp_path: Path) -> None:
     (line,) = [line for line in lines if line.endswith(" index.html")]
     assert line.startswith(".f"), line
     assert "p" in line.split()[0], line
+
+
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="needs rsync")
+def test_protected_parents_converge_without_hiding_real_changes(tmp_path: Path) -> None:
+    """Real checksum/no-times rsync, with only its SSH transport replaced locally."""
+    from pyinfra.operations import server
+
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    for root in (src, dest):
+        root.mkdir()
+        (root / "app.py").write_text("old\n")
+    (src / "app.py").write_text("new\n")
+    cache = dest / "old parent " / "nested" / "__pycache__"
+    cache.mkdir(parents=True)
+    (cache / "protected.pyc").write_bytes(b"keep-cache")
+    backup = dest / "old compose" / "maintenance" / "backups"
+    backup.parent.mkdir(parents=True)
+    backup.write_bytes(b"keep-backup")
+    calls: list[tuple[list[str], RsyncResult]] = []
+
+    def local(argv: Sequence[str]) -> RsyncResult:
+        assert {"-rl", "--checksum", "--omit-dir-times", "--delete", "--no-owner", "--no-group"} <= set(argv)
+        assert not {"-a", "-t", "--times", "--delete-excluded"} & set(argv)
+        # Preserve every production flag/filter; replace just the remote transport.
+        args = [*argv[: argv.index("-e")], f"{src}/", f"{dest}/"]
+        completed = subprocess.run(args, check=False, capture_output=True, text=True)
+        result = RsyncResult(completed.returncode, completed.stdout, completed.stderr)
+        calls.append((list(argv), result))
+        return result
+
+    @deploy("Sync")
+    def application() -> None:
+        changed = sync_tree(
+            name="Sync tree",
+            src=src,
+            dest=str(dest),
+            user=str(os.getuid()),
+            group=str(os.getgid()),
+            excludes=("backups",),
+            chmod="D0755,F0644",
+            runner=local,
+        )
+        # Fake connector only: verifies the same did_change gate as an app restart.
+        server.shell(name="Restart application", commands=["systemctl restart app.service"], _if=changed.did_change)
+
+    def apply() -> list[str]:
+        run = run_deploy_fake(application, host_data=HOST_DATA)
+        assert run.succeeded, run.error
+        assert (cache / "protected.pyc").read_bytes() == b"keep-cache"
+        assert backup.read_bytes() == b"keep-backup"
+        return run.mutating_changed_ops
+
+    assert apply() == ["Sync | Sync tree", "Sync | Restart application"]
+    assert (dest / "app.py").read_text() == "new\n"
+    assert len(calls) == 2
+    assert apply() == []
+    assert len(calls) == 3  # Repeat did not schedule a real rsync or restart.
+    repeat = calls[-1][1]
+    assert "cannot delete non-empty directory:" in repeat.stdout
+    assert "*deleting" in repeat.stdout
+    assert repeat.itemized_lines == []
+
+    (src / "app.py").write_text("changed again\n")
+    assert apply() == ["Sync | Sync tree", "Sync | Restart application"]
+    assert (dest / "app.py").read_text() == "changed again\n"
+    (dest / "app.py").chmod(0o600)
+    assert apply() == ["Sync | Sync tree", "Sync | Restart application"]
+    assert (dest / "app.py").stat().st_mode & 0o777 == 0o644
+
+    obsolete = dest / "old parent " / "removable file"
+    obsolete.write_text("delete this, not the cache\n")
+    empty = dest / "removable empty directory"
+    empty.mkdir()
+    assert apply() == ["Sync | Sync tree", "Sync | Restart application"]
+    assert not obsolete.exists()
+    assert not empty.exists()
+    assert apply() == []
+
+    # A later genuinely removable formerly blocked directory must not stay cached.
+    retained = tmp_path / "retained-cache"
+    cache.rename(retained)
+    run = run_deploy_fake(application, host_data=HOST_DATA)
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == ["Sync | Sync tree", "Sync | Restart application"]
+    assert not (dest / "old parent ").exists()
+    assert (retained / "protected.pyc").read_bytes() == b"keep-cache"
+    assert backup.read_bytes() == b"keep-backup"
+
+
+def test_nonzero_exit_still_refuses_known_nonempty_stdout(source: Path) -> None:
+    result = RsyncResult(23, "cannot delete non-empty directory: old\n*deleting   old/\n", "actual transfer failure\n")
+    rsync = RecordingRsyncRunner(responses={"--dry-run": result})
+    with pytest.raises(RsyncError, match="actual transfer failure"):
+        run_deploy_fake(sync_deploy, source, rsync, host_data=HOST_DATA)
+    assert _real_runs(rsync) == []

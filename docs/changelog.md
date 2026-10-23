@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `sync_tree` no longer reports a mutation for rsync
+  cannot-delete-nonempty diagnostics and their exact impossible directory
+  deletion candidates. Protected descendants remain untouched; real transfers,
+  permission changes, removable file/directory deletions and unknown output
+  retain their existing change/error handling.
+
 - Add deploy-only `minecraft_java` for vanilla/Forge servers, guarded loader
   switches, verified JARs, mods, UFW and change-gated systemd rollout. RCON
   credentials remain on stdin/in protected files, including graceful stop.

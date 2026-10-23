@@ -55,6 +55,22 @@ changed = sync_tree(
 - A failed dry run raises `RsyncError` while planning, before anything
   changes. A failed real run fails the operation.
 
+### Protected descendants and itemized deletion candidates
+
+Rsync can print `cannot delete non-empty directory: path` followed by
+`*deleting   path/` when an excluded descendant prevents removing its parent.
+The directory is not actually deleted. `RsyncResult.itemized_lines` omits only
+that exact diagnostic and the corresponding exact directory candidate;
+standalone ancestor refusal diagnostics are also not mutations. The raw stdout
+and stderr remain available unchanged. Unmatched file/directory deletions,
+content and permission changes, and unknown stdout still count as changes;
+nonzero rsync exits still fail. No filters, exclusions or child files change.
+
+This differs from metadata suppression: checksum/no-times comparison remains
+unchanged. A repeat sync with only protected-parent refusal output does not
+schedule rsync or dependent application restarts. A later genuinely removable
+directory without the refusal is still a change.
+
 ## `secret_file`
 
 Installs secret content at a path without it appearing in a command line,
