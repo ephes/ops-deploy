@@ -1,0 +1,8 @@
+[
+{% for player in minecraft_java_whitelist_players %}
+  {
+    "name": "{{ player }}"
+  }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+]

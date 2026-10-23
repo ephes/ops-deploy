@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add deploy-only `minecraft_java` for vanilla/Forge servers, guarded loader
+  switches, verified JARs, mods, UFW and change-gated systemd rollout. RCON
+  credentials remain on stdin/in protected files, including graceful stop.
+  Existing backup jobs and archives are left untouched. Download staging runs
+  as the service user, loader transitions resume safely after partial failure,
+  and semantic config comparison tolerates Java startup rewrites/added UUIDs.
+  First deploys tolerate absent JARs and missing/unsupported mcrcon via strict
+  probes, with a required post-build version check. Pending-loader manual
+  recovery is documented.
+
 - Mastodon configuration convergence now refuses a changed Traefik route while
   a transaction holds its host lock, through the existing guarded route writer.
   An unchanged route runs no guard and remains free of mutations.

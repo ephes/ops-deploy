@@ -1,0 +1,10 @@
+[
+{% for op in minecraft_java_ops %}
+  {
+    "name": "{{ op }}",
+    "level": 4,
+    "bypassesPlayerLimit": true
+  }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+]

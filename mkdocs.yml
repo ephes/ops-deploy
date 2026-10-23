@@ -58,4 +58,5 @@ nav:
       - jellyfin: services/jellyfin.md
       - unifi: services/unifi.md
       - vaultwarden: services/vaultwarden.md
+      - minecraft_java: services/minecraft_java.md
   - Changelog: changelog.md
