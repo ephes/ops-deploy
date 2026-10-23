@@ -36,6 +36,7 @@ BEHAVIOUR = ("defaults", "files", "handlers", "tasks", "templates", "vars")
 # ``<package dir>/files/<name>``: ``roles/<role>/files/<name>``, byte for byte.
 VENDORED_FILES = {
     "infra/files/certbot_stray_guard.py": "certbot_dns_deploy",
+    "infra/files/traefik_health_probe.py": "traefik_deploy",
     "services/delve/files/apple-storekit-root-certs.pem": "delve_deploy",
     "services/fastdeploy/files/ensure_token_user.py": "fastdeploy_deploy",
     "services/fastdeploy/files/sudoers_blanket_check.py": "fastdeploy_restore",

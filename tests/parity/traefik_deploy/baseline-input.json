@@ -1,0 +1,18 @@
+{"traefik_health_probe_config": {
+  "tls_fingerprints": true,
+  "probes": [
+    {"host": "app.example.org", "scheme": "https", "port": 443, "address": "192.0.2.10"},
+    {"host": "app.example.org", "scheme": "http", "port": 80, "address": "192.0.2.10", "path": "/healthz"},
+    {"host": "down.example.org", "scheme": "https", "port": 443, "address": "2001:db8::10", "path": "/"}
+  ],
+  "entrypoints": ["web", "web-secure", "traefik"],
+  "observations": [
+    {"status": "200", "exit": 0, "tls_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    {"status": "308", "exit": 0},
+    {"status": "000", "exit": 7, "tls_sha256": null, "tls_error": "ConnectionRefusedError"}
+  ],
+  "dynamic": {
+    "app.yml": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "nested/üml.yml": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}}

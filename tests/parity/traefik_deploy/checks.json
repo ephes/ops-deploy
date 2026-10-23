@@ -1,0 +1,51 @@
+{
+    "dynamic": {
+        "app.yml": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "nested/\u00fcml.yml": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "entrypoints": [
+        "web",
+        "web-secure",
+        "traefik"
+    ],
+    "observations": [
+        {
+            "exit": 0,
+            "status": "200",
+            "tls_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+            "exit": 0,
+            "status": "308"
+        },
+        {
+            "exit": 7,
+            "status": "000",
+            "tls_error": "ConnectionRefusedError",
+            "tls_sha256": null
+        }
+    ],
+    "probes": [
+        {
+            "address": "192.0.2.10",
+            "host": "app.example.org",
+            "port": 443,
+            "scheme": "https"
+        },
+        {
+            "address": "192.0.2.10",
+            "host": "app.example.org",
+            "path": "/healthz",
+            "port": 80,
+            "scheme": "http"
+        },
+        {
+            "address": "2001:db8::10",
+            "host": "down.example.org",
+            "path": "/",
+            "port": 443,
+            "scheme": "https"
+        }
+    ],
+    "tls_fingerprints": true
+}

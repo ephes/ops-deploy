@@ -1,8 +1,8 @@
 # Traefik
 
 `ops_deploy.infra` also ports the base Traefik roles of ops-library:
-`traefik_deploy` (full deploy only), `traefik_backup`, `traefik_restore` and
-`traefik_remove`. Like the other infra deploys each is a frozen, strict config
+`traefik_deploy` (full deploy and the health probes), `traefik_backup`,
+`traefik_restore` and `traefik_remove`. Like the other infra deploys each is a frozen, strict config
 plus a `@deploy` function outside the size-capped helpers/ops/core layer. None
 of them takes a secret. Per-service routes stay with
 [`traefik_route`](concepts/helpers.md).
@@ -43,8 +43,9 @@ with `transaction_required` set, or when `/var/lib/traefik-transactions`
 exists on the host, `deploy_traefik`, `deploy_traefik_restore` and
 `deploy_traefik_remove` stop while planning, before any change. Backup only
 reads and is allowed everywhere. The role's transaction engine is ported (next
-section) but no deploy runs it yet; its prepare and health-probe entries are not
-ported.
+section) but no deploy runs it yet, and its prepare entries are not ported. Its
+health-probe entries are ported (see [Health probes](#health-probes)) and are
+allowed on these hosts.
 
 ## Transaction engine
 
@@ -174,7 +175,7 @@ recovery state` (the reference engine stops with an uncaught `AttributeError`);
 Not part of the port yet: the transport, with detached execution so a lost
 session cannot interrupt replace, verify and rollback, and a safe-restore unit
 for a killed engine (until then a lost result leaves the record `pending`, as
-with the reference engine); the compatibility proof, the probe programs and the release resolver. The pre-change archive stays where
+with the reference engine); the compatibility proof and the release resolver. The pre-change archive stays where
 the reference engine writes it, in the transaction directory on the system
 disk, and is never pruned; its place and retention change before the engine
 runs unattended.
@@ -436,3 +437,98 @@ a release list that is not the API's shape (a non-string tag or asset field,
 a non-boolean `draft`/`prerelease`, assets that are not a list of objects)
 or that names a version or an asset twice. Entries with any other tag are
 dropped before their other fields are read.
+
+## Health probes
+
+The read-only ingress acceptance probes of the transaction workflow: the
+role's `health_probe_capture` and `health_probe` task entries, checked against
+ops-library `3110a0f1`. The probe program `infra/files/traefik_health_probe.py`
+is the role's `files/traefik_health_probe.py` byte for byte
+(`tests/test_ops_library_drift.py` compares it with `OPS_LIBRARY_PATH`), so
+both tools install the same program with the same SHA256 and a transaction
+request can name it either way.
+
+```python
+from ops_deploy.backups import SshTarget, ssh_runner
+from ops_deploy.infra import (
+    ProbeSpec,
+    TraefikHealthProbesConfig,
+    capture_traefik_health_probes,
+    deploy_traefik_health_probes,
+    verify_traefik_health_probes,
+)
+
+runner = ssh_runner(SshTarget(hostname="proxy.example.org", user="root"))
+spec = ProbeSpec(
+    probes=[{"host": "app.example.org", "scheme": "https", "port": 443, "address": "192.0.2.10"}],
+    entrypoints=["web", "web-secure"],
+    tls_fingerprints=True,
+)
+baseline = capture_traefik_health_probes(runner, spec)  # read-only
+deploy_traefik_health_probes(TraefikHealthProbesConfig(baseline=baseline))  # in a pyinfra deploy
+commands = verify_traefik_health_probes(runner)  # read-only; argv + sha256 per probe
+```
+
+| Entry | Writes | Returns |
+|---|---|---|
+| `capture_traefik_health_probes(runner, spec)` | only a private temporary directory, removed afterwards | `ProbeBaseline`: the spec plus `observations` and `dynamic` hashes |
+| `deploy_traefik_health_probes(cfg)` (pyinfra) | `/var/lib/traefik-update-probes` (`0700`), `health.py` (`0755`), `checks.json` (`0600`), all `root:root` | nothing; the closing check is read-only |
+| `verify_traefik_health_probes(runner)` | nothing | `ProbeCommands`: `baseline_probe`, `acceptance_probe`, `alias_acceptance_probe`, `metrics_bind_acceptance_probe`, `cleanup_probe`, each `argv` and `sha256` (`as_request()`: plain JSON for the request) |
+
+The spec has `probes` (each `host`, `scheme` `http`/`https`, `port`,
+`address`, an IP literal, IPv6 without brackets, and optional `path`,
+default `/`), the complete `entrypoints` list and optional
+`tls_fingerprints` (record the served TLS leaf of each HTTPS probe; health then
+refuses any change of it; Traefik generates a new default certificate at each
+restart and whenever its TLS configuration changes, so fingerprint only probes
+whose certificate is stable). Capture curls each probe at its `address` (TLS
+verification on, so a failing route is recorded as a failure, not called
+healthy) and hashes every file below `/etc/traefik/dynamic`. `health`
+requires the same results (or a 5xx backend recovering to 2xx, never with a
+changed TLS leaf) and an unchanged dynamic tree; `alias` and `metrics_bind`
+also check the static config; `cleanup` checks the dynamic tree. Capture
+before a change, never after a failed one: a fresh baseline must not make a
+regression look healthy.
+
+As in the role:
+
+- an empty probe list is refused, by the configs (before anything runs) and by
+  the program itself;
+- `/usr/bin/python3` must be 3.11 or newer (checked before capture, install
+  and verify; the transaction runs the probes with it through the shebang);
+- capture copies the program (`0700`) and spec (`0600`) into a fresh
+  `mktemp -d` directory named `traefik-probe-capture-*`, runs `capture` there
+  and removes only that directory, also on failure;
+- `checks.json` is the role's `to_nice_json` output byte for byte, so a
+  baseline installed by one tool shows no change when the other installs the
+  same baseline; the commands have the role's keys and argv.
+
+Differences, on purpose:
+
+- Capture and verify run from the controller through a
+  [`Runner`](backups.md) (ssh, script on stdin) instead of inside a pyinfra
+  run: their result decides what the caller does next, and a pyinfra
+  operation is planned before it runs and cannot hand a result back. Only the
+  install is a pyinfra deploy.
+- The spec and baseline are strict: unknown keys (a misspelt
+  `tls_fingerprints` would silently turn fingerprints off), a port given as a
+  string, an explicit `null` path or flag, an `address` that is a name (curl's
+  `--resolve` takes only IP literals and fails before connecting, which
+  capture would record as the baseline and health would then accept),
+  observations not matching the probes one to one, and a baseline with
+  `tls_fingerprints` but without the captured TLS leaves are refused.
+  Validation errors do not echo the values.
+- Failures are reported as fixed reasons (`ingress changed`, `permanent
+  routing changed`, `no probes`, a refused path or mode, ...), never with the
+  program's own output, which names the probed hosts; run `health.py health
+  checks.json` on the host for the details. This also applies to the deploy's
+  closing check.
+- The baseline is written through `secret_file` (stdin, never a command line
+  or a diff), as the role's `no_log` copy keeps it out of the output.
+- Verify refuses unless `health.py` is exactly the vendored program, root-owned,
+  executable and not writable by group or others below root-owned directories
+  nobody else can write (what the transaction engine requires of a probe), and
+  `checks.json` is a root-owned `0600` regular file; it then runs `health` the
+  way the engine runs a probe, directly through the program's
+  `/usr/bin/python3` shebang. The role only checks the installed program's
+  SHA256 after copying it and runs it through `/usr/bin/python3` explicitly.
