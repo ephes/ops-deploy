@@ -45,7 +45,7 @@ def payload(cfg: UnifiConfig, secrets: SecretValues) -> str:
         raise ValueError("homeassistant_password must not be a placeholder")
     return json.dumps(
         {
-            "version": cfg.version,
+            "installed_package_version": cfg.installed_package_version,
             "controller_bind_address": cfg.controller_bind_address,
             "mongodb_password": password,
             "create_homeassistant_user": cfg.create_homeassistant_user,

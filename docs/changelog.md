@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- UniFi existing-install admission now requires an explicit
+  `installed_package_version`, compared exactly with the installed Debian
+  package and status. Only the qualified `9.5.21-31260-1` build of role
+  release `9.5.21` is accepted; the former configurable `version` option is
+  removed. Other builds/revisions/releases require reviewed qualification,
+  never silent equivalence or upgrades.
+
 - `ops_deploy.infra.traefik_tx.engine`: new `rebaseline` action (ops-deploy
   only; the reference engine refuses it as unknown). On a `clear` record whose
   identity differs from the live one only in the dynamic route tree hash, and

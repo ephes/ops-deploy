@@ -28,7 +28,11 @@ from tests import fakehost
 
 ROOT = Path(__file__).parents[1]
 PACKAGE = ROOT / "src/ops_deploy/services/unifi"
-CFG = UnifiConfig(controller_bind_address="10.2.3.4", external_hostname="unifi.example.com")
+CFG = UnifiConfig(
+    installed_package_version="9.5.21-31260-1",
+    controller_bind_address="10.2.3.4",
+    external_hostname="unifi.example.com",
+)
 SENTINEL = "unifi-probe-sentinel-4XvkZ"
 SECRETS = SecretValues(SecretRef("secrets/test.yml"), {"mongodb_password": SENTINEL})
 ARGS = "/etc/unifi-secrets/mongodb.jvmargs"
@@ -133,7 +137,14 @@ def test_ambiguous_uri_credentials_refused_without_host_access(password: str) ->
     "overrides",
     [
         {"mongodb_enable_auth": False},
-        {"version": "shell;code"},
+        {"version": "9.5.21"},
+        {"installed_package_version": "10.0.3-1"},
+        {"installed_package_version": "9.5.21-31261-1"},
+        {"installed_package_version": "9.5.21-31260-2"},
+        {"installed_package_version": ""},
+        {"installed_package_version": "9.5.21;echo bad"},
+        {"installed_package_version": "9.5.21\n"},
+        {"installed_package_version": 9},
         {"controller_bind_address": "host"},
         {"traefik_ip_allowlist": ['bad"yaml']},
         {"traefik_ip_allowlist": ['fe80::1%bad"yaml']},
@@ -177,8 +188,9 @@ def test_templates_and_supported_defaults_match_current_role() -> None:
     source = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/unifi_deploy"
     defaults = yaml.safe_load((source / "defaults/main.yml").read_text())
     cfg = CFG
+    # Qualification stays tied to the role release, not a configurable no-op.
+    assert defaults["unifi_version"] == "9.5.21"
     for field in (
-        "version",
         "jvm_min_heap_mb",
         "jvm_max_heap_mb",
         "traefik_entrypoints",
@@ -371,3 +383,61 @@ def test_unknown_pending_reload_state_refuses_before_mutation() -> None:
     )
     assert not run.succeeded
     assert run.executed_commands == []
+
+
+def test_exact_package_version_is_required_and_reaches_admission_payload() -> None:
+    values = CFG.model_dump()
+    del values["installed_package_version"]
+    with pytest.raises(ValidationError, match="installed_package_version"):
+        UnifiConfig(**values)
+    data = json.loads(payload(CFG, SECRETS))
+    assert "version" not in data
+    assert data["installed_package_version"] == "9.5.21-31260-1"
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected_reason"),
+    [
+        ("ii |9.5.21-31260-1", "installation_missing_use_ansible"),
+        ("ii |9.5.21-31261-1", "installed_version_mismatch_use_ansible"),
+        ("ii |9.5.21-31260-2", "installed_version_mismatch_use_ansible"),
+        ("ii |9.5.22-31260-1", "installed_version_mismatch_use_ansible"),
+        ("ii |9.5.21", "installed_version_mismatch_use_ansible"),
+        ("ii |9.5.21-31260-1~rc1", "installed_version_mismatch_use_ansible"),
+        ("rc |9.5.21-31260-1", "installed_version_mismatch_use_ansible"),
+        ("iF |9.5.21-31260-1", "installed_version_mismatch_use_ansible"),
+        ("", "installed_version_mismatch_use_ansible"),
+    ],
+)
+def test_host_package_admission_uses_exact_status_and_full_version(
+    monkeypatch: pytest.MonkeyPatch, installed: str, expected_reason: str
+) -> None:
+    module = host_module()
+    original_read = Path.read_text
+    calls: list[list[str]] = []
+
+    def read(path: Path, *args: Any, **kwargs: Any) -> str:
+        if str(path) == "/etc/os-release":
+            return "ID=ubuntu"
+        if str(path) == "/proc/1/comm":
+            return "systemd"
+        return original_read(path, *args, **kwargs)
+
+    def child(args: list[str], **kwargs: Any) -> str:
+        calls.append(args)
+        if args[0] == "uname":
+            return "x86_64"
+        if args[0] == "ip":
+            return "8.8.8.8 dev eth0 src 10.2.3.4"
+        assert args == ["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Version}", "unifi"]
+        return installed
+
+    monkeypatch.setattr(module.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(Path, "is_file", lambda path: False)
+    monkeypatch.setattr(module, "run", child)
+    # The accepted package advances to the deliberately absent installation;
+    # all other status/version values must stop at the earlier package guard.
+    with pytest.raises(ValueError, match=expected_reason):
+        module.check(json.loads(payload(CFG, SECRETS)))
+    assert calls[-1][0] == "dpkg-query"

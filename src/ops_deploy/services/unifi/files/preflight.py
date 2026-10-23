@@ -82,7 +82,7 @@ def check(payload: dict[str, Any]) -> None:
     require(source is not None and source.group(1) == payload["controller_bind_address"], "controller_address_drift")
     require(
         run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Version}", "unifi"])
-        == f'ii |{payload["version"]}',
+        == f'ii |{payload["installed_package_version"]}',
         "installed_version_mismatch_use_ansible",
     )
     require(Path("/usr/lib/unifi/lib/ace.jar").is_file(), "installation_missing_use_ansible")

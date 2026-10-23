@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from ops_deploy.base._common import RoleConfig, Version
+from ops_deploy.base._common import RoleConfig
 from ops_deploy.helpers.traefik import Hostname
 
 Word = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")]
@@ -18,10 +18,11 @@ class UnifiConfig(RoleConfig):
     """Fixed role layout; unknown/unsupported role settings fail rather than being ignored.
 
     No first install, package upgrade, MongoDB provisioning or HA reconciliation.
-    The version is an installed-version assertion, never an upgrade request.
+    Only the qualified 9.5.21 package build is supported; the explicit installed
+    package assertion never requests an upgrade.
     """
 
-    version: Version = "9.5.21"
+    installed_package_version: Literal["9.5.21-31260-1"]
     controller_bind_address: str
     external_hostname: Hostname
     traefik_enabled: bool = True

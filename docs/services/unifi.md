@@ -13,6 +13,7 @@ from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.unifi import UnifiConfig, deploy_unifi
 
 cfg = UnifiConfig(
+    installed_package_version="9.5.21-31260-1",
     controller_bind_address="10.2.3.4",
     external_hostname="unifi.example.com",
     traefik_ip_allowlist=("10.0.0.0/8",),
@@ -30,9 +31,15 @@ Connect directly as root to an existing Debian/Ubuntu x86_64 systemd host
 with Python 3, curl, mongosh, Java 17 and the role's fixed `unifi` account
 and directory layout. The configured backend IPv4 must match the host's
 default-route source address (queried locally without sending a packet).
-The `version` setting defaults to the current role's
-`9.5.21`: it asserts the installed package version and never installs or
-upgrades a package. Unknown settings are rejected.
+The qualified role release is `9.5.21`; its supported full Debian package
+build is `9.5.21-31260-1`. The required `installed_package_version` must
+explicitly name that build, and admission requires exact `dpkg-query`
+installed status and package version. Other releases, builds or revisions
+are refused both by config validation and host admission. There is no
+configurable `version` release option: it would have no effect on these
+fixed templates. Expanding supported package builds needs a reviewed code
+change and qualification, never a prefix match or stripped suffix.
+This deploy never installs or upgrades a package. Unknown settings are rejected.
 
 ## Admission and refusals
 
@@ -86,7 +93,7 @@ allowlist; empty leaves only the controller's own login as protection.
 | Settings | Default | Behavior |
 |---|---|---|
 | `controller_bind_address`, `external_hostname` | required | IPv4 backend and public route hostname |
-| `version` | `9.5.21` | installed-version assertion |
+| `installed_package_version` | required | exact qualified build `9.5.21-31260-1`; no upgrade |
 | `jvm_min_heap_mb`, `jvm_max_heap_mb` | `1024`, `2048` | bounded positive heap settings, min ≤ max |
 | `traefik_enabled` | `True` | false leaves an existing route untouched |
 | `traefik_entrypoints`, `traefik_certresolver` | `("web-secure",)`, `"letsencrypt"` | `None` resolver emits `tls: {}` |
