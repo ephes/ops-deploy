@@ -47,6 +47,7 @@ from ops_deploy.backups.remote import CommandResult, RemoteCommandError, Runner
 
 ENGINE = (Path(__file__).parent / "engine.py").read_bytes()
 RUNNER = (Path(__file__).parent / "runner.py").read_bytes()
+RETENTION = (Path(__file__).parent / "retention.py").read_bytes()
 ENGINE_SHA256 = hashlib.sha256(ENGINE).hexdigest()
 RUNNER_SHA256 = hashlib.sha256(RUNNER).hexdigest()
 PYTHON = "/usr/bin/python3"
@@ -361,4 +362,38 @@ def inspect_host(runner: Runner, policy: Mapping[str, Any], *, timeout: float = 
     code, response = found.get("engine_exit"), found.get("response")
     if not isinstance(code, int) or not isinstance(response, dict):
         raise TransportError("inspect: unusable result")
+    return EngineRun(code, response)
+
+
+def retention_host(
+    runner: Runner,
+    policy: Mapping[str, Any],
+    *,
+    keep_minimal: int,
+    keep_full: int,
+    apply: bool = False,
+    timeout: float = 900,
+) -> EngineRun:
+    """The local rollback set and what retention keeps and removes (:mod:`.retention`).
+
+    Without ``apply`` a read-only listing: no lock, nothing written on the host but the
+    private directory the script removes again. With ``apply`` it removes what the listing
+    says, under the transaction lock and only for a ``clear`` host record. The program's
+    own refusals come back as its exit code (2) and ``error``.
+    """
+
+    request = _request_bytes(
+        {
+            "action": "retention",
+            "policy": dict(policy),
+            "keep_minimal": keep_minimal,
+            "keep_full": keep_full,
+            "apply": apply,
+        }
+    )
+    files = {"engine.py": ENGINE, "retention.py": RETENTION, "request.json": request}
+    found = _call(runner, "retention", 'retention "$dir"', [], timeout, files)
+    code, response = found.get("engine_exit"), found.get("response")
+    if not isinstance(code, int) or not isinstance(response, dict):
+        raise TransportError("retention: unusable result")
     return EngineRun(code, response)

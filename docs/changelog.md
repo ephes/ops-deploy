@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Traefik rollback set (`ops_deploy.infra.traefik_tx`): an optional policy key
+  `rollback_archive` (`root` below `mount`) makes the engine's `binary` write
+  its full pre-change archive to `<root>/<transaction>.tar.gz` on an external
+  disk and name it in `backup.json`. The transaction is refused before anything
+  is written unless `mount` is a read-write mount point, root's and writable by
+  nobody else, and refused when a directory below it is a symlink, not root's,
+  writable by others or on another device. The directories are opened through
+  descriptors and the archive is created exclusively in the opened directory,
+  so an unmount or a swapped directory after the checks cannot redirect it;
+  nothing falls back to the system disk. Without the key the
+  engine is unchanged (parity with ops-library 3110a0f1). A rebaseline reads
+  the route files from the external archive too. New host program
+  `retention.py` (run by `runner.py retention` and
+  `transport.retention_host`): keeps the `keep_minimal` newest transaction
+  directories with their rollback artifact (`original`, `request.json`,
+  `backup.json`), the `keep_full` newest of them with `prechange.tar.gz`, the
+  recorded transaction always, and removes older directories and `candidate`
+  files. By default a read-only listing (no lock, no writes); `apply` takes the
+  engine lock, needs a `clear` record and writes `retention.json` into trimmed
+  directories. External archives are listed, never removed. Nothing runs it
+  automatically.
+
 - `ops_deploy.infra.traefik_tx.proof` (new): the isolated native
   compatibility proof the transaction engine's `binary` action requires. On
   the host, as root and standard library only, it holds the transaction lock,

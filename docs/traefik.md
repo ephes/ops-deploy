@@ -117,7 +117,9 @@ an unexpected error, as `error`.
    restart;
 7. `prechange.tar.gz` of the configured backup set, which must cover the
    binary, `/etc/traefik`, the unit, `/etc/letsencrypt` and unit drop-ins when
-   present, and the approved ACME stores; a copy of the original binary; the
+   present, and the approved ACME stores (with a `rollback_archive` policy it
+   goes to the external disk instead, see
+   [The rollback set](#the-rollback-set)); a copy of the original binary; the
    identity once more; the `pending` record;
 8. atomic replacement, restart, the new identity within 15 tries a second
    apart, acceptance probe, cleanup probe (always), the identity again:
@@ -176,10 +178,89 @@ recovery state` (the reference engine stops with an uncaught `AttributeError`);
 
 The compatibility proof and the release resolver are modules of their own, see
 [Compatibility proof](#compatibility-proof) and
-[Patch-line release resolver](#patch-line-release-resolver). The pre-change
-archive stays where the reference engine writes it, in the transaction directory
-on the system disk, and is never pruned; its place and retention change before
-the engine runs unattended.
+[Patch-line release resolver](#patch-line-release-resolver). Where the pre-change
+archive goes and how long transaction directories stay is
+[The rollback set](#the-rollback-set).
+
+### The rollback set
+
+A rollback needs only the transaction directory's small artifact: `original`
+(the replaced binary), `request.json` and `backup.json`. The two large files,
+`candidate` (the new binary) and the full `prechange.tar.gz` (binary,
+`/etc/traefik`, unit, ACME stores, `/etc/letsencrypt`: about 1.3 GB on a
+long-lived host), only add up on the system disk. Two optional pieces decide
+where they go and how long they stay.
+
+**External archive.** A policy key `rollback_archive` (`{"root": ..., "mount":
+...}`, plain absolute paths, `root` strictly below `mount`) makes `binary` write
+the full archive to `<root>/<transaction>.tar.gz` on an external disk instead
+of the transaction directory; `backup.json` then names it as `archive`. Nothing
+falls back to the system disk:
+
+- `binary` is refused before its baseline probe, and so before anything is
+  written, unless `mount` is a read-write mount point (`findmnt --mountpoint`);
+- at the archive step the mount point is opened (not through a symlink) and
+  must be the root of the file system mounted there (the path names the
+  opened directory, on another device than its parent), root's and writable by
+  nobody else; otherwise the transaction is refused before anything is
+  created;
+- each directory below it is created `0700` if missing and opened through its
+  parent's descriptor without following a symlink; it must be root's, writable
+  by nobody else and on the same device, and `root` must be private;
+- the archive is created exclusively (`0600`) in the opened `root` and `tar`
+  writes into that descriptor; an existing archive of the same name refuses,
+  and a failed `tar` removes the partial archive. The open descriptors pin the
+  disk: an unmount or a renamed or replaced directory after the checks cannot
+  send the archive anywhere else (a mounted disk with an open descriptor is
+  busy; a lazily detached one still receives it).
+
+Without the key the engine writes `prechange.tar.gz` exactly as the reference
+engine does (the parity tests run without it). A rebaseline reads the route
+files from the external archive the record's transaction names, under the same
+checks as a local one; when it is gone, the changed file names are
+`unavailable`, as before. ops-library's engine does not know the key: a
+transaction run through the Ansible entry still writes its archive locally.
+
+**Retention.** `ops_deploy.infra.traefik_tx.retention` is a host program next to
+the engine (standard library only, as root):
+
+```sh
+python3 -I retention.py --request request.json
+# {"keep_minimal": 3, "keep_full": 2, "apply": false, "policy": {...}}
+```
+
+It orders the transaction directories (named by a UUID, real directories;
+nothing else in the state directory is touched) by when their `request.json`
+was written, newest first, and plans:
+
+| Transactions | Kept | Removed |
+|---|---|---|
+| the `keep_full` newest | the artifact and `prechange.tar.gz` | `candidate` |
+| the next ones up to `keep_minimal` | the artifact | `candidate`, `prechange.tar.gz` |
+| the one the host record names, whatever its age | at least the artifact | as above |
+| all older ones | nothing | the directory |
+
+`keep_minimal` is 1 to 20, `keep_full` 0 to `keep_minimal`. Without `apply` it
+is a read-only listing: no lock, no writes, exit 0 with the plan
+(`transactions` with `keep`, `remove`, `free_bytes` each; `other` entries;
+`local_bytes`, `free_bytes`, `available_bytes`; the host record's `phase`) and
+the external archives (`external`: `not_configured`, `not_mounted` or
+`mounted` with name, size and time of each). With `apply` it takes the engine
+lock (refused, exit 2, while it is held), requires a `clear` host record, plans
+again under the lock and removes what that plan says, writing `retention.json`
+(what was removed) into each directory it trimmed; `applied` lists the
+directories it changed. External archives are listed, never removed.
+
+`transport.retention_host(runner, policy, keep_minimal=..., keep_full=...,
+apply=False)` runs it in the foreground through the host program
+(`runner.py retention <dir>`), like `inspect_host`, and returns the exit code
+and the program's JSON. Which host keeps what (and that `apply` on existing
+archives needs the owner's approval) is the caller's policy, in ops-control.
+
+`tests/test_traefik_tx_retention.py` covers plan, listing, apply, lock and
+phase refusals, the program, runner and transport, and the external archive
+(mount checks, directory checks, the transaction refused before any write,
+the rebaseline reading it).
 
 `tests/test_traefik_tx_parity.py` runs this engine and the reference one
 (vendored byte for byte under `tests/parity/traefik_deploy/`;
@@ -231,6 +312,7 @@ with a fixed reason and no host name.
 | `poll_transaction(runner, id)` | read-only status, taken only from marker files that did not change while systemd was asked about the two units (otherwise it looks again, and reports `running` if the transaction keeps moving); `wait_for_transaction(runner, id, timeout=..., interval=5)` polls until the status is final or `timeout` has passed, and takes a failed poll as "ask again" |
 | `cleanup_transaction(runner, id)` | removes the transport directory, holding the transaction's lock; refused while a unit program holds it (`transaction is busy`) or the status is `running` or `restoring`. A unit program that gets the lock only afterwards finds its directory gone and stops before the engine |
 | `inspect_host(runner, policy)` | the engine's read-only `inspect` (identity and host record), in the foreground; it writes nothing but the private directory |
+| `retention_host(runner, policy, keep_minimal=..., keep_full=..., apply=False)` | the [rollback-set retention](#the-rollback-set) program, in the foreground: a read-only listing, or with `apply` the removal under the engine lock |
 
 Statuses: `absent` (no transport directory), `incomplete` (staging did not
 finish), `staged` (never started: the engine did not run), `running`,
@@ -278,7 +360,7 @@ as unknown.
 Only root can read the transport directory: the request holds the evidence and
 the probe commands. The staged archive is deleted once the engine ran;
 `cleanup_transaction` removes the rest. The engine's transaction directory and
-its pre-change archive are unchanged (see above).
+its pre-change archive stay until [retention](#the-rollback-set) removes them.
 
 `tests/test_traefik_tx_runner.py` runs the host program with the real engine
 on the engine tests' fake host (systemd, the download and root faked),

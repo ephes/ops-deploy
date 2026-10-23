@@ -22,11 +22,19 @@ refusal messages, so records written by either engine load unchanged in the othe
 serialize on the same lock, and the controller journal pairs with either one.
 ``enroll``, ``alias``, ``metrics_bind`` and ``acme_storage`` are not ported: they are
 refused before anything is read or written and stay with the Ansible path.
+
+Where ``binary`` keeps its full pre-change archive is the policy's choice: in the transaction
+directory, as the reference engine does, or, with ``rollback_archive`` (``root`` below
+``mount``), as ``<root>/<transaction>.tar.gz`` on an external disk. Then the transaction is
+refused before anything is written unless ``mount`` is mounted read-write there; nothing
+falls back to the root file system. The transaction directory keeps the small rollback
+artifact either way (``original``, ``request.json``, ``backup.json``).
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -42,7 +50,7 @@ import tomllib
 import uuid
 import zlib
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 
 STATE_ROOT = Path("/var/lib/traefik-transactions")
 LOCK = Path("/run/lock/traefik-transaction.lock")
@@ -54,6 +62,10 @@ OWN = ("rebaseline",)
 # Per-file digests of the route tree at the last rebaseline, the basis for the next one's file list.
 ROUTE_INVENTORY = "route-inventory.json"
 PHASES = frozenset({"clear", "pending", "recovery", "degraded"})
+# A plain absolute path: no empty or dot-led component (so no "." or ".."), no trailing slash.
+PLAIN_PATH = re.compile(r"(/[A-Za-z0-9_+@-][A-Za-z0-9._+@-]*)+")
+# Who must own the external archive disk's root and the directories below it.
+ARCHIVE_OWNER = 0
 
 
 class Refused(RuntimeError):
@@ -291,8 +303,145 @@ def candidate_binary(archive: Path, checksum: str, destination: Path, target: st
     return output
 
 
+def plain_path(value: object) -> bool:
+    return isinstance(value, str) and PLAIN_PATH.fullmatch(value) is not None
+
+
+def archive_settings(policy: dict[str, Any]) -> tuple[Path, Path] | None:
+    """The external archive ``(root, mount)`` from ``policy["rollback_archive"]``, or ``None``."""
+
+    value = policy.get("rollback_archive")
+    if value is None:
+        return None
+    require(
+        isinstance(value, dict)
+        and set(value) == {"root", "mount"}
+        and plain_path(value["root"])
+        and plain_path(value["mount"]),
+        "invalid rollback_archive",
+    )
+    root, mount = PurePosixPath(value["root"]), PurePosixPath(value["mount"])
+    require(root != mount and root.is_relative_to(mount), "rollback archive root must be below its mount")
+    return Path(root), Path(mount)
+
+
+def archive_mounted(mount: Path) -> bool:
+    """Whether ``findmnt`` reports a read-write file system mounted at ``mount`` itself."""
+
+    argv = ["findmnt", "--mountpoint", str(mount), "--noheadings", "--first-only", "--output", "TARGET,OPTIONS"]
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    fields = result.stdout.split()
+    return result.returncode == 0 and len(fields) == 2 and fields[0] == str(mount) and "rw" in fields[1].split(",")
+
+
+def mount_root(mount: Path, opened: os.stat_result) -> bool:
+    """Whether the directory opened as ``opened`` is the root of the file system mounted read-write at ``mount``.
+
+    It must be what ``mount`` names now and sit on another device than its parent: a
+    descriptor taken while the disk was not mounted names a directory on ``/``.
+    """
+
+    now, parent = os.stat(mount, follow_symlinks=False), os.stat(mount.parent)
+    same = (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino)
+    return same and parent.st_dev != opened.st_dev and archive_mounted(mount)
+
+
+def archive_dir(policy: dict[str, Any]) -> tuple[int, Path] | None:
+    """The external archive directory, opened (descriptor, path); ``None``: the archive stays local.
+
+    The mount point is opened first (no symlink) and must be the root of the read-write
+    file system mounted there, root's and writable by nobody else; a refusal here comes
+    before anything is created. Each directory below it is then created ``0700`` if
+    missing and opened through its parent's descriptor without following a symlink; it
+    must be root's, writable by nobody else and on the same file system, and ``root``
+    private. The descriptors pin the disk: an unmount after the checks cannot redirect
+    the archive to the system disk (a mounted disk with an open descriptor is busy, and a
+    lazily detached one still receives it).
+    """
+
+    settings = archive_settings(policy)
+    if settings is None:
+        return None
+    root, mount = settings
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        current = os.open(mount, flags)
+    except OSError:
+        raise Refused("rollback archive mount is not mounted") from None
+    try:
+        disk = os.fstat(current)
+        require(mount_root(mount, disk), "rollback archive mount is not mounted")
+        require(disk.st_uid == ARCHIVE_OWNER and not disk.st_mode & 0o022, f"unsafe rollback archive mount: {mount}")
+        path = mount
+        for part in root.relative_to(mount).parts:
+            path = path / part
+            try:
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(part, 0o700, dir_fd=current)
+                child = os.open(part, flags, dir_fd=current)
+            except OSError:
+                raise Refused(f"unsafe rollback archive directory: {path}") from None
+            os.close(current)
+            current = child
+            info = os.fstat(current)
+            require(
+                info.st_uid == ARCHIVE_OWNER and not info.st_mode & 0o022 and info.st_dev == disk.st_dev,
+                f"unsafe rollback archive directory: {path}",
+            )
+        require(not os.fstat(current).st_mode & 0o077, f"rollback archive directory is not private: {root}")
+        return current, root
+    except BaseException:
+        os.close(current)
+        raise
+
+
+def tar_to(stream: BinaryIO, paths: list[str]) -> None:
+    """``tar`` of ``paths`` (as the local archive) written to ``stream``."""
+
+    argv = ["tar", "--acls", "--xattrs", "--numeric-owner", "-czf", "-", "--", *paths]
+    result = subprocess.run(argv, stdout=stream, stderr=subprocess.PIPE, timeout=120, check=False)
+    require(result.returncode == 0, f"command failed: tar (exit {result.returncode})")
+
+
+def external_backup(opened: tuple[int, Path], name: str, paths: list[str]) -> tuple[Path, str]:
+    """The archive as ``name`` in the opened directory (created exclusively, ``0600``): its path and SHA256.
+
+    A failure removes the partial archive again.
+    """
+
+    directory, root = opened
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    try:
+        try:
+            output = os.open(name, flags, 0o600, dir_fd=directory)
+        except FileExistsError:
+            raise Refused("rollback archive exists already") from None
+        try:
+            with os.fdopen(output, "w+b") as stream:
+                tar_to(stream, paths)
+                stream.flush()
+                os.fsync(stream.fileno())
+                stream.seek(0)
+                sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+            os.fsync(directory)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(name, dir_fd=directory)
+            raise
+    finally:
+        os.close(directory)
+    return root / name, sha256
+
+
 def backup(policy: dict[str, Any], directory: Path) -> None:
-    """``prechange.tar.gz`` of the configured rollback set, which must cover binary, config and unit."""
+    """The full pre-change archive of the configured rollback set, which must cover binary, config and unit.
+
+    ``prechange.tar.gz`` in ``directory``, or ``<root>/<transaction>.tar.gz`` with a
+    ``rollback_archive`` (see :func:`archive_dir`); ``backup.json`` names it then.
+    """
 
     paths = policy["backup_paths"]
     required = {policy["binary_path"], "/etc/traefik", "/etc/systemd/system/traefik.service"}
@@ -306,6 +455,11 @@ def backup(policy: dict[str, Any], directory: Path) -> None:
     # An ACME target that does not exist yet (before its adoption) is the only allowed gap.
     require(all(Path(p).exists() or p == policy.get("acme_target") for p in paths), "required backup path absent")
     paths = [p for p in paths if Path(p).exists()]
+    opened = archive_dir(policy)
+    if opened is not None:
+        archive, sha256 = external_backup(opened, f"{directory.name}.tar.gz", paths)
+        save(directory / "backup.json", {"paths": paths, "sha256": sha256, "archive": str(archive)})
+        return
     archive = directory / "prechange.tar.gz"
     run(["tar", "--acls", "--xattrs", "--numeric-owner", "-czf", str(archive), "--", *paths], timeout=120)
     save(directory / "backup.json", {"paths": paths, "sha256": digest(archive)})
@@ -380,11 +534,29 @@ def recorded_route_files(dynamic_sha256: str) -> list[tuple[str, str]] | None:
     return [(name, sha) for name, sha in files]
 
 
+def prechange_archive(directory: Path) -> Path | None:
+    """The transaction's full pre-change archive: local, or external as ``backup.json`` names it."""
+
+    local = directory / "prechange.tar.gz"
+    if os.path.lexists(local):
+        return local
+    record = directory / "backup.json"
+    if not os.path.lexists(record):
+        return None
+    trusted_file(record)
+    value = json.loads(record.read_text())
+    named = value.get("archive") if isinstance(value, dict) else None
+    if not plain_path(named) or PurePosixPath(str(named)).name != f"{directory.name}.tar.gz":
+        return None
+    return Path(str(named))
+
+
 def archived_route_files(record: dict[str, Any], dynamic: str) -> list[tuple[str, str]] | None:
     """The route files in the record's transaction ``prechange.tar.gz``, if they are its exact tree.
 
     A ``clear`` record from ``binary`` names its transaction directory, whose archive holds
-    ``/etc/traefik`` as it was when that record's identity was taken.
+    ``/etc/traefik`` as it was when that record's identity was taken: ``prechange.tar.gz``
+    there, or the external archive its ``backup.json`` names.
     """
 
     transaction = record.get("transaction")
@@ -397,7 +569,9 @@ def archived_route_files(record: dict[str, Any], dynamic: str) -> list[tuple[str
     prefix = dynamic.lstrip("/") + "/"
     files: dict[str, str] = {}
     try:
-        archive = directory / "prechange.tar.gz"
+        archive = prechange_archive(directory)
+        if archive is None:
+            return None
         trusted_file(archive)
         with tarfile.open(archive, "r:gz") as bundle:
             for member in bundle:
@@ -472,6 +646,9 @@ def replace_binary(
     """Replace only the executable; roll back to the original on any failure."""
 
     require(state["phase"] == "clear" and state["identity"] == live, "active recovery or unreviewed baseline drift")
+    # An external archive disk that is not mounted refuses the transaction before anything is written.
+    settings = archive_settings(policy)
+    require(settings is None or archive_mounted(settings[1]), "rollback archive mount is not mounted")
     check_probe(request["baseline_probe"])
     compatibility = request["compatibility"]
     require(
