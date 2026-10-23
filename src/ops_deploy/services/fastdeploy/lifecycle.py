@@ -41,6 +41,7 @@ from ops_deploy.base._common import AbsolutePath, RoleConfig, output
 from ops_deploy.core.config import ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers.probes import probe
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.ops import secret_stdin
 from ops_deploy.services._lifecycle import (
     flag,
@@ -336,7 +337,10 @@ def deploy_fastdeploy_restore(cfg: FastdeployRestoreConfig, secrets: SecretValue
         "R_SUDOERS_CHECK": SUDOERS_CHECK.read_text(),
     }
     label = " (dry run)" if cfg.dry_run else ""
-    _run(f"Restore FastDeploy{label}", values, "fd_restore", password)
+    # The restore writes the Traefik route: refused before it changes anything while a
+    # Traefik transaction holds its host lock (checked once, up front).
+    guard = f"{route_guard_command()}\n" if cfg.traefik_config_path and not cfg.dry_run else ""
+    _run(f"Restore FastDeploy{label}", values, f"{guard}fd_restore", password)
 
 
 def _sql_exists(query: str) -> bool:

@@ -23,6 +23,7 @@ from pyinfra.facts.server import Users
 from pyinfra.operations import files, python, server
 
 from ops_deploy.base._common import output
+from ops_deploy.services._traefik_routes import route_absent
 from ops_deploy.services.work_app._lifecycle import WorkAppPaths
 
 
@@ -85,7 +86,7 @@ def deploy_work_app_remove(cfg: WorkAppRemoveConfig) -> None:
         files.file(name=f"Remove {cfg.unit_path}", path=cfg.unit_path, present=False)
         server.shell(name="Reload systemd", commands=["systemctl daemon-reload"])
     if cfg.remove_traefik_config and host.get_fact(File, path=cfg.traefik_config_path):
-        files.file(name=f"Remove {cfg.traefik_config_path}", path=cfg.traefik_config_path, present=False)
+        route_absent(name=f"Remove {cfg.traefik_config_path}", path=cfg.traefik_config_path)
     if cfg.remove_database and home_present:
         for suffix in ("", "-wal", "-shm"):
             path = cfg.database_path + suffix

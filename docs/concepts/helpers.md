@@ -186,7 +186,9 @@ Writes `/etc/traefik/dynamic/<route.name>.yml` (`root:root 0644`; through
 `secret_file` when it holds a basic-auth hash, see
 [below](#no-hash-in-diff-output)) and restarts `traefik.service` when the file
 changed and Traefik is running (the roles' `reload traefik` handler). With `restart="none"`, it relies on the file
-provider's `watch = true` instead.
+provider's `watch = true` instead. A write is refused while a Traefik binary transaction holds its host lock
+(see [Route writers wait for transactions](../traefik.md#route-writers-wait-for-transactions)); an unchanged route
+runs no check.
 
 `TraefikRoute` covers the roles' dual-router template:
 

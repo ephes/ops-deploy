@@ -1,0 +1,27 @@
+# Traefik route guard (ops_deploy.helpers.traefik.route_guard_command).
+# ${1} the lock file, ${2} the kernel lock table (/proc/locks). Exit 1 while any process
+# holds (or waits for) an flock on the lock file; exit 0 when there is none or no file.
+# It only reads: taking the lock, even shared for an instant, could make a starting
+# transaction refuse. /proc/locks names a lock by the file system device (hex
+# major:minor) and inode, decoded here from the stat device number as glibc does.
+# No backslashes or single quotes, so the sh -c wrapping of pyinfra leaves it unchanged.
+# Braced parameters keep a dollar sign directly before a digit out of the command
+# text, where it would read like the start of a bcrypt hash.
+set -euo pipefail
+lock=${1}
+table=${2}
+if [ ! -e "$lock" ]; then
+    exit 0
+fi
+read -r dev ino < <(stat -L -c "%d %i" -- "$lock")
+major=$(( ((dev >> 8) & 0xfff) | ((dev >> 32) & ~0xfff) ))
+minor=$(( (dev & 0xff) | ((dev >> 12) & ~0xff) ))
+key=$(printf "%02x:%02x:%d" "$major" "$minor" "$ino")
+while read -r line; do
+    case " $line " in
+        *" FLOCK "*" $key "*)
+            echo "traefik route guard: a Traefik transaction holds $lock; not changing routes" >&2
+            exit 1
+            ;;
+    esac
+done <"$table"

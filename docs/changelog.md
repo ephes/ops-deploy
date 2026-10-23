@@ -24,6 +24,17 @@
   directories. External archives are listed, never removed. Nothing runs it
   automatically.
 
+- Route writers refuse while a Traefik transaction holds its host lock: a
+  read-only guard (`/proc/locks`, never takes the lock) runs in front of every
+  change of a file in `/etc/traefik/dynamic` by `traefik_route`, the new
+  `services._traefik_routes.route_put`/`route_absent` (gotosocial,
+  django_site noindex, unifi, vaultwarden, zellij ingress, work_app removal),
+  `_lifecycle.remove_path` below the dynamic directory (compose_app,
+  fastdeploy, nyxmon removal), the work_app restore's route and the fastdeploy
+  restore (checked once up front, not on a dry run). The guard fails the
+  operation before the write. Unchanged deploys run no guard and stay at zero
+  changes; a changed one shows one more command.
+
 - `ops_deploy.infra.traefik_tx.proof` (new): the isolated native
   compatibility proof the transaction engine's `binary` action requires. On
   the host, as root and standard library only, it holds the transaction lock,

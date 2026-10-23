@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.nyxmon import (
     NyxmonBackupConfig,
     NyxmonRemoveConfig,
@@ -202,9 +203,10 @@ def test_remove_takes_units_route_data_user_and_temp_files() -> None:
         "rm -rf /etc/systemd/system/nyxmon.service",
         "rm -rf /etc/systemd/system/nyxmon-monitor.service",
     ]
-    assert commands[5:6] == ["rm -rf /etc/traefik/dynamic/nyxmon.yml"]
-    assert commands[6].startswith("for pid in $(ps -u nyxmon")
-    assert commands[7:] == [
+    # The route goes only while no Traefik transaction holds its host lock.
+    assert commands[5:7] == [route_guard_command(), "rm -rf /etc/traefik/dynamic/nyxmon.yml"]
+    assert commands[7].startswith("for pid in $(ps -u nyxmon")
+    assert commands[8:] == [
         "rm -rf /home/nyxmon",
         "userdel -r nyxmon || true",
         "groupdel nyxmon || true",

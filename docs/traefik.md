@@ -369,6 +369,37 @@ acceptance and inside their own rollback; `tests/test_traefik_tx_transport.py`
 covers the controller side with a fake runner and the real scripts in a local
 bash.
 
+## Route writers wait for transactions
+
+A Traefik binary transaction takes its identity, including the hash of
+`/etc/traefik/dynamic`, before it replaces the binary and again after the
+restart; a route written in between rolls the update back. So every ops-deploy
+writer of a dynamic file first runs a guard that refuses (the operation fails,
+nothing is written) while any process holds or waits for an `flock` on the
+transaction lock `/run/lock/traefik-transaction.lock`:
+
+- `traefik_route` (every service route) and the services' other dynamic files
+  through `ops_deploy.services._traefik_routes` (`route_put`, `route_absent`:
+  gotosocial, django_site's noindex middleware, unifi, vaultwarden, zellij
+  ingress, work_app removal);
+- `_lifecycle.remove_path` for paths below `/etc/traefik/dynamic` (the
+  removals of compose_app, fastdeploy, nyxmon);
+- the work_app restore, just before it writes the route, and the fastdeploy
+  restore, once before it changes anything (not on a dry run).
+
+The guard (`helpers/templates/traefik_route_guard.sh.txt`) only reads: it looks
+up the lock file's device and inode in `/proc/locks` and never takes the lock,
+which, even for an instant, could make a starting transaction refuse. It runs
+only in front of an operation that changes something, so an unchanged deploy
+stays at zero changes. Traefik's own deploy, restore and removal refuse
+transaction-managed hosts altogether (above).
+
+It is a check, not a lock: a transaction that starts right after the check
+still races the write, and writers outside ops-deploy (the frozen Ansible
+roles, FastDeploy's own runs, certbot hooks) do not check at all. A raced
+transaction rolls back, which is safe but noisy; the deploy lock and the
+update windows keep that rare.
+
 ## Compatibility proof
 
 `binary` requires a `compatibility` block: the exact candidate executable and

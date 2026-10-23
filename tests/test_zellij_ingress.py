@@ -17,6 +17,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.zellij_ingress import (
     DEFAULT_ALLOWED_IP_RANGES,
     ZellijIngressConfig,
@@ -192,7 +193,9 @@ def run(cfg: ZellijIngressConfig, responses: dict[str, Any] | None = None) -> Fa
 
 
 def assert_untouched_services(result: FakeRun) -> None:
-    text = "\n".join(result.executed_commands)
+    # A route write runs the read-only Traefik transaction-lock guard first, once.
+    assert result.executed_commands.count(route_guard_command()) == 1
+    text = "\n".join(command for command in result.executed_commands if command != route_guard_command())
     for word in ("systemctl", "service ", "traefik ", "tailscale", "zellij ", "kill", "rm "):
         assert word not in text
 

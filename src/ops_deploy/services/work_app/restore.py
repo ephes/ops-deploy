@@ -30,6 +30,7 @@ from pyinfra.operations import server
 from ops_deploy.base._common import AbsolutePath, output
 from ops_deploy.helpers import http_check, mark_read_only
 from ops_deploy.helpers.python import _as_user
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services._lifecycle.local_backup import MountGuard, mount_check
 from ops_deploy.services.work_app._lifecycle import SLUG, WorkAppPaths
 
@@ -145,12 +146,15 @@ def _django(cfg: WorkAppRestoreConfig, *args: str) -> str:
     return f"if [ -f {shlex.quote(cfg.env_file)} ]; then cd {shlex.quote(cfg.site_path)} && {shell}; fi"
 
 
-def _install_config(src: str, dest: str, follow_up: str) -> str:
-    """``copy`` (root, 0644): written only when content, owner or mode differ, then ``follow_up``."""
+def _install_config(src: str, dest: str, follow_up: str, guard: str = "") -> str:
+    """``copy`` (root, 0644): written only when content, owner or mode differ, then ``follow_up``.
+
+    ``guard``, a command, runs first when the file is to be written; its failure stops the write.
+    """
 
     return (
         f"if ! cmp -s {src} {dest} || [ \"$(stat -c '%a %U %G' {dest} 2>/dev/null)\" != '644 root root' ]; then "
-        f"install -o root -g root -m 0644 {src} {dest} && {{ {follow_up}; }}; fi"
+        f"{guard + ' && ' if guard else ''}install -o root -g root -m 0644 {src} {dest} && {{ {follow_up}; }}; fi"
     )
 
 
@@ -251,7 +255,10 @@ def deploy_work_app_restore(cfg: WorkAppRestoreConfig) -> None:
         reload = "systemctl reload traefik || true" if cfg.reload_traefik else "true"
         step(
             "Restore the Traefik config",
-            _install_config(f"{payload}/configs/traefik.yml", shlex.quote(cfg.traefik_config_path), reload),
+            # Refused while a Traefik transaction holds its host lock (only when it would write).
+            _install_config(
+                f"{payload}/configs/traefik.yml", shlex.quote(cfg.traefik_config_path), reload, route_guard_command()
+            ),
         )
     # Nothing below reads the staging directory.
     cleanup()

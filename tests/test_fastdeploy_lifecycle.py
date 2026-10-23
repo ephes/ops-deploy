@@ -12,6 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.fastdeploy import (
     FastdeployBackupConfig,
     FastdeployRemoveConfig,
@@ -254,6 +255,7 @@ def test_remove_takes_everything_in_the_role_order() -> None:
         "systemctl stop fastdeploy.service || true",
         "systemctl disable fastdeploy.service || true",
         "rm -rf /etc/systemd/system/fastdeploy.service",
+        route_guard_command(),
         "rm -rf /etc/traefik/dynamic/fastdeploy.yml",
         "rm -f /etc/sudoers.d/fastdeploy_nyxmon",
         "rm -f /etc/sudoers.d/fastdeploy_work",

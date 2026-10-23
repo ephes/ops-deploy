@@ -49,6 +49,7 @@ from ops_deploy.helpers import mark_read_only, systemd_unit
 from ops_deploy.helpers.probes import probe
 from ops_deploy.infra.postgres_install import missing_packages
 from ops_deploy.ops import secret_file
+from ops_deploy.services._traefik_routes import route_absent, route_put
 from ops_deploy.services.gotosocial.config import ARCH_MAP, GotosocialConfig
 from ops_deploy.services.gotosocial.render import render_admin_wrapper, render_config, render_route, render_unit
 
@@ -273,14 +274,12 @@ def deploy_gotosocial(cfg: GotosocialConfig, smtp_password: SecretStr | None = N
     if route_text is not None:
         directory = cfg.traefik_config_path.rsplit("/", 1)[0] or "/"
         files.directory(name=f"Ensure {directory}", path=directory, user="root", group="root", mode="0755")
-        files.put(
+        route_put(
             name="Write Traefik route gotosocial",
-            src=StringIO(route_text),
+            src=route_text,
             dest=cfg.traefik_config_path,
-            user="root",
-            group="root",
             mode="0644",
             create_remote_dir=False,
         )
     else:
-        files.file(name="Remove Traefik route gotosocial", path=cfg.traefik_config_path, present=False)
+        route_absent(name="Remove Traefik route gotosocial", path=cfg.traefik_config_path)

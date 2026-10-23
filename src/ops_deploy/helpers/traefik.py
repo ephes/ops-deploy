@@ -11,16 +11,26 @@ Replaces ``webapp_deploy_internal`` ``traefik_config`` and the per-role
   do) would rewrite the file and restart Traefik on every deploy.
 - A route file that holds a hash, now or on the host, is written with
   ``secret_file``: pyinfra's ``--diff`` would print the old and new hash.
+
+Every write of a route through :func:`traefik_route` first runs :data:`ROUTE_GUARD_SCRIPT`
+(see :func:`guarded`), which refuses while a Traefik transaction holds its host lock: a
+changed route tree during a binary update's acceptance would roll the update back. The
+guard runs only when the operation changes something, so an unchanged deploy stays free
+of changes. Services that write or remove other dynamic files use
+``ops_deploy.services._traefik_routes`` (``route_put``, ``route_absent``) or
+``_lifecycle.remove_path``, which run the same guard.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import re
-from collections.abc import Callable, Generator
+import shlex
+from collections.abc import Callable, Generator, Iterable
+from importlib.resources import files as files_of
 from io import StringIO
 from pathlib import PurePosixPath
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import bcrypt
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -37,6 +47,12 @@ from ops_deploy.core.templates import render
 from ops_deploy.ops.secret_file import secret_file
 
 DYNAMIC_DIR = PurePosixPath("/etc/traefik/dynamic")
+# The transaction engines' host lock (ops-library's and ops_deploy.infra.traefik_tx's).
+TRANSACTION_LOCK = "/run/lock/traefik-transaction.lock"
+
+# The guard every route write runs first (templates/traefik_route_guard.sh.txt): read-only,
+# it exits 1 while a process holds or waits for an flock on the lock file.
+ROUTE_GUARD_SCRIPT = files_of("ops_deploy.helpers").joinpath("templates/traefik_route_guard.sh.txt").read_text()
 BCRYPT_COST = 5  # htpasswd -B default, which the Ansible roles use
 
 # Defaults from the Ansible roles (nyxmon_internal_ip_ranges and friends).
@@ -180,8 +196,23 @@ def render_route(route: TraefikRoute, auth_hash: str | None) -> str:
 RouteRenderer = Callable[[TraefikRoute, str | None], str]
 
 
+def route_guard_command(lock: str = TRANSACTION_LOCK, table: str = "/proc/locks") -> str:
+    """:data:`ROUTE_GUARD_SCRIPT` as one shell command; it fails while ``lock`` is held."""
+
+    return shlex.join(["bash", "-c", ROUTE_GUARD_SCRIPT, "traefik-route-guard", lock, table])
+
+
+def guarded(commands: Iterable[Any]) -> Generator[Any, None, None]:
+    """``commands``, preceded by the transaction-lock guard when there is any to run."""
+
+    items = list(commands)
+    if items:
+        yield StringCommand(route_guard_command())
+    yield from items
+
+
 @operation()
-def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[StringCommand, None, None]:
+def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[Any, None, None]:
     # The hash depends on the deployed file, so it is resolved inside the
     # operation (per host, at plan and execution time) rather than up front.
     current = host.get_fact(FileContents, path=str(route.path))
@@ -191,9 +222,10 @@ def _route_file(route: TraefikRoute, renderer: RouteRenderer) -> Generator[Strin
     text = renderer(route, auth_hash)
     if any(_HASH_MARK.search(line) for line in (*(current or ()), *text.splitlines())):
         # files.put --diff prints both versions: write it like a secret, which never shows content.
-        yield from secret_file._inner(route.path, SecretContent(text), user="root", group="root", mode="0644")
-        return
-    yield from files.put._inner(src=StringIO(text), dest=str(route.path), user="root", group="root", mode="0644")
+        yield from guarded(secret_file._inner(route.path, SecretContent(text), user="root", group="root", mode="0644"))
+    else:
+        put = files.put._inner(src=StringIO(text), dest=str(route.path), user="root", group="root", mode="0644")
+        yield from guarded(put)
 
 
 def traefik_route(
