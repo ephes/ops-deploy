@@ -127,8 +127,8 @@ recovery state` (the reference engine stops with an uncaught `AttributeError`);
 Not part of the port yet: the transport, with detached execution so a lost
 session cannot interrupt replace, verify and rollback, and a safe-restore unit
 for a killed engine (until then a lost result leaves the record `pending`, as
-with the reference engine); the compatibility proof, route-only rebaselining,
-the probe programs and the release resolver. The pre-change archive stays where
+with the reference engine); route-only rebaselining and the probe programs.
+The compatibility proof and the release resolver are separate modules (below). The pre-change archive stays where
 the reference engine writes it, in the transaction directory on the system
 disk, and is never pruned; its place and retention change before the engine
 runs unattended.
@@ -140,6 +140,124 @@ through the same requests on the same fake host. Results, refusals and the
 files left behind (records, transaction directory, binary) must be identical
 byte for byte, and so must identity, policy, evidence, archive, backup-set,
 probe and command-line behaviour, compared function by function.
+
+## Compatibility proof
+
+`binary` requires a `compatibility` block: the exact candidate executable and
+the unchanged static config must have loaded every router in an isolated start
+on the host's own architecture, and so must the installed pair. Until now that
+proof was made by hand. `ops_deploy.infra.traefik_tx.proof` makes it on the
+host, as root, standard library only, next to `engine.py`:
+
+```sh
+python3 proof.py --request request.json
+```
+
+The request is the engine's: `policy` (including `acme_paths`),
+`release.version`, `release.sha256` and `archive_path` (the checksum-pinned
+upstream archive; the caller fetches it). Nothing in ops-deploy uploads or
+starts the program yet.
+
+**What it does.** It takes the transaction lock (exclusive, non-blocking, the
+engine's `/run/lock/traefik-transaction.lock`; a held lock is refused) and
+reads the live identity as the engine does. Into a work directory below
+`/var/lib/traefik-update-proofs` (`0700`) go:
+
+- the static config with one change, `api.insecure = true` (added to the
+  `[api]` table or as a new one; the result must parse to the original plus
+  that key, otherwise it is refused);
+- a copy of the dynamic tree, whose digest must equal the identity's;
+- copies of the existing approved ACME stores (`acme_paths`; every store a
+  resolver names, relative ones against the unit's working directory, must be
+  one of them);
+- the candidate from the archive, with its exact SHA256 and version checked.
+
+Both the installed executable and the candidate must report
+`OS/Arch: linux/<native>` (`amd64` on `x86_64`, `arm64` on `aarch64`). Each
+pair, the installed one first, then starts in its own transient unit
+(`systemd-run --wait --collect`) with `PrivateNetwork=yes`,
+`ProtectSystem=strict`, `PrivateTmp=yes`, `NoNewPrivileges=yes`,
+`RuntimeMaxSec=150` and the live unit's `WorkingDirectory`. The dynamic copy is
+bound read-only over `/etc/traefik/dynamic`, the ACME copies and empty log
+directories (for `log.filePath` and `accessLog.filePath`) are bound writable
+over their live paths, so the unit reads no live routing file and writes
+nothing live: Traefik's own ACME attempts fail in the empty network. Inside
+the unit the same program starts Traefik with `--configFile=<copy>`, polls
+`/api/rawdata` on the `traefik` entrypoint (`:8080` unless defined) until the
+router statuses have not changed for 5 seconds, stops it and leaves the answer
+for the outer run. The work directory and units are removed afterwards; work
+left by a killed run is removed (its units stopped) by the next one.
+
+**Pass criteria.** A pair passes when the API answered, the routers settled
+while Traefik kept running, every router (HTTP, TCP, UDP, `@internal`
+included) is `enabled`, and the `@file` routers are exactly the ones the
+dynamic files define. The proof passes when both pairs pass, they loaded the
+same routers and the live identity was unchanged at the end. The defined
+routers come from every `.toml`, `.yaml` and `.yml` file in the tree
+(subdirectories, dot files and upper-case suffixes included, as Traefik reads
+them): TOML is parsed, YAML is scanned for the names under
+`http`/`tcp`/`udp` `routers`. The scanner reads block-style YAML as the
+deploys write it and refuses anything it cannot read for sure (flow style,
+anchors or merge keys at those levels, sequences, tabs, several documents,
+templates). A file Traefik cannot decode makes it drop every `@file` router,
+so the proof then fails with all of them `missing`.
+
+**Refused before a proof exists** (exit 2, `error`, no file): no root, a held
+lock, an unsupported release, a wrong archive checksum or version, a
+candidate that does not run natively, an `api.insecure = false` or an `[api]`
+layout the override cannot edit with certainty, an entrypoint on an address
+other than a wildcard or loopback (an empty network has no other), a log
+directory that would hide configuration, an ACME store outside `acme_paths`,
+an absent approved store below `/dev`, `/proc` or `/sys` (the only trees
+`ProtectSystem=strict` leaves writable, so Traefik could create it there),
+unreadable dynamic YAML, or a failing transient unit. Other absent stores stay
+unbound: the read-only file system keeps Traefik from creating them.
+
+**Output.** The proof is written once, `0600`, as
+`/var/lib/traefik-update-proofs/<version>-<YYYYMMDD>-<host>.json` (`-2`,
+`-3` ... when taken; an existing file is never replaced), and printed. Exit 0:
+passed; 1: the proof ran and failed. The first nine keys are the format of
+the 2026-09 proofs, unchanged; the rest are additions:
+
+| Key | Meaning |
+|---|---|
+| `host`, `version` | canonical host; the candidate's release |
+| `architecture` | `uname -m` of the host |
+| `candidate_binary_sha256` | the candidate executable that was started |
+| `live_config_sha256` | the live static config (the copy differs only by the override) |
+| `router_count`, `disabled`, `api_reachable` | the candidate pair: routers loaded, names not `enabled`, API answered |
+| `isolation_override` | `api.insecure=true only`, or `null` when the config already sets it |
+| `missing`, `unexpected` | candidate: defined `@file` routers not loaded, loaded ones not defined |
+| `same_routers_as_baseline` | both pairs loaded the same router names |
+| `baseline_pair` | the installed pair: `version`, `binary_sha256` and the same counts |
+| `passed`, `baseline_pair_passed` | the engine's `compatibility` flags |
+| `baseline` | the live identity the proof was made against |
+| `isolation`, `started_at`, `finished_at`, `report_reference`, `error` | how, when, this file, why it failed without a pair failing |
+
+Routers are compared by kind and name, so an HTTP router and a TCP router of
+the same name stay apart. In the lists HTTP names appear plain, TCP and UDP
+ones with a `tcp:` or `udp:` prefix, and an HTTP name that contains `:` with
+`http:`.
+
+`proof.compatibility(proof, live)` turns a passed proof into the engine's
+`compatibility` block and refuses a failed one or one made for another live
+identity. The golden test pins the format; the tests run the whole proof with
+a stand-in Traefik and the unit's command line run unisolated.
+
+**VM proof** (disposable Lima VM, Ubuntu 24.04 arm64, systemd 255, real
+Traefik 3.7.14 and 3.7.16 archives, a role-shaped static config with an
+`[api]` table, file logs, an ACME store inside the dynamic directory and a
+relative fallback store; 11 routers over YAML, TOML, a subdirectory and a TCP
+router): 3.7.16 against the live 3.7.14 config passed in about 13 seconds;
+ACME stores (content and mtime), live logs, the running unit, binary and
+config were unchanged and nothing was left behind. A router with a missing
+service failed both pairs (`disabled`); a duplicate-key file failed with every
+`@file` router `missing`. A held lock, a wrong checksum, an amd64 candidate
+and flow-style YAML were refused without a file. SIGTERM during a unit
+stopped it and cleaned up; after SIGKILL the next proof removed the stale
+work and passed. Its `compatibility` block then let the engine update the
+binary to 3.7.16 (`clear`, running = disk). Isolated x86_64 proofs on the
+hosts follow with the runner.
 
 ## Nothing unchecked goes live
 
