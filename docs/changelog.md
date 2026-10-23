@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `ops_deploy.infra.traefik_tx.engine` (new): the host side of the guarded
+  Traefik transaction workflow, ported from ops-library's
+  `traefik_transaction.py` (3110a0f1) for `inspect`, `binary` and `resume`.
+  Same state directory, lock, record schema, request format, refusal messages
+  and exit codes, so records written by either engine load unchanged in the
+  other and the two exclude each other on the lock. `enroll`, `alias`,
+  `metrics_bind` and `acme_storage` are refused before anything is read or
+  written and stay with the Ansible entry. Standard library only, under 1,500
+  lines. `tests/test_traefik_tx_parity.py` runs both engines (the reference
+  vendored under `tests/parity/traefik_deploy/`) through the same requests on a
+  fake host and requires identical results, refusals and files. Nothing uploads
+  or runs the engine yet; no deploy changes.
+
 - `ops_deploy.infra.traefik_release` (new): a pure patch-line release
   resolver for unattended Traefik binary updates. From a decoded GitHub
   release list, a `PatchPolicy(line, cooldown_hours)`, the installed version

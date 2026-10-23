@@ -42,8 +42,104 @@ refuses full deploy, restore and removal there, and so do these deploys:
 with `transaction_required` set, or when `/var/lib/traefik-transactions`
 exists on the host, `deploy_traefik`, `deploy_traefik_restore` and
 `deploy_traefik_remove` stop while planning, before any change. Backup only
-reads and is allowed everywhere. The transaction, prepare and health-probe
-entries of the role are not ported.
+reads and is allowed everywhere. The role's transaction engine is ported (next
+section) but no deploy runs it yet; its prepare and health-probe entries are not
+ported.
+
+## Transaction engine
+
+`ops_deploy.infra.traefik_tx.engine` is the host side of that workflow: a port
+of ops-library's `roles/traefik_deploy/files/traefik_transaction.py` at
+`3110a0f1` for the actions `inspect`, `binary` and `resume`. It is one program,
+standard library only (under 1,500 lines), that runs as root under
+`/usr/bin/python3` 3.11 or newer:
+
+```sh
+python3 engine.py --request request.json
+```
+
+Nothing in ops-deploy uploads or starts it yet. Binary updates still go through
+ops-library's Ansible transaction entry, which runs the reference engine.
+
+| Action | What it does |
+|---|---|
+| `inspect` | read-only: the live identity and the host record |
+| `binary` | replaces only the executable with a checksum-pinned release, restarts and verifies; any failure puts the original back |
+| `resume` | reviewed reconciliation: a new `clear` record for the live identity once the baseline probe passes |
+| `enroll`, `alias`, `metrics_bind`, `acme_storage` | refused before anything is read or written; they stay with the Ansible entry |
+
+**Same state, same records.** State directory `/var/lib/traefik-transactions`
+(`state.json` plus one directory per transaction), lock
+`/run/lock/traefik-transaction.lock` (exclusive, non-blocking `flock`), record
+schema 1 with the phases `clear`, `pending`, `recovery` and `degraded`. Records
+written by either engine load unchanged in the other, a controller journal
+pairs with either, and the two engines exclude each other on the lock. The
+full-deploy guard above checks the same directory. The request format is the
+one in ops-library's `TRANSACTIONS.md` (`action`, `policy`, `controller_state`,
+`evidence`, `baseline_probe`, `acceptance_probe`, `cleanup_probe`,
+`compatibility`, `release`, `archive_path`, `recovery_review_reference`);
+`release.arch` is not read, the caller fetches the archive.
+
+**Output.** One JSON object on stdout. Exit 0: `inspect` prints `identity` and
+`state`; `binary` and `resume` print `changed` and the new record as `state`.
+Exit 1: the binary transaction failed after its `pending` record was written;
+the original binary was put back and verified (`recovery`), or that did not
+verify (`degraded`). Exit 2: refused (always before the binary is touched) or
+an unexpected error, as `error`.
+
+`binary` checks and acts in the reference engine's order:
+
+1. policy: a canonical host name, `/usr/bin/traefik` or
+   `/usr/local/bin/traefik`, `/etc/traefik/traefik.toml`,
+   `/etc/traefik/dynamic`;
+2. root, a root-owned `0700` state directory, the lock;
+3. the host record; the live identity (machine ID, binary hash and version, the
+   running executable is the installed one, exactly `--configFile=<config>` as
+   startup arguments, no `TRAEFIK_` environment, the static config with only
+   the directory file provider and its hash, the hash of the dynamic tree, the
+   hash of the unit text); evidence at most an hour old and tied to that
+   identity; the controller's copy of the record equal to the host's, and the
+   record `clear` at that identity;
+4. the baseline probe; the compatibility proof (same baseline, native
+   architecture, passed, baseline pair passed, a report reference);
+5. a transaction directory with the request; no downgrade; the release
+   archive's exact SHA256, one bounded regular `traefik` member and the version
+   it reports; the candidate's hash and the unchanged static config hash must be
+   the ones the compatibility proof tested;
+6. the installed release again is a no-op: acceptance and cleanup probes, no
+   restart;
+7. `prechange.tar.gz` of the configured backup set, which must cover the
+   binary, `/etc/traefik`, the unit, `/etc/letsencrypt` and unit drop-ins when
+   present, and the approved ACME stores; a copy of the original binary; the
+   identity once more; the `pending` record;
+8. atomic replacement, restart, the new identity within 15 tries a second
+   apart, acceptance probe, cleanup probe (always), the identity again:
+   `clear`;
+9. on any failure, an interrupt included: cleanup probe, the original put back,
+   restart, baseline and cleanup probes: `recovery` with `review_due`; if any of
+   that fails: `degraded`. Both wait for a reviewed `resume`.
+
+Differences from the reference engine, on purpose: only the three actions; a
+host record that is valid JSON but not an object is refused as `invalid
+recovery state` (the reference engine stops with an uncaught `AttributeError`);
+`main` takes its arguments for tests.
+
+Not part of the port yet: the transport, with detached execution so a lost
+session cannot interrupt replace, verify and rollback, and a safe-restore unit
+for a killed engine (until then a lost result leaves the record `pending`, as
+with the reference engine); the compatibility proof, route-only rebaselining,
+the probe programs and the release resolver. The pre-change archive stays where
+the reference engine writes it, in the transaction directory on the system
+disk, and is never pruned; its place and retention change before the engine
+runs unattended.
+
+`tests/test_traefik_tx_parity.py` runs this engine and the reference one
+(vendored byte for byte under `tests/parity/traefik_deploy/`;
+`tests/test_traefik_tx_engine.py` checks it against `OPS_LIBRARY_PATH`)
+through the same requests on the same fake host. Results, refusals and the
+files left behind (records, transaction directory, binary) must be identical
+byte for byte, and so must identity, policy, evidence, archive, backup-set,
+probe and command-line behaviour, compared function by function.
 
 ## Nothing unchecked goes live
 
