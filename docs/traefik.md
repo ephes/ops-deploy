@@ -227,9 +227,9 @@ with a fixed reason and no host name.
 |---|---|
 | `stage_transaction(runner, request, id)` | `/var/lib/traefik-transport/<id>/` (root, `0700`) with `engine.py`, `runner.py`, `request.json` (`binary`, `resume` or `rebaseline`); for `binary` the host downloads the release archive from GitHub (`release.version` for `release.arch`, which must be the host's) and refuses it unless it has exactly `release.sha256`, and `archive_path` is set to it; the safe-restore unit template (below), with `systemctl daemon-reload` when it was missing or differed; last `staged.json` with the files' SHA256, which must be the ones sent. A refusal leaves no directory, and nothing ran: it needs no `pending` record |
 | `start_transaction(runner, id, runtime_max_sec=900)` | the staged files unchanged and never started, then `systemd-run --unit=traefik-tx-<id>.service --collect` with `Type=exec`, `RuntimeMaxSec=<n>` (60 to 3600), `TimeoutStopSec=30`, `KillMode=control-group` and `OnFailure=traefik-tx-safe-restore@<id>.service`; returns once the unit runs. A failure here does not prove that nothing started: poll |
-| the unit | `started.json` (written durably before the engine starts), the engine on `request.json`, then `result.json` (`engine_exit`, `response` = the engine's JSON, `host_phase`, `restore_expected`); the archive is deleted afterwards. The unit fails, and so starts the safe-restore unit, when the engine gave no usable result or left the host record `pending`; a timeout, a kill and a stop (its `SIGTERM` exits 143, not as a clean stop) fail it too |
-| `poll_transaction(runner, id)` | read-only status; `wait_for_transaction(runner, id, timeout=..., interval=5)` polls until the status is final or `timeout` has passed, and takes a failed poll as "ask again" |
-| `cleanup_transaction(runner, id)` | removes the transport directory; refused while `running` or `restoring` |
+| the unit | holding the transaction's lock (an exclusive `flock` on its directory) while it runs: `started.json` (written durably before the engine starts), the engine on `request.json`, then `result.json` (`engine_exit`, `response` = the engine's JSON, `host_phase`, `restore_expected`); the archive is deleted afterwards. The unit fails, and so starts the safe-restore unit, when the engine gave no usable result or left the host record `pending`; a timeout, a kill and a stop (its `SIGTERM` exits 143, not as a clean stop) fail it too |
+| `poll_transaction(runner, id)` | read-only status, taken only from marker files that did not change while systemd was asked about the two units (otherwise it looks again, and reports `running` if the transaction keeps moving); `wait_for_transaction(runner, id, timeout=..., interval=5)` polls until the status is final or `timeout` has passed, and takes a failed poll as "ask again" |
+| `cleanup_transaction(runner, id)` | removes the transport directory, holding the transaction's lock; refused while a unit program holds it (`transaction is busy`) or the status is `running` or `restoring`. A unit program that gets the lock only afterwards finds its directory gone and stops before the engine |
 | `inspect_host(runner, policy)` | the engine's read-only `inspect` (identity and host record), in the foreground; it writes nothing but the private directory |
 
 Statuses: `absent` (no transport directory), `incomplete` (staging did not
@@ -245,8 +245,8 @@ the controller keeps its `pending` one, as ops-library's controller does.
 
 **Safe-restore.** `traefik-tx-safe-restore@.service` is a runtime template in
 `/run/systemd/system` (`Type=oneshot`, `TimeoutStartSec=600`) that runs the
-transaction's `runner.py safe-restore <id>`. It acts only when, under the
-engine lock:
+transaction's `runner.py safe-restore <id>`, holding the transaction's lock. It
+acts only when, under the engine lock:
 
 - the host record is `pending` for a `binary` operation;
 - its transaction directory is below `/var/lib/traefik-transactions` and holds
