@@ -204,6 +204,33 @@ class ThermalMonitoringConfig(BaseServiceConfig, metrics_httpd.HttpdSwitchFields
         return self.htpasswd_dir / "htpasswd"
 
 
+class ThermalCheckConfig(BaseServiceConfig):
+    """Only the Nyxmon freshness check of a thermal endpoint that another host serves.
+
+    The play around the roles may upsert its check on the Nyxmon host rather
+    than on the endpoint's host (two plays, two hosts); this is that second
+    play on its own: the same check (``JsonMetricsCheck``) through the same
+    upsert as :class:`ThermalMonitoringConfig`'s ``nyxmon_check``, with the
+    endpoint password as the check's login. ``service_name``, ``user`` and
+    ``site_path`` name the Nyxmon instance the row lands in; nothing else
+    happens on that host.
+    """
+
+    required_secret_keys: ClassVar[tuple[str, ...]] = (PASSWORD_KEY,)
+
+    service_name: ServiceName = "nyxmon"
+    user: UnixUser = "nyxmon"
+    site_path: PlainPath = PurePosixPath("/home/nyxmon/site")
+    nyxmon_check: JsonMetricsCheck
+
+    @model_validator(mode="after")
+    def _the_check_is_this_nyxmon(self) -> ThermalCheckConfig:
+        check = self.nyxmon_check
+        if check.user != self.user or check.db_path != self.site_path / "db.sqlite3":
+            raise ValueError("nyxmon_check must write this Nyxmon (its user and site_path/db.sqlite3)")
+        return self
+
+
 def role_vars(cfg: ThermalMonitoringConfig, bind: str = "127.0.0.1") -> dict[str, Any]:
     """The roles' variables for ``cfg``, as the templates read them."""
 
@@ -443,6 +470,16 @@ def _timer(cfg: ThermalMonitoringConfig, unit_file: OperationMeta) -> None:
             _if=lambda: not any(meta.did_change() for meta in (unit_file, rollout.start, rollout.restart)),
         )
     mark_read_only(server.shell(name=f"Require an armed {timer}", commands=[armed_check(timer)]))
+
+
+@deploy("Thermal endpoint check")
+def deploy_thermal_check(cfg: ThermalCheckConfig, secrets: SecretValues) -> None:
+    """The json-metrics check of a thermal endpoint served elsewhere, upserted into this host's Nyxmon."""
+
+    # The endpoint password is required either way, and checked before any operation.
+    password = _password(secrets)
+    check = cfg.nyxmon_check
+    upsert_json_metrics_check(check, password if check.auth_username is not None else None)
 
 
 @deploy("Thermal monitoring")

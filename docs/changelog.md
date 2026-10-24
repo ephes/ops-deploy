@@ -21,6 +21,14 @@
   planning. Tests: decision table, fake connector, Docker (trixie, systemd,
   nginx, real apt reinstall through the hook).
 
+- `thermal_monitoring`: `ThermalCheckConfig` / `deploy_thermal_check`, only
+  the endpoint's Nyxmon json-metrics check (the same `JsonMetricsCheck` and
+  upsert as `nyxmon_check`, the endpoint password as its login), for a play
+  that upserts the check into a Nyxmon on another host than the endpoint. The
+  check's user and database (`site_path/db.sqlite3`) must be that Nyxmon's;
+  the password is checked before any operation, also without a login.
+  `deploy_thermal_monitoring` is unchanged.
+
 - Traefik compatibility proof (`ops_deploy.infra.traefik_tx.proof`): a
   `.yaml`/`.yml` dynamic file whose content starts with `{` is read as the JSON
   document it is (JSON is YAML; Traefik loads it) with the standard library's

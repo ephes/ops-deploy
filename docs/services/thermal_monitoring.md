@@ -160,6 +160,20 @@ A converged host gets read-only operations only: the armed-timer check, the
 HTTP server check (and, with a pinned release, its validation and
 `--check-config`) and, with a check, the Nyxmon database privacy check.
 
+## The check on another host (`ThermalCheckConfig`)
+
+When the play around the roles upserts its freshness check into a Nyxmon that
+runs on another host than the endpoint (one play for the endpoint's host, one
+for the Nyxmon host), the second play is `deploy_thermal_check` with a
+`ThermalCheckConfig`: the same `nyxmon_check` (`JsonMetricsCheck`), the same
+upsert below and the endpoint password as the check's login
+(`endpoint_password` from `secrets`; required and checked before any
+operation like the endpoint deploy's, also for a check without a login).
+`service_name`, `user` and `site_path` (defaults `nyxmon`, `nyxmon`,
+`/home/nyxmon/site`) name that Nyxmon; the check's `user` must be its user and
+its database `site_path/db.sqlite3`. Nothing else happens on that host. A
+converged check plans only the database privacy check.
+
 ## The json-metrics check upsert
 
 `ops_deploy.services._nyxmon_json_metrics` is the port of the shared
@@ -242,6 +256,12 @@ ops-library `be348cdb`). Intended differences (for the HTTP server switch see
   the password never outside stdin, the check data only on the upsert's
   stdin, the task's retries, the privacy guard before any upsert, shell
   syntax.
+- `tests/test_thermal_check.py`: the check-only deploy: a converged check
+  (only the privacy check), a missing check upserted with the password on
+  stdin only, a failing probe, nothing else on the host, the privacy guard
+  before any upsert, unusable passwords (with and without a login), a check
+  without a login storing no password, a check whose user or database
+  (another path, another file name) is not this Nyxmon's.
 - `tests/test_nyxmon_json_metrics.py`: the host script against real SQLite
   files: fresh insert (probe leaves the file byte-identical), existing
   service, converged no-op with a running schedule untouched, data spelling,

@@ -6,8 +6,10 @@ from ops_deploy.services.thermal_monitoring.deploy import (
     IpmiSensor,
     LmSensor,
     SysfsSensor,
+    ThermalCheckConfig,
     ThermalExporter,
     ThermalMonitoringConfig,
+    deploy_thermal_check,
     deploy_thermal_monitoring,
 )
 
@@ -17,7 +19,9 @@ __all__ = [
     "JsonMetricsCheck",
     "LmSensor",
     "SysfsSensor",
+    "ThermalCheckConfig",
     "ThermalExporter",
     "ThermalMonitoringConfig",
+    "deploy_thermal_check",
     "deploy_thermal_monitoring",
 ]
