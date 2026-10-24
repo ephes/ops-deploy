@@ -1100,12 +1100,17 @@ class Controller:
         limit = 3 * interval + self.config.interval_s
         return source.failures >= self.config.failure_cycles or source.last_ok is None or now - source.last_ok > limit
 
-    def failing_inputs(self, now: float) -> list[str]:
+    def required(self) -> dict[str, float]:
+        """The required inputs and their poll intervals."""
+
         config = self.config
-        names = [("cpu", config.interval_s)]
-        names += [(d.name, config.interval_s) for d in config.nvme]
-        names += [(d.name, config.hdd_interval_s) for d in config.hdd]
-        return [name for name, interval in names if self._stale(name, interval, now)]
+        names = {"cpu": float(config.interval_s)}
+        names.update({d.name: float(config.interval_s) for d in config.nvme})
+        names.update({d.name: float(config.hdd_interval_s) for d in config.hdd})
+        return names
+
+    def failing_inputs(self, now: float) -> list[str]:
+        return [name for name, interval in self.required().items() if self._stale(name, interval, now)]
 
     def check_stall(self) -> list[str]:
         """Managed fans that read no RPM or 0 RPM for ``stall_cycles`` cycles in a row."""
@@ -1273,6 +1278,8 @@ class Calibrator:
         self.c = controller
         assert controller.config.calibration is not None
         self.cal = controller.config.calibration
+        # Whether a write command reached the BMC (until then a failure is a skip).
+        self.wrote = False
 
     def _guard(self) -> None:
         """Abort unless every required input reads, no scan runs and the curves ask for less
@@ -1280,7 +1287,11 @@ class Calibrator:
 
         c = self.c
         c.read_inputs()
-        failing = c.failing_inputs(c.clock())
+        now = c.clock()
+        # No grace while the fans run below the controller's duty: a source that failed
+        # its latest read counts, not only one that failed failure_cycles times.
+        latest = {name for name in c.required() if (source := c.sources.get(name)) is not None and source.failures}
+        failing = sorted(set(c.failing_inputs(now)) | latest)
         if failing:
             raise CalibrationAbort(f"required inputs failing: {', '.join(failing)}")
         if c.readings.scans and any(c.readings.scans.values()):
@@ -1321,7 +1332,11 @@ class Calibrator:
     def _write(self, kind: str, values: dict[int, int]) -> None:
         """Change only ``values``' positions of the mode or duty bytes (fresh read per attempt); read back."""
 
-        self.c.bmc.update(kind, values)
+        writes = self.c.bmc.writes
+        try:
+            self.c.bmc.update(kind, values)
+        finally:
+            self.wrote = self.wrote or self.c.bmc.writes != writes
 
     def run(self) -> dict[str, Any]:
         config = self.c.config
@@ -1387,9 +1402,9 @@ class Calibrator:
                 report["steps"].append(step)
             report["result"] = "ok"
         except (CalibrationAbort, BmcError) as exc:
-            report["result"] = "aborted"
+            report["result"] = "aborted" if self.wrote else "skipped"
             report["reason"] = str(exc)
-            log(4, f"calibration aborted: {exc}")
+            log(4, f"calibration {report['result']}: {exc}")
         finally:
             try:
                 self._write("mode", {p: mode0[p] for p in managed})
@@ -1501,6 +1516,11 @@ def _calibrate_once(controller: Controller) -> None:
         done = {}
     if isinstance(done, dict) and done.get("id") == cal.id and done.get("result") != "skipped":
         log(6, f"calibration {cal.id} already ran ({done.get('result')}); observing")
+        return
+    if controller.leftover:
+        # Claiming would overwrite the state the stop helper needs to release those fans.
+        held = controller.leftover
+        log(4, f"calibration {cal.id} skipped: positions {held} are still under an earlier run's control")
         return
     try:
         report = Calibrator(controller).run()

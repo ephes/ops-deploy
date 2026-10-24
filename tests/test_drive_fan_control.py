@@ -745,11 +745,21 @@ def test_calibration_aborts_on_a_stall_and_restores(host: FakeHost) -> None:
 
 
 def test_calibration_aborts_when_another_fan_mode_changes(host: FakeHost) -> None:
-    host.update(drift_mode_after_reads=4, drift_position=5)  # during the baseline samples
+    host.update(drift_mode_after_reads=10, drift_position=5)  # while mapping, after writes
     run(host, calibrate_config(), 1)
     report = json.loads(host.paths.calibration_file.read_text())
     assert report["result"] == "aborted"
     assert "unmanaged" in report["reason"]
+    assert host.load()["mode"][:3] == [0, 0, 0]
+    assert host.load()["mode"][5] == 2  # the other fan's change is kept
+
+
+def test_a_foreign_mode_change_before_any_write_skips(host: FakeHost) -> None:
+    host.update(drift_mode_after_reads=4, drift_position=5)  # during the baseline samples
+    run(host, calibrate_config(), 1)
+    report = json.loads(host.paths.calibration_file.read_text())
+    assert report["result"] == "skipped"
+    assert host.bmc_writes() == []
 
 
 def test_calibration_aborts_when_the_wrong_fan_rises(host: FakeHost) -> None:
@@ -835,6 +845,53 @@ def test_calibration_aborts_and_restores_when_an_input_fails_meanwhile(host: Fak
     assert "required inputs failing: cpu" in report["reason"]
     assert host.load()["mode"] == MODE0
     assert host.load()["duty"] == DUTY0
+
+
+def test_calibration_aborts_on_the_first_failed_read_of_an_input(host: FakeHost) -> None:
+    flaky = {"count": 0}
+
+    def hook(n: int) -> None:
+        cpu = host.root / "sys" / "class" / "hwmon" / "hwmon0" / "temp1_input"
+        flaky["count"] += 1
+        if n == 30 and cpu.exists():
+            cpu.unlink()  # one failed read is enough while calibrating
+
+    run_with_hook(host, calibrate_config(), 1, hook)
+    report = json.loads(host.paths.calibration_file.read_text())
+    assert report["result"] == "aborted"
+    assert "cpu" in report["reason"]
+
+
+def test_a_failure_before_the_first_write_is_a_skip_that_runs_again(host: FakeHost) -> None:
+    def hook(n: int) -> None:
+        cpu = host.root / "sys" / "class" / "hwmon" / "hwmon0" / "temp1_input"
+        if n == 4 and cpu.exists():
+            cpu.unlink()  # during the baseline, before any write
+
+    run_with_hook(host, calibrate_config(), 1, hook)
+    assert host.bmc_writes() == []
+    report = json.loads(host.paths.calibration_file.read_text())
+    assert report["result"] == "skipped"
+    host.set_cpu(40.0)
+    run(host, calibrate_config(), 1)
+    assert json.loads(host.paths.calibration_file.read_text())["result"] == "ok"
+
+
+def test_no_calibration_while_an_earlier_run_still_holds_fans(host: FakeHost) -> None:
+    run(host, config(mode="active"), 2)
+    before = len(host.bmc_writes())
+    cal = config(
+        mode="calibrate",
+        calibration=CALIBRATION,
+        managed=[{"position": 3, "sensor": "FAN4_1"}],
+    )
+    host.update(positions={**host.load()["positions"], "FAN4_1": 3}, fans={**host.load()["fans"], "FAN4_1": 400})
+
+    run(host, cal, 1)
+
+    assert len(host.bmc_writes()) == before
+    assert host.control()["managed"] == [0, 1, 2]
+    assert host.control()["control"] is True
 
 
 # -- entry point and systemd ---------------------------------------------------------
