@@ -2,7 +2,7 @@
 
 Each module holds one role: a typed config and a ``@deploy`` function, used on
 their own (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
-SSH guard, dpkg foreign architectures) or as a step of a service deploy (uv,
+SSH guard, dpkg foreign architectures, stale binary restart) or as a step of a service deploy (uv,
 Node.js). They are deploys, not shared helpers, so they sit outside the
 size-capped helpers/ops/core layer.
 """
@@ -16,6 +16,12 @@ from ops_deploy.base.nodejs_install import NodejsInstallConfig, deploy_nodejs_in
 from ops_deploy.base.shell_basics import ShellBasicsConfig, deploy_shell_basics
 from ops_deploy.base.ssh_authorized_keys import AuthorizedKey, SshAuthorizedKeysConfig, deploy_ssh_authorized_keys
 from ops_deploy.base.ssh_guard import SshGuardConfig, deploy_ssh_guard
+from ops_deploy.base.stale_exe_restart import (
+    StaleExeHttpProbe,
+    StaleExeRestartConfig,
+    StaleExeUnit,
+    deploy_stale_exe_restart,
+)
 from ops_deploy.base.systemd_unit_masks import SystemdUnitMasksConfig, UnitMask, deploy_systemd_unit_masks
 from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
 
@@ -30,6 +36,9 @@ __all__ = [
     "ShellBasicsConfig",
     "SshAuthorizedKeysConfig",
     "SshGuardConfig",
+    "StaleExeHttpProbe",
+    "StaleExeRestartConfig",
+    "StaleExeUnit",
     "SystemdUnitMasksConfig",
     "UnitMask",
     "UvInstallConfig",
@@ -41,6 +50,7 @@ __all__ = [
     "deploy_shell_basics",
     "deploy_ssh_authorized_keys",
     "deploy_ssh_guard",
+    "deploy_stale_exe_restart",
     "deploy_systemd_unit_masks",
     "deploy_uv_install",
 ]

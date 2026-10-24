@@ -3,8 +3,8 @@
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
-SSH guard, dpkg foreign architectures), the others are steps a service deploy
-calls (uv, Node.js):
+SSH guard, dpkg foreign architectures, stale binary restart), the others are
+steps a service deploy calls (uv, Node.js):
 
 ```python
 from ops_deploy.base import HostnameConfig, deploy_hostname
@@ -32,6 +32,7 @@ change.
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
 | `ssh_guard` | `ssh_guard_deploy` | `SshGuardConfig` | `deploy_ssh_guard` |
 | `dpkg_arch_remove` | `dpkg_arch_remove` | `DpkgArchRemoveConfig` | `deploy_dpkg_arch_remove` |
+| `stale_exe_restart` | none (pyinfra only) | `StaleExeRestartConfig`, `StaleExeUnit`, `StaleExeHttpProbe` | `deploy_stale_exe_restart` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -301,12 +302,162 @@ either field is refused when the config is built, so the deploy behaves like
 the role with its defaults, which fail on such packages. Remove the packages
 deliberately first (or use the role).
 
+## stale_exe_restart
+
+No ops-library role: a pyinfra-only base deploy. A reload never loads a new
+executable (nginx's `SIGHUP` forks new workers from the old image), and a
+package's maintainer scripts only restart the units the package ships. A unit
+that runs a packaged binary under its own name (an nginx started by a service's
+own `web-nginx.service`, say) therefore keeps running the old, deleted image
+after an upgrade until something restarts it. The file's mtime cannot tell:
+dpkg keeps the archive's mtime; the identity of `/proc/PID/exe` can.
+
+```python
+from ops_deploy.base import StaleExeRestartConfig, deploy_stale_exe_restart
+
+deploy_stale_exe_restart(
+    StaleExeRestartConfig.model_validate(
+        {
+            "units": [
+                {
+                    "unit": "web-nginx.service",
+                    "binary": "/usr/sbin/nginx",
+                    "package": "nginx",
+                    "test": "nginx",
+                    "expected_argv": ["/usr/sbin/nginx", "-c", "/etc/web/nginx.conf", "-g", "daemon off;"],
+                    "http_probe": {"url": "http://127.0.0.1:8080/health", "headers": {"Host": "web.example.org"}},
+                }
+            ]
+        }
+    )
+)
+```
+
+| Field | Default | |
+|---|---|---|
+| `units` | `()` | the allowlist; empty: the timer only reports and restarts nothing; a unit listed twice is refused |
+| `units[].unit` | | a `*.service` name |
+| `units[].binary` | | normalized absolute path of the packaged executable |
+| `units[].package` | | the Debian package that owns `binary` |
+| `units[].test` | | the configuration test; only `nginx` so far |
+| `units[].expected_argv` | | the unit's exact `ExecStart` argv, starting with `binary` (no NUL or newline) |
+| `units[].http_probe` | `None` | `url` (`http://` to `127.0.0.1`, `::1` or `localhost` with an explicit port), `headers`, `status` (default 200) |
+
+The deploy installs, all `root:root`:
+
+| Path | |
+|---|---|
+| `/usr/local/libexec/ops-deploy/stale-exe-restart` (0755) | the host program (`base/files/stale_exe_restart.py`, standard library only, `/usr/bin/python3 -I`, Python 3.11 or newer) |
+| `/etc/ops-deploy/stale-exe-restart.json` (0644) | the allowlist (`{"schema": 1, "units": [...]}`) |
+| `stale-exe-restart.service` | oneshot running the program's `run` mode; `StartLimitIntervalSec=0` (the apt hook may start it after every dpkg run), no `Restart=`, `TimeoutStartSec=50min`, `StateDirectory=ops-deploy/stale-exe-restart` |
+| `stale-exe-restart.timer` | hourly, `RandomizedDelaySec=5min`, `Persistent=true`; enabled and started |
+| `/etc/apt/apt.conf.d/80ops-deploy-stale-exe-restart` (0644) | `DPkg::Post-Invoke` that only queues the oneshot (`systemctl --no-block start`, only with `/run/systemd/system` and the unit file present, failures ignored): no restart happens inside dpkg and the hook never fails apt |
+
+The deploy itself never restarts, reloads or starts a consumer unit and never
+starts the oneshot: it writes the files, reloads systemd when a unit file
+changed, starts the timer and writes the hook last. While planning, the
+packaged program runs read-only in `report` mode with the rendered allowlist
+(sent on stdin, the allowlist as base64), so `--dry` logs what the next timer
+run would do; a host that cannot run it fails the deploy before any change. The
+deploy ends with a read-only `report` of the installed program. A converged
+host gets no mutating operation. Debian-family hosts with systemd only.
+
+`run` acts on an allowlisted unit only when every check passes, in this order:
+
+1. **dpkg is idle**: no process holds `/var/lib/dpkg/lock-frontend` or
+   `/var/lib/dpkg/lock` (`/proc/locks`, read-only), no `apt`, `apt-get`,
+   `aptitude`, `dpkg` or `unattended-upgrade` process runs (a process whose name
+   cannot be read counts as one), and no package is
+   half-installed, unpacked, half-configured, awaiting or pending triggers or
+   marked reinst-required. It waits up to 30 minutes (10 s polls), then records
+   `deferred` and exits 0; the next timer run tries again.
+2. **The unit runs a stale image**: loaded and active (`activating`,
+   `reloading` and the like are `changing`: left for the next run; missing or
+   unknown properties refuse), every process of its
+   cgroup (and the cgroups below it) runs `binary` in the host's mount
+   namespace and root directory, the main PID is among them, and at least one
+   runs a `(deleted)` image or one with another device/inode than the file on
+   disk. A process that cannot be inspected (also a cgroup that cannot be
+   listed), one in another namespace or one running another executable makes
+   the unit `refused`.
+3. **The binary is the package's**: a regular file owned by root and writable
+   only by root, `dpkg-query -S` names exactly `package` (no diversion), the
+   package is `ii`, and `dpkg --verify` does not list the file (it exits 0 for
+   changed files, so its output is read).
+4. **The unit is the approved one**: `ExecStart` read over D-Bus
+   (`busctl --json`, exact argument boundaries; `systemctl show` loses them for
+   `daemon off;`) is exactly `[binary, expected_argv]`, every `ExecStartPre` is
+   a `-t` run of `binary`, there is no `ExecStartPost`, and `NeedDaemonReload`
+   is `no` (a pending unit edit must not ride along with the restart).
+5. **One restart per binary**: no restart was attempted before for this
+   binary's device, inode and sha256 (`stale_no_retry` otherwise).
+6. **The configuration test passes** as the unit's `User`/`Group` (`runuser`):
+   `<binary> -t <expected_argv[1:]>`, then each `ExecStartPre`; exit 0,
+   `test is successful`, no `[emerg]`/`[crit]`/`[alert]` line (output in the
+   journal, not in the state file). The test runs with the oneshot's limits,
+   not the unit's (`LimitNOFILE`), so nginx may warn about
+   `worker_connections`; warnings do not fail it.
+7. **Nothing changed during the tests** (they can take minutes): dpkg idle
+   again, the same main PID still on a stale image, checks 3 and 4 again, the
+   same `ExecStartPre`, the same definition (`User`, `Group` and the sha256 of
+   the unit file and every drop-in systemd loaded) and the same binary (device,
+   inode, sha256) as tested. Otherwise `deferred`: nothing recorded, the next
+   run starts over.
+
+Then the attempt is recorded in the state file, `systemctl try-restart <unit>`
+runs once (`try-restart`: a unit stopped in the last moment stays stopped), and
+the post check waits up to 30 s for: active, a new main PID,
+every process on the disk binary, the main process's image (`/proc/PID/exe`)
+with the file's sha256; then up to 30 s for the HTTP probe's status. There is
+no retry and no rollback: a failed restart or post check is recorded
+(`restart_failed`, `post_failed`) and the binary is not tried again.
+
+For an allowlisted unit that is current or inactive, checks 3 and 4 run as
+well and the result says `ready` (or why a restart would be refused): an
+allowlist entry that does not fit the unit (a typo in the argv, another package,
+a changed unit) shows at once instead of at the next upgrade, makes the oneshot
+exit 1, and makes the deploy fail while planning, before any change (so does a
+unit that is not loaded).
+
+Every other unit is only reported: units whose processes run a stale image
+(`(deleted)`, or another inode than the host file at that path) or map deleted
+libraries below `/usr`, `/lib*`, `/bin`, `/sbin`, `/opt` (basenames only).
+Processes in another mount namespace or root directory (containers, sandboxed
+units) are skipped for the path comparison, because their paths are not host
+paths; only the kernel's `(deleted)` marks are reported for them, and they are
+counted. Deleted libraries never trigger a restart, also not for an allowlisted
+unit.
+
+State: `/var/lib/ops-deploy/stale-exe-restart/state.json` (0644, replaced
+atomically; it records each attempt before the restart, so a crash cannot turn
+into a second restart). A state file that exists but cannot be read or parsed
+(also one whose attempts lack a well-formed binary key, time or result)
+blocks every action: `run` exits 2 and leaves it as it is, `report` names it as
+`state_error`, and the deploy fails while planning until it is repaired or
+removed. Fields: `result` (`ok`, `attention`, `deferred`, `config_error`, `error`),
+`units` (per allowlisted unit: `status`, `reason`, PIDs, running and disk
+identities), `report_only`, `attempts` (per unit: binary key, time, result),
+`foreign_namespace_pids`, `unreadable_pids`, `dpkg_waited_s`. The oneshot exits
+0 when nothing needs attention, 1 when an allowlisted unit is `not_loaded`,
+`refused`, `stale_no_retry`, `test_failed`, `restart_failed`, `post_failed` or
+`error`, or is not `ready` (so `systemctl --failed` shows it), and 2 on a configuration,
+state or internal error. `stale-exe-restart report` prints the same evaluation as JSON
+without testing, restarting or writing anything.
+
+To remove it: `systemctl disable --now stale-exe-restart.timer`, delete the
+hook first, then the units (`daemon-reload`), the program, the allowlist and
+the state directory.
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
 converged run (no change), drift and refusal cases, config validation, and the
 authorized_keys and journald drop-in rendering against the vendored role
 templates.
+`tests/test_base_stale_exe_restart_host.py` runs the host program's decision
+table against an in-memory host (every refusal, test failure, deferral, one
+restart per binary, post checks, the report), and
+`tests/test_base_stale_exe_restart.py` the deploy against the fake connector.
 
 `tests/test_base_journald_docker.py` runs `journald_config` against a real
 systemd and journald in an owned Docker container and is skipped unless
@@ -343,3 +494,27 @@ CLI is wrapped so it can only inspect, exec and copy. The test covers the
 first run, a converged run, jail drift (restart only), drop-in drift (check
 and reload only), a value `sshd -t` rejects (drop-in removed, deploy failed,
 no reload, sshd still running) and recovery, and a stopped ssh.
+
+`tests/test_base_stale_exe_restart_docker.py` runs `stale_exe_restart`
+against real systemd, nginx, dpkg and apt. It is skipped unless
+`STALE_EXE_DOCKER_CONTAINER` holds the full ID of a running container named
+`ops-deploy-stale-exe-*`, labelled `ops-deploy.fixture=stale-exe-restart`,
+with `--network none`, not privileged, no mounts and systemd as PID 1, built
+from `debian:trixie` with `systemd systemd-sysv dbus nginx python3`,
+`nginx.service` masked (a `/dev/null` link) and the installed nginx `.deb`
+under `/opt/stale-exe-fixture/debs` (`apt-get download nginx` while building),
+for example `--cgroupns private --cap-add SYS_ADMIN --cap-add SYS_PTRACE
+--tmpfs /run --tmpfs /run/lock`, `/sbin/init` after remounting
+`/sys/fs/cgroup` read-write (`SYS_PTRACE`: root reads other users'
+`/proc/PID/exe`, as on a host). pyinfra's Docker CLI is wrapped so it can only
+inspect, exec and copy. The test sets up a `webapp-nginx.service` shaped like
+a service's own nginx unit plus units holding a copy of a library, a copy of an
+executable and a sandboxed one, then checks: the first deploy installs
+everything and restarts nothing, the second changes nothing; after a
+package-style replacement (a copy renamed over the binary: same bytes, new
+inode) the report names the stale unit and the report-only ones; the oneshot
+restarts only the allowlisted unit, once; a broken configuration fails the
+test and restarts nothing; a pending unit edit is refused; a held dpkg lock
+makes the run wait; and a real `apt-get install --reinstall` of the cached
+package queues the oneshot through the hook, which restarts the unit after apt
+has finished.

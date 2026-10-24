@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- New base deploy `stale_exe_restart` (`ops_deploy.base`, no ops-library role):
+  restarts allowlisted units that still run a replaced package binary, e.g. an
+  nginx a service runs under its own unit, which no reload and no maintainer
+  script ever restarts. Installs a host program
+  (`/usr/local/libexec/ops-deploy/stale-exe-restart`), its allowlist, a oneshot
+  with an hourly timer and an apt `DPkg::Post-Invoke` hook that only queues the
+  oneshot. A unit is restarted at most once per installed binary and only when
+  dpkg is idle, every process of the unit runs the stale image in the host
+  namespace, the binary is the configured package's (`dpkg -S`, `ii`,
+  `dpkg --verify`), `ExecStart` is exactly the approved argv (D-Bus), no unit
+  edit is pending and the configuration test passes as the unit's user; all of
+  it is checked again right before a `systemctl try-restart`, and a damaged
+  state file blocks every action. Post checks verify the new image and an
+  optional local HTTP probe. Other
+  units are only reported (stale executables, deleted libraries). The deploy
+  never restarts a consumer unit itself; a read-only `report` runs while
+  planning. Tests: decision table, fake connector, Docker (trixie, systemd,
+  nginx, real apt reinstall through the hook).
+
 - Traefik compatibility proof (`ops_deploy.infra.traefik_tx.proof`): a
   `.yaml`/`.yml` dynamic file whose content starts with `{` is read as the JSON
   document it is (JSON is YAML; Traefik loads it) with the standard library's
