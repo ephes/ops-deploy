@@ -16,8 +16,9 @@
   back. 100 % on missing, stale or failing inputs and stalled fans; a clean
   stop restores BMC auto (read back), any other stop sets 100 %, both only on
   the board and firmware control was taken on; `observe` never writes the
-  BMC, also not positions an earlier run left. Calibration is skipped or
-  aborted while inputs fail, a scrub runs or the drives warm up.
+  BMC, also not positions an earlier run left. Calibration is skipped
+  (retried at the next start) or aborted while inputs fail, a scrub runs or
+  the drives warm up, and does not run while an earlier run still holds fans.
   `Type=notify` with a watchdog; numeric metrics
   files for the thermal endpoint's `sysfs_sensors`. The deploy refuses before
   any operation unless board, BMC identity and firmware match and every

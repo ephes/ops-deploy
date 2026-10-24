@@ -33,7 +33,10 @@ Modes:
   fan and measures a duty staircase, restores the BMC's previous mode and duty
   bytes of the managed positions (read back), writes ``calibration.json``,
   then observes. It does not start, and it aborts, while a required input
-  fails, a scrub or resilver runs or the curves ask for ``abort_target_pct``.
+  fails (a single failed read is enough), a scrub or resilver runs or the
+  curves ask for ``abort_target_pct``; until its first BMC write that is a
+  skip, and the same id runs again at the next start. It does not start
+  either while positions an earlier run left under control are still held.
 
 Board and firmware must match the configured identity (DMI board vendor and
 name, BMC manufacturer and product ID, firmware revision) or the process exits

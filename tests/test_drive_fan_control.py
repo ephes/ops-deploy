@@ -847,19 +847,51 @@ def test_calibration_aborts_and_restores_when_an_input_fails_meanwhile(host: Fak
     assert host.load()["duty"] == DUTY0
 
 
-def test_calibration_aborts_on_the_first_failed_read_of_an_input(host: FakeHost) -> None:
-    flaky = {"count": 0}
+@pytest.mark.parametrize("source", ["cpu", "fast-nvme", "tank-hdd-1"])
+def test_one_failed_read_of_any_input_aborts_the_calibration(
+    host: FakeHost, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    failed: list[str] = []
 
-    def hook(n: int) -> None:
-        cpu = host.root / "sys" / "class" / "hwmon" / "hwmon0" / "temp1_input"
-        flaky["count"] += 1
-        if n == 30 and cpu.exists():
-            cpu.unlink()  # one failed read is enough while calibrating
+    def fails_once(name: str) -> bool:
+        # Exactly one read fails, while every managed fan runs the duty staircase;
+        # the next read of the same input works again.
+        if name != source or failed or host.load()["mode"][:3] != [2, 2, 2]:
+            return False
+        failed.append(name)
+        return True
 
-    run_with_hook(host, calibrate_config(), 1, hook)
+    read_cpu, read_nvme, read_hdd = DFC.read_cpu, DFC.read_nvme, DFC.read_hdd
+
+    def cpu(cfg: Any, paths: Any) -> float:
+        if fails_once("cpu"):
+            raise ValueError("no reading this time")
+        return float(read_cpu(cfg, paths))
+
+    def nvme(drive: Any, paths: Any) -> float:
+        if fails_once(drive.name):
+            raise ValueError("no reading this time")
+        return float(read_nvme(drive, paths))
+
+    def hdd(drive: Any, runner: Any) -> Any:
+        if fails_once(drive.name):
+            return DFC.HddReading("error", error="hdparm -C failed this time")
+        return read_hdd(drive, runner)
+
+    monkeypatch.setattr(DFC, "read_cpu", cpu)
+    monkeypatch.setattr(DFC, "read_nvme", nvme)
+    monkeypatch.setattr(DFC, "read_hdd", hdd)
+
+    # Disks every 30 s, so the staircase sees disk polls too.
+    run(host, config(mode="calibrate", calibration=CALIBRATION, hdd_interval_s=30), 1)
+
     report = json.loads(host.paths.calibration_file.read_text())
+    assert failed == [source]
     assert report["result"] == "aborted"
-    assert "cpu" in report["reason"]
+    assert report["reason"] == f"required inputs failing: {source}"
+    assert report["restored"] is True
+    assert host.load()["mode"] == MODE0
+    assert host.load()["duty"] == DUTY0
 
 
 def test_a_failure_before_the_first_write_is_a_skip_that_runs_again(host: FakeHost) -> None:
@@ -878,7 +910,7 @@ def test_a_failure_before_the_first_write_is_a_skip_that_runs_again(host: FakeHo
 
 
 def test_no_calibration_while_an_earlier_run_still_holds_fans(host: FakeHost) -> None:
-    run(host, config(mode="active"), 2)
+    run(host, config(mode="active"), 2)  # its stop helper never ran: positions 0-2 stay manual
     before = len(host.bmc_writes())
     cal = config(
         mode="calibrate",
@@ -887,11 +919,21 @@ def test_no_calibration_while_an_earlier_run_still_holds_fans(host: FakeHost) ->
     )
     host.update(positions={**host.load()["positions"], "FAN4_1": 3}, fans={**host.load()["fans"], "FAN4_1": 400})
 
-    run(host, cal, 1)
+    code, _ = run(host, cal, 1)
 
+    assert code == 0
     assert len(host.bmc_writes()) == before
+    assert not host.paths.calibration_file.exists()  # nothing ran, so nothing is recorded
     assert host.control()["managed"] == [0, 1, 2]
     assert host.control()["control"] is True
+    assert host.status()["leftover_control"] == [0, 1, 2]
+    # The next clean stop still releases the earlier run's fans ...
+    assert DFC.cmd_stop_post(host.paths, host.runner(), "success", sleep=lambda s: None) == 0
+    assert host.load()["mode"] == MODE0
+    # ... and the start after it runs the calibration.
+    run(host, cal, 1)
+    assert json.loads(host.paths.calibration_file.read_text())["result"] == "ok"
+    assert host.load()["mode"] == MODE0
 
 
 # -- entry point and systemd ---------------------------------------------------------

@@ -389,11 +389,15 @@ disjoint, curves rising in temperature and never falling in duty, duties
 
 Once per `calibration.id` (recorded in
 `/var/lib/drive-fan-control/calibration.json`), with every managed and
-protected position in BMC auto mode first. Before it touches the BMC, and at
-every sample while it holds it, every required input must read, no scrub or
-resilver may run, and the curves must ask for less than `abort_target_pct`
-(default 60); before the first write that only skips the calibration (nothing
-written, the same id runs at the next start), later it aborts it. Then: a
+protected position in BMC auto mode first. It does not run while positions an
+earlier run left under control are still held (nothing written or recorded;
+the same id runs at a start after the stop helper released them). Before it
+touches the BMC, and at every sample while it holds it, every required input
+must read (a single failed read is enough to stop it; `failure_cycles` does
+not apply), no scrub or resilver may run, and the curves must ask for less
+than `abort_target_pct` (default 60); before the first BMC write that only
+skips the calibration (nothing written, the same id runs at the next start),
+later it aborts it. Then: a
 baseline, then each managed
 position alone at 100 % manual for `mapping_hold_s` (its own sensor must rise
 by at least two `tach_step_rpm`, the other managed fans by at most one), then
@@ -486,9 +490,11 @@ The emergency return of every position to auto is
   recorded identity or on another firmware), control left behind (never
   written by `observe`, reported, released by the next clean stop),
   calibration (success, skipped while an input fails or a scrub runs and
-  retried, aborted when a drive warms up or an input fails meanwhile, stall, a
-  foreign mode change, a wrong mapping), `READY`/`WATCHDOG` on a real notify
-  socket, argv without backslashes.
+  retried, skipped and retried when an input fails or another fan's mode
+  changes before its first write, aborted when a drive warms up or a single
+  read of any input fails meanwhile, not run while an earlier run still holds
+  fans, stall, a foreign mode change, a wrong mapping), `READY`/`WATCHDOG` on
+  a real notify socket, argv without backslashes.
 - `tests/test_nyxmon_json_metrics.py`: the host script against real SQLite
   files: fresh insert (probe leaves the file byte-identical), existing
   service, converged no-op with a running schedule untouched, data spelling,
