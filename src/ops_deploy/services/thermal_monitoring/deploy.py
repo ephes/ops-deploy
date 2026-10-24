@@ -51,6 +51,7 @@ from ops_deploy.ops import secret_file
 from ops_deploy.services import _metrics_httpd as metrics_httpd
 from ops_deploy.services._nyxmon_json_metrics import JsonMetricsCheck, upsert_json_metrics_check
 from ops_deploy.services.nyxmon_site_checks.deploy import PlainPath
+from ops_deploy.services.thermal_monitoring.fan_control import FanControl, deploy_fan_control, require_identity
 
 TEMPLATE_PACKAGE = "ops_deploy.services.thermal_monitoring"
 # The deploy's key for the endpoint password (also the Nyxmon check's login).
@@ -181,6 +182,8 @@ class ThermalMonitoringConfig(BaseServiceConfig, metrics_httpd.HttpdSwitchFields
     timer_randomized_delay_sec: Seconds = 30
     exporter: ThermalExporter = ThermalExporter()
     nyxmon_check: JsonMetricsCheck | None = None
+    # Optional drive-aware case-fan control (fan_control.py); without it nothing else changes.
+    fan_control: FanControl | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> ThermalMonitoringConfig:
@@ -488,6 +491,8 @@ def deploy_thermal_monitoring(cfg: ThermalMonitoringConfig, secrets: SecretValue
     bind = _bind(cfg)
     if not bind:
         raise DeployError("thermal_monitoring: `tailscale ip --4` printed no single IPv4 address; is Tailscale up?")
+    if cfg.fan_control is not None and cfg.fan_control.enabled:
+        require_identity(cfg.fan_control)
     exporter = cfg.exporter
     group = cfg.group_name
 
@@ -530,6 +535,10 @@ def deploy_thermal_monitoring(cfg: ThermalMonitoringConfig, secrets: SecretValue
     service_rollout(cfg.service_name, restart_when=[endpoint_unit, httpd, *credentials, selection.dropin])
     # The unit runs the selected server and answers 401 with its realm; then pin and prune.
     metrics_httpd.verify(selection)
+
+    # The optional drive-aware fan controller (its own service; the deploy never writes the BMC).
+    if cfg.fan_control is not None:
+        deploy_fan_control(cfg.fan_control)
 
     # The play's tasks: the Nyxmon freshness check of this endpoint.
     check = cfg.nyxmon_check

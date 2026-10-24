@@ -1,8 +1,8 @@
 # thermal_monitoring
 
 Bounded thermal and fan metrics of one host as an authenticated, cached HTTP
-endpoint, and optionally the Nyxmon check that watches the endpoint's
-freshness. A port of ops-library's `thermal_metrics_exporter` and
+endpoint, optionally the Nyxmon check that watches the endpoint's freshness,
+and optionally a drive-aware case-fan controller ([fan_control](#fan_control)). A port of ops-library's `thermal_metrics_exporter` and
 `thermal_metrics_endpoint` roles (ops-library 2.56.0, `540ede2b`; both
 roles are unchanged since the frozen reference `49d2f168`) together with the
 play around them on the private side: the endpoint bound to the host's
@@ -74,6 +74,7 @@ role's defaults:
 | `timer_on_calendar` | `*:0/5` | the wall-clock backstop |
 | `exporter` | see below | the `thermal_metrics_exporter_*` variables |
 | `nyxmon_check` | none | the Nyxmon json-metrics check (`JsonMetricsCheck`), see below |
+| `fan_control` | none | the drive-aware case-fan controller (`FanControl`), see [fan_control](#fan_control) |
 | `httpd_impl` | `python` | the endpoint's HTTP server: the role's Python script or the pinned Rust `metrics-httpd` (the role's `thermal_metrics_endpoint_impl`); see [metrics-httpd switch](metrics_httpd.md) |
 | `httpd_rust_version`, `httpd_rust_sha256` | `""`, `""` | the release pin (`metrics_httpd_rust_version`/`_sha256`); with a version the release is installed and checked even on Python; `rust` needs both |
 
@@ -154,7 +155,11 @@ address. Validation errors never echo the input.
    the selected server and answers an unauthenticated `GET` with 401 and
    realm `thermal-metrics`; only then the `metrics-httpd` pin of the unit
    moves and old releases are pruned.
-8. With `nyxmon_check`: the shared json-metrics upsert below.
+8. With `fan_control`: the controller's packages, files and unit, the
+   service enabled, started (restarted on change) and checked; see
+   [fan_control](#fan_control). Its board check runs while planning, before
+   step 1.
+9. With `nyxmon_check`: the shared json-metrics upsert below.
 
 A converged host gets read-only operations only: the armed-timer check, the
 HTTP server check (and, with a pinned release, its validation and
@@ -241,6 +246,200 @@ ops-library `be348cdb`). Intended differences (for the HTTP server switch see
   lease refusals, umask 077, busy timeout and `BEGIN IMMEDIATE` are the
   task's.
 
+## fan_control
+
+On some server boards the BMC drives the case fans from a CPU-derived index
+only: it never sees a drive temperature, and the OS has no PWM path because
+every fan header belongs to the BMC. `fan_control` adds a small controller
+service, `drive-fan-control`, that reads the drives itself and sets the duty
+of the configured case-fan positions through the BMC. Without the block the
+deploy plans exactly what it planned before: `tests/test_thermal_monitoring_golden.py`
+compares every operation, command, upload and stdin of four host states with
+a record taken before `fan_control` existed.
+
+The controller is `files/drive_fan_control.py` (standard library only), run
+by systemd as `/usr/local/libexec/drive-fan-control/drive_fan_control.py`
+with `/etc/drive-fan-control/config.json`. The deploy never writes the BMC;
+the service owns every write.
+
+```python
+fan_control = {
+    "mode": "observe",  # observe | calibrate | active
+    "board": {
+        "dmi_board_vendor": "ExampleRack",
+        "dmi_board_name": "EX650D4U",
+        "bmc_manufacturer_id": 49622,
+        "bmc_product_id": 8217,
+        "bmc_firmware": ["6.09"],
+    },
+    "managed": [{"position": 0, "sensor": "FAN1_1"}, {"position": 1, "sensor": "FAN2_1"}],
+    "protected": [{"position": 5, "sensor": "FAN6_1"}],  # the CPU fan: stays BMC auto
+    "cpu": {"hwmon_name": "k10temp", "label": "Tctl"},
+    "nvme": [{"name": "fast-nvme", "device": "/dev/disk/by-id/nvme-Example_0001"}],
+    "hdd": [{"name": "hdd-1", "device": "/dev/disk/by-id/ata-Example_0001"}],
+    "scan_pools": [{"pool": "tank", "min_pct": 60}],
+    "curves": {
+        "hdd": [[36, 35], [40, 45], [44, 75], [47, 100]],
+        "nvme": [[48, 35], [55, 50], [65, 80], [72, 100]],
+        "cpu": [[60, 35], [75, 60], [85, 100]],
+    },
+}
+```
+
+### Configuration (`FanControl`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | `false`: the service is stopped and disabled (its clean stop restores BMC auto on the positions it held); files stay, no board probe |
+| `mode` | `observe` | `observe`: compute and record what it would set, never write the BMC. `active`: control the managed fans. `calibrate`: run the calibration once per `calibration.id`, then observe |
+| `backend` | `asrock_rack_ast2600` | the BMC command set (below) |
+| `board` | (required) | DMI `board_vendor`/`board_name`, the BMC's manufacturer and product ID and the allowed firmware revisions; anything else is refused |
+| `managed` | (required) | the fan positions (0 = FAN1 … 15) the controller sets, each with its `ipmitool sdr` sensor |
+| `protected` | (required) | positions that must stay in BMC auto mode (the CPU fan); never managed |
+| `floor_pct` | `35` | the lowest duty (at least 25) |
+| `interval_s` | `30` | the cycle: CPU, NVMe, scan state and fan RPM every cycle |
+| `hdd_interval_s` | `300` | how often the HDDs are polled (at least `interval_s`) |
+| `cpu` | (required) | the hwmon `name` and temperature `label` of the CPU sensor |
+| `nvme` | `()` | NVMe drives by device path; the Composite temperature comes from the hwmon of the drive's controller |
+| `hdd` | `()` | HDDs by device path and `smart_type` (`sat`, `ata`, `auto`) |
+| `scan_pools` | `()` | ZFS pools whose running scrub or resilver raises the duty to at least `min_pct` |
+| `curves` | (required) | `hdd`, `nvme`, `cpu`: (°C, %) points; below the first point its duty, above the last its duty, linear in between |
+| `decrease_step_pct`, `decrease_hold_cycles`, `min_change_pct` | `5`, `3`, `3` | the slew (below) |
+| `failure_cycles`, `stall_cycles` | `2`, `2` | when a failing input or a stopped fan forces 100 % |
+| `calibration` | none | required for `calibrate` (below) |
+| `packages` | `ipmitool`, `smartmontools`, `hdparm` | installed with apt (`zpool` comes with ZFS) |
+
+The controller's own parser checks the configuration while the config is
+built (the same code that reads it on the host), so the host never gets one
+the service would refuse: positions 0–15 and unique, managed and protected
+disjoint, curves rising in temperature and never falling in duty, duties
+0–100, the floor at least 25, device paths absolute below `/dev/` without
+`..`, `cpu`/`fans` not used as drive names, `calibrate` only with a
+`calibration` block.
+
+### What the controller does
+
+- **HDDs are never woken.** Every `hdd_interval_s` it runs `hdparm -C`
+  (CHECK POWER MODE) and only for a spinning disk `smartctl -n standby -d
+  <type> -A -j`, which itself skips a disk that went to standby in between. A
+  disk in standby asks for nothing; that is not an error. A failed poll is
+  retried the next cycle instead of after `hdd_interval_s`. `drivetemp` is not
+  used: its reads are not standby-aware.
+- **Demand**: the highest duty any curve asks for (CPU, every NVMe drive, the
+  hottest spinning HDD) or any running scan's `min_pct`, rounded up and
+  clamped to [`floor_pct`, 100].
+- **Slew**: increases apply at once (smaller than `min_change_pct` are
+  ignored, except to 100 %); a decrease needs the target to stay at least
+  `decrease_step_pct` below the duty for `decrease_hold_cycles` cycles and
+  then steps down `decrease_step_pct` per cycle. The duty starts at 100 % and
+  slews down, in every mode.
+- **Freshness**: each cycle reads the fan RPM, the disks (when due) and the
+  scan state first and the hwmon sensors last, right before it decides; every
+  input carries the time it was read, and staleness is measured at the time
+  of the decision.
+- **Fail-safe**: a required input (the CPU, every NVMe drive, every HDD's
+  power state and the temperature of a spinning HDD; in `active` mode also
+  the fan RPM read) that is missing, unparsable, timed out, or fails
+  `failure_cycles` polls in a row, or whose last good value is older than
+  three of its intervals, forces 100 % (`failsafe`). In `active` mode a
+  managed fan that reads "No Reading" or 0 RPM for `stall_cycles` cycles does
+  too. The scan state is not required: without it there is no feed-forward.
+- **BMC writes** (`active`): it takes control with the duty bytes first (100 %,
+  inactive while auto), then the mode bytes (manual) of the managed positions.
+  Every write attempt reads the 16 bytes right before and sends them back with
+  only the managed positions changed, so a byte someone else changed is never
+  written over, and is read back; a write whose read-back differs is attempted
+  once more from a fresh read, then the managed positions go back to auto
+  (read back) and the process exits 75. The vendor commands time out after
+  5 s. Every 20 cycles it checks that the managed fans are still manual at
+  its duty and puts back what someone else changed on them.
+- **Board check**: at every start, DMI board, BMC manufacturer and product ID
+  and firmware must be the configured ones, otherwise it exits 78 without a
+  BMC write (`RestartPreventExitStatus=78`); an unreadable BMC exits 75 and is
+  retried. The identity it validated is recorded with the control state.
+- **Stop** (`ExecStopPost=`, `stop-post`): it acts only while the controller
+  holds the BMC, as its runtime state `/run/drive-fan-control/control.json`
+  says, whatever the configuration says by then, and only when the board, BMC
+  and firmware are still the ones recorded there (otherwise it writes
+  nothing and fails). After a clean stop (`SERVICE_RESULT=success`) it
+  restores BMC auto on the managed positions; after anything else (crash,
+  watchdog, timeout) it sets them to 100 % manual, and to auto if that fails;
+  all read back. `observe` and `calibrate` never write positions an earlier
+  `active` or `calibrate` run still holds: the run reports them
+  (`leftover_control` in the status, `healthy` 0) and keeps the state, so the
+  stop helper releases them at the service's next clean stop.
+- **systemd**: `Type=notify` (`READY=1` after the board check and, in
+  `active`, after taking control), `WatchdogSec=90` (pinged after every
+  command and while sleeping), `Restart=always` with `RestartSec=15`, at most
+  five starts in 30 minutes, `TimeoutStopSec=180` (the stop helper's worst
+  case), `ProtectSystem=strict` with its runtime and state directories.
+- **Metrics**: one number per file in `/run/drive-fan-control/metrics/`
+  (`na` when unknown): `duty_pct` (held, or would hold), `target_pct`,
+  `healthy` (every required input read, and in `active` every managed fan
+  turning), `failsafe`, `bmc_control` (it holds the managed fans),
+  `managed_auto` (the managed positions read as BMC auto), `hdd_max_c`,
+  `hdd_active`, `scan_active` (`FAN_CONTROL_METRICS`, `FAN_CONTROL_METRICS_DIR`).
+  A thermal exporter `sysfs_sensors` entry per file serves them through the
+  endpoint. `/run/drive-fan-control/status.json` has the whole cycle (inputs,
+  reasons, errors, fan RPM, the BMC write count). The journal gets a line per
+  change of the (would-be) duty, the target or the fail-safe state, and a
+  summary every 20 cycles.
+
+### Calibration (`mode: calibrate`)
+
+Once per `calibration.id` (recorded in
+`/var/lib/drive-fan-control/calibration.json`), with every managed and
+protected position in BMC auto mode first. Before it touches the BMC, and at
+every sample while it holds it, every required input must read, no scrub or
+resilver may run, and the curves must ask for less than `abort_target_pct`
+(default 60); before the first write that only skips the calibration (nothing
+written, the same id runs at the next start), later it aborts it. Then: a
+baseline, then each managed
+position alone at 100 % manual for `mapping_hold_s` (its own sensor must rise
+by at least two `tach_step_rpm`, the other managed fans by at most one), then
+all managed positions through the `steps_pct` staircase, `step_hold_s` each,
+sampling every `sample_interval_s` after `settle_s`. It aborts at once when an
+input fails or warms up as above, when a managed fan stops, when the RPM
+within a step spreads over `oscillation_steps` tach steps, or when the mode
+byte of a position it does not manage changes. In every case the managed positions' mode and duty bytes
+go back to what they were before (read back). The report lists the mapping,
+RPM per step and `suggested_floor_pct` (the lowest step whose fans all stayed
+at or above `min_rpm`). Then it observes. Calibration and `active` are meant
+to be run supervised; each is a separate decision.
+
+### BMC commands (`asrock_rack_ast2600`)
+
+ASRock Rack's documented commands for AST2600 boards (technical document
+TSDQA-72), through `ipmitool -I open`: `raw 0x3a 0xd0 0x12` reads the 16 mode
+bytes (`0x00` default/auto, `0x02` manual) and `raw 0x3a 0xd0 0x0f` the 16
+duty bytes (0–100); `0x11` and `0x0e` followed by 16 bytes write them. The
+mapping of byte position to fan header is the board's; check it with the
+calibration or the BMC's fan settings page. `ipmitool sdr type fan` gives the
+RPM.
+
+### What the deploy does
+
+1. While planning, before anything else: a read-only probe prints the DMI
+   board vendor and name, `ipmitool mc info` and the mode bytes (vendor GET).
+   The deploy refuses unless board, manufacturer, product and firmware match
+   and every position that is not managed is in auto mode.
+2. The packages; `/usr/local/libexec/drive-fan-control` and
+   `/etc/drive-fan-control` `root:root 0755`; the controller `0755` and its
+   config `0644`; the unit `drive-fan-control.service`.
+3. `daemon-reload` when the unit changed; the service enabled and started, and
+   restarted when the script, the config or the unit changed (not right after
+   this run started it).
+4. A read-only check: within 90 s the service reports a healthy cycle of its
+   own process in the configured mode (`bmc_control` 0 in `observe`, 1 in
+   `active`); `calibrate` only needs the unit active.
+
+A converged host plans only the read-only checks. With `enabled: false` the
+deploy only stops and disables the service (no board probe, no file
+operation). Rollback: `mode: observe` (the restart's clean stop restores BMC
+auto) or `enabled: false`; dropping the block leaves the service as it is.
+The emergency return of every position to auto is
+`ipmitool -I open raw 0x3a 0xd0 0x11` with sixteen `0x00`.
+
 ## Tests
 
 - `tests/test_thermal_monitoring.py`: template parity for the role defaults,
@@ -262,6 +461,34 @@ ops-library `be348cdb`). Intended differences (for the HTTP server switch see
   before any upsert, unusable passwords (with and without a login), a check
   without a login storing no password, a check whose user or database
   (another path, another file name) is not this Nyxmon's.
+- `tests/test_thermal_monitoring_golden.py`: without `fan_control` the plans
+  of four host states are the ones recorded before it existed.
+- `tests/test_fan_control.py`: config refusals (also the controller's own),
+  the controller parses the JSON the deploy writes, the identity guard
+  (board, vendor, firmware, product, manufacturer, an unmanaged position in
+  manual mode, unreadable bytes, a failed probe) before any operation, plans
+  for a converged host (read-only checks only), a fresh host, a new mode, a
+  changed script or unit, a stopped service, `enabled: false` (stop and
+  disable, no board probe; nothing when the service is gone), the status
+  check, shell syntax, no BMC write command in any plan.
+- `tests/test_drive_fan_control.py`: the controller against fake `ipmitool`,
+  `hdparm`, `smartctl` and `zpool` executables and a fake sysfs: config
+  refusals, curves, demand, slew and hysteresis, scan feed-forward, standby
+  disks never queried further, every reader error and timeout, staleness,
+  fail-safe after repeated failures, the hwmon sensors read after the slow
+  inputs, `observe` without a BMC write, `active` taking only the managed
+  positions with unmanaged bytes kept, writes built from a fresh read (a
+  foreign change before a retry or after a write is kept), stepping down, a
+  stalled fan, unreadable fans, a write that does not read back (auto
+  restored, exit 75), protected fans not in auto, retaking changed fans, board
+  and firmware refusals, `stop-post` for every `SERVICE_RESULT` (clean: auto;
+  otherwise 100 %, auto if that fails; nothing without control, without a
+  recorded identity or on another firmware), control left behind (never
+  written by `observe`, reported, released by the next clean stop),
+  calibration (success, skipped while an input fails or a scrub runs and
+  retried, aborted when a drive warms up or an input fails meanwhile, stall, a
+  foreign mode change, a wrong mapping), `READY`/`WATCHDOG` on a real notify
+  socket, argv without backslashes.
 - `tests/test_nyxmon_json_metrics.py`: the host script against real SQLite
   files: fresh insert (probe leaves the file byte-identical), existing
   service, converged no-op with a running schedule untouched, data spelling,

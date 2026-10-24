@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- `thermal_monitoring`: optional `fan_control` block, a drive-aware case-fan
+  controller (`drive-fan-control.service`, `files/drive_fan_control.py`,
+  standard library only) for boards whose BMC drives the case fans from the
+  CPU alone. Modes `observe` (compute and record, never write the BMC),
+  `active` and `calibrate` (once per id: header mapping and duty staircase,
+  BMC restored). HDD temperatures only for spinning disks (`hdparm -C`, then
+  `smartctl -n standby`) every `hdd_interval_s`, NVMe and CPU from hwmon every
+  cycle, scrub/resilver feed-forward, piecewise linear curves, slewed
+  decreases. Only the managed positions go to manual; protected ones (the CPU
+  fan) stay auto. Board and firmware must match (exit 78 otherwise); every
+  BMC write attempt keeps the other bytes as read right before it and is read
+  back. 100 % on missing, stale or failing inputs and stalled fans; a clean
+  stop restores BMC auto (read back), any other stop sets 100 %, both only on
+  the board and firmware control was taken on; `observe` never writes the
+  BMC, also not positions an earlier run left. Calibration is skipped or
+  aborted while inputs fail, a scrub runs or the drives warm up.
+  `Type=notify` with a watchdog; numeric metrics
+  files for the thermal endpoint's `sysfs_sensors`. The deploy refuses before
+  any operation unless board, BMC identity and firmware match and every
+  unmanaged fan position is auto, and checks that the started service reports
+  a healthy cycle of its own in the configured mode. Without the block the
+  plans are unchanged (golden test). ASRock Rack AST2600 commands (TSDQA-72).
+
 - `tests/test_become_environment_secrets.py` follows calls by function name
   only within one program. The package is one: its modules and every host
   script one of them imports or loads as a module (a module loader such as
