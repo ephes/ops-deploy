@@ -444,9 +444,23 @@ identities), `report_only`, `attempts` (per unit: binary key, time, result),
 state or internal error. `stale-exe-restart report` prints the same evaluation as JSON
 without testing, restarting or writing anything.
 
-To remove it: `systemctl disable --now stale-exe-restart.timer`, delete the
-hook first, then the units (`daemon-reload`), the program, the allowlist and
-the state directory.
+To remove it, first make the oneshot impossible to start, then drain it:
+
+1. `systemctl disable --now stale-exe-restart.timer` (no runs from the timer);
+2. delete the apt hook and `/etc/systemd/system/stale-exe-restart.service`. An
+   apt process that started before reads the hook from memory, but the hook
+   starts nothing once the unit file is gone;
+3. `systemctl daemon-reload`: from now on no start request can load the unit;
+4. `systemctl stop stale-exe-restart.service` and check that it is `inactive`.
+   A run that was queued or running (it may wait up to 30 minutes for dpkg with
+   the allowlist already loaded) could otherwise still restart a unit; a
+   restart systemd has already started finishes on its own;
+5. delete the timer unit (`daemon-reload`), the program, the allowlist and the
+   state directory.
+
+Taking a unit off the allowlist and deploying again stops its restarts, except
+for a run that already loaded the old allowlist (stop the service as in step 4
+if that matters).
 
 ## Tests
 

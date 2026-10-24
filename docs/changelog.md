@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `stale_exe_restart` docs: the removal steps first make the oneshot
+  impossible to start (timer disabled, apt hook and service unit file deleted,
+  `daemon-reload`) and then stop a queued or running run, which has already
+  loaded the allowlist and could still restart a unit. Docs only.
+
 - New base deploy `stale_exe_restart` (`ops_deploy.base`, no ops-library role):
   restarts allowlisted units that still run a replaced package binary, e.g. an
   nginx a service runs under its own unit, which no reload and no maintainer
