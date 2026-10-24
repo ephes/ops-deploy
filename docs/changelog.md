@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Traefik compatibility proof (`ops_deploy.infra.traefik_tx.proof`): a
+  `.yaml`/`.yml` dynamic file whose content starts with `{` is read as the JSON
+  document it is (JSON is YAML; Traefik loads it) with the standard library's
+  `json`, giving the same router names as the same data in block style: the
+  keys below `http`/`tcp`/`udp` `routers`, none for a file with middlewares
+  only. Before, the proof refused such a file as unsupported YAML, so a host
+  with one could not be updated. Only strict JSON is read; a syntax error
+  (with its line), duplicate keys, `NaN`/`Infinity`, `<<` keys or a section
+  that is neither an object nor `null` are refused, and a file that is not
+  UTF-8 or not valid TOML is now refused by name and position, without the
+  decoder's text (which can quote the file). Block-style YAML and TOML
+  are read as before. New read-only `proof.py --routes request.json`: reads
+  the live dynamic files exactly as the proof does (no lock, no unit, nothing
+  written) and prints the route file and router counts or the same refusal,
+  so a controller can find an unreadable route file before a transaction
+  writes anything. The proof record format is unchanged.
+
 - `sync_tree` no longer reports a mutation for rsync
   cannot-delete-nonempty diagnostics and their exact impossible directory
   deletion candidates. Protected descendants remain untouched; real transfers,

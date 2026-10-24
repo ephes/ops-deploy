@@ -125,6 +125,56 @@ tcp:
         servers:
           - address: "127.0.0.1:5432"
 """
+# JSON is YAML, so Traefik loads a JSON document from a .yml file. This is the shape the
+# first live proof refused: a service's routers were removed and its middlewares kept, a
+# 19-line JSON document whose ``http`` holds only ``middlewares``.
+JSON_MIDDLEWARES_ONLY = """{
+  "http": {
+    "middlewares": {
+      "retired-auth": {
+        "basicAuth": {
+          "users": [
+            "admin:$2y$05$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        }
+      },
+      "retired-redirect": {
+        "redirectScheme": {
+          "scheme": "https",
+          "permanent": true
+        }
+      }
+    }
+  }
+}
+"""
+JSON_ROUTES = """{
+  "http": {
+    "routers": {
+      "json-web": {"rule": "Host(`json.example.test`)", "entryPoints": ["web"], "service": "json"},
+      "json-secure": {"rule": "Host(`json.example.test`)", "service": "json", "tls": {"certResolver": "le"}}
+    },
+    "middlewares": {"json-headers": {"headers": {"stsSeconds": 31536000}}},
+    "services": {"json": {"loadBalancer": {"servers": [{"url": "http://127.0.0.1:9100"}]}}}
+  },
+  "tcp": {"routers": {"json-db": {"rule": "HostSNI(`*`)", "service": "db"}}},
+  "udp": {"routers": {"json-dns": {"service": "dns"}}},
+  "tls": {"options": {"default": {"minVersion": "VersionTLS12"}}}
+}
+"""
+JSON_ROUTERS = ["json-web@file", "json-secure@file", "tcp:json-db@file", "udp:json-dns@file"]
+JSON_SCANNED = [
+    "{}",
+    '{"http": {}}',
+    '{"http": null, "tcp": {"routers": null}}',
+    '{"http": {"routers": {}}}',
+    '{"http": {"routers": {"x": null}}}',
+    '\n  {"http": {"routers": {"lead": {}}}}\n',
+    '{"http":{"routers":{"compact":{"rule":"Host(`a`)"}}},"udp":{"routers":{"u":{}}}}',
+    '{"http": {"routers": {"caf\\u00e9": {}, "na\u00efve": {}, "a:b": {}, "c@d": {}, "x\\/y": {}}}}',
+    '{"http": {"services": {"routers": {"fake": {}}}}, "x": {"http": {"routers": {"nested": {}}}}}',
+    '{"http_extra": {"routers": {"not-a-router": {}}}, "tcp": {"routers": {"http": {}}}}',
+]
 TRAEFIK = """#!{python}
 import http.server, json, sys, tomllib
 VERSION, ARCH, MODE = {version!r}, {arch!r}, {mode!r}
@@ -311,17 +361,27 @@ class ProofHost:
             stack.enter_context(patch("signal.signal", new=lambda *args: self.handlers.append(args)))
             yield
 
-    def main(self, request: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+    def main(self, request: dict[str, Any] | None = None, flag: str = "--request") -> tuple[int, dict[str, Any]]:
         path = self.root / "request.json"
         path.write_text(json.dumps(self.request() if request is None else request))
         previous = os.umask(0o022)
         try:
             with self.patched(), patch("builtins.print") as printed:
-                code = proof.main(["--request", str(path)])
+                code = proof.main([flag, str(path)])
         finally:
             os.umask(previous)
         (line,), _ = printed.call_args
         return code, json.loads(line)
+
+    def routes(self) -> tuple[int, dict[str, Any]]:
+        """``proof.py --routes`` with the proof's request (it reads only the policy)."""
+
+        return self.main(flag="--routes")
+
+    def tree(self) -> list[str]:
+        """Everything below the root but the request file."""
+
+        return sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*") if path.name != "request.json")
 
 
 real_run = engine.run
@@ -531,6 +591,38 @@ def test_unreadable_dynamic_yaml_refuses(host: ProofHost) -> None:
     assert_refused(host, "unsupported YAML in flow.yml, line 1")
 
 
+def test_json_route_files_are_read_and_the_proof_passes(host: ProofHost) -> None:
+    """The middlewares-only JSON file the first live proof refused, next to a JSON file with routers."""
+
+    (host.dynamic / "middlewares-only.yml").write_text(JSON_MIDDLEWARES_ONLY)
+    (host.dynamic / "sub" / "json.yml").write_text(JSON_ROUTES)
+    shown = [*FILE_ROUTERS, *JSON_ROUTERS, *INTERNAL_ROUTERS]
+    host.set_mode("baseline", {"rawdata": rawdata(shown)})
+    host.set_mode("candidate", {"rawdata": rawdata(shown)})
+
+    code, printed = host.main()
+
+    assert code == 0
+    assert printed["passed"] is printed["baseline_pair_passed"] is True
+    assert printed["router_count"] == printed["baseline_pair"]["router_count"] == len(shown)
+    assert printed["missing"] == printed["unexpected"] == []
+
+
+def test_json_routers_traefik_did_not_load_fail_the_proof(host: ProofHost) -> None:
+    (host.dynamic / "sub" / "json.yml").write_text(JSON_ROUTES)
+
+    code, printed = host.main()
+
+    assert code == 1
+    assert printed["missing"] == printed["baseline_pair"]["missing"] == sorted(JSON_ROUTERS)
+
+
+def test_invalid_json_in_a_route_file_refuses(host: ProofHost) -> None:
+    (host.dynamic / "broken.yml").write_text('{\n  "http": {"routers": {"x": {}}}\n  "tcp": {}\n}\n')
+
+    assert_refused(host, "invalid JSON in broken.yml, line 3")
+
+
 def test_a_dynamic_copy_that_differs_from_the_live_tree_refuses(host: ProofHost) -> None:
     copytree = shutil.copytree
 
@@ -579,14 +671,15 @@ def test_main_installs_the_signal_handlers(host: ProofHost) -> None:
     assert host.handlers == [(signal.SIGHUP, proof.interrupted), (signal.SIGTERM, proof.interrupted)]
 
 
-def test_the_program_runs_standalone_next_to_the_engine(tmp_path: Path) -> None:
+@pytest.mark.parametrize("flag", ["--request", "--routes"])
+def test_the_program_runs_standalone_next_to_the_engine(tmp_path: Path, flag: str) -> None:
     """``python3 -I proof.py``: no package and no script directory on the path; it imports its neighbour."""
 
     request = tmp_path / "request.json"
     request.write_text(json.dumps({"policy": {"host": "Not Canonical"}, "release": {}}))
 
     result = subprocess.run(
-        [sys.executable, "-I", str(PROOF_PATH), "--request", str(request)],
+        [sys.executable, "-I", str(PROOF_PATH), flag, str(request)],
         capture_output=True,
         text=True,
         timeout=60,
@@ -596,6 +689,48 @@ def test_the_program_runs_standalone_next_to_the_engine(tmp_path: Path) -> None:
 
     assert (result.returncode, result.stderr) == (2, "")
     assert json.loads(result.stdout) == {"failed": True, "error": "invalid canonical host"}
+
+
+# -- the read-only route scan -------------------------------------------------------------
+
+
+def test_the_route_scan_reads_the_live_tree_and_writes_nothing(host: ProofHost) -> None:
+    (host.dynamic / "middlewares-only.yml").write_text(JSON_MIDDLEWARES_ONLY)
+    (host.dynamic / "sub" / "json.yml").write_text(JSON_ROUTES)
+    before = host.tree()
+
+    code, printed = host.routes()
+
+    # app.yml, extra.toml, sub/nested.yml and the two JSON files; notes.txt and acme.json are no route files.
+    assert (code, printed) == (0, {"files": 5, "routers": {"http": 6, "tcp": 2, "udp": 1}})
+    assert host.tree() == before  # no lock file, no proof directory content, no work directory
+    assert (host.units, host.stopped) == ([], [])
+    assert proof.defined_routers(host.dynamic) == routers([*FILE_ROUTERS, *JSON_ROUTERS])
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "error"),
+    [
+        ("broken.yml", '{"http": {"routers": {"x": {}}}}}', "invalid JSON in broken.yml, line 1"),
+        ("sub/dup.yaml", '{"http": {}, "http": {}}', "unsupported JSON in sub/dup.yaml: duplicate key"),
+        ("flow.yml", "http: {routers: {x: {service: s}}}\n", "unsupported YAML in flow.yml, line 1"),
+        ("sub/bad.toml", "[http]\nrouters = 1\n", "unsupported routers in sub/bad.toml"),
+    ],
+)
+def test_the_route_scan_refuses_what_the_proof_refuses(host: ProofHost, name: str, text: str, error: str) -> None:
+    (host.dynamic / name).write_text(text)
+    before = host.tree()
+
+    assert host.routes() == (2, {"failed": True, "error": error})
+    assert host.tree() == before
+    assert_refused(host, error)
+
+
+def test_the_route_scan_needs_the_tree_the_engine_accepts(host: ProofHost) -> None:
+    (host.dynamic / "link.yml").symlink_to(host.dynamic / "app.yml")
+
+    assert host.routes() == (2, {"failed": True, "error": f"symlink in managed configuration: {host.dynamic}/link.yml"})
+    assert host.units == []
 
 
 # -- the parts ----------------------------------------------------------------------------
@@ -928,6 +1063,106 @@ def test_toml_routers_that_are_not_a_table_are_refused(tmp_path: Path) -> None:
 
     with pytest.raises(engine.Refused, match=r"^unsupported routers in bad\.toml$"):
         proof.defined_routers(tmp_path)
+
+
+def test_json_route_files_are_parsed(tmp_path: Path) -> None:
+    (tmp_path / "middlewares-only.yml").write_text(JSON_MIDDLEWARES_ONLY)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "routes.YAML").write_text(JSON_ROUTES)
+    (tmp_path / "app.yml").write_text(APP)
+
+    assert proof.file_routers(JSON_MIDDLEWARES_ONLY, "middlewares-only.yml") == set()
+    assert proof.defined_routers(tmp_path) == routers(
+        ["app-http@file", "app-secure@file", "tcp:db@file", *JSON_ROUTERS]
+    )
+
+
+@pytest.mark.parametrize("text", [JSON_MIDDLEWARES_ONLY, JSON_ROUTES, *JSON_SCANNED])
+def test_json_routers_agree_with_a_yaml_parser(text: str) -> None:
+    """JSON is YAML: the parsed names are the ones a YAML parser reads from the same file."""
+
+    assert proof.file_routers(text, "file.yml") == yaml_reference(text)
+
+
+@pytest.mark.parametrize("text", [JSON_MIDDLEWARES_ONLY, JSON_ROUTES])
+def test_json_routers_are_what_the_scanner_reads_from_the_same_data_in_block_style(text: str) -> None:
+    block = yaml.safe_dump(json.loads(text), default_flow_style=False, sort_keys=False)
+
+    assert not block.startswith("{")
+    assert proof.yaml_routers(block, "file.yml") == proof.file_routers(text, "file.yml")
+
+
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [
+        ('{\n  "http": {\n    "routers" {"x": {}}\n  }\n}\n', "invalid JSON in x.yml, line 3"),
+        ("{http: {routers: {x: {}}}}\n", "invalid JSON in x.yml, line 1"),
+        ('{"http": {}}\n---\n{"tcp": {}}\n', "invalid JSON in x.yml, line 2"),
+        ('{"http": {}}\n# trailing comment\n', "invalid JSON in x.yml, line 2"),
+        ('{"http": {"routers": {"x": {}}}, "http": {}}', "unsupported JSON in x.yml: duplicate key"),
+        ('{"http": {"routers": {"x": {"rule": "a", "rule": "b"}}}}', "unsupported JSON in x.yml: duplicate key"),
+        ('{"http": {"routers": {"x": {"weight": NaN}}}}', "unsupported JSON in x.yml: NaN is not JSON"),
+        ('{"tls": {"x": -Infinity}}', "unsupported JSON in x.yml: -Infinity is not JSON"),
+        ('{"x": ' + "[" * 100_000 + "]" * 100_000 + "}", "unsupported JSON in x.yml"),
+        ('{"x": ' + "9" * 5000 + "}", "unsupported JSON in x.yml"),
+        ('{"http": []}', "unsupported http in x.yml"),
+        ('{"udp": "dns"}', "unsupported udp in x.yml"),
+        ('{"http": {"routers": ["x"]}}', "unsupported routers in x.yml"),
+        ('{"tcp": {"routers": true}}', "unsupported routers in x.yml"),
+        ('{"<<": {"http": {}}}', "unsupported JSON in x.yml: key <<"),
+        ('{"http": {"<<": {}}}', "unsupported JSON in x.yml: key <<"),
+        ('{"http": {"routers": {"<<": {}}}}', "unsupported JSON in x.yml: key <<"),
+    ],
+)
+def test_json_that_is_not_certain_is_refused(text: str, error: str) -> None:
+    with pytest.raises(engine.Refused, match=f"^{re.escape(error)}$"):
+        proof.file_routers(text, "x.yml")
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "error"),
+    [
+        # Only a document that starts with "{" is JSON; the rest stays with the YAML scanner.
+        ("x.yml", '# routes\n{"http": {}}\n', "unsupported YAML in x.yml, line 2"),
+        ("x.yml", '---\n{"http": {}}\n', "unsupported YAML in x.yml, line 2"),
+        ("x.yml", '\ufeff{"http": {}}\n', "unsupported YAML in x.yml, line 1"),
+        ("x.toml", '{"http": {}}\n', "invalid TOML in x.toml, line 1, column 1"),
+    ],
+)
+def test_route_files_are_read_by_suffix_and_first_character(name: str, text: str, error: str) -> None:
+    with pytest.raises(engine.Refused, match=f"^{re.escape(error)}$"):
+        proof.file_routers(text, name)
+
+
+def test_route_files_the_proof_cannot_decode_are_refused_by_name(tmp_path: Path) -> None:
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "latin.yml").write_bytes("http:\n  routers:\n    caf\xe9: {}\n".encode("latin-1"))
+
+    with pytest.raises(engine.Refused, match=r"^unsupported encoding in sub/latin\.yml: not UTF-8$"):
+        proof.defined_routers(tmp_path)
+
+    (tmp_path / "sub" / "latin.yml").unlink()
+    (tmp_path / "broken.toml").write_text("[http.routers.x\n")
+    with pytest.raises(engine.Refused, match=r"^invalid TOML in broken\.toml, line 1, column 16$"):
+        proof.defined_routers(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [
+        # The decoder's own messages would quote the key or the character.
+        ("x = {hunter2 = 1, hunter2 = 2}\n", "invalid TOML in x.toml, line 1, column 30"),
+        ("[hunter2]\n[hunter2]\n", "invalid TOML in x.toml, line 2, column 9"),
+        ('k = "a\x7fhunter2"\n', "invalid TOML in x.toml, line 1, column 7"),
+        ("[http]\nhunter2 = 1\nhunter2 = 2\n", "invalid TOML in x.toml, line 3, column 12"),
+        ("a = 1\nhunter2 = ", "invalid TOML in x.toml, end of document"),
+    ],
+)
+def test_toml_refusals_name_the_position_and_never_the_content(text: str, error: str) -> None:
+    with pytest.raises(engine.Refused) as refused:
+        proof.file_routers(text, "x.toml")
+
+    assert str(refused.value) == error
 
 
 def test_a_pair_passes_only_when_settled_running_and_complete() -> None:

@@ -28,6 +28,11 @@ the live identity did not change meanwhile. It is written once, as
 taken), and printed. Exit 0: passed; 1: the proof ran and failed (``passed`` false);
 2: refused or an error before a proof existed, with ``error`` and no file.
 :func:`compatibility` turns a passed proof into the engine's ``compatibility`` block.
+
+``python3 proof.py --routes request.json`` only reads the live dynamic files as the
+proof reads them (:func:`routes`: no lock, no unit, nothing written) and prints the
+counts, exit 0, or refuses like the proof, exit 2: a route file the proof cannot read
+shows up before a transaction changes anything.
 """
 
 from __future__ import annotations
@@ -75,6 +80,7 @@ WRITABLE_IN_UNIT = (Path("/dev"), Path("/proc"), Path("/sys"))
 SAFE_PATH = re.compile(r"/[A-Za-z0-9._@+/-]*")
 API_HEADER = re.compile(r"^[ \t]*\[api\][ \t]*(?:#.*)?$", re.MULTILINE)
 YAML_KEY = re.compile(r"""(?P<key>[A-Za-z0-9_][A-Za-z0-9_.@-]*|"[^"\\]*"|'[^']*')[ ]*:(?:[ ]+(?P<value>.*))?""")
+TOML_POSITION = re.compile(r"\(at (line \d+, column \d+|end of document)\)$")
 UNIT_MAX_SEC = 150  # the transient unit's hard limit
 DEADLINE = 90  # seconds Traefik gets to load every router
 SETTLE = 5  # router statuses unchanged this long: loaded (the file provider throttles 2 s)
@@ -245,24 +251,124 @@ def yaml_routers(text: str, name: str) -> set[Router]:
     return found
 
 
+class UnsupportedJson(ValueError):
+    """JSON that :func:`json_routers` cannot read with certainty."""
+
+
+def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    # ``json`` keeps the last of duplicate keys, a YAML parser rejects them: not certain.
+    data = dict(pairs)
+    if len(data) != len(pairs):
+        raise UnsupportedJson("duplicate key")
+    return data
+
+
+def no_constant(name: str) -> Any:
+    raise UnsupportedJson(f"{name} is not JSON")
+
+
+def json_routers(text: str, name: str) -> set[Router]:
+    """Router names in a dynamic file that is one JSON document; what is not certain is refused.
+
+    JSON is YAML, so Traefik loads such a file from a ``.yml``/``.yaml`` name. Read with
+    the standard library, it gives the names :func:`yaml_routers` reads from the same
+    content in block style: the keys below ``<kind>.routers``; other sections are not
+    read. Only RFC 8259 JSON with unique keys is read; ``<<`` keys, a section that is
+    neither an object nor ``null`` and anything else uncertain are refused.
+    """
+
+    try:
+        data = json.loads(text, object_pairs_hook=unique_keys, parse_constant=no_constant)
+    except json.JSONDecodeError as exc:
+        raise Refused(f"invalid JSON in {name}, line {exc.lineno}") from None
+    except UnsupportedJson as exc:
+        raise Refused(f"unsupported JSON in {name}: {exc}") from None
+    except (ValueError, RecursionError):  # beyond the integer digit limit, nested too deep
+        raise Refused(f"unsupported JSON in {name}") from None
+    require(isinstance(data, dict), f"unsupported JSON in {name}")
+    found: set[Router] = set()
+    levels = [data]
+    for kind in KINDS:
+        section = data.get(kind)
+        if section is None:
+            continue
+        require(isinstance(section, dict), f"unsupported {kind} in {name}")
+        levels.append(section)
+        routers = section.get("routers")
+        if routers is None:
+            continue
+        require(isinstance(routers, dict), f"unsupported routers in {name}")
+        levels.append(routers)
+        found.update((kind, f"{router}@file") for router in routers)
+    # Never a merge key in JSON; refused at the levels read, as the YAML scan does.
+    require(all("<<" not in level for level in levels), f"unsupported JSON in {name}: key <<")
+    return found
+
+
+def file_routers(text: str, name: str) -> set[Router]:
+    """``@file`` routers of one dynamic file: TOML parsed, a JSON document parsed, YAML scanned.
+
+    ``name`` is the file's path relative to the dynamic directory; its suffix decides
+    TOML. A ``.yml``/``.yaml`` file whose content starts with ``{`` (after JSON
+    whitespace) is a JSON document; anything else there is YAML for the scanner.
+    """
+
+    if Path(name).suffix.lower() == ".toml":
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            # The decoder's message can quote keys or characters of the file: only its position is kept.
+            position = TOML_POSITION.search(str(exc))
+            raise Refused(f"invalid TOML in {name}" + (f", {position.group(1)}" if position else "")) from None
+        names: set[Router] = set()
+        for kind in KINDS:
+            routers = data.get(kind, {}).get("routers", {}) if isinstance(data.get(kind), dict) else {}
+            require(isinstance(routers, dict), f"unsupported routers in {name}")
+            names.update((kind, f"{router}@file") for router in routers)
+        return names
+    if text.lstrip(" \t\r\n").startswith("{"):
+        return json_routers(text, name)
+    return yaml_routers(text, name)
+
+
+def dynamic_files(root: Path) -> list[Path]:
+    """The files below ``root`` that Traefik's file provider reads, sorted."""
+
+    return [path for path in sorted(root.rglob("*")) if path.is_file() and path.suffix.lower() in DYNAMIC_SUFFIXES]
+
+
 def defined_routers(root: Path) -> set[Router]:
-    """``@file`` routers the dynamic tree defines (TOML parsed, YAML scanned)."""
+    """``@file`` routers the dynamic tree defines (:func:`file_routers` for each file)."""
 
     names: set[Router] = set()
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in DYNAMIC_SUFFIXES:
-            continue
-        text = path.read_text(encoding="utf-8")
+    for path in dynamic_files(root):
         relative = str(path.relative_to(root))
-        if path.suffix.lower() == ".toml":
-            data = tomllib.loads(text)
-            for kind in KINDS:
-                routers = data.get(kind, {}).get("routers", {}) if isinstance(data.get(kind), dict) else {}
-                require(isinstance(routers, dict), f"unsupported routers in {relative}")
-                names.update((kind, f"{router}@file") for router in routers)
-        else:
-            names.update(yaml_routers(text, relative))
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise Refused(f"unsupported encoding in {relative}: not UTF-8") from None
+        names.update(file_routers(text, relative))
     return names
+
+
+def routes(request: dict[str, Any]) -> dict[str, Any]:
+    """Read-only: what the live dynamic files define, read exactly as the proof reads them.
+
+    No lock, no unit and nothing written. The tree must be what the engine's identity
+    requires (an ordinary directory, no symlinks, root's files); a file the proof would
+    refuse is refused here as well, before a transaction changes anything. The answer
+    has counts only: route files read and ``@file`` routers per kind.
+    """
+
+    policy = request["policy"]
+    engine.validate_policy(policy)
+    root = Path(policy["dynamic_path"])
+    engine.route_files(root)
+    found = defined_routers(root)
+    return {
+        "files": len(dynamic_files(root)),
+        "routers": {kind: sum(1 for router in found if router[0] == kind) for kind in KINDS},
+    }
 
 
 def native(binary: Path) -> None:
@@ -602,6 +708,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Isolated native compatibility proof for a Traefik binary update.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--request", type=Path)
+    group.add_argument(
+        "--routes", type=Path, metavar="REQUEST", help="read-only: the routers the live dynamic files define"
+    )
     group.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     os.umask(0o077)
@@ -610,6 +719,9 @@ def main(argv: list[str] | None = None) -> int:
     for signum in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(signum, interrupted)
     try:
+        if args.routes is not None:
+            print(json.dumps(routes(json.loads(args.routes.read_text()))))
+            return 0
         proof = run_proof(json.loads(args.request.read_text()))
     except (Refused, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(json.dumps({"failed": True, "error": str(exc)}))

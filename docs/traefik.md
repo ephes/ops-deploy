@@ -458,8 +458,30 @@ them): TOML is parsed, YAML is scanned for the names under
 `http`/`tcp`/`udp` `routers`. The scanner reads block-style YAML as the
 deploys write it and refuses anything it cannot read for sure (flow style,
 anchors or merge keys at those levels, sequences, tabs, several documents,
-templates). A file Traefik cannot decode makes it drop every `@file` router,
-so the proof then fails with all of them `missing`.
+templates). A `.yaml`/`.yml` file whose content starts with `{` is a JSON
+document (JSON is YAML, so Traefik loads it): it is parsed with the standard
+library's `json` and gives the same names as the same data in block style,
+the keys below `http`/`tcp`/`udp` `routers`; a file with middlewares only
+defines none. Only strict JSON is read: a syntax error (`invalid JSON in
+<file>, line <n>`), a duplicate key (`json` keeps the last one where a YAML
+parser rejects the file), `NaN`/`Infinity`, a `<<` key, a section that is
+neither an object nor `null`, or anything else after the document is
+refused. A file that is not UTF-8, or a `.toml` file that is not valid TOML,
+is refused by name. A refusal of a dynamic file names the file and a
+position, never content (the TOML decoder's own message can quote a key or
+a character, so only its line and column are kept). A file Traefik cannot
+decode makes it drop every `@file` router, so the proof then fails with all
+of them `missing`.
+
+**Read-only route scan.** `python3 proof.py --routes request.json` (the same
+request; only `policy` is read) reads the live dynamic files exactly as the
+proof reads its copy of them, without the lock, a unit, the proof directory
+or any other write. The tree must be what the engine's identity accepts (an
+ordinary directory, no symlinks, root's files). It prints
+`{"files": <route files>, "routers": {"http": <n>, "tcp": <n>, "udp": <n>}}`
+(counts only), exit 0, or refuses like the proof, `{"failed": true, "error":
+...}`, exit 2. A controller can run it before a transaction changes anything,
+so a route file the proof could not read shows up in a check run.
 
 **Refused before a proof exists** (exit 2, `error`, no file): no root, a held
 lock, an unsupported release, a wrong archive checksum or version, a
@@ -470,8 +492,9 @@ directory that would hide configuration, an ACME store outside `acme_paths`,
 an approved store path with a symlink in it (a dangling one included), an
 absent approved store below `/dev`, `/proc` or `/sys` (the only trees
 `ProtectSystem=strict` leaves writable, so Traefik could create it there),
-unreadable dynamic YAML, or a failing transient unit. Other absent stores stay
-unbound: the read-only file system keeps Traefik from creating them.
+an unreadable dynamic file (YAML, JSON, TOML or its encoding), or a failing
+transient unit. Other absent stores stay unbound: the read-only file system
+keeps Traefik from creating them.
 
 **Output.** The proof is written once, `0600`, as
 `/var/lib/traefik-update-proofs/<version>-<YYYYMMDD>-<host>.json` (`-2`,
