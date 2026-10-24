@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- `ssh_guard` (`ops_deploy.base`) fixes fail2ban's CVE-2026-109786 and is
+  extended (docs/base.md, "ssh_guard"). New `fail2ban_sshd_filter_fix`
+  (default `auto`) writes `/etc/fail2ban/filter.d/sshd.local` with the two
+  lines of upstream fail2ban ddd879d while the packaged sshd filter still
+  accepts `on <token>`, removes it once the package is fixed, and refuses a
+  `sshd.local` it did not write. New jail keys `fail2ban_banaction`
+  (`nftables…`/`iptables…` only), `fail2ban_journalmatch`,
+  `fail2ban_ban_only`; `fail2ban_no_recommends`; `python3-systemd` for the
+  systemd backend is installed first, fail2ban and `nftables` (for an
+  nftables ban action) after fail2ban has loaded the fixed filter. Gates after every fail2ban
+  change (and when the running jail still lacks the fix) stop fail2ban and
+  fail the deploy on a vulnerable loaded filter or a missing/foreign ban
+  action. New sshd fields `max_startups`, `per_source_net_block_size`,
+  `per_source_penalties`, `per_source_penalty_exempt_list`, refused at plan
+  time on an OpenSSH too old for them (`ssh -V`); a changed drop-in is
+  checked with `sshd -t` and its effective values with `sshd -T` (numbers by
+  value) before the reload. Plan-time refusals: an `sshd-session` the filter ignores, an
+  enabled `nftables.service`, an unresolvable port name. Without a configured
+  ban action, `nftables` is installed when the jail inherits an nftables
+  action from fail2ban's other jail files. With only the role's fields the
+  jail and drop-in stay byte-identical to the role; the default config now
+  also manages the filter override, the gates and `python3-systemd`. The
+  Docker fixture test now runs an exposed host (vulnerable filter loaded, nft
+  missing) through the fix, spoof regression, IPv4/IPv6 nftables bans and the
+  gates.
+
 - `stale_exe_restart` docs: the removal steps first make the oneshot
   impossible to start (timer disabled, apt hook and service unit file deleted,
   `daemon-reload`) and then stop a queued or running run, which has already

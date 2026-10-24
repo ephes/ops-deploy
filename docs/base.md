@@ -222,58 +222,171 @@ last owns the file.
 
 ## ssh_guard
 
+fail2ban for sshd plus an sshd drop-in with per-source limits: the role's
+two files, extended by the fix for fail2ban's CVE-2026-109786, explicit jail
+keys, and checks of the running jail and of sshd's effective values.
+
 | Field | Default | |
 |---|---|---|
-| `fail2ban_enabled` | `True` | `False` skips the package, service and jail |
+| `fail2ban_enabled` | `True` | `False` skips the package, service, filter override and jail |
 | `fail2ban_package`, `fail2ban_service_name` | `fail2ban` | |
 | `fail2ban_jail_name` | `sshd` | letters, digits, `_ . @ -` |
 | `fail2ban_backend`, `fail2ban_filter`, `fail2ban_port` | `systemd`, `sshd`, `ssh` | |
 | `fail2ban_maxretry` | `5` | an int (not a bool, string or float), > 0 while fail2ban is enabled |
 | `fail2ban_findtime`, `fail2ban_bantime` | `10m`, `1h` | |
 | `fail2ban_ignoreip` | `127.0.0.1/8 ::1 100.64.0.0/10` | empty: no `ignoreip` line |
-| `sshd_dropin_enabled` | `True` | `False` skips the drop-in, check and reload |
+| `fail2ban_sshd_filter_fix` | `auto` | not in the role: `auto` manages the CVE-2026-109786 filter override (below); `off` never touches `filter.d/sshd.local` |
+| `fail2ban_banaction` | `""` | not in the role: `banaction` jail key; only `nftables…`/`iptables…` actions, optionally with `[parameters]`; empty leaves the packaged default |
+| `fail2ban_journalmatch` | `""` | not in the role: `journalmatch` jail key, journalctl matches joined by ` + ` |
+| `fail2ban_ban_only` | `False` | not in the role: `action = %(action_)s` (ban only, no mail or whois action) |
+| `fail2ban_no_recommends` | `False` | not in the role: apt installs without Recommends (no whois or mail tools) |
+| `sshd_dropin_enabled` | `True` | `False` skips the drop-in, checks and reload |
 | `sshd_dropin_path` | `/etc/ssh/sshd_config.d/99-ssh-guard.conf` | a file below a directory |
 | `sshd_service_name` | `ssh` | |
 | `per_source_max_startups` | `"5"` | empty: directive left out; `None` is refused while the drop-in is enabled |
 | `max_auth_tries`, `login_grace_time` | `""` | empty: directive left out |
+| `max_startups` | `""` | not in the role: `start:rate:full` |
+| `per_source_net_block_size` | `""` | not in the role: `<ipv4 0-32>:<ipv6 0-128>` (`32:64` groups an IPv6 /64) |
+| `per_source_penalties` | `""` | not in the role: `no`, or `key:value` settings OpenSSH knows (`authfail:5m max:600`), each key once |
+| `per_source_penalty_exempt_list` | `""` | not in the role: comma-separated addresses/networks |
 
 Values written into the files must not contain line breaks or other control
 characters, so a value cannot add a directive of its own. The role's two
 asserts (`maxretry`, `PerSourceMaxStartups`) are checked when the config is
 built, each only for the enabled part.
 
-`/etc/fail2ban/jail.d/ssh-guard.local` and the drop-in are byte-identical to
-the role's templates (including the `# Managed by ops-library
-ssh_guard_deploy. Do not edit.` header), `root:root 0644`; the drop-in
-directory is `root:root 0755`. In the role's order: drop-in directory,
-`fail2ban` from apt (no cache refresh, as the role's `package` task),
-fail2ban enabled and started, jail file, drop-in.
+With only the role's fields, `/etc/fail2ban/jail.d/ssh-guard.local` and the
+drop-in are byte-identical to the role's templates (including the `# Managed
+by ops-library ssh_guard_deploy. Do not edit.` header). The extra jail keys
+follow the role's lines in the order `banaction`, `journalmatch`, `action`;
+the extra directives follow `PerSourceMaxStartups`, `MaxAuthTries`,
+`LoginGraceTime` in the order `MaxStartups`, `PerSourceNetBlockSize`,
+`PerSourcePenalties`, `PerSourcePenaltyExemptList`. All files are
+`root:root 0644`, their directories `root:root 0755`.
 
-- **fail2ban** is restarted (`systemctl restart`, which also starts a stopped
-  unit) only when the jail file changed, right after it is written.
-- **ssh**: only when the drop-in changed, `sshd -t -f /etc/ssh/sshd_config`
-  checks the whole configuration. When it fails, the drop-in is removed and
-  the deploy fails with `Invalid sshd config; removed <path>.`, before any
-  reload (the role's `rescue`). When it passes, ssh is reloaded if it runs and
-  started if not (the role handler's `state: reloaded`).
-- A converged host reports no change and nothing is restarted or reloaded.
+### Planning
+
+One read-only probe (`ssh -V`, the packaged `filter.d/sshd.conf`, an
+existing `filter.d/sshd.local`, `nftables.service`, `getent services`, what a
+running jail has loaded, the ban action lines of fail2ban's other jail files)
+decides the plan. The deploy is refused before any change when
+
+- a directive the drop-in renders is newer than the host's OpenSSH:
+  `PerSourceMaxStartups`/`PerSourceNetBlockSize` need 8.5,
+  `PerSourcePenalties`/`PerSourcePenaltyExemptList` 9.8 (or `ssh -V` is
+  unreadable while such a directive is set);
+- `filter.d/sshd.local` exists but was not written by this deploy (its first
+  line is not `# Managed by ops-deploy ssh_guard. Do not edit.`), or is not a
+  regular file (with `fail2ban_sshd_filter_fix` `auto`);
+- OpenSSH logs from `sshd-session` (OpenSSH 10) but the packaged filter's
+  `_daemon` does not accept that name (fail2ban would see no failure);
+- `nftables.service` is enabled: its `flush ruleset` would drop fail2ban's
+  bans along with Tailscale's and Docker's rules. The deploy never enables or
+  starts it;
+- a service name in `fail2ban_port` does not resolve (`getent services`; the
+  `netbase` package), which the nftables actions need.
+
+### CVE-2026-109786 filter override
+
+fail2ban's packaged sshd filter (Debian 12/13, Ubuntu 24.04 at the time of
+writing) accepts `on <token>` after the host in `__suff` and
+`__on_port_opt`. OpenSSH logs the offered user name verbatim, so a user name
+like `x 198.51.100.23 on` makes fail2ban attribute the close line of the
+session to `198.51.100.23`: an attacker bans an address of their choice.
+Upstream fixed it in fail2ban commit ddd879d. With `auto` the deploy writes
+`/etc/fail2ban/filter.d/sshd.local` with those two lines (fail2ban merges a
+`.local` over the `.conf` before interpolation, so every failregex built from
+them picks them up) while the packaged `sshd.conf` still contains `on \S+`,
+or does not exist yet (a fresh install). Once the package carries the fix the
+deploy removes its file again and restarts fail2ban.
+
+### Order
+
+1. drop-in directory; `/etc/fail2ban/jail.d` and `/etc/fail2ban/filter.d`;
+2. `python3-systemd` for a `systemd` backend (it arms nothing; a fail2ban
+   installed without Recommends could not load a systemd jail without it).
+   Packages come from apt, each on its own, with no cache refresh (as the
+   role's `package` task);
+3. the filter override (written or removed), then the jail file;
+4. if fail2ban was installed when planning and step 3 changed something:
+   restart fail2ban (`systemctl restart` also starts a stopped unit) and run
+   the gate;
+5. `fail2ban`, then `nftables` for an `nftables…` ban action, the configured
+   one or, without one, the one the jail inherits from fail2ban's other jail
+   files (`jail.conf`, `jail.d/*.conf`, `jail.local`, `jail.d/*.local`
+   without this deploy's file, in fail2ban's order: the jail's section over
+   `[DEFAULT]`, a later file over an earlier one, inline comments ignored;
+   e.g. Debian 13's nftables default). An interpolated value is not resolved;
+   on a host without fail2ban yet nothing is known while planning, and the
+   final gate stops fail2ban if `nft` is then missing. A fresh package's
+   postinst starts fail2ban with the override and jail already in place; an
+   installed one has already loaded them before `nft` exists;
+6. restart fail2ban if a package was installed; fail2ban enabled and
+   running; the final gate if anything in steps 2–6 changed;
+7. the drop-in; if it changed, `sshd -t` and the `sshd -T` check, then the
+   reload (or a start of a stopped ssh, the role handler's `state: reloaded`).
+
+A converged host reports no change: nothing is restarted, checked or reloaded.
+When fail2ban is running, the probe also reads what its jail has loaded: if
+that still contains `on \S+` or lacks the configured ban action although the
+files are right (a run interrupted before its restart), fail2ban is restarted
+and checked again.
+
+### The gate
+
+`fail2ban-client` against the running jail (waiting up to 60 s for it to come
+up after a restart). It stops fail2ban (`systemctl stop`, which also removes
+fail2ban's nftables table or iptables chains) and fails the deploy when the
+jail does not come up, loaded no failregex, any loaded failregex contains
+`on \S+`, it has no ban action or one that is not an `nftables…`/`iptables…`
+action, the configured `banaction` is not among them, or with `ban_only`
+there is more than one. The final gate adds: the binaries of the ban actions
+exist (`nft`; `iptables` and `ip6tables`) and, with `sshd-session`, the
+loaded prefix regex accepts that name. An enabled `nftables.service` there
+fails the deploy without stopping fail2ban. sshd is never touched by a gate;
+a stopped fail2ban leaves OpenSSH's own limits (`PerSourcePenalties` from 9.8)
+as the protection.
+
+### sshd effective values
+
+`sshd -t -f /etc/ssh/sshd_config` checks the whole configuration. Then
+`sshd -T` must print each rendered directive with its value as sshd prints
+it (lowercase; numbers without leading zeros; `LoginGraceTime` in seconds;
+`PerSourcePenalties` part by part, words exactly and numbers by value, so
+`authfail:5m` matches OpenSSH 10.0's `authfail:300` and 10.3's
+`authfail:300.000000`). sshd takes the first value it reads for most directives,
+so an earlier drop-in that sets the same one wins; OpenSSH 10.0 takes the last
+`PerSourceNetBlockSize`. Either way the effective value differs. On any
+failure the drop-in is removed and the deploy fails before the reload, with
+`Invalid sshd config; removed <path>.` or `sshd -T does not show: <line>;
+removed <path>.` (the role's `rescue`, extended). Role values whose printed
+form is not derived here (free text `sshd -t` still accepts) are checked by
+`sshd -t` only.
 
 Differences from the role, on purpose:
 
+- The CVE-2026-109786 filter override, the extra jail keys and directives,
+  the gates, the `sshd -T` check and the package and install order above. The role (ops-library `ssh_guard_deploy`, frozen) installs
+  fail2ban, lets the postinst start it with the packaged vulnerable filter,
+  and writes the jail afterwards.
 - The fail2ban restart is not deferred to the end. The role's handlers do not
   run once the drop-in check fails, which leaves a written jail that fail2ban
   never loads (later runs see it unchanged). Here the jail is applied before
   the drop-in is checked.
-- Only a failing `sshd -t` removes the drop-in. The role's `rescue` also
-  removes it when writing the file fails (an upload or permission error),
-  which would drop a valid earlier drop-in.
+- Only a failing `sshd -t`/`sshd -T` check removes the drop-in. The role's
+  `rescue` also removes it when writing the file fails (an upload or
+  permission error), which would drop a valid earlier drop-in.
+- `python3-systemd` is installed for the `systemd` backend (fail2ban only
+  recommends it on Debian 12 and Ubuntu 24.04).
 - Linux hosts with systemd and apt only. The role's `package` and `service`
   modules would also try other package managers and init systems.
 
 Inherited from the role: with ssh stopped, Debian removes `/run/sshd`, so
 `sshd -t` fails on that alone and a changed drop-in is removed (start ssh and
 run again). A run interrupted between writing the drop-in and the check leaves
-the file unchecked and not reloaded until it changes again.
+the file unchecked and not reloaded until it changes again. Likewise a run
+interrupted between a fail2ban file write and the gate leaves the gate unrun
+until something changes again.
 
 ## dpkg_arch_remove
 
@@ -497,17 +610,41 @@ a throwaway user, units and directories and restores the hostname, default
 target and editor.
 
 `tests/test_base_ssh_guard_docker.py` runs `deploy_ssh_guard` against real
-sshd, fail2ban and systemd. It is skipped unless `SSH_GUARD_DOCKER_CONTAINER`
-holds the full ID of a running container named `ops-deploy-ssh-guard-*`,
-labelled `ops-deploy.fixture=ssh-guard`, with `--network none`, not
-privileged, no mounts and systemd as PID 1, built from `debian:trixie` with
-`systemd systemd-sysv openssh-server fail2ban python3-systemd` (for example
-`--cgroupns private --cap-add SYS_ADMIN --tmpfs /run --tmpfs /run/lock`,
-`/sbin/init` after remounting `/sys/fs/cgroup` as cgroup2). pyinfra's Docker
-CLI is wrapped so it can only inspect, exec and copy. The test covers the
-first run, a converged run, jail drift (restart only), drop-in drift (check
-and reload only), a value `sshd -t` rejects (drop-in removed, deploy failed,
-no reload, sshd still running) and recovery, and a stopped ssh.
+sshd, fail2ban, nftables and systemd. It is skipped unless
+`SSH_GUARD_DOCKER_CONTAINER` holds the full ID of a running container named
+`ops-deploy-ssh-guard-*`, labelled `ops-deploy.fixture=ssh-guard`, with
+`--network none`, not privileged, no mounts, `NET_ADMIN` and systemd as
+PID 1. Build it from `debian:trixie` with the image's `docker-clean` apt
+hook removed, `systemd systemd-sysv openssh-server fail2ban python3-systemd
+netbase` installed and `nftables` only downloaded (`apt-get install
+--download-only --no-install-recommends nftables`), so the deploy can install
+it with no network; enable `ssh` and `fail2ban`. Run it with
+`--cgroupns private --cap-add SYS_ADMIN --cap-add NET_ADMIN --security-opt
+apparmor=unconfined --tmpfs /run --tmpfs /run/lock`, as entry point
+`/sbin/init` after remounting `/sys/fs/cgroup` read-write. pyinfra's Docker
+CLI is wrapped so it can only inspect, exec and copy.
+
+The test first resets the container to the shape of a host exposed to
+CVE-2026-109786 (packaged filter loaded, Debian's nftables default ban
+action, `nft` missing, no guard files) and checks that the stock filter
+blames the injected address. It then covers: the first run in the documented
+order; the spoof regression on the installed filter (`fail2ban-regex` on
+session strings with documentation addresses, nothing written) and legitimate
+sessions unchanged; bans reaching nftables for IPv4 and IPv6 and unbans
+removing them; a converged run; a running jail that still has the vulnerable
+filter although the files are right (restart and gate, nothing written); jail
+drift; the gate stopping fail2ban (and its nftables table) when the vulnerable
+filter is loaded with `fail2ban_sshd_filter_fix` `off`, and recovery;
+drop-in drift; an earlier drop-in that shadows a directive (`sshd -T`
+mismatch: drop-in removed, no reload); a value `sshd -t` rejects; a stopped
+ssh; and the role's defaults on the exposed host (nftables installed for the
+inherited nftables action).
+
+`tests/test_base_ssh_guard_sshd_check.py` runs the generated `sshd -t`/`-T`
+check with `sh` against a stub `sshd` that prints what OpenSSH 10.0 and 10.3
+print (integer and decimal penalty times): matching values keep the drop-in;
+a shadowed directive, another time or mode, penalties off or missing, and a
+failing `sshd -t` remove it.
 
 `tests/test_base_stale_exe_restart_docker.py` runs `stale_exe_restart`
 against real systemd, nginx, dpkg and apt. It is skipped unless
