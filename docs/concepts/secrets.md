@@ -52,7 +52,14 @@ run). Deploys receive `SecretValues`, never a store.
   check data can carry a monitor login). Enforced by
   `tests/test_become_environment_secrets.py`, a static scan with an explicit
   allowlist (empty), like ops-control's and ops-library's guards of the same
-  name.
+  name. It follows calls by function name within one program: the package,
+  with every host script a package module imports or loads as a module, or
+  a single host script under `files/`, which sees the package only if it
+  imports it. A file that uses a module loader (`importlib`, `runpy`,
+  `exec`, under any name) must name the host script it loads in a string
+  (`"x.py"`, a path ending in it, or the dotted module name), which is how
+  the scan follows the load, or, when it loads no host script, be listed in
+  the test's `LOADS_NO_HOST_SCRIPT` with what it loads instead.
 
 ## `SecretContent`
 

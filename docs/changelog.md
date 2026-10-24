@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- `tests/test_become_environment_secrets.py` follows calls by function name
+  only within one program. The package is one: its modules and every host
+  script one of them imports or loads as a module (a module loader such as
+  `spec_from_file_location`, under any name, in a module that names the
+  script), all of them seeing all of its names. Every other host script
+  under `files/` is a program of its own and sees the package only if it
+  imports it. Before, all modules and host scripts shared one name space: a
+  further host script with generic method names (`update`, a runner called
+  as `run`) linked package code through `base/files/stale_exe_restart.py`'s
+  `run()` to its `runuser` call and flagged `django_site`'s env-file
+  `DATABASE_URL`. A file that uses a module loader must now name the host
+  script it loads or be listed in `LOADS_NO_HOST_SCRIPT` (the Traefik
+  transaction runner and retention, which load their engine, and
+  FastDeploy's `ensure_token_user.py`). New tests pin a package leak and a
+  host script's own leak (both still caught), that false positive, a
+  package module reaching a host script's user switch through an import, a
+  module loader (also an aliased one) or the loaded module passed on, a
+  loaded script reaching the package's through a module handed to it, and
+  a host script reaching the package or the script next to it through an
+  import. Test and docs only.
+
 - `ssh_guard` (`ops_deploy.base`) fixes fail2ban's CVE-2026-109786 and is
   extended (docs/base.md, "ssh_guard"). New `fail2ban_sshd_filter_fix`
   (default `auto`) writes `/etc/fail2ban/filter.d/sshd.local` with the two
