@@ -610,7 +610,7 @@ def main() -> None:
     command(
         "bash",
         "-c",
-        "cd " + shlex.quote(str(minimal)) + " && npx --yes corepack@0.34.0 yarn install --mode=skip-builds",
+        "cd " + shlex.quote(str(minimal)) + " && npx --yes corepack@0.34.0 yarn install --mode=skip-build",
         user=True,
     )
     shutil.rmtree(minimal / "node_modules", ignore_errors=True)
