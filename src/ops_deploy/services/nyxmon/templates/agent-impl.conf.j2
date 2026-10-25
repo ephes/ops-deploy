@@ -1,6 +1,0 @@
-# Managed by Ansible (nyxmon_deploy): nyxmon_agent_impl=rust.
-# Removed when nyxmon_agent_impl=python; the base unit then runs the venv
-# start-agent again.
-[Service]
-ExecStart=
-ExecStart={{ cfg.agent_rust_binary }} --db {{ cfg.site_path }}/db.sqlite3 --enable-telegram

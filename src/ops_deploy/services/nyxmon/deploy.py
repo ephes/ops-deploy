@@ -13,7 +13,7 @@ import re
 import shlex
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pyinfra.api import deploy
@@ -40,7 +40,7 @@ from ops_deploy.helpers import (
 from ops_deploy.helpers.probes import probe, when_present
 from ops_deploy.helpers.traefik import _MIDDLEWARE, DEFAULT_INTERNAL_IP_RANGES, Hostname
 from ops_deploy.ops import secret_file, sync_tree
-from ops_deploy.services.nyxmon.agent import check_agent, install_agent, prune_agents, select_agent
+from ops_deploy.services.nyxmon.agent import check_agent, install_agent, prune_agents, retire_dropin
 
 TEMPLATE_PACKAGE = "ops_deploy.services.nyxmon"
 
@@ -120,10 +120,10 @@ class NyxmonConfig(BaseServiceConfig):
     notify_warning_repeat_interval_seconds: Interval = 86400
     processing_lease_seconds: int = Field(default=900, ge=30)
     check_batch_size: Count = 5
-    # The role's nyxmon_agent_impl and nyxmon_agent_rust_*: which agent
-    # nyxmon-monitor runs, and the pinned Rust release installed (with either
-    # implementation) below the install root. Empty version: nothing installed.
-    agent_impl: Literal["python", "rust"] = "python"
+    # The role's nyxmon_agent_rust_*: the pinned Rust release installed below
+    # the install root, which nyxmon-monitor runs. deploy_nyxmon requires a
+    # version; the lifecycle (backup, restore, remove) does not use it. The
+    # Python agent fallback (the role's nyxmon_agent_impl) is retired.
     agent_rust_version: Annotated[str, Field(pattern=r"^([0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?)?$")] = ""
     # sha256 of the release archive; required with a version unless a local archive is set.
     agent_rust_sha256: Annotated[str, Field(pattern=r"^([0-9a-f]{64})?$")] = ""
@@ -179,11 +179,9 @@ class NyxmonConfig(BaseServiceConfig):
 
     @model_validator(mode="after")
     def _agent_settings(self) -> Self:
-        """The role's "Validate monitoring agent implementation settings"."""
+        """The role's "Validate monitoring agent settings" (the version itself: deploy_nyxmon)."""
 
         version, local = self.agent_rust_version, self.agent_rust_local_archive
-        if self.agent_impl == "rust" and not version:
-            raise ValueError("agent_impl rust needs agent_rust_version")
         if version and not self.agent_rust_sha256 and local is None:
             raise ValueError("agent_rust_version needs agent_rust_sha256 (or agent_rust_local_archive)")
         if (self.agent_rust_sha256 or local is not None) and not version:
@@ -307,6 +305,9 @@ def _opsgate_check(cfg: NyxmonConfig) -> OperationMeta:
 @deploy("Deploy nyxmon")
 def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner = subprocess_rsync_runner) -> None:
     secrets.require(cfg.required_secret_keys)
+    if not cfg.agent_rust_version:
+        # The role requires it while nyxmon_monitoring_enabled; this port always deploys the monitor.
+        raise ValueError("nyxmon-monitor runs the Rust agent: pin agent_rust_version (and agent_rust_sha256)")
     env_content, shell_env = render_env(cfg, secrets, shell=False), render_env(cfg, secrets, shell=True)
 
     site_dirs = [cfg.site_path / d for d in ("src", *EXTRA_DIRS)]
@@ -381,7 +382,7 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
         )
     # The role's agent_rust.yml: after the migrations, so --check-schema sees the schema the agent runs against.
     installed = install_agent(cfg)
-    selected = None
+    monitor_unit = retired = None
 
     # Traefik's file provider watches the dynamic directory; like the role
     # (ops-library 2.31.47), no Traefik restart.
@@ -403,9 +404,11 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
         )
         units = [unit, dropin]
         if name == cfg.monitor_service_name:
-            # Every switch and version change rewrites the drop-in: reload and restart.
-            selected = select_agent(cfg, dropin_dir)
-            units.append(selected)
+            # A version change rewrites the unit; removing a pre-2.75.0 agent-impl.conf
+            # also reloads and restarts (after the unit is written).
+            monitor_unit = unit
+            retired = retire_dropin(cfg, f"/etc/systemd/system/{name}.service", dropin_dir)
+            units.append(retired)
         service_rollout(name, units=units, restart_when=[deps, env, *code])
     _sqlite_private(cfg)
 
@@ -413,6 +416,6 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
     # Production settings redirect plain HTTP (301); with require_login, pages redirect to the login (302).
     http_check(f"http://{cfg.app_host}:{cfg.app_port}/", status=(200, 301, 302), host_header=cfg.traefik_host)
     check_agent(cfg)
-    prune_agents(cfg, [installed, selected])
+    prune_agents(cfg, [installed, monitor_unit, retired])
     if cfg.opsgate_enabled:
         _opsgate_check(cfg)

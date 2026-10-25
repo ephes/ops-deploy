@@ -35,6 +35,10 @@ UV_SYNC = (
     "/usr/local/bin/uv sync --frozen --no-dev --no-default-groups --python 3.13"
 )
 OPSGATE = "http://studio.example:8711"
+# The pinned Rust agent every deploy needs (the Python agent fallback is retired).
+AGENT_SHA = "b5ea97633a77d3297ef93991d6db38475f37995fae654cea995e7050ae998305"
+AGENT = {"agent_rust_version": "0.1.0", "agent_rust_sha256": AGENT_SHA}
+AGENT_ROOT = "/opt/nyxmon-agent"
 ITEMIZED_CHANGE = [">f.st...... views.py"]
 _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 
@@ -45,6 +49,7 @@ def cfg(tmp_path: Path) -> NyxmonConfig:
         source_path=make_source(tmp_path),
         secrets=SecretRef("secrets/prod/nyxmon.yml"),
         opsgate_submit_base_url=OPSGATE,
+        **AGENT,
     )
 
 
@@ -58,8 +63,11 @@ def secrets(cfg: NyxmonConfig) -> SecretValues:
     return values(cfg)
 
 
-def converged(cfg: NyxmonConfig, secrets: SecretValues, **drift: str) -> dict[str, Any]:
-    """Facts of a host where nyxmon is fully deployed; ``drift`` overrides file content by path."""
+def site_converged(cfg: NyxmonConfig, secrets: SecretValues, **drift: str) -> dict[str, Any]:
+    """Facts of a host where nyxmon is fully deployed, without the Rust agent release (tests that install their own).
+
+    ``drift`` overrides file content by path.
+    """
 
     content = {
         f"{SITE}/.env": render_env(cfg, secrets, shell=False).reveal().decode(),
@@ -89,6 +97,18 @@ def converged(cfg: NyxmonConfig, secrets: SecretValues, **drift: str) -> dict[st
     return responses
 
 
+def converged(cfg: NyxmonConfig, secrets: SecretValues, **drift: str) -> dict[str, Any]:
+    """:func:`site_converged` plus the pinned Rust agent release, installed (``install_agent`` only validates it)."""
+
+    version = cfg.agent_rust_version
+    return {
+        **site_converged(cfg, secrets, **drift),
+        **fakehost.directory(AGENT_ROOT),
+        **fakehost.directory(f"{AGENT_ROOT}/{version}"),
+        **fakehost.file(f"{AGENT_ROOT}/{version}/.archive-sha256", f"{cfg.agent_rust_sha256}\n"),
+    }
+
+
 def first_host() -> dict[str, Any]:
     return {**fakehost.LINUX, SQLITE_PROBE: ["missing"]}
 
@@ -109,9 +129,11 @@ def deploy(
 READ_ONLY = [
     "Deploy nyxmon | Wait for port 127.0.0.1:10017",
     "Deploy nyxmon | Check http://127.0.0.1:10017/",
-    "Deploy nyxmon | Check nyxmon-monitor runs the Python agent",
+    "Deploy nyxmon | Check nyxmon-monitor runs the Rust agent",
     "Deploy nyxmon | Check nyxmon-monitor OpsGate settings",
 ]
+# A converged host validates the installed release read-only first.
+CONVERGED_READ_ONLY = ["Deploy nyxmon | Validate nyxmon-agent 0.1.0", *READ_ONLY]
 AGENT_DROPIN = "/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf"
 
 
@@ -137,7 +159,7 @@ def test_second_run_changes_nothing_mutating(cfg: NyxmonConfig, secrets: SecretV
     run = deploy(cfg, secrets, converged(cfg, secrets))
 
     assert run.mutating_changed_ops == []
-    assert run.changed_ops == READ_ONLY
+    assert run.changed_ops == CONVERGED_READ_ONLY
     assert run.uploads == []
     assert run.stdin == []
     assert not any(c.startswith(("systemctl", "cd ", "find ")) for c in run.executed_commands)
@@ -210,27 +232,41 @@ def test_basic_auth_rotation_only_touches_traefik(cfg: NyxmonConfig, secrets: Se
     assert not any("traefik" in command for command in run.executed_commands if command.startswith("systemctl"))
 
 
-def test_rust_agent_dropin_is_removed_and_the_monitor_restarted(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+def test_retired_agent_dropin_is_removed_and_the_monitor_restarted(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     dropin = "[Service]\nExecStart=\nExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent --db x\n"
-    responses = {**converged(cfg, secrets), **fakehost.file(AGENT_DROPIN, dropin)}
+    # First: ``cat <unit>`` is contained in ``cat <unit>.d/agent-impl.conf`` (the fake answers the first match).
+    responses = {**fakehost.file(AGENT_DROPIN, dropin), **converged(cfg, secrets)}
 
     run = deploy(cfg, secrets, responses)
 
-    # The role's agent_rust.yml with nyxmon_agent_impl: python.
+    # A host deployed before ops-library 2.75.0: same version, so nothing is remembered.
+    # The removal can change which version runs, so the pruning runs again.
     assert run.mutating_changed_ops == [
-        "Deploy nyxmon | Select the Python agent for nyxmon-monitor",
+        "Deploy nyxmon | Remove the retired agent drop-in of nyxmon-monitor",
         "Deploy nyxmon | Reload systemd for nyxmon-monitor.service",
         "Deploy nyxmon | Restart nyxmon-monitor.service",
+        "Deploy nyxmon | Prune old Rust agent versions",
     ]
     assert f"rm -f {AGENT_DROPIN}" in run.executed_commands
+    assert "systemctl restart nyxmon.service" not in run.executed_commands
 
 
-def test_agent_check_wants_the_venv_start_agent(cfg: NyxmonConfig, secrets: SecretValues) -> None:
-    run = deploy(cfg, secrets, converged(cfg, secrets))
+def test_the_monitor_unit_starts_the_rust_agent(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets)
 
-    check = next(c for c in run.executed_commands if "start-agent" in c and "MainPID" in c)
-    assert f"grep -qxF {SITE}/.venv/bin/start-agent" in check
-    assert "/opt/nyxmon-agent/*) exit 1" in check
+    unit = run.upload(UNITS["nyxmon-monitor"]).decode()
+    assert f"\nExecStart={AGENT_ROOT}/0.1.0/nyxmon-agent --db {SITE}/db.sqlite3 --enable-telegram\n" in unit
+    assert "start-agent" not in unit
+    check = next(c for c in run.executed_commands if "is-active" in c and "readlink" in c)
+    assert f"= {AGENT_ROOT}/0.1.0/nyxmon-agent ]" in check
+    assert "start-agent" not in check
+
+
+def test_a_deploy_without_an_agent_pin_is_refused(tmp_path: Path, secrets: SecretValues) -> None:
+    cfg = NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("secrets/prod/nyxmon.yml"))
+
+    with pytest.raises(ValueError, match="pin agent_rust_version"):
+        run_deploy_fake(deploy_nyxmon, cfg, values(cfg), responses=first_host())
 
 
 @pytest.mark.parametrize("entry", ["model_validate_json", "model_validate_strings"])
@@ -240,7 +276,13 @@ def test_agent_defaults_validate_from_text(tmp_path: Path, entry: str) -> None:
 
     cfg = getattr(NyxmonConfig, entry)(text)
 
-    assert (cfg.agent_impl, cfg.agent_rust_install_root) == ("python", "/opt/nyxmon-agent")
+    assert (cfg.agent_rust_version, cfg.agent_rust_install_root) == ("", "/opt/nyxmon-agent")
+
+
+def test_the_retired_implementation_switch_is_refused(tmp_path: Path) -> None:
+    retired: dict[str, Any] = {"agent_impl": "rust", **AGENT}
+    with pytest.raises(ConfigValidationError, match="agent_impl"):
+        NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("x.yml"), **retired)
 
 
 def test_basic_auth_user_from_secrets_wins(cfg: NyxmonConfig, secrets: SecretValues) -> None:
@@ -252,10 +294,12 @@ def test_basic_auth_user_from_secrets_wins(cfg: NyxmonConfig, secrets: SecretVal
 def test_monitor_unit_change_reloads_and_restarts_only_the_monitor(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     run = deploy(cfg, secrets, converged(cfg, secrets, **{UNITS["nyxmon-monitor"]: "[Unit]\n"}))
 
+    # The unit names the agent version, so the pruning runs again.
     assert run.mutating_changed_ops == [
         "Deploy nyxmon | Install systemd unit nyxmon-monitor.service",
         "Deploy nyxmon | Reload systemd for nyxmon-monitor.service",
         "Deploy nyxmon | Restart nyxmon-monitor.service",
+        "Deploy nyxmon | Prune old Rust agent versions",
     ]
 
 
@@ -282,7 +326,7 @@ def test_exposed_database_is_restricted(cfg: NyxmonConfig, secrets: SecretValues
 
 
 def test_opsgate_disabled_skips_token_and_check(tmp_path: Path) -> None:
-    cfg = NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("secrets/prod/nyxmon.yml"))
+    cfg = NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("secrets/prod/nyxmon.yml"), **AGENT)
     required = {k: SECRET_VALUES[k] for k in cfg.required_secret_keys}
     secrets = SecretValues(SecretRef("secrets/prod/nyxmon.yml"), required)
 

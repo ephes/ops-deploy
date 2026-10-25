@@ -1,10 +1,12 @@
-"""The monitoring agent: the Python ``start-agent`` or the Rust ``nyxmon-agent``.
+"""The monitoring agent: the pinned Rust ``nyxmon-agent`` release.
 
 Port of the role's ``agent_rust.yml`` and ``agent_verify.yml`` (ops-library
-2.32.0). A pinned release is installed below ``agent_rust_install_root`` with
-either implementation; ``agent_impl`` decides whether the drop-in
-``agent-impl.conf`` points ``nyxmon-monitor`` at it. The host-side steps are
-``files/agent.sh``.
+2.75.0). The pinned release is installed below ``agent_rust_install_root`` and
+``nyxmon-monitor.service`` starts it directly. The Python agent fallback (the
+role's ``nyxmon_agent_impl`` and the ``agent-impl.conf`` drop-in that pointed
+the unit's Python ``ExecStart`` at the Rust agent) is retired; a host deployed
+before keeps that drop-in until :func:`retire_dropin` removes it. The
+host-side steps are ``files/agent.sh``.
 """
 
 from __future__ import annotations
@@ -18,10 +20,9 @@ from typing import TYPE_CHECKING
 
 from pyinfra import host
 from pyinfra.api.operation import OperationMeta
-from pyinfra.facts.files import Directory, FileContents
+from pyinfra.facts.files import Directory, File, FileContents
 from pyinfra.operations import files, server
 
-from ops_deploy.core.templates import render
 from ops_deploy.helpers import mark_read_only
 from ops_deploy.helpers.probes import probe, verify_probe
 
@@ -29,7 +30,8 @@ if TYPE_CHECKING:
     from ops_deploy.services.nyxmon.deploy import NyxmonConfig
 
 AGENT_SCRIPT = (Path(__file__).parent / "files" / "agent.sh").read_text()
-# The role's drop-in that selects the Rust agent (nyxmon_agent_impl: rust).
+# The drop-in older deploys used to select the Rust agent over the Python
+# ExecStart (ops-library < 2.75.0); removed by its fixed name only.
 AGENT_DROPIN = "agent-impl.conf"
 
 
@@ -55,11 +57,11 @@ def install_agent(cfg: NyxmonConfig) -> OperationMeta | None:
     """Install and validate the pinned release (after the migrations: ``--check-schema``).
 
     Returns the install operation, or ``None`` when the version was installed
-    already (it is validated read-only then) or none is pinned.
+    already (it is validated read-only then).
     """
 
     if not cfg.agent_rust_version:
-        return None
+        raise ValueError("nyxmon-monitor runs the Rust agent: pin agent_rust_version (and agent_rust_sha256)")
     root, version = cfg.agent_rust_install_root, cfg.agent_rust_version
     sha256 = _archive_sha256(cfg)
     db = cfg.site_path / "db.sqlite3"
@@ -98,28 +100,24 @@ def install_agent(cfg: NyxmonConfig) -> OperationMeta | None:
     )
 
 
-def select_agent(cfg: NyxmonConfig, dropin_dir: str) -> OperationMeta:
-    """Write (rust) or remove (python) the drop-in; remember the Rust version it selected so far."""
+def retire_dropin(cfg: NyxmonConfig, unit_path: str, dropin_dir: str) -> OperationMeta:
+    """Remember the Rust version the unit ran so far, then remove the retired drop-in.
+
+    The version comes from the unit's ``ExecStart``, or from the old drop-in
+    while it exists (it overrode the unit). Only ``<dropin_dir>/agent-impl.conf``
+    is removed; anything there but a regular file stops the deploy.
+    """
 
     root, dropin = cfg.agent_rust_install_root, f"{dropin_dir}/{AGENT_DROPIN}"
-    before = "\n".join(host.get_fact(FileContents, path=dropin) or [])
-    match = re.search(rf"(?m)^ExecStart={re.escape(root)}/([^/ ]+)/nyxmon-agent( |$)", before)
-    active = match.group(1) if match else ""
-    if cfg.agent_impl == "rust":
-        selected = files.put(
-            name=f"Select the Rust agent for {cfg.monitor_service_name}",
-            src=StringIO(render("ops_deploy.services.nyxmon", "agent-impl.conf.j2", cfg=cfg)),
-            dest=dropin,
-            user="root",
-            group="root",
-            mode="0644",
-        )
-    else:
-        name = f"Select the Python agent for {cfg.monitor_service_name}"
-        selected = files.file(name=name, path=dropin, present=False)
-    # Kept by the pruning as the rollback target; written only when the selection moves away from it.
-    target = cfg.agent_rust_version if cfg.agent_impl == "rust" else ""
-    if active and active != target and bool(host.get_fact(Directory, path=f"{root}/{active}")):
+    pattern = rf"(?m)^ExecStart={re.escape(root)}/([^/ ]+)/nyxmon-agent( |$)"
+    active = ""
+    for path in (dropin, unit_path):
+        match = re.search(pattern, "\n".join(host.get_fact(FileContents, path=path) or []))
+        if match:
+            active = match.group(1)
+            break
+    # Kept by the pruning as the rollback target; written only when the pin moves away from it.
+    if active and active != cfg.agent_rust_version and bool(host.get_fact(Directory, path=f"{root}/{active}")):
         files.put(
             name="Remember the previously selected Rust agent",
             src=StringIO(f"{active}\n"),
@@ -128,24 +126,19 @@ def select_agent(cfg: NyxmonConfig, dropin_dir: str) -> OperationMeta:
             group="root",
             mode="0644",
         )
-    return selected
+    if host.get_fact(File, path=dropin) is False:
+        raise ValueError(f"{dropin} exists but is not a regular file; it is left alone. Inspect and remove it by hand.")
+    return files.file(
+        name=f"Remove the retired agent drop-in of {cfg.monitor_service_name}", path=dropin, present=False
+    )
 
 
 def check_agent(cfg: NyxmonConfig) -> OperationMeta:
-    """The monitor runs the selected agent (the role's agent_verify.yml, 10 tries 3 s apart)."""
+    """The monitor runs the pinned Rust agent (the role's agent_verify.yml, 10 tries 3 s apart)."""
 
     unit = shlex.quote(cfg.monitor_service_name)
-    if cfg.agent_impl == "rust":
-        expected = cfg.agent_rust_binary
-        runs = f'[ "$(readlink "/proc/$pid/exe")" = {shlex.quote(expected)} ]'
-    else:
-        # The venv interpreter is a symlink to a uv-managed Python, so the
-        # Python agent is identified by its argv, a Rust agent by /proc/<pid>/exe.
-        expected = f"{cfg.venv_path}/bin/start-agent"
-        runs = (
-            f'case "$(readlink "/proc/$pid/exe")" in {shlex.quote(cfg.agent_rust_install_root + "/")}*) exit 1;; esac; '
-            f"tr '\\0' '\\n' < \"/proc/$pid/cmdline\" | grep -qxF {shlex.quote(expected)}"
-        )
+    expected = cfg.agent_rust_binary
+    runs = f'[ "$(readlink "/proc/$pid/exe")" = {shlex.quote(expected)} ]'
     live = (
         f'[ "$(systemctl is-active {unit})" = active ] || exit 1; '
         f"pid=$(systemctl show --property=MainPID --value {unit}); "
@@ -153,12 +146,11 @@ def check_agent(cfg: NyxmonConfig) -> OperationMeta:
     )
     script = (
         f"for i in $(seq 1 10); do ( {live} ) && exit 0; sleep 3; done; "
-        f'echo "{cfg.monitor_service_name} does not run {expected} (agent_impl {cfg.agent_impl})" >&2; exit 1'
+        f'echo "{cfg.monitor_service_name} does not run {expected}" >&2; exit 1'
     )
-    impl = "Rust" if cfg.agent_impl == "rust" else "Python"
     return mark_read_only(
         server.shell(
-            name=f"Check {cfg.monitor_service_name} runs the {impl} agent", commands=[f"sh -c {shlex.quote(script)}"]
+            name=f"Check {cfg.monitor_service_name} runs the Rust agent", commands=[f"sh -c {shlex.quote(script)}"]
         )
     )
 
@@ -170,8 +162,6 @@ def prune_agents(cfg: NyxmonConfig, changes: list[OperationMeta | None]) -> None
     change what goes, so either reruns the pruning.
     """
 
-    if not cfg.agent_rust_version:
-        return
     args = (cfg.agent_rust_install_root, cfg.agent_rust_version, cfg.monitor_service_name, cfg.agent_rust_keep_versions)
     check = _agent("prune", *args, "--dry-run")
     pending = probe(check, name="Rust agent versions to prune")
@@ -184,4 +174,4 @@ def prune_agents(cfg: NyxmonConfig, changes: list[OperationMeta | None]) -> None
         verify_probe(check, name="Rust agent versions to prune")
 
 
-__all__ = ["AGENT_DROPIN", "check_agent", "install_agent", "prune_agents", "select_agent"]
+__all__ = ["AGENT_DROPIN", "check_agent", "install_agent", "prune_agents", "retire_dropin"]

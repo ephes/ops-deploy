@@ -10,7 +10,7 @@ Group={{ cfg.user }}
 WorkingDirectory={{ cfg.site_path }}
 EnvironmentFile={{ cfg.env_path }}
 
-ExecStart={{ cfg.venv_path }}/bin/start-agent --db {{ cfg.site_path }}/db.sqlite3 --enable-telegram
+ExecStart={{ cfg.agent_rust_binary }} --db {{ cfg.site_path }}/db.sqlite3 --enable-telegram
 
 Restart=always
 RestartSec=30

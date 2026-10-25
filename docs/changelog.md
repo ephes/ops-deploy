@@ -2,11 +2,29 @@
 
 ## Unreleased
 
+- `nyxmon`: the Python agent fallback is retired (port of ops-library
+  2.75.0). `NyxmonConfig.agent_impl` is removed (an unknown field now), and
+  `deploy_nyxmon` stops before any operation without `agent_rust_version`.
+  `nyxmon-monitor.service` starts the versioned Rust binary itself instead of
+  the venv `start-agent`; the `agent-impl.conf` template is gone. On a host
+  deployed before, the version the old drop-in selected is read for
+  `.previous-version`, then exactly
+  `/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf` is removed
+  (anything there but a regular file stops the deploy), with one reload and
+  restart of the monitor; the other drop-ins stay. The agent check accepts
+  only the versioned binary (`/proc/<pid>/exe`); a unit change or the
+  removal also re-runs the pruning. Rollback is pinning the previous release
+  again. `tests/smoke/test_nyxmon_smoke.py` needs `NYXMON_AGENT_ARCHIVE`
+  (an archive built for the VM) and skips without it. The vendored role
+  templates follow (`nyxmon_deploy__nyxmon-monitor.service.j2` updated,
+  `nyxmon_deploy__agent-impl.conf.j2` removed); the `nyxmon_deploy` digest in
+  `tests/parity/ops_library_roles.json` is not updated here (it was already
+  behind ops-library main before this change).
+
 - Extend Mastodon existing-install configuration mapping to existing delegated
   domains, explicit process sizing, federation nginx caching/timing and local
   domain discovery routing. Role defaults/templates and immutable source,
   runtime, environment, data and maintenance boundaries remain unchanged.
-
 
 - `thermal_monitoring`: optional `fan_control` block, a drive-aware case-fan
   controller (`drive-fan-control.service`, `files/drive_fan_control.py`,

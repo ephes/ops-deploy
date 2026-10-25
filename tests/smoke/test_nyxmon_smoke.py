@@ -2,7 +2,12 @@
 
 Needs a nyxmon checkout: ``NYXMON_SOURCE``, else ``$PROJECTS_ROOT/nyxmon``. Its
 committed ``HEAD`` is exported, so local databases and uncommitted files never
-reach the VM.
+reach the VM. ``nyxmon-monitor`` runs the Rust agent only (the Python fallback
+is retired), so the run also needs ``NYXMON_AGENT_ARCHIVE``: a
+``nyxmon-agent`` release archive built for the VM's architecture (e.g. a
+``cargo build --release`` of nyxmon's ``agent-rs`` for aarch64 Linux, packed
+with ``nyxmon-agent`` and ``LICENSE`` at the root), with its version in
+``NYXMON_AGENT_VERSION`` (default ``0.1.1``).
 """
 
 from __future__ import annotations
@@ -48,6 +53,10 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
     checkout = nyxmon_checkout()
     if checkout is None or not (checkout / ".git").exists():
         pytest.skip("no nyxmon checkout (set NYXMON_SOURCE or PROJECTS_ROOT)")
+    agent_archive = os.environ.get("NYXMON_AGENT_ARCHIVE")
+    if not agent_archive:
+        pytest.skip("no nyxmon-agent archive for the VM (set NYXMON_AGENT_ARCHIVE)")
+    agent_version = os.environ.get("NYXMON_AGENT_VERSION", "0.1.1")
     source = tmp_path_factory.mktemp("nyxmon")
     archive = subprocess.run(["git", "-C", str(checkout), "archive", "HEAD"], check=True, capture_output=True)
     subprocess.run(["tar", "-x", "-C", str(source)], input=archive.stdout, check=True)
@@ -59,6 +68,8 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
         django_allowed_hosts=f"127.0.0.1,{HOST}",
         require_login=True,
         opsgate_submit_base_url=OPSGATE,
+        agent_rust_version=agent_version,
+        agent_rust_local_archive=Path(agent_archive),
     )
     values = SecretValues(
         ref,
@@ -73,10 +84,12 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
     # The same commit exported again with fresh mtimes (``tar -m``), as a new clone has.
     fresh = tmp_path_factory.mktemp("nyxmon-fresh")
     subprocess.run(["tar", "-x", "-m", "-C", str(fresh)], input=archive.stdout, check=True)
-    # A Rust agent selection left by the role (nyxmon_agent_impl: rust); impl python removes it.
+    # The drop-in an ops-library < 2.75.0 deploy left (it selected the Rust agent
+    # over the Python ExecStart); the first run removes it.
     smoke_host.run(
         f"install -d -m 0755 {AGENT_DROPIN.rsplit('/', 1)[0]} && "
-        f"printf '[Service]\\nExecStart=\\nExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent\\n' > {AGENT_DROPIN}"
+        "printf '[Service]\\nExecStart=\\nExecStart=%s\\n' "
+        f"/opt/nyxmon-agent/{agent_version}/nyxmon-agent > {AGENT_DROPIN}"
     )
     runs = []
     fresh_cfg = cfg.model_copy(update={"source_path": fresh})
@@ -88,11 +101,12 @@ def deployed(smoke_host: SmokeHost, tmp_path_factory: pytest.TempPathFactory) ->
     return Deployed(cfg, values, *runs)
 
 
-def test_the_python_agent_runs(smoke_host: SmokeHost, deployed: Deployed) -> None:
-    assert "Deploy nyxmon | Select the Python agent for nyxmon-monitor" in deployed.first.changed_ops
+def test_the_rust_agent_runs_and_the_old_dropin_is_gone(smoke_host: SmokeHost, deployed: Deployed) -> None:
+    assert "Deploy nyxmon | Remove the retired agent drop-in of nyxmon-monitor" in deployed.first.changed_ops
     assert smoke_host.out(f"test -e {AGENT_DROPIN} && echo present || echo absent") == "absent"
+    assert "start-agent" not in smoke_host.out("cat /etc/systemd/system/nyxmon-monitor.service")
     for run in (deployed.first, deployed.second, deployed.fresh_clone):
-        assert run.op("Deploy nyxmon | Check nyxmon-monitor runs the Python agent").succeeded
+        assert run.op("Deploy nyxmon | Check nyxmon-monitor runs the Rust agent").succeeded
 
 
 def test_second_run_has_no_mutating_changes(deployed: Deployed) -> None:

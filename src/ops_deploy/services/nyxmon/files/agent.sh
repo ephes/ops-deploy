@@ -71,7 +71,7 @@ install_release() {
     chmod 0644 "$staging/tree/.archive-sha256"
     mv --no-target-directory "$staging/tree" "$dir"
     rm -rf "$staging"
-    # Validated by the versioned path; the drop-in does not point at it yet.
+    # Validated by the versioned path; the unit does not point at it yet.
     ( validate "$root" "$version" "$user" "$db" ) || { rm -rf "$dir"; exit 1; }
 }
 

@@ -114,12 +114,20 @@ def test_env_matches_role(source: Path, overrides: dict[str, Any], shell: bool) 
     assert ours == role
 
 
+def agent_vars(cfg: NyxmonConfig) -> dict[str, Any]:
+    """The role's nyxmon_agent_rust_binary (set by agent_rust.yml)."""
+
+    return {"nyxmon_agent_rust_binary": f"{cfg.agent_rust_install_root}/{cfg.agent_rust_version}/nyxmon-agent"}
+
+
 @pytest.mark.parametrize("overrides", CONFIGS)
 @pytest.mark.parametrize("template", ["nyxmon.service.j2", "nyxmon-monitor.service.j2"])
 def test_units_match_role(source: Path, overrides: dict[str, Any], template: str) -> None:
-    cfg, secrets = make(source, **overrides)
+    cfg, secrets = make(source, agent_rust_version="0.1.0", agent_rust_sha256="0" * 64, **overrides)
 
-    assert render(TEMPLATE_PACKAGE, template, cfg=cfg) == render_ansible(template, role_vars(cfg, secrets))
+    ours = render(TEMPLATE_PACKAGE, template, cfg=cfg)
+
+    assert ours == render_ansible(template, role_vars(cfg, secrets, **agent_vars(cfg)))
 
 
 def test_shell_env_quotes_what_the_role_quotes(source: Path) -> None:
@@ -137,11 +145,13 @@ def test_shell_env_quotes_what_the_role_quotes(source: Path) -> None:
         {"agent_rust_version": "1.2.3-rc.1", "agent_rust_install_root": "/srv/agents", "site_path": "/srv/nyx/site"},
     ],
 )
-def test_agent_dropin_matches_role(source: Path, overrides: dict[str, Any]) -> None:
-    cfg, secrets = make(source, agent_impl="rust", agent_rust_sha256="0" * 64, **overrides)
-    extra = {"nyxmon_agent_rust_binary": f"{cfg.agent_rust_install_root}/{cfg.agent_rust_version}/nyxmon-agent"}
+def test_monitor_unit_starts_the_rust_agent_like_the_role(source: Path, overrides: dict[str, Any]) -> None:
+    # The Python agent fallback is retired (ops-library 2.75.0): the unit itself names the versioned binary.
+    cfg, secrets = make(source, agent_rust_sha256="0" * 64, **overrides)
+    binary = agent_vars(cfg)["nyxmon_agent_rust_binary"]
 
-    ours = render(TEMPLATE_PACKAGE, "agent-impl.conf.j2", cfg=cfg)
+    ours = render(TEMPLATE_PACKAGE, "nyxmon-monitor.service.j2", cfg=cfg)
 
-    assert ours == render_ansible("agent-impl.conf.j2", role_vars(cfg, secrets, **extra))
-    assert f"ExecStart={extra['nyxmon_agent_rust_binary']} --db {cfg.site_path}/db.sqlite3 --enable-telegram\n" in ours
+    assert ours == render_ansible("nyxmon-monitor.service.j2", role_vars(cfg, secrets, **agent_vars(cfg)))
+    assert f"\nExecStart={binary} --db {cfg.site_path}/db.sqlite3 --enable-telegram\n" in ours
+    assert "start-agent" not in ours
