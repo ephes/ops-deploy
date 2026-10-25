@@ -16,6 +16,7 @@ import sys
 import time
 import urllib.request
 import uuid
+from base64 import urlsafe_b64encode
 from dataclasses import asdict
 from importlib import import_module
 from pathlib import Path
@@ -28,6 +29,48 @@ MASTODON_COMMIT = "32e8e7c70af88c7ff12d2db03fcc93aa777a8cfc"
 RUBY_BUILD = "b6a92c15f0df872047c74f7dfa0b92dfd4de8a92"
 RBENV = "07e9b1e297a5977298c6aadc9971ae0e9eb7f0dc"
 NVM = "8db529c5350353f165e1e7f6abb6eb6909f7fd37"
+OLD_RUBY = "4.0.4"
+OLD_NODE = "24.16.0"
+
+
+def generate_fixture_keys(path: Path) -> None:
+    """Use the locked controller crypto library before any runtime compile."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    values = {
+        "vapid_private_key": key.private_numbers().private_value.to_bytes(32, "big"),
+        "vapid_public_key": key.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint),
+    }
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w") as output:
+        json.dump({name: urlsafe_b64encode(value).decode().rstrip("=") for name, value in values.items()}, output)
+
+
+def fixture_failure_output(stdout: str, stderr: str) -> str:
+    """Bound dummy-VM diagnostics; never echo generated fixture keys or env dumps."""
+    values = {"a" * 64, "fixture-database-only"}
+    try:
+        vapid = HOME / "vapid.json"
+        data = json.loads(vapid.read_text())
+        values.update(data.values())
+    except (OSError, ValueError, TypeError, AttributeError):
+        return "tool output withheld: fixture key metadata unavailable"
+    sections = []
+    for label, content in (("stdout", stdout), ("stderr", stderr)):
+        for value in values:
+            if isinstance(value, str) and value:
+                content = content.replace(value, "[redacted fixture value]")
+        lines = []
+        for line in content.splitlines():
+            if re.search(r"(?:^|\s)(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=", line):
+                continue
+            if re.search(r"authorization|cookie|password|secret|(?:access|auth)[_-]?token", line, re.I):
+                continue
+            lines.append(re.sub(r"(https?://)[^/@\s]+@", r"\1[redacted]@", line))
+        sections.append(label + ":\n" + "\n".join(lines)[-2000:])
+    return "\n".join(sections)
 
 
 def command(*args: str, user: bool = False) -> str:
@@ -47,7 +90,9 @@ def command(*args: str, user: bool = False) -> str:
     result = subprocess.run(argv, text=True, capture_output=True, check=False)
     if result.returncode:
         # Only fixture data; generated key output is never logged on success.
-        raise RuntimeError(f"{args[0]} failed ({result.returncode}): {result.stderr[-3000:]}")
+        raise RuntimeError(
+            f"{args[0]} failed ({result.returncode}):\n" + fixture_failure_output(result.stdout, result.stderr)
+        )
     return result.stdout.strip()
 
 
@@ -91,7 +136,9 @@ end
             'ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)\nrequire "bundler/setup"\n'
         ),
         "config/application.rb": """require_relative "boot"
-require "rails/all"
+require "rails"
+require "active_record/railtie"
+require "action_controller/railtie"
 Bundler.require(*Rails.groups)
 module ReleaseFixture
   class Application < Rails::Application
@@ -120,7 +167,6 @@ end
 end
 """,
         "config.ru": 'require_relative "config/environment"\nrun Rails.application\n',
-        "app/assets/config/manifest.js": "//= link fixture.css\n",
         "app/assets/fixture.css": "body { color: black; }\n",
         "db/migrate/20250101000000_create_widgets.rb": """class CreateWidgets < ActiveRecord::Migration[8.1]
   def change
@@ -247,6 +293,13 @@ def deploy(cfg: dict[str, Any], evidence: Path, label: str, *, fails: bool = Fal
     if fails:
         if success:
             raise AssertionError("deliberate failing build unexpectedly succeeded")
+        asset_indexes = [
+            index
+            for index, op in enumerate(ops)
+            if op.name.endswith("Build and verify selected Mastodon production assets") and not op.succeeded
+        ]
+        if len(asset_indexes) != 1 or not all(op.succeeded for op in ops[: asset_indexes[0]]):
+            raise AssertionError("expected the real named asset operation to fail after successful prior operations")
     else:
         if not (success):
             raise AssertionError(f"{label}: see private operation evidence; {type(error).__name__}")
@@ -441,18 +494,20 @@ def preserve_runner_nvm(home: Path, evidence: Path, service_uid: int) -> Path | 
     return saved
 
 
-def bootstrap_actual_mastodon(cfg: dict[str, Any], evidence: Path) -> None:
+def bootstrap_existing(cfg: dict[str, Any], evidence: Path, *, actual: bool) -> None:
     """Provision a real existing app on ONLY the fresh, owned disposable VM DB."""
     assert_owned_vm()
     api = import_module("ops_deploy.services.mastodon")
     model = api.MastodonReleaseConfig(**cfg)
+    if not actual:
+        model = model.model_copy(update={"ruby_version": OLD_RUBY, "node_version": OLD_NODE})
     resolved = command(
-        "bash", "-c", '. "$HOME/.nvm/nvm.sh"; nvm version ' + shlex.quote(str(cfg["node_version"])), user=True
+        "bash", "-c", '. "$HOME/.nvm/nvm.sh"; nvm version ' + shlex.quote(model.node_version), user=True
     ).removeprefix("v")
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", resolved):
         raise AssertionError("fixture cannot resolve selected managed Node")
     model = model.model_copy(update={"node_version": resolved})
-    from ops_deploy.services.mastodon.render import render_env
+    from ops_deploy.services.mastodon.render import render, render_env
 
     env_path = SITE / ".env.production"
     descriptor = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -464,9 +519,19 @@ def bootstrap_actual_mastodon(cfg: dict[str, Any], evidence: Path) -> None:
     if api.__file__ is None:
         raise AssertionError("candidate API module has no source file")
     helper = runpy.run_path(str(Path(api.__file__).parent / "files/release_host.py"))
-    run = helper["user"]
     fields = model.model_dump()
-    print("BOOTSTRAP actual Mastodon locked dependencies", flush=True)
+    helper["verify_source"](fields)
+
+    def run(argv: list[str], *, load_env: bool = False) -> None:
+        print("BOOTSTRAP step: " + " ".join(argv[:4]), flush=True)
+        result = helper["user"](fields, argv, load_env=load_env, optional=True)
+        if result.returncode:
+            raise RuntimeError(
+                f"fixture bootstrap failed ({result.returncode}):\n"
+                + fixture_failure_output(result.stdout, result.stderr)
+            )
+
+    print("BOOTSTRAP existing app locked dependencies", flush=True)
     for label, argv in (
         ("bundle-config-path", ["bundle", "config", "set", "--local", "path", fields["bundle_path"]]),
         ("bundle-config-without", ["bundle", "config", "set", "--local", "without", fields["bundle_without"]]),
@@ -478,7 +543,8 @@ def bootstrap_actual_mastodon(cfg: dict[str, Any], evidence: Path) -> None:
         ("yarn-immutable-install", ["yarn", "install", "--immutable"]),
     ):
         print("BOOTSTRAP step: " + label, flush=True)
-        run(fields, argv)
+        run(argv)
+    helper["verify_source"](fields)
     tables = command(
         "runuser",
         "-u",
@@ -492,10 +558,22 @@ def bootstrap_actual_mastodon(cfg: dict[str, Any], evidence: Path) -> None:
     )
     if tables != "0":
         raise AssertionError("schema load requires the newly recreated empty fixture DB")
-    print("BOOTSTRAP actual Mastodon real Rails schema load", flush=True)
-    run(fields, ["bundle", "exec", "rails", "db:schema:load"], load_env=True)
-    print("BOOTSTRAP step: db-seed", flush=True)
-    run(fields, ["bundle", "exec", "rails", "db:seed"], load_env=True)
+    run(["bundle", "exec", "rails", "db:schema:load" if actual else "db:migrate"], load_env=True)
+    if actual:
+        run(["bundle", "exec", "rails", "db:seed"], load_env=True)
+    else:
+        # A business row written through ActiveRecord, after the real migration.
+        run(
+            [
+                "bundle",
+                "exec",
+                "rails",
+                "runner",
+                'ActiveRecord::Base.connection.execute("INSERT INTO widgets (name) '
+                "VALUES ('preserved-business-row')\")",
+            ],
+            load_env=True,
+        )
     history = command(
         "runuser",
         "-u",
@@ -509,28 +587,35 @@ def bootstrap_actual_mastodon(cfg: dict[str, Any], evidence: Path) -> None:
     )
     if not set(cfg["migration_versions"]).issubset(set(history.splitlines())):
         raise AssertionError("real schema load did not cover candidate regular/post migration identities")
-    print("BOOTSTRAP actual Mastodon real assets and current app", flush=True)
-    run(fields, ["bundle", "exec", "rails", "assets:precompile"], load_env=True)
+    run(["bundle", "exec", "rails", "assets:precompile"], load_env=True)
+    if not helper["assets_output"](fields):
+        raise AssertionError("baseline must have genuine complete Propshaft/Vite outputs")
+    # Use the actual reviewed unit/config templates for this existing installation.
+    write(Path("/etc/mastodon/nginx.conf"), render(model, "nginx.conf.j2"))
+    for unit in UNITS:
+        write(Path("/etc/systemd/system/mastodon-" + unit + ".service"), render(model, unit + ".service.j2"))
+    command("systemctl", "daemon-reload")
     for unit in UNITS:
         command("systemctl", "start", "mastodon-" + unit + ".service")
     for attempt in range(30):
         try:
-            check_http(actual=True)
+            check_http(actual=actual)
             break
         except (OSError, TimeoutError):
             if attempt == 29:
                 raise
             time.sleep(2)
     baseline = services()
-    runtimes = running_runtimes(cfg)
+    runtimes = running_runtimes(fields)
     state = Path("/var/lib/ops-deploy-mastodon")
     if state.exists():
         raise AssertionError("baseline setup must not fabricate deployer completion state")
     write(
-        evidence / "actual-mastodon-existing-baseline.json",
+        evidence / ("actual-mastodon-existing-baseline.json" if actual else "minimal-existing-baseline.json"),
         json.dumps(
             dict(
-                real_schema_load=True,
+                real_schema_load=actual,
+                real_db_migrate=not actual,
                 migration_count=len(history.splitlines()),
                 regular_and_post_coverage=True,
                 http200_instance=True,
@@ -554,6 +639,10 @@ def main() -> None:
         raise AssertionError("integration invariant failed")
     if not (command("git", "-C", str(controller_root), "rev-parse", "HEAD") == os.environ["IMPLEMENTATION_SHA"]):
         raise AssertionError("integration invariant failed")
+    harness_root = Path(__file__).resolve().parents[3]
+    harness_sha = command("git", "-C", str(harness_root), "rev-parse", "HEAD")
+    if harness_sha != os.environ["HARNESS_SHA"]:
+        raise AssertionError("harness checkout does not match selected workflow SHA")
     source = Path("/var/tmp/mastodon-selected-source")
     command("git", "clone", "--depth=1", "--branch", "v4.6.9", "https://github.com/mastodon/mastodon.git", str(source))
     if not (command("git", "-C", str(source), "rev-parse", "HEAD") == MASTODON_COMMIT):
@@ -564,7 +653,13 @@ def main() -> None:
         evidence / "provenance.json",
         json.dumps(
             dict(
-                implementation=os.environ["IMPLEMENTATION_SHA"],
+                harness_sha=harness_sha,
+                implementation_sha=os.environ["IMPLEMENTATION_SHA"],
+                implementation_checkout=str(controller_root),
+                implementation_module=str(Path(api.__file__).resolve()),
+                implementation_module_sha256=hashlib.sha256(Path(api.__file__).read_bytes()).hexdigest(),
+                controller_executable=str(Path(sys.executable).resolve()),
+                controller_proc_executable=str(Path("/proc/self/exe").resolve()),
                 mastodon=MASTODON_COMMIT,
                 ruby_build=RUBY_BUILD,
                 rbenv=RBENV,
@@ -574,6 +669,9 @@ def main() -> None:
             )
         ),
     )
+    # Real dummy keys exist before the first tool/compile, allowing bounded
+    # diagnostics throughout setup; missing/unreadable metadata still fails shut.
+    generate_fixture_keys(HOME / "vapid.json")
     # Fixture prerequisites: exact tool checkouts; selected runtime itself remains absent.
     for repo, dest, ref in [
         ("rbenv/rbenv", HOME / ".rbenv", RBENV),
@@ -604,31 +702,41 @@ def main() -> None:
     minimal = HOME / "fixture-source"
     fixture(minimal, ruby, node)
     command("chown", "-R", "mastodon:mastodon", str(minimal))
-    # VM system Ruby/Node create source lockfiles; target managed runtimes remain absent.
-    command("gem", "install", "bundler", "-v", "4.0.13", "--no-document")
-    command("bash", "-c", "cd " + shlex.quote(str(minimal)) + " && bundle _4.0.13_ lock", user=True)
-    command(
-        "bash",
-        "-c",
-        "cd " + shlex.quote(str(minimal)) + " && npx --yes corepack@0.34.0 yarn install --mode=skip-build",
-        user=True,
-    )
-    shutil.rmtree(minimal / "node_modules", ignore_errors=True)
-    shutil.rmtree(minimal / ".yarn", ignore_errors=True)
-    # Seed an old real managed runtime to establish retention across selected-runtime install.
-    command(str(HOME / ".rbenv/bin/rbenv"), "install", "-s", "3.4.0", user=True)
-    old_ruby = HOME / ".rbenv/versions/3.4.0/bin/ruby"
+    # Bootstrap with the retained real runtimes; do not depend on Ubuntu Ruby's
+    # resolver/version or generate source locks under the still-absent target.
+    command(str(HOME / ".rbenv/bin/rbenv"), "install", "-s", OLD_RUBY, user=True)
+    command(str(HOME / ".rbenv/bin/rbenv"), "global", OLD_RUBY, user=True)
+    old_ruby = HOME / ".rbenv/versions" / OLD_RUBY / "bin/ruby"
     old_ruby_version = command(str(old_ruby), "--version", user=True)
-    command("bash", "-c", ". /home/mastodon/.nvm/nvm.sh && nvm install 24.16.0", user=True)
-    old_node = HOME / ".nvm/versions/node/v24.16.0/bin/node"
+    command("bash", "-c", ". /home/mastodon/.nvm/nvm.sh && nvm install " + OLD_NODE, user=True)
+    old_node = HOME / ".nvm/versions/node" / ("v" + OLD_NODE) / "bin/node"
     old_node_version = command(str(old_node), "--version", user=True)
     initial_old_alias = (HOME / ".nvm/alias/default").read_text().strip()
-    if initial_old_alias.removeprefix("v") != "24.16.0":
+    if initial_old_alias.removeprefix("v") != OLD_NODE:
         raise AssertionError("fixture must start with old Node alias")
     write(
         evidence / "initial-retained-runtime.json",
         json.dumps(dict(old_ruby=old_ruby_version, old_node=old_node_version, nvm_default_alias=initial_old_alias)),
     )
+    bootstrap_path = str(old_ruby.parent) + ":" + str(old_node.parent) + ":/usr/local/bin:/usr/bin:/bin"
+    for script in (
+        "gem install bundler -v 4.0.13 --no-document && bundle _4.0.13_ lock",
+        # Only source-fixture lock generation may create a lock in CI. Actual
+        # application installs below and in the API still use --immutable.
+        "YARN_ENABLE_IMMUTABLE_INSTALLS=false npx --yes corepack@0.34.0 yarn install --mode=skip-build",
+    ):
+        command(
+            "env",
+            "PATH=" + bootstrap_path,
+            "RBENV_ROOT=" + str(HOME / ".rbenv"),
+            "RBENV_VERSION=" + OLD_RUBY,
+            "bash",
+            "-c",
+            "cd " + shlex.quote(str(minimal)) + " && " + script,
+            user=True,
+        )
+    shutil.rmtree(minimal / "node_modules", ignore_errors=True)
+    shutil.rmtree(minimal / ".yarn", ignore_errors=True)
     command("git", "init", "-q", str(minimal))
     first_commit = git_commit(minimal, "minimal real Rails source")
     command("git", "-C", str(minimal), "tag", "fixture-first")
@@ -636,24 +744,8 @@ def main() -> None:
     shutil.rmtree(SITE)
     command("git", "clone", minimal.as_uri(), str(SITE), user=True)
     seed_protected()
-    command(
-        "runuser",
-        "-u",
-        "postgres",
-        "--",
-        "psql",
-        "-d",
-        "mastodon",
-        "-v",
-        "ON_ERROR_STOP=1",
-        "-c",
-        "CREATE TABLE schema_migrations (version varchar NOT NULL PRIMARY KEY); "
-        "INSERT INTO schema_migrations VALUES ('20250101000000'); "
-        "CREATE TABLE widgets (id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, name varchar); "
-        "ALTER TABLE schema_migrations OWNER TO mastodon; ALTER TABLE widgets OWNER TO mastodon; "
-        "INSERT INTO widgets (name) VALUES ('preserved-business-row');",
-    )
     cfg = config(minimal, minimal.as_uri(), "fixture-first")
+    bootstrap_existing(cfg, evidence, actual=False)
     if (HOME / ".rbenv/versions" / ruby).exists():
         raise AssertionError("integration invariant failed")
     if list((HOME / ".nvm/versions/node").glob("v" + node + "*")):
@@ -746,15 +838,6 @@ def main() -> None:
         "-c",
         "CREATE EXTENSION pg_trgm; CREATE EXTENSION unaccent;",
     )
-    # Generate a valid P-256 VAPID pair using the actually installed selected Ruby.
-    vapid_code = (
-        "require 'openssl'; require 'json'; require 'base64'; k=OpenSSL::PKey::EC.generate('prime256v1'); "
-        "puts JSON.generate(vapid_private_key: "
-        "Base64.urlsafe_encode64(k.private_key.to_s(2).rjust(32, 0.chr), padding:false), "
-        "vapid_public_key: Base64.urlsafe_encode64(k.public_key.to_octet_string(:uncompressed), padding:false))"
-    )
-    write(HOME / "vapid.json", command(str(HOME / ".rbenv/versions" / ruby / "bin/ruby"), "-e", vapid_code, user=True))
-    (HOME / "vapid.json").chmod(0o600)
     SITE.rmdir()
     command(
         "git",
@@ -768,7 +851,7 @@ def main() -> None:
     )
     seed_protected()
     full = config(source, "https://github.com/mastodon/mastodon.git", "v4.6.9")
-    bootstrap_actual_mastodon(full, evidence)
+    bootstrap_existing(full, evidence, actual=True)
     pair(full, evidence, "actual-mastodon-v4.6.9")
     if not (command(str(old_ruby), "--version", user=True) == old_ruby_version):
         raise AssertionError("integration invariant failed")

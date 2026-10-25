@@ -47,7 +47,7 @@ jobs:
         env:
           IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
         run: |
-          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" \
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$GITHUB_SHA" \
             NODE_BOOTSTRAP_DIR="$(dirname "$(command -v node)")" \
             CONTROLLER_PYTHON="$PWD/.implementation/.venv/bin/python" \
             bash tests/integration/mastodon_release/run.sh

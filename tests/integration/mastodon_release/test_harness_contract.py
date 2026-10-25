@@ -172,3 +172,79 @@ def test_diagnostic_upload_permissions_survive_missing_journal(tmp_path: Path) -
     assert result.returncode == 0, result.stderr
     assert "No service journal" in (evidence / "journal.log").read_text()
     assert stat.S_IMODE(evidence.stat().st_mode) & 0o005 == 0o005
+
+
+def test_command_failure_reports_real_tool_stdout_without_fixture_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    import sys
+
+    harness = load_harness()
+    monkeypatch.setattr(harness, "HOME", tmp_path)
+    private_value = "generated-vapid-value-for-test"
+    (tmp_path / "vapid.json").write_text(json.dumps({"vapid_private_key": private_value}))
+    script = (
+        "import sys; print('YN0028: lockfile would be created'); "
+        "print('DB_PASS=fixture-database-only'); print('" + private_value + "'); "
+        "print('Authorization: Bearer fixture-only',file=sys.stderr); sys.exit(17)"
+    )
+    with pytest.raises(RuntimeError) as error:
+        harness.command(sys.executable, "-c", script)
+    output = str(error.value)
+    assert "failed (17)" in output
+    assert "YN0028: lockfile would be created" in output
+    assert "DB_PASS=" not in output
+    assert "Authorization" not in output
+    assert "fixture-database-only" not in output
+    assert private_value not in output
+
+
+@pytest.mark.parametrize("metadata", ["missing", "invalid", "directory"])
+def test_bad_diagnostic_metadata_preserves_primary_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, metadata: str
+) -> None:
+    import sys
+
+    harness = load_harness()
+    monkeypatch.setattr(harness, "HOME", tmp_path)
+    if metadata == "invalid":
+        (tmp_path / "vapid.json").write_text("not json")
+    elif metadata == "directory":
+        (tmp_path / "vapid.json").mkdir()
+    with pytest.raises(RuntimeError, match=r"failed \(19\)") as error:
+        harness.command(sys.executable, "-c", "import sys; print('original tool failure'); sys.exit(19)")
+    assert "tool output withheld" in str(error.value)
+    assert "original tool failure" not in str(error.value)
+
+
+def test_tool_failure_output_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    harness = load_harness()
+    monkeypatch.setattr(harness, "HOME", tmp_path)
+    (tmp_path / "vapid.json").write_text("{}")
+    output = harness.fixture_failure_output("x" * 10000, "y" * 10000)
+    assert len(output) <= 4020
+
+
+def test_fixture_vapid_keys_are_valid_private_and_exclusive(tmp_path: Path) -> None:
+    import json
+    import stat
+    from base64 import urlsafe_b64decode
+
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    harness = load_harness()
+    target = tmp_path / "vapid.json"
+    harness.generate_fixture_keys(target)
+    values = json.loads(target.read_text())
+    private = urlsafe_b64decode(values["vapid_private_key"] + "=")
+    public = urlsafe_b64decode(values["vapid_public_key"] + "===")
+    key = ec.derive_private_key(int.from_bytes(private, "big"), ec.SECP256R1())
+    assert key.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint) == public
+    assert len(private) == 32
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    before = target.read_bytes()
+    with pytest.raises(FileExistsError):
+        harness.generate_fixture_keys(target)
+    assert target.read_bytes() == before
