@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import string
 from pathlib import PurePosixPath
 from typing import Annotated, Self
 
@@ -13,6 +15,13 @@ from ops_deploy.core.git_source import CommitSha
 Path_ = Annotated[str, Field(pattern=r"^/[A-Za-z0-9._/-]+$")]
 Domain = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$")]
 Version = Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")]
+
+
+def unquoted_env_literal(value: str) -> str:
+    """Validate literal Bash assignment values used by the unchanged role env."""
+    if any(c in value for c in string.whitespace + "\x00\"\\$`';|&<>()") or re.search(r"(?:^|:)~", value):
+        raise ValueError("mastodon: unsupported unquoted literal environment value")
+    return value
 
 
 class MastodonConfig(RoleConfig):
@@ -55,12 +64,19 @@ class MastodonConfig(RoleConfig):
             raise ValueError("paths must be normalised non-root absolute paths")
         return value
 
-    @field_validator("smtp_login", "smtp_from_address")
+    @field_validator("smtp_from_address")
     @classmethod
     def _literal_env(cls, value: str) -> str:
         if not value or any(c in value for c in '\r\n\x00"\\$`'):
             raise ValueError("SMTP fields must be literal single-line environment values")
         return value
+
+    @field_validator("smtp_login")
+    @classmethod
+    def _smtp_login_literal(cls, value: str) -> str:
+        if not value:
+            raise ValueError("SMTP login must not be empty")
+        return unquoted_env_literal(value)
 
     @model_validator(mode="after")
     def _layout(self) -> Self:

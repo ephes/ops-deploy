@@ -38,9 +38,10 @@ def deploy_mastodon(cfg: MastodonConfig, secrets: SecretValues) -> None:
 
         deploy_release(cfg, secrets)
         return
+    environment = render_env(cfg, secrets)
     require_linux("mastodon")
     require_systemd("mastodon")
-    payload = json.dumps({"config": cfg.model_dump(), "environment_b64": encode_payload(render_env(cfg, secrets))})
+    payload = json.dumps({"config": cfg.model_dump(), "environment_b64": encode_payload(environment)})
     answer = probe(shlex.join(["python3", "-I", "-c", PREFLIGHT]), name="mastodon admission", stdin=payload)
     if answer is None or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", answer.strip()):
         raise DeployError("mastodon: existing-install admission failed; no operations planned")

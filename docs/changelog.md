@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Reject shell syntax that cannot remain literal in Mastodon unquoted environment
+  assignments before any host fact or operation; preserve quoted From addresses.
+
 - `nyxmon`: the Python agent fallback is retired (port of ops-library
   2.75.0). `NyxmonConfig.agent_impl` is removed (an unknown field now), and
   `deploy_nyxmon` stops before any operation without `agent_rust_version`.
