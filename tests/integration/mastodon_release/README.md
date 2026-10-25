@@ -86,3 +86,16 @@ unreadable generated-key metadata withholds tool output while preserving the
 original command label and exit code. Local CLI/boot tests qualify those
 bootstrap assumptions; only a successful changed Ubuntu VM job with
 `SUCCESS.json` qualifies the complete Linux chain.
+
+
+Job40182269154 used harness`aebff23` and reviewed API`aac262b` but stopped before
+any API call. Ruby4.0.4 configured, compiled and installed, then ruby-build's
+return to the inherited controller checkout failed with permission denied.
+Every fixture service-user command now starts in that user's accessible home;
+this matches the API executor's explicit service-owned working-directory
+contract. Runner checkout permissions remain unchanged. A real Bash
+pushd/popd permission reproduction and caller-boundary regression cover this
+context. Before any tool clone or compile, actual service-user `pwd -P` and
+`id -u` must match the new user/home and are recorded alongside the controller
+cwd in `fixture-execution-context.json`. Only a later successful changed Linux
+job qualifies the entire chain.

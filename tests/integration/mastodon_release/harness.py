@@ -87,7 +87,7 @@ def command(*args: str, user: bool = False) -> str:
         argv = list(args)
         if len(args) > 2 and args[:2] == ("git", "-C"):
             argv = ["git", "-c", "safe.directory=" + args[2], *args[1:]]
-    result = subprocess.run(argv, text=True, capture_output=True, check=False)
+    result = subprocess.run(argv, cwd=HOME if user else None, text=True, capture_output=True, check=False)
     if result.returncode:
         # Only fixture data; generated key output is never logged on success.
         raise RuntimeError(
@@ -672,6 +672,14 @@ def main() -> None:
     # Real dummy keys exist before the first tool/compile, allowing bounded
     # diagnostics throughout setup; missing/unreadable metadata still fails shut.
     generate_fixture_keys(HOME / "vapid.json")
+    context = dict(
+        controller_cwd=str(Path.cwd()),
+        service_cwd=command("pwd", "-P", user=True),
+        service_uid=command("id", "-u", user=True),
+    )
+    if context["service_cwd"] != str(HOME.resolve()) or context["service_uid"] != str(pwd.getpwnam("mastodon").pw_uid):
+        raise AssertionError("fixture service commands must run as mastodon in its accessible home")
+    write(evidence / "fixture-execution-context.json", json.dumps(context, indent=2))
     # Fixture prerequisites: exact tool checkouts; selected runtime itself remains absent.
     for repo, dest, ref in [
         ("rbenv/rbenv", HOME / ".rbenv", RBENV),

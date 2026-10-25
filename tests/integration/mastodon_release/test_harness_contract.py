@@ -248,3 +248,31 @@ def test_fixture_vapid_keys_are_valid_private_and_exclusive(tmp_path: Path) -> N
     with pytest.raises(FileExistsError):
         harness.generate_fixture_keys(target)
     assert target.read_bytes() == before
+
+
+def test_service_commands_start_in_accessible_home_outside_controller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness = load_harness()
+    home, controller, build = (tmp_path / name for name in ("service-home", "controller", "build"))
+    for path in (home, controller, build):
+        path.mkdir()
+    monkeypatch.setattr(harness, "HOME", home)
+    real_run = subprocess.run
+
+    def execute_without_uid_switch(argv: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        # Ordinary tests cannot switch UID. Preserve the actual env/Bash command
+        # and process cwd; only remove runuser's privilege-switch prefix.
+        assert argv[:4] == ["runuser", "-u", "mastodon", "--"]
+        return real_run(argv[4:], **options)
+
+    monkeypatch.setattr(harness.subprocess, "run", execute_without_uid_switch)
+    monkeypatch.chdir(controller)
+    try:
+        controller.chmod(0)
+        output = harness.command(
+            "bash", "-c", 'set -e; pushd "$1" >/dev/null; popd >/dev/null; pwd -P', "fixture", str(build), user=True
+        )
+    finally:
+        controller.chmod(0o700)
+    assert output == str(home.resolve())
