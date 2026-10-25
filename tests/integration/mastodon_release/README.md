@@ -99,3 +99,17 @@ context. Before any tool clone or compile, actual service-user `pwd -P` and
 `id -u` must match the new user/home and are recorded alongside the controller
 cwd in `fixture-execution-context.json`. Only a later successful changed Linux
 job qualifies the entire chain.
+
+
+Job40183175024 proved the working-directory repair and compiled retained Ruby,
+but stopped before the API when inherited runner `NVM_DIR` directed Node's cache
+to `/home/runner/.nvm`. Fixture service commands now use the reviewed API's
+`runuser`/`env -i` pattern: explicit home, identity, shell, locale, rbenv/nvm roots
+and controlled bootstrap PATH. Only `CI`/`GITHUB_ACTIONS` are retained for the
+package-manager CI context. Runner shell hooks, language/package caches, temp
+and Git configuration are discarded. The early context artifact records only
+the declared non-secret service environment. Fixture Git init/commits/tags and
+clones run as the service owner; generated pending source is chowned before its
+commit. No wildcard safe-directory or runner permission changes are used.
+Actual pinned-nvm cache selection and a poisoned-environment caller regression
+qualify this repair locally; full Linux qualification remains pending.

@@ -74,15 +74,20 @@ def fixture_failure_output(stdout: str, stderr: str) -> str:
 
 
 def command(*args: str, user: bool = False) -> str:
-    argv = [
-        "runuser",
-        "-u",
-        "mastodon",
-        "--",
-        "env",
-        "PATH=" + os.environ.get("NODE_BOOTSTRAP_DIR", "/usr/bin") + ":" + os.environ["PATH"],
-        *args,
-    ]
+    environment = {
+        "HOME": str(HOME),
+        "USER": "mastodon",
+        "LOGNAME": "mastodon",
+        "SHELL": "/bin/bash",
+        "LANG": "C.UTF-8",
+        "RBENV_ROOT": str(HOME / ".rbenv"),
+        "NVM_DIR": str(HOME / ".nvm"),
+        "PATH": os.environ.get("NODE_BOOTSTRAP_DIR", "/usr/bin") + ":/usr/local/bin:/usr/bin:/bin",
+    }
+    # Reproduce CI's package-manager behavior, without inheriting runner caches,
+    # shell hooks, credentials or runtime/Git configuration.
+    environment.update({name: os.environ[name] for name in ("CI", "GITHUB_ACTIONS") if name in os.environ})
+    argv = ["runuser", "-u", "mastodon", "--", "env", "-i", *[k + "=" + v for k, v in environment.items()], *args]
     if not user:
         argv = list(args)
         if len(args) > 2 and args[:2] == ("git", "-C"):
@@ -196,8 +201,8 @@ http.createServer((req,res) => { res.writeHead(200); res.end('ok'); }).listen(Nu
         (source / name).chmod(0o755)
 
 
-def git_commit(source: Path, message: str) -> str:
-    command("git", "-C", str(source), "add", ".")
+def git_commit(source: Path, message: str, *, user: bool = False) -> str:
+    command("git", "-C", str(source), "add", ".", user=user)
     command(
         "git",
         "-C",
@@ -209,8 +214,9 @@ def git_commit(source: Path, message: str) -> str:
         "commit",
         "-qm",
         message,
+        user=user,
     )
-    return command("git", "-C", str(source), "rev-parse", "HEAD")
+    return command("git", "-C", str(source), "rev-parse", "HEAD", user=user)
 
 
 def config(source: Path, repo: str, ref: str) -> dict[str, Any]:
@@ -679,7 +685,22 @@ def main() -> None:
     )
     if context["service_cwd"] != str(HOME.resolve()) or context["service_uid"] != str(pwd.getpwnam("mastodon").pw_uid):
         raise AssertionError("fixture service commands must run as mastodon in its accessible home")
-    write(evidence / "fixture-execution-context.json", json.dumps(context, indent=2))
+    service_environment = json.loads(
+        command(
+            "python3",
+            "-c",
+            "import json,os; print(json.dumps({key:os.environ.get(key) for key in "
+            "('HOME','USER','LOGNAME','SHELL','LANG','RBENV_ROOT','NVM_DIR','PATH','CI','GITHUB_ACTIONS')}))",
+            user=True,
+        )
+    )
+    expected = {"HOME": str(HOME), "RBENV_ROOT": str(HOME / ".rbenv"), "NVM_DIR": str(HOME / ".nvm")}
+    if any(service_environment[key] != value for key, value in expected.items()):
+        raise AssertionError("fixture runtime/cache roots must belong to the service home")
+    write(
+        evidence / "fixture-execution-context.json",
+        json.dumps({**context, "service_environment": service_environment}, indent=2),
+    )
     # Fixture prerequisites: exact tool checkouts; selected runtime itself remains absent.
     for repo, dest, ref in [
         ("rbenv/rbenv", HOME / ".rbenv", RBENV),
@@ -745,9 +766,9 @@ def main() -> None:
         )
     shutil.rmtree(minimal / "node_modules", ignore_errors=True)
     shutil.rmtree(minimal / ".yarn", ignore_errors=True)
-    command("git", "init", "-q", str(minimal))
-    first_commit = git_commit(minimal, "minimal real Rails source")
-    command("git", "-C", str(minimal), "tag", "fixture-first")
+    command("git", "init", "-q", str(minimal), user=True)
+    first_commit = git_commit(minimal, "minimal real Rails source", user=True)
+    command("git", "-C", str(minimal), "tag", "fixture-first", user=True)
     command("chown", "-R", "mastodon:mastodon", str(minimal))
     shutil.rmtree(SITE)
     command("git", "clone", minimal.as_uri(), str(SITE), user=True)
@@ -770,9 +791,9 @@ def main() -> None:
         "  def change\n    add_column :widgets, :note, :string\n  end\nend\n",
     )
     write(minimal / "app/assets/fixture.css", "body { color: navy; }\n")
-    git_commit(minimal, "pending migration and changed build input")
-    command("git", "-C", str(minimal), "tag", "fixture-pending")
     command("chown", "-R", "mastodon:mastodon", str(minimal))
+    git_commit(minimal, "pending migration and changed build input", user=True)
+    command("git", "-C", str(minimal), "tag", "fixture-pending", user=True)
     cfg = config(minimal, minimal.as_uri(), "fixture-pending")
     write(HOME / "fail-assets", "deliberate fixture fault\n")
     old_services = services()

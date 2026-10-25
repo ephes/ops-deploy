@@ -276,3 +276,41 @@ def test_service_commands_start_in_accessible_home_outside_controller(
     finally:
         controller.chmod(0o700)
     assert output == str(home.resolve())
+
+
+def test_service_environment_ignores_runner_hooks_and_cache_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    import sys
+
+    harness = load_harness()
+    home = tmp_path / "service-home"
+    home.mkdir()
+    monkeypatch.setattr(harness, "HOME", home)
+    marker = tmp_path / "foreign-hook-executed"
+    hook = tmp_path / "runner-bash-env"
+    hook.write_text('touch "' + str(marker) + '"\n')
+    inherited = ("GEM_HOME", "GEM_PATH", "NPM_CONFIG_PREFIX", "COREPACK_HOME", "TMPDIR", "GIT_CONFIG_GLOBAL")
+    for name in (*inherited, "HOME", "RBENV_ROOT", "NVM_DIR"):
+        monkeypatch.setenv(name, str(tmp_path / "foreign-runner-root"))
+    monkeypatch.setenv("BASH_ENV", str(hook))
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    real_run = subprocess.run
+
+    def execute_without_uid_switch(argv: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        assert argv[:4] == ["runuser", "-u", "mastodon", "--"]
+        return real_run(argv[4:], **options)
+
+    monkeypatch.setattr(harness.subprocess, "run", execute_without_uid_switch)
+    keys = ("HOME", "RBENV_ROOT", "NVM_DIR", "CI", "GITHUB_ACTIONS", "BASH_ENV", *inherited)
+    code = "import json,os; print(json.dumps({key:os.environ.get(key) for key in " + repr(keys) + "}))"
+    output = harness.command("bash", "-c", 'exec "$1" -c "$2"', "fixture", sys.executable, code, user=True)
+    actual = json.loads(output)
+    assert actual["HOME"] == str(home)
+    assert actual["RBENV_ROOT"] == str(home / ".rbenv")
+    assert actual["NVM_DIR"] == str(home / ".nvm")
+    assert actual["CI"] == actual["GITHUB_ACTIONS"] == "true"
+    assert all(actual[name] is None for name in ("BASH_ENV", *inherited))
+    assert not marker.exists()
