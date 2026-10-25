@@ -90,8 +90,9 @@ def test_transaction_lock_refuses_changed_route_before_upload() -> None:
     assert run.uploaded_paths == []
 
 
-def test_admission_failure_plans_no_operation() -> None:
-    cfg = config()
+@pytest.mark.parametrize("federation_cache", [False, True])
+def test_admission_failure_plans_no_operation(federation_cache: bool) -> None:
+    cfg = config(nginx_federation_cache_enabled=federation_cache)
     facts = {**converged(cfg), "def require(ok):": [FAILED]}
     with patch("ops_deploy.services.mastodon.deploy.files.put") as put:
         run = run_deploy_fake(deploy_mastodon, cfg=cfg, secrets=secrets(), responses=facts)
@@ -125,7 +126,9 @@ def test_restart_debt_is_repaid_without_file_drift() -> None:
 @pytest.mark.parametrize(
     "changes",
     [
-        {"web_domain": "other.example.org"},
+        {"web_domain": "bad/domain"},
+        {"db_pool": 4},
+        {"web_concurrency": True},
         {"site_path": "/srv/mastodon/../live"},
         {"source_files": {}},
         {"ruby_version": "4.0;bad"},
@@ -187,3 +190,68 @@ def test_supplied_secret_is_never_interpreted_as_template() -> None:
     values["secret_key_base"] = "{{literal_fixture_value}}"
     text = render_env(config(), SecretValues(SecretRef("secrets/test/mastodon.yml"), values)).reveal().decode()
     assert "SECRET_KEY_BASE={{literal_fixture_value}}\n" in text
+
+
+def test_existing_delegated_domain_and_process_sizing_are_preserved() -> None:
+    cfg = config(
+        local_domain="example.org",
+        web_concurrency=1,
+        max_threads=10,
+        sidekiq_concurrency=5,
+        db_pool=10,
+        nginx_federation_cache_enabled=True,
+        nginx_access_log_timing=True,
+        traefik_local_domain_wellknown=True,
+        traefik_local_domain_cert_resolver="letsencrypt",
+    )
+    text = render_env(cfg, secrets()).reveal().decode()
+    for line in [
+        "LOCAL_DOMAIN=example.org",
+        "WEB_DOMAIN=social.example.org",
+        "WEB_CONCURRENCY=1",
+        "MAX_THREADS=10",
+        "DB_POOL=10",
+    ]:
+        assert line + "\n" in text
+    assert "-c 5" in render(cfg, "sidekiq.service.j2")
+    nginx = render(cfg, "nginx.conf.j2")
+    assert "$mastodon_federation_accept" in nginx
+    assert "log_format mastodon_timing" in nginx
+    route = render(cfg, "traefik.yml.j2")
+    assert "mastodon-local-wellknown:" in route
+    assert "Host(`example.org`)" in route
+    assert "certResolver: letsencrypt" in route
+
+
+def test_delegated_existing_install_is_converged_without_mutations() -> None:
+    cfg = config(
+        local_domain="example.org",
+        web_concurrency=1,
+        max_threads=10,
+        sidekiq_concurrency=5,
+        db_pool=10,
+        nginx_federation_cache_enabled=True,
+        nginx_access_log_timing=True,
+        traefik_local_domain_wellknown=True,
+        traefik_local_domain_cert_resolver="letsencrypt",
+    )
+    run = run_deploy_fake(deploy_mastodon, cfg=cfg, secrets=secrets(), responses=converged(cfg))
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == []
+    assert all("fixture-secret-sentinel" not in command for command in run.executed_commands)
+
+
+def test_added_fields_keep_role_defaults() -> None:
+    cfg = config()
+    defaults = json.loads((TEMPLATES / "defaults.json").read_text())
+    for field in [
+        "web_concurrency",
+        "max_threads",
+        "sidekiq_concurrency",
+        "db_pool",
+        "nginx_federation_cache_enabled",
+        "nginx_access_log_timing",
+        "traefik_local_domain_wellknown",
+        "traefik_local_domain_cert_resolver",
+    ]:
+        assert getattr(cfg, field) == defaults["mastodon_" + field]

@@ -16,7 +16,7 @@ Version = Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")]
 
 
 class MastodonConfig(RoleConfig):
-    """Only the default single-domain, local-storage layout is supported.
+    """Existing single-domain or delegated-domain local-storage layouts are supported.
 
     The controller resolves the inventory ref through ``fetch_source`` and
     supplies the commit and runtime versions. The host must already carry
@@ -33,6 +33,14 @@ class MastodonConfig(RoleConfig):
     source_files: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
     web_port: int = Field(default=10040, gt=1024, lt=65536)
     streaming_port: int = Field(default=10041, gt=1024, lt=65536)
+    web_concurrency: Annotated[int, Field(strict=True, gt=0)] = 2
+    max_threads: Annotated[int, Field(strict=True, gt=0)] = 5
+    sidekiq_concurrency: Annotated[int, Field(strict=True, gt=0)] = 25
+    db_pool: Annotated[int, Field(strict=True, gt=0)] = 25
+    nginx_federation_cache_enabled: bool = False
+    nginx_access_log_timing: bool = False
+    traefik_local_domain_wellknown: bool = False
+    traefik_local_domain_cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]*$")] = ""
     smtp_server: Domain
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_login: str
@@ -58,8 +66,8 @@ class MastodonConfig(RoleConfig):
     def _layout(self) -> Self:
         if set(self.source_files) != {"Gemfile.lock", "yarn.lock", "package.json", ".ruby-version", ".nvmrc"}:
             raise ValueError("the source contract requires both lockfiles and runtime declarations")
-        if self.local_domain != self.web_domain:
-            raise ValueError("split-domain changes are outside the existing-install contract")
+        if self.db_pool < max(self.max_threads, self.sidekiq_concurrency):
+            raise ValueError("db_pool must cover both max_threads and sidekiq_concurrency")
         if self.site_path != self.home_path + "/live":
             raise ValueError("only the existing <home>/live layout is supported")
         if len({self.web_port, self.streaming_port, 10044}) != 3:

@@ -49,10 +49,17 @@ def main(payload):
                 if p.is_dir() and (p / "bin/node").is_file()
                 and (p.name[1:] == cfg["node_version"] or p.name[1:].startswith(cfg["node_version"] + "."))]
     require(len(matching) == 1)
+    cache = None
+    if cfg.get("nginx_federation_cache_enabled", False):
+        cache = Path("/var/cache/mastodon/nginx-federation")
+        require(cache.is_dir() and not cache.is_symlink() and cache.resolve() == cache)
     def as_user(args):
         result = subprocess.run(["runuser", "-u", "mastodon", "--", *args],
                                 capture_output=True, text=True, check=True)
         return result.stdout.strip()
+    if cache is not None:
+        as_user(["test", "-w", str(cache)])
+        as_user(["test", "-x", str(cache)])
     require(as_user(["git", "--no-optional-locks", "-C", str(site), "rev-parse", "HEAD"]) == cfg["source_commit"])
     as_user(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", str(site), "diff",
              "--no-ext-diff", "--no-textconv", "--exit-code", "HEAD", "--"])

@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from ops_deploy.services.mastodon.deploy import PREFLIGHT
-from tests.test_mastodon import config
+from tests.test_mastodon import TEMPLATES, config
 
 SENTINEL = "mastodon-admission-fixture"
 
@@ -82,8 +82,15 @@ def host_fixture(tmp_path: Path) -> tuple[Any, dict[str, Any]]:
     return module, {"config": cfg, "environment_b64": base64.b64encode(b"fixture-secret-value\n").decode()}
 
 
-def test_actual_preflight_accepts_matching_existing_install(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("federation_cache", [False, True])
+def test_actual_preflight_accepts_matching_existing_install(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], federation_cache: bool
+) -> None:
     module, payload = host_fixture(tmp_path)
+    payload["config"]["nginx_federation_cache_enabled"] = federation_cache
+    if federation_cache:
+        defaults = json.loads((TEMPLATES / "defaults.json").read_text())
+        module.Path(defaults["mastodon_nginx_federation_cache_path"]).mkdir(parents=True)
 
     def command(args: list[str], **kwargs: Any) -> Any:
         if args[0] == "runuser":
@@ -155,3 +162,28 @@ def test_script_errors_never_echo_payload_secrets(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr == "mastodon: existing-install admission refused\n"
+
+
+@pytest.mark.parametrize("failure", ["missing", "symlink", "not-writable"])
+def test_federation_cache_admission_refuses_before_other_host_commands(tmp_path: Path, failure: str) -> None:
+    module, payload = host_fixture(tmp_path)
+    payload["config"]["nginx_federation_cache_enabled"] = True
+    cache = module.Path("/var/cache/mastodon/nginx-federation")
+    if failure == "symlink":
+        cache.parent.mkdir(parents=True)
+        target = tmp_path / "other-cache"
+        target.mkdir()
+        cache.symlink_to(target, target_is_directory=True)
+    elif failure == "not-writable":
+        cache.mkdir(parents=True)
+    with patch.object(module.subprocess, "run") as command:
+        if failure == "not-writable":
+            command.side_effect = subprocess.CalledProcessError(1, "test")
+            with pytest.raises(subprocess.CalledProcessError):
+                module.main(payload)
+            command.assert_called_once()
+            assert command.call_args.args[0] == ["runuser", "-u", "mastodon", "--", "test", "-w", str(cache)]
+        else:
+            with pytest.raises(ValueError, match="existing-install contract"):
+                module.main(payload)
+            command.assert_not_called()

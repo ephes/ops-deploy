@@ -1,8 +1,8 @@
 # Mastodon: existing installation only
 
 `ops_deploy.services.mastodon` is a deliberately bounded configuration convergence
-entrypoint, **not full `mastodon_deploy` parity**. It supports the role's default
-single-domain, local-storage layout and four existing running systemd services.
+entrypoint, **not full `mastodon_deploy` parity**. It supports existing single-domain or delegated-domain local-storage layouts
+and four existing running systemd services.
 
 The controller resolves the desired upstream git ref with `core.git_source`.
 Before planning any operation, admission requires that exact clean commit,
@@ -42,3 +42,23 @@ Traefik transaction holds or waits for its host lock. An unchanged route runs
 no guard and stays free of mutating operations. This is a read-only check with
 the same bounded race as the other service route writers; coordinate deployment
 and transaction windows as described in the Traefik guide.
+
+
+## Existing delegated-domain installations
+
+The existing-install configuration also accepts a distinct local identity domain
+and web domain. Set the existing process sizing (`web_concurrency`, `max_threads`,
+`sidekiq_concurrency`, `db_pool`), `nginx_federation_cache_enabled`,
+`nginx_access_log_timing`, `traefik_local_domain_wellknown` and
+`traefik_local_domain_cert_resolver` to the deployed role settings. Their defaults
+are unchanged. The pool must cover the maximum thread and Sidekiq concurrency.
+The same role templates preserve federation caching, request timing and the
+local-domain discovery route; identities and environment bytes are still compared
+against the existing installation before configuration convergence.
+
+This extends configuration mapping only. It does not upgrade source, runtimes,
+dependencies or schema, change credentials/media, run maintenance or prime caches.
+
+When federation caching is enabled, admission also requires the existing cache
+directory to be a real directory writable and searchable by the Mastodon user.
+It never creates that directory during configuration convergence.

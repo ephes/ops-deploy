@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Extend Mastodon existing-install configuration mapping to existing delegated
+  domains, explicit process sizing, federation nginx caching/timing and local
+  domain discovery routing. Role defaults/templates and immutable source,
+  runtime, environment, data and maintenance boundaries remain unchanged.
+
+
 - `thermal_monitoring`: optional `fan_control` block, a drive-aware case-fan
   controller (`drive-fan-control.service`, `files/drive_fan_control.py`,
   standard library only) for boards whose BMC drives the case fans from the
