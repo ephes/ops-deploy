@@ -55,9 +55,11 @@ jobs:
         if: always()
         run: |
           sudo mkdir -p /var/tmp/mastodon-release-evidence
-          sudo journalctl -u 'mastodon-*' --no-pager -n 150 > /tmp/mastodon-journal.txt
+          trap 'sudo chmod -R a+rX /var/tmp/mastodon-release-evidence' EXIT
+          if ! sudo journalctl -u 'mastodon-*' --no-pager -n 150 > /tmp/mastodon-journal.txt 2>&1; then
+            echo 'Service journal unavailable; primary failure remains in job log.'
+          fi
           sudo cp /tmp/mastodon-journal.txt /var/tmp/mastodon-release-evidence/journal.log
-          sudo chmod -R a+rX /var/tmp/mastodon-release-evidence
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
