@@ -11,6 +11,7 @@ import jinja2
 
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.services.mastodon.config import MastodonConfig
+from ops_deploy.services.mastodon.release_config import MastodonReleaseConfig
 
 PACKAGE = "ops_deploy.services.mastodon"
 SECRET_KEYS = (
@@ -51,11 +52,24 @@ def role_vars(cfg: MastodonConfig, secrets: SecretValues | None = None) -> dict[
         {
             "mastodon_ruby_version_effective": cfg.ruby_version,
             "mastodon_runtime_path": (
-                f"{cfg.home_path}/.nvm/versions/node/v{cfg.node_version}/bin:"
-                f"{cfg.home_path}/.rbenv/bin:{cfg.home_path}/.rbenv/shims:/usr/local/bin:/usr/bin:/bin"
+                f"{getattr(cfg, 'nvm_dir', cfg.home_path + '/.nvm')}/versions/node/v{cfg.node_version}/bin:"
+                f"{getattr(cfg, 'rbenv_root', cfg.home_path + '/.rbenv')}/bin:"
+                f"{getattr(cfg, 'rbenv_root', cfg.home_path + '/.rbenv')}/shims:/usr/local/bin:/usr/bin:/bin"
             ),
         }
     )
+    if isinstance(cfg, MastodonReleaseConfig):
+        commands = cfg.maintenance_tootctl_commands
+        if commands is None:
+            commands = [
+                f"media remove --days {cfg.maintenance_media_days}",
+                "media remove-orphans",
+                f"preview-cards remove --days {cfg.maintenance_preview_days}",
+                "accounts prune",
+                f"statuses remove --days {cfg.maintenance_status_days}",
+            ]
+        values["mastodon_maintenance_commands"] = commands + cfg.maintenance_extra_commands
+        values["mastodon_maintenance_runtime_path"] = values["mastodon_runtime_path"]
     if secrets is not None:
         secrets.require(SECRET_KEYS)
         for key in SECRET_KEYS:

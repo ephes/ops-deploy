@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add the existing-install Mastodon selected-release API: immutable candidate
+  and ruby-build provenance, protected Git updates, rbenv/nvm runtime and locked
+  dependency convergence, secret-safe env, migration identities, genuine asset
+  outputs, durable retry debt, ordered single application rollout, maintenance
+  schedule and federation-cache verification. Retain the configuration-only
+  compatibility API; do not bootstrap databases/users or add lifecycle actions.
+
 - Extend Mastodon existing-install configuration mapping to existing delegated
   domains, explicit process sizing, federation nginx caching/timing and local
   domain discovery routing. Role defaults/templates and immutable source,

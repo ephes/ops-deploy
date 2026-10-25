@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export RBENV_ROOT="{{ mastodon_rbenv_root }}"
+export RBENV_VERSION="{{ mastodon_ruby_version_effective }}"
+export NVM_DIR="{{ mastodon_nvm_dir }}"
+export PATH="{{ mastodon_maintenance_runtime_path }}"
+
+set -a
+. "{{ mastodon_env_file }}"
+set +a
+
+cd "{{ mastodon_site_path }}"
+{% for cmd in mastodon_maintenance_commands %}
+bin/tootctl {{ cmd }}{{ ' || true' if mastodon_maintenance_ignore_errors else '' }}
+{% endfor %}

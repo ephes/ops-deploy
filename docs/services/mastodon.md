@@ -1,64 +1,99 @@
-# Mastodon: existing installation only
+# Mastodon: selected-release deployment of an existing installation
 
-`ops_deploy.services.mastodon` is a deliberately bounded configuration convergence
-entrypoint, **not full `mastodon_deploy` parity**. It supports existing single-domain or delegated-domain local-storage layouts
-and four existing running systemd services.
+`deploy_mastodon(cfg=MastodonReleaseConfig(...), secrets=...)` updates an existing
+Git installation. It resolves a selected release, installs its Ruby/Node and
+locked dependencies when needed, converges the secret environment, applies
+pending migration identities, builds assets, and performs an ordered application
+rollout. It does not provision the OS, service account, PostgreSQL/Redis instance
+or storage, and does not implement backup/restore/remove. Existing local media
+and the `<home>/live` layout are retained.
 
-The controller resolves the desired upstream git ref with `core.git_source`.
-Before planning any operation, admission requires that exact clean commit,
-matching Gemfile/Yarn lockfiles, package manifest and Ruby/Node declarations,
-existing Ruby and an unambiguous installed Node matching `.nvmrc`, dependency
-and compiled-asset directories, the existing environment and active Redis and
-maintenance timer. Any mismatch refuses the plan. The environment comparison
-uses redacted stdin and reports no values or digests. Even changes to SMTP,
-account encryption keys, database or Redis credentials are refused.
+The compatibility `MastodonConfig` API still performs immutable configuration-only
+convergence. Callers must opt into the release API with the candidate description;
+changing its old exact-source admission is not how routine updates are enabled.
 
-The parity checkpoint is ops-library `3110a0f1` / `2.68.0`. Behaviour digests for
-`mastodon_deploy` and `mastodon_shared` are recorded in the drift manifest; this
-checkpoint does not imply parity with the unported role tasks.
+## Candidate and runtime provenance
 
-The seven role templates are shipped unchanged from ops-library. With the admitted
-defaults the deploy converges the four units, nginx config and Traefik route.
-Services restart only when their inputs change or a prior failed rollout owes
-a restart. Systemd reload debt is also repaid. No maintenance commands run;
-the existing timer/script/configuration are preserved. No directory trees are
-recursively chowned or deleted. Media, PostgreSQL data, Redis and source files
-are never written by this entrypoint.
+Resolve the configured Git ref with `core.git_source.fetch_source`, then call
+`describe_candidate` on that immutable tree. The description includes the full
+tracked path list, both lockfiles/runtime declarations, and migration identities
+from **both** `db/migrate` and `db/post_migrate`. The read-only host inspection
+compares those identities against the configured PostgreSQL database before any
+write. It does not load new application code with old installed dependencies.
 
-This package does not bootstrap, update refs, install Ruby/Node/PostgreSQL/Redis,
-install gems or Yarn dependencies, compile assets, migrate the database, clear
-Rails/Redis caches, rotate keys, alter SMTP or implement backup/restore/remove.
-Existing build products are admission evidence, not a proof that every gem or
-asset is healthy. Source/schema/runtime upgrades remain future work. A partial
-previous source/build rollout requires operator assessment before admission.
+With `ruby_build_update=true`, the controller resolves ruby-build master once.
+The returned `runtime_tool_commits` records the exact Git object fetched from its
+configured repository. Preserve that explicit input for apply and its repeat;
+an independent later invocation may resolve a newer master honestly. With update
+false, the installed checkout is retained. rbenv and configured nvm tag semantics
+follow the role. Existing matching Node is preserved; a missing partial-version
+match is resolved to a concrete release before rendering service paths. Numeric
+major/minor/patch selectors are supported; nvm aliases/LTS names are not part of
+this typed existing-install API. Old
+runtime directories are retained.
 
-No live qualification has been performed. A future staging window needs a
-reviewed manifest, verified synchronous Echoport backup, read-only baseline,
-plan, first run, application health and data/key invariants, and an actual
-second run with zero mutations. Registration alone must not switch an engine.
+Git deployment fetches the configured ref as the service user, checks that it
+still resolves to the controller-selected commit, and performs a forced detached
+checkout. It never runs `git clean`. Candidate paths cannot overwrite retained
+env/media/dependencies/runtime contents. Known tracked `log/.keep` and
+`vendor/.keep` scaffolds are permitted; an untracked retained scaffold collision
+is not overwritten. Ownership is not recursively changed over media or the site.
+Local rsync source transport is not implemented by this Git release API.
 
-A changed Traefik route uses the shared guarded writer and refuses while a
-Traefik transaction holds or waits for its host lock. An unchanged route runs
-no guard and stays free of mutating operations. This is a read-only check with
-the same bounded race as the other service route writers; coordinate deployment
-and transaction windows as described in the Traefik guide.
+## Build, migration and rollout
 
+Role-compatible inputs include rbenv/ruby-build/nvm settings, Bundler and Yarn
+flags, migrations/assets/cache-clear toggles, process sizing, delegated domains,
+nginx federation cache/timing and discovery settings. Source, locks, runtime,
+configuration and actual output checks determine whether work is necessary.
+A completion marker alone does not prove installed dependencies or assets exist.
+The selected pipeline determines asset verification: Propshaft and Vite builds
+require their real manifests and referenced files; retained webpack/Sprockets
+manifests cannot qualify a current Propshaft/Vite release.
 
-## Existing delegated-domain installations
+Secret env bytes travel through redacted stdin to `secret_file` with service
+ownership and mode 0600. Application commands run as the service user with an
+explicit clean runtime environment. Credentials are never operation names or
+arguments, and application stderr is not echoed by the host action runner.
+Changing DB credentials does not provision or rotate a database role.
 
-The existing-install configuration also accepts a distinct local identity domain
-and web domain. Set the existing process sizing (`web_concurrency`, `max_threads`,
-`sidekiq_concurrency`, `db_pool`), `nginx_federation_cache_enabled`,
-`nginx_access_log_timing`, `traefik_local_domain_wellknown` and
-`traefik_local_domain_cert_resolver` to the deployed role settings. Their defaults
-are unchanged. The pool must cover the maximum thread and Sidekiq concurrency.
-The same role templates preserve federation caching, request timing and the
-local-domain discovery route; identities and environment bytes are still compared
-against the existing installation before configuration convergence.
+Before a potentially partial source/runtime/dependency/migration/asset mutation,
+Mastodon-local durable rollout and cache-clear debt is stored under root-owned
+`/var/lib/ops-deploy-mastodon` (0700, entries 0600). Env-only changes create rollout
+debt without cache-clear debt. Failed commands never save successful build state;
+retry pays surviving debt. Systemd reload precedes conditional tootctl cache clear,
+then each application restarts once, then health verifies the rollout. No shared
+Traefik restart, unrelated Redis flush or automatic DB rollback occurs.
 
-This extends configuration mapping only. It does not upgrade source, runtimes,
-dependencies or schema, change credentials/media, run maintenance or prime caches.
+The guarded Traefik writer remains unchanged. An unchanged route does not invoke
+the guard; changed routes use the existing transaction coordination contract.
+Maintenance script/service/timer templates are copied unchanged from the role;
+converging the schedule does not execute cleanup. Maintenance command validation
+preserves the role's full-name/scoped emoji-purge rules. `run_now=true` is an
+explicit cleanup operation outside this release deployer, rather than silently
+ignored or executed.
 
-When federation caching is enabled, admission also requires the existing cache
-directory to be a real directory writable and searchable by the Mastodon user.
-It never creates that directory during configuration convergence.
+Federation cache priming uses the role's host/path/Accept expansion, including
+configured extra and delegated discovery entries, and verifies the second
+response cache status. Missing cache outputs or changed release inputs schedule
+priming; a converged repeat only verifies existing cache responses. Such normal
+read requests may still refresh nginx's derived cache/log state.
+
+## Operational qualification
+
+Read the selected release's upstream upgrade notes, including skipped releases.
+For [v4.6.9](https://github.com/mastodon/mastodon/releases/tag/v4.6.9), instructions
+call for locked dependencies, asset compilation and restarting the processes.
+Its production Vite build retains old output (`emptyOutDir=false`). This does not
+promise atomic deployment, zero downtime or a general cross-version rollback.
+Pending schema effects and online compatibility must be inspected for the
+selected release. Old runtime retention alone is not sufficient rollback.
+
+Before live production, verify recovery evidence appropriate to actual source,
+schema and storage effects. Do not claim media recovery from a DB-only archive.
+Qualification needs an inspected plan, actual first apply, source/runtime/env/
+migration/identity/media/health evidence, and a same-input real repeat with zero
+builds, cache clears, restarts and mutating operations. Fake command tests prove
+ordering and failure handling; real Linux tools plus an actual Mastodon build
+are separate required evidence. This public API documentation does not claim
+qualification of any particular operator's hosts.

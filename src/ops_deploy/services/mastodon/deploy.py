@@ -18,6 +18,7 @@ from ops_deploy.helpers.probes import probe
 from ops_deploy.ops.secret_file import encode_payload
 from ops_deploy.services._traefik_routes import route_put
 from ops_deploy.services.mastodon.config import MastodonConfig
+from ops_deploy.services.mastodon.release_config import MastodonReleaseConfig
 from ops_deploy.services.mastodon.render import render, render_env
 
 RESTART = resources("ops_deploy.services.gotosocial").joinpath("files/restart_host.py").read_text()
@@ -32,6 +33,11 @@ def deploy_mastodon(cfg: MastodonConfig, secrets: SecretValues) -> None:
     migrations, clear Redis, alter the environment, or manage maintenance.
     A mismatch refuses the entire plan before its first operation.
     """
+    if isinstance(cfg, MastodonReleaseConfig):
+        from ops_deploy.services.mastodon.release import deploy_release
+
+        deploy_release(cfg, secrets)
+        return
     require_linux("mastodon")
     require_systemd("mastodon")
     payload = json.dumps({"config": cfg.model_dump(), "environment_b64": encode_payload(render_env(cfg, secrets))})
