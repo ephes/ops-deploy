@@ -64,9 +64,9 @@ def _probe(action: str, payload: str) -> dict[str, Any]:
 
 
 def deploy_release(cfg: MastodonReleaseConfig, secrets: SecretValues) -> None:
+    environment = render_env(cfg, secrets)
     require_linux("mastodon")
     require_systemd("mastodon")
-    environment = render_env(cfg, secrets)
 
     def payload_for(config: MastodonReleaseConfig) -> str:
         return json.dumps({"config": config.model_dump(), "environment_b64": encode_payload(environment)})

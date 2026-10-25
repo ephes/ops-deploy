@@ -97,3 +97,10 @@ builds, cache clears, restarts and mutating operations. Fake command tests prove
 ordering and failure handling; real Linux tools plus an actual Mastodon build
 are separate required evidence. This public API documentation does not claim
 qualification of any particular operator's hosts.
+
+The unchanged role environment is sourced by Bash for release commands and
+maintenance. Unquoted credentials and SMTP login must be literal assignment
+values: shell operators, ASCII whitespace, quotes, expansion/escape syntax and
+assignment-position tilde expansion are rejected before host inspection. Quoted
+SMTP From addresses retain spaces and address punctuation; valid environment
+bytes are unchanged.

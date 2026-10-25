@@ -10,7 +10,7 @@ from typing import Any
 import jinja2
 
 from ops_deploy.core.secrets import SecretContent, SecretValues
-from ops_deploy.services.mastodon.config import MastodonConfig
+from ops_deploy.services.mastodon.config import MastodonConfig, unquoted_env_literal
 from ops_deploy.services.mastodon.release_config import MastodonReleaseConfig
 
 PACKAGE = "ops_deploy.services.mastodon"
@@ -74,7 +74,8 @@ def role_vars(cfg: MastodonConfig, secrets: SecretValues | None = None) -> dict[
         secrets.require(SECRET_KEYS)
         for key in SECRET_KEYS:
             value = secrets[key]
-            if any(c in value for c in '\r\n\x00"\\$`') or value == "CHANGEME":
+            unquoted_env_literal(value)
+            if value == "CHANGEME":
                 raise ValueError(f"mastodon: {key} is not a supported literal environment value")
             values["mastodon_" + key] = value
     env = environment()
