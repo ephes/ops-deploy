@@ -153,7 +153,9 @@ def test_environment_keeps_default_account_and_storage_contract() -> None:
 def test_templates_and_selected_defaults_match_fresh_role() -> None:
     root = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles"
     for template in TEMPLATES.glob("*.j2"):
-        assert template.read_bytes() == (root / "mastodon_deploy/templates" / template.name).read_bytes()
+        role = "mastodon_maintenance" if template.name.startswith("maintenance.") else "mastodon_deploy"
+        name = "mastodon-" + template.name if role == "mastodon_maintenance" else template.name
+        assert template.read_bytes() == (root / role / "templates" / name).read_bytes()
     defaults = yaml.safe_load((root / "mastodon_shared/defaults/main.yml").read_text())
     defaults.update(yaml.safe_load((root / "mastodon_deploy/defaults/main.yml").read_text()))
     vendored = json.loads((TEMPLATES / "defaults.json").read_text())

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Mastodon maintenance tasks
+
+[Timer]
+OnCalendar={{ mastodon_maintenance_on_calendar }}
+Persistent={{ mastodon_maintenance_persistent | ternary('true', 'false') }}
+{% if mastodon_maintenance_randomized_delay_sec | length > 0 %}
+RandomizedDelaySec={{ mastodon_maintenance_randomized_delay_sec }}
+{% endif %}
+
+[Install]
+WantedBy=timers.target
