@@ -109,9 +109,13 @@ def retire_dropin(cfg: NyxmonConfig, unit_path: str, dropin_dir: str) -> Operati
     """
 
     root, dropin = cfg.agent_rust_install_root, f"{dropin_dir}/{AGENT_DROPIN}"
+    # The type first: reading anything but a regular file (a FIFO blocks ``cat``) is never attempted.
+    present = host.get_fact(File, path=dropin)
+    if present is False:
+        raise ValueError(f"{dropin} exists but is not a regular file; it is left alone. Inspect and remove it by hand.")
     pattern = rf"(?m)^ExecStart={re.escape(root)}/([^/ ]+)/nyxmon-agent( |$)"
     active = ""
-    for path in (dropin, unit_path):
+    for path in ([dropin] if present else []) + [unit_path]:
         match = re.search(pattern, "\n".join(host.get_fact(FileContents, path=path) or []))
         if match:
             active = match.group(1)
@@ -126,8 +130,6 @@ def retire_dropin(cfg: NyxmonConfig, unit_path: str, dropin_dir: str) -> Operati
             group="root",
             mode="0644",
         )
-    if host.get_fact(File, path=dropin) is False:
-        raise ValueError(f"{dropin} exists but is not a regular file; it is left alone. Inspect and remove it by hand.")
     return files.file(
         name=f"Remove the retired agent drop-in of {cfg.monitor_service_name}", path=dropin, present=False
     )

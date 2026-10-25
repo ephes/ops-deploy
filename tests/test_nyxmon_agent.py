@@ -445,3 +445,42 @@ def test_keep_versions_has_no_upper_bound(tmp_path: Path) -> None:
     cfg, _ = make(tmp_path, agent_rust_keep_versions=250)
 
     assert cfg.agent_rust_keep_versions == 250
+
+
+class _RecordingHost:
+    """Stands in for ``pyinfra.host`` in ``retire_dropin``: answers facts by type, records the order asked."""
+
+    def __init__(self, file_fact: object) -> None:
+        self.file_fact = file_fact
+        self.asked: list[tuple[str, str]] = []
+
+    def get_fact(self, fact: type, path: str) -> object:
+        self.asked.append((fact.__name__, path))
+        return self.file_fact if fact.__name__ == "File" else None
+
+
+def test_a_non_file_dropin_is_refused_without_reading_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A FIFO at the path would block ``cat``: the type is checked first and nothing is read.
+    import ops_deploy.services.nyxmon.agent as agent_module
+
+    cfg, _ = rust(tmp_path)
+    fake = _RecordingHost(file_fact=False)
+    monkeypatch.setattr(agent_module, "host", fake)
+
+    with pytest.raises(ValueError, match="not a regular file"):
+        agent_module.retire_dropin(cfg, UNIT, DROPIN.rsplit("/", 1)[0])
+    assert fake.asked == [("File", DROPIN)]
+
+
+def test_the_dropin_is_read_only_after_its_type_is_known(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ops_deploy.services.nyxmon.agent as agent_module
+
+    cfg, _ = rust(tmp_path)
+    fake = _RecordingHost(file_fact=None)  # absent: only the unit is read
+    monkeypatch.setattr(agent_module, "host", fake)
+    monkeypatch.setattr("ops_deploy.services.nyxmon.agent.files.file", lambda **kwargs: kwargs)
+
+    agent_module.retire_dropin(cfg, UNIT, DROPIN.rsplit("/", 1)[0])
+
+    assert fake.asked[:2] == [("File", DROPIN), ("FileContents", UNIT)]
+    assert ("FileContents", DROPIN) not in fake.asked
