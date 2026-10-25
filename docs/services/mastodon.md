@@ -104,3 +104,8 @@ values: shell operators, ASCII whitespace, quotes, expansion/escape syntax and
 assignment-position tilde expansion are rejected before host inspection. Quoted
 SMTP From addresses retain spaces and address punctuation; valid environment
 bytes are unchanged.
+
+Dependency verification uses `bundle check --dry-run`: plain Bundler checks can
+touch an unchanged lockfile and create false restart debt. Both planning and
+post-install verification preserve lockfile bytes and timestamps; genuine
+after-start changes retain the existing precise restart-debt behavior.

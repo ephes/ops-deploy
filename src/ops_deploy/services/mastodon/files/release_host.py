@@ -517,7 +517,7 @@ def dependencies_state(cfg, runtime):
     bundle_current = (
         state_read("bundle") == bundle_key(cfg)
         and ruby_ready
-        and user(cfg, ["bundle", "check"], optional=True).returncode == 0
+        and user(cfg, ["bundle", "check", "--dry-run"], optional=True).returncode == 0
     )
     yarn_current = state_read("yarn") == yarn_key(cfg) and node_ready and yarn_output(cfg)
     return {
@@ -535,7 +535,7 @@ def bundle(cfg):
         user(cfg, ["bundle", "config", "set", "--local", "deployment", "true"])
     user(cfg, ["bundle", "install", "--jobs", str(cfg["bundle_jobs"]), "--retry", str(cfg["bundle_retry"])])
     verify_source(cfg)
-    user(cfg, ["bundle", "check"])
+    user(cfg, ["bundle", "check", "--dry-run"])
     state_write("bundle", bundle_key(cfg))
 
 

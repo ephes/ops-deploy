@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep Mastodon dependency inspection read-only with Bundler checks in dry-run
+  mode, preserving lockfile timestamps and avoiding false restart debt after a
+  runtime update. Genuine after-start input changes still require rollout.
+
 - Reject shell syntax that cannot remain literal in Mastodon unquoted environment
   assignments before any host fact or operation; preserve quoted From addresses.
 
