@@ -5,13 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pwd
 import re
+import runpy
 import shlex
 import shutil
 import stat
 import subprocess
 import sys
+import time
 import urllib.request
+import uuid
 from dataclasses import asdict
 from importlib import import_module
 from pathlib import Path
@@ -54,6 +58,7 @@ def write(path: Path, text: str) -> None:
 
 def fixture(source: Path, ruby: str, node: str) -> None:
     """A real small Rails/PostgreSQL/Redis app, not a fake Mastodon build."""
+    # Exact versions from selected Mastodon32e8 lock; no guessed latest stack.
     files = {
         ".gitignore": (
             "/.env.production\n/.bundle/\n/node_modules/\n/vendor/bundle/\n"
@@ -62,12 +67,12 @@ def fixture(source: Path, ruby: str, node: str) -> None:
         ".ruby-version": ruby + "\n",
         ".nvmrc": node + "\n",
         "Gemfile": """source "https://rubygems.org"
-gem "rails", "~> 8.1.0"
-gem "pg", "~> 1.5"
-gem "puma", "~> 6.4"
-gem "sidekiq", "~> 7.3"
-gem "redis", "~> 5.0"
-gem "propshaft"
+gem "rails", "= 8.1.3.1"
+gem "pg", "= 1.6.3"
+gem "puma", "= 8.0.2"
+gem "sidekiq", "= 8.1.6"
+gem "redis", "= 5.4.1"
+gem "propshaft", "= 1.3.2"
 """,
         "package.json": (
             '{"name":"release-fixture","private":true,"packageManager":"yarn@4.16.0","dependencies":{"ws":"8.18.3"}}\n'
@@ -403,6 +408,141 @@ def assert_owned_vm() -> None:
     safety_require(identity["machine_id"] == Path("/etc/machine-id").read_text().strip(), "VM identity mismatch")
 
 
+def preserve_runner_nvm(home: Path, evidence: Path, service_uid: int) -> Path | None:
+    """Preserve the image-created leaf without reading contents or following links."""
+    safety_require(home.is_dir() and not home.is_symlink(), "fixture HOME must be a real directory")
+    safety_require(home.stat().st_uid == service_uid, "fixture HOME must belong to the new service user")
+    target = home / ".nvm"
+    if not target.exists() and not target.is_symlink():
+        write(evidence / "image-nvm.json", json.dumps(dict(present=False)))
+        return None
+    metadata = target.lstat()
+    safety_require(metadata.st_uid in (0, service_uid), "unexpected image nvm owner")
+    saved = home / (".nvm-image-baseline-" + uuid.uuid4().hex)
+    entries = []
+    if stat.S_ISDIR(metadata.st_mode):
+        for entry in sorted(target.iterdir()):
+            leaf = entry.lstat()
+            entries.append(dict(name=entry.name, mode=stat.S_IFMT(leaf.st_mode), owner=leaf.st_uid))
+    write(
+        evidence / "image-nvm.json",
+        json.dumps(
+            dict(
+                present=True,
+                owner=metadata.st_uid,
+                mode=stat.S_IFMT(metadata.st_mode),
+                entries=entries,
+                preserved_as=saved.name,
+            ),
+            indent=2,
+        ),
+    )
+    target.rename(saved)
+    return saved
+
+
+def bootstrap_actual_mastodon(cfg: dict[str, Any], evidence: Path) -> None:
+    """Provision a real existing app on ONLY the fresh, owned disposable VM DB."""
+    assert_owned_vm()
+    api = import_module("ops_deploy.services.mastodon")
+    model = api.MastodonReleaseConfig(**cfg)
+    resolved = command(
+        "bash", "-c", '. "$HOME/.nvm/nvm.sh"; nvm version ' + shlex.quote(str(cfg["node_version"])), user=True
+    ).removeprefix("v")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", resolved):
+        raise AssertionError("fixture cannot resolve selected managed Node")
+    model = model.model_copy(update={"node_version": resolved})
+    from ops_deploy.services.mastodon.render import render_env
+
+    env_path = SITE / ".env.production"
+    descriptor = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    account = pwd.getpwnam("mastodon")
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(render_env(model, secrets()).reveal())
+    os.chown(env_path, account.pw_uid, account.pw_gid)
+    # Reuse actual reviewed command executor, not completion/debt-mutating actions.
+    if api.__file__ is None:
+        raise AssertionError("candidate API module has no source file")
+    helper = runpy.run_path(str(Path(api.__file__).parent / "files/release_host.py"))
+    run = helper["user"]
+    fields = model.model_dump()
+    print("BOOTSTRAP actual Mastodon locked dependencies", flush=True)
+    for label, argv in (
+        ("bundle-config-path", ["bundle", "config", "set", "--local", "path", fields["bundle_path"]]),
+        ("bundle-config-without", ["bundle", "config", "set", "--local", "without", fields["bundle_without"]]),
+        (
+            "bundle-install",
+            ["bundle", "install", "--jobs", str(fields["bundle_jobs"]), "--retry", str(fields["bundle_retry"])],
+        ),
+        ("corepack-enable", ["corepack", "enable"]),
+        ("yarn-immutable-install", ["yarn", "install", "--immutable"]),
+    ):
+        print("BOOTSTRAP step: " + label, flush=True)
+        run(fields, argv)
+    tables = command(
+        "runuser",
+        "-u",
+        "postgres",
+        "--",
+        "psql",
+        "-d",
+        "mastodon",
+        "-Atc",
+        "SELECT count(*) FROM pg_tables WHERE schemaname='public'",
+    )
+    if tables != "0":
+        raise AssertionError("schema load requires the newly recreated empty fixture DB")
+    print("BOOTSTRAP actual Mastodon real Rails schema load", flush=True)
+    run(fields, ["bundle", "exec", "rails", "db:schema:load"], load_env=True)
+    print("BOOTSTRAP step: db-seed", flush=True)
+    run(fields, ["bundle", "exec", "rails", "db:seed"], load_env=True)
+    history = command(
+        "runuser",
+        "-u",
+        "postgres",
+        "--",
+        "psql",
+        "-d",
+        "mastodon",
+        "-Atc",
+        "SELECT version FROM schema_migrations ORDER BY version",
+    )
+    if not set(cfg["migration_versions"]).issubset(set(history.splitlines())):
+        raise AssertionError("real schema load did not cover candidate regular/post migration identities")
+    print("BOOTSTRAP actual Mastodon real assets and current app", flush=True)
+    run(fields, ["bundle", "exec", "rails", "assets:precompile"], load_env=True)
+    for unit in UNITS:
+        command("systemctl", "start", "mastodon-" + unit + ".service")
+    for attempt in range(30):
+        try:
+            check_http(actual=True)
+            break
+        except (OSError, TimeoutError):
+            if attempt == 29:
+                raise
+            time.sleep(2)
+    baseline = services()
+    runtimes = running_runtimes(cfg)
+    state = Path("/var/lib/ops-deploy-mastodon")
+    if state.exists():
+        raise AssertionError("baseline setup must not fabricate deployer completion state")
+    write(
+        evidence / "actual-mastodon-existing-baseline.json",
+        json.dumps(
+            dict(
+                real_schema_load=True,
+                migration_count=len(history.splitlines()),
+                regular_and_post_coverage=True,
+                http200_instance=True,
+                services=baseline,
+                running_versions=runtimes,
+                application_commit=cfg["source_commit"],
+            ),
+            indent=2,
+        ),
+    )
+
+
 def main() -> None:
     assert_owned_vm()
     evidence = Path(sys.argv[1])
@@ -438,10 +578,19 @@ def main() -> None:
     for repo, dest, ref in [
         ("rbenv/rbenv", HOME / ".rbenv", RBENV),
         ("rbenv/ruby-build", HOME / ".rbenv/plugins/ruby-build", RUBY_BUILD),
-        ("nvm-sh/nvm", HOME / ".nvm", NVM),
     ]:
         command("git", "clone", "https://github.com/" + repo + ".git", str(dest), user=True)
         command("git", "-C", str(dest), "checkout", "--detach", ref, user=True)
+    # Clone nvm outside its possibly image-created destination, preserving it.
+    nvm_stage = HOME / (".fixture-nvm-source-" + uuid.uuid4().hex)
+    command("git", "clone", "https://github.com/nvm-sh/nvm.git", str(nvm_stage), user=True)
+    command("git", "-C", str(nvm_stage), "checkout", "--detach", NVM, user=True)
+    preserve_runner_nvm(HOME, evidence, pwd.getpwnam("mastodon").pw_uid)
+    safety_require(
+        not (HOME / ".nvm").exists() and not (HOME / ".nvm").is_symlink(),
+        "nvm destination reappeared before fixture install",
+    )
+    nvm_stage.rename(HOME / ".nvm")
     # Existing-install prerequisite: login shells initialize the real runtimes.
     write(
         HOME / ".bash_profile",
@@ -619,6 +768,7 @@ def main() -> None:
     )
     seed_protected()
     full = config(source, "https://github.com/mastodon/mastodon.git", "v4.6.9")
+    bootstrap_actual_mastodon(full, evidence)
     pair(full, evidence, "actual-mastodon-v4.6.9")
     if not (command(str(old_ruby), "--version", user=True) == old_ruby_version):
         raise AssertionError("integration invariant failed")

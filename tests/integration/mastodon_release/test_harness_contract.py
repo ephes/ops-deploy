@@ -102,3 +102,73 @@ def test_operation_invariants_survive_optimization() -> None:
     )
     assert result.returncode != 0
     assert b"AssertionError" in result.stderr
+
+
+@pytest.mark.parametrize("existing", ["absent", "empty", "nonempty", "symlink"])
+def test_image_nvm_leaf_preserved_without_deleting_or_following(tmp_path: Path, existing: str) -> None:
+    import json
+
+    harness = load_harness()
+    home = tmp_path / "home"
+    home.mkdir()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    target = home / ".nvm"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "untouched").write_text("keep outside target")
+    if existing == "symlink":
+        target.symlink_to(outside, target_is_directory=True)
+    elif existing != "absent":
+        target.mkdir()
+        if existing == "nonempty":
+            (target / "keep").write_text("preserve actual bytes")
+    saved = harness.preserve_runner_nvm(home, evidence, os.getuid())
+    proof = json.loads((evidence / "image-nvm.json").read_text())
+    assert not target.exists()
+    assert not target.is_symlink()
+    assert (outside / "untouched").read_text() == "keep outside target"
+    if existing == "absent":
+        assert saved is None
+        assert proof["present"] is False
+    else:
+        assert saved is not None
+        assert saved.name == proof["preserved_as"]
+        if existing == "symlink":
+            assert saved.is_symlink()
+            assert proof["entries"] == []
+        elif existing == "nonempty":
+            assert (saved / "keep").read_text() == "preserve actual bytes"
+
+
+def test_image_nvm_refuses_unverified_home_owner(tmp_path: Path) -> None:
+    harness = load_harness()
+    with pytest.raises(SystemExit, match="HOME must belong"):
+        harness.preserve_runner_nvm(tmp_path, tmp_path, os.getuid() + 1000)
+
+
+def test_diagnostic_upload_permissions_survive_missing_journal(tmp_path: Path) -> None:
+    import stat
+
+    import yaml
+
+    workflow = yaml.load(
+        (HERE.parents[2] / ".github/workflows/mastodon-release-integration.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    steps = workflow["jobs"]["real-linux"]["steps"]
+    script = next(step["run"] for step in steps if step.get("name") == "Capture diagnostic service state")
+    evidence = tmp_path / "evidence"
+    evidence.mkdir(mode=0o700)
+    journal = tmp_path / "journal"
+    script = script.replace("/var/tmp/mastodon-release-evidence", '"$TEST_EVIDENCE"')
+    script = script.replace("/tmp/mastodon-journal.txt", '"$TEST_JOURNAL"')
+    fake_sudo = 'sudo() { if [[ "$1" == journalctl ]]; then echo "No service journal" >&2; return 1; fi; "$@"; }\n'
+    result = subprocess.run(
+        ["bash", "-e", "-c", fake_sudo + script],
+        env=dict(os.environ, TEST_EVIDENCE=str(evidence), TEST_JOURNAL=str(journal)),
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "No service journal" in (evidence / "journal.log").read_text()
+    assert stat.S_IMODE(evidence.stat().st_mode) & 0o005 == 0o005

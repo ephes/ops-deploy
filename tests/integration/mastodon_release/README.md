@@ -21,9 +21,15 @@ The two independent workloads are:
    failure; retry must converge and a real second execution must mutate nothing.
 2. The **actual Mastodon v4.6.9** source at
    `32e8e7c70af88c7ff12d2db03fcc93aa777a8cfc`, with its own Gemfile/yarn locks,
-   Ruby4.0.5 and Node24.17 selector. It builds dependencies, Rails migrations and
-   assets and runs the real services. This is distinct from minimal-app proof.
-   The VM DB/source is deliberately reset between workloads; this is not a live
+   Ruby4.0.5 and Node24.17 selector. The API builds dependencies and assets and
+   runs real services after baseline schema load. Its regular/post migration
+   history must remain complete and unchanged; pending migration execution is
+   exercised by the separate minimal Rails fixture, not the full Mastodon pair.
+   The VM DB/source is deliberately reset between workloads. Full Mastodon is
+   first provisioned as a real existing installation using its locked dependencies,
+   generated fixture env, standard Rails schema load/seed and genuine assets.
+   Both regular/post migration history and actual instance HTTP200 must pass
+   before the API controlled build/repeat; no fabricated migration rows. This is not a live
    upgrade/recovery qualification or a backup/restore test.
 
 Each workload starts from a seeded Git checkout (existing-install contract).
@@ -48,3 +54,12 @@ fixture data only. No production env, database or media is copied.
 A job is qualified only when `SUCCESS.json` exists and the job succeeds. An
 uploaded failure artifact is not passing integration evidence. CI failure causes
 must be reported honestly; never weaken trust guards to make a fixture pass.
+
+
+Failure repair notes: the first real run40177167605 stopped before the API because
+an existing nonempty `.nvm` blocked clone. Its contents were **not retained**, so
+no original image-cause claim is made. Setup now clones official pinned nvm into
+a unique service-user-owned sibling, records the preexisting leaf metadata/names
+without following links, preserves that leaf by rename, then installs the verified
+checkout. No retained runtime is deleted. Failure diagnostics always make only
+the generated evidence directory uploadable even when no service journal exists.
