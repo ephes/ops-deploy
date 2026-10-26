@@ -7,6 +7,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -46,8 +47,13 @@ def test_real_http_wait_and_deadline(monkeypatch: pytest.MonkeyPatch, mode: str)
     module = health_module()
     paths: list[str] = []
     clock = [0.0]
-    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(module.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    # Replace this helper's binding, not the shared time module used internally
+    # by subprocess and the HTTP server thread.
+    monkeypatch.setattr(
+        module,
+        "time",
+        SimpleNamespace(monotonic=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds)),
+    )
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
