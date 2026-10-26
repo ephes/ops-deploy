@@ -6,6 +6,14 @@
   `0700` data directory during ordinary stack convergence. The default remains
   the role's `0755`; no data, container or source selection changes.
 
+- Minecraft: add explicit started/stopped deployment state, preserving enabled
+  stopped servers without runtime start/restart or live health claims. Maintain
+  UFW rules without activating an inactive firewall for stopped deployment;
+  require active UFW before all mutations for a running deployment. Add a real
+  Forge first-deploy, repeat, normal-update and stopped-preservation smoke test.
+  Accept Forge's clean RCON stop status 143 and treat absent mcrcon/configuration
+  as expected first-install states before strict output verification.
+
 - Keep Mastodon dependency inspection read-only with Bundler checks in dry-run
   mode, preserving lockfile timestamps and avoiding false restart debt after a
   runtime update. Genuine after-start input changes still require rollout.

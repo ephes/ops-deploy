@@ -43,6 +43,7 @@ The environment retains `RCON_PASSWORD` for existing backup scripts.
 | `mods_enabled`, `mods_prune_unmanaged`, `mods` | false, false, empty; Forge only. Entries require `name`, HTTPS `url`, SHA256; optional `filename`, `version`, `enabled` (true). A missing filename uses the URL basename. Disabled entries are removed; pruning removes unmanaged regular `*.jar` files only when explicitly enabled |
 | `port`, `rcon_port` | 25565, 25575; must differ |
 | `firewall_allowed_networks` | required nonempty CIDR list; no private network defaults |
+| `service_state` | `started`; `stopped` keeps the unit stopped while converging runtime/configuration; enablement remains true |
 | `rcon_enabled`, `firewall_enabled` | true required; disabling either is deliberately unsupported |
 | `difficulty`, `gamemode`, `max_players`, `pvp` | normal, survival, 20, true |
 | `motd`, `seed`, `level_type` | A Minecraft Server, empty, `minecraft:normal`; MOTD/seed are printable ASCII without backslashes |
@@ -63,12 +64,25 @@ mod JARs are downloaded without first trying to hash their absent destinations.
 No world data is
 removed. Forge artifacts remain when changing back to vanilla.
 
-UFW must already be active. The deploy never enables/resets it, adds game
+For `service_state="started"`, UFW must already be active; this is checked
+before any package, file or service mutation. A stopped deployment maintains
+the same rules even if UFW is inactive, matching the role, and never enables
+it. This is offline configuration coverage, not proof that RCON is protected
+while running. Starting the service later requires active UFW and auditing
+rule ordering. The deploy never enables/resets UFW, adds game
 allow rules for the configured networks and an external RCON deny, and fails
 before starting the service if UFW is inactive. Existing unrelated firewall
 rules remain operator-owned; audit rule ordering before the first live use.
+Forge's clean RCON shutdown exit status 143 is accepted by systemd.
+Missing mcrcon/configuration files are normal bootstrap states; strict probes
+still verify the installed outputs and surface failures of existing files.
 The unit is reloaded only if changed, the service restarts only for changed
 runtime inputs, and game TCP plus authenticated RCON are required after start.
+For a stopped deployment the service is stopped before changing runtime inputs,
+remains enabled (as in the role), and must finish inactive (or in the legacy
+clean-stop failed/exit-code/143 state) with no game or RCON
+listener. No running health probe is claimed for that state. This does not
+prevent an operator or reboot from subsequently starting the enabled unit.
 A pending loader/world transition is recorded before changing properties,
 retaining the previous pair across partial failure. A retry must resume that
 candidate; unrelated pending-state drift is refused. After verification the
@@ -126,8 +140,20 @@ convergence before switching an engine.
 Selected templates from the current source live separately in
 `tests/parity/minecraft_java_3110a0f1`; older frozen parity inputs are unchanged.
 All selected templates render byte-identically except the deliberate env/unit
-change that keeps the RCON password out of process arguments. The public path
+change that keeps the RCON password out of process arguments and accepts
+Forge's successful RCON shutdown status. The public path
 and network defaults are generic, and RCON/firewall disabling and custom Forge
 artifact paths are refused instead of being silently ignored. The role's local
 cron backup path is intentionally excluded: use an independently approved
-backup integration. This port is not a live proof or an engine-switch approval.
+backup integration. Live qualification belongs in the private controller receipt.
+
+The opt-in real Forge integration test uses an isolated Ubuntu smoke VM:
+`MINECRAFT_FORGE_SMOKE=1 just smoke tests/smoke/test_minecraft_java_smoke.py`.
+It installs Forge 1.20.1-47.4.0 into a fixture tree, starts it with active UFW,
+checks authenticated RCON, proves an unchanged repeat, applies an ordinary
+player-limit update with restart, then converges stopped with inactive UFW
+and verifies the fixture world remains unchanged. It enables UFW on the
+fixture and stops/disables its fixture unit and disables UFW on exit; use a
+disposable isolated VM with no pre-existing firewall policy. Do not point this
+test at an inventory host. `MINECRAFT_SMOKE_RECEIPT=/absolute/path.json` records
+per-phase operations and preservation assertions.
