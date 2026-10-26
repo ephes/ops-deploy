@@ -27,7 +27,7 @@ from pydantic import Field, field_validator
 from pyinfra import host
 from pyinfra.api import DeployError, deploy
 from pyinfra.facts.files import FileContents
-from pyinfra.operations import files, systemd
+from pyinfra.operations import files, server, systemd
 from pyinfra.operations.util import any_changed
 
 from ops_deploy.base import RoleConfig
@@ -37,7 +37,7 @@ from ops_deploy.helpers import mark_read_only
 from ops_deploy.infra import VectorAptInstallConfig, vector_apt_steps
 from ops_deploy.ops import secret_file, secret_stdin
 from ops_deploy.services.graphyard._common import Url, Word, absolute, render_role
-from ops_deploy.services.logyard.vector import env_line, global_data_dir
+from ops_deploy.services.logyard.vector import env_line, fragments_current, global_data_dir
 
 CONFIG_PATTERNS = ("*.yaml", "*.yml", "*.toml", "*.json")
 FragmentName = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+\.(yaml|yml)$")]
@@ -178,13 +178,20 @@ def vector_steps(cfg: GraphyardVectorConfig, secrets: SecretValues) -> None:
         name="Ensure Vector config directory", path=str(cfg.config_dir), user="root", group="vector", mode="0750"
     )
     # Validation before anything Vector reads changes: a fragment it rejects never goes live.
-    mark_read_only(
+    if fragments_current({cfg.global_config_path: render_global(cfg), cfg.config_path: text}):
+        mark_read_only(
+            server.shell(
+                name="Validate the live Vector configuration",
+                commands=[f"vector validate --config-dir {shlex.quote(str(cfg.config_dir))}"],
+            )
+        )
+    else:
+        # Staging writes temporary files and must not be tagged read-only.
         secret_stdin(
             name="Validate the staged Vector configuration",
             command=validate_command(cfg),
             content=SecretContent(base64.b64encode(text.encode()).decode() + "\n"),
         )
-    )
     env = env_line(
         name="Point Vector at its config directory",
         path=str(cfg.env_file),

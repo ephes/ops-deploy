@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Vector producers: validate converged Logyard/Graphyard fragments in place
+  without temporary staging writes. Retain staging before content or metadata
+  repairs and classify those temporary writes as mutations. Preserve source
+  tokens, package choices, other fragments and restart conditions.
+
 - Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private
   `0700` data directory during ordinary stack convergence. The default remains
   the role's `0755`; no data, container or source selection changes.
