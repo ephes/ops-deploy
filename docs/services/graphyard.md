@@ -90,6 +90,11 @@ connection.
 | `inventory_release_sources` | `None` | the weekly public release refresh; `None` stops an installed timer |
 | `skip_django_manage` | `False` | no `manage.py` command (the role's emergency switch) |
 
+`Influx.data_dir_mode` defaults to `"0755"` (the role's mode). Set `"0700"`
+for an existing installation whose InfluxDB process keeps its data directory
+private; convergence then preserves that mode instead of loosening it on
+each deploy.
+
 ### What the core deploy does
 
 1. Group and user `graphyard` (shell bash), home and site, `/etc/graphyard`
