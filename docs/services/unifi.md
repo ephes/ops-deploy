@@ -135,3 +135,14 @@ startup, true zero-mutation repeats, Mongo/HA drift repair and refusal paths.
 The workflow result, not merely the presence of the harness, is qualification
 evidence. Live host qualification and dispatcher routing are recorded by the
 private control plane.
+
+Readiness requires HTTP200 with JSON `meta.rc=ok` and `meta.up=true`. UniFi
+serves HTTP200 with `up=false` and HTML API startup pages before it is ready;
+deployment waits for the explicit ready signal before HA reconciliation. The
+configured health timeout bounds the whole wait, and redirects are rejected.
+
+HA privileges use the controller's string-valued account/site references. When
+only legacy ObjectId references exist, routine reconciliation repairs one
+privilege in place, preserving its ID and the account ID. An already-working
+canonical record leaves harmless legacy duplicates intact; no records are
+deleted or broader roles granted.

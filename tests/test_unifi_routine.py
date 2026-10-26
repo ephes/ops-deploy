@@ -127,6 +127,11 @@ def test_ha_repair_preserves_id_and_supports_both_foreign_key_types() -> None:
     state["ha"] = {"x_shadow": "irrelevant"}
     namespace["matches_password"] = lambda *_: True
     state["privileges"] = [{"role": "readonly", "permissions": []}]
+    assert namespace["ha_pending"](state, data) is True
+    state["ha_site_access"] = True
+    assert namespace["ha_pending"](state, data) is False
+    # A canonical record plus a harmless legacy duplicate remains untouched.
+    state["privileges"].append({"role": "readonly", "permissions": []})
     assert namespace["ha_pending"](state, data) is False
     state["privileges"].append({"role": "admin", "permissions": []})
     assert namespace["ha_pending"](state, data) is True

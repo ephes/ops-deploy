@@ -9,6 +9,7 @@ def ha_pending(state, payload):
     return (
         not isinstance(ha, dict)
         or not matches_password(payload['homeassistant_password'], ha.get('x_shadow', ''))
+        or state.get('ha_site_access') is not True
         or not state['privileges']
         or any(p.get('role') != 'readonly' or p.get('permissions') != [] for p in state['privileges'])
     )
@@ -42,9 +43,14 @@ def ha_javascript(payload, hashed):
         'const user=u.admin.findOne({name:username});\n'
         'const query={admin_id:{$in:[user._id,user._id.toString()]},'
         'site_id:{$in:[site._id,site._id.toString()]}};\n'
-        'if(u.privilege.countDocuments(query)===0) u.privilege.insertOne('
-        '{admin_id:user._id,site_id:site._id,role:"readonly",permissions:[]});\n'
-        'else u.privilege.updateMany(query,{$set:{role:"readonly",permissions:[]}});\n'
+        'const canonical={admin_id:user._id.toString(),site_id:site._id.toString()};\n'
+        'const existing=u.privilege.findOne(query);\n'
+        'if(!existing) u.privilege.insertOne({...canonical,role:"readonly",permissions:[]});\n'
+        'else {u.privilege.updateMany(query,{$set:{role:"readonly",permissions:[]}});\n'
+        # A working native record wins: retain harmless legacy duplicates and
+        # their IDs. Repair one legacy record in place only if no native one exists.
+        'if(u.privilege.countDocuments(canonical)===0) '
+        'u.privilege.updateOne({_id:existing._id},{$set:canonical});}\n'
         'print("OPS_UNIFI="+JSON.stringify({changed:true}));\n'
     )
 

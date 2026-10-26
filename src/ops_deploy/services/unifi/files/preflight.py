@@ -78,7 +78,7 @@ def javascript(payload: dict[str, Any]) -> str:
         'const privileges=ha && site ? u.privilege.find({'
         'admin_id:{$in:[ha._id,ha._id.toString()]},site_id:{$in:[site._id,site._id.toString()]}}).toArray() : [];\n'
         + fresh_check
-        + 'print("OPS_UNIFI="+JSON.stringify({opts:opts.parsed,parameters:parameters,ha:ha,site:!!site,privileges:privileges,fresh:fresh}));\n'
+        + 'print("OPS_UNIFI="+JSON.stringify({opts:opts.parsed,parameters:parameters,ha:ha,site:!!site,privileges:privileges,ha_site_access:privileges.some(p=>typeof p.admin_id==="string"&&typeof p.site_id==="string"),fresh:fresh}));\n'
     )
 
 
@@ -227,6 +227,8 @@ def check_mongodb_state(state: dict[str, Any], payload: dict[str, Any]) -> None:
                     and item.get("permissions") == [] for item in privileges),
             "ha_privilege_drift_use_ansible",
         )
+        if payload.get("routine_verify"):
+            require(state.get("ha_site_access") is True, "ha_site_access_missing")
         store = Path("/home/unifi/.homeassistant_unifi_password")
         require(not store.is_symlink() and store.is_file(), "ha_password_store_invalid_use_ansible")
         info = store.stat()

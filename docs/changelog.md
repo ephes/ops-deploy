@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Wait for UniFi JSON readiness (`meta.up=true`) before completing deployment; HTTP200 startup pages are not readiness. Create usable string-valued HA privilege references and repair legacy-only references in place while preserving working mixed layouts and record IDs.
+
 - Add initialized-controller UniFi routine deployments with explicit verified package updates, Java/Mongo package presence, authenticated Mongo/HA reconciliation and a disposable real Linux integration workflow. Initialize the absent controller's private external-database selectors before vendor startup; preserve existing controller configuration and database selection. Missing-controller admission requires empty application/statistics/audit databases and effective write/index privileges before vendor initialization.
 
 - Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private

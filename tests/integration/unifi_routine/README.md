@@ -69,3 +69,18 @@ a wizard HTTP response, before any selected-version update. Its artifacts are
 retained. Wizard diagnostics now persist each fixed phase's response status,
 content type and redirect flag without bodies, cookies or credentials; the
 actual JVM is recorded before that step too.
+
+Run40333858819 reproduced the first wizard POST returning HTTP200/text-html.
+A native disposable Linux HTTP reproduction with the exact vendor9.4.19 bits
+showed `meta.up=false` alongside HTML startup pages until the API was ready;
+then the unmodified wizard commands succeeded. Production readiness now waits
+for JSON `meta.rc=ok` and strict boolean `meta.up=true`, and the deliberate
+fixture restart wait uses that signal too. The local HTTP reproduction is
+diagnostic evidence, not a substitute for the x86/systemd integration run.
+
+The same owned HTTP reproduction verified that legacy ObjectId privilege
+references allow HA login but expose no API site. Vendor-created references are
+strings. Routine repair now uses canonical string references, preserving record
+IDs and leaving already-functional mixed layouts unchanged. The VM's HA login
+and external-site identity assertion verifies actual access, not only a hash
+or MongoDB privilege document.

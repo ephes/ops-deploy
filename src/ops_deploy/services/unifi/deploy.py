@@ -22,6 +22,7 @@ from .render import render_template
 
 PREFLIGHT = resources("ops_deploy.services.unifi").joinpath("files/preflight.py").read_text()
 PREFLIGHT_COMMAND = shlex.join(["python3", "-I", "-c", PREFLIGHT])
+HEALTH = resources("ops_deploy.services.unifi").joinpath("files/health.py").read_text()
 RESTART = resources("ops_deploy.services.unifi").joinpath("files/restart_host.py").read_text()
 FIREWALL_RULES = (
     (8080, "tcp", "UniFi device communication"),
@@ -181,11 +182,7 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
     )
     # The controller's own certificate is self-signed (the role uses
     # validate_certs:false). Never weaken verification for external downloads.
-    command = (
-        f"for i in $(seq 1 {cfg.healthcheck_timeout}); do "
-        "code=$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 5 https://127.0.0.1:8443/status); "
-        '[ "$code" = 200 ] && exit 0; sleep 1; done; echo "UniFi status check failed" >&2; exit 1'
-    )
+    command = shlex.join(["python3", "-I", "-c", HEALTH, str(cfg.healthcheck_timeout)])
     mark_read_only(server.shell(name="Verify UniFi status endpoint", commands=[command]))
     if cfg.routine is not None:
         from .routine import reconcile_ha
