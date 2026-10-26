@@ -391,6 +391,7 @@ def main(evidence: Path) -> None:
             mongo('if(db.getSiblingDB("admin").runCommand({ping:1}).ok!==1)quit(22);')
             status = json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))
             assert status["meta"]["server_version"] == "9.5.21"
+            assert status["meta"]["up"] is True
             assert Path("/usr/lib/unifi/run").is_dir()
             break
         except (RuntimeError, AssertionError):
