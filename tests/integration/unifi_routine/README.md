@@ -41,3 +41,24 @@ authenticated HA API login and matching default-site identity in the external
 MongoDB, plus exactly the system mongod process and no embedded database.
 Both application and statistics connections select authenticated external DBs.
 Existing controller configuration is never migrated by this initialization.
+
+Run40322273105 reached authenticated external MongoDB during fresh9.4.19
+startup and failed because the initialized fixture user lacked `unifi_audit`
+access. The fixture adds only `readWrite` for that database, preserving
+authorization and avoiding administrative or wildcard grants. Existing live
+controller roles and database selection are not changed by fixture setup.
+
+Fresh-controller admission verifies effective database privileges and refuses
+nonempty application/statistics/audit databases before any controller writes.
+The VM exercises all three nonempty refusals, missing audit-write access, and
+actual scoped audit CRUD/index operations under the application identity. Those
+CRUD operations are fixture evidence, not a claim of controller-generated audit
+events. The existing installed-controller path does not acquire audit grants.
+
+Before inserting protected records or updating the controller, the fixture
+completes the real setup wizard using the bundled frontend's `add-default-admin`
+and `set-installed` API commands with a fixture-only administrator. It verifies
+`is_default=false` and the API/external-DB site identity. No site is fabricated
+in MongoDB. The initialized state must survive update and repair; otherwise
+vendor Factory Default could reinitialize databases and invalidate preservation
+proof. This setup API is never called by the production deployment.
