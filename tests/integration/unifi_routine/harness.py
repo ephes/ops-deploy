@@ -20,6 +20,7 @@ from ops_deploy.services.unifi import deploy_unifi
 
 PASSWORD = "fixture-unifi-mongo-20261026"
 HA_PASSWORD = "fixture-homeassistant-20261026"
+BOOTSTRAP_PASSWORD = "fixture-bootstrap-admin-20261026"
 
 
 def run(*args: str, stdin: str | None = None) -> str:
@@ -95,7 +96,17 @@ setParameter:
     # Bootstrap belongs to the owned fixture, not the deployment's supported
     # existing-install contract. MongoDB authorization remains enabled throughout.
     mongo(
-        'db.getSiblingDB("admin").createUser({user:"unifi",pwd:' + json.dumps(PASSWORD) + ",roles:["
+        'db.getSiblingDB("admin").createUser({user:"fixture-bootstrap",pwd:'
+        + json.dumps(BOOTSTRAP_PASSWORD)
+        + ',roles:[{role:"userAdminAnyDatabase",db:"admin"}]});',
+        authenticate=False,
+    )
+    mongo(
+        'const a=db.getSiblingDB("admin");if(!a.auth("fixture-bootstrap",'
+        + json.dumps(BOOTSTRAP_PASSWORD)
+        + '))quit(20);a.createUser({user:"unifi",pwd:'
+        + json.dumps(PASSWORD)
+        + ",roles:["
         '{role:"readWrite",db:"unifi"},{role:"dbOwner",db:"unifi"},'
         '{role:"readWrite",db:"unifi_stat"},{role:"dbOwner",db:"unifi_stat"},'
         '{role:"clusterMonitor",db:"admin"}]});',
@@ -155,6 +166,15 @@ def protection() -> str:
     )
 
 
+def runtime() -> dict[str, str]:
+    """Record the executable of the actual controller process, not JAVA_HOME."""
+    pid = run("systemctl", "show", "-p", "MainPID", "--value", "unifi")
+    assert pid.isdigit()
+    assert pid != "0"
+    executable = str(Path("/proc", pid, "exe").resolve(strict=True))
+    return {"pid": pid, "executable": executable, "version": run(executable, "--version")}
+
+
 def main(evidence: Path) -> None:
     marker = json.loads(Path("/var/tmp/unifi-routine-owned-vm.json").read_text())
     assert marker == {"run": os.environ["GITHUB_RUN_ID"], "machine": Path("/etc/machine-id").read_text().strip()}
@@ -179,9 +199,13 @@ def main(evidence: Path) -> None:
         'u.ops_fixture.insertOne({_id:"protected",value:"preserve"});'
     )
     before = protection()
+    runtime_before = runtime()
     deploy(config, evidence, "update-first")
     assert run("dpkg-query", "-W", "-f=${Version}", "unifi") == "9.5.21-31260-1"
     assert json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))["meta"]["server_version"] == "9.5.21"
+    runtime_after = runtime()
+    assert runtime_before["executable"] == runtime_after["executable"]
+    assert runtime_before["version"] == runtime_after["version"]
     deploy(config, evidence, "update-repeat")
     assert protection() == before
     identity = mongo('print(db.getSiblingDB("unifi").admin.findOne({name:"homeassistant"})._id.toString());')
@@ -222,6 +246,8 @@ def main(evidence: Path) -> None:
                 "harness_sha": os.environ["HARNESS_SHA"],
                 "old_version": "9.4.19-31042-1",
                 "selected_version": "9.5.21-31260-1",
+                "runtime_before_update": runtime_before,
+                "runtime_after_update": runtime_after,
                 "protection_sha256": hashlib.sha256(before.encode()).hexdigest(),
                 "passed": True,
             },

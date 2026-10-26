@@ -17,3 +17,11 @@ The fixture's localhost-exception database initialization is fixture setup;
 production fresh bootstrap remains unsupported. No real credentials, device
 adoptions or inventory hosts are used. Evidence JSON omits operation arguments;
 service logs and provenance are uploaded for seven days.
+
+The localhost exception creates a fixture-only user administrator first; that
+account authenticates to create the role-parity UniFi Mongo user. MongoDB
+authorization remains enabled throughout. Creating the application user as the
+first user was rejected in run40316009319 and reproduced on real Mongo8.0.34;
+that failed run is retained as evidence. The receipt records the actual
+controller process JVM executable and version before/after the selected update,
+without assuming that the installed Java17 package is the selected runtime.
