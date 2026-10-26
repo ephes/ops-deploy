@@ -201,7 +201,7 @@ def protection() -> str:
     )
 
 
-def complete_controller_setup() -> dict[str, Any]:
+def complete_controller_setup(evidence: Path) -> dict[str, Any]:
     """Use the vendor setup API before protecting data or testing an update."""
     cookies = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(
@@ -211,6 +211,7 @@ def complete_controller_setup() -> dict[str, Any]:
     # Load the frontend session, then mirror its csrf_token -> X-Csrf-Token
     # cookie/header binding on each state-changing request.
     opener.open("https://127.0.0.1:8443/", timeout=30).close()
+    steps: list[dict[str, Any]] = []
     # Exact commands/fields from 9.4.19's bundled setup frontend. This is
     # fixture-only wizard completion, never a deployment operation.
     for endpoint, body in (
@@ -235,7 +236,22 @@ def complete_controller_setup() -> dict[str, Any]:
             data=json.dumps(body).encode(),
             headers=headers,
         )
-        assert json.load(opener.open(request, timeout=30))["meta"]["rc"] == "ok"
+        with opener.open(request, timeout=30) as response:
+            phase = str(body.get("cmd", "login"))
+            steps.append(
+                {
+                    "phase": phase,
+                    "status": response.status,
+                    "content_type": response.headers.get_content_type(),
+                    "redirected": response.url != request.full_url,
+                }
+            )
+            (evidence / "wizard-http.json").write_text(json.dumps(steps, indent=2))
+            try:
+                result = json.load(response)
+            except json.JSONDecodeError:
+                raise RuntimeError(f"wizard {phase} returned non-JSON; see wizard-http.json") from None
+            assert result["meta"]["rc"] == "ok", f"wizard {phase} rejected"
     assert_controller_initialized()
     sites = json.load(opener.open("https://127.0.0.1:8443/api/self/sites", timeout=20))
     assert sites["meta"]["rc"] == "ok"
@@ -336,7 +352,8 @@ def main(evidence: Path) -> None:
     deploy(previous, evidence, "install-first")
     assert json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))["meta"]["server_version"] == "9.4.19"
     deploy(previous, evidence, "install-repeat")
-    wizard = complete_controller_setup()
+    (evidence / "runtime-before-wizard.json").write_text(json.dumps(runtime(), indent=2))
+    wizard = complete_controller_setup(evidence)
     (evidence / "wizard-completion.json").write_text(json.dumps(wizard, indent=2))
     mongo(
         'const u=db.getSiblingDB("unifi");'
