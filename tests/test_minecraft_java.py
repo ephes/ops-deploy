@@ -126,6 +126,7 @@ def converged(cfg: MinecraftJavaConfig) -> dict[str, Any]:
         ],
         "minecraft-config-state": ["current"],
         "/usr/local/bin/mcrcon -v": ["mcrcon 0.7.2"],
+        "LC_ALL=C ufw status": ["Status: active", "fixture rules"],
         "LC_ALL=C ufw show added": ["ufw deny 25575/tcp", "ufw allow from 192.0.2.0/24 to any port 25565 proto tcp"],
         "sha256sum /opt/minecraft/server/server.jar": ["a" * 64 + "  /opt/minecraft/server/server.jar"],
         **fakehost.file("/usr/local/bin/mcrcon", "binary", mode="-rwxr-xr-x"),
@@ -255,6 +256,10 @@ def test_templates_against_current_role_snapshot(template: str, mode: str) -> No
     original = env.from_string(source.read_text()).render(**cfg.context(secrets))
     if template == "minecraft-java.service.j2":
         original = original.replace('-p "${RCON_PASSWORD}" "stop"', '"stop"')
+        original = original.replace(
+            "# Auto-restart on failure\n",
+            "# Forge exits 143 after a clean RCON stop.\nSuccessExitStatus=143\n\n# Auto-restart on failure\n",
+        )
     if template == "minecraft-java.env.j2":
         original = original.replace(
             "RCON_PASSWORD=" + secrets["rcon_password"],
@@ -334,10 +339,9 @@ def test_existing_ufw_comments_and_protocol_order_do_not_schedule_changes() -> N
 def test_inactive_firewall_aborts_before_service_start() -> None:
     cfg = config()
     responses = converged(cfg)
-    responses["LC_ALL=C ufw status |"] = {"success": False}
-    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
-    assert not run.succeeded
-    assert not any("systemctl start" in command or "systemctl restart" in command for command in run.executed_commands)
+    responses["LC_ALL=C ufw status"] = ["Status: inactive"]
+    with pytest.raises(ValueError, match="active UFW"):
+        run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
 
 
 def test_review_download_caller_drops_root_for_all_staging_steps() -> None:
@@ -389,7 +393,7 @@ def test_review_retry_after_partial_new_world_deploy(tmp_path: Path) -> None:
     assert before.returncode == 0
     responses = converged(cfg)
     responses[guard_command(cfg)] = before.stdout.splitlines()
-    responses["LC_ALL=C ufw status |"] = {"success": False}
+    responses["bash -ec "] = {"success": False}
     responses["minecraft-config-state"] = ["pending"]
     responses.update(
         fakehost.file(str(root / "server.properties"), "level-name=old-world\n", user=cfg.user, mode="-rw-r-----")
@@ -608,3 +612,117 @@ def test_production_mcrcon_probe_and_verification_shell(tmp_path: Path, version:
     assert probe_result.returncode == 0
     assert (probe_result.stdout.splitlines()[-1:] == [FAILED]) is (version != "0.7.2")
     assert (verify_result.returncode == 0) is (version == "0.7.2")
+
+
+def test_started_with_inactive_ufw_refuses_before_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[str] = []
+    monkeypatch.setattr(
+        "ops_deploy.services.minecraft_java.deploy.apt.packages", lambda **kwargs: called.append("packages")
+    )
+    cfg = config()
+    responses = {**converged(cfg), "LC_ALL=C ufw status": ["Status: inactive"]}
+    with pytest.raises(ValueError, match="active UFW"):
+        run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert not called
+
+
+def test_stopped_with_inactive_ufw_has_no_start_restart_or_running_health() -> None:
+    cfg = config(service_state="stopped")
+    responses = {
+        **converged(cfg),
+        **fakehost.service("minecraft-java.service", running=False),
+        "LC_ALL=C ufw status": ["Status: inactive"],
+    }
+    # Runtime changes must also keep the service stopped.
+    responses.update(fakehost.file("/etc/systemd/system/minecraft-java.service", "old unit"))
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert run.succeeded, run.error
+    commands = "\n".join(run.executed_commands)
+    assert "daemon-reload" in commands
+    assert not re.search(r"systemctl (start|restart) ", commands)
+    assert "mcrcon -H" not in commands
+    assert "ufw enable" not in commands
+
+
+def test_stopped_converged_has_no_mutations() -> None:
+    cfg = config(service_state="stopped")
+    responses = {**converged(cfg), **fakehost.service("minecraft-java.service", running=False)}
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert run.succeeded, run.error
+    assert not run.mutating_changed_ops, run.mutating_changed_ops
+
+
+def test_missing_mcrcon_and_properties_are_expected_bootstrap_states() -> None:
+    cfg = config()
+    responses = converged(cfg)
+    responses[next(iter(fakehost.stat("/usr/local/bin/mcrcon")))] = []
+    responses[next(iter(fakehost.stat(str(cfg.site_path / "server.properties"))))] = []
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert run.succeeded, run.error
+    assert not any("mcrcon -v" in command for command in run.fact_commands)
+    assert not any("server.properties properties" in command for command in run.fact_commands)
+    assert run.op("Deploy Minecraft Java | Install mcrcon if missing").changed
+    assert run.op("Deploy Minecraft Java | Write Minecraft server.properties").changed
+
+
+@pytest.mark.parametrize(
+    ("state", "result", "code", "listener", "ok"),
+    [
+        ("inactive", "success", "0", "", True),
+        ("failed", "exit-code", "143", "", True),
+        ("failed", "exit-code", "1", "", False),
+        ("failed", "signal", "143", "", False),
+        ("active", "success", "0", "", False),
+        ("inactive", "success", "0", "LISTEN", False),
+    ],
+)
+def test_stopped_check_admits_only_inactive_or_legacy_clean_shutdown(
+    tmp_path: Path,
+    state: str,
+    result: str,
+    code: str,
+    listener: str,
+    ok: bool,
+) -> None:
+    from ops_deploy.services.minecraft_java.deploy import stopped_check
+
+    systemctl = tmp_path / "systemctl"
+    systemctl.write_text(
+        '#!/bin/sh\ncase "$3" in\n'
+        + "ActiveState) echo "
+        + shlex.quote(state)
+        + ";;\n"
+        + "Result) echo "
+        + shlex.quote(result)
+        + ";;\n"
+        + "ExecMainStatus) echo "
+        + shlex.quote(code)
+        + ";;\nesac\n"
+    )
+    systemctl.chmod(0o755)
+    ss = tmp_path / "ss"
+    ss.write_text("#!/bin/sh\nprintf %s " + shlex.quote(listener) + "\n")
+    ss.chmod(0o755)
+    run = subprocess.run(
+        ["/bin/sh", "-c", stopped_check(config())], env={**os.environ, "PATH": str(tmp_path)}, check=False
+    )
+    assert (run.returncode == 0) is ok
+
+
+def test_stopped_running_service_stops_before_any_runtime_write() -> None:
+    cfg = config(service_state="stopped")
+    responses = converged(cfg)
+    responses.update(fakehost.file("/etc/systemd/system/minecraft-java.service", "old unit"))
+    responses["/server.properties properties 0640"] = ["pending"]
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert run.succeeded, run.error
+    commands = run.executed_commands
+    stop = next(i for i, c in enumerate(commands) if "systemctl stop" in c)
+    writes = [
+        i
+        for i, c in enumerate(commands)
+        if " server.properties " in c or "/etc/systemd/system/minecraft-java.service" in c
+    ]
+    assert writes
+    assert stop < min(writes)
+    assert not any(re.search(r"systemctl (start|restart) ", c) for c in commands)

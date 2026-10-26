@@ -25,6 +25,9 @@ ExecStart=/usr/bin/java \
 # Graceful shutdown via RCON
 ExecStop=/usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "stop"
 
+# Forge exits 143 after a clean RCON stop.
+SuccessExitStatus=143
+
 # Auto-restart on failure
 Restart=on-failure
 RestartSec=10

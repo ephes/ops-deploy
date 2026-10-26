@@ -18,7 +18,8 @@ from pyinfra.api import StringCommand, deploy, operation
 from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.files import File, FindFiles
 from pyinfra.facts.server import Command
-from pyinfra.operations import apt, files, server
+from pyinfra.operations import apt, files, server, systemd
+from pyinfra.operations.util import any_changed
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
@@ -119,6 +120,7 @@ class MinecraftJavaConfig(BaseServiceConfig):
     whitelist_enabled: bool = False
     whitelist_players: tuple[Name, ...] = ()
     ops: tuple[Name, ...] = ()
+    service_state: Literal["started", "stopped"] = "started"
     firewall_enabled: Literal[True] = True
     firewall_allowed_networks: tuple[str, ...]
 
@@ -234,7 +236,11 @@ def config_command(cfg: MinecraftJavaConfig, name: str, kind: str, mode: str) ->
 def _config_file(cfg: MinecraftJavaConfig, name: str, content: str, kind: str, mode: str) -> OperationMeta:
     request = json.dumps({"content": content})
     command = config_command(cfg, name, kind, mode)
-    current = probe(command, name="Minecraft " + name, stdin=request)
+    current = (
+        probe(command, name="Minecraft " + name, stdin=request)
+        if host.get_fact(File, path=str(cfg.site_path / name))
+        else "pending"
+    )
     if current == "unsupported":
         raise ValueError("Minecraft configuration uses unsupported file syntax; no changes scheduled")
     write = secret_file(
@@ -310,6 +316,12 @@ def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> No
         previous = json.loads(result.removeprefix("safe "))
     except ValueError:
         raise ValueError("Minecraft loader/world guard returned invalid state") from None
+    if cfg.service_state == "started":
+        if (host.get_fact(Command, command="LC_ALL=C ufw status") or "").splitlines()[:1] != ["Status: active"]:
+            raise ValueError("Minecraft requires active UFW before starting; no changes scheduled")
+    else:
+        # Stop before replacing any runtime inputs, including the old unit/env.
+        systemd.service(name="Keep Minecraft stopped", service=cfg.service_name, running=False)
     apt.packages(
         packages=[
             f"openjdk-{cfg.java_version}-jre-headless",
@@ -333,7 +345,9 @@ def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> No
         _put(cfg, ".loader_state.json", json.dumps(pending, sort_keys=True) + "\n")
     # Unique build directory, removed on both success and failure. No mutable
     # checkout under a shared fixed temporary path.
-    version = probe(MCRCON_CHECK, name="Minecraft mcrcon")
+    version = (
+        probe(MCRCON_CHECK, name="Minecraft mcrcon") if host.get_fact(File, path="/usr/local/bin/mcrcon") else None
+    )
     build = """set -eu
 build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT
@@ -392,10 +406,8 @@ install -o root -g root -m 0755 "$build_dir/mcrcon" /usr/local/bin/mcrcon"""
         )
     if cfg.loader_mode == "forge" and cfg.mods_enabled:
         changes.extend(_mods(cfg))
-    # Deny RCON before starting it; do not enable/reset UFW or alter other rules.
-    mark_read_only(
-        server.shell(name="Require active firewall", commands=["LC_ALL=C ufw status | grep -qx 'Status: active'"])
-    )
+    # Maintain the role's rules even on a stopped server with inactive UFW.
+    # Starting requires active UFW above; never enable/reset it here.
     rules = [f"ufw deny {cfg.rcon_port}/tcp"]
     rules += [f"ufw allow from {network} to any port {cfg.port} proto tcp" for network in cfg.firewall_allowed_networks]
     for command in rules:
@@ -407,7 +419,41 @@ install -o root -g root -m 0755 "$build_dir/mcrcon" /usr/local/bin/mcrcon"""
             _if=partial(_firewall_missing, command),
         )
     unit = systemd_unit(cfg.service_name, rendered(cfg, "minecraft-java.service.j2", secrets))
-    service_rollout(cfg.service_name, units=[unit], restart_when=changes)
+    if cfg.service_state == "stopped":
+        systemd.daemon_reload(name="Reload stopped Minecraft unit", _if=any_changed(unit))
+        systemd.service(name="Enable stopped Minecraft", service=cfg.service_name, running=None, enabled=True)
+        mark_read_only(
+            server.shell(
+                name="Verify Minecraft remains stopped",
+                commands=[stopped_check(cfg)],
+            )
+        )
+    else:
+        service_rollout(cfg.service_name, units=[unit], restart_when=changes)
+        _verify_running(cfg, secrets)
+    _put(cfg, ".loader_mode", cfg.loader_mode + "\n")
+    _put(
+        cfg,
+        ".loader_state.json",
+        json.dumps({"loader_mode": cfg.loader_mode, "world_name": cfg.world_name}, sort_keys=True) + "\n",
+    )
+
+
+def stopped_check(cfg: MinecraftJavaConfig) -> str:
+    # The old role unit records Forge's clean RCON shutdown as failed/143.
+    # Preserve that known stopped state without hiding other runtime failures.
+    return (
+        f"state=$(systemctl show -p ActiveState --value {cfg.service_name}); "
+        f"result=$(systemctl show -p Result --value {cfg.service_name}); "
+        f"code=$(systemctl show -p ExecMainStatus --value {cfg.service_name}); "
+        '[ "$state" = inactive ] || { [ "$state" = failed ] && '
+        '[ "$result" = exit-code ] && [ "$code" = 143 ]; } || exit 1; '
+        f"listeners=$(ss -H -ltn '( sport = :{cfg.port} or sport = :{cfg.rcon_port} )') || exit 1; "
+        'test -z "$listeners"'
+    )
+
+
+def _verify_running(cfg: MinecraftJavaConfig, secrets: SecretValues) -> None:
     check = (
         f"systemctl is-active --quiet {cfg.service_name}; "
         f"for i in $(seq 1 {cfg.startup_timeout}); do "
@@ -428,12 +474,6 @@ install -o root -g root -m 0755 "$build_dir/mcrcon" /usr/local/bin/mcrcon"""
         secret_stdin(
             name="Verify Minecraft RCON", command=command, content=SecretContent(secrets["rcon_password"] + "\n")
         )
-    )
-    _put(cfg, ".loader_mode", cfg.loader_mode + "\n")
-    _put(
-        cfg,
-        ".loader_state.json",
-        json.dumps({"loader_mode": cfg.loader_mode, "world_name": cfg.world_name}, sort_keys=True) + "\n",
     )
 
 
