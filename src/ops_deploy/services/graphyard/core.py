@@ -223,6 +223,9 @@ class Influx(Part):
     config_dir: PurePosixPath = PurePosixPath("/var/lib/graphyard/influxdb2-config")
     data_dir_owner: NumericId = "1000"
     data_dir_group: NumericId = "0"
+    # InfluxDB may tighten its data directory to 0700 at startup. Preserve that
+    # mode explicitly instead of repeatedly loosening a running installation.
+    data_dir_mode: Annotated[str, Field(pattern=r"^0[0-7]{3}$")] = "0755"
     config_dir_owner: NumericId = "1000"
     config_dir_group: NumericId = "0"
     init_username: Word = "graphyard_admin"
@@ -732,7 +735,7 @@ def _numeric_directory(path: PurePosixPath, owner: str, group: str, mode: str) -
 def _runtime(cfg: GraphyardConfig, runtime: Runtime, compose: SecretContent, secrets: SecretValues) -> None:
     influx, grafana = cfg.influx, cfg.grafana
     files.directory(name="Ensure /var/lib/graphyard", path="/var/lib/graphyard", user="root", group="root", mode="0755")
-    _numeric_directory(influx.data_dir, influx.data_dir_owner, influx.data_dir_group, "0755")
+    _numeric_directory(influx.data_dir, influx.data_dir_owner, influx.data_dir_group, influx.data_dir_mode)
     _numeric_directory(influx.config_dir, influx.config_dir_owner, influx.config_dir_group, "0775")
     _numeric_directory(grafana.data_dir, grafana.data_dir_owner, grafana.data_dir_group, "0755")
     provisioning, dashboards = shlex.quote(str(cfg.provisioning_path)), shlex.quote(str(cfg.dashboards_path))

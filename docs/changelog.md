@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private
+  `0700` data directory during ordinary stack convergence. The default remains
+  the role's `0755`; no data, container or source selection changes.
+
 - Keep Mastodon dependency inspection read-only with Bundler checks in dry-run
   mode, preserving lockfile timestamps and avoiding false restart debt after a
   runtime update. Genuine after-start input changes still require rollout.

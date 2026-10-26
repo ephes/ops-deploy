@@ -582,6 +582,27 @@ def test_runtime_replacement_ca_store_rendering(source: Path) -> None:
     assert "/graphyard-grafana" in text
 
 
+def test_runtime_preserves_configured_private_influx_data_mode(source: Path) -> None:
+    cfg = macmini_core_config(source)
+    cfg = cfg.model_copy(update={"influx": cfg.influx.model_copy(update={"data_dir_mode": "0700"})})
+    responses = converged(cfg)
+    responses["stat -c '%u %g %a' /var/lib/graphyard/influxdb2"] = ["1000 0 700"]
+
+    run = deploy(cfg, responses)
+
+    assert run.mutating_changed_ops == []
+    assert not any("chmod 0755 /var/lib/graphyard/influxdb2" in c for c in run.executed_commands)
+
+
+def test_runtime_rejects_invalid_influx_data_mode() -> None:
+    from pydantic import ValidationError
+
+    from ops_deploy.services.graphyard.core import Influx
+
+    with pytest.raises(ValidationError):
+        Influx(data_dir_mode="700; false")
+
+
 def test_runtime_rejects_relative_ca_store() -> None:
     from pydantic import ValidationError
 
