@@ -19,6 +19,7 @@ validation step stops a wrong guess before it replaces the running config.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import shlex
@@ -31,7 +32,7 @@ import yaml
 from pydantic import Field, field_validator
 from pyinfra import host
 from pyinfra.api import DeployError, StringCommand, deploy, operation
-from pyinfra.facts.files import FileContents
+from pyinfra.facts.files import File, FileContents, Sha256File
 from pyinfra.operations import files, server, systemd
 from pyinfra.operations.util import any_changed
 
@@ -199,6 +200,23 @@ def validate_command(cfg: LogyardVectorConfig, fragment: str) -> str:
     return f"bash -c {shlex.quote(script)}"
 
 
+def fragments_current(expected: dict[PurePosixPath, str]) -> bool:
+    """Reuse pyinfra's file facts: current bytes, owner, group and mode.
+
+    Only exact current inputs can validate in place. Any missing/non-file or
+    metadata/content drift takes the staged validation path before file writes.
+    Hashing avoids exposing Graphyard's bearer token in file-content facts.
+    """
+
+    for path, text in expected.items():
+        info = host.get_fact(File, path=str(path))
+        if not info or info["mode"] != 640 or info["user"] != "root" or info["group"] != "vector":
+            return False
+        if host.get_fact(Sha256File, path=str(path)) != hashlib.sha256(text.encode()).hexdigest():
+            return False
+    return True
+
+
 def vector_steps(cfg: LogyardVectorConfig) -> None:
     vector_apt_steps(cfg.apt)
 
@@ -211,9 +229,17 @@ def vector_steps(cfg: LogyardVectorConfig) -> None:
         )
 
     # Validation first: nothing live (env file, legacy config) changes if it fails.
-    mark_read_only(
+    if fragments_current({cfg.global_config_path: render_global(cfg), cfg.config_path: fragment}):
+        mark_read_only(
+            server.shell(
+                name="Validate the live Vector configuration",
+                commands=[f"vector validate --skip-healthchecks --config-dir {shlex.quote(str(cfg.config_dir))}"],
+            )
+        )
+    else:
+        # This command creates and removes temporary files: it is a mutation,
+        # even though it leaves the live directory unchanged.
         server.shell(name="Validate the staged Vector configuration", commands=[validate_command(cfg, fragment)])
-    )
     files.directory(
         name="Ensure Vector data directory", path=str(cfg.data_dir), user="vector", group="vector", mode="0750"
     )

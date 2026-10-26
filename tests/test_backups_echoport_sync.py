@@ -7,6 +7,7 @@ with stub ``runuser``, Echoport and ``mc`` executables on ``PATH``.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import stat
@@ -335,7 +336,7 @@ def _process_ended(pid: int) -> bool:
     if Path("/proc/self/stat").exists():
         try:
             fields = (Path("/proc") / str(pid) / "stat").read_text().rpartition(")")[2].split()
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             return True
         return fields[0] in ("Z", "X")
     ps = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False)
@@ -348,6 +349,32 @@ def _process_ended(pid: int) -> bool:
             return True
         return False
     return state.startswith("Z")
+
+
+@pytest.mark.parametrize("error_number", [errno.ENOENT, errno.ESRCH, errno.EACCES])
+def test_process_ended_proc_races_do_not_hide_permission_errors(
+    monkeypatch: pytest.MonkeyPatch, error_number: int
+) -> None:
+    pid = 424242
+    stat_path = Path("/proc") / str(pid) / "stat"
+    reads: list[Path] = []
+
+    def read_stat(path: Path) -> str:
+        reads.append(path)
+        raise OSError(error_number, os.strerror(error_number))
+
+    # Force the Linux /proc branch, also on a non-Linux test controller.
+    # Restore the patches before pytest handles a possible injected failure.
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "kill", lambda _pid, _signal: None)
+        patch.setattr(Path, "exists", lambda path: path == Path("/proc/self/stat"))
+        patch.setattr(Path, "read_text", read_stat)
+        if error_number == errno.EACCES:
+            with pytest.raises(PermissionError):
+                _process_ended(pid)
+        else:
+            assert _process_ended(pid)
+    assert reads == [stat_path]
 
 
 # --- the real scripts, with stubs --------------------------------------------

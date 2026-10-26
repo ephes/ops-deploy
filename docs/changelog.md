@@ -7,7 +7,13 @@
   recursive queue ACLs, probe-state exports and the torrent root collector/timer.
   Converged repeats perform no deploy mutations; collector output is initialized
   only when absent, invalid, stale, affected by changed inputs or needed to seed
-  an unarmed timer. The mail Python wrapper verifies passwords on stdin, matching the paired role security repair.
+  an unarmed timer. The mail Python wrapper verifies passwords on stdin, matching
+  the paired role security repair.
+
+- Vector producers: validate converged Logyard/Graphyard fragments in place
+  without temporary staging writes. Retain staging before content or metadata
+  repairs and classify those temporary writes as mutations. Preserve source
+  tokens, package choices, other fragments and restart conditions.
 
 - Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private
   `0700` data directory during ordinary stack convergence. The default remains

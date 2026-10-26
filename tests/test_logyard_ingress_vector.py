@@ -194,7 +194,43 @@ def test_vector_second_run_changes_nothing_but_the_validation() -> None:
 
     assert run.mutating_changed_ops == []
     assert run.uploaded_paths == []
-    assert run.changed_ops == [VECTOR + "Validate the staged Vector configuration"]
+    assert run.changed_ops == [VECTOR + "Validate the live Vector configuration"]
+    assert not any("mktemp" in command for command in run.executed_commands)
+    assert run.stdin == []
+
+
+@pytest.mark.parametrize("path", [FRAGMENT, GLOBAL])
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"user": "vector"},
+        {"group": "root"},
+        {"mode": "-rw-r--r--"},
+    ],
+)
+def test_vector_metadata_drift_stages_before_repair(path: str, drift: dict[str, str]) -> None:
+    cfg = vector_config()
+    responses = vector_host(cfg)
+    attrs = {"user": "root", "group": "vector", "mode": "-rw-r-----", **drift}
+    responses.update(fakehost.stat(path, user=attrs["user"], group=attrs["group"], mode=attrs["mode"]))
+    run = run_vector(cfg, responses)
+    staged = VECTOR + "Validate the staged Vector configuration"
+    assert staged in run.mutating_changed_ops
+    assert VECTOR + "Validate the live Vector configuration" not in run.changed_ops
+    assert any("mktemp" in command for command in run.executed_commands)
+
+
+def test_vector_rejected_staging_never_replaces_live_fragments() -> None:
+    cfg = vector_config()
+    responses = {
+        "vector validate": {"success": False, "stderr": ["invalid candidate"]},
+        **vector_host(cfg, **{FRAGMENT: "sources: {}\n"}),
+    }
+    run = run_deploy_fake(deploy_logyard_vector, cfg, responses=responses)
+    assert not run.succeeded
+    assert any("vector validate" in command for command in run.executed_commands)
+    assert run.uploaded_paths == []
+    assert not any("systemctl restart" in command for command in run.executed_commands)
 
 
 def test_vector_fragment_change_restarts_vector_once() -> None:
@@ -203,6 +239,7 @@ def test_vector_fragment_change_restarts_vector_once() -> None:
     run = run_vector(cfg, vector_host(cfg, **{FRAGMENT: "sources: {}\n"}))
 
     assert run.mutating_changed_ops == [
+        VECTOR + "Validate the staged Vector configuration",
         VECTOR + "Deploy the Logyard Vector config fragment",
         VECTOR + "Restart vector.service",
     ]
@@ -290,6 +327,7 @@ def test_old_vector_gets_a_fragment_without_the_opt_out() -> None:
 
     # The fragment on the host has the opt-out; Vector 0.45 predates it.
     assert run.mutating_changed_ops == [
+        VECTOR + "Validate the staged Vector configuration",
         VECTOR + "Deploy the Logyard Vector config fragment",
         VECTOR + "Restart vector.service",
     ]
@@ -299,7 +337,7 @@ def test_old_vector_gets_a_fragment_without_the_opt_out() -> None:
 def test_validation_stages_the_directory_and_validates_it() -> None:
     cfg = vector_config()
 
-    run = run_vector(cfg, vector_host(cfg))
+    run = run_vector(cfg, vector_host(cfg, **{FRAGMENT: "sources: {}\n"}))
 
     command = next(c for c in run.executed_commands if "vector validate" in c)
     assert "mktemp -d /tmp/logyard-vector-validate-" in command

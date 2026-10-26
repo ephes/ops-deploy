@@ -256,8 +256,45 @@ def test_vector_second_run_changes_nothing() -> None:
     run = run_vector(cfg, vector_host(cfg))
 
     assert names(run, VECTOR) == []
+    assert run.mutating_changed_ops == []
     assert run.uploaded_paths == []
-    assert run.changed_ops == [VECTOR + "Validate the staged Vector configuration"]
+    assert run.changed_ops == [VECTOR + "Validate the live Vector configuration"]
+    assert not any("mktemp" in command for command in run.executed_commands)
+    assert run.stdin == []
+
+
+@pytest.mark.parametrize("path", [FRAGMENT, GLOBAL])
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"user": "vector"},
+        {"group": "root"},
+        {"mode": "-rw-r--r--"},
+    ],
+)
+def test_vector_metadata_drift_stages_before_repair(path: str, drift: dict[str, str]) -> None:
+    cfg = vector_config()
+    responses = vector_host(cfg)
+    attrs = {"user": "root", "group": "vector", "mode": "-rw-r-----", **drift}
+    responses.update(fakehost.stat(path, user=attrs["user"], group=attrs["group"], mode=attrs["mode"]))
+    run = run_vector(cfg, responses)
+    staged = VECTOR + "Validate the staged Vector configuration"
+    assert staged in run.mutating_changed_ops
+    assert VECTOR + "Validate the live Vector configuration" not in run.changed_ops
+    assert any("mktemp" in command for command in run.executed_commands)
+
+
+def test_vector_rejected_staging_never_replaces_live_fragments() -> None:
+    cfg = vector_config()
+    responses = {
+        "vector validate": {"success": False, "stderr": ["invalid candidate"]},
+        **vector_host(cfg, **{FRAGMENT: "sources: {}\n"}),
+    }
+    run = run_deploy_fake(deploy_graphyard_vector, cfg, secrets_values(), responses=responses)
+    assert not run.succeeded
+    assert any("vector validate" in command for command in run.executed_commands)
+    assert run.written_paths == []
+    assert not any("systemctl restart" in command for command in run.executed_commands)
 
 
 def test_vector_fragment_change_restarts_vector_once() -> None:
@@ -265,7 +302,11 @@ def test_vector_fragment_change_restarts_vector_once() -> None:
 
     run = run_vector(cfg, vector_host(cfg, **{FRAGMENT: "sources: {}\n"}))
 
-    assert names(run, VECTOR) == ["Deploy the Graphyard Vector config fragment", "Restart vector.service"]
+    assert names(run, VECTOR) == [
+        "Validate the staged Vector configuration",
+        "Deploy the Graphyard Vector config fragment",
+        "Restart vector.service",
+    ]
 
 
 def test_vector_rotated_token_rewrites_the_fragment() -> None:
@@ -277,7 +318,11 @@ def test_vector_rotated_token_rewrites_the_fragment() -> None:
     )
 
     assert run.succeeded
-    assert names(run, VECTOR) == ["Deploy the Graphyard Vector config fragment", "Restart vector.service"]
+    assert names(run, VECTOR) == [
+        "Validate the staged Vector configuration",
+        "Deploy the Graphyard Vector config fragment",
+        "Restart vector.service",
+    ]
     assert "rotated-token" not in run.all_text()
 
 
