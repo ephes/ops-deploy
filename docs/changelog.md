@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add initialized-controller UniFi routine deployments with explicit verified package updates, Java/Mongo package presence, authenticated Mongo/HA reconciliation and a disposable real Linux integration workflow.
+
 - Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private
   `0700` data directory during ordinary stack convergence. The default remains
   the role's `0755`; no data, container or source selection changes.

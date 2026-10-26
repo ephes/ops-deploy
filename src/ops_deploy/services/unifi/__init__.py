@@ -1,6 +1,6 @@
-"""Converge an existing UniFi installation; database/bootstrap stay with Ansible."""
+"""Deploy an initialized UniFi controller; fresh database bootstrap is separate."""
 
-from .config import UnifiConfig
+from .config import UnifiConfig, UnifiRoutine
 from .deploy import deploy_unifi
 
-__all__ = ["UnifiConfig", "deploy_unifi"]
+__all__ = ["UnifiConfig", "UnifiRoutine", "deploy_unifi"]
