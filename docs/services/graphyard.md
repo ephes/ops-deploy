@@ -224,6 +224,14 @@ each run of one rewrites what the other wrote, as with the roles.
 
 ## Vector (`GraphyardVectorConfig`)
 
+When the global and producer fragments already match the rendered content,
+`root:vector` ownership and `0640` mode, validate the existing live directory
+without staging files. This observational check preserves the existing
+health-check policy. Any content or metadata drift uses staged validation
+before replacing either live fragment. Staging creates and removes temporary
+files and is counted as a mutating operation; a fully converged repeat uses
+only the live-directory check.
+
 `host_id` and `ingest_url` (required), `service_id`, `source_tag`,
 collectors, metric prefixes, filesystem mountpoint excludes, sink tuning.
 Linux only (apt and systemd); the role's Homebrew/launchd branch for macOS
