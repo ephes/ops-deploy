@@ -14,7 +14,7 @@ from pyinfra.operations import apt, files, server
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import service_rollout
 from ops_deploy.helpers.probes import probe, stdin_arguments, verify_probe
-from ops_deploy.ops import secret_file
+from ops_deploy.ops import secret_file, secret_stdin
 
 from .config import UnifiConfig
 
@@ -29,7 +29,7 @@ def command(source: str, *args: str) -> str:
     return shlex.join(["python3", "-I", "-c", source, *args])
 
 
-def prepare_routine(cfg: UnifiConfig, stdin: str) -> bool:
+def prepare_routine(cfg: UnifiConfig, stdin: str) -> tuple[bool, bool]:
     selection = cfg.routine
     assert selection is not None
     # Complete all safety probes before scheduling a write. A failed probe is
@@ -97,10 +97,15 @@ def prepare_routine(cfg: UnifiConfig, stdin: str) -> bool:
     )
     service_rollout("mongod", restart_when=(mongo_write,))
     verify_probe(command(MONGO, "check"), name="UniFi MongoDB configuration", expect="current")
-    return installed.strip() != selection.package_version
+    return installed.strip() != selection.package_version, installed.strip() == "absent"
 
 
-def install_selected(cfg: UnifiConfig, needs_package: bool) -> OperationMeta:
+def install_selected(
+    cfg: UnifiConfig,
+    needs_package: bool,
+    missing_controller: bool,
+    secrets: SecretValues,
+) -> OperationMeta:
     selection = cfg.routine
     assert selection is not None
     package_path = f"/var/cache/ops-deploy-unifi/unifi_{selection.package_version}_all.deb"
@@ -122,9 +127,17 @@ def install_selected(cfg: UnifiConfig, needs_package: bool) -> OperationMeta:
             group="root",
         )
     install = PACKAGE.joinpath("files/install_package.py").read_text()
-    return server.shell(
+    return secret_stdin(
         name="Install selected UniFi package",
-        commands=[command(install, package_path, selection.package_version, selection.package_sha256)],
+        command=command(install, package_path, selection.package_version, selection.package_sha256),
+        content=SecretContent(
+            json.dumps(
+                {
+                    "initialize": missing_controller,
+                    "mongodb_password": secrets["mongodb_password"] if missing_controller else "",
+                }
+            )
+        ),
         _if=lambda: needs_package,
     )
 

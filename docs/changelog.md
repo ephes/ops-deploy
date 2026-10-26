@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add initialized-controller UniFi routine deployments with explicit verified package updates, Java/Mongo package presence, authenticated Mongo/HA reconciliation and a disposable real Linux integration workflow.
+- Add initialized-controller UniFi routine deployments with explicit verified package updates, Java/Mongo package presence, authenticated Mongo/HA reconciliation and a disposable real Linux integration workflow. Initialize the absent controller's private external-database selectors before vendor startup; preserve existing controller configuration and database selection.
 
 - Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private
   `0700` data directory during ordinary stack convergence. The default remains

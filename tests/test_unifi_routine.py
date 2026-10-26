@@ -320,3 +320,128 @@ def test_mongo_comments_nested_options_and_duplicate_headers() -> None:
     assert yaml.safe_load(result)["systemLog"]["quiet"] is True
     with pytest.raises(ValueError, match="duplicate MongoDB section"):
         mongo_module().desired(CONFIG + "setParameter:\n  diagnosticDataCollectionEnabled: true\n")
+
+
+@pytest.mark.parametrize("failure", ["missing", "digest", "metadata"])
+def test_verified_installer_failure_retry_leaves_data_absent_until_package_verified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    import hashlib
+    import os
+    from types import SimpleNamespace
+
+    module = installer_module()
+    data = tmp_path / "data"
+    monkeypatch.setattr(module, "DATA", data)
+    monkeypatch.setattr(module.pwd, "getpwnam", lambda _: SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid()))
+    package = tmp_path / "fixture.deb"
+    version = "9.5.21-31260-1"
+    package.write_bytes(b"verified fixture")
+    digest = hashlib.sha256(package.read_bytes()).hexdigest()
+    metadata_valid = failure != "metadata"
+    events: list[str] = []
+
+    def output(args: list[str], **kwargs: Any) -> str:
+        if args[0] == "dpkg-deb":
+            return f"Package: {'unifi' if metadata_valid else 'other'}\nVersion: {version}\nArchitecture: all\n"
+        assert args[0] == "dpkg-query"
+        return "ii |" + version
+
+    def run(args: list[str], **kwargs: Any) -> Any:
+        if args[0] == "dpkg-query":
+            return SimpleNamespace(returncode=1, stdout="")
+        if args[0] == "systemctl":
+            assert not data.exists()
+            events.append("stop")
+        elif args[0] == "apt-get":
+            config = data / "system.properties"
+            text = config.read_text()
+            assert config.stat().st_mode & 0o7777 == 0o600
+            assert "db.mongo.local=false\n" in text
+            assert "db.mongo.uri=mongodb://unifi:fixture@127.0.0.1:27017/unifi?authSource=admin\n" in text
+            assert "statdb.mongo.uri=mongodb://unifi:fixture@127.0.0.1:27017/unifi_stat?authSource=admin\n" in text
+            events.append("install")
+        else:
+            raise AssertionError(args)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(module.subprocess, "check_output", output)
+    monkeypatch.setattr(module.subprocess, "run", run)
+    initial = {"initialize": True, "mongodb_password": "fixture"}
+    if failure == "missing":
+        package.unlink()
+    with pytest.raises(ValueError, match=r"package (file|digest|metadata)"):
+        module.main(str(package), version, "0" * 64 if failure == "digest" else digest, initial)
+    assert not data.exists()
+    assert events == []
+    # Retry through the production installer entry, not just its initializer.
+    metadata_valid = True
+    package.write_bytes(b"verified fixture")
+    module.main(str(package), version, digest, initial)
+    assert events == ["stop", "install"]
+
+
+def test_installer_existing_controller_never_rewrites_database_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+    from types import SimpleNamespace
+
+    module = installer_module()
+    data = tmp_path / "data"
+    data.mkdir()
+    config = data / "system.properties"
+    config.write_text("existing private database selection\n")
+    before = config.read_bytes()
+    monkeypatch.setattr(module, "DATA", data)
+    package = tmp_path / "fixture.deb"
+    package.write_bytes(b"fixture")
+    digest = hashlib.sha256(package.read_bytes()).hexdigest()
+    version = "9.5.21-31260-1"
+    monkeypatch.setattr(
+        module.subprocess,
+        "check_output",
+        lambda args, **_: (
+            f"Package: unifi\nVersion: {version}\nArchitecture: all\n" if args[0] == "dpkg-deb" else "ii |" + version
+        ),
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda args, **_: SimpleNamespace(
+            returncode=1 if args[0] == "dpkg" else 0,
+            stdout="9.4.19-31042-1" if args[0] == "dpkg-query" else "",
+        ),
+    )
+    module.main(str(package), version, digest, {"initialize": False})
+    assert config.read_bytes() == before
+    with pytest.raises(ValueError, match="appeared after admission"):
+        module.main(str(package), version, digest, {"initialize": True, "mongodb_password": "fixture"})
+    assert config.read_bytes() == before
+
+
+@pytest.mark.parametrize("missing_controller", [False, True])
+def test_normal_deploy_transports_initialization_only_for_absent_controller(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_controller: bool,
+) -> None:
+    from ops_deploy.services.unifi import deploy_unifi, routine
+    from ops_deploy.testing import run_deploy_fake
+    from tests.test_unifi import SENTINEL, converged
+
+    # Keep deploy_unifi -> install_selected -> secret_stdin intact. Only isolate
+    # package presence and HA preparation, unrelated to installer transport.
+    monkeypatch.setattr(routine, "prepare_routine", lambda *_: (True, missing_controller))
+    monkeypatch.setattr(routine, "reconcile_ha", lambda **_: None)
+    cfg = UnifiConfig(**{**CFG.model_dump(), "routine": SELECTION})
+    run = run_deploy_fake(deploy_unifi, cfg, SECRETS, responses=converged())
+    assert run.succeeded, run.error
+    [(_, stdin)] = [(command, value) for command, value in run.stdin if "Verified local package install" in command]
+    assert json.loads(stdin) == {
+        "initialize": missing_controller,
+        "mongodb_password": SENTINEL if missing_controller else "",
+    }
+    assert not any(SENTINEL in command for command in run.executed_commands + run.fact_commands)

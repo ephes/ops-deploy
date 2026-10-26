@@ -28,7 +28,17 @@ deploy_unifi(cfg, secrets)  # SecretValues: mongodb_password, homeassistant_pass
 
 Routine deployment supports Ubuntu 24.04 x86_64, systemd, Python 3 and the
 role's fixed account/directory layout and an authenticated MongoDB
-installation. A missing controller package is installed after creating the
+installation. Only when admission proves the controller and its data absent,
+the deploy creates a private0600 `system.properties` selecting the authenticated
+external MongoDB for both application and statistics databases. Existing files
+and database selections are preserved byte-for-byte; there is no embedded-to-external
+database migration. JVM flags alone do not configure a fresh controller.
+The installer creates these selectors only after both digest and package metadata
+verification, immediately before installing the verified package. Failed downloads
+or verification leave controller data absent and can be retried. An interrupted
+installation after initialization/dpkg may leave partial data/package state; it
+is refused for diagnosis, never adopted or deleted automatically.
+A missing controller package is installed after creating the
 service account, private credential argfile and custom unit; the same API
 updates an existing controller. Unpackaged leftover controller data is refused. The controller's default-route IPv4 must match
 `controller_bind_address`. Admission authenticates MongoDB before writes and

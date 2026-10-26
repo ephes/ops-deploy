@@ -98,7 +98,8 @@ def check(payload: dict[str, Any]) -> None:
                                      "lt", installed.removeprefix("ii |")], capture_output=True)
         require(comparison.returncode == 1, "controller_downgrade_or_comparison_failed")
     if fresh_runtime:
-        require(not Path("/var/lib/unifi").exists() and not Path("/usr/lib/unifi").exists(), "unpackaged_controller_data_present")
+        require(not Path("/var/lib/unifi").exists() and not Path("/var/lib/unifi").is_symlink()
+                and not Path("/usr/lib/unifi").exists() and not Path("/usr/lib/unifi").is_symlink(), "unpackaged_controller_data_present")
     else:
         require(Path("/usr/lib/unifi/lib/ace.jar").is_file(), "installation_missing_use_ansible")
     if not payload.get("routine"):

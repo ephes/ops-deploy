@@ -99,9 +99,10 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
     if cfg.routine is not None:
         from .routine import prepare_routine
 
-        needs_package = prepare_routine(cfg, stdin)
+        needs_package, missing_controller = prepare_routine(cfg, stdin)
     else:
         needs_package = False
+        missing_controller = False
     package = None
     restart_command = shlex.join(
         [
@@ -145,7 +146,7 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
         # Vendor postinst must see our unit and credential argfile even on the
         # first controller installation over an existing authenticated MongoDB.
         systemd.daemon_reload(name="Load UniFi unit before package installation", _if=lambda: needs_package)
-        package = install_selected(cfg, needs_package)
+        package = install_selected(cfg, needs_package, missing_controller, secrets)
     if cfg.mongodb_logrotate_enabled:
         _put(cfg, "mongodb-logrotate.j2", "/etc/logrotate.d/mongodb")
     if cfg.mongodb_monitor_script_enabled:
