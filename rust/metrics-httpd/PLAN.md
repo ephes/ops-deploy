@@ -241,8 +241,10 @@ same apart from the differences in the variant table 4.3).
    (case sensitive); the token is `header.split()[1]`, base64-decoded, UTF-8
    decoded, split at the first `:`; the password is verified against the
    htpasswd file for that user (`htpasswd -vi <file> <user>` with the
-   password on stdin, l.131–138; `metrics_endpoint`: `htpasswd -vb` with the
-   password in argv, l.66–70). Any failure (missing header, malformed,
+   password on stdin; `metrics_endpoint` also uses stdin, with the historical
+   argv password semantics enforced before verification: 255 bytes maximum,
+   NUL denied, and CR/LF denied except for suffix bytes beyond bcrypt's byte-72
+   boundary when every record of the selected user is bcrypt). Any failure (missing header, malformed,
    unknown user, wrong password, unreadable htpasswd file) → **401**, headers
    `WWW-Authenticate: Basic realm="<realm>"` and `Content-Length: 0`, empty
    body. The htpasswd file is consulted on every request (rotation without a
@@ -628,14 +630,20 @@ per-request 401/503, not a startup failure.
   with exactly these cases; the parity harness compares bytes for every
   200 response and parsed JSON plus the D-3 rules for errors.
 - **D-6 Auth.** In-process bcrypt verification (no subprocess; fixes the
-  password in argv of `metrics_endpoint`'s `htpasswd -vb`), with the rules
+  historical password-in-argv exposure of `metrics_endpoint`), with the rules
   of the `htpasswd` binary pinned by `fixtures/auth.json` (generated with
   the real binary): file parsing (leading whitespace, comments, blank lines,
   a line without `:` invalidates the file, every entry of the user must
   verify), the password rules of `-vi` (json-file, apt-state: at most 255
   bytes, one trailing `\n`/`\r\n` removed, cut at NUL) and of `-vb`
-  (script mode: at most 255 bytes, verbatim, a NUL crashes Python and is
-  refused). Only `$2y$` and `$2a$` hashes (all live files are `$2y$`; APR's
+  (the script mode's retained legacy semantic contract: at most 255 bytes,
+  verbatim, NUL refused). The Python script wrapper now uses `-vi` with an
+  algorithm-aware input gate: NUL returns 401 instead of raising; CR/LF is
+  rejected except beyond byte 72 when all records for that user are `$2y$` or
+  `$2a$`. APR/SHA and other schemes get no suffix exception. The `vb` fixture
+  key and existing Rust `PasswordSource::Argv` remain; all 68 Rust decisions
+  are unchanged and only two Python NUL crash classifications become denied.
+  Only `$2y$` and `$2a$` hashes (all live files are `$2y$`; APR's
   `htpasswd` refuses `$2b$`, so Rust does too); a `$2a$` hash with a
   non-ASCII password is refused (APR's `$2a$` safety measure may differ from
   the `bcrypt` crate); other schemes (MD5 `$apr1$`, `{SHA}`, crypt, `$2x$`)

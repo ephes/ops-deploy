@@ -63,12 +63,41 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return False, "malformed"
 
+        encoded = password.encode("utf-8")
+        if len(encoded) > 255 or "\x00" in password:
+            return False, "malformed"
+        if b"\r" in encoded or b"\n" in encoded:
+            # Keep bcrypt's historical 72-byte suffix equivalence without
+            # allowing stdin truncation for APR/SHA or another hash scheme.
+            if any(char in encoded[:72] for char in (10, 13)) or not self._bcrypt_records_only(user, cfg):
+                return False, "malformed"
+
         result = subprocess.run(
-            ["htpasswd", "-vb", cfg["htpasswd_file"], user, password],
+            ["htpasswd", "-vi", cfg["htpasswd_file"], user],
+            input=password,
             capture_output=True,
             text=True,
         )
         return result.returncode == 0, result.stderr
+
+
+
+    def _bcrypt_records_only(self, user: str, cfg: dict) -> bool:
+        # htpasswd still performs all verification. This only admits the
+        # legacy bcrypt-only suffix case before its stdin line handling.
+        hashes = []
+        try:
+            with open(cfg["htpasswd_file"], "rb") as records:
+                for line in records:
+                    line = line.lstrip()
+                    if not line or line.startswith(b"#"):
+                        continue
+                    name, separator, value = line.partition(b":")
+                    if separator and name == user.encode("utf-8"):
+                        hashes.append(value.split(b"\r", 1)[0].split(b"\n", 1)[0])
+        except OSError:
+            return False
+        return bool(hashes) and all(value.startswith((b"$2a$", b"$2y$")) for value in hashes)
 
 
 def parse_args() -> argparse.Namespace:

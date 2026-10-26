@@ -19,8 +19,12 @@ one of the rendered Python endpoint scripts produces. The Rust tests
 ``auth`` (templates, ``htpasswd``)
     ``auth.json``: the decision of the rendered backup script's
     ``_check_auth`` (``htpasswd -vi``) and of ``metrics_endpoint``'s
-    (``htpasswd -vb``) for header and htpasswd-file cases, run with the real
-    ``htpasswd`` binary against the committed test-only ``htpasswd*`` files.
+    (``htpasswd -vi`` plus the legacy argv-semantics input gate) for header
+    and htpasswd-file cases, run with the real ``htpasswd`` binary against the
+    committed test-only ``htpasswd*`` files. ``vb`` remains the historical key:
+    its bcrypt decisions are unchanged; NUL now fails closed instead of raising.
+    A CR/LF suffix beyond byte 72 is admitted only for actual bcrypt records;
+    other schemes reject CR/LF and the old 255-byte bound still applies.
 ``http_common`` (templates, ``htpasswd``)
     ``http_common.json``: the rendered scripts' handlers served on loopback
     and driven with raw requests: the 501/404/401 gate of PLAN.md 4.1 for
@@ -3487,8 +3491,18 @@ STATIC_DATE = "Sat, 03 Oct 2026 13:57:50 GMT"
 # (kind, path below the tree, content or link target, mode). The site root
 # is `site/`; `outside.txt` lies next to it.
 STATIC_TREE: list[tuple[str, str, str, int]] = [
-    ("file", "site/index.html", "<!doctype html><title>benchpack registry snapshot</title>\n", 0o644),
-    ("file", "site/report.md", "# Report\n\nbenchpack registry snapshot ünicode\n", 0o644),
+    (
+        "file",
+        "site/index.html",
+        "<!doctype html><title>benchpack registry snapshot</title>\n",
+        0o644,
+    ),
+    (
+        "file",
+        "site/report.md",
+        "# Report\n\nbenchpack registry snapshot ünicode\n",
+        0o644,
+    ),
     ("file", "site/snapshot.json", '{"benchmarks": [1, 2, 3]}\n', 0o644),
     ("file", "site/style.css", "body { margin: 0 }\n", 0o644),
     ("file", "site/app.js", "console.log(1);\n", 0o644),
@@ -3569,10 +3583,24 @@ def static_cases() -> list[dict[str, Any]]:
         ("empty-dir-redirect", "GET", "/empty", []),
         ("symlink-dir", "GET", "/linkdir/page.html", []),
         ("symlink-outside", "GET", "/link.txt", []),
-        ("htm-index", "GET", "/htm/", [], "HTTP/1.1", {"rust_status": 404, "d": "D-11"}),
+        (
+            "htm-index",
+            "GET",
+            "/htm/",
+            [],
+            "HTTP/1.1",
+            {"rust_status": 404, "d": "D-11"},
+        ),
         # list_directory's "Directory listing is disabled" page; Rust sends
         # the "File not found" page (ServeDir does not say why).
-        ("empty-dir", "GET", "/empty/", [], "HTTP/1.1", {"rust_status": 404, "d": "D-3"}),
+        (
+            "empty-dir",
+            "GET",
+            "/empty/",
+            [],
+            "HTTP/1.1",
+            {"rust_status": 404, "d": "D-3"},
+        ),
         ("missing", "GET", "/missing.html", []),
         ("missing-head", "HEAD", "/missing.html", []),
         ("missing-dir", "GET", "/missing/", []),
@@ -3580,10 +3608,31 @@ def static_cases() -> list[dict[str, Any]]:
         ("file-as-dir", "GET", "/index.html/x", []),
         ("unreadable", "GET", "/private.txt", []),
         ("parent-escape", "GET", "/../outside.txt", []),
-        ("parent-inside", "GET", "/sub/../index.html", [], "HTTP/1.1", {"rust_status": 404, "d": "D-11"}),
-        ("encoded-parent", "GET", "/sub/%2e%2e/index.html", [], "HTTP/1.1", {"rust_status": 404, "d": "D-11"}),
+        (
+            "parent-inside",
+            "GET",
+            "/sub/../index.html",
+            [],
+            "HTTP/1.1",
+            {"rust_status": 404, "d": "D-11"},
+        ),
+        (
+            "encoded-parent",
+            "GET",
+            "/sub/%2e%2e/index.html",
+            [],
+            "HTTP/1.1",
+            {"rust_status": 404, "d": "D-11"},
+        ),
         ("backslash", "GET", "/sub%5Cpage.html", []),
-        ("nul", "GET", "/index.html%00", [], "HTTP/1.1", {"rust_status": 404, "d": "D-2"}),
+        (
+            "nul",
+            "GET",
+            "/index.html%00",
+            [],
+            "HTTP/1.1",
+            {"rust_status": 404, "d": "D-2"},
+        ),
         ("invalid-utf8", "GET", "/%FF", []),
         ("absolute-form", "GET", "http://127.0.0.1/index.html", []),
         ("ims-equal", "GET", "/index.html", ims),
@@ -3600,14 +3649,45 @@ def static_cases() -> list[dict[str, Any]]:
             "HTTP/1.1",
             {"rust_status": 200, "d": "D-11"},
         ),
-        ("ims-with-if-none-match", "GET", "/index.html", ims + [("If-None-Match", '"x"')]),
+        (
+            "ims-with-if-none-match",
+            "GET",
+            "/index.html",
+            ims + [("If-None-Match", '"x"')],
+        ),
         ("if-none-match-star", "GET", "/index.html", [("If-None-Match", "*")]),
         ("if-match", "GET", "/index.html", [("If-Match", '"nope"')]),
-        ("if-unmodified-since", "GET", "/index.html", [("If-Unmodified-Since", "Sat, 03 Oct 2026 12:00:00 GMT")]),
-        ("range", "GET", "/index.html", [("Range", "bytes=0-4")], "HTTP/1.1", {"rust_status": 206, "d": "D-11"}),
+        (
+            "if-unmodified-since",
+            "GET",
+            "/index.html",
+            [("If-Unmodified-Since", "Sat, 03 Oct 2026 12:00:00 GMT")],
+        ),
+        (
+            "range",
+            "GET",
+            "/index.html",
+            [("Range", "bytes=0-4")],
+            "HTTP/1.1",
+            {"rust_status": 206, "d": "D-11"},
+        ),
         ("range-multi", "GET", "/index.html", [("Range", "bytes=0-1,3-4")]),
-        ("range-unsatisfiable", "GET", "/index.html", [("Range", "bytes=9999-")], "HTTP/1.1", {"rust_status": 416, "d": "D-11"}),
-        ("range-malformed", "GET", "/index.html", [("Range", "lines=1-2")], "HTTP/1.1", {"rust_status": 416, "d": "D-11"}),
+        (
+            "range-unsatisfiable",
+            "GET",
+            "/index.html",
+            [("Range", "bytes=9999-")],
+            "HTTP/1.1",
+            {"rust_status": 416, "d": "D-11"},
+        ),
+        (
+            "range-malformed",
+            "GET",
+            "/index.html",
+            [("Range", "lines=1-2")],
+            "HTTP/1.1",
+            {"rust_status": 416, "d": "D-11"},
+        ),
         ("post", "POST", "/index.html", [("Content-Length", "0")]),
         ("put", "PUT", "/new.txt", [("Content-Length", "0")]),
         ("delete", "DELETE", "/index.html", []),
