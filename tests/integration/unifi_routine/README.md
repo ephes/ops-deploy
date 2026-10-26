@@ -62,3 +62,10 @@ and `set-installed` API commands with a fixture-only administrator. It verifies
 in MongoDB. The initialized state must survive update and repair; otherwise
 vendor Factory Default could reinitialize databases and invalidate preservation
 proof. This setup API is never called by the production deployment.
+
+Run40332163946 passed all four admission refusal cases, scoped audit CRUD,
+real9.4.19 installation and its zero-mutation repeat. It failed while parsing
+a wizard HTTP response, before any selected-version update. Its artifacts are
+retained. Wizard diagnostics now persist each fixed phase's response status,
+content type and redirect flag without bodies, cookies or credentials; the
+actual JVM is recorded before that step too.
