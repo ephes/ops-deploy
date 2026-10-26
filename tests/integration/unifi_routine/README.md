@@ -25,3 +25,19 @@ first user was rejected in run40316009319 and reproduced on real Mongo8.0.34;
 that failed run is retained as evidence. The receipt records the actual
 controller process JVM executable and version before/after the selected update,
 without assuming that the installed Java17 package is the selected runtime.
+
+Run40318175856 installed9.4.19 and updated9.5.21 with zero-mutation repeats,
+then refused admission after the fixture's explicit Mongo restart. Its evidence
+is retained as a failed run. The fixture now waits for authenticated Mongo and
+the dependent controller to become ready after that deliberate restart, records
+only fixed admission status labels on failure, and persists runtime evidence at
+each phase instead of only on complete success. Its journal also exposed a
+controller-owned Mongo process on the fresh installation; external-database
+application use must be proven before the complete path is qualified.
+
+The corrected production path initializes external database selectors only for
+an admitted absent controller with no existing data. The fixture requires an
+authenticated HA API login and matching default-site identity in the external
+MongoDB, plus exactly the system mongod process and no embedded database.
+Both application and statistics connections select authenticated external DBs.
+Existing controller configuration is never migrated by this initialization.

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import http.cookiejar
 import json
 import os
 import re
 import shlex
+import ssl
 import subprocess
 import sys
 import time
+import urllib.request
 from dataclasses import asdict
 from importlib import import_module
 from pathlib import Path
@@ -144,7 +147,33 @@ def deploy(config: Any, evidence: Path, label: str, *, wrong_password: bool = Fa
     finally:
         ops = collect_ops(state, "@local")
         disconnect_all(state)
-    result = {"operations": [{k: v for k, v in asdict(op).items() if k != "args"} for op in ops], "error": error}
+    admission = None
+    if error:
+        # Persist only the production probe's fixed status label, never its
+        # payload or subprocess diagnostics (even with dummy fixture secrets).
+        api = import_module("ops_deploy.services.unifi.deploy")
+        probe_result = subprocess.run(
+            shlex.split(api.PREFLIGHT_COMMAND),
+            input=api.payload(
+                config,
+                SecretValues(
+                    SecretRef("fixture.yml"),
+                    {
+                        "mongodb_password": "wrong-fixture-password" if wrong_password else PASSWORD,
+                        "homeassistant_password": HA_PASSWORD,
+                    },
+                ),
+            ),
+            text=True,
+            capture_output=True,
+        )
+        status_label = probe_result.stdout.strip()
+        admission = status_label if re.fullmatch(r"ready|refused:[a-z0-9_]+", status_label) else "unavailable"
+    result = {
+        "admission": admission,
+        "operations": [{k: v for k, v in asdict(op).items() if k != "args"} for op in ops],
+        "error": error,
+    }
     (evidence / (label + ".json")).write_text(json.dumps(result, indent=2))
     mutations = [op for op in ops if op.changed and not op.read_only]
     if wrong_password:
@@ -164,6 +193,31 @@ def protection() -> str:
         'const u=db.getSiblingDB("unifi");print(JSON.stringify({site:u.site.find({},{_id:1,name:1}).toArray(),'
         'sentinel:u.ops_fixture.findOne({_id:"protected"}),auth:db.getSiblingDB("admin").runCommand({getCmdLineOpts:1}).parsed.security}));'
     )
+
+
+def application_database_proof() -> dict[str, Any]:
+    """Prove the running application reads the same authenticated database."""
+    cookies = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+        urllib.request.HTTPCookieProcessor(cookies),
+    )
+    request = urllib.request.Request(
+        "https://127.0.0.1:8443/api/login",
+        data=json.dumps({"username": "homeassistant", "password": HA_PASSWORD}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert json.load(opener.open(request, timeout=20))["meta"]["rc"] == "ok"
+    sites = json.load(opener.open("https://127.0.0.1:8443/api/self/sites", timeout=20))
+    assert sites["meta"]["rc"] == "ok"
+    expected = mongo('print(db.getSiblingDB("unifi").site.findOne({name:"default"})._id.toString());')
+    assert any(site["_id"] == expected and site["name"] == "default" for site in sites["data"])
+    # The sole Mongo process must be the authenticated system service. An
+    # application-owned embedded database would invalidate this proof.
+    mongo_pid = run("systemctl", "show", "-p", "MainPID", "--value", "mongod")
+    assert run("pgrep", "-x", "mongod").splitlines() == [mongo_pid]
+    assert not Path("/var/lib/unifi/db").exists()
+    return {"authenticated": True, "site_id": expected, "only_system_mongo": True}
 
 
 def runtime() -> dict[str, str]:
@@ -200,13 +254,17 @@ def main(evidence: Path) -> None:
     )
     before = protection()
     runtime_before = runtime()
+    (evidence / "runtime-before-update.json").write_text(json.dumps(runtime_before, indent=2))
     deploy(config, evidence, "update-first")
     assert run("dpkg-query", "-W", "-f=${Version}", "unifi") == "9.5.21-31260-1"
     assert json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))["meta"]["server_version"] == "9.5.21"
     runtime_after = runtime()
+    (evidence / "runtime-after-update.json").write_text(json.dumps(runtime_after, indent=2))
     assert runtime_before["executable"] == runtime_after["executable"]
     assert runtime_before["version"] == runtime_after["version"]
     deploy(config, evidence, "update-repeat")
+    database_proof = application_database_proof()
+    (evidence / "application-database.json").write_text(json.dumps(database_proof, indent=2))
     assert protection() == before
     identity = mongo('print(db.getSiblingDB("unifi").admin.findOne({name:"homeassistant"})._id.toString());')
     mongo(
@@ -217,8 +275,22 @@ def main(evidence: Path) -> None:
     path = Path("/etc/mongod.conf")
     path.write_text(path.read_text().replace("quiet: true", "quiet: false"))
     run("systemctl", "restart", "mongod")
+    # Requires=mongod restarts the controller too. Complete the deliberate
+    # fixture mutation before asking deployment admission to inspect it.
+    for attempt in range(60):
+        try:
+            mongo('if(db.getSiblingDB("admin").runCommand({ping:1}).ok!==1)quit(22);')
+            status = json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))
+            assert status["meta"]["server_version"] == "9.5.21"
+            assert Path("/usr/lib/unifi/run").is_dir()
+            break
+        except (RuntimeError, AssertionError):
+            if attempt == 59:
+                raise
+            time.sleep(2)
     deploy(config, evidence, "repair-first")
     deploy(config, evidence, "repair-repeat")
+    assert application_database_proof() == database_proof
     assert mongo('print(db.getSiblingDB("unifi").admin.findOne({name:"homeassistant"})._id.toString());') == identity
     assert protection() == before
     deploy(config, evidence, "bad-auth", wrong_password=True)
@@ -233,6 +305,7 @@ def main(evidence: Path) -> None:
                 source, "/var/cache/ops-deploy-unifi/unifi_9.4.19-31042-1_all.deb", "9.4.19-31042-1", "0" * 64
             )
         ),
+        input=json.dumps({"initialize": False}).encode(),
         capture_output=True,
     )
     assert invalid.returncode != 0
@@ -246,6 +319,7 @@ def main(evidence: Path) -> None:
                 "harness_sha": os.environ["HARNESS_SHA"],
                 "old_version": "9.4.19-31042-1",
                 "selected_version": "9.5.21-31260-1",
+                "application_database": database_proof,
                 "runtime_before_update": runtime_before,
                 "runtime_after_update": runtime_after,
                 "protection_sha256": hashlib.sha256(before.encode()).hexdigest(),
