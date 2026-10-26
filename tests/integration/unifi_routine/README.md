@@ -84,3 +84,11 @@ strings. Routine repair now uses canonical string references, preserving record
 IDs and leaving already-functional mixed layouts unchanged. The VM's HA login
 and external-site identity assertion verifies actual access, not only a hash
 or MongoDB privilege document.
+
+Run40344461738 completed the real wizard, selected package update and zero-
+mutation repeat, then authenticated HA access with matching external site ID
+and exactly the system Mongo process. It failed an overly strict assertion
+that the vendor `db` directory must be absent. The fixture now records bounded
+directory-entry evidence and permits only an absent or empty real directory;
+any file, symlink or extra Mongo process still refuses qualification. The failed
+run remains retained and is not reported as full qualification.

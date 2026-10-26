@@ -264,7 +264,7 @@ def assert_controller_initialized() -> None:
     assert re.search(r"(?m)^is_default\s*=\s*false\s*$", Path("/var/lib/unifi/system.properties").read_text())
 
 
-def application_database_proof() -> dict[str, Any]:
+def application_database_proof(evidence: Path, phase: str) -> dict[str, Any]:
     """Prove the running application reads the same authenticated database."""
     assert_controller_initialized()
     cookies = http.cookiejar.CookieJar()
@@ -286,8 +286,23 @@ def application_database_proof() -> dict[str, Any]:
     # application-owned embedded database would invalidate this proof.
     mongo_pid = run("systemctl", "show", "-p", "MainPID", "--value", "mongod")
     assert run("pgrep", "-x", "mongod").splitlines() == [mongo_pid]
-    assert not Path("/var/lib/unifi/db").exists()
-    return {"authenticated": True, "site_id": expected, "only_system_mongo": True}
+    assert_no_embedded_database(evidence, phase)
+    return {"authenticated": True, "site_id": expected, "only_system_mongo": True, "no_embedded_database_files": True}
+
+
+def assert_no_embedded_database(evidence: Path, phase: str, embedded: Path = Path("/var/lib/unifi/db")) -> None:
+    # An empty vendor-created directory is not an embedded database. Preserve
+    # bounded entry-name evidence before refusing any actual database files.
+    entries = sorted(path.name for path in embedded.iterdir()) if embedded.is_dir() else []
+    directory_proof = {
+        "exists": embedded.exists(),
+        "is_directory": embedded.is_dir(),
+        "is_symlink": embedded.is_symlink(),
+        "entries": entries[:100],
+    }
+    (evidence / f"embedded-directory-{phase}.json").write_text(json.dumps(directory_proof, indent=2))
+    assert not embedded.is_symlink()
+    assert not embedded.exists() or (embedded.is_dir() and not entries)
 
 
 def runtime() -> dict[str, str]:
@@ -371,7 +386,7 @@ def main(evidence: Path) -> None:
     assert runtime_before["executable"] == runtime_after["executable"]
     assert runtime_before["version"] == runtime_after["version"]
     deploy(config, evidence, "update-repeat")
-    database_proof = application_database_proof()
+    database_proof = application_database_proof(evidence, "after-update")
     (evidence / "application-database.json").write_text(json.dumps(database_proof, indent=2))
     assert protection() == before
     identity = mongo('print(db.getSiblingDB("unifi").admin.findOne({name:"homeassistant"})._id.toString());')
@@ -400,7 +415,7 @@ def main(evidence: Path) -> None:
             time.sleep(2)
     deploy(config, evidence, "repair-first")
     deploy(config, evidence, "repair-repeat")
-    assert application_database_proof() == database_proof
+    assert application_database_proof(evidence, "after-repair") == database_proof
     assert mongo('print(db.getSiblingDB("unifi").admin.findOne({name:"homeassistant"})._id.toString());') == identity
     assert protection() == before
     deploy(config, evidence, "bad-auth", wrong_password=True)
