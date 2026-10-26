@@ -1,0 +1,67 @@
+#!/bin/bash
+# Lightweight mail metrics exporter for nyxmon health endpoint.
+set -euo pipefail
+
+queue_path="{{ metrics_endpoint_queue_path }}"
+vmail_path="{{ metrics_endpoint_vmail_path }}"
+
+queue_active=$({ find "${queue_path}/active" -type f 2>/dev/null || true; } | wc -l)
+queue_deferred=$({ find "${queue_path}/deferred" -type f 2>/dev/null || true; } | wc -l)
+queue_total=$((queue_active + queue_deferred))
+
+vmail_pct=$(df "${vmail_path}" --output=pcent 2>/dev/null | tail -1 | tr -d ' %' || echo -1)
+root_pct=$(df / --output=pcent | tail -1 | tr -d ' %')
+
+services_json=""
+{% for svc in metrics_endpoint_services %}
+svc_status="$(systemctl is-active {{ svc }} 2>/dev/null || true)"
+if [[ -z "${svc_status}" ]]; then
+  svc_status="unknown"
+fi
+{% if not loop.first %}services_json="${services_json}, "
+{% endif %}
+services_json="${services_json}\"{{ svc }}\": \"${svc_status}\""
+{% endfor %}
+
+{% if metrics_endpoint_probe_states | length > 0 %}
+# Probe state sections: last_status/last_run from a key=value state file plus
+# the age at request time. A missing or malformed file omits the section.
+probe_section() {
+  local name="$1" path="$2" key value last_status="" last_run="" now
+  [[ -r "${path}" ]] || return 0
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      last_status) last_status="${value}" ;;
+      last_run) last_run="${value}" ;;
+    esac
+  done <"${path}"
+  [[ "${last_status}" =~ ^[0-9]{1,3}$ && "${last_run}" =~ ^[0-9]{1,12}$ ]] || return 0
+  now=$(date +%s)
+  printf ',\n  "%s": {\n    "last_status": %d,\n    "last_run": %d,\n    "age_seconds": %d\n  }' \
+    "${name}" "$((10#${last_status}))" "$((10#${last_run}))" "$((now - 10#${last_run}))"
+}
+
+probes_json=""
+{% for probe in metrics_endpoint_probe_states %}
+probes_json="${probes_json}$(probe_section {{ probe.name | quote }} {{ probe.path | quote }})"
+{% endfor %}
+{% endif %}
+cat <<EOF
+{
+  "hostname": "$(hostname)",
+  "timestamp": "$(date -Iseconds)",
+  "mail": {
+    "queue_active": ${queue_active},
+    "queue_deferred": ${queue_deferred},
+    "queue_total": ${queue_total}
+  },
+  "disk": {
+    "vmail_percent": ${vmail_pct},
+    "root_percent": ${root_pct}
+  },
+  "services": {
+    ${services_json}
+  }{% if metrics_endpoint_probe_states | length > 0 %}${probes_json}{% endif %}
+
+}
+EOF

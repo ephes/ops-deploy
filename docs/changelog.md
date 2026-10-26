@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add standalone mail and torrent VPN metrics endpoint deploys using the existing
+  Python/Rust switch, Basic Auth, role templates and service identities. Preserve
+  recursive queue ACLs, probe-state exports and the torrent root collector/timer.
+  Converged repeats perform no deploy mutations; collector output is initialized
+  only when absent, invalid, stale, affected by changed inputs or needed to seed
+  an unarmed timer. The mail Python wrapper verifies passwords on stdin, matching the paired role security repair.
+
 - Allow Graphyard's `Influx.data_dir_mode` to preserve an existing private
   `0700` data directory during ordinary stack convergence. The default remains
   the role's `0755`; no data, container or source selection changes.

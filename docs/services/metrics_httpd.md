@@ -4,13 +4,15 @@
 role's Python HTTP server or the pinned Rust `metrics-httpd` release. It is
 the pyinfra side of ops-library's internal role `metrics_httpd_switch`
 (ops-library `rust/metrics-httpd/PLAN.md` 7.2 and 7.4, slice S5e) and is
-shared by the three deploys that render a metrics-httpd endpoint role:
+shared by the deploys that render a metrics-httpd endpoint role:
 
 | Deploy | Unit | Role | Mode |
 |---|---|---|---|
 | [`thermal_monitoring`](thermal_monitoring.md) | `thermal-metrics-endpoint` | `thermal_metrics_endpoint` | `json-file` |
 | [`logyard`](logyard.md) (core) | `logyard-health-endpoint` | `logyard_deploy` | `logyard-health` |
 | [`static_site`](static_site.md) | `<service_name>` | `static_site_deploy` | `static` |
+| [`metrics_endpoint`](metrics_endpoints.md) | `metrics-endpoint` | `metrics_endpoint` | `script` |
+| [`torrent_vpn_metrics_endpoint`](metrics_endpoints.md) | `torrent-vpn-metrics-endpoint` | existing torrent endpoint role | `json-file` |
 
 Each unit keeps its unit file and Python script exactly as before. Rust is
 selected by one systemd drop-in, the role's template rendered byte for byte:

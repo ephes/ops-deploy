@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""Collector for torrent VPN egress metrics.
+
+Provider-neutral: the VPN provider and the forwarded port are read from the
+gluetun container's environment, so the checks follow the torrent deploy
+without a second copy of its settings. Only those keys are read; no other
+container environment (it holds the WireGuard key) is ever written out.
+"""
+import json
+import subprocess
+import sys
+import time
+from typing import Dict, List, Optional, Set, Tuple
+
+GLUETUN_CONTAINER = "{{ torrent_vpn_metrics_endpoint_gluetun_container }}"
+ATTACHED_CONTAINERS = {{ torrent_vpn_metrics_endpoint_attached_containers | to_json }}
+SCRIPT_TIMEOUT = {{ torrent_vpn_metrics_endpoint_script_timeout }}
+HOST_IP_URL = "{{ torrent_vpn_metrics_endpoint_host_ip_url }}"
+VPN_INTERFACE = "{{ torrent_vpn_metrics_endpoint_vpn_interface }}"
+# provider -> {"url": ..., "flag": dotted path to a bool, "country": dotted path}
+PROVIDER_CHECKS = {{ torrent_vpn_metrics_endpoint_provider_checks | to_json }}
+
+DOCKER_ID_FORMAT = "{% raw %}{{.Id}}{% endraw %}"
+DOCKER_PID_FORMAT = "{% raw %}{{.State.Pid}}{% endraw %}"
+DOCKER_NETMODE_FORMAT = "{% raw %}{{.HostConfig.NetworkMode}}{% endraw %}"
+DOCKER_ENV_FORMAT = "{% raw %}{{json .Config.Env}}{% endraw %}"
+ENV_KEYS = ("VPN_SERVICE_PROVIDER", "FIREWALL_VPN_INPUT_PORTS")
+
+
+def _run(cmd: List[str], timeout: Optional[int] = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
+
+
+def _docker_inspect(container: str, fmt: str) -> Tuple[Optional[str], Optional[str]]:
+    result = _run(["docker", "inspect", "-f", fmt, container], timeout=5)
+    if result.returncode != 0:
+        return None, result.stderr.strip() or f"docker inspect failed for {container}"
+    return result.stdout.strip(), None
+
+
+def _in_netns(pid: int, cmd: List[str], timeout: int) -> subprocess.CompletedProcess[str]:
+    return _run(["nsenter", "-t", str(pid), "-n", *cmd], timeout=timeout)
+
+
+def parse_env(raw_json: Optional[str]) -> Dict[str, str]:
+    """Pick ENV_KEYS out of `docker inspect` JSON env; ignore everything else."""
+    picked: Dict[str, str] = {}
+    try:
+        entries = json.loads(raw_json or "[]")
+    except json.JSONDecodeError:
+        return picked
+    for entry in entries if isinstance(entries, list) else []:
+        key, _, value = str(entry).partition("=")
+        if key in ENV_KEYS:
+            picked[key] = value.strip()
+    return picked
+
+
+def parse_ports(value: Optional[str]) -> List[int]:
+    ports = []
+    for part in (value or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ports.append(int(part))
+    return ports
+
+
+def parse_ipv4(ip_addr_output: str) -> Optional[str]:
+    """First IPv4 address from `ip -4 -o addr show <if>`."""
+    for line in ip_addr_output.splitlines():
+        fields = line.split()
+        if "inet" in fields:
+            return fields[fields.index("inet") + 1].split("/")[0]
+    return None
+
+
+def listening_ports(ss_output: str, address: str) -> Set[int]:
+    """Ports with a listening socket bound to exactly `address` (`ss -Hlnt`)."""
+    ports: Set[int] = set()
+    for line in ss_output.splitlines():
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        host, _, port = fields[3].rpartition(":")
+        # A socket bound to a device shows as "10.0.0.2%tun0".
+        host = host.partition("%")[0]
+        if host == address and port.isdigit():
+            ports.add(int(port))
+    return ports
+
+
+def json_path(data: object, dotted: str) -> object:
+    for key in dotted.split("."):
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def as_bool(value: object) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "0", "false", "no"}:
+        return value.strip().lower() in {"1", "true", "yes"}
+    return None
+
+
+def container_attached(mode: Optional[str], gluetun_name: str, gluetun_id: Optional[str]) -> bool:
+    if not mode:
+        return False
+    candidates = {f"container:{gluetun_name}"}
+    if gluetun_id:
+        candidates |= {f"container:{gluetun_id}", f"container:{gluetun_id[:12]}"}
+    return mode in candidates
+
+
+class Collector:
+    def __init__(self) -> None:
+        self.error_type: Optional[str] = None
+        self.message: Optional[str] = None
+
+    def fail(self, error_type: str, message: str) -> None:
+        if self.error_type is None:
+            self.error_type = error_type
+            self.message = message
+
+    def fetch_json(self, cmd: List[str], label: str) -> Optional[dict]:
+        try:
+            result = _run(cmd, timeout=SCRIPT_TIMEOUT + 2)
+        except subprocess.TimeoutExpired:
+            self.fail(f"{label}_failed", f"{label} request timed out")
+            return None
+        if result.returncode != 0:
+            self.fail(f"{label}_failed", result.stderr.strip() or f"{label} request failed")
+            return None
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            self.fail(f"{label}_failed", f"{label} response was not valid JSON")
+            return None
+        return data if isinstance(data, dict) else None
+
+    def collect(self) -> dict:
+        topology: Dict[str, object] = {
+            "containers_ok": 0,
+            "gluetun_container": GLUETUN_CONTAINER,
+            "attached_containers": ATTACHED_CONTAINERS,
+            "network_modes": {},
+            "missing_containers": [],
+        }
+        vpn: Dict[str, object] = {
+            "provider": None,
+            "egress_ok": 0,
+            "provider_exit": 0,
+            "exit_ip_v4": None,
+            "exit_country": None,
+            "forwarded_port": None,
+            "listen_tun_ok": 0,
+            "tun_listen_ports": [],
+        }
+
+        gluetun_id, err = _docker_inspect(GLUETUN_CONTAINER, DOCKER_ID_FORMAT)
+        if not gluetun_id:
+            self.fail("gluetun_missing", err or f"gluetun container {GLUETUN_CONTAINER} not found")
+
+        attached = bool(gluetun_id)
+        for name in ATTACHED_CONTAINERS:
+            mode, _ = _docker_inspect(name, DOCKER_NETMODE_FORMAT)
+            topology["network_modes"][name] = mode  # type: ignore[index]
+            if mode is None:
+                topology["missing_containers"].append(name)  # type: ignore[union-attr]
+            attached = attached and container_attached(mode, GLUETUN_CONTAINER, gluetun_id)
+        topology["containers_ok"] = 1 if attached else 0
+
+        pid = None
+        if gluetun_id:
+            pid_raw, err = _docker_inspect(GLUETUN_CONTAINER, DOCKER_PID_FORMAT)
+            pid = int(pid_raw) if pid_raw and pid_raw.isdigit() and int(pid_raw) > 0 else None
+            if pid is None:
+                self.fail("gluetun_pid_missing", err or "gluetun PID missing or invalid")
+            env_raw, _ = _docker_inspect(GLUETUN_CONTAINER, DOCKER_ENV_FORMAT)
+            env = parse_env(env_raw)
+            vpn["provider"] = env.get("VPN_SERVICE_PROVIDER") or None
+            ports = parse_ports(env.get("FIREWALL_VPN_INPUT_PORTS"))
+            vpn["forwarded_port"] = ports[0] if ports else None
+
+        if pid is None:
+            return self.payload(topology, vpn)
+
+        curl = ["curl", "-fsS", "--max-time", str(SCRIPT_TIMEOUT)]
+
+        # Egress: the namespace's public IPv4 must differ from the host's.
+        host = self.fetch_json(curl + ["-4", HOST_IP_URL], "host_ip")
+        netns = self.fetch_json(["nsenter", "-t", str(pid), "-n", *curl, "-4", HOST_IP_URL], "egress_ip")
+        host_ip = (host or {}).get("ip")
+        exit_ip = (netns or {}).get("ip")
+        vpn["exit_ip_v4"] = exit_ip
+        if host_ip and exit_ip:
+            vpn["egress_ok"] = 1 if host_ip != exit_ip else 0
+
+        # Provider: its own "am I connected through us" API, from the namespace.
+        check = PROVIDER_CHECKS.get(str(vpn["provider"] or ""))
+        if check is None:
+            self.fail("provider_unknown", f"no provider check for {vpn['provider']!r}")
+        else:
+            data = self.fetch_json(["nsenter", "-t", str(pid), "-n", *curl, check["url"]], "provider")
+            if data is not None:
+                flag = as_bool(json_path(data, check["flag"]))
+                if flag is None:
+                    self.fail("provider_failed", f"provider response missing {check['flag']}")
+                vpn["provider_exit"] = 1 if flag else 0
+                vpn["exit_country"] = json_path(data, check["country"])
+
+        # qBittorrent listens on the tunnel address (and on the forwarded port).
+        try:
+            tun = _in_netns(pid, ["ip", "-4", "-o", "addr", "show", VPN_INTERFACE], 5)
+            ss = _in_netns(pid, ["ss", "-Hlnt"], 5)
+        except subprocess.TimeoutExpired:
+            self.fail("listen_check_failed", "listener inspection timed out")
+        else:
+            tun_ip = parse_ipv4(tun.stdout) if tun.returncode == 0 else None
+            ports = sorted(listening_ports(ss.stdout, tun_ip)) if tun_ip and ss.returncode == 0 else []
+            vpn["tun_listen_ports"] = ports
+            expected = vpn["forwarded_port"]
+            vpn["listen_tun_ok"] = 1 if ports and (expected is None or expected in ports) else 0
+
+        return self.payload(topology, vpn)
+
+    def payload(self, topology: dict, vpn: dict) -> dict:
+        return {
+            "ts": int(time.time()),
+            "topology": topology,
+            "vpn": vpn,
+            "error": self.error_type is not None,
+            "error_type": self.error_type,
+            "message": self.message,
+        }
+
+
+def main() -> int:
+    try:
+        payload = Collector().collect()
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        payload = {
+            "ts": int(time.time()),
+            "topology": {"containers_ok": 0},
+            "vpn": {"egress_ok": 0, "provider_exit": 0, "listen_tun_ok": 0},
+            "error": True,
+            "error_type": "collector_failed",
+            "message": str(exc),
+        }
+    sys.stdout.write(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
