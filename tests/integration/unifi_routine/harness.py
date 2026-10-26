@@ -291,8 +291,8 @@ def application_database_proof(evidence: Path, phase: str) -> dict[str, Any]:
 
 
 def assert_no_embedded_database(evidence: Path, phase: str, embedded: Path = Path("/var/lib/unifi/db")) -> None:
-    # An empty vendor-created directory is not an embedded database. Preserve
-    # bounded entry-name evidence before refusing any actual database files.
+    # Vendor application version markers are not embedded MongoDB data.
+    # Preserve bounded evidence and reject all unrecognized entries.
     entries = sorted(path.name for path in embedded.iterdir()) if embedded.is_dir() else []
     directory_proof = {
         "exists": embedded.exists(),
@@ -302,7 +302,18 @@ def assert_no_embedded_database(evidence: Path, phase: str, embedded: Path = Pat
     }
     (evidence / f"embedded-directory-{phase}.json").write_text(json.dumps(directory_proof, indent=2))
     assert not embedded.is_symlink()
-    assert not embedded.exists() or (embedded.is_dir() and not entries)
+    assert not embedded.exists() or embedded.is_dir()
+    assert set(entries) <= {"version", "previous_version"}
+    expected = {"version": "9.5.21", "previous_version": "9.4.19"}
+    markers: dict[str, str] = {}
+    for name in entries:
+        marker = embedded / name
+        assert not marker.is_symlink()
+        assert marker.is_file()
+        assert marker.stat().st_size <= 128
+        markers[name] = marker.read_text().strip()
+    (evidence / f"application-version-markers-{phase}.json").write_text(json.dumps(markers, indent=2))
+    assert all(value == expected[name] for name, value in markers.items())
 
 
 def runtime() -> dict[str, str]:

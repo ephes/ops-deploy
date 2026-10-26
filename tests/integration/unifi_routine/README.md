@@ -92,3 +92,11 @@ that the vendor `db` directory must be absent. The fixture now records bounded
 directory-entry evidence and permits only an absent or empty real directory;
 any file, symlink or extra Mongo process still refuses qualification. The failed
 run remains retained and is not reported as full qualification.
+
+Run40345999812 retained the directory evidence: only `version` and
+`previous_version` existed. Exact vendor `core.jar` bytecode confirms these
+application-version metadata paths. The fixture permits only those regular,
+nonsymlink, bounded markers with the selected/previous controller version
+values, or an empty/absent directory; any other entry still refuses. Successfully read marker
+contents and each phase's entry list are retained independently. This does
+not relax authenticated external-site or sole-system-Mongo checks.
