@@ -203,10 +203,14 @@ def protection() -> str:
 
 def complete_controller_setup() -> dict[str, Any]:
     """Use the vendor setup API before protecting data or testing an update."""
+    cookies = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
-        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+        urllib.request.HTTPCookieProcessor(cookies),
     )
+    # Load the frontend session, then mirror its csrf_token -> X-Csrf-Token
+    # cookie/header binding on each state-changing request.
+    opener.open("https://127.0.0.1:8443/", timeout=30).close()
     # Exact commands/fields from 9.4.19's bundled setup frontend. This is
     # fixture-only wizard completion, never a deployment operation.
     for endpoint, body in (
@@ -222,10 +226,14 @@ def complete_controller_setup() -> dict[str, Any]:
         ("/api/login", {"username": "fixtureadmin", "password": CONTROLLER_ADMIN_PASSWORD}),
         ("/api/cmd/system", {"cmd": "set-installed"}),
     ):
+        headers = {"Content-Type": "application/json"}
+        for cookie in cookies:
+            if cookie.name == "csrf_token" and cookie.value is not None:
+                headers["X-Csrf-Token"] = cookie.value
         request = urllib.request.Request(
             "https://127.0.0.1:8443" + endpoint,
             data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         assert json.load(opener.open(request, timeout=30))["meta"]["rc"] == "ok"
     assert_controller_initialized()
