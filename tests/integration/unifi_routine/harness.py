@@ -199,13 +199,15 @@ def main(evidence: Path) -> None:
     assert protection() == before
     deploy(config, evidence, "bad-auth", wrong_password=True)
     assert protection() == before
-    from ops_deploy.services.unifi.routine import PACKAGE, command
+    routine_api = import_module("ops_deploy.services.unifi.routine")
 
-    source = PACKAGE.joinpath("files/install_package.py").read_text()
+    source = routine_api.PACKAGE.joinpath("files/install_package.py").read_text()
     pid = run("systemctl", "show", "-p", "MainPID", "--value", "unifi")
     invalid = subprocess.run(
         shlex.split(
-            command(source, "/var/cache/ops-deploy-unifi/unifi_9.4.19-31042-1_all.deb", "9.4.19-31042-1", "0" * 64)
+            routine_api.command(
+                source, "/var/cache/ops-deploy-unifi/unifi_9.4.19-31042-1_all.deb", "9.4.19-31042-1", "0" * 64
+            )
         ),
         capture_output=True,
     )
