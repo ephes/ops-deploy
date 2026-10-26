@@ -28,9 +28,16 @@ deploy_unifi(cfg, secrets)  # SecretValues: mongodb_password, homeassistant_pass
 
 Routine deployment supports Ubuntu 24.04 x86_64, systemd, Python 3 and the
 role's fixed account/directory layout and an authenticated MongoDB
-installation. Only when admission proves the controller and its data absent,
+installation. Missing-controller admission also requires empty `unifi`,
+`unifi_stat` and `unifi_audit` databases and effective read/write, collection
+and index permissions on each (including narrowly scoped `readWrite` on
+`unifi_audit`). A successful read alone is insufficient. Vendor Factory Default
+initialization can reset databases, so nonempty external databases are refused
+before writes. Existing installed-controller admission/roles are unchanged.
+Only when admission proves the controller and its data absent,
 the deploy creates a private0600 `system.properties` selecting the authenticated
-external MongoDB for both application and statistics databases. Existing files
+external MongoDB; the controller derives its statistics/audit database names
+from `unifi.db.name`. Existing files
 and database selections are preserved byte-for-byte; there is no embedded-to-external
 database migration. JVM flags alone do not configure a fresh controller.
 The installer creates these selectors only after both digest and package metadata

@@ -20,7 +20,6 @@ def initialize_data(password):
     content = (
         "db.mongo.local=false\n"
         f"db.mongo.uri={uri}unifi?authSource=admin\n"
-        f"statdb.mongo.uri={uri}unifi_stat?authSource=admin\n"
         "unifi.db.name=unifi\n"
     )
     # Exclusive creation: never rewrite or adopt any existing controller data.

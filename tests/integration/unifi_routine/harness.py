@@ -24,6 +24,7 @@ from ops_deploy.services.unifi import deploy_unifi
 PASSWORD = "fixture-unifi-mongo-20261026"
 HA_PASSWORD = "fixture-homeassistant-20261026"
 BOOTSTRAP_PASSWORD = "fixture-bootstrap-admin-20261026"
+CONTROLLER_ADMIN_PASSWORD = "fixture-controller-admin-20261026"
 
 
 def run(*args: str, stdin: str | None = None) -> str:
@@ -112,12 +113,15 @@ setParameter:
         + ",roles:["
         '{role:"readWrite",db:"unifi"},{role:"dbOwner",db:"unifi"},'
         '{role:"readWrite",db:"unifi_stat"},{role:"dbOwner",db:"unifi_stat"},'
+        '{role:"readWrite",db:"unifi_audit"},'
         '{role:"clusterMonitor",db:"admin"}]});',
         authenticate=False,
     )
 
 
-def deploy(config: Any, evidence: Path, label: str, *, wrong_password: bool = False) -> list[Any]:
+def deploy(
+    config: Any, evidence: Path, label: str, *, wrong_password: bool = False, expect_refusal: str | None = None
+) -> list[Any]:
     from pyinfra.api import Config, Inventory, State
     from pyinfra.api.connect import connect_all, disconnect_all
     from pyinfra.api.deploy import add_deploy
@@ -176,9 +180,11 @@ def deploy(config: Any, evidence: Path, label: str, *, wrong_password: bool = Fa
     }
     (evidence / (label + ".json")).write_text(json.dumps(result, indent=2))
     mutations = [op for op in ops if op.changed and not op.read_only]
-    if wrong_password:
+    if wrong_password or expect_refusal:
         assert error
         assert not mutations
+        if expect_refusal is not None:
+            assert admission == expect_refusal, result
     else:
         assert error is None, result
         assert ops, result
@@ -191,12 +197,52 @@ def deploy(config: Any, evidence: Path, label: str, *, wrong_password: bool = Fa
 def protection() -> str:
     return mongo(
         'const u=db.getSiblingDB("unifi");print(JSON.stringify({site:u.site.find({},{_id:1,name:1}).toArray(),'
-        'sentinel:u.ops_fixture.findOne({_id:"protected"}),auth:db.getSiblingDB("admin").runCommand({getCmdLineOpts:1}).parsed.security}));'
+        'sentinel:u.ops_fixture.findOne({_id:"protected"}),audit_sentinel:db.getSiblingDB("unifi_audit").ops_fixture.findOne({_id:"protected"}),auth:db.getSiblingDB("admin").runCommand({getCmdLineOpts:1}).parsed.security}));'
     )
+
+
+def complete_controller_setup() -> dict[str, Any]:
+    """Use the vendor setup API before protecting data or testing an update."""
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+    )
+    # Exact commands/fields from 9.4.19's bundled setup frontend. This is
+    # fixture-only wizard completion, never a deployment operation.
+    for endpoint, body in (
+        (
+            "/api/cmd/sitemgr",
+            {
+                "cmd": "add-default-admin",
+                "name": "fixtureadmin",
+                "email": "fixture@example.com",
+                "x_password": CONTROLLER_ADMIN_PASSWORD,
+            },
+        ),
+        ("/api/login", {"username": "fixtureadmin", "password": CONTROLLER_ADMIN_PASSWORD}),
+        ("/api/cmd/system", {"cmd": "set-installed"}),
+    ):
+        request = urllib.request.Request(
+            "https://127.0.0.1:8443" + endpoint,
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        assert json.load(opener.open(request, timeout=30))["meta"]["rc"] == "ok"
+    assert_controller_initialized()
+    sites = json.load(opener.open("https://127.0.0.1:8443/api/self/sites", timeout=20))
+    assert sites["meta"]["rc"] == "ok"
+    expected = mongo('print(db.getSiblingDB("unifi").site.findOne({name:"default"})._id.toString());')
+    assert any(site["_id"] == expected and site["name"] == "default" for site in sites["data"])
+    return {"wizard_api_completed": True, "site_id": expected}
+
+
+def assert_controller_initialized() -> None:
+    assert re.search(r"(?m)^is_default\s*=\s*false\s*$", Path("/var/lib/unifi/system.properties").read_text())
 
 
 def application_database_proof() -> dict[str, Any]:
     """Prove the running application reads the same authenticated database."""
+    assert_controller_initialized()
     cookies = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
@@ -243,14 +289,51 @@ def main(evidence: Path) -> None:
             )
         }
     )
+    # Exercise actual production admission before any controller/account/data
+    # mutation, retaining each deliberately protected fixture record.
+    for database in ("unifi", "unifi_stat", "unifi_audit"):
+        mongo(f'db.getSiblingDB({json.dumps(database)}).ops_guard.insertOne({{_id:"protected",value:1}});')
+        deploy(previous, evidence, "nonempty-" + database, expect_refusal="refused:fresh_controller_database_not_empty")
+        assert (
+            mongo(f'print(db.getSiblingDB({json.dumps(database)}).ops_guard.findOne({{_id:"protected"}}).value);')
+            == "1"
+        )
+        assert not Path("/var/lib/unifi").exists()
+        mongo(f"db.getSiblingDB({json.dumps(database)}).ops_guard.drop();")
+    administrator = (
+        'const a=db.getSiblingDB("admin");if(!a.auth("fixture-bootstrap",'
+        + json.dumps(BOOTSTRAP_PASSWORD)
+        + "))quit(20);"
+    )
+    mongo(administrator + 'a.revokeRolesFromUser("unifi",[{role:"readWrite",db:"unifi_audit"}]);', authenticate=False)
+    deploy(
+        previous,
+        evidence,
+        "insufficient-audit-access",
+        expect_refusal="refused:fresh_database_permissions_insufficient",
+    )
+    assert not Path("/var/lib/unifi").exists()
+    mongo(administrator + 'a.grantRolesToUser("unifi",[{role:"readWrite",db:"unifi_audit"}]);', authenticate=False)
+    # This is explicit fixture CRUD under the application identity, not a claim
+    # that controller-generated audit events were observed.
+    mongo(
+        'const c=db.getSiblingDB("unifi_audit").ops_permission_probe;'
+        'c.createIndex({value:1});c.insertOne({_id:"owned",value:1});'
+        'c.updateOne({_id:"owned"},{$set:{value:2}});'
+        'if(c.findOne({_id:"owned"}).value!==2)quit(30);'
+        'c.deleteOne({_id:"owned"});c.dropIndex("value_1");c.drop();'
+    )
+    audit_permission_proof = {"direct_authenticated_crud": True, "controller_generated_events": "not asserted"}
+    (evidence / "audit-permissions.json").write_text(json.dumps(audit_permission_proof, indent=2))
     deploy(previous, evidence, "install-first")
     assert json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))["meta"]["server_version"] == "9.4.19"
     deploy(previous, evidence, "install-repeat")
-    # Model completing the controller's setup wizard, which creates a site.
+    wizard = complete_controller_setup()
+    (evidence / "wizard-completion.json").write_text(json.dumps(wizard, indent=2))
     mongo(
         'const u=db.getSiblingDB("unifi");'
-        'if(!u.site.findOne({name:"default"})) u.site.insertOne({name:"default",desc:"Fixture"});'
         'u.ops_fixture.insertOne({_id:"protected",value:"preserve"});'
+        'db.getSiblingDB("unifi_audit").ops_fixture.insertOne({_id:"protected",value:"preserve-audit"});'
     )
     before = protection()
     runtime_before = runtime()
@@ -270,7 +353,8 @@ def main(evidence: Path) -> None:
     mongo(
         'const u=db.getSiblingDB("unifi");'
         'u.admin.updateOne({name:"homeassistant"},{$set:{x_shadow:"invalid-fixture-hash"}});'
-        'u.privilege.updateMany({},{$set:{role:"admin",permissions:["fixture"]}});'
+        'const id=u.admin.findOne({name:"homeassistant"})._id;'
+        'u.privilege.updateMany({admin_id:{$in:[id,id.toString()]}},{$set:{role:"admin",permissions:["fixture"]}});'
     )
     path = Path("/etc/mongod.conf")
     path.write_text(path.read_text().replace("quiet: true", "quiet: false"))
@@ -319,6 +403,7 @@ def main(evidence: Path) -> None:
                 "harness_sha": os.environ["HARNESS_SHA"],
                 "old_version": "9.4.19-31042-1",
                 "selected_version": "9.5.21-31260-1",
+                "audit_permission_proof": audit_permission_proof,
                 "application_database": database_proof,
                 "runtime_before_update": runtime_before,
                 "runtime_after_update": runtime_after,

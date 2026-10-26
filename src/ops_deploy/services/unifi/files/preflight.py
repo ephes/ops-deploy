@@ -51,6 +51,18 @@ def matches_password(password: str, hashed: str) -> bool:
 
 def javascript(payload: dict[str, Any]) -> str:
     # JSON encoding prevents JavaScript injection; --file suppresses interactive echo.
+    fresh_check = "const fresh=null;\n"
+    if payload.get("fresh_controller"):
+        fresh_check = (
+            'const access=a.runCommand({connectionStatus:1,showPrivileges:true});'
+            'if(access.ok!==1)quit(23);const grants=access.authInfo.authenticatedUserPrivileges;'
+            'const fresh={actions:{},empty:{}};'
+            'for(const name of ["unifi","unifi_stat","unifi_audit"]){'
+            'fresh.actions[name]=grants.filter(p=>p.resource.db===name&&p.resource.collection==="")'
+            '.flatMap(p=>p.actions);'
+            'try{fresh.empty[name]=db.getSiblingDB(name).getCollectionNames().length===0;}'
+            'catch(e){fresh.empty[name]=false;}}'
+        )
     return (
         'if (config.get("disableLogging") !== true || config.get("enableTelemetry") !== false || '
         'config.get("updateURL") !== "") quit(19);\n'
@@ -65,7 +77,8 @@ def javascript(payload: dict[str, Any]) -> str:
         'const site=u.site.findOne({name:"default"});\n'
         'const privileges=ha && site ? u.privilege.find({'
         'admin_id:{$in:[ha._id,ha._id.toString()]},site_id:{$in:[site._id,site._id.toString()]}}).toArray() : [];\n'
-        'print("OPS_UNIFI="+JSON.stringify({opts:opts.parsed,parameters:parameters,ha:ha,site:!!site,privileges:privileges}));\n'
+        + fresh_check
+        + 'print("OPS_UNIFI="+JSON.stringify({opts:opts.parsed,parameters:parameters,ha:ha,site:!!site,privileges:privileges,fresh:fresh}));\n'
     )
 
 
@@ -138,9 +151,24 @@ def check(payload: dict[str, Any]) -> None:
     start = datetime.datetime.strptime(timestamp, "%a %Y-%m-%d %H:%M:%S.%f UTC").replace(tzinfo=datetime.timezone.utc)
     if not payload.get("routine"):
         require(Path("/etc/mongod.conf").stat().st_mtime_ns <= int(start.timestamp() * 1_000_000_000), "mongodb_pending_restart")
-    check_mongodb_state(mongodb_state(payload), payload)
+    state = mongodb_state({**payload, "fresh_controller": bool(fresh_runtime)})
+    check_mongodb_state(state, payload)
+    if fresh_runtime:
+        check_fresh_database_state(state)
     if payload["manage_firewall"]:
         run(["ufw", "show", "added"])
+
+
+def check_fresh_database_state(state: dict[str, Any]) -> None:
+    """Factory Default may clear databases: never initialize over real data."""
+    fresh = state.get("fresh")
+    require(isinstance(fresh, dict), "fresh_database_probe_invalid")
+    required = {"find", "insert", "update", "remove", "createCollection", "createIndex",
+                "listCollections", "listIndexes", "dropCollection", "dropIndex"}
+    for name in ("unifi", "unifi_stat", "unifi_audit"):
+        actions = fresh.get("actions", {}).get(name, [])
+        require(isinstance(actions, list) and required <= set(actions), "fresh_database_permissions_insufficient")
+        require(fresh.get("empty", {}).get(name) is True, "fresh_controller_database_not_empty")
 
 
 def mongodb_state(payload: dict[str, Any]) -> dict[str, Any]:

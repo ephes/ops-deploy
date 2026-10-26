@@ -255,7 +255,19 @@ def test_routine_downgrade_refuses_in_read_only_admission(monkeypatch: pytest.Mo
     assert calls[-1][0] == "dpkg-query"
 
 
-@pytest.mark.parametrize("case", ["missing-runtime", "leftover", "wrong-os", "failed-query"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-runtime",
+        "leftover",
+        "wrong-os",
+        "failed-query",
+        "missing-audit-write",
+        "nonempty-unifi",
+        "nonempty-unifi_stat",
+        "nonempty-unifi_audit",
+    ],
+)
 def test_initialized_database_runtime_admission_branches(monkeypatch: pytest.MonkeyPatch, case: str) -> None:
     import subprocess
 
@@ -294,7 +306,12 @@ def test_initialized_database_runtime_admission_branches(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(module, "run", run)
     monkeypatch.setattr(module.pwd, "getpwnam", missing_user)
-    monkeypatch.setattr(module, "mongodb_state", lambda _: mongodb_state())
+    fresh = fresh_database_state()
+    if case == "missing-audit-write":
+        fresh["actions"]["unifi_audit"] = ["find", "listCollections"]
+    if case.startswith("nonempty-"):
+        fresh["empty"][case.removeprefix("nonempty-")] = False
+    monkeypatch.setattr(module, "mongodb_state", lambda _: {**mongodb_state(), "fresh": fresh})
     data = json.loads(payload(CFG, SECRETS))
     data.update(routine=True, manage_firewall=False)
     if case == "missing-runtime":
@@ -304,6 +321,11 @@ def test_initialized_database_runtime_admission_branches(monkeypatch: pytest.Mon
             "leftover": "unpackaged_controller_data",
             "wrong-os": "routine_requires",
             "failed-query": "package_query_failed",
+            "missing-audit-write": "fresh_database_permissions_insufficient",
+            **{
+                f"nonempty-{name}": "fresh_controller_database_not_empty"
+                for name in ("unifi", "unifi_stat", "unifi_audit")
+            },
         }[case]
         with pytest.raises(ValueError, match=reason):
             module.check(data)
@@ -361,7 +383,7 @@ def test_verified_installer_failure_retry_leaves_data_absent_until_package_verif
             assert config.stat().st_mode & 0o7777 == 0o600
             assert "db.mongo.local=false\n" in text
             assert "db.mongo.uri=mongodb://unifi:fixture@127.0.0.1:27017/unifi?authSource=admin\n" in text
-            assert "statdb.mongo.uri=mongodb://unifi:fixture@127.0.0.1:27017/unifi_stat?authSource=admin\n" in text
+            assert "unifi.db.name=unifi\n" in text
             events.append("install")
         else:
             raise AssertionError(args)
@@ -445,3 +467,20 @@ def test_normal_deploy_transports_initialization_only_for_absent_controller(
         "mongodb_password": SENTINEL if missing_controller else "",
     }
     assert not any(SENTINEL in command for command in run.executed_commands + run.fact_commands)
+
+
+def fresh_database_state() -> dict[str, Any]:
+    names = ("unifi", "unifi_stat", "unifi_audit")
+    actions = [
+        "find",
+        "insert",
+        "update",
+        "remove",
+        "createCollection",
+        "createIndex",
+        "listCollections",
+        "listIndexes",
+        "dropCollection",
+        "dropIndex",
+    ]
+    return {"actions": {name: actions.copy() for name in names}, "empty": {name: True for name in names}}
