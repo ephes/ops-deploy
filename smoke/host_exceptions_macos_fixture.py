@@ -22,6 +22,8 @@ from ollama_macos_fixture import command, owned_runner, pid, unload
 from ops_deploy.base import HostnameConfig, deploy_hostname
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.graphyard import GraphyardVectorConfig, GraphyardVectorDarwinConfig, deploy_graphyard_vector
+from ops_deploy.services.graphyard.vector import fragment_text
+from ops_deploy.services.graphyard.vector_darwin import host_command, native_payload
 from ops_deploy.testing import run_deploy_ssh
 
 TOKEN = secrets.token_hex(32)
@@ -292,6 +294,28 @@ def main() -> None:
             "tap_still_absent_before_api": True,
             "formula_still_absent_before_api": True,
         }
+        report["fresh_status_before_convergence"] = []
+        for package in ("vector", "vectordotdev/brew/vector"):
+            probe_cfg = cfg.model_copy(update={"darwin": native.model_copy(update={"brew_package": package})})
+            before_taps = brew_run("tap").splitlines()
+            status_command = host_command(native_payload(probe_cfg, fragment_text(probe_cfg, VALUES)), "status")
+            assert TOKEN not in status_command
+            response = command("/bin/sh", "-c", status_command, check=False)
+            after_taps = brew_run("tap").splitlines()
+            report["fresh_status_before_convergence"].append(
+                {
+                    "package": package,
+                    "rc": response.returncode,
+                    "status": response.stdout.strip(),
+                    "taps_before": before_taps,
+                    "taps_after": after_taps,
+                }
+            )
+            assert response.returncode == 0, response.stderr
+            assert response.stdout.strip() == "drift"
+            assert before_taps == after_taps, "status must not auto-tap a missing formula"
+            assert "vectordotdev/brew" not in after_taps
+            assert not brew_run("list", "--versions", "vector")
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.symlink_to(root / "owned-obsolete-monolithic-config")
         name = "ops-baseline-" + run_id[-10:]
