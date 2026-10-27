@@ -34,3 +34,8 @@ The no-write scanner distinguishes dig naming its own short-lived threads via
 O_RDWR opens by a PID observed executing `/usr/bin/dig` are admitted. Other proc
 paths, other processes, creates and ordinary file writes remain failures. The
 fixture listener observer writes evidence only and never controls listeners.
+
+Firewall evidence retains raw expected/actual iptables-save text. Policies, chain
+and rule order, arguments and comments remain exact apart from generated/completed
+timestamps. Packet/byte counters may advance, never reset: production removes
+individual rules with `-D` and does not use restore or reload.
