@@ -130,9 +130,20 @@ def main() -> None:
         def no_op(config: OpsGateConfig, name: str) -> None:
             before = state(config)
             changes = deploy(config)
-            assert changes == []
-            assert state(config) == before
+            after = state(config)
+            # Operation names and owned fixture paths only; recorded before asserting.
             owned.report["repeats"][name] = changes
+            drift = sorted(
+                k
+                for k in before["files"].keys() | after["files"].keys()
+                if before["files"].get(k) != after["files"].get(k)
+            )
+            owned.report.setdefault("repeat_drift", {})[name] = {
+                "files": drift[:40],
+                "pids_changed": (before["api_pid"], before["runner_pid"]) != (after["api_pid"], after["runner_pid"]),
+            }
+            assert changes == []
+            assert after == before
 
         owned.report["stage"] = "fresh full role"
         owned.report["first_changes"] = deploy(cfg)

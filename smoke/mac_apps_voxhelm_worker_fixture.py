@@ -226,9 +226,13 @@ def main() -> None:
             before = state(config)
             assert not before["restart_intent"]
             changes = deploy(config)
-            assert changes == [], changes
-            assert state(config) == before
+            after = state(config)
             owned.report["repeats"][name] = changes
+            owned.report.setdefault("repeat_drift", {})[name] = sorted(
+                key for key in ["files", "models", "pid"] if before[key] != after[key]
+            )
+            assert changes == [], changes
+            assert after == before
 
         owned.report["stage"] = "fresh public worker, Parakeet and ad-analysis profile"
         owned.report["first_changes"] = deploy(cfg)
@@ -259,17 +263,28 @@ def main() -> None:
         table = command("/bin/ps", "-Aww", "-o", "pid=,ppid=,uid=,command=").stdout.splitlines()
         job = next(line for line in table if line.split()[0] == str(pid))
         owned.report["worker_process"] = job.split(None, 3)[3]
-        # caffeinate takes its assertions for its own PID and then execs the
-        # worker in place, so the launchd job PID is the worker holding them.
+        # The launched caffeinate execs the worker in place (the job PID is the
+        # worker); its assertions are held by that PID or by a caffeinate child
+        # watching it, depending on the macOS release. Accept either, record which.
         assert cfg.voxhelm_remote_worker_binary_path in job.split(None, 3)[3]
         assert job.split()[2] == str(uid)
+        watchers = [
+            int(line.split()[0])
+            for line in table
+            if line.split()[1] == str(pid) and line.split(None, 3)[3].startswith("/usr/bin/caffeinate")
+        ]
+        holders = {pid, *watchers}
         held = [
             line.strip()
             for line in command("/usr/bin/pmset", "-g", "assertions").stdout.splitlines()
-            if re.search(r"\bpid " + str(pid) + r"\(", line)
+            if any(re.search(r"\bpid " + str(holder) + r"\(", line) for holder in holders)
         ]
         kinds = sorted({found[1] for line in held if (found := re.search(r"\]\s+\S+\s+(\w+)\s+named", line))})
-        owned.report["caffeinate_assertions"] = {"lines": held, "kinds": kinds}
+        owned.report["caffeinate_assertions"] = {
+            "holder": "caffeinate child of the worker" if watchers else "worker PID",
+            "lines": held,
+            "kinds": kinds,
+        }
         assert any("caffeinate" in line for line in held)
         assert {"PreventUserIdleSystemSleep", "PreventDiskIdle"} <= set(kinds)
         owned.report["runtime"] = {
@@ -277,7 +292,7 @@ def main() -> None:
             "python": "3.14.8",
             "parakeet_mlx": parakeet_version,
             "parakeet_weight_sha256_verified": True,
-            "caffeinate": "worker PID holds the caffeinate assertions (-i -m -s) as the service account",
+            "caffeinate": "caffeinate assertions (-i -m -s) are held for the worker running as the service account",
         }
         owned.report["limitations"].append(
             "No job was offered, so S3 artifacts, audio decoding, Parakeet/whisper inference and MLX are not exercised."
