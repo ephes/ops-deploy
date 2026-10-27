@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import configparser
 import hashlib
 import hmac
 import http.cookies
@@ -120,6 +121,66 @@ def partial_bootstrap_command(command: str) -> str:
     mutated = source.replace("$1::varchar", "$1")
     replacement = base64.b64encode(mutated.encode()).decode()
     return shlex.join([*argv[:-1], loader.replace(encoded, replacement)])
+
+
+def seed_admin_totp(path: Path, value: str, *, php_cli: str = "/usr/bin/php8.3") -> dict[str, Any]:
+    """Owned fixture setup: admit only an absent/semantically empty admin TOTP."""
+    assert re.fullmatch(r"[A-Z2-7]{32}", value)
+    text = path.read_bytes().decode()
+
+    class CasePreservingParser(configparser.ConfigParser):
+        def optionxform(self, optionstr: str) -> str:
+            return optionstr
+
+    parser = CasePreservingParser(interpolation=None, strict=True)
+    parser.read_string(text)
+    assert not parser.defaults()
+    assert parser.has_section("security")
+    source = r"""
+$q=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);
+$ini=@parse_ini_string($q['text'],true);
+if ($ini===false || !isset($ini['security']) || !is_array($ini['security'])) { exit(1); }
+$present=array_key_exists('admin_totp',$ini['security']);
+$value=$present ? $ini['security']['admin_totp'] : '';
+if (!is_string($value)) { exit(1); }
+echo json_encode(['present'=>$present,'empty'=>$value==='','sha256'=>hash('sha256',$value)],JSON_THROW_ON_ERROR);
+"""
+
+    def parsed(body: str) -> dict[str, Any]:
+        result: dict[str, Any] = json.loads(run(php_cli, "-r", source, stdin=json.dumps({"text": body})))
+        return result
+
+    prior = parsed(text)
+    if not prior["empty"]:
+        raise ValueError("owned fixture refuses unexpected nonempty admin TOTP")
+    headers = list(re.finditer(r"(?m)^[ \t]*\[([^]\r\n]+)\][ \t]*(?:[;#][^\r\n]*)?(?=\r?$)", text))
+    matches = [(n, h) for n, h in enumerate(headers) if h.group(1) == "security"]
+    assert len(matches) == 1
+    n, header = matches[0]
+    end = headers[n + 1].start() if n + 1 < len(headers) else len(text)
+    region = text[header.end() : end]
+    assignments = list(re.finditer(r"(?m)^[ \t]*admin_totp[ \t]*=[^\r\n]*(?=\r?$)", region))
+    assert len(assignments) <= 1
+    assignment = 'admin_totp = "' + value + '"'
+    if assignments:
+        old = assignments[0]
+        line = old.group(0)
+        prefix = re.match(r"[ \t]*admin_totp[ \t]*=[ \t]*", line)
+        assert prefix is not None
+        remainder = line[prefix.end() :]
+        suffix = re.search(r"[ \t]*[;#].*$|[ \t]*$", remainder)
+        assert suffix is not None
+        replacement = prefix.group(0) + '"' + value + '"' + suffix.group(0)
+        region = region[: old.start()] + replacement + region[old.end() :]
+    else:
+        newline = "\r\n" if region.startswith("\r\n") else "\n"
+        region = newline + assignment + region
+    result = text[: header.end()] + region + text[end:]
+    after = parsed(result)
+    assert after["present"]
+    assert after["sha256"] == hashlib.sha256(value.encode()).hexdigest()
+    path.write_bytes(result.encode())
+    return {"prior_key_present": prior["present"], "prior_semantic_empty": True, "seeded": True}
 
 
 def credential_admission(cfg: Any) -> None:
@@ -749,6 +810,33 @@ def main() -> None:
     deploy(pfa, "postfixadmin-fresh-repeat")
     deploy(snappy, "snappymail-fresh")
     deploy(snappy, "snappymail-fresh-repeat")
+    fpm_pid = int(run("systemctl", "show", "php8.3-fpm", "-p", "MainPID", "--value"))
+    fpm_executable = os.readlink(f"/proc/{fpm_pid}/exe")
+    server_version = sql("SHOW server_version;")
+    nginx_version = subprocess.run(["nginx", "-v"], capture_output=True, text=True, check=True).stderr.strip()
+    (EVIDENCE / "runtime-versions.json").write_text(
+        json.dumps(
+            {
+                "machine": os.uname().machine,
+                "postgresql_server": server_version,
+                "php_cli": run("/usr/bin/php8.3", "-r", "echo PHP_VERSION;"),
+                "php_fpm_process": {"pid": fpm_pid, "executable": fpm_executable, "version": run(fpm_executable, "-v")},
+                "nginx": nginx_version,
+                "packages": run(
+                    "dpkg-query",
+                    "-W",
+                    "-f=${Package}=${Version}\n",
+                    "php8.3-cli",
+                    "php8.3-fpm",
+                    "nginx",
+                    "libpq5",
+                    "postgresql-" + server_version.split(".", 1)[0],
+                ),
+                "scope": "after successful fresh deployment, before config/update/fault phases",
+            },
+            indent=2,
+        )
+    )
     local_delivery()
     ui_auth()
     sql(
@@ -760,9 +848,9 @@ def main() -> None:
     ini = Path(snappy.data_dir) / "_data_/_default_/configs/application.ini"
     MATERIAL["totp_secret"] = base64.b32encode(secrets.token_bytes(20)).decode()
     write(FIXTURE / "material.json", json.dumps(MATERIAL), 0o600)
+    seeded = seed_admin_totp(ini, MATERIAL["totp_secret"])
+    (EVIDENCE / "totp-fixture-seed.json").write_text(json.dumps(seeded))
     text = ini.read_text()
-    assert 'admin_totp = ""' in text
-    text = text.replace('admin_totp = ""', 'admin_totp = "' + MATERIAL["totp_secret"] + '"')
     text += '\n[custom]\nfixture_setting = "preserve nondefault"\n'
     ini.write_text(text)
     unowned_ini = 'admin_totp = "' + MATERIAL["totp_secret"] + '"'

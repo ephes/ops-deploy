@@ -36,3 +36,9 @@ commit's Git blob. Evidence retains both implementation and harness SHAs and all
 resource digests. OPS_DEPLOY_PATH is unset; the immutable installed package owns
 the executed API. Role template provenance is ops-library 2.75.2, commit
 `cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641`.
+
+Synthetic TOTP setup admits an absent or PHP-semantically empty key in the
+security section, refuses unexpected nonempty or ambiguous inputs, and preserves
+other INI bytes. This fixture setup is separate from deployment accounting.
+Runtime evidence records actual PHP CLI/FPM, PostgreSQL, nginx and package
+versions after fresh deployment.
