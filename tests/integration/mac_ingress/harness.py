@@ -170,7 +170,9 @@ def main() -> None:
         deploy(deploy_opsgate_ingress, ops, "opsgate-first")
         assert wait_http(ops.traefik_host, 200)["X-Frame-Options"] == "SAMEORIGIN"
         assert state()["pid"] == old_pid
-        assert "Reload Traefik, restart only when reload fails" in report["operations"]["opsgate-first"]
+        assert (
+            "Deploy OpsGate ingress | Reload Traefik, restart only when reload fails"
+        ) in report["operations"]["opsgate-first"]
         deploy(deploy_opsgate_ingress, ops, "opsgate-repeat", repeat=True)
         deploy(deploy_voxhelm_ingress, vox, "voxhelm-first")
         assert wait_http(vox.traefik_host, 200)["X-Frame-Options"] == "DENY"
