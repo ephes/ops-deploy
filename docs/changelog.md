@@ -4,6 +4,12 @@
 
 - Add the full ordinary Unbound/DNS deployment with conditional blocklist/DDNS jobs, validated owned configuration replacement and rollback, authenticated status endpoint and explicit no-write convergence. Keep current package and endpoint runtime selections. DNS alone opts into change-gated transient metrics validation; existing helper callers retain their defaults.
 
+- Add the Mailgun relay deployment and Traefik ingress with the existing
+  Python/Rust switch, strict staged archives, shared secret configuration and
+  live implementation verification. Preserve Python source/runtime by default;
+  installing/updating it requires an explicit choice. Retain rollback independently
+  of a working Rust release and recover restart intent after an interrupted deploy.
+
 - `thermal_monitoring` `fan_control`: `active` now returns positions an
   earlier run still holds but no longer manages (a changed managed set) to BMC
   auto, read back, before it takes control, instead of leaving them manual

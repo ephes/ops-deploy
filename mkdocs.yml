@@ -42,6 +42,7 @@ nav:
       - metrics endpoints: services/metrics_endpoints.md
       - DNS: services/dns.md
       - mail monitoring: services/mail_monitoring.md
+      - mailgun relay: services/mailgun_relay.md
       - django_site: services/django_site.md
       - compose_app: services/compose_app.md
       - livekit: services/livekit.md

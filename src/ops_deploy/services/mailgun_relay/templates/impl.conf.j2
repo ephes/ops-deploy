@@ -1,0 +1,13 @@
+# Managed by Ansible (mailgun_relay_deploy): mailgun_relay_impl=rust.
+# Removed when mailgun_relay_impl=python; the base unit then runs the venv
+# `python -m mailgun_relay` again. User, EnvironmentFile, journal routing and
+# hardening come from the base unit for both implementations.
+[Service]
+ExecStart=
+ExecStart={{ mailgun_relay_rust_binary }}
+# glibc raises its dynamic mmap threshold whenever a large buffer is freed, so
+# after one request with big attachments the next large buffers stay on the
+# heap: the relay kept 40-100 MiB resident long after a request at the 25 MiB
+# body limit. A fixed 128 KiB threshold returns them to the kernel (4.5 MiB
+# after the same request). Measured for mailgun-relay rust/PLAN.md S5.
+Environment=MALLOC_MMAP_THRESHOLD_=131072
