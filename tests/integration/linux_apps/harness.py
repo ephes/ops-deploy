@@ -146,13 +146,24 @@ def trace_writes(text: str) -> list[str]:
 
 
 def executed(text: str) -> list[list[str]]:
-    """argv of every successful execve in a trace."""
+    """argv of every successful execve in a trace (also when strace split the call)."""
 
     found = []
+    pending: dict[str, list[str]] = {}
     for line in text.splitlines():
-        match = re.match(r'^\d+ execve\("[^"]+", \[(.*)\], .* = 0$', line)
-        if match:
-            found.append(re.findall(r'"((?:[^"\\]|\\.)*)"', match.group(1)))
+        call = re.match(r'^(\d+) execve\("[^"]+", \[(.*?)\], ', line)
+        if call:
+            argv = re.findall(r'"((?:[^"\\]|\\.)*)"', call.group(2))
+            if line.endswith(" = 0"):
+                found.append(argv)
+            elif line.endswith("<unfinished ...>"):
+                pending[call.group(1)] = argv
+            continue
+        resumed = re.match(r"^(\d+) <\.\.\. execve resumed>.* = (-?\d+)", line)
+        if resumed and resumed.group(1) in pending:
+            argv = pending.pop(resumed.group(1))
+            if resumed.group(2) == "0":
+                found.append(argv)
     return found
 
 

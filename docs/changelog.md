@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Add `ops_deploy.infra.encrypted_volume`, the configure path of
+  `encrypted_volume_prepare` for an existing LUKS volume: read-only admission
+  (wrong UUID, non-LUKS device, foreign or conflicting mappings and mounts,
+  read-only mount, duplicate fstab entry are refused before any operation),
+  the keyfile through `secret_file`, the role's crypttab/fstab semantics,
+  open only when closed and remount only when an existing entry changed. It
+  never formats, closes, unmounts or switches the device path; a converged
+  host gets no write.
+
+- Add `ops_deploy.services.open_webui`, the port of `open_webui_venv_deploy`
+  with pinned `open-webui` 0.7.2 on CPython 3.11.14 and the shipped install
+  constraints of that version. The virtualenv is recreated and the package
+  installed only when needed; the role's environment file, unit and route are
+  rendered byte for byte; the generated `.webui_secret_key` and the data
+  directory are never written. Both are qualified on an owned native Ubuntu
+  fixture (`tests/integration/linux_apps`), including the role after pyinfra.
+
 - Qualify the mail web APIs on an immutable owned x86 Linux fixture: fresh setup,
   authenticated release updates, config/credential changes, recovery and nine
   zero-change repeats. Preserve the original failed fixture run and separate

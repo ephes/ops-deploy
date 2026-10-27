@@ -53,9 +53,19 @@ def test_trace_accepts_reads_null_and_absent_tty() -> None:
 
 def test_executed_argv_is_parsed() -> None:
     line = '12 execve("/usr/bin/mount", ["mount", "-o", "remount", "/mnt/cryptdata"], 0x55 /* 20 vars */) = 0'
-    assert harness().executed(line + "\n13 execve(\"/x\", [\"x\"], 0x0) = -1 ENOENT") == [
+    assert harness().executed(line + '\n13 execve("/x", ["x"], 0x0) = -1 ENOENT') == [
         ["mount", "-o", "remount", "/mnt/cryptdata"]
     ]
+
+
+def test_executed_argv_survives_split_calls() -> None:
+    trace = (
+        '7 execve("/usr/sbin/mount", ["mount", "/mnt/cryptdata"], 0x1 /* 9 vars */ <unfinished ...>\n'
+        '8 execve("/usr/sbin/findmnt", ["findmnt"], 0x1 /* 9 vars */ <unfinished ...>\n'
+        "7 <... execve resumed>) = 0\n"
+        "8 <... execve resumed>) = -1 ENOENT (No such file or directory)\n"
+    )
+    assert harness().executed(trace) == [["mount", "/mnt/cryptdata"]]
 
 
 def test_runner_refuses_outside_owned_github_before_commands() -> None:

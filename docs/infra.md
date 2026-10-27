@@ -1,8 +1,8 @@
 # PostgreSQL and Redis
 
 `ops_deploy.infra` ports the shared host services of ops-library:
-`postgres_install` and `redis_install` (and `docker_install`, `vector_apt_install`
-and `certbot_dns`, below). Like the [base deploys](base.md) each is
+`postgres_install` and `redis_install` (and `docker_install`, `vector_apt_install`,
+`certbot_dns` and `encrypted_volume`, below). Like the [base deploys](base.md) each is
 a frozen, strict config plus a `@deploy` function, outside the size-capped
 helpers/ops/core layer. Passwords are deploy arguments, never config fields,
 so a config can be printed and compared without exposing anything.
@@ -392,3 +392,97 @@ Passwords currently use the explicit nonempty ASCII contract (excluding CR, LF
 and NUL). Non-ASCII inputs refuse before verification or mutation; no Unicode
 normalization or SASLprep equivalence is claimed. Database-only requests contain
 no password.
+
+## encrypted_volume
+
+`ops_deploy.infra.encrypted_volume` ports the configure path of
+`encrypted_volume_prepare` for a LUKS volume that already exists: the
+passphrase becomes the keyfile `cryptsetup open` and `/etc/crypttab` use, the
+mapper is opened when it is closed, and the filesystem inside is mounted
+through its `/etc/fstab` entry. Deploys whose data lives on the volume call it
+first, as the Ansible plays import the role's playbook first.
+
+```python
+from pydantic import SecretStr
+from ops_deploy.infra import EncryptedVolumeConfig, deploy_encrypted_volume
+
+deploy_encrypted_volume(
+    EncryptedVolumeConfig(device="/dev/sda", expected_luks_uuid="e301d851-3454-4b1b-a3a2-5e71f18af8d7"),
+    SecretStr(passphrase),
+)
+```
+
+Never done, by construction: format a device or mapper (`allow_format`),
+close a mapper, unmount, read or change the LUKS header or keyslots, or
+switch the device path (`device_by_id`; `device` is resolved with `realpath`
+and recorded in `/etc/crypttab` as the role does without `device_by_id`).
+Passphrase mode (`use_keyfile: false`), `validate_only`, `fs_label` and
+`no_log` are not ported.
+
+| Field | Default | Notes |
+|---|---|---|
+| `device`, `expected_luks_uuid` | required | the device must be a block device whose LUKS header has this UUID |
+| `mapper_name`, `mount_point` | `cryptdata`, `/mnt/cryptdata` | |
+| `fs_type`, `mount_opts`, `fstab_dump`, `fstab_passno` | `ext4`, `defaults,noatime`, `0`, `0` | the fstab entry's fields |
+| `keyfile_path` | `None` | `None`: `/root/.luks-key-<mapper_name>`; never on the volume itself |
+| `keyfile_owner`, `keyfile_group`, `keyfile_mode` | `root`, `root`, `0400` | |
+| `crypttab_options` | `luks` | |
+| `mount_owner`, `mount_group`, `mount_mode` | `root`, `root`, `0755` | the mount point (the filesystem's root once mounted) |
+| `packages` | `cryptsetup`, `cryptsetup-initramfs` | installed only while `cryptsetup` is missing |
+
+### Admission, then at most one step
+
+While planning, one read-only host program (`files/encrypted_volume_host.py`,
+run as `python3 -I -B`, source and config base64 so fish passes them through)
+looks at the host with `blkid -p` (no cache), `lsblk` and `findmnt` only: no
+`cryptsetup` call, so not even a LUKS lock file is created. It refuses, and
+the deploy stops before any operation, when:
+
+- the device is missing or not a block device, not a LUKS container, or its
+  header UUID is not `expected_luks_uuid`;
+- the device is already mapped under another name, or `mapper_name` is open
+  on another device (the role's check for the first never fires: it compares
+  `lsblk -p` paths with a basename);
+- the open mapper holds no filesystem (this deploy never formats) or another
+  type than `fs_type`;
+- something else is mounted at `mount_point` (also while the mapper is
+  closed), or the volume is mounted read-only;
+- `/etc/fstab` has more than one entry for `mount_point`.
+
+Otherwise it reports what is pending. Then: `cryptsetup` is installed when it
+is missing; the keyfile directory `root:root 0700`; the keyfile with
+`secret_file` (rewritten only when its SHA-256, owner or mode differ); the
+mount point; and, only when something is pending, one step that re-runs the
+admission and then
+
+1. opens the mapper with the keyfile when it is closed (`udevadm settle`
+   afterwards);
+2. writes the crypttab line `<mapper> <device> <keyfile> <options>` with
+   `lineinfile`'s semantics (the last line matching `^<mapper>\s` is
+   replaced, otherwise the line is appended; other lines stay);
+3. writes the fstab entry with `ansible.posix.mount`'s semantics (matched by
+   mount point; source `UUID=<filesystem UUID>`; a differing entry is
+   rewritten as `src name fstype opts dump passno`, a missing dump/passno
+   counts as differing; otherwise the entry is appended);
+4. mounts the volume when it is not mounted, or runs `mount -o remount` when
+   an existing entry was rewritten (an added entry leaves the mount as it is).
+   Unlike the role, a failed remount fails the deploy instead of falling back
+   to unmount and mount.
+
+Both files are written through a sibling temporary file and renamed, keeping
+an existing file's owner and mode. Afterwards `/etc/crypttab` is enforced
+`root:root 0640` and `/etc/fstab` `root:root 0644` (as the role does), and a
+final read-only probe must find nothing pending.
+
+On a converged host nothing is written and nothing is remounted. Equal
+inputs give the files the role writes, so the role run after this deploy
+changes nothing (the owned native fixture checks it with the role).
+
+### Tests
+
+`tests/test_encrypted_volume.py` covers the crypttab and fstab edits, every
+refusal and the plan; the owned native fixture
+[`tests/integration/linux_apps`](https://github.com/ephes/ops-deploy/tree/main/tests/integration/linux_apps)
+runs it on a real LUKS loop device: fresh, repeat, closed mapper, lost lines,
+changed options, keyfile drift, the refusals, recovery and the role run after
+it.
