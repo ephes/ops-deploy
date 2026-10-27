@@ -51,7 +51,7 @@ PY
 # Fixture bootstrap only. No apt/package commands run on inventory.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends fish apache2-utils python3 util-linux ca-certificates git
+apt-get install -y --no-install-recommends fish apache2-utils python3 python3-apt sudo util-linux ca-certificates git
 "$UV_BIN" pip install --python "$CONTROLLER_PYTHON" ansible==14.5.0
 install -d -m 0755 /opt/os-apt-fixture
 # Actual immutable role and dependencies for Ansible coexistence.

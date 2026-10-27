@@ -114,7 +114,7 @@ def fs(path: Path) -> Any:
 def endpoint_snapshot() -> dict[str, Any]:
     roots = [ROOT / name for name in ("state", "auth", "apt-runner", "httpd.py", "apt-events", "reboot-events")]
     roots += list(Path("/etc/systemd/system").glob("fixture-apt*"))
-    roots += [Path("/usr/local/lib/metrics-httpd")]
+    roots += [Path("/opt/metrics-httpd")]
     files: dict[str, Any] = {}
     for root in roots:
         files[str(root)] = fs(root)

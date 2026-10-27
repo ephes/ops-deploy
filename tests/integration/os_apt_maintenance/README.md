@@ -16,7 +16,9 @@ The deploy's runner gets synthetic apt-get/systemctl executable paths. The first
 job exercises its real command construction and durable-state path, while recording the
 four apt action arguments instead of upgrading packages or rebooting. This is synthetic
 job-branch evidence, not real upgrade/reboot qualification. Fixture bootstrap installs its
-own prerequisites before the deployment snapshots. No inventory host is contacted.
+own prerequisites, including Ansible’s sudo and python3-apt dependencies, before
+the deployment snapshots. The actual `/opt/metrics-httpd` release/pin tree is
+part of strict endpoint snapshots. No inventory host is contacted.
 
 Phases cover fresh state/first job, authenticated and anonymous HTTP, exact repeated managed
 files/PID/state/packages/apt policy/timer state, fish transport, full Ansible coexistence,
@@ -42,3 +44,12 @@ may change bookkeeping. No global zero-I/O claim and no production connection ke
 Run only via `OS apt maintenance integration`. Main publication and inventory cutover remain
 coordinator-gated after the workflow evidence has been read. The harness refuses non-GitHub,
 non-root, non-systemd, unsupported OS/architecture and pre-existing fixture state.
+
+The Ubuntu run of the original-role fault oracle returned 0 with only refresh-timer
+metadata changing: active/enabled became failed with an empty UnitFileState after
+Ansible’s unconditional reload. The pyinfra fault stopped activity but left inactive
+with cached enabled metadata and the exact ignored disable error. These are not identical
+systemd outcomes; both require classification as an externally damaged-unit fault.
+Restoring the original declared configuration and repeating succeeded in each case.
+Release-tree immutability is only established by runs that snapshot `/opt/metrics-httpd`;
+the first two runs used an incorrect absent path and do not prove that part.

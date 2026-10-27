@@ -95,6 +95,15 @@ are sent only through masked stdin when an upsert is needed. Skipping an upsert
 means zero managed row changes; SQLite reader bookkeeping is not a global
 zero-I/O guarantee.
 
+If an active refresh timer’s unit files have already been removed outside the
+deploy, stopping it can succeed before systemd’s disable command reports a
+missing unit. The role and port both tolerate that error; the combined pyinfra
+operation may report failed/unchanged despite the physical stop. Ansible’s
+unconditional reload and pyinfra’s conditional reload leave different cached
+unit metadata in this damaged state. This is a separately recorded fault,
+not a healthy zero-change repeat. Restoring the declared configuration recovers
+the units; normal refresh disable and its repeat are qualified separately.
+
 ## Qualification status
 
 Actual `ansible.builtin.template` output from ops-library
