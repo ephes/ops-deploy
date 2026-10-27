@@ -1,4 +1,4 @@
-"""Fail-closed Traefik binary transactions on a Linux host. Requests are trusted operator policy.
+"""Fail-closed Traefik binary and ordinary resource transactions on a Linux host. Requests are trusted operator policy.
 
 A port of ops-library's transaction engine (``roles/traefik_deploy/files/traefik_transaction.py``
 at 3110a0f1) for the actions ``inspect``, ``binary`` and ``resume``, plus ``rebaseline``, which
@@ -58,7 +58,8 @@ LOCK = Path("/run/lock/traefik-transaction.lock")
 ACTIONS = ("inspect", "enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume")
 PORTED = ("inspect", "binary", "resume")
 # Actions only this engine has; the reference engine refuses them as unknown.
-OWN = ("rebaseline",)
+# Routine uses the same state/lock and adds a complete file/metadata restore manifest.
+OWN = ("rebaseline", "routine")
 # Per-file digests of the route tree at the last rebaseline, the basis for the next one's file list.
 ROUTE_INVENTORY = "route-inventory.json"
 PHASES = frozenset({"clear", "pending", "recovery", "degraded"})
@@ -253,6 +254,27 @@ def evidence(request: dict[str, Any], live: dict[str, Any]) -> None:
     require(proof["baseline"] == live, "reviewed baseline does not match live state")
     age = time.time() - proof["verified_at"]
     require(0 <= age <= 3600, "preflight evidence must be at most one hour old")
+    if proof.get("kind") == "ordinary":
+        # Automatic observations are not historical manual observer attestations.
+        require(request["action"] in {"routine", "rebaseline"}, "ordinary evidence action mismatch")
+        for key in ("owner", "review_reference", "recovery_access"):
+            require(isinstance(proof.get(key), str) and bool(proof[key].strip()), f"missing evidence: {key}")
+        observations = proof.get("observations")
+        require(isinstance(observations, dict), "missing automatic observations")
+        require(observations.get("identity") == live, "automatic observation identity mismatch")
+        probes = observations.get("probes")
+        require(isinstance(probes, list) and bool(probes), "missing automatic ingress observations")
+        require(
+            all(
+                isinstance(item, dict)
+                and item.get("exit") == 0
+                and isinstance(item.get("status"), str)
+                and re.fullmatch(r"[1-5][0-9]{2}", item["status"])
+                for item in probes
+            ),
+            "invalid automatic ingress observations",
+        )
+        return
     # The legacy ``console_recovery`` counts only when ``recovery_access`` is absent.
     recovery = proof.get("recovery_access", proof.get("console_recovery"))
     require(
@@ -620,8 +642,16 @@ def rebaseline(
             "modified": sorted(name for name in old.keys() & new.keys() if old[name] != new[name]),
             "removed": sorted(old.keys() - new.keys()),
         }
-    # The inventory first: one that does not match the record it follows is ignored next time.
+    metadata = request.get("metadata", {})
+    require(isinstance(metadata, dict) and set(metadata) <= {"probe_config"}, "invalid rebaseline metadata")
+    if "probe_config" in metadata:
+        config = metadata["probe_config"]
+        require(isinstance(config, dict) and config.get("dynamic") == dict(files), "rebaseline probe tree mismatch")
+        trusted_file(PROBE_CONFIG)
+    # Inventory and captured probe precede clear; interrupted publication cannot look paired/clear.
     save(STATE_ROOT / ROUTE_INVENTORY, {"dynamic_sha256": live["dynamic_sha256"], "files": files})
+    if "probe_config" in metadata:
+        save(PROBE_CONFIG, metadata["probe_config"])
     rebaselined = state_for(
         policy,
         "clear",
@@ -742,6 +772,265 @@ def replace_binary(
         return {"changed": replaced, "failed": True, "state": recovery}
 
 
+# Routine transactions extend the same journal, lock and detached recovery protocol.
+UNIT_PATH = Path("/etc/systemd/system/traefik.service")
+PROBE_CONFIG = Path("/var/lib/traefik-update-probes/checks.json")
+
+
+def routine_paths(policy: dict[str, Any]) -> dict[str, Path]:
+    return {
+        "binary": Path(policy["binary_path"]),
+        "static": Path(policy["config_path"]),
+        "unit": UNIT_PATH,
+        "certificates": Path(policy["dynamic_path"]) / "certificates.yml",
+        "probe_config": PROBE_CONFIG,
+        "route_inventory": STATE_ROOT / ROUTE_INVENTORY,
+    }
+
+
+def routine_files(request: dict[str, Any], policy: dict[str, Any]) -> dict[str, bytes | None]:
+    """Decode only declared owned text resources; absence is explicit for certificates."""
+
+    supplied = request.get("files", {})
+    require(isinstance(supplied, dict) and set(supplied) <= {"static", "unit", "certificates"}, "invalid routine files")
+    result: dict[str, bytes | None] = {}
+    for name, value in supplied.items():
+        require(isinstance(value, str) or (name == "certificates" and value is None), "invalid routine content")
+        result[name] = value.encode() if isinstance(value, str) else None
+    if "static" in supplied:
+        before = tomllib.loads(Path(policy["config_path"]).read_text())
+        after = tomllib.loads(supplied["static"])
+        require(after.get("providers") == before.get("providers"), "routine cannot change provider ownership")
+        require(
+            after.get("certificatesResolvers") == before.get("certificatesResolvers"),
+            "routine cannot change ACME resolver/account/storage",
+        )
+    return result
+
+
+def snapshot_file(path: Path) -> dict[str, Any]:
+    if not os.path.lexists(path):
+        trusted_file_parent(path)
+        return {"exists": False}
+    trusted_file(path)
+    info = path.stat()
+    return {
+        "exists": True,
+        "sha256": digest(path),
+        "mode": stat.S_IMODE(info.st_mode),
+        "uid": info.st_uid,
+        "gid": info.st_gid,
+    }
+
+
+def trusted_file_parent(path: Path) -> None:
+    for parent in path.parents:
+        info = parent.lstat()
+        require(
+            stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022, f"unsafe parent: {parent}"
+        )
+
+
+def manifest_snapshot(directory: Path, policy: dict[str, Any], values: dict[str, bytes | None]) -> dict[str, Any]:
+    paths = routine_paths(policy)
+    require(set(values) <= set(paths), "unknown routine resource")
+    entries = {}
+    for name, content in values.items():
+        path = paths[name]
+        old = snapshot_file(path)
+        if old["exists"]:
+            atomic(directory / f"original-{name}", path.read_bytes())
+        entries[name] = {
+            "path": str(path),
+            "original": old,
+            "candidate_sha256": hashlib.sha256(content).hexdigest() if content is not None else None,
+        }
+    manifest = {"schema": 1, "policy": policy, "entries": entries}
+    save(directory / "manifest.json", manifest)
+    return manifest
+
+
+def restore_manifest(policy: dict[str, Any], directory: Path, expected_digest: str) -> None:
+    """Shared synchronous/OnFailure restoration; validate every original before any write."""
+
+    path = directory / "manifest.json"
+    trusted_file(path)
+    require(digest(path) == expected_digest, "restore manifest changed")
+    manifest = json.loads(path.read_text())
+    require(manifest.get("schema") == 1 and manifest.get("policy") == policy, "restore manifest policy mismatch")
+    entries, paths = manifest["entries"], routine_paths(policy)
+    require(isinstance(entries, dict) and bool(entries) and set(entries) <= set(paths), "invalid restore resources")
+    for name, entry in entries.items():
+        require(entry["path"] == str(paths[name]), "restore destination mismatch")
+        trusted_file_parent(paths[name])
+        if os.path.lexists(paths[name]):
+            trusted_file(paths[name])
+        old = entry["original"]
+        if old["exists"]:
+            original = directory / f"original-{name}"
+            trusted_file(original)
+            require(digest(original) == old["sha256"] and old["uid"] == old["gid"] == 0, "restore original changed")
+    # Restore the watched file first, metadata after the core resources.
+    for name in ("certificates", "binary", "static", "unit", "probe_config", "route_inventory"):
+        if name not in entries:
+            continue
+        old, target = entries[name]["original"], paths[name]
+        if old["exists"]:
+            atomic(target, (directory / f"original-{name}").read_bytes(), old["mode"])
+        elif os.path.lexists(target):
+            target.unlink()
+            fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    if "unit" in entries:
+        run(["systemctl", "daemon-reload"])
+
+
+def routine_expected(policy: dict[str, Any], live: dict[str, Any], values: dict[str, bytes | None]) -> dict[str, Any]:
+    expected = dict(live)
+    if "static" in values:
+        expected["config_sha256"] = hashlib.sha256(values["static"] or b"").hexdigest()
+    if "unit" in values:
+        current = run(["systemctl", "cat", "traefik.service"])
+        prefix = f"# {UNIT_PATH}\n"
+        require(current == prefix + UNIT_PATH.read_text(), "unit drop-ins or noncanonical unit source unsupported")
+        expected["unit_sha256"] = hashlib.sha256(prefix.encode() + (values["unit"] or b"")).hexdigest()
+    files = dict(route_files(Path(policy["dynamic_path"])))
+    if "certificates" in values:
+        content = values["certificates"]
+        if content is None:
+            files.pop("certificates.yml", None)
+        else:
+            files["certificates.yml"] = hashlib.sha256(content).hexdigest()
+    expected["dynamic_sha256"] = canonical(sorted(files.items(), key=lambda item: PurePosixPath(item[0])))
+    return expected
+
+
+def replace_routine(
+    request: dict[str, Any], policy: dict[str, Any], state: dict[str, Any], live: dict[str, Any], state_path: Path
+) -> dict[str, Any]:
+    """One full owned-file change through the existing transaction protocol."""
+
+    require(state["phase"] == "clear" and state["identity"] == live, "active recovery or baseline drift")
+    values = routine_files(request, policy)
+    expected = routine_expected(policy, live, values)
+    compatibility = request["compatibility"]
+    require(
+        compatibility.get("baseline") == live and compatibility.get("architecture") == os.uname().machine,
+        "routine proof baseline mismatch",
+    )
+    require(
+        compatibility.get("passed") is True and compatibility.get("baseline_pair_passed") is True,
+        "routine isolated proof required",
+    )
+    require(
+        compatibility.get("routine_files")
+        == {k: hashlib.sha256(v).hexdigest() if v is not None else None for k, v in values.items()},
+        "routine proof files mismatch",
+    )
+    if "certificates" in values:
+        require(compatibility.get("mixed_pairs_passed") is True, "watched-file mixed proof required")
+    release = request.get("release")
+    if release is not None:
+        require(
+            tuple(map(int, release["version"].split("."))) >= tuple(map(int, live["version"].split("."))),
+            "ordinary downgrade refused",
+        )
+    check_probe(request["baseline_probe"])
+    settings = archive_settings(policy)
+    require(settings is None or archive_mounted(settings[1]), "rollback archive mount is not mounted")
+    directory = STATE_ROOT / str(uuid.uuid4())
+    directory.mkdir(mode=0o700)
+    save(directory / "request.json", request)
+    if release is not None:
+        candidate = candidate_binary(Path(request["archive_path"]), release["sha256"], directory, release["version"])
+        values["binary"] = candidate.read_bytes()
+        expected.update(binary_sha256=digest(candidate), version=release["version"])
+    require(compatibility.get("candidate_binary_sha256") == expected["binary_sha256"], "routine binary proof mismatch")
+    require(compatibility.get("candidate_config_sha256") == expected["config_sha256"], "routine config proof mismatch")
+    require(
+        compatibility.get("candidate_dynamic_sha256") == expected["dynamic_sha256"], "routine dynamic proof mismatch"
+    )
+    require(compatibility.get("candidate_unit_sha256") == expected["unit_sha256"], "routine unit proof mismatch")
+    require(expected != live, "routine unchanged; admission must bypass staging")
+    backup(policy, directory)
+    metadata = request.get("metadata", {})
+    require(isinstance(metadata, dict) and set(metadata) <= {"probe_config", "route_inventory"}, "invalid metadata")
+    if "probe_config" in metadata:
+        config = metadata["probe_config"]
+        require(isinstance(config, dict) and isinstance(config.get("dynamic"), dict), "invalid candidate probe tree")
+        require(
+            canonical(sorted(config["dynamic"].items(), key=lambda item: PurePosixPath(item[0])))
+            == expected["dynamic_sha256"],
+            "candidate probe tree mismatch",
+        )
+    if "route_inventory" in metadata:
+        inventory = metadata["route_inventory"]
+        require(
+            isinstance(inventory, dict)
+            and inventory.get("dynamic_sha256") == expected["dynamic_sha256"]
+            and canonical(inventory.get("files")) == expected["dynamic_sha256"],
+            "candidate route inventory mismatch",
+        )
+    for name, value in metadata.items():
+        require(isinstance(value, dict), "invalid metadata content")
+        values[name] = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+    manifest_snapshot(directory, policy, values)
+    manifest_digest = digest(directory / "manifest.json")
+    require(identity(policy) == live, "baseline changed during routine preparation")
+    pending = state_for(
+        policy,
+        "pending",
+        live,
+        owner=request["evidence"]["owner"],
+        operation="routine",
+        transaction=str(directory),
+        intended_identity=expected,
+        previous_revision=state["revision"],
+        manifest_sha256=manifest_digest,
+    )
+    save(state_path, pending)
+    paths = routine_paths(policy)
+    try:
+        for name in ("binary", "static", "unit", "certificates"):
+            if name not in values:
+                continue
+            data = values[name]
+            if data is None:
+                paths[name].unlink(missing_ok=True)
+            else:
+                atomic(paths[name], data, 0o755 if name == "binary" else 0o644)
+        if "unit" in values:
+            run(["systemctl", "daemon-reload"])
+        accepted = restart_verify(policy, expected, request["acceptance_probe"], request["cleanup_probe"])
+        for name in ("probe_config", "route_inventory"):
+            if name in values:
+                atomic(paths[name], values[name] or b"")
+        complete = state_for(policy, "clear", accepted, owner=request["evidence"]["owner"], transaction=str(directory))
+        save(state_path, complete)
+        return {"changed": True, "state": complete}
+    except BaseException as failure:
+        recovery = state_for(
+            policy,
+            "recovery",
+            live,
+            owner=request["evidence"]["owner"],
+            transaction=str(directory),
+            manifest_sha256=manifest_digest,
+            reason=type(failure).__name__,
+            review_due=int(time.time()) + 3600,
+        )
+        try:
+            restore_manifest(policy, directory, manifest_digest)
+            restart_verify(policy, live, request["baseline_probe"], request["cleanup_probe"])
+        except BaseException as restore_failure:
+            recovery.update(phase="degraded", recovery_error=type(restore_failure).__name__)
+        save(state_path, recovery)
+        return {"changed": True, "failed": True, "state": recovery}
+
+
 def execute(request: dict[str, Any]) -> dict[str, Any]:
     policy, action = request["policy"], request["action"]
     validate_policy(policy)
@@ -774,6 +1063,8 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
             return resume(request, policy, state, live, state_path)
         if action == "rebaseline":
             return rebaseline(request, policy, state, live, state_path)
+        if action == "routine":
+            return replace_routine(request, policy, state, live, state_path)
         return replace_binary(request, policy, state, live, state_path)
 
 

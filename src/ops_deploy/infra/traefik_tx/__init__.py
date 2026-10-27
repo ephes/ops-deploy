@@ -6,6 +6,7 @@
 compatibility proof its ``binary`` action requires.
 :mod:`ops_deploy.infra.traefik_tx.transport` runs the engine detached in a
 transient systemd unit there, with :mod:`ops_deploy.infra.traefik_tx.runner` as
-the host side and a safe-restore unit for an interrupted engine. Nothing calls
-the transport or uploads the proof yet; see ``docs/traefik.md``.
+the host side and a safe-restore unit for an interrupted engine.
+:mod:`ops_deploy.infra.traefik_routine` integrates ordinary deployment; the
+separate private patch runner also uses this transport. See ``docs/traefik.md``.
 """

@@ -33,7 +33,7 @@ deploy_traefik(
 deploy_traefik_remove(TraefikRemoveConfig(confirm=True))
 ```
 
-## Transaction-managed hosts are refused
+## Legacy full deploy and lifecycle guards
 
 Hosts enrolled in the guarded Traefik transaction workflow
 (`roles/traefik_deploy/TRANSACTIONS.md` in ops-library) take binary and
@@ -43,8 +43,8 @@ with `transaction_required` set, or when `/var/lib/traefik-transactions`
 exists on the host, `deploy_traefik`, `deploy_traefik_restore` and
 `deploy_traefik_remove` stop while planning, before any change. Backup only
 reads and is allowed everywhere. The role's transaction engine is ported (next
-section) with a transport that runs it detached on the host, but no deploy runs
-it yet, and its prepare entries are not ported. Its health-probe entries are
+section) with a transport that runs it detached on the host. The ordinary routine
+API below integrates that transport without removing the legacy guards. Its health-probe entries are
 ported (see [Health probes](#health-probes)) and are allowed on these hosts.
 
 ## Transaction engine
@@ -886,3 +886,50 @@ Differences, on purpose:
   way the engine runs a probe, directly through the program's
   `/usr/bin/python3` shebang. The role only checks the installed program's
   SHA256 after copying it and runs it through `/usr/bin/python3` explicitly.
+
+
+## Ordinary deployment on enrolled hosts
+
+`ops_deploy.infra.traefik_routine.TraefikRoutineConfig` and `deploy_traefik_routine`
+combine the existing ordinary resource deployment with the existing transaction
+engine. Inventory declares enrollment; missing or mismatched host/controller
+records never select an unguarded fallback. Non-enrolled hosts retain the full
+ordinary installation path. The ordinary routine uses an explicit release floor,
+not the patch updater's latest-release resolver. A newer recorded release within
+the selected patch line is preserved; no downgrade occurs.
+
+The routine compares TOML semantics, normalizing only the implicit Prometheus
+`entryPoint = "traefik"`. Equivalent bytes are preserved. Binary, static config,
+unit and the owned `dynamic/certificates.yml` are changed through one journaled
+transaction. Other service-owned routes, external certificates/keys and ACME
+accounts/storage are preserved. Config candidates cannot move ACME storage or
+change resolver/account settings. A candidate unit must fit the supported role
+unit contract; unsupported startup/dependency changes are refused.
+
+Candidate proof runs both binary/config pairs and, for a watched certificate
+file change, both mixed dynamic-tree pairs that live reload or rollback can
+expose. The candidate's supported hardening runs with isolated copies of writable
+configuration, logs and ACME files. Router loading, existing auth/redirect status
+and served TLS fingerprints are checked. Backend availability is not fabricated:
+the isolated network can make an otherwise healthy backend unreachable.
+
+The engine and detached `OnFailure` runner share a complete restore manifest,
+including original absence, modes, checksums and probe/route metadata. Death or
+failed acceptance restores all owned files and leaves `recovery` or `degraded`,
+not a false clear record. Existing binary-only transactions retain their protocol.
+Automatic ordinary evidence records actual SSH/HTTP/TLS observations and standing
+deployment authority, without pretending to be a human observer attestation.
+
+A converged invocation does not upload helpers, create remote temporary files,
+refresh probes/journals, prepare archives, or run isolated proof units. Read-only
+admission executes Python in memory with bytecode disabled. Route-only drift can
+produce one explicit rebaseline and updated paired record. Ancillary operations
+(directory/store modes, logrotate, declared web conflicts, UFW rules and enabled
+state) remain individually idempotent and run after the accepted core transaction.
+Their failure fails the deployment; it does not erase a valid core record.
+
+The existing archive policy applies to actual mutations. An unavailable configured
+external archive mount refuses before target writes; the converged path bypasses
+archive handling. Local archive growth is retained and no retention APPLY occurs.
+See `tests/integration/traefik_routine/README.md` for the isolated qualification
+contract. Inventory qualifications belong in the private operator receipt.

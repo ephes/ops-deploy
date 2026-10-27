@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add ordinary Traefik deployment for declared transaction-managed hosts using the existing engine, isolated candidate proof, detached complete-file recovery and a no-staging converged path. Preserve the separate patch updater and non-enrolled installation API.
+
 - Add standalone mail and torrent VPN metrics endpoint deploys using the existing
   Python/Rust switch, Basic Auth, role templates and service identities. Preserve
   recursive queue ACLs, probe-state exports and the torrent root collector/timer.

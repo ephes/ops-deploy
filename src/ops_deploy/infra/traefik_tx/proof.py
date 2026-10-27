@@ -38,9 +38,13 @@ shows up before a transaction changes anything.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import configparser
 import copy
 import datetime
 import fcntl
+import hashlib
+import io
 import ipaddress
 import json
 import os
@@ -394,6 +398,13 @@ def unit_argv(unit: str, workdir: Path, spec: Path, mounts: dict[str, list[tuple
     ]
     for kind in ("BindReadOnlyPaths", "BindPaths"):
         properties += [f"{kind}={source}:{target}" for source, target in mounts.get(kind, [])]
+    candidate_spec = json.loads(spec.read_text()) if spec.exists() else {}
+    for item in candidate_spec.get("unit_properties", []):
+        key, _, value = item.partition("=")
+        if key == "ReadWritePaths":
+            value = f"{spec.parent} {value}"
+        properties = [old for old in properties if not old.startswith(key + "=")]
+        properties.append(f"{key}={value}")
     argv = ["systemd-run", "--quiet", "--wait", "--collect", "--service-type=exec", f"--unit={unit}"]
     for item in properties:
         argv += ["-p", item]
@@ -464,6 +475,22 @@ def inside(spec_path: Path) -> int:
         )
         try:
             result = observe(process, spec)
+            if "probe_baseline" in spec:
+                namespace: dict[str, Any] = {"__name__": "isolated_probe"}
+                program = Path(spec["probe_program"])
+                require(engine.digest(program) == spec["probe_sha256"], "proof probe source changed")
+                exec(compile(program.read_bytes(), str(program), "exec"), namespace)
+                probes = spec["probe_baseline"]["probes"]
+                with concurrent.futures.ThreadPoolExecutor(8) as pool:
+                    observed = list(pool.map(namespace["observe_with_fingerprint"], probes))
+                previous = spec["probe_baseline"]["observations"]
+                require(len(observed) == len(previous), "proof probe cardinality mismatch")
+                result["ingress_preserved"] = all(
+                    after.get("exit") == 0
+                    and before.get("tls_sha256") == after.get("tls_sha256")
+                    and (not before["status"].startswith(("3", "4")) or before["status"] == after["status"])
+                    for before, after in zip(previous, observed, strict=True)
+                )
         finally:
             stop(process)
     (out / "result.json").write_text(json.dumps(result))
@@ -488,6 +515,7 @@ def pair(result: dict[str, Any], expected: set[Router]) -> dict[str, Any]:
         and result.get("exited") is None
         and loaded
         and not (summary["disabled"] or summary["missing"] or summary["unexpected"])
+        and result.get("ingress_preserved", True) is True
     )
     summary["routers"] = sorted(found)
     return summary
@@ -545,7 +573,12 @@ def compatibility(proof: dict[str, Any], live: dict[str, Any]) -> dict[str, Any]
         "baseline": live,
         "architecture": proof["architecture"],
         "candidate_binary_sha256": proof["candidate_binary_sha256"],
-        "candidate_config_sha256": proof["live_config_sha256"],
+        "candidate_config_sha256": proof.get("candidate_config_sha256", proof["live_config_sha256"]),
+        **{
+            key: proof[key]
+            for key in ("routine_files", "candidate_dynamic_sha256", "candidate_unit_sha256", "mixed_pairs_passed")
+            if key in proof
+        },
         "passed": True,
         "baseline_pair_passed": True,
         "report_reference": proof["report_reference"],
@@ -569,7 +602,7 @@ def write_once(path: Path, data: bytes) -> None:
 
 
 def stop_units(run_id: str) -> None:
-    for variant in ("baseline", "candidate"):
+    for variant in ("baseline", "candidate", "baseline-candidate-dynamic", "candidate-baseline-dynamic"):
         subprocess.run(
             ["systemctl", "stop", f"traefik-proof-{run_id}-{variant}.service"],
             capture_output=True,
@@ -618,11 +651,71 @@ def isolated_start(
     return result
 
 
+def routine_unit_properties(text: str, policy: dict[str, Any]) -> list[str]:
+    """Exercise supported unit hardening; reject directives that the proof cannot model."""
+
+    class UnitParser(configparser.ConfigParser):
+        def optionxform(self, optionstr: str) -> str:
+            return optionstr
+
+    parser = UnitParser(interpolation=None, strict=True)
+    parser.read_file(io.StringIO(text))
+    require(set(parser.sections()) == {"Unit", "Service", "Install"}, "unsupported unit sections")
+    require(dict(parser["Install"]) == {"WantedBy": "multi-user.target"}, "unsupported install target")
+    require(
+        set(parser["Unit"]) <= {"Description", "Documentation", "After", "Wants"}
+        and parser["Unit"].get("After") == "network-online.target"
+        and parser["Unit"].get("Wants") == "network-online.target",
+        "unsupported unit dependency",
+    )
+    service = dict(parser["Service"])
+    startup = {
+        "Type": "simple",
+        "User": "root",
+        "Group": "root",
+        "ExecStart": f"{policy['binary_path']} --configfile={policy['config_path']}",
+    }
+    require(all(service.get(k) == v for k, v in startup.items()), "unsupported candidate startup")
+    operational = {
+        "Restart",
+        "RestartSec",
+        "StandardOutput",
+        "StandardError",
+        "SyslogIdentifier",
+        "KillMode",
+        "KillSignal",
+    }
+    security = {
+        "NoNewPrivileges",
+        "PrivateTmp",
+        "ProtectSystem",
+        "ProtectHome",
+        "ProtectKernelTunables",
+        "ProtectKernelModules",
+        "ProtectControlGroups",
+        "RestrictRealtime",
+        "RestrictSUIDSGID",
+        "PrivateDevices",
+        "LockPersonality",
+    }
+    require(set(service) <= set(startup) | operational | security | {"ReadWritePaths"}, "unsupported unit directive")
+    require(service.get("ProtectSystem") == "strict", "proof requires strict filesystem protection")
+    require(
+        service.get("ReadWritePaths", "").split() == ["/etc/traefik", "/var/log/traefik"],
+        "unsupported unit writable paths",
+    )
+    # Both paths are replaced by isolated copies in the unit's mount namespace.
+    return [f"{key}={value}" for key, value in service.items() if key in security] + [
+        "ReadWritePaths=/etc/traefik /var/log/traefik"
+    ]
+
+
 def run_proof(request: dict[str, Any]) -> dict[str, Any]:
     policy, release = request["policy"], request["release"]
     engine.validate_policy(policy)
     require(re.fullmatch(r"3\.\d+\.\d+", str(release["version"])), "unsupported release")
-    archive = safe_path(request["archive_path"], "archive_path")
+    archive = safe_path(request["archive_path"], "archive_path") if request.get("archive_path") else None
+    routine = request.get("routine_files")
     require(os.geteuid() == 0, "root is required")
     with engine.LOCK.open("a") as lock:
         try:
@@ -659,7 +752,12 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
                 (workdir / f"log-{index}").mkdir(mode=0o700)
                 mounts.setdefault("BindPaths", []).append((workdir / f"log-{index}", directory))
             installed = Path(policy["binary_path"])
-            candidate = engine.candidate_binary(archive, release["sha256"], workdir, release["version"])
+            candidate = (
+                engine.candidate_binary(archive, release["sha256"], workdir, release["version"])
+                if archive is not None
+                else installed
+            )
+            require(archive is not None or routine is not None, "binary proof requires archive")
             native(installed)
             native(candidate)
             spec = {
@@ -670,10 +768,90 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
                 "settle": SETTLE,
                 "patience": PATIENCE,
             }
-            results = {
-                variant: pair(isolated_start(variant, binary, workdir, run_id, mounts, cwd, spec), expected)
-                for variant, binary in (("baseline", installed), ("candidate", candidate))
-            }
+            if routine is None:
+                results = {
+                    variant: pair(isolated_start(variant, binary, workdir, run_id, mounts, cwd, spec), expected)
+                    for variant, binary in (("baseline", installed), ("candidate", candidate))
+                }
+                routine_report = {}
+            else:
+                files = engine.routine_files({"files": routine}, policy)
+                candidate_text = str(routine.get("static", static_text))
+                candidate_static = tomllib.loads(candidate_text)
+                require(acme_stores(candidate_static, policy, cwd) == stores, "candidate ACME stores differ")
+                require(log_dirs(candidate_static, [dynamic, *stores]) == logs, "candidate log directories differ")
+                candidate_config = workdir / "candidate.toml"
+                engine.atomic(candidate_config, isolated_config(candidate_text)[0].encode())
+                candidate_dynamic = workdir / "candidate-dynamic"
+                shutil.copytree(workdir / "dynamic", candidate_dynamic)
+                if "certificates" in files:
+                    owned = candidate_dynamic / "certificates.yml"
+                    if files["certificates"] is None:
+                        owned.unlink(missing_ok=True)
+                    else:
+                        engine.atomic(owned, files["certificates"] or b"", 0o644)
+                require(defined_routers(candidate_dynamic) == expected, "owned candidate changed routers")
+                unit_text = routine.get("unit", engine.UNIT_PATH.read_text())
+                baseline_probe = request.get("probe_baseline")
+                require(isinstance(baseline_probe, dict), "routine proof requires ingress/TLS baseline")
+                source_probe = Path(__file__).resolve().parent / "health.py"
+                shutil.copy2(source_probe, workdir / "health.py")
+                spec.update(
+                    probe_baseline=baseline_probe,
+                    probe_program=str(workdir / "health.py"),
+                    probe_sha256=engine.digest(workdir / "health.py"),
+                )
+                candidate_properties = routine_unit_properties(unit_text, policy)
+                baseline_properties = routine_unit_properties(engine.UNIT_PATH.read_text(), policy)
+                # Writable unit paths must point to copies, including absent ACME files.
+                isolated_config_root = workdir / "config-root"
+                shutil.copytree(Path(policy["config_path"]).parent, isolated_config_root, symlinks=True)
+                mounts.setdefault("BindPaths", []).append((isolated_config_root, Path("/etc/traefik")))
+                results = {}
+                pairs = [
+                    ("baseline", installed, config, workdir / "dynamic", baseline_properties),
+                    ("candidate", candidate, candidate_config, candidate_dynamic, candidate_properties),
+                ]
+                if "certificates" in files:
+                    pairs += [
+                        ("baseline-candidate-dynamic", installed, config, candidate_dynamic, baseline_properties),
+                        (
+                            "candidate-baseline-dynamic",
+                            candidate,
+                            candidate_config,
+                            workdir / "dynamic",
+                            candidate_properties,
+                        ),
+                    ]
+                for variant, binary, cfg, tree, properties in pairs:
+                    pair_mounts = copy.deepcopy(mounts)
+                    pair_mounts["BindReadOnlyPaths"] = [(tree, dynamic)]
+                    pair_spec = {
+                        **spec,
+                        "config": str(cfg),
+                        "api": api_url(tomllib.loads(cfg.read_text())),
+                        "unit_properties": properties,
+                    }
+                    results[variant] = pair(
+                        isolated_start(variant, binary, workdir, run_id, pair_mounts, cwd, pair_spec), expected
+                    )
+                    results[variant].update(
+                        binary_sha256=engine.digest(binary),
+                        isolated_config_sha256=engine.digest(cfg),
+                        dynamic_sha256=engine.inventory_tree(tree),
+                    )
+                target_identity = engine.routine_expected(policy, live, files)
+                routine_report = {
+                    "routine_files": {
+                        k: hashlib.sha256(v).hexdigest() if v is not None else None for k, v in files.items()
+                    },
+                    "candidate_config_sha256": target_identity["config_sha256"],
+                    "candidate_dynamic_sha256": target_identity["dynamic_sha256"],
+                    "candidate_unit_sha256": target_identity["unit_sha256"],
+                    "mixed_pairs_passed": all(result["passed"] for result in results.values()),
+                    "routine_pairs": results,
+                    "unit_substitutions": "private copies of config/log/ACME; isolated API; wrapper supervises process",
+                }
             error = None if engine.identity(policy) == live else "live identity changed during the proof"
             # Linked under exactly this name; the lock keeps another proof from taking it.
             target = next((path for path in report_path(release, policy["host"], started) if not path.exists()), None)
@@ -690,6 +868,9 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
             }
             run["report_reference"] = str(target)
             proof = build_proof(policy, release, live, run)
+            proof.update(routine_report)
+            if routine_report:
+                proof["passed"] = bool(proof["passed"] and routine_report["mixed_pairs_passed"])
             write_once(target, (json.dumps(proof, indent=2) + "\n").encode())
             return proof
         finally:
