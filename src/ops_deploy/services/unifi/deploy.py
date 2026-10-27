@@ -22,6 +22,7 @@ from .render import render_template
 
 PREFLIGHT = resources("ops_deploy.services.unifi").joinpath("files/preflight.py").read_text()
 PREFLIGHT_COMMAND = shlex.join(["python3", "-I", "-c", PREFLIGHT])
+HEALTH = resources("ops_deploy.services.unifi").joinpath("files/health.py").read_text()
 RESTART = resources("ops_deploy.services.unifi").joinpath("files/restart_host.py").read_text()
 FIREWALL_RULES = (
     (8080, "tcp", "UniFi device communication"),
@@ -53,6 +54,8 @@ def payload(cfg: UnifiConfig, secrets: SecretValues) -> str:
             "homeassistant_username": cfg.homeassistant_username,
             "homeassistant_password": secrets["homeassistant_password"] if cfg.create_homeassistant_user else "",
             "manage_firewall": cfg.manage_firewall,
+            "routine": cfg.routine is not None,
+            "selected_package_version": cfg.routine.package_version if cfg.routine else cfg.installed_package_version,
         }
     )
 
@@ -84,14 +87,24 @@ def _firewall() -> None:
 def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
     """Preflight is read-only even in check mode; every refusal precedes operations.
 
-    Ansible owns installation, upgrades, MongoDB and HA user changes. MongoDB
-    is never restarted or written. Traefik uses its watched dynamic directory.
+    Optional routine selection enables package and authenticated Mongo/HA
+    reconciliation. Traefik uses its watched dynamic directory.
     """
 
     stdin = payload(cfg, secrets)
     answer = probe(PREFLIGHT_COMMAND, name="existing UniFi admission", stdin=stdin)
     if answer is None or answer.strip() != "ready":
-        raise DeployError("unifi: existing-install preflight refused; reconcile with Ansible before retrying")
+        raise DeployError(
+            "unifi: existing-install preflight refused; inspect the reported host invariant before retrying"
+        )
+    if cfg.routine is not None:
+        from .routine import prepare_routine
+
+        needs_package, missing_controller = prepare_routine(cfg, stdin)
+    else:
+        needs_package = False
+        missing_controller = False
+    package = None
     restart_command = shlex.join(
         [
             "python3",
@@ -128,6 +141,13 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
         mode="0640",
     )
     unit = systemd_unit("unifi", render_template(cfg, "unifi.service.j2"))
+    if cfg.routine is not None:
+        from .routine import install_selected
+
+        # Vendor postinst must see our unit and credential argfile even on the
+        # first controller installation over an existing authenticated MongoDB.
+        systemd.daemon_reload(name="Load UniFi unit before package installation", _if=lambda: needs_package)
+        package = install_selected(cfg, needs_package, missing_controller, secrets)
     if cfg.mongodb_logrotate_enabled:
         _put(cfg, "mongodb-logrotate.j2", "/etc/logrotate.d/mongodb")
     if cfg.mongodb_monitor_script_enabled:
@@ -154,13 +174,32 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
         name="Recover pending UniFi unit reload",
         _if=lambda: pending_reload.strip() == "yes" and not unit.did_change(),
     )
-    service_rollout("unifi", units=(unit,), restart_when=(args,), always_restart=restart.strip() == "owed")
+    service_rollout(
+        "unifi",
+        units=(unit,),
+        restart_when=(args,) if package is None else (args, package),
+        always_restart=restart.strip() == "owed",
+    )
     # The controller's own certificate is self-signed (the role uses
     # validate_certs:false). Never weaken verification for external downloads.
-    command = (
-        f"for i in $(seq 1 {cfg.healthcheck_timeout}); do "
-        "code=$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 5 https://127.0.0.1:8443/status); "
-        '[ "$code" = 200 ] && exit 0; sleep 1; done; echo "UniFi status check failed" >&2; exit 1'
-    )
+    command = shlex.join(["python3", "-I", "-c", HEALTH, str(cfg.healthcheck_timeout)])
     mark_read_only(server.shell(name="Verify UniFi status endpoint", commands=[command]))
-    verify_probe(PREFLIGHT_COMMAND, name="existing UniFi invariants", expect="ready", stdin=stdin)
+    if cfg.routine is not None:
+        from .routine import reconcile_ha
+
+        reconcile_ha(name="Reconcile UniFi Home Assistant account and credential", cfg=cfg, secrets=secrets)
+    verify_probe(
+        PREFLIGHT_COMMAND,
+        name="existing UniFi invariants",
+        expect="ready",
+        stdin=json.dumps(
+            {
+                **json.loads(stdin),
+                "routine": False,
+                "routine_verify": cfg.routine is not None,
+                "installed_package_version": cfg.routine.package_version
+                if cfg.routine
+                else cfg.installed_package_version,
+            }
+        ),
+    )

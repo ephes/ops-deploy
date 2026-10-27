@@ -10,6 +10,10 @@
   an unarmed timer. The mail Python wrapper verifies passwords on stdin, matching
   the paired role security repair.
 
+- Wait for UniFi JSON readiness (`meta.up=true`) before completing deployment; HTTP200 startup pages are not readiness. Create usable string-valued HA privilege references and repair legacy-only references in place while preserving working mixed layouts and record IDs.
+
+- Add initialized-controller UniFi routine deployments with explicit verified package updates, Java/Mongo package presence, authenticated Mongo/HA reconciliation and a disposable real Linux integration workflow. Initialize the absent controller's private external-database selectors before vendor startup; preserve existing controller configuration and database selection. Missing-controller admission requires empty application/statistics/audit databases and effective write/index privileges before vendor initialization.
+
 - Vector producers: validate converged Logyard/Graphyard fragments in place
   without temporary staging writes. Retain staging before content or metadata
   repairs and classify those temporary writes as mutations. Preserve source

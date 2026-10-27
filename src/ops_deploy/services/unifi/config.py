@@ -14,14 +14,30 @@ from ops_deploy.helpers.traefik import Hostname
 Word = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")]
 
 
+class UnifiRoutine(RoleConfig):
+    """Explicit artifact selection for normal deployment of an initialized controller.
+
+    MongoDB authentication must already work; provisioning a new database is a
+    separate bootstrap concern. Package presence preserves installed Java/Mongo
+    patches, as the Ansible role does.
+    """
+
+    package_version: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-[0-9]+$")]
+    package_url: Annotated[
+        str, Field(pattern=r"^https://dl\.ui\.com/unifi/[0-9]+\.[0-9]+\.[0-9]+/unifi_sysvinit_all\.deb$")
+    ]
+    package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
 class UnifiConfig(RoleConfig):
     """Fixed role layout; unknown/unsupported role settings fail rather than being ignored.
 
-    No first install, package upgrade, MongoDB provisioning or HA reconciliation.
-    Only the qualified 9.5.21 package build is supported; the explicit installed
-    package assertion never requests an upgrade.
+    Without routine selection, retain the original exact-build config contract.
+    Routine selection adds package/runtime and authenticated Mongo/HA changes
+    for an initialized Ubuntu 24.04 controller; no fresh database bootstrap.
     """
 
+    routine: UnifiRoutine | None = None
     installed_package_version: Literal["9.5.21-31260-1"]
     controller_bind_address: str
     external_hostname: Hostname
@@ -64,6 +80,8 @@ class UnifiConfig(RoleConfig):
 
     @model_validator(mode="after")
     def _heaps(self) -> UnifiConfig:
+        if self.routine and self.routine.package_version.split("-", 1)[0] != self.routine.package_url.split("/")[-2]:
+            raise ValueError("selected package URL must match its full version")
         if self.jvm_min_heap_mb > self.jvm_max_heap_mb:
             raise ValueError("jvm_min_heap_mb must not exceed jvm_max_heap_mb")
         return self

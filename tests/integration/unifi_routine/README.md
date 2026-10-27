@@ -41,3 +41,72 @@ authenticated HA API login and matching default-site identity in the external
 MongoDB, plus exactly the system mongod process and no embedded database.
 Both application and statistics connections select authenticated external DBs.
 Existing controller configuration is never migrated by this initialization.
+
+Run40322273105 reached authenticated external MongoDB during fresh9.4.19
+startup and failed because the initialized fixture user lacked `unifi_audit`
+access. The fixture adds only `readWrite` for that database, preserving
+authorization and avoiding administrative or wildcard grants. Existing live
+controller roles and database selection are not changed by fixture setup.
+
+Fresh-controller admission verifies effective database privileges and refuses
+nonempty application/statistics/audit databases before any controller writes.
+The VM exercises all three nonempty refusals, missing audit-write access, and
+actual scoped audit CRUD/index operations under the application identity. Those
+CRUD operations are fixture evidence, not a claim of controller-generated audit
+events. The existing installed-controller path does not acquire audit grants.
+
+Before inserting protected records or updating the controller, the fixture
+completes the real setup wizard using the bundled frontend's `add-default-admin`
+and `set-installed` API commands with a fixture-only administrator. It verifies
+`is_default=false` and the API/external-DB site identity. No site is fabricated
+in MongoDB. The initialized state must survive update and repair; otherwise
+vendor Factory Default could reinitialize databases and invalidate preservation
+proof. This setup API is never called by the production deployment.
+
+Run40332163946 passed all four admission refusal cases, scoped audit CRUD,
+real9.4.19 installation and its zero-mutation repeat. It failed while parsing
+a wizard HTTP response, before any selected-version update. Its artifacts are
+retained. Wizard diagnostics now persist each fixed phase's response status,
+content type and redirect flag without bodies, cookies or credentials; the
+actual JVM is recorded before that step too.
+
+Run40333858819 reproduced the first wizard POST returning HTTP200/text-html.
+A native disposable Linux HTTP reproduction with the exact vendor9.4.19 bits
+showed `meta.up=false` alongside HTML startup pages until the API was ready;
+then the unmodified wizard commands succeeded. Production readiness now waits
+for JSON `meta.rc=ok` and strict boolean `meta.up=true`, and the deliberate
+fixture restart wait uses that signal too. The local HTTP reproduction is
+diagnostic evidence, not a substitute for the x86/systemd integration run.
+
+The same owned HTTP reproduction verified that legacy ObjectId privilege
+references allow HA login but expose no API site. Vendor-created references are
+strings. Routine repair now uses canonical string references, preserving record
+IDs and leaving already-functional mixed layouts unchanged. The VM's HA login
+and external-site identity assertion verifies actual access, not only a hash
+or MongoDB privilege document.
+
+Run40344461738 completed the real wizard, selected package update and zero-
+mutation repeat, then authenticated HA access with matching external site ID
+and exactly the system Mongo process. It failed an overly strict assertion
+that the vendor `db` directory must be absent. The fixture now records bounded
+directory-entry evidence and permits only an absent or empty real directory;
+any file, symlink or extra Mongo process still refuses qualification. The failed
+run remains retained and is not reported as full qualification.
+
+Run40345999812 retained the directory evidence: only `version` and
+`previous_version` existed. Exact vendor `core.jar` bytecode confirms these
+application-version metadata paths. The fixture permits only those regular,
+nonsymlink, bounded markers with the selected/previous controller version
+values, or an empty/absent directory; any other entry still refuses. Successfully read marker
+contents and each phase's entry list are retained independently. This does
+not relax authenticated external-site or sole-system-Mongo checks.
+
+The complete chain passed in
+[run 40347259878](https://github.com/ephes/ops-deploy/actions/runs/40347259878):
+immutable implementation `b5dc1143641ea41fe479c5b32c2164940c115147`, harness
+`d0ddbd84602020d4840f74578c0474e5e0dba557`. Actual install/update/repair had
+17/5/3 mutations with zero-mutation repeats and a final zero-mutation repeat
+after fault tests. HA API/external-site identity, authenticated sole system
+Mongo, version markers and preserved application/audit records all passed.
+All preceding failed runs remain retained; the audit CRUD proof is explicitly
+fixture-generated, not a claim about controller-generated audit events.

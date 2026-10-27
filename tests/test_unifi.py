@@ -95,7 +95,16 @@ def test_route_drift_only_writes_route_and_does_not_restart() -> None:
     assert not any(command.startswith("systemctl restart") for command in run.executed_commands)
 
 
-@pytest.mark.parametrize("answer", [[], ["refused:mongodb_auth_config_drift"], ["ops-deploy-probe-failed"]])
+@pytest.mark.parametrize(
+    "answer",
+    [
+        [],
+        ["refused:mongodb_auth_config_drift"],
+        ["refused:fresh_database_permissions_insufficient"],
+        ["refused:fresh_controller_database_not_empty"],
+        ["ops-deploy-probe-failed"],
+    ],
+)
 def test_admission_refuses_before_any_mutation(answer: list[str]) -> None:
     run = run_deploy_fake(
         deploy_unifi, CFG, SECRETS, responses=converged(**{"Only a private temporary mongosh HOME": answer})
