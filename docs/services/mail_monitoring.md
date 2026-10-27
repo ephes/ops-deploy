@@ -52,3 +52,9 @@ this integration test unless explicitly selected for an owned fixture.
 
 The relay service account has no managed home directory, matching the original
 role’s `create_home: false`; an absent home remains absent on deployment.
+
+The native smoke test also provisions an existing synthetic relay account with
+an absent home, then verifies its passwd entry and absent home survive first
+and zero-change repeat deployment. It leaves the owned `nohome@example.test`
+mailbox and enabled `smoke-nohome-relay` timer (scheduled in2099) on the
+disposable fixture.

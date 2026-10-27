@@ -102,3 +102,43 @@ def test_mailbox_rotation_repeat_and_role_metadata(smoke_host: SmokeHost) -> Non
     assert result.returncode != 0
     assert "mailbox identity is ambiguous" in result.stderr
     assert smoke_host.out("runuser -u postgres -- psql -d mail -Atc 'SELECT count(*) FROM mail_users'") == before
+
+
+def test_existing_relay_user_without_home_first_and_repeat(smoke_host: SmokeHost) -> None:
+    smoke_host.run("test -f /etc/ops-deploy-mail-fixture")
+    user = "smoke-nohome-relay"
+    home = "/home/" + user
+    smoke_host.run(
+        f"set -e; getent group {user} >/dev/null || groupadd --system {user}; "
+        f"id {user} >/dev/null 2>&1 || useradd --system -M -d {home} -g {user} -s /usr/sbin/nologin {user}; "
+        f"test ! -e {home}"
+    )
+    account = smoke_host.out(f"getent passwd {user}")
+    assert account.split(":")[5:] == [home, "/usr/sbin/nologin"]
+    cfg = MailMonitoringConfig(
+        address="nohome@example.test",
+        schema_mode="postfixadmin",
+        site_path="/var/lib/mail-fixture",
+        cleanup_enabled=False,
+        relay_probe_enabled=True,
+        relay_probe_user=user,
+        relay_probe_service_name=user,
+        relay_probe_url="http://127.0.0.1:18086",
+        relay_probe_domain="mg.example.test",
+        relay_probe_from="probe@example.test",
+        relay_probe_on_calendar="2099-01-01 00:00:00",
+    )
+    values = SecretValues(
+        SecretRef("fixture.yml"),
+        {"monitor_password": "fixture-nohome-password", "relay_probe_token": "fixture-nohome-token"},
+    )
+    for repeat in (False, True):
+        run = run_deploy_ssh(
+            deploy_mail_monitoring, cfg, values, host_name=smoke_host.name, host_data=smoke_host.host_data
+        )
+        assert run.succeeded, str(run.error)
+        if repeat:
+            assert not run.mutating_changed_ops
+        smoke_host.run(f"test ! -e {home}")
+        assert smoke_host.out(f"getent passwd {user}") == account
+        assert not any("Ensure relay probe user" in op for op in run.mutating_changed_ops)
