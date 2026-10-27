@@ -1004,3 +1004,48 @@ def test_verify_sends_no_credentials(fake: FakeHost) -> None:
         httpd.server_close()
     assert result.returncode == 0, result.stderr
     assert seen == [None]
+
+
+@pytest.mark.parametrize("inputs_changed", [False, True])
+def test_dns_optin_only_runs_transient_check_for_actual_input_change(inputs_changed: bool) -> None:
+    @deploy("Switch")
+    def body() -> None:
+        switch.verify(
+            switch.select(ENDPOINT, PYTHON_PINNED, check_when=lambda: inputs_changed, transient_check_is_mutation=True)
+        )
+
+    result = run_deploy_fake(body, responses={**fakehost.LINUX, **installed()})
+    assert result.succeeded, result.error
+    assert ran(result, "--check-config") is inputs_changed
+    label = f"{P}Check the metrics-httpd {VERSION} configuration of {UNIT}"
+    assert (label in result.mutating_changed_ops) is inputs_changed
+
+
+@pytest.mark.parametrize("fields", [PYTHON_PINNED, RUST])
+def test_dns_optin_cannot_skip_new_binary_or_rust_switch(fields: HttpdSwitchFields) -> None:
+    @deploy("Switch")
+    def body() -> None:
+        switch.verify(switch.select(ENDPOINT, fields, check_when=lambda: False, transient_check_is_mutation=True))
+
+    for responses in ({}, installed() if fields.httpd_impl == "rust" else {}):
+        result = run_deploy_fake(body, responses={**fakehost.LINUX, **responses})
+        assert result.succeeded, result.error
+        assert ran(result, "--check-config")
+        assert f"{P}Check the metrics-httpd {VERSION} configuration of {UNIT}" in result.mutating_changed_ops
+
+
+def test_dns_optin_failed_rust_check_never_installs_dropin() -> None:
+    @deploy("Switch")
+    def body() -> None:
+        switch.select(ENDPOINT, RUST, check_when=lambda: False, transient_check_is_mutation=True)
+
+    result = run_deploy_fake(
+        body,
+        responses={
+            **fakehost.LINUX,
+            **installed(),
+            "--check-config": {"success": False, "stderr": ["fixture failure"]},
+        },
+    )
+    assert not result.succeeded
+    assert not any(DROPIN in path for path in result.uploads)

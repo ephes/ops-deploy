@@ -35,6 +35,8 @@ MANIFEST = Path(__file__).parent / "parity" / "ops_library_roles.json"
 BEHAVIOUR = ("defaults", "files", "handlers", "tasks", "templates", "vars")
 # ``<package dir>/files/<name>``: ``roles/<role>/files/<name>``, byte for byte.
 VENDORED_FILES = {
+    "services/dns/files/ddns_update.py": "dns_deploy",
+    "services/dns/files/ddns_status_httpd.py": "dns_deploy",
     "infra/files/certbot_stray_guard.py": "certbot_dns_deploy",
     "infra/files/traefik_health_probe.py": "traefik_deploy",
     "services/delve/files/apple-storekit-root-certs.pem": "delve_deploy",

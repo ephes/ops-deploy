@@ -1,0 +1,10 @@
+# Local authoritative DNS records
+# Managed by Ansible (dns_deploy role)
+
+server:
+{% for record_name in dns_local_records | map(attribute='name') | unique %}
+  local-zone: "{{ record_name }}." static
+{% endfor %}
+{% for record in dns_local_records %}
+  local-data: "{{ record.name }}. IN {{ record.type | upper }} {{ record.value }}"
+{% endfor %}

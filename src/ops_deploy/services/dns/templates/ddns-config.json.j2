@@ -1,0 +1,19 @@
+{{ {
+  "provider": dns_ddns_effective_providers[0],
+  "providers": dns_ddns_effective_providers,
+  "zone": dns_ddns_domain,
+  "names": [dns_ddns_subdomain] + ((['*.' ~ dns_ddns_subdomain]) if dns_ddns_update_wildcard | bool else []),
+  "ttl": dns_ddns_ttl | int,
+  "ipv4": dns_ddns_ipv4_enabled | bool,
+  "ipv6": dns_ddns_ipv6_enabled | bool,
+  "ip_sources": {"ipv4": dns_ddns_ipv4_source_url, "ipv6": dns_ddns_ipv6_source_url},
+  "verify_nameservers": dns_ddns_verify_nameservers,
+  "status_path": dns_ddns_status_path,
+  "log_file": dns_ddns_log_dir ~ "/ddns-update.log",
+  "log_max_bytes": (dns_ddns_log_max_size_mb | int) * 1048576,
+  "gandi": {"auth_scheme": dns_ddns_gandi_auth_scheme, "api_base": dns_ddns_gandi_api_base},
+  "rfc2136": {"server": dns_ddns_rfc2136_server, "port": dns_ddns_rfc2136_port | int,
+              "key_name": dns_ddns_rfc2136_key_name,
+              "key_algorithm": dns_ddns_rfc2136_key_algorithm,
+              "update_zone": dns_ddns_rfc2136_update_zone}
+} | to_nice_json }}

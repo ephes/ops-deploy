@@ -1,0 +1,18 @@
+{
+  "files/ddns_status_httpd.py": "57f42e9c80828fc131ad4da8bea335460e037db36fe02da52836774bb20295e5",
+  "files/ddns_update.py": "f41b76c5ae8609ad3697c9ac0214215a8c4d8c19bea4687d2e6c01165eb1cb48",
+  "templates/ddns-config.json.j2": "9b8a7ff24574b9d3b29d99c47bd3367b857f4d9bed55d59e66f680f28d793348",
+  "templates/ddns-status-endpoint.service.j2": "b868e410bf3ebaa08f984394946c8e8c997c700d7bc566bb162345fd1d500e0a",
+  "templates/ddns-update.service.j2": "91ccd6f04cecbcb54706b496f2c4360b1a41ada03fcacf4baf2363949781cb24",
+  "templates/ddns-update.timer.j2": "5736d8e1080474dff1cbac5cd60e238adcc3d647c65f3b4d3c3a8f6a403d9dfa",
+  "templates/ddns.env.j2": "da10ae0c7c79c58169f8799ef1b61c63fd3774bc14c6717f108ba321f77eb481",
+  "templates/resolv.conf.j2": "82b999a9395da9d7b13c1bd9f4180129318aecd5c6f9233cfe0a08e212044f51",
+  "templates/unbound-allowlist.conf.j2": "721abdb7cc7fa8b7d535ab140611caffabc9fbd75f7cc35fafc3d13a0a3bb01e",
+  "templates/unbound-base-full.conf.j2": "7e4216273a80f2802c902b641239619927a8649a76dbe9e6b961ba7e1dc01676",
+  "templates/unbound-blocklist.service.j2": "3c0296549957cf9814fc66dfc9672acf4d4cf70a83818934883cf33d596d610b",
+  "templates/unbound-blocklist.timer.j2": "0a02eb9d5f9b745b11ba88fc2adeee8dd3e2ef4a2cc2794e64d6cba938255a39",
+  "templates/unbound-forward-zones.conf.j2": "24d4555f5068208645f972bb5bcaf7313d33669c4e0c36eff0f6ef24cc856515",
+  "templates/unbound-local-records.conf.j2": "0ef083658f8fb8531da04bef01c84a02a8690fa32d18f9c8f1ac601b8dfb4da0",
+  "templates/unbound-split-dns.conf.j2": "861c405c3540688c21bc5d72d7fafa6bc149fe5db7f27f2750240a5bb8392674",
+  "templates/update-blocklists.sh.j2": "ea12bbc3345979756d034559d7fc293c5e6d321482f7677b59cb1a9729d4b785"
+}

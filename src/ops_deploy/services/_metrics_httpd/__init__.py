@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from io import StringIO
@@ -242,7 +243,13 @@ def _release(cfg: HttpdSwitchFields, unit: str) -> str:
     return ""
 
 
-def select(endpoint: Endpoint, cfg: HttpdSwitchFields) -> Selection:
+def select(
+    endpoint: Endpoint,
+    cfg: HttpdSwitchFields,
+    *,
+    check_when: Callable[[], bool] | None = None,
+    transient_check_is_mutation: bool = False,
+) -> Selection:
     """Select the implementation of ``endpoint``'s unit; call it after the unit file is written."""
 
     unit, impl = endpoint.service_name, cfg.httpd_impl
@@ -257,7 +264,8 @@ def select(endpoint: Endpoint, cfg: HttpdSwitchFields) -> Selection:
             f"{'; '.join(found)}. --check-config is skipped."
         )
 
-    before = before_binary(host.get_fact(FileContents, path=endpoint.dropin_path))
+    before_lines = host.get_fact(FileContents, path=endpoint.dropin_path)
+    before = before_binary(before_lines)
     live = probe(live_command(unit), name=f"the executable {unit} runs")
     dropin: OperationMeta | None = None
     if impl == "python":
@@ -272,16 +280,30 @@ def select(endpoint: Endpoint, cfg: HttpdSwitchFields) -> Selection:
     if install is not None and not found:
         checked = install
         # Binds nothing, sends nothing, prints no hash or password.
-        mark_read_only(
-            server.shell(
-                name=f"Check the {NAME} {version} configuration of {unit}",
-                commands=[check_config_command(endpoint, install.binary)],
-                _if=lambda: not checked.failed(),
-                # As the role: a refused configuration stops impl rust; with impl
-                # python it is an ignored error and the unit stays on Python.
-                _ignore_errors=impl == "python",
+        desired_dropin = render_dropin(install.binary, endpoint.argv).splitlines()
+        switch_needed = impl == "rust" and (before_lines != desired_dropin or (live or "").strip() != install.binary)
+
+        def needs_check() -> bool:
+            if checked.failed():
+                return False
+            # A newly installed/repaired binary or an actual Rust switch always
+            # validates, even if a caller's already-executed input operations did
+            # not change. A read-only release validation is not an installation.
+            return (
+                check_when is None
+                or (not checked.validated and checked.op.did_change())
+                or switch_needed
+                or check_when()
             )
+
+        check = server.shell(
+            name=f"Check the {NAME} {version} configuration of {unit}",
+            commands=[check_config_command(endpoint, install.binary)],
+            _if=needs_check,
+            _ignore_errors=impl == "python",
         )
+        if not transient_check_is_mutation:
+            mark_read_only(check)
     if impl == "rust":
         files.directory(
             name=f"Ensure {endpoint.dropin_dir}", path=endpoint.dropin_dir, user="root", group="root", mode="0755"

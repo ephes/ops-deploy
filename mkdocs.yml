@@ -40,6 +40,7 @@ nav:
       - static_site: services/static_site.md
       - metrics-httpd switch: services/metrics_httpd.md
       - metrics endpoints: services/metrics_endpoints.md
+      - DNS: services/dns.md
       - mail monitoring: services/mail_monitoring.md
       - django_site: services/django_site.md
       - compose_app: services/compose_app.md

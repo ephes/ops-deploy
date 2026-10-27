@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the full ordinary Unbound/DNS deployment with conditional blocklist/DDNS jobs, validated owned configuration replacement and rollback, authenticated status endpoint and explicit no-write convergence. Keep current package and endpoint runtime selections. DNS alone opts into change-gated transient metrics validation; existing helper callers retain their defaults.
+
 - Preserve the monitor relay service account’s absent home directory, matching
   the original role’s `create_home: false`.
 

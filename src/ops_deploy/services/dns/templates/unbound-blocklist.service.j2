@@ -1,0 +1,22 @@
+[Unit]
+Description=Update Unbound DNS Blocklists
+After=network-online.target unbound.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-blocklists.sh
+StandardOutput=journal
+StandardError=journal
+User=root
+Group=root
+
+# Security hardening
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ dns_unbound_blocklist_dir }} /run
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

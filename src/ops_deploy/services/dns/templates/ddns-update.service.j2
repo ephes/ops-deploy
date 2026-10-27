@@ -1,0 +1,20 @@
+[Unit]
+Description=Update {{ dns_ddns_effective_providers | join(" + ") }} DNS for {{ dns_ddns_subdomain }}.{{ dns_ddns_domain }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ddns
+Group=ddns
+EnvironmentFile={{ dns_ddns_config_dir }}/credentials.env
+ExecStart=/usr/bin/python3 {{ dns_ddns_script_path }} --config {{ dns_ddns_config_dir }}/config.json
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ dns_ddns_log_dir }} {{ dns_ddns_state_dir }}

@@ -1,0 +1,38 @@
+[Unit]
+Description=DDNS status HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ddns
+Group=ddns
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 {{ dns_ddns_status_endpoint_server_path }} \
+  --bind {{ dns_ddns_status_endpoint_bind }} \
+  --port {{ dns_ddns_status_endpoint_port }} \
+  --path {{ dns_ddns_status_endpoint_path }} \
+  --json-path {{ dns_ddns_status_path }} \
+  --htpasswd-file {{ dns_ddns_status_endpoint_htpasswd_path }}
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+ReadOnlyPaths={{ dns_ddns_state_dir }}
+
+[Install]
+WantedBy=multi-user.target

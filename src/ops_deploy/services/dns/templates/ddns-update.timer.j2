@@ -1,0 +1,14 @@
+[Unit]
+Description=Run DDNS update every {{ dns_ddns_interval }}
+Requires=ddns-update.service
+
+[Timer]
+# Run 1 minute after boot
+OnBootSec=1min
+# Then at configured interval
+OnUnitActiveSec={{ dns_ddns_interval }}
+# Run even if the system was powered down when it should have run
+Persistent=true
+
+[Install]
+WantedBy=timers.target

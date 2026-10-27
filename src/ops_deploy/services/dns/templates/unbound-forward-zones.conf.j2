@@ -1,0 +1,13 @@
+# Forward zone configuration
+# Forward specific domains to designated upstream DNS servers
+# Managed by Ansible (dns_deploy role)
+
+{% for zone in dns_forward_zones %}
+forward-zone:
+    name: "{{ zone.name }}"
+{% for addr in zone.forward_addrs | default([]) | flatten | list %}
+    forward-addr: {{ addr }}
+{% endfor %}
+    forward-first: {{ zone.forward_first | default(false) | ternary('yes', 'no') }}
+
+{% endfor %}

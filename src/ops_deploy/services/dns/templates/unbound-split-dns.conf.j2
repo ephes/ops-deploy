@@ -1,0 +1,80 @@
+# Split DNS configuration - different responses per client network
+# This file is only used in Advanced Mode
+# Views use view-first: yes to check local zones first, then fall through
+# to global forward zones when configured.
+
+server:
+  # Map client networks to views
+  access-control-view: {{ dns_split_lan_network }} "lan"
+{% for lan_ipv6 in dns_split_lan_ipv6_networks | default([]) %}
+  access-control-view: {{ lan_ipv6 }} "lan"
+{% endfor %}
+  access-control-view: {{ dns_split_tailscale_network }} "tailscale"
+{% for ts_ipv6 in dns_split_tailscale_ipv6_networks | default([]) %}
+  access-control-view: {{ ts_ipv6 }} "tailscale"
+{% endfor %}
+  access-control-view: 127.0.0.0/8 "localhost"
+
+# LAN view - internal network clients
+view:
+  name: "lan"
+  view-first: yes
+
+  # Redirect zone for wildcard behavior
+  local-zone: "{{ dns_local_domain }}." redirect
+  local-data: "{{ dns_local_domain }}. IN A {{ dns_split_lan_ip }}"
+
+  local-zone: "{{ dns_local_domain_punycode }}." redirect
+  local-data: "{{ dns_local_domain_punycode }}. IN A {{ dns_split_lan_ip }}"
+
+  # Service-specific overrides using static zones
+  # IMPORTANT: Static zones take precedence over the redirect wildcard
+  # Use for services that need different IPs than the wildcard default
+{% for service in dns_split_services %}
+  local-zone: "{{ service.name }}.{{ dns_local_domain }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain }}. IN A {{ service.lan_ip }}"
+  local-zone: "{{ service.name }}.{{ dns_local_domain_punycode }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain_punycode }}. IN A {{ service.lan_ip }}"
+{% endfor %}
+
+# Tailscale view - Tailscale network clients
+view:
+  name: "tailscale"
+  view-first: yes
+
+  # Redirect zone for wildcard behavior
+  local-zone: "{{ dns_local_domain }}." redirect
+  local-data: "{{ dns_local_domain }}. IN A {{ dns_split_tailscale_ip }}"
+
+  local-zone: "{{ dns_local_domain_punycode }}." redirect
+  local-data: "{{ dns_local_domain_punycode }}. IN A {{ dns_split_tailscale_ip }}"
+
+  # Service-specific overrides using static zones
+  # IMPORTANT: Static zones take precedence over the redirect wildcard
+  # Use for services that need different IPs than the wildcard default
+{% for service in dns_split_services %}
+  local-zone: "{{ service.name }}.{{ dns_local_domain }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain }}. IN A {{ service.tailscale_ip }}"
+  local-zone: "{{ service.name }}.{{ dns_local_domain_punycode }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain_punycode }}. IN A {{ service.tailscale_ip }}"
+{% endfor %}
+
+# Localhost view
+view:
+  name: "localhost"
+  view-first: yes
+
+  # Redirect zone for wildcard behavior
+  local-zone: "{{ dns_local_domain }}." redirect
+  local-data: "{{ dns_local_domain }}. IN A {{ dns_split_lan_ip }}"
+
+  local-zone: "{{ dns_local_domain_punycode }}." redirect
+  local-data: "{{ dns_local_domain_punycode }}. IN A {{ dns_split_lan_ip }}"
+
+  # Service-specific overrides using static zones (same as LAN view)
+{% for service in dns_split_services %}
+  local-zone: "{{ service.name }}.{{ dns_local_domain }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain }}. IN A {{ service.lan_ip }}"
+  local-zone: "{{ service.name }}.{{ dns_local_domain_punycode }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain_punycode }}. IN A {{ service.lan_ip }}"
+{% endfor %}

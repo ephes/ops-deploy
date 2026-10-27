@@ -1,0 +1,15 @@
+# Unbound allowlist - overrides blocklist entries
+# These domains will always be resolved normally
+
+{% for domain in dns_whitelist_domains | default([]) %}
+local-zone: "{{ domain }}" transparent
+{% endfor %}
+
+# Additional commonly needed domains
+local-zone: "github.com" transparent
+local-zone: "raw.githubusercontent.com" transparent
+local-zone: "registry.npmjs.org" transparent
+local-zone: "pypi.org" transparent
+local-zone: "files.pythonhosted.org" transparent
+local-zone: "docker.io" transparent
+local-zone: "registry.docker.io" transparent

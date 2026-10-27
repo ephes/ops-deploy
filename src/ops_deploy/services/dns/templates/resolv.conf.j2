@@ -1,0 +1,14 @@
+# Managed by Ansible (dns_deploy role)
+# Local resolver configuration for Unbound
+
+{% for ns in dns_resolver_nameservers | select('truthy') | unique -%}
+nameserver {{ ns }}
+{% endfor -%}
+
+{% if dns_resolver_search_domains | select('truthy') | list %}
+search{% for domain in dns_resolver_search_domains | select('truthy') | unique %} {{ domain }}{% endfor %}
+{% endif -%}
+
+{% if dns_resolver_options | select('truthy') | list -%}
+options{% for opt in dns_resolver_options | select('truthy') | unique %} {{ opt }}{% endfor %}
+{% endif -%}

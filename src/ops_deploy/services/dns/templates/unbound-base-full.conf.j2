@@ -1,0 +1,90 @@
+# Unbound base configuration - Full DNS server mode
+# This configuration is used when dns_mode == 'unbound_only'
+
+server:
+    # Network interfaces - listen on all for both LAN and Tailscale
+    interface: 0.0.0.0
+    interface: ::0
+    # Explicitly bind to Tailscale IP if available
+{% if dns_split_tailscale_ip is defined %}
+    interface: {{ dns_split_tailscale_ip }}
+{% endif %}
+    port: 53
+
+    # Automatically select correct interface for replies
+    interface-automatic: yes
+
+    # Access control
+    access-control: 127.0.0.0/8 allow
+    access-control: ::1/128 allow
+    access-control: {{ dns_split_lan_network | default('192.168.178.0/24') }} allow
+    access-control: {{ dns_split_tailscale_network | default('100.64.0.0/10') }} allow
+{% for lan_ipv6 in dns_split_lan_ipv6_networks | default([]) %}
+    access-control: {{ lan_ipv6 }} allow
+{% endfor %}
+{% for ts_ipv6 in dns_split_tailscale_ipv6_networks | default([]) %}
+    access-control: {{ ts_ipv6 }} allow
+{% endfor %}
+    access-control: 0.0.0.0/0 refuse
+    access-control: ::/0 refuse
+
+    # Performance
+    num-threads: {{ ansible_processor_vcpus | default(2) }}
+{% if dns_unbound_num_queries_per_thread | int > 0 %}
+    num-queries-per-thread: {{ dns_unbound_num_queries_per_thread | int }}
+{% endif %}
+    cache-min-ttl: 3600
+    cache-max-ttl: 86400
+    cache-max-negative-ttl: 3600
+    msg-cache-size: 128m
+    rrset-cache-size: 256m
+    prefetch: {{ 'yes' if dns_unbound_prefetch | bool else 'no' }}
+    prefetch-key: {{ 'yes' if dns_unbound_prefetch_key | bool else 'no' }}
+
+    # Security
+    hide-identity: yes
+    hide-version: yes
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    harden-referral-path: yes
+    use-caps-for-id: yes
+
+    # DNSSEC
+    # auto-trust-anchor-file is already defined in root-auto-trust-anchor-file.conf
+    val-clean-additional: yes
+    val-permissive-mode: no
+    val-log-level: 1
+{% if dns_unbound_serve_expired | bool %}
+    serve-expired: yes
+    serve-expired-ttl: {{ dns_unbound_serve_expired_ttl }}
+    serve-expired-reply-ttl: {{ dns_unbound_serve_expired_reply_ttl }}
+    serve-expired-ttl-reset: {{ 'yes' if dns_unbound_serve_expired_ttl_reset | bool else 'no' }}
+{% if dns_unbound_serve_expired_client_timeout | int > 0 %}
+    serve-expired-client-timeout: {{ dns_unbound_serve_expired_client_timeout | int }}
+{% endif %}
+{% endif %}
+
+    # Logging
+    verbosity: 1
+    log-queries: no
+    log-replies: no
+    log-servfail: yes
+
+    # IPv6
+    do-ip6: yes
+    prefer-ip6: no
+
+    # TCP
+    do-tcp: yes
+    tcp-idle-timeout: 900000
+
+    # Files
+    directory: "/etc/unbound"
+    logfile: ""  # Log to syslog
+    pidfile: "/run/unbound.pid"
+
+    # Include blocklist if it exists
+    include: "{{ dns_unbound_blocklist_dir }}/blocklist.conf"
+
+    # Include allowlist overrides if they exist
+    include: "{{ dns_unbound_blocklist_dir }}/allowlist.conf"
