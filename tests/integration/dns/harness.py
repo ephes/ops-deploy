@@ -85,7 +85,22 @@ def snapshot() -> dict[str, Any]:
 
 def assert_trace(text: str) -> None:
     mutations = []
+    executables: dict[str, str] = {}
     for line in text.splitlines():
+        exited = re.match(r"^(\d+) \+\+\+ (?:exited|killed)", line)
+        if exited:
+            executables.pop(exited[1], None)
+        attempt = re.match(r"^(\d+) execve\(", line)
+        if attempt:
+            executables.pop(attempt[1], None)
+        executed = re.match(r'^(\d+) execve\("([^\"]+)".* = 0$', line)
+        if executed:
+            executables[executed[1]] = executed[2]
+        thread_name = re.match(r'^(\d+) openat\(AT_FDCWD, "/proc/self/task/\d+/comm", O_RDWR\) = \d+$', line)
+        if thread_name and executables.get(thread_name[1]) == "/usr/bin/dig":
+            # dig names its own short-lived query threads; this is kernel task
+            # metadata, not a persistent file or a deployment resource.
+            continue
         if not re.search(
             r"^(?:[0-9]+\s+)?(?:open|openat|openat2|creat)\(.*(?:O_WRONLY|O_RDWR|O_CREAT|O_TRUNC)|"
             r"^(?:[0-9]+\s+)?(?:mkdir|mkdirat|unlink|unlinkat|rename|renameat|renameat2|chmod|fchmod|fchmodat|chown|lchown|fchown|fchownat|utime|utimes|utimensat|symlink|symlinkat|link|linkat|truncate|ftruncate)\(",
