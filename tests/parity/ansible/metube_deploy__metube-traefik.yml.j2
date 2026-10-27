@@ -1,0 +1,111 @@
+# Managed by Ansible - Traefik configuration for MeTube
+
+http:
+  routers:
+{% if metube_basic_auth_enabled %}
+    metube-int:
+      rule: "Host(`{{ metube_traefik_host }}`) && ({% for range in metube_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in metube_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 120
+      middlewares:
+        - metube-headers
+        - metube-gzip
+{% for middleware in metube_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: metube
+{% if metube_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ metube_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    metube-ext:
+      rule: "Host(`{{ metube_traefik_host }}`)"
+      entryPoints:
+{% for ep in metube_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - metube-auth
+        - metube-headers
+        - metube-gzip
+{% for middleware in metube_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: metube
+{% if metube_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ metube_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    metube-secure:
+      rule: "Host(`{{ metube_traefik_host }}`)"
+      entryPoints:
+{% for ep in metube_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - metube-headers
+        - metube-gzip
+{% for middleware in metube_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: metube
+{% if metube_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ metube_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    metube-http:
+      rule: "Host(`{{ metube_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - metube-redirect
+      service: metube
+
+  middlewares:
+{% if metube_basic_auth_enabled %}
+    metube-auth:
+      basicAuth:
+        users:
+          - "{{ metube_basic_auth_user }}:{{ metube_basic_auth_password_hash }}"
+        removeHeader: {{ metube_basic_auth_remove_header | bool }}
+{% endif %}
+
+    metube-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ metube_traefik_host }}"
+
+    metube-gzip:
+      compress: {}
+
+    metube-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    metube:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ metube_port }}"

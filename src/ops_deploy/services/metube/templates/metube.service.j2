@@ -1,0 +1,35 @@
+[Unit]
+Description=MeTube (yt-dlp web UI)
+After={{ metube_systemd_after }}
+
+[Service]
+User={{ metube_user }}
+Group={{ metube_group }}
+WorkingDirectory={{ metube_app_dir }}
+EnvironmentFile=-{{ metube_env_file }}
+Environment=PATH={{ metube_venv_path }}/bin:/usr/local/bin:/usr/bin
+ExecStart={{ metube_venv_path }}/bin/python3 {{ metube_app_dir }}/app/main.py
+Restart={{ metube_systemd_restart }}
+RestartSec={{ metube_systemd_restart_sec }}
+LimitNOFILE={{ metube_systemd_nofile }}
+{% if metube_systemd_hardening | default(false) %}
+{% if metube_systemd_tasks_max %}
+TasksMax={{ metube_systemd_tasks_max }}
+{% endif %}
+{% if metube_systemd_memory_max %}
+MemoryMax={{ metube_systemd_memory_max }}
+{% endif %}
+{% else %}
+{% if metube_systemd_tasks_max %}TasksMax={{ metube_systemd_tasks_max }}{% endif %}
+{% if metube_systemd_memory_max %}MemoryMax={{ metube_systemd_memory_max }}{% endif %}
+{% endif %}
+{% if metube_systemd_hardening | default(false) %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ metube_home }} {{ metube_download_dir }} {{ metube_temp_dir }} {{ metube_state_dir }} {{ metube_audio_download_dir }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

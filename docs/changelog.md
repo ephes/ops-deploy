@@ -14,6 +14,9 @@
 
 - Add initialized-controller UniFi routine deployments with explicit verified package updates, Java/Mongo package presence, authenticated Mongo/HA reconciliation and a disposable real Linux integration workflow. Initialize the absent controller's private external-database selectors before vendor startup; preserve existing controller configuration and database selection. Missing-controller admission requires empty application/statistics/audit databases and effective write/index privileges before vendor initialization.
 
+- Add native MeTube Git/Angular/uv deployment with staged runtime/UI qualification,
+  retained media/state, queue protection and role-compatible systemd/Traefik artifacts.
+
 - Vector producers: validate converged Logyard/Graphyard fragments in place
   without temporary staging writes. Retain staging before content or metadata
   repairs and classify those temporary writes as mutations. Preserve source

@@ -56,6 +56,7 @@ nav:
       - homelab: services/homelab.md
       - gotosocial: services/gotosocial.md
       - thermal_monitoring: services/thermal_monitoring.md
+      - metube (native): services/metube.md
       - jellyfin: services/jellyfin.md
       - unifi: services/unifi.md
       - vaultwarden: services/vaultwarden.md
