@@ -1,0 +1,27 @@
+[Unit]
+Description=Mailgun relay end-to-end probe (POST to the monitor mailbox)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User={{ mail_monitoring_relay_probe_user }}
+Group={{ mail_monitoring_relay_probe_user }}
+StateDirectory={{ mail_monitoring_relay_probe_service_name }}
+# metrics_endpoint (another user) reads the state file.
+StateDirectoryMode=0755
+ExecStart=/usr/local/bin/{{ mail_monitoring_relay_probe_service_name }} --state-file /var/lib/{{ mail_monitoring_relay_probe_service_name }}/state
+TimeoutStartSec={{ ((mail_monitoring_relay_probe_timeout | int) + 10) * ((mail_monitoring_relay_probe_retries | int) + 1) + 30 }}
+
+# Hardening (safe for oneshot)
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes

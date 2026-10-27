@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Mailgun relay end-to-end probe
+
+[Timer]
+OnCalendar={{ mail_monitoring_relay_probe_on_calendar }}
+RandomizedDelaySec={{ mail_monitoring_relay_probe_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run mail monitoring mailbox cleanup
+
+[Timer]
+OnCalendar={{ mail_monitoring_cleanup_timer_on_calendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

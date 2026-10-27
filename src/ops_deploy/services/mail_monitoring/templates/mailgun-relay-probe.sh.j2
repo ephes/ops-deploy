@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Mailgun-API end-to-end probe (ops-library mail_monitoring role).
+#
+# POSTs one message to <url>/v3/<domain>/messages with Basic-Auth api:<token>
+# and prints the HTTP status. Exits 0 only on HTTP 200.
+#
+# Usage: {{ mail_monitoring_relay_probe_service_name }} [options] [-- extra curl arguments]
+#   --url BASE_URL        relay base URL (default {{ mail_monitoring_relay_probe_url }})
+#   --state-file PATH     write last_status/last_run for metrics_endpoint
+#                         (only the timer passes this; manual runs leave it out)
+#   --retries N           curl retries on connection refused, timeout,
+#                         408/429/5xx (default {{ mail_monitoring_relay_probe_retries }})
+#   --subject-suffix TEXT appended to "<prefix> <nonce>"
+#   --token-file PATH     raw token (default {{ '/etc/' ~ mail_monitoring_relay_probe_service_name ~ '/token' }})
+# Arguments after "--" go to curl unchanged, e.g. --form-string html=... or
+# -F attachment=@file for extra message shapes.
+set -euo pipefail
+
+url={{ mail_monitoring_relay_probe_url | quote }}
+domain={{ mail_monitoring_relay_probe_domain | quote }}
+from={{ mail_monitoring_relay_probe_from | quote }}
+to={{ mail_monitoring_relay_probe_to | quote }}
+subject_prefix={{ mail_monitoring_relay_probe_subject_prefix | quote }}
+timeout={{ mail_monitoring_relay_probe_timeout | int }}
+retries={{ mail_monitoring_relay_probe_retries | int }}
+token_file={{ ('/etc/' ~ mail_monitoring_relay_probe_service_name ~ '/token') | quote }}
+state_file=""
+subject_suffix=""
+
+usage() {
+  sed -n '/^# Usage:/,/^set -euo pipefail$/{/^#/s/^# \{0,1\}//p;}' "$0"
+}
+
+need_value() {
+  if [[ $# -lt 2 ]]; then
+    echo "$1 needs a value" >&2
+    exit 2
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --url) need_value "$@"; url="$2"; shift 2 ;;
+    --state-file) need_value "$@"; state_file="$2"; shift 2 ;;
+    --retries) need_value "$@"; retries="$2"; shift 2 ;;
+    --subject-suffix) need_value "$@"; subject_suffix="$2"; shift 2 ;;
+    --token-file) need_value "$@"; token_file="$2"; shift 2 ;;
+    --) shift; break ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ ! "$url" =~ ^https?://[^/[:space:]]+(/[^[:space:]]*)?$ ]]; then
+  echo "invalid --url: $url" >&2
+  exit 2
+fi
+if [[ ! "$retries" =~ ^[0-9]+$ ]]; then
+  echo "invalid --retries: $retries" >&2
+  exit 2
+fi
+if [[ ! -r "$token_file" ]]; then
+  echo "token file not readable: $token_file" >&2
+  exit 2
+fi
+token=""
+IFS= read -r token <"$token_file" || true
+# The token goes to curl on stdin (--config -), never on a command line; this
+# pattern also keeps it from breaking out of the quoted config value.
+if [[ ! "$token" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+  echo "token in $token_file is empty or has characters outside [A-Za-z0-9._~-]" >&2
+  exit 2
+fi
+
+nonce="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+subject="${subject_prefix} ${nonce}${subject_suffix:+ ${subject_suffix}}"
+endpoint="${url%/}/v3/${domain}/messages"
+body_file="$(mktemp)"
+trap 'rm -f "$body_file"' EXIT
+
+retry_args=()
+if [[ "$retries" -gt 0 ]]; then
+  retry_args=(--retry "$retries" --retry-delay 10 --retry-connrefused)
+fi
+
+curl_exit=0
+http_code="$(
+  printf 'user = "api:%s"\n' "$token" |
+    curl --config - --silent --show-error --max-time "$timeout" \
+      ${retry_args[@]+"${retry_args[@]}"} \
+      --output "$body_file" --write-out '%{http_code}' \
+      --form-string "from=${from}" \
+      --form-string "to=${to}" \
+      --form-string "subject=${subject}" \
+      --form-string "text=Mailgun relay end-to-end probe ${nonce} from $(hostname)." \
+      "$@" "$endpoint"
+)" || curl_exit=$?
+unset token
+
+if [[ ! "$http_code" =~ ^[0-9]{3}$ ]]; then
+  http_code=000
+fi
+status=$((10#$http_code))
+response="$(head -c 300 "$body_file" | tr -d '\r\n')"
+echo "endpoint=${endpoint} subject=\"${subject}\" status=${status} curl_exit=${curl_exit} response=${response}"
+
+if [[ -n "$state_file" ]]; then
+  printf 'last_status=%d\nlast_run=%d\ncurl_exit=%d\n' "$status" "$(date +%s)" "$curl_exit" >"${state_file}.tmp"
+  chmod 0644 "${state_file}.tmp"
+  mv -f "${state_file}.tmp" "$state_file"
+fi
+
+if [[ "$status" -ne 200 ]]; then
+  exit 1
+fi

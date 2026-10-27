@@ -110,8 +110,8 @@ class SiteCheck(_Part):
     """One ``health_check`` row: what Nyxmon checks, how often, with which settings (``data``)."""
 
     name: Annotated[Text, Field(max_length=255)]
-    check_type: Literal["http", "json-metrics", "tcp"]
-    # An http(s) URL for http and json-metrics checks, a host name for tcp checks.
+    check_type: Literal["http", "json-metrics", "tcp", "imap"]
+    # An http(s) URL for http and json-metrics checks, a host name for tcp/imap checks.
     url: Annotated[StrictStr, Field(max_length=512)]
     check_interval: Annotated[StrictInt, Field(ge=1)]
     data: dict[str, Any]
@@ -132,7 +132,7 @@ class SiteCheck(_Part):
                     "http and json-metrics checks need an http(s) URL without whitespace, quotes or backslashes"
                 )
         elif not _HOSTNAME.fullmatch(self.url):
-            raise ValueError("tcp checks need a host name")
+            raise ValueError("tcp and imap checks need a host name")
         return self
 
     def as_json(self) -> dict[str, Any]:
@@ -165,11 +165,14 @@ class NyxmonSiteChecksConfig(BaseServiceConfig):
     # notification state); a name that is not there is already converged.
     remove_checks: tuple[Annotated[Text, Field(max_length=255)], ...] = ()
     require_literal: SourceLiteral | None = None
+    managed_safety: bool = False
 
     @model_validator(mode="after")
     def _unique_check_names(self) -> NyxmonSiteChecksConfig:
         if not self.checks and not self.remove_checks:
             raise ValueError("checks or remove_checks must name at least one check")
+        if self.managed_safety and self.remove_checks:
+            raise ValueError("managed checks cannot remove checks")
         names = [check.name for check in self.checks]
         if len(set(names)) != len(names):
             raise ValueError("check names must be unique")
@@ -201,7 +204,22 @@ def site_checks_command(cfg: NyxmonSiteChecksConfig, mode: Literal["check", "app
 
     env = {"NYXMON_DB_PATH": str(cfg.db_path), "NYXMON_SERVICE_NAME": cfg.service_name}
     assignments = [f"{key}={value}" for key, value in env.items()]
-    return shlex.join(["runuser", "-u", cfg.user, "--", "env", *assignments, "python3", "-I", "-c", SCRIPT, mode])
+    return shlex.join(
+        [
+            "runuser",
+            "-u",
+            cfg.user,
+            "--",
+            "env",
+            *assignments,
+            "python3",
+            "-I",
+            "-c",
+            SCRIPT,
+            mode,
+            *(["--managed-safety"] if cfg.managed_safety else []),
+        ]
+    )
 
 
 def _require(name: str, test: str, message: str) -> None:
@@ -226,6 +244,12 @@ def deploy_nyxmon_site_checks(cfg: NyxmonSiteChecksConfig) -> None:
     state = probe(check, name=name, stdin=payload)
     if (state or "").strip() == "changed=false":
         return
-    secret_stdin(name=f"Upsert {name}", command=site_checks_command(cfg, "apply"), content=SecretContent(payload))
+    retry_options: dict[str, Any] = {"_retries": 7, "_retry_delay": 5} if cfg.managed_safety else {}
+    secret_stdin(
+        name=f"Upsert {name}",
+        command=site_checks_command(cfg, "apply"),
+        content=SecretContent(payload),
+        **retry_options,
+    )
     if state is None:
         verify_probe(check, name=name, expect="changed=false", stdin=payload)

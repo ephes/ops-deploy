@@ -34,12 +34,14 @@ import os
 import pathlib
 import sqlite3
 import sys
+import stat
 
 # The tables (and their column) that hold rows of a health check, as
 # Nyxmon's models cascade them on delete.
 DEPENDENTS = (("check_result", "health_check_id"), ("check_notification_state", "check_id"))
 
-mode = sys.argv[1] if len(sys.argv) == 2 else ""
+managed_safety = sys.argv[2:] == ["--managed-safety"]
+mode = sys.argv[1] if len(sys.argv) == 2 or managed_safety else ""
 if mode not in ("check", "apply"):
     sys.exit("usage: site_checks.py check|apply")
 apply = mode == "apply"
@@ -58,6 +60,18 @@ if not isinstance(checks, list) or not isinstance(remove, list) or not all(isins
 if set(remove) & {check["name"] for check in checks}:
     sys.exit("a check must not be both listed and removed")
 
+if managed_safety:
+    if remove:
+        sys.exit("managed checks cannot remove checks")
+    db = pathlib.Path(db_path)
+    info = db.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
+        sys.exit("Nyxmon database must be regular, owned by the executing Nyxmon user, mode 0600")
+    for sidecar in db.parent.glob(db.name + "*"):
+        info = sidecar.lstat()
+        if stat.S_ISREG(info.st_mode) and (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600):
+            sys.exit("Nyxmon database sidecars must be owned by the executing Nyxmon user, mode 0600")
+
 os.umask(0o077)
 uri = pathlib.PurePosixPath(db_path).as_uri() + ("?mode=rw" if apply else "?mode=ro")
 conn = sqlite3.connect(uri, uri=True, timeout=10)
@@ -65,9 +79,22 @@ cur = conn.cursor()
 if apply:
     cur.execute("BEGIN IMMEDIATE")
 changed = False
+if managed_safety:
+    required_columns = {
+        "service": {"id", "name"},
+        "health_check": {"id", "name", "service_id", "check_type", "url", "check_interval",
+                         "status", "next_check_time", "processing_started_at", "disabled", "data"},
+    }
+    for table, required in required_columns.items():
+        actual = {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
+        if required - actual:
+            sys.exit("Nyxmon schema lacks required columns")
 
 cur.execute("SELECT id FROM service WHERE name = ?", (service_name,))
-row = cur.fetchone()
+rows = cur.fetchall()
+if managed_safety and len(rows) > 1:
+    sys.exit("ambiguous Nyxmon service name")
+row = rows[0] if rows else None
 service_id = None if row is None else row[0]
 
 doomed = []
@@ -113,16 +140,20 @@ for check in checks:
     desired_data_json = json.dumps(check["data"], sort_keys=True)
 
     existing = None
+    lease_columns = ", status, processing_started_at" if managed_safety else ""
     if service_id is not None:
         cur.execute(
-            """
-            SELECT id, check_type, url, check_interval, data, disabled
+            f"""
+            SELECT id, check_type, url, check_interval, data, disabled{lease_columns}
             FROM health_check
             WHERE service_id = ? AND name = ?
             """,
             (service_id, check_name),
         )
-        existing = cur.fetchone()
+        rows = cur.fetchall()
+        if managed_safety and len(rows) > 1:
+            sys.exit("ambiguous Nyxmon check name")
+        existing = rows[0] if rows else None
 
     if existing is None:
         changed = True
@@ -139,7 +170,8 @@ for check in checks:
             )
         continue
 
-    check_id, current_type, current_url, current_interval, current_data, current_disabled = existing
+    check_id, current_type, current_url, current_interval, current_data, current_disabled = existing[:6]
+    status = existing[6] if managed_safety else None
     try:
         current_data_json = json.dumps(json.loads(current_data or "{}"), sort_keys=True)
     except json.JSONDecodeError:
@@ -151,6 +183,8 @@ for check in checks:
         or current_data_json != desired_data_json
         or int(current_disabled) != 0
     ):
+        if managed_safety and status == "processing":
+            sys.exit("Nyxmon check is currently processing; retry after its lease completes")
         changed = True
         if apply:
             cur.execute(
@@ -165,9 +199,12 @@ for check in checks:
                     next_check_time = 0,
                     processing_started_at = 0
                 WHERE id = ?
-                """,
+                """ + (" AND status != 'processing'" if managed_safety else ""),
                 (check_type, check_url, check_interval, desired_data_json, check_id),
             )
+
+            if managed_safety and cur.rowcount != 1:
+                sys.exit("Nyxmon check lease changed during reconciliation")
 
 if apply:
     conn.commit()

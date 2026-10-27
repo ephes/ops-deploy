@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add native monitor mailbox/Maildir and mail cleanup/relay probe provisioning,
+  with unchanged role templates, Dovecot stdin password transport and scoped SQL.
+  Add IMAP SiteCheck validation and opt-in managed privacy/processing-lease guards.
+
 - Add standalone mail and torrent VPN metrics endpoint deploys using the existing
   Python/Rust switch, Basic Auth, role templates and service identities. Preserve
   recursive queue ACLs, probe-state exports and the torrent root collector/timer.

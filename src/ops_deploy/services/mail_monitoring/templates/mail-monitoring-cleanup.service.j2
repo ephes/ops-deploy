@@ -1,0 +1,14 @@
+[Unit]
+Description=Mail monitoring mailbox cleanup (expunge old messages)
+
+[Service]
+Type=oneshot
+ExecStart={{ mail_monitoring_cleanup_script_path }}
+
+# Hardening (safe for oneshot)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ mail_monitoring_vmail_path }}
+

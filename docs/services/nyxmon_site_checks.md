@@ -5,7 +5,8 @@ SQLite database on the Nyxmon host: the service row is created if it is
 missing, each listed check is inserted or brought back to the listed
 settings, and each check named in `remove_checks` is deleted. It is the pyinfra counterpart of site-check provisioning playbooks
 that run on the Nyxmon host only: the monitored sites are never contacted,
-Nyxmon itself is not restarted, and no secrets are involved.
+Nyxmon itself is not restarted. Check data may carry credentials; it travels on
+redacted stdin, never in arguments or environment variables.
 
 ```python
 from ops_deploy.services.nyxmon_site_checks import NyxmonSiteChecksConfig, deploy_nyxmon_site_checks
@@ -46,12 +47,13 @@ deploy_nyxmon_site_checks(cfg)
 | `db_path` | `/home/nyxmon/site/db.sqlite3` | Nyxmon's database; letters, digits, `.`, `_`, `-`, `/` only |
 | `checks` | `()` | the `health_check` rows, see below; names must be unique |
 | `remove_checks` | `()` | names of the service's checks to delete; unique, plain text (as a check name), none also in `checks`. `checks` and `remove_checks` together must name at least one check |
+| `managed_safety` | `false` | enable managed mail-task privacy/schema/identity/lease guards; forbids removal |
 | `require_literal` | none | `{path, literal}`: `grep -Fq` must find `literal` in `path` before anything is written |
 
 A check (`SiteCheck`) has `name` (at most 255 characters), `check_type`
-(`http`, `json-metrics` or `tcp`; other Nyxmon types are refused until a
+(`http`, `json-metrics`, `tcp` or `imap`; other Nyxmon types are refused until a
 deploy needs them), `url` (an http(s) URL for `http` and `json-metrics`, a
-host name for `tcp`), `check_interval` (a positive integer; booleans,
+host name for `tcp` and `imap`), `check_interval` (a positive integer; booleans,
 strings and floats are refused) and `data`, a mapping of JSON values. The
 types in `data` are kept exactly: `10.0` stays a float and `10` an integer,
 because the upsert compares the stored data as JSON text and `10.0` and `10`
@@ -156,3 +158,23 @@ differences:
   the service, refusal (nothing written, both modes) on an unknown table
   referencing `health_check` or a check being processed, and malformed
   payloads.
+
+## Managed safety mode
+
+`managed_safety=True` passes `--managed-safety` to the existing resource. It is
+opt-in; other consumers retain the default behavior above. Both check and apply
+require a regular (not symlink) database owned by the executing `user`, mode0600,
+and the same ownership/mode for existing regular files matching `db_path*`.
+These assertions preserve the managed mail task; they do not repair unrelated
+SQLite file metadata. Operations run as `user` with umask077, so newly created
+journal/WAL/SHM files retain the intended identity and privacy.
+
+The resource checks required service/health_check columns and refuses ambiguous
+service or check names. Removal is prohibited. An unchanged row keeps its ID,
+status, processing lease, next-check schedule, grace and history. When a row's
+configuration differs, `status='processing'` prevents the update. Apply obtains
+`BEGIN IMMEDIATE`, rechecks the lease in the update predicate, and requires one
+affected row; a failed transaction rolls back. A configuration update otherwise
+uses the existing idle/reset behavior above. Apply gets seven retries, five
+seconds apart, matching the managed task, so a short active lease can finish.
+Read-only comparison never retries into a mutation.

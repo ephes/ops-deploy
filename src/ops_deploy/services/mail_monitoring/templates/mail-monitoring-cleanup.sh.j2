@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mailbox="{{ mail_monitoring_address }}"
+ttl_days="{{ mail_monitoring_cleanup_ttl_days }}"
+
+# Dovecot exit codes:
+# - 68 (EX_NOUSER): mailbox doesn't exist (yet) -> treat as success for a periodic cleanup
+/usr/bin/doveadm expunge -u "${mailbox}" mailbox INBOX savedbefore "${ttl_days}d" || {
+  rc="$?"
+  if [ "${rc}" -eq 68 ]; then
+    exit 0
+  fi
+  exit "${rc}"
+}
+
