@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add the Mailgun relay deployment and Traefik ingress with the existing
+  Python/Rust switch, strict staged archives, shared secret configuration and
+  live implementation verification. Preserve Python source/runtime by default;
+  installing/updating it requires an explicit choice. Retain rollback independently
+  of a working Rust release and recover restart intent after an interrupted deploy.
+
 - Add native macOS Ollama Homebrew/LaunchDaemon deployment, preserving installed
   formulas and retained model contents, with role-compatible identity,
   directory, conflict and service behavior. Unchanged running jobs are retained

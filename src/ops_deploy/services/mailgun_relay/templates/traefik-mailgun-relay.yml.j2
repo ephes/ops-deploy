@@ -1,0 +1,57 @@
+# Managed by Ansible (mailgun_relay_ingress_deploy) — do not edit manually.
+# The mailgun-relay service handles its own HTTP Basic auth; this file only
+# wires TLS termination and request forwarding.
+
+http:
+  routers:
+    mailgun-relay-secure:
+      rule: "Host(`{{ mailgun_relay_ingress_host }}`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - mailgun-relay-headers
+        - mailgun-relay-buffering
+      service: mailgun-relay
+{% if mailgun_relay_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ mailgun_relay_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    mailgun-relay-http:
+      rule: "Host(`{{ mailgun_relay_ingress_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: mailgun-relay
+
+  middlewares:
+    mailgun-relay-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    mailgun-relay-buffering:
+      buffering:
+        maxRequestBodyBytes: {{ mailgun_relay_ingress_max_request_body_bytes }}
+        memRequestBodyBytes: 1048576
+
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    mailgun-relay:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "{{ mailgun_relay_ingress_backend_url }}"
