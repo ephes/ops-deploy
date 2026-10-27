@@ -64,3 +64,14 @@ def test_catalog_skips_probe_when_a_prerequisite_such_as_the_role_is_pending(pen
     checks = [command for command in run.fact_commands if "' check" in command]
     applies = [command for command in run.executed_commands if "' apply" in command]
     assert (bool(checks), len(applies)) == ((False, 1) if pending else (True, 0))
+
+
+def test_backend_refuses_legacy_forwards_and_unrendered_sql_port() -> None:
+    from ops_deploy.services.mail_backend.config import ForwardAlias
+
+    forward = ForwardAlias(address="hallo@example.test", destinations=("dest@remote.test",))
+    MailBackendConfig(domains=("example.test",), schema_mode="postfixadmin", forward_aliases=(forward,))
+    with pytest.raises(ConfigValidationError, match="MailBackendConfig"):
+        MailBackendConfig(domains=("example.test",), forward_aliases=(forward,))
+    with pytest.raises(ConfigValidationError, match="MailBackendConfig"):
+        MailBackendConfig(domains=("example.test",), postgres_port=5433)

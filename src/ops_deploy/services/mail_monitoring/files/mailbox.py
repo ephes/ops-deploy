@@ -12,7 +12,7 @@ def qualified_password_hash(value):
     # and the two meaningful bits in the final crypt-base64 character.
     if not isinstance(value, str):
         return False
-    match = re.fullmatch(r"\{SHA512-CRYPT\}\$6\$(?:rounds=([1-9][0-9]{0,8})\$)?([^$:\r\n\0]{1,16})\$[./0-9A-Za-z]{85}[./01]", value)
+    match = re.fullmatch(r"\{SHA512-CRYPT\}\$6\$(?:rounds=([1-9][0-9]{0,8})\$)?(?!rounds=)([^$:\r\n\0]{1,16})\$[./0-9A-Za-z]{85}[./01]", value)
     return bool(match and all(0x21 <= ord(char) <= 0x7e and char not in "!*:;" and ord(char) != 92 for char in match[2])
                 and (match[1] is None or 1000 <= int(match[1]) <= 999999999))
 

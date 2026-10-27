@@ -18,7 +18,7 @@ from psycopg2 import sql
 def qualified_password_hash(value):
     if not isinstance(value, str):
         return False
-    match = re.fullmatch(r"\{SHA512-CRYPT\}\$6\$(?:rounds=([1-9][0-9]{0,8})\$)?([^$:\r\n\0]{1,16})\$[./0-9A-Za-z]{85}[./01]", value)
+    match = re.fullmatch(r"\{SHA512-CRYPT\}\$6\$(?:rounds=([1-9][0-9]{0,8})\$)?(?!rounds=)([^$:\r\n\0]{1,16})\$[./0-9A-Za-z]{85}[./01]", value)
     return bool(match and all(0x21 <= ord(char) <= 0x7e and char not in "!*:;" and ord(char) != 92 for char in match[2])
                 and (match[1] is None or 1000 <= int(match[1]) <= 999999999))
 
@@ -92,14 +92,26 @@ def reconcile(request, apply):
             raise ValueError('mail catalog identity is ambiguous')
         return rows[0] if rows else None
 
+    declared_aliases = {}
+
     def alias(cur, address, destination, domain, active=True, insert_only=False):
+        # Declarations follow the original role's order and the last one wins,
+        # as its sequential writes did; each address is then reconciled once, so
+        # overlapping declarations cannot rewrite a row twice on every run.
         if domain.lower() == 'all':
             raise ValueError('reserved web admin domain is outside core ownership')
-        row = one(cur, 'SELECT address, goto, domain, active FROM alias WHERE LOWER(address)=LOWER(%s)', (address,))
-        if row is None:
-            change(cur, 'INSERT INTO alias (address,goto,domain,active,created,modified) VALUES (%s,%s,%s,%s,NOW(),NOW())', (address, destination, domain, active))
-        elif not insert_only and (row[1], row[2], bool(row[3])) != (destination, domain, active):
-            change(cur, 'UPDATE alias SET goto=%s,domain=%s,active=%s,modified=NOW() WHERE address=%s', (destination, domain, active, row[0]))
+        key = address.lower()
+        if insert_only and key in declared_aliases:
+            return
+        declared_aliases[key] = (address, destination, domain, active, insert_only)
+
+    def reconcile_aliases(cur):
+        for address, destination, domain, active, insert_only in declared_aliases.values():
+            row = one(cur, 'SELECT address, goto, domain, active FROM alias WHERE LOWER(address)=LOWER(%s)', (address,))
+            if row is None:
+                change(cur, 'INSERT INTO alias (address,goto,domain,active,created,modified) VALUES (%s,%s,%s,%s,NOW(),NOW())', (address, destination, domain, active))
+            elif not insert_only and (row[1], row[2], bool(row[3])) != (destination, domain, active):
+                change(cur, 'UPDATE alias SET goto=%s,domain=%s,active=%s,modified=NOW() WHERE address=%s', (destination, domain, active, row[0]))
 
     try:
         with conn.cursor() as cur:
@@ -261,6 +273,7 @@ def reconcile(request, apply):
                         cur.execute("SELECT local_part,username,active FROM mailbox WHERE LOWER(domain)=%s AND LOWER(domain)<>'all'", (leaf,))
                         for local, username, active in cur.fetchall():
                             alias(cur, (local+'@'+source).lower(), username.lower(), source, bool(active))
+            reconcile_aliases(cur)
             if apply:
                 conn.commit()
             else:

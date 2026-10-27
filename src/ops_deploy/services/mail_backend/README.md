@@ -17,7 +17,11 @@ mail storage paths explicitly for your environment. The default `schema_mode`
 is the legacy role schema; `postfixadmin` uses the existing upstream application
 schema. The API does not install or bootstrap the PostfixAdmin application.
 In legacy mode both sides of a `postfixadmin_domain_aliases` mapping must be
-hosted `domains`. Dovecot always listens on implicit-TLS IMAPS (993) with
+hosted `domains`, and `forward_aliases` are refused (they need the PostfixAdmin
+schema, as the role asserted). The packaged SQL maps name no port, so only
+`postgres_port` 5432 is accepted. When declarations overlap (initial self-alias,
+required aliases, forwards, domain-alias expansion), the last one in that order
+wins, as the role's sequential writes did, and each address is written once. Dovecot always listens on implicit-TLS IMAPS (993) with
 `ssl = required`; `tls_enabled` toggles Postfix TLS only, as in the role.
 
 Ordinary domains, initial mailbox and declared aliases are insert/conditional

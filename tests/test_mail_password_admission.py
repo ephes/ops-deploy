@@ -131,6 +131,7 @@ def test_real_native_hash_forms_use_known_match_or_mismatch(
         "rounds-huge",
         "bad-padding",
         "bad-salt",
+        "rounds-as-salt",
     ],
 )
 def test_native_invalid_mismatch_status_cannot_authorize_rotation(
@@ -151,6 +152,8 @@ def test_native_invalid_mismatch_status_cannot_authorize_rotation(
         "rounds-huge": "{SHA512-CRYPT}$6$rounds=" + "9" * 100 + "$" + salt + "$" + digest,
         "bad-padding": stored[:-1] + "Z",
         "bad-salt": "{SHA512-CRYPT}$6$invalid salt$" + digest,
+        # Native crypt reads a leading rounds= as the cost, leaving no salt.
+        "rounds-as-salt": "{SHA512-CRYPT}$6$rounds=1000$" + digest,
     }[problem]
     module, db = entrypoint(monkeypatch, kind, broken)
     # Native Dovecot also returns75 for these invalid hashes. The entrypoint
@@ -316,3 +319,68 @@ def test_core_reconcile_apply_keeps_matching_hash_and_replaces_known_mismatch(
         assert changed
         assert updates == [("UPDATE mail_users SET password=%s WHERE id=%s", (generated, 2))]
     connection.commit.assert_called_once()
+
+
+class PostfixAdminCursor(CoreCursor):
+    """Stateful alias table for the PostfixAdmin branch of the core reconcile."""
+
+    def __init__(self, stored: str, aliases: dict[str, tuple[str, str, str, bool]]) -> None:
+        super().__init__(stored)
+        self.aliases = aliases
+
+    def execute(self, statement: object, parameters: object = None) -> None:
+        text = str(statement)
+        args = tuple(parameters) if isinstance(parameters, tuple) else ()
+        if text.startswith("SELECT address, goto, domain, active FROM alias"):
+            row = self.aliases.get(str(args[0]).lower())
+            self.rows = [row] if row else []
+        elif text.startswith("INSERT INTO alias"):
+            self.writes.append((text, parameters))
+            self.aliases[str(args[0]).lower()] = (args[0], args[1], args[2], args[3])
+        elif text.startswith("UPDATE alias"):
+            self.writes.append((text, parameters))
+            self.aliases[str(args[3]).lower()] = (args[3], args[0], args[1], args[2])
+        elif text.startswith("SELECT username,password,active FROM mailbox"):
+            self.rows = [("owned@example.test", self.stored, True)]
+        elif text.startswith("SELECT username,domain FROM mailbox"):
+            self.rows = [("owned@example.test", "example.test")]
+        elif text.startswith(("SELECT domain FROM domain", "SELECT active FROM domain")):
+            self.rows = [("example.test",)]
+        else:
+            super().execute(statement, parameters)
+
+
+def test_core_reconcile_overlapping_alias_declarations_converge(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ops_deploy.core.secrets import SecretRef, SecretValues
+    from ops_deploy.services.mail_backend import MailBackendConfig
+    from ops_deploy.services.mail_backend.config import ForwardAlias
+    from ops_deploy.services.mail_backend.render import render_role
+
+    stored = VERIFIERS[0]["stored"]
+    aliases: dict[str, tuple[str, str, str, bool]] = {}
+    cfg = MailBackendConfig(
+        domains=("example.test",),
+        schema_mode="postfixadmin",
+        initial_user="owned",
+        initial_user_domain="example.test",
+        # Overlaps the default required postmaster alias (-> initial user).
+        forward_aliases=(ForwardAlias(address="postmaster@example.test", destinations=("dest@remote.test",)),),
+    )
+    secrets = SecretValues(SecretRef("owned.yml"), {"postgres_password": "owned", "relay_password": "owned"})
+    request = {
+        "config": cfg.model_dump(mode="json", exclude={"secrets"}),
+        "schema_sql": render_role("schema.sql.j2", cfg, secrets),
+        "initial_password": PASSWORD,
+    }
+    writes = []
+    for _ in range(2):
+        module, _, connection, _ = core_reconcile(
+            monkeypatch, stored, Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+        )
+        cursor = PostfixAdminCursor(stored, aliases)
+        connection.cursor.return_value = cursor
+        module.reconcile(request, True)
+        writes.append([text.split(" ", 1)[0] for text, _ in cursor.writes])
+    assert aliases["postmaster@example.test"][1] == "dest@remote.test"
+    assert writes[0]
+    assert writes[1] == [], "a repeat must not rewrite any alias"

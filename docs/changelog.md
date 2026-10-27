@@ -14,6 +14,9 @@
   and durable per-daemon restart/reload recovery after interrupted changes.
   Refuse a spam monitoring-probe source inside the local/trusted-relay networks
   and legacy domain aliases without a hosted alias domain before connecting.
+  Refuse legacy-mode forwards and non-5432 SQL ports, resolve overlapping alias
+  declarations once per address, and refuse SHA512-CRYPT salts that native
+  crypt would read as a rounds directive.
   Add an owned package-absent native qualification workflow (two systemd-nspawn
   systems, package-fault refusal, fresh install, owned mail flows and repeat).
 - Refuse malformed or unsupported monitor-mailbox SHA512-CRYPT verifiers before

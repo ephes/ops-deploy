@@ -118,6 +118,12 @@ class MailBackendConfig(BaseServiceConfig):
             raise ValueError("hosted and sender-only domains must be disjoint")
         if self.sender_only_domains and self.schema_mode != "postfixadmin":
             raise ValueError("sender-only domains require the PostfixAdmin schema")
+        if self.forward_aliases and self.schema_mode != "postfixadmin":
+            # As the role asserted: legacy reconciliation has no forward table.
+            raise ValueError("forward aliases require the PostfixAdmin schema")
+        if self.postgres_port != 5432:
+            # The packaged Postfix/Dovecot SQL maps (role templates) name no port.
+            raise ValueError("the packaged SQL maps support only PostgreSQL port 5432")
         for domain_alias in self.postfixadmin_domain_aliases:
             if domain_alias.target_domain not in self.domains or domain_alias.alias_domain == "all":
                 raise ValueError("domain aliases must target hosted domains and exclude the reserved admin domain")
