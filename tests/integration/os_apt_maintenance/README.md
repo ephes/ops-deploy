@@ -20,8 +20,19 @@ own prerequisites before the deployment snapshots. No inventory host is contacte
 
 Phases cover fresh state/first job, authenticated and anonymous HTTP, exact repeated managed
 files/PID/state/packages/apt policy/timer state, fish transport, full Ansible coexistence,
-timer-only change, fixture credential rotation/recovery, disabling a still-loaded timer
-after its files disappear, restoration, and missing-state initialization without a job.
+timer-only change, fixture credential rotation/recovery, normal refresh disable/repeat,
+and missing-state initialization without a job. The loaded-but-unlinked timer fault is
+separate: the actual cf3 role runs against it first, then the fixture restores the units
+and injects it again for pyinfra. Raw original-role return code/logs/before-after state are
+retained for explicit comparison. The role fault oracle is unadjudicated: its
+return code and refresh-timer outcome are recorded without a success or zero-change
+assertion, while all other protected resources remain strict. A green native job does
+not by itself establish fault parity. Pyinfra must stop the timer; exactly its known combined
+stop/disable operation may report the ignored missing-unit error. This is classified as a
+partial systemd fault, never a healthy zero-change repeat: pyinfra can report zero managed
+operations although the preceding stop physically happened. The fixture restores the
+original configuration and then requires a healthy strict repeat. No daemon reload or
+state cleanup is injected merely to make a repeat pass.
 Nyxmon phases use a synthetic database: create four rows, repeat, preserve current disabled
 rows, change an owned interval while preserving status/schedule/processing, keep an unrelated
 row, repeat via fish, and skip an absent database. SQLite main-file content/metadata and all

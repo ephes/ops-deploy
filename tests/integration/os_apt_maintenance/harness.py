@@ -167,6 +167,7 @@ def deploy(
     failure: bool = False,
     fish: bool = False,
     secret: str | None = None,
+    expected_ignored: str | None = None,
 ) -> dict[str, Any]:
     snap = db_snapshot if nyxmon else endpoint_snapshot
     before = snap()
@@ -205,8 +206,12 @@ def deploy(
             disconnect_all(state)
     after = snap()
     managed = [op.name for op in operations if op.changed and not op.read_only]
+    failed_ops = [op.name for op in operations if not op.succeeded]
     result = {
         "label": label,
+        "classification": "expected-partial-systemd-fault" if expected_ignored else "healthy-deploy",
+        "failed_operations": failed_ops,
+        "physical_changed_sections": sorted(key for key in before if before[key] != after[key]),
         "managed": managed,
         "uploads": len(uploads),
         "error": error,
@@ -217,10 +222,27 @@ def deploy(
         "commands": len(commands),
     }
     write(label + ".json", result)
-    PHASES.append({key: result[key] for key in ("label", "managed", "uploads", "error", "fish_transport")})
+    PHASES.append(
+        {
+            key: result[key]
+            for key in (
+                "label",
+                "classification",
+                "managed",
+                "uploads",
+                "error",
+                "failed_operations",
+                "physical_changed_sections",
+                "fish_transport",
+            )
+        }
+    )
     assert bool(error) is failure, result
-    if not failure:
-        assert all(op.succeeded for op in operations), result
+    if expected_ignored:
+        assert not zero, "fault phase must never be called a healthy zero-change repeat"
+        assert failed_ops == [expected_ignored], result
+    elif not failure:
+        assert not failed_ops, result
     if zero:
         assert not managed, result
         assert not uploads, result
@@ -228,7 +250,7 @@ def deploy(
         for key in before.keys() - {"sidecars"}:
             assert before[key] == after[key], (label, key, before[key], after[key])
         assert not any("daemon-reload" in cmd or "systemctl start fixture-apt.service" in cmd for cmd in commands)
-    print(label, len(managed), "managed", len(uploads), "uploads", flush=True)
+    print(label, result["classification"], len(managed), "reported managed", len(uploads), "uploads", flush=True)
     return result
 
 
@@ -259,9 +281,10 @@ def health(secret: str = "") -> dict[str, Any]:
     raise AssertionError("no HTTP response")
 
 
-def ansible_repeat(config: OsAptMaintenanceConfig) -> None:
+def ansible_repeat(config: OsAptMaintenanceConfig, *, fault: bool = False) -> None:
     import yaml
 
+    label = "ansible-unlinked-fault" if fault else "ansible-repeat"
     variables = role_vars(config, "127.0.0.1")
     for name in (
         "enabled",
@@ -301,27 +324,66 @@ def ansible_repeat(config: OsAptMaintenanceConfig) -> None:
     )
     path.chmod(0o600)
     before = endpoint_snapshot()
+
+    def retain(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
+        def redacted(value: str | bytes | None) -> str:
+            text = value.decode(errors="replace") if isinstance(value, bytes) else value or ""
+            return text.replace(VALUE, "<synthetic-password>")
+
+        output = redacted(stdout)
+        (EVIDENCE / (label + ".log")).write_text(output)
+        (EVIDENCE / (label + ".stderr")).write_text(redacted(stderr))
+        return output
+
     try:
-        output = sh(
-            str(Path(sys.executable).parent / "ansible-playbook"),
-            "-i",
-            "localhost,",
-            "-c",
-            "local",
-            str(path),
-            env={**os.environ, "ANSIBLE_COLLECTIONS_PATH": str(ROOT / "collections")},
-        )
+        try:
+            completed = subprocess.run(
+                [str(Path(sys.executable).parent / "ansible-playbook"), "-i", "localhost,", "-c", "local", str(path)],
+                env={**os.environ, "ANSIBLE_COLLECTIONS_PATH": str(ROOT / "collections")},
+                text=True,
+                capture_output=True,
+                timeout=900,
+            )
+        except subprocess.TimeoutExpired as exc:
+            retain(exc.stdout, exc.stderr)
+            raise
+        output = retain(completed.stdout, completed.stderr)
+        if not fault:
+            assert completed.returncode == 0, f"Ansible exit {completed.returncode}; retained stdout/stderr"
     finally:
         path.unlink()
-    (EVIDENCE / "ansible-repeat.log").write_text(output)
-    assert "changed=0" in output, output
     after = endpoint_snapshot()
-    # Ansible intentionally daemon-reloads, but current role resources/state/PID must remain exact.
-    assert before == after, {"before": before, "after": after}
     write(
-        "ansible-repeat.json",
-        {"library_sha": sh("git", "-C", str(LIBRARY), "rev-parse", "HEAD"), "unchanged": True, "reported_changed": 0},
+        label + ".json",
+        {
+            "library_sha": sh("git", "-C", str(LIBRARY), "rev-parse", "HEAD"),
+            "classification": "actual-role-fault-oracle" if fault else "healthy-ansible-repeat",
+            "returncode": completed.returncode,
+            "before": before,
+            "after": after,
+            "physical_changed_sections": sorted(key for key in before if before[key] != after[key]),
+        },
     )
+    PHASES.append(
+        {
+            "label": label,
+            "classification": "unadjudicated-actual-role-fault-oracle" if fault else "healthy-ansible-repeat",
+            "returncode": completed.returncode,
+            "physical_changed_sections": sorted(key for key in before if before[key] != after[key]),
+        }
+    )
+    if not fault:
+        assert "changed=0" in output, output
+        # Ansible intentionally daemon-reloads; current resources/state/PID stay exact.
+        assert before == after, {"before": before, "after": after}
+    else:
+        # Only the injected refresh unit fault may vary. Keep every other
+        # protected resource strict even while recording the oracle outcome.
+        for key in before.keys() - {"timer_state"}:
+            assert before[key] == after[key], (label, key)
+        assert before["timer_state"]["fixture-apt.timer"] == after["timer_state"]["fixture-apt.timer"]
+        # This phase is not accepted as a successful/zero-mutation deploy.
+        print(label, "unadjudicated fault oracle recorded", completed.returncode, flush=True)
 
 
 def nyxmon() -> None:
@@ -417,16 +479,31 @@ def main() -> None:
     write("http-rotated.json", health("owned-rotated-password"))
     deploy("credential-repeat", timer, zero=True, secret="owned-rotated-password")
     deploy("credential-restore", timer)
-    # Inject the actual loaded-but-unlinked timer condition, without daemon-reload.
-    Path("/etc/systemd/system/fixture-apt-refresh.timer").unlink()
-    Path("/etc/systemd/system/fixture-apt-refresh.service").unlink()
-    assert sh("systemctl", "is-active", "fixture-apt-refresh.timer") == "active"
     off = timer.model_copy(update={"refresh_enabled": False})
-    deploy("refresh-off-unlinked", off)
-    assert sh("systemctl", "is-active", "fixture-apt-refresh.timer", check=False) != "active"
+    deploy("refresh-off-normal", off)
     deploy("refresh-off-repeat", off, zero=True)
     deploy("refresh-restore", timer)
     deploy("refresh-restored-repeat", timer, zero=True)
+
+    def unlink_active() -> None:
+        Path("/etc/systemd/system/fixture-apt-refresh.timer").unlink()
+        Path("/etc/systemd/system/fixture-apt-refresh.service").unlink()
+        assert sh("systemctl", "is-active", "fixture-apt-refresh.timer") == "active"
+
+    # Run the actual cf3 role on the owned fault, restore, then inject the same
+    # fault for pyinfra. Preserve both raw results, including partial changes.
+    unlink_active()
+    ansible_repeat(off, fault=True)
+    deploy("restore-after-ansible-fault", timer)
+    unlink_active()
+    deploy(
+        "refresh-off-unlinked",
+        off,
+        expected_ignored="Deploy os apt maintenance | Stop apt index refresh timer fixture-apt-refresh.timer",
+    )
+    assert sh("systemctl", "is-active", "fixture-apt-refresh.timer", check=False) != "active"
+    deploy("restore-after-pyinfra-fault", timer)
+    deploy("fault-restored-repeat", timer, zero=True)
     before_events = (ROOT / "apt-events").read_bytes()
     (ROOT / "state/state.json").unlink()
     deploy("missing-state-no-maintenance", timer.model_copy(update={"run_on_first_deploy": False}))
