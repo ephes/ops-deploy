@@ -1,4 +1,5 @@
-"""Shared host services ported from ops-library: PostgreSQL, Redis, Traefik, Docker, Vector and certbot.
+"""Shared host services ported from ops-library: PostgreSQL, Redis, Traefik, Docker, Vector, certbot and
+the encrypted data volume.
 
 Like :mod:`ops_deploy.base`, each module holds a typed config and a
 ``@deploy`` function; they are deploys, not shared helpers, so they sit
@@ -8,6 +9,7 @@ passwords) are deploy arguments, never config fields.
 
 from ops_deploy.infra.certbot_dns import CertbotDnsConfig, deploy_certbot_dns
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
+from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
 from ops_deploy.infra.postgres_install import (
     DatabaseSpec,
     ExtensionSpec,
@@ -40,6 +42,7 @@ __all__ = [
     "CertbotDnsConfig",
     "DatabaseSpec",
     "DockerInstallConfig",
+    "EncryptedVolumeConfig",
     "ExtensionSpec",
     "FileCertificate",
     "PgHbaRule",
@@ -58,6 +61,7 @@ __all__ = [
     "capture_traefik_health_probes",
     "deploy_certbot_dns",
     "deploy_docker_install",
+    "deploy_encrypted_volume",
     "deploy_postgres_install",
     "deploy_redis_install",
     "deploy_traefik",
