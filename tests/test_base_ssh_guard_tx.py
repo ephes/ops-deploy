@@ -48,7 +48,8 @@ case "$cmd" in
              [ -n "$quiet" ] || echo inactive; exit 3;;
   is-enabled) if [ -f "$u.enabled" ]; then echo enabled; exit 0; fi
               if [ -f "$u.loaded" ]; then echo disabled; else echo not-found; fi; exit 1;;
-  show) if [ "$3" = ActiveState ]; then
+  show) if [ "$3" = ActiveState ] && [ -f "$WORLD/fail-show" ]; then exit 1
+        elif [ "$3" = ActiveState ]; then
           if [ -f "$WORLD/running/$unit" ]; then echo active; else echo inactive; fi
         elif [ -f "$u.loaded" ]; then echo loaded; else echo not-found; fi;;
   enable) touch "$u.enabled";; disable) rm -f "$u.enabled";;
@@ -79,6 +80,15 @@ if [ -n "$timer" ]; then
   exit 0
 fi
 shift
+# The unit's cgroup as systemd would make it (unified hierarchy; hybrid with fail-v1).
+root=$(dirname "$WORLD")
+mkdir -p "$root/proc/self" "$root/cgroup/test/$unit.service"
+touch "$root/cgroup/cgroup.controllers" "$root/cgroup/test/$unit.service/cgroup.procs"
+if [ -f "$WORLD/fail-v1" ]; then
+  printf '1:name=systemd:/test/%s.service\n0::/test/%s.service\n' "$unit" "$unit" > "$root/proc/self/cgroup"
+else
+  printf '0::/test/%s.service\n' "$unit" > "$root/proc/self/cgroup"
+fi
 touch "$WORLD/running/$unit"
 "$TEST_PYTHON" "$@" > "$WORLD/apply.out" 2> "$WORLD/apply.err"
 echo $? > "$WORLD/apply.exit"
@@ -209,8 +219,9 @@ class World:
         env = dict(self.env)
         if caller is not None:
             env["SSH_CONNECTION"] = caller
+        roots = ["--proc-root", str(self.tmp / "proc"), "--cgroup-root", str(self.tmp / "cgroup")]
         return subprocess.run(
-            [sys.executable, "-I", str(PROGRAM), "--state-dir", str(self.state_dir), *args],
+            [sys.executable, "-I", str(PROGRAM), "--state-dir", str(self.state_dir), *roots, *args],
             capture_output=True,
             text=True,
             env=env,
@@ -238,14 +249,7 @@ class World:
             seconds = uptime() + 5 if session == "new" else 1.0
             fields = ["S", "1", *["0"] * 17, str(int(seconds * tick)), "0", "0"]
             (entry / "stat").write_text(f"{os.getpid()} (sshd-session) {' '.join(fields)}\n")
-        return self.tx(
-            "confirm",
-            "--generation",
-            str(generation),
-            "--proc-root",
-            str(proc),
-            caller=NEW if caller is None else caller,
-        )
+        return self.tx("confirm", "--generation", str(generation), caller=NEW if caller is None else caller)
 
     def run(
         self, bundle: dict[str, Any], caller: str = "198.51.100.1 50000 192.0.2.1 22"
@@ -766,3 +770,38 @@ def test_a_step_timeout_out_of_range_is_refused(world: World, limit: object) -> 
 
     assert result.returncode == 3
     assert "invalid timeout" in result.stderr
+
+
+def test_a_hybrid_or_v1_cgroup_layout_is_refused_before_any_change(world: World) -> None:
+    (world.root / "fail-v1").touch()
+
+    result = world.run(world.standard())
+
+    assert result.returncode == 1
+    state = world.state()
+    assert state["status"] == "aborted"
+    assert "unified cgroup hierarchy" in state["reason"]
+    assert world.timers() == []
+    assert not Path(world.dropin).exists()
+    assert not any(line.startswith("apt-get") for line in world.log())
+
+
+def test_a_revert_that_cannot_see_the_apply_unit_end_restores_nothing(world: World) -> None:
+    world.unit("ssh")
+    assert world.run(world.standard()).returncode == 0
+    (world.root / "fail-show").touch()
+    timer = world.timers()[0]
+    argv = (world.root / "timers" / timer).read_text().splitlines()
+    # A failing query never counts as "ended": the revert waits its full 60 s, then gives up.
+    started = time.monotonic()
+    fired = subprocess.run(argv, capture_output=True, text=True, env=world.env, timeout=120, check=False)
+
+    assert fired.returncode == 1
+    assert "nothing restored yet" in fired.stderr
+    assert time.monotonic() - started >= 59
+    assert world.state()["status"] == "armed"
+    assert Path(world.dropin).read_text() == "PerSourceMaxStartups 5\n"
+    # Once systemd answers again, the same revert completes.
+    (world.root / "fail-show").unlink()
+    assert world.fire(timer).returncode == 0
+    assert world.state()["status"] == "reverted"

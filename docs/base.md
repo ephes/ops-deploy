@@ -414,8 +414,9 @@ until something changes again.
 For a host whose only way back is the SSH path these changes touch.
 `timed_revert_seconds: 0` (the default) is the plain deploy above; its only
 addition is one read-only probe line, the transaction state, so that it
-refuses while a transaction is open. With 60..3600 the deploy runs the same
-steps (same names, order, commands and conditions; a test compares them with
+refuses while a transaction is open. With 60..3600 (on a host with the unified cgroup v2 hierarchy, the
+default of current Debian and Ubuntu; the apply refuses before any change
+otherwise) the deploy runs the same steps (same names, order, commands and conditions; a test compares them with
 the plain operations) through the host program `files/ssh_guard_tx.py`,
 installed as `/usr/local/libexec/ops-deploy/ssh-guard-tx` (`root 0755`,
 standard library, `/usr/bin/python3 -I`), with its state in
@@ -459,8 +460,8 @@ On the host, under one `flock` (`state-dir/lock`):
    different from the one recorded by `run`. Also the same boot and the
    deadline not passed. It records `confirmed`, then stops the timer.
 4. `revert <id>` first kills a still running apply unit and waits until
-   systemd reports it gone (else it restores nothing and fails, to be run
-   again). It acts only on its own open transaction; anything else (a
+   `systemctl show` answers that it is `inactive` or `failed` (a failed query
+   never counts; after 60 s it restores nothing and fails, to be run again). It acts only on its own open transaction; anything else (a
    confirmed one, a newer one, a final status) is left alone, so a revert
    fires at most once and never touches a later transaction. An `armed`
    transaction whose files no longer have the recorded digests was changed by

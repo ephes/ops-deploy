@@ -85,6 +85,8 @@ REVERT_MIN, REVERT_MAX = 60, 3600
 APPLY_RUNTIME_MAX = 1800
 STEP_TIMEOUT = 900
 QUIESCE_WAIT = 60
+# Where the kernel's views are; options only so that tests can point them at fixtures.
+ROOTS = {"proc": Path("/proc"), "cgroup": Path("/sys/fs/cgroup")}
 COMMAND_TIMEOUT = 120
 KEEP_TRANSACTIONS = 5
 STEP_KINDS = ("dir", "file", "absent", "package", "service", "shell")
@@ -515,12 +517,24 @@ def stop_timer(state: dict[str, Any]) -> None:
         run(["systemctl", "stop", f"{unit}.timer"])
 
 
-def own_cgroup() -> str:
+def unit_procs(unit: str) -> Path:
+    """``cgroup.procs`` of this process's cgroup, which must be ``unit``'s on the unified (v2) hierarchy.
+
+    Raises TxError otherwise (cgroup v1 or hybrid, or not running in that
+    unit): the apply refuses before any change, because it could not find the
+    processes a step left behind.
+    """
+
     try:
-        lines = Path("/proc/self/cgroup").read_text().splitlines()
+        lines = (ROOTS["proc"] / "self" / "cgroup").read_text().splitlines()
     except OSError:
-        return ""
-    return next((line[3:] for line in lines if line.startswith("0::")), "")
+        lines = []
+    path = next((line[3:] for line in lines if line.startswith("0::")), "")
+    procs = ROOTS["cgroup"] / path.lstrip("/") / "cgroup.procs"
+    unified = (ROOTS["cgroup"] / "cgroup.controllers").is_file() and len(lines) == 1
+    if not (unified and path.endswith(f"/{unit}.service") and procs.is_file()):
+        raise TxError(f"not running in {unit}.service on the unified cgroup hierarchy (cgroup v2); unsupported")
+    return procs
 
 
 def quiesce(state: dict[str, Any], *, inside: bool) -> None:
@@ -535,13 +549,10 @@ def quiesce(state: dict[str, Any], *, inside: bool) -> None:
 
     unit = state.get("apply_unit")
     if not isinstance(unit, str) or not _UNIT.fullmatch(unit):
-        return
-    cgroup = own_cgroup()
+        raise TxError("the transaction names no apply unit")
     deadline = time.monotonic() + QUIESCE_WAIT
     if inside:
-        if not cgroup.endswith(f"/{unit}.service"):
-            return  # outside the unit (run by hand, a test): only the process groups apply
-        procs = Path("/sys/fs/cgroup") / cgroup.lstrip("/") / "cgroup.procs"
+        procs = unit_procs(unit)
         while True:
             try:
                 others = [int(pid) for pid in procs.read_text().split() if int(pid) != os.getpid()]
@@ -556,12 +567,14 @@ def quiesce(state: dict[str, Any], *, inside: bool) -> None:
                     os.kill(pid, signal.SIGKILL)
             time.sleep(0.2)
     while True:
-        active = run(["systemctl", "show", "-p", "ActiveState", "--value", f"{unit}.service"]).stdout.strip()
-        if active not in ("active", "activating", "deactivating", "reloading"):
+        # Only a successful answer naming a stopped state counts (a gone unit reads "inactive").
+        shown = run(["systemctl", "show", "-p", "ActiveState", "--value", f"{unit}.service"])
+        if shown.returncode == 0 and shown.stdout.strip() in ("inactive", "failed"):
             return
         if time.monotonic() > deadline:
-            raise TxError(f"{unit}.service does not end")
-        run(["systemctl", "kill", "--signal=SIGKILL", f"{unit}.service"])
+            raise TxError(f"cannot show that {unit}.service has ended")
+        if shown.returncode == 0 and shown.stdout.strip() in ("active", "activating", "deactivating", "reloading"):
+            run(["systemctl", "kill", "--signal=SIGKILL", f"{unit}.service"])
         time.sleep(0.5)
 
 
@@ -699,7 +712,8 @@ def run_step(step: dict[str, Any], bundle: dict[str, Any], changed: set[str]) ->
 
 
 def program_argv(store: Store, txdir: Path, *args: str) -> list[str]:
-    return [PYTHON, "-I", str(txdir / "ssh-guard-tx.py"), "--state-dir", str(store.root), *args]
+    roots = ["--proc-root", str(ROOTS["proc"]), "--cgroup-root", str(ROOTS["cgroup"])]
+    return [PYTHON, "-I", str(txdir / "ssh-guard-tx.py"), "--state-dir", str(store.root), *roots, *args]
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -796,9 +810,10 @@ def cmd_apply(args: argparse.Namespace) -> int:
         txdir = store.tx_dir(args.txid)
         bundle = validate_bundle(json.loads((txdir / "bundle.json").read_text()))
         try:
+            unit_procs(state["apply_unit"])
             before = snapshot(bundle)
         except TxError as exc:
-            state.update(status="aborted", reason=f"snapshot: {exc}", finished=time.time())
+            state.update(status="aborted", reason=str(exc), finished=time.time())
             store.save(state)
             return 1
         write_atomic(txdir / "snapshot.json", json.dumps(before).encode(), 0, 0, 0o600)
@@ -864,7 +879,7 @@ def cmd_confirm(args: argparse.Namespace) -> int:
             raise TxError("the revert deadline has passed; the revert runs or ran")
         if not caller or caller == state.get("caller"):
             raise TxError("confirm needs a new SSH connection (SSH_CONNECTION unset or that of the apply)")
-        started = session_started(Path(args.proc_root))
+        started = session_started(ROOTS["proc"])
         if started is None:
             raise TxError("confirm must run in an SSH session (no sshd process above it)")
         if started <= state["armed_uptime"]:
@@ -920,6 +935,8 @@ def prune(store: Store, state: dict[str, Any]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ssh-guard-tx")
     parser.add_argument("--state-dir", default=STATE_DIR)
+    parser.add_argument("--proc-root", default="/proc", help=argparse.SUPPRESS)
+    parser.add_argument("--cgroup-root", default="/sys/fs/cgroup", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
     plan = sub.add_parser("plan")
     plan.add_argument("--bundle-b64", required=True)
@@ -930,12 +947,12 @@ def main(argv: list[str] | None = None) -> int:
     apply.add_argument("txid")
     confirm = sub.add_parser("confirm")
     confirm.add_argument("--generation", type=int, required=True)
-    confirm.add_argument("--proc-root", default="/proc", help=argparse.SUPPRESS)
     revert = sub.add_parser("revert")
     revert.add_argument("txid")
     revert.add_argument("--reason", default="manual")
     sub.add_parser("status")
     args = parser.parse_args(argv)
+    ROOTS.update(proc=Path(args.proc_root), cgroup=Path(args.cgroup_root))
     if getattr(args, "txid", None) is not None and not _TXID.fullmatch(args.txid):
         parser.error("invalid transaction id")
     handler = {
