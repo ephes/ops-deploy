@@ -1,0 +1,29 @@
+{
+  "host_id": "fixture-two",
+  "auth_user": "monitor",
+  "user": "fixturemetrics",
+  "group": "fixturemetrics",
+  "state_dir": "/srv/apt-state",
+  "state_file": "/srv/apt-state/custom.json",
+  "lock_file": "/run/fixture-apt.lock",
+  "script_path": "/usr/local/sbin/fixture-apt",
+  "server_path": "/usr/local/bin/fixture-http.py",
+  "htpasswd_dir": "/etc/fixture-apt",
+  "port": 19106,
+  "path": "/fixture/state",
+  "timer_on_calendar": "Mon *-*-* 03:15:00",
+  "timer_randomized_delay_sec": "15m",
+  "timer_accuracy_sec": "5m",
+  "timer_persistent": false,
+  "refresh_timer_on_calendar": "*-*-* 09:15:00",
+  "refresh_timer_randomized_delay_sec": "20m",
+  "refresh_timer_accuracy_sec": "2m",
+  "refresh_timer_persistent": false,
+  "update_cache": false,
+  "autoremove": false,
+  "autoclean": false,
+  "ip_allow": [
+    "100.64.0.0/10",
+    "192.0.2.0/24"
+  ]
+}

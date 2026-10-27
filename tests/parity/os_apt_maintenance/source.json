@@ -1,0 +1,14 @@
+{
+  "library": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "ansible": "ansible-playbook [core 2.21.5]",
+  "templates": {
+    "os-apt-maintenance-endpoint.service.j2": "a82354fae11dcb6aef99470dbdfa42af5126381f3b0dfa50eccf8eccdc0ed4ea",
+    "os-apt-maintenance-refresh.service.j2": "677e9faa96dcfb2e3f0da6c52854f2926ccde235d0e5eab2aca152881969e98d",
+    "os-apt-maintenance-refresh.timer.j2": "7af6bd3fead3acd9d01451c09f154a91fa341560e2b3bfff158c1dc07cd392a5",
+    "os-apt-maintenance.service.j2": "0f687e3a7811061a16fd003db59ddeebc834df6601c7e0ee3ff62e4033568bc8",
+    "os-apt-maintenance.timer.j2": "520488750770a623d01374da51531ff4c4cd4865e35857eb5b09cbdbbaa3b40f",
+    "os_apt_maintenance.py.j2": "409dc8271f86f524c7053ff6f85ecfbcdb719c15d81e441319d1bc89face8561",
+    "os_apt_maintenance_httpd.py.j2": "ab723e9d7ecd712f099eef0bd1b3557155da055e551d2d821f6db1e53e2e35af"
+  },
+  "method": "Actual ansible.builtin.template on localhost; synthetic role variables, no role tasks or service operations."
+}

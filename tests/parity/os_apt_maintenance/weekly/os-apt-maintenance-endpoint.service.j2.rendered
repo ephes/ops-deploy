@@ -1,0 +1,32 @@
+[Unit]
+Description=Serve os apt maintenance state for monitoring
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=metrics
+Group=metrics
+ExecStart=/usr/bin/python3 /usr/local/bin/os_apt_maintenance_httpd.py
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+ReadOnlyPaths=/var/lib/os-apt-maintenance/state.json
+ReadOnlyPaths=/etc/os-apt-maintenance-endpoint/htpasswd
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+[Install]
+WantedBy=multi-user.target

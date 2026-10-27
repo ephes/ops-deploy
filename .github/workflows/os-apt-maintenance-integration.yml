@@ -1,0 +1,119 @@
+name: OS apt maintenance integration
+
+# Disposable Ubuntu VM and isolated Debian13 userspace/systemd guest.
+on:
+  push:
+    branches: [pyinfra-os-apt-20261027]
+    paths:
+      - '.github/workflows/os-apt-maintenance-integration.yml'
+      - 'tests/integration/os_apt_maintenance/**'
+      - 'src/ops_deploy/services/os_apt_maintenance/**'
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed ops-deploy implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: os-apt-maintenance-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  owned-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-python, debian13-rust]
+    env:
+      IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate immutable implementation selection
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.IMPLEMENTATION_SHA }}
+          path: .implementation
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Install immutable Ubuntu controller
+        if: matrix.platform == 'ubuntu-python'
+        working-directory: .implementation
+        run: |
+          unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV
+          uv sync --locked --no-dev
+          uv pip install --python .venv/bin/python --no-deps --reinstall "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
+      - name: Qualify Ubuntu Python endpoint
+        if: matrix.platform == 'ubuntu-python'
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$IMPLEMENTATION_SHA" UV_BIN="$(command -v uv)" \
+            FIXTURE_IMPL=python FIXTURE_SCOPE=owned-Ubuntu24-VM \
+            CONTROLLER_PYTHON="$PWD/.implementation/.venv/bin/python" \
+            bash .implementation/tests/integration/os_apt_maintenance/run.sh
+      - name: Build isolated Debian13 systemd guest
+        if: matrix.platform == 'debian13-rust'
+        run: |
+          docker build -t os-apt-debian13-fixture - <<'DOCKERFILE'
+          FROM debian:13
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv dbus python3 curl git ca-certificates && apt-get clean
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          DOCKERFILE
+          # No host source/data/credential/socket mounts. Cgroups and kernel are Docker's isolated guest infrastructure.
+          docker run -d --name os-apt-debian13 --privileged --cgroupns=private \
+            --tmpfs /run --tmpfs /run/lock os-apt-debian13-fixture
+          for attempt in $(seq 1 60); do
+            if docker exec os-apt-debian13 systemctl is-system-running | grep -Eq 'running|degraded'; then break; fi
+            sleep 1
+          done
+          docker exec os-apt-debian13 systemctl show --property Version
+          docker exec os-apt-debian13 mkdir -p /opt/controller
+          docker cp .implementation/. os-apt-debian13:/opt/controller/
+          docker cp "$(command -v uv)" os-apt-debian13:/usr/local/bin/uv
+          docker exec os-apt-debian13 git config --global --add safe.directory /opt/controller
+          docker exec os-apt-debian13 bash -c 'cd /opt/controller && uv sync --locked --no-dev --python 3.13'
+          docker exec os-apt-debian13 uv pip install --python /opt/controller/.venv/bin/python --no-deps --reinstall \
+            "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
+      - name: Qualify Debian13 Rust endpoint
+        if: matrix.platform == 'debian13-rust'
+        run: |
+          docker exec -e GITHUB_ACTIONS=true -e RUNNER_ENVIRONMENT=github-hosted -e GITHUB_RUN_ID \
+            -e IMPLEMENTATION_SHA -e HARNESS_SHA="$IMPLEMENTATION_SHA" -e UV_BIN=/usr/local/bin/uv \
+            -e FIXTURE_IMPL=rust -e FIXTURE_SCOPE=Debian13-userspace-systemd-shared-Ubuntu-kernel \
+            -e CONTROLLER_PYTHON=/opt/controller/.venv/bin/python os-apt-debian13 \
+            bash /opt/controller/tests/integration/os_apt_maintenance/run.sh
+      - name: Collect Debian evidence and teardown owned guest
+        if: always() && matrix.platform == 'debian13-rust'
+        run: |
+          sudo mkdir -p /var/tmp/os-apt-evidence
+          docker logs os-apt-debian13 > /tmp/os-apt-debian13-init.log 2>&1 || true
+          sudo cp /tmp/os-apt-debian13-init.log /var/tmp/os-apt-evidence/
+          docker cp os-apt-debian13:/var/tmp/os-apt-evidence/. /var/tmp/os-apt-evidence/ || true
+          docker inspect os-apt-debian13 > /tmp/os-apt-debian13-container.json || true
+          sudo cp /tmp/os-apt-debian13-container.json /var/tmp/os-apt-evidence/
+          docker image inspect os-apt-debian13-fixture debian:13 > /tmp/os-apt-debian13-images.json || true
+          sudo cp /tmp/os-apt-debian13-images.json /var/tmp/os-apt-evidence/
+          docker rm -f os-apt-debian13 || true
+      - name: Make fixture evidence readable
+        if: always()
+        run: sudo chmod -R a+rX /var/tmp/os-apt-evidence || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: os-apt-${{ matrix.platform }}-${{ github.run_id }}
+          path: /var/tmp/os-apt-evidence
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,21 @@
+[Unit]
+Description=Refresh host-local apt package indexes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=DEBIAN_FRONTEND=noninteractive
+ExecStart=/usr/local/sbin/os-apt-maintenance --refresh-only
+TimeoutStartSec=1020
+
+# This unit only ever runs `apt-get update`, so it can be confined harder than
+# the maintenance unit: it never unpacks a package and never touches
+# /lib/modules, which is why ProtectKernelModules= is safe here and is not in
+# os-apt-maintenance.service.
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true

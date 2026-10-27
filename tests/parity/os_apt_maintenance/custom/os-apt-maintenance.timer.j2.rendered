@@ -1,0 +1,11 @@
+[Unit]
+Description=Run host-local apt maintenance on schedule
+
+[Timer]
+OnCalendar=Mon *-*-* 03:15:00
+AccuracySec=5m
+RandomizedDelaySec=15m
+Persistent=false
+
+[Install]
+WantedBy=timers.target

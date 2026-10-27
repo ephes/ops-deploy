@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh host-local apt package indexes on schedule
+
+[Timer]
+OnCalendar=*-*-* 09:15:00
+AccuracySec=2m
+RandomizedDelaySec=20m
+Persistent=false
+
+[Install]
+WantedBy=timers.target

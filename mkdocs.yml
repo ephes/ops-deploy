@@ -59,6 +59,7 @@ nav:
       - echoport: services/echoport.md
       - logyard: services/logyard.md
       - graphyard: services/graphyard.md
+      - os_apt_maintenance: services/os_apt_maintenance.md
       - work_app: services/work_app.md
       - zellij_ingress: services/zellij_ingress.md
       - homelab: services/homelab.md

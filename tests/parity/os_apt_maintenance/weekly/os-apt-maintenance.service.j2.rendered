@@ -1,0 +1,30 @@
+[Unit]
+Description=Run host-local apt maintenance
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=DEBIAN_FRONTEND=noninteractive
+ExecStart=/usr/local/sbin/os-apt-maintenance
+ExecStartPre=/bin/mkdir -p /var/lib/os-apt-maintenance
+ExecStartPre=/bin/chown root:metrics /var/lib/os-apt-maintenance
+ExecStartPre=/bin/chmod 0750 /var/lib/os-apt-maintenance
+# ExecStopPost=, not ExecStartPost=: systemd skips ExecStartPost= entirely when
+# ExecStart= exits non-zero, so a failed apt run used to leave state.json as
+# 0600 root:root and the monitoring endpoint answered 503 until the next
+# successful run - masking the failure it had just recorded.  ExecStopPost=
+# runs on success and on failure alike; the leading '-' keeps a missing file
+# from turning a successful run into a failed unit.
+ExecStopPost=-/bin/chown root:metrics /var/lib/os-apt-maintenance/state.json
+ExecStopPost=-/bin/chmod 0640 /var/lib/os-apt-maintenance/state.json
+TimeoutStartSec=7500
+
+# Keep apt/dpkg visibility while reducing accidental filesystem access.
+# Kernel packages need write access to /lib/modules, so do not use
+# ProtectKernelModules here.
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true

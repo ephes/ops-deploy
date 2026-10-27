@@ -1,0 +1,33 @@
+[Unit]
+Description=Serve os apt maintenance state for monitoring
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fixturemetrics
+Group=fixturemetrics
+ExecStart=/usr/bin/python3 /usr/local/bin/fixture-http.py
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+ReadOnlyPaths=/srv/apt-state/custom.json
+ReadOnlyPaths=/etc/fixture-apt/htpasswd
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+IPAddressAllow=192.0.2.0/24
+
+[Install]
+WantedBy=multi-user.target

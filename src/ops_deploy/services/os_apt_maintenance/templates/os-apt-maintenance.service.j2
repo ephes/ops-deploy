@@ -1,0 +1,30 @@
+[Unit]
+Description=Run host-local apt maintenance
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=DEBIAN_FRONTEND=noninteractive
+ExecStart={{ os_apt_maintenance_script_path }}
+ExecStartPre=/bin/mkdir -p {{ os_apt_maintenance_state_dir }}
+ExecStartPre=/bin/chown root:{{ os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root' }} {{ os_apt_maintenance_state_dir }}
+ExecStartPre=/bin/chmod {{ '0750' if os_apt_maintenance_endpoint_enabled | bool else '0755' }} {{ os_apt_maintenance_state_dir }}
+# ExecStopPost=, not ExecStartPost=: systemd skips ExecStartPost= entirely when
+# ExecStart= exits non-zero, so a failed apt run used to leave state.json as
+# 0600 root:root and the monitoring endpoint answered 503 until the next
+# successful run - masking the failure it had just recorded.  ExecStopPost=
+# runs on success and on failure alike; the leading '-' keeps a missing file
+# from turning a successful run into a failed unit.
+ExecStopPost=-/bin/chown root:{{ os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root' }} {{ os_apt_maintenance_state_file }}
+ExecStopPost=-/bin/chmod {{ '0640' if os_apt_maintenance_endpoint_enabled | bool else '0644' }} {{ os_apt_maintenance_state_file }}
+TimeoutStartSec={{ (os_apt_maintenance_command_timeout | int) + 300 }}
+
+# Keep apt/dpkg visibility while reducing accidental filesystem access.
+# Kernel packages need write access to /lib/modules, so do not use
+# ProtectKernelModules here.
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
