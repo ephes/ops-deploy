@@ -1,0 +1,77 @@
+name: Linux apps integration (encrypted_volume, open_webui)
+
+# Owned native fixture: a disposable GitHub-hosted Ubuntu 24.04 x86 VM with its
+# own LUKS loop file and synthetic credentials. Never an inventory host.
+on:
+  push:
+    branches:
+      - pyinfra-linux-apps-20261027
+    paths:
+      - '.github/workflows/linux-apps-integration.yml'
+      - 'tests/integration/linux_apps/**'
+      - 'src/ops_deploy/infra/encrypted_volume.py'
+      - 'src/ops_deploy/infra/files/encrypted_volume_host.py'
+      - 'src/ops_deploy/services/open_webui/**'
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed ops-deploy implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-apps-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  real-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate immutable implementation selection
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.IMPLEMENTATION_SHA }}
+          path: .implementation
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Install the locked controller with the immutable Git package
+        working-directory: .implementation
+        run: |
+          unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV
+          uv sync --locked --no-dev
+          uv pip install --python .venv/bin/python --no-deps --reinstall "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
+      - name: Owned encrypted volume and Open WebUI qualification
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$GITHUB_SHA" UV_BIN="$(command -v uv)" \
+            CONTROLLER_PYTHON="$PWD/.implementation/.venv/bin/python" \
+            bash tests/integration/linux_apps/run.sh
+      - name: Capture diagnostic service state
+        if: always()
+        run: |
+          sudo mkdir -p /var/tmp/linuxev-evidence
+          trap 'sudo chmod -R a+rX /var/tmp/linuxev-evidence' EXIT
+          if ! sudo journalctl -u open-webui --no-pager -n 300 > /tmp/linuxev-journal.txt 2>&1; then
+            echo 'Service journal unavailable; primary failure remains in job log.'
+          fi
+          sudo cp /tmp/linuxev-journal.txt /var/tmp/linuxev-evidence/journal.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: linux-apps-${{ github.run_id }}
+          path: /var/tmp/linuxev-evidence
+          if-no-files-found: error
+          retention-days: 7

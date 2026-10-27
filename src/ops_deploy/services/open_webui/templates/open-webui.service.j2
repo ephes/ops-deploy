@@ -1,0 +1,25 @@
+[Unit]
+Description=Open WebUI (uv venv)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ open_webui_user }}
+Group={{ open_webui_group }}
+WorkingDirectory={{ open_webui_site_dir }}
+EnvironmentFile={{ open_webui_env_path }}
+Environment=DATA_DIR={{ open_webui_data_dir }}
+ExecStart={{ open_webui_venv_path }}/bin/open-webui serve --port {{ open_webui_host_port }}{{ ' --host ' ~ open_webui_bind_host if open_webui_use_host_flag | bool else '' }}{{ ' ' ~ (open_webui_extra_args | join(' ')) if open_webui_extra_args | length > 0 else '' }}
+Restart={{ open_webui_systemd_restart }}
+RestartSec={{ open_webui_systemd_restart_sec }}
+{% if open_webui_systemd_hardening | default(false) | bool %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ open_webui_home }} {{ open_webui_data_dir }} {{ open_webui_log_dir }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,111 @@
+# Managed by Ansible - Traefik configuration for Open WebUI
+
+http:
+  routers:
+{% if open_webui_basic_auth_enabled %}
+    open-webui-int:
+      rule: "Host(`{{ open_webui_traefik_host }}`) && ({% for range in open_webui_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in open_webui_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 120
+      middlewares:
+        - open-webui-headers
+        - open-webui-gzip
+{% for middleware in open_webui_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: open-webui
+{% if open_webui_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ open_webui_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    open-webui-ext:
+      rule: "Host(`{{ open_webui_traefik_host }}`)"
+      entryPoints:
+{% for ep in open_webui_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - open-webui-auth
+        - open-webui-headers
+        - open-webui-gzip
+{% for middleware in open_webui_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: open-webui
+{% if open_webui_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ open_webui_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    open-webui-secure:
+      rule: "Host(`{{ open_webui_traefik_host }}`)"
+      entryPoints:
+{% for ep in open_webui_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - open-webui-headers
+        - open-webui-gzip
+{% for middleware in open_webui_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: open-webui
+{% if open_webui_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ open_webui_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    open-webui-http:
+      rule: "Host(`{{ open_webui_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - open-webui-redirect
+      service: open-webui
+
+  middlewares:
+{% if open_webui_basic_auth_enabled %}
+    open-webui-auth:
+      basicAuth:
+        users:
+          - "{{ open_webui_basic_auth_user }}:{{ open_webui_basic_auth_password_hash }}"
+        removeHeader: {{ open_webui_basic_auth_remove_header | bool }}
+{% endif %}
+
+    open-webui-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ open_webui_traefik_host }}"
+
+    open-webui-gzip:
+      compress: {}
+
+    open-webui-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    open-webui:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ open_webui_host_port }}"
