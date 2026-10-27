@@ -127,4 +127,13 @@ unchanged, including the actual Rust release/pin tree. The damaged-unit oracle
 retains the distinct systemd 255/257 outcomes described in the harness README;
 it does not establish identical cached-unit metadata. Earlier failed fixture
 runs remain part of the evidence, including their missing Rust-tree coverage.
-Inventory rollout qualification is still pending.
+The coordinated four-host inventory plan, default first deployment and explicit
+macmini repeat also passed on immutable artifact `db2d4d3`. Each deployment
+completed the four endpoints and Nyxmon stage with 117 successful operations,
+zero managed changes and zero uploads. Protected files, process identities,
+packages, apt/reboot policy, mounts and declared check rows remained unchanged.
+Only the live main SQLite file's mtime changed between phases; its cause is
+unproven, and no global zero-I/O claim is made. An initial read-only plan stopped
+on a receipt-parser error before apply; the failed evidence was retained and
+the corrected plan reran before the first deployment. The private control plane
+records the detailed receipt and released deployment lock.

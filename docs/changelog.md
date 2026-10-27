@@ -6,7 +6,8 @@
   semantics, with actual cf3 role-template parity. Preserve existing state,
   scheduled apt/reboot policy and disabled-role behavior; reload/restart only
   for managed changes. Owned Ubuntu Python and Debian 13 userspace Rust
-  qualification passed; inventory qualification remains pending.
+  and four-host inventory qualification passed: first/repeat each completed
+  five stages with zero managed changes and zero uploads.
 
 - `ssh_guard`: optional timed revert, `timed_revert_seconds` (default `0`,
   off: the plain deploy plans and writes exactly as before; its read-only
