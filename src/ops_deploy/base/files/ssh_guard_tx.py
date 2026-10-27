@@ -64,9 +64,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from collections.abc import Iterator
@@ -82,6 +84,7 @@ FINAL = ("unchanged", "aborted", "confirmed", "reverted", "revert-failed", "supe
 REVERT_MIN, REVERT_MAX = 60, 3600
 APPLY_RUNTIME_MAX = 1800
 STEP_TIMEOUT = 900
+QUIESCE_WAIT = 60
 COMMAND_TIMEOUT = 120
 KEEP_TRANSACTIONS = 5
 STEP_KINDS = ("dir", "file", "absent", "package", "service", "shell")
@@ -191,6 +194,9 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
                 raise TxError(f"bundle: step {step_id} needs command and always")
             if not isinstance(when, list) or not all(isinstance(ref, str) and ref in ids for ref in when):
                 raise TxError(f"bundle: step {step_id} may only depend on earlier steps")
+            limit = step.get("timeout", STEP_TIMEOUT)
+            if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= STEP_TIMEOUT:
+                raise TxError(f"bundle: step {step_id} has an invalid timeout")
         ids.add(step_id)
     return bundle
 
@@ -211,6 +217,38 @@ def run(argv: list[str], *, timeout: int = COMMAND_TIMEOUT) -> subprocess.Comple
         return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return subprocess.CompletedProcess(argv, 125, "", f"{type(exc).__name__}: {exc}")
+
+
+def run_tree(argv: list[str], *, timeout: int, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a step in its own process group and kill the whole group afterwards.
+
+    On a timeout, and also after a normal exit, every process left in the
+    group (a backgrounded child, a hung dpkg) is killed, so nothing a step
+    started keeps changing the host after the step has ended. Processes that
+    leave the group (``setsid``) are caught by :func:`quiesce` before a revert.
+    """
+
+    # Output goes to files, not pipes: waiting for a pipe's end would also wait
+    # for a backgrounded child that holds it.
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        try:
+            proc = subprocess.Popen(argv, stdout=out, stderr=err, env=env, start_new_session=True)
+        except OSError as exc:
+            return subprocess.CompletedProcess(argv, 125, "", f"{type(exc).__name__}: {exc}")
+        try:
+            code = proc.wait(timeout=timeout)
+            note = ""
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            code, note = 124, f"\ntimed out after {timeout} s"
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        out.seek(0)
+        err.seek(0)
+        text = out.read().decode(errors="replace"), err.read().decode(errors="replace") + note
+    return subprocess.CompletedProcess(argv, code, *text)
 
 
 def unit_running(unit: str) -> bool:
@@ -477,9 +515,65 @@ def stop_timer(state: dict[str, Any]) -> None:
         run(["systemctl", "stop", f"{unit}.timer"])
 
 
-def do_revert(store: Store, state: dict[str, Any], bundle: dict[str, Any], reason: str) -> int:
+def own_cgroup() -> str:
+    try:
+        lines = Path("/proc/self/cgroup").read_text().splitlines()
+    except OSError:
+        return ""
+    return next((line[3:] for line in lines if line.startswith("0::")), "")
+
+
+def quiesce(state: dict[str, Any], *, inside: bool) -> None:
+    """Make sure nothing the apply started still runs before anything is restored.
+
+    ``inside`` the apply (a failing step; each step's process group is already
+    killed): kill every other process of the apply unit's cgroup, which also
+    holds children that left a step's process group. From the timer or by
+    hand: kill the apply unit if it is still there and wait until systemd
+    reports it gone. Raises TxError when that does not happen.
+    """
+
+    unit = state.get("apply_unit")
+    if not isinstance(unit, str) or not _UNIT.fullmatch(unit):
+        return
+    cgroup = own_cgroup()
+    deadline = time.monotonic() + QUIESCE_WAIT
+    if inside:
+        if not cgroup.endswith(f"/{unit}.service"):
+            return  # outside the unit (run by hand, a test): only the process groups apply
+        procs = Path("/sys/fs/cgroup") / cgroup.lstrip("/") / "cgroup.procs"
+        while True:
+            try:
+                others = [int(pid) for pid in procs.read_text().split() if int(pid) != os.getpid()]
+            except (OSError, ValueError):
+                raise TxError(f"cannot read {procs}") from None
+            if not others:
+                return
+            if time.monotonic() > deadline:
+                raise TxError("processes the apply started do not end")
+            for pid in others:
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.kill(pid, signal.SIGKILL)
+            time.sleep(0.2)
+    while True:
+        active = run(["systemctl", "show", "-p", "ActiveState", "--value", f"{unit}.service"]).stdout.strip()
+        if active not in ("active", "activating", "deactivating", "reloading"):
+            return
+        if time.monotonic() > deadline:
+            raise TxError(f"{unit}.service does not end")
+        run(["systemctl", "kill", "--signal=SIGKILL", f"{unit}.service"])
+        time.sleep(0.5)
+
+
+def do_revert(store: Store, state: dict[str, Any], bundle: dict[str, Any], reason: str, *, inside: bool = False) -> int:
     """Restore the snapshot; the caller holds the lock and has checked ownership."""
 
+    try:
+        quiesce(state, inside=inside)
+    except TxError as exc:
+        # Nothing restored and the status left as it was: a later revert retries.
+        print(f"ssh_guard tx revert: {exc}; nothing restored yet", file=sys.stderr)
+        return 1
     txdir = store.tx_dir(state["txid"])
     if state["status"] == "armed":
         try:
@@ -545,11 +639,7 @@ def do_revert(store: Store, state: dict[str, Any], bundle: dict[str, Any], reaso
 def apt_install(package: str, no_recommends: bool) -> subprocess.CompletedProcess[str]:
     argv = ["apt-get", "-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"]
     argv += ["install", *(["--no-install-recommends"] if no_recommends else []), package]
-    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
-    try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=STEP_TIMEOUT, check=False, env=env)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return subprocess.CompletedProcess(argv, 125, "", f"{type(exc).__name__}")
+    return run_tree(argv, timeout=STEP_TIMEOUT, env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
 
 
 def run_step(step: dict[str, Any], bundle: dict[str, Any], changed: set[str]) -> bool:
@@ -598,7 +688,7 @@ def run_step(step: dict[str, Any], bundle: dict[str, Any], changed: set[str]) ->
         return acted
     if not (step["always"] or changed.intersection(step["when"])):
         return False
-    result = run(["sh", "-c", step["command"]], timeout=STEP_TIMEOUT)
+    result = run_tree(["sh", "-c", step["command"]], timeout=step.get("timeout", STEP_TIMEOUT))
     if result.returncode != 0:
         sys.stderr.write(result.stderr[-2000:])
         raise TxError(f"{step['name']}: failed ({result.returncode})")
@@ -642,10 +732,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             "txid": txid,
             "caller": args.caller,
             "revert_after": bundle["revert_after"],
+            "apply_unit": f"ssh-guard-tx-apply-{txid[:12]}",
             "created": time.time(),
         }
         store.save(state)
-    unit = f"ssh-guard-tx-apply-{txid[:12]}"
+    unit = state["apply_unit"]
     started = run(
         [
             "systemd-run",
@@ -665,11 +756,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + APPLY_RUNTIME_MAX + 60
     while True:
         current = store.load()
-        if current.get("txid") != txid or current["status"] not in ("staged", "applying"):
+        if current.get("txid") != txid or current["status"] not in ("staged", "applying", "reverting"):
             break
         if time.monotonic() > deadline:
             raise TxError(f"the apply unit {unit} still runs; check 'status' later")
-        if current["status"] == "applying" and not unit_running(unit):
+        if current["status"] in ("applying", "reverting") and not unit_running(unit):
             break
         if current["status"] == "staged" and not unit_running(unit):
             # The unit ended (or never ran) without getting past staging: nothing was changed.
@@ -686,7 +777,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(json.dumps(report))
     if current["status"] in ("armed", "unchanged"):
         return 0
-    if current["status"] == "applying":
+    if current["status"] in ("applying", "reverting"):
         print(
             "ssh_guard tx: the apply ended without finishing; the revert timer restores the snapshot", file=sys.stderr
         )
@@ -744,7 +835,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
             except Exception as exc:  # any failure reverts at once, still under this lock
                 state["changed"] = names
                 print(f"ssh_guard tx apply: {exc}", file=sys.stderr)
-                do_revert(store, state, bundle, f"step failed: {step['name']}")
+                do_revert(store, state, bundle, f"step failed: {step['name']}", inside=True)
                 return 1
         state["changed"] = names
         if not names:
@@ -753,7 +844,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
             store.save(state)
             return 0
         if time.monotonic() >= state["deadline_monotonic"]:
-            do_revert(store, state, bundle, "the apply outlasted the revert window")
+            do_revert(store, state, bundle, "the apply outlasted the revert window", inside=True)
             return 1
         state.update(status="armed", applied=applied_digests(bundle), armed_uptime=uptime())
         store.save(state)

@@ -48,7 +48,9 @@ case "$cmd" in
              [ -n "$quiet" ] || echo inactive; exit 3;;
   is-enabled) if [ -f "$u.enabled" ]; then echo enabled; exit 0; fi
               if [ -f "$u.loaded" ]; then echo disabled; else echo not-found; fi; exit 1;;
-  show) if [ -f "$u.loaded" ]; then echo loaded; else echo not-found; fi;;
+  show) if [ "$3" = ActiveState ]; then
+          if [ -f "$WORLD/running/$unit" ]; then echo active; else echo inactive; fi
+        elif [ -f "$u.loaded" ]; then echo loaded; else echo not-found; fi;;
   enable) touch "$u.enabled";; disable) rm -f "$u.enabled";;
   start|restart) [ -f "$WORLD/fail-$cmd-$unit" ] && exit 1; touch "$u.active";;
   stop) rm -f "$u.active";;
@@ -652,11 +654,12 @@ def test_nothing_to_change_arms_nothing(world: World) -> None:
     world.unit("fail2ban")
     (world.root / "pkgs" / "fail2ban").touch()
     (world.etc / "ssh" / "conf.d").mkdir()
-    (world.etc / "ssh" / "conf.d").chmod(0o755)
     Path(world.jail).write_text("[sshd]\n")
     Path(world.dropin).write_text("PerSourceMaxStartups 5\n")
-    for path in (world.jail, world.dropin):
-        os.chmod(path, 0o644)
+    # A new file's group follows its directory on some systems (BSD): set exactly what the bundle expects.
+    for path, mode_ in ((str(world.etc / "ssh" / "conf.d"), 0o755), (world.jail, 0o644), (world.dropin, 0o644)):
+        os.chown(path, world.uid, world.gid)
+        os.chmod(path, mode_)
 
     assert world.plan(world.standard()) == {"pending": False, "steps": []}
     result = world.run(world.standard())
@@ -703,3 +706,63 @@ def test_status_hides_the_callers(world: World) -> None:
     assert "caller" not in shown
     assert "confirmed_by" not in shown
     assert "198.51.100" not in json.dumps(shown)
+
+
+def test_a_timed_out_step_and_its_children_are_killed_before_the_revert(world: World) -> None:
+    Path(world.dropin).write_text("PerSourceMaxStartups 9\n")
+    world.unit("ssh")
+    late = shlex.quote(world.dropin)
+    bundle = world.standard()
+    bundle["steps"].insert(
+        6,
+        {
+            "id": "s9",
+            "kind": "shell",
+            "name": "Hang",
+            # A child in the step's process group that would write after the rollback.
+            "command": f"(sleep 3; echo late > {late}) & sleep 30",
+            "when": [],
+            "always": True,
+            "timeout": 1,
+        },
+    )
+
+    result = world.run(bundle)
+
+    assert result.returncode == 1
+    assert world.state()["reason"] == "step failed: Hang"
+    assert world.state()["status"] == "reverted"
+    time.sleep(4)
+    assert Path(world.dropin).read_text() == "PerSourceMaxStartups 9\n"
+
+
+def test_a_step_leaves_no_process_behind(world: World) -> None:
+    world.unit("ssh")
+    marker = world.tmp / "late"
+    bundle = world.standard()
+    bundle["steps"].insert(
+        6,
+        {
+            "id": "s9",
+            "kind": "shell",
+            "name": "Background",
+            "command": f"(sleep 2; touch {shlex.quote(str(marker))}) & exit 0",
+            "when": [],
+            "always": True,
+        },
+    )
+
+    assert world.run(bundle).returncode == 0
+    time.sleep(3)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("limit", [0, 901, True, "5"])
+def test_a_step_timeout_out_of_range_is_refused(world: World, limit: object) -> None:
+    bundle = world.standard()
+    bundle["steps"][3]["timeout"] = limit
+
+    result = world.run(bundle)
+
+    assert result.returncode == 3
+    assert "invalid timeout" in result.stderr

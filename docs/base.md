@@ -442,9 +442,13 @@ On the host, under one `flock` (`state-dir/lock`):
    and the packages, records `applying` with the deadline, and starts the
    one-shot timer `ssh-guard-tx-revert-<id>.timer` (`systemd-run
    --on-active=N`), which runs `revert <id>` with the transaction's own copy of
-   the program. Only then does it run the steps. A failing step (a gate, `sshd
-   -t`/`-T`, apt) reverts at once; an apply that outlasts the window reverts
-   too. Success records `armed` with the digests of the managed files.
+   the program. Only then does it run the steps. Each step runs in its own
+   process group (at most 900 s), killed as a whole when the step ends or
+   times out, so nothing it started keeps writing. A failing step (a gate,
+   `sshd -t`/`-T`, apt, a timeout) reverts at once, after every other process
+   of the apply unit's cgroup (a child that left its process group) is
+   killed; an apply that outlasts the window reverts too. Success records
+   `armed` with the digests of the managed files.
 3. `confirm --generation N` (run it over a new SSH connection: `ssh -o
    ControlMaster=no -o ControlPath=none HOST /usr/bin/python3 -I
    /usr/local/libexec/ops-deploy/ssh-guard-tx confirm --generation N`) needs
@@ -454,7 +458,9 @@ On the host, under one `flock` (`state-dir/lock`):
    connection from before the change is refused; and `SSH_CONNECTION` set and
    different from the one recorded by `run`. Also the same boot and the
    deadline not passed. It records `confirmed`, then stops the timer.
-4. `revert <id>` acts only on its own open transaction; anything else (a
+4. `revert <id>` first kills a still running apply unit and waits until
+   systemd reports it gone (else it restores nothing and fails, to be run
+   again). It acts only on its own open transaction; anything else (a
    confirmed one, a newer one, a final status) is left alone, so a revert
    fires at most once and never touches a later transaction. An `armed`
    transaction whose files no longer have the recorded digests was changed by
@@ -741,7 +747,8 @@ confirmed transaction against a newer armed one (nothing); a drop-in changed
 after the transaction (`superseded`, left alone, failed unit); a value `sshd
 -t` rejects (reverted at once, ssh reloaded onto the old drop-in); and a
 caller killed with its process group while the apply runs (the apply
-finishes in its unit, the timer reverts). `confirm` runs over real SSH logins
+finishes in its unit, the timer reverts); and a timed-out step whose `setsid`
+child would write after the rollback (killed with the unit's cgroup first). `confirm` runs over real SSH logins
 to the container's loopback with a test key: a new login confirms, a login
 through a ControlMaster opened before the change and a plain `docker exec`
 are refused.
@@ -751,7 +758,8 @@ are refused.
 and fired by the test): arming before the first change, byte-exact restores,
 confirm rules, refusals, an old timer against a newer transaction, the digest
 check, immediate revert, restore failures, a killed apply, a revert waiting
-for a running apply, and bundle validation.
+for a running apply, a timed-out step and a backgrounded child (both killed
+before they can write), and bundle validation.
 
 `tests/test_base_ssh_guard_sshd_check.py` runs the generated `sshd -t`/`-T`
 check with `sh` against a stub `sshd` that prints what OpenSSH 10.0 and 10.3

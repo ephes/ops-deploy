@@ -678,3 +678,41 @@ def test_timed_apply_survives_a_lost_session(tmp_path: Path, monkeypatch: pytest
     assert status["status"] == "reverted", status
     assert not box.exists(DROPIN)
     assert not box.exists(JAIL_PATH)
+
+
+def test_a_child_that_left_its_step_is_killed_before_the_revert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A timed-out step's ``setsid`` child is outside its process group, not outside the apply unit's cgroup."""
+
+    box = Container()
+    box.guard_connector(tmp_path, monkeypatch)
+    box.reset()
+    state = HostState.parse(box.out(probe_command(TIMED)))
+    bundle = transaction_bundle(TIMED, state, installed=True)
+    hang = {
+        "id": "hang",
+        "kind": "shell",
+        "name": "Hang",
+        "command": f"setsid sh -c 'sleep 4; echo late >> {DROPIN}' & sleep 30",
+        "when": [],
+        "always": True,
+        "timeout": 2,
+    }
+    bundle["steps"].append(hang)
+    subprocess.run(
+        [box.binary, "exec", "-i", box.identifier, "sh", "-c", f"mkdir -p {LIBEXEC} && cat > {TX_PROGRAM_PATH}"],
+        input=TX_PROGRAM,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+
+    result = box.sh(f"python3 -I {TX_PROGRAM_PATH} run --bundle-b64 {encode_bundle(bundle)} --caller x", check=False)
+
+    assert result.returncode == 1
+    status = tx_status(box)
+    assert (status["status"], status["reason"]) == ("reverted", "step failed: Hang")
+    assert not box.exists(DROPIN)
+    box.sh("sleep 6")
+    assert not box.exists(DROPIN)
