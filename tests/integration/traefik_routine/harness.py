@@ -85,6 +85,12 @@ def assert_observation_trace(script: str, lines: list[str]) -> None:
             line,
         )
         and '"/dev/null"' not in line
+        # Bash probes its absent controlling terminal; this failed device open
+        # cannot create, truncate or write a filesystem object.
+        and not re.search(
+            r'\bopenat\(AT_FDCWD, "/dev/tty", O_RDWR\|O_NONBLOCK\) = -1 ENXIO \(No such device or address\)$',
+            line,
+        )
     ]
     assert not mutations, mutations
     # Fail closed on truncation as well as payload leakage into a process argv.
