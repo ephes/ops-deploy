@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Add typed native mail backend, edge relay and spam filtering deployments,
+  preserving current packages, mailbox/queue state, credentials, SQL ownership,
+  aliases, DKIM/SRS, TLS and existing resolver/milter policy. Retain conditional
+  native password verification, bounded transient PostgreSQL definition checks,
+  and durable per-daemon restart/reload recovery after interrupted changes.
+  Refuse a spam monitoring-probe source inside the local/trusted-relay networks
+  and legacy domain aliases without a hosted alias domain before connecting.
+  Add an owned package-absent native qualification workflow (two systemd-nspawn
+  systems, package-fault refusal, fresh install, owned mail flows and repeat).
+- Refuse malformed or unsupported monitor-mailbox SHA512-CRYPT verifiers before
+  treating Dovecot's mismatch status as permission to change the stored password;
+  qualified current hashes retain their existing behavior and bytes.
+
+
 - Add the shared mail database foundation: conditional SCRAM role reconciliation,
   create-only database state, and read-only application requirements. Preserve
   existing ownership/grants and matching verifiers; refuse unknown or

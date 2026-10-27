@@ -1,9 +1,20 @@
 """Exact monitor mailbox role SQL, run as postgres; secrets arrive on stdin only."""
 import json
+import re
 import subprocess
 import sys
 
 import psycopg2
+
+
+def qualified_password_hash(value):
+    # libxcrypt SHA512-CRYPT: canonical numeric cost, native salt grammar,
+    # and the two meaningful bits in the final crypt-base64 character.
+    if not isinstance(value, str):
+        return False
+    match = re.fullmatch(r"\{SHA512-CRYPT\}\$6\$(?:rounds=([1-9][0-9]{0,8})\$)?([^$:\r\n\0]{1,16})\$[./0-9A-Za-z]{85}[./01]", value)
+    return bool(match and all(0x21 <= ord(char) <= 0x7e and char not in "!*:;" and ord(char) != 92 for char in match[2])
+                and (match[1] is None or 1000 <= int(match[1]) <= 999999999))
 
 
 def pw(arguments, password, repeat=False):
@@ -45,8 +56,8 @@ def reconcile(request, apply):
                 raise ValueError("monitor mailbox identity is ambiguous")
             changed = not rows
             if rows:
-                if not isinstance(rows[0][1], str) or not rows[0][1]:
-                    raise ValueError("stored monitor password hash is missing")
+                if not qualified_password_hash(rows[0][1]):
+                    raise ValueError("stored monitor password hash is unsupported or malformed")
                 verified = pw(["-t", rows[0][1]], password)
                 # Dovecot reports password mismatch with exit 75. Other errors are not rotation requests.
                 if verified.returncode not in (0, 75):

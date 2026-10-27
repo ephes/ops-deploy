@@ -23,7 +23,10 @@ requires the stored password hash as a subprocess argument; local process-list
 readers can observe that verifier while the process runs. Plaintext is kept off
 argv, and neither plaintext nor hashes are emitted in deploy logs. This port
 retains the Dovecot interface rather than introducing a different hash verifier.
-A missing stored hash is diagnosed rather than silently replacing it. Dovecot verifies the existing password hash; no-op
+A missing, malformed or unsupported stored hash is diagnosed rather than silently
+replacing it. SHA512-CRYPT admission includes canonical supported rounds, native
+salt bounds and final encoding bits before Dovecot mismatch can authorize an
+explicit password change; failed tools/timeouts also refuse row mutation. Dovecot verifies the existing password hash; no-op
 reconciliation preserves it. Changed password/active state uses the existing
 role SQL. Missing domains and ambiguous identities fail without row changes.
 PostgreSQL operations run as postgres and emit only a changed-state indicator.
