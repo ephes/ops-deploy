@@ -21,6 +21,7 @@ sudo apt-get update -qq
 sudo apt-get install -y --no-install-recommends openssh-server rsync curl openssl >/dev/null
 ssh-keygen -q -t ed25519 -N '' -f "$task_dir/key"
 sudo install -d -m 0700 /root/.ssh
+sudo install -d -m 0755 /run/sshd
 cat "$task_dir/key.pub" | sudo tee -a /root/.ssh/authorized_keys >/dev/null
 sudo chmod 0600 /root/.ssh/authorized_keys
 printf 'PermitRootLogin prohibit-password\nPubkeyAuthentication yes\n' | sudo tee /etc/ssh/sshd_config.d/00-mailgun-fixture.conf >/dev/null
