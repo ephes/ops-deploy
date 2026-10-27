@@ -29,8 +29,9 @@ and injects it again for pyinfra. Raw original-role return code/logs/before-afte
 retained for explicit comparison. The role fault oracle is unadjudicated: its
 return code and refresh-timer outcome are recorded without a success or zero-change
 assertion, while all other protected resources remain strict. A green native job does
-not by itself establish fault parity. Pyinfra must stop the timer; exactly its known combined
-stop/disable operation may report the ignored missing-unit error. This is classified as a
+not by itself establish fault parity. Pyinfra must stop the timer. Systemd 255 reports the exact known combined
+stop/disable operation’s ignored missing-unit error; systemd 257 completes that
+operation successfully. The fixture asserts each observed outcome explicitly. This is classified as a
 partial systemd fault, never a healthy zero-change repeat: pyinfra can report zero managed
 operations although the preceding stop physically happened. The fixture restores the
 original configuration and then requires a healthy strict repeat. No daemon reload or
@@ -53,3 +54,9 @@ systemd outcomes; both require classification as an externally damaged-unit faul
 Restoring the original declared configuration and repeating succeeded in each case.
 Release-tree immutability is only established by runs that snapshot `/opt/metrics-httpd`;
 the first two runs used an incorrect absent path and do not prove that part.
+
+The Debian 13 systemd 257 run stopped and disabled the unlinked unit successfully
+(1 reported managed operation, no ignored failure, inactive/empty UnitFileState).
+It is classified separately as a successful fault stop, not a healthy zero-change
+repeat. This differs from the Ubuntu systemd 255 partial operation described above.
+Both platforms keep every non-refresh-timer resource strict during this fault.

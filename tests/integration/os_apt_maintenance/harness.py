@@ -168,6 +168,7 @@ def deploy(
     fish: bool = False,
     secret: str | None = None,
     expected_ignored: str | None = None,
+    fault: bool = False,
 ) -> dict[str, Any]:
     snap = db_snapshot if nyxmon else endpoint_snapshot
     before = snap()
@@ -209,7 +210,11 @@ def deploy(
     failed_ops = [op.name for op in operations if not op.succeeded]
     result = {
         "label": label,
-        "classification": "expected-partial-systemd-fault" if expected_ignored else "healthy-deploy",
+        "classification": "expected-partial-systemd-fault"
+        if expected_ignored
+        else "successful-systemd-fault-stop"
+        if fault
+        else "healthy-deploy",
         "failed_operations": failed_ops,
         "physical_changed_sections": sorted(key for key in before if before[key] != after[key]),
         "managed": managed,
@@ -238,9 +243,12 @@ def deploy(
         }
     )
     assert bool(error) is failure, result
-    if expected_ignored:
+    if fault:
         assert not zero, "fault phase must never be called a healthy zero-change repeat"
-        assert failed_ops == [expected_ignored], result
+        assert failed_ops == ([expected_ignored] if expected_ignored else []), result
+        for key in before.keys() - {"timer_state"}:
+            assert before[key] == after[key], (label, key)
+        assert before["timer_state"]["fixture-apt.timer"] == after["timer_state"]["fixture-apt.timer"]
     elif not failure:
         assert not failed_ops, result
     if zero:
@@ -496,10 +504,17 @@ def main() -> None:
     ansible_repeat(off, fault=True)
     deploy("restore-after-ansible-fault", timer)
     unlink_active()
+    systemd_major = int(sh("systemctl", "--version").split()[1])
+    assert systemd_major in (255, 257), "qualify changed fixture systemd fault semantics explicitly"
     deploy(
         "refresh-off-unlinked",
         off,
-        expected_ignored="Deploy os apt maintenance | Stop apt index refresh timer fixture-apt-refresh.timer",
+        fault=True,
+        expected_ignored=(
+            "Deploy os apt maintenance | Stop apt index refresh timer fixture-apt-refresh.timer"
+            if systemd_major == 255
+            else None
+        ),
     )
     assert sh("systemctl", "is-active", "fixture-apt-refresh.timer", check=False) != "active"
     deploy("restore-after-pyinfra-fault", timer)
