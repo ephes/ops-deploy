@@ -77,3 +77,20 @@ def test_firewall_rules_preserve_policy_and_allow_only_advancing_counters(fixtur
     ]:
         with pytest.raises(AssertionError):
             fixture_module.assert_nat_preserved(before, invalid)
+
+
+def test_original_upstream_parser_preserves_actual_nonloopback_addresses(fixture_module: Any) -> None:
+    text = (
+        "# original runner uplink\nnameserver 127.0.0.53\nnameserver 168.63.129.16 # Azure\n"
+        "nameserver ::1\nnameserver 2606:4700:4700::1111\nnameserver 168.63.129.16\nsearch fixture.invalid\n"
+    )
+    assert fixture_module.uplink_nameservers(text) == ["168.63.129.16", "2606:4700:4700::1111"]
+    assert (
+        fixture_module.uplink_nameservers(
+            "nameserver 127.0.0.100\nnameserver 0.0.0.0\nnameserver ff02::1\n"
+            "nameserver 169.254.1.1\nnameserver fe80::1%eth0\nnameserver fd00::1%eth0"
+        )
+        == []
+    )
+    with pytest.raises(ValueError, match="does not appear"):
+        fixture_module.uplink_nameservers("nameserver not-an-address")

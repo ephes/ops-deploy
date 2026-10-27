@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 EVIDENCE = Path(sys.argv[1])
 ROOT = Path("/opt/dns-routine-fixture")
@@ -215,7 +217,107 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
     return record
 
 
+def uplink_nameservers(text: str) -> list[str]:
+    addresses = []
+    for line in text.splitlines():
+        fields = line.split("#", 1)[0].split()
+        if len(fields) != 2 or fields[0] != "nameserver":
+            continue
+        address = ipaddress.ip_address(fields[1])
+        if (
+            not (
+                address.is_loopback
+                or address.is_unspecified
+                or address.is_multicast
+                or address.is_link_local
+                or getattr(address, "scope_id", None)
+            )
+            and str(address) not in addresses
+        ):
+            addresses.append(str(address))
+    return addresses
+
+
+def preserve_runner_upstream() -> None:
+    for source in (Path("/run/systemd/resolve/resolv.conf"), Path("/etc/resolv.conf")):
+        if source.exists() and (upstreams := uplink_nameservers(source.read_text())):
+            break
+    else:
+        raise AssertionError("No original non-loopback runner DNS upstream; refuse fixture mutation")
+    release_url = "https://github.com/ephes/ops-library/releases/download/metrics-httpd-v0.1.0/metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+    redirect = urlsplit(
+        command(
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--head",
+            "--max-time",
+            "30",
+            "--output",
+            "/dev/null",
+            "--write-out",
+            "%{url_effective}",
+            release_url,
+        )
+    ).hostname
+    assert redirect, redirect
+    assert redirect.endswith(".githubusercontent.com"), redirect
+    (EVIDENCE / "original-upstream.json").write_text(
+        json.dumps({"source": str(source), "upstreams": upstreams, "release_hosts": ["github.com", redirect]}, indent=2)
+    )
+    observe_release_dns("original", required=True)
+
+
+def observe_release_dns(label: str, *, required: bool) -> None:
+    evidence = {}
+    for hostname in json.loads((EVIDENCE / "original-upstream.json").read_text())["release_hosts"]:
+        script = (
+            "import json,socket,sys; print(json.dumps(sorted({x[4][0] for x in socket.getaddrinfo(sys.argv[1],443)})))"
+        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-I", "-c", script, hostname], capture_output=True, text=True, timeout=15, check=False
+            )
+            evidence[hostname] = {"exit": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+        except subprocess.TimeoutExpired:
+            evidence[hostname] = {"exit": -1, "stdout": "", "stderr": "15-second resolution deadline"}
+    (EVIDENCE / f"release-dns-{label}.json").write_text(json.dumps(evidence, indent=2))
+    if required:
+        assert all(x["exit"] == 0 and json.loads(str(x["stdout"])) for x in evidence.values()), evidence
+
+
+def activate_runner_upstream() -> None:
+    # Observe actual default localhost/getaddrinfo behavior; no inferred egress diagnosis.
+    observe_release_dns("default-recursive", required=False)
+    upstreams = json.loads((EVIDENCE / "original-upstream.json").read_text())["upstreams"]
+    include = Path("/etc/unbound/unbound.conf.d/99-fixture-upstream.conf")
+    assert not include.exists()
+    before_pid = command("systemctl", "show", "unbound", "-p", "MainPID", "--value")
+    write(
+        include,
+        'forward-zone:\n name: "."\n' + "".join(f" forward-addr: {address}\n" for address in upstreams),
+    )
+    command("unbound-checkconf")
+    command("systemctl", "restart", "unbound")
+    (EVIDENCE / "fixture-upstream-activation.json").write_text(
+        json.dumps(
+            {
+                "classification": "explicit owned-fixture setup, not deployment/no-op",
+                "include": str(include),
+                "sha256": hashlib.sha256(include.read_bytes()).hexdigest(),
+                "before_pid": before_pid,
+                "after_pid": command("systemctl", "show", "unbound", "-p", "MainPID", "--value"),
+            },
+            indent=2,
+        )
+    )
+    observe_release_dns("original-uplink-forwarded", required=True)
+
+
 def fixtures() -> None:
+    preserve_runner_upstream()
     ROOT.mkdir(mode=0o755)
     command("ip", "address", "add", "192.0.2.1/32", "dev", "lo")
     command("ip", "address", "add", "100.64.0.1/32", "dev", "lo")
@@ -265,7 +367,9 @@ grant fixture name *.home.fixture.example. A AAAA; }}; }};
 
 
 def query_contract(*, include_unrelated: bool = False) -> None:
-    evidence: dict[str, str] = {}
+    public_answer = command("dig", "@192.0.2.1", "github.com", "A", "+short", "+time=5", "+tries=2")
+    assert any(ipaddress.ip_address(line).version == 4 for line in public_answer.splitlines()), public_answer
+    evidence: dict[str, str] = {"github_after": public_answer}
     for address in ("192.0.2.1", "100.64.0.1"):
         answer = command(
             "dig", "-b", address, "@" + address, "deploy.home.fixture.example", "A", "+short", "+time=3", "+tries=1"
@@ -485,6 +589,7 @@ def main() -> None:
     resolver.symlink_to(ROOT / "resolver-stub.conf")
     deploy(cfg, "fresh-install")
     assert not Path("/etc/resolv.conf").is_symlink()
+    activate_runner_upstream()
     deploy(cfg, "fresh-repeat")
     query_contract()
     legacy_fixture(cfg)
@@ -570,6 +675,7 @@ def main() -> None:
         }
     )
     rust_cfg = ddns.model_copy(update={"endpoint": rust_endpoint})
+    observe_release_dns("before-rust-fetch", required=True)
     deploy(rust_cfg, "rust-switch")
     deploy(rust_cfg, "rust-repeat")
     # Owned Linux fixture repairs metadata/staging, never the installed release.

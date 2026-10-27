@@ -45,3 +45,14 @@ Explicit queries prove both source-address split views, generated blocklist
 NXDOMAIN, an outside-ACL client REFUSED from the owned primary namespace, and
 the unrelated nested include after a configuration replacement. Responses are
 retained separately from deployment operation counts.
+
+The owned VM retains its original non-loopback upstream DNS addresses in an
+unrelated root-forward include after first recording the default localhost resolver
+result for the actual release and discovered redirect hosts. This avoids
+assuming the runner permits direct recursive DNS egress. The receipt records the
+original uplink source/addresses and bounded system getaddrinfo before/after
+and immediately before the Rust fetch. The fixture alone restarts Unbound to
+activate this prerequisite include; subsequent deployment repeats preserve it.
+It does not claim default-recursion success when that diagnostic fails. Loopback-only,
+link-local/scoped, or malformed uplinks refuse before DNS fixture changes. No public inventory
+resolver policy changes, and no unknown port-53 process is terminated.

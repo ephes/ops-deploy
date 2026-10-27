@@ -8,7 +8,9 @@ operation with its flags, every command the fake connector saw (planning and
 execution, hashed), every upload (path and content hash) and every stdin
 payload (hashed; the htpasswd entry carries a random bcrypt salt and is left
 out). A config without ``fan_control`` (the macmini deploy) must reproduce it
-byte for byte.
+byte for byte. On 2026-10-27 only eight shared Rust host-script stdin hashes
+were refreshed for read-only layout validation; operations, commands and uploads
+remained identical.
 """
 
 from __future__ import annotations
