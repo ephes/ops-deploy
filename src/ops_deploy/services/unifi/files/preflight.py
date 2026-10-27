@@ -51,6 +51,18 @@ def matches_password(password: str, hashed: str) -> bool:
 
 def javascript(payload: dict[str, Any]) -> str:
     # JSON encoding prevents JavaScript injection; --file suppresses interactive echo.
+    fresh_check = "const fresh=null;\n"
+    if payload.get("fresh_controller"):
+        fresh_check = (
+            'const access=a.runCommand({connectionStatus:1,showPrivileges:true});'
+            'if(access.ok!==1)quit(23);const grants=access.authInfo.authenticatedUserPrivileges;'
+            'const fresh={actions:{},empty:{}};'
+            'for(const name of ["unifi","unifi_stat","unifi_audit"]){'
+            'fresh.actions[name]=grants.filter(p=>p.resource.db===name&&p.resource.collection==="")'
+            '.flatMap(p=>p.actions);'
+            'try{fresh.empty[name]=db.getSiblingDB(name).getCollectionNames().length===0;}'
+            'catch(e){fresh.empty[name]=false;}}'
+        )
     return (
         'if (config.get("disableLogging") !== true || config.get("enableTelemetry") !== false || '
         'config.get("updateURL") !== "") quit(19);\n'
@@ -65,7 +77,8 @@ def javascript(payload: dict[str, Any]) -> str:
         'const site=u.site.findOne({name:"default"});\n'
         'const privileges=ha && site ? u.privilege.find({'
         'admin_id:{$in:[ha._id,ha._id.toString()]},site_id:{$in:[site._id,site._id.toString()]}}).toArray() : [];\n'
-        'print("OPS_UNIFI="+JSON.stringify({opts:opts.parsed,parameters:parameters,ha:ha,site:!!site,privileges:privileges}));\n'
+        + fresh_check
+        + 'print("OPS_UNIFI="+JSON.stringify({opts:opts.parsed,parameters:parameters,ha:ha,site:!!site,privileges:privileges,ha_site_access:privileges.some(p=>typeof p.admin_id==="string"&&typeof p.site_id==="string"),fresh:fresh}));\n'
     )
 
 
@@ -75,23 +88,45 @@ def check(payload: dict[str, Any]) -> None:
         line.split("=", 1) for line in Path("/etc/os-release").read_text().splitlines() if "=" in line
     )
     require(release.get("ID", "").strip('"') in {"debian", "ubuntu"}, "unsupported_os")
+    if payload.get("routine"):
+        require(release.get("ID", "").strip('"') == "ubuntu" and release.get("VERSION_CODENAME", "").strip('"') == "noble", "routine_requires_ubuntu_noble")
     require(run(["uname", "-m"]) == "x86_64", "unsupported_architecture")
     require(Path("/proc/1/comm").read_text().strip() == "systemd", "systemd_required")
     route = run(["ip", "-4", "route", "get", "8.8.8.8"])
     source = re.search(r"\bsrc ([0-9.]+)\b", route)
     require(source is not None and source.group(1) == payload["controller_bind_address"], "controller_address_drift")
+    try:
+        installed = run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Version}", "unifi"])
+    except subprocess.CalledProcessError as error:
+        require(payload.get("routine") and error.returncode == 1 and not error.stdout, "package_query_failed")
+        installed = "absent"
+    fresh_runtime = payload.get("routine") and installed == "absent"
     require(
-        run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Version}", "unifi"])
-        == f'ii |{payload["installed_package_version"]}',
+        installed == "absent" or bool(re.fullmatch(r"ii \|[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-[0-9]+", installed))
+        if payload.get("routine") else installed == f'ii |{payload["installed_package_version"]}',
         "installed_version_mismatch_use_ansible",
     )
-    require(Path("/usr/lib/unifi/lib/ace.jar").is_file(), "installation_missing_use_ansible")
-    require(Path("/usr/lib/jvm/java-17-openjdk-amd64/bin/java").is_file(), "java17_required")
-    account = pwd.getpwnam("unifi")
-    require(account.pw_gid == grp.getgrnam("unifi").gr_gid, "unifi_group_drift")
-    require(account.pw_dir == "/home/unifi" and account.pw_shell == "/usr/sbin/nologin", "unifi_user_drift")
-    for path in ("/usr/lib/unifi/data", "/usr/lib/unifi/logs", "/usr/lib/unifi/run"):
-        require(Path(path).is_dir(), "installation_layout_missing_use_ansible")
+    if payload.get("routine") and not fresh_runtime:
+        comparison = subprocess.run(["dpkg", "--compare-versions", payload["selected_package_version"],
+                                     "lt", installed.removeprefix("ii |")], capture_output=True)
+        require(comparison.returncode == 1, "controller_downgrade_or_comparison_failed")
+    if fresh_runtime:
+        require(not Path("/var/lib/unifi").exists() and not Path("/var/lib/unifi").is_symlink()
+                and not Path("/usr/lib/unifi").exists() and not Path("/usr/lib/unifi").is_symlink(), "unpackaged_controller_data_present")
+    else:
+        require(Path("/usr/lib/unifi/lib/ace.jar").is_file(), "installation_missing_use_ansible")
+    if not payload.get("routine"):
+        require(Path("/usr/lib/jvm/java-17-openjdk-amd64/bin/java").is_file(), "java17_required")
+    try:
+        account = pwd.getpwnam("unifi")
+    except KeyError:
+        require(fresh_runtime, "unifi_user_missing")
+    else:
+        require(account.pw_gid == grp.getgrnam("unifi").gr_gid, "unifi_group_drift")
+        require(account.pw_dir == "/home/unifi" and account.pw_shell == "/usr/sbin/nologin", "unifi_user_drift")
+    if not fresh_runtime:
+        for path in ("/usr/lib/unifi/data", "/usr/lib/unifi/logs", "/usr/lib/unifi/run"):
+            require(Path(path).is_dir(), "installation_layout_missing_use_ansible")
     for path in ("/etc/unifi-secrets", "/etc/traefik/dynamic"):
         item = Path(path)
         require(not item.is_symlink(), "managed_directory_symlink")
@@ -106,18 +141,34 @@ def check(payload: dict[str, Any]) -> None:
     # A legacy unit with an inline Mongo URI would expose the old password in
     # pyinfra --diff. Have Ansible migrate that unit before using this port.
     unit = Path("/etc/systemd/system/unifi.service")
-    require(unit.is_file(), "custom_unit_missing_use_ansible")
-    require("mongodb://" not in unit.read_text(), "legacy_inline_credentials_use_ansible")
+    require(unit.is_file() or fresh_runtime, "custom_unit_missing_use_ansible")
+    require(not unit.is_file() or "mongodb://" not in unit.read_text(), "legacy_inline_credentials_use_ansible")
     require(run(["systemctl", "is-active", "mongod.service"]) == "active", "mongodb_not_active")
     require(run(["systemctl", "is-enabled", "mongod.service"]) == "enabled", "mongodb_not_enabled")
     # A running config is insufficient if a previous run left newer, unapplied
     # MongoDB settings. Refuse a pending MongoDB restart instead of applying it.
     timestamp = run(["systemctl", "show", "--timestamp=us+utc", "-p", "ActiveEnterTimestamp", "--value", "mongod.service"])
     start = datetime.datetime.strptime(timestamp, "%a %Y-%m-%d %H:%M:%S.%f UTC").replace(tzinfo=datetime.timezone.utc)
-    require(Path("/etc/mongod.conf").stat().st_mtime_ns <= int(start.timestamp() * 1_000_000_000), "mongodb_pending_restart")
-    check_mongodb_state(mongodb_state(payload), payload)
+    if not payload.get("routine"):
+        require(Path("/etc/mongod.conf").stat().st_mtime_ns <= int(start.timestamp() * 1_000_000_000), "mongodb_pending_restart")
+    state = mongodb_state({**payload, "fresh_controller": bool(fresh_runtime)})
+    check_mongodb_state(state, payload)
+    if fresh_runtime:
+        check_fresh_database_state(state)
     if payload["manage_firewall"]:
         run(["ufw", "show", "added"])
+
+
+def check_fresh_database_state(state: dict[str, Any]) -> None:
+    """Factory Default may clear databases: never initialize over real data."""
+    fresh = state.get("fresh")
+    require(isinstance(fresh, dict), "fresh_database_probe_invalid")
+    required = {"find", "insert", "update", "remove", "createCollection", "createIndex",
+                "listCollections", "listIndexes", "dropCollection", "dropIndex"}
+    for name in ("unifi", "unifi_stat", "unifi_audit"):
+        actions = fresh.get("actions", {}).get(name, [])
+        require(isinstance(actions, list) and required <= set(actions), "fresh_database_permissions_insufficient")
+        require(fresh.get("empty", {}).get(name) is True, "fresh_controller_database_not_empty")
 
 
 def mongodb_state(payload: dict[str, Any]) -> dict[str, Any]:
@@ -146,6 +197,8 @@ def check_mongodb_state(state: dict[str, Any], payload: dict[str, Any]) -> None:
     require(opts.get("security", {}).get("authorization") == "enabled", "mongodb_auth_config_drift")
     net = opts.get("net", {})
     require(net.get("bindIp") == "127.0.0.1" and net.get("port", 27017) == 27017, "mongodb_bind_config_drift")
+    if payload.get("routine"):
+        return
     log = opts.get("systemLog", {})
     require(log.get("quiet") is True and log.get("verbosity", 0) == 0, "mongodb_logging_config_drift")
     parameters = state["parameters"]
@@ -155,6 +208,8 @@ def check_mongodb_state(state: dict[str, Any], payload: dict[str, Any]) -> None:
         "mongodb_parameter_drift",
     )
     if payload["create_homeassistant_user"]:
+        if payload.get("routine_verify") and not state["site"]:
+            return
         require(state["site"] is True, "ha_default_site_missing_use_ansible")
         ha = state["ha"]
         require(isinstance(ha, dict), "ha_user_missing_use_ansible")
@@ -172,6 +227,8 @@ def check_mongodb_state(state: dict[str, Any], payload: dict[str, Any]) -> None:
                     and item.get("permissions") == [] for item in privileges),
             "ha_privilege_drift_use_ansible",
         )
+        if payload.get("routine_verify"):
+            require(state.get("ha_site_access") is True, "ha_site_access_missing")
         store = Path("/home/unifi/.homeassistant_unifi_password")
         require(not store.is_symlink() and store.is_file(), "ha_password_store_invalid_use_ansible")
         info = store.stat()
