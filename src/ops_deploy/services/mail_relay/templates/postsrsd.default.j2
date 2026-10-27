@@ -1,0 +1,27 @@
+# Managed by Ansible (ops-library/roles/mail_relay_deploy). Do not edit on the server.
+#
+# postsrsd 1.10 reads this file from /usr/share/postsrsd/postsrsd-systemd-launcher,
+# which then exec's postsrsd with each value as a command-line flag.
+
+# Domain the rewritten envelope sender lives in. Its MX must point at this relay,
+# so bounces to SRS0.../SRS1... addresses come back here and can be reversed, and
+# its SPF must authorise this host or the rewrite defeats its own purpose.
+SRS_DOMAIN={{ mail_relay_srs_domain }}
+
+# Domains that must NEVER be rewritten -- our own senders. Each domain is listed
+# twice on purpose: postsrsd matches a bare name as that domain exactly, and a
+# leading dot as its subdomains but NOT the domain itself. Both forms are needed
+# or service subdomains such as fedi.wersdoerfer.de and fedi.python-podcast.de
+# would get their envelope sender rewritten, breaking DMARC alignment for mail we
+# send ourselves.
+SRS_EXCLUDE_DOMAINS={{ (mail_relay_srs_exclude_domains | map('regex_replace', '^', '.') | list + mail_relay_srs_exclude_domains | list) | unique | join(',') }}
+
+SRS_SECRET={{ mail_relay_srs_secret_file }}
+SRS_LISTEN_ADDR={{ mail_relay_srs_listen_addr }}
+SRS_FORWARD_PORT={{ mail_relay_srs_forward_port }}
+SRS_REVERSE_PORT={{ mail_relay_srs_reverse_port }}
+SRS_SEPARATOR==
+SRS_HASHLENGTH=4
+SRS_HASHMIN=4
+RUN_AS=postsrsd
+CHROOT=/var/lib/postsrsd

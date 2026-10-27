@@ -1,0 +1,91 @@
+{
+  "IMAP": {
+    "host": "{{ snappymail_imap_host }}",
+    "port": {{ snappymail_imap_port }},
+    "type": {% if snappymail_imap_security | upper == 'SSL' %}1{% elif snappymail_imap_security | upper == 'TLS' %}2{% else %}0{% endif %},
+    "timeout": {{ snappymail_imap_timeout }},
+    "shortLogin": {{ snappymail_imap_short_login | ternary('true', 'false') }},
+    "lowerLogin": true,
+    "sasl": [
+      "SCRAM-SHA3-512",
+      "SCRAM-SHA-512",
+      "SCRAM-SHA-256",
+      "SCRAM-SHA-1",
+      "PLAIN",
+      "LOGIN"
+    ],
+    "ssl": {
+      "verify_peer": true,
+      "verify_peer_name": true,
+      "allow_self_signed": false,
+      "SNI_enabled": true,
+      "disable_compression": true,
+      "security_level": 1
+    },
+    "disabled_capabilities": [
+      "METADATA",
+      "OBJECTID",
+      "PREVIEW",
+      "STATUS=SIZE"
+    ],
+    "use_expunge_all_on_delete": false,
+    "fast_simple_search": true,
+    "force_select": false,
+    "message_all_headers": false,
+    "message_list_limit": 10000,
+    "search_filter": ""
+  },
+  "SMTP": {
+    "host": "{{ snappymail_smtp_host }}",
+    "port": {{ snappymail_smtp_port }},
+    "type": {% if snappymail_smtp_security | upper == 'SSL' %}1{% elif snappymail_smtp_security | upper == 'TLS' %}2{% else %}0{% endif %},
+    "timeout": 60,
+    "shortLogin": {{ snappymail_smtp_short_login | ternary('true', 'false') }},
+    "lowerLogin": true,
+    "sasl": [
+      "SCRAM-SHA3-512",
+      "SCRAM-SHA-512",
+      "SCRAM-SHA-256",
+      "SCRAM-SHA-1",
+      "PLAIN",
+      "LOGIN"
+    ],
+    "ssl": {
+      "verify_peer": true,
+      "verify_peer_name": true,
+      "allow_self_signed": false,
+      "SNI_enabled": true,
+      "disable_compression": true,
+      "security_level": 1
+    },
+    "useAuth": {{ snappymail_smtp_auth | ternary('true', 'false') }},
+    "setSender": {{ snappymail_smtp_set_sender | ternary('true', 'false') }},
+    "usePhpMail": false
+  },
+  "Sieve": {
+    "host": "{{ snappymail_sieve_host }}",
+    "port": {{ snappymail_sieve_port }},
+    "type": {% if snappymail_sieve_security | upper == 'SSL' %}1{% elif snappymail_sieve_security | upper == 'TLS' %}2{% else %}0{% endif %},
+    "timeout": 10,
+    "shortLogin": {{ snappymail_sieve_short_login | ternary('true', 'false') }},
+    "lowerLogin": true,
+    "sasl": [
+      "SCRAM-SHA3-512",
+      "SCRAM-SHA-512",
+      "SCRAM-SHA-256",
+      "SCRAM-SHA-1",
+      "PLAIN",
+      "LOGIN"
+    ],
+    "ssl": {
+      "verify_peer": true,
+      "verify_peer_name": true,
+      "allow_self_signed": false,
+      "SNI_enabled": true,
+      "disable_compression": true,
+      "security_level": 1
+    },
+    "enabled": {{ snappymail_sieve_enabled | ternary('true', 'false') }}
+  },
+  "whiteList": ""
+}

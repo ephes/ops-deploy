@@ -1,6 +1,6 @@
 # Native Voxhelm control plane
 
-`VoxhelmConfig` / `deploy_voxhelm` ports the authoritative ops-library role at `56495f75` (2.75.1). It supports the existing Darwin/launchd contract. Native qualification of this implementation is pending.
+`VoxhelmConfig` / `deploy_voxhelm` ports the authoritative ops-library role at `56495f75` (2.75.1). It supports the existing Darwin/launchd contract. The owned ARM fixture passed on `cd4ee3e7920232aabcf142971bec96e044611f55`; inventory rollout is separate.
 
 This API retains the root-owned control plane, optional local worker, Wyoming and WhisperKit sidecars, shared model layout and periodic pruning configuration. False sidecar flags leave their previous deployment unmanaged, matching the role. Pruning is different: disabling it while launchd management is enabled unloads it and removes its plist/script. Enabling it loads the configured interval/calendar schedule with `RunAtLoad=false`; deployment never kickstarts pruning.
 

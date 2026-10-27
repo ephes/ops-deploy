@@ -51,6 +51,8 @@ and `/props`, and unauthenticated `/v1/models` returning401. They perform no
 inference. `healthcheck_enabled=False` keeps launchd-state verification only.
 
 `enabled=False` unloads this job and removes only its plist and API-key file;
-model, wrapper and package remain. Native fresh/install/config/fault/repeat
-qualification for this port is in progress; the forwarding-identity prerequisite
-workflow alone is not detector qualification.
+model, wrapper and package remain. Fresh package/model installation, authenticated
+readiness, configuration changes, fault preservation, disable and zero-change
+repeats passed on the owned ARM fixture at `cd4ee3e7920232aabcf142971bec96e044611f55`.
+The fixture issued no inference request; normal server startup may warm the model.
+Inventory rollout is separate from this fixture proof.

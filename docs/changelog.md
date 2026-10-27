@@ -17,36 +17,87 @@
   Voxhelm/worker role parity checks and
   make OpsGate's follow `OPS_LIBRARY_PATH`. Add owned native Voxhelm
   control-plane and remote-worker fixtures and run all seven Mac fixtures in the
-  native workflow, with exact owned-process cleanup. Native qualification is
-  pending.
+  native workflow, with exact owned-process cleanup. All seven owned ARM fixtures passed on the reviewed implementation; inventory rollout remains separate.
 
 - Add complete native OpsGate, Voxhelm and remote-worker role APIs and original
   templates/defaults, with per-unit launchd semantics, selected runtime retention,
   explicit existing-artifact metadata continuity and verified changed downloads.
   Preserve OpsGate branch-tracking workspaces and Python/Rust rollback separately;
   compare bootstrap passwords with real read-only Django verification, and retain
-  periodic pruning without kickstarting it. Native qualification is pending.
+  periodic pruning without kickstarting it. All seven owned ARM fixtures passed; inventory rollout remains separate.
 
 - Add explicit native Darwin uv installation while retaining the existing Linux
   defaults and commands. Matching releases do not stage or repair metadata;
   invalid archives retain both installed binaries. Add owned ARM install/fault
   coverage and explicit remote-rsync selection/fresh-destination preparation in
-  the existing checksum-based sync primitive. Native qualification is pending.
+  the existing checksum-based sync primitive. All seven owned ARM fixtures passed; inventory rollout remains separate.
 
 - Add the pinned native llama-server role API, with masked credential stdin,
   existing-model metadata continuity, fresh-download checksum verification,
   change-triggered LaunchDaemon rollout, exact profile/auth readiness and the
-  original disabled-state resource retention. Native qualification is pending.
+  original disabled-state resource retention. All seven owned ARM fixtures passed; inventory rollout remains separate.
 
 - Add a descriptor-only OpenSSH forwarding identity probe and an owned ARM
   macOS prerequisite workflow. Existing-key inspection creates no temporary
-  private-key copy; the complete native tunnel deployment remains in progress.
+  private-key copy. The complete tunnel is qualified with an owned GUI owner,
+  restricted relay, verified TLS, install-stopped transition and no-write repeats.
+
+- Add `ops_deploy.infra.encrypted_volume`, the configure path of
+  `encrypted_volume_prepare` for an existing LUKS volume: read-only admission
+  (wrong UUID, non-LUKS device, foreign or conflicting mappings and mounts,
+  read-only mount, duplicate fstab entry are refused before any operation),
+  the keyfile through `secret_file`, the role's crypttab/fstab semantics,
+  open only when closed and remount only when an existing entry changed. It
+  never formats, closes, unmounts or switches the device path; a converged
+  host gets no write.
+
+- Add `ops_deploy.services.open_webui`, the port of `open_webui_venv_deploy`
+  with pinned `open-webui` 0.7.2 on CPython 3.11.14 and the shipped install
+  constraints of that version. The virtualenv is recreated and the package
+  installed only when needed; the role's environment file, unit and route are
+  rendered byte for byte; the generated `.webui_secret_key` and the data
+  directory are never written. Both are qualified on an owned native Ubuntu
+  fixture (`tests/integration/linux_apps`), including the role after pyinfra.
+
+- Qualify the mail web APIs on an immutable owned x86 Linux fixture: fresh setup,
+  authenticated release updates, config/credential changes, recovery and nine
+  zero-change repeats. Preserve the original failed fixture run and separate
+  inventory rollout status from the native API proof.
+
+- Add typed native mail backend, edge relay and spam filtering deployments,
+  preserving current packages, mailbox/queue state, credentials, SQL ownership,
+  aliases, DKIM/SRS, TLS and existing resolver/milter policy. Retain conditional
+  native password verification, bounded transient PostgreSQL definition checks,
+  and durable per-daemon restart/reload recovery after interrupted changes.
+  Refuse a spam monitoring-probe source inside the local/trusted-relay networks
+  and legacy domain aliases without a hosted alias domain before connecting.
+  Refuse legacy-mode forwards and non-5432 SQL ports, resolve overlapping alias
+  declarations once per address, and refuse SHA512-CRYPT salts that native
+  crypt would read as a rounds directive.
+  Add an owned package-absent native qualification workflow (two systemd-nspawn
+  systems, package-fault refusal, fresh install, owned mail flows and repeat).
+- Refuse malformed or unsupported monitor-mailbox SHA512-CRYPT verifiers before
+  treating Dovecot's mismatch status as permission to change the stored password;
+  qualified current hashes retain their existing behavior and bytes.
+
+- Add the shared mail database foundation: conditional SCRAM role reconciliation,
+  create-only database state, and read-only application requirements. Preserve
+  existing ownership/grants and matching verifiers; refuse unknown or
+  inconsistent credential state before reconciliation.
 
 - Add native Darwin hostname convergence and the complete Graphyard Vector
   Homebrew/launchd/newsyslog role branch, with masked stdin credentials,
   candidate validation, retained data and zero-staging no-ops. Keep Linux
   behavior and support literal-space filesystem excludes safely. Add owned
   macOS qualification and Linux ban-persistence/sudo-stdin fixture coverage.
+
+- Add ordinary PostfixAdmin and SnappyMail deployment APIs with pinned code
+  manifests, preserved verifying credentials and mutable data, complete staged
+  PHP/FPM/nginx validation, bounded owned-file recovery, and no-stage repeats.
+  Existing PostfixAdmin schemas are admitted read-only; the selected upstream
+  bootstrap is restricted to an empty database. Both routes expose an explicit
+  `traefik_sts_preload` option, defaulting to false.
+
 
 - Make installed Rust release validation genuinely read-only on a current layout.
   Classify needed root metadata or owned staging repairs as managed changes,

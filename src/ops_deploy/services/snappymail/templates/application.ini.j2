@@ -1,0 +1,32 @@
+; Managed by Ansible - SnappyMail configuration
+
+[security]
+allow_admin_panel = On
+admin_login = "{{ snappymail_admin_user }}"
+admin_password = "{{ snappymail_admin_password_hash_effective }}"
+force_https = {{ snappymail_force_https | ternary('On', 'Off') }}
+hide_x_mailer_header = On
+
+[login]
+default_domain = "{{ snappymail_login_default_domain }}"
+fault_delay = 5
+determine_user_language = On
+
+[webmail]
+title = "SnappyMail Webmail"
+app_path = "{{ snappymail_external_url }}"
+allow_additional_accounts = On
+allow_additional_identities = On
+
+[logs]
+enable = {{ snappymail_logging_enabled | ternary('On', 'Off') }}
+path = "{{ snappymail_logging_path }}"
+level = {{ snappymail_logging_level }}
+hide_passwords = On
+time_zone = "UTC"
+
+[ssl]
+verify_certificate = On
+allow_self_signed = Off
+security_level = 1
+disable_compression = On

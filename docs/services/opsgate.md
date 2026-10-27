@@ -1,6 +1,6 @@
 # Native OpsGate
 
-`OpsGateConfig` / `deploy_opsgate` ports the authoritative ops-library role at `56495f75` (2.75.1). It supports the existing Darwin/launchd contract. Native qualification of this implementation is pending.
+`OpsGateConfig` / `deploy_opsgate` ports the authoritative ops-library role at `56495f75` (2.75.1). It supports the existing Darwin/launchd contract. The owned ARM fixture passed on `cd4ee3e7920232aabcf142971bec96e044611f55`; inventory rollout is separate.
 
 The original two-account contract is preserved: the API runs as `control_service_user`, and the runner as `ops`. Account groups, reciprocal group membership, private homes, credentials, tmux settings, application copies, Python rollback plists and pinned Rust releases remain independently managed. The role defaults render units without managing or starting them; select the existing manage/start inputs to run them.
 

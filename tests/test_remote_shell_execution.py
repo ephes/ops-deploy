@@ -159,10 +159,19 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         *SRC.glob("services/_lifecycle/*.sh"),
         SRC / "ops" / "_secret_install.py",
     ]
+    # These sources are encoded, never interpolated raw. The actual composed
+    # command and protected stdin are executed through bash AND fish in
+    # test_mail_web_source_and_secret_stdin_through_real_login_shell.
+    encoded_mail_web = {
+        "services/_mail_web/files/mail_web_common.py",
+        "services/_mail_web/files/mail_web_candidate.py",
+    }
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
-        if path.name != "env_exec.py" and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
+        if path.name != "env_exec.py"
+        and str(path.relative_to(SRC)) not in encoded_mail_web
+        and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
     assert offenders == []

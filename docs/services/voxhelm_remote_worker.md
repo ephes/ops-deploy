@@ -1,6 +1,6 @@
 # Native Voxhelm remote worker
 
-`VoxhelmRemoteWorkerConfig` / `deploy_voxhelm_remote_worker` ports the authoritative ops-library role at `56495f75` (2.75.1). It supports the existing Darwin/launchd contract. Native qualification of this implementation is pending.
+`VoxhelmRemoteWorkerConfig` / `deploy_voxhelm_remote_worker` ports the authoritative ops-library role at `56495f75` (2.75.1). It supports the existing Darwin/launchd contract. The owned ARM fixture passed on `cd4ee3e7920232aabcf142971bec96e044611f55`; inventory rollout is separate.
 
 The original existing-user contract is retained: the declared account/home must already exist. Its pinned public PyPI `voxhelm` tool, selected Python, extras and install transcript determine whether installation is owed. A matching tool environment is retained, including patched certifi/trust bytes. `force_install` deliberately requests installation; package/index selection stays on public PyPI with `--no-sources`.
 

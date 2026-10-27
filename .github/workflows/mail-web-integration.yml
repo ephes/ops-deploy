@@ -1,0 +1,70 @@
+name: Mail web routine integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed ops-deploy release implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mail-web-routine-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  real-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate immutable implementation selection
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+        run: |
+          [[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.implementation_sha }}
+          path: .implementation
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Install locked controller
+        working-directory: .implementation
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+        run: |
+          unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV
+          uv sync --locked
+          uv pip install --python .venv/bin/python --no-deps --reinstall "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
+      - name: Real ephemeral VM provisioning and deployment chain
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$GITHUB_SHA" \
+            CONTROLLER_PYTHON="$PWD/.implementation/.venv/bin/python" \
+            bash tests/integration/mail_web/run.sh
+      - name: Capture diagnostic service state
+        if: always()
+        run: |
+          sudo mkdir -p /var/tmp/mail-web-evidence
+          trap 'sudo chmod -R a+rX /var/tmp/mail-web-evidence' EXIT
+          if ! sudo journalctl -u nginx -u php8.3-fpm --no-pager -n 250 > /tmp/mail-web-journal.txt 2>&1; then
+            echo 'Service journal unavailable; primary failure remains in job log.'
+          fi
+          sudo cp /tmp/mail-web-journal.txt /var/tmp/mail-web-evidence/journal.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: mail-web-linux-${{ github.run_id }}
+          path: /var/tmp/mail-web-evidence
+          if-no-files-found: error
+          retention-days: 7

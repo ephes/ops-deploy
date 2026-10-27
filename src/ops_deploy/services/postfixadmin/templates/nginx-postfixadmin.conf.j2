@@ -1,0 +1,83 @@
+# PostfixAdmin nginx configuration
+# Managed by Ansible - do not edit manually
+
+# Restore real client IP from Traefik (required for rate limiting)
+set_real_ip_from 127.0.0.1;
+set_real_ip_from ::1;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+
+# Rate limiting zone for login attempts
+limit_req_zone $binary_remote_addr zone=postfixadmin_login:10m rate={{ postfixadmin_login_rate_limit }};
+
+server {
+    listen {{ postfixadmin_listen_address }}:{{ postfixadmin_listen_port }};
+    server_name {{ postfixadmin_nginx_server_names | join(' ') }};
+
+    root {{ postfixadmin_public_path }};
+    index index.php;
+
+    access_log /var/log/nginx/postfixadmin_access.log;
+    error_log /var/log/nginx/postfixadmin_error.log;
+
+    client_max_body_size {{ postfixadmin_nginx_client_max_body_size }};
+
+    # Security headers
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+    }
+
+    # Deny access to config files
+    location ~* config\.(inc\.php|local\.php)$ {
+        deny all;
+    }
+
+    # Rate-limited login endpoint
+    location = /login.php {
+        limit_req zone=postfixadmin_login burst={{ postfixadmin_login_rate_burst }} nodelay;
+        limit_req_status 429;
+
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:{{ postfixadmin_php_fpm_socket }};
+        fastcgi_read_timeout {{ postfixadmin_php_max_execution_time }};
+
+        # TLS terminated at Traefik - tell PHP we're on HTTPS
+        fastcgi_param HTTPS on;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+    }
+
+    # Rate-limited user password change endpoints
+    location ~ ^/users/.*\.php$ {
+        limit_req zone=postfixadmin_login burst={{ postfixadmin_login_rate_burst }} nodelay;
+        limit_req_status 429;
+
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:{{ postfixadmin_php_fpm_socket }};
+        fastcgi_read_timeout {{ postfixadmin_php_max_execution_time }};
+
+        # TLS terminated at Traefik - tell PHP we're on HTTPS
+        fastcgi_param HTTPS on;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+    }
+
+    # Default location
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # Other PHP files (no rate limit)
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:{{ postfixadmin_php_fpm_socket }};
+        fastcgi_read_timeout {{ postfixadmin_php_max_execution_time }};
+
+        # TLS terminated at Traefik - tell PHP we're on HTTPS
+        fastcgi_param HTTPS on;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+    }
+}

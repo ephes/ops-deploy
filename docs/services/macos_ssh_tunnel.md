@@ -4,7 +4,7 @@ The native `MacosSshTunnelConfig` / `deploy_macos_ssh_tunnel` API preserves the
 existing `macos_ssh_tunnel` role's local owner and Aqua-session model. Deployment installs the tunnel stopped,
 including when the existing label is enabled and loaded. The existing explicit
 lifecycle commands start it.
-Native qualification of the full API remains pending. The earlier published
+The full API passed the owned ARM fixture on `cd4ee3e7920232aabcf142971bec96e044611f55`. The earlier published
 descriptor-probe prerequisite alone qualified neither deployment nor an
 inventory engine switch.
 
