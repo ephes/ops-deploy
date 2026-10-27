@@ -11,6 +11,7 @@ import sys
 import time
 from collections.abc import Sequence
 from dataclasses import asdict
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -21,15 +22,13 @@ from ops_deploy.infra.traefik_probes import (
     PROGRAM,
     Probe,
     ProbeSpec,
-    capture_memory_traefik_health_probes,
 )
-from ops_deploy.infra.traefik_routine import (
-    TraefikRoutineConfig,
-    deploy_traefik_routine,
-    ordinary_evidence,
-    transaction_probes,
-)
-from ops_deploy.infra.traefik_tx import engine, proof, transport
+
+# The bootstrap workflow runs against an immutable implementation checkout.
+# Resolve feature-only interfaces at execution time so baseline Main can typecheck.
+engine = import_module("ops_deploy.infra.traefik_tx.engine")
+proof = import_module("ops_deploy.infra.traefik_tx.proof")
+transport = import_module("ops_deploy.infra.traefik_tx.transport")
 
 OLD_SHA = "52cd039a34258dd61c617a95d69252bc6bcae27c520f338186c31c7fef8f6394"
 FAULT_SHA = "759a7bc0d66b74c588255ed9e41c7f9d4aba60bdb7bce9dde551b1268a55eb07"
@@ -94,7 +93,7 @@ def assert_observation_trace(script: str, lines: list[str]) -> None:
             assert all(packet not in line for packet in packets), "payload in execve argv"
 
 
-def deploy(cfg: TraefikRoutineConfig, evidence: Path, label: str, *, refusal: bool = False) -> None:
+def deploy(cfg: Any, evidence: Path, label: str, *, refusal: bool = False) -> None:
     from pyinfra.api import Config, Inventory, State
     from pyinfra.api.connect import connect_all, disconnect_all
     from pyinfra.api.deploy import add_deploy
@@ -120,7 +119,12 @@ def deploy(cfg: TraefikRoutineConfig, evidence: Path, label: str, *, refusal: bo
     error = None
     try:
         connect_all(state)
-        add_deploy(state, deploy_traefik_routine, cfg=cfg, runner=observed_access)
+        add_deploy(
+            state,
+            import_module("ops_deploy.infra.traefik_routine").deploy_traefik_routine,
+            cfg=cfg,
+            runner=observed_access,
+        )
         run_ops(state)
     except Exception as exc:
         error = str(exc)
@@ -148,7 +152,7 @@ def deploy(cfg: TraefikRoutineConfig, evidence: Path, label: str, *, refusal: bo
             assert snapshot() == before, result
 
 
-def enroll_fixture(cfg: TraefikRoutineConfig) -> dict[str, Any]:
+def enroll_fixture(cfg: Any) -> dict[str, Any]:
     """Owned fixture enrollment only, not a new production bootstrap API."""
     engine.STATE_ROOT.mkdir(mode=0o700, exist_ok=True)
     live = engine.identity(cfg.transaction_policy)
@@ -156,10 +160,10 @@ def enroll_fixture(cfg: TraefikRoutineConfig) -> dict[str, Any]:
     engine.save(engine.STATE_ROOT / "state.json", record)
     engine.save(cfg.controller_journal, record)
     cfg.controller_journal.with_suffix(".lock").touch(mode=0o600)
-    return record
+    return dict(record)
 
 
-def fault_request(cfg: TraefikRoutineConfig) -> tuple[dict[str, Any], str]:
+def fault_request(cfg: Any) -> tuple[dict[str, Any], str]:
     live = engine.identity(cfg.transaction_policy)
     record = json.loads(cfg.controller_journal.read_text())
     spec = ProbeSpec(
@@ -171,7 +175,7 @@ def fault_request(cfg: TraefikRoutineConfig) -> tuple[dict[str, Any], str]:
         entrypoints=("web", "web-secure", "traefik"),
         tls_fingerprints=True,
     )
-    baseline = capture_memory_traefik_health_probes(ACCESS, spec)
+    baseline = import_module("ops_deploy.infra.traefik_probes").capture_memory_traefik_health_probes(ACCESS, spec)
     desired = {
         "static": render_static(cfg.model_copy(update={"log_level": "DEBUG"})),
         "unit": render_unit(cfg) + "# owned fixture candidate\n",
@@ -197,8 +201,8 @@ def fault_request(cfg: TraefikRoutineConfig) -> tuple[dict[str, Any], str]:
         "files": desired,
         "release": {"version": "3.7.16", "arch": "amd64", "sha256": FAULT_SHA},
         "compatibility": proof.compatibility(result, live),
-        "evidence": ordinary_evidence(cfg, live, baseline),
-        **transaction_probes(txid, baseline, candidate),
+        "evidence": import_module("ops_deploy.infra.traefik_routine").ordinary_evidence(cfg, live, baseline),
+        **import_module("ops_deploy.infra.traefik_routine").transaction_probes(txid, baseline, candidate),
         "metadata": {
             "probe_config": candidate.model_dump(mode="json", exclude_unset=True),
             "route_inventory": {
@@ -211,7 +215,7 @@ def fault_request(cfg: TraefikRoutineConfig) -> tuple[dict[str, Any], str]:
     return request, txid
 
 
-def deaths(cfg: TraefikRoutineConfig, evidence: Path) -> None:
+def deaths(cfg: Any, evidence: Path) -> None:
     """Inject SIGKILL after actual production atomic writes; detached original runner restores."""
     for target in [
         "/usr/local/bin/traefik",
@@ -286,6 +290,7 @@ def main() -> None:
             raise RuntimeError("unexpected trace self-check failure") from exc
     else:
         raise AssertionError("trace payload negative self-check did not detect argv")
+    assert engine.__file__
     provenance = {
         "implementation": os.environ["IMPLEMENTATION_SHA"],
         "harness": os.environ["HARNESS_SHA"],
@@ -298,7 +303,7 @@ def main() -> None:
     assert marker["machine"] == Path("/etc/machine-id").read_text().strip()
     journal = Path("/var/tmp/traefik-routine-journal")
     journal.mkdir(mode=0o700)
-    cfg = TraefikRoutineConfig(
+    cfg = import_module("ops_deploy.infra.traefik_routine").TraefikRoutineConfig(
         checksum="sha256:" + OLD_SHA,
         letsencrypt_email="fixture@example.com",
         canonical_host="fixture",
@@ -424,7 +429,7 @@ def main() -> None:
         time.sleep(1)
     else:
         raise RuntimeError("fixture HTTPS/auth route did not settle")
-    baseline = capture_memory_traefik_health_probes(ACCESS, spec)
+    baseline = import_module("ops_deploy.infra.traefik_probes").capture_memory_traefik_health_probes(ACCESS, spec)
     write("/var/lib/traefik-update-probes/health.py", PROGRAM.decode(), 0o755)
     write(str(engine.PROBE_CONFIG), baseline.model_dump_json(exclude_unset=True), 0o600)
     enroll_fixture(cfg)
