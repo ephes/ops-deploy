@@ -24,18 +24,24 @@ Modes:
   the CPU fan) into manual mode and writes their duty. Every write attempt
   reads the 16 bytes right before and changes only the managed positions, and
   is read back; a mismatch is retried once from a fresh read, then the managed
-  positions go back to BMC auto and the process exits. A required input that
-  is missing, stale or fails ``failure_cycles`` times in a row, and a managed
-  fan that reads no RPM or 0 RPM for ``stall_cycles`` cycles, force 100 %.
+  positions go back to BMC auto and the process exits. Before it takes
+  control, positions an earlier run still holds that are not managed now go
+  back to BMC auto (read back), so no fan stays under a control nobody
+  records; when that run's record is from another board, BMC or firmware it
+  refuses instead. A required input that is missing, stale or fails
+  ``failure_cycles`` times in a row, and a managed fan that reads no RPM or
+  0 RPM for ``stall_cycles`` cycles, force 100 %.
   The hwmon sensors are read last in a cycle, right before the decision, and
   staleness is measured at the time of the decision.
 - ``calibrate``: once per ``calibration.id``, maps each managed position to its
   fan and measures a duty staircase, restores the BMC's previous mode and duty
   bytes of the managed positions (read back), writes ``calibration.json``,
   then observes. It does not start, and it aborts, while a required input
-  fails (a single failed read is enough), a scrub or resilver runs or the
-  curves ask for ``abort_target_pct``; until its first BMC write that is a
-  skip, and the same id runs again at the next start. It does not start
+  fails (a single failed read is enough), a scrub or resilver runs, the scan
+  state of a configured pool is unknown (``zpool status`` failed or shows no
+  scan line for it) or the curves ask for ``abort_target_pct``; until its
+  first BMC write that is a skip, and the same id runs again at the next
+  start. It does not start
   either while positions an earlier run left under control are still held.
 
 Board and firmware must match the configured identity (DMI board vendor and
@@ -821,16 +827,16 @@ def read_hdd(drive: Drive, run: Runner) -> HddReading:
     return HddReading("error", error=f"smartctl exit {smart.returncode} without a temperature")
 
 
-def parse_scans(stdout: str, pools: Sequence[str]) -> dict[str, bool]:
-    """``zpool status``: pool -> scrub or resilver in progress."""
+def parse_scan_states(stdout: str, pools: Sequence[str]) -> dict[str, bool | None]:
+    """``zpool status``: pool -> scrub or resilver in progress, ``None`` without a scan line."""
 
-    found: dict[str, bool] = {}
+    found: dict[str, bool | None] = {}
     current = None
     for line in stdout.splitlines():
         stripped = line.strip()
         if stripped.startswith("pool:"):
             current = stripped.partition(":")[2].strip()
-            found[current] = False
+            found[current] = None
         elif stripped.startswith("scan:") and current is not None:
             found[current] = bool(re.search(r"\b(scrub|resilver) in progress\b", stripped))
     missing = [pool for pool in pools if pool not in found]
@@ -839,14 +845,14 @@ def parse_scans(stdout: str, pools: Sequence[str]) -> dict[str, bool]:
     return {pool: found[pool] for pool in pools}
 
 
-def read_scans(config: Config, run: Runner) -> dict[str, bool]:
+def read_scan_states(config: Config, run: Runner) -> dict[str, bool | None]:
     pools = [p.pool for p in config.scan_pools]
     if not pools:
         return {}
     result = run(["zpool", "status", "-p", *pools], TIMEOUT_ZPOOL)
     if not result.ok:
         raise ValueError(f"zpool status failed ({result.returncode}): {_first_line(result.stderr)}")
-    return parse_scans(result.stdout, pools)
+    return parse_scan_states(result.stdout, pools)
 
 
 # -- policy --------------------------------------------------------------------------
@@ -1008,6 +1014,39 @@ class Controller:
         self.identity: dict[str, Any] = {}
         # Positions an earlier run left under control; observe and calibrate never write them.
         self.leftover: list[int] = []
+        # Why the scan state of the configured pools is not known (empty when it is): the
+        # demand treats an unknown scan as none, the calibration refuses to run on it.
+        self.scan_unknown = ""
+
+    def release_unmanaged(self, held: Sequence[int], recorded: Mapping[str, Any]) -> None:
+        """Before ``active`` takes control: positions an earlier run still holds (``held``, its
+        record) that are not managed now go back to BMC auto, read back.
+
+        Claiming the managed positions overwrites the record the stop helper acts
+        on, so a position left out of it would stay under a control nobody
+        records. The release is refused (:class:`ConfigError`, nothing written)
+        when that record is from another board, BMC or firmware than the one
+        validated at this start, like the stop helper refuses then. The record
+        keeps only what is still held, so a failure after the release never puts
+        a released position back under control.
+        """
+
+        managed = self.config.managed_positions
+        others = [p for p in held if p not in managed]
+        if not others:
+            return
+        if not recorded or dict(recorded) != self.identity:
+            raise ConfigError(
+                f"positions {others} are still held by an earlier run whose record is from another board, "
+                "BMC or firmware; refusing to take control"
+            )
+        log(4, f"positions {others} are still under an earlier run's control and not managed now; restoring BMC auto")
+        restore_auto(self.bmc, others)
+        kept = [p for p in held if p in managed]
+        write_control(
+            self.paths, control=bool(kept), managed=kept, note="released positions not managed now", identity=recorded
+        )
+        log(6, f"positions {others} are back in BMC auto mode (read back)")
 
     # The controller holds the managed positions in manual mode from here on.
     def take_control(self) -> None:
@@ -1077,11 +1116,17 @@ class Controller:
                     self.readings.hdd[drive.name] = reading
                     self._source(drive.name, True, self.clock())
         try:
-            self.readings.scans = read_scans(config, self.run)
+            states = read_scan_states(config, self.run)
         except ValueError as exc:
             self.readings.scans = None
+            self.scan_unknown = str(exc)
             if self.cycle % SUMMARY_EVERY == 0:
                 log(4, f"scan state unavailable: {exc}")
+        else:
+            # A pool without a scan line feeds nothing forward, as before; only the calibration minds.
+            self.readings.scans = {pool: bool(running) for pool, running in states.items()}
+            unknown = [pool for pool, running in states.items() if running is None]
+            self.scan_unknown = f"zpool status shows no scan line for {', '.join(unknown)}" if unknown else ""
         try:
             self.readings.cpu = read_cpu(config, self.paths)
             self._source("cpu", True, self.clock())
@@ -1285,8 +1330,8 @@ class Calibrator:
         self.wrote = False
 
     def _guard(self) -> None:
-        """Abort unless every required input reads, no scan runs and the curves ask for less
-        than ``abort_target_pct``."""
+        """Abort unless every required input reads, the scan state of every configured pool is
+        known and no scan runs, and the curves ask for less than ``abort_target_pct``."""
 
         c = self.c
         c.read_inputs()
@@ -1297,6 +1342,9 @@ class Calibrator:
         failing = sorted(set(c.failing_inputs(now)) | latest)
         if failing:
             raise CalibrationAbort(f"required inputs failing: {', '.join(failing)}")
+        # Fail closed: an unreadable scan state is not "no scan running".
+        if c.config.scan_pools and (c.readings.scans is None or c.scan_unknown):
+            raise CalibrationAbort(f"scan state unknown: {c.scan_unknown or 'zpool status not read'}")
         if c.readings.scans and any(c.readings.scans.values()):
             raise CalibrationAbort("a scrub or resilver is running")
         target, reasons = demand(c.config, c.readings)
@@ -1458,6 +1506,7 @@ def _run(controller: Controller) -> int:
     previous = read_control(paths)
     held = [p for p in previous.get("managed", []) if isinstance(p, int) and 0 <= p < POSITIONS]
     held = held if previous.get("control") else []
+    recorded = previous.get("identity") if isinstance(previous.get("identity"), dict) else {}
     try:
         controller.identity = read_identity(controller.bmc, paths)
         check_board(config, controller.identity)
@@ -1471,6 +1520,7 @@ def _run(controller: Controller) -> int:
         return EXIT_BMC
     try:
         if config.mode == "active":
+            controller.release_unmanaged(held, recorded)
             controller.take_control()
         elif held:
             # An earlier active or calibrate run still holds these positions (its stop did not
