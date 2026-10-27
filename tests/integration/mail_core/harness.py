@@ -461,9 +461,10 @@ PY
 
 EFFECTIVE = r"""
 python3 -c "$(cat <<'PY'
-import json,os,subprocess,sys
+import json,os,subprocess,sys,time
 from pathlib import Path
-ticks=os.sysconf('SC_CLK_TCK');boot=float(next(l.split()[1] for l in open('/proc/stat') if l.startswith('btime')))
+# /proc start ticks count from boot (CLOCK_BOOTTIME); /proc/stat btime is whole seconds only.
+ticks=os.sysconf('SC_CLK_TCK');boot=time.clock_gettime(time.CLOCK_REALTIME)-time.clock_gettime(time.CLOCK_BOOTTIME)
 def started(pid):return boot+int(Path(f'/proc/{pid}/stat').read_text().rsplit(') ',1)[1].split()[19])/ticks
 def pid(unit):
     if unit=='postfix':return int(Path('/var/spool/postfix/pid/master.pid').read_text().split()[0])
@@ -476,6 +477,8 @@ for pair in sys.argv[1:]:
                'started_after_config':started(p)>Path(config).stat().st_mtime,'config':config}
 def postconf(name):return subprocess.run(['postconf','-h',name],capture_output=True,text=True,check=True).stdout.strip()
 out['postfix_effective']={'myhostname':postconf('myhostname'),'smtpd_milters':postconf('smtpd_milters'),'relay_domains':postconf('relay_domains')}
+out['listeners']=sorted({line.split()[3] for line in subprocess.run(['ss','-Hltn'],capture_output=True,text=True,check=True).stdout.splitlines()})
+if 'postsrsd' in out:out['postsrsd_cmdline']=Path(f"/proc/{out['postsrsd']['pid']}/cmdline").read_bytes().replace(b'\0',b' ').decode()
 if Path('/usr/bin/doveconf').exists():out['dovecot_ssl']=subprocess.run(['doveconf','-h','ssl'],capture_output=True,text=True,check=True).stdout.strip()
 print(json.dumps(out))
 PY
@@ -717,6 +720,16 @@ def qualify() -> None:
     assert "rspamd/milter.sock" in first["backend"]["postfix_effective"]["smtpd_milters"]
     assert first["backend"]["dovecot_ssl"] == "required"
     assert first["edge"]["postfix_effective"]["myhostname"] == "edge.fixture.test"
+    # Observable effective configuration of the running daemons (package defaults differ).
+    backend_listeners, edge_listeners = set(first["backend"]["listeners"]), set(first["edge"]["listeners"])
+    assert {"127.0.0.1:25", "192.168.104.1:25", "127.0.0.1:5335", "127.0.0.1:11334"} <= backend_listeners, (
+        backend_listeners
+    )
+    assert any(item.endswith(":993") for item in backend_listeners), backend_listeners
+    assert not {"0.0.0.0:25", "[::]:25", "0.0.0.0:143", "[::]:143"} & backend_listeners, backend_listeners
+    assert "192.168.104.3:25" in edge_listeners, edge_listeners
+    assert not {"0.0.0.0:25", "[::]:25"} & edge_listeners, edge_listeners
+    assert "example.test" in first["edge"]["postsrsd_cmdline"], "postsrsd runs without the configured SRS domain"
     mail_flows()
     before = {name: effective(name) for name in HOSTS}
     for stage, cfg in (("backend", backend), ("relay", relay), ("spam", spam)):
