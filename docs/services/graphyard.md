@@ -29,13 +29,14 @@ cfg = GraphyardStackConfig(
 deploy_graphyard(cfg, secrets)  # core, Vector, ingress, auth: deploy-graphyard.yml's order
 ```
 
-Five entry points, as there are five playbooks: `deploy_graphyard` (stack),
+Six entry points, as there are six playbooks: `deploy_graphyard` (stack),
 `deploy_graphyard_core(cfg, secrets)`, `deploy_graphyard_vector(cfg, secrets)`,
-`deploy_graphyard_ingress(cfg, secrets)` and `deploy_graphyard_auth(cfg, secrets)`.
+`deploy_graphyard_ingress(cfg, secrets)`, `deploy_graphyard_auth(cfg, secrets)`
+and `deploy_graphyard_conditions(cfg)` (separate from the stack).
 The roles' dependencies are the ported [`docker_install`, `vector_apt_install`](../infra.md)
 and, on request, [`uv_install`](../base.md).
 
-All files are byte-identical to the roles' (templates shipped unchanged,
+Role templates are byte-identical to the originals (shipped unchanged,
 `tests/test_graphyard_parity.py` renders the vendored copies independently),
 so Ansible and ops-deploy can take turns on a host. Unlike the roles, steps
 that would change nothing are skipped: a converged host sees no file written,
@@ -427,3 +428,60 @@ negative and positive TLS probes. The preparation role owns root:root 0755 for
 the managed store root; LiveKit declares the same metadata for bind validation.
 
 When replacement trust is enabled, preconditions require the prepared bundle, empty directory and manifest before any service changes. A missing store fails deployment; prepare the target image first rather than allowing Compose to create a missing source.
+
+
+## Disk-usage conditions (`GraphyardConditionsConfig`)
+
+`deploy_graphyard_conditions(cfg)` ports `seed-graphyard-conditions.yml` and
+requires an existing Graphyard installation. It is independent of the stack:
+calling `deploy_graphyard` does not seed conditions.
+
+```python
+from ops_deploy.services.graphyard import GraphyardConditionsConfig, deploy_graphyard_conditions
+
+cfg = GraphyardConditionsConfig.model_validate(
+    {
+        "conditions": [{"host": "storage", "mountpoint": "/", "warning_threshold": 0.8, "critical_threshold": 0.9}],
+    }
+)
+deploy_graphyard_conditions(cfg)
+```
+
+The non-empty conditions list accepts `host`, absolute `mountpoint`, ordered
+numeric thresholds in `(0, 1]`, optional `name`, `operator` (default `gte`),
+`window_minutes` (30), `breach_minutes` (5), and `enabled` (true). Disabled
+entries are skipped; no row is removed. The application command remains the
+authority for operator/window validation.
+
+Defaults: `python=/opt/apps/graphyard/site/.venv/bin/python`,
+`manage_py=/opt/apps/graphyard/site/src/django/manage.py`, `workdir` its directory,
+`system_user=graphyard`, `home=/opt/apps/graphyard`,
+`env_file=/etc/graphyard/graphyard.env`, and
+`conditions_url=http://127.0.0.1:8051/v1/conditions`. These are independently
+configurable absolute paths/user/URL. The SQLite database is `db.sqlite3` beside
+`manage_py`, as in Graphyard's settings.
+
+The service environment is sourced as the service user and must set
+`DJANGO_SETTINGS_MODULE`. Comparison uses standard-library SQLite `mode=ro`
+with query-only enabled, querying only the declared names and managed columns.
+A current row causes no Django startup or seed command. Missing or changed rows
+are seeded through Graphyard's `seed_disk_usage_condition`, with specs on masked
+stdin and bytecode writes disabled. A post-write probe verifies the managed
+fields; the API must return 200 and list every enabled name.
+
+Owned fields are enabled, metric, host/subject/service/tag filters, operator,
+thresholds and window/breach minutes. Existing evaluation fields and staleness
+settings are preserved. Unlike the original playbook seed, the public seed
+passes an existing `stale_after_seconds` through `--stale-after-seconds` and
+passes `--intermittent` when `alert_when_stale` is false. True omits that flag;
+null omits the allowance flag. New rows keep the upstream defaults. This is a
+deliberate preservation refinement: the upstream command does reset staleness
+on updates when no flags are given, contrary to the initial migration survey.
+The seed script is therefore derived from, rather than byte-identical to, the
+playbook script. Ansible on an already-converged row still changes nothing.
+
+The owned native fixture in `tests/integration/graphyard_conditions` uses pinned
+real Graphyard, Django, SQLite and its HTTP API with synthetic operational rows.
+It covers first/repeat/update, nondefault staleness with both flag states,
+disabled/unrelated rows, missing settings, API omissions and Ansible coexistence.
+Inventory rollout is a separate qualification step.

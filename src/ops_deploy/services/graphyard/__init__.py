@@ -2,12 +2,17 @@
 
 Ports of the ``graphyard_deploy``, ``graphyard_vector_deploy``,
 ``graphyard_ingress_deploy`` and ``graphyard_auth_bootstrap_deploy`` roles and
-the playbooks around them, with the ``docker_install``, ``uv_install`` and
+the playbooks around them (also ``seed-graphyard-conditions.yml``), with the ``docker_install``, ``uv_install`` and
 ``vector_apt_install`` roles they depend on (:mod:`ops_deploy.infra`,
 :mod:`ops_deploy.base`).
 """
 
 from ops_deploy.services.graphyard.auth import GraphyardAuthConfig, deploy_graphyard_auth
+from ops_deploy.services.graphyard.conditions import (
+    DiskUsageCondition,
+    GraphyardConditionsConfig,
+    deploy_graphyard_conditions,
+)
 from ops_deploy.services.graphyard.core import (
     Django,
     Grafana,
@@ -24,9 +29,11 @@ from ops_deploy.services.graphyard.vector import GraphyardVectorConfig, deploy_g
 from ops_deploy.services.graphyard.vector_darwin import GraphyardVectorDarwinConfig
 
 __all__ = [
+    "DiskUsageCondition",
     "Django",
     "Grafana",
     "GraphyardAuthConfig",
+    "GraphyardConditionsConfig",
     "GraphyardConfig",
     "GraphyardIngressConfig",
     "GraphyardStackConfig",
@@ -38,6 +45,7 @@ __all__ = [
     "Runtime",
     "deploy_graphyard",
     "deploy_graphyard_auth",
+    "deploy_graphyard_conditions",
     "deploy_graphyard_core",
     "deploy_graphyard_ingress",
     "deploy_graphyard_vector",

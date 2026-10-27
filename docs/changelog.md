@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add the independent `graphyard_conditions` deployment: compare declared
+  disk-usage conditions through read-only SQLite, seed only missing or changed
+  rows, and verify Graphyard's conditions API. Preserve existing staleness and
+  evaluation settings when changing owned thresholds; disabled/unrelated rows
+  remain untouched. Include an owned native Graphyard fixture.
+
 - Complete OpsGate and Voxhelm ingress fanout with exact role templates,
   transaction-aware route publication and change-gated reload/restart handlers.
   Keep worker-internal Voxhelm routes blocked unless explicitly scoped.
