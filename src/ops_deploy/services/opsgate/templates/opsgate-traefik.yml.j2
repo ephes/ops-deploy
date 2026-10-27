@@ -1,0 +1,55 @@
+# Managed by Ansible - Traefik configuration for OpsGate private ingress
+
+http:
+  routers:
+    opsgate-secure:
+      rule: "Host(`{{ opsgate_ingress_traefik_host }}`) && ({% for range in opsgate_ingress_allowed_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in opsgate_ingress_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - opsgate-headers
+        - opsgate-gzip
+      service: opsgate
+{% if opsgate_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ opsgate_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    opsgate-http:
+      rule: "Host(`{{ opsgate_ingress_traefik_host }}`) && ({% for range in opsgate_ingress_allowed_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web
+      middlewares:
+        - opsgate-redirect
+      service: opsgate
+
+  middlewares:
+    opsgate-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ opsgate_ingress_traefik_host }}"
+
+    opsgate-gzip:
+      compress: {}
+
+    opsgate-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    opsgate:
+      loadBalancer:
+        servers:
+          - url: "{{ opsgate_ingress_backend_url }}"

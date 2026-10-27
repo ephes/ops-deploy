@@ -1,0 +1,98 @@
+# Managed by Ansible - Traefik configuration for Voxhelm private ingress
+
+http:
+  routers:
+    voxhelm-internal-api:
+      rule: "Host(`{{ voxhelm_ingress_traefik_host }}`) && (Path(`/v1/internal`) || PathPrefix(`/v1/internal/`))"
+      entryPoints:
+{% for ep in voxhelm_ingress_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 200
+      middlewares:
+{% if voxhelm_ingress_internal_api_enabled | bool %}
+        - voxhelm-internal-api-allowlist
+        - voxhelm-headers
+        - voxhelm-gzip
+{% else %}
+        - voxhelm-internal-api-block
+{% endif %}
+      service: voxhelm
+{% if voxhelm_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ voxhelm_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    voxhelm-secure:
+      rule: "Host(`{{ voxhelm_ingress_traefik_host }}`) && ({% for range in voxhelm_ingress_allowed_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in voxhelm_ingress_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - voxhelm-headers
+        - voxhelm-gzip
+      service: voxhelm
+{% if voxhelm_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ voxhelm_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    voxhelm-http:
+      rule: "Host(`{{ voxhelm_ingress_traefik_host }}`) && ({% for range in voxhelm_ingress_allowed_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web
+      middlewares:
+        - voxhelm-redirect
+      service: voxhelm
+
+  middlewares:
+{% if voxhelm_ingress_internal_api_enabled | bool %}
+    voxhelm-internal-api-allowlist:
+      ipAllowList:
+        sourceRange:
+{% for range in voxhelm_ingress_internal_api_allowed_ip_ranges %}
+          - "{{ range }}"
+{% endfor %}
+
+{% else %}
+    voxhelm-internal-api-block:
+      ipAllowList:
+        sourceRange:
+{% for range in voxhelm_ingress_internal_api_block_ip_ranges %}
+          - "{{ range }}"
+{% endfor %}
+
+{% endif %}
+    voxhelm-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # Voxhelm itself answers X-Frame-Options: DENY. Traefik replaces the
+        # backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ voxhelm_ingress_traefik_host }}"
+
+    voxhelm-gzip:
+      compress: {}
+
+    voxhelm-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    voxhelm:
+      loadBalancer:
+        servers:
+          - url: "{{ voxhelm_ingress_backend_url }}"

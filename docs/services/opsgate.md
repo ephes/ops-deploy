@@ -135,3 +135,23 @@ Configuration retains the original public variable names. Computed defaults belo
 | `opsgate_runner_stdout_log` | `"{{ opsgate_log_dir }}/opsgate-runner.log"` |
 | `opsgate_runner_stderr_log` | `"{{ opsgate_log_dir }}/opsgate-runner.err.log"` |
 | `opsgate_runner_environment` | `{"HOME": "{{ ops_home_dir }}", "PATH": "{{ opsgate_launchd_path }}", "TMUX_TMPDIR": "{{ opsgate_tmux_tmpdir }}", "OPSGATE_TMUX_SOCKET_LABEL": "{{ opsgate_tmux_socket_label }}", "OPSGATE_ENV_FILE": "{{ opsgate_config_dir }}/opsgate-runner.env"}` |
+
+## Private HTTPS ingress
+
+`OpsGateIngressConfig` and `deploy_opsgate_ingress` preserve the original
+`opsgate_ingress_deploy` role's template, internal source ranges, TLS and
+header policy. They run on the existing Linux Traefik host as a separate stage
+after the Mac daemon. Configuration uses the original names without the
+`opsgate_ingress_` prefix: `backend_url`, `traefik_host`, `traefik_enabled`,
+`traefik_entrypoints`, `traefik_cert_resolver`, `traefik_config_path` and
+`allowed_ip_ranges`. The defaults and rendered bytes match the role.
+
+Route publication uses `services._traefik_routes.route_put`, including its
+existing transaction-lock guard and no-write convergence. Only an actual route
+change invokes the original service handler: reload Traefik, and restart if
+reload fails. Disabling ingress skips it and retains its existing route.
+
+Focused role parity is exercised against the current absolute library checkout.
+The owned Linux workflow tests real Traefik routing, conditional reload/restart,
+transaction-lock failure preservation and zero-change repeats; qualification of
+this additive ingress path is pending its recorded workflow result.

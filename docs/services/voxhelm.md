@@ -175,3 +175,28 @@ Configuration retains the original public variable names. Computed defaults belo
 | `voxhelm_healthcheck_url` | `"http://127.0.0.1:{{ voxhelm_app_port }}/v1/health"` |
 | `voxhelm_healthcheck_retries` | `15` |
 | `voxhelm_healthcheck_delay` | `2` |
+
+## Private HTTPS ingress
+
+`VoxhelmIngressConfig` and `deploy_voxhelm_ingress` preserve the original
+`voxhelm_ingress_deploy` role's template, internal source ranges, TLS and
+header policy. They run on the existing Linux Traefik host as a separate stage
+after the Mac daemon. Configuration uses the original names without the
+`voxhelm_ingress_` prefix: `backend_url`, `traefik_host`, `traefik_enabled`,
+`traefik_entrypoints`, `traefik_cert_resolver`, `traefik_config_path` and
+`allowed_ip_ranges`. The defaults and rendered bytes match the role.
+
+Route publication uses `services._traefik_routes.route_put`, including its
+existing transaction-lock guard and no-write convergence. Only an actual route
+change invokes the original service handler: reload Traefik, and restart if
+reload fails. Disabling ingress skips it and retains its existing route.
+
+The worker-internal path is blocked by default. Enabling it requires explicit
+`internal_api_allowed_ip_ranges`; `internal_api_block_ip_ranges` retains the
+role's disabled-policy default. Ordinary producer ingress does not implicitly
+open the worker control plane.
+
+Focused role parity is exercised against the current absolute library checkout.
+The owned Linux workflow tests real Traefik routing, conditional reload/restart,
+transaction-lock failure preservation and zero-change repeats; qualification of
+this additive ingress path is pending its recorded workflow result.

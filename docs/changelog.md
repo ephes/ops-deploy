@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Complete OpsGate and Voxhelm ingress fanout with exact role templates,
+  transaction-aware route publication and change-gated reload/restart handlers.
+  Keep worker-internal Voxhelm routes blocked unless explicitly scoped.
+
 - Check Homebrew formulae per formula with the roles' own `brew list --versions`
   in the Voxhelm, remote-worker and llama-server host steps; current Homebrew
   rejects the previous `--full-name --versions` listing, and the per-formula
