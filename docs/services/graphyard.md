@@ -39,8 +39,10 @@ and, on request, [`uv_install`](../base.md).
 Role templates are byte-identical to the originals (shipped unchanged,
 `tests/test_graphyard_parity.py` renders the vendored copies independently),
 so Ansible and ops-deploy can take turns on a host. Unlike the roles, steps
-that would change nothing are skipped: a converged host sees no file written,
-no command that writes run and nothing restarted.
+that would change nothing are skipped. The core, Vector, ingress and auth
+configuration paths retain their existing no-file-write/no-restart repeat proof.
+The separate conditions deployment below distinguishes zero managed changes
+from SQLite reader bookkeeping.
 
 ## Secrets
 
@@ -485,3 +487,20 @@ real Graphyard, Django, SQLite and its HTTP API with synthetic operational rows.
 It covers first/repeat/update, nondefault staleness with both flag states,
 disabled/unrelated rows, missing settings, API omissions and Ansible coexistence.
 Inventory rollout is a separate qualification step.
+
+Native run `40590096323` qualified implementation `82b2cd3` in 20 phases against
+Graphyard `1918198`. The ten successful pyinfra repeats/recoveries made no
+managed changes or uploads; the Ansible seed repeat reported `changed=0`.
+The original failed run `40589106951` remains retained: its repeat had unchanged
+rows, main database, environment and PID, but WAL/SHM bookkeeping changed.
+The observer then explicitly closed its own SQLite connections and added
+isolated observations before stabilizing the fixture. A direct read-only probe
+changed SHM bookkeeping; the real HTTP request changed WAL and SHM bookkeeping.
+Neither changed rows, the main database, environment or PID.
+
+The successful fixture holds one idle service-user Django connection, checks
+that it remains alive, and compares all database sidecars without exclusions.
+This qualifies zero managed changes with stable connection lifetime, not global
+zero I/O on an idle database. No connection keeper is installed by the deploy.
+The native proof uses a local pyinfra connector and fish command transport;
+actual inventory SSH and live service behavior remain a separate rollout gate.
