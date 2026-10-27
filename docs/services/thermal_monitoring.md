@@ -343,7 +343,8 @@ disjoint, curves rising in temperature and never falling in duty, duties
   `failure_cycles` polls in a row, or whose last good value is older than
   three of its intervals, forces 100 % (`failsafe`). In `active` mode a
   managed fan that reads "No Reading" or 0 RPM for `stall_cycles` cycles does
-  too. The scan state is not required: without it there is no feed-forward.
+  too. The scan state is not required: without it there is no feed-forward
+  (a calibration does not run without it, see below).
 - **BMC writes** (`active`): it takes control with the duty bytes first (100 %,
   inactive while auto), then the mode bytes (manual) of the managed positions.
   Every write attempt reads the 16 bytes right before and sends them back with
@@ -352,7 +353,16 @@ disjoint, curves rising in temperature and never falling in duty, duties
   once more from a fresh read, then the managed positions go back to auto
   (read back) and the process exits 75. The vendor commands time out after
   5 s. Every 20 cycles it checks that the managed fans are still manual at
-  its duty and puts back what someone else changed on them.
+  its duty and puts back what someone else changed on them. Before it takes
+  control, positions an earlier `active` or `calibrate` run still holds (its
+  runtime state says so) that are not managed now, for example after the
+  managed set changed while that run's stop did not restore them, go back to
+  BMC auto (read back, only their bytes), and the runtime state then records
+  only what is still held; a position it never recorded (someone else's) is
+  left alone. If that record is from another board, BMC or firmware than the
+  one validated at this start, it exits 78 without a BMC write; if the
+  release does not read back, it exits 75 and the record still names every
+  position the earlier run held, so the stop helper acts on all of them.
 - **Board check**: at every start, DMI board, BMC manufacturer and product ID
   and firmware must be the configured ones, otherwise it exits 78 without a
   BMC write (`RestartPreventExitStatus=78`); an unreadable BMC exits 75 and is
@@ -394,7 +404,10 @@ earlier run left under control are still held (nothing written or recorded;
 the same id runs at a start after the stop helper released them). Before it
 touches the BMC, and at every sample while it holds it, every required input
 must read (a single failed read is enough to stop it; `failure_cycles` does
-not apply), no scrub or resilver may run, and the curves must ask for less
+not apply), the scan state of every pool in `scan_pools` must be known (an
+unreadable or failed `zpool status`, a missing pool or a pool shown without
+its `scan:` line count as "scan state unknown", never as "no scan"), no
+scrub or resilver may run, and the curves must ask for less
 than `abort_target_pct` (default 60); before the first BMC write that only
 skips the calibration (nothing written, the same id runs at the next start),
 later it aborts it. Then: a
@@ -493,7 +506,14 @@ The emergency return of every position to auto is
   retried, skipped and retried when an input fails or another fan's mode
   changes before its first write, aborted when a drive warms up or a single
   read of any input fails meanwhile, not run while an earlier run still holds
-  fans, stall, a foreign mode change, a wrong mapping), `READY`/`WATCHDOG` on
+  fans, skipped while the scan state is unknown (failed `zpool status`, no
+  scan line, a missing pool) and aborted when it turns unknown meanwhile,
+  stall, a foreign mode change, a wrong mapping), `active` releasing the
+  positions of an earlier run's set it no longer manages (also one that is
+  protected now; nothing released for the same or a larger set, not on
+  another firmware record, the whole record kept when the release does not
+  read back; never by `observe` or `calibrate`), `observe` unchanged with an
+  unknown scan state, `READY`/`WATCHDOG` on
   a real notify socket, argv without backslashes.
 - `tests/test_nyxmon_json_metrics.py`: the host script against real SQLite
   files: fresh insert (probe leaves the file byte-identical), existing
