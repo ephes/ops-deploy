@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- Check Homebrew formulae per formula with the roles' own `brew list --versions`
+  in the Voxhelm, remote-worker and llama-server host steps; current Homebrew
+  rejects the previous `--full-name --versions` listing, and the per-formula
+  check also resolves renamed formulae such as `whisper-cpp`. The remote worker
+  now publishes a changed runtime, model or file before restarting (as the role
+  does), with a persisted restart intent, so a rejected download no longer stops
+  a running worker, and gives created ancestor directories the requested owner
+  and mode. A Voxhelm runtime sync no longer stops running units first; they
+  restart after a successful sync. Add Voxhelm/worker role parity checks and
+  make OpsGate's follow `OPS_LIBRARY_PATH`. Add owned native Voxhelm
+  control-plane and remote-worker fixtures and run all seven Mac fixtures in the
+  native workflow, with exact owned-process cleanup. Native qualification is
+  pending.
+
+- Add complete native OpsGate, Voxhelm and remote-worker role APIs and original
+  templates/defaults, with per-unit launchd semantics, selected runtime retention,
+  explicit existing-artifact metadata continuity and verified changed downloads.
+  Preserve OpsGate branch-tracking workspaces and Python/Rust rollback separately;
+  compare bootstrap passwords with real read-only Django verification, and retain
+  periodic pruning without kickstarting it. Native qualification is pending.
+
+- Add explicit native Darwin uv installation while retaining the existing Linux
+  defaults and commands. Matching releases do not stage or repair metadata;
+  invalid archives retain both installed binaries. Add owned ARM install/fault
+  coverage and explicit remote-rsync selection/fresh-destination preparation in
+  the existing checksum-based sync primitive. Native qualification is pending.
+
+- Add the pinned native llama-server role API, with masked credential stdin,
+  existing-model metadata continuity, fresh-download checksum verification,
+  change-triggered LaunchDaemon rollout, exact profile/auth readiness and the
+  original disabled-state resource retention. Native qualification is pending.
+
 - Add a descriptor-only OpenSSH forwarding identity probe and an owned ARM
   macOS prerequisite workflow. Existing-key inspection creates no temporary
   private-key copy; the complete native tunnel deployment remains in progress.

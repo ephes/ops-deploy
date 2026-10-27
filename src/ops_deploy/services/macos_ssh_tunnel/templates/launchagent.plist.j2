@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{{ macos_ssh_tunnel_label | e }}</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/ssh</string><string>-F</string>
+    <string>{{ macos_ssh_tunnel_directory | e }}/ssh_config</string>
+    <string>-N</string><string>-T</string><string>managed-tunnel</string>
+  </array>
+  <key>Disabled</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{{ macos_ssh_tunnel_log_directory | e }}/stdout.log</string>
+  <key>StandardErrorPath</key><string>{{ macos_ssh_tunnel_log_directory | e }}/stderr.log</string>
+</dict></plist>

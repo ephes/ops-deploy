@@ -1,0 +1,10 @@
+# Managed by local.ops_library.opsgate_deploy
+# Runner model uses: tmux -L {{ opsgate_tmux_socket_label }}
+set -g history-limit {{ opsgate_tmux_history_limit }}
+set -g base-index {{ opsgate_tmux_base_index }}
+set -g pane-base-index {{ opsgate_tmux_base_index }}
+set -g detach-on-destroy off
+set -g destroy-unattached off
+set -g remain-on-exit on
+set -g set-titles off
+set -g mouse on

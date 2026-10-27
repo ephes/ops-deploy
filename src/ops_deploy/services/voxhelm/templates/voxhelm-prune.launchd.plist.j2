@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ voxhelm_prune_label | e }}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/bin/env</string>
+      <string>bash</string>
+      <string>-lc</string>
+      <string>{{ voxhelm_prune_script_path | e }}</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>{{ voxhelm_launchd_path | e }}</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>{{ voxhelm_app_dir | e }}</string>
+
+{% if voxhelm_prune_daily_time | string | length > 0 %}
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>{{ (voxhelm_prune_daily_time | string).split(':')[0] | int }}</integer>
+      <key>Minute</key>
+      <integer>{{ (voxhelm_prune_daily_time | string).split(':')[1] | int }}</integer>
+    </dict>
+{% else %}
+    <key>StartInterval</key>
+    <integer>{{ voxhelm_prune_interval_seconds | int }}</integer>
+{% endif %}
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>{{ voxhelm_prune_stdout_log | e }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ voxhelm_prune_stderr_log | e }}</string>
+  </dict>
+</plist>

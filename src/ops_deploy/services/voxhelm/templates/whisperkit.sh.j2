@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+set -a
+source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+set +a
+
+cd {{ voxhelm_app_dir | quote }}
+
+exec {{ voxhelm_whisperkit_cli_bin | quote }} serve \
+  --host "$VOXHELM_WHISPERKIT_HOST" \
+  --port "$VOXHELM_WHISPERKIT_PORT" \
+  --model "$VOXHELM_WHISPERKIT_MODEL" \
+  --audio-encoder-compute-units "$VOXHELM_WHISPERKIT_AUDIO_ENCODER_COMPUTE_UNITS" \
+  --text-decoder-compute-units "$VOXHELM_WHISPERKIT_TEXT_DECODER_COMPUTE_UNITS" \
+  --concurrent-worker-count "$VOXHELM_WHISPERKIT_CONCURRENT_WORKER_COUNT" \
+  --chunking-strategy "$VOXHELM_WHISPERKIT_CHUNKING_STRATEGY"

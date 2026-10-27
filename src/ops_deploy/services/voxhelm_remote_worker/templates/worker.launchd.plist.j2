@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ voxhelm_remote_worker_launchd_label | e }}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/sh</string>
+      <string>{{ voxhelm_remote_worker_launcher_path | e }}</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>{{ voxhelm_remote_worker_launchd_path | e }}</string>
+      <key>PYTHONUNBUFFERED</key>
+      <string>1</string>
+    </dict>
+
+    <key>UserName</key>
+    <string>{{ voxhelm_remote_worker_service_user | e }}</string>
+    <key>GroupName</key>
+    <string>{{ voxhelm_remote_worker_service_group | e }}</string>
+    <key>WorkingDirectory</key>
+    <string>{{ voxhelm_remote_worker_work_dir | e }}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+{% if voxhelm_remote_worker_launchd_keepalive | bool %}
+    <true/>
+{% else %}
+    <false/>
+{% endif %}
+
+    <key>StandardOutPath</key>
+    <string>{{ voxhelm_remote_worker_stdout_log | e }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ voxhelm_remote_worker_stderr_log | e }}</string>
+  </dict>
+</plist>

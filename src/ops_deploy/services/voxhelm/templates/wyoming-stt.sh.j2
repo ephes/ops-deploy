@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+set -a
+source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+set +a
+
+cd {{ voxhelm_app_dir | quote }}
+
+exec .venv/bin/voxhelm-wyoming-stt

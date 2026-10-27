@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Managed by Ansible (llama_server_deploy). Do not edit on the host. -->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ llama_server_launchd_label | e }}</string>
+
+    <!-- The wrapper checks the model's SHA-256, the build and the bind address,
+         then execs llama-server with the pinned flags (no prompt logging). -->
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>{{ llama_server_wrapper_path | e }}</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>{{ llama_server_launchd_path | e }}</string>
+      <key>HOME</key>
+      <string>{{ llama_server_service_home | e }}</string>
+      <key>DELVE_DETECTOR_GGUF</key>
+      <string>{{ (llama_server_model_dir ~ '/' ~ llama_server_gguf_file) | e }}</string>
+      <key>DELVE_DETECTOR_HOST</key>
+      <string>{{ llama_server_bind_address | e }}</string>
+      <key>DELVE_DETECTOR_PORT</key>
+      <string>{{ llama_server_port | int }}</string>
+      <key>DELVE_DETECTOR_API_KEY_FILE</key>
+      <string>{{ llama_server_api_key_path | e }}</string>
+      <key>DELVE_DETECTOR_BUILD</key>
+      <string>{{ llama_server_build | e }}</string>
+      <key>DELVE_LLAMA_SERVER</key>
+      <string>{{ llama_server_bin | e }}</string>
+    </dict>
+
+    <key>UserName</key>
+    <string>{{ llama_server_service_user | e }}</string>
+    <key>GroupName</key>
+    <string>{{ llama_server_service_group | e }}</string>
+    <key>WorkingDirectory</key>
+    <string>{{ llama_server_install_dir | e }}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{ llama_server_stdout_log | e }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ llama_server_stderr_log | e }}</string>
+  </dict>
+</plist>

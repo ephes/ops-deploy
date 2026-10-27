@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+set -a
+source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+set +a
+
+cd {{ voxhelm_app_dir | quote }}
+
+exec .venv/bin/python manage.py db_worker \
+  --backend default \
+  --queue-name {{ voxhelm_task_queue | quote }} \
+  --interval {{ voxhelm_worker_interval_seconds | int }} \
+  --no-reload

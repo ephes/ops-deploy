@@ -115,6 +115,37 @@ def test_writable_intermediate_directory_is_rejected(identity: tuple[Path, Path,
     runner.assert_not_called()
 
 
+def test_explicit_safe_parent_mode_repair_is_drift_never_current(identity: tuple[Path, Path, Mock]) -> None:
+    home, key, _ = identity
+    key.parent.chmod(0o750)
+    before = key.stat()
+    result = probe_identity(
+        str(home), str(key), os.getuid(), "fixture", gid=key.parent.stat().st_gid, allow_parent_mode_drift=True
+    )
+    assert result == {"state": "drift", "public_key": "ssh-ed25519 YWJj"}
+    assert key.parent.stat().st_mode & 0o777 == 0o750
+    assert key.stat().st_ino == before.st_ino
+
+
+@pytest.mark.parametrize("unsafe", ["writable_parent", "wrong_group", "private_mode", "orphan"])
+def test_parent_repair_option_does_not_weaken_unsafe_identity_refusal(
+    identity: tuple[Path, Path, Mock], unsafe: str
+) -> None:
+    home, key, _ = identity
+    key.parent.chmod(0o750)
+    gid = key.parent.stat().st_gid
+    if unsafe == "writable_parent":
+        key.parent.chmod(0o770)
+    elif unsafe == "wrong_group":
+        gid += 1
+    elif unsafe == "private_mode":
+        key.chmod(0o640)
+    else:
+        key.unlink()
+    with pytest.raises(IdentityProbeError):
+        probe_identity(str(home), str(key), os.getuid(), "fixture", gid=gid, allow_parent_mode_drift=True)
+
+
 @pytest.mark.parametrize("component", ["home", "parent"])
 def test_foreign_hierarchy_owner_is_rejected(
     identity: tuple[Path, Path, Mock], monkeypatch: pytest.MonkeyPatch, component: str

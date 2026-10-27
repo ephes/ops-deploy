@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ opsgate_runner_launchd_label | e }}</string>
+
+{# opsgate_launchd_render_impl: set by the template task; python renders the
+    venv command of opsgate_runner_program(_arguments), rust the pinned release
+    binary in the same login-shell wrapper (rust/PLAN.md 10.1 of the opsgate
+    repository). #}
+{% set opsgate_plist_impl = opsgate_launchd_render_impl | default(opsgate_runner_impl) %}
+    <key>ProgramArguments</key>
+    <array>
+{% if opsgate_plist_impl == 'rust' %}
+      <string>/usr/bin/env</string>
+      <string>bash</string>
+      <string>-lc</string>
+      <string>{{ ('cd ' ~ (opsgate_runner_app_dir | quote) ~ ' && exec ' ~ (opsgate_rust_binary | quote) ~ ' runner') | e }}</string>
+{% else %}
+      <string>{{ opsgate_runner_program | e }}</string>
+{% for arg in opsgate_runner_program_arguments %}
+      <string>{{ arg | e }}</string>
+{% endfor %}
+{% endif %}
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+{% for key, value in opsgate_runner_environment | dictsort %}
+      <key>{{ key | e }}</key>
+      <string>{{ value | e }}</string>
+{% endfor %}
+    </dict>
+
+    <key>UserName</key>
+    <string>{{ ops_user | e }}</string>
+    <key>GroupName</key>
+    <string>{{ ops_group | e }}</string>
+    <key>WorkingDirectory</key>
+    <string>{{ opsgate_runner_working_directory | e }}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+{% if opsgate_launchd_keepalive | bool %}
+    <true/>
+{% else %}
+    <false/>
+{% endif %}
+
+    <key>StandardOutPath</key>
+    <string>{{ opsgate_runner_stdout_log | e }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ opsgate_runner_stderr_log | e }}</string>
+  </dict>
+</plist>

@@ -20,7 +20,9 @@ from pathlib import Path, PurePosixPath
 from pyinfra import host
 from pyinfra.api import FunctionCommand, OperationValueError, operation
 from pyinfra.api.host import Host
+from pyinfra.api.operation import OperationMeta
 from pyinfra.context import ctx_host
+from pyinfra.facts.files import Directory
 
 from ops_deploy.core.rsync import RsyncResult, RsyncRunner, run_checked, subprocess_rsync_runner
 
@@ -45,6 +47,7 @@ def rsync_argv(
     excludes: Sequence[str] = (),
     delete: bool = True,
     chmod: str | None = None,
+    rsync_path: str | None = None,
     dry_run: bool,
 ) -> list[str]:
     """Build the rsync command line; ``remote`` is ``user@host``.
@@ -72,6 +75,17 @@ def rsync_argv(
         argv += ["--perms", f"--chmod={chmod}"]
     if dry_run:
         argv += DRY_RUN_FLAGS
+    if rsync_path is not None:
+        remote_binary = PurePosixPath(rsync_path)
+        if (
+            not remote_binary.is_absolute()
+            or remote_binary == PurePosixPath("/")
+            or ".." in remote_binary.parts
+            or str(remote_binary) != rsync_path
+            or any(c in rsync_path for c in "\x00\r\n")
+        ):
+            raise OperationValueError("rsync_path must be a normalized absolute executable path")
+        argv.append("--rsync-path=" + shlex.quote(rsync_path))
     argv += [f"--exclude={pattern}" for pattern in (*MANDATORY_EXCLUDES, *excludes)]
     argv += ["-e", shlex.join(ssh_command), f"{src}/", f"{remote}:{dest}/"]
     return argv
@@ -110,6 +124,12 @@ def _run_rsync(runner: RsyncRunner, argv: Sequence[str]) -> None:
     run_checked(runner, argv)
 
 
+def _run_prepared_rsync(runner: RsyncRunner, argv: Sequence[str], prepared_by: OperationMeta) -> None:
+    if not prepared_by.is_complete() or not prepared_by.did_succeed():
+        raise OperationValueError("sync_tree destination preparation did not succeed")
+    run_checked(runner, argv)
+
+
 @operation()
 def sync_tree(
     src: Path | str,
@@ -119,6 +139,8 @@ def sync_tree(
     excludes: Sequence[str] = (),
     delete: bool = True,
     chmod: str | None = None,
+    rsync_path: str | None = None,
+    prepared_by: OperationMeta | None = None,
     runner: RsyncRunner = subprocess_rsync_runner,
 ) -> Generator[FunctionCommand, None, None]:
     """Make ``dest`` on the host mirror the controller directory ``src``.
@@ -129,6 +151,8 @@ def sync_tree(
     + excludes: extra rsync exclude patterns, added to ``MANDATORY_EXCLUDES``
     + delete: remove remote files missing from ``src`` (excluded paths are kept)
     + chmod: rsync ``--chmod`` modes (for example ``D0755,F0644``), enforced on existing files too
+    + rsync_path: explicit already-installed remote rsync executable; defaults to the original remote command
+    + prepared_by: preceding preparation operation creating a fresh destination; existing destinations still dry-run
     + runner: controller-side rsync runner; tests inject a recorder
     """
 
@@ -140,6 +164,13 @@ def sync_tree(
         raise OperationValueError(f"sync_tree destination must be absolute: {dest_path}")
     if group is not None and user is None:
         raise OperationValueError("sync_tree group requires user")
+    if prepared_by is not None and (
+        dest_path == PurePosixPath("/")
+        or ".." in dest_path.parts
+        or str(dest_path) != str(dest)
+        or any(c in str(dest) for c in "\x00\r\n")
+    ):
+        raise OperationValueError("prepared sync_tree destination must be a normalized absolute non-root path")
 
     remote, ssh_command = _ssh_target()
 
@@ -154,9 +185,29 @@ def sync_tree(
             excludes=excludes,
             delete=delete,
             chmod=chmod,
+            rsync_path=rsync_path,
             dry_run=dry_run,
         )
 
+    if prepared_by is not None and not host.get_fact(Directory, path=str(dest_path)):
+        # A real preceding operation must be queued on this same host. Merely
+        # passing a flag cannot suppress the checksum dry-run of an existing tree.
+        current_host = ctx_host.get()
+        order = current_host.op_hash_order
+        if (
+            prepared_by._hash not in order
+            or (host.current_op_hash in order and order.index(prepared_by._hash) >= order.index(host.current_op_hash))
+            or not prepared_by.will_change
+        ):
+            raise OperationValueError("fresh sync_tree destination requires a preceding planned preparation operation")
+        actual = argv(dry_run=False)
+        remote = shlex.quote(rsync_path) if rsync_path else "rsync"
+        target = shlex.quote(str(dest_path))
+        guarded = f"test -d {target} && test ! -L {target} && {remote}"
+        actual = [arg for arg in actual if not arg.startswith("--rsync-path=")]
+        actual.insert(actual.index("-e"), "--rsync-path=" + guarded)
+        yield FunctionCommand(_run_prepared_rsync, (runner, actual, prepared_by), {})
+        return
     plan = _dry_run(runner, argv(dry_run=True))
     if not plan.itemized_lines:
         host.noop(f"{dest_path} is up to date")

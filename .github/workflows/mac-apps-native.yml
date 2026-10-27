@@ -4,10 +4,17 @@ on:
   pull_request:
     paths:
       - '.github/workflows/mac-apps-native.yml'
+      - 'src/ops_deploy/base/uv_install.py'
+      - 'src/ops_deploy/base/uv_install_darwin.py'
+      - 'src/ops_deploy/ops/sync_tree.py'
       - 'src/ops_deploy/services/macos_ssh_tunnel/**'
-      - 'smoke/mac_apps_identity_fixture.py'
-      - 'tests/test_macos_ssh_tunnel_identity.py'
-      - 'tests/test_mac_apps_identity_fixture.py'
+      - 'src/ops_deploy/services/opsgate/**'
+      - 'src/ops_deploy/services/voxhelm/**'
+      - 'src/ops_deploy/services/voxhelm_remote_worker/**'
+      - 'src/ops_deploy/services/llama_server/**'
+      - 'smoke/mac_apps_*.py'
+      - 'tests/test_mac_apps_*.py'
+      - 'tests/test_macos_ssh_tunnel*.py'
   workflow_dispatch:
     inputs:
       implementation_sha:
@@ -23,40 +30,78 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  identity-prerequisite:
+  native:
+    name: ${{ matrix.fixture }}
+    # GitHub-hosted macos-15 is Apple silicon; every fixture also refuses
+    # anything but an arm64 Darwin hosted runner.
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Unprivileged: the descriptor identity algorithm and uv as the runner.
+          - {fixture: identity, privileged: false, timeout: 15}
+          - {fixture: uv, privileged: false, timeout: 15}
+          # Root fixtures own unique accounts, labels, ports and roots; separate
+          # jobs keep each application's RAM/disk use within one hosted VM.
+          - {fixture: tunnel, privileged: true, timeout: 20}
+          - {fixture: opsgate, privileged: true, timeout: 40}
+          - {fixture: llama, privileged: true, timeout: 60}
+          - {fixture: voxhelm, privileged: true, timeout: 90}
+          - {fixture: voxhelm_worker, privileged: true, timeout: 90}
     env:
       IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.event.pull_request.head.sha }}
+      MAC_APPS_EVIDENCE_DIR: /private/var/tmp/mac-apps-evidence
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Validate immutable implementation selection
         run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ env.IMPLEMENTATION_SHA }}
           path: .implementation
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           python-version: '3.13'
           enable-cache: false
-      - name: Build and install immutable implementation
+      - name: Build and install the immutable implementation wheel
         working-directory: .implementation
         run: |
+          test "$(git rev-parse HEAD)" = "$IMPLEMENTATION_SHA"
+          test -z "$(git status --porcelain)"
           uv build --wheel
           uv venv --python 3.13 /private/var/tmp/mac-apps-controller
           uv pip install --python /private/var/tmp/mac-apps-controller/bin/python dist/*.whl
-      - name: Prove no-temp descriptor-only public-key probe on actual ARM Darwin
-        env:
-          MAC_APPS_EVIDENCE_DIR: /private/var/tmp/mac-apps-evidence
-        run: /private/var/tmp/mac-apps-controller/bin/python .implementation/smoke/mac_apps_identity_fixture.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Record runner identity
+        run: |
+          uname -m
+          sw_vers
+          id
+          sysctl -n hw.memsize
+          df -h /private/var/tmp
+      - name: Run unprivileged fixture
+        if: ${{ !matrix.privileged }}
+        run: /private/var/tmp/mac-apps-controller/bin/python ".implementation/smoke/mac_apps_${{ matrix.fixture }}_fixture.py"
+      - name: Run root fixture through the runner's existing sudo
+        if: ${{ matrix.privileged }}
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" MAC_APPS_EVIDENCE_DIR="$MAC_APPS_EVIDENCE_DIR" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /private/var/tmp/mac-apps-controller/bin/python ".implementation/smoke/mac_apps_${{ matrix.fixture }}_fixture.py"
+      - name: Make evidence readable for upload
+        if: always()
+        run: |
+          mkdir -p "$MAC_APPS_EVIDENCE_DIR"
+          sudo chown -R "$(id -u):$(id -g)" "$MAC_APPS_EVIDENCE_DIR"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: native-mac-apps-${{ github.run_id }}
+          name: native-mac-apps-${{ matrix.fixture }}-${{ github.run_id }}
           path: /private/var/tmp/mac-apps-evidence
           if-no-files-found: error
           retention-days: 7

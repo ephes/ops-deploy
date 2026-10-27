@@ -162,13 +162,24 @@ deploy instead.
 | `owner`, `group` | `root` | |
 | `update_existing` | `True` | replace another installed version |
 | `force_reinstall` | `False` | |
+| `darwin` | `False` | explicitly select the native Darwin branch |
 
 Installs when `uv` or `uvx` is missing, `uv` is a symlink, is another version (with
 `update_existing`) or `force_reinstall` is set. One shell step downloads the
 release archive into a private temp directory with `curl`, checks the sha256,
 unpacks it and renames `uv`/`uvx` into place, then runs `uv --version`. `curl` is installed with apt first when missing.
-Linux only (the role also handles macOS; macOS hosts are a later phase). The
-role's deprecated `uv_create_symlinks`/`uv_symlink_dir` are not ported.
+The default path and commands remain Linux-only. `darwin=True` explicitly
+selects the native Darwin installer; callers must supply the selected native
+version, matching `aarch64-apple-darwin`/`x86_64-apple-darwin` checksums, and the
+native ownership (normally `root:wheel`). The Mac application roles select
+`0.13.5`; this does not change the existing Linux `0.13.4` defaults.
+The Darwin branch uses the target's `/usr/bin/python3`, verifies the archive
+and both staged executables before publication, and retains the installed
+binaries when validation fails. An already-current installation creates no
+download, staging directory, chmod or home-directory change. It replaces legacy
+binary symlinks when installation is selected; it does not convert Homebrew's
+separate prefix. The role's deprecated `uv_create_symlinks`/`uv_symlink_dir`
+are not ported.
 Planning (`pyinfra-check`) only reads, which matches the role's `--check`
 since ops-library 2.48.2: a host with the pinned version plans no step, a
 pending install or update shows as the one install step.

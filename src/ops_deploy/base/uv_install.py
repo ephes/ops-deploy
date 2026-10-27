@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import re
+import shlex
+from importlib.resources import files as resources
 
 from pydantic import Field, field_validator
 from pyinfra import host
 from pyinfra.api import DeployError, deploy
 from pyinfra.facts.files import File, Link
-from pyinfra.facts.server import Arch
+from pyinfra.facts.server import Arch, Command
 from pyinfra.operations import files, server
 
 from ops_deploy.base._common import (
@@ -27,6 +31,8 @@ ARCHES = {"x86_64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
 
 
 class UvInstallConfig(RoleConfig):
+    # Explicit opt-in: Linux defaults and its existing installation path remain unchanged.
+    darwin: bool = False
     # Version and checksums change together (the role's defaults).
     version: Version = "0.13.4"
     checksums: dict[str, Sha256] = Field(
@@ -60,6 +66,19 @@ def installed_version(binary: str) -> str:
 
 @deploy("Install uv")
 def deploy_uv_install(cfg: UvInstallConfig) -> None:
+    if cfg.darwin:
+        data = cfg.model_dump(mode="json", exclude={"darwin"})
+        native_script = resources("ops_deploy.base").joinpath("uv_install_darwin.py").read_bytes()
+        launcher = (
+            "import base64;exec(compile(base64.b64decode('"
+            + base64.b64encode(native_script).decode()
+            + "'),'<uv-install-darwin>','exec'))"
+        )
+        command = shlex.join(["/usr/bin/python3", "-B", "-c", launcher])
+        encoded = shlex.quote(base64.b64encode(json.dumps(data).encode()).decode())
+        if host.get_fact(Command, command=f"{command} status {encoded}") != "current":
+            server.shell(name=f"Install native uv {cfg.version}", commands=[f"{command} apply {encoded}"])
+        return
     require_linux("uv_install")
     uv = f"{cfg.install_dir}/uv"
     files.directory(name=f"Ensure {cfg.install_dir}", path=cfg.install_dir, mode="0755")

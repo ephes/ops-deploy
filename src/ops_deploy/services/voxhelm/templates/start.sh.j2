@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+set -a
+source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+set +a
+
+cd {{ voxhelm_app_dir | quote }}
+
+exec .venv/bin/uvicorn \
+  config.asgi:application \
+  --host {{ voxhelm_bind_host | quote }} \
+  --port {{ voxhelm_app_port | int }} \
+  --log-level {{ voxhelm_uvicorn_log_level | quote }}

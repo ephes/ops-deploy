@@ -1,0 +1,21 @@
+Host managed-tunnel
+    HostName {{ macos_ssh_tunnel_host }}
+    User {{ macos_ssh_tunnel_user }}
+    IdentityFile "{{ macos_ssh_tunnel_identity }}"
+    UserKnownHostsFile "{{ macos_ssh_tunnel_known_hosts }}"
+    IdentityAgent none
+    IdentitiesOnly yes
+    BatchMode yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ForwardAgent no
+    RequestTTY no
+    StrictHostKeyChecking yes
+    LocalForward 127.0.0.1:{{ macos_ssh_tunnel_local_port }} {{ macos_ssh_tunnel_target }}:{{ macos_ssh_tunnel_target_port }}
+    ExitOnForwardFailure yes
+    ConnectTimeout 10
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    ControlMaster no
+    ForkAfterAuthentication no
+    LogLevel ERROR

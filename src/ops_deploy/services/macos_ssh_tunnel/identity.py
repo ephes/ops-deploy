@@ -41,7 +41,14 @@ def _regular(info: os.stat_result, uid: int, mode: int) -> None:
 
 
 def probe_identity(
-    home: str, path: str, uid: int, comment: str, *, keygen: str = "/usr/bin/ssh-keygen"
+    home: str,
+    path: str,
+    uid: int,
+    comment: str,
+    *,
+    keygen: str = "/usr/bin/ssh-keygen",
+    gid: int | None = None,
+    allow_parent_mode_drift: bool = False,
 ) -> dict[str, Any]:
     """Return missing/drift/current and only public material; never stage or write.
 
@@ -73,7 +80,10 @@ def probe_identity(
             if index >= len(home_path.parts) - 1 and (info.st_uid != uid or stat.S_IMODE(info.st_mode) & 0o022):
                 raise IdentityProbeError("identity home and descendant directories require safe ownership and modes")
         parent_info = os.fstat(parent)
-        if parent_info.st_uid != uid or stat.S_IMODE(parent_info.st_mode) != 0o700:
+        if parent_info.st_uid != uid or (gid is not None and parent_info.st_gid != gid):
+            raise IdentityProbeError("identity parent must have its configured owner/group")
+        parent_drift = stat.S_IMODE(parent_info.st_mode) != 0o700
+        if parent_drift and (not allow_parent_mode_drift or gid is None):
             raise IdentityProbeError("identity parent must be owner-owned mode 0700")
         name = identity_path.name
         try:
@@ -135,7 +145,7 @@ def probe_identity(
                 os.stat(name + ".pub", dir_fd=parent, follow_symlinks=False)
             ):
                 raise IdentityProbeError("public identity changed during inspection")
-        return {"state": "current" if actual == desired else "drift", "public_key": public}
+        return {"state": "current" if actual == desired and not parent_drift else "drift", "public_key": public}
     finally:
         if private >= 0:
             os.close(private)

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import grp
 import hashlib
+import importlib.resources
 import json
 import os
 import platform
+import pwd
 import shutil
 import subprocess
 import tempfile
@@ -41,7 +44,7 @@ def main() -> None:
         "status": "failed",
         "limitations": [
             "Metadata observer covers the owned fixture tree, not a whole-host syscall trace.",
-            "This prerequisite does not qualify identity mutation/recovery or a deployed tunnel.",
+            "Crash-boundary recovery paths and a deployed tunnel are qualified separately.",
         ],
     }
     failure: BaseException | None = None
@@ -81,6 +84,78 @@ def main() -> None:
         key.with_suffix(".pub").unlink()
         assert probe_identity(str(Path.home()), str(key), os.getuid(), comment)["state"] == "drift"
         receipt["negative_mode_and_missing_public"] = True
+        # Execute the original byte-identical role mutator with the actual
+        # system helper interpreter, rather than the newer controller Python.
+        original = (
+            importlib.resources.files("ops_deploy.services.macos_ssh_tunnel")
+            .joinpath("files/forwarding_identity_host.py")
+            .read_text()
+        )
+        source = Path(__file__).resolve().parents[1]
+        assert (
+            original.encode()
+            == (source / "src/ops_deploy/services/macos_ssh_tunnel/files/forwarding_identity_host.py").read_bytes()
+        )
+        receipt["original_mutator_sha256"] = hashlib.sha256(original.encode()).hexdigest()
+        receipt["host_python"] = subprocess.run(
+            ["/usr/bin/python3", "--version"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        arguments = [
+            "/usr/bin/python3",
+            "-B",
+            "-c",
+            original,
+            "--state",
+            "present",
+            "--home",
+            str(Path.home()),
+            "--path",
+            str(key),
+            "--user",
+            pwd.getpwuid(os.getuid()).pw_name,
+            "--group",
+            grp.getgrgid(os.getgid()).gr_name,
+            "--comment",
+            comment,
+            "--keygen",
+            "/usr/bin/ssh-keygen",
+        ]
+        private_before = key.read_bytes()
+        subprocess.run(arguments, capture_output=True, text=True, check=True)
+        assert key.read_bytes() == private_before
+        assert probe_identity(str(Path.home()), str(key), os.getuid(), comment)["state"] == "current"
+        receipt["private_present_public_missing_repaired_without_rotation"] = True
+        root.chmod(0o750)
+        result = probe_identity(
+            str(Path.home()), str(key), os.getuid(), comment, gid=os.getgid(), allow_parent_mode_drift=True
+        )
+        assert result["state"] == "drift"
+        assert root.stat().st_mode & 0o777 == 0o750
+        mutation = subprocess.run(arguments, capture_output=True, text=True, check=True)
+        assert json.loads(mutation.stdout)["changed"] is True
+        assert root.stat().st_mode & 0o777 == 0o700
+        assert key.read_bytes() == private_before
+        before = snapshot(root)
+        result = probe_identity(
+            str(Path.home()), str(key), os.getuid(), comment, gid=os.getgid(), allow_parent_mode_drift=True
+        )
+        assert result["state"] == "current"
+        assert snapshot(root) == before
+        receipt["parent_0750_original_repair_and_no_write_probe_repeat"] = True
+        # Distinguish public-orphan refusal from missing-both fresh creation.
+        key.unlink()
+        orphan = snapshot(root)
+        rejected = subprocess.run(arguments, capture_output=True, text=True)
+        assert rejected.returncode != 0
+        assert snapshot(root) == orphan
+        key.with_suffix(".pub").unlink()
+        created = subprocess.run(arguments, capture_output=True, text=True, check=True)
+        assert json.loads(created.stdout)["changed"] is True
+        before = snapshot(root)
+        repeated = subprocess.run(arguments, capture_output=True, text=True, check=True)
+        assert json.loads(repeated.stdout)["changed"] is False
+        assert snapshot(root) == before
+        receipt["orphan_refused_fresh_created_and_mutator_repeat_no_write"] = True
     except BaseException as error:
         failure = error
         receipt["failure_type"] = type(error).__name__

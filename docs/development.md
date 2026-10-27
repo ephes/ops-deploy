@@ -32,12 +32,18 @@ CI (`.github/workflows/ci.yml`) runs `just check` steps on Python 3.12 and 3.13.
 ## Size cap on the shared layer
 
 The shared layer (`src/ops_deploy/helpers`, `ops` and `core`) must stay at or
-below **1,650 code lines**. The cap guards against framework creep: services
+below **1,700 code lines**. The cap guards against framework creep: services
 should call a small set of plain helpers, not grow an abstraction layer.
 
 The cap was 1,500 until the owner raised it to 1,650 on 2026-10-21, to make
 room for `helpers.rust_release`, the Rust release helper shared by all Rust
 ports (the shared layer was then at 1,633 code lines).
+
+On 2026-10-27 the approved existing `sync_tree` extension added 45 shared code
+lines (1,648 → 1,693): explicit remote rsync selection and a verified preceding
+preparation operation for genuinely fresh destinations. The cap is now 1,700.
+The native uv branch remains in `base`, and service-specific Darwin operations
+remain in their service packages; this change adds no shared Mac framework.
 
 `scripts/size_cap.py` (`just size-cap`) prints line and code-line counts per
 layer and exits non-zero above the cap. A code line is a physical line holding

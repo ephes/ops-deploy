@@ -7,11 +7,15 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 from pyinfra.api import deploy
+from pyinfra.api.operation import OperationMeta
+from pyinfra.connectors.util import CommandOutput
+from pyinfra.operations import server
 
 from ops_deploy.core.rsync import RsyncError, RsyncResult
 from ops_deploy.ops import sync_tree
 from ops_deploy.ops.sync_tree import MANDATORY_EXCLUDES, rsync_argv
 from ops_deploy.testing import RecordingRsyncRunner, run_deploy_fake
+from tests import fakehost
 
 HOST_DATA = {"ssh_hostname": "app.example.invalid", "ssh_user": "deploy"}
 
@@ -387,3 +391,82 @@ def test_nonzero_exit_still_refuses_known_nonempty_stdout(source: Path) -> None:
     with pytest.raises(RsyncError, match="actual transfer failure"):
         run_deploy_fake(sync_deploy, source, rsync, host_data=HOST_DATA)
     assert _real_runs(rsync) == []
+
+
+def test_explicit_remote_binary_and_missing_prepared_destination(source: Path) -> None:
+    rsync = RecordingRsyncRunner()
+
+    @deploy("Fresh")
+    def fresh() -> None:
+        prepared = server.shell(name="Prepare exact destination", commands=["mkdir -p /srv/app"])
+        sync_tree(
+            name="Sync",
+            src=source,
+            dest="/srv/app",
+            user="app",
+            group="www",
+            runner=rsync,
+            rsync_path="/opt/homebrew/bin/rsync",
+            prepared_by=prepared,
+        )
+
+    run = run_deploy_fake(fresh, host_data=HOST_DATA)
+    assert run.succeeded, run.error
+    assert _dry_runs(rsync) == []
+    (actual,) = _real_runs(rsync)
+    assert "--rsync-path=test -d /srv/app && test ! -L /srv/app && /opt/homebrew/bin/rsync" in actual
+    assert "--chown=app:www" in actual
+
+
+def test_existing_destination_keeps_real_dry_run_despite_preparation(source: Path) -> None:
+    rsync = RecordingRsyncRunner()
+
+    @deploy("Existing")
+    def existing() -> None:
+        prepared = server.shell(name="Other preparation", commands=["true"])
+        sync_tree(
+            name="Sync",
+            src=source,
+            dest="/srv/app",
+            runner=rsync,
+            rsync_path="/opt/homebrew/bin/rsync",
+            prepared_by=prepared,
+        )
+
+    run = run_deploy_fake(existing, host_data=HOST_DATA, responses=fakehost.directory("/srv/app"))
+    assert run.succeeded, run.error
+    assert _real_runs(rsync) == []
+    assert len(_dry_runs(rsync)) == 1
+    assert "--rsync-path=/opt/homebrew/bin/rsync" in rsync.calls[0]
+
+
+def test_unregistered_preparation_cannot_skip_dry_run(source: Path) -> None:
+    rsync = RecordingRsyncRunner()
+
+    @deploy("Bad")
+    def bad() -> None:
+        sync_tree(name="Sync", src=source, dest="/srv/app", runner=rsync, prepared_by=OperationMeta("invented", True))
+
+    run = run_deploy_fake(bad, host_data=HOST_DATA)
+    assert not run.succeeded
+    assert "preceding planned preparation" in str(run.error)
+    assert rsync.calls == []
+
+
+@pytest.mark.parametrize("success", [False, None])
+def test_unsuccessful_preparation_never_runs_rsync(success: bool | None) -> None:
+    from ops_deploy.ops.sync_tree import _run_prepared_rsync
+
+    rsync = RecordingRsyncRunner()
+    prepared = OperationMeta("owned", True)
+    if success is not None:
+        prepared.set_complete(success, [], CommandOutput([]))
+    with pytest.raises(ValueError, match="preparation did not succeed"):
+        _run_prepared_rsync(rsync, ["rsync"], prepared)
+    assert rsync.calls == []
+
+
+@pytest.mark.parametrize("binary", ["relative", "/", "/path/../rsync", "/bin/rsync\nother"])
+def test_invalid_explicit_remote_binary_is_rejected(binary: str) -> None:
+    with pytest.raises(ValueError, match="normalized absolute executable"):
+        rsync_argv(Path("/src"), PurePosixPath("/dest"), "root@h", rsync_path=binary, dry_run=True)

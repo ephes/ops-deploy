@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+{% if voxhelm_remote_worker_caffeinate_enabled | bool -%}
+exec {{ voxhelm_remote_worker_caffeinate_bin | quote }}{% for arg in voxhelm_remote_worker_caffeinate_args %} {{ arg | quote }}{% endfor %} \
+  {{ voxhelm_remote_worker_binary_path | quote }} \
+  --env-file {{ voxhelm_remote_worker_env_file | quote }} \
+  --hostname {{ voxhelm_remote_worker_hostname | quote }} \
+  --poll-seconds {{ voxhelm_remote_worker_poll_seconds | int }} \
+  --http-timeout-seconds {{ voxhelm_remote_worker_http_timeout_seconds | int }} \
+  --heartbeat-interval-seconds {{ voxhelm_remote_worker_heartbeat_interval_seconds | int }} \
+  --log-level {{ voxhelm_remote_worker_log_level | quote }}
+{% else -%}
+exec {{ voxhelm_remote_worker_binary_path | quote }} \
+  --env-file {{ voxhelm_remote_worker_env_file | quote }} \
+  --hostname {{ voxhelm_remote_worker_hostname | quote }} \
+  --poll-seconds {{ voxhelm_remote_worker_poll_seconds | int }} \
+  --http-timeout-seconds {{ voxhelm_remote_worker_http_timeout_seconds | int }} \
+  --heartbeat-interval-seconds {{ voxhelm_remote_worker_heartbeat_interval_seconds | int }} \
+  --log-level {{ voxhelm_remote_worker_log_level | quote }}
+{% endif -%}

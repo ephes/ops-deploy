@@ -1,0 +1,13 @@
+#!/bin/bash
+# Managed by Ansible (voxhelm_deploy). Run by launchd on the schedule in the
+# prune plist; see the role README before switching off dry-run mode.
+set -euo pipefail
+
+set -a
+source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+set +a
+
+cd {{ voxhelm_app_dir | quote }}
+
+echo "voxhelm prune_job_artifacts start $(date -u +%Y-%m-%dT%H:%M:%SZ){{ ' (dry run)' if voxhelm_prune_dry_run | bool else '' }}"
+exec .venv/bin/python manage.py prune_job_artifacts{{ ' --dry-run' if voxhelm_prune_dry_run | bool else '' }}
