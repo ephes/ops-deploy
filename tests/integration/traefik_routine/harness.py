@@ -33,6 +33,7 @@ transport = import_module("ops_deploy.infra.traefik_tx.transport")
 OLD_SHA = "52cd039a34258dd61c617a95d69252bc6bcae27c520f338186c31c7fef8f6394"
 FAULT_SHA = "759a7bc0d66b74c588255ed9e41c7f9d4aba60bdb7bce9dde551b1268a55eb07"
 NEW_SHA = "d08641f5de2dd3788097bddab1ce4b29c10a0b788566970db707fa5c94c71f15"
+FIXTURE_BINARY = "/usr/bin/traefik"
 ACCESS = SubprocessRunner()
 TRACE_ARGS = ("strace", "-f", "-s", "1000000", "-v", "-e", "trace=file,process,fchmod,fchown,ftruncate")
 
@@ -53,6 +54,7 @@ def snapshot() -> dict[str, Any]:
         Path(p)
         for p in (
             "/etc/traefik",
+            FIXTURE_BINARY,
             "/var/lib/traefik-transactions",
             "/var/lib/traefik-transport",
             "/var/lib/traefik-update-proofs",
@@ -83,6 +85,12 @@ def assert_observation_trace(script: str, lines: list[str]) -> None:
             line,
         )
         and '"/dev/null"' not in line
+        # Bash probes its absent controlling terminal; this failed device open
+        # cannot create, truncate or write a filesystem object.
+        and not re.search(
+            r'\bopenat\(AT_FDCWD, "/dev/tty", O_RDWR\|O_NONBLOCK\) = -1 ENXIO \(No such device or address\)$',
+            line,
+        )
     ]
     assert not mutations, mutations
     # Fail closed on truncation as well as payload leakage into a process argv.
@@ -218,7 +226,7 @@ def fault_request(cfg: Any) -> tuple[dict[str, Any], str]:
 def deaths(cfg: Any, evidence: Path) -> None:
     """Inject SIGKILL after actual production atomic writes; detached original runner restores."""
     for target in [
-        "/usr/local/bin/traefik",
+        FIXTURE_BINARY,
         "daemon-reload",
         "restart",
         "before-clear",
@@ -304,6 +312,7 @@ def main() -> None:
     journal = Path("/var/tmp/traefik-routine-journal")
     journal.mkdir(mode=0o700)
     cfg = import_module("ops_deploy.infra.traefik_routine").TraefikRoutineConfig(
+        binary_path=FIXTURE_BINARY,
         checksum="sha256:" + OLD_SHA,
         letsencrypt_email="fixture@example.com",
         canonical_host="fixture",

@@ -36,14 +36,17 @@ import contextlib
 import hashlib
 import json
 import re
+import shlex
 import time
 import uuid
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
 from ops_deploy.backups.remote import CommandResult, RemoteCommandError, Runner
+from ops_deploy.infra.traefik_probes import PROGRAM as PROBE_PROGRAM
 
 ENGINE = (Path(__file__).parent / "engine.py").read_bytes()
 RUNNER = (Path(__file__).parent / "runner.py").read_bytes()
@@ -230,7 +233,7 @@ def staged_request(request: Mapping[str, Any], transaction_id: str) -> bytes:
     """
 
     value = json.loads(_request_bytes(request))
-    if value.get("action") == "binary":
+    if value.get("action") == "binary" or (value.get("action") == "routine" and value.get("release") is not None):
         value["archive_path"] = f"{TRANSPORT_ROOT}/{_check_id(transaction_id)}/release.tar.gz"
     else:
         value.pop("archive_path", None)
@@ -251,7 +254,7 @@ def stage_transaction(
 
     _check_id(transaction_id)
     action = request.get("action")
-    if action not in ("binary", "resume", "rebaseline"):
+    if action not in ("binary", "resume", "rebaseline", "routine"):
         raise TransportError("stage: only binary, resume and rebaseline transactions run detached")
     staged = _call(
         runner,
@@ -261,7 +264,7 @@ def stage_transaction(
         timeout,
         {"engine.py": ENGINE, "request.json": _request_bytes(request)},
     )
-    release = request.get("release") if action == "binary" else None
+    release = request.get("release") if action in {"binary", "routine"} else None
     archive = release.get("sha256") if isinstance(release, Mapping) else None
     expected = hashlib.sha256(staged_request(request, transaction_id)).hexdigest()
     if (
@@ -362,6 +365,94 @@ def inspect_host(runner: Runner, policy: Mapping[str, Any], *, timeout: float = 
     code, response = found.get("engine_exit"), found.get("response")
     if not isinstance(code, int) or not isinstance(response, dict):
         raise TransportError("inspect: unusable result")
+    return EngineRun(code, response)
+
+
+def prove_routine(runner: Runner, request: Mapping[str, Any], *, timeout: float = 900) -> dict[str, Any]:
+    """Run the existing isolated proof with routine candidates; this is a mutating preparation step."""
+
+    proof_source = (Path(__file__).parent / "proof.py").read_bytes()
+    setup = """import json,sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import runner
+root = Path(sys.argv[1])
+request = json.loads((root / "request.json").read_text())
+if request.pop("fetch_release", False):
+    runner.fetch_release(request["release"], root / "release.tar.gz")
+    request["archive_path"] = str(root / "release.tar.gz")
+(root / "request.json").write_text(json.dumps(request))
+"""
+    blocks = {
+        "runner.py": RUNNER,
+        "engine.py": ENGINE,
+        "proof.py": proof_source,
+        "health.py": PROBE_PROGRAM,
+        "request.json": _request_bytes(request),
+        "prepare.py": setup.encode(),
+    }
+    files = "".join(
+        _FILE.format(name=name, tag=re.sub(r"[^A-Z]", "_", name.upper()), data=_blob(data))
+        for name, data in blocks.items()
+    )
+    code = _SCRIPT.format(python=PYTHON, files=files, command='inspect "$dir"')
+    code = code.replace(
+        f'{PYTHON} -I "$dir/runner.py" inspect "$dir"',
+        f'{PYTHON} -I -B "$dir/prepare.py" "$dir"\n{PYTHON} -I -B "$dir/proof.py" --request "$dir/request.json"',
+    )
+    try:
+        result = runner(code, [], timeout)
+    except RemoteCommandError:
+        raise TransportError("proof: no result") from None
+    if not result.ok:
+        raise _failure("proof", result)
+    value = json.loads(result.stdout)
+    if not isinstance(value, dict) or value.get("passed") is not True:
+        raise TransportError("proof: candidate did not pass")
+    return value
+
+
+def memory_script(source: str) -> str:
+    """A builtin printf pipe, never a shell heredoc (large heredocs spool to disk)."""
+
+    encoded = base64.b64encode(zlib.compress(source.encode())).decode()
+    bootstrap = (
+        "import base64,sys,zlib; "
+        "exec(compile(zlib.decompress(base64.b64decode(sys.stdin.buffer.read())), "
+        "'<traefik-observation>', 'exec'))"
+    )
+    return f"builtin printf '%s' {shlex.quote(encoded)} | {PYTHON} -I -B -c {shlex.quote(bootstrap)}\n"
+
+
+def inspect_memory_host(runner: Runner, policy: Mapping[str, Any], *, timeout: float = 300) -> EngineRun:
+    """Observe without uploads, temporary files, bytecode, locks or journals."""
+
+    payload = base64.b64encode(_request_bytes({"action": "inspect", "policy": dict(policy)})).decode()
+    source = base64.b64encode(ENGINE).decode()
+    program = f"""import base64,json,subprocess
+namespace = {{"__name__": "traefik_observation"}}
+exec(compile(base64.b64decode({source!r}), "<traefik-engine>", "exec"), namespace)
+try:
+    response = namespace["execute"](json.loads(base64.b64decode({payload!r})))
+    code = 0
+except (RuntimeError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+    response = {{"failed": True, "error": str(exc)}}
+    code = 2
+print(json.dumps({{"engine_exit": code, "response": response}}))
+"""
+    try:
+        result = runner(memory_script(program), [], timeout)
+    except RemoteCommandError:
+        raise TransportError("inspect: no result (ssh failed or timed out)") from None
+    if not result.ok:
+        raise _failure("inspect", result)
+    try:
+        found = json.loads(result.stdout)
+        code, response = found["engine_exit"], found["response"]
+        if not isinstance(code, int) or not isinstance(response, dict):
+            raise ValueError
+    except (ValueError, TypeError, KeyError):
+        raise TransportError("inspect: unusable result") from None
     return EngineRun(code, response)
 
 

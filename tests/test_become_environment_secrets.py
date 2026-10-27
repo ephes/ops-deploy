@@ -118,9 +118,16 @@ _SWITCH_ASSIGNMENT = re.compile(r"(?<![\w-])[\"']?(" + _NAME + r")=")
 ALLOWED: dict[tuple[str, str], str] = {}
 # Path relative to src/ops_deploy -> what its module loader loads instead of a host script under files/.
 LOADS_NO_HOST_SCRIPT: dict[str, str] = {
-    "infra/traefik_tx/retention.py": "engine.py next to it (infra/traefik_tx/engine.py, a package module)",
     "infra/traefik_tx/runner.py": "the staged copy of infra/traefik_tx/engine.py (a package module)",
+    "infra/traefik_tx/retention.py": "engine.py next to it (infra/traefik_tx/engine.py, a package module)",
     "services/fastdeploy/files/ensure_token_user.py": "FastDeploy's own commands.py in the site directory",
+}
+
+
+# The runner's staged generated Traefik probe is also called health.py. Its
+# module loader loads engine.py, never the unrelated UniFi host script.
+NON_LOADED_NAME_MATCHES = {
+    "infra/traefik_tx/runner.py": {"services/unifi/files/health.py"},
 }
 
 
@@ -237,7 +244,7 @@ def _links(trees: dict[str, ast.AST]) -> dict[str, set[str]]:
         found = {modules[name] for name in imported if name in modules}
         found |= {script for script, module in scripts.items() if any(module.endswith(f".{n}") for n in imported)}
         if _uses_a_loader(tree):
-            found |= _named(tree, scripts)
+            found |= _named(tree, scripts) - NON_LOADED_NAME_MATCHES.get(relative, set())
         links[relative] = found - {relative}
     return links
 
@@ -421,8 +428,26 @@ def test_every_module_loader_names_its_host_script_or_is_listed() -> None:
     # The scan follows a load by a module loader only through the host script's name in the loading file.
     trees = _trees()
     scripts = [relative for relative in trees if _host_script(relative)]
-    unnamed = {relative for relative, tree in trees.items() if _uses_a_loader(tree) and not _named(tree, scripts)}
+    unnamed = {
+        relative
+        for relative, tree in trees.items()
+        if _uses_a_loader(tree) and not (_named(tree, scripts) - NON_LOADED_NAME_MATCHES.get(relative, set()))
+    }
+    for relative, excluded in NON_LOADED_NAME_MATCHES.items():
+        assert excluded <= _named(trees[relative], scripts)
+        assert relative in LOADS_NO_HOST_SCRIPT
     assert unnamed == set(LOADS_NO_HOST_SCRIPT)
+
+
+def test_traefik_generated_probe_does_not_link_unrelated_unifi_script() -> None:
+    trees = _trees()
+    runner = "infra/traefik_tx/runner.py"
+    unifi = "services/unifi/files/health.py"
+    assert unifi in _named(trees[runner], [unifi])
+    assert unifi not in _links(trees)[runner]
+    # Direct imports are not suppressed by the basename-only disambiguation.
+    trees[runner] = ast.parse("import ops_deploy.services.unifi.files.health")
+    assert unifi in _links(trees)[runner]
 
 
 STUBS = """

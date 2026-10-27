@@ -325,6 +325,35 @@ def capture_traefik_health_probes(runner: Runner, spec: ProbeSpec, *, timeout: f
         raise ProbeError(f"capture: unusable result ({type(exc).__name__})") from None
 
 
+def capture_memory_traefik_health_probes(runner: Runner, spec: ProbeSpec, *, timeout: float = 300) -> ProbeBaseline:
+    """Capture in memory: no upload, temporary directory, bytecode or installed baseline write."""
+
+    program = base64.b64encode(PROGRAM).decode()
+    payload = base64.b64encode(config_json(spec).encode()).decode()
+    from ops_deploy.infra.traefik_tx.transport import memory_script
+
+    script = f"""import base64,json,concurrent.futures
+namespace = {{"__name__": "traefik_probe_observation"}}
+exec(compile(base64.b64decode({program!r}), "<traefik-probe>", "exec"), namespace)
+spec = json.loads(base64.b64decode({payload!r}))
+observer = namespace["observe_with_fingerprint"] if spec.get("tls_fingerprints") else namespace["observe"]
+with concurrent.futures.ThreadPoolExecutor(8) as pool:
+    observations = list(pool.map(observer, spec["probes"]))
+print(json.dumps({{**spec, "observations": observations,
+                  "dynamic": namespace["tree"](namespace["Path"]("/etc/traefik/dynamic"))}}))
+"""
+    try:
+        result = runner(memory_script(script), [], timeout)
+    except RemoteCommandError:
+        raise ProbeError("capture: no result") from None
+    if not result.ok:
+        raise _failure("capture", result)
+    try:
+        return ProbeBaseline.model_validate(json.loads(result.stdout))
+    except (ValueError, ValidationError):
+        raise ProbeError("capture: unusable result") from None
+
+
 def verify_traefik_health_probes(runner: Runner, *, timeout: float = 300) -> ProbeCommands:
     """Check the installed probes and run ``health`` (read-only); the commands on success.
 

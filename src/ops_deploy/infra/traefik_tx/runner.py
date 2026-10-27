@@ -31,7 +31,9 @@ unit run it. Subcommands, each printing one JSON object (exit 0) or
     binary differs from it: then it puts ``original`` back, restarts Traefik, waits for
     the pre-transaction identity and runs the baseline and cleanup probes, like the
     engine's own rollback. It records ``recovery``, or ``degraded`` when any of that
-    fails; never ``clear``. Otherwise it changes nothing. ``safe-restore.json`` says what
+    fails; never ``clear``. Ordinary routine transactions instead restore every
+    manifest-bound owned file and metadata resource through the shared engine helper.
+    Otherwise it changes nothing. ``safe-restore.json`` says what
     it did.
 ``poll ID``
     Read-only: the transaction's status (below) with ``result.json`` and
@@ -88,7 +90,7 @@ RELEASE_URL = "https://github.com/traefik/traefik/releases/download/v{version}/t
 ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_JSON = 4 * 1024 * 1024
-STAGED_ACTIONS = ("binary", "resume", "rebaseline")
+STAGED_ACTIONS = ("binary", "resume", "rebaseline", "routine")
 ACTIVE = frozenset({"active", "activating", "deactivating", "reloading", "refreshing"})
 TRANSACTION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 
@@ -148,6 +150,8 @@ class Engine(Protocol):
     def restart_verify(
         self, policy: dict[str, Any], expected: dict[str, Any], probe: dict[str, Any], cleanup: dict[str, Any]
     ) -> dict[str, Any]: ...
+
+    def restore_manifest(self, policy: dict[str, Any], directory: Path, expected_digest: str) -> None: ...
 
     def state_for(self, policy: dict[str, Any], phase: str, live: dict[str, Any], **fields: Any) -> dict[str, Any]: ...
 
@@ -392,7 +396,7 @@ def stage(transaction_id: str, source: Path) -> dict[str, Any]:
         atomic_write(directory / ENGINE, engine)
         atomic_write(directory / RUNNER, runner)
         archive = None
-        if action == "binary":
+        if action == "binary" or (action == "routine" and request.get("release") is not None):
             # As the Ansible transport does: the engine reads the archive the transport fetched.
             request["archive_path"] = str(directory / ARCHIVE)
             archive = fetch_release(request.get("release"), directory / ARCHIVE)
@@ -400,6 +404,14 @@ def stage(transaction_id: str, source: Path) -> dict[str, Any]:
             request.pop("archive_path", None)
         data = (json.dumps(request, sort_keys=True, indent=2) + "\n").encode()
         atomic_write(directory / REQUEST, data)
+        probe_files = request.get("probe_files", {})
+        require(
+            isinstance(probe_files, dict) and set(probe_files) <= {"health.py", "baseline.json", "candidate.json"},
+            "invalid transaction probe files",
+        )
+        for name, content in probe_files.items():
+            require(isinstance(content, str), "invalid transaction probe content")
+            atomic_write(directory / name, content.encode(), 0o755 if name == "health.py" else 0o600)
         install_template()
         staged = {
             "schema": 1,
@@ -427,10 +439,17 @@ def verify_staged(directory: Path) -> dict[str, Any]:
         "transaction is not staged",
     )
     files = [(ENGINE, "engine_sha256"), (RUNNER, "runner_sha256"), (REQUEST, "request_sha256")]
-    if staged.get("action") == "binary":
+    if staged.get("archive_sha256") is not None:
         files.append((ARCHIVE, "archive_sha256"))
     for name, key in files:
         require(file_sha256(directory / name) == staged.get(key), "staged files changed")
+    request = read_json(directory / REQUEST)
+    for name, content in request.get("probe_files", {}).items():
+        require(
+            name in {"health.py", "baseline.json", "candidate.json"}
+            and file_sha256(directory / name) == sha256(content.encode()),
+            "staged probes changed",
+        )
     return dict(staged)
 
 
@@ -589,7 +608,10 @@ def own_transaction(
     supplied = request.get("controller_state")
     return (
         saved == request
-        and request.get("archive_path") == str(directory / ARCHIVE)
+        and (
+            request.get("archive_path") == str(directory / ARCHIVE)
+            or (request.get("action") == "routine" and request.get("release") is None and "archive_path" not in request)
+        )
         and isinstance(supplied, dict)
         and state.get("previous_revision") == supplied.get("revision")
     )
@@ -602,7 +624,7 @@ def skipped(reason: str) -> dict[str, Any]:
 def restore(engine: Engine, directory: Path, request: Any, transaction_id: str) -> dict[str, Any]:
     """The safe-restore decision and, when it applies, the restore itself (see the module docstring)."""
 
-    if not isinstance(request, dict) or request.get("action") != "binary":
+    if not isinstance(request, dict) or request.get("action") not in {"binary", "routine"}:
         return skipped("not_binary")
     policy = request["policy"]
     engine.validate_policy(policy)
@@ -615,11 +637,39 @@ def restore(engine: Engine, directory: Path, request: Any, transaction_id: str) 
         state = engine.load_state(state_path)
         if state is None:
             return skipped("no_record")
-        if state["phase"] != "pending" or state.get("operation") != "binary":
+        if state["phase"] != "pending" or state.get("operation") != request["action"]:
             return skipped("not_pending")
         transaction = Path(str(state.get("transaction")))
         if not own_transaction(engine, transaction, directory, request, state):
             return skipped("not_this_transaction")
+        if request["action"] == "routine":
+            recovery = engine.state_for(
+                policy,
+                "recovery",
+                state["identity"],
+                owner=state.get("owner"),
+                transaction=str(transaction),
+                reason="EngineInterrupted",
+                review_due=int(time.time()) + 3600,
+                safe_restore=transaction_id,
+                manifest_sha256=state.get("manifest_sha256"),
+            )
+            try:
+                engine.restore_manifest(policy, transaction, state["manifest_sha256"])
+                engine.restart_verify(policy, state["identity"], request["baseline_probe"], request["cleanup_probe"])
+                recovery["identity"] = engine.identity(policy)
+            except BaseException as failure:
+                recovery.update(phase="degraded", recovery_error=type(failure).__name__)
+            try:
+                engine.save(state_path, recovery)
+            except OSError:
+                return {"acted": True, "reason": "record_not_saved", "phase": None, "state": None}
+            return {
+                "acted": True,
+                "reason": "restored" if recovery["phase"] == "recovery" else "restore_failed",
+                "phase": recovery["phase"],
+                "state": recovery,
+            }
         original = transaction / "original"
         try:
             engine.trusted_file(original)
