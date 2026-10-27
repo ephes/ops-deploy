@@ -118,4 +118,13 @@ The harness includes strict repeats, credential/timer changes, Nyxmon ownership
 and actual cf3 role coexistence. Its code and limits are documented in
 `tests/integration/os_apt_maintenance/README.md`.
 
-Native execution evidence and inventory rollout qualification are still pending.
+Native run [40601741102](https://github.com/ephes/ops-deploy/actions/runs/40601741102)
+passed all 26 phases on each platform using immutable artifact
+`7f6379e52d1c0dd52431c955cb9ed961f67afb76`. All 617 installed resources matched
+Git exactly. Healthy repeats and the full cf3 Ansible coexistence repeat kept
+managed files, PID, timer state, package versions, apt policy and reboot flags
+unchanged, including the actual Rust release/pin tree. The damaged-unit oracle
+retains the distinct systemd 255/257 outcomes described in the harness README;
+it does not establish identical cached-unit metadata. Earlier failed fixture
+runs remain part of the evidence, including their missing Rust-tree coverage.
+Inventory rollout qualification is still pending.
