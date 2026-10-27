@@ -246,12 +246,22 @@ def test_templates_and_defaults_are_the_authoritative_role_resources(
 
     oracle = Path(source) / "roles" / role
     packaged = files("ops_deploy.services." + service)
-    templates = sorted((oracle / "templates").iterdir())
-    assert [path.name for path in templates] == sorted(
+    # Daemon and ingress resources share a package, but retain their own
+    # authoritative roles. Enumerate both so neither role loses byte coverage.
+    template_roles = {
+        "voxhelm": (role, "voxhelm_ingress_deploy"),
+        "voxhelm_remote_worker": (role,),
+    }[service]
+    templates = {}
+    for template_role in template_roles:
+        for path in sorted((Path(source) / "roles" / template_role / "templates").iterdir()):
+            assert path.name not in templates, f"Role template name collision: {path.name}"
+            templates[path.name] = path
+    assert sorted(templates) == sorted(
         path.name for path in packaged.joinpath("templates").iterdir() if path.name.endswith(".j2")
     )
-    for path in templates:
-        assert packaged.joinpath("templates", path.name).read_bytes() == path.read_bytes()
+    for name, path in templates.items():
+        assert packaged.joinpath("templates", name).read_bytes() == path.read_bytes()
     expected = {key: value for key, value in yaml.safe_load((oracle / "defaults/main.yml").read_text()).items()}
     assert omitted <= set(expected)
     ported = {
