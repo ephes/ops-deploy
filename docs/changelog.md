@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the shared mail database foundation: conditional SCRAM role reconciliation,
+  create-only database state, and read-only application requirements. Preserve
+  existing ownership/grants and matching verifiers; refuse unknown or
+  inconsistent credential state before reconciliation.
+
 - Add native Darwin hostname convergence and the complete Graphyard Vector
   Homebrew/launchd/newsyslog role branch, with masked stdin credentials,
   candidate validation, retained data and zero-staging no-ops. Keep Linux

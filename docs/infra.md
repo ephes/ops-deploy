@@ -368,3 +368,27 @@ log on every start); the leftover-settings cleanup on the real file; an old
 file another lineage uses is kept; a guard refusal changes nothing; and the
 final checks fail on a second lineage (also a symlinked one) or a missing
 consumer.
+
+## Mail database foundation
+
+`ops_deploy.services._mail_database` supplies the narrow shared foundation for
+mail applications: `MailDatabaseConfig`, `ensure_mail_database` and read-only
+`require_mail_database`. It creates only missing roles/databases, retains
+PostgreSQL's default database owner, and preserves existing owners and grants.
+Matching SCRAM credentials retain their verifier; a login-only repair does not
+rotate it. Unsupported, malformed or inconsistent verifier state refuses before
+reconciliation. Passwords and verifiers travel through protected stdin.
+
+The requirement operation can check DATABASE-level CONNECT, CREATE and TEMPORARY
+privileges. It never grants privileges or checks application tables/schemas.
+PostgreSQL installation, application schemas and mail catalog rows are outside
+this API. Applications with planning-time admission require foundation/password
+convergence in a prior run. See the [module contract](https://github.com/ephes/ops-deploy/blob/main/src/ops_deploy/services/_mail_database/README.md)
+for signatures and qualification limits.
+
+Existing roles with NULL password verifiers are refused, like unsupported MD5;
+this API does not interpret unknown credentials as permission to initialize them.
+Passwords currently use the explicit nonempty ASCII contract (excluding CR, LF
+and NUL). Non-ASCII inputs refuse before verification or mutation; no Unicode
+normalization or SASLprep equivalence is claimed. Database-only requests contain
+no password.
