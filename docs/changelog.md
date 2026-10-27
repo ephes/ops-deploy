@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve the monitor relay service account’s absent home directory, matching
+  the original role’s `create_home: false`.
+
 - Add native monitor mailbox/Maildir and mail cleanup/relay probe provisioning,
   with unchanged role templates, Dovecot stdin password transport and scoped SQL.
   Add IMAP SiteCheck validation and opt-in managed privacy/processing-lease guards.

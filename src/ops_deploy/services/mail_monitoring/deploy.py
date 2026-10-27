@@ -188,6 +188,7 @@ def deploy_mail_monitoring(cfg: MailMonitoringConfig, secrets: SecretValues) -> 
         group=cfg.relay_probe_user,
         shell="/usr/sbin/nologin",
         create_home=False,
+        ensure_home=False,
         system=True,
     )
     files.directory(

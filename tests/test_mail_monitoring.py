@@ -44,3 +44,34 @@ def test_optional_actual_role_template_bytes() -> None:
     assert {p.name for p in source.glob("*.j2")} == {p.name for p in packaged.glob("*.j2")}
     for template in source.glob("*.j2"):
         assert template.read_bytes() == (packaged / template.name).read_bytes()
+
+
+def test_existing_relay_account_without_home_stays_unchanged() -> None:
+    from unittest.mock import patch
+
+    from ops_deploy.services.mail_monitoring import deploy_mail_monitoring
+    from ops_deploy.testing import run_deploy_fake
+    from tests import fakehost
+
+    cfg = MailMonitoringConfig(
+        address="monitor@example.test",
+        cleanup_enabled=False,
+        relay_probe_enabled=True,
+        relay_probe_url="https://relay.example.test",
+        relay_probe_domain="mg.example.test",
+        relay_probe_from="probe@example.test",
+    )
+    secrets = SecretValues(
+        SecretRef("fixture.yml"),
+        {"monitor_password": "fixture-value", "relay_probe_token": "fixture-token"},
+    )
+    responses = {
+        **fakehost.LINUX,
+        **fakehost.system_account("mailgun-relay-probe", "/home/mailgun-relay-probe", shell="/usr/sbin/nologin"),
+    }
+    # No home directory exists, matching the original role's create_home:false.
+    with patch("ops_deploy.services.mail_monitoring.deploy.probe", return_value="changed=false"):
+        run = run_deploy_fake(deploy_mail_monitoring, cfg, secrets, responses=responses)
+    assert run.succeeded, str(run.error)
+    assert not any("/home/mailgun-relay-probe" in command for command in run.executed_commands)
+    assert not any("usermod" in command or "useradd" in command for command in run.executed_commands)

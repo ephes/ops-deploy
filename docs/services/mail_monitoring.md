@@ -49,3 +49,6 @@ set the usual `SMOKE_SSH_*` variables and `MAIL_MONITORING_FIXTURE=1`, then run
 PostgreSQL reconciliation, Dovecot authentication, password rotation, Maildir
 identity, missing-domain failure and zero-change repeats. Default tests skip
 this integration test unless explicitly selected for an owned fixture.
+
+The relay service account has no managed home directory, matching the original
+role’s `create_home: false`; an absent home remains absent on deployment.
