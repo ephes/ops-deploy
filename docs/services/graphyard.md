@@ -256,8 +256,9 @@ Homebrew 6 requires its owner to trust third-party formulae before loading
 them. For a fresh owner the role's declared formula can be selected with
 `brew trust --formula vectordotdev/brew/vector`. That existing Homebrew trust
 prerequisite is separate from deployment: this API does not manage the owner's
-trust store or upgrade Homebrew. An already-installed producer keeps its
-existing package, tap and trust selection.
+trust store. `brew_update` remains false by default; an explicit request uses
+standard `brew update` without upgrading the Vector formula. An already-installed
+producer keeps its existing package, tap and trust selection.
 
 ```python
 from ops_deploy.services.graphyard import (
