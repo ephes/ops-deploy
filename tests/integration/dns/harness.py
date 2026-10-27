@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import urllib.request
 from dataclasses import asdict
 from importlib import import_module
@@ -153,6 +154,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
         active_patch.start()
     state = State(Inventory(([("@local", {})], {})), Config())
     error = None
+    error_traceback = None
     try:
         connect_all(state)
         add_deploy(
@@ -166,6 +168,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
         run_ops(state)
     except Exception as exc:
         error = type(exc).__name__
+        error_traceback = traceback.format_exc()
     finally:
         ops = collect_ops(state, "@local")
         disconnect_all(state)
@@ -173,6 +176,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
             active_patch.stop()
     record = {
         "error": error,
+        "error_traceback": error_traceback,
         "operations": [asdict(x) for x in ops],
         "mutations": [x.name for x in ops if x.changed and not x.read_only],
         "files_unchanged": snapshot() == before,
