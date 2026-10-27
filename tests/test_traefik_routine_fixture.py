@@ -55,7 +55,15 @@ def test_trace_guard_detects_payload_and_mutations() -> None:
     packet = "A" * 400
     script = "builtin printf '%s' " + packet + " | python3"
     module.assert_observation_trace(script, ['execve("/usr/bin/python3", ["python3", "-c", "bootstrap"], []) = 0'])
+    module.assert_observation_trace(
+        script,
+        [
+            '10491 openat(AT_FDCWD, "/dev/tty", O_RDWR|O_NONBLOCK) = -1 ENXIO (No such device or address)',
+        ],
+    )
     for line in (
+        '10491 openat(AT_FDCWD, "/dev/tty", O_RDWR|O_NONBLOCK) = 3',
+        '10491 openat(AT_FDCWD, "/tmp/example", O_RDWR|O_CREAT) = -1 EACCES (Permission denied)',
         'execve("/usr/bin/python3", ["python3", "' + packet + '"], []) = 0',
         'execve("/usr/bin/python3", ["python3", "AAAA"...], []) = 0',
         'fchmodat(AT_FDCWD, "/tmp/example", 0600) = 0',
