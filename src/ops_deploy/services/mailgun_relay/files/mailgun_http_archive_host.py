@@ -8,8 +8,7 @@ import pathlib
 import subprocess
 import sys
 
-namespace = {"__name__": "shared_relay_installer"}
-exec(sys.stdin.read(), namespace)
+installer = sys.stdin.read()
 upload, url, impl = sys.argv[1:4]
 result = subprocess.run([
     "curl", "--fail", "--silent", "--show-error", "--location",
@@ -21,4 +20,7 @@ if result.returncode:
           else "Rust archive download failed", file=sys.stderr)
     print("failed download")
     sys.exit(0 if impl == "python" else 1)
-sys.exit(namespace["main"](sys.argv[4:]))
+sys.exit(subprocess.run(
+    ["/usr/bin/python3", "-I", "-", *sys.argv[4:]],
+    input=installer, text=True, check=False,
+).returncode)

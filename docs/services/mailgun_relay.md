@@ -93,6 +93,8 @@ redirects HTTP and forwards bodies/Host unchanged with the existing security
 headers and buffering. Application Basic auth (`api:<token>`) and sender policy
 remain authoritative; no proxy Basic auth or auth bypass is added. Traefik's
 dynamic directory must already exist; the file provider reloads the route.
+The existing native `route_put` primitive guards changes against a held Traefik
+transaction lock. An unchanged route remains a no-op even while that lock is held.
 
 ## Release validation, failures and repeat runs
 

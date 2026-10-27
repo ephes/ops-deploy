@@ -14,10 +14,14 @@ from typing import Any
 from urllib.parse import urlunsplit
 
 import pytest
+from pyinfra.api import deploy
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.mailgun_relay import MailgunRelayConfig
-from ops_deploy.services.mailgun_relay.deploy import render_role, validate_secrets
+from ops_deploy.services.mailgun_relay.deploy import _ingress, render_role, validate_secrets
+from ops_deploy.testing import run_deploy_fake
+from tests import fakehost
 
 REF = SecretRef("fixture.yml")
 
@@ -125,6 +129,32 @@ def test_optional_actual_role_template_bytes() -> None:
             assert template.read_bytes() == (packaged / template.name).read_bytes()
             count += 1
     assert count == 5
+
+
+def test_ingress_guards_changed_route_and_skips_unchanged() -> None:
+    cfg = config(ingress_enabled=True)
+    text = render_role("traefik-mailgun-relay.yml.j2", cfg)
+    path = str(cfg.ingress_traefik_config_path)
+
+    @deploy("Relay ingress")
+    def write() -> None:
+        _ingress(cfg, text)
+
+    base = {**fakehost.LINUX, **fakehost.directory(str(cfg.ingress_traefik_config_path.parent))}
+    changed = run_deploy_fake(write, responses={**base, **fakehost.file(path, "old\n")})
+    assert changed.succeeded, changed.error
+    assert changed.executed_commands[0] == route_guard_command()
+    assert changed.uploaded_paths == [path]
+    held = run_deploy_fake(
+        write,
+        responses={**base, **fakehost.file(path, "old\n"), "traefik-route-guard": {"success": False}},
+    )
+    assert not held.succeeded
+    assert held.uploaded_paths == []
+    same = run_deploy_fake(write, responses={**base, **fakehost.file(path, text)})
+    assert same.succeeded, same.error
+    assert same.executed_commands == []
+    assert same.changed_ops == []
 
 
 @pytest.fixture

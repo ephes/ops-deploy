@@ -25,6 +25,7 @@ from ops_deploy.helpers.probes import stdin_arguments
 from ops_deploy.helpers.python import uv_sync
 from ops_deploy.helpers.rust_release import HOST_SCRIPT, Install, install_release
 from ops_deploy.ops import secret_file, sync_tree
+from ops_deploy.services._traefik_routes import route_put
 from ops_deploy.services.mailgun_relay.config import MailgunRelayConfig
 
 SCRIPT = (Path(__file__).parent / "files/mailgun_release_host.py").read_text()
@@ -228,6 +229,16 @@ def _python(cfg: MailgunRelayConfig) -> list[OperationMeta]:
     return result
 
 
+def _ingress(cfg: MailgunRelayConfig, text: str | None) -> None:
+    if text is not None:
+        route_put(
+            name="Write relay Traefik ingress",
+            src=text,
+            dest=str(cfg.ingress_traefik_config_path),
+            mode="0644",
+        )
+
+
 @deploy("Deploy Mailgun relay")
 def deploy_mailgun_relay(cfg: MailgunRelayConfig, secrets: SecretValues) -> None:
     values = validate_secrets(secrets)
@@ -398,15 +409,7 @@ def deploy_mailgun_relay(cfg: MailgunRelayConfig, secrets: SecretValues) -> None
                     and not any(line.startswith("failed ") for line in candidate.stdout_lines)
                 ),
             )
-    if route_text is not None:
-        files.put(
-            name="Write relay Traefik ingress",
-            src=StringIO(route_text),
-            dest=str(cfg.ingress_traefik_config_path),
-            user="root",
-            group="root",
-            mode="0644",
-        )
+    _ingress(cfg, route_text)
     server.shell(
         name="Clear completed relay restart",
         commands=[f"rm -f {state}/restart"],

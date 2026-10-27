@@ -13,6 +13,7 @@ import io
 import json
 import os
 import shlex
+import subprocess
 import tarfile
 from email import policy
 from email.parser import Parser
@@ -68,7 +69,11 @@ def run(host: SmokeHost, cfg: MailgunRelayConfig, label: str, *, success: bool =
                         "impl": cfg.impl,
                         "mutations": result.mutating_changed_ops,
                         "readonly": [op.name for op in result.ops if op.read_only and op.changed],
-                        "native_process_check": not bool(os.environ.get("MAILGUN_FIXTURE_TRANSLATED")),
+                        "native_process_check_mode": not bool(os.environ.get("MAILGUN_FIXTURE_TRANSLATED")),
+                        "process_probe_ran": any(
+                            op.name.endswith("Verify selected relay process") and op.changed and op.succeeded
+                            for op in result.ops
+                        ),
                     }
                 )
                 + "\n"
@@ -104,7 +109,8 @@ def relay_fixture(smoke_host: SmokeHost) -> Any:
         pytest.skip("actual relay artifacts/source not supplied")
     sink = Path(__file__).with_name("mailgun_smtp_fixture.py").read_bytes()
     smoke_host.run(
-        "systemctl stop mailgun-fixture mailgun-fixture-smtp mailgun-fixture-artifacts 2>/dev/null || true; "
+        "systemctl stop mailgun-fixture mailgun-fixture-smtp mailgun-fixture-artifacts "
+        "mailgun-fixture-lock 2>/dev/null || true; "
         "rm -rf /opt/apps/mailgun-fixture /opt/mailgun-fixture /etc/mailgun-fixture "
         f"{ROOT} /var/lib/ops-deploy/mailgun-fixture /opt/mailgun-fixture-http; "
         "rm -rf /etc/systemd/system/mailgun-fixture.service.d; "
@@ -155,7 +161,8 @@ def relay_fixture(smoke_host: SmokeHost) -> Any:
         yield cfg, Path(artifacts)
     finally:
         smoke_host.run(
-            "systemctl stop mailgun-fixture mailgun-fixture-smtp mailgun-fixture-artifacts 2>/dev/null || true"
+            "systemctl stop mailgun-fixture mailgun-fixture-smtp mailgun-fixture-artifacts "
+            "mailgun-fixture-lock 2>/dev/null || true"
         )
 
 
@@ -197,8 +204,37 @@ def fixture_exe(pid):
         script = script.replace('if __name__ == "__main__":', translated + '\nif __name__ == "__main__":')
         monkeypatch.setattr(module, "SCRIPT", script)
     cfg, artifacts = relay_fixture
+    assert not subprocess.check_output(
+        ["git", "-C", str(cfg.source_path), "status", "--porcelain"], text=True
+    ).strip(), "Python fixture source must be a clean application checkout"
     first = run(smoke_host, cfg, "first 0.2.1 install")
     assert first.mutating_changed_ops
+    provenance = {
+        "python_source_kind": "actual mailgun-relay application repository",
+        "python_source_commit": subprocess.check_output(
+            ["git", "-C", str(cfg.source_path), "rev-parse", "HEAD"],
+            text=True,
+        ).strip(),
+        "python_runtime": json.loads(
+            smoke_host.out(
+                shlex.join(
+                    [
+                        str(cfg.venv / "bin/python"),
+                        "-IB",
+                        "-c",
+                        "import sys,ssl,json,importlib.metadata; print(json.dumps({"
+                        "'version':sys.version,'openssl':ssl.OPENSSL_VERSION,"
+                        "'app_distribution':importlib.metadata.version('mailgun-relay')}))",
+                    ]
+                )
+            )
+        ),
+        "host_uv": smoke_host.out("/usr/local/bin/uv --version"),
+        "synthetic_components": ["SMTP capture server", "test policies/credentials", "CA/leaf", "mail inputs"],
+    }
+    evidence = os.environ.get("MAILGUN_FIXTURE_EVIDENCE_DIR")
+    if evidence:
+        (Path(evidence) / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     initial_pid = pid(smoke_host)
     baseline = snapshot(smoke_host)
     preserved = cfg.model_copy(update={"python_deploy": "preserve"})
@@ -376,6 +412,44 @@ def fixture_exe(pid):
         }
     )
     run(smoke_host, rollback, "Python rollback with rejected Rust")
+    before_records = int(smoke_host.out(f"wc -l < {ROOT}/records.jsonl"))
     assert post(smoke_host) == 200
+    assert int(smoke_host.out(f"wc -l < {ROOT}/records.jsonl")) == before_records + 1
+    python_record = json.loads(smoke_host.out(f"tail -1 {ROOT}/records.jsonl"))
+    assert python_record["tls"] is True
+    assert python_record["auth"] is True
+    assert "fixture@example.test" in python_record["sender"]
+    assert len(python_record["recipients"]) == 3
+    assert "Bcc:" not in python_record["data"]
+    python_message = Parser(policy=policy.default).parsestr(python_record["data"])
+    assert [part.get_payload(decode=True) for part in python_message.iter_attachments()] == [b"synthetic-attachment\n"]
     run(smoke_host, changed, "return to selected Rust")
     assert run(smoke_host, changed, "final repeat").mutating_changed_ops == []
+    route = str(changed.ingress_traefik_config_path)
+    before_route = smoke_host.out("sha256sum " + route)
+    before_pid = pid(smoke_host)
+    smoke_host.run(
+        "mkdir -p /run/lock; systemd-run --unit=mailgun-fixture-lock "
+        "/usr/bin/flock --exclusive /run/lock/traefik-transaction.lock /usr/bin/sleep 90"
+    )
+    try:
+        smoke_host.run(
+            "for i in $(seq 1 20); do if ! flock -n /run/lock/traefik-transaction.lock true; "
+            "then exit 0; fi; sleep 0.1; done; exit 1"
+        )
+        assert run(smoke_host, changed, "unchanged route while transaction locked").mutating_changed_ops == []
+        route_changed = changed.model_copy(update={"ingress_max_request_body_bytes": 26214401})
+        refused = run(smoke_host, route_changed, "changed route refused while transaction locked", success=False)
+        failed = [op for op in refused.ops if not op.succeeded]
+        assert len(failed) == 1
+        assert failed[0].name.endswith("Write relay Traefik ingress")
+        assert refused.mutating_changed_ops == []
+        assert smoke_host.out("sha256sum " + route) == before_route
+        assert pid(smoke_host) == before_pid
+    finally:
+        smoke_host.run("systemctl stop mailgun-fixture-lock")
+    run(smoke_host, route_changed, "route update after transaction unlock")
+    assert pid(smoke_host) == before_pid
+    run(smoke_host, changed, "restore original route bytes")
+    assert smoke_host.out("sha256sum " + route) == before_route
+    assert run(smoke_host, changed, "guarded final repeat").mutating_changed_ops == []
