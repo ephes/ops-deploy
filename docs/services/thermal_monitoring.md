@@ -331,8 +331,12 @@ disjoint, curves rising in temperature and never falling in duty, duties
 - **Slew**: increases apply at once (smaller than `min_change_pct` are
   ignored, except to 100 %); a decrease needs the target to stay at least
   `decrease_step_pct` below the duty for `decrease_hold_cycles` cycles and
-  then steps down `decrease_step_pct` per cycle. The duty starts at 100 % and
-  slews down, in every mode.
+  then steps down `decrease_step_pct` per cycle. A gap smaller than
+  `decrease_step_pct` (e.g. what remains of the last step, or a short rise
+  that ended) closes to the target once it has lasted `decrease_hold_cycles`
+  cycles in a row, so the duty does not stay above a steady target; a target
+  back at or above the duty, a larger gap or a fail-safe restarts that count.
+  The duty starts at 100 % and slews down, in every mode.
 - **Freshness**: each cycle reads the fan RPM, the disks (when due) and the
   scan state first and the hwmon sensors last, right before it decides; every
   input carries the time it was read, and staleness is measured at the time
@@ -490,7 +494,8 @@ The emergency return of every position to auto is
   check, shell syntax, no BMC write command in any plan.
 - `tests/test_drive_fan_control.py`: the controller against fake `ipmitool`,
   `hdparm`, `smartctl` and `zpool` executables and a fake sysfs: config
-  refusals, curves, demand, slew and hysteresis, scan feed-forward, standby
+  refusals, curves, demand, slew and hysteresis (a sub-step gap settles to
+  the target, also in `observe` and `active`), scan feed-forward, standby
   disks never queried further, every reader error and timeout, staleness,
   fail-safe after repeated failures, the hwmon sensors read after the slow
   inputs, `observe` without a BMC write, `active` taking only the managed

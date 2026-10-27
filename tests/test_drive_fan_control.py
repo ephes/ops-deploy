@@ -164,12 +164,50 @@ def test_increases_apply_at_once_and_decreases_wait_and_step() -> None:
     assert slew.next(52, cfg, failsafe=False) == 50  # below min_change_pct
     assert slew.next(60, cfg, failsafe=False) == 60
     assert [slew.next(40, cfg, failsafe=False) for _ in range(6)] == [60, 60, 55, 50, 45, 40]
-    assert slew.next(37, cfg, failsafe=False) == 40  # within the step: hold
+    assert slew.next(37, cfg, failsafe=False) == 40  # within the step: held (settles after the hold)
     assert slew.next(100, cfg, failsafe=False) == 100
     assert slew.next(35, cfg, failsafe=True) == 100
     # A target that bounces back up resets the hold.
     slew = DFC.Slew(duty=60)
     assert [slew.next(t, cfg, failsafe=False) for t in (50, 50, 58, 50, 50, 50)] == [60, 60, 60, 60, 60, 55]
+
+
+def test_a_gap_smaller_than_a_step_closes_to_the_target_after_the_hold() -> None:
+    cfg = config()
+    # The soak case: a duty a few points above the floor no longer rests there.
+    slew = DFC.Slew(duty=38)
+    assert [slew.next(35, cfg, failsafe=False) for _ in range(4)] == [38, 38, 35, 35]
+    # The remainder of a step-down settles after its own hold, not in the same cycle.
+    slew = DFC.Slew(duty=43)
+    assert [slew.next(35, cfg, failsafe=False) for _ in range(7)] == [43, 43, 38, 38, 38, 35, 35]
+    # Above the floor as well, to the target of the cycle that completes the hold.
+    slew = DFC.Slew(duty=50)
+    assert [slew.next(t, cfg, failsafe=False) for t in (47, 48, 46, 46)] == [50, 50, 46, 46]
+    # A target back at the duty (or above it) or a fail-safe restarts the hold.
+    slew = DFC.Slew(duty=40)
+    assert [slew.next(t, cfg, failsafe=False) for t in (37, 37, 40, 37, 37, 37)] == [40, 40, 40, 40, 40, 37]
+    slew = DFC.Slew(duty=40)
+    assert [slew.next(t, cfg, failsafe=False) for t in (37, 37, 41, 37, 37, 37)] == [40, 40, 40, 40, 40, 37]
+    slew = DFC.Slew(duty=40)
+    assert [slew.next(37, cfg, failsafe=f) for f in (False, False, True)] == [40, 40, 100]
+    # A gap of a step or more in between restarts it too: that gap steps on its own hold.
+    slew = DFC.Slew(duty=40)
+    assert [slew.next(t, cfg, failsafe=False) for t in (37, 37, 30, 37, 37, 37)] == [40, 40, 40, 40, 40, 37]
+
+
+def test_observe_settles_a_would_be_duty_just_above_the_floor(host: FakeHost) -> None:
+    controller = host.controller(config())
+    controller.slew.duty = 38
+    duties = []
+    for _ in range(4):
+        controller.step()
+        duties.append(host.status()["duty_pct"])
+
+    assert duties == [38, 38, 35, 35]
+    assert host.status()["target_pct"] == 35
+    assert host.status()["bmc_writes"] == 0
+    assert host.bmc_writes() == []
+    assert host.load()["duty"] == DUTY0
 
 
 def test_an_update_keeps_every_unmanaged_byte_and_reads_back(host: FakeHost) -> None:
@@ -510,6 +548,22 @@ def test_active_steps_down_and_writes_each_step(host: FakeHost) -> None:
 
     duties = [int(w[7], 16) for w in host.bmc_writes() if w[6] == "0x0e"]
     assert duties == [100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35]
+    assert host.load()["duty"][:3] == [35, 35, 35]
+    assert host.load()["duty"][3:] == DUTY0[3:]
+
+
+def test_active_writes_the_settling_step_to_the_floor(host: FakeHost) -> None:
+    run(host, config(mode="active"), 20)
+    controller = host.controller(config(mode="active"))
+    controller.control = True
+    controller.slew.duty = 38
+    before = len(host.bmc_writes())
+    for _ in range(4):
+        controller.step()
+
+    duties = [int(w[7], 16) for w in host.bmc_writes()[before:] if w[6] == "0x0e"]
+    assert duties[-1] == 35
+    assert host.status()["duty_pct"] == 35
     assert host.load()["duty"][:3] == [35, 35, 35]
     assert host.load()["duty"][3:] == DUTY0[3:]
 

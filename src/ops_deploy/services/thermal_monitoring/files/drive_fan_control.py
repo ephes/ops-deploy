@@ -13,7 +13,9 @@ disk); scrub and resilver state of the configured ZFS pools each cycle. The
 demand is the highest duty any curve or scan asks for, clamped to
 ``[floor_pct, 100]``. Increases apply at once; a decrease needs the target to
 stay ``decrease_step_pct`` below the duty for ``decrease_hold_cycles`` cycles
-and then steps down ``decrease_step_pct`` per cycle.
+and then steps down ``decrease_step_pct`` per cycle; a gap smaller than
+``decrease_step_pct`` that lasts ``decrease_hold_cycles`` cycles closes to the
+target.
 
 Modes:
 
@@ -903,12 +905,20 @@ def demand(config: Config, readings: Readings) -> tuple[int, list[str]]:
 
 @dataclass
 class Slew:
-    """Increases at once; a decrease after ``hold`` cycles at least ``step`` below, ``step`` at a time."""
+    """Increases at once; a decrease after ``hold`` cycles at least ``step`` below, ``step`` at a time.
+
+    A gap smaller than one step (``settle``) closes to the target once it has
+    lasted ``hold`` cycles in a row, so the duty does not stay above a steady target.
+    """
 
     duty: int = FULL
     below: int = 0
+    settle: int = 0
 
     def next(self, target: int, config: Config, *, failsafe: bool) -> int:
+        gap = self.duty - target
+        if failsafe or not 0 < gap < config.decrease_step_pct:
+            self.settle = 0
         if failsafe:
             self.below = 0
             self.duty = FULL
@@ -916,12 +926,17 @@ class Slew:
             self.below = 0
             if target - self.duty >= config.min_change_pct or target == FULL:
                 self.duty = target
-        elif self.duty - target >= config.decrease_step_pct:
+        elif gap >= config.decrease_step_pct:
             self.below += 1
             if self.below >= config.decrease_hold_cycles:
                 self.duty = max(target, self.duty - config.decrease_step_pct)
         else:
             self.below = 0
+            if gap > 0:
+                self.settle += 1
+                if self.settle >= config.decrease_hold_cycles:
+                    self.settle = 0
+                    self.duty = target
         return self.duty
 
 
