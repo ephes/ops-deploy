@@ -1,6 +1,16 @@
 name: Mac application ingress integration
 
 on:
+  push:
+    branches: [pyinfra-mac-apps-20261027]
+    paths:
+      - .github/workflows/mac-ingress-native.yml
+      - src/ops_deploy/services/opsgate/ingress.py
+      - src/ops_deploy/services/opsgate/templates/opsgate-traefik.yml.j2
+      - src/ops_deploy/services/voxhelm/ingress.py
+      - src/ops_deploy/services/voxhelm/templates/voxhelm-traefik.yml.j2
+      - tests/integration/mac_ingress/**
+      - tests/test_mac_ingress.py
   workflow_dispatch:
     inputs:
       implementation_sha:
@@ -25,11 +35,11 @@ jobs:
           persist-credentials: false
       - name: Validate immutable implementation selection
         env:
-          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.sha }}
         run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ inputs.implementation_sha }}
+          ref: ${{ inputs.implementation_sha || github.sha }}
           path: .implementation
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
@@ -39,14 +49,14 @@ jobs:
       - name: Install immutable controller package
         working-directory: .implementation
         env:
-          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.sha }}
         run: |
           unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV
           uv sync --locked
           uv pip install --python .venv/bin/python --no-deps --reinstall "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
       - name: Real owned Linux ingress convergence
         env:
-          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.sha }}
         run: |
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" \
             IMPLEMENTATION_ROOT="$PWD/.implementation" \
