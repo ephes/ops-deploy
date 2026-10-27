@@ -41,6 +41,8 @@ nav:
       - metrics-httpd switch: services/metrics_httpd.md
       - metrics endpoints: services/metrics_endpoints.md
       - DNS: services/dns.md
+      - PostfixAdmin: services/postfixadmin.md
+      - SnappyMail: services/snappymail.md
       - mail backend: services/mail_backend.md
       - mail edge relay: services/mail_relay.md
       - mail spam filtering: services/mail_spam.md

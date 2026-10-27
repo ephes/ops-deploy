@@ -179,3 +179,55 @@ def test_partial_bootstrap_fault_modifies_exact_public_source_marker(markers: in
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "b64decode"
     )
     assert base64.b64decode(ast.literal_eval(literal)).decode() == source.replace("$1::varchar", "$1")
+
+
+@pytest.mark.parametrize(
+    "line", [None, 'admin_totp = ""', "admin_totp = ''", " admin_totp  = Off  ; retain comment", "admin_totp = "]
+)
+def test_owned_totp_seed_accepts_semantic_empty_preserving_other_bytes(tmp_path: Path, line: str | None) -> None:
+    import shutil
+
+    php = shutil.which("php")
+    if php is None:
+        pytest.skip("PHP parser unavailable; required by native fixture")
+    path = tmp_path / "application.ini"
+    prefix = "; preserve header\r\n[security] ; section comment\r\n"
+    suffix = 'admin_password = "unchanged"\r\n[next]\r\nadmin_totp = "unrelated"\r\n'
+    body = prefix + ((line + "\r\n") if line is not None else "") + suffix
+    path.write_bytes(body.encode())
+    value = "A" * 32
+    result = harness().seed_admin_totp(path, value, php_cli=php)
+    assert result == {"prior_key_present": line is not None, "prior_semantic_empty": True, "seeded": True}
+    after = path.read_bytes().decode()
+    assert after.startswith(prefix)
+    assert after.endswith(suffix)
+    assert after.count(value) == 1
+    if line and "; retain comment" in line:
+        assert ' admin_totp  = "' + value + '"  ; retain comment\r\n' in after
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '[security]\nadmin_totp="unexpected"\n',
+        '[security]\nadmin_totp=""\nadmin_totp=""\n',
+        '[security]\nadmin_totp=""\n[security]\n',
+        '[other]\nadmin_totp=""\n',
+    ],
+)
+def test_owned_totp_seed_refuses_nonempty_or_ambiguous_without_write(tmp_path: Path, body: str) -> None:
+    import configparser
+    import shutil
+
+    php = shutil.which("php")
+    if php is None:
+        pytest.skip("PHP parser unavailable; required by native fixture")
+    path = tmp_path / "application.ini"
+    path.write_text(body)
+    before = path.stat()
+    with pytest.raises((ValueError, AssertionError, configparser.Error)):
+        harness().seed_admin_totp(path, "A" * 32, php_cli=php)
+    assert path.read_text() == body
+    after = path.stat()
+    for field in ("st_mtime_ns", "st_ctime_ns", "st_mode", "st_uid", "st_gid", "st_ino", "st_size"):
+        assert getattr(after, field) == getattr(before, field)
