@@ -21,6 +21,7 @@ from ops_deploy.services.graphyard.core import (
 from ops_deploy.services.graphyard.ingress import GraphyardIngressConfig, deploy_graphyard_ingress
 from ops_deploy.services.graphyard.stack import GraphyardStackConfig, deploy_graphyard
 from ops_deploy.services.graphyard.vector import GraphyardVectorConfig, deploy_graphyard_vector
+from ops_deploy.services.graphyard.vector_darwin import GraphyardVectorDarwinConfig
 
 __all__ = [
     "Django",
@@ -30,6 +31,7 @@ __all__ = [
     "GraphyardIngressConfig",
     "GraphyardStackConfig",
     "GraphyardVectorConfig",
+    "GraphyardVectorDarwinConfig",
     "HealthCheck",
     "Influx",
     "MetricSpecs",

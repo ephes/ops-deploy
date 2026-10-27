@@ -436,3 +436,46 @@ def test_ssh_guard_in_a_real_container(tmp_path: Path, monkeypatch: pytest.Monke
     assert box.vulnerable_regexes() == 0
     assert box.actions() == "nftables"
     assert box.deploy(DEFAULT).changed_ops == []
+
+
+def test_existing_bans_survive_filter_only_repair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Heis shape: existing policy/enforcement, no package/jail/drop-in change."""
+    box = Container()
+    box.guard_connector(tmp_path, monkeypatch)
+    box.reset()
+    box.sh("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-download --no-install-recommends nftables")
+    for path, text in ((JAIL_PATH, render_jail(DEFAULT)), (DROPIN, render_dropin(DEFAULT))):
+        box.sh(f"printf %s {shlex.quote(text)} > {shlex.quote(path)}; chmod 0644 {shlex.quote(path)}")
+    box.sh("systemctl restart fail2ban")
+    box.wait_for_jail()
+    assert box.vulnerable_regexes() > 0
+    assert box.actions() == "nftables"
+    box.sh(f"fail2ban-client set sshd banip {ATTACKER} {ATTACKER6}")
+    assert ATTACKER in box.nft_table()
+    assert ATTACKER6 in box.nft_table()
+    before = {
+        "package": box.out("dpkg-query -W -f='${Version}' fail2ban"),
+        "ssh": box.pid("ssh"),
+        "jail": box.read(JAIL_PATH),
+        "dropin": box.read(DROPIN),
+    }
+    old_pid = box.pid("fail2ban")
+    repaired = box.deploy(DEFAULT)
+    assert repaired.succeeded, repaired.error
+    assert repaired.mutating_changed_ops == [WRITE_FILTER, RESTART, GATE_EARLY, GATE]
+    assert box.pid("fail2ban") != old_pid
+    assert box.vulnerable_regexes() == 0
+    assert box.out("dpkg-query -W -f='${Version}' fail2ban") == before["package"]
+    assert box.pid("ssh") == before["ssh"]
+    assert box.read(JAIL_PATH) == before["jail"]
+    assert box.read(DROPIN) == before["dropin"]
+    # The real fail2ban database restores bans after its required restart;
+    # both IPv4 and IPv6 must again be enforced, not just listed by the jail.
+    for _ in range(30):
+        if ATTACKER in box.nft_table() and ATTACKER6 in box.nft_table():
+            break
+        box.sh("sleep 1")
+    assert ATTACKER in box.nft_table()
+    assert ATTACKER6 in box.nft_table()
+    assert box.deploy(DEFAULT).changed_ops == []
+    box.sh(f"fail2ban-client set sshd unbanip {ATTACKER} {ATTACKER6}")
