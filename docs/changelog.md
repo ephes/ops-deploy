@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add a descriptor-only OpenSSH forwarding identity probe and an owned ARM
+  macOS prerequisite workflow. Existing-key inspection creates no temporary
+  private-key copy; the complete native tunnel deployment remains in progress.
+
 - Add native Darwin hostname convergence and the complete Graphyard Vector
   Homebrew/launchd/newsyslog role branch, with masked stdin credentials,
   candidate validation, retained data and zero-staging no-ops. Keep Linux

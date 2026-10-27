@@ -1,0 +1,62 @@
+name: Native Mac applications integration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mac-apps-native.yml'
+      - 'src/ops_deploy/services/macos_ssh_tunnel/**'
+      - 'smoke/mac_apps_identity_fixture.py'
+      - 'tests/test_macos_ssh_tunnel_identity.py'
+      - 'tests/test_mac_apps_identity_fixture.py'
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-mac-apps-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  identity-prerequisite:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate immutable implementation selection
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.IMPLEMENTATION_SHA }}
+          path: .implementation
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Build and install immutable implementation
+        working-directory: .implementation
+        run: |
+          uv build --wheel
+          uv venv --python 3.13 /private/var/tmp/mac-apps-controller
+          uv pip install --python /private/var/tmp/mac-apps-controller/bin/python dist/*.whl
+      - name: Prove no-temp descriptor-only public-key probe on actual ARM Darwin
+        env:
+          MAC_APPS_EVIDENCE_DIR: /private/var/tmp/mac-apps-evidence
+        run: /private/var/tmp/mac-apps-controller/bin/python .implementation/smoke/mac_apps_identity_fixture.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: native-mac-apps-${{ github.run_id }}
+          path: /private/var/tmp/mac-apps-evidence
+          if-no-files-found: error
+          retention-days: 7
