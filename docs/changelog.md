@@ -46,6 +46,12 @@
   private-key copy. The complete tunnel is qualified with an owned GUI owner,
   restricted relay, verified TLS, install-stopped transition and no-write repeats.
 
+- Fix the drive fan controller's slew deadband: a duty less than one
+  `decrease_step_pct` above the target (e.g. 38 % against a 35 % floor) now
+  closes to the target after `decrease_hold_cycles` cycles instead of resting
+  there. Increases, the fail-safe and larger step-downs are unchanged; `observe`
+  still only records what it would set.
+
 - Add `ops_deploy.infra.encrypted_volume`, the configure path of
   `encrypted_volume_prepare` for an existing LUKS volume: read-only admission
   (wrong UUID, non-LUKS device, foreign or conflicting mappings and mounts,
