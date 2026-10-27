@@ -215,20 +215,52 @@ def validate(binary, args):
         )
 
 
+def install_layout_current(args):
+    """Read-only classification of owned layout work; never validates by mutation."""
+    check_install_inputs(args)
+    root = lstat_or_none(args.root)
+    if root is not None and not stat.S_ISDIR(root.st_mode):
+        raise Refused(f"{args.root} is not a real directory")
+    directory = os.path.join(args.root, args.version)
+    existing = lstat_or_none(directory)
+    if existing is not None and not stat.S_ISDIR(existing.st_mode):
+        raise Refused(f"{directory} is not a real directory")
+    owner, group = ids(args)
+    return (
+        root is not None and existing is not None
+        and (root.st_uid, root.st_gid) == (owner, group)
+        and stat.S_IMODE(root.st_mode) == 0o755
+        and not os.path.lexists(os.path.join(args.root, f".staging-{args.version}"))
+        and not args.upload
+    )
+
+
 def install(args):
+    if args.check:
+        print("current" if install_layout_current(args) else "change layout")
+        return
     root = args.root
     directory = os.path.join(root, args.version) if rust_release_version_ok(args.version) else ""
     staging = os.path.join(root, f".staging-{args.version}") if directory else ""
-    fresh = created = False
+    fresh = created = admitted_root = False
     try:
+        check_common(args)
+        root_info = lstat_or_none(root)
+        if root_info is not None and not stat.S_ISDIR(root_info.st_mode):
+            raise Refused(f"{root} is not a real directory")
+        admitted_root = True
         url, members, executables = check_install_inputs(args)
         existing = lstat_or_none(directory)
         if existing is not None and not stat.S_ISDIR(existing.st_mode):
             raise Refused(f"{directory} exists but is not a directory (or is a symlink)")
         fresh = existing is None
-        os.makedirs(root, mode=0o755, exist_ok=True)
-        chown(root, args)
-        os.chmod(root, 0o755)
+        if root_info is None:
+            os.makedirs(root, mode=0o755, exist_ok=True)
+            root_info = os.lstat(root)
+        if (root_info.st_uid, root_info.st_gid) != ids(args):
+            chown(root, args)
+        if stat.S_IMODE(root_info.st_mode) != 0o755:
+            os.chmod(root, 0o755)
         # A leftover of an interrupted install; never followed if it is a link.
         remove_path(staging)
         if not fresh:
@@ -270,7 +302,7 @@ def install(args):
     except Exception as error:  # the role's rescue: any failure
         if created:
             shutil.rmtree(directory, ignore_errors=True)
-        if staging:
+        if staging and admitted_root:
             try:
                 remove_path(staging)
             except (OSError, Refused):
@@ -286,7 +318,7 @@ def install(args):
         print(f"failed {error}")
         return
     finally:
-        if args.upload and os.path.lexists(args.upload):
+        if admitted_root and args.upload and os.path.lexists(args.upload):
             os.unlink(args.upload)
     print(f"{'installed' if fresh else 'validated'} {binary}")
 

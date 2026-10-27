@@ -20,7 +20,8 @@ Ansible core2.21.5 to seed existing role files and independently generated bcryp
 credentials; the first deployment over that state and its repeat must be no-ops.
 Every repeat traces the connector commands and rejects file/helper upload or
 filesystem mutation syscalls, including temporary files later removed. It switches the endpoint to the existing pinned
-Rust release, repeats, and returns to Python/repeats. No public DNS UPDATE occurs.
+Rust release, repeats, repairs deliberately drifted owned root metadata/staging
+without binary replacement or process restart, repeats again, and returns to Python/repeats. No public DNS UPDATE occurs.
 
 Phase JSON records all operations, managed mutations and protected file metadata.
 Existing upstream blocklist/DNSSEC warnings are not silently repaired. The local
@@ -34,3 +35,13 @@ The no-write scanner distinguishes dig naming its own short-lived threads via
 O_RDWR opens by a PID observed executing `/usr/bin/dig` are admitted. Other proc
 paths, other processes, creates and ordinary file writes remain failures. The
 fixture listener observer writes evidence only and never controls listeners.
+
+Firewall evidence retains raw expected/actual iptables-save text. Policies, chain
+and rule order, arguments and comments remain exact apart from generated/completed
+timestamps. Packet/byte counters may advance, never reset: production removes
+individual rules with `-D` and does not use restore or reload.
+
+Explicit queries prove both source-address split views, generated blocklist
+NXDOMAIN, an outside-ACL client REFUSED from the owned primary namespace, and
+the unrelated nested include after a configuration replacement. Responses are
+retained separately from deployment operation counts.

@@ -21,6 +21,27 @@ fd=os.open('/var/tmp/dns-routine-owned-vm.json',os.O_CREAT|os.O_EXCL|os.O_WRONLY
 with os.fdopen(fd,'w') as f:
     json.dump({'run':os.environ['GITHUB_RUN_ID'],'machine':open('/etc/machine-id').read().strip()},f)
 PY
+# Record only executable identity, never arbitrary process argv or environment.
+"$CONTROLLER_PYTHON" - "$EVIDENCE" <<'PYIDENTITY'
+import hashlib,json,os,sys
+from pathlib import Path
+observed=[]
+for proc in Path('/proc').iterdir():
+    if not proc.name.isdigit():
+        continue
+    try:
+        if (proc/'comm').read_text().strip() != 'dns-resolver':
+            continue
+        executable=(proc/'exe').resolve(strict=True)
+        observed.append({'pid':int(proc.name),'exe':str(executable),
+                         'sha256':hashlib.sha256(executable.read_bytes()).hexdigest(),
+                         'uid':proc.stat().st_uid,'cgroup':(proc/'cgroup').read_text()})
+    except FileNotFoundError:
+        continue
+Path(sys.argv[1],'preexisting-resolver-identity.json').write_text(json.dumps(observed,indent=2))
+if observed:
+    raise SystemExit('Owned fixture has an extra port-53 resolver; identity retained, no process terminated')
+PYIDENTITY
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl python3 iproute2 iptables bind9 strace

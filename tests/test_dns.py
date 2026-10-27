@@ -362,3 +362,34 @@ def test_invalid_candidate_retains_legacy_forwarding(monkeypatch: pytest.MonkeyP
     with pytest.raises(RuntimeError, match="invalid candidate"):
         module.deploy_dns.__wrapped__(DnsConfig(), SecretValues(SecretRef("fixture.yml"), {}))
     assert calls == []
+
+
+def test_legacy_apply_deletes_rules_individually_without_restore(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = dns_helper("legacy_host")
+    rule4 = "-A PREROUTING -p tcp --dport 53 -j DNAT --to-destination 127.0.0.1:5335"
+    rule6 = "-A PREROUTING -s fd7a:115c:a1e0::/48 -p udp --dport 53 -j DNAT --to-destination [::1]:5335"
+    for family, rule in ((4, rule4), (6, rule6)):
+        (tmp_path / f"rules.v{family}").write_text("*nat\n:PREROUTING ACCEPT [7:560]\n" + rule + "\nCOMMIT\n")
+    monkeypatch.setattr(
+        module, "Path", lambda p: tmp_path / Path(p).name if str(p).startswith("/etc/iptables/") else Path(p)
+    )
+    monkeypatch.setattr(
+        module,
+        "runtime",
+        lambda family: (
+            "iptables" if family == 4 else "ip6tables",
+            [(rule4 if family == 4 else rule6).split()],
+            "present",
+        ),
+    )
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: calls.append(args))
+    module.main(apply=True)
+    assert calls == [
+        ["iptables", "-t", "nat", "-D", *rule4.split()[1:]],
+        ["ip6tables", "-t", "nat", "-D", *rule6.split()[1:]],
+    ]
+    for family in (4, 6):
+        assert (tmp_path / f"rules.v{family}").read_text() == "*nat\n:PREROUTING ACCEPT [7:560]\nCOMMIT\n"

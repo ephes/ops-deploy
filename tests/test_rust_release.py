@@ -173,11 +173,13 @@ def test_install_layout_and_idempotent_validation(box: Host) -> None:
     assert box.root.stat().st_mode & 0o7777 == 0o755
     assert box.hidden() == []
 
+    root_before = box.root.stat()
     before = (version_dir / NAME).stat().st_mtime_ns
     again = box.install("1.0.0")
     assert again.returncode == 0, again.stderr
     assert again.stdout == f"validated {version_dir / NAME}\n"
     assert (version_dir / NAME).stat().st_mtime_ns == before
+    assert box.root.stat().st_ctime_ns == root_before.st_ctime_ns
 
 
 def test_extra_members_and_executables(box: Host) -> None:
@@ -579,7 +581,7 @@ def test_install_plans_one_install_with_the_script_on_stdin() -> None:
 def test_an_installed_version_is_validated_read_only() -> None:
     result = run(
         lambda: install_release("metrics-httpd", "0.1.0", sha256=SHA, fail_hard=False),
-        fakehost.directory(f"{ROOT}/0.1.0"),
+        {**fakehost.directory(f"{ROOT}/0.1.0"), "--validate-user nobody --soft --check": ["current"]},
     )
 
     assert result.succeeded, result.error
@@ -743,7 +745,7 @@ def test_a_validated_install_gates_the_prune_but_is_no_change() -> None:
         prune_releases("metrics-httpd", after=[installed])
 
     prune_key = f"prune --name metrics-httpd --root {ROOT} --keep-versions 3 --check"
-    converged = run(body, fakehost.directory(f"{ROOT}/0.2.0"))
+    converged = run(body, {**fakehost.directory(f"{ROOT}/0.2.0"), "--validate-user nobody --soft --check": ["current"]})
     assert converged.succeeded, converged.error
     # Only the read-only validation runs: an installed version changes nothing to prune.
     assert [c.split()[3] for c in converged.executed_commands] == ["install"]
@@ -948,3 +950,94 @@ def test_same_files_and_prune_decisions_as_the_role(tmp_path: Path) -> None:
     assert both(nothing, [f"{theirs}/5.0.0/{NAME} (deleted)", "/usr/bin/python3"])["removed"] == []
     assert both(nothing, ["2.0.0"])["removed"] == ["5.0.0"]
     assert ours.versions() == ["1.0.0", "2.0.0", "3.0.0", "4.0.0", "6.0.0"]
+
+
+@pytest.mark.parametrize("probe_result", [[], ["change layout"], ["unknown"], ["ops-deploy-probe-failed"]])
+def test_layout_drift_or_unknown_is_managed_without_replacing_the_binary(probe_result: Any) -> None:
+    def body() -> None:
+        release = install_release("metrics-httpd", "0.2.0", sha256=SHA)
+        assert release.validated
+        prune_releases("metrics-httpd", after=[release])
+
+    result = run(body, {**fakehost.directory(f"{ROOT}/0.2.0"), "--validate-user nobody --check": probe_result})
+    assert result.succeeded, result.error
+    assert result.mutating_changed_ops == ["Test | Validate metrics-httpd 0.2.0"]
+    assert len(result.executed_commands) == 1
+
+
+def test_layout_probe_and_metadata_repair_preserve_release_and_other_resources(box: Host) -> None:
+    assert box.install("1.0.0").returncode == 0
+    assert box.install("2.0.0").returncode == 0
+    box.pin("consumer", "2.0.0")
+    release = box.root / "1.0.0" / NAME
+    before = release.stat()
+    other = (box.root / "2.0.0" / NAME).read_bytes()
+    pin = (box.root / ".pins" / "consumer").read_bytes()
+    box.root.chmod(0o700)
+    staging = box.root / ".staging-1.0.0"
+    staging.mkdir()
+    (staging / "interrupted").write_text("owned leftover")
+    root_before = box.root.stat()
+    check = box.install("1.0.0", None, "--check")
+    assert check.returncode == 0, check.stderr
+    assert check.stdout == "change layout\n"
+    assert staging.is_dir()
+    assert box.root.stat().st_ctime_ns == root_before.st_ctime_ns
+    assert box.install("1.0.0").stdout.startswith("validated ")
+    assert not staging.exists()
+    assert box.root.stat().st_mode & 0o777 == 0o755
+    assert release.stat().st_ctime_ns == before.st_ctime_ns
+    assert (box.root / "2.0.0" / NAME).read_bytes() == other
+    assert (box.root / ".pins" / "consumer").read_bytes() == pin
+    root_before = box.root.stat()
+    assert box.install("1.0.0", None, "--check").stdout == "current\n"
+    assert box.root.stat().st_ctime_ns == root_before.st_ctime_ns
+
+
+def test_missing_layout_probe_creates_nothing(box: Host) -> None:
+    result = box.install("1.0.0", None, "--check")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "change layout\n"
+    assert not box.root.exists()
+
+
+@pytest.mark.parametrize("check", [False, True])
+def test_install_refuses_symlink_root_without_cleanup_through_it(box: Host, check: bool) -> None:
+    outside = box.base / "outside"
+    staging = outside / ".staging-1.0.0"
+    staging.mkdir(parents=True)
+    sentinel = staging / "unrelated"
+    sentinel.write_text("preserve")
+    box.root.parent.mkdir(parents=True)
+    box.root.symlink_to(outside)
+    before = outside.stat()
+    result = box.install("1.0.0", None, *(["--check"] if check else []))
+    assert result.returncode != 0
+    assert "not a real directory" in result.stderr
+    assert sentinel.read_text() == "preserve"
+    assert outside.stat().st_ctime_ns == before.st_ctime_ns
+
+
+@pytest.mark.parametrize("soft", [False, True])
+def test_uploaded_archive_is_removed_on_input_refusal(box: Host, soft: bool) -> None:
+    path, sha = box.archive("1.0.0")
+    box.root.mkdir(parents=True)
+    upload = box.root / ".upload-1.0.0.tar.gz"
+    shutil.copy(path, upload)
+    result = host(
+        "install",
+        box.root,
+        "--version",
+        "1.0.0",
+        "--sha256",
+        "0" * 64,
+        "--archive-sha256",
+        sha,
+        "--upload",
+        str(upload),
+        *(["--soft"] if soft else []),
+    )
+    assert result.returncode == (0 if soft else 1)
+    assert "not the pinned" in result.stderr
+    assert not upload.exists()
+    assert not (box.root / "1.0.0").exists()

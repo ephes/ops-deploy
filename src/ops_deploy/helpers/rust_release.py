@@ -60,11 +60,12 @@ _PINS: WeakKeyDictionary[State, dict[str, list[OperationMeta]]] = WeakKeyDiction
 
 @dataclass(frozen=True)
 class Install:
-    """The install (or read-only validation) of one release; ``failed()`` only after it ran."""
+    """The install (or existing-release validation) of one release; ``failed()`` only after it ran."""
 
     op: OperationMeta
     binary: str
-    # An installed version was only validated (read-only): it gates later steps but changed nothing.
+    # Existing binary was validated, not replaced. Owned layout repairs may still
+    # mutate metadata; they must not trigger consumer restarts or unrelated pruning.
     validated: bool = False
 
     def failed(self) -> bool:
@@ -94,7 +95,8 @@ def install_release(
     """Install ``version`` of crate ``name`` and run ``<binary> --version`` as ``validate_user``.
 
     Like the role's ``tasks_from: install``: an installed version is only
-    validated (read-only; a different archive for it is refused), a new one
+    validated (read-only when its owned layout is current; a different archive
+    for it is refused). Actual root-metadata/staging repairs count as mutations. A new one
     is downloaded from ``release_url`` (default: the ops-library GitHub
     release) or uploaded from ``local_archive``, checked against ``sha256``,
     required to hold exactly ``members`` (default ``[name, "LICENSE"]``) as
@@ -137,12 +139,10 @@ def install_release(
             )
             options += ["--upload", upload]
     command = _command("install", name, root, "--sha256", sha256, *options)
-    op = server.shell(
-        name=f"{'Validate' if installed else 'Install'} {name} {version}",
-        commands=[command],
-        **stdin_arguments(HOST_SCRIPT),
-    )
-    return Install(mark_read_only(op) if installed else op, f"{root}/{version}/{name}", validated=installed)
+    current = installed and probe(command + " --check", name="Inspect release layout", stdin=HOST_SCRIPT) == "current"
+    label = f"{'Validate' if installed else 'Install'} {name} {version}"
+    op = server.shell(name=label, commands=[command], **stdin_arguments(HOST_SCRIPT))
+    return Install(mark_read_only(op) if current else op, f"{root}/{version}/{name}", validated=installed)
 
 
 def _gated(name: str, command: str, after: Iterable[OperationMeta | Install] = ()) -> tuple[str, OperationMeta]:

@@ -326,8 +326,13 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
 - `install_release(name, version, *, sha256="", install_root="", release_url="",
   local_archive=None, members=(), executables=(), validate_user="nobody",
   fail_hard=True)` returns an `Install` (`op`, `binary`, `validated`). An
-  installed version is only validated (`validated` is true), as a read-only
-  operation; a different archive for it is
+  installed binary is validated without replacement (`validated` is true). A
+  read-only layout probe classifies validation as read-only only when the root
+  ownership/mode is current and no owned staging cleanup is needed. Actual
+  metadata or interrupted-staging repairs count as managed changes; they do not
+  trigger consumer restarts or pruning merely because `validated` is true.
+  Unknown/failed probes conservatively classify the step as managed. Validation
+  still checks the archive marker and executable version every run; a different archive for it is
   refused (an installed version is never replaced in place). A new version is
   downloaded from `release_url` (default: the ops-library GitHub release
   `<name>-v<version>`) or uploaded from `local_archive` (checked against

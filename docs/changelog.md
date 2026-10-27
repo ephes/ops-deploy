@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Make installed Rust release validation genuinely read-only on a current layout.
+  Classify needed root metadata or owned staging repairs as managed changes,
+  preserve existing-binary restart/prune semantics, and refuse symlink roots.
+
 - Add the full ordinary Unbound/DNS deployment with conditional blocklist/DDNS jobs, validated owned configuration replacement and rollback, authenticated status endpoint and explicit no-write convergence. Keep current package and endpoint runtime selections. DNS alone opts into change-gated transient metrics validation; existing helper callers retain their defaults.
 
 - Add the Mailgun relay deployment and Traefik ingress with the existing

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ops_deploy.helpers.rust_release import HOST_PYTHON
@@ -34,7 +35,10 @@ def verify_op(prefix: str, unit: str, impl: str = "python") -> str:
     return f"{prefix}Check {unit} runs the {label} HTTP server and answers"
 
 
-def installed(version: str = VERSION) -> dict[str, Any]:
+def installed(version: str = VERSION) -> dict[Any, Any]:
     """Facts of a host with ``version`` installed under the shared install root."""
 
-    return fakehost.directory(f"{ROOT}/{version}")
+    return {
+        **fakehost.directory(f"{ROOT}/{version}"),
+        re.compile(r"install --name metrics-httpd .* --check "): ["current"],
+    }
