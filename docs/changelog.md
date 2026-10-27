@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add native macOS Ollama Homebrew/LaunchDaemon deployment, preserving installed
+  formulas and retained model contents, with role-compatible identity,
+  directory, conflict and service behavior. Unchanged running jobs are retained
+  without staging/helper writes or restarts; intentional plist changes restart
+  the selected label. Add an isolated hosted macOS integration workflow.
+
 - Add standalone mail and torrent VPN metrics endpoint deploys using the existing
   Python/Rust switch, Basic Auth, role templates and service identities. Preserve
   recursive queue ACLs, probe-state exports and the torrent root collector/timer.
