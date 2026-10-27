@@ -47,3 +47,13 @@ without replacing the stored credential. All checks use the selected versioned
 PHP CLI; system alternatives are preserved. Shared-runtime changes also probe
 the configured peer's actual loopback listener with an independent bounded
 preservation check (10 seconds, three attempts).
+
+Owned x86 Linux qualification passed in GitHub run `40557194107`, using immutable
+implementation `f5c66d70bf03985a3ebbf18ba34d07d6dd3f347f` and separate harness
+`ce824efcceab4289b2115534c3c3354ba78d3eed`. The combined two-app fixture exercised
+fresh setup, partial-schema retry, configuration/credential changes, authenticated
+previous-release updates, invalid candidate refusal, real systemd restart failure
+and recovery, and nine zero-change repeats. Actual PHP CLI/FPM 8.3.6, PostgreSQL
+16.15 and nginx 1.24.0 were recorded. Synthetic mail stayed local with verified
+TLS. Inventory deployment qualification is separate. The original failed run
+`40553538688` is retained; its failure was a fixture TOTP-seeding assumption.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify the mail web APIs on an immutable owned x86 Linux fixture: fresh setup,
+  authenticated release updates, config/credential changes, recovery and nine
+  zero-change repeats. Preserve the original failed fixture run and separate
+  inventory rollout status from the native API proof.
+
 - Add the shared mail database foundation: conditional SCRAM role reconciliation,
   create-only database state, and read-only application requirements. Preserve
   existing ownership/grants and matching verifiers; refuse unknown or
