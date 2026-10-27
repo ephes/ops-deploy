@@ -344,3 +344,73 @@ def test_worker_directories_give_created_ancestors_the_requested_owner_and_mode(
     for created in [existing / "Caches", existing / "Caches/voxhelm", target]:
         assert created.stat().st_mode & 0o777 == 0o750
     assert existing.stat().st_mode & 0o777 == 0o700
+
+
+def test_control_runtime_status_requires_selected_extras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Selecting an extra (here routing) must make the runtime owed even when
+    # the application version and interpreter already match.
+    import platform
+    import subprocess
+    import sys
+
+    module = host_module("voxhelm")
+    site = tmp_path / "site"
+    for name, version, requires in [
+        (
+            "voxhelm",
+            "0.1.11",
+            [
+                "Django>=5.2",
+                'onnxruntime>=1.27; extra == "kokoro"',
+                'lingua-language-detector; extra == "routing"',
+                "mlx-whisper; platform_system == 'Darwin'",
+            ],
+        ),
+        ("onnxruntime", "1.27.0", []),
+        ("Django", "5.2.12", []),
+    ]:
+        info = site / (name + "-" + version + ".dist-info")
+        info.mkdir(parents=True)
+        lines = ["Metadata-Version: 2.1", "Name: " + name, "Version: " + version]
+        (info / "METADATA").write_text("\n".join(lines + ["Requires-Dist: " + r for r in requires]) + "\n")
+
+    def probe(extras: list[str]) -> list[Any]:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import sys;sys.path.insert(0," + repr(str(site)) + ");exec(sys.argv.pop(1))",
+                module.RUNTIME_PROBE,
+                json.dumps(extras),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return list(json.loads(result.stdout))
+
+    python = platform.python_version()
+    assert probe(["kokoro"]) == ["0.1.11", python, []]
+    assert probe(["kokoro", "routing"]) == ["0.1.11", python, ["lingua-language-detector"]]
+    venv = tmp_path / "app/.venv/bin"
+    venv.mkdir(parents=True)
+    (venv / "python").write_text("")
+    monkeypatch.setattr(module, "pending", lambda c: tmp_path / "absent")
+    outputs = {"kokoro": ["0.1.11", "3.14.8", []], "routing": ["0.1.11", "3.14.8", ["lingua-language-detector"]]}
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda argv, c, **kwargs: SimpleNamespace(returncode=0, stdout=json.dumps(outputs[json.loads(argv[-1])[-1]])),
+    )
+    cfg = {
+        "app_dir": str(tmp_path / "app"),
+        "project_version": "0.1.11",
+        "python_version": "3.14.8",
+        "uv_extras": [],
+        "diarization_backend": "none",
+        "tts_kokoro_enabled": True,
+        "tts_language_routing_enabled": False,
+    }
+    assert module.runtime_current(cfg)
+    assert not module.runtime_current({**cfg, "tts_language_routing_enabled": True})

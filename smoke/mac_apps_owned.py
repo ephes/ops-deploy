@@ -172,7 +172,7 @@ class OwnedMac:
         self.report["failure_type"] = type(error).__name__
         self.report["failure_location"] = [
             Path(frame.filename).name + ":" + str(frame.lineno) + ":" + frame.name
-            for frame in traceback.extract_tb(error.__traceback__)[-4:]
+            for frame in traceback.extract_tb(error.__traceback__)[-8:]
         ]
 
     def verify_implementation(self) -> None:
@@ -275,33 +275,35 @@ class OwnedMac:
         return path
 
     def ssh_transport(self) -> dict[str, Any]:
-        """High-port private sshd, using the runner's existing sudo privilege.
+        """Owned high-port loopback sshd mirroring the inventory root SSH transport.
 
-        It never changes the runner's normal authorized_keys, SSH service, keys,
-        sudoers or auth settings. The remote wrapper execs real Homebrew rsync.
+        Production reaches Studio as root with a key; this sshd accepts only the
+        fixture's own key for root, on loopback, with its own host key and
+        authorized-keys file. The system SSH service, the runner's keys and
+        sudoers are untouched. rsync is the real Homebrew binary at the default
+        ``remote_rsync_path``.
         """
-        account = pwd.getpwnam("runner")
         key = self.root / "transport-key"
         host_key = self.root / "transport-host-key"
         for path in [key, host_key]:
             command("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(path))
-        # StrictModes requires an authorized-keys path whose every ancestor is
-        # owned by root or the account and not group/world writable, so it
-        # lives in a unique root-owned directory in the runner's actual home
-        # (never its own ~/.ssh or authorized_keys).
-        keys = Path(account.pw_dir) / (".ops-mac-apps-transport-" + self.suffix)
+        # StrictModes requires an authorized-keys path whose ancestors up to the
+        # account home are owned by root/the account and not group/world
+        # writable (/private/var/tmp is 1777), so it lives in a unique directory
+        # in root's actual home, removed on cleanup.
+        keys = Path(pwd.getpwnam("root").pw_dir) / (".ops-mac-apps-transport-" + self.suffix)
         self.created_outside_root(keys)
-        keys.mkdir(mode=0o755)
+        keys.mkdir(mode=0o700)
         authorized = keys / "authorized_keys"
         authorized.write_text(key.with_suffix(".pub").read_text())
-        authorized.chmod(0o644)
+        authorized.chmod(0o600)
         selected_port = port()
         config = self.root / "transport-sshd.conf"
         config.write_text(
             f"Port {selected_port}\nListenAddress 127.0.0.1\nHostKey {host_key}\n"
             f"PidFile {self.root}/transport-sshd.pid\nAuthorizedKeysFile {authorized}\n"
             "PasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM no\n"
-            "PermitRootLogin no\nAllowUsers runner\nStrictModes yes\nLogLevel INFO\n"
+            "PermitRootLogin prohibit-password\nAllowUsers root\nStrictModes yes\nLogLevel INFO\n"
         )
         command("/usr/sbin/sshd", "-t", "-f", str(config))
         process = self.spawn(["/usr/sbin/sshd", "-D", "-e", "-f", str(config)], self.evidence / "transport-sshd.log")
@@ -322,6 +324,27 @@ class OwnedMac:
                 time.sleep(0.1)
         else:
             raise RuntimeError("owned high-port sshd did not listen")
+        binary = "/opt/homebrew/bin/rsync"
+        if not Path(binary).is_file():
+            # Inventory Macs already have modern Homebrew rsync; the hosted image
+            # ships only openrsync, so the fixture installs the public formula.
+            command(
+                "/usr/bin/sudo",
+                "-H",
+                "-u",
+                "runner",
+                "--",
+                "/usr/bin/env",
+                "HOMEBREW_NO_AUTO_UPDATE=1",
+                "/opt/homebrew/bin/brew",
+                "install",
+                "rsync",
+            )
+            self.report["limitations"].append("Homebrew rsync was installed as a fixture prerequisite.")
+        version = command(binary, "--version").stdout.splitlines()[0]
+        parsed = re.search(r"version ([0-9]+)\.([0-9]+)\.([0-9]+)", version)
+        assert parsed is not None
+        assert tuple(int(part) for part in parsed.groups()) >= (3, 1, 0)
         probe = command(
             "/usr/bin/ssh",
             "-p",
@@ -336,39 +359,31 @@ class OwnedMac:
             "StrictHostKeyChecking=yes",
             "-o",
             "UserKnownHostsFile=" + str(known),
-            "runner@127.0.0.1",
-            "/usr/bin/sudo -n /usr/bin/true",
+            "root@127.0.0.1",
+            binary + " --version",
             check=False,
         )
         # Client diagnostics name hosts, users and key types only; no secret is involved.
         self.report["transport_probe"] = {"returncode": probe.returncode, "stderr": probe.stderr[-2000:]}
         if probe.returncode:
-            raise RuntimeError("owned transport sshd refused the runner key; see transport_probe")
-        binary = "/opt/homebrew/bin/rsync"
-        version = command(binary, "--version").stdout.splitlines()[0]
-        parsed = re.search(r"version ([0-9]+)\.([0-9]+)\.([0-9]+)", version)
-        assert parsed is not None
-        assert tuple(int(part) for part in parsed.groups()) >= (3, 1, 0)
-        wrapper = self.root / "rsync-as-existing-root"
-        wrapper.write_text("#!/bin/sh\nexec /usr/bin/sudo -n " + binary + ' "$@"\n')
-        wrapper.chmod(0o755)
+            raise RuntimeError("owned transport sshd refused the fixture key; see transport_probe")
         self.report["transport"] = {
             "address": "127.0.0.1",
             "port": selected_port,
-            "user": account.pw_name,
+            "user": "root",
             "remote_rsync": binary,
             "version": version,
             "auth_changes": False,
-            "sudo": "existing hosted runner noninteractive privilege; no sudoers change",
+            "scope": "owned loopback sshd and key only; system SSH, runner keys and sudoers untouched",
         }
         return {
             "ssh_hostname": "127.0.0.1",
-            "ssh_user": "runner",
+            "ssh_user": "root",
             "ssh_port": selected_port,
             "ssh_key": str(key),
             "ssh_known_hosts_file": str(known),
             "ssh_strict_host_key_checking": "yes",
-            "remote_rsync_path": str(wrapper),
+            "remote_rsync_path": binary,
         }
 
     def cleanup(self) -> None:

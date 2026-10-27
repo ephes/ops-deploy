@@ -150,17 +150,43 @@ def mark(c):
     put(str(pending(c)), {"owner": "root", "group": "wheel", "mode": 0o600, "content": "pending\n"})
 
 
+def selected_extras(c):
+    return list(dict.fromkeys(c["uv_extras"] + (["diarization"] if c["diarization_backend"].strip().lower() == "pyannote" else [])
+                              + (["kokoro"] if c["tts_kokoro_enabled"] else []) + (["routing"] if c["tts_language_routing_enabled"] else [])))
+
+
+# Read-only: installed metadata only. A requirement gated by an extra alone
+# must be installed for every selected extra; requirements with any other
+# marker condition are not judged here.
+RUNTIME_PROBE = r'''
+import importlib.metadata as m, json, platform, re, sys
+selected = set(json.loads(sys.argv[1]))
+missing = []
+for requirement in m.distribution("voxhelm").requires or []:
+    spec, _, marker = requirement.partition(";")
+    found = re.fullmatch(r"\s*extra\s*==\s*[\"']([^\"']+)[\"']\s*", marker)
+    if not found or found.group(1) not in selected:
+        continue
+    name = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", spec).group(1)
+    try:
+        m.distribution(name)
+    except m.PackageNotFoundError:
+        missing.append(name)
+print(json.dumps([m.version("voxhelm"), platform.python_version(), sorted(missing)]))
+'''
+
+
 def runtime_current(c):
     if pending(c).exists():
         return False
     python = Path(c["app_dir"]) / ".venv/bin/python"
     if not python.is_file():
         return False
-    result = run([str(python), "-B", "-c", "import importlib.metadata,json,platform;print(json.dumps([importlib.metadata.version('voxhelm'),platform.python_version()]))"], c, check=False)
+    result = run([str(python), "-B", "-c", RUNTIME_PROBE, json.dumps(selected_extras(c))], c, check=False)
     if result.returncode:
         return False
-    version, interpreter = json.loads(result.stdout)
-    return version == c["project_version"] and interpreter == c["python_version"]
+    version, interpreter, missing = json.loads(result.stdout)
+    return version == c["project_version"] and interpreter == c["python_version"] and not missing
 
 
 def runtime_apply(c):
@@ -182,8 +208,7 @@ def runtime_apply(c):
             shutil.rmtree(venv)
     if not (venv / "bin/python").is_file():
         run([c["uv_bin"], "venv", "--python", selected, str(venv)], c)
-    extras = list(dict.fromkeys(c["uv_extras"] + (["diarization"] if c["diarization_backend"].strip().lower() == "pyannote" else [])
-                               + (["kokoro"] if c["tts_kokoro_enabled"] else []) + (["routing"] if c["tts_language_routing_enabled"] else [])))
+    extras = selected_extras(c)
     argv = [c["uv_bin"], "sync", "--frozen", "--no-dev"]
     for extra in extras:
         argv += ["--extra", extra]

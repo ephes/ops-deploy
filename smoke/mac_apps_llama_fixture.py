@@ -166,7 +166,41 @@ exec "$DELVE_LLAMA_SERVER" -m "$DELVE_DETECTOR_GGUF" --host "$DELVE_DETECTOR_HOS
             except urllib.error.HTTPError as error:
                 return int(error.code)
 
-        owned.report["first_changes"] = deploy(cfg)
+        def installed_build() -> str:
+            result = command("/opt/homebrew/bin/llama-server", "--version", check=False)
+            found = re.search(r"\(build ([0-9]+), commit ([0-9a-f]+)\)", result.stdout + result.stderr)
+            return "b" + found[1] + "-" + found[2] if found else ""
+
+        as_owner = ["/usr/bin/sudo", "-H", "-u", "runner", "--", "/usr/bin/env", "HOMEBREW_NO_AUTO_UPDATE=1", brew]
+        from ops_deploy.testing import run_deploy_ssh
+
+        attempt = run_deploy_ssh(deploy_llama_server, cfg, {"api_key": token}, host_name="@local", host_data={})
+        assert token not in str(attempt.error)
+        if attempt.succeeded:
+            owned.report["first_changes"] = attempt.mutating_changed_ops
+            owned.report["stale_formula_refusal"] = "not exercised: the runner's formula already was the pinned build"
+        else:
+            # The hosted image's Homebrew metadata can lag; the role installs
+            # the missing formula but must refuse any build but the pin, and it
+            # never upgrades. Prove that, then take the owner's upgrade step.
+            build = installed_build()
+            assert build, "first deploy failed before installing a llama-server build"
+            assert build != cfg.build, "first deploy failed for a reason other than the pinned-build refusal"
+            assert command("/bin/launchctl", "print", "system/" + label, check=False).returncode != 0
+            assert cfg.launchd_plist_path is not None
+            assert not Path(cfg.launchd_plist_path).exists()
+            owned.report["stale_formula_refusal"] = {
+                "installed_build": build,
+                "pinned_build": cfg.build,
+                "changes_before_refusal": attempt.mutating_changed_ops,
+            }
+            command(*as_owner, "update")
+            command(*as_owner, "upgrade", "llama.cpp")
+            assert installed_build() == cfg.build, "current Homebrew llama.cpp is not the pinned build"
+            owned.report["limitations"].append(
+                "The fixture refreshed the runner's Homebrew metadata and upgraded llama.cpp to the pinned build."
+            )
+            owned.report["first_changes"] = deploy(cfg)
         assert owned.report["first_changes"]
         assert auth(cfg, token) == 200
         assert auth(cfg, None) == 401

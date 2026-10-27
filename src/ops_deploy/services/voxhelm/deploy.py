@@ -11,7 +11,7 @@ import tomllib
 from collections.abc import Callable, Mapping
 from importlib.resources import files
 from io import StringIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from pyinfra import host
@@ -90,6 +90,26 @@ def source_overrides(cfg: VoxhelmConfig) -> dict[str, str]:
     return {} if status.stdout.strip() else dict(cfg.source_overrides)
 
 
+def generated_launchers(cfg: VoxhelmConfig) -> list[str]:
+    """Anchored excludes for rendered launchers inside the synced application tree.
+
+    They are not part of the source, so ``--delete`` would remove them on every
+    run (the role protects only prune.sh, then re-renders the rest). Disabled
+    components' scripts are retained too, as their deployments stay unmanaged.
+    """
+
+    app = PurePosixPath(cfg.voxhelm_app_dir)
+    paths = [
+        cfg.voxhelm_start_script_path,
+        cfg.voxhelm_worker_script_path,
+        cfg.voxhelm_wyoming_stt_script_path,
+        cfg.voxhelm_whisperkit_script_path,
+        cfg.voxhelm_prune_script_path,
+    ]
+    inside = [PurePosixPath(path) for path in paths if PurePosixPath(path).is_relative_to(app)]
+    return sorted({"/" + str(path.relative_to(app)) for path in inside})
+
+
 @deploy("Deploy native Voxhelm control plane")
 def deploy_voxhelm(
     cfg: VoxhelmConfig, secrets: Mapping[str, str], *, rsync: RsyncRunner = subprocess_rsync_runner
@@ -126,7 +146,7 @@ def deploy_voxhelm(
             user="root",
             group="wheel",
             chmod="D0755,F0755",
-            excludes=[*cfg.voxhelm_sync_excludes, *("/" + path for path in retained)],
+            excludes=[*cfg.voxhelm_sync_excludes, *generated_launchers(cfg), *("/" + path for path in retained)],
             rsync_path=cfg.remote_rsync_path,
             prepared_by=prepared,
             runner=rsync,

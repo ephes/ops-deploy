@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 import urllib.request
@@ -258,16 +259,25 @@ def main() -> None:
         table = command("/bin/ps", "-Aww", "-o", "pid=,ppid=,uid=,command=").stdout.splitlines()
         job = next(line for line in table if line.split()[0] == str(pid))
         owned.report["worker_process"] = job.split(None, 3)[3]
-        assert job.split(None, 3)[3].startswith("/usr/bin/caffeinate -i -m -s " + cfg.voxhelm_remote_worker_binary_path)
+        # caffeinate takes its assertions for its own PID and then execs the
+        # worker in place, so the launchd job PID is the worker holding them.
+        assert cfg.voxhelm_remote_worker_binary_path in job.split(None, 3)[3]
         assert job.split()[2] == str(uid)
-        child = [line for line in table if line.split()[1] == str(pid)]
-        assert any(cfg.voxhelm_remote_worker_binary_path in line for line in child)
+        held = [
+            line.strip()
+            for line in command("/usr/bin/pmset", "-g", "assertions").stdout.splitlines()
+            if re.search(r"\bpid " + str(pid) + r"\(", line)
+        ]
+        kinds = sorted({found[1] for line in held if (found := re.search(r"\]\s+\S+\s+(\w+)\s+named", line))})
+        owned.report["caffeinate_assertions"] = {"lines": held, "kinds": kinds}
+        assert any("caffeinate" in line for line in held)
+        assert {"PreventUserIdleSystemSleep", "PreventDiskIdle"} <= set(kinds)
         owned.report["runtime"] = {
             "voxhelm": "0.1.11",
             "python": "3.14.8",
             "parakeet_mlx": parakeet_version,
             "parakeet_weight_sha256_verified": True,
-            "caffeinate": "-i -m -s wraps the worker as the service account",
+            "caffeinate": "worker PID holds the caffeinate assertions (-i -m -s) as the service account",
         }
         owned.report["limitations"].append(
             "No job was offered, so S3 artifacts, audio decoding, Parakeet/whisper inference and MLX are not exercised."

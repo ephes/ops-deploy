@@ -16,6 +16,7 @@ import pytest
 from pydantic import ValidationError
 
 from ops_deploy.services.voxhelm import VoxhelmConfig, deploy_voxhelm
+from ops_deploy.services.voxhelm import deploy as deploy_module
 from ops_deploy.services.voxhelm.deploy import source_overrides
 from ops_deploy.services.voxhelm.render import payload as control_payload
 from ops_deploy.services.voxhelm_remote_worker import VoxhelmRemoteWorkerConfig, deploy_voxhelm_remote_worker
@@ -258,3 +259,20 @@ def test_templates_and_defaults_are_the_authoritative_role_resources(
         **json.loads(packaged.joinpath("secret_defaults.json").read_text()),
     }
     assert ported == {key: value for key, value in expected.items() if key not in omitted}
+
+
+def test_source_sync_protects_rendered_launchers_from_delete(tmp_path: Path) -> None:
+    # The launchers are rendered into the synced tree but are not source files;
+    # --delete would remove them on every unchanged repeat.
+    (tmp_path / "pyproject.toml").write_text('[project]\nname="voxhelm"\nversion="0.1.11"\n')
+    cfg = control_config(tmp_path, voxhelm_worker_enabled=False, voxhelm_prune_enabled=False)
+    recorder = RecordingRsyncRunner()
+    responses = {"-status ": ["current"], " bootstrap-check ": ["current"], **fakehost.directory(cfg.voxhelm_app_dir)}
+    run = run_deploy_fake(deploy_voxhelm, cfg, control_secrets(), responses=responses, rsync=recorder)
+    assert run.succeeded, run.error
+    argv = recorder.calls[0]
+    assert "--delete" in argv
+    for name in ["start.sh", "worker.sh", "wyoming-stt.sh", "whisperkit.sh", "prune.sh"]:
+        assert "--exclude=/" + name in argv
+    outside = control_config(tmp_path, voxhelm_start_script_path="/usr/local/libexec/voxhelm-start.sh")
+    assert "/start.sh" not in deploy_module.generated_launchers(outside)
