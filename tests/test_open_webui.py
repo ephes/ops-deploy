@@ -249,6 +249,10 @@ def test_shipped_constraints_pin_the_version_and_are_public() -> None:
         {"env_path": SITE},
         {"venv_path": f"{DATA}/.venv"},
         {"mounts_required": ("//srv/data",)},
+        {"uv_install_dir": DATA},
+        {"uv_install_dir": f"{VENV}/bin"},
+        {"uv_install_dir": SITE},
+        {"env_path": "/usr/local/bin/uv"},
         {"package_spec": "open-webui"},
     ],
 )

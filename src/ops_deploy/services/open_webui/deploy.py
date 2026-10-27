@@ -248,6 +248,9 @@ class OpenWebUIConfig(RoleConfig):
                 raise ValueError(f"{name} must not be inside venv_path (it is removed when recreated)")
         if key.is_relative_to(venv) or venv.is_relative_to(self.data_dir):
             raise ValueError("venv_path must not hold the secret key file or lie in data_dir")
+        # uv and uvx are installed there: not into a directory the deploy manages or must keep.
+        if any(PurePosixPath(self.uv_install_dir).is_relative_to(path) for path in paths.values()):
+            raise ValueError("uv_install_dir must not lie in home, site_dir, data_dir, log_dir or venv_path")
         # The files the deploy writes: never the secret key, the data, the venv or a managed directory.
         written = {"env_path": self.env_file, "python_security_constraints_path": self.security_constraints}
         if len(set(written.values())) != len(written):
@@ -256,8 +259,9 @@ class OpenWebUIConfig(RoleConfig):
             target = PurePosixPath(path)
             if path in paths.values() or len(target.parts) < 3:
                 raise ValueError(f"{name} must be a file below a directory, not a managed directory")
-            if target == key or any(target.is_relative_to(p) for p in (self.data_dir, self.venv)):
-                raise ValueError(f"{name} must not be the secret key file or lie in data_dir or venv_path")
+            uv_files = {PurePosixPath(self.uv_install_dir) / name for name in ("uv", "uvx")}
+            if target == key or target in uv_files or any(target.is_relative_to(p) for p in (self.data_dir, self.venv)):
+                raise ValueError(f"{name} must not be the secret key file or uv, or lie in data_dir or venv_path")
         if self.version not in shipped_constraints():
             raise ValueError(f"no shipped install constraints for open-webui {self.version}")
         if self.mounts_required and not any(
