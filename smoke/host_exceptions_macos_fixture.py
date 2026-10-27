@@ -262,6 +262,36 @@ def main() -> None:
         report["brew_preflight"] = {"identity": identity, "probes": probes}
         print(json.dumps({"owned_precredential_brew_preflight": report["brew_preflight"]}), flush=True)
         assert probes[0]["rc"] == 0, "owned Homebrew prefix probe failed; see precredential evidence"
+        # Homebrew 6 requires an owner trust entry before loading a third-party
+        # formula. This is owned-runner setup, not production policy management.
+        # Trust exactly the authoritative role's only formula, without tapping
+        # or installing it: both must remain actual API installer work below.
+        trust = command(
+            "/usr/bin/sudo",
+            "-H",
+            "-u",
+            owner,
+            "--",
+            "/usr/bin/env",
+            "HOMEBREW_NO_AUTO_UPDATE=1",
+            "HOMEBREW_NO_ANALYTICS=1",
+            brew,
+            "trust",
+            "--formula",
+            "vectordotdev/brew/vector",
+            check=False,
+        )
+        assert trust.returncode == 0, trust.stderr
+        assert "vectordotdev/brew" not in brew_run("tap").splitlines()
+        assert not brew_run("list", "--versions", "vector")
+        report["owned_homebrew_prerequisite"] = {
+            "version": brew_run("--version"),
+            "trusted_formula": "vectordotdev/brew/vector",
+            "standard_command": "brew trust --formula vectordotdev/brew/vector",
+            "scope": "disposable runner owner trust; production trust is not managed",
+            "tap_still_absent_before_api": True,
+            "formula_still_absent_before_api": True,
+        }
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.symlink_to(root / "owned-obsolete-monolithic-config")
         name = "ops-baseline-" + run_id[-10:]

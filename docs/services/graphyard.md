@@ -252,6 +252,13 @@ Select the role's existing Homebrew/launchd branch with the nested typed
 `darwin` configuration. No Linux logging or shell feature is invented for
 macOS. The Graphyard fragment and global config use the same role templates.
 
+Homebrew 6 requires its owner to trust third-party formulae before loading
+them. For a fresh owner the role's declared formula can be selected with
+`brew trust --formula vectordotdev/brew/vector`. That existing Homebrew trust
+prerequisite is separate from deployment: this API does not manage the owner's
+trust store or upgrade Homebrew. An already-installed producer keeps its
+existing package, tap and trust selection.
+
 ```python
 from ops_deploy.services.graphyard import (
     GraphyardVectorConfig,
@@ -310,6 +317,10 @@ paths and local ingest endpoint. It installs an absent real formula, exercises
 present/update/config/fault/recovery/duplicate-service paths, and records actual
 version/hash, source/installed resource parity and zero-repeat results. It
 never uses an inventory machine as a fixture or reads private logs/buffers.
+On the Homebrew 6 runner, setup trusts only the exact role formula using the
+standard command above. The tap and formula remain absent until the API adds
+and installs them. Evidence classifies this owned trust setup separately from
+installer/configuration operations; it is not a production trust-policy change.
 
 ## Auth bootstrap (`GraphyardAuthConfig`)
 
