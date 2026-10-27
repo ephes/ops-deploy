@@ -1,0 +1,37 @@
+[Unit]
+Description=mailgun-relay (Mailgun-API-compatible SMTP relay)
+After=network.target
+
+[Service]
+Type=simple
+User={{ mailgun_relay_user }}
+Group={{ mailgun_relay_group }}
+WorkingDirectory={{ mailgun_relay_site_path }}
+EnvironmentFile={{ mailgun_relay_env_path }}
+ExecStart={{ mailgun_relay_venv_bin }}/python -m mailgun_relay
+Restart=on-failure
+RestartSec=2
+
+# Pin the log destination instead of inheriting DefaultStandardOutput/Error from
+# system.conf, and label the records with the service name so they can be found
+# by `journalctl -t mailgun-relay` and told apart from every other python unit
+# on the host (they all show up as `python[<pid>]` otherwise).
+#
+# PYTHONUNBUFFERED is deliberately NOT set: the relay logs through
+# logging.StreamHandler, which flushes the stream after every record, so lines
+# reach the journal as they are emitted even though systemd hands the process a
+# block-buffered stdout pipe. See the role README before "fixing" a silent relay
+# by adding it.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mailgun-relay
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

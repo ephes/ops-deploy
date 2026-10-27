@@ -1,0 +1,75 @@
+name: Mailgun relay native integration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mailgun-relay-integration.yml'
+      - 'src/ops_deploy/services/mailgun_relay/**'
+      - 'src/ops_deploy/helpers/rust_release.py'
+      - 'src/ops_deploy/helpers/templates/rust_release*'
+      - 'src/ops_deploy/helpers/**'
+      - 'src/ops_deploy/ops/**'
+      - 'src/ops_deploy/core/**'
+      - 'src/ops_deploy/testing/**'
+      - 'tests/test_mailgun_relay.py'
+      - 'tests/test_mailgun_ci_fixture.py'
+      - 'tests/smoke/*mailgun*'
+      - 'tests/smoke/conftest.py'
+      - 'tests/integration/mailgun_relay/**'
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - '.python-version'
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mailgun-relay-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-x86-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Validate immutable implementation selection
+        env:
+          IMPLEMENTATION_SHA: ${{ github.event.pull_request.head.sha || inputs.implementation_sha || github.sha }}
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.implementation_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ephes/mailgun-relay
+          ref: d113daeb5388740e4dc0cf5119fbca1e9f4e4016
+          path: .relay-source
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Install locked controller
+        run: uv sync --locked
+      - name: Native systemd installation, update, fault, rollback and repeat
+        run: bash tests/integration/mailgun_relay/run.sh
+      - name: Capture fixture service diagnostics
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/mailgun-relay-evidence"
+          sudo journalctl -u mailgun-fixture -u mailgun-fixture-smtp -u mailgun-fixture-artifacts --no-pager -n 150 \
+            > "$RUNNER_TEMP/mailgun-relay-evidence/journal.log" 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: mailgun-relay-native-${{ github.run_id }}
+          path: ${{ runner.temp }}/mailgun-relay-evidence
+          if-no-files-found: error
+          retention-days: 7
