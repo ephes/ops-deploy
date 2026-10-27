@@ -1,7 +1,7 @@
 """graphyard vector: the host-metrics producer that pushes to Graphyard's ingest endpoint.
 
-Port of the ``graphyard_vector_deploy`` role (apt and systemd; the role's
-Homebrew/launchd branch for the macOS hosts stays on Ansible) and
+Port of both ``graphyard_vector_deploy`` branches (apt/systemd and native
+Darwin Homebrew/launchd) and
 ``playbooks/deploy-graphyard-vector.yml``. Vector comes from its apt channel
 (``vector_apt_install``), shares ``config.d``, the global ``data_dir`` fragment
 and ``/etc/default/vector`` with the Logyard producer, and the Graphyard
@@ -21,9 +21,9 @@ import json
 import shlex
 from io import StringIO
 from pathlib import PurePosixPath
-from typing import Annotated
+from typing import Annotated, Any, Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pyinfra import host
 from pyinfra.api import DeployError, deploy
 from pyinfra.facts.files import FileContents
@@ -37,6 +37,7 @@ from ops_deploy.helpers import mark_read_only
 from ops_deploy.infra import VectorAptInstallConfig, vector_apt_steps
 from ops_deploy.ops import secret_file, secret_stdin
 from ops_deploy.services.graphyard._common import Url, Word, absolute, render_role
+from ops_deploy.services.graphyard.vector_darwin import GraphyardVectorDarwinConfig, darwin_steps
 from ops_deploy.services.logyard.vector import env_line, fragments_current, global_data_dir
 
 CONFIG_PATTERNS = ("*.yaml", "*.yml", "*.toml", "*.json")
@@ -51,6 +52,7 @@ class GraphyardVectorConfig(RoleConfig):
     """
 
     apt: VectorAptInstallConfig = VectorAptInstallConfig()
+    darwin: GraphyardVectorDarwinConfig | None = None
     config_dir: PurePosixPath = PurePosixPath("/etc/vector/config.d")
     config_name: FragmentName = "20-graphyard-host-metrics.yaml"
     global_config_name: FragmentName = "00-global.yaml"
@@ -62,7 +64,7 @@ class GraphyardVectorConfig(RoleConfig):
     collectors: tuple[Word, ...] = Field(
         default=("cpu", "disk", "filesystem", "load", "memory", "network"), min_length=1
     )
-    filesystem_mountpoint_excludes: tuple[Annotated[str, Field(pattern=r"^/[^\s\"\\]*$")], ...] = (
+    filesystem_mountpoint_excludes: tuple[Annotated[str, Field(pattern=r"^/[^\x00-\x1f\x7f\"\\]*$")], ...] = (
         "/run/docker/netns/*",
         "/var/lib/docker/*",
     )
@@ -81,6 +83,39 @@ class GraphyardVectorConfig(RoleConfig):
     batch_timeout_secs: int = Field(default=5, ge=1)
     batch_max_events: int = Field(default=50, ge=1)
     buffer_max_size: int = Field(default=268435488, ge=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _native_defaults(cls, value: Any) -> Any:
+        if (
+            isinstance(value, dict)
+            and value.get("darwin") is not None
+            and "filesystem_mountpoint_excludes" not in value
+        ):
+            return {**value, "filesystem_mountpoint_excludes": ()}
+        return value
+
+    @model_validator(mode="after")
+    def _native_destinations(self) -> Self:
+        if self.darwin is not None:
+            native = self.darwin
+            paths = [
+                self.config_path,
+                self.global_config_path,
+                native.launchd_plist_path
+                or PurePosixPath("/Library/LaunchDaemons") / (native.launchd_label + ".plist"),
+            ]
+            if native.log_rotation_enabled:
+                paths.append(native.newsyslog_conf_path)
+            if len(set(paths)) != len(paths):
+                raise ValueError("native Vector managed configuration paths must be distinct")
+            logs = {
+                native.stdout_log_path or native.log_dir / "graphyard-vector.log",
+                native.stderr_log_path or native.log_dir / "graphyard-vector.err.log",
+            }
+            if set(paths) & logs:
+                raise ValueError("native Vector logs must not overwrite managed configuration")
+        return self
 
     @field_validator("config_dir", "env_file", "data_dir")
     @classmethod
@@ -163,6 +198,12 @@ def validate_command(cfg: GraphyardVectorConfig) -> str:
 def vector_steps(cfg: GraphyardVectorConfig, secrets: SecretValues) -> None:
     text = fragment_text(cfg, secrets)
     fragment = SecretContent(text)
+    if cfg.darwin is not None:
+        existing = global_data_dir(host.get_fact(FileContents, path=str(cfg.global_config_path)) or None, cfg.data_dir)
+        if existing != str(cfg.data_dir):
+            raise DeployError("existing shared Vector data_dir differs; align it before deploying")
+        darwin_steps(cfg, text)
+        return
     vector_apt_steps(cfg.apt)
 
     existing = global_data_dir(host.get_fact(FileContents, path=str(cfg.global_config_path)) or None, cfg.data_dir)

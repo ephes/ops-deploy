@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add native Darwin hostname convergence and the complete Graphyard Vector
+  Homebrew/launchd/newsyslog role branch, with masked stdin credentials,
+  candidate validation, retained data and zero-staging no-ops. Keep Linux
+  behavior and support literal-space filesystem excludes safely. Add owned
+  macOS qualification and Linux ban-persistence/sudo-stdin fixture coverage.
+
 - Make installed Rust release validation genuinely read-only on a current layout.
   Classify needed root metadata or owned staging repairs as managed changes,
   preserve existing-binary restart/prune semantics, and refuse symlink roots.

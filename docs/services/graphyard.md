@@ -234,8 +234,8 @@ only the live-directory check.
 
 `host_id` and `ingest_url` (required), `service_id`, `source_tag`,
 collectors, metric prefixes, filesystem mountpoint excludes, sink tuning.
-Linux only (apt and systemd); the role's Homebrew/launchd branch for macOS
-stays on Ansible. Installs Vector from apt, creates the data and config
+The default branch uses Linux apt and systemd. It installs Vector from apt,
+creates the data and config
 directories, validates the config directory with this fragment and the global
 fragment swapped in (`vector validate --config-dir`, like the role without
 `--skip-healthchecks`) before anything live changes, points
@@ -244,6 +244,72 @@ the shared `00-global.yaml` (a different `data_dir` already there stops the
 deploy) and the Graphyard fragment, and restarts Vector when one of them
 changed. The Logyard producer shares the directory, the global fragment and
 the service.
+
+
+### Native macOS producer
+
+Select the role's existing Homebrew/launchd branch with the nested typed
+`darwin` configuration. No Linux logging or shell feature is invented for
+macOS. The Graphyard fragment and global config use the same role templates.
+
+```python
+from ops_deploy.services.graphyard import (
+    GraphyardVectorConfig,
+    GraphyardVectorDarwinConfig,
+    deploy_graphyard_vector,
+)
+
+cfg = GraphyardVectorConfig(
+    host_id="workstation",
+    service_id="workstation_host_metrics",
+    ingest_url="https://graphyard.example.com/v1/metrics",
+    filesystem_mountpoint_excludes=("/Volumes/Backups of workstation",),
+    darwin=GraphyardVectorDarwinConfig(brew_user="operator"),
+)
+deploy_graphyard_vector(cfg, secrets)  # vector_ingest_token, as above
+```
+
+| Native field | Default/behavior |
+|---|---|
+| `brew_user` | Required existing Homebrew owner; commands use that owner's home and sudo context. |
+| `brew_bin`, `binary_path` | Resolve `/opt/homebrew/bin/brew` then `/usr/local/bin/brew`; Vector defaults to `<brew prefix>/bin/vector`. |
+| `brew_package`, `brew_service_name` | `vector`; ensures the `vectordotdev/brew` tap and installs an absent formula. Installed formulas are not upgraded. |
+| `brew_update` | `false`; explicit `true` requests Homebrew metadata update, not formula upgrade. That requested update is a mutation. |
+| `disable_brew_service` | `true`; stop a registered/running Homebrew Vector service to avoid duplicate producers. |
+| `runtime_user`, `runtime_group`, `validation_group` | Existing `root`, `wheel`, `wheel`; the role does not create runtime accounts. |
+| `launchd_label`, `launchd_plist_path` | `de.wersdoerfer.graphyard.vector`, `/Library/LaunchDaemons/<label>.plist`. |
+| `launchd_keepalive`, `launchd_path` | `true`; `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`. Working directory is the main config's `data_dir`. |
+| `log_dir`, `stdout_log_path`, `stderr_log_path` | `/var/log/vector`; derived `graphyard-vector.log` and `graphyard-vector.err.log` within it. |
+| `newsyslog_conf_path`, `log_rotation_enabled` | `/etc/newsyslog.d/graphyard-vector.conf`, `true`. |
+| `log_rotation_owner_group`, `log_rotation_mode` | `root:wheel`, `640`. |
+| `log_rotation_count`, `log_rotation_size_kb` | `7`, `10240`. |
+| `log_rotation_when`, `log_rotation_flags` | `*`, `ZN`. |
+
+Darwin's default filesystem excludes are empty; Linux retains its Docker
+excludes. Literal spaces in exclude paths are JSON-quoted; control characters
+are rejected. The native branch retains shared fragments and buffer contents,
+uses nonrecursive directory ownership/mode convergence and asserts the same
+shared global `data_dir`. It validates a complete private candidate directory
+before publishing configuration. The ingest token reaches apply only on
+masked stdin, never argv, environment or debug host data; validation errors
+never forward output that could quote credentials.
+
+Intentional plist or pipeline changes restart the selected launchd job.
+Missing/stopped jobs are recovered. Matching live configuration and a running
+job retain their PID, even if a formula's installed binary changed separately.
+A no-op creates no uploaded helper, staging directory or marker; its explicit
+read-only verification validates the live directory. An active Vector process
+may naturally append/rotate buffers or write logs: that daemon activity is
+separate from deployment mutations. Do not freeze or hash large live buffers
+to establish idempotence; compare config metadata, job identity and buffer
+ownership/path/inode continuity.
+
+The owned workflow `host-exceptions-native.yml` exercises both native hostname
+and Vector branches on a disposable hosted macOS runner, with unique label,
+paths and local ingest endpoint. It installs an absent real formula, exercises
+present/update/config/fault/recovery/duplicate-service paths, and records actual
+version/hash, source/installed resource parity and zero-repeat results. It
+never uses an inventory machine as a fixture or reads private logs/buffers.
 
 ## Auth bootstrap (`GraphyardAuthConfig`)
 
