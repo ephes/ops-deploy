@@ -225,6 +225,20 @@ def test_native_trace_detects_ephemeral_writes_without_matching_source_argv(monk
     spec.loader.exec_module(module)
     module.assert_trace('123 execve("python3", ["python3", "-c", "os.fchmod(fd, 384)"], []) = 0')
     module.assert_trace('123 openat(AT_FDCWD, "/etc/unbound/unbound.conf", O_RDONLY) = 3')
+    from pyinfra.api.command import StringCommand
+
+    assert module.raw_command("uname -s") == "uname -s"
+    assert module.raw_command(StringCommand("uname", "-s")) == "uname -s"
+    dig = '11212 execve("/usr/bin/dig", ["dig"], []) = 0\n'
+    module.assert_trace(dig + '11212 openat(AT_FDCWD, "/proc/self/task/11214/comm", O_RDWR) = 11')
+    for changed in [
+        '11213 openat(AT_FDCWD, "/proc/self/task/11214/comm", O_RDWR) = 11',
+        '11212 openat(AT_FDCWD, "/proc/sys/kernel/hostname", O_RDWR) = 11',
+        '11212 openat(AT_FDCWD, "/proc/self/task/11214/comm", O_RDWR|O_CREAT) = 11',
+        '11212 openat(AT_FDCWD, "/tmp/write", O_WRONLY|O_CREAT, 0600) = 11',
+    ]:
+        with pytest.raises(AssertionError):
+            module.assert_trace(dig + changed)
     with pytest.raises(AssertionError):
         module.assert_trace('123 openat(AT_FDCWD, "/tmp/hidden-stage", O_WRONLY|O_CREAT, 0600) = 3')
     with pytest.raises(AssertionError):

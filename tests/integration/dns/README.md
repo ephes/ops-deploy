@@ -28,3 +28,9 @@ HTTP fixture supplies a small blocklist and test WAN addresses. Natural timer
 activity must be distinguished from deploy-triggered writes; production timer
 state must not be frozen for qualification. Native results remain pending until
 an actual successful immutable run is linked in the deployment receipt.
+
+The no-write scanner distinguishes dig naming its own short-lived threads via
+`/proc/self/task/<tid>/comm` from persistent filesystem mutation: only successful
+O_RDWR opens by a PID observed executing `/usr/bin/dig` are admitted. Other proc
+paths, other processes, creates and ordinary file writes remain failures. The
+fixture listener observer writes evidence only and never controls listeners.

@@ -25,4 +25,14 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl python3 iproute2 iptables bind9 strace
 systemctl disable --now named
+# Fixture-only observer records transient listener owners; never controls them.
+(
+  while true; do
+    date --iso-8601=ns
+    ss -H -lntup 'sport = :53'
+    sleep 0.2
+  done
+) > "$EVIDENCE/listeners-53.log" 2>&1 &
+listener_observer=$!
+trap 'kill "$listener_observer" 2>/dev/null || true; wait "$listener_observer" 2>/dev/null || true' EXIT
 "$CONTROLLER_PYTHON" "$HERE/harness.py" "$EVIDENCE"

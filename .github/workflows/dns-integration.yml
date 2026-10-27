@@ -61,7 +61,7 @@ jobs:
         run: |
           sudo mkdir -p /var/tmp/dns-routine-evidence
           trap 'sudo chmod -R a+rX /var/tmp/dns-routine-evidence' EXIT
-          if ! sudo journalctl -u unbound --no-pager -n 150 > /tmp/dns-journal.txt 2>&1; then
+          if ! sudo journalctl -u unbound -u systemd-resolved -u named --no-pager -n 250 > /tmp/dns-journal.txt 2>&1; then
             echo 'Service journal unavailable; primary failure remains in job log.'
           fi
           sudo cp /tmp/dns-journal.txt /var/tmp/dns-routine-evidence/journal.log

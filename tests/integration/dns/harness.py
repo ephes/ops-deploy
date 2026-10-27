@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import urllib.request
 from dataclasses import asdict
 from importlib import import_module
@@ -84,7 +85,22 @@ def snapshot() -> dict[str, Any]:
 
 def assert_trace(text: str) -> None:
     mutations = []
+    executables: dict[str, str] = {}
     for line in text.splitlines():
+        exited = re.match(r"^(\d+) \+\+\+ (?:exited|killed)", line)
+        if exited:
+            executables.pop(exited[1], None)
+        attempt = re.match(r"^(\d+) execve\(", line)
+        if attempt:
+            executables.pop(attempt[1], None)
+        executed = re.match(r'^(\d+) execve\("([^\"]+)".* = 0$', line)
+        if executed:
+            executables[executed[1]] = executed[2]
+        thread_name = re.match(r'^(\d+) openat\(AT_FDCWD, "/proc/self/task/\d+/comm", O_RDWR\) = \d+$', line)
+        if thread_name and executables.get(thread_name[1]) == "/usr/bin/dig":
+            # dig names its own short-lived query threads; this is kernel task
+            # metadata, not a persistent file or a deployment resource.
+            continue
         if not re.search(
             r"^(?:[0-9]+\s+)?(?:open|openat|openat2|creat)\(.*(?:O_WRONLY|O_RDWR|O_CREAT|O_TRUNC)|"
             r"^(?:[0-9]+\s+)?(?:mkdir|mkdirat|unlink|unlinkat|rename|renameat|renameat2|chmod|fchmod|fchmodat|chown|lchown|fchown|fchownat|utime|utimes|utimensat|symlink|symlinkat|link|linkat|truncate|ftruncate)\(",
@@ -99,6 +115,10 @@ def assert_trace(text: str) -> None:
             continue
         mutations.append(line)
     assert not mutations, mutations
+
+
+def raw_command(command: Any) -> str:
+    return command if isinstance(command, str) else str(command.get_raw_value())
 
 
 def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
@@ -134,7 +154,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
             str(trace),
             "sh",
             "-c",
-            QuoteString(command.get_raw_value()),
+            QuoteString(raw_command(command)),
         )
         result = original_command(self, wrapped, **kwargs)
         assert_trace(trace.read_text())
@@ -153,6 +173,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
         active_patch.start()
     state = State(Inventory(([("@local", {})], {})), Config())
     error = None
+    error_traceback = None
     try:
         connect_all(state)
         add_deploy(
@@ -166,6 +187,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
         run_ops(state)
     except Exception as exc:
         error = type(exc).__name__
+        error_traceback = traceback.format_exc()
     finally:
         ops = collect_ops(state, "@local")
         disconnect_all(state)
@@ -173,6 +195,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
             active_patch.stop()
     record = {
         "error": error,
+        "error_traceback": error_traceback,
         "operations": [asdict(x) for x in ops],
         "mutations": [x.name for x in ops if x.changed and not x.read_only],
         "files_unchanged": snapshot() == before,
