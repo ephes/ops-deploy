@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add native macOS Ollama Homebrew/LaunchDaemon deployment, preserving installed
+  formulas and retained model contents, with role-compatible identity,
+  directory, conflict and service behavior. Unchanged running jobs are retained
+  without staging/helper writes or restarts; intentional plist changes restart
+  the selected label. Add an isolated hosted macOS integration workflow.
+
 - Preserve the monitor relay service account’s absent home directory, matching
   the original role’s `create_home: false`.
 

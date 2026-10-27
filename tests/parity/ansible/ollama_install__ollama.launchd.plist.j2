@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ ollama_launchd_label }}</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>{{ ollama_binary_path_resolved }}</string>
+      <string>{{ ollama_launchd_command }}</string>
+      {% for arg in ollama_launchd_command_args %}
+      <string>{{ arg }}</string>
+      {% endfor %}
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      {% for key, value in ollama_env | dictsort %}
+      <key>{{ key }}</key>
+      <string>{{ value }}</string>
+      {% endfor %}
+    </dict>
+    <key>UserName</key>
+    <string>{{ ollama_service_user }}</string>
+    <key>GroupName</key>
+    <string>{{ ollama_service_group }}</string>
+    <key>WorkingDirectory</key>
+    <string>{{ ollama_service_home }}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{ ollama_log_dir }}/ollama.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ollama_log_dir }}/ollama.err.log</string>
+  </dict>
+</plist>

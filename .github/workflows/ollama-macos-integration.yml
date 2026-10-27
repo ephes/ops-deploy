@@ -1,0 +1,63 @@
+name: Ollama native macOS integration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ollama-macos-integration.yml'
+      - 'src/ops_deploy/services/ollama/**'
+      - 'smoke/ollama_macos_fixture.py'
+      - 'tests/test_ollama.py'
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed ops-deploy implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ollama-macos-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-macos:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate immutable implementation selection
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.IMPLEMENTATION_SHA }}
+          path: .implementation
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Build and install immutable implementation package
+        working-directory: .implementation
+        run: |
+          uv build --wheel
+          uv venv --python 3.13 /private/var/tmp/ollama-controller
+          uv pip install --python /private/var/tmp/ollama-controller/bin/python dist/*.whl
+      - name: Qualify real package, identity, launchd, config, fault and repeat
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" FIXTURE_BREW_BIN="$(command -v brew)" \
+            OLLAMA_EVIDENCE_DIR=/private/var/tmp/ollama-evidence \
+            /private/var/tmp/ollama-controller/bin/python .implementation/smoke/ollama_macos_fixture.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ollama-native-macos-${{ github.run_id }}
+          path: /private/var/tmp/ollama-evidence
+          if-no-files-found: error
+          retention-days: 7
