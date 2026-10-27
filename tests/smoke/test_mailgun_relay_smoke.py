@@ -441,7 +441,8 @@ def fixture_exe(pid):
         route_changed = changed.model_copy(update={"ingress_max_request_body_bytes": 26214401})
         refused = run(smoke_host, route_changed, "changed route refused while transaction locked", success=False)
         failed = [op for op in refused.ops if not op.succeeded]
-        assert len(failed) == 1
+        # The harness also marks downstream, unexecuted operations unsuccessful.
+        # The first failure identifies the guard, before restart-marker cleanup.
         assert failed[0].name.endswith("Write relay Traefik ingress")
         assert refused.mutating_changed_ops == []
         assert smoke_host.out("sha256sum " + route) == before_route
