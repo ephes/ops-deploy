@@ -42,8 +42,12 @@ Aux Firmware Rev Info     :
     0x00
 """
 
+# A pool the fake ``zpool status`` lists without its ``scan:`` line.
+NO_SCAN_LINE = "<no scan line>"
+
 FAKE = r"""#!{python}
 import json, os, sys, time
+NO_SCAN_LINE = "<no scan line>"
 here = os.path.dirname(os.path.abspath(sys.argv[0]))
 tool = os.path.basename(sys.argv[0])
 args = sys.argv[1:]
@@ -139,6 +143,9 @@ elif tool == "zpool":
     for pool in args[2:]:
         scan = zpool["pools"].get(pool)
         if scan is None:
+            continue
+        if scan == NO_SCAN_LINE:
+            print(f"  pool: {pool}\n state: ONLINE\nconfig:\n")
             continue
         print(f"  pool: {pool}\n state: ONLINE\n  scan: {scan}\nconfig:\n")
 """

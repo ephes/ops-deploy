@@ -24,6 +24,7 @@ from tests.drive_fan_control_fixtures import (
     DFC,
     DUTY0,
     MODE0,
+    NO_SCAN_LINE,
     FakeHost,
     config,
     config_dict,
@@ -272,10 +273,12 @@ def test_scans() -> None:
         "  pool: fast\n state: ONLINE\n  scan: scrub in progress since Mon Oct 19 02:26:33 2026\n"
         "  pool: tank\n state: ONLINE\n  scan: resilver in progress since Mon Oct 19 00:51:10 2026\n"
         "  pool: idle\n  scan: scrub paused since Mon Oct 19 00:51:10 2026\n"
+        "  pool: blind\n state: ONLINE\nconfig:\n"
     )
-    assert DFC.parse_scans(text, ["fast", "tank", "idle"]) == {"fast": True, "tank": True, "idle": False}
+    states = DFC.parse_scan_states(text, ["fast", "tank", "idle", "blind"])
+    assert states == {"fast": True, "tank": True, "idle": False, "blind": None}
     with pytest.raises(ValueError, match="missing"):
-        DFC.parse_scans(text, ["missing"])
+        DFC.parse_scan_states(text, ["missing"])
 
 
 # -- readers -------------------------------------------------------------------------
@@ -386,6 +389,24 @@ def test_a_scrub_raises_the_target(host: FakeHost) -> None:
 
     assert host.status()["target_pct"] == 60
     assert host.metric("scan_active") == "1"
+
+
+@pytest.mark.parametrize(
+    "zpool",
+    [{"rc": 1, "pools": {}}, {"pools": {"tank": NO_SCAN_LINE, "fast": "none requested"}}],
+    ids=["zpool-fails", "no-scan-line"],
+)
+def test_observe_treats_an_unknown_scan_state_as_before(host: FakeHost, zpool: dict[str, Any]) -> None:
+    # No feed-forward and no fail-safe, as before: the scan state is not a required input.
+    host.update(zpool=zpool)
+    run(host, config(), 3)
+
+    assert host.bmc_writes() == []
+    assert host.metric("scan_active") == ("na" if zpool.get("rc") else "0")
+    assert host.metric("failsafe") == "0"
+    assert host.metric("healthy") == "1"
+    assert host.status()["reasons"] == ["floor"]
+    assert host.status()["scans"] == (None if zpool.get("rc") else {"tank": False, "fast": False})
 
 
 def test_a_failing_disk_read_is_retried_next_cycle_then_fails_safe(host: FakeHost) -> None:
@@ -554,6 +575,105 @@ def test_managed_fans_put_back_to_manual_are_retaken(host: FakeHost) -> None:
     controller.cycle = DFC.SUMMARY_EVERY
     controller.step()
     assert host.load()["mode"][:3] == [2, 2, 2]
+
+
+TWO_MANAGED = [{"position": 0, "sensor": "FAN1_1"}, {"position": 1, "sensor": "FAN2_1"}]
+
+
+def test_active_with_a_smaller_set_releases_the_positions_it_no_longer_manages(host: FakeHost) -> None:
+    run(host, config(mode="active"), 2)  # its stop helper never ran: positions 0-2 stay manual
+    before = len(host.bmc_writes())
+
+    code, _ = run(host, config(mode="active", managed=TWO_MANAGED), 2)
+
+    assert code == 0
+    state = host.load()
+    assert state["mode"] == [2, 2, *MODE0[2:]]
+    # Position 2 back to auto first (only its byte), then the takeover of 0 and 1.
+    writes = host.bmc_writes()[before:]
+    assert writes[0][6] == "0x11"
+    assert writes[0][7:10] == ["0x02", "0x02", "0x00"]
+    assert host.control()["managed"] == [0, 1]
+    assert host.control()["control"] is True
+    # The clean stop now leaves every position in auto, not position 2 manual.
+    assert DFC.cmd_stop_post(host.paths, host.runner(), "success", sleep=lambda s: None) == 0
+    assert host.load()["mode"] == MODE0
+
+
+def test_active_restores_a_held_position_that_is_protected_now(host: FakeHost) -> None:
+    run(host, config(mode="active"), 2)
+    protected = [{"position": 2, "sensor": "FAN3_1"}, {"position": 5, "sensor": "FAN6_1"}]
+
+    code, _ = run(host, config(mode="active", managed=TWO_MANAGED, protected=protected), 1)
+
+    assert code == 0
+    assert host.load()["mode"] == [2, 2, *MODE0[2:]]
+    assert host.control()["managed"] == [0, 1]
+
+
+def test_active_with_a_disjoint_set_records_only_its_own_positions(host: FakeHost) -> None:
+    run(host, config(mode="active", managed=TWO_MANAGED), 2)
+    host.update(positions={**host.load()["positions"], "FAN4_1": 3}, fans={**host.load()["fans"], "FAN4_1": 400})
+    other = [{"position": 2, "sensor": "FAN3_1"}, {"position": 3, "sensor": "FAN4_1"}]
+
+    code, _ = run(host, config(mode="active", managed=other), 1)
+
+    assert code == 0
+    assert host.load()["mode"] == [0, 0, 2, 2, *MODE0[4:]]
+    assert host.control()["managed"] == [2, 3]
+
+
+def test_active_with_the_same_or_a_larger_set_releases_nothing(host: FakeHost) -> None:
+    run(host, config(mode="active", managed=TWO_MANAGED), 2)
+    before = len(host.bmc_writes())
+
+    code, _ = run(host, config(mode="active"), 1)
+
+    assert code == 0
+    assert all(w[7:9] == ["0x02", "0x02"] for w in host.bmc_writes()[before:] if w[6] == "0x11")
+    assert host.load()["mode"][:3] == [2, 2, 2]
+    assert host.control()["managed"] == [0, 1, 2]
+
+
+def test_a_release_that_does_not_read_back_keeps_the_whole_record(host: FakeHost) -> None:
+    run(host, config(mode="active"), 2)
+    host.update(ignore_set=["mode"])
+
+    code, _ = run(host, config(mode="active", managed=TWO_MANAGED), 1)
+
+    assert code == DFC.EXIT_BMC
+    # Nothing was taken over; the stop helper still acts on everything the earlier run held.
+    assert host.control()["managed"] == [0, 1, 2]
+    assert host.control()["control"] is True
+
+
+def test_held_positions_from_another_firmware_record_are_not_released(host: FakeHost) -> None:
+    firmware = {**config_dict()["board"], "bmc_firmware": ["6.09", "6.10"]}
+    run(host, config(mode="active", board=firmware), 2)
+    host.update(mc_info=host.load()["mc_info"].replace("6.09", "6.10"))
+    before = len(host.bmc_writes())
+    record = host.control()
+
+    code, _ = run(host, config(mode="active", board=firmware, managed=TWO_MANAGED), 1)
+
+    assert code == DFC.EXIT_CONFIG
+    assert len(host.bmc_writes()) == before
+    assert host.control() == record
+
+
+@pytest.mark.parametrize("mode", ["observe", "calibrate"])
+def test_observe_and_calibrate_never_release_another_set(host: FakeHost, mode: str) -> None:
+    run(host, config(mode="active"), 2)
+    before = len(host.bmc_writes())
+    extra = {"calibration": CALIBRATION} if mode == "calibrate" else {}
+
+    code, _ = run(host, config(mode=mode, managed=TWO_MANAGED, **extra), 2)
+
+    assert code == 0
+    assert len(host.bmc_writes()) == before
+    assert host.load()["mode"][:3] == [2, 2, 2]
+    assert host.control()["managed"] == [0, 1, 2]
+    assert host.status()["leftover_control"] == [0, 1, 2]
 
 
 # -- board identity --------------------------------------------------------------------
@@ -814,6 +934,57 @@ def test_calibration_is_skipped_while_a_scrub_runs(host: FakeHost) -> None:
 
     assert host.bmc_writes() == []
     assert "scrub" in json.loads(host.paths.calibration_file.read_text())["reason"]
+
+
+@pytest.mark.parametrize(
+    ("zpool", "why"),
+    [
+        ({"rc": 1, "pools": {}}, "zpool status failed (1)"),
+        ({"pools": {"tank": NO_SCAN_LINE, "fast": "none requested"}}, "no scan line for tank"),
+        ({"pools": {"fast": "none requested"}}, "zpool status lists no tank"),
+    ],
+    ids=["zpool-fails", "no-scan-line", "pool-missing"],
+)
+def test_calibration_is_skipped_while_the_scan_state_is_unknown(
+    host: FakeHost, zpool: dict[str, Any], why: str
+) -> None:
+    good = host.load()["zpool"]
+    host.update(zpool=zpool)
+    code, _ = run(host, calibrate_config(), 1)
+
+    assert code == 0
+    assert host.bmc_writes() == []
+    report = json.loads(host.paths.calibration_file.read_text())
+    assert report["result"] == "skipped"
+    assert report["reason"].startswith("scan state unknown: ")
+    assert why in report["reason"]
+
+    host.update(zpool=good)  # readable again: the next start runs the same id
+    run(host, calibrate_config(), 1)
+    assert json.loads(host.paths.calibration_file.read_text())["result"] == "ok"
+
+
+def test_calibration_aborts_and_restores_when_the_scan_state_turns_unknown(host: FakeHost) -> None:
+    def hook(n: int) -> None:
+        if n == 30:
+            host.update(zpool={"rc": 1, "pools": {}})
+
+    run_with_hook(host, calibrate_config(), 1, hook)
+
+    report = json.loads(host.paths.calibration_file.read_text())
+    assert report["result"] == "aborted"
+    assert report["reason"].startswith("scan state unknown: zpool status failed")
+    assert report["restored"] is True
+    assert host.load()["mode"] == MODE0
+    assert host.load()["duty"] == DUTY0
+
+
+def test_calibration_without_scan_pools_does_not_ask_zpool(host: FakeHost) -> None:
+    host.update(zpool={"rc": 1, "pools": {}})
+    run(host, config(mode="calibrate", calibration=CALIBRATION, scan_pools=[]), 1)
+
+    assert host.calls("zpool") == []
+    assert json.loads(host.paths.calibration_file.read_text())["result"] == "ok"
 
 
 def test_calibration_aborts_and_restores_when_a_drive_warms_up(host: FakeHost) -> None:

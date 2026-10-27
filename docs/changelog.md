@@ -8,6 +8,15 @@
   installing/updating it requires an explicit choice. Retain rollback independently
   of a working Rust release and recover restart intent after an interrupted deploy.
 
+- `thermal_monitoring` `fan_control`: `active` now returns positions an
+  earlier run still holds but no longer manages (a changed managed set) to BMC
+  auto, read back, before it takes control, instead of leaving them manual
+  and dropping them from the record the stop helper acts on; it refuses (exit
+  78, no write) when that record is from another board, BMC or firmware. The
+  calibration guard now treats an unknown scan state (failed `zpool status`,
+  a missing pool, no scan line) as "scan state unknown" and does not
+  calibrate, instead of as "no scan running". `observe` is unchanged.
+
 - Add native macOS Ollama Homebrew/LaunchDaemon deployment, preserving installed
   formulas and retained model contents, with role-compatible identity,
   directory, conflict and service behavior. Unchanged running jobs are retained
