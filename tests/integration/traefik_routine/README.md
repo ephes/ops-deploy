@@ -3,7 +3,10 @@
 Manual workflow `traefik-routine-integration.yml` checks out an exact 40-character
 implementation commit in a GitHub-hosted Ubuntu24.04 x86_64 VM. The harness refuses
 an existing Traefik installation and binds an exclusive fixture marker to the
-machine ID/run. Never run this harness on inventory machines.
+machine ID/run. The fixture selects the engine's existing allowed `/usr/bin/traefik`
+location because the hosted runner's `/usr/local/bin` is writable by its tool user.
+The launcher refuses an existing binary; engine path and parent-ownership checks
+remain unchanged. Never run this harness on inventory machines.
 
 The production ordinary API installs3.7.13 and repeats without changes; an owned
 fixture enrollment then exercises3.7.14 update, static configuration change, unit

@@ -66,3 +66,33 @@ def test_trace_guard_detects_payload_and_mutations() -> None:
     ):
         with pytest.raises(AssertionError):
             module.assert_observation_trace(script, [line])
+
+
+def test_fixture_binary_obeys_unchanged_engine_policy() -> None:
+    import ast
+
+    from ops_deploy.infra.traefik_tx.engine import validate_policy
+
+    tree = ast.parse((ROOT / "tests/integration/traefik_routine/harness.py").read_text())
+    binary = next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "FIXTURE_BINARY" for target in node.targets)
+    )
+    validate_policy(
+        {
+            "host": "fixture",
+            "binary_path": binary,
+            "config_path": "/etc/traefik/traefik.toml",
+            "dynamic_path": "/etc/traefik/dynamic",
+        }
+    )
+    runner = (ROOT / "tests/integration/traefik_routine/run.sh").read_text()
+    assert f"! -e {binary}" in runner
+
+    deaths = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "deaths")
+    loop = next(node for node in deaths.body if isinstance(node, ast.For))
+    targets = eval(compile(ast.Expression(loop.iter), "fixture-targets", "eval"), {"FIXTURE_BINARY": binary})
+    assert binary in targets
+    assert "/usr/local/bin/traefik" not in targets
