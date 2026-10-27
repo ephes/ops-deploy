@@ -8,7 +8,8 @@ settings through the upstream command flags). The
 playbook started one ``manage.py shell`` per condition on every run; this port
 reads first: one read-only SQLite probe compares the fields the
 seed manages, and only the conditions it finds missing or different are seeded
-(with the spec on stdin, as before). A converged run writes nothing.
+(with the spec on stdin, as before). A converged run changes no managed rows;
+SQLite readers may update WAL/SHM bookkeeping.
 
 What the deploy owns: the named ``condition_definition`` rows and only the
 fields the seed manages (enabled, metric name, the host/subject/service/tags
