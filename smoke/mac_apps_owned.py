@@ -61,7 +61,7 @@ def processes() -> dict[int, dict[str, Any]]:
     """Live (non-zombie) processes: PID to parent, group, UID and start time."""
 
     table = {}
-    for line in command("/bin/ps", "-A", "-o", "pid=,ppid=,pgid=,uid=,stat=,lstart=").stdout.splitlines():
+    for line in command("/bin/ps", "-Aww", "-o", "pid=,ppid=,pgid=,uid=,stat=,lstart=").stdout.splitlines():
         fields = line.split(None, 5)
         if len(fields) == 6 and not fields[4].startswith("Z"):
             table[int(fields[0])] = {
@@ -285,7 +285,14 @@ class OwnedMac:
         host_key = self.root / "transport-host-key"
         for path in [key, host_key]:
             command("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(path))
-        authorized = self.root / "transport-authorized-keys"
+        # StrictModes requires an authorized-keys path whose every ancestor is
+        # owned by root or the account and not group/world writable, so it
+        # lives in a unique root-owned directory in the runner's actual home
+        # (never its own ~/.ssh or authorized_keys).
+        keys = Path(account.pw_dir) / (".ops-mac-apps-transport-" + self.suffix)
+        self.created_outside_root(keys)
+        keys.mkdir(mode=0o755)
+        authorized = keys / "authorized_keys"
         authorized.write_text(key.with_suffix(".pub").read_text())
         authorized.chmod(0o644)
         selected_port = port()
@@ -294,7 +301,7 @@ class OwnedMac:
             f"Port {selected_port}\nListenAddress 127.0.0.1\nHostKey {host_key}\n"
             f"PidFile {self.root}/transport-sshd.pid\nAuthorizedKeysFile {authorized}\n"
             "PasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM no\n"
-            "PermitRootLogin no\nAllowUsers runner\nStrictModes yes\nLogLevel ERROR\n"
+            "PermitRootLogin no\nAllowUsers runner\nStrictModes yes\nLogLevel INFO\n"
         )
         command("/usr/sbin/sshd", "-t", "-f", str(config))
         process = self.spawn(["/usr/sbin/sshd", "-D", "-e", "-f", str(config)], self.evidence / "transport-sshd.log")
@@ -315,7 +322,7 @@ class OwnedMac:
                 time.sleep(0.1)
         else:
             raise RuntimeError("owned high-port sshd did not listen")
-        command(
+        probe = command(
             "/usr/bin/ssh",
             "-p",
             str(selected_port),
@@ -331,7 +338,12 @@ class OwnedMac:
             "UserKnownHostsFile=" + str(known),
             "runner@127.0.0.1",
             "/usr/bin/sudo -n /usr/bin/true",
+            check=False,
         )
+        # Client diagnostics name hosts, users and key types only; no secret is involved.
+        self.report["transport_probe"] = {"returncode": probe.returncode, "stderr": probe.stderr[-2000:]}
+        if probe.returncode:
+            raise RuntimeError("owned transport sshd refused the runner key; see transport_probe")
         binary = "/opt/homebrew/bin/rsync"
         version = command(binary, "--version").stdout.splitlines()[0]
         parsed = re.search(r"version ([0-9]+)\.([0-9]+)\.([0-9]+)", version)

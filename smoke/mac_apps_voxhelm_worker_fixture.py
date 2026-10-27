@@ -255,8 +255,9 @@ def main() -> None:
         assert "package=voxhelm==0.1.11\n" in transcript
         pid = job_pid("system/" + label)
         assert pid is not None
-        table = command("/bin/ps", "-A", "-o", "pid=,ppid=,uid=,command=").stdout.splitlines()
+        table = command("/bin/ps", "-Aww", "-o", "pid=,ppid=,uid=,command=").stdout.splitlines()
         job = next(line for line in table if line.split()[0] == str(pid))
+        owned.report["worker_process"] = job.split(None, 3)[3]
         assert job.split(None, 3)[3].startswith("/usr/bin/caffeinate -i -m -s " + cfg.voxhelm_remote_worker_binary_path)
         assert job.split()[2] == str(uid)
         child = [line for line in table if line.split()[1] == str(pid)]

@@ -218,7 +218,7 @@ def main() -> None:
             f"Port {ssh_port}\nListenAddress 127.0.0.1\nHostKey {host_key}\n"
             f"PidFile {owned.root}/relay-sshd.pid\nAuthorizedKeysFile {authorized}\n"
             f"AllowUsers {relay}\nPermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"
-            "UsePAM no\nAllowTcpForwarding local\nStrictModes yes\nLogLevel ERROR\n"
+            "UsePAM no\nAllowTcpForwarding local\nStrictModes yes\nLogLevel INFO\n"
         )
         command("/usr/sbin/sshd", "-t", "-f", str(ssh_config))
         owned.spawn(["/usr/sbin/sshd", "-D", "-e", "-f", str(ssh_config)], owned.evidence / "tunnel-owned-sshd.log")

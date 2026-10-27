@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
@@ -11,6 +12,40 @@ from typing import Any
 from mac_apps_owned import OwnedMac, command, file_state, port
 
 from ops_deploy.services.llama_server import LlamaServerConfig, deploy_llama_server
+
+
+def diagnostics(owned: OwnedMac) -> dict[str, Any]:
+    """Public build/job facts and the owned server log tail; the fixture key is redacted."""
+
+    found: dict[str, Any] = {}
+    try:
+        for name, argv in {
+            "formula": [
+                "/usr/bin/sudo",
+                "-H",
+                "-u",
+                "runner",
+                "--",
+                "/opt/homebrew/bin/brew",
+                "list",
+                "--versions",
+                "llama.cpp",
+            ],
+            "version": ["/opt/homebrew/bin/llama-server", "--version"],
+        }.items():
+            result = command(*argv, check=False)
+            found[name] = (result.stdout + result.stderr)[-1500:]
+        for label in owned.labels:
+            output = command("/bin/launchctl", "print", label, check=False).stdout
+            found[label] = [
+                line.strip() for line in output.splitlines() if re.search(r"state =|last exit|runs =", line)
+            ]
+        for log in sorted((owned.root / "logs").glob("*.log")):
+            text = log.read_text(errors="replace")[-4000:]
+            found[log.name] = re.sub(r"owned-detector-[A-Za-z0-9-]+", "<fixture-key>", text)
+    except Exception as error:  # diagnostics never mask the original failure
+        found["diagnostics_error"] = type(error).__name__
+    return found
 
 
 def main() -> None:
@@ -182,6 +217,7 @@ exec "$DELVE_LLAMA_SERVER" -m "$DELVE_DETECTOR_GGUF" --host "$DELVE_DETECTOR_HOS
         owned.report["status"] = "passed"
     except BaseException as error:
         failure = error
+        owned.report["diagnostics"] = diagnostics(owned)
     finally:
         failure = owned.finish(failure)
     if failure is not None:
