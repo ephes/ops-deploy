@@ -4,8 +4,9 @@
 blocklist updater/timer, RFC2136 DDNS updater/timer and optional authenticated
 status endpoint. The private adapter adds the existing conditional Nyxmon check.
 This is separate from authoritative BIND, router/DHCP configuration and DNS
-removal. Current inventory applicability is macmini; implementation/native and
-live qualification are pending while this candidate is developed.
+removal. The ordinary private adapter applies to macmini. Native Ubuntu 24.04
+qualification covers installation, changes, recovery and no-write convergence;
+inventory rollout records belong in the private operator repository.
 
 `DnsConfig` supplies explicit split networks, views, forwarders, local records,
 cache settings and DDNS inputs. LAN address, Tailscale address and CPU count come
@@ -54,3 +55,17 @@ mutation. It selects only the role's six obsolete port53-to5335 DNAT rules; all
 other rules/chains remain untouched. Missing tools or an explicitly absent NAT
 table are distinguished from unknown read failures, which refuse deployment. A
 converged host performs no firewall write or temporary staging.
+
+
+## Qualification
+
+[Native run40508758685](https://github.com/ephes/ops-deploy/actions/runs/40508758685)
+passed20 phases using implementation `77e470f4761b4a22c00fb99af0ae46611e02813e`
+and harness `e0376e5631960a6273a84ffdf6e8043f865b9822`. Ten no-write runs
+(including role-seeded first deployment) preserved files/PIDs and passed1,256
+actual syscall traces. The fixture also verifies selective legacy firewall
+cleanup, configuration refusal/rollback, authenticated DDNS, Python/Rust switches,
+and owned Rust layout repair followed by a no-write repeat. Its explicit upstream
+activation is fixture setup, separate from deployment/no-op accounting. Historical
+failed runs are retained; an earlier release-host resolution failure has no
+claimed root cause. See the fixture README for the evidence boundaries.

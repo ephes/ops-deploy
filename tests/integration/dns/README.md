@@ -56,3 +56,11 @@ activate this prerequisite include; subsequent deployment repeats preserve it.
 It does not claim default-recursion success when that diagnostic fails. Loopback-only,
 link-local/scoped, or malformed uplinks refuse before DNS fixture changes. No public inventory
 resolver policy changes, and no unknown port-53 process is terminated.
+
+
+Qualified run: [40508758685](https://github.com/ephes/ops-deploy/actions/runs/40508758685),
+implementation `77e470f4761b4a22c00fb99af0ae46611e02813e`, harness
+`e0376e5631960a6273a84ffdf6e8043f865b9822`:20 phases,10 no-write runs,
+1,256 checked syscall traces. Default-recursive resolution also succeeded on
+that VM; the prior Errno-5 failure is retained without an asserted cause. The
+explicit fixture upstream activation and its PID change have a separate receipt.
