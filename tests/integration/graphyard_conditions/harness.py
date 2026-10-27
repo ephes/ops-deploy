@@ -6,11 +6,13 @@ import hashlib
 import json
 import os
 import shlex
+import signal
 import sqlite3
 import subprocess
 import sys
 import time
 import traceback
+from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -24,7 +26,7 @@ from pyinfra.api.operations import run_ops
 from pyinfra.connectors.local import LocalConnector
 
 from ops_deploy.services.graphyard import GraphyardConditionsConfig, deploy_graphyard_conditions
-from ops_deploy.services.graphyard.conditions import manage
+from ops_deploy.services.graphyard.conditions import CONDITIONS_PROBE, manage, with_environment
 from ops_deploy.testing.harness import collect_ops
 
 HERE = Path(__file__).parent
@@ -39,6 +41,7 @@ USER = "graphyard-fixture"
 UNIT = "graphyard-conditions-fixture.service"
 URL = "http://127.0.0.1:18051/v1/conditions"
 PHASES: list[dict[str, Any]] = []
+KEEPER: subprocess.Popen[str] | None = None
 ENTRIES = [
     {"host": "fixture-one", "mountpoint": "/", "warning_threshold": 0.8, "critical_threshold": 0.9},
     {"host": "fixture-two", "mountpoint": "/data", "warning_threshold": 0.85, "critical_threshold": 0.95},
@@ -77,7 +80,7 @@ def management(code: str) -> str:
 
 
 def rows() -> list[dict[str, Any]]:
-    with sqlite3.connect(f"file:{DB}?mode=ro", uri=True) as connection:
+    with closing(sqlite3.connect(f"file:{DB}?mode=ro", uri=True)) as connection:
         connection.row_factory = sqlite3.Row
         return [dict(row) for row in connection.execute("SELECT * FROM condition_definition ORDER BY name")]
 
@@ -102,6 +105,8 @@ def snapshot() -> dict[str, Any]:
 def deploy(
     label: str, config: GraphyardConditionsConfig, *, zero: bool = False, failure: bool = False, fish: bool = False
 ) -> None:
+    assert KEEPER is not None
+    assert KEEPER.poll() is None, "fixture connection keeper exited"
     before = snapshot()
     original = LocalConnector.run_shell_command
     commands: list[str] = []
@@ -142,6 +147,7 @@ def deploy(
             operations = collect_ops(state, "@local")
             disconnect_all(state)
     after = snapshot()
+    assert KEEPER.poll() is None, "fixture connection keeper exited"
     mutations = [op.name for op in operations if op.changed and not op.read_only]
     result = {
         "label": label,
@@ -203,6 +209,7 @@ def ansible_repeat(config: GraphyardConditionsConfig) -> None:
 
 
 def main() -> None:
+    global KEEPER
     ENV.write_text("DJANGO_SETTINGS_MODULE=config.settings.test\nPYTHONDONTWRITEBYTECODE=1\n")
     ENV.chmod(0o644)
     shell("bash", "-c", manage(cfg(), "migrate", "--noinput"))
@@ -222,6 +229,47 @@ def main() -> None:
             time.sleep(0.2)
     else:
         raise AssertionError("fixture API did not start")
+    # Retain isolated observations to distinguish SQLite bookkeeping caused by
+    # the direct read-only probe from the real HTTP request. The snapshot reader
+    # explicitly closes its own connection too (a sqlite context manager does not).
+    direct = with_environment(cfg(), ["python3", "-I", "-c", CONDITIONS_PROBE, str(DB)])
+    probes = [
+        ("direct-probe", ["bash", "-c", direct], json.dumps([json.loads(c.spec()) for c in cfg().enabled])),
+        ("http-read", ["curl", "--fail", "--silent", "-H", "X-Forwarded-Proto: https", URL], None),
+    ]
+    for label, command, stdin in probes:
+        before = snapshot()
+        shell(*command, stdin=stdin)
+        after = snapshot()
+        observation = {
+            "before": before,
+            "after": after,
+            "changed_sections": [k for k in before if before[k] != after[k]],
+        }
+        (EVIDENCE / f"isolated-{label}.json").write_text(json.dumps(observation, indent=2))
+        for key in ("rows", "pid", str(DB), str(ENV)):
+            assert before[key] == after[key], (label, key)
+    # Hold one real service-user connection for strict repeated comparisons of
+    # every sidecar. This bounds the fixture's zero-change claim to a stable WAL
+    # lifecycle; no production host connection keeper is part of the deployment.
+    keeper_code = (
+        "from django.db import connection; import time; "
+        "connection.cursor().execute('SELECT COUNT(*) FROM condition_definition').fetchall(); "
+        "print('fixture-reader-ready', flush=True); time.sleep(1800)"
+    )
+    KEEPER = subprocess.Popen(
+        ["bash", "-c", manage(cfg(), "shell", "-c", keeper_code)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    assert KEEPER.stdout is not None
+    while True:
+        line = KEEPER.stdout.readline()
+        assert line, "fixture connection keeper exited before ready"
+        if line.strip() == "fixture-reader-ready":
+            break
     management(
         "from graphyard.models import ConditionDefinition; ConditionDefinition.objects.create("
         "name='Unrelated synthetic condition', metric_name='fixture', warning_threshold=1, status='warning', "
@@ -267,6 +315,7 @@ def main() -> None:
     # Ansible compares only its owned fields and therefore does not reset staleness on a repeat.
     ansible_repeat(cfg())
     deploy("pyinfra-after-ansible", cfg(), zero=True)
+    assert KEEPER.poll() is None, "fixture connection keeper exited"
     (EVIDENCE / "summary.json").write_text(
         json.dumps(
             {
@@ -280,7 +329,8 @@ def main() -> None:
                 "limits": (
                     "Real Graphyard/Django/SQLite/API on owned Ubuntu VM; local pyinfra connector plus fish "
                     "command transport, not inventory SSH. Synthetic rows only. Traces retained; zero managed "
-                    "repeats asserted via row/file/PID snapshots, not a blanket syscall-zero claim."
+                    "repeats asserted via row/file/PID snapshots, not a blanket syscall-zero claim. "
+                    "A real service-user connection stays open to stabilize WAL/SHM lifetime; no sidecars are excluded."
                 ),
             },
             indent=2,
@@ -289,4 +339,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        if KEEPER is not None and KEEPER.poll() is None:
+            os.killpg(KEEPER.pid, signal.SIGTERM)
+            try:
+                KEEPER.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(KEEPER.pid, signal.SIGKILL)
+                KEEPER.wait()
