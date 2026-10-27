@@ -199,6 +199,11 @@ def admit(cfg):
     if state["crypttab"] is not None:
         state["pending"].append("crypttab")
 
+    fstab_text = read_text(FSTAB)
+    probe = {"src": "", "name": cfg["mount_point"], "fstype": "", "opts": "", "dump": "", "passno": ""}
+    _, entries = fstab_update(fstab_text, probe)
+    if entries > 1:
+        raise Refused("%s has %d entries for %s" % (FSTAB, entries, cfg["mount_point"]))
     current = mounted(cfg["mount_point"])
     if not active:
         if current is not None:
@@ -219,9 +224,7 @@ def admit(cfg):
         "dump": cfg["dump"],
         "passno": cfg["passno"],
     }
-    state["fstab"], matches = fstab_update(read_text(FSTAB), entry)
-    if matches > 1:
-        raise Refused("%s has %d entries for %s" % (FSTAB, matches, cfg["mount_point"]))
+    state["fstab"], matches = fstab_update(fstab_text, entry)
     if state["fstab"] is not None:
         state["pending"].append("fstab")
     if current is None:

@@ -97,6 +97,14 @@ Defaults follow `open_webui_venv_deploy/defaults/main.yml`
 | `healthcheck_*` | the role's | port wait (`timeout × retries` seconds), then `GET http://<host>:<port><path>` |
 | `mounts_required` | `()` | not in the role: mount points checked (read-only) before any change; `data_dir` must be below one |
 
+Path fields must be absolute and in their one spelling (no `//`, `.` or
+`..` segment, no trailing slash), so the checks below cannot be bypassed by
+an alias. The virtualenv (removed when it is recreated) may not hold or lie
+in `home`, `site_dir`, `data_dir`, `log_dir` or the secret key file, and the
+two files the deploy writes (`env_path`, `python_security_constraints_path`)
+must differ, may not be a managed directory, the secret key file, or lie in
+`data_dir` or the virtualenv.
+
 Not ported: `package_spec` (the version pin replaces it), `manage_user`,
 `webui_secret_key`, `openai_api_key`, `uv_version`/`uv_update_existing`/
 `uv_force_reinstall` (ops-deploy's `UvInstallConfig` pin),

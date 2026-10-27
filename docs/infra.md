@@ -447,7 +447,8 @@ the deploy stops before any operation, when:
   type than `fs_type`;
 - something else is mounted at `mount_point` (also while the mapper is
   closed), or the volume is mounted read-only;
-- `/etc/fstab` has more than one entry for `mount_point`.
+- `/etc/fstab` has more than one entry for `mount_point` (also while the mapper
+  is closed).
 
 Otherwise it reports what is pending. Then: `cryptsetup` is installed when it
 is missing; the keyfile directory `root:root 0700`; the keyfile with

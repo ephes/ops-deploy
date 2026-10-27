@@ -35,7 +35,7 @@ mounts) and repeat; closed mapper reopened and mounted without touching the
 recorded lines; lost crypttab/fstab lines restored without a remount; changed
 fstab options rewritten and applied with `mount -o remount` only (same mount
 ID, no umount); keyfile drift rewritten; refusals for a wrong LUKS UUID, a
-non-LUKS device, a missing device, a read-only mount, a duplicate fstab entry,
+non-LUKS device, a missing device, a read-only mount, a duplicate fstab entry (mounted and with the mapper closed),
 the mapper name open on another device, the device mapped under another name
 and a foreign mount at the mount point; recovery and final repeat; then the
 `encrypted_volume_prepare` role of ops-library `cf3a0c74` (Ansible 14.5.0)

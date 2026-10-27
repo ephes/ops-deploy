@@ -33,7 +33,7 @@ from pathlib import PurePosixPath
 from typing import Annotated, Any
 
 import jinja2
-from pydantic import Field, TypeAdapter, ValidationError, field_validator, model_validator
+from pydantic import AfterValidator, Field, TypeAdapter, ValidationError, field_validator, model_validator
 from pyinfra import host, logger
 from pyinfra.api import DeployError, deploy
 from pyinfra.api.operation import OperationMeta
@@ -41,7 +41,7 @@ from pyinfra.facts.files import Directory, File
 from pyinfra.facts.server import Users
 from pyinfra.operations import files, server
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, Version, require_linux, require_systemd
+from ops_deploy.base._common import RoleConfig, Version, require_linux, require_systemd
 from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
 from ops_deploy.core.config import UnixUser
 from ops_deploy.core.secrets import SecretContent
@@ -74,6 +74,20 @@ _ARG = re.compile(r"^[A-Za-z0-9_.=:/,+-]+$")
 _PATCH = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 Mode = Annotated[str, Field(pattern=r"^0?[0-7]{3,4}$")]
+SECRET_KEY_FILE = ".webui_secret_key"
+
+
+def _canonical(value: str) -> str:
+    """An absolute path in its one spelling: no ``//``, ``.``/``..`` segment or trailing slash."""
+
+    segments = value.split("/")[1:]
+    if not re.fullmatch(r"(/[A-Za-z0-9_.+-]+)+", value) or any(s in (".", "..") for s in segments):
+        raise ValueError("must be an absolute path of letters, digits and _ . + - without . or .. segments")
+    return value
+
+
+# Path fields compare as strings below, so each has exactly one spelling.
+CanonicalPath = Annotated[str, AfterValidator(_canonical)]
 
 
 class OpenWebUIConfig(RoleConfig):
@@ -93,21 +107,21 @@ class OpenWebUIConfig(RoleConfig):
     user: UnixUser = "openwebui"
     group: UnixUser = "openwebui"
     # None: the role's ``/home/<user>``. uv keeps the managed interpreter and its cache there.
-    home: AbsolutePath | None = None
-    site_dir: AbsolutePath = "/opt/open-webui"
-    data_dir: AbsolutePath = "/var/lib/open-webui"
-    log_dir: AbsolutePath = "/var/log/open-webui"
+    home: CanonicalPath | None = None
+    site_dir: CanonicalPath = "/opt/open-webui"
+    data_dir: CanonicalPath = "/var/lib/open-webui"
+    log_dir: CanonicalPath = "/var/log/open-webui"
     # None: ``<site_dir>/open-webui.env`` and ``<site_dir>/.venv``.
-    env_path: AbsolutePath | None = None
-    venv_path: AbsolutePath | None = None
+    env_path: CanonicalPath | None = None
+    venv_path: CanonicalPath | None = None
     # Not in the role (it installs the latest ``open-webui`` into the latest ``3.11``).
     version: Version = "0.7.2"
     python_version: Version = "3.11.14"
     python_security_floor_enabled: bool = True
     # None: ``<site_dir>/.python-security-constraints.txt``.
-    python_security_constraints_path: AbsolutePath | None = None
+    python_security_constraints_path: CanonicalPath | None = None
     manage_uv: bool = True
-    uv_install_dir: AbsolutePath = "/usr/local/bin"
+    uv_install_dir: CanonicalPath = "/usr/local/bin"
 
     bind_host: Annotated[str, Field(pattern=r"^[A-Za-z0-9.:\[\]-]+$")] = "127.0.0.1"
     host_port: int = Field(default=3000, ge=1, le=65535)
@@ -140,7 +154,7 @@ class OpenWebUIConfig(RoleConfig):
     healthcheck_timeout: int = Field(default=10, ge=1, le=600)
     healthcheck_retries: int = Field(default=12, ge=1, le=100)
     # Not in the role: mount points ``data_dir`` must live on; checked (read-only) before any change.
-    mounts_required: tuple[AbsolutePath, ...] = ()
+    mounts_required: tuple[CanonicalPath, ...] = ()
 
     @field_validator("python_version")
     @classmethod
@@ -228,9 +242,22 @@ class OpenWebUIConfig(RoleConfig):
         if len(set(paths.values())) != len(paths):
             raise ValueError("home, site_dir, data_dir, log_dir and venv_path must be distinct")
         venv = PurePosixPath(self.venv)
+        key = PurePosixPath(self.site_dir) / SECRET_KEY_FILE
         for name in ("home", "site_dir", "data_dir", "log_dir"):
             if PurePosixPath(paths[name]).is_relative_to(venv):
                 raise ValueError(f"{name} must not be inside venv_path (it is removed when recreated)")
+        if key.is_relative_to(venv) or venv.is_relative_to(self.data_dir):
+            raise ValueError("venv_path must not hold the secret key file or lie in data_dir")
+        # The files the deploy writes: never the secret key, the data, the venv or a managed directory.
+        written = {"env_path": self.env_file, "python_security_constraints_path": self.security_constraints}
+        if len(set(written.values())) != len(written):
+            raise ValueError("env_path and python_security_constraints_path must differ")
+        for name, path in written.items():
+            target = PurePosixPath(path)
+            if path in paths.values() or len(target.parts) < 3:
+                raise ValueError(f"{name} must be a file below a directory, not a managed directory")
+            if target == key or any(target.is_relative_to(p) for p in (self.data_dir, self.venv)):
+                raise ValueError(f"{name} must not be the secret key file or lie in data_dir or venv_path")
         if self.version not in shipped_constraints():
             raise ValueError(f"no shipped install constraints for open-webui {self.version}")
         if self.mounts_required and not any(

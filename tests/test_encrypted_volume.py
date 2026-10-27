@@ -274,6 +274,16 @@ def test_foreign_mount_with_closed_mapper_is_refused(cfg: EncryptedVolumeConfig,
         host_script.admit(script_cfg(cfg))
 
 
+def test_duplicate_fstab_entries_are_refused_while_the_mapper_is_closed(
+    cfg: EncryptedVolumeConfig, fake_host: Host
+) -> None:
+    del fake_host.lsblk["/dev/mapper/cryptdata"]
+    del fake_host.mounts["/mnt/cryptdata"]
+    fake_host.files["/etc/fstab"] = FSTAB + FSTAB_LINE + "\n"
+    with pytest.raises(host_script.Refused, match="has 2 entries"):
+        host_script.admit(script_cfg(cfg))
+
+
 def test_check_mode_prints_refusals_and_exits_zero(
     cfg: EncryptedVolumeConfig, fake_host: Host, capsys: pytest.CaptureFixture[str]
 ) -> None:
