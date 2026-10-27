@@ -121,6 +121,8 @@ def test_control_actual_changed_pin_then_rollback_downloads_both_verified_artifa
 
     monkeypatch.setattr(module.urllib.request, "urlopen", download)
     monkeypatch.setattr(module.os, "fchown", lambda *args: None)
+    # Linux CI has no Darwin "wheel" group; ownership is not under test here.
+    monkeypatch.setattr(module.grp, "getgrnam", lambda name: SimpleNamespace(gr_gid=0))
     monkeypatch.setattr(module, "put", put)
     monkeypatch.setattr(module, "metadata", lambda *args, **kwargs: True)
     assert module.model_pin(cfg, model) == old_pin
@@ -140,6 +142,8 @@ def test_failed_new_artifact_retains_old_model_and_provenance(tmp_path: Path, mo
     cfg = {"config_dir": str(tmp_path)}
     monkeypatch.setattr(module.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(b"invalid new artifact"))
     monkeypatch.setattr(module.os, "fchown", lambda *args: None)
+    # Linux CI has no Darwin "wheel" group; ownership is not under test here.
+    monkeypatch.setattr(module.grp, "getgrnam", lambda name: SimpleNamespace(gr_gid=0))
     with pytest.raises(RuntimeError, match="checksum differs"):
         module.download(cfg, model, "https://example.test/new", "0" * 64)
     assert model.read_bytes() == b"existing owned model"
