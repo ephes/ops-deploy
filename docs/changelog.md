@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `ssh_guard`: optional timed revert, `timed_revert_seconds` (default `0`,
+  off: the plain deploy plans and writes exactly as before; its read-only
+  probe also reads the transaction state). Set to 60..3600, every sshd and
+  fail2ban change runs as one host-side transaction
+  (`base/files/ssh_guard_tx.py`, installed as
+  `/usr/local/libexec/ops-deploy/ssh-guard-tx`) that holds one lock, snapshots
+  the managed files and services, arms a one-shot systemd revert timer before
+  the first change and runs the plain deploy's steps in their order. It is
+  kept only when `confirm --generation N` arrives before the deadline over an
+  SSH connection opened after the change (its sshd process started later; a
+  multiplexed older connection is refused); otherwise the timer restores the files byte for byte
+  and the services' enabled and active state (packages stay installed). A
+  failing step reverts at once, a revert fires at most once, acts only on its
+  own open transaction and leaves files someone changed afterwards alone
+  (`superseded`). Every deploy, timed or not, refuses while a transaction is
+  open. docs/base.md, "Timed revert".
+
 - Add the independent `graphyard_conditions` deployment: compare declared
   disk-usage conditions through read-only SQLite, seed only missing or changed
   rows, and verify Graphyard's conditions API. Preserve existing staleness and

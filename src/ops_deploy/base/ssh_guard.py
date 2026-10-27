@@ -26,19 +26,27 @@ fail2ban is restarted only when its filter, jail or packages changed and ssh is
 reloaded only when the drop-in changed, so a converged host reports no change.
 See the "ssh_guard" section of docs/base.md for the order and the differences
 from the role.
+
+``timed_revert_seconds`` (off by default) runs the same steps as one host-side
+transaction (``files/ssh_guard_tx.py``) that arms a revert timer before the
+first change and is kept only when ``confirm`` arrives over a new SSH
+connection in time (docs/base.md, "Timed revert"). Every deploy refuses while
+such a transaction is open.
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 import shlex
 from dataclasses import dataclass, field
 from io import StringIO
-from pathlib import PurePosixPath
-from typing import Annotated, Literal
+from pathlib import Path, PurePosixPath
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, StrictBool, StrictInt, model_validator
-from pyinfra import host
+from pyinfra import host, logger
 from pyinfra.api import DeployError, deploy
 from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.deb import DebPackages
@@ -48,6 +56,7 @@ from pyinfra.operations.util import any_changed
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig, output, require_linux, require_systemd
 from ops_deploy.base._units import ENABLED
+from ops_deploy.helpers.probes import probe
 
 # The role's header line, kept byte for byte.
 HEADER = "# Managed by ops-library ssh_guard_deploy. Do not edit.\n"
@@ -76,6 +85,18 @@ SSHD_SESSION = "/usr/lib/openssh/sshd-session"
 SSHD_CONFIG = "/etc/ssh/sshd_config"
 # Seconds the gate waits for the jail after a fail2ban (re)start.
 GATE_WAIT = 60
+
+# The timed revert's host program and where it keeps its state.
+TX_PROGRAM = (Path(__file__).parent / "files" / "ssh_guard_tx.py").read_text()
+HOST_PYTHON = "/usr/bin/python3"
+LIBEXEC_DIR = "/usr/local/libexec/ops-deploy"
+TX_PROGRAM_PATH = f"{LIBEXEC_DIR}/ssh-guard-tx"
+TX_STATE_DIR = "/var/lib/ops-deploy/ssh-guard-tx"
+TX_STATUS = f"{TX_STATE_DIR}/status"
+# A transaction in one of these is open: every deploy refuses.
+TX_OPEN = ("staged", "applying", "armed", "reverting")
+TX_FINAL = ("unchanged", "aborted", "confirmed", "reverted", "revert-failed", "superseded")
+TX_REVERT_MIN, TX_REVERT_MAX = 60, 3600
 
 # A value rendered into one line of a config file: no line breaks or other control characters.
 Line = Annotated[str, Field(pattern=r"^[^\x00-\x1f\x7f]*$")]
@@ -192,6 +213,9 @@ class SshGuardConfig(RoleConfig):
     per_source_net_block_size: NetBlockSize = ""
     per_source_penalties: Line = ""
     per_source_penalty_exempt_list: ExemptList = ""
+    # Not in the role. 0: off (the plain deploy). Otherwise the seconds after
+    # which an unconfirmed change is reverted (docs/base.md, "Timed revert").
+    timed_revert_seconds: StrictInt = 0
 
     @model_validator(mode="after")
     def _role_asserts(self) -> SshGuardConfig:
@@ -213,6 +237,8 @@ class SshGuardConfig(RoleConfig):
                 raise ValueError("per_source_net_block_size must be <ipv4 0-32>:<ipv6 0-128>")
         if self.per_source_penalties:
             penalty_tokens(self.per_source_penalties)
+        if self.timed_revert_seconds and not TX_REVERT_MIN <= self.timed_revert_seconds <= TX_REVERT_MAX:
+            raise ValueError(f"timed_revert_seconds must be 0 (off) or {TX_REVERT_MIN}..{TX_REVERT_MAX}")
         return self
 
     @property
@@ -444,6 +470,8 @@ def probe_command(cfg: SshGuardConfig) -> str:
         f' /etc/fail2ban/jail.d/*.local; do [ -f "$f" ] && [ "$f" != {JAIL_PATH} ] || continue'
         "; grep -E '^[[:space:]]*([[][^]]*[]]|banaction[[:space:]]*=)' \"$f\" | sed 's/^/jailconf=/'; done"
         f"{ports}"
+        # An open timed-revert transaction (files/ssh_guard_tx.py) blocks every deploy.
+        f'; echo "tx_state=$(head -n 1 {TX_STATUS} 2>/dev/null)"'
     )
 
 
@@ -469,6 +497,8 @@ class HostState:
     # Section headers and ``banaction`` lines of fail2ban's jail configuration
     # without this deploy's jail file, in read order.
     jail_config: tuple[str, ...] = ()
+    # The timed-revert state line: ``<status> <generation> <txid>``; empty: none yet.
+    tx_state: str = ""
 
     @classmethod
     def parse(cls, text: str) -> HostState:
@@ -496,7 +526,23 @@ class HostState:
             loaded_marker=int(loaded) if loaded.isdigit() else None,
             loaded_actions=tuple(values.get("loaded_actions", "").replace(",", " ").split()),
             jail_config=tuple(jail_config),
+            tx_state=values.get("tx_state", ""),
         )
+
+    @property
+    def tx(self) -> tuple[str, int, str]:
+        """``(status, generation, txid)`` of the newest timed-revert transaction (``none`` without one).
+
+        Raises DeployError for a line it cannot read: an open transaction must
+        never pass as none.
+        """
+
+        if not self.tx_state:
+            return ("none", 0, "")
+        parts = self.tx_state.split()
+        if len(parts) != 3 or parts[0] not in TX_OPEN + TX_FINAL or not parts[1].isdigit():
+            raise DeployError(f"ssh_guard: unreadable {TX_STATUS}; inspect it before any change")
+        return (parts[0], int(parts[1]), parts[2])
 
     def inherited_banaction(self, jail: str) -> str | None:
         """The ban action a jail without its own ``banaction`` gets from the other files.
@@ -540,6 +586,21 @@ def _check_openssh(cfg: SshGuardConfig, state: HostState) -> None:
             raise DeployError(f"ssh_guard: {key} needs OpenSSH {since[0]}.{since[1]} or later; the host has {have}")
 
 
+def _check_transaction(state: HostState) -> None:
+    status, generation, txid = state.tx
+    program = f"{HOST_PYTHON} -I {TX_PROGRAM_PATH}"
+    if status in TX_OPEN:
+        raise DeployError(
+            f"ssh_guard: timed-revert transaction generation {generation} is {status}; confirm it from a new SSH "
+            f"connection ({program} confirm --generation {generation}) or revert it ({program} revert {txid})"
+        )
+    if status in ("reverted", "revert-failed", "superseded"):
+        logger.warning(
+            f"{host.print_prefix}ssh_guard: the last timed-revert transaction (generation {generation}) ended "
+            f"{status}; details: {program} status"
+        )
+
+
 def _check_fail2ban(cfg: SshGuardConfig, state: HostState) -> None:
     if cfg.fail2ban_sshd_filter_fix == "auto":
         if state.override_kind not in ("missing", "regular file", "regular empty file"):
@@ -578,10 +639,15 @@ def deploy_ssh_guard(cfg: SshGuardConfig) -> None:
         return
 
     state = HostState.parse(output(probe_command(cfg)))
+    _check_transaction(state)
     if cfg.sshd_dropin_enabled:
         _check_openssh(cfg, state)
     if cfg.fail2ban_enabled:
         _check_fail2ban(cfg, state)
+
+    if cfg.timed_revert_seconds:
+        _deploy_timed(cfg, state)
+        return
 
     if cfg.sshd_dropin_enabled:
         files.directory(name=f"Ensure {cfg.dropin_dir}", path=cfg.dropin_dir, user="root", group="root", mode="0755")
@@ -680,8 +746,7 @@ def _deploy_fail2ban(cfg: SshGuardConfig, state: HostState, *, installed: bool) 
     # nftables last, for a configured nftables action or, without one, the one
     # the jail inherits from fail2ban's other files (e.g. Debian 13's default).
     packages.append(install(cfg.fail2ban_package))
-    action = cfg.banaction_name or state.inherited_banaction(cfg.fail2ban_jail_name) or ""
-    if action.startswith("nftables"):
+    if _needs_nftables(cfg, state):
         packages.append(install("nftables"))
     server.shell(
         name=f"Restart {service} for the new packages",
@@ -694,4 +759,170 @@ def _deploy_fail2ban(cfg: SshGuardConfig, state: HostState, *, installed: bool) 
         name="Check the jail",
         commands=[gate_command(cfg, final=True)],
         _if=lambda: stale or anything_changed(),
+    )
+
+
+def _needs_nftables(cfg: SshGuardConfig, state: HostState) -> bool:
+    """The configured ban action or, without one, the inherited one is an nftables action."""
+
+    action = cfg.banaction_name or state.inherited_banaction(cfg.fail2ban_jail_name) or ""
+    return action.startswith("nftables")
+
+
+def transaction_bundle(cfg: SshGuardConfig, state: HostState, *, installed: bool) -> dict[str, Any]:
+    """The steps of the plain deploy, in its order and with its conditions, for ``files/ssh_guard_tx.py``.
+
+    Each step carries the name of the operation the plain deploy would run, so
+    a timed run lists the same steps; ``when`` holds the steps whose change
+    the plain deploy's ``_if`` waits for, ``always`` its stale-jail repair.
+    """
+
+    root = {"uid": 0, "gid": 0}
+    files_: list[dict[str, Any]] = []
+    dirs: list[dict[str, Any]] = []
+    services: list[dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
+
+    def step(kind: str, name: str, **fields: Any) -> str:
+        step_id = f"s{len(steps) + 1}"
+        steps.append({"id": step_id, "kind": kind, "name": name, **fields})
+        return step_id
+
+    def directory(path: str) -> None:
+        dirs.append({"path": path, **root, "mode": 0o755})
+        step("dir", f"Ensure {path}", path=path)
+
+    def manage(path: str) -> None:
+        files_.append({"path": path, **root, "mode": 0o644})
+
+    def put(path: str, content: str, name: str = "") -> str:
+        return step("file", name or f"Write {path}", path=path, content=content)
+
+    if cfg.sshd_dropin_enabled:
+        directory(cfg.dropin_dir)
+    if cfg.fail2ban_enabled:
+        service = cfg.fail2ban_service_name
+        stale = installed and state.stale(cfg)
+        for path in (JAIL_DIR, FILTER_DIR):
+            directory(path)
+
+        def install(name: str) -> str:
+            return step("package", f"Install {name}", package=name, no_recommends=cfg.fail2ban_no_recommends)
+
+        packages = [install("python3-systemd")] if cfg.fail2ban_backend.startswith("systemd") else []
+        config: list[str] = []
+        fail2ban_files = [JAIL_PATH]
+        manage(JAIL_PATH)
+        if cfg.fail2ban_sshd_filter_fix == "auto":
+            # Managed (snapshotted) whether or not this run writes it.
+            fail2ban_files.append(FILTER_OVERRIDE)
+            manage(FILTER_OVERRIDE)
+            if state.stock_kind == "missing" or state.stock_marker:
+                name = f"Write {FILTER_OVERRIDE} (CVE-2026-109786)"
+                config.append(put(FILTER_OVERRIDE, FILTER_OVERRIDE_CONTENT, name))
+            elif state.override_kind != "missing":
+                name = f"Remove {FILTER_OVERRIDE} (the packaged filter is fixed)"
+                config.append(step("absent", name, path=FILTER_OVERRIDE))
+        config.append(put(JAIL_PATH, render_jail(cfg)))
+        if installed:
+            for name, command in (
+                (f"Restart {service} for the new filter or jail", restart_command(cfg)),
+                ("Check the jail before the package installs", gate_command(cfg, final=False)),
+            ):
+                step("shell", name, command=command, when=list(config), always=stale)
+        packages.append(install(cfg.fail2ban_package))
+        if _needs_nftables(cfg, state):
+            packages.append(install("nftables"))
+        step(
+            "shell",
+            f"Restart {service} for the new packages",
+            command=restart_command(cfg),
+            when=list(packages),
+            always=False,
+        )
+        ensure = step("service", f"Ensure {service}", unit=service)
+        step(
+            "shell",
+            "Check the jail",
+            command=gate_command(cfg, final=True),
+            when=[*config, *packages, ensure],
+            always=stale,
+        )
+        services.append({"role": "fail2ban", "unit": service, "files": sorted(fail2ban_files)})
+    if cfg.sshd_dropin_enabled:
+        manage(cfg.sshd_dropin_path)
+        dropin = put(cfg.sshd_dropin_path, render_dropin(cfg))
+        step("shell", "Validate the sshd configuration", command=validate_command(cfg), when=[dropin], always=False)
+        step(
+            "shell",
+            f"Reload {cfg.sshd_service_name} for the new drop-in",
+            command=reload_command(cfg.sshd_service_name),
+            when=[dropin],
+            always=False,
+        )
+        services.append(
+            {
+                "role": "ssh",
+                "unit": cfg.sshd_service_name,
+                "files": [cfg.sshd_dropin_path],
+                "check": f"sshd -t -f {SSHD_CONFIG}",
+            }
+        )
+    return {
+        "schema": 1,
+        "revert_after": cfg.timed_revert_seconds,
+        "expect_generation": state.tx[1],
+        "files": files_,
+        "dirs": dirs,
+        "services": services,
+        "steps": steps,
+    }
+
+
+def encode_bundle(bundle: dict[str, Any]) -> str:
+    return base64.b64encode(json.dumps(bundle, sort_keys=True).encode()).decode()
+
+
+def tx_plan_command(encoded: str) -> str:
+    """The host program from stdin, read-only: which steps would run now."""
+
+    return f"{HOST_PYTHON} -I - plan --bundle-b64 {encoded}"
+
+
+def tx_run_command(encoded: str) -> str:
+    """Stage and apply under the timed revert; the caller's SSH connection is recorded for ``confirm``."""
+
+    return f'{HOST_PYTHON} -I {TX_PROGRAM_PATH} run --bundle-b64 {encoded} --caller "${{SSH_CONNECTION:-}}"'
+
+
+def _deploy_timed(cfg: SshGuardConfig, state: HostState) -> None:
+    installed = cfg.fail2ban_enabled and cfg.fail2ban_package in (host.get_fact(DebPackages) or {})
+    encoded = encode_bundle(transaction_bundle(cfg, state, installed=installed))
+    answer = probe(tx_plan_command(encoded), name="ssh_guard timed-revert plan", stdin=TX_PROGRAM)
+    try:
+        plan = json.loads(answer or "")
+        pending, steps = bool(plan["pending"]), [str(name) for name in plan["steps"]]
+    except (ValueError, KeyError, TypeError):
+        raise DeployError("ssh_guard: the read-only transaction plan failed on the host (probe warning)") from None
+    if not pending:
+        return
+    files.directory(name=f"Ensure {LIBEXEC_DIR}", path=LIBEXEC_DIR, user="root", group="root", mode="0755")
+    files.put(
+        name=f"Install {TX_PROGRAM_PATH}",
+        src=StringIO(TX_PROGRAM),
+        dest=TX_PROGRAM_PATH,
+        user="root",
+        group="root",
+        mode="0755",
+    )
+    seconds = cfg.timed_revert_seconds
+    server.shell(
+        name=f"Apply under a {seconds} s timed revert: " + "; ".join(steps),
+        commands=[tx_run_command(encoded)],
+    )
+    generation = state.tx[1] + 1
+    logger.warning(
+        f"{host.print_prefix}ssh_guard: after the checks, confirm generation {generation} within {seconds} s from a "
+        f"NEW SSH connection, or it is reverted: ssh -o ControlMaster=no -o ControlPath=none <host> "
+        f"{HOST_PYTHON} -I {TX_PROGRAM_PATH} confirm --generation {generation}"
     )

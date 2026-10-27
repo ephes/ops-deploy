@@ -25,6 +25,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -40,8 +41,15 @@ from ops_deploy.base.ssh_guard import (
     FILTER_OVERRIDE,
     FILTER_OVERRIDE_CONTENT,
     JAIL_PATH,
+    TX_PROGRAM,
+    TX_PROGRAM_PATH,
+    TX_STATE_DIR,
+    HostState,
+    encode_bundle,
+    probe_command,
     render_dropin,
     render_jail,
+    transaction_bundle,
 )
 from ops_deploy.testing.harness import DeployRun, collect_ops
 
@@ -221,6 +229,8 @@ class Container:
         """An exposed host: stock filter, Debian's nftables default ban action, no nft, no guard files."""
 
         self.sh(
+            "systemctl stop 'ssh-guard-tx-*' 2>/dev/null; systemctl reset-failed 'ssh-guard-tx-*' 2>/dev/null; "
+            f"rm -rf {TX_STATE_DIR}; "
             f"rm -f {FILTER_OVERRIDE} {JAIL_PATH} {DROPIN} {CONFLICT}; "
             "if dpkg -s nftables >/dev/null 2>&1; then "
             "DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq nftables; fi; "
@@ -479,3 +489,192 @@ def test_existing_bans_survive_filter_only_repair(tmp_path: Path, monkeypatch: p
     assert ATTACKER6 in box.nft_table()
     assert box.deploy(DEFAULT).changed_ops == []
     box.sh(f"fail2ban-client set sshd unbanip {ATTACKER} {ATTACKER6}")
+
+
+# --- timed revert ------------------------------------------------------------------
+
+TIMED = NFT_HOST.model_copy(update={"timed_revert_seconds": 60})
+LIBEXEC = "/usr/local/libexec/ops-deploy"
+CONFIRM = ("confirm", "--generation")
+
+
+def tx_status(box: Container) -> dict[str, object]:
+    status: dict[str, object] = json.loads(box.out(f"python3 -I {TX_PROGRAM_PATH} status"))
+    return status
+
+
+KEY = "/root/.ssh/id_ssh_guard_test"
+SSH = f"ssh -i {KEY} -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+MASTER = "/root/ssh-guard-test-master"
+
+
+def login_key(box: Container) -> None:
+    """A root key for real SSH logins over the container's loopback (exempt from bans by ignoreip)."""
+
+    keys = "/root/.ssh/authorized_keys"
+    box.sh(
+        f"mkdir -p -m 0700 /root/.ssh; [ -f {KEY} ] || ssh-keygen -q -t ed25519 -N '' -f {KEY}; "
+        f'grep -qxF "$(cat {KEY}.pub)" {keys} 2>/dev/null || cat {KEY}.pub >> {keys}'
+    )
+
+
+def confirm(box: Container, generation: int, via: str = "new") -> subprocess.CompletedProcess[str]:
+    """``confirm`` over a new SSH login (``new``), the older multiplexed master (``master``) or no SSH (``exec``)."""
+
+    command = f"python3 -I {TX_PROGRAM_PATH} {' '.join(CONFIRM)} {generation}"
+    if via == "exec":
+        return box.sh(command, check=False)
+    if via == "master":
+        return box.sh(f"{SSH} -S {MASTER} root@127.0.0.1 {command}", check=False)
+    return box.sh(f"{SSH} -o ControlMaster=no -o ControlPath=none root@127.0.0.1 {command}", check=False)
+
+
+def revert_timers(box: Container) -> list[str]:
+    listing = "systemctl list-timers --all --no-legend 'ssh-guard-tx-revert-*'"
+    return box.out(f"{listing} | grep -o 'ssh-guard-tx-revert-[0-9a-f]*[.]timer' || true").split()
+
+
+def wait_for(box: Container, status: str, seconds: int) -> dict[str, object]:
+    deadline = time.monotonic() + seconds
+    while True:
+        current = tx_status(box)
+        if current["status"] == status or time.monotonic() > deadline:
+            return current
+        time.sleep(2)
+
+
+def test_timed_revert_in_a_real_container(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    box = Container()
+    box.guard_connector(tmp_path, monkeypatch)
+    box.reset()
+    assert box.vulnerable_regexes() == 18
+    ssh, hups = box.pid("ssh"), box.sighups()
+
+    # 1. Arm, then the session is gone (the deploy ends, nobody confirms): the timer reverts everything.
+    armed = box.deploy(TIMED)
+    assert armed.succeeded, armed.error
+    [apply] = [name for name in armed.mutating_changed_ops if "timed revert" in name]
+    assert apply.startswith("SSH guard | Apply under a 60 s timed revert: Write " + FILTER_OVERRIDE)
+    assert apply.endswith("Write " + DROPIN + "; Validate the sshd configuration; Reload ssh for the new drop-in")
+    status = tx_status(box)
+    assert (status["status"], status["generation"]) == ("armed", 1)
+    assert len(revert_timers(box)) == 1
+    assert box.read(DROPIN) == render_dropin(TIMED)
+    assert box.vulnerable_regexes() == 0
+    assert box.out("command -v nft") == "/usr/sbin/nft"
+    assert box.sighups() == hups + 1
+    # Every deploy refuses while it is armed.
+    blocked = box.deploy(NFT_HOST)
+    assert not blocked.succeeded
+    assert "generation 1 is armed" in str(blocked.error)
+
+    status = wait_for(box, "reverted", 120)
+    assert status["status"] == "reverted", status
+    assert status["packages_left_installed"] == ["nftables"]
+    assert not box.exists(DROPIN)
+    assert not box.exists(JAIL_PATH)
+    assert not box.exists(FILTER_OVERRIDE)
+    # fail2ban back on what it ran before (the stock filter), ssh reloaded onto the old configuration.
+    box.wait_for_jail()
+    assert box.vulnerable_regexes() == 18
+    assert box.active("fail2ban") == "active"
+    assert box.pid("ssh") == ssh
+    assert box.sighups() == hups + 2
+    assert "persourcenetblocksize 32:64" not in box.out("sshd -T")
+    assert revert_timers(box) == []
+
+    # 2. Arm, confirm from a new connection: the timer is gone and nothing reverts.
+    box.reset()
+    login_key(box)
+    box.sh(f"{SSH} -M -S {MASTER} -f -N root@127.0.0.1")
+    second = box.deploy(TIMED)
+    assert second.succeeded, second.error
+    generation = int(str(tx_status(box)["generation"]))
+    assert "SSH_CONNECTION unset" in confirm(box, generation, via="exec").stderr
+    # The master connection was opened before the change: it does not prove that new ones work.
+    assert "opened before the change" in confirm(box, generation, via="master").stderr
+    box.sh(f"{SSH} -S {MASTER} -O exit root@127.0.0.1", check=False)
+    assert "not armed" in confirm(box, generation + 1).stderr
+    confirmed = confirm(box, generation)
+    assert confirmed.returncode == 0, confirmed.stderr
+    assert tx_status(box)["status"] == "confirmed"
+    assert revert_timers(box) == []
+    time.sleep(65)
+    assert tx_status(box)["status"] == "confirmed"
+    assert box.read(DROPIN) == render_dropin(TIMED)
+    assert box.vulnerable_regexes() == 0
+    # Converged: the timed deploy plans no operation at all, the plain one changes nothing.
+    assert box.deploy(TIMED).ops == []
+    assert box.deploy(NFT_HOST).changed_ops == []
+
+    # 3. A stale revert of the confirmed transaction against a newer armed one does nothing.
+    old = tx_status(box)
+    old_copy = f"{TX_STATE_DIR}/tx/{old['txid']}/ssh-guard-tx.py"
+    newer_cfg = TIMED.model_copy(update={"per_source_net_block_size": "32:56"})
+    newer = box.deploy(newer_cfg)
+    assert newer.succeeded, newer.error
+    assert tx_status(box)["status"] == "armed"
+    stale = box.sh(f"python3 -I {old_copy} revert {old['txid']} --reason timer")
+    assert "nothing to do (armed)" in stale.stdout
+    assert box.read(DROPIN) == render_dropin(newer_cfg)
+    assert confirm(box, generation + 1).returncode == 0
+
+    # 4. Someone else changes a managed file after the transaction: the revert leaves it alone.
+    third = box.deploy(TIMED)
+    assert third.succeeded, third.error
+    box.sh(f"echo 'MaxAuthTries 4' >> {DROPIN}")
+    status = wait_for(box, "superseded", 120)
+    assert status["status"] == "superseded", status
+    assert box.read(DROPIN) == render_dropin(TIMED) + "MaxAuthTries 4\n"
+    assert box.active("ssh-guard-tx-revert-" + str(status["txid"])[:12] + ".service") == "failed"
+
+    # 5. A step that fails reverts at once: sshd rejects the value, the drop-in comes back.
+    box.sh(f"systemctl reset-failed 'ssh-guard-tx-*'; rm -f {DROPIN}")
+    assert box.deploy(NFT_HOST).succeeded
+    hups = box.sighups()
+    bad = box.deploy(TIMED.model_copy(update={"per_source_max_startups": "not-a-number"}))
+    assert not bad.succeeded
+    status = tx_status(box)
+    assert status["status"] == "reverted"
+    assert status["reason"] == "step failed: Validate the sshd configuration"
+    assert box.read(DROPIN) == render_dropin(NFT_HOST)
+    assert revert_timers(box) == []
+    assert box.sighups() == hups + 1  # ssh reloaded onto the restored drop-in
+
+
+def test_timed_apply_survives_a_lost_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The caller is killed while the apply runs: the apply finishes in its own unit and the timer reverts."""
+
+    box = Container()
+    box.guard_connector(tmp_path, monkeypatch)
+    box.reset()
+    box.sh("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-download --no-install-recommends nftables")
+    state = HostState.parse(box.out(probe_command(TIMED)))
+    bundle = transaction_bundle(TIMED, state, installed=True)
+    # A slow step right after the first write keeps the apply running while its caller dies.
+    slow = {"id": "slow", "kind": "shell", "name": "Slow", "command": "sleep 8", "when": [], "always": True}
+    first_write = next(i for i, step in enumerate(bundle["steps"]) if step["kind"] == "file")
+    bundle["steps"].insert(first_write + 1, slow)
+    subprocess.run(
+        [box.binary, "exec", "-i", box.identifier, "sh", "-c", f"mkdir -p {LIBEXEC} && cat > {TX_PROGRAM_PATH}"],
+        input=TX_PROGRAM,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    # The caller in its own process group (a session), killed as a whole like a dropped SSH session.
+    box.sh(
+        f"setsid sh -c 'exec python3 -I {TX_PROGRAM_PATH} run --bundle-b64 {encode_bundle(bundle)} --caller x "
+        "> /root/run.out 2>&1' & caller=$!; sleep 3; kill -9 -$caller; wait $caller; [ $? -eq 137 ]"
+    )
+    # The caller is gone, the apply goes on in its own unit with the first file written.
+    assert tx_status(box)["status"] == "applying"
+    assert box.read(FILTER_OVERRIDE) == FILTER_OVERRIDE_CONTENT
+    assert box.out("cat /root/run.out") == ""
+    status = wait_for(box, "armed", 60)
+    assert status["status"] == "armed", status
+    assert box.read(DROPIN) == render_dropin(TIMED)
+    status = wait_for(box, "reverted", 120)
+    assert status["status"] == "reverted", status
+    assert not box.exists(DROPIN)
+    assert not box.exists(JAIL_PATH)

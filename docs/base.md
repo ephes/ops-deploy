@@ -269,6 +269,7 @@ keys, and checks of the running jail and of sshd's effective values.
 | `per_source_net_block_size` | `""` | not in the role: `<ipv4 0-32>:<ipv6 0-128>` (`32:64` groups an IPv6 /64) |
 | `per_source_penalties` | `""` | not in the role: `no`, or `key:value` settings OpenSSH knows (`authfail:5m max:600`), each key once |
 | `per_source_penalty_exempt_list` | `""` | not in the role: comma-separated addresses/networks |
+| `timed_revert_seconds` | `0` | not in the role: `0` off; 60..3600 runs every change under a timed revert (below) |
 
 Values written into the files must not contain line breaks or other control
 characters, so a value cannot add a directive of its own. The role's two
@@ -407,6 +408,79 @@ run again). A run interrupted between writing the drop-in and the check leaves
 the file unchecked and not reloaded until it changes again. Likewise a run
 interrupted between a fail2ban file write and the gate leaves the gate unrun
 until something changes again.
+
+### Timed revert
+
+For a host whose only way back is the SSH path these changes touch.
+`timed_revert_seconds: 0` (the default) is the plain deploy above; its only
+addition is one read-only probe line, the transaction state, so that it
+refuses while a transaction is open. With 60..3600 the deploy runs the same
+steps (same names, order, commands and conditions; a test compares them with
+the plain operations) through the host program `files/ssh_guard_tx.py`,
+installed as `/usr/local/libexec/ops-deploy/ssh-guard-tx` (`root 0755`,
+standard library, `/usr/bin/python3 -I`), with its state in
+`/var/lib/ops-deploy/ssh-guard-tx` (`0700`).
+
+While planning, the program runs read-only from stdin (`plan`) and names the
+steps that would run now. A converged host gets no operation. Otherwise the
+deploy has three: the directory and the program, then one shell operation,
+`Apply under a N s timed revert: <steps>`, which calls `run`. No pyinfra
+operation writes an sshd or fail2ban file in this mode.
+
+On the host, under one `flock` (`state-dir/lock`):
+
+1. `run` refuses while a transaction is open (`staged`, `applying`, `armed`,
+   `reverting`) or when the generation differs from the one the deploy read
+   while planning (the host changed since); with nothing to change it reports
+   `unchanged` and arms nothing. Otherwise it stores the bundle and a copy of
+   the program under `tx/<id>/`, records `staged` with generation + 1, and
+   starts `apply` in a transient unit `ssh-guard-tx-apply-<id>.service`
+   (`RuntimeMaxSec=1800`), so a dropped SSH session does not stop it; it waits
+   for the result.
+2. `apply` snapshots every managed file (content, owner, mode, or absence),
+   the managed directories, the fail2ban and ssh units' enabled/active state
+   and the packages, records `applying` with the deadline, and starts the
+   one-shot timer `ssh-guard-tx-revert-<id>.timer` (`systemd-run
+   --on-active=N`), which runs `revert <id>` with the transaction's own copy of
+   the program. Only then does it run the steps. A failing step (a gate, `sshd
+   -t`/`-T`, apt) reverts at once; an apply that outlasts the window reverts
+   too. Success records `armed` with the digests of the managed files.
+3. `confirm --generation N` (run it over a new SSH connection: `ssh -o
+   ControlMaster=no -o ControlPath=none HOST /usr/bin/python3 -I
+   /usr/local/libexec/ops-deploy/ssh-guard-tx confirm --generation N`) needs
+   an SSH connection opened after the transaction was armed: the nearest
+   `sshd`/`sshd-session` process above it (the connection's own process) must
+   have started after the apply finished, so a multiplexed or kept-open
+   connection from before the change is refused; and `SSH_CONNECTION` set and
+   different from the one recorded by `run`. Also the same boot and the
+   deadline not passed. It records `confirmed`, then stops the timer.
+4. `revert <id>` acts only on its own open transaction; anything else (a
+   confirmed one, a newer one, a final status) is left alone, so a revert
+   fires at most once and never touches a later transaction. An `armed`
+   transaction whose files no longer have the recorded digests was changed by
+   someone else since: `superseded`, nothing restored, the unit fails.
+   Otherwise it records `reverting`, restores each file byte for byte with
+   owner and mode (or removes it), removes directories the transaction created
+   when empty, and then: fail2ban back to its enabled state and, if it ran
+   before, restarted onto the restored files, else stopped (which removes its
+   bans); ssh reloaded once the restored drop-in passes `sshd -t` (never
+   stopped or started). A file it cannot restore makes it stop fail2ban rather
+   than load it, and skip the ssh reload. The result is `reverted` or
+   `revert-failed` (the unit fails); both are final.
+
+Packages a transaction installed stay installed after a revert (inert: their
+service stopped and disabled when it was not there before); the revert names
+them (`packages_left_installed`). A reboot drops the transient timer: the
+transaction stays open, every deploy refuses and `confirm` refuses (other
+boot); decide with `revert <id>` (or inspect first). `status` prints the
+state without the recorded SSH connections.
+
+The next deploy warns about a last transaction that ended `reverted`,
+`revert-failed` or `superseded`, and refuses while one is open, naming the
+`confirm` and `revert` commands. Concurrent deploys of the same host are
+excluded by the caller's deploy lock; a plain deploy started while a
+transaction is open refuses, and one that changes a file after it is caught
+by the digest check.
 
 ## dpkg_arch_remove
 
@@ -658,7 +732,26 @@ filter is loaded with `fail2ban_sshd_filter_fix` `off`, and recovery;
 drop-in drift; an earlier drop-in that shadows a directive (`sshd -T`
 mismatch: drop-in removed, no reload); a value `sshd -t` rejects; a stopped
 ssh; and the role's defaults on the exposed host (nftables installed for the
-inherited nftables action).
+inherited nftables action). The timed revert (60 s window): armed with every
+deploy refused, then reverted by the timer (files gone, fail2ban back on the
+stock filter, ssh reloaded onto the old configuration, nftables left
+installed); armed and confirmed from a new connection (nothing reverts after
+the deadline, the next timed run plans no operation); a stale revert of the
+confirmed transaction against a newer armed one (nothing); a drop-in changed
+after the transaction (`superseded`, left alone, failed unit); a value `sshd
+-t` rejects (reverted at once, ssh reloaded onto the old drop-in); and a
+caller killed with its process group while the apply runs (the apply
+finishes in its unit, the timer reverts). `confirm` runs over real SSH logins
+to the container's loopback with a test key: a new login confirms, a login
+through a ControlMaster opened before the change and a plain `docker exec`
+are refused.
+
+`tests/test_base_ssh_guard_tx.py` runs the host program against stub
+`systemctl`, `systemd-run`, `dpkg-query` and `apt-get` (timers are recorded
+and fired by the test): arming before the first change, byte-exact restores,
+confirm rules, refusals, an old timer against a newer transaction, the digest
+check, immediate revert, restore failures, a killed apply, a revert waiting
+for a running apply, and bundle validation.
 
 `tests/test_base_ssh_guard_sshd_check.py` runs the generated `sshd -t`/`-T`
 check with `sh` against a stub `sshd` that prints what OpenSSH 10.0 and 10.3
