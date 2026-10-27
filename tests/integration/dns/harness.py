@@ -102,6 +102,10 @@ def assert_trace(text: str) -> None:
     assert not mutations, mutations
 
 
+def raw_command(command: Any) -> str:
+    return command if isinstance(command, str) else str(command.get_raw_value())
+
+
 def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
     from pyinfra.api import Config, Inventory, State
     from pyinfra.api.command import QuoteString, StringCommand
@@ -135,7 +139,7 @@ def deploy(cfg: Any, label: str, *, failure: bool = False) -> dict[str, Any]:
             str(trace),
             "sh",
             "-c",
-            QuoteString(command.get_raw_value()),
+            QuoteString(raw_command(command)),
         )
         result = original_command(self, wrapped, **kwargs)
         assert_trace(trace.read_text())
