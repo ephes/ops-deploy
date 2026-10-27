@@ -12,7 +12,9 @@
   and mode. A Voxhelm runtime sync no longer stops running units first; they
   restart after a successful sync, a newly selected extra whose requirements
   are missing requests that sync, and the source sync no longer deletes the
-  rendered launchers. Add Voxhelm/worker role parity checks and
+  rendered launchers. OpsGate's source sync keeps the rollback install's
+  `*.egg-info` build metadata instead of deleting it on every run. Add
+  Voxhelm/worker role parity checks and
   make OpsGate's follow `OPS_LIBRARY_PATH`. Add owned native Voxhelm
   control-plane and remote-worker fixtures and run all seven Mac fixtures in the
   native workflow, with exact owned-process cleanup. Native qualification is

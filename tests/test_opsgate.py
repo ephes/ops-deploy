@@ -160,6 +160,8 @@ def test_current_native_deploy_does_not_sync_stage_or_send_secrets(tmp_path: Pat
     assert result.stdin == []
     assert len(rsync.calls) == 2
     assert all("--dry-run" in argv for argv in rsync.calls)
+    # The editable rollback install's build metadata is retained, not deleted.
+    assert all("--exclude=*.egg-info" in argv and "--delete" in argv for argv in rsync.calls)
     for value in credentials().values():
         assert value not in "\n".join(result.executed_commands)
 

@@ -60,6 +60,12 @@ def opsgate_host_command(data: dict[str, Any], action: str) -> str:
     )
 
 
+# The rollback environment is an editable ``uv sync`` of the setuptools
+# project, which writes ``src/opsgate.egg-info`` into the synced tree. It is not
+# source, so ``--delete`` would remove it on every run and re-trigger the sync.
+BUILD_METADATA = ["*.egg-info"]
+
+
 def _source(
     cfg: OpsGateConfig, data: dict[str, Any], unit: str, prepared: OperationMeta, rsync: RsyncRunner
 ) -> OperationMeta:
@@ -81,7 +87,7 @@ def _source(
         dest=path,
         user=user,
         group=group,
-        excludes=cfg.opsgate_rsync_excludes,
+        excludes=[*cfg.opsgate_rsync_excludes, *BUILD_METADATA],
         chmod="D0750,F0750",
         rsync_path=cfg.remote_rsync_path,
         prepared_by=prepared,
