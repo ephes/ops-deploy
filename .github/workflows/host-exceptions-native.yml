@@ -57,11 +57,24 @@ jobs:
           uv venv --python 3.13 /private/var/tmp/baseline-controller
           uv pip install --python /private/var/tmp/baseline-controller/bin/python dist/*.whl
       - name: Qualify native hostname and real Vector package/service/config/fault/repeat
+        id: native_fixture
         run: |
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
             IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" FIXTURE_BREW_BIN="$(command -v brew)" \
             BASELINE_EVIDENCE_DIR=/private/var/tmp/baseline-evidence \
             /private/var/tmp/baseline-controller/bin/python .implementation/smoke/host_exceptions_macos_fixture.py
+      - name: Diagnose owned runner Homebrew after failed fixture cleanup
+        if: failure() && steps.native_fixture.outcome == 'failure'
+        continue-on-error: true
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_ANALYTICS: '1'
+        run: |
+          # Public package diagnostics only; the original fixture stays failed.
+          # No environment dump, private config, token or install-proof claim.
+          brew config
+          brew tap vectordotdev/brew
+          brew install vector
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
