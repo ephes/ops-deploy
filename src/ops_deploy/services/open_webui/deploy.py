@@ -532,7 +532,7 @@ def _uv(cfg: OpenWebUIConfig, *argv: str) -> str:
     return f"cd {shlex.quote(cfg.site_dir)} && {command}"
 
 
-def install_command(cfg: OpenWebUIConfig) -> str:
+def pip_install_command(cfg: OpenWebUIConfig) -> str:
     """``uv pip install open-webui==<version>`` with the floors and the shipped constraints (from stdin).
 
     The constraints arrive on stdin into a temporary file the service user can
@@ -575,7 +575,7 @@ def _python(cfg: OpenWebUIConfig, state: str) -> list[OperationMeta]:
         ops.append(
             server.shell(
                 name=f"Install Open WebUI {cfg.version} via uv pip",
-                commands=[install_command(cfg)],
+                commands=[pip_install_command(cfg)],
                 **stdin_arguments(shipped_constraints()[cfg.version]),
             )
         )

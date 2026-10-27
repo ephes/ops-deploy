@@ -95,7 +95,7 @@ def read_text(path):
 
 
 def crypttab_update(text, line, name):
-    """lineinfile with ``regexp: ^<name>\\s``: the new text, or None when nothing changes.
+    """lineinfile with ``regexp`` "line start, <name>, whitespace": the new text, or None when unchanged.
 
     The last matching line is replaced; without a match the line is appended
     (after a newline when the file does not end with one); a missing file gets
