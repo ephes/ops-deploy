@@ -1,0 +1,99 @@
+# Managed by Ansible - Traefik configuration for PostfixAdmin
+
+http:
+  routers:
+    postfixadmin-secure:
+      rule: "Host(`{{ postfixadmin_traefik_host }}`)"
+      entryPoints:
+{% for ep in postfixadmin_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - postfixadmin-headers
+        - postfixadmin-compress
+{% if postfixadmin_traefik_ip_whitelist_enabled %}
+        - postfixadmin-ipwhitelist
+{% endif %}
+{% for middleware in postfixadmin_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: postfixadmin
+{% if postfixadmin_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ postfixadmin_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+{% if postfixadmin_traefik_host_aliases | length > 0 %}
+    # Router for host aliases
+    postfixadmin-aliases:
+      rule: "Host({% for alias in postfixadmin_traefik_host_aliases %}`{{ alias }}`{{ ', ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in postfixadmin_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - postfixadmin-headers
+        - postfixadmin-compress
+{% if postfixadmin_traefik_ip_whitelist_enabled %}
+        - postfixadmin-ipwhitelist
+{% endif %}
+{% for middleware in postfixadmin_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: postfixadmin
+{% if postfixadmin_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ postfixadmin_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP to HTTPS redirect
+    postfixadmin-http:
+      rule: "Host(`{{ postfixadmin_traefik_host }}`{% for alias in postfixadmin_traefik_host_aliases %}, `{{ alias }}`{% endfor %})"
+      entryPoints:
+        - web
+      middlewares:
+        - postfixadmin-redirect
+      service: postfixadmin
+
+  middlewares:
+    postfixadmin-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    postfixadmin-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+{% if postfixadmin_traefik_sts_preload | default(false) | bool %}
+        stsPreload: true
+{% endif %}
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ postfixadmin_traefik_host }}"
+
+    postfixadmin-compress:
+      compress: {}
+
+{% if postfixadmin_traefik_ip_whitelist_enabled %}
+    postfixadmin-ipwhitelist:
+      ipAllowList:
+        sourceRange:
+{% for ip_range in postfixadmin_traefik_ip_whitelist %}
+          - "{{ ip_range }}"
+{% endfor %}
+{% endif %}
+
+  services:
+    postfixadmin:
+      loadBalancer:
+        servers:
+          - url: "http://{{ postfixadmin_listen_address }}:{{ postfixadmin_listen_port }}"

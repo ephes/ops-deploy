@@ -13,6 +13,14 @@
   behavior and support literal-space filesystem excludes safely. Add owned
   macOS qualification and Linux ban-persistence/sudo-stdin fixture coverage.
 
+- Add ordinary PostfixAdmin and SnappyMail deployment APIs with pinned code
+  manifests, preserved verifying credentials and mutable data, complete staged
+  PHP/FPM/nginx validation, bounded owned-file recovery, and no-stage repeats.
+  Existing PostfixAdmin schemas are admitted read-only; the selected upstream
+  bootstrap is restricted to an empty database. Both routes expose an explicit
+  `traefik_sts_preload` option, defaulting to false.
+
+
 - Make installed Rust release validation genuinely read-only on a current layout.
   Classify needed root metadata or owned staging repairs as managed changes,
   preserve existing-binary restart/prune semantics, and refuse symlink roots.
