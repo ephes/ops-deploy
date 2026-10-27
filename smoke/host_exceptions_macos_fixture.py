@@ -10,6 +10,7 @@ import os
 import pwd
 import secrets
 import shutil
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -216,6 +217,51 @@ def main() -> None:
         filesystem_mountpoint_excludes=("/Volumes/Backups of fixture",),
     )
     try:
+        # These readonly probes run before any credential-bearing config is
+        # applied. Preserve the actual owner/home/identity and bounded stderr
+        # needed to diagnose an owned-runner Homebrew setup failure.
+        identity = {
+            "effective_uid": os.geteuid(),
+            "effective_gid": os.getegid(),
+            "selected_owner": owner,
+            "selected_uid": pwd.getpwnam(owner).pw_uid,
+            "selected_gid": pwd.getpwnam(owner).pw_gid,
+            "selected_home": pwd.getpwnam(owner).pw_dir,
+            "brew_path": brew,
+            "brew_realpath": str(Path(brew).resolve()),
+            "brew_uid": Path(brew).stat().st_uid,
+            "brew_parent_uid": Path(brew).parent.stat().st_uid,
+        }
+        probes = []
+        for args in (("--prefix",), ("list", "--versions", "vector"), ("tap",)):
+            response = subprocess.run(
+                [
+                    "/usr/bin/sudo",
+                    "-H",
+                    "-u",
+                    owner,
+                    "--",
+                    "/usr/bin/env",
+                    "HOMEBREW_NO_AUTO_UPDATE=1",
+                    "HOMEBREW_NO_ANALYTICS=1",
+                    brew,
+                    *args,
+                ],
+                text=True,
+                capture_output=True,
+                cwd=pwd.getpwnam(owner).pw_dir,
+            )
+            probes.append(
+                {
+                    "arguments": args,
+                    "rc": response.returncode,
+                    "stdout": response.stdout[-16000:].replace(TOKEN, "<fixture-token>"),
+                    "stderr": response.stderr[-16000:].replace(TOKEN, "<fixture-token>"),
+                }
+            )
+        report["brew_preflight"] = {"identity": identity, "probes": probes}
+        print(json.dumps({"owned_precredential_brew_preflight": report["brew_preflight"]}), flush=True)
+        assert probes[0]["rc"] == 0, "owned Homebrew prefix probe failed; see precredential evidence"
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.symlink_to(root / "owned-obsolete-monolithic-config")
         name = "ops-baseline-" + run_id[-10:]
