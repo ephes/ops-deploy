@@ -41,8 +41,17 @@ unless noted below.
 ## hostname
 
 `hostname` (required; letters, digits, `.`, `_`, `-`, not starting with a
-symbol). Runs `hostnamectl set-hostname` when `uname -n` differs. The role
-defaults to the inventory host name; the private side passes it.
+symbol). On Linux, runs `hostnamectl set-hostname` when `uname -n` differs.
+On Darwin, compares `HostName`, `ComputerName` and `LocalHostName` through
+`scutil`; if any differs it sets all three like Ansible's Darwin strategy.
+The Bonjour name uses that strategy's scrub transformation (dots removed,
+underscores replaced with hyphens, repeated hyphen pairs removed).
+An unchanged native deployment writes no files and issues no setter command.
+
+The role defaults to the inventory host name; callers must pass the intended
+machine name explicitly when an inventory alias differs. Native operations
+use the caller's existing privileged connection or standard sudo context;
+this API does not provision SSH access or alter login policy.
 
 ## headless_mode
 

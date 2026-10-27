@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ graphyard_vector_launchd_label }}</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>{{ graphyard_vector_binary_path_resolved }}</string>
+      <string>--config-dir</string>
+      <string>{{ graphyard_vector_config_dir }}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>{{ graphyard_vector_launchd_path }}</string>
+    </dict>
+    <key>UserName</key>
+    <string>{{ graphyard_vector_runtime_user }}</string>
+    <key>GroupName</key>
+    <string>{{ graphyard_vector_runtime_group }}</string>
+    <key>WorkingDirectory</key>
+    <string>{{ graphyard_vector_data_dir }}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+{% if graphyard_vector_launchd_keepalive | bool %}
+    <true/>
+{% else %}
+    <false/>
+{% endif %}
+    <key>StandardOutPath</key>
+    <string>{{ graphyard_vector_stdout_log_path }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ graphyard_vector_stderr_log_path }}</string>
+  </dict>
+</plist>

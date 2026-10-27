@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add native Darwin hostname convergence and the complete Graphyard Vector
+  Homebrew/launchd/newsyslog role branch, with masked stdin credentials,
+  candidate validation, retained data and zero-staging no-ops. Keep Linux
+  behavior and support literal-space filesystem excludes safely. Add owned
+  macOS qualification and Linux ban-persistence/sudo-stdin fixture coverage.
+
 - Add the Mailgun relay deployment and Traefik ingress with the existing
   Python/Rust switch, strict staged archives, shared secret configuration and
   live implementation verification. Preserve Python source/runtime by default;
