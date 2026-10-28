@@ -1,9 +1,9 @@
 # Voice Memo Inbox components
 
 The typed Inbox installer ports the original
-`daybook_voice_memo_inbox_deploy` declaration. This implementation slice is
-undergoing source review and disposable-host qualification; it does not change
-inventory engines or qualify a default deployment.
+`daybook_voice_memo_inbox_deploy` declaration. The component is source-reviewed
+and qualified on a disposable Darwin VM. It does not change inventory engines
+or qualify a default deployment; normal update and lifecycle adoption are separate.
 
 `DaybookInboxConfig` retains the original defaults and fixed protected root
 checkout, shared root Python tree, GUI account layout, two launchd labels,
@@ -72,3 +72,32 @@ Root publication remains the separately guarded operation using protected stdin
 and descriptor checks. Internal raw expected texts follow Sessions' established
 rendering pattern; public resource objects remain `SecretContent`, and only the
 secret operation unwraps them.
+
+## Component qualification
+
+Immutable implementation `79e0191d9342c7ff49b1fd8f3cbecc3c12379242` passed
+[canonical CI](https://github.com/ephes/ops-deploy/actions/runs/40772667951)
+(8,527 tests on each Python version) and the
+[owned native fixture](https://github.com/ephes/ops-deploy/actions/runs/40772667957).
+The actual noneditable package contained exactly the 813 expected resource files,
+with every byte matching that Git revision. Fixed original declarations and
+four template resources are independently paired against the collection oracle;
+owned fixture paths and labels are explicitly substituted.
+
+The native component first completed eight managed operations and one real SFTP
+upload. Repeat and already-current enabled-keeper verification performed zero
+managed operations/uploads and preserved scoped metadata and the keeper PID.
+Resource drift under that keeper refused before operations. The stopped-but-enabled
+handoff performed one resource operation and verified the disabled-first set
+without changing the existing profile's enabled bit. Separate healthy/fault handoffs
+inherited every SDK privilege field and proved none executed at the real transport
+boundary. Copy-digest, writable-code and genuine SFTP-setup failures remained
+failures; owned resources and private transfer directories were cleaned up.
+
+Initial policy-test failures, the earlier native proof and all review rounds are
+retained as provenance; they are not relabelled successful full qualification.
+Review execution had sandbox limits, distinct from the passing caller/CI/native
+checks. These are component/mechanism proofs with inert app code and fake auth,
+not real importer activation, data processing or an inventory rollout. Temporary
+UV/cache I/O and unique enabled launchd override rows are outside any claim of
+whole-machine I/O or state immutability.
