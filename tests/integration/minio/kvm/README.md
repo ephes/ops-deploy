@@ -68,3 +68,10 @@ were not separately preflighted. Their real bootstrap fetches remain fallible
 build steps whose complete result must be preserved; the resolver correction
 is not evidence that every dependency endpoint is reachable. The guest receipt
 records its actual Ubuntu release, machine ID, run identity and kernel.
+
+The second attempt built the image but Docker rejected tooling-container startup:
+its local logging driver does not allow compression with `max-file=1`. The runner
+explicitly disables compression for this container while retaining `max-size=20m`
+and `max-file=1`, as supported by the [Docker local logging options](https://docs.docker.com/engine/logging/drivers/local/#options).
+No guest or MinIO process started in that attempt; its failure and successful
+owned-resource cleanup remain separate evidence.

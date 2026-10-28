@@ -76,7 +76,7 @@ docker image inspect "$IMAGE" > "$ROOT/evidence/image.json"
 docker create --name "$NAME" --label "io.ops.minio.fixture=$MINIO_OWNED_ID" \
     --network none --device /dev/kvm --cap-drop ALL --security-opt no-new-privileges \
     --cpus 2 --memory 5g --memory-swap 5g --pids-limit 256 \
-    --log-driver local --log-opt max-size=20m --log-opt max-file=1 \
+    --log-driver local --log-opt max-size=20m --log-opt max-file=1 --log-opt compress=false \
     -e "MINIO_OWNED_ID=$MINIO_OWNED_ID" "$IMAGE" >/dev/null
 docker cp "$ROOT/artifacts" "$NAME:/input"
 docker start "$NAME" >/dev/null
