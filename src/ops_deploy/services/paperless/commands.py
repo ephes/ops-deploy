@@ -53,6 +53,7 @@ def reindex_payload(cfg: PaperlessConfig) -> str:
             "env_file": f"{cfg.site_root}/.env",
             "python_bin": f"{cfg.site_root}/.venv/bin/python",
             "manage_dir": f"{cfg.site_root}/paperless-ngx/src",
+            "index_dir": f"{cfg.external_storage_root}/data/index",
         }
     )
 

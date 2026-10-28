@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import pwd
 import re
 import stat
 import subprocess
@@ -51,7 +53,9 @@ def original_install(harness: Any, version: str) -> None:
     log = (harness.EVIDENCE / "00-original-install.log").read_text()
     # Never turn an auth/network/repository/other original failure into recovery.
     errors = [line for line in log.splitlines() if line.startswith("[ERROR]")]
-    assert errors == [MISSING], "unrecognised original bootstrap failure; no fixture recovery"
+    if errors != [MISSING]:
+        recover_original_index(harness, "00-original-install", version)
+        return
     assert re.search(r"localhost\s*:\s*ok=\d+\s+changed=\d+\s+unreachable=0\s+failed=1\s", log)
     before = cache_diagnostic(harness)
     harness.write("original-bootstrap-cache-before.json", before)
@@ -82,7 +86,9 @@ def original_install(harness: Any, version: str) -> None:
         },
     )
     assert result.returncode == 0, "owned fixture apt update failed; no original retry"
-    harness.ansible("00b-original-install-after-fixture-cache-recovery", version=version)
+    label = "00b-original-install-after-fixture-cache-recovery"
+    if harness.ansible(label, version=version, allow_failure=True):
+        recover_original_index(harness, label, version)
 
 
 def retain_update(harness: Any, output: str, result: dict[str, Any]) -> None:
@@ -137,3 +143,50 @@ def prepare_ssh(harness: Any) -> None:
     assert after["unit"]["MainPID"].isdigit()
     assert int(after["unit"]["MainPID"]) > 0
     assert after["runtime_directory"] == {"mode": 0o755, "uid": 0, "gid": 0, "is_directory": True}
+
+
+def recover_original_index(harness: Any, label: str, version: str) -> None:
+    """One declared owned prerequisite after the retained upstream mkdir gap."""
+    log = (harness.EVIDENCE / (label + ".log")).read_text()
+    errors = [line for line in log.splitlines() if line.startswith("[ERROR]")]
+    assert errors == ["[ERROR]: Task failed: Module failed: The command exited with a non-zero return code."]
+    assert re.search(r"localhost\s*:\s*ok=\d+\s+changed=\d+\s+unreachable=0\s+failed=1\s", log)
+    fatal = [line for line in log.splitlines() if line.startswith("fatal: [localhost]: FAILED! => ")]
+    assert len(fatal) == 1
+    failure = json.loads(fatal[0].split(" => ", 1)[1])
+    index = Path(harness.CFG.external_storage_root) / "data/index"
+    stderr = failure.get("stderr", "")
+    assert failure.get("rc") == 1
+    assert stderr.splitlines()[-1] == f"FileNotFoundError: [Errno 2] No such file or directory: '{index}'"
+    assert f"paperless-ngx-v{version}/src/documents/search/_schema.py" in stderr
+    assert "in wipe_index" in stderr
+    assert "manage.py document_index reindex" in failure.get("cmd", "")
+    assert not index.exists()
+    assert not index.is_symlink()
+    assert index.parent.resolve(strict=True) == index.parent
+    parent = index.parent.lstat()
+    user = pwd.getpwnam(harness.CFG.username)
+    assert stat.S_ISDIR(parent.st_mode)
+    assert parent.st_uid == user.pw_uid
+    before = {"index_absent": True, "parent_uid": parent.st_uid, "parent_gid": parent.st_gid}
+    harness.write("owned-original-index-prerequisite-started.json", {"before": before, "failed_original": label})
+    result = harness.command(
+        "runuser", "-u", harness.CFG.username, "--", "mkdir", "-m", "0755", "--", str(index), check=False
+    )
+    harness.write("owned-original-index-prerequisite-result.json", {"exit": result.returncode})
+    assert result.returncode == 0, "owned original index prerequisite failed"
+    after = index.lstat()
+    assert stat.S_ISDIR(after.st_mode)
+    assert after.st_uid == user.pw_uid
+    harness.write(
+        "owned-original-index-prerequisite.json",
+        {
+            "classification": (
+                "explicit service-user owned missing-index prerequisite after original failure; "
+                "not pristine original bootstrap"
+            ),
+            "before": before,
+            "after": {"uid": after.st_uid, "gid": after.st_gid, "mode": stat.S_IMODE(after.st_mode)},
+        },
+    )
+    harness.ansible("00c-original-install-after-fixture-index-prerequisite", version=version)

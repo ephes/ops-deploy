@@ -461,6 +461,7 @@ def main() -> None:
     ansible("04-original-current-repeat")
     deploy("05-after-original-repeat", zero=True)
     application_matrix.sftp_ocr(harness)
+    application_matrix.missing_entire_index(harness)
     application_matrix.empty_current_index(harness)
     application_matrix.index_faults(harness)
     application_matrix.reindex_failure_and_retry(harness)

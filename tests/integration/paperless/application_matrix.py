@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import pwd
+import shutil
 import subprocess
 import time
 import urllib.parse
@@ -326,3 +329,75 @@ print(json.dumps({{'owned_migration_cleanup':True}}))
         {"only_synthetic_noop_migration_removed": True, "actual_application_migrations_untouched": True},
     )
     harness.deploy("pending-migration-cleanup-repeat", zero=True)
+
+
+def missing_entire_index(harness: Any) -> None:
+    """Real owned absent-path fault, exact old-helper failure, normal recovery."""
+    from ops_deploy.services.paperless.commands import reindex_payload
+
+    assert harness.OWNED_ADMITTED is True
+    index = Path(harness.CFG.external_storage_root) / "data/index"
+    assert index.is_dir()
+    assert not index.is_symlink()
+    assert index.parent.resolve(strict=True) == index.parent
+    # Stop the four synthetic units to avoid a background application opener
+    # creating the leaf before the deployment can demonstrate recovery.
+    harness.write(
+        "missing-index-fault-started.json",
+        {
+            "classification": "declared owned fault setup: stop four units and remove entire synthetic index",
+            "before": harness.snapshot_receipt("missing-index-fault", "before", harness.snapshot()),
+        },
+    )
+    for unit in harness.CFG.units:
+        harness.command("systemctl", "stop", unit + ".service")
+    shutil.rmtree(index)
+    assert not index.exists()
+    before = harness.snapshot()
+    before_receipt = harness.snapshot_receipt("missing-index-old-helper", "before", before)
+    harness.write("missing-index-old-helper-started.json", {"before": before_receipt})
+    previous = "7522da86d56efe2aeeb9dcf46507fda5954cd767"
+    resource = "src/ops_deploy/services/paperless/files/reindex.py"
+    source = harness.command("git", "-C", "/opt/controller", "show", previous + ":" + resource).stdout
+    expected_sha = "9c022648d43c19fe09ed5f8d786bd43868713ab14e1f66b28e19a999adc3455f"
+    assert hashlib.sha256(source.encode()).hexdigest() == expected_sha
+    payload = json.loads(reindex_payload(harness.CFG))
+    del payload["index_dir"]  # Exact previous helper's public input contract.
+    result = harness.command("python3", "-I", "-B", "-c", source, stdin=json.dumps(payload), check=False)
+    after = harness.snapshot()
+    harness.write(
+        "missing-index-old-helper.json",
+        {
+            "classification": "expected owned old execution-helper failure; not a pyinfra operation/no-op claim",
+            "source_commit": previous,
+            "source_sha256": expected_sha,
+            "exit": result.returncode,
+            "stdout": harness.sanitize(result.stdout),
+            "stderr": harness.sanitize(result.stderr),
+            "before": before_receipt,
+            "after": harness.snapshot_receipt("missing-index-old-helper", "after", after),
+            "private_content_equal": before.private == after.private,
+        },
+    )
+    assert result.returncode == 1
+    assert not index.exists()
+    assert result.stderr == "Paperless managed reindex failed; inspect service status locally\n"
+    assert before.public == after.public
+    assert before.private == after.private
+    repaired = harness.deploy("index-missing-entire-directory")
+    assert any("Converge Paperless search index" in name for name in repaired["managed"])
+    owner = pwd.getpwnam(harness.CFG.username)
+    info = index.lstat()
+    assert index.is_dir()
+    assert not index.is_symlink()
+    assert info.st_uid == owner.pw_uid
+    harness.write(
+        "missing-index-recovered.json",
+        {
+            "uid": info.st_uid,
+            "gid": info.st_gid,
+            "directory_created": True,
+            "scope": "managed reindex plus normal previously stopped service starts",
+        },
+    )
+    harness.deploy("index-missing-entire-directory-repeat", zero=True)

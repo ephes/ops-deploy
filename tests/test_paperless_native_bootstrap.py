@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import pwd
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -62,7 +63,7 @@ def test_only_exact_missing_package_allows_one_labelled_refresh(
     )
     assert h.ansible.call_count == (1 if refresh else 2)
     if not refresh:
-        assert h.ansible.call_args.kwargs == {"version": "3.2.1"}
+        assert h.ansible.call_args.kwargs == {"version": "3.2.1", "allow_failure": True}
         assert h.ansible.call_args.args == ("00b-original-install-after-fixture-cache-recovery",)
     assert (tmp_path / "00-original-install.log").read_text() == exact_failure()
     receipt = json.loads((tmp_path / "original-bootstrap-cache-recovery.json").read_text())
@@ -222,3 +223,50 @@ def test_successful_start_command_does_not_mask_bad_ssh_state(
     with pytest.raises(AssertionError):
         bootstrap.prepare_ssh(h)
     assert (tmp_path / "owned-ssh-start-result.json").is_file()
+
+
+@pytest.mark.parametrize("bad", [False, True])
+def test_original_index_recovery_admits_only_exact_missing_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: bool
+) -> None:
+    root = tmp_path.resolve()
+    data = root / "data"
+    data.mkdir()
+    index = data / "index"
+    stderr = (
+        "/home/paperless/site/paperless-ngx-v3.2.1/src/documents/search/_schema.py in wipe_index\n"
+        + f"FileNotFoundError: [Errno 2] No such file or directory: '{index}'"
+    )
+    failure = {
+        "rc": 1,
+        "stderr": stderr + ("unexpected" if bad else ""),
+        "cmd": "python manage.py document_index reindex",
+    }
+    log = (
+        "[ERROR]: Task failed: Module failed: The command exited with a non-zero return code.\n"
+        + "fatal: [localhost]: FAILED! => "
+        + json.dumps(failure)
+        + "\n"
+        + "localhost : ok=123 changed=49 unreachable=0 failed=1 skipped=37 \n"
+    )
+    h = fixture(root, log)
+    h.CFG = SimpleNamespace(external_storage_root=str(root), username="owned-local")
+    monkeypatch.setattr(pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=os.getuid()))
+
+    def command(*args: str, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert args == ("runuser", "-u", "owned-local", "--", "mkdir", "-m", "0755", "--", str(index))
+        assert kwargs == {"check": False}
+        index.mkdir(mode=0o755)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    h.command.side_effect = command
+    if bad:
+        with pytest.raises(AssertionError):
+            bootstrap.recover_original_index(h, "00-original-install", "3.2.1")
+        h.command.assert_not_called()
+        h.ansible.assert_not_called()
+    else:
+        bootstrap.recover_original_index(h, "00-original-install", "3.2.1")
+        h.command.assert_called_once()
+        h.ansible.assert_called_once_with("00c-original-install-after-fixture-index-prerequisite", version="3.2.1")
+        assert json.loads((root / "owned-original-index-prerequisite.json").read_text())["after"]["uid"] == os.getuid()

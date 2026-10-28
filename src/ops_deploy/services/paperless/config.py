@@ -1,4 +1,4 @@
-"""Prepared Paperless configuration; deployment API is not yet exported."""
+"""Paperless configuration for the prepared deployment and recovery API."""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ class PaperlessConfig(RoleConfig):
     """Current role settings used by the prepared runtime and index contract.
 
     Secrets live in PaperlessCredentials. Public defaults are synthetic; the
-    private adapter will retain actual deployment values. Remaining dependency
-    and lifecycle composition is still under implementation.
+    private adapter retains actual deployment values. Native application and
+    inventory qualification remain pending; lifecycle migration is separate.
     """
 
     username: UnixUser = "paperless"

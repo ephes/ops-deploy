@@ -19,7 +19,12 @@ class ReindexFailure(RuntimeError):
 
 def validate(settings):
     if not isinstance(settings, dict) or set(settings) != {
-        "username", "service_name", "env_file", "python_bin", "manage_dir"
+        "username",
+        "service_name",
+        "env_file",
+        "python_bin",
+        "manage_dir",
+        "index_dir",
     }:
         raise ValueError("invalid reindex settings")
     for name in ("username", "service_name"):
@@ -27,20 +32,67 @@ def validate(settings):
             raise ValueError("invalid reindex identity")
         if settings[name] == "root":
             raise ValueError("reindex requires a non-root identity")
-    for name in ("env_file", "python_bin", "manage_dir"):
+    for name in ("env_file", "python_bin", "manage_dir", "index_dir"):
         value = settings[name]
         if not isinstance(value, str) or not re.fullmatch(r"(?:/[A-Za-z0-9_.+-]+)+", value):
             raise ValueError("invalid reindex path")
         if any(part in {".", ".."} for part in value.split("/")[1:]):
             raise ValueError("invalid reindex path")
-    return tuple(settings["service_name"] + suffix + ".service" for suffix in ("", "-worker", "-scheduler", "-consumer"))
+    if not settings["index_dir"].endswith("/data/index"):
+        raise ValueError("invalid configured index directory")
+    return tuple(
+        settings["service_name"] + suffix + ".service" for suffix in ("", "-worker", "-scheduler", "-consumer")
+    )
+
+
+# This child runs as the configured service user, after all units stop. Only the
+# absent leaf may be created. Every existing ancestor and the leaf are opened
+# without following links; no parent creation, chown, chmod or existing-dir touch.
+# This does not claim to pin upstream's subsequent index traversal against a
+# concurrent same-user application writer; the configured units are stopped.
+PREPARE_AND_REINDEX = """import os
+import sys
+
+
+def ensure_index(path):
+    parts = path.split('/')
+    if parts[0] != '' or parts[-2:] != ['data', 'index'] or any(part in ('', '.', '..') for part in parts[1:]):
+        raise ValueError('invalid index path')
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    parent = os.open('/', flags)
+    try:
+        for part in parts[1:-1]:
+            child = os.open(part, flags, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        try:
+            leaf = os.open('index', flags, dir_fd=parent)
+        except FileNotFoundError:
+            try:
+                os.mkdir('index', mode=0o755, dir_fd=parent)
+            except FileExistsError:
+                pass
+            leaf = os.open('index', flags, dir_fd=parent)
+        os.close(leaf)
+    finally:
+        os.close(parent)
+
+
+if __name__ == '__main__':
+    ensure_index(sys.argv[1])
+    os.execv(sys.executable, [sys.executable, 'manage.py', 'document_index', 'reindex'])
+"""
 
 
 def call(argv, *, capture=False, cwd=None):
     return subprocess.run(
-        argv, cwd=cwd, stdin=subprocess.DEVNULL,
+        argv,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, text=True, check=False,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
     )
 
 
@@ -62,8 +114,10 @@ def reindex(settings):
             if result.returncode:
                 raise ReindexFailure("could not stop a configured Paperless unit")
         script = (
-            "set -a; . " + shlex.quote(settings["env_file"]) + "; set +a; exec "
-            + shlex.join([settings["python_bin"], "manage.py", "document_index", "reindex"])
+            "set -a; . "
+            + shlex.quote(settings["env_file"])
+            + "; set +a; exec "
+            + shlex.join([settings["python_bin"], "-c", PREPARE_AND_REINDEX, settings["index_dir"]])
         )
         result = call(
             ["runuser", "-u", settings["username"], "--", "bash", "-euc", script],
@@ -83,7 +137,9 @@ def reindex(settings):
                 resume_failed = True
     if primary_failure is not None:
         if resume_failed:
-            raise ReindexFailure("reindex failed and at least one previous service could not resume") from primary_failure
+            raise ReindexFailure(
+                "reindex failed and at least one previous service could not resume"
+            ) from primary_failure
         raise primary_failure
     if resume_failed:
         raise ReindexFailure("reindex completed but at least one previous service could not resume")

@@ -13,7 +13,10 @@
   conditional metadata/count-based reindexing. Existing admin credentials stay
   untouched; healthy package, bind-mount and ownership steps avoid repeated
   writes. Native OCR/SFTP, PostgreSQL and recovery qualification and private
-  inventory adoption remain pending. Original Ansible reindexing is unchanged.
+  inventory adoption remain pending. Repair missing-entire-index recovery by
+  creating only the absent leaf as the service user before the upstream rebuild;
+  refuse unsafe ancestors and preserve existing directory metadata. Original
+  Ansible reindexing is unchanged.
 
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access

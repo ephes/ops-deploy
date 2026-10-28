@@ -121,3 +121,28 @@ already planned synthetic SFTP test. It does not manually create `/run/sshd`,
 change host authentication/settings, or publish ports. This prepared guest
 baseline and the separate cache recovery are not pristine original bootstrap
 success claims.
+
+
+Run40737132706 completed the SSH prerequisite and the labelled PGDG cache
+recovery in both guests. The original retry then reached123ok/49changed/1failed:
+upstream3.2.1 and3.0.4 `wipe_index()` iterated the absent `data/index` directory.
+Both run1/collection0/cleanup0 receipts, original failures and44 collected guest
+files remain; no Paperless pyinfra phase ran. This also exposed a real gap in the
+typed reindex helper, which invoked the same command without creating the leaf.
+
+Only the exact original missing-index error admits one explicitly labelled owned
+service-user `mkdir` prerequisite and a fresh original-role retry; it does not
+skip reindex or become a pristine-bootstrap success claim. The typed helper now
+creates only an absent configured index leaf with no-follow directory-descriptor
+traversal, as the service user after stopping units. Existing directories and
+parents receive no metadata repair; symlinks/non-directories/missing parents
+refuse, preserving ordinary failure/resume behavior.
+
+A distinct owned case stops the synthetic units and removes the whole index.
+It then executes the exact SHA-bound old7522 helper against the actual app,
+retaining its expected failure and raw before/after snapshots. No directory is
+preseeded before the normal new typed deployment. Recovery must create the index
+with the actual service UID, start the previously stopped configured units, and
+pass a strict0managed/0upload repeat. The old-helper control is not a full old
+package deployment or a zero-managed-operation claim. The native result of this
+runtime repair is still outstanding; no inventory mkdir/reindex is authorized.

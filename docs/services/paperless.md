@@ -38,6 +38,17 @@ process or host loss cannot guarantee resumption. Application command output is
 discarded to avoid logging document metadata. The helper retains the original
 role's lack of a separate reindex timeout.
 
+If the entire configured `data/index` directory is missing, the managed reindex
+child creates only that leaf as the Paperless service user after stopping the
+units. It pins existing ancestors with directory descriptors and refuses symbolic
+links, non-directories or missing parents. Existing directories receive no
+ownership, mode or timestamp write. It then executes the unchanged upstream
+management command. This repairs a demonstrated upstream/original-role gap:
+`wipe_index()` iterates a missing directory and fails before rebuilding. The
+original role remains unchanged. The new owned case removes the entire index,
+checks the exact old helper's failure, then requires normal typed recovery and a
+strict healthy repeat; that native result is still pending.
+
 The prepared count command uses one fixed `COUNT(*)` with the release's
 soft-delete predicate, a read-only PostgreSQL transaction and a 30-second
 statement timeout. It returns only the aggregate and refuses query errors or
