@@ -86,3 +86,22 @@ run exit1, collection exit1 (no container), cleanup exit0 (owned image absent).
 No guest or application phase ran. The runner now inspects only its actual owned
 image; the resolved upstream base digest is evidence in the retained full
 BuildKit log, not inferred from a possibly absent or unrelated local base tag.
+
+Run40732257237 booted both real systemd guests and verified all793 noneditable
+installed package files against exact31c8. Original Ansible then changed14 tasks
+and failed installing PostgreSQL17: the new PGDG repository had been written,
+but its cache refresh reported no change and the package was unavailable. Its
+3600-second cache TTL can suppress refresh after preceding dependency updates;
+the causal effect of a fresh index is tested separately, not assumed. Both raw
+before/after snapshots show package/file/unit and private-content changes.
+Run exit1, collection0 and cleanup0 are retained; no Paperless pyinfra phase ran.
+
+Only that exact original missing-package failure admits a labelled owned-fixture
+recovery: capture the fixed public PGDG source, bounded apt-list metadata and
+package policy; perform one fatal-on-error apt cache refresh; preserve its result
+and rerun the original role. An auth, network, repository or other failure stops.
+This is explicit fixture recovery, not a successful original fresh bootstrap or
+permission to repair inventory apt state. The first failure remains separate.
+The cache-refresh attempt is recorded before execution; timeout and bounded
+partial output retain a separate result, and output overflow retains its actual
+exit and a marked20MiB prefix. Neither case permits the original-role retry.

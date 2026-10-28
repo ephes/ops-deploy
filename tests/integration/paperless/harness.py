@@ -451,8 +451,9 @@ def main() -> None:
     harness = sys.modules[__name__]
     # These modules operate only through this guarded, synthetic fixture.
     from tests.integration.paperless import application_matrix, recovery_matrix, scanner_matrix
+    from tests.integration.paperless.bootstrap import original_install
 
-    ansible("00-original-install", version="3.2.1" if case == "current" else "3.0.4")
+    original_install(harness, "3.2.1" if case == "current" else "3.0.4")
     deploy("01-pyinfra-adoption" if case == "current" else "01-pyinfra-upgrade")
     deploy("02-healthy-repeat", zero=True)
     deploy("03-fish-healthy-repeat", zero=True, fish=True)
