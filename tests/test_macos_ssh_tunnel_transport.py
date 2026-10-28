@@ -19,6 +19,11 @@ from ops_deploy.services.macos_ssh_tunnel.deploy import host_command
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def recorded(calls: list[Any], value: Any, result: Any) -> Any:
+    calls.append(value)
+    return result
+
+
 def helper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], dict[str, Any]]:
     cache = tmp_path.parent / ("control-" + tmp_path.name)
     cache.mkdir(mode=0o700, exist_ok=True)
@@ -187,7 +192,7 @@ def test_local_command_deadline_stays_bounded(tmp_path: Path, monkeypatch: pytes
     ns, _ = helper(tmp_path, monkeypatch)
     calls: list[Any] = []
     monkeypatch.setattr(
-        ns["subprocess"], "run", lambda *args, **kwargs: calls.append(kwargs) or SimpleNamespace(returncode=0)
+        ns["subprocess"], "run", lambda *args, **kwargs: recorded(calls, kwargs, SimpleNamespace(returncode=0))
     )
     ns["run"](["/usr/bin/true"])
     assert calls[0]["timeout"] == 30
@@ -249,7 +254,7 @@ def test_generated_ansible_ssh_profile_matches_authorization_transport(
     ns, data = helper(tmp_path / "owner", monkeypatch)
     observed: list[list[str]] = []
     monkeypatch.setitem(
-        ns, "run", lambda argv, **kwargs: observed.append(argv) or SimpleNamespace(stdout='{"current":true}')
+        ns, "run", lambda argv, **kwargs: recorded(observed, argv, SimpleNamespace(stdout='{"current":true}'))
     )
     assert ns["authorize"](data, "ssh-ed25519 synthetic-public", True)
     actual_options = options(observed[0])
@@ -282,7 +287,7 @@ def test_unselected_or_unavailable_private_cache_uses_isolated_native_fallback(
         Path(data["ssh_control_path"]).parent.chmod(0o755)
     calls: list[list[str]] = []
     monkeypatch.setitem(
-        ns, "run", lambda argv, **kwargs: calls.append(argv) or SimpleNamespace(stdout='{"current":true}')
+        ns, "run", lambda argv, **kwargs: recorded(calls, argv, SimpleNamespace(stdout='{"current":true}'))
     )
     assert ns["authorize"](data, "ssh-ed25519 synthetic-public", True)
     opts = options(calls[0])
@@ -335,7 +340,7 @@ def test_untrusted_existing_cache_object_is_untouched_and_not_reused(
     monkeypatch.setattr(ns["os"], "lstat", lstat)
     calls: list[list[str]] = []
     monkeypatch.setitem(
-        ns, "run", lambda argv, **kwargs: calls.append(argv) or SimpleNamespace(stdout='{"current":true}')
+        ns, "run", lambda argv, **kwargs: recorded(calls, argv, SimpleNamespace(stdout='{"current":true}'))
     )
     assert ns["authorize"](data, "ssh-ed25519 synthetic-public", True)
     assert options(calls[0])["controlmaster"] == "no"
