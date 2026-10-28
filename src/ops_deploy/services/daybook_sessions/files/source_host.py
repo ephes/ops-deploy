@@ -58,7 +58,7 @@ class SourceProbes(NativeProbes):
                 "-C", self.data["checkout"], *args]
 
 
-def checkout_shape(data, account):
+def checkout_shape(data, account, *, planning=False):
     root = pathlib.Path(data["checkout"])
     for path in (root, *root.parents):
         if path.is_symlink():
@@ -66,7 +66,7 @@ def checkout_shape(data, account):
     if not root.exists():
         if not data["allow_create"]:
             raise SourceError("sessions_source_preexisting_checkout_required")
-        if not root.parent.is_dir():
+        if not root.parent.is_dir() and not planning:
             raise SourceError("sessions_source_parent_required")
         return False
     if not root.is_dir() or root.stat().st_uid != account.pw_uid:
@@ -78,8 +78,8 @@ def checkout_shape(data, account):
     return True
 
 
-def inspect(data, probes):
-    exists = checkout_shape(data, probes.account)
+def inspect(data, probes, *, planning=False):
+    exists = checkout_shape(data, probes.account, planning=planning)
     if not data["source_hashes"] or len(data["source_hashes"]) > 2048:
         raise SourceError("sessions_source_manifest_invalid")
     needs_bundle, code = True, False
@@ -269,7 +269,10 @@ def main():
             apply(data, probes)
             print("current")
         elif action == "status":
-            print(json.dumps(inspect(data, probes), sort_keys=True))
+            # Planning may precede an explicitly queued managed directory
+            # operation. It never creates that parent. Preparation/apply keep
+            # the original strict check, before any temporary upload directory.
+            print(json.dumps(inspect(data, probes, planning=True), sort_keys=True))
         elif action == "verify":
             if not inspect(data, probes)["current"]:
                 raise SourceError("sessions_source_not_current")

@@ -7,7 +7,7 @@ import json
 import re
 import shlex
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.resources import files
 from typing import Any
 
@@ -105,19 +105,29 @@ class SessionResource:
     content: str | SecretContent
 
 
-def resources(
+@dataclass(frozen=True)
+class _ResourceText:
+    path: str
+    owner: str
+    group: str
+    mode: int
+    content: str = field(repr=False)
+    private: bool = False
+
+
+def _resource_texts(
     cfg: DaybookSessionsConfig, secrets: Mapping[str, str], *, identity_verified: bool = False
-) -> tuple[SessionResource, ...]:
+) -> tuple[_ResourceText, ...]:
     if not cfg.daybook_sessions_enabled:
         return ()
     values = role_values(cfg, secrets, identity_verified=identity_verified)
     user, group = cfg.daybook_sessions_service_user, cfg.daybook_sessions_service_group
     system_owner, system_group = ("root", "wheel") if cfg.daybook_sessions_launchd_scope == "system" else (user, group)
-    rendered: list[SessionResource] = []
+    rendered: list[_ResourceText] = []
 
     def add(template: str, path: str, owner: str, file_group: str, mode: int, *, secret: bool = False) -> None:
         body = render_template(template, values)
-        rendered.append(SessionResource(path, owner, file_group, mode, SecretContent(body) if secret else body))
+        rendered.append(_ResourceText(path, owner, file_group, mode, body, secret))
 
     add("sessions.env.j2", cfg.daybook_sessions_env_file, user, group, 0o600, secret=True)
     add("ship-sessions.sh.j2", cfg.daybook_sessions_launcher_path, system_owner, system_group, 0o755)
@@ -149,9 +159,7 @@ def resources(
         env = render_template("weeknotes-reconcile.env.j2", values)
         checksum = hashlib.sha256(env.encode()).hexdigest() + "  " + cfg.daybook_weeknotes_reconcile_env_file + "\n"
         rendered.append(
-            SessionResource(
-                cfg.daybook_weeknotes_reconcile_env_checksum_file, "root", "wheel", 0o644, SecretContent(checksum)
-            )
+            _ResourceText(cfg.daybook_weeknotes_reconcile_env_checksum_file, "root", "wheel", 0o644, checksum, True)
         )
         add("reconcile-weeknotes.sh.j2", cfg.daybook_weeknotes_reconcile_launcher_path, "root", "wheel", 0o755)
         if not cfg.daybook_weeknotes_reconcile_launchd_retired:
@@ -165,3 +173,14 @@ def resources(
     if len({resource.path for resource in rendered}) != len(rendered):
         raise ValueError("Sessions managed resource paths overlap")
     return tuple(rendered)
+
+
+def resources(
+    cfg: DaybookSessionsConfig, secrets: Mapping[str, str], *, identity_verified: bool = False
+) -> tuple[SessionResource, ...]:
+    return tuple(
+        SessionResource(
+            row.path, row.owner, row.group, row.mode, SecretContent(row.content) if row.private else row.content
+        )
+        for row in _resource_texts(cfg, secrets, identity_verified=identity_verified)
+    )

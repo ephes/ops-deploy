@@ -2,8 +2,8 @@
 
 This staged port preserves the original `daybook_sessions_deploy` declaration and
 its Sessions, Archive classifier and Weeknotes reconciler resources. The guarded
-host deployment and normal routing are still being implemented and qualified;
-these resource APIs do not switch an inventory engine or authorize an update.
+host controller is undergoing owned qualification; normal inventory routing is
+still pending. These APIs do not switch an engine or authorize a live update.
 
 `DaybookSessionsConfig` retains the original 105 nonsecret variable names and
 resolves their original dependent defaults. Seven private fields stay separate
@@ -27,8 +27,10 @@ deployment must preserve an existing refreshed credential and retain the role's
 real-path, ownership, mode and single-link checks before any seeding.
 
 Normal desired source remains the once-per-run resolved head of Daybook Main.
-An installed old revision is not an alternative pin. A source/lock change needs
-the guarded update and its attended runtime window; Python stays at the declared
+An installed old revision is not an alternative pin. A change to active Inbox
+runtime source needs its guarded update and attended window. Legacy Sessions
+checkout convergence retains its original scoped guards; shared environment
+effects are assessed against the active adapters separately. Python stays at the declared
 3.14.7 unless a separate reviewed declaration changes it. The existing classifier
 command/model selection is opaque operator configuration and remains unchanged.
 Its original synthetic `Return exactly OK.` probe is an actual external command
@@ -91,3 +93,72 @@ failed synchronization remains a failure after checkout; no rollback is claimed.
 Source parents are prepared by the complete role, which is still being ported.
 This stage does not install resources, enable timers, change Pi auth or qualify a
 default inventory deployment.
+
+The resource substage under `daybook_sessions.deploy` is being qualified
+independently of the complete role. Its protected stdin carries expected resource
+contents; arguments and JSON results contain no credentials or identity fields.
+The original conditional directory/log layout is compared to the paired role.
+Existing logs are inspected through metadata and retain their inode, contents and
+modification time. Config publication uses private temporary files in the declared
+parent and atomic replacement. Standard root-owned Darwin `/etc`, `/var` and
+`/tmp` aliases retain their original declarations; arbitrary linked ancestors are
+refused. Browser profiles must be dedicated direct children of `~/.daybook`, as
+the original role requires, and existing unmarked nonempty profiles are refused.
+
+Weeknotes control preflight inspects only type, owner, mode, link count and the
+dedicated auth directory's names. Existing refreshed auth is retained without
+reading its body. A missing destination is explicitly seeded through private
+atomic no-replace publication; a concurrent destination wins. Explicit rotation
+retains the disabled/unloaded precondition. Seeding is managed work, never a fact.
+
+For a requested identity epoch, the resource stage binds the exact helper and
+twelve application module hashes before running the direct existing interpreter
+with `-I -B -S`. Source is compiled from the verified bytes in memory, avoiding
+site startup hooks and stale bytecode. The loader reads only the declared
+operational seed, plan and attestation through the reviewed verifier. Its plan
+hash stays in the remote parent's memory for comparison to the original private
+root proof and Git ancestry check. Only `schema_version` and `identity_verified`
+leave that gate. The managed helper rails/directories may already have changed if
+verification fails; environment, checksum and auth publication follow success.
+No rollback or remote identity migration is implied.
+
+The standalone resource substage requires early exact system reconcile
+quiescence. The draft full-role controller wires its separate managed primitive
+before source/config work, while the resource API only verifies the precondition.
+Retired timers refuse a running/spawning job before
+resource mutation. Enabled Sessions/classifier schedules retain the original
+explicit start/run-at-load flags and conditional kickstart behavior; Weeknotes
+ordinary installation remains disabled. No inventory adapter uses this draft
+substage yet. `deploy_daybook_sessions(config, secrets, source_tree, bundle)` and
+`install_sessions_resources(config, secrets, source_tree)` are exported with
+inventory adoption still pending review/native proof.
+
+The draft full controller orders original system reconcile quiescence, uv and
+Homebrew prerequisites, explicit directory preparation, source/environment
+convergence, the configured synthetic classifier probe, then resource/timer
+convergence and verification. Homebrew installs only missing packages; it does
+not upgrade existing packages, and explicit `brew_update` retains its separate
+update request. Source status can plan an absent parent without creating it;
+actual transfer preparation/apply still require the earlier explicit directory
+operation to have succeeded. Pending source work defers application imports
+until apply binds the installed code.
+
+Pure identity, repository-policy and Git/test probes use the existing direct
+metadata execution pattern with bound environment/interpreter and no login
+profile. Managed source, Homebrew and model commands retain their original login
+context. The original pinned `public_repository_policy_from_env` is invoked only
+from the same hash-bound twelve-module closure, with the supplied repository
+declaration; it never opens a Journal or contacts a client. Its result is reduced
+to a boolean. A configured classifier probe remains actual managed application
+work on every deployment, including repeats. Its original bounded synthetic
+input, model command and timeout remain intact; it is not disabled to manufacture
+a zero-work repeat. A timeout terminates the probe's owned process group and
+remains a genuine failure. The GUI account creates that exact child group/session
+with `start_new_session`, checks queryable PGID/SID metadata, and retains the
+creation proof when macOS cannot query an unreaped exited leader. Its reserved
+PID/group ID cannot be reused before cleanup. Sudo's optional pseudo-terminal
+does not own the model deadline. Post-signal pipe/reaping waits are bounded; wrapper
+startup/report transport has a separate five-second allowance, without extending
+the configured model execution budget. An absent or incomplete cleanup report
+fails the deployment. No real model/probe or source/profile transition is
+authorized by these APIs or owned proofs.

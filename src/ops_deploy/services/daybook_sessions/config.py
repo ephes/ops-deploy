@@ -226,7 +226,7 @@ class DaybookSessionsConfig(RoleConfig):
         default=DEFAULTS["daybook_weeknotes_identity_apply_confirmation"]
     )
     daybook_weeknotes_identity_seed_moves: list[dict[str, Any]] = Field(
-        default=DEFAULTS["daybook_weeknotes_identity_seed_moves"]
+        default=DEFAULTS["daybook_weeknotes_identity_seed_moves"], repr=False
     )
     daybook_weeknotes_path: str = Field(default=DEFAULTS["daybook_weeknotes_path"])
     daybook_weeknotes_cast_base_url: str = Field(default=DEFAULTS["daybook_weeknotes_cast_base_url"])
@@ -299,8 +299,8 @@ class DaybookSessionsConfig(RoleConfig):
                 raise ValueError("Enabled classifier requires its existing command")
             browser = PurePosixPath(self.daybook_archive_browser_user_data_dir)
             parent = PurePosixPath(self.daybook_sessions_service_home) / ".daybook"
-            if not browser.is_relative_to(parent) or browser == parent:
-                raise ValueError("Classifier needs a dedicated browser profile below the service home")
+            if browser.parent != parent:
+                raise ValueError("Classifier needs a dedicated browser profile directly below the service home")
         if self.daybook_weeknotes_reconcile_enabled:
             self._weeknotes_guard()
         return self

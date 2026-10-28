@@ -187,6 +187,27 @@ def test_checkout_only_source_change_never_queries_unrelated_supervisors(
     assert not Path(data["transfer_dir"]).exists()
 
 
+def test_status_can_plan_explicit_source_parent_preparation_without_creating_it(
+    checkout: tuple[dict[str, Any], Path, SourceTree],
+) -> None:
+    data, bundle, source = checkout
+    root = source.path.parent / "explicitly-prepared-parent"
+    data.update(allow_create=True, checkout=str(root / "checkout"), python=str(root / "checkout/.venv/bin/python"))
+    probes = Probes(data)
+    state = MODULE["inspect"](data, probes, planning=True)
+    assert state["current"] is False
+    assert state["needs_bundle"] is True
+    assert not root.exists()
+    with pytest.raises(RuntimeError, match="sessions_source_parent_required"):
+        MODULE["inspect"](data, probes)
+    assert not root.exists()
+    root.mkdir()  # explicitly managed preparation boundary in the full role
+    stage_transfer(data, bundle)
+    MODULE["apply"](data, probes)
+    assert git(Path(data["checkout"]), "rev-parse", "HEAD") == source.commit
+    assert MODULE["inspect"](data, probes)["current"] is True
+
+
 @pytest.mark.parametrize("fault", ["untracked", "tracked", "linked", "missing"])
 def test_original_no_fetch_shape_cleanliness_guards_preserve_tree(
     checkout: tuple[dict[str, Any], Path, SourceTree],

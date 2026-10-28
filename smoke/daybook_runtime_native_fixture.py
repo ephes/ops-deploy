@@ -18,10 +18,11 @@ import shlex
 import shutil
 import sys
 import time
+import types
 from pathlib import Path
 from typing import Any
 
-from mac_apps_owned import OwnedMac, command, job_pid
+from mac_apps_owned import OwnedMac, command, job_pid, processes, stop_exact, tree
 
 from ops_deploy.core.git_source import SourceTree
 from ops_deploy.services.daybook_operations_runtime import (
@@ -34,7 +35,7 @@ from ops_deploy.services.daybook_operations_runtime import (
 from ops_deploy.services.daybook_operations_runtime.inspect import SCRIPT, observation_payload, verify_daybook_runtime
 from ops_deploy.services.daybook_operations_runtime.render import credential_text, render_resource
 from ops_deploy.services.daybook_operations_runtime.status import SourceStatus
-from ops_deploy.services.daybook_sessions import DaybookSessionsConfig, install_sessions_source
+from ops_deploy.services.daybook_sessions import DaybookSessionsConfig, deploy_daybook_sessions, install_sessions_source
 from ops_deploy.testing import run_deploy_ssh
 
 APP = """import json,pathlib,subprocess,sys,time
@@ -762,6 +763,262 @@ def main() -> None:
         owned.report["sessions_source_repeat_actual_sftp"] = source_repeat_uploads
         owned.report["sessions_source_bundle_removed_runtime_resources_preserved"] = True
         owned.report["sessions_legacy_first_repeat_unrelated_keeper_pid_resources_preserved"] = True
+        # Full original base Sessions composition: fresh source parent, exact
+        # locked environment and owned configuration/logs, while the unrelated
+        # Inbox-backed keeper remains running. This fixture selects the original
+        # unmanaged timer mode; it never toggles a global reconcile namespace.
+        full_root = owned.root / "sessions-full"
+        full_root.mkdir(mode=0o755)
+        full_cfg = DaybookSessionsConfig(
+            daybook_sessions_launchd_scope="user",
+            daybook_sessions_launchd_manage_state=False,
+            daybook_sessions_launchd_enabled=False,
+            daybook_sessions_service_user="runner",
+            daybook_sessions_service_group="staff",
+            daybook_sessions_repo_ref=session_revision,
+            daybook_sessions_repo_update=True,
+            daybook_sessions_checkout_force=False,
+            daybook_sessions_checkout_path=str(full_root / "source/daybook"),
+            daybook_sessions_repo_bundle_path=str(full_root / "temporary-main.bundle"),
+            daybook_sessions_config_dir=str(full_root / "config"),
+            daybook_sessions_log_dir=str(full_root / "logs"),
+            daybook_sessions_state_path=str(full_root / "state/sessions.json"),
+            daybook_sessions_launchd_plist_path=str(full_root / "agents/sessions.plist"),
+            daybook_archive_quote_classifier_launchd_plist_path=str(full_root / "agents/classifier.plist"),
+            daybook_sessions_remove_legacy_runner_paths=[],
+            daybook_sessions_brew_packages=[],
+            daybook_sessions_uv_bin=str(uv_wrapper),
+            daybook_sessions_launchd_path="/usr/bin:/bin:/usr/sbin:/sbin",
+            daybook_sessions_aws_endpoint_url_s3="https://s3.example.test",
+        )
+        full_secrets = {
+            "daybook_sessions_aws_access_key_id": "UNUSABLE-OWNED-ACCESS",
+            "daybook_sessions_aws_secret_access_key": "UNUSABLE-OWNED-SECRET",
+        }
+        assert not Path(full_cfg.daybook_sessions_checkout_path).parent.exists()
+        full_first, full_uploads = source_run_with_upload_counter(
+            deploy_daybook_sessions,
+            full_cfg,
+            full_secrets,
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert full_first.succeeded, str(full_first.error)
+        assert len(full_first.mutating_changed_ops) == 5
+        assert {key: value for key, value in full_uploads.items() if key != "paths"} == {
+            "attempted": 1,
+            "succeeded": 1,
+            "failed": 0,
+        }
+        assert len(full_uploads["paths"]) == 1
+        assert not Path(full_uploads["paths"][0]).parent.exists()
+        assert snapshot(protected) == before
+        assert job_pid(service) == pid
+        assert snapshot([session_checkout]) == session_current
+        full_current = snapshot([full_root])
+        full_repeat, full_repeat_uploads = source_run_with_upload_counter(
+            deploy_daybook_sessions,
+            full_cfg,
+            full_secrets,
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert full_repeat.succeeded, str(full_repeat.error)
+        assert full_repeat.mutating_changed_ops == []
+        assert full_repeat_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
+        assert snapshot([full_root]) == full_current
+        assert snapshot(protected) == before
+        assert job_pid(service) == pid
+        assert snapshot([session_checkout]) == session_current
+        owned.report["sessions_base_full_first_managed_ops"] = 5
+        owned.report["sessions_base_full_first_actual_sftp"] = full_uploads
+        owned.report["sessions_base_full_repeat_managed_ops"] = 0
+        owned.report["sessions_base_full_repeat_actual_sftp"] = full_repeat_uploads
+        owned.report["sessions_base_full_fresh_parent_and_resource_repeat_preserve_unrelated_keeper"] = True
+        # Exercise the actual shared pure root→GUI transport, existing exact
+        # interpreter and protected stdin. This is a synthetic loader, distinct
+        # from the separately audited exact private twelve-module verifier.
+        assert os.geteuid() == 0
+        transport_protected = snapshot([full_root])
+        transport_modules = {}
+        try:
+            for name, filename in (
+                ("ops_sessions_resources", "resources_host.py"),
+                ("ops_sessions_controls", "controls_host.py"),
+                ("ops_sessions_dependencies", "dependencies_host.py"),
+            ):
+                transport_modules[name] = sys.modules.get(name)
+                module = types.ModuleType(name)
+                sys.modules[name] = module
+                body = (
+                    importlib.resources.files("ops_deploy.services.daybook_sessions")
+                    .joinpath("files/" + filename)
+                    .read_bytes()
+                )
+                exec(compile(body, "<owned-installed-" + filename + ">", "exec"), module.__dict__)
+            synthetic_loader = (
+                "import json,os,sys\n"
+                "data=json.load(sys.stdin)\n"
+                "assert os.geteuid()==data['expected_uid']\n"
+                "assert sys.version_info[:3]==(3,14,7)\n"
+                "assert data['private']=='UNUSABLE-OWNED-TRANSPORT-INPUT'\n"
+                "print(json.dumps({'schema_version':1,'transport_bound':True}))\n"
+            )
+            transport = sys.modules["ops_sessions_controls"].bound_loader(
+                full_cfg.model_dump(mode="json"),
+                synthetic_loader,
+                {"expected_uid": actor.pw_uid, "private": "UNUSABLE-OWNED-TRANSPORT-INPUT"},
+            )
+            assert json.loads(transport) == {"schema_version": 1, "transport_bound": True}
+            assert b"UNUSABLE" not in transport
+            assert snapshot([full_root]) == transport_protected
+            # Actual original root→GUI login execution, with synthetic model
+            # only. The timeout/group owner is inside that GUI context even if
+            # sudo allocates its own pseudo-terminal/session.
+            dependency_cfg = full_cfg.model_dump(mode="json")
+            dependency_cfg.update(
+                daybook_archive_quote_classifier_enabled=True,
+                daybook_archive_quote_classifier_probe_enabled=True,
+                daybook_archive_quote_classifier_probe_timeout_seconds=1,
+                daybook_archive_quote_classifier_cmd=shlex.join(
+                    [
+                        str(Path(full_cfg.daybook_sessions_checkout_path) / ".venv/bin/python"),
+                        "-I",
+                        "-B",
+                        "-S",
+                        "-c",
+                        "import sys;assert sys.stdin.read()=='Return exactly OK.\\n';print('OK')",
+                    ]
+                ),
+            )
+            dependencies = sys.modules["ops_sessions_dependencies"].Dependencies(dependency_cfg)
+            dependencies.probe()
+            probe_marker = Path(full_cfg.daybook_sessions_state_path).parent / "owned-probe-process.json"
+            assert not probe_marker.exists()
+            model_code = (
+                "import json,os,pathlib,time;"
+                f"pathlib.Path({str(probe_marker)!r}).write_text(json.dumps("
+                "{'pid':os.getpid(),'pgid':os.getpgrp(),'sid':os.getsid(0),'uid':os.geteuid()}));time.sleep(30)"
+            )
+            dependency_cfg["daybook_archive_quote_classifier_cmd"] = shlex.join(
+                [
+                    str(Path(full_cfg.daybook_sessions_checkout_path) / ".venv/bin/python"),
+                    "-I",
+                    "-B",
+                    "-S",
+                    "-c",
+                    model_code,
+                ]
+            )
+            tracked_probe: dict[int, str] = {}
+            probe_roots = [
+                Path(full_cfg.daybook_sessions_checkout_path),
+                Path(full_cfg.daybook_sessions_config_dir),
+                Path(full_cfg.daybook_sessions_log_dir),
+                Path(full_cfg.daybook_sessions_launchd_plist_path).parent,
+            ]
+            probe_protected = snapshot(probe_roots)
+
+            def captured_probe_group() -> dict[int, str]:
+                if not probe_marker.exists():
+                    return {}
+                identity = json.loads(probe_marker.read_text())
+                assert set(identity) == {"pid", "pgid", "sid", "uid"}
+                assert identity["uid"] == actor.pw_uid
+                assert identity["pgid"] == identity["sid"] != os.getpgrp()
+                table = processes()
+                group = {p for p, row in table.items() if row["pgid"] == identity["pgid"]}
+                assert all(table[p]["uid"] == actor.pw_uid for p in group)
+                return tree(group, groups={identity["pgid"]})
+
+            leader_exits = (
+                "import subprocess,sys;subprocess.Popen([sys.executable,'-I','-B','-S','-c',"
+                + repr(model_code)
+                + "]);print('OK')"
+            )
+            probe_cases = [
+                dependency_cfg["daybook_archive_quote_classifier_cmd"],
+                shlex.join(
+                    [
+                        str(Path(full_cfg.daybook_sessions_checkout_path) / ".venv/bin/python"),
+                        "-I",
+                        "-B",
+                        "-S",
+                        "-c",
+                        leader_exits,
+                    ]
+                ),
+            ]
+            for probe_case in probe_cases:
+                dependency_cfg["daybook_archive_quote_classifier_cmd"] = probe_case
+                try:
+                    probe_error = None
+                    try:
+                        dependencies.probe()
+                    except sys.modules["ops_sessions_resources"].ResourceError as error:
+                        probe_error = str(error)
+                    tracked_probe = captured_probe_group()
+                    assert probe_error == "sessions_classifier_probe_timed_out"
+                    assert probe_marker.exists()
+                    # Prove production cleanup before any owned fixture backstop.
+                    assert not tracked_probe
+                    assert snapshot(probe_roots) == probe_protected
+                    assert snapshot(protected) == before
+                    assert job_pid(service) == pid
+                finally:
+                    # A surviving process fails above; exact PID/start backstop
+                    # cannot turn that failed proof into green.
+                    assert not stop_exact(captured_probe_group())
+                    if probe_marker.exists():
+                        probe_marker.unlink()
+            owned.report["sessions_actual_root_gui_synthetic_probe_success_and_owned_group_timeout_cleanup"] = True
+            owned.report["sessions_actual_root_gui_synthetic_probe_timeout_cases"] = len(probe_cases)
+        finally:
+            for name, previous in transport_modules.items():
+                if previous is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = previous
+        assert snapshot(protected) == before
+        assert job_pid(service) == pid
+        owned.report["sessions_pure_actual_root_gui_transport_bound_interpreter_stdin_metadata_exact"] = True
+        config_path = Path(full_cfg.daybook_sessions_config_dir)
+        held_config = full_root / "owned-protected-config"
+        config_path.rename(held_config)
+        config_path.symlink_to(held_config, target_is_directory=True)
+        fault_protected = snapshot([held_config, Path(full_cfg.daybook_sessions_checkout_path)])
+        try:
+            resource_fault, resource_fault_uploads = source_run_with_upload_counter(
+                deploy_daybook_sessions,
+                full_cfg,
+                full_secrets,
+                session_source,
+                session_bundle,
+                host_name="owned-daybook",
+                host_data=host_data,
+            )
+            assert not resource_fault.succeeded
+            assert resource_fault.mutating_changed_ops == []
+            assert resource_fault_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
+            assert snapshot([held_config, Path(full_cfg.daybook_sessions_checkout_path)]) == fault_protected
+            assert snapshot(protected) == before
+            assert job_pid(service) == pid
+            owned.report["sessions_base_full_linked_resource_refusal_preserves_source_config_and_keeper"] = True
+            owned.report["sessions_base_full_linked_resource_failure_type"] = type(resource_fault.error).__name__
+        finally:
+            # Restore only this deliberately malformed owned fixture topology;
+            # no inventory repair or successful deployment replay is involved.
+            assert config_path.is_symlink()
+            config_path.unlink()
+            held_config.rename(config_path)
+        owned.report["limitations"].append(
+            "Full base Sessions native proof uses original unmanaged timer mode and no Archive/Weeknotes component; "
+            "paired role/layout tests and separate bound identity/launchd proofs have distinct scope."
+        )
         stop_cfg = cfg.model_copy(update={"action": "stop", "confirmed": True})
         clock = command("/bin/date", "+%H:%M", env={**os.environ, "TZ": "Europe/Berlin"}).stdout.strip()
         assert clock < "23:58", "Owned full-day window fault needs a bounded midnight margin"

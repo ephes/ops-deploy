@@ -121,6 +121,9 @@ LOADS_NO_HOST_SCRIPT: dict[str, str] = {
     "infra/traefik_tx/runner.py": "the staged copy of infra/traefik_tx/engine.py (a package module)",
     "infra/traefik_tx/retention.py": "engine.py next to it (infra/traefik_tx/engine.py, a package module)",
     "services/fastdeploy/files/ensure_token_user.py": "FastDeploy's own commands.py in the site directory",
+    "services/daybook_sessions/files/identity_host.py": (
+        "the hash-bound twelve Daybook application modules and rendered identity helper, not an ops-deploy host script"
+    ),
 }
 
 

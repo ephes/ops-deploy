@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Build the Sessions protected resource substage with original filesystem,
+  browser/private-control, refreshed-auth, identity-proof and timer contracts.
+  Add draft original controller ordering, install-missing prerequisites and
+  explicitly managed synthetic model probes. Keep inventory adoption separate
+  while qualification continues; restore the original direct-child browser
+  declaration and status-only planning for explicit source-parent preparation.
+
 - Preserve checkout-only Sessions convergence while an unrelated Inbox-backed
   supervisor runs; retain the original scoped system reconcile quiescence guard.
 

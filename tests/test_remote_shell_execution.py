@@ -176,11 +176,16 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # Runtime stop is also always base64 encoded by stop_command, never raw
     # Python in shell source. The actual composed command is exercised below.
     encoded_daybook_runtime = {"services/daybook_operations_runtime/files/runtime_stop.py"}
+    # Sessions resource_command also always base64-encodes this source. The
+    # actual composed CLI with protected stdin and its synthetic model probe is
+    # executed through both real shells in test_daybook_sessions_resource_cli.
+    encoded_daybook_sessions = {"services/daybook_sessions/files/dependencies_host.py"}
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
         if path.name != "env_exec.py"
-        and str(path.relative_to(SRC)) not in encoded_mail_web | stdin_software_live | encoded_daybook_runtime
+        and str(path.relative_to(SRC))
+        not in encoded_mail_web | stdin_software_live | encoded_daybook_runtime | encoded_daybook_sessions
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
