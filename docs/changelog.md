@@ -4,7 +4,9 @@
 
 - Add the original fixed-path software-estate removal as a typed lifecycle
   operation, preserving directory/file/link removal and an absent-path no-op.
-  It does not restore the retired pilot or change deploy-default counts.
+  It does not restore the retired pilot or change deploy-default counts. Owned
+  Ubuntu CI proved actual directory/file/link/absent first/repeat behavior;
+  inventory removal was not performed. Private routing adoption remains separate.
 
 - Keep new Tailscale namespace exports available without eagerly importing their
   Fractal endpoint model. Existing Fractal components can again initialize first
