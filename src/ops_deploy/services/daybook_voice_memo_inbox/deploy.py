@@ -121,8 +121,70 @@ def inspect_inbox(data: dict[str, Any]) -> dict[str, bool]:
 def upload_inbox_bundle(src: str, dest: str) -> Generator[FileUploadCommand | StringCommand, None, None]:
     # SFTP always uses the existing connecting identity. Explicit private parent
     # preparation and descriptor-checked root publication happen separately.
-    yield BundleUploadCommand(src, dest, _sudo=False, _sudo_user="", _su_user="", _doas=False, _dzdo=False)
-    yield StringCommand(shlex.join(["/bin/chmod", "0600", dest]), _sudo=False, _sudo_user="", _su_user="")
+    yield BundleUploadCommand(
+        src, dest, _sudo=False, _sudo_user="", _su_user="", _doas=False, _doas_user="", _dzdo=False, _dzdo_user=""
+    )
+    yield StringCommand(
+        shlex.join(["/bin/chmod", "0600", dest]),
+        _sudo=False,
+        _sudo_user="",
+        _su_user="",
+        _doas=False,
+        _doas_user="",
+        _dzdo=False,
+        _dzdo_user="",
+    )
+
+
+def _connecting_uid() -> int:
+    value = host.get_fact(
+        Command,
+        command="/usr/bin/id -u",
+        _sudo=False,
+        _sudo_user="",
+        _su_user="",
+        _doas=False,
+        _doas_user="",
+        _dzdo=False,
+        _dzdo_user="",
+    )
+    if not value or not value.isdecimal():
+        raise DeployError("Inbox original connecting uid is unavailable")
+    return int(value)
+
+
+def _transfer_operation(data: dict[str, Any], *, cleanup: bool = False) -> OperationMeta:
+    return secret_stdin(
+        name="Clean private existing-identity Inbox source transfer"
+        if cleanup
+        else "Prepare private existing-identity Inbox source transfer",
+        command=component_command("cleanup-transfer" if cleanup else "prepare-transfer"),
+        content=SecretContent(json.dumps(data) + "\n"),
+        _sudo=False,
+        _sudo_user="",
+        _su_user="",
+        _doas=False,
+        _doas_user="",
+        _dzdo=False,
+        _dzdo_user="",
+    )
+
+
+def _cleanup_transfer_now(target: Host, data: dict[str, Any]) -> bool:
+    with io.StringIO(json.dumps(data) + "\n") as stream:
+        success, _ = target.run_shell_command(
+            component_command("cleanup-transfer"),
+            _stdin=stream,
+            _get_pty=False,
+            _sudo=False,
+            _sudo_user="",
+            _su_user="",
+            _doas=False,
+            _doas_user="",
+            _dzdo=False,
+            _dzdo_user="",
+        )
+    return bool(success)
 
 
 def transfer_cleanup(
@@ -147,15 +209,7 @@ def transfer_cleanup(
             if armed["value"] and (operation is uploaded or operation is applied):
                 armed["value"] = False
                 try:
-                    with io.StringIO(json.dumps(data) + "\n") as stream:
-                        success, _ = target.run_shell_command(
-                            component_command("cleanup-transfer"),
-                            _stdin=stream,
-                            _get_pty=False,
-                            _sudo=False,
-                            _sudo_user="",
-                            _su_user="",
-                        )
+                    success = _cleanup_transfer_now(target, data)
                 except Exception:
                     success = False
                 if not success:
@@ -209,9 +263,7 @@ def install_daybook_inbox(
             managed("Prepare original Inbox directories and preserved logs", "directories")
         if not state["source_current"]:
             # Immutable controller bundle is already bound by source_payload.
-            original_uid = host.get_fact(Command, command="/usr/bin/id -u", _sudo=False, _sudo_user="", _su_user="")
-            if not original_uid or not original_uid.isdecimal():
-                raise DeployError("Inbox original connecting uid is unavailable")
+            original_uid = _connecting_uid()
             temporary = "/private/var/tmp/ops-deploy-daybook-inbox-" + uuid.uuid4().hex
             data.update(
                 transfer_dir=temporary,
@@ -219,14 +271,7 @@ def install_daybook_inbox(
                 transfer_uid=int(original_uid),
                 bundle_sha256=hashlib.sha256(bundle.read_bytes()).hexdigest(),
             )
-            prepared = secret_stdin(
-                name="Prepare private existing-identity Inbox source transfer",
-                command=component_command("prepare-transfer"),
-                content=SecretContent(json.dumps(data) + "\n"),
-                _sudo=False,
-                _sudo_user="",
-                _su_user="",
-            )
+            prepared = _transfer_operation(data)
             uploaded = upload_inbox_bundle(
                 name="Upload exact Inbox Main bundle", src=str(bundle), dest=data["uploaded_bundle"]
             )

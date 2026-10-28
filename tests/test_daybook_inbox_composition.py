@@ -49,3 +49,34 @@ def test_other_runtime_resource_or_interpreter_binding_is_not_treated_as_current
 def test_observed_enabled_bit_without_declaration_cannot_reassign_plist_ownership() -> None:
     with pytest.raises(ValueError, match="evidence requires"):
         final_resources(config(), secrets(), installed=InstalledRuntime(True, True, True))
+
+
+@pytest.mark.parametrize("long_enabled", [False, True])
+@pytest.mark.parametrize("keeper_enabled", [False, True])
+def test_internal_raw_stdin_projection_exactly_matches_public_secret_wrapped_bytes(
+    long_enabled: bool, keeper_enabled: bool
+) -> None:
+    from ops_deploy.services.daybook_voice_memo_inbox.render import _resource_texts
+    from ops_deploy.services.daybook_voice_memo_inbox.resource_payload import resource_payload
+
+    cfg = config(daybook_voice_memo_inbox_long_label_enabled=long_enabled)
+    profile = runtime()
+    observed = InstalledRuntime(keeper_enabled, True, True)
+    data = resource_payload(cfg, secrets(), uid=501, runtime=profile, installed=observed)
+
+    def expected(rows: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "path": row.path,
+                "owner": row.owner,
+                "group": row.group,
+                "mode": row.mode,
+                "content": row.content.reveal().decode(),
+            }
+            for row in rows
+        ]
+
+    assert data["resources"] == expected(resources(cfg, secrets()))
+    assert data["final_resources"] == expected(final_resources(cfg, secrets(), runtime=profile, installed=observed))
+    assert "UNUSABLE-OWNED-CREDENTIAL" not in repr(resources(cfg, secrets()))
+    assert "UNUSABLE-OWNED-CREDENTIAL" not in repr(_resource_texts(cfg, secrets()))

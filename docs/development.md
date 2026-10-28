@@ -18,8 +18,13 @@ CI (`.github/workflows/ci.yml`) runs `just check` steps on Python 3.12 and 3.13.
 
 ## Rules enforced by tests and lint
 
-- No `_sudo`, `_sudo_user`, `_su_user` or `_doas` in `ops_deploy`
-  (`tests/test_policy.py`): pyinfra stages `_sudo` uploads as plaintext in `/tmp`.
+- Never enable pyinfra privilege arguments or choose another user in `ops_deploy`
+  (`tests/test_policy.py`): sudo/doas/dzdo/su uploads otherwise use shared plaintext
+  temporary staging. Literal `False` may disable each actual SDK flag. Empty/None
+  user clearing requires the corresponding flag disabled in the same call;
+  `_su_user` clearing requires all three flags disabled (there is no `_su` flag).
+  True, dynamic values, integer zero, user overrides and clearing alone remain
+  forbidden. Explicit private connecting-identity handoffs preserve this invariant.
 - No secret-looking or payload (`*_JSON`, `*_DATA`, `*_SPEC`) environment
   name in a user-switched command's environment or on a command line, and no
   pyinfra `_env` (`tests/test_become_environment_secrets.py`, see

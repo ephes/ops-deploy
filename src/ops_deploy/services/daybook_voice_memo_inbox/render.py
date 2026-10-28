@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.resources import files
 
 import jinja2
@@ -56,7 +56,18 @@ class InboxResource:
     content: SecretContent
 
 
-def resources(cfg: DaybookInboxConfig, secrets: Mapping[str, str]) -> tuple[InboxResource, ...]:
+@dataclass(frozen=True)
+class _InboxResourceText:
+    """Private expected text, like Sessions' internal resource rendering."""
+
+    path: str
+    owner: str
+    group: str
+    mode: int
+    content: str = field(repr=False)
+
+
+def _resource_texts(cfg: DaybookInboxConfig, secrets: Mapping[str, str]) -> tuple[_InboxResourceText, ...]:
     if not cfg.daybook_voice_memo_inbox_enabled:
         return ()
     values = role_values(cfg, secrets)
@@ -82,6 +93,14 @@ def resources(cfg: DaybookInboxConfig, secrets: Mapping[str, str]) -> tuple[Inbo
             )
         )
     return tuple(
-        InboxResource(path, owner, group, mode, SecretContent(render_template(name, values)))
+        _InboxResourceText(path, owner, group, mode, render_template(name, values))
         for name, path, owner, group, mode in rows
+    )
+
+
+def resources(cfg: DaybookInboxConfig, secrets: Mapping[str, str]) -> tuple[InboxResource, ...]:
+    """Public rendered values remain wrapped; only secret_stdin unwraps content."""
+    return tuple(
+        InboxResource(row.path, row.owner, row.group, row.mode, SecretContent(row.content))
+        for row in _resource_texts(cfg, secrets)
     )

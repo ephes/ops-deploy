@@ -15,18 +15,18 @@ from ops_deploy.services.daybook_operations_runtime.decision import InstalledRun
 from ops_deploy.services.daybook_operations_runtime.render import render_resource
 
 from .config import DaybookInboxConfig
-from .render import InboxResource, resources
+from .render import InboxResource, _InboxResourceText, _resource_texts
 
 
-def final_resources(
+def _final_resource_texts(
     cfg: DaybookInboxConfig,
     secrets: Mapping[str, str],
     *,
     runtime: DaybookRuntimeConfig | None = None,
     installed: InstalledRuntime | None = None,
-) -> tuple[InboxResource, ...]:
+) -> tuple[_InboxResourceText, ...]:
     """Compare the declared shared resource owner, with no new marker or flag."""
-    original = resources(cfg, secrets)
+    original = _resource_texts(cfg, secrets)
     if runtime is None:
         if installed is not None:
             raise ValueError("Inbox runtime evidence requires its declared runtime configuration")
@@ -47,10 +47,22 @@ def final_resources(
     if not cfg.daybook_voice_memo_inbox_enabled or installed is None or not installed.enabled:
         return original
     return tuple(
-        InboxResource(
-            row.path, row.owner, row.group, row.mode, SecretContent(render_resource(runtime, "runtime.plist.j2"))
-        )
+        _InboxResourceText(row.path, row.owner, row.group, row.mode, render_resource(runtime, "runtime.plist.j2"))
         if row.path == cfg.daybook_voice_memo_inbox_plist_path
         else row
         for row in original
+    )
+
+
+def final_resources(
+    cfg: DaybookInboxConfig,
+    secrets: Mapping[str, str],
+    *,
+    runtime: DaybookRuntimeConfig | None = None,
+    installed: InstalledRuntime | None = None,
+) -> tuple[InboxResource, ...]:
+    """Public final expectations retain secret wrappers and safe reprs."""
+    return tuple(
+        InboxResource(row.path, row.owner, row.group, row.mode, SecretContent(row.content))
+        for row in _final_resource_texts(cfg, secrets, runtime=runtime, installed=installed)
     )

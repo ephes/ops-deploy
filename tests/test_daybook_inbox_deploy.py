@@ -172,3 +172,43 @@ def test_stopped_but_enabled_resource_drift_selects_original_installer_postcondi
     ]
     assert actions == ["resources", "verify-installed"]
     assert run.ops[-1].read_only is True
+
+
+def test_actual_sdk_commands_disable_every_inherited_escalation_before_upload_or_chmod() -> None:
+    import inspect
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from pyinfra.api.arguments import ConnectorArguments
+
+    observed: list[dict[str, Any]] = []
+
+    def upload(*_args: Any, **kwargs: Any) -> bool:
+        observed.append(kwargs)
+        return True
+
+    def shell(*_args: Any, **kwargs: Any) -> tuple[bool, object]:
+        observed.append(kwargs)
+        return True, object()
+
+    target = SimpleNamespace(put_file=upload, run_shell_command=shell)
+    state = SimpleNamespace(print_output=False, print_input=False)
+    commands = list(inspect.unwrap(api.upload_inbox_bundle)("/owned/source.bundle", "/owned/private/source.bundle"))
+    for command in commands:
+        inherited = cast(
+            ConnectorArguments,
+            {
+                "_sudo": True,
+                "_sudo_user": "root",
+                "_doas": True,
+                "_doas_user": "root",
+                "_dzdo": True,
+                "_dzdo_user": "root",
+                "_su_user": "root",
+            },
+        )
+        assert command.execute(state, target, inherited)
+    assert len(observed) == 2
+    for kwargs in observed:
+        assert all(kwargs[key] is False for key in ("_sudo", "_doas", "_dzdo"))
+        assert all(kwargs[key] == "" for key in ("_sudo_user", "_doas_user", "_dzdo_user", "_su_user"))

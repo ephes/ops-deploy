@@ -63,3 +63,12 @@ Owned fixtures use inert code and unusable credentials. They do not read real
 Voice Memos, call private app status, activate an Inbox or change TCC/auth policy.
 Mechanism and source proofs are recorded separately from actual inventory
 qualification.
+
+The installer explicitly disables inherited CLI sudo/doas/dzdo/su for connecting-identity
+metadata and private SFTP staging. Literal empty user overrides accompany that
+same no-escalation call. This prevents pyinfra from copying an upload through shared
+plaintext temporary staging; it never enables privilege or selects another user.
+Root publication remains the separately guarded operation using protected stdin
+and descriptor checks. Internal raw expected texts follow Sessions' established
+rendering pattern; public resource objects remain `SecretContent`, and only the
+secret operation unwraps them.

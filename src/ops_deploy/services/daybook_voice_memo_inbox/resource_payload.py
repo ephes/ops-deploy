@@ -9,10 +9,10 @@ from typing import Any
 from ops_deploy.services.daybook_operations_runtime import DaybookRuntimeConfig
 from ops_deploy.services.daybook_operations_runtime.decision import InstalledRuntime
 
-from .composition import final_resources
+from .composition import _final_resource_texts
 from .config import DaybookInboxConfig
 from .layout import directories, logs
-from .render import resources
+from .render import _resource_texts
 
 
 def resource_payload(
@@ -34,7 +34,7 @@ def resource_payload(
                 "owner": row.owner,
                 "group": row.group,
                 "mode": row.mode,
-                "content": row.content.reveal().decode(),
+                "content": row.content,
             }
             for row in values
         ]
@@ -46,8 +46,8 @@ def resource_payload(
         "long_label": cfg.daybook_voice_memo_inbox_long_launchd_label,
         "directories": [asdict(row) for row in directories(cfg)],
         "logs": [asdict(row) for row in logs(cfg)],
-        "resources": rows(resources(cfg, secrets)),
-        "final_resources": rows(final_resources(cfg, secrets, runtime=runtime, installed=installed)),
+        "resources": rows(_resource_texts(cfg, secrets)),
+        "final_resources": rows(_final_resource_texts(cfg, secrets, runtime=runtime, installed=installed)),
         "retired_long_plist": (
             cfg.daybook_voice_memo_inbox_long_plist_path
             if cfg.daybook_voice_memo_inbox_enabled and not cfg.daybook_voice_memo_inbox_long_label_enabled

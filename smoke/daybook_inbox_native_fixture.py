@@ -7,6 +7,7 @@ via explicit fixture-only model copies. No inventory or private app is reached.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.resources
 import json
 import os
@@ -15,6 +16,7 @@ import pwd
 import stat
 import sys
 import types
+import uuid
 from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -25,6 +27,7 @@ import pytest
 from daybook_resources_native_fixture import provenance, wait
 from daybook_runtime_native_fixture import snapshot
 from mac_apps_owned import OwnedMac, command, job_pid
+from pyinfra.api import deploy
 from pyinfra.api.exceptions import ConnectError, PyinfraError
 from pyinfra.connectors.ssh import SSHConnector
 
@@ -33,6 +36,7 @@ from ops_deploy.services.daybook_operations_runtime import DaybookRuntimeConfig
 from ops_deploy.services.daybook_operations_runtime.decision import InstalledRuntime
 from ops_deploy.services.daybook_operations_runtime.render import render_resource
 from ops_deploy.services.daybook_voice_memo_inbox import DaybookInboxConfig, install_daybook_inbox
+from ops_deploy.services.daybook_voice_memo_inbox import deploy as inbox_api
 from ops_deploy.services.daybook_voice_memo_inbox.config import PACKAGE
 from ops_deploy.services.daybook_voice_memo_inbox.deploy import component_payload
 from ops_deploy.services.daybook_voice_memo_inbox.render import SECRET_DEFAULTS
@@ -170,10 +174,11 @@ def run(
     bundle: Path,
     *,
     fail_setup: bool = False,
+    inherited_sudo: bool = False,
     runtime: Any = None,
     installed: Any = None,
 ) -> tuple[Any, dict[str, Any]]:
-    counts: dict[str, Any] = {"attempted": 0, "succeeded": 0, "paths": []}
+    counts: dict[str, Any] = {"attempted": 0, "succeeded": 0, "paths": [], "inherited_sudo": inherited_sudo}
     original = paramiko.SFTPClient.putfo
 
     def observed(client: Any, stream: Any, destination: str, *args: Any, **kwargs: Any) -> Any:
@@ -207,11 +212,104 @@ def run(
             runtime=runtime,
             installed=installed,
             _env={"UV_CACHE_DIR": str(owned.root / "fixture-cache")},
+            _sudo=inherited_sudo,
+            _sudo_user="root" if inherited_sudo else "",
         )
         if injected is not None:
             counts["setup_attempted"] = injected.call_count
     assert all(not Path(path).parent.exists() for path in counts["paths"])
     return result, counts
+
+
+def connecting_identity_case(owned: OwnedMac, transport: dict[str, Any], bundle: Path, *, fail_setup: bool) -> None:
+    """Actual SDK all-flags inheritance: only the login identity may execute."""
+    transfer = "/private/var/tmp/ops-deploy-daybook-inbox-" + uuid.uuid4().hex
+    owned.created_outside_root(Path(transfer))
+    data: dict[str, Any] = {
+        "transfer_dir": transfer,
+        "uploaded_bundle": transfer + "/source.bundle",
+        "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+    }
+    seen = {"shell": 0, "upload": 0, "sftp": 0}
+    flags = ("_sudo", "_doas", "_dzdo")
+    users = ("_sudo_user", "_doas_user", "_dzdo_user", "_su_user")
+
+    def assert_direct(kwargs: dict[str, Any]) -> None:
+        assert all(kwargs.get(key) is False or kwargs.get(key) is None for key in flags)
+        assert all(kwargs.get(key) in {"", None} for key in users)
+
+    original_shell, original_put = SSHConnector.run_shell_command, SSHConnector.put_file
+    original_sftp = paramiko.SFTPClient.putfo
+
+    def shell(connector: Any, *args: Any, **kwargs: Any) -> Any:
+        assert_direct(kwargs)
+        seen["shell"] += 1
+        return original_shell(connector, *args, **kwargs)
+
+    def put(connector: Any, *args: Any, **kwargs: Any) -> Any:
+        assert_direct(kwargs)
+        seen["upload"] += 1
+        return original_put(connector, *args, **kwargs)
+
+    def sftp(client: Any, stream: Any, destination: str, *args: Any, **kwargs: Any) -> Any:
+        assert destination == data["uploaded_bundle"], "no shared temporary upload allowed"
+        seen["sftp"] += 1
+        return original_sftp(client, stream, destination, *args, **kwargs)
+
+    @deploy("Owned connecting-identity handoff under every inherited privilege path")
+    def handoff() -> None:
+        data["transfer_uid"] = inbox_api._connecting_uid()
+        prepared = inbox_api._transfer_operation(data)
+        uploaded = inbox_api.upload_inbox_bundle(src=str(bundle), dest=data["uploaded_bundle"])
+        cleanup = inbox_api._transfer_operation(data, cleanup=True)
+        inbox_api.transfer_cleanup(data, prepared, uploaded, cleanup)
+
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(SSHConnector, "run_shell_command", shell))
+        stack.enter_context(patch.object(SSHConnector, "put_file", put))
+        stack.enter_context(patch.object(paramiko.SFTPClient, "putfo", sftp))
+        injected = None
+        if fail_setup:
+            injected = stack.enter_context(
+                patch.object(
+                    SSHConnector, "get_file_transfer_connection", side_effect=ConnectError("owned setup fault")
+                )
+            )
+        result = run_deploy_ssh(
+            handoff,
+            host_name="owned-all-escalation",
+            host_data=transport,
+            _sudo=True,
+            _sudo_user="root",
+            _doas=True,
+            _doas_user="root",
+            _dzdo=True,
+            _dzdo_user="root",
+            _su_user="root",
+        )
+        if injected is not None:
+            assert injected.call_count == 1
+    assert not Path(transfer).exists()
+    assert seen["shell"] >= 2
+    assert seen["upload"] == 1
+    if fail_setup:
+        assert type(result.error) is PyinfraError
+        assert str(result.error) == "No hosts remaining!"
+        assert seen["sftp"] == 0
+    else:
+        assert result.succeeded
+        assert seen["sftp"] == 1
+        assert len(result.mutating_changed_ops) == 3
+    owned.report.setdefault("connecting_identity_inherited_all", []).append(
+        {
+            "inherited": [*flags, *users],
+            "actual_sdk_escalation_executed": 0,
+            "observed": seen,
+            "genuine_failed_setup": fail_setup,
+            "failed": not result.succeeded,
+            "owned_transfer_cleanup": not Path(transfer).exists(),
+        }
+    )
 
 
 def phase(owned: OwnedMac, name: str, result: Any, counts: dict[str, Any]) -> None:
@@ -237,11 +335,13 @@ def main() -> None:
         assert command(uv, "--version").stdout.startswith("uv 0.13.5 ")
         source, bundle = source_tree(owned, uv)
         transport = owned.ssh_transport()
+        connecting_identity_case(owned, transport, bundle, fail_setup=False)
+        connecting_identity_case(owned, transport, bundle, fail_setup=True)
         secret = dict.fromkeys(SECRET_DEFAULTS, "UNUSABLE-OWNED-CREDENTIAL")
         cfg = configuration(owned, source, bundle, uv, actor, name="healthy")
         for label in (cfg.daybook_voice_memo_inbox_launchd_label, cfg.daybook_voice_memo_inbox_long_launchd_label):
             owned.adopt_gui_label(actor.pw_uid, label)
-        first, counts = run(owned, transport, cfg, secret, source, bundle)
+        first, counts = run(owned, transport, cfg, secret, source, bundle, inherited_sudo=True)
         phase(owned, "first", first, counts)
         assert first.succeeded, str(first.error)
         assert len(first.mutating_changed_ops) == 8
