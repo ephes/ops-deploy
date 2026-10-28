@@ -83,3 +83,13 @@ one 60-second total admission budget and a timestamped request/reply transcript;
 it still requires an identified response with KVM both present and enabled.
 This does not extend the overall 45-minute guest limit or permit emulation.
 The failed attempt remains separate from any later native proof.
+
+The fourth attempt recorded KVM present and enabled, booted the independent
+Ubuntu guest, and completed fresh MinIO/IAM deployment plus healthy bash/fish
+repeats with zero managed operations and uploads. The original Ansible comparison
+then failed because its apt module tried to install missing `python3-apt` in the
+offline guest. That dependency is now installed during image bootstrap alongside
+`apache2-utils`; the actual guest still has no network interface. The failed
+original-role observation (including its earlier change) remains separate from
+successful pyinfra phases. Recovery and remaining fault cases were not reached,
+so this partial run does not qualify the complete service migration.

@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN printf 'nameserver 1.1.1.1\noptions timeout:2 attempts:2\n' > /etc/resolv.conf && \
     printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod 0755 /usr/sbin/policy-rc.d && \
     apt-get -o APT::Update::Error-Mode=any update && apt-get install -y --no-install-recommends \
-    systemd systemd-sysv dbus linux-image-virtual initramfs-tools python3 python3-venv \
+    systemd systemd-sysv dbus linux-image-virtual initramfs-tools python3 python3-venv python3-apt \
     curl git ca-certificates fish apache2-utils sudo util-linux iproute2 && \
     rm /usr/sbin/policy-rc.d && apt-get clean
 ARG IMPLEMENTATION_SHA
