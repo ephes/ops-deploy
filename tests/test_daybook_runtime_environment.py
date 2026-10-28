@@ -95,11 +95,19 @@ def build_editable(wheel_directory, config_settings=None, metadata_directory=Non
     }
     probe = module["NativeProbes"](data)
     before = metadata(root)
-    assert probe.runtime_current() is True
-    assert probe.runtime_current() is True
+    managed = "/uv/python/cpython-" + data["python_version"] + "-" in sys.base_prefix
+    if os.environ.get("GITHUB_ACTIONS") == "true" and sys.version_info[:2] == (3, 13):
+        assert managed, "CI 3.13 must retain the combined managed-interpreter positive case"
+    # Linux CI 3.12 may run Ubuntu's system Python. The production guard must
+    # still reject that interpreter; independently prove the actual offline uv
+    # lock/editable-package check, without faking a managed interpreter or skip.
+    assert probe.runtime_current() is managed
+    assert probe.locked_environment_current() is True
+    assert probe.locked_environment_current() is True
     assert metadata(root) == before
     # A missing environment stays missing; verification cannot repair it.
     (root / ".venv/pyvenv.cfg").unlink()
     broken = metadata(root)
     assert probe.runtime_current() is False
+    assert probe.locked_environment_current() is False
     assert metadata(root) == broken

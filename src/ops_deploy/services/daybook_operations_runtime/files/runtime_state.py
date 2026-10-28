@@ -137,6 +137,13 @@ class NativeProbes:
             data["python_version"]], user=True)
         if interpreter.returncode:
             return False
+        return self.locked_environment_current()
+
+    def locked_environment_current(self):
+        data = self.data
+        environment = pathlib.Path(data["python"]).parent.parent
+        if not (environment / "pyvenv.cfg").is_file():
+            return False
         # --check never synchronizes. Existing lock, no network/download/build;
         # native temporary cache I/O is distinct from service-managed changes.
         synced = self.run([data["uv_bin"], "--directory", data["checkout"], "sync", "--check", "--frozen",
