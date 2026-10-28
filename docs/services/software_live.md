@@ -116,5 +116,20 @@ Debian uses an isolated systemd userspace guest and shares the Ubuntu runner ker
 All fixture data and credentials were synthetic; no inventory data, credentials or sockets
 were mounted. No upgrade or reboot job was run. Owned SQLite rows and main-database bytes
 were strict, with sidecar bookkeeping observed separately. The [full CI matrix](https://github.com/ephes/ops-deploy/actions/runs/40609646540)
-also passed at the same implementation. Inventory cutover remains a separate gate;
-this result does not claim a live inventory deployment.
+also passed at the same implementation. Inventory qualification subsequently passed with the same software runtime in
+the composed immutable `5caf929` controller. Normal default first/repeat each
+completed 39 operations with zero managed changes/uploads. The four-host fleet
+first completed 156 operations with only a declared policy write and its
+observation collector (two managed operations, one upload); the fleet repeat
+completed 156 operations with zero managed changes/uploads. The policy update
+matched an already installed application version; binaries, application PIDs,
+packages and other protected configuration stayed unchanged. Existing warning
+baselines were retained.
+
+The policy-triggered collector was a declared managed execution. Separate
+background or unattributed observation changes and real monitoring database
+metadata were recorded without reading database bodies or unrelated rows. The
+real database main-file mtime changed between phases, while each observer's own
+before/after metadata matched and sidecars were absent. Causal attribution is
+unproven; this qualification does not claim global zero I/O or a fully updated
+fleet.
