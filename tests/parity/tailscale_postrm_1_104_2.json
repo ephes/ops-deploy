@@ -1,0 +1,7 @@
+{
+  "package": "tailscale",
+  "version": "1.104.2",
+  "source": "Actual installed official package vendor control script /var/lib/dpkg/info/tailscale.postrm in owned Ubuntu24 ARM fixture",
+  "sha256": "4e1a86e46633a3f8a7d752b228a57619ae6c12df2ba9243e6369c6abe824903b",
+  "finding": "dpkg purge unconditionally deletes /var/lib/tailscale; default purge_state:false must remove without purge to retain identity. No actual inventory removal proof."
+}

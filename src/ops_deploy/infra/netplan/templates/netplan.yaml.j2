@@ -1,0 +1,63 @@
+---
+network:
+  version: 2
+  renderer: {{ netplan_config_renderer }}
+  ethernets:
+{% for iface in netplan_config_interfaces %}
+    {{ iface.name }}:
+{% if iface.dhcp4 is defined %}
+      dhcp4: {{ iface.dhcp4 | bool | ternary('true', 'false') }}
+{% endif %}
+{% if iface.dhcp6 is defined %}
+      dhcp6: {{ iface.dhcp6 | bool | ternary('true', 'false') }}
+{% endif %}
+{% if iface.addresses is defined and iface.addresses | length > 0 %}
+      addresses:
+{% for addr in iface.addresses %}
+        - {{ addr }}
+{% endfor %}
+{% endif %}
+{% if iface.mtu is defined %}
+      mtu: {{ iface.mtu }}
+{% endif %}
+{% if iface.optional is defined %}
+      optional: {{ iface.optional | bool | ternary('true', 'false') }}
+{% endif %}
+{% if iface.dhcp4_overrides is defined %}
+      dhcp4-overrides:
+{{ iface.dhcp4_overrides | to_nice_yaml | indent(8, true) }}
+{% endif %}
+{% if iface.dhcp6_overrides is defined %}
+      dhcp6-overrides:
+{{ iface.dhcp6_overrides | to_nice_yaml | indent(8, true) }}
+{% endif %}
+{% if iface.routes is defined and iface.routes | length > 0 %}
+      routes:
+{% for route in iface.routes %}
+        - to: {{ route.to }}
+          via: {{ route.via }}
+{% if route.metric is defined %}
+          metric: {{ route.metric }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if iface.nameservers is defined %}
+      nameservers:
+{% if iface.nameservers.addresses is defined and iface.nameservers.addresses | length > 0 %}
+        addresses:
+{% for ns_addr in iface.nameservers.addresses %}
+          - {{ ns_addr }}
+{% endfor %}
+{% endif %}
+{% if iface.nameservers.search is defined and iface.nameservers.search | length > 0 %}
+        search:
+{% for ns_search in iface.nameservers.search %}
+          - {{ ns_search }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if iface.networkmanager is defined %}
+      networkmanager:
+{{ iface.networkmanager | to_nice_yaml | indent(8, true) }}
+{% endif %}
+{% endfor %}

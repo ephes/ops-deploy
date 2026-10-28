@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Collect Tailscale login state and node-key expiry metrics."""
+from __future__ import annotations
+
+import json
+import re
+import socket
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Any
+
+
+TAILSCALE_BIN = "{{ tailscale_metrics_endpoint_tailscale_bin }}"
+IP_BIN = "{{ tailscale_metrics_endpoint_ip_bin }}"
+DEFAULT_ROUTE_INTERFACE = "{{ tailscale_metrics_endpoint_default_route_interface }}"
+REQUIRE_DEFAULT_IPV4_ROUTE = {{ tailscale_metrics_endpoint_require_default_ipv4_route | bool }}
+REQUIRE_SELF_ONLINE = {{ tailscale_metrics_endpoint_require_self_online | bool }}
+MDSTAT_PATH = {{ tailscale_metrics_endpoint_mdstat_path | to_json }}
+REQUIRE_MDRAID_HEALTHY = {{ tailscale_metrics_endpoint_require_mdraid_healthy | bool }}
+REQUIRED_MDRAID_ARRAYS = {{ tailscale_metrics_endpoint_required_mdraid_arrays | to_json }}
+WARNING_DAYS = {{ tailscale_metrics_endpoint_warning_days | int }}
+CRITICAL_DAYS = {{ tailscale_metrics_endpoint_critical_days | int }}
+
+
+def parse_tailscale_time(value: str | None) -> datetime | None:
+    if not value or value.startswith("0001-01-01T"):
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def run_status() -> tuple[int, dict[str, Any], str]:
+    try:
+        completed = subprocess.run(
+            [TAILSCALE_BIN, "status", "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return -1, {}, "tailscale status --json timed out after 15 seconds"
+    except OSError as err:
+        return -1, {}, f"tailscale status --json failed: {err}"
+
+    try:
+        payload = json.loads(completed.stdout or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return completed.returncode, payload, completed.stderr.strip()
+
+
+def probe_default_ipv4_route() -> tuple[bool, str]:
+    if not REQUIRE_DEFAULT_IPV4_ROUTE:
+        return True, ""
+    try:
+        completed = subprocess.run(
+            [IP_BIN, "-4", "route", "show", "default", "dev", DEFAULT_ROUTE_INTERFACE],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "IPv4 default-route probe timed out after 5 seconds"
+    except OSError as err:
+        return False, f"IPv4 default-route probe failed: {err}"
+
+    route = completed.stdout.strip()
+    if completed.returncode != 0:
+        return False, completed.stderr.strip() or f"ip exited with {completed.returncode}"
+    if not route:
+        return False, f"no IPv4 default route on {DEFAULT_ROUTE_INTERFACE}"
+    return True, route
+
+
+def probe_mdraid() -> tuple[bool | None, list[dict[str, Any]], str]:
+    if not REQUIRE_MDRAID_HEALTHY:
+        return None, [], "mdraid health not evaluated"
+    try:
+        with open(MDSTAT_PATH, encoding="utf-8") as handle:
+            mdstat = handle.read()
+    except OSError as err:
+        return False, [], f"cannot read {MDSTAT_PATH}: {err}"
+
+    arrays: list[dict[str, Any]] = []
+    lines = mdstat.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(
+            r"^(\S+)\s*:\s+active(?:\s+\([^)]*\))?\s+(\S+)", line
+        )
+        if not match:
+            continue
+        block_lines = [line]
+        for following in lines[index + 1 :]:
+            if following and not following[0].isspace():
+                break
+            block_lines.append(following)
+        status_matches = re.findall(r"\[([U_]+)\]", "\n".join(block_lines))
+        status = status_matches[-1] if status_matches else ""
+        level = match.group(2)
+        arrays.append(
+            {
+                "name": match.group(1),
+                "level": level,
+                "status": f"[{status}]" if status else None,
+                "healthy": "_" not in status if status else level in {"raid0", "linear"},
+            }
+        )
+
+    if not arrays:
+        return False, [], f"no active mdraid arrays found in {MDSTAT_PATH}"
+    active_names = {array["name"] for array in arrays}
+    missing = sorted(set(REQUIRED_MDRAID_ARRAYS) - active_names)
+    unhealthy = [array["name"] for array in arrays if not array["healthy"]]
+    problems = []
+    if missing:
+        problems.append("missing mdraid arrays: " + ", ".join(missing))
+    if unhealthy:
+        problems.append("degraded mdraid arrays: " + ", ".join(unhealthy))
+    if problems:
+        return False, arrays, "; ".join(problems)
+    return True, arrays, ""
+
+
+def main() -> int:
+    now = datetime.now(timezone.utc)
+    status_rc, status, stderr = run_status()
+    default_ipv4_route_present, default_ipv4_route_detail = probe_default_ipv4_route()
+    mdraid_healthy, mdraid_arrays, mdraid_detail = probe_mdraid()
+    self_node = status.get("Self") or {}
+    key_expiry = self_node.get("KeyExpiry")
+    key_expiry_dt = parse_tailscale_time(key_expiry)
+    key_expiry_epoch = int(key_expiry_dt.timestamp()) if key_expiry_dt else None
+    seconds_until_key_expiry = (
+        int((key_expiry_dt - now).total_seconds()) if key_expiry_dt else None
+    )
+    days_until_key_expiry = (
+        seconds_until_key_expiry / 86400 if seconds_until_key_expiry is not None else None
+    )
+
+    backend_state = status.get("BackendState", "unknown")
+    key_expiry_disabled = key_expiry_dt is None and backend_state == "Running"
+    expired = bool(self_node.get("Expired")) or (
+        seconds_until_key_expiry is not None and seconds_until_key_expiry <= 0
+    )
+    warning_seconds = WARNING_DAYS * 86400
+    critical_seconds = CRITICAL_DAYS * 86400
+    key_expiry_warning_ok = key_expiry_disabled or (
+        seconds_until_key_expiry is not None and seconds_until_key_expiry > warning_seconds
+    )
+    key_expiry_critical_ok = key_expiry_disabled or (
+        seconds_until_key_expiry is not None and seconds_until_key_expiry > critical_seconds
+    )
+    backend_running = backend_state == "Running"
+    self_online = bool(self_node.get("Online"))
+
+    payload: dict[str, Any] = {
+        "hostname": socket.gethostname(),
+        "timestamp": now.isoformat(),
+        "timestamp_epoch": int(now.timestamp()),
+        "tailscale": {
+            "status_rc": status_rc,
+            "status_stderr": stderr,
+            "backend_state": backend_state,
+            "have_node_key": bool(status.get("HaveNodeKey")),
+            "magic_dns_suffix": status.get("MagicDNSSuffix"),
+            "tailnet": (status.get("CurrentTailnet") or {}).get("Name"),
+            "self": {
+                "hostname": self_node.get("HostName"),
+                "dns_name": self_node.get("DNSName"),
+                "tailscale_ips": self_node.get("TailscaleIPs") or [],
+                "online": bool(self_node.get("Online")),
+                "active": bool(self_node.get("Active")),
+                "in_engine": bool(self_node.get("InEngine")),
+                "expired": expired,
+                "key_expiry": key_expiry,
+                "key_expiry_epoch": key_expiry_epoch,
+                "seconds_until_key_expiry": seconds_until_key_expiry,
+                "days_until_key_expiry": days_until_key_expiry,
+                "key_expiry_disabled": key_expiry_disabled,
+            },
+        },
+        "network": {
+            "default_ipv4_route_required": REQUIRE_DEFAULT_IPV4_ROUTE,
+            "default_ipv4_route_interface": DEFAULT_ROUTE_INTERFACE or None,
+            "default_ipv4_route_present": default_ipv4_route_present,
+            "default_ipv4_route_detail": default_ipv4_route_detail,
+        },
+        "storage": {
+            "mdraid_required": REQUIRE_MDRAID_HEALTHY,
+            "mdraid_required_arrays": REQUIRED_MDRAID_ARRAYS,
+            "mdraid_healthy": mdraid_healthy,
+            "mdraid_detail": mdraid_detail,
+            "mdraid_arrays": mdraid_arrays,
+        },
+        "thresholds": {
+            "warning_days": WARNING_DAYS,
+            "critical_days": CRITICAL_DAYS,
+        },
+        "summary": {
+            "backend_running": backend_running,
+            "self_online": self_online,
+            "default_ipv4_route_present": default_ipv4_route_present,
+            "mdraid_healthy": mdraid_healthy,
+            "key_expiry_disabled": key_expiry_disabled,
+            "key_expiry_present": key_expiry_dt is not None,
+            "key_expired": expired,
+            "key_expiry_warning_ok": key_expiry_warning_ok,
+            "key_expiry_critical_ok": key_expiry_critical_ok,
+            "overall_ok": (
+                backend_running
+                and (self_online or not REQUIRE_SELF_ONLINE)
+                and default_ipv4_route_present
+                and (mdraid_healthy or not REQUIRE_MDRAID_HEALTHY)
+                and key_expiry_critical_ok
+                and not expired
+            ),
+        },
+    }
+
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

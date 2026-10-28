@@ -1,0 +1,12 @@
+[Unit]
+# Managed by local.ops_library.netplan_config
+Description=Check networkd IPv4 default routes every {{ netplan_config_route_guard_interval_sec | int }} seconds
+
+[Timer]
+OnActiveSec=2min
+OnUnitActiveSec={{ netplan_config_route_guard_interval_sec | int }}s
+AccuracySec=5s
+Unit={{ netplan_config_route_guard_service_name }}.service
+
+[Install]
+WantedBy=timers.target

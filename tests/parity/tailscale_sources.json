@@ -1,0 +1,11 @@
+{
+  "source_ref": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "scope": "Selected tailscale_metrics_endpoint resources only; global940 unchanged.",
+  "resources": {
+    "tailscale-metrics-collector.service.j2": "1d485f42eb82e03987ef64b7eb9734fc5b4bfafdaed31ef576a87efc90b446ca",
+    "tailscale-metrics-collector.timer.j2": "fd241597fddf21c499bb78274753d4f6c160dbd0321d1ece37eeb9dc85f853ed",
+    "tailscale-metrics-endpoint.service.j2": "39adb6362dcb95fce60a4c160a2cefe72bbd5b3a1e24a12947e82fd9d7bb619a",
+    "tailscale_metrics_exporter.py.j2": "1dd17c7f2d66e89a83afb56e7c5643edf4cca7d18e59afceb526d011547a8071",
+    "tailscale_metrics_httpd.py.j2": "560d94b6f720823391d477bd1295118d36f680714436c302c0c95c8d82d1d9ce"
+  }
+}
