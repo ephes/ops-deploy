@@ -120,23 +120,68 @@ def wait_count(harness: Any, expected: int) -> None:
     raise RuntimeError("synthetic ingestion did not reach the declared aggregate")
 
 
-def sftp_ocr(harness: Any) -> None:
-    # Create an image-only PDF. Its pixels/text are synthetic and are never
-    # accepted as evidence of physical scanner, personal-data or hardware use.
-    pdf = Path("/tmp/paperless-owned-ocr.pdf")
-    assert not pdf.exists()
-    program = """from PIL import Image,ImageDraw,ImageFont
-from pathlib import Path
-image=Image.new('RGB',(1800,800),'white')
-draw=ImageDraw.Draw(image)
-font=ImageFont.truetype(str(next(Path('/usr/share/fonts').rglob('LiberationSans-Regular.ttf'))),70)
-draw.text((100,160),'PAPERLESS OWNED QUARTZ FIXTURE',fill='black',font=font)
-draw.text((100,300),'Synthetic application qualification only',fill='black',font=font)
-image.save('/tmp/paperless-owned-ocr.pdf','PDF',resolution=150)
-"""
-    harness.command(harness.CFG.site_root + "/.venv/bin/python", "-c", program)
-    pdf.chmod(0o644)
-    before = harness.count()
+def sftp_diagnostic(harness: Any) -> dict[str, Any]:
+    """Known owned SSH metadata only; sshd -T describes disk config, not loaded state."""
+    assert harness.OWNED_ADMITTED
+    result = {}
+    commands = {
+        "unit": (
+            "systemctl",
+            "show",
+            "ssh.service",
+            "-p",
+            "ActiveState",
+            "-p",
+            "MainPID",
+            "-p",
+            "ActiveEnterTimestampMonotonic",
+        ),
+        "account": ("id", harness.CFG.scanner_username),
+        "paths": (
+            "stat",
+            "-c",
+            "%n|%F|%u|%g|%a|%i|%Y|%Z",
+            "/srv",
+            harness.CFG.sftp_chroot_dir,
+            harness.CFG.sftp_chroot_dir + "/inbox",
+            "/etc/ssh/sshd_config.d/sftp-scanner.conf",
+        ),
+        "acl": ("getfacl", "--absolute-names", "--numeric", "--", harness.CFG.sftp_chroot_dir + "/inbox"),
+        "disk_configuration": (
+            "sshd",
+            "-T",
+            "-C",
+            f"user={harness.CFG.scanner_username},host=localhost,addr=127.0.0.1",
+        ),
+    }
+    for name, argv in commands.items():
+        reply = harness.command(*argv, timeout=30, check=False)
+        stdout = reply.stdout
+        if name == "disk_configuration":
+            allowed = {"passwordauthentication", "pubkeyauthentication", "chrootdirectory", "forcecommand", "usepam"}
+            stdout = "\n".join(line for line in stdout.splitlines() if line.split(" ", 1)[0] in allowed)
+        result[name] = {"exit": reply.returncode, "stdout": stdout, "stderr": reply.stderr}
+    return result
+
+
+def retain_sftp_result(
+    harness: Any, result: subprocess.CompletedProcess[str], *, label: str = "synthetic-sftp-attempt"
+) -> None:
+    # write() sanitizes every generated fixture credential before serialization.
+    # Save complete output before asserting, including actual nonzero status.
+    harness.write(
+        label + ".json",
+        {
+            "exit": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "scope": "owned synthetic SFTP only; no production connection or scanner hardware proof",
+        },
+    )
+
+
+def scanner_sftp(harness: Any, command: str, label: str) -> subprocess.CompletedProcess[str]:
+    assert harness.OWNED_ADMITTED
     read_fd, write_fd = os.pipe()
     try:
         os.write(write_fd, (harness.CREDS.scanner_password.get_secret_value() + "\n").encode())
@@ -161,20 +206,54 @@ image.save('/tmp/paperless-owned-ocr.pdf','PDF',resolution=150)
             "-",
             harness.CFG.scanner_username + "@127.0.0.1",
         ]
-        result = subprocess.run(
-            args,
-            input=f"put {pdf} /inbox/owned-quartz.pdf\n",
-            text=True,
-            capture_output=True,
-            timeout=60,
-            pass_fds=(read_fd,),
-            check=False,
-        )
-        assert result.returncode == 0, "owned SFTP upload failed; output withheld"
+        try:
+            result = subprocess.run(
+                args,
+                input=command,
+                text=True,
+                capture_output=True,
+                timeout=60,
+                pass_fds=(read_fd,),
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            output = {}
+            for name, raw in (("stdout", error.stdout), ("stderr", error.stderr)):
+                output[name] = raw.decode(errors="replace") if isinstance(raw, bytes) else raw or ""
+            harness.write(label + ".json", {"exit": None, "timed_out": True, **output})
+            harness.write(label + "-after.json", sftp_diagnostic(harness))
+            raise
+        retain_sftp_result(harness, result, label=label)
+        harness.write(label + "-after.json", sftp_diagnostic(harness))
+        return result
     finally:
         os.close(read_fd)
         if write_fd != -1:
             os.close(write_fd)
+
+
+def sftp_ocr(harness: Any) -> None:
+    # Create an image-only PDF. Its pixels/text are synthetic and are never
+    # accepted as evidence of physical scanner, personal-data or hardware use.
+    pdf = Path("/tmp/paperless-owned-ocr.pdf")
+    assert not pdf.exists()
+    program = """from PIL import Image,ImageDraw,ImageFont
+from pathlib import Path
+image=Image.new('RGB',(1800,800),'white')
+draw=ImageDraw.Draw(image)
+font=ImageFont.truetype(str(next(Path('/usr/share/fonts').rglob('LiberationSans-Regular.ttf'))),70)
+draw.text((100,160),'PAPERLESS OWNED QUARTZ FIXTURE',fill='black',font=font)
+draw.text((100,300),'Synthetic application qualification only',fill='black',font=font)
+image.save('/tmp/paperless-owned-ocr.pdf','PDF',resolution=150)
+"""
+    harness.command(harness.CFG.site_root + "/.venv/bin/python", "-c", program)
+    pdf.chmod(0o644)
+    before = harness.count()
+    harness.write("synthetic-sftp-before.json", sftp_diagnostic(harness))
+    try:
+        result = scanner_sftp(harness, f"put {pdf} /inbox/owned-quartz.pdf\n", "synthetic-sftp-attempt")
+        assert result.returncode == 0, "owned SFTP upload failed; retained sanitized output"
+    finally:
         pdf.unlink()
     wait_count(harness, before + 1)
     observed = query(

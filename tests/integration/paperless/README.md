@@ -210,3 +210,36 @@ run exit1, collection exit0 and cleanup exit0. All824 installed resources and
 snapshot equality on healthy repeats remains required; no mode exemption is
 introduced in those comparisons. Full application/recovery qualification is
 still pending, and every original failure remains retained.
+
+The eighth current-version leg passed all102 operations in adoption and each
+ordinary/fish/after-original repeat. All three repeats had zero managed changes,
+zero uploads and equal complete snapshots. All three static observations found
+2817 public program files (2631 frontend), matching source/destination bodies,
+no path errors and no pending collection. It then failed the first synthetic SFTP
+upload before recording its detailed output. That lost output cannot be recovered
+or replaced by inference; current runner1/collection0/cleanup0 remains retained.
+The upgrade leg reached the same SFTP failure after its12-managed-operation
+upgrade and three strict0managed/0upload repeats. Both runner1/collection0/cleanup0
+receipts and all61 collected guest files per leg are retained; all825 installed
+resources/direct_url match the executed source.
+
+The actual current snapshots show that the original failed run created the
+scanner SSH drop-in but never reached its deferred SSH handler. The prepared
+SSH PID and start time remained unchanged through the original retry and typed
+repeats. A separate owned ARM64 Ubuntu OpenSSH experiment reproduced the mechanism:
+password authentication succeeds but SFTP closes with the old loaded config;
+reloading the unchanged on-disk config activates internal-sftp and succeeds.
+This is mechanism evidence, not retrospective proof of the discarded AMD64 error.
+
+The next fixture always retains complete sanitized SFTP stdout/stderr/status,
+including timeout output, before asserting. Its pre-adoption `pwd` probe writes
+no synthetic document. Only the exact closed-connection result plus retained
+original missing-index failure, newly created drop-in, unchanged prepared PID,
+unchanged current file metadata/body and no handler execution permits explicit
+completion of the original `restart ssh` handler. The fixture loads that exact
+library task (`state: restarted`, `enabled: true`), records its outcome and new
+PID/enablement, requires all other selected state and private content unchanged,
+and requires the same-config SFTP probe to succeed. Other auth/network/chroot
+errors stop. This is a labelled owned bootstrap recovery, not an original pristine
+bootstrap or a forced restart added to the typed runtime. The guest still has
+no host ports/data mounts; SFTP uses only its internal loopback connection.

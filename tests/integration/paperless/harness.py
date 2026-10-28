@@ -456,9 +456,11 @@ def main() -> None:
     # These modules operate only through this guarded, synthetic fixture.
     from tests.integration.paperless import application_matrix, recovery_matrix, scanner_matrix
     from tests.integration.paperless.bootstrap import original_install, prepare_ssh
+    from tests.integration.paperless.ssh_recovery import complete_pending_handler
 
     prepare_ssh(harness)
     original_install(harness, "3.2.1" if case == "current" else "3.0.4")
+    complete_pending_handler(harness)
     providers = command(
         "dpkg-query",
         "-W",

@@ -288,3 +288,46 @@ sys.modules['django.contrib.staticfiles.finders'].get_finders = lambda: []
     else:
         assert observed["error"] is None
         assert observed["sha256"] == hashlib.sha256(destination.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_sftp_failure_receipt_precedes_assertion_and_sanitizes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool
+) -> None:
+    pdf = tmp_path / "owned.pdf"
+    monkeypatch.setattr(application_matrix, "Path", lambda value: pdf)
+    monkeypatch.setattr(harness, "EVIDENCE", tmp_path)
+    monkeypatch.setattr(harness, "VALUES", ["owned-secret"])
+    monkeypatch.setattr(application_matrix, "sftp_diagnostic", lambda fixture: {"metadata": "owned"})
+    calls = []
+
+    def command(*args: object) -> None:
+        pdf.write_bytes(b"synthetic PDF placeholder; command boundary only")
+
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        assert kwargs["pass_fds"]
+        assert os.read(kwargs["pass_fds"][0], 100) == b"owned-secret\n"
+        if timed_out:
+            raise subprocess.TimeoutExpired(argv, 60, b"owned output owned-secret", b"Connection closed")
+        return subprocess.CompletedProcess(argv, 255, "owned output owned-secret", "Connection closed")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    fixture = SimpleNamespace(
+        OWNED_ADMITTED=True,
+        CFG=SimpleNamespace(site_root="/owned", scanner_username="scanner"),
+        CREDS=SimpleNamespace(scanner_password=SecretStr("owned-secret")),
+        command=command,
+        count=lambda: 0,
+        write=harness.write,
+    )
+    with pytest.raises(subprocess.TimeoutExpired if timed_out else AssertionError):
+        application_matrix.sftp_ocr(fixture)
+    assert len(calls) == 1
+    receipt = json.loads((tmp_path / "synthetic-sftp-attempt.json").read_text())
+    assert receipt["exit"] == (None if timed_out else 255)
+    if timed_out:
+        assert receipt["timed_out"] is True
+    assert receipt["stdout"] == "owned output <synthetic-redacted>"
+    assert receipt["stderr"] == "Connection closed"
+    assert not pdf.exists()
