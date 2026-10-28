@@ -1,0 +1,40 @@
+[Unit]
+Description=Storage metrics HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ storage_metrics_endpoint_user }}
+Group={{ storage_metrics_endpoint_group }}
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 {{ storage_metrics_endpoint_server_path }} \
+  --bind {{ storage_metrics_endpoint_bind }} \
+  --port {{ storage_metrics_endpoint_port }} \
+  --path {{ storage_metrics_endpoint_path }} \
+  --json-path {{ storage_metrics_endpoint_json_path }} \
+  --htpasswd-file {{ storage_metrics_endpoint_htpasswd_path }}
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+# Read access to the metrics data file
+ReadOnlyPaths={{ storage_metrics_endpoint_data_dir }}
+
+[Install]
+WantedBy=multi-user.target

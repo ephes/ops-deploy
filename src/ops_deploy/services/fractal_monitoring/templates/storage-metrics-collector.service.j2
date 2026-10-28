@@ -1,0 +1,20 @@
+[Unit]
+Description=Collect storage metrics and write to JSON file
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '{{ storage_metrics_endpoint_exporter_path }} > {{ storage_metrics_endpoint_json_path }}.tmp && mv {{ storage_metrics_endpoint_json_path }}.tmp {{ storage_metrics_endpoint_json_path }}'
+
+# Run as root to access ZFS/SMART data
+User=root
+Group=root
+
+# Ensure directory exists and has correct permissions
+ExecStartPre=/bin/mkdir -p {{ storage_metrics_endpoint_data_dir }}
+ExecStartPre=/bin/chown root:{{ storage_metrics_endpoint_group }} {{ storage_metrics_endpoint_data_dir }}
+ExecStartPre=/bin/chmod 0750 {{ storage_metrics_endpoint_data_dir }}
+
+# After writing, ensure the metrics user can read the file
+ExecStartPost=/bin/chown root:{{ storage_metrics_endpoint_group }} {{ storage_metrics_endpoint_json_path }}
+ExecStartPost=/bin/chmod 0640 {{ storage_metrics_endpoint_json_path }}

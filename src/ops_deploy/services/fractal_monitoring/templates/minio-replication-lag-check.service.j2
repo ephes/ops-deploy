@@ -1,0 +1,11 @@
+[Unit]
+Description=MinIO replication lag/parity monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/minio
+ExecStart={{ fractal_minio_replication_monitor_script_path }} \
+  {{ fractal_minio_replication_monitor_destination_endpoint }} \
+  {{ fractal_minio_replication_monitor_jobs_config_path }}

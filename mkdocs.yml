@@ -67,6 +67,7 @@ nav:
       - homelab: services/homelab.md
       - gotosocial: services/gotosocial.md
       - thermal_monitoring: services/thermal_monitoring.md
+      - fractal_monitoring: services/fractal_monitoring.md
       - metube (native): services/metube.md
       - ollama (macOS native): services/ollama.md
       - macos_ssh_tunnel (macOS owner session): services/macos_ssh_tunnel.md
@@ -78,6 +79,7 @@ nav:
       - Daybook Sessions: services/daybook_sessions.md
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md
+      - minio: services/minio.md
       - unifi: services/unifi.md
       - vaultwarden: services/vaultwarden.md
       - minecraft_java: services/minecraft_java.md

@@ -30,6 +30,7 @@ from ops_deploy.helpers.probes import (
     migrations_state,
     probe_command,
     probe_output,
+    stdin_arguments,
     uv_sync_state,
     verify_probe,
     when_present,
@@ -43,6 +44,7 @@ from ops_deploy.services.django_site.deploy import markers_command
 from ops_deploy.services.django_site.django import manage_script, site_shell
 from ops_deploy.services.django_site.render import render as render_django_site
 from ops_deploy.services.django_site.render import render_env as django_site_env
+from ops_deploy.services.minio.deploy import host_command as minio_host_command
 from ops_deploy.services.weeknotes_home import WeeknotesHomeConfig
 from ops_deploy.services.weeknotes_home.deploy import FILES, _site_manage, render_env
 from ops_deploy.testing import fish_unsafe, run_deploy_fake
@@ -180,12 +182,19 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # actual composed CLI with protected stdin and its synthetic model probe is
     # executed through both real shells in test_daybook_sessions_resource_cli.
     encoded_daybook_sessions = {"services/daybook_sessions/files/dependencies_host.py"}
+    # MinIO uses the same encoded-source boundary, with secret payload on stdin.
+    # Exercise its actual composed command through both shells below.
+    encoded_minio = {"services/minio/files/iam_host.py"}
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
         if path.name != "env_exec.py"
         and str(path.relative_to(SRC))
-        not in encoded_mail_web | stdin_software_live | encoded_daybook_runtime | encoded_daybook_sessions
+        not in encoded_mail_web
+        | stdin_software_live
+        | encoded_daybook_runtime
+        | encoded_daybook_sessions
+        | encoded_minio
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
@@ -486,3 +495,63 @@ def test_encoded_daybook_stop_command_through_real_login_shell(login_shell: str)
     assert result.stdout == ""
     assert result.stderr.strip() == "runtime_stop_failed"
     assert private not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_minio_encoded_host_source_and_secret_stdin_through_real_login_shell(tmp_path: Path, login_shell: str) -> None:
+    expected_alias = {
+        "url": "http://127.0.0.1:9001",
+        "accessKey": "fixture-root",
+        "secretKey": TRICKY,
+        "api": "s3v4",
+        "path": "auto",
+    }
+    fake_mc = tmp_path / "mc"
+    fake_mc.write_text(
+        f"#!{sys.executable}\nimport json,sys\n"
+        "assert sys.argv[1:3] == ['--json','--config-dir']\n"
+        "assert sys.argv[4:] == ['alias','import','fixture']\n"
+        f"assert json.load(sys.stdin) == {expected_alias!r}\n"
+        "print(json.dumps({'status':'success'}))\n"
+    )
+    fake_mc.chmod(0o700)
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    alias_file = shared / "config.json"
+    alias_file.write_text(json.dumps({"aliases": {"fixture": expected_alias}}))
+    before = alias_file.read_bytes()
+    payload = json.dumps(
+        {
+            "mc": str(fake_mc),
+            "alias": "fixture",
+            "shared_config": str(shared),
+            "endpoint": expected_alias["url"],
+            "root_user": expected_alias["accessKey"],
+            "root_password": TRICKY,
+            "buckets": [],
+            "policies": [],
+            "identities": [],
+            "superseded": [],
+        }
+    )
+    command = minio_host_command("iam_host", "check")
+    actual_source = (SRC / "services/minio/files/iam_host.py").read_text()
+    assert actual_source not in command
+    assert payload not in command
+    assert TRICKY not in command
+    remote = make_unix_command(StringCommand(command)).get_raw_value()
+    assert not fish_unsafe(remote)
+    stdin = stdin_arguments(payload)
+    assert repr(stdin["_stdin"]) == "<stdin redacted>"
+    assert stdin["_get_pty"] is False
+    result = subprocess.run(
+        [login_shell, "-c", remote],
+        input="".join(stdin["_stdin"]),
+        env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(result.stdout) == {"pending": 0, "changed": False}
+    assert result.stderr == ""
+    assert alias_file.read_bytes() == before

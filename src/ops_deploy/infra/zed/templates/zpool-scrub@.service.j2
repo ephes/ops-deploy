@@ -1,0 +1,12 @@
+[Unit]
+Description=ZFS scrub for pool %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+{% set scrub_wait = zed_scrub_wait_for_completion | bool or zed_scrub_spindown_enabled | bool %}
+ExecStart=/sbin/zpool scrub{% if scrub_wait %} -w{% endif %} %i
+{% if zed_scrub_spindown_enabled | bool %}
+ExecStartPost={{ zed_scrub_spindown_script_path }}
+{% endif %}

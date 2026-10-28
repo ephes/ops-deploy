@@ -1,0 +1,80 @@
+{
+  "server-readiness-0": {
+    "label": "server-readiness-0",
+    "exit": 0,
+    "stdout": "{\"status\":\"error\",\"error\":\"Get \\\"http://127.0.0.1:19001/minio/admin/v3/info?metrics=false\\\": dial tcp 127.0.0.1:19001: connect: connection refused\",\"info\":{\"buckets\":{\"count\":0},\"objects\":{\"count\":0},\"versions\":{\"count\":0},\"deletemarkers\":{\"count\":0},\"usage\":{\"size\":0},\"services\":{\"kms\":{},\"ldap\":{}},\"backend\":{\"backendType\":\"\",\"onlineDisks\":0,\"offlineDisks\":0,\"standardSCParity\":0,\"rrSCParity\":0,\"totalSets\":null,\"totalDrivesPerSet\":null}}}\n",
+    "stderr": ""
+  },
+  "enabled-user-info": {
+    "label": "enabled-user-info",
+    "exit": 0,
+    "stdout": "{\"status\":\"success\",\"accessKey\":\"fixture-prefix-user\",\"policyName\":\"fixture-prefix\",\"userStatus\":\"enabled\"}\n",
+    "stderr": ""
+  },
+  "absent-user-info": {
+    "label": "absent-user-info",
+    "exit": 1,
+    "stdout": "{\"status\":\"error\",\"error\":{\"message\":\"Unable to get user info\",\"cause\":{\"message\":\"The specified user does not exist. (Specified user does not exist)\",\"error\":{\"Code\":\"XMinioAdminNoSuchUser\",\"Message\":\"The specified user does not exist. (Specified user does not exist)\",\"BucketName\":\"\",\"Key\":\"\",\"RequestID\":\"18E28E0B9F2FAC51\",\"HostID\":\"58281e7f608e5ae1e870abda0386ad6618a5795df1de5b98b180ddf466eee7ef\",\"Region\":\"\"}},\"type\":\"fatal\"}}\n",
+    "stderr": ""
+  },
+  "absent-policy-info": {
+    "label": "absent-policy-info",
+    "exit": 1,
+    "stdout": "{\"status\":\"error\",\"error\":{\"message\":\"Unable to fetch policy\",\"cause\":{\"message\":\"The canned policy does not exist. (Specified canned policy does not exist)\",\"error\":{\"Code\":\"XMinioAdminNoSuchPolicy\",\"Message\":\"The canned policy does not exist. (Specified canned policy does not exist)\",\"BucketName\":\"\",\"Key\":\"\",\"RequestID\":\"18E28E0BB2788393\",\"HostID\":\"58281e7f608e5ae1e870abda0386ad6618a5795df1de5b98b180ddf466eee7ef\",\"Region\":\"\"}},\"type\":\"fatal\"}}\n",
+    "stderr": ""
+  },
+  "user-entities": {
+    "label": "user-entities",
+    "exit": 0,
+    "stdout": "{\"status\":\"success\",\"result\":{\"timestamp\":\"2026-10-28T01:43:02.857306073Z\",\"userMappings\":[{\"user\":\"fixture-prefix-user\",\"policies\":[\"fixture-prefix\"]}]}}\n",
+    "stderr": ""
+  },
+  "policy-entities": {
+    "label": "policy-entities",
+    "exit": 0,
+    "stdout": "{\"status\":\"success\",\"result\":{\"timestamp\":\"2026-10-28T01:43:03.360938215Z\",\"policyMappings\":[{\"policy\":\"fixture-prefix\",\"users\":[\"fixture-prefix-user\"],\"groups\":null}]}}\n",
+    "stderr": ""
+  },
+  "absent-policy-entities": {
+    "label": "absent-policy-entities",
+    "exit": 0,
+    "stdout": "{\"status\":\"success\",\"result\":{\"timestamp\":\"2026-10-28T01:43:03.890215096Z\"}}\n",
+    "stderr": ""
+  },
+  "bucket-anonymous": {
+    "label": "bucket-anonymous",
+    "exit": 0,
+    "stdout": "{\"operation\":\"get\",\"status\":\"success\",\"bucket\":\"local/fixture-bucket\",\"permission\":\"private\"}\n",
+    "stderr": ""
+  },
+  "bucket-versioning": {
+    "label": "bucket-versioning",
+    "exit": 0,
+    "stdout": "{\"Op\":\"info\",\"status\":\"success\",\"url\":\"local/fixture-bucket\",\"versioning\":{\"status\":\"\",\"MFADelete\":\"\"}}\n",
+    "stderr": ""
+  },
+  "correct-prefix-stat": {
+    "label": "correct-prefix-stat",
+    "exit": 1,
+    "stdout": "{\"status\":\"error\",\"error\":{\"message\":\"Unable to list folder.\",\"cause\":{\"message\":\"Access Denied.\",\"error\":{\"Code\":\"AccessDenied\",\"Message\":\"Access Denied.\",\"BucketName\":\"fixture-bucket\",\"Key\":\"\",\"Resource\":\"/fixture-bucket/\",\"RequestID\":\"18E28E0C84D06672\",\"HostID\":\"58281e7f608e5ae1e870abda0386ad6618a5795df1de5b98b180ddf466eee7ef\",\"Region\":\"\",\"Server\":\"MinIO\"}},\"type\":\"error\"}}\n{\"status\":\"error\",\"error\":{\"message\":\"Unable to stat `proof/fixture-bucket/allowed/nonexistent`.\",\"cause\":{\"message\":\"Object does not exist\",\"error\":{}},\"type\":\"fatal\"}}\n",
+    "stderr": ""
+  },
+  "wrong-prefix-stat": {
+    "label": "wrong-prefix-stat",
+    "exit": 1,
+    "stdout": "{\"status\":\"error\",\"error\":{\"message\":\"Unable to list folder.\",\"cause\":{\"message\":\"The request signature we calculated does not match the signature you provided. Check your key and signing method.\",\"error\":{\"Code\":\"SignatureDoesNotMatch\",\"Message\":\"The request signature we calculated does not match the signature you provided. Check your key and signing method.\",\"BucketName\":\"fixture-bucket\",\"Key\":\"\",\"Resource\":\"/fixture-bucket/\",\"RequestID\":\"18E28E0CAB7C378C\",\"HostID\":\"58281e7f608e5ae1e870abda0386ad6618a5795df1de5b98b180ddf466eee7ef\",\"Region\":\"\",\"Server\":\"MinIO\"}},\"type\":\"error\"}}\n{\"status\":\"error\",\"error\":{\"message\":\"Unable to stat `proof/fixture-bucket/allowed/nonexistent`.\",\"cause\":{\"message\":\"Object does not exist\",\"error\":{}},\"type\":\"fatal\"}}\n",
+    "stderr": ""
+  },
+  "missing-user-prefix-stat": {
+    "label": "missing-user-prefix-stat",
+    "exit": 1,
+    "stdout": "{\"status\":\"error\",\"error\":{\"message\":\"Unable to list folder.\",\"cause\":{\"message\":\"The Access Key Id you provided does not exist in our records.\",\"error\":{\"Code\":\"InvalidAccessKeyId\",\"Message\":\"The Access Key Id you provided does not exist in our records.\",\"BucketName\":\"fixture-bucket\",\"Key\":\"\",\"Resource\":\"/fixture-bucket/\",\"RequestID\":\"18E28E0CD1282352\",\"HostID\":\"58281e7f608e5ae1e870abda0386ad6618a5795df1de5b98b180ddf466eee7ef\",\"Region\":\"\",\"Server\":\"MinIO\"}},\"type\":\"error\"}}\n{\"status\":\"error\",\"error\":{\"message\":\"Unable to stat `proof/fixture-bucket/allowed/nonexistent`.\",\"cause\":{\"message\":\"Object does not exist\",\"error\":{}},\"type\":\"fatal\"}}\n",
+    "stderr": ""
+  },
+  "unreachable-stat": {
+    "label": "unreachable-stat",
+    "exit": 1,
+    "stdout": "{\"status\":\"error\",\"error\":{\"message\":\"Unable to list folder.\",\"cause\":{\"message\":\"Get \\\"http://127.0.0.1:19009/fixture-bucket/?location=\\\": dial tcp 127.0.0.1:19009: connect: connection refused\",\"error\":{\"Op\":\"Get\",\"URL\":\"http://127.0.0.1:19009/fixture-bucket/?location=\",\"Err\":{\"Op\":\"dial\",\"Net\":\"tcp\",\"Source\":null,\"Addr\":{\"IP\":\"127.0.0.1\",\"Port\":19009,\"Zone\":\"\"},\"Err\":{\"Syscall\":\"connect\",\"Err\":111}}}},\"type\":\"error\"}}\n{\"status\":\"error\",\"error\":{\"message\":\"Unable to stat `proof/fixture-bucket/allowed/nonexistent`.\",\"cause\":{\"message\":\"Object does not exist\",\"error\":{}},\"type\":\"fatal\"}}\n",
+    "stderr": ""
+  }
+}

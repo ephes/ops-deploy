@@ -1,0 +1,111 @@
+# Traefik configuration for MinIO
+# Managed by Ansible - do not edit manually
+# Uses separate subdomains for API (S3) and Console (Web UI)
+# Implements dual router pattern on Console: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+    # ===== API ENDPOINT (S3 operations) =====
+    # No authentication - S3 credentials in requests
+    minio-api-secure:
+      rule: "Host(`s3.minio.home.example.com`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - minio-api-headers
+      service: minio-api
+      tls: {}
+
+    # HTTP redirect for API
+    minio-api-http:
+      rule: "Host(`s3.minio.home.example.com`)"
+      entryPoints:
+        - web
+      middlewares:
+        - minio-https-redirect
+      service: minio-api
+
+    # ===== CONSOLE ENDPOINT (Web UI) on main domain (at root) =====
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    minio-console-int:
+      rule: "Host(`minio.home.example.com`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - minio-console-headers
+      service: minio-console
+      tls: {}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    minio-console-ext:
+      rule: "Host(`minio.home.example.com`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - minio-console-auth
+        - minio-console-headers
+      service: minio-console
+      tls: {}
+
+    # HTTP redirect for Console
+    minio-console-http:
+      rule: "Host(`minio.home.example.com`)"
+      entryPoints:
+        - web
+      middlewares:
+        - minio-https-redirect
+      service: minio-console
+
+  middlewares:
+    # HTTPS redirect
+    minio-https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # Basic auth for Console (external access)
+    minio-console-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$abcdefghijklmnopqrstuu012345678901234567890123456789012"
+        removeHeader: true
+
+    # Security headers for API
+    minio-api-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    # Security headers for Console
+    minio-console-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+  services:
+    # S3 API service
+    minio-api:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9001"
+
+    # Web Console service
+    minio-console:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9002"
