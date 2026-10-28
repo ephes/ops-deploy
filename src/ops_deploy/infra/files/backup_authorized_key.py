@@ -3,13 +3,12 @@
 import base64
 import json
 import os
-from pathlib import Path
 import re
-import shlex
 import stat
 import struct
 import sys
 import tempfile
+from pathlib import Path
 
 
 def admit(path):
@@ -70,12 +69,51 @@ def candidate(original, v):
         if row.lstrip().startswith("#") or not row.strip():
             rows.append(row)
             continue
-        # Parse quoted options, never evaluate them. Preserve unrelated rows.
-        fields = shlex.split(row, comments=False)
-        matching = any(fields[i] == kind and fields[i + 1] == value for i in range(len(fields) - 1))
-        if matching:
+        # Locate identity using OpenSSH's sshkey_advance_past_options rule,
+        # never POSIX shell quoting or free-form comment tokens. Only a
+        # backslash followed by a double quote skips both bytes.
+        line = row.rstrip("\r\n").lstrip(" \t")
+        fields = re.split(r"[ \t]+", line, maxsplit=2)
+        selected = fields[:2] == [kind, value]
+        if not selected:
+            offset = 0
+            quoted = False
+            while offset < len(line) and (quoted or line[offset] not in " \t"):
+                if line[offset] == chr(92) and line[offset + 1 : offset + 2] == '"':
+                    offset += 2
+                    continue
+                if line[offset] == '"':
+                    quoted = not quoted
+                offset += 1
+            fields = re.split(r"[ \t]+", line[offset:].lstrip(" \t"), maxsplit=2)
+            selected = not quoted and fields[:2] == [kind, value]
+        if selected:
             if not found:
-                rows.append(desired)
+                # The complete raw line must contain exactly the six original
+                # literal tokens. The permitted command path cannot contain a
+                # comma/quote/space; keeping its quotes is therefore stricter
+                # than interpreting arbitrary OpenSSH option syntax.
+                suffix = r"[ \t]+" + re.escape(v["comment"]) if v["comment"] else ""
+                raw = re.fullmatch(
+                    r"[ \t]*(?P<options>[^ \t\r\n]+)[ \t]+"
+                    + re.escape(kind)
+                    + r"[ \t]+"
+                    + re.escape(value)
+                    + suffix
+                    + r"[ \t]*",
+                    row.rstrip("\r\n"),
+                )
+                options = raw.group("options").split(",") if raw else []
+                wanted = {
+                    'command="' + v["command"] + '"',
+                    "no-agent-forwarding",
+                    "no-port-forwarding",
+                    "no-pty",
+                    "no-user-rc",
+                    "no-X11-forwarding",
+                }
+                policy_equal = len(options) == len(wanted) and set(options) == wanted
+                rows.append(row if raw is not None and policy_equal else desired)
                 found = True
         else:
             rows.append(row)

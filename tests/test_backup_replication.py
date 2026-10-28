@@ -386,3 +386,110 @@ def test_mail_private_key_filter_is_applied_by_actual_callers_only(monkeypatch: 
         cfg=client.BackupSourceConfig(mail_restore_host="owned.example"), mail_private_key=source
     )
     assert seen == [expected]
+
+
+def test_original_ordered_authorization_options_are_byte_current_and_comments_not_keys() -> None:
+    module = helper("authorized_key")
+    selected = public_key(payload=b"selected")
+    other = public_key(payload=b"unrelated")
+    options = (
+        'no-X11-forwarding,no-agent-forwarding,command="/usr/local/sbin/mail-restore-allow.sh",'
+        "no-user-rc,no-pty,no-port-forwarding"
+    )
+    untouched = "ssh-ed25519 " + other + " comment mentioning ssh-ed25519 " + selected + " must survive\n"
+    current = options + " ssh-ed25519 " + selected + " macmini mail offsite restore\n"
+    request = {
+        "key": "ssh-ed25519 " + selected,
+        "command": "/usr/local/sbin/mail-restore-allow.sh",
+        "comment": "macmini mail offsite restore",
+    }
+    assert module.candidate(untouched + current, request) == untouched + current
+
+
+def test_extra_or_duplicate_authorization_options_are_actual_policy_drift() -> None:
+    module = helper("authorized_key")
+    key = public_key()
+    request = {
+        "key": "ssh-ed25519 " + key,
+        "command": "/usr/local/sbin/mail-restore-allow.sh",
+        "comment": "macmini mail offsite restore",
+    }
+    desired = module.candidate("", request)
+    for changed in (
+        desired.replace("no-pty,", "no-pty,no-pty,"),
+        desired.replace("no-pty,", 'from="192.0.2.1",no-pty,'),
+    ):
+        assert changed != desired
+        assert module.candidate(changed, request) == desired
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        'command="/usr/local/sbin/mail-restore-allow.sh,no-agent-forwarding",no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding',
+        "command=/usr/local/sbin/mail-restore-allow.sh,no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding",
+        "'command=/usr/local/sbin/mail-restore-allow.sh,no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding'",
+    ],
+)
+def test_quote_boundary_drift_is_never_reported_as_current(options: str) -> None:
+    module = helper("authorized_key")
+    key = public_key()
+    request = {
+        "key": "ssh-ed25519 " + key,
+        "command": "/usr/local/sbin/mail-restore-allow.sh",
+        "comment": "macmini mail offsite restore",
+    }
+    malformed = options + " ssh-ed25519 " + key + " macmini mail offsite restore\n"
+    desired = module.candidate("", request)
+    assert malformed != desired
+    assert module.candidate(malformed, request) == desired
+
+
+def test_unrelated_free_comment_quotes_are_never_parsed_as_options() -> None:
+    module = helper("authorized_key")
+    selected = public_key(payload=b"selected")
+    other = public_key(payload=b"other")
+    original = "ssh-ed25519 " + other + " Owner's unrelated key with an unmatched quote\n"
+    request = {
+        "key": "ssh-ed25519 " + selected,
+        "command": "/usr/local/sbin/mail-restore-allow.sh",
+        "comment": "macmini mail offsite restore",
+    }
+    assert module.candidate(original, request).startswith(original)
+
+
+def test_openssh_escaped_quote_identity_cannot_leave_weaker_selected_row() -> None:
+    module = helper("authorized_key")
+    key = public_key()
+    request = {
+        "key": "ssh-ed25519 " + key,
+        "command": "/usr/local/sbin/mail-restore-allow.sh",
+        "comment": "macmini mail offsite restore",
+    }
+    # OpenSSH skips only backslash-doublequote, not an escaped backslash.
+    options = 'command="a' + "\\" * 2 + '" x",no-pty'
+    weaker = options + " ssh-ed25519 " + key + ' c"\n'
+    desired = module.candidate("", request)
+    assert module.candidate(weaker, request) == desired
+    assert module.candidate(weaker + desired, request) == desired
+    other = public_key(payload=b"other")
+    unrelated = options + " ssh-ed25519 " + other + " Owner's unrelated key\n"
+    assert module.candidate(unrelated + desired, request) == unrelated + desired
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n", ""])
+@pytest.mark.parametrize("options", ["", "no-pty "])
+def test_commentless_selected_rows_are_replaced_not_left_before_canonical(ending: str, options: str) -> None:
+    module = helper("authorized_key")
+    key = public_key()
+    request = {
+        "key": "ssh-ed25519 " + key,
+        "command": "/usr/local/sbin/mail-restore-allow.sh",
+        "comment": "macmini mail offsite restore",
+    }
+    weaker = options + "ssh-ed25519 " + key + ending
+    desired = module.candidate("", request)
+    assert module.candidate(weaker, request) == desired
+    if ending:
+        assert module.candidate(weaker + desired, request) == desired
+    assert module.candidate(desired, request) == desired

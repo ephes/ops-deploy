@@ -1865,5 +1865,7 @@
   original policy programs, RAM-only private-file equality and fresh peer keyscan.
 - Add the original delegated mail/MinIO source and restore-access preparation;
   configuration deploys do not explicitly execute backups or storage maintenance.
+  Preserve equivalent reordered forced-key options and unrelated comments while
+  repairing quoted/escaped policy drift with OpenSSH identity boundaries.
 - Qualification is in progress; owned file-vdev/component evidence does not attest
   production storage, physical USB/spindown or complete lifecycle parity.

@@ -644,8 +644,11 @@ an authentication channel or suppress future peer key changes.
 `deploy_backup_restore_access` and `deploy_backup_restore_client` for the original delegated source scripts and
 the Fractal mail-restore forced-command key. They install the existing mail staging/restore programs;
 deploy never runs them or reads mail. The source play does not authorize keys on macmini; its existing SSH-key management retains that ownership. Existing unrelated Fractal root authorizations
-are retained in memory without exporting their file contents. The control
-plane preserves the exact original interleave: call `deploy_backup_source`
+are retained in memory without exporting their file contents. A matching restore
+key with exactly the original six options may retain its existing option order;
+quote, escape or extra-option policy drift is reconciled to the canonical
+forced command. Key identity follows OpenSSH option boundaries without parsing
+free-form comments as keys. The control plane preserves the exact original interleave: call `deploy_backup_source`
 with `restore_client=False` on macmini for its wrapper files, then
 `deploy_backup_restore_access` on Fractal for its restore wrapper/key, then
 `deploy_backup_restore_client` on macmini for its private restore key and fresh
