@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import importlib.util
 import io
 import json
 import socket
+import subprocess
 import tarfile
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 from unittest.mock import Mock
 
@@ -212,3 +217,115 @@ def test_qmp_write_failure_is_retained_in_transcript() -> None:
     with pytest.raises(BrokenPipeError):
         recorded.write(b"request\n")
     assert json.loads(trace.getvalue().splitlines()[-1])["event"] == "write-error"
+
+
+def test_foreign_alias_baseline_survives_root_rotation_and_detects_real_tampering(tmp_path: Path) -> None:
+    # Execute the real harness comparator and baseline statement, without booting
+    # its main program or importing the runtime deployment into this unit test.
+    source = Path(__file__).parent / "integration/minio/harness.py"
+    tree = ast.parse(source.read_text())
+    comparator = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "foreign_alias_observation"
+    )
+    main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
+    baseline = next(
+        node
+        for node in main.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "FOREIGN_ALIAS" for target in node.targets)
+    )
+    original = {
+        "url": "http://127.0.0.1:9001",
+        "accessKey": "synthetic-root",
+        "secretKey": "synthetic-old",
+        "api": "s3v4",
+        "path": "auto",
+    }
+    namespace: dict[str, Any] = {
+        "Path": Path,
+        "Mapping": Mapping,
+        "Any": Any,
+        "json": json,
+        "MappingProxyType": MappingProxyType,
+        "alias": original.copy(),
+    }
+    exec(compile(ast.Module(body=[comparator, baseline], type_ignores=[]), str(source), "exec"), namespace)
+    expected = namespace["FOREIGN_ALIAS"]
+    namespace["alias"]["secretKey"] = "synthetic-new"
+    with pytest.raises(TypeError):
+        expected["secretKey"] = "synthetic-new"
+    path = tmp_path / "config.json"
+    config = {"aliases": {"untouched": original.copy(), "local": namespace["alias"]}}
+    path.write_text(json.dumps(config))
+    observe = namespace["foreign_alias_observation"]
+    assert observe(path, expected) == {"present": True, "equal": True, "different_fields": []}
+    # This is the old final assertion's bad expectation, reproduced separately.
+    assert observe(path, namespace["alias"])["equal"] is False
+    config["aliases"]["untouched"]["secretKey"] = "synthetic-tampered"
+    path.write_text(json.dumps(config))
+    assert observe(path, expected) == {"present": True, "equal": False, "different_fields": ["secretKey"]}
+    del config["aliases"]["untouched"]
+    path.write_text(json.dumps(config))
+    assert observe(path, expected) == {
+        "present": False,
+        "equal": False,
+        "different_fields": ["<missing-or-invalid-alias>"],
+    }
+
+    for invalid in ("{", "[]", '{"aliases": []}', '{"aliases": null}'):
+        path.write_text(invalid)
+        assert observe(path, expected) == {
+            "present": False,
+            "equal": False,
+            "different_fields": ["<unreadable-config>"],
+        }
+    path.unlink()
+    assert observe(path, expected) == {"present": False, "equal": False, "different_fields": ["<unreadable-config>"]}
+
+
+def test_s4_component_binds_exact_inputs_and_passes_credentials_only_on_stdin(tmp_path: Path) -> None:
+    directory = Path(__file__).parent / "integration/minio"
+    tree = ast.parse((directory / "harness.py").read_text())
+    function = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run_lag_component"
+    )
+    for name in ("s4-lag-driver.py.txt", "s4-lag-probe.py.txt"):
+        body = (directory / name).read_bytes()
+        compile(body, name, "exec")
+        (tmp_path / name).write_bytes(body)
+    creds = Mock()
+    creds.root_user.get_secret_value.return_value = "synthetic-root"
+    creds.root_password.get_secret_value.return_value = "synthetic-password"
+    process = Mock(return_value=subprocess.CompletedProcess([], 0, stdout='{"scope":"synthetic"}', stderr=""))
+    record = Mock()
+    namespace: dict[str, Any] = {
+        "Path": Path,
+        "MinioCredentials": Any,
+        "__file__": str(tmp_path / "harness.py"),
+        "hashlib": hashlib,
+        "subprocess": Mock(run=process),
+        "sys": Mock(executable="owned-python"),
+        "json": json,
+        "VALUES": ["synthetic-password"],
+        "write": record,
+    }
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "harness-component", "exec"), namespace)
+    namespace["run_lag_component"](creds)
+    args, kwargs = process.call_args
+    assert args[0][:2] == ["owned-python", str(tmp_path / "s4-lag-driver.py.txt")]
+    assert "synthetic-password" not in repr(args)
+    assert json.loads(kwargs["input"]) == {
+        "endpoint": "http://127.0.0.1:9001",
+        "user": "synthetic-root",
+        "password": "synthetic-password",
+    }
+    assert kwargs["timeout"] == 600
+    assert record.call_args.args[0] == "s4-lag-component.json"
+    for name in ("s4-lag-driver.py.txt", "s4-lag-probe.py.txt"):
+        original = (tmp_path / name).read_bytes()
+        (tmp_path / name).write_bytes(original + b"\n")
+        process.reset_mock()
+        with pytest.raises(AssertionError):
+            namespace["run_lag_component"](creds)
+        process.assert_not_called()
+        (tmp_path / name).write_bytes(original)

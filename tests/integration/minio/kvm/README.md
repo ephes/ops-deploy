@@ -93,3 +93,28 @@ offline guest. That dependency is now installed during image bootstrap alongside
 original-role observation (including its earlier change) remains separate from
 successful pyinfra phases. Recovery and remaining fault cases were not reached,
 so this partial run does not qualify the complete service migration.
+
+The fifth attempt reached all 28 healthy/recovery/refusal phases, including 13
+strict zero-change repeats, but failed its final foreign-alias assertion. The
+fixture had mutated the expected alias to the newly rotated root credential;
+the unrelated alias was originally imported with the old credential. Original
+Ansible normal/missing-client/stopped-service observations succeeded; its root
+rotation failed after changing the environment, and pyinfra safely refused that
+untouched half-applied state before writes. Those raw results remain retained.
+File-level snapshots and the runtime preservation guard do not substitute for
+an independent per-phase semantic alias proof. The fixture now keeps a separate
+immutable baseline and records equality plus differing field names, never
+credential values, before and after every pyinfra/original-role phase. A negative
+local test changes the actual foreign alias and proves the comparison rejects it.
+The failed run remains incomplete qualification; no runtime resource changed.
+
+After the MinIO matrix writes its own successful summary, a separately scoped S4
+component runs the checksum-bound, unmodified `20b721bb` lag probe and its owned
+driver against the same loopback synthetic server and exact mc binary. Current
+fixture credentials travel only in-memory through stdin. The driver owns two new
+synthetic buckets and `/srv/s4-owned-lag-20b` state, testing six healthy/failure/
+recovery calls; its status and marker writes are expected managed effects. Its
+separate receipt and any post-MinIO error do not overwrite the MinIO summary.
+This proves neither the typed S4 deployment nor composite, hardware or inventory
+behavior. Both copied fixture inputs are hash-checked before execution; no server
+configuration, admin action, external network or production data is involved.

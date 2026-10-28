@@ -13,8 +13,10 @@ import sys
 import time
 import traceback
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 from unittest.mock import patch
 
@@ -44,6 +46,7 @@ LIBRARY = ROOT / "collections/ansible_collections/local/ops_library"
 DATA = Path("/var/lib/minio/data")
 VALUES: list[str] = []
 PHASES: list[dict[str, Any]] = []
+FOREIGN_ALIAS: Mapping[str, str] = MappingProxyType({})
 
 
 def value() -> SecretStr:
@@ -114,6 +117,27 @@ def tree(root: Path) -> dict[str, Any]:
     return {str(path): fs(path) for path in [root, *sorted(root.rglob("*"))]} if root.exists() else {str(root): None}
 
 
+def foreign_alias_observation(path: Path, expected: Mapping[str, str]) -> dict[str, Any]:
+    """Compare the owned fixture's foreign alias without recording credential values."""
+    try:
+        config = json.loads(path.read_text())
+        if not isinstance(config, dict) or not isinstance(config.get("aliases"), dict):
+            raise ValueError("invalid alias config")
+        aliases = config["aliases"]
+    except (OSError, UnicodeError, ValueError):
+        return {"present": False, "equal": False, "different_fields": ["<unreadable-config>"]}
+    actual = aliases.get("untouched")
+    return {
+        "present": "untouched" in aliases,
+        "equal": actual == expected,
+        "different_fields": (
+            sorted(key for key in set(actual) | set(expected) if actual.get(key) != expected.get(key))
+            if isinstance(actual, dict)
+            else ["<missing-or-invalid-alias>"]
+        ),
+    }
+
+
 def snapshot() -> dict[str, Any]:
     paths = [
         "/usr/local/bin/minio",
@@ -129,6 +153,7 @@ def snapshot() -> dict[str, Any]:
     ]
     return {
         "files": {path: fs(Path(path)) for path in paths},
+        "foreign_alias": foreign_alias_observation(Path("/root/.mc/config.json"), FOREIGN_ALIAS),
         "policies": tree(Path("/etc/minio/policies")),
         "iam": tree(DATA / ".minio.sys/config/iam"),
         "objects": tree(DATA / "fixture-objects"),
@@ -228,6 +253,8 @@ def deploy(
             )
         }
     )
+    assert before["foreign_alias"]["equal"], label
+    assert after["foreign_alias"]["equal"], label
     assert not exposed, label
     assert bool(error or failed) == failure, label
     if zero:
@@ -353,12 +380,52 @@ def ansible(
         },
     )
     path.unlink()
+    assert before["foreign_alias"]["equal"], label
+    assert after["foreign_alias"]["equal"], label
     if not allow_failure:
         assert result.returncode == 0, "original Ansible role failed"
     return result.returncode
 
 
+def run_lag_component(creds: MinioCredentials) -> None:
+    directory = Path(__file__).parent
+    driver = directory / "s4-lag-driver.py.txt"
+    probe = directory / "s4-lag-probe.py.txt"
+    driver_sha = "8e535d6ff0a0173ce6914137382a58ab99fd07cf8dab5adc7ad3624879024c95"
+    probe_sha = "a83cec6f0768601fb10ebad2f72edc18c04004d24d5232da73c7c36ca802ebf2"
+    assert hashlib.sha256(driver.read_bytes()).hexdigest() == driver_sha
+    assert hashlib.sha256(probe.read_bytes()).hexdigest() == probe_sha
+    result = subprocess.run(
+        [sys.executable, str(driver), str(probe), probe_sha],
+        input=json.dumps(
+            {
+                "endpoint": "http://127.0.0.1:9001",
+                "user": creds.root_user.get_secret_value(),
+                "password": creds.root_password.get_secret_value(),
+            }
+        ),
+        text=True,
+        capture_output=True,
+        timeout=600,
+    )
+    exposed = any(secret in result.stdout + result.stderr for secret in VALUES)
+    write(
+        "s4-lag-component.json",
+        {
+            "exit": result.returncode,
+            "driver_sha256": driver_sha,
+            "probe_sha256": probe_sha,
+            "plaintext_secret_logged": exposed,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        },
+    )
+    assert not exposed, "S4 synthetic component credential output"
+    assert result.returncode == 0, "S4 synthetic component failed; separate receipt retained"
+
+
 def main() -> None:
+    global FOREIGN_ALIAS
     cfg, creds = configured()
     access = creds.root_user.get_secret_value()
     root = creds.root_password.get_secret_value()
@@ -369,6 +436,7 @@ def main() -> None:
         "api": "s3v4",
         "path": "auto",
     }
+    FOREIGN_ALIAS = MappingProxyType(alias.copy())
     mc("alias", "import", "untouched", stdin=json.dumps(alias), shared=True)
     mc("alias", "import", "local", stdin=json.dumps(alias))
     # Start a new native server and its two owned buckets first. The third
@@ -524,8 +592,7 @@ def main() -> None:
     deploy("17-final-repeat", cfg, creds, zero=True)
     with urllib.request.urlopen("http://127.0.0.1:9001/minio/health/live", timeout=10) as response:
         assert response.status == 200
-    aliases = json.loads(Path("/root/.mc/config.json").read_text())["aliases"]
-    assert aliases["untouched"] == alias
+    assert foreign_alias_observation(Path("/root/.mc/config.json"), FOREIGN_ALIAS)["equal"]
     write(
         "summary.json",
         {
@@ -539,9 +606,12 @@ def main() -> None:
         },
     )
 
+    run_lag_component(creds)
+
 
 try:
     main()
 except Exception:
-    write("summary.json", {"success": False, "phases": PHASES, "error": traceback.format_exc()})
+    failure_receipt = "post-minio-component-error.json" if (EVIDENCE / "summary.json").exists() else "summary.json"
+    write(failure_receipt, {"success": False, "phases": PHASES, "error": traceback.format_exc()})
     raise
