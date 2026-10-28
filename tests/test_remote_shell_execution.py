@@ -175,9 +175,13 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         "services/software_live/files/software_live_impl.py",
         "services/software_live/files/live_state_host.py",
     }
-    # Runtime stop is also always base64 encoded by stop_command, never raw
-    # Python in shell source. The actual composed command is exercised below.
-    encoded_daybook_runtime = {"services/daybook_operations_runtime/files/runtime_stop.py"}
+    # Runtime stop/transition are always encoded by their command builders,
+    # never raw Python in shell source. Both actual composed commands execute
+    # through bash AND fish with protected stdin below.
+    encoded_daybook_runtime = {
+        "services/daybook_operations_runtime/files/runtime_stop.py",
+        "services/daybook_operations_runtime/files/runtime_transition.py",
+    }
     # Sessions resource_command also always base64-encodes this source. The
     # actual composed CLI with protected stdin and its synthetic model probe is
     # executed through both real shells in test_daybook_sessions_resource_cli.
@@ -476,10 +480,13 @@ def test_django_site_marker_fact_lists_only_markers(
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
-def test_encoded_daybook_stop_command_through_real_login_shell(login_shell: str) -> None:
+@pytest.mark.parametrize("component", ["stop", "transition"])
+def test_encoded_daybook_runtime_command_through_real_login_shell(login_shell: str, component: str) -> None:
     from ops_deploy.services.daybook_operations_runtime.stop import stop_command
+    from ops_deploy.services.daybook_operations_runtime.transition import transition_command
 
-    parts = shlex.split(stop_command())
+    command = stop_command() if component == "stop" else transition_command()
+    parts = shlex.split(command)
     assert parts[0] == "/usr/bin/python3"
     # Keep the encoded command and shell wrapping; use the test environment's
     # interpreter instead of an optional host shim or CLT installation prompt.
@@ -497,7 +504,7 @@ def test_encoded_daybook_stop_command_through_real_login_shell(login_shell: str)
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr.strip() == "runtime_stop_failed"
+    assert result.stderr.strip() == f"runtime_{component}_failed"
     assert private not in result.stdout + result.stderr
 
 

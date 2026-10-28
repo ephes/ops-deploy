@@ -250,3 +250,67 @@ a later refusal phase, and subsequent diagnostics exposed the ordinary uv lock
 mode compatibility issue. The final scoped review retained its execution limits
 and repaired the hard-link regression's masked negative case; it did not relabel
 those failures or claim a whole-family live review.
+
+## Attended cutover and rollback component
+
+`transition_daybook_runtime` retains the original confirmed `cutover` and
+`rollback` actions and optional start. It checks the exact source, existing
+profile identity/store/kinds, closeout marker, loaded keeper and detached
+supervisor before mutation. Original executor `operations status` and `idle`
+commands remain managed application work: they can open the application Journal
+and expire authority. Their raw output stays in memory; only four aggregate
+status fields are interpreted. This is distinct from pure monitor verification.
+
+The transition stages credentials and the candidate, disables only the declared
+label, preserves the original idle wait, proves it unloaded, and checks all
+rollback-store entries before selecting a command. The first original command
+is saved once, including binary plist bytes. Closeout prevents recreating the
+backup. The selected policy is parsed through the original managed client
+constructor. Starting still requires reconciled server state before enabling
+and bootstrapping the exact label. A failed intermediate step retains its real
+partial effects; the component does not automatically restart or roll back.
+
+The original GUI account login context is retained for managed commands.
+Read-only metadata probes continue to use their separate direct context.
+This component does not install code, select a new source, quiesce a running
+keeper, or expand the runtime update's Inbox-only dependency into Sessions or
+Photos. Private normal routing, complete update composition and inventory
+qualification are separate work.
+
+The original `binding` selects one source for transition `status`/`idle`;
+`status_sources` selects the full monitoring/stop set. They retain separate
+original purposes, so the typed model adds no new membership restriction.
+Live and saved command metadata are checked before mutation and rechecked
+after unloading before replacement.
+
+## Owned transition/report qualification
+
+Immutable runtime `8065a2998d0cba326ef2a677a7844940807c15ca` completed
+[native run40781491228](https://github.com/ephes/ops-deploy/actions/runs/40781491228)
+with all behavioral assertions and cleanup successful. The actual noneditable
+installation enumerated exactly817 package resources, every byte matching Git,
+with the exact Git direct URL. The fixture used an inert owned application,
+synthetic server/ledger and unusable credentials. It exercised cutover/start,
+original-command preservation, rollback and explicit rollback repeat, plus
+three exact-category refusals protecting resources/PIDs. Explicit rollback
+repeat still performs one managed application/transition operation; this is
+not a zero-effect repeat claim. The optional report actually returned the
+validated count3 through the real GUI/SSH/SDK path.
+
+The raw native receipt retained its initial `status: failed` label because this
+new fixture omitted its final success assignment. The raw artifact is retained:
+GH exit0, completed assertions, final ledger-equality field and cleanup evidence
+were independently adjudicated. The fixture now asserts final ledger equality
+and sets passed only after its assertions; `OwnedMac.finish` still resets any
+real failure to failed. No identical runtime proof was replayed for this metadata
+correction. Scoped review ended Suggestion-only with documented execution
+limits; it is not represented as a full CLEAN reviewer execution.
+
+The initial canonical run40781491157 failed only the scanner treating an encoded
+Python resource as raw shell source. Test-only `5f4145e` checks the actual composed
+transition through real bash and fish, preserving protected stdin and sanitized
+errors. [Canonical40783227181](https://github.com/ephes/ops-deploy/actions/runs/40783227181)
+passed8600 tests with518 known skips on each Python version; all817 runtime
+resources remained byte/mode exact8065. These component proofs add no inventory
+default and authorize no real source/profile/keeper transition. Normal routing,
+managed original CLI-health parity and lifecycle adoption remain separate work.

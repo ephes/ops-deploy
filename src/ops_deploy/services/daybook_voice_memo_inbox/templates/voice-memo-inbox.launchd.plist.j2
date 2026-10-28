@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{ daybook_voice_memo_inbox_launchd_label }}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ daybook_voice_memo_inbox_python }}</string>
+    <string>-I</string>
+    <string>-c</string>
+    <string>from daybook.cli import main; raise SystemExit(main())</string>
+    <string>voice-memos</string>
+    <string>ingest</string>
+    <string>--summary-only</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{ daybook_voice_memo_inbox_checkout_path }}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DAYBOOK_VOICE_MEMOS_POLICY</key>
+    <string>{{ daybook_voice_memo_inbox_policy_path }}</string>
+    <key>HOME</key>
+    <string>{{ daybook_voice_memo_inbox_service_home }}</string>
+    <key>LC_ALL</key>
+    <string>C.UTF-8</string>
+    <key>PATH</key>
+    <string>/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>{{ daybook_voice_memo_inbox_interval_seconds }}</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>{{ daybook_voice_memo_inbox_stdout_log }}</string>
+  <key>StandardErrorPath</key>
+  <string>{{ daybook_voice_memo_inbox_stderr_log }}</string>
+</dict>
+</plist>

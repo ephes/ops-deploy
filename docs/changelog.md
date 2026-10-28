@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Add managed Daybook runtime cutover/rollback and optional Inbox interruption
+  summary components, preserving original reconciliation/start guards. Owned
+  root/GUI/SSH transition/report assertions and exact817 package provenance
+  passed; canonical8600/518 passed on both Python versions after a test-only
+  encoded-shell classifier repair. Preserve the raw native receipt's failed-label
+  omission explicitly; its status correction changes no runtime resources.
+  Inventory update/lifecycle/default adoption remains separate.
+
+- Add the original Voice Memo Inbox declaration, disabled-first component
+  controller and final keeper resource composition. Keep root-source/Python
+  replacement behind the original runtime/quiescence guards, preserve private
+  credential comparison and logs, and use checked per-run source transfer.
+  Inventory routing, runtime update and activation adoption remain separate.
+
 - Add the original fixed-path software-estate removal as a typed lifecycle
   operation, preserving directory/file/link removal and an absent-path no-op.
   It does not restore the retired pilot or change deploy-default counts. Owned
