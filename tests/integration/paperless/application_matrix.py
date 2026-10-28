@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -499,6 +500,38 @@ print(json.dumps({{'owned_migration_cleanup':True}}))
     harness.deploy("pending-migration-cleanup-repeat", zero=True)
 
 
+def old_reindex_fault_observation(before: dict[str, Any], after: dict[str, Any], cfg: Any) -> dict[str, Any]:
+    """Classify the old managed command's observed writes, never a healthy no-op."""
+    roots = [str(Path(cfg.external_storage_root) / name) for name in ("data", "media", "consume")]
+    roots.append(str(Path(cfg.sftp_chroot_dir) / "inbox"))
+    normalized = copy.deepcopy(after)
+    changed_fields = {}
+    expected = True
+    for root in roots:
+        old = before["files"].get(root)
+        new = after["files"].get(root)
+        if not isinstance(old, dict) or not isinstance(new, dict):
+            expected = False
+            changed_fields[root] = ["missing-or-nondict-metadata"]
+            continue
+        fields = sorted(key for key in old.keys() | new.keys() if old.get(key) != new.get(key))
+        changed_fields[root] = fields
+        expected = expected and set(fields) == {"mtime_ns", "ctime_ns"}
+        for field in ("mtime_ns", "ctime_ns"):
+            # Only these four roots and two timestamps can differ for this
+            # deliberately failing execution helper. All remaining snapshot
+            # fields, including root ownership/inode/mode/size, remain strict.
+            expected = expected and type(old.get(field)) is int and type(new.get(field)) is int
+            if type(old.get(field)) is int and type(new.get(field)) is int:
+                expected = expected and new[field] > old[field]
+            normalized["files"][root][field] = old.get(field)
+    return {
+        "classification": "old managed reindex failure with root timestamp writes; not zero mutation",
+        "root_changed_fields": changed_fields,
+        "only_expected_root_metadata_changed": expected and normalized == before,
+    }
+
+
 def missing_entire_index(harness: Any) -> None:
     """Real owned absent-path fault, exact old-helper failure, normal recovery."""
     from ops_deploy.services.paperless.commands import reindex_payload
@@ -547,10 +580,14 @@ def missing_entire_index(harness: Any) -> None:
             "private_content_equal": before.private == after.private,
         },
     )
+    # Preserve both complete raw snapshots and command outcome before any
+    # classifier or assertion can fail on unexpected structure/effects.
+    observation = old_reindex_fault_observation(before.public, after.public, harness.CFG)
+    harness.write("missing-index-old-helper-observation.json", observation)
     assert result.returncode == 1
     assert not index.exists()
     assert result.stderr == "Paperless managed reindex failed; inspect service status locally\n"
-    assert before.public == after.public
+    assert observation["only_expected_root_metadata_changed"], "unexpected old managed reindex failure effects"
     assert before.private == after.private
     repaired = harness.deploy("index-missing-entire-directory")
     assert any("Converge Paperless search index" in name for name in repaired["managed"])

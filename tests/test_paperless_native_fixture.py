@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import gzip
 import hashlib
 import json
@@ -331,3 +332,80 @@ def test_sftp_failure_receipt_precedes_assertion_and_sanitizes(
     assert receipt["stdout"] == "owned output <synthetic-redacted>"
     assert receipt["stderr"] == "Connection closed"
     assert not pdf.exists()
+
+
+@pytest.mark.parametrize(
+    "extra_change",
+    [
+        None,
+        "mode",
+        "inode",
+        "size",
+        "uid",
+        "gid",
+        "link",
+        "new_field",
+        "backwards",
+        "missing",
+        "unit",
+        "body",
+        "db",
+        "index",
+        "other_root",
+        "root_missing",
+        "root_nondict",
+    ],
+)
+def test_old_failed_reindex_allows_only_exact_observed_root_timestamps(extra_change: str | None) -> None:
+    cfg = SimpleNamespace(external_storage_root="/owned/paperless", sftp_chroot_dir="/owned/scanner")
+    roots = ["/owned/paperless/" + name for name in ("data", "media", "consume")]
+    roots.append("/owned/scanner/inbox")
+    metadata = {
+        "mode": 16877,
+        "uid": 1001,
+        "gid": 1001,
+        "inode": 42,
+        "size": 80,
+        "mtime_ns": 100,
+        "ctime_ns": 101,
+        "link": None,
+    }
+    before: dict[str, Any] = {
+        "files": {root: dict(metadata) for root in [*roots, "/owned/paperless"]},
+        "units": {"paperless": "inactive"},
+        "public_program_hashes": {"program": "same"},
+        "database_operational_state": {"documents": 1},
+        "index_metadata_only": {"missing": True},
+    }
+    after = copy.deepcopy(before)
+    for root in roots:
+        after["files"][root]["mtime_ns"] += 10
+        after["files"][root]["ctime_ns"] += 10
+    if extra_change in {"mode", "inode", "size", "uid", "gid"}:
+        after["files"][roots[0]][extra_change] += 1
+    elif extra_change in {"link", "new_field"}:
+        after["files"][roots[0]][extra_change] = "unexpected"
+    elif extra_change == "backwards":
+        after["files"][roots[0]]["mtime_ns"] = 1
+    elif extra_change == "missing":
+        after["files"][roots[0]]["ctime_ns"] = 101
+    elif extra_change == "other_root":
+        after["files"]["/owned/paperless"]["mtime_ns"] += 1
+    elif extra_change == "root_missing":
+        del after["files"][roots[0]]
+    elif extra_change == "root_nondict":
+        after["files"][roots[0]] = None
+    elif extra_change:
+        section = {
+            "unit": "units",
+            "body": "public_program_hashes",
+            "db": "database_operational_state",
+            "index": "index_metadata_only",
+        }[extra_change]
+        after[section]["unexpected"] = True
+    unchanged_before, unchanged_after = copy.deepcopy(before), copy.deepcopy(after)
+    result = application_matrix.old_reindex_fault_observation(before, after, cfg)
+    assert result["only_expected_root_metadata_changed"] is (extra_change is None)
+    assert before == unchanged_before
+    assert after == unchanged_after
+    assert "not zero mutation" in result["classification"]

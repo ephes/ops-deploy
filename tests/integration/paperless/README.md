@@ -243,3 +243,23 @@ and requires the same-config SFTP probe to succeed. Other auth/network/chroot
 errors stop. This is a labelled owned bootstrap recovery, not an original pristine
 bootstrap or a forced restart added to the typed runtime. The guest still has
 no host ports/data mounts; SFTP uses only its internal loopback connection.
+
+
+Run40771823685's current and upgrade legs exercised that exact pending-handler recovery:
+SFTP closed with exit255 before the original restart+enable task, then passed
+with the same configuration and a new SSH PID; only the selected SSH unit changed.
+Actual synthetic SFTP upload, OCR and authenticated search subsequently passed.
+The ordinary, fish and after-original repeats each ran102 successful operations
+with zero managed changes/uploads and exact entire snapshots.
+
+The next fault control failed an overly strict assertion before reaching typed
+missing-index recovery: the old7522 managed reindex helper failed as expected
+with the entire index still absent, but its original Django system checks changed
+mtime/ctime on the four writable roots. All other selected state and private
+content matched. Both full raw failures and runner1/collection0/cleanup0 are retained.
+This execution helper is intentionally managed, unlike the corrected read-only
+migration-status probe. Its fault oracle now records those eight observed timestamp
+writes, requires every other field exact, and rejects extra changes or unchanged/
+backwards expected timestamps. It does not add skip-checks to managed reindex,
+change application code, or exempt metadata from any healthy-repeat assertion.
+The actual repaired missing-index recovery and remaining matrix are still pending.
