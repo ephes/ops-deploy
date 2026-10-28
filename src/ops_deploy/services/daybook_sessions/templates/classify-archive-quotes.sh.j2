@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+
+export PATH={{ daybook_sessions_launchd_path | quote }}
+export UV_PROJECT_ENVIRONMENT={{ (daybook_sessions_checkout_path ~ '/.venv') | quote }}
+export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+set -a
+# shellcheck disable=SC1090
+source {{ daybook_sessions_env_file | quote }}
+# shellcheck disable=SC1090
+source {{ daybook_archive_quote_classifier_env_file | quote }}
+set +a
+
+cd {{ daybook_sessions_checkout_path | quote }}
+exec {{ daybook_sessions_uv_bin | quote }} run --frozen --no-dev daybook archive classify-quotes \
+  --since-days {{ daybook_archive_quote_classifier_since_days | int }} \
+  --limit {{ daybook_archive_quote_classifier_limit | int }} \
+  --state-path {{ daybook_archive_quote_classifier_state | quote }}

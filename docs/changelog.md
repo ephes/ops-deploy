@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Port the original Daybook Sessions/Archive/Weeknotes declaration and eleven
+  resource templates, retaining retired timers, identity and auth boundaries.
+  Add pure local runtime observation and original transition predicates as
+  groundwork for guarded host deployment; no inventory or activation switch.
+
 - Define the protected Daybook schema-five runtime profile and action-aware
   default decision, retaining disabled installation and the original guarded
   update boundary. Add a pure monitor-only status client with strict TLS,

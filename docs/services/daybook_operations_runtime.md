@@ -18,7 +18,11 @@ resource equality selects pure verification. A change selects the original
 guarded stop → importer install → replace → cutover/start → verify update flow,
 once all dependent APIs are qualified. Fresh or disabled installations stay
 disabled. The installed old commit must never replace desired Main to manufacture
-a no-op. Revision text alone is not proof of source/resource equality.
+a no-op. Health is checked by pure verification, separately from source/resource
+drift: a current halted or stopped keeper fails verification for operator attention
+without selecting a mutating update. An existing disabled profile does not require
+a running GUI job or store during observation; normal disabled installation
+converges those prerequisites without activation. Revision text alone is not proof of source/resource equality.
 
 The new pure verification contract uses `GET /v1/status` with a separate existing
 **monitor-purpose** credential through the existing redacted `SecretValues`
@@ -49,3 +53,19 @@ OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core \
 The owned local HTTPS fixture checks certificate denial, exact route, monitor vs
 executor purpose, repeated reads, redirect denial and oversized-response failure.
 It has synthetic operational metadata and no personal data or inventory access.
+
+The next local verification slice reads code/package bytes, the declared profile,
+resource equality and delivery-store directory metadata. Credential bytes are
+compared in memory; no credential digest is placed in command arguments or proof
+metadata. Directory entries are counted without opening delivery or halt records.
+It probes the exact loaded command, the supervisor session and pinned interpreter
+without importing Daybook. The pyinfra fact receives a closed-after-use in-memory
+stream: raw string fact stdin is deliberately avoided because verbose pyinfra
+completion logging prints that argument. A real verbose local CLI fixture checks
+the supported stream path without any inventory or real credential.
+
+Transition predicates retain the original same-day run windows (including their
+lead), recheck-before-stop requirement, already-stopped recovery, quiet store and
+source guards, profile identity and kind/store continuity, and replacement drain
+proof. They do not perform a transition by themselves. Original executor-status
+expiry effects remain managed update effects, separate from pure monitoring.

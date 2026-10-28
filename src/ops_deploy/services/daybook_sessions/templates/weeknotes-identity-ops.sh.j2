@@ -1,0 +1,59 @@
+#!/bin/bash
+set -euo pipefail
+
+export PATH={{ daybook_sessions_launchd_path | quote }}
+unset UV_PROJECT_ENVIRONMENT
+
+/usr/bin/shasum -a 256 -c {{ daybook_weeknotes_reconcile_env_checksum_file | quote }} >/dev/null
+
+set -a
+# shellcheck disable=SC1090
+source {{ daybook_weeknotes_reconcile_env_file | quote }}
+set +a
+
+cd {{ daybook_sessions_checkout_path | quote }}
+
+case "${1:-}" in
+  prepare)
+    [[ $# -eq 1 ]]
+    exec {{ daybook_sessions_uv_bin | quote }} run --isolated --frozen --no-dev python \
+      {{ daybook_weeknotes_identity_helper_path | quote }} prepare \
+      {{ daybook_weeknotes_identity_seed_path | quote }} \
+      {{ daybook_weeknotes_identity_plan_path | quote }}
+    ;;
+  dry-run)
+    [[ $# -eq 1 ]]
+    exec {{ daybook_sessions_uv_bin | quote }} run --isolated --frozen --no-dev daybook \
+      weeknotes migrate-identities \
+      --plan {{ daybook_weeknotes_identity_plan_path | quote }} \
+      --state {{ daybook_weeknotes_reconcile_state_path | quote }} \
+      --attestation {{ daybook_weeknotes_identity_attestation_path | quote }}
+    ;;
+  apply)
+    [[ $# -eq 1 ]]
+    exec {{ daybook_sessions_uv_bin | quote }} run --isolated --frozen --no-dev daybook \
+      weeknotes migrate-identities \
+      --plan {{ daybook_weeknotes_identity_plan_path | quote }} \
+      --state {{ daybook_weeknotes_reconcile_state_path | quote }} \
+      --attestation {{ daybook_weeknotes_identity_attestation_path | quote }} \
+      --apply
+    ;;
+  verify)
+    [[ $# -eq 1 ]]
+    exec {{ daybook_sessions_uv_bin | quote }} run --isolated --frozen --no-dev python \
+      {{ daybook_weeknotes_identity_helper_path | quote }} verify \
+      {{ daybook_weeknotes_identity_seed_path | quote }} \
+      {{ daybook_weeknotes_identity_plan_path | quote }} \
+      {{ daybook_weeknotes_identity_attestation_path | quote }}
+    ;;
+  status)
+    [[ $# -eq 1 ]]
+    exec {{ daybook_sessions_uv_bin | quote }} run --isolated --frozen --no-dev daybook \
+      weeknotes reconcile-status \
+      --state {{ daybook_weeknotes_reconcile_state_path | quote }}
+    ;;
+  *)
+    printf 'usage: %s {prepare|dry-run|apply|verify|status}\n' "$0" >&2
+    exit 64
+    ;;
+esac

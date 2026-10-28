@@ -37,7 +37,12 @@ def render_resource(cfg: DaybookRuntimeConfig, template: str) -> str:
     return env.get_template(template).render(role_values(cfg))
 
 
-def render_credential(token: str) -> SecretContent:
-    if not re.fullmatch(r"[A-Za-z0-9._~-]{32,256}", token) or "CHANGEME" in token:
+def credential_text(token: str) -> str:
+    """One original credential encoding shared by installer and observer."""
+    if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._~-]{32,256}", token) or "CHANGEME" in token:
         raise ValueError("runtime executor credential is invalid")
-    return SecretContent(json.dumps({"token": token}, indent=4, sort_keys=True) + "\n")
+    return json.dumps({"token": token}, indent=4, sort_keys=True) + "\n"
+
+
+def render_credential(token: str) -> SecretContent:
+    return SecretContent(credential_text(token))

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ daybook_sessions_launchd_label | e }}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/sh</string>
+      <string>{{ daybook_sessions_launcher_path | e }}</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>{{ daybook_sessions_launchd_path | e }}</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+    </dict>
+
+{% if daybook_sessions_launchd_scope == 'system' %}
+    <key>UserName</key>
+    <string>{{ daybook_sessions_service_user | e }}</string>
+    <key>GroupName</key>
+    <string>{{ daybook_sessions_service_group | e }}</string>
+{% endif %}
+    <key>WorkingDirectory</key>
+    <string>{{ daybook_sessions_checkout_path | e }}</string>
+
+{% if daybook_sessions_launchd_run_at_load | bool %}
+    <key>RunAtLoad</key>
+    <true/>
+{% else %}
+    <key>RunAtLoad</key>
+    <false/>
+{% endif %}
+    <key>StartInterval</key>
+    <integer>{{ daybook_sessions_schedule_interval_seconds | int }}</integer>
+
+    <key>StandardOutPath</key>
+    <string>{{ daybook_sessions_stdout_log | e }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ daybook_sessions_stderr_log | e }}</string>
+  </dict>
+</plist>

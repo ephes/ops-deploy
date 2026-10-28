@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+export PATH={{ daybook_sessions_launchd_path | quote }}
+unset UV_PROJECT_ENVIRONMENT
+
+/usr/bin/shasum -a 256 -c {{ daybook_weeknotes_reconcile_env_checksum_file | quote }} >/dev/null
+
+set -a
+# shellcheck disable=SC1090
+source {{ daybook_weeknotes_reconcile_env_file | quote }}
+set +a
+
+cd {{ daybook_sessions_checkout_path | quote }}
+[[ "$(/usr/bin/git rev-parse HEAD)" == {{ daybook_sessions_repo_ref | quote }} ]]
+[[ "$(/usr/bin/git rev-parse --show-toplevel)" == {{ daybook_sessions_checkout_path | quote }} ]]
+[[ -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)" ]]
+printf '[%s] starting draft-only daybook weeknotes reconcile\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+exec {{ daybook_sessions_uv_bin | quote }} run --isolated --frozen --no-dev --no-config \
+  daybook weeknotes reconcile "$@"

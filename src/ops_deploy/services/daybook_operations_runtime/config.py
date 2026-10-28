@@ -73,6 +73,7 @@ class DaybookRuntimeConfig(RoleConfig):
     install_root: PurePosixPath | None = None
     python: PurePosixPath | None = None
     python_version: Annotated[str, Field(pattern=r"^3\.[0-9]+\.[0-9]+$")] = "3.14.7"
+    uv_bin: PurePosixPath = PurePosixPath("/opt/homebrew/bin/uv")
     policy: PurePosixPath | None = None
     importer_policy: PurePosixPath | None = None
     credential: PurePosixPath | None = None
@@ -103,6 +104,7 @@ class DaybookRuntimeConfig(RoleConfig):
         "home",
         "install_root",
         "python",
+        "uv_bin",
         "policy",
         "importer_policy",
         "credential",

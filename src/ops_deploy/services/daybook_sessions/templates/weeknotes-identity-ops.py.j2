@@ -1,0 +1,398 @@
+{% raw %}#!/usr/bin/env python3
+"""Content-free preparation and verification for Daybook identity migration."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import secrets
+import stat
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from daybook.cast_client import DeliveryConfig, DjangoCastClient, protected_post_fields_hash
+from daybook.weeknotes import normalized_week, weeknotes_slug, weeknotes_title
+from daybook.weeknotes_identity_migration import parse_identity_migration_plan
+
+EPOCH = "monday-after-v1"
+MAX_FILE_BYTES = 1024 * 1024
+SEED_FIELDS = {
+    "week",
+    "audience",
+    "blog_id",
+    "post_id",
+    "expected_revision_id",
+    "from_title",
+    "from_slug",
+}
+RECEIPT_FIELDS = {"week", "audience", "blog_id", "post_id", "new_revision_id"}
+TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError
+        result[key] = value
+    return result
+
+
+def _reject_constant(_value: str) -> Any:
+    raise ValueError
+
+
+def _strict_json(raw: bytes) -> Any:
+    return json.loads(
+        raw.decode("utf-8"),
+        object_pairs_hook=_unique_object,
+        parse_constant=_reject_constant,
+    )
+
+
+def _positive_int(value: Any) -> int:
+    if type(value) is not int or value < 1:
+        raise ValueError
+    return value
+
+
+def _open_absolute_directory(path: Path) -> int:
+    if not path.is_absolute():
+        raise ValueError
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    current = os.open("/", flags)
+    try:
+        for component in path.parts[1:]:
+            if component in {"", ".", ".."}:
+                raise ValueError
+            following = os.open(component, flags, dir_fd=current)
+            os.close(current)
+            current = following
+        info = os.fstat(current)
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) & 0o077
+        ):
+            raise ValueError
+        return current
+    except Exception:
+        os.close(current)
+        raise
+
+
+def _same_private_parent(paths: tuple[Path, ...]) -> tuple[Path, int]:
+    if not paths or any(not path.is_absolute() for path in paths):
+        raise ValueError
+    parent = paths[0].parent
+    if any(path.parent != parent or path.name in {"", ".", ".."} for path in paths):
+        raise ValueError
+    return parent, _open_absolute_directory(parent)
+
+
+def _open_private_at(directory_fd: int, name: str) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(name, flags, dir_fd=directory_fd)
+    try:
+        info = os.fstat(fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise ValueError
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _read_private_at(directory_fd: int, name: str) -> bytes:
+    fd = _open_private_at(directory_fd, name)
+    try:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(65536, MAX_FILE_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_FILE_BYTES:
+                raise ValueError
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def _entry_exists(directory_fd: int, name: str) -> bool:
+    try:
+        os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _recover_completed_link_at(directory_fd: int, final_name: str) -> None:
+    """Finish unlinking crash leftovers after the durable no-replace link."""
+    try:
+        final = os.stat(final_name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if final.st_nlink == 1:
+        return
+    if (
+        not stat.S_ISREG(final.st_mode)
+        or final.st_uid != os.geteuid()
+        or stat.S_IMODE(final.st_mode) != 0o600
+    ):
+        raise ValueError
+    prefix = f".{final_name}.daybook-"
+    matches: list[str] = []
+    for name in os.listdir(directory_fd):
+        if not name.startswith(prefix):
+            continue
+        candidate = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        if candidate.st_dev == final.st_dev and candidate.st_ino == final.st_ino:
+            matches.append(name)
+    if len(matches) != final.st_nlink - 1:
+        raise ValueError
+    for name in matches:
+        os.unlink(name, dir_fd=directory_fd)
+    os.fsync(directory_fd)
+
+
+def _read_seed_at(directory_fd: int, name: str) -> list[dict[str, Any]]:
+    payload = _strict_json(_read_private_at(directory_fd, name))
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version",
+        "identity_epoch",
+        "moves",
+    }:
+        raise ValueError
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
+        raise ValueError
+    if payload["identity_epoch"] != EPOCH:
+        raise ValueError
+    if not isinstance(payload["moves"], list) or not payload["moves"]:
+        raise ValueError
+    moves: list[dict[str, Any]] = []
+    for value in payload["moves"]:
+        if not isinstance(value, dict) or set(value) != SEED_FIELDS:
+            raise ValueError
+        week = normalized_week(value["week"])
+        if week != value["week"] or value["audience"] not in {"public", "family"}:
+            raise ValueError
+        move = dict(value)
+        for field in ("blog_id", "post_id", "expected_revision_id"):
+            move[field] = _positive_int(move[field])
+        for field in ("from_title", "from_slug"):
+            if not isinstance(move[field], str) or not move[field] or move[field] != move[field].strip():
+                raise ValueError
+        moves.append(move)
+    return moves
+
+
+def _seed_payload(seed: list[dict[str, Any]], *, protected_hash: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "identity_epoch": EPOCH,
+        "moves": [
+            {
+                **value,
+                "to_title": weeknotes_title(value["week"], audience=value["audience"]),
+                "to_slug": weeknotes_slug(value["week"], audience=value["audience"]),
+                "protected_fields_hash": protected_hash,
+            }
+            for value in seed
+        ],
+    }
+
+
+def _validate_seed_intent(seed: list[dict[str, Any]]) -> None:
+    parse_identity_migration_plan(
+        json.dumps(_seed_payload(seed, protected_hash="0" * 64), ensure_ascii=False, allow_nan=False)
+    )
+
+
+def _parse_plan_at(directory_fd: int, name: str):
+    return parse_identity_migration_plan(_read_private_at(directory_fd, name))
+
+
+def _seed_matches_plan(seed: list[dict[str, Any]], plan: Any) -> bool:
+    if len(seed) != len(plan.moves):
+        return False
+    return all(
+        all(getattr(planned, field) == value[field] for field in SEED_FIELDS)
+        for value, planned in zip(seed, plan.moves, strict=True)
+    )
+
+
+def _atomic_create_at(directory_fd: int, final_name: str, raw: bytes) -> None:
+    temporary_name = f".{final_name}.daybook-{secrets.token_hex(12)}"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
+    linked = False
+    try:
+        os.fchmod(fd, 0o600)
+        offset = 0
+        while offset < len(raw):
+            offset += os.write(fd, raw[offset:])
+        os.fsync(fd)
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600:
+            raise ValueError
+        os.close(fd)
+        fd = -1
+        os.link(
+            temporary_name,
+            final_name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        linked = True
+        os.fsync(directory_fd)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+            if linked:
+                os.fsync(directory_fd)
+        except FileNotFoundError:
+            pass
+
+
+def prepare(seed_path: Path, plan_path: Path) -> dict[str, Any]:
+    _parent, directory_fd = _same_private_parent((seed_path, plan_path))
+    try:
+        seed = _read_seed_at(directory_fd, seed_path.name)
+        _validate_seed_intent(seed)
+        if _entry_exists(directory_fd, plan_path.name):
+            _recover_completed_link_at(directory_fd, plan_path.name)
+            plan = _parse_plan_at(directory_fd, plan_path.name)
+            if not _seed_matches_plan(seed, plan):
+                raise ValueError
+            return {"schema_version": 1, "status": "existing_plan_reused", "plan_hash": plan.plan_hash}
+
+        client = DjangoCastClient(DeliveryConfig.from_env())
+        moves: list[dict[str, Any]] = []
+        for value in seed:
+            post = client.read_post(value["post_id"])
+            parent = post.get("parent")
+            predecessor = post.get("previous_revision_id")
+            if (
+                post.get("id") != value["post_id"]
+                or not isinstance(parent, dict)
+                or parent.get("id") != value["blog_id"]
+                or post.get("latest_revision_id") != value["expected_revision_id"]
+                or post.get("title") != value["from_title"]
+                or post.get("slug") != value["from_slug"]
+                or post.get("type") != "cast.Post"
+                or post.get("status") != "draft"
+                or post.get("live") is not False
+                or (
+                    predecessor is not None
+                    and (
+                        type(predecessor) is not int
+                        or predecessor < 1
+                        or predecessor >= value["expected_revision_id"]
+                    )
+                )
+            ):
+                raise ValueError
+            moves.append(
+                {
+                    **value,
+                    "to_title": weeknotes_title(value["week"], audience=value["audience"]),
+                    "to_slug": weeknotes_slug(value["week"], audience=value["audience"]),
+                    "protected_fields_hash": protected_post_fields_hash(post),
+                }
+            )
+        payload = {"schema_version": 1, "identity_epoch": EPOCH, "moves": moves}
+        raw = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False).encode("utf-8") + b"\n"
+        parsed = parse_identity_migration_plan(raw)
+        _atomic_create_at(directory_fd, plan_path.name, raw)
+        persisted = _parse_plan_at(directory_fd, plan_path.name)
+        if persisted.plan_hash != parsed.plan_hash or not _seed_matches_plan(seed, persisted):
+            raise ValueError
+        return {"schema_version": 1, "status": "plan_prepared", "plan_hash": persisted.plan_hash}
+    finally:
+        os.close(directory_fd)
+
+
+def _read_attestation_at(directory_fd: int, name: str) -> dict[str, Any]:
+    payload = _strict_json(_read_private_at(directory_fd, name))
+    if not isinstance(payload, dict) or set(payload) != {
+        "version",
+        "identity_epoch",
+        "plan_hash",
+        "moves",
+        "completed_at",
+    }:
+        raise ValueError
+    if type(payload["version"]) is not int or payload["version"] != 1 or payload["identity_epoch"] != EPOCH:
+        raise ValueError
+    if not isinstance(payload["plan_hash"], str) or not re.fullmatch(r"[0-9a-f]{64}", payload["plan_hash"]):
+        raise ValueError
+    timestamp = payload["completed_at"]
+    if not isinstance(timestamp, str) or not TIMESTAMP_RE.fullmatch(timestamp):
+        raise ValueError
+    if datetime.fromisoformat(timestamp.removesuffix("Z") + "+00:00").utcoffset().total_seconds() != 0:
+        raise ValueError
+    if not isinstance(payload["moves"], list) or not payload["moves"]:
+        raise ValueError
+    return payload
+
+
+def verify(seed_path: Path, plan_path: Path, attestation_path: Path) -> dict[str, Any]:
+    _parent, directory_fd = _same_private_parent((seed_path, plan_path, attestation_path))
+    try:
+        seed = _read_seed_at(directory_fd, seed_path.name)
+        _validate_seed_intent(seed)
+        plan = _parse_plan_at(directory_fd, plan_path.name)
+        if not _seed_matches_plan(seed, plan):
+            raise ValueError
+        attestation = _read_attestation_at(directory_fd, attestation_path.name)
+        if attestation["plan_hash"] != plan.plan_hash or len(attestation["moves"]) != len(plan.moves):
+            raise ValueError
+        for receipt, move in zip(attestation["moves"], plan.moves, strict=True):
+            if (
+                not isinstance(receipt, dict)
+                or set(receipt) != RECEIPT_FIELDS
+                or receipt.get("week") != move.week
+                or receipt.get("audience") != move.audience
+                or receipt.get("blog_id") != move.blog_id
+                or receipt.get("post_id") != move.post_id
+                or type(receipt.get("new_revision_id")) is not int
+                or receipt["new_revision_id"] <= move.expected_revision_id
+            ):
+                raise ValueError
+        return {"schema_version": 1, "status": "attestation_verified", "plan_hash": plan.plan_hash}
+    finally:
+        os.close(directory_fd)
+
+
+def main() -> int:
+    try:
+        if len(sys.argv) == 4 and sys.argv[1] == "prepare":
+            result = prepare(Path(sys.argv[2]), Path(sys.argv[3]))
+        elif len(sys.argv) == 5 and sys.argv[1] == "verify":
+            result = verify(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
+        else:
+            raise ValueError
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except Exception:
+        print(json.dumps({"schema_version": 1, "status": "failed", "reason_code": "identity_gate_failed"}, sort_keys=True))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+{% endraw %}

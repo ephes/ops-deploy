@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+set -a
+. {{ daybook_sessions_env_file | quote }}
+set +a
+
+cd {{ daybook_sessions_checkout_path | quote }}
+printf '[%s] starting daybook sessions ship\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+exec {{ daybook_sessions_uv_bin | quote }} run --frozen --no-dev daybook sessions ship

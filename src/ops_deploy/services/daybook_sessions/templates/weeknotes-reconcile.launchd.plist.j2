@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{ daybook_weeknotes_reconcile_launchd_label | e }}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ daybook_weeknotes_reconcile_launcher_path | e }}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{ daybook_sessions_checkout_path | e }}</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StartCalendarInterval</key>
+  <array>
+{% for schedule in daybook_weeknotes_reconcile_start_calendar %}
+    <dict>
+      <key>Hour</key>
+      <integer>{{ schedule.Hour | int }}</integer>
+      <key>Minute</key>
+      <integer>{{ schedule.Minute | int }}</integer>
+    </dict>
+{% endfor %}
+  </array>
+  <key>StandardOutPath</key>
+  <string>{{ daybook_weeknotes_reconcile_stdout_log | e }}</string>
+  <key>StandardErrorPath</key>
+  <string>{{ daybook_weeknotes_reconcile_stderr_log | e }}</string>
+{% if daybook_sessions_launchd_scope == 'system' %}
+  <key>UserName</key>
+  <string>{{ daybook_sessions_service_user | e }}</string>
+  <key>GroupName</key>
+  <string>{{ daybook_sessions_service_group | e }}</string>
+{% endif %}
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{{ daybook_sessions_launchd_path | e }}</string>
+    <key>HOME</key>
+    <string>{{ daybook_sessions_service_home | e }}</string>
+    <key>USER</key>
+    <string>{{ daybook_sessions_service_user | e }}</string>
+    <key>LOGNAME</key>
+    <string>{{ daybook_sessions_service_user | e }}</string>
+    <key>XDG_CONFIG_HOME</key>
+    <string>{{ (daybook_sessions_service_home ~ '/.config') | e }}</string>
+    <key>XDG_CACHE_HOME</key>
+    <string>{{ (daybook_sessions_service_home ~ '/.cache') | e }}</string>
+    <key>XDG_DATA_HOME</key>
+    <string>{{ (daybook_sessions_service_home ~ '/.local/share') | e }}</string>
+    <key>UV_PROJECT_ENVIRONMENT</key>
+    <string>{{ (daybook_sessions_checkout_path ~ '/.venv') | e }}</string>
+  </dict>
+</dict>
+</plist>
