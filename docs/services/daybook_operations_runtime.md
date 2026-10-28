@@ -134,7 +134,8 @@ then still fails on that original result. It compares protected metadata and
 keeper PID before/after the diagnostic, which cannot pre-warm or replace the
 first normal observation. It uses the exact observer over the same SSH connector and retains
 only observer metadata, fixed failure categories and per-probe return codes with
-fixed stderr classifications. Child stderr, argv, environment and input bodies
+fixed stderr classifications. A failed uv check also retains matching fixed
+error/plan tags, without package names, paths or raw messages. Child stderr, argv, environment and input bodies
 stay out of the receipt. This adds no retry, bypass or change to normal verifier
 success criteria; failed attempts remain failed evidence.
 

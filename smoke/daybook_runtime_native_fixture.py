@@ -109,7 +109,21 @@ class DiagnosticProbes(NativeProbes):
                        (b'dubious ownership','git-owner'),(b'no interpreter found','python-selection'),
                        (b'no such file','missing')]:
    if needle in result.stderr.lower():category=label;break
-  history.append({'probe':probe,'returncode':result.returncode,'stderr_category':category})
+  entry={'probe':probe,'returncode':result.returncode,'stderr_category':category}
+  if probe=='uv-check':
+   signals=[(b'would install','would-install'),(b'would uninstall','would-uninstall'),
+            (b'would update','would-update'),(b'would replace project environment at:','would-replace-env'),
+            (b'would create project environment at:','would-create-env'),(b'would download','would-download'),
+            (b'would make no changes','no-changes'),
+            (b'error: the environment is outdated','env-outdated'),
+            (b'error: failed to query python','python-query'),
+            (b'error: failed to inspect','python-inspect'),
+            (b'error: failed to build','build'),(b'error: failed to download','download'),
+            (b'error: failed to create temporary directory','temp-create'),
+            (b'error: failed to open file','file-open'),(b'error:','error'),(b'warning:','warning')]
+   lines=[line.lstrip().lower() for line in result.stderr.splitlines()]
+   entry['uv_signals']=[label for prefix,label in signals if any(line.startswith(prefix) for line in lines)]
+  history.append(entry)
   return result
 try:
  raw=sys.stdin.buffer.read(MAX_INPUT+1)

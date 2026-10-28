@@ -88,3 +88,60 @@ def test_owned_diagnostic_failures_keep_type_without_body_or_false_transport_lab
     assert result == {"failure": "RuntimeError" if kind == "run-failed" else "ValueError"}
     assert private not in json.dumps(result)
     assert "transport" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    ("message", "tags"),
+    [
+        ("error: The environment is outdated; run uv sync", ["env-outdated", "error"]),
+        ("Would replace project environment at: /private/daybook", ["would-replace-env"]),
+        ("Would create project environment at: /private/daybook", ["would-create-env"]),
+        ("Would download 1 package", ["would-download"]),
+        ("Would make no changes", ["no-changes"]),
+        ("Would install 1 package", ["would-install"]),
+        ("/owned/Caches/daybook/offline", []),
+    ],
+)
+def test_actual_diagnostic_reports_uv_fixed_signals_without_child_body(
+    monkeypatch: pytest.MonkeyPatch,
+    message: str,
+    tags: list[str],
+) -> None:
+    import runpy
+    import shlex
+
+    fixture = Path(__file__).resolve().parents[1] / "smoke/daybook_runtime_native_fixture.py"
+    monkeypatch.syspath_prepend(str(fixture.parent))
+    module = runpy.run_path(str(fixture))
+    private = "UNUSABLE-SYNTHETIC-CHILD-BODY"
+    replacement = """import types
+MAX_INPUT=1024
+class ObservationError(RuntimeError):pass
+class NativeProbes:
+ def __init__(self,data):self.data=data
+ def run(self,*args,**kwargs):
+  body=OWNED_ERROR_BODY
+  return types.SimpleNamespace(returncode=1,stderr=body)
+def observe(data,probes):
+ probes.run([data['uv_bin']])
+ return {'healthy':False}
+"""
+    replacement = replacement.replace("OWNED_ERROR_BODY", repr((message + " " + private).encode()))
+    monkeypatch.setitem(module["diagnostic_command"].__globals__, "SCRIPT", replacement.encode())
+    command = shlex.split(module["diagnostic_command"]())
+    command[0] = sys.executable
+    data = {"python": "/owned/python", "uv_bin": "/owned/uv", "host_tmux": "/owned/tmux"}
+    result = subprocess.run(command, input=json.dumps(data), capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {
+        "state": {"healthy": False},
+        "probes": [
+            {
+                "probe": "uv-check",
+                "returncode": 1,
+                "stderr_category": "nonempty",
+                "uv_signals": tags,
+            }
+        ],
+    }
+    assert private not in result.stdout + result.stderr
