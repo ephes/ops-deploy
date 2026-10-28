@@ -11,13 +11,79 @@ import stat
 import subprocess
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TextIO
 
 
 class QmpStream(Protocol):
     def readline(self) -> bytes: ...
     def write(self, data: bytes, /) -> int: ...
     def flush(self) -> None: ...
+
+
+class RecordedQmpStream:
+    """One total admission budget, recomputed before every raw socket syscall."""
+
+    def __init__(self, connection: socket.socket, trace: TextIO, *, seconds: float = 60) -> None:
+        self.connection = connection
+        self.trace = trace
+        self.started = time.monotonic()
+        self.deadline = self.started + seconds
+        self.pending = bytearray()
+
+    def record(self, event: str, value: str) -> None:
+        self.trace.write(
+            json.dumps({"elapsed_seconds": time.monotonic() - self.started, "event": event, "value": value}) + "\n"
+        )
+        self.trace.flush()
+
+    def budget(self) -> None:
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            self.record("deadline", "total QMP admission budget exhausted")
+            raise TimeoutError("total QMP admission budget exhausted")
+        self.connection.settimeout(remaining)
+
+    def readline(self) -> bytes:
+        try:
+            while True:
+                self.budget()
+                end = self.pending.find(b"\n")
+                if end >= 0:
+                    data = bytes(self.pending[: end + 1])
+                    del self.pending[: end + 1]
+                    break
+                if len(self.pending) >= 65536:
+                    raise RuntimeError("oversized QMP message")
+                chunk = self.connection.recv(min(4096, 65536 - len(self.pending)))
+                if not chunk:
+                    data = bytes(self.pending)
+                    self.pending.clear()
+                    break
+                self.pending.extend(chunk)
+        except (OSError, RuntimeError) as error:
+            self.record("read-error", type(error).__name__)
+            raise
+        self.record("read", data.decode("utf-8", errors="replace"))
+        return data
+
+    def write(self, data: bytes, /) -> int:
+        remaining = memoryview(data)
+        try:
+            while remaining:
+                self.budget()
+                count = self.connection.send(remaining)
+                if count == 0:
+                    raise ConnectionError("QMP connection closed during write")
+                remaining = remaining[count:]
+        except OSError as error:
+            self.record("write-error", type(error).__name__)
+            raise
+        self.record("write", data.decode("utf-8"))
+        return len(data)
+
+    def flush(self) -> None:
+        self.budget()
+        self.record("flush", "unbuffered writes completed")
 
 
 def query_kvm(stream: QmpStream) -> dict[str, bool]:
@@ -164,8 +230,8 @@ def main() -> None:
                         time.sleep(0.5)
                 else:
                     raise RuntimeError("QMP connection timed out")
-                with connection.makefile("rwb") as stream:
-                    native = query_kvm(stream)
+                with (evidence / "qmp.jsonl").open("w") as trace:
+                    native = query_kvm(RecordedQmpStream(connection, trace))
             (evidence / "kvm.json").write_text(json.dumps(native))
             while child.poll() is None:
                 if time.monotonic() - started > 45 * 60:

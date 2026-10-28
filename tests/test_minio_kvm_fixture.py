@@ -5,9 +5,13 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import socket
 import tarfile
+import threading
+import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -104,3 +108,107 @@ def test_copy_out_stream_bounds_and_refuses_links_or_path_escape(tmp_path: Path)
         with pytest.raises(RuntimeError):
             collector.collect(archive(name, kind, size), tmp_path)
     assert not (tmp_path / "large").exists()
+
+
+def test_recorded_qmp_uses_one_total_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = [0.0]
+    monkeypatch.setattr(TOOLING.time, "monotonic", lambda: clock[0])
+    connection = Mock()
+    trace = io.StringIO()
+    connection.send.return_value = len(b"request\n")
+    admission = TOOLING.RecordedQmpStream(connection, trace)
+    admission.write(b"request\n")
+    connection.settimeout.assert_called_with(60.0)
+    clock[0] = 30.0
+    admission.flush()
+    connection.settimeout.assert_called_with(30.0)
+    clock[0] = 61.0
+    with pytest.raises(TimeoutError, match="total QMP"):
+        admission.readline()
+    assert [json.loads(line)["event"] for line in trace.getvalue().splitlines()[-2:]] == ["deadline", "read-error"]
+
+
+def test_actual_socket_qmp_exchange_records_requests_and_strict_reply() -> None:
+    left, right = socket.socketpair()
+    left.settimeout(2)
+    right.settimeout(2)
+    requests: list[Any] = []
+    errors: list[str] = []
+
+    def serve() -> None:
+        try:
+            with right, right.makefile("rwb") as stream:
+                stream.write(b'{"QMP":{}}\r\n')
+                stream.flush()
+                for expected in ("qmp_capabilities", "query-kvm"):
+                    request = json.loads(stream.readline())
+                    requests.append(request)
+                    assert request["execute"] == expected
+                    result = {} if expected == "qmp_capabilities" else {"enabled": True, "present": True}
+                    stream.write((json.dumps({"return": result, "id": request["id"]}) + "\r\n").encode())
+                    stream.flush()
+        except BaseException as error:
+            errors.append(type(error).__name__)
+
+    peer = threading.Thread(target=serve)
+    peer.start()
+    trace = io.StringIO()
+    try:
+        with left:
+            recorded = TOOLING.RecordedQmpStream(left, trace, seconds=2)
+            assert TOOLING.query_kvm(recorded) == {"enabled": True, "present": True}
+    finally:
+        peer.join(timeout=3)
+    assert not peer.is_alive()
+    assert errors == []
+    assert [request["execute"] for request in requests] == ["qmp_capabilities", "query-kvm"]
+    events = [json.loads(line) for line in trace.getvalue().splitlines()]
+    assert [event["event"] for event in events] == [
+        "read",
+        "write",
+        "flush",
+        "read",
+        "write",
+        "flush",
+        "read",
+    ]
+    assert all(0 <= event["elapsed_seconds"] <= 2 for event in events)
+
+
+def test_actual_trickled_socket_bytes_cannot_extend_total_qmp_budget() -> None:
+    left, right = socket.socketpair()
+    stop = threading.Event()
+
+    def trickle() -> None:
+        with right:
+            while not stop.wait(0.02):
+                try:
+                    right.sendall(b"x")
+                except OSError:
+                    return
+
+    peer = threading.Thread(target=trickle)
+    peer.start()
+    trace = io.StringIO()
+    started = time.monotonic()
+    try:
+        with left:
+            recorded = TOOLING.RecordedQmpStream(left, trace, seconds=0.15)
+            with pytest.raises(TimeoutError):
+                recorded.readline()
+    finally:
+        stop.set()
+        peer.join(timeout=2)
+    assert not peer.is_alive()
+    assert time.monotonic() - started < 2
+    assert json.loads(trace.getvalue().splitlines()[-1])["event"] == "read-error"
+
+
+def test_qmp_write_failure_is_retained_in_transcript() -> None:
+    connection = Mock()
+    connection.send.side_effect = BrokenPipeError()
+    trace = io.StringIO()
+    recorded = TOOLING.RecordedQmpStream(connection, trace)
+    with pytest.raises(BrokenPipeError):
+        recorded.write(b"request\n")
+    assert json.loads(trace.getvalue().splitlines()[-1])["event"] == "write-error"

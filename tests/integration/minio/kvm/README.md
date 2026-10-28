@@ -75,3 +75,11 @@ explicitly disables compression for this container while retaining `max-size=20m
 and `max-file=1`, as supported by the [Docker local logging options](https://docs.docker.com/engine/logging/drivers/local/#options).
 No guest or MinIO process started in that attempt; its failure and successful
 owned-resource cleanup remain separate evidence.
+
+The third attempt started tooling but its five-second QMP socket read timed out
+after the greeting, before enabled-KVM admission completed. Empty serial/QEMU
+logs did not establish guest boot or the cause of the delay. The query now has
+one 60-second total admission budget and a timestamped request/reply transcript;
+it still requires an identified response with KVM both present and enabled.
+This does not extend the overall 45-minute guest limit or permit emulation.
+The failed attempt remains separate from any later native proof.
