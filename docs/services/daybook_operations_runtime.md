@@ -83,7 +83,10 @@ all initial launchd state is preserved. It never kills the capability host or us
 This stop stage is **managed**, including executor/Journal effects when a prior
 failure already stopped the supervisor. It is not used by pure default
 verification or presented as a read-only check. The original CLI's own bounds
-are retained without adding an outer executor-status deadline. Local metadata
+are retained without adding an outer executor-status deadline. Its managed status
+command retains the original login context; an inner subprocess captures only
+the CLI stdout and frames it separately from login-profile output. Both raw
+streams remain in memory and are discarded; a failing CLI still fails the stage. Local metadata
 commands remain bounded. `RuntimeStopPolicy` carries the original window inputs;
 the role's empty-window/zero-lead defaults are separate from the private update
 wrapper's existing 20-minute lead and two Europe/Berlin windows.

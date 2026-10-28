@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Isolate managed Daybook executor-status JSON from login-profile output while
+  preserving the original login context, application effects and exit status.
+
 - Preserve the declared Daybook command environment across metadata delegation
   with an explicit readable cwd and direct execution. Keep the same-user path
   direct and retain authentication and timeout policies. Fixture setup selects

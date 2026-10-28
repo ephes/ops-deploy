@@ -5,6 +5,7 @@ may open a Journal and expire server authority; this is never a pure verifier.
 No application output, launchctl environment or record contents are reported.
 """
 
+import base64
 import json
 import math
 import os
@@ -24,6 +25,18 @@ from ops_daybook_observer import NativeProbes, ObservationError, safe_file, stor
 
 class StopError(RuntimeError):
     pass
+
+
+# The managed CLI retains the original login context. Capture its stdout inside
+# that context so shell-profile output cannot be mistaken for the CLI JSON. The
+# outer transport captures/discards every raw stream; this envelope is not logged.
+STATUS_FRAME = b"\nOPS_DAYBOOK_EXECUTOR_STDOUT="
+STATUS_CAPTURE = (
+    "import base64,subprocess,sys;"
+    "r=subprocess.run(sys.argv[1:],capture_output=True);"
+    "sys.stdout.buffer.write(b'\\nOPS_DAYBOOK_EXECUTOR_STDOUT='+base64.b64encode(r.stdout)+b'\\n');"
+    "raise SystemExit(r.returncode)"
+)
 
 
 class NativeStop(NativeProbes):
@@ -84,6 +97,7 @@ class NativeStop(NativeProbes):
         argv = [self.data["python"], "-I", "-c",
                 "from daybook.cli import main; raise SystemExit(main())", "operations", "status",
                 "--policy", self.data["policy"], "--policy-owner", self.data["owner"], "--binding", binding]
+        argv = [self.data["python"], "-I", "-c", STATUS_CAPTURE, *argv]
         if os.geteuid() != self.account.pw_uid:
             argv = ["/usr/bin/sudo", "-H", "-S", "-n", "-i", "-u", self.data["user"], "--", *argv]
         result = subprocess.run(argv, capture_output=True, env={
@@ -92,7 +106,10 @@ class NativeStop(NativeProbes):
         if result.returncode:
             raise StopError("runtime_transition_status_unanswered")
         try:
-            body = json.loads(result.stdout)
+            _, separator, framed = result.stdout.rpartition(STATUS_FRAME)
+            if not separator:
+                raise ValueError
+            body = json.loads(base64.b64decode(framed.split(b"\n", 1)[0], validate=True))
             active = body["server"]["active_state"]
             if active is not None and active not in {"pending", "assigned", "awaiting_apply", "needs_reconciliation", "failed"}:
                 raise ValueError

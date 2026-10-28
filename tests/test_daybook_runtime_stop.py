@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import runpy
 import subprocess
@@ -198,7 +199,17 @@ def test_native_executor_uses_original_account_login_flags_and_sanitizes_body(
     driver.account = types.SimpleNamespace(pw_uid=account_uid, pw_dir="/Users/owned")
     driver.data = config(mode="host").model_dump(mode="json")
     response = {"server": {"active_state": "pending", "private": "UNUSABLE-SYNTHETIC-BODY"}}
-    command = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response).encode(), b""))
+    command = Mock(
+        return_value=subprocess.CompletedProcess(
+            [],
+            0,
+            b"unrelated profile banner\n"
+            + MODULE["STATUS_FRAME"]
+            + base64.b64encode(json.dumps(response).encode())
+            + b"\nlogout profile banner\n",
+            b"",
+        )
+    )
     monkeypatch.setattr(subprocess, "run", command)
     result = driver.source("regular")
     assert vars(result) == {"binding": "regular", "active_state": "pending"}
@@ -207,6 +218,25 @@ def test_native_executor_uses_original_account_login_flags_and_sanitizes_body(
         assert argv[:8] == ["/usr/bin/sudo", "-H", "-S", "-n", "-i", "-u", driver.data["user"], "--"]
     else:
         assert argv[0] == driver.data["python"]
+    tail = argv if as_user else argv[8:]
+    assert tail == [
+        driver.data["python"],
+        "-I",
+        "-c",
+        MODULE["STATUS_CAPTURE"],
+        driver.data["python"],
+        "-I",
+        "-c",
+        "from daybook.cli import main; raise SystemExit(main())",
+        "operations",
+        "status",
+        "--policy",
+        driver.data["policy"],
+        "--policy-owner",
+        driver.data["owner"],
+        "--binding",
+        "regular",
+    ]
     assert "timeout" not in command.call_args.kwargs
     assert command.call_args.kwargs["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
     command.return_value = subprocess.CompletedProcess([], 1, b"PRIVATE-ERROR-BODY", b"PRIVATE-ERROR-BODY")
@@ -291,3 +321,49 @@ def test_original_rescue_recovers_keeper_even_if_initial_label_was_unloaded() ->
     assert bootstrap["when"] == "daybook_operations_runtime_stop_is_keeper | bool"
     assert "stop_label" not in str(enable["when"])
     assert "stop_label" not in str(bootstrap["when"])
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_actual_managed_status_capture_preserves_cli_bytes_and_failure(exit_code: int) -> None:
+    private = "OWNED-SYNTHETIC-STATUS-BODY"
+    child = "import sys;sys.stdout.write(sys.argv[1]);sys.stderr.write(sys.argv[1]);raise SystemExit(int(sys.argv[2]))"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            MODULE["STATUS_CAPTURE"],
+            sys.executable,
+            "-I",
+            "-c",
+            child,
+            private,
+            str(exit_code),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+    assert completed.returncode == exit_code
+    assert completed.stderr == b""
+    assert completed.stdout.startswith(MODULE["STATUS_FRAME"])
+    assert (
+        base64.b64decode(completed.stdout.partition(MODULE["STATUS_FRAME"])[2].strip(), validate=True)
+        == private.encode()
+    )
+
+
+@pytest.mark.parametrize("body", [b"", b"profile banner\n{}", b"\nOPS_DAYBOOK_EXECUTOR_STDOUT=invalid!"])
+def test_managed_status_requires_actual_capture_frame_without_leaking_body(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+) -> None:
+    import os
+    from unittest.mock import Mock
+
+    driver = MODULE["NativeStop"].__new__(MODULE["NativeStop"])
+    driver.account = types.SimpleNamespace(pw_uid=os.geteuid())
+    driver.data = config(mode="host").model_dump(mode="json")
+    monkeypatch.setattr(subprocess, "run", Mock(return_value=subprocess.CompletedProcess([], 0, body, b"")))
+    with pytest.raises(StopError, match=r"^runtime_transition_status_invalid$"):
+        driver.source("regular")
