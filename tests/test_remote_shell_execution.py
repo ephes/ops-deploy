@@ -173,11 +173,14 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         "services/software_live/files/software_live_impl.py",
         "services/software_live/files/live_state_host.py",
     }
+    # Runtime stop is also always base64 encoded by stop_command, never raw
+    # Python in shell source. The actual composed command is exercised below.
+    encoded_daybook_runtime = {"services/daybook_operations_runtime/files/runtime_stop.py"}
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
         if path.name != "env_exec.py"
-        and str(path.relative_to(SRC)) not in encoded_mail_web | stdin_software_live
+        and str(path.relative_to(SRC)) not in encoded_mail_web | stdin_software_live | encoded_daybook_runtime
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
@@ -452,3 +455,29 @@ def test_django_site_marker_fact_lists_only_markers(
     assert result.returncode == 0, result.stderr
     assert sorted(result.stdout.split()) == [".ops-deploy-pending", ".ops-deploy-restart-marina"]
     assert run_remote(fact.replace(str(state), str(state / "missing")), login_shell, os.environ["PATH"]).stdout == ""
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_encoded_daybook_stop_command_through_real_login_shell(login_shell: str) -> None:
+    from ops_deploy.services.daybook_operations_runtime.stop import stop_command
+
+    parts = shlex.split(stop_command())
+    assert parts[0] == "/usr/bin/python3"
+    # Keep the encoded command and shell wrapping; use the test environment's
+    # interpreter instead of an optional host shim or CLT installation prompt.
+    parts[0] = sys.executable
+    line = make_unix_command(StringCommand(shlex.join(parts))).get_raw_value()
+    assert not fish_unsafe(line)
+    private = "UNUSABLE-OWNED-INLINE-INPUT"
+    result = subprocess.run(
+        [login_shell, "-c", line],
+        input=json.dumps({"private": private}),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.strip() == "runtime_stop_failed"
+    assert private not in result.stdout + result.stderr
