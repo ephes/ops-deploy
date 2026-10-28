@@ -64,8 +64,11 @@
   credentials, policies and attachments before writes; refuse disabled users,
   immutable policy drift and unknown client failures. Manage data-root metadata
   without recursive object chmod/chown. Owned offline x86 KVM qualification
-  completed 28 phases and 13 strict zero-change repeats; inventory adoption remains
-  pending. Earlier emulated evidence remains mechanism-only. Add current-root
+  completed28 phases and13 strict zero-change repeats. Separate inventory default
+  first/explicit repeat completed70 operations with zero managed changes/uploads
+  and exact protected state/health. Preserve the initial conditional-plan stop
+  and exact false-operand proof without relabeling raw conditional rows. Earlier
+  emulated evidence remains mechanism-only. Add current-root
   host-local admission, managed pinned-client/inactive-unit recovery and desired
   root credential rollout. Preserve honest partial prerequisite changes on a later
   IAM refusal and retain zero-change healthy repeats. The original Ansible

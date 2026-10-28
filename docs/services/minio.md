@@ -1,12 +1,12 @@
 # MinIO deployment
 
-The port of `minio_deploy` preserves the pinned server/client, service, environment and Traefik route. The private adapter composes encrypted-volume preparation first and accepts only its declared host. It does not own replication, lifecycle jobs, backup identities, unrelated aliases or object contents. The public runtime has completed owned native qualification; private inventory adoption and live receipts remain pending.
+The port of `minio_deploy` preserves the pinned server/client, service, environment and Traefik route. The private adapter composes encrypted-volume preparation first and accepts only its declared host. It does not own replication, lifecycle jobs, backup identities, unrelated aliases or object contents. The public runtime has completed owned native qualification and the private metadata-selected deployment has completed its normal first/repeat inventory qualification.
 
 ## Deliberate convergence changes
 
 The client checks before writing. It compares the declared shared alias locally without returning credentials, and imports it through stdin only when different. IAM inspection and signed requests use a private temporary client config; credentials never appear in command arguments or probe output. Existing enabled users are rotated only after a recognized signature mismatch. A disabled managed user stops the run. Transport errors, malformed output and unrecognized server errors are failures, never evidence that a user or policy is absent.
 
-Each declared policy is compared after canonicalizing only statement order and the set-valued Action/Resource fields. Mutable policy drift is updated in place. The versioned weeknotes source policy is immutable: drift requires a new reviewed policy name. Its rollback branch remains with the legacy play; the pyinfra adapter refuses the disabled setting with that pointer. Superseded policy detachment/removal happens only when present, after proving the replacement attachment. Superseded retirement requires an additive identity; the configuration rejects retirement on an exact identity. Exact-policy identities also require no group membership; additive identities retain their original weaker attachment contract.
+Each declared policy is compared after canonicalizing only statement order and the set-valued Action/Resource fields. Mutable policy drift is updated in place. The versioned weeknotes source policy is immutable: drift requires a new reviewed policy name. Its separate maintenance rollback remains tracked conversion work; the current adapter refuses the disabled setting with a legacy-play pointer until an equivalent guarded workflow is implemented and qualified. This is not a permanent Ansible exception. Superseded policy detachment/removal happens only when present, after proving the replacement attachment. Superseded retirement requires an additive identity; the configuration rejects retirement on an exact identity. Exact-policy identities also require no group membership; additive identities retain their original weaker attachment contract.
 
 Bucket creation, anonymous access and versioning are inspected first. `versioning=false` means leave the existing versioning state alone, not disable it. Data directory ownership/mode applies only to each top-level directory. A read-only foreign-owner search stops on the first descendant mismatch; it never chmods/chowns stored objects recursively. On a healthy store this admission walks every descendant metadata entry, so its cost grows with the object tree. It has no separate probe timeout and reads no object bodies.
 
@@ -14,9 +14,9 @@ Bucket creation, anonymous access and versioning are inspected first. `versionin
 
 The original server download URL still returns HTTP410; the client now uses an exact verified official GitHub asset (below). An existing matching binary needs no download. Fresh server installation requires the same verified artifact, not an invented replacement release. Owned fixtures used read-only copies of those exact executables.
 
-Local ARM/QEMU checks of the copied amd64 binaries established CLI/IAM mechanics only. They are explicitly emulated and do not qualify native systemd behavior, inventory adoption, object preservation or healthy repeat convergence. Those earlier checks are distinct from the completed native fixture below; coordinated inventory/live receipts remain pending.
+Local ARM/QEMU checks of the copied amd64 binaries established CLI/IAM mechanics only. They are explicitly emulated and do not qualify native systemd behavior, inventory adoption, object preservation or healthy repeat convergence. Those earlier checks are distinct from the completed native fixture and separate inventory qualification below.
 
-Direct legacy Ansible deployment retains its old recursive directory handling, alias/identity upserts and unconditional bootstrap commands. After eventual adoption, use the metadata-aware deployment entry point. No new engine-refusal or rollback-acknowledgement guard is introduced.
+Direct legacy Ansible deployment retains its old recursive directory handling, alias/identity upserts and unconditional bootstrap commands. Use the metadata-aware deployment entry point for the adopted default. No new engine-refusal or rollback-acknowledgement guard is introduced.
 
 ## Public API and defaults
 
@@ -141,7 +141,7 @@ A separate, checksum-bound original S4 lag-probe component also completed six
 synthetic cases after the MinIO summary. Its expected marker/status writes are
 not zero-change, typed S4 deployment, composite, hardware or inventory proof.
 
-The prepared pyinfra client's fixed source is the official GitHub release asset
+The pyinfra client's fixed source is the official GitHub release asset
 `https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z`.
 An anonymous download was verified at30535864bytes with the unchanged SHA256
 `01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891`.
@@ -151,5 +151,31 @@ Legacy Ansible/operator custom URLs are unchanged. The MinIO **server** source
 still returns410; no alternate server version or source is silently selected.
 
 The executed offline native KVM transport and all retained attempt limits are
-documented under `tests/integration/minio/kvm/README.md`. Inventory deployment
-remains a separately coordinated step.
+documented under `tests/integration/minio/kvm/README.md`. Inventory qualification is separately recorded below.
+
+
+## Inventory deployment qualification
+
+On2026-10-28 the private metadata-selected chain completed a normal plan, default
+first deploy and explicit-host repeat using immutable public1249bd0. Each actual
+call ran6 encrypted-volume and29 MinIO operations:70 successful operations total,
+zero managed changes and zero uploads. Every actual CLI child proved all684
+installed resource bytes/noneditable direct_url. Protected file/config/unit/PID,
+mount, package, listener and explicit-directory metadata remained exact, as did
+health and memory-only secret-content comparisons. No restart, root rotation,
+manual IAM repair, remount or binary/package upgrade occurred.
+
+An earlier plan stopped before apply on two real conditional rollout rows. The
+final recorder retained those raw rows and proved only the exact installed
+callbacks false from identical earlier state/host operation operands with literal
+planned-change False; unknown/changed callbacks remain refusals. Both actual
+calls independently confirmed zero managed changes. The original stop, bounded
+final snapshot and its ephemeral-comparison discontinuity are retained; the fresh
+successful window had continuous comparisons and verified lock release.
+
+This is normal deployment qualification, not blanket workflow conversion or a
+global physical-I/O claim. The observer did not enumerate object names/bodies or
+export IAM. The qualified normal descendant ownership admission still has the
+metadata-only whole-root latency limit above. Loopback route/status checks are
+not certificate validation. Explicit maintenance rollback and other lifecycle
+workflows remain separately tracked; the Ansible role is unchanged.
