@@ -1,0 +1,35 @@
+http:
+  routers:
+    paperless:
+      rule: "Host(`paperless.home.example.org`)"
+      service: paperless
+      entryPoints:
+        - "web-secure"
+      tls:
+        certResolver: "letsencrypt"
+      middlewares:
+        - paperless-headers
+
+  services:
+    paperless:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:12030"
+        healthCheck:
+          path: /api/
+          interval: "30s"
+          timeout: "10s"
+
+  middlewares:
+    paperless-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"
+          server: ""

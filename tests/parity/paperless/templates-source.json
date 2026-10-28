@@ -1,0 +1,21 @@
+{
+  "library_ref": "d88c3286b2fb58a8799663d6c1f3a9d6061af37b",
+  "ansible": "ansible-playbook [core 2.21.5]",
+  "cases": [
+    "defaults",
+    "authenticated-redis",
+    "custom-account"
+  ],
+  "templates": {
+    "gunicorn.conf.py.j2": "9a9b864046d15b1b843905f98fc4a34b5b645c0eaa6c88a4987b36b028a9d7b0",
+    "paperless-consumer.service.j2": "ca398f4f053b9e095a048938b7e0f2e9e3362e82d8210406f761e4bafd5c3016",
+    "paperless-scheduler.service.j2": "df97b2cacd87d28a939e020e27c39efd39449990b6f00921aeb7d3c64711b473",
+    "paperless-worker.service.j2": "9e35bf4d85d0ae0bd8718683ce67825e8e34841b5c0fb75073f3a7dae4a3e8d2",
+    "paperless.env.j2": "7da5363427389ab94ef9a433925e3458b09397fbfb05df46555254c79c0bb91e",
+    "paperless.service.j2": "eb0a11e25b92eb08c513e26a4ffa3e36c977fef1ee63d551d5c024800d76cf4d",
+    "paperless.traefik.yml.j2": "c2542267c48ff5650684deb55ccfac7d5b47fc7f973c97192bd78e7801887552",
+    "sshd_sftp_scanner.conf.j2": "85d88f8067ff234dbfd203f77a3b2f5dab7df4304352d2cf6cbe3e335e873415"
+  },
+  "scope": "Actual Ansible localhost rendering only with synthetic values; no role tasks/dependency/service/database/index action.",
+  "ansible_log_normalization": "Trailing whitespace only; rendered template bytes are unmodified."
+}

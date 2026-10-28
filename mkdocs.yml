@@ -80,6 +80,7 @@ nav:
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md
       - minio: services/minio.md
+      - paperless (prepared): services/paperless.md
       - unifi: services/unifi.md
       - vaultwarden: services/vaultwarden.md
       - minecraft_java: services/minecraft_java.md

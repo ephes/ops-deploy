@@ -1,0 +1,7 @@
+{
+  "secret_key": "synthetic-key-synthetic-key-synthetic-key-synthetic-key-synthetic-key-",
+  "postgres_password": "synthetic-db",
+  "admin_password": "synthetic-admin",
+  "scanner_password": "synthetic;stdin-only",
+  "redis_password": "synthetic:@/&?%"
+}

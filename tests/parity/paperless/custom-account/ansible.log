@@ -1,0 +1,29 @@
+
+PLAY [Owned Paperless source oracle] *******************************************
+
+TASK [Render owned gunicorn.conf.py.j2] ****************************************
+changed: [localhost]
+
+TASK [Render owned paperless-consumer.service.j2] ******************************
+changed: [localhost]
+
+TASK [Render owned paperless-scheduler.service.j2] *****************************
+changed: [localhost]
+
+TASK [Render owned paperless-worker.service.j2] ********************************
+changed: [localhost]
+
+TASK [Render owned paperless.env.j2] *******************************************
+changed: [localhost]
+
+TASK [Render owned paperless.service.j2] ***************************************
+changed: [localhost]
+
+TASK [Render owned paperless.traefik.yml.j2] ***********************************
+changed: [localhost]
+
+TASK [Render owned sshd_sftp_scanner.conf.j2] **********************************
+changed: [localhost]
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=8    changed=8    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0

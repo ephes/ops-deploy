@@ -1,0 +1,39 @@
+[Unit]
+Description=Paperless-ngx Celery Scheduler
+After=network.target postgresql.service redis-server.service {{ paperless_service_name }}.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User={{ paperless_username }}
+Group={{ paperless_group }}
+WorkingDirectory={{ paperless_manage_dir }}
+EnvironmentFile={{ paperless_env_file }}
+Environment="PATH={{ paperless_virtualenv }}/bin:/usr/bin:/bin"
+Environment="PYTHONPATH={{ paperless_virtualenv }}/lib/python{{ paperless_python_version }}/site-packages"
+Environment="PAPERLESS_NLTK_DIR={{ paperless_nltk_data_path }}"
+
+ExecStart={{ paperless_python_bin }} -m celery --app paperless beat --loglevel INFO
+
+Restart=on-failure
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=no
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+ReadWritePaths={{ paperless_external_storage_root }} {{ paperless_site_root }} /tmp
+
+# Resource limits
+LimitNOFILE=65536
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

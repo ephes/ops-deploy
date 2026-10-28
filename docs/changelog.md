@@ -8,6 +8,13 @@
   original inert uv bookkeeping locks without changing their modes. Qualify the
   separate owned root mechanism and fault cases; inventory adoption stays separate.
 
+- Prepare the checksum-bound Paperless3.2.1 API with the original dependency,
+  scanner, service and template contracts, recoverable app installation and
+  conditional metadata/count-based reindexing. Existing admin credentials stay
+  untouched; healthy package, bind-mount and ownership steps avoid repeated
+  writes. Native OCR/SFTP, PostgreSQL and recovery qualification and private
+  inventory adoption remain pending. Original Ansible reindexing is unchanged.
+
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access
   and fake auth/control guards. Keep private identity semantics and inventory

@@ -1,0 +1,160 @@
+"""Local safety/receipt checks; these do not qualify the native application."""
+
+from __future__ import annotations
+
+import gzip
+import hashlib
+import json
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+import yaml
+from pydantic import SecretStr
+from pyinfra.connectors.local import LocalConnector
+
+from tests.integration.paperless import evidence, harness
+
+
+def test_native_guard_refuses_local_execution_before_any_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("host command must not run outside the owned guest")
+
+    monkeypatch.setattr(harness, "command", forbidden)
+    with pytest.raises(AssertionError):
+        harness.main()
+    assert not harness.OWNED_ADMITTED
+
+
+def test_bash_runner_refuses_local_environment_before_docker() -> None:
+    path = Path(__file__).parent / "integration/paperless/run-owned.sh"
+    result = subprocess.run(
+        ["bash", str(path)], env={"PATH": os.environ["PATH"]}, capture_output=True, text=True, check=False, timeout=10
+    )
+    assert result.returncode != 0
+    assert not result.stdout
+    assert not result.stderr
+
+
+def test_complete_snapshot_keeps_private_bytes_and_digests_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(harness, "EVIDENCE", tmp_path)
+    private = b"owned-secret-must-stay-in-memory"
+    snapshot = harness.Snapshot({"file": {"inode": 123, "mtime_ns": 456}}, {"/synthetic/env": private})
+    receipt = harness.snapshot_receipt("phase", "before", snapshot)
+    raw = gzip.decompress((tmp_path / receipt["file"]).read_bytes())
+    assert json.loads(raw) == snapshot.public
+    assert private not in raw
+    assert hashlib.sha256(private).hexdigest().encode() not in raw
+    assert receipt == harness.snapshot_receipt("phase", "before", snapshot)
+
+
+def test_log_bound_counts_utf8_bytes_and_refuses_before_extra_write(tmp_path: Path) -> None:
+    path = tmp_path / "raw-private.log"
+    with path.open("w") as stream, harness.BoundedLog(stream, limit=5) as log:
+        assert log.write("ä") == 1
+        assert log.write("abc") == 3
+        with pytest.raises(RuntimeError, match="exceeds bound"):
+            log.write("d")
+    assert path.read_text() == "äabc"
+
+
+def test_split_synthetic_log_value_is_redacted_after_complete_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secret = "owned-only-value"
+    monkeypatch.setattr(harness, "VALUES", [secret])
+    path = tmp_path / "raw-private.log"
+    with path.open("w") as stream, harness.BoundedLog(stream) as log:
+        log.write(secret[:5])
+        log.write(secret[5:])
+    assert harness.sanitize(path.read_text()) == "<synthetic-redacted>"
+
+
+def test_actual_fixture_refusal_records_bounded_log_without_host_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(harness, "ROOT", tmp_path)
+    monkeypatch.setattr(harness, "EVIDENCE", tmp_path)
+    monkeypatch.setattr(harness, "PHASES", [])
+    monkeypatch.setattr(harness, "snapshot", lambda cfg: harness.Snapshot({"owned": True}, {}))
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("credential mismatch must refuse before any connector command")
+
+    monkeypatch.setattr(LocalConnector, "run_shell_command", forbidden)
+    result = harness.deploy("owned-refusal", failure=True, shared_redis_password=SecretStr("wrong-owned-value"))
+    assert result["operations"] == []
+    assert result["uploads"] == 0
+    assert "shared Redis credentials differ" in result["error"]
+    assert (tmp_path / "owned-refusal.log").exists()
+    assert not (tmp_path / "private-current-cli.log").exists()
+    started = json.loads((tmp_path / "owned-refusal-started.json").read_text())
+    final = json.loads((tmp_path / started["completion_receipt"]).read_text())
+    assert final["before"] == started["before"]
+    assert final["after"]["file"] == "owned-refusal-after.json.gz"
+
+
+def test_evidence_collector_hashes_actual_files_and_refuses_foreign_link(tmp_path: Path) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    (root / "phase.json").write_bytes(b"{}")
+    assert evidence.manifest(root) == {
+        "files": {"phase.json": {"size": 2, "sha256": hashlib.sha256(b"{}").hexdigest()}},
+        "total_size": 2,
+    }
+    foreign = tmp_path / "foreign"
+    foreign.write_text("do not copy")
+    (root / "linked.log").symlink_to(foreign)
+    with pytest.raises(ValueError, match="unexpected path type"):
+        evidence.manifest(root)
+
+
+def test_evidence_collector_refuses_oversized_sparse_file_without_reading_it(tmp_path: Path) -> None:
+    with (tmp_path / "large.log").open("wb") as stream:
+        stream.truncate(40 * 1024 * 1024 + 1)
+    with pytest.raises(ValueError, match="file exceeds limit"):
+        evidence.manifest(tmp_path)
+
+
+def test_interrupted_phase_preserves_durable_before_without_claiming_after(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(harness, "ROOT", tmp_path)
+    monkeypatch.setattr(harness, "EVIDENCE", tmp_path)
+    monkeypatch.setattr(harness, "snapshot", lambda cfg: harness.Snapshot({"owned": True}, {}))
+
+    def interrupt(*args: object, **kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(harness, "add_deploy", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        harness.deploy("owned-interrupted")
+    receipt = json.loads((tmp_path / "owned-interrupted-started.json").read_text())
+    assert receipt["completion_receipt"] == "owned-interrupted.json"
+    assert not (tmp_path / receipt["completion_receipt"]).exists()
+    assert json.loads(gzip.decompress((tmp_path / receipt["before"]["file"]).read_bytes())) == {"owned": True}
+    assert not (tmp_path / "owned-interrupted-after.json.gz").exists()
+    assert not (tmp_path / "owned-interrupted.json").exists()
+
+
+@pytest.mark.parametrize("boundary", ["snapshot", "playbook_write"])
+def test_ansible_early_failure_never_leaves_secret_playbook(
+    boundary: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(harness, "ROOT", tmp_path)
+    monkeypatch.setattr(harness, "EVIDENCE", tmp_path)
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("owned injected failure")
+
+    monkeypatch.setattr(
+        harness, "snapshot", fail if boundary == "snapshot" else lambda: harness.Snapshot({"owned": True}, {})
+    )
+    monkeypatch.setattr(yaml, "safe_dump", fail)
+    with pytest.raises(RuntimeError, match="owned injected failure"):
+        harness.ansible("owned-failed-ansible")
+    assert not (tmp_path / "owned-ansible.yml").exists()
+    assert not (tmp_path / "owned-failed-ansible.json").exists()
