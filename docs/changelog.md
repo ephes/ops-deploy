@@ -10,6 +10,12 @@
   end; existing include order remains untouched. See storage policy/Samba docs
   for the fresh-case oracle exception, RID and physical-hardware limits.
 
+- Qualify delegated tunnel transport recovery on owned ARM Darwin and the normal
+  owner-session path: actual default recovery and explicit/convenience repeats
+  verify the already-stopped install without managed changes or uploads.
+  Preserve earlier failure evidence and distinguish native expected-resource
+  byte proof from the separate complete immutable installed-controller proof.
+
 - Restore delegated macOS tunnel authorization transport/session parity with the
   original Ansible controller profile. Preserve strict identities, relay line
   and known hosts, validate/converge authorization before stopping the GUI job,
@@ -19,7 +25,7 @@
 
 - Add the original Python/Rust observation deployment, rollback, shadow comparison and removal APIs.
 - Gate collection on declared changes or missing/stale observation state; unchanged fresh deploys verify read-only. This deliberately differs from Ansible's unconditional collection.
-- Preserve software-live's specific Nyxmon re-enable/scheduling semantics and installed shared helper. Owned Ubuntu Python and Debian 13 Rust native qualification passed 33 phases per leg, including 16 strict zero-change repeats. Full CI passed; inventory cutover remains a separate gate. Debian shares the runner kernel and the deliberate shadow fault performs a real rollback before failing.
+- Preserve software-live's specific Nyxmon re-enable/scheduling semantics and installed shared helper. Owned Ubuntu Python and Debian 13 Rust native qualification passed 33 phases per leg, including 16 strict zero-change repeats. Full CI and default/fleet inventory qualification passed. Default and fleet repeats made zero managed changes/uploads; fleet first only wrote the declared policy and ran its collector (2 managed, 1 upload), without an application upgrade. Debian shares the runner kernel and the deliberate shadow fault performs a real rollback before failing.
 
 - Add the host-local OS apt maintenance API and exact Nyxmon check upsert
   semantics, with actual cf3 role-template parity. Preserve existing state,
