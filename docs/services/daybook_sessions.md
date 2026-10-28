@@ -43,3 +43,46 @@ OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core pytest \
 
 No tests read personal sessions, photos, audio, transcripts or application record
 bodies. Synthetic fixtures use unusable credentials and explicit metadata.
+
+`install_sessions_source(config, source_tree, bundle)` implements the source and
+locked-environment stage independently of resource installation. The source tree
+and controller bundle must bind the same once-resolved Main commit. Existing
+no-fetch mode requires a real service-user-owned Git checkout; update mode can
+initialize a checkout under an already prepared parent. Both use the controller
+bundle, so hosts need no GitHub credentials, key enrollment or host-key changes.
+The configured repository URL remains the origin on a fresh checkout.
+
+The stage retains tracked-force semantics and no-fetch mode’s untracked refusal
+(update mode retains unrelated untracked files), exact managed
+Python, original frozen sync inputs and the original service-user login context
+for managed Git/build commands. Explicit environment reaches that context after
+sudo. It neither imports the application nor runs the classifier probe. Current
+source/environment can verify while the supervisor runs; changes require the
+original update fanout to quiesce it first, with a second check before mutation. For managed system scope, the source stage
+also requires the original exact reconcile daemon to be persistently disabled
+and unloaded before any source drift: the complete role must run its original
+early reconcile quiesce first. This standalone component refuses that missing
+precondition at managed preparation (before creating the transfer directory)
+and apply without unloading or disabling anything itself. Status reports readiness
+without refusing a still-loaded daemon, so the original earlier quiesce operation
+can satisfy the precondition during the same pyinfra run. A failed fresh update
+checkout with an unborn HEAD can retry the same controller bundle normally,
+restoring a missing declared origin; no-fetch mode refuses unborn checkouts.
+Target/Python overrides in sync arguments are refused before work begins.
+
+A missing commit explicitly prepares a per-run private temporary directory and
+transfers one mode-0600 code bundle with the existing SSH identity. Descriptor
+checks publish that file to the service account without pyinfra sudo uploads;
+the directory stays owned by the connecting identity. The configured bundle
+basename is retained, while its temporary directory is outside app/config/data
+trees. Both file and directory are removed on completion or failure while the
+connector remains usable. The existing pyinfra state callback also cleans a failed upload
+before host failure skips later operations; a cleanup transport failure remains
+an explicit error, and never changes the original failed result. Preparation
+is a managed operation: a source first has three managed operations and one
+actual SFTP transfer; a current repeat has zero of both. An already present commit
+needs no transfer. Git/uv output stays in memory and fixed error categories reach logs. A
+failed synchronization remains a failure after checkout; no rollback is claimed.
+Source parents are prepared by the complete role, which is still being ported.
+This stage does not install resources, enable timers, change Pi auth or qualify a
+default inventory deployment.

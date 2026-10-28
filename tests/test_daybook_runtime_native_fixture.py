@@ -145,3 +145,48 @@ def observe(data,probes):
         ],
     }
     assert private not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_native_upload_counter_observes_actual_sftp_method_without_body(
+    monkeypatch: pytest.MonkeyPatch,
+    fails: bool,
+) -> None:
+    import io
+    import runpy
+    from types import SimpleNamespace
+
+    import paramiko
+
+    fixture = Path(__file__).resolve().parents[1] / "smoke/daybook_runtime_native_fixture.py"
+    monkeypatch.syspath_prepend(str(fixture.parent))
+    module = runpy.run_path(str(fixture))
+    private = "UNUSABLE-OWNED-SFTP-BODY"
+
+    def original(*args: object, **kwargs: object) -> None:
+        if fails:
+            raise OSError(private)
+
+    monkeypatch.setattr(paramiko.SFTPClient, "putfo", original)
+
+    def run(*args: object, **kwargs: object) -> object:
+        try:
+            client = paramiko.SFTPClient.__new__(paramiko.SFTPClient)
+            client.putfo(
+                io.BytesIO(private.encode()),
+                "/private/var/tmp/ops-deploy-daybook-source-" + "a" * 32 + "/source.bundle",
+            )
+        except OSError:
+            return SimpleNamespace(succeeded=False)
+        return SimpleNamespace(succeeded=True)
+
+    monkeypatch.setitem(module["source_run_with_upload_counter"].__globals__, "run_deploy_ssh", run)
+    result, counts = module["source_run_with_upload_counter"]()
+    assert result.succeeded is not fails
+    assert counts == {
+        "attempted": 1,
+        "succeeded": int(not fails),
+        "failed": int(fails),
+        "paths": ["/private/var/tmp/ops-deploy-daybook-source-" + "a" * 32 + "/source.bundle"],
+    }
+    assert private not in json.dumps(counts)

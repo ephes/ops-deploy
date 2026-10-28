@@ -34,6 +34,7 @@ from ops_deploy.services.daybook_operations_runtime import (
 from ops_deploy.services.daybook_operations_runtime.inspect import SCRIPT, observation_payload, verify_daybook_runtime
 from ops_deploy.services.daybook_operations_runtime.render import credential_text, render_resource
 from ops_deploy.services.daybook_operations_runtime.status import SourceStatus
+from ops_deploy.services.daybook_sessions import DaybookSessionsConfig, install_sessions_source
 from ops_deploy.testing import run_deploy_ssh
 
 APP = """import json,pathlib,subprocess,sys,time
@@ -173,6 +174,40 @@ def capture_observation(
     if not result.succeeded:
         return {"failure": type(result.error).__name__ if result.error is not None else "OwnedFactFailed"}
     return captured
+
+
+def source_run_with_upload_counter(*args: Any, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
+    from unittest.mock import patch
+
+    import paramiko
+
+    fail_upload = kwargs.pop("_owned_fail_upload", False)
+    counts: dict[str, Any] = {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
+    original = paramiko.SFTPClient.putfo
+
+    def observed(client: Any, file_obj: Any, remote_path: str, *upload_args: Any, **upload_kwargs: Any) -> Any:
+        counts["attempted"] += 1
+        remote = Path(remote_path)
+        if remote.parent.parent != Path("/private/var/tmp") or not remote.parent.name.startswith(
+            "ops-deploy-daybook-source-"
+        ):
+            raise AssertionError("owned source upload escaped its declared temporary scope")
+        counts["paths"].append(remote_path)
+        try:
+            if fail_upload:
+                raise OSError("owned injected SFTP transfer failure")
+            result = original(client, file_obj, remote_path, *upload_args, **upload_kwargs)
+        except Exception:
+            counts["failed"] += 1
+            raise
+        counts["succeeded"] += 1
+        return result
+
+    # Count the actual SFTP transfer boundary, including individual attempts;
+    # no file/body/argument is inspected or copied into the receipt.
+    with patch.object(paramiko.SFTPClient, "putfo", observed):
+        result = run_deploy_ssh(*args, **kwargs)
+    return result, counts
 
 
 def main() -> None:
@@ -531,6 +566,80 @@ def main() -> None:
             assert snapshot(protected) == before
             assert capability_present()
             owned.report["repeats"]["pure-" + str(index)] = []
+        # Independent Sessions code fixture: an existing old checkout plus
+        # managed environment, and a newly resolved synthetic Main in a separate
+        # controller tree. It cannot alter the runtime source binding above.
+        session_controller = owned.root / "sessions-controller"
+        command("/usr/bin/git", "clone", "--quiet", "--no-hardlinks", str(controller), str(session_controller))
+        session_root = owned.root / "sessions"
+        session_root.mkdir(mode=0o755)
+        session_checkout = session_root / "daybook"
+        command("/usr/bin/git", "clone", "--quiet", "--no-hardlinks", str(session_controller), str(session_checkout))
+        command("/usr/sbin/chown", "-R", "runner:staff", str(session_root))  # before sync only
+        command(
+            "/usr/bin/sudo",
+            "-H",
+            "-u",
+            "runner",
+            "--",
+            str(uv_wrapper),
+            "--directory",
+            str(session_checkout),
+            "sync",
+            "--frozen",
+            "--no-dev",
+            "--python",
+            "3.14.7",
+        )
+        (session_controller / "src/daybook/__init__.py").write_text("# owned new Sessions Main\n")
+        command("/usr/bin/git", "-C", str(session_controller), "add", ".")
+        command(
+            "/usr/bin/git",
+            "-C",
+            str(session_controller),
+            "-c",
+            "user.name=Owned Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "commit",
+            "--quiet",
+            "-m",
+            "owned Sessions Main",
+        )
+        session_revision = command("/usr/bin/git", "-C", str(session_controller), "rev-parse", "HEAD").stdout.strip()
+        command("/usr/bin/git", "-C", str(session_controller), "update-ref", "refs/heads/main", session_revision)
+        session_bundle = owned.root / "sessions-main.bundle"
+        command(
+            "/usr/bin/git", "-C", str(session_controller), "bundle", "create", str(session_bundle), "refs/heads/main"
+        )
+        session_source = SourceTree(session_controller, session_revision)
+        session_cfg = DaybookSessionsConfig(
+            daybook_sessions_launchd_scope="user",
+            daybook_sessions_service_user="runner",
+            daybook_sessions_service_group="staff",
+            daybook_sessions_repo_ref=session_revision,
+            daybook_sessions_repo_update=False,
+            daybook_sessions_checkout_force=False,
+            daybook_sessions_checkout_path=str(session_checkout),
+            daybook_sessions_repo_bundle_path=str(session_root / "temporary-main.bundle"),
+            daybook_sessions_uv_bin=str(uv_wrapper),
+            daybook_sessions_launchd_path="/usr/bin:/bin:/usr/sbin:/sbin",
+        )
+        session_before = snapshot([session_checkout])
+        source_refused, source_refusal_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            session_cfg,
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert not source_refused.succeeded
+        assert source_refusal_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
+        assert snapshot([session_checkout]) == session_before
+        assert snapshot(protected) == before
+        assert job_pid(service) == pid
+        owned.report["sessions_source_running_refusal_before_upload_pid_preserved"] = True
         stop_cfg = cfg.model_copy(update={"action": "stop", "confirmed": True})
         clock = command("/bin/date", "+%H:%M", env={**os.environ, "TZ": "Europe/Berlin"}).stdout.strip()
         assert clock < "23:58", "Owned full-day window fault needs a bounded midnight margin"
@@ -590,6 +699,95 @@ def main() -> None:
         assert len(repeat.mutating_changed_ops) == 1
         assert snapshot(protected) == before
         assert capability_present()
+        # The normal source API now runs after real supervisor quiescence.
+        source_first, source_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            session_cfg,
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert source_first.succeeded, str(source_first.error)
+        assert len(source_first.mutating_changed_ops) == 3
+        assert {key: value for key, value in source_uploads.items() if key != "paths"} == {
+            "attempted": 1,
+            "succeeded": 1,
+            "failed": 0,
+        }
+        assert len(source_uploads["paths"]) == 1
+        assert not Path(source_uploads["paths"][0]).parent.exists()
+        assert not Path(session_cfg.daybook_sessions_repo_bundle_path).exists()
+        assert (
+            command("/usr/bin/git", "-C", str(session_checkout), "rev-parse", "HEAD").stdout.strip() == session_revision
+        )
+        assert snapshot(protected) == before
+        assert job_pid(service) is None
+        assert capability_present()
+        session_current = snapshot([session_checkout])
+        source_repeat, source_repeat_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            session_cfg,
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert source_repeat.succeeded, str(source_repeat.error)
+        assert source_repeat.mutating_changed_ops == []
+        assert source_repeat_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
+        assert snapshot([session_checkout]) == session_current
+        assert snapshot(protected) == before
+        assert job_pid(service) is None
+        assert capability_present()
+        owned.report["sessions_source_first_managed_ops"] = 3
+        owned.report["sessions_source_first_actual_sftp"] = source_uploads
+        owned.report["sessions_source_repeat_managed_ops"] = 0
+        owned.report["sessions_source_repeat_actual_sftp"] = source_repeat_uploads
+        owned.report["sessions_source_bundle_removed_runtime_resources_preserved"] = True
+        # Fresh, separate source-run fault: a new synthetic Main requires a
+        # transfer, whose actual SFTP method is forced to fail before bytes move.
+        # The original failed upload stays failed; cleanup must still run.
+        (session_controller / "src/daybook/__init__.py").write_text("# owned SFTP failure Main\n")
+        command("/usr/bin/git", "-C", str(session_controller), "add", ".")
+        command(
+            "/usr/bin/git",
+            "-C",
+            str(session_controller),
+            "-c",
+            "user.name=Owned Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "commit",
+            "--quiet",
+            "-m",
+            "owned transfer fault",
+        )
+        fault_revision = command("/usr/bin/git", "-C", str(session_controller), "rev-parse", "HEAD").stdout.strip()
+        command("/usr/bin/git", "-C", str(session_controller), "update-ref", "refs/heads/main", fault_revision)
+        fault_bundle = owned.root / "sessions-fault.bundle"
+        command("/usr/bin/git", "-C", str(session_controller), "bundle", "create", str(fault_bundle), "refs/heads/main")
+        fault_source_cfg = session_cfg.model_copy(update={"daybook_sessions_repo_ref": fault_revision})
+        source_failure, failed_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            fault_source_cfg,
+            SourceTree(session_controller, fault_revision),
+            fault_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+            _owned_fail_upload=True,
+        )
+        assert not source_failure.succeeded
+        assert failed_uploads["attempted"] == failed_uploads["failed"] == 3
+        assert failed_uploads["succeeded"] == 0
+        assert len(set(failed_uploads["paths"])) == 1
+        assert not Path(failed_uploads["paths"][0]).parent.exists()
+        assert snapshot([session_checkout]) == session_current
+        assert snapshot(protected) == before
+        assert job_pid(service) is None
+        assert capability_present()
+        owned.report["sessions_source_injected_sftp_failure_cleanup_and_old_source_exact"] = True
+        owned.report["sessions_source_failed_actual_sftp_attempts"] = failed_uploads
         # Disabled-first configuration staging is a separate managed stage.
         # It cannot activate/install the live label or update this exact code.
         stage_cfg = cfg.model_copy(update={"action": "replace", "confirmed": True})

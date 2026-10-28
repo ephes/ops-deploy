@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/daybook-runtime-native.yml
       - src/ops_deploy/services/daybook_operations_runtime/**
+      - src/ops_deploy/services/daybook_sessions/**
+      - tests/test_daybook_sessions_source.py
       - smoke/daybook_runtime_native_fixture.py
       - smoke/mac_apps_owned.py
       - tests/test_daybook_runtime_native_fixture.py

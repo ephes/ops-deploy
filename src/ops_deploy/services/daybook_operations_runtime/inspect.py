@@ -31,8 +31,8 @@ from .status import SourceStatus
 SCRIPT = files("ops_deploy.services.daybook_operations_runtime").joinpath("files/runtime_state.py").read_bytes()
 
 
-def source_manifest(source: SourceTree, cfg: DaybookRuntimeConfig) -> dict[str, str]:
-    if source.commit != cfg.revision:
+def daybook_code_manifest(source: SourceTree, revision: str) -> dict[str, str]:
+    if source.commit != revision:
         raise ValueError("Runtime source must be the same once-resolved Main revision")
     environment = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"}
 
@@ -67,6 +67,10 @@ def source_manifest(source: SourceTree, cfg: DaybookRuntimeConfig) -> dict[str, 
     if not expected:
         raise ValueError("Runtime controller source has no package code")
     return expected
+
+
+def source_manifest(source: SourceTree, cfg: DaybookRuntimeConfig) -> dict[str, str]:
+    return daybook_code_manifest(source, cfg.revision)
 
 
 def observation_payload(cfg: DaybookRuntimeConfig, secrets: Mapping[str, str], source: SourceTree) -> dict[str, Any]:

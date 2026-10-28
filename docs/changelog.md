@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add the Daybook Sessions controller-bundle source and locked environment stage,
+  with quiescence checks and zero-upload current repeats; resource deployment and activation remain separate.
+
 - Add disabled-first Daybook runtime staging with original enabled-install,
   quiescence, profile identity and drained-store guards; no source update or activation.
 
