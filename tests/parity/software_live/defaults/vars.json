@@ -1,0 +1,62 @@
+{
+  "ops_library_documentation_category": "operations",
+  "software_live_policy": {
+    "host": "fixture",
+    "os": {
+      "expected_id": "ubuntu",
+      "product": "ubuntu"
+    },
+    "postgresql": {
+      "expected": false
+    },
+    "traefik": {
+      "expected": false,
+      "unit": "traefik.service",
+      "desired_version": null
+    },
+    "apt_max_age_seconds": 172800
+  },
+  "software_live_bind": "100.64.0.7",
+  "software_live_port": 9110,
+  "software_live_auth_user": "nyxmon",
+  "software_live_auth_password": "CHANGE_ME",
+  "software_live_user": "metrics",
+  "software_live_group": "metrics",
+  "software_live_config_dir": "/etc/software-live",
+  "software_live_data_dir": "/var/lib/software-live",
+  "software_live_install_dir": "/usr/local/lib/software-live",
+  "software_live_packages": [
+    "python3",
+    "python3-apt",
+    "apache2-utils"
+  ],
+  "software_live_on_calendar": "*:0/15",
+  "software_live_nyxmon_db": "/home/nyxmon/site/db.sqlite3",
+  "software_live_nyxmon_user": "nyxmon",
+  "software_live_nyxmon_checks": [],
+  "software_live_nyxmon_disable_names": [],
+  "software_live_inventory_export": false,
+  "software_live_inventory_group": "software-estate-publisher",
+  "software_live_impl": "python",
+  "software_live_rust_version": "0.1.1",
+  "software_live_rust_sha256": {},
+  "software_live_rust_release_url": "https://github.com/ephes/ops-library/releases/download/software-live-v{{ software_live_rust_version }}/software-live-{{ software_live_rust_version }}-x86_64-unknown-linux-gnu-{{ _software_live_variant }}.tar.gz",
+  "software_live_rust_local_archive": "",
+  "software_live_rust_keep_versions": 3,
+  "software_live_rust_shadow": false,
+  "software_live_shadow_port": 9119,
+  "software_live_shadow_on_calendar": "*:7/15",
+  "software_live_verify_retries": 15,
+  "software_live_verify_delay": 2,
+  "software_live_collector_wait_retries": 60,
+  "software_live_systemd_dir": "/etc/systemd/system",
+  "software_live_proc_root": "/proc",
+  "software_live_cgroup_root": "/sys/fs/cgroup",
+  "software_live_os_release_path": "/etc/os-release",
+  "software_live_rust_owner": "root",
+  "software_live_rust_group": "root",
+  "software_live_rust_version_check_user": "{{ software_live_user }}",
+  "_software_live_rust_binary": "{{ software_live_install_dir }}/releases/{{ software_live_rust_version }}/software-live",
+  "_software_live_shadow_dir": "{{ software_live_data_dir }}/shadow",
+  "_software_live_shadow_config": "{{ software_live_config_dir }}/shadow-endpoint.json"
+}

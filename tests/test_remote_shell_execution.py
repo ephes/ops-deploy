@@ -166,11 +166,18 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         "services/_mail_web/files/mail_web_common.py",
         "services/_mail_web/files/mail_web_candidate.py",
     }
+    # Software-live concatenates its filter and host driver on protected stdin,
+    # never in -c source. Both actual composed probes are exercised through bash
+    # and fish in test_software_live_protection.py.
+    stdin_software_live = {
+        "services/software_live/files/software_live_impl.py",
+        "services/software_live/files/live_state_host.py",
+    }
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
         if path.name != "env_exec.py"
-        and str(path.relative_to(SRC)) not in encoded_mail_web
+        and str(path.relative_to(SRC)) not in encoded_mail_web | stdin_software_live
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20

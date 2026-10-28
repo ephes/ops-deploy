@@ -1,0 +1,7 @@
+# Managed by ops-library software_live (software_live_impl: rust).
+# Runs the pinned Rust release instead of the base unit's Python program;
+# removing this file (and daemon-reload) switches back to Python.
+[Service]
+ExecStart=
+ExecStart=/usr/local/lib/software-live/releases/0.1.1/software-live collect --config /etc/software-live/policy.json --output /var/lib/software-live/state.json --cache /var/lib/software-live/upstream.json --group metrics
+ExecStartPost=

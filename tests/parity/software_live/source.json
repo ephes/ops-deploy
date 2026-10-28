@@ -1,0 +1,20 @@
+{
+  "library": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "ansible": "ansible-playbook [core 2.21.5]",
+  "templates": {
+    "collector.service.j2": "7c26771f4e0aa7282891c61635bc36c98c05824149d1bd7adc4c6374a97a85a8",
+    "collector.timer.j2": "dcbc4eed8196ff575e7303faccaf92836c272b0ea116c785645cedab0deb81f7",
+    "endpoint.service.j2": "fe2b51d4bb71076a7c7f836023b3c6552f0472b8b78da95762ddd7f8d5d0477d",
+    "impl-collector.conf.j2": "5b053d4f5d17feba62cd1c61267951bd4e2948af59a72120c40f975244077a36",
+    "impl-endpoint.conf.j2": "50c474385bf3f4af1edc4974fdf4c036d03b965d4dca3d48bd005ce1e23f7948",
+    "shadow-collector.service.j2": "680635648a03291d4e1216c18460857725efce49701376c101337db25b0a70ea",
+    "shadow-collector.timer.j2": "e1cc1c184c9220130fb2099120562cefe3818786ae4370dd6121b7dda90dff64",
+    "shadow-endpoint.service.j2": "bcb16cd06a638f87891e0d96eab09f53229ed17283c859aab4f05e57f5c75a4d"
+  },
+  "files": {
+    "files/software_live.py": "1c9fdfc8a9b9c0b5adbcf506c4dcd45ba86f19c9b7ef2f4fae4fe3351918caf4",
+    "files/nyxmon_checks.py": "425fd52e6d00ff4648a8194db875662a4686fc9bfc011cdbb9f972e94a222633",
+    "files/software_live_impl.py": "ffb0c06e977b607402891ed03c211e04e71678206319c079e3995b36f97a827a"
+  },
+  "method": "Actual ansible.builtin.template; synthetic independent role inputs; no role tasks/services."
+}

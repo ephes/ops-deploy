@@ -1,0 +1,20 @@
+[Unit]
+Description=Read-only software health observation (Rust shadow)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/lib/software-live/releases/0.1.1/software-live collect --report-usage --config /etc/software-live/policy.json --output /var/lib/software-live/shadow/state.json --cache /var/lib/software-live/shadow/upstream.json --group metrics
+TimeoutStartSec=90
+Nice=10
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/software-live/shadow

@@ -1,0 +1,20 @@
+{
+  "policy": {
+    "host": "fixture",
+    "os": {
+      "expected_id": "ubuntu",
+      "product": "ubuntu"
+    },
+    "postgresql": {
+      "expected": false
+    },
+    "traefik": {
+      "expected": false,
+      "unit": "traefik.service",
+      "desired_version": null
+    },
+    "apt_max_age_seconds": 172800
+  },
+  "auth_user": "nyxmon",
+  "rust_version": "0.1.1"
+}

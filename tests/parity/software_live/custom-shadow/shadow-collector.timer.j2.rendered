@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh read-only software observations (Rust shadow)
+
+[Timer]
+OnBootSec=30s
+OnCalendar=*:4/20
+RandomizedDelaySec=30s
+AccuracySec=10s
+Persistent=true
+Unit=software-live-shadow-collector.service
+
+[Install]
+WantedBy=timers.target
