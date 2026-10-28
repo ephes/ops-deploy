@@ -52,3 +52,19 @@ No build, download or VM launch on an inventory host is authorized by this file.
 Use the exact reviewed immutable source under the coordinator's execution GO.
 
 Guest evidence is admitted from debugfs metadata before body extraction (flat regular files, at most 1024 files and 192 MiB). Docker copy-out independently rejects links/special files/path escapes and stops before any body that would exceed 256 MiB. This also applies during failed-run cleanup; bounded partial evidence is retained.
+
+The first owned attempt stopped before guest boot: Docker's default build resolver
+could not resolve the public Ubuntu mirrors. A bounded disposable probe showed
+public HTTP egress working and public DNS at `1.1.1.1` resolving both mirror names.
+Each networked build step now selects that resolver only in its ephemeral
+container resolver mount; failed apt index retrieval is fatal. This changes no
+host DNS, Docker daemon, firewall or routing setting. The final tooling container
+and real guest remain offline. The failed receipt is retained separately and
+provides no native service qualification.
+
+The DNS probe covered only the two public Ubuntu mirror names and public Ubuntu
+HTTP egress. GitHub, PyPI, Python download hosts and redirect/CDN destinations
+were not separately preflighted. Their real bootstrap fetches remain fallible
+build steps whose complete result must be preserved; the resolver correction
+is not evidence that every dependency endpoint is reachable. The guest receipt
+records its actual Ubuntu release, machine ID, run identity and kernel.

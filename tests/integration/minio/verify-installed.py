@@ -4,6 +4,8 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import platform
+import re
 import subprocess
 import sys
 import sysconfig
@@ -66,6 +68,11 @@ for name, sha in {
         "size": artifact_path.stat().st_size,
         "version": subprocess.check_output([str(artifact_path), "--version"], text=True),
     }
+machine_id = Path("/etc/machine-id").read_text().strip()
+assert re.fullmatch(r"[0-9a-f]{32}", machine_id)
+os_release = platform.freedesktop_os_release()
+assert os_release["ID"] == "ubuntu"
+assert os_release["VERSION_ID"] == "24.04"
 Path("/var/tmp/minio-evidence/installed-artifact.json").write_text(
     json.dumps(
         {
@@ -76,10 +83,13 @@ Path("/var/tmp/minio-evidence/installed-artifact.json").write_text(
             "artifacts": artifacts,
             "scope": scope,
             "kind": kind,
+            "run": run,
+            "machine_id": machine_id,
+            "os_release": {key: os_release[key] for key in ("ID", "VERSION_ID", "PRETTY_NAME")},
             "kernel": subprocess.check_output(["uname", "-a"], text=True).strip(),
         },
         indent=2,
     )
 )
 with open("/var/tmp/minio-owned-guest.json", "x") as stream:
-    json.dump({"run": run, "machine": Path("/etc/machine-id").read_text().strip()}, stream)
+    json.dump({"run": run, "machine": machine_id}, stream)
