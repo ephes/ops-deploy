@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on ZFS syncoid replication failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart={{ zfs_syncoid_replication_alert_script_path }} "%i"

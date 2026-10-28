@@ -1,0 +1,11 @@
+[Unit]
+Description=Mail offsite replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+{% if mail_offsite_replication_alert_enabled | bool %}OnFailure={{ mail_offsite_replication_service_name }}-failure@%n.service
+{% endif %}
+
+[Service]
+Type=oneshot
+TimeoutStartSec={{ mail_offsite_replication_timeout_sec }}
+ExecStart={{ mail_offsite_replication_script_path }}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run mail offsite replication (ops-library)
+
+[Timer]
+OnCalendar={{ mail_offsite_replication_on_calendar }}
+RandomizedDelaySec={{ mail_offsite_replication_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

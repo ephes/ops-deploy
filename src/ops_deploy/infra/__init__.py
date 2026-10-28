@@ -9,6 +9,24 @@ passwords) are deploy arguments, never config fields.
 
 from typing import TYPE_CHECKING, Any
 
+from ops_deploy.infra.backup import (
+    BackupRestoreAccessConfig,
+    BackupSourceConfig,
+    MailReplicationConfig,
+    MinioArchiveConfig,
+    SnapshotRetention,
+    SyncoidConfig,
+    SyncoidJob,
+    UsbDrive,
+    UsbReplicationConfig,
+    deploy_backup_restore_access,
+    deploy_backup_restore_client,
+    deploy_backup_source,
+    deploy_mail_replication,
+    deploy_minio_archive,
+    deploy_syncoid,
+    deploy_usb_replication,
+)
 from ops_deploy.infra.certbot_dns import CertbotDnsConfig, deploy_certbot_dns
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
@@ -44,8 +62,18 @@ from ops_deploy.infra.traefik_probes import (
 from ops_deploy.infra.traefik_remove import TraefikRemoveConfig, deploy_traefik_remove
 from ops_deploy.infra.vector_apt_install import VectorAptInstallConfig, deploy_vector_apt_install, vector_apt_steps
 from ops_deploy.infra.zed import ZedConfig, deploy_zed
+from ops_deploy.infra.zfs_storage import (
+    ZfsDatasetConfig,
+    ZfsPoolConfig,
+    ZfsStorageConfig,
+    deploy_zfs_dataset,
+    deploy_zfs_pool,
+    deploy_zfs_storage,
+)
 
 __all__ = [
+    "BackupRestoreAccessConfig",
+    "BackupSourceConfig",
     "CertbotDnsConfig",
     "DatabaseSpec",
     "DockerInstallConfig",
@@ -55,6 +83,8 @@ __all__ = [
     "HdparmDevice",
     "HdparmTuneConfig",
     "MailRelayClientConfig",
+    "MailReplicationConfig",
+    "MinioArchiveConfig",
     "NetplanConfig",
     "PgHbaRule",
     "PostgresInstallConfig",
@@ -65,6 +95,9 @@ __all__ = [
     "RedisInstallConfig",
     "SmartdConfig",
     "SmartdDevice",
+    "SnapshotRetention",
+    "SyncoidConfig",
+    "SyncoidJob",
     "TailscaleBackupConfig",
     "TailscaleConfig",
     "TailscaleManualRestoreConfig",
@@ -77,18 +110,29 @@ __all__ = [
     "TraefikHealthProbesConfig",
     "TraefikRemoveConfig",
     "TraefikRestoreConfig",
+    "UsbDrive",
+    "UsbReplicationConfig",
     "VectorAptInstallConfig",
     "ZedConfig",
+    "ZfsDatasetConfig",
+    "ZfsPoolConfig",
+    "ZfsStorageConfig",
     "capture_traefik_health_probes",
+    "deploy_backup_restore_access",
+    "deploy_backup_restore_client",
+    "deploy_backup_source",
     "deploy_certbot_dns",
     "deploy_docker_install",
     "deploy_encrypted_volume",
     "deploy_hdparm_tune",
     "deploy_mail_relay_client",
+    "deploy_mail_replication",
+    "deploy_minio_archive",
     "deploy_netplan",
     "deploy_postgres_install",
     "deploy_redis_install",
     "deploy_smartd",
+    "deploy_syncoid",
     "deploy_tailscale",
     "deploy_tailscale_backup",
     "deploy_tailscale_manual_restore",
@@ -100,8 +144,12 @@ __all__ = [
     "deploy_traefik_health_probes",
     "deploy_traefik_remove",
     "deploy_traefik_restore",
+    "deploy_usb_replication",
     "deploy_vector_apt_install",
     "deploy_zed",
+    "deploy_zfs_dataset",
+    "deploy_zfs_pool",
+    "deploy_zfs_storage",
     "docker_steps",
     "vector_apt_steps",
     "verify_traefik_health_probes",

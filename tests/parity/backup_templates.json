@@ -1,0 +1,314 @@
+{
+  "provenance": "Actual ansible-playbook local original role templates; public synthetic inputs, cf3 runtime",
+  "source_ref": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "inputs": {
+    "zfs_syncoid_replication": {
+      "enabled": true,
+      "packages": [
+        "sanoid"
+      ],
+      "service_name": "zfs-syncoid-replication",
+      "timer_name": "zfs-syncoid-replication",
+      "on_calendar": "02:00",
+      "randomized_delay_sec": "10m",
+      "timeout_sec": "6h",
+      "alert_enabled": true,
+      "alert_email": "root",
+      "alert_subject_prefix": "[zfs-syncoid]",
+      "alert_script_path": "/usr/local/bin/zfs-syncoid-alert.sh",
+      "spindown_enabled": true,
+      "spindown_pool": "tank",
+      "spindown_devices": [
+        "/dev/disk/by-id/owned"
+      ],
+      "spindown_script_path": "/usr/local/bin/zfs-syncoid-spindown.sh",
+      "syncoid_path": "/usr/sbin/syncoid",
+      "default_args": [
+        "--no-rollback"
+      ],
+      "jobs": [
+        {
+          "source": "fast/owned",
+          "target": "tank/owned",
+          "recursive": true,
+          "readonly": true,
+          "force_delete": true,
+          "no_rollback": false,
+          "prune_conflicting_snapshots": true,
+          "prune_target_only_snapshots": true,
+          "abort_partial_receive": true,
+          "extra_args": [
+            "--no-sync-snap"
+          ]
+        },
+        {
+          "source": "fast/second",
+          "target": "tank/second",
+          "recursive": false,
+          "readonly": false,
+          "force_delete": false,
+          "prune_conflicting_snapshots": false,
+          "prune_target_only_snapshots": false,
+          "abort_partial_receive": false,
+          "extra_args": []
+        }
+      ],
+      "spindown_retries": 10,
+      "spindown_sleep_sec": 60,
+      "prune_script_path": "/usr/local/bin/zfs-syncoid-prune-conflicts.sh",
+      "abort_partial_receive_script_path": "/usr/local/bin/zfs-syncoid-abort-partial-receive.sh"
+    },
+    "zfs_usb_replication": {
+      "enabled": true,
+      "packages": [
+        "sanoid"
+      ],
+      "service_name": "zfs-usb-replication",
+      "timer_name": "zfs-usb-replication",
+      "on_calendar": "Sun 04:00",
+      "randomized_delay_sec": "30m",
+      "timeout_sec": "8h",
+      "alert_enabled": true,
+      "alert_email": "root",
+      "alert_subject_prefix": "[zfs-usb]",
+      "alert_script_path": "/usr/local/bin/zfs-usb-alert.sh",
+      "spindown_enabled": true,
+      "spindown_pool": "tank",
+      "spindown_devices": [
+        "/dev/disk/by-id/owned"
+      ],
+      "spindown_script_path": "/usr/local/bin/zfs-usb-spindown.sh",
+      "syncoid_path": "/usr/sbin/syncoid",
+      "state_dir": "/var/lib/zfs-usb-replication",
+      "state_writer_path": "/usr/local/bin/zfs_usb_replication_state.py",
+      "attestation_helper_path": "/usr/local/sbin/zfs-snapshot-file-attestation",
+      "snapshot_retention": [
+        {
+          "source": "tank/owned",
+          "target": "vault/owned",
+          "keep_days": 60,
+          "prefixes": [
+            "autosnap_",
+            "syncoid_"
+          ]
+        }
+      ],
+      "retention_script_path": "/usr/local/bin/zfs_usb_snapshot_retention.py",
+      "wait_for_async_destroy": true,
+      "device": "",
+      "pool": "vault",
+      "devices": [
+        {
+          "name": "owned-a",
+          "device": "/dev/disk/by-id/owned-a",
+          "pool_guid": "1234"
+        },
+        {
+          "name": "owned-b",
+          "device": "/dev/disk/by-id/owned-b"
+        }
+      ],
+      "anchor_mode": "bookmark",
+      "anchor_helper_path": "/usr/local/bin/zfs_usb_bookmark_anchors.py",
+      "bookmark_prune": true,
+      "bookmark_prune_prefixes": [
+        "autosnap_",
+        "syncoid_"
+      ],
+      "identifier": "",
+      "force_export": false,
+      "exportfs_lock_dir": "/etc/exports.d",
+      "set_canmount_off_for_readonly_recursive_targets": true,
+      "key_manage": true,
+      "key_path": "/root/.zfs-key-vault",
+      "default_args": [
+        "--no-rollback"
+      ],
+      "abort_partial_receive_script_path": "/usr/local/bin/zfs-syncoid-abort-partial-receive.sh",
+      "jobs": [
+        {
+          "source": "fast/owned",
+          "target": "tank/owned",
+          "recursive": true,
+          "readonly": true,
+          "force_delete": true,
+          "no_rollback": false,
+          "prune_conflicting_snapshots": true,
+          "prune_target_only_snapshots": true,
+          "abort_partial_receive": true,
+          "extra_args": [
+            "--no-sync-snap"
+          ]
+        },
+        {
+          "source": "fast/second",
+          "target": "tank/second",
+          "recursive": false,
+          "readonly": false,
+          "force_delete": false,
+          "prune_conflicting_snapshots": false,
+          "prune_target_only_snapshots": false,
+          "abort_partial_receive": false,
+          "extra_args": []
+        }
+      ]
+    },
+    "minio_offsite_replication": {
+      "enabled": true,
+      "packages": [
+        "rsync",
+        "openssh-client"
+      ],
+      "service_name": "minio-offsite-replication",
+      "timer_name": "minio-offsite-replication",
+      "on_calendar": "05:00",
+      "randomized_delay_sec": "15m",
+      "timeout_sec": "4h",
+      "alert_enabled": true,
+      "alert_email": "root",
+      "alert_subject_prefix": "[minio-offsite]",
+      "alert_script_path": "/usr/local/bin/minio-offsite-alert.sh",
+      "spindown_enabled": true,
+      "spindown_pool": "",
+      "spindown_devices": [],
+      "spindown_script_path": "/usr/local/bin/owned-spindown.sh",
+      "source_host": "owned.example",
+      "source_user": "root",
+      "ssh_key_manage": true,
+      "ssh_key_path": "/root/.ssh/minio-offsite-replication-ed25519",
+      "ssh_known_hosts_path": "/root/.ssh/known_hosts",
+      "ssh_connect_timeout": 30,
+      "manage_known_hosts": true,
+      "ssh_keyscan_type": "ed25519",
+      "destination_path": "/tank/backups/minio",
+      "destination_owner": "root",
+      "destination_group": "backup-metrics",
+      "destination_mode": "0750",
+      "status_dir": "/var/lib/minio-offsite-replication",
+      "status_owner": "root",
+      "status_group": "backup-metrics",
+      "status_mode": "0750",
+      "script_path": "/usr/local/bin/minio-offsite-replication.sh",
+      "source_path": "/opt/backups/minio",
+      "archive_patterns": [
+        "*.tar.gz",
+        "*.tar.zst"
+      ],
+      "rsync_extra_args": [
+        "--archive",
+        "--hard-links",
+        "--numeric-ids",
+        "--partial-dir=.rsync-partial"
+      ],
+      "rsync_delete": false,
+      "require_archives": false
+    },
+    "mail_offsite_replication": {
+      "enabled": true,
+      "packages": [
+        "rsync",
+        "openssh-client"
+      ],
+      "service_name": "mail-offsite-replication",
+      "timer_name": "mail-offsite-replication",
+      "on_calendar": "04:00",
+      "randomized_delay_sec": "15m",
+      "timeout_sec": "4h",
+      "alert_enabled": true,
+      "alert_email": "root",
+      "alert_subject_prefix": "[mail-offsite]",
+      "alert_script_path": "/usr/local/bin/mail-offsite-alert.sh",
+      "spindown_enabled": true,
+      "spindown_pool": "",
+      "spindown_devices": [],
+      "spindown_script_path": "/usr/local/bin/owned-spindown.sh",
+      "source_host": "owned.example",
+      "source_user": "root",
+      "ssh_key_manage": true,
+      "ssh_key_path": "/root/.ssh/mail-offsite-replication-ed25519",
+      "ssh_known_hosts_path": "/root/.ssh/known_hosts",
+      "ssh_connect_timeout": 30,
+      "manage_known_hosts": true,
+      "ssh_keyscan_type": "ed25519",
+      "destination_path": "/tank/backups/mail",
+      "destination_owner": "root",
+      "destination_group": "backup-metrics",
+      "destination_mode": "0750",
+      "status_dir": "/var/lib/mail-offsite-replication",
+      "status_owner": "root",
+      "status_group": "backup-metrics",
+      "status_mode": "0750",
+      "script_path": "/usr/local/bin/mail-offsite-replication.sh",
+      "source_vmail_path": "/mnt/cryptdata/vmail",
+      "source_stage_path": "/mnt/cryptdata/mail-backup-stage",
+      "source_stage_command": "/usr/local/sbin/mail-backup-stage.sh",
+      "destination_vmail_subdir": "vmail",
+      "destination_stage_subdir": "stage",
+      "vmail_rsync_extra_args": [
+        "--archive",
+        "--hard-links",
+        "--numeric-ids",
+        "--partial-dir=.rsync-partial",
+        "--delete"
+      ],
+      "stage_rsync_extra_args": [
+        "--archive",
+        "--numeric-ids"
+      ],
+      "snapshot_enabled": true,
+      "snapshot_dataset": "tank/backups/mail",
+      "snapshot_prefix": "mail-sync",
+      "snapshot_keep": 30
+    }
+  },
+  "resources": {
+    "zfs-syncoid-abort-partial-receive.sh": "#!/usr/bin/env bash\nset -euo pipefail\n# Abort any partial ZFS receive on a target dataset (and optionally its descendants).\n# Usage: zfs-syncoid-abort-partial-receive.sh <target_dataset> [recursive]\n#\n# Exit 0 always \u2014 partial receives that are aborted are logged, datasets\n# without a pending receive are silently skipped.\n\nlog_tag=\"zfs-syncoid-abort-partial\"\ntarget=\"${1:-}\"\nrecursive=\"${2:-false}\"\n\nif [[ -z \"${target}\" ]]; then\n  logger -t \"${log_tag}\" \"Usage: ${0} <target_dataset> [recursive]\"\n  exit 1\nfi\n\nabort_if_pending() {\n  local ds=\"${1}\"\n  # zfs get -H -o value receive_resume_token returns \"-\" when there is no\n  # pending receive, and a base64 token string when there is one.\n  local token\n  token=\"$(zfs get -H -o value receive_resume_token \"${ds}\" 2>/dev/null || echo \"-\")\"\n  if [[ \"${token}\" != \"-\" && -n \"${token}\" ]]; then\n    logger -t \"${log_tag}\" \"Aborting partial receive on ${ds}\"\n    local abort_output abort_rc\n    abort_output=\"$(zfs receive -A \"${ds}\" 2>&1)\" && abort_rc=0 || abort_rc=$?\n    if [[ ${abort_rc} -eq 0 ]]; then\n      logger -t \"${log_tag}\" \"Successfully aborted partial receive on ${ds}\"\n    else\n      logger -t \"${log_tag}\" \"WARNING: zfs receive -A on ${ds} exited ${abort_rc}: ${abort_output}\"\n    fi\n  fi\n}\n\nif [[ \"${recursive}\" == \"true\" ]]; then\n  # Process the target and all descendants\n  while IFS= read -r ds; do\n    abort_if_pending \"${ds}\"\n  done < <(zfs list -r -H -o name \"${target}\" 2>/dev/null || echo \"${target}\")\nelse\n  abort_if_pending \"${target}\"\nfi\n",
+    "zfs-syncoid-alert.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nunit_name=\"${1:-unknown}\"\nsubject=\"[zfs-syncoid] ${unit_name} failed on $(hostname -s)\"\n\njournal_output=\"$(journalctl -u \"${unit_name}\" -n 200 --no-pager --output=short-iso || true)\"\n\nmail_body=$(cat <<MAIL\nZFS syncoid replication failure\nHost: $(hostname -f)\nUnit: ${unit_name}\nTime: $(date -Is)\n\nLast 200 journal lines:\n${journal_output}\nMAIL\n)\n\necho \"${mail_body}\" | mail -s \"${subject}\" \"root\"\n",
+    "zfs-syncoid-prune-conflicts.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nsource_dataset=\"${1:-}\"\ntarget_dataset=\"${2:-}\"\nrecursive=\"${3:-false}\"\nprune_target_only=\"${4:-false}\"\nlog_tag=\"zfs-syncoid-prune\"\n\nif [[ -z \"${source_dataset}\" || -z \"${target_dataset}\" ]]; then\n  logger -t \"${log_tag}\" \"Usage: ${0} <source_dataset> <target_dataset>\"\n  exit 1\nfi\n\nif ! zfs list -H -o name \"${target_dataset}\" >/dev/null 2>&1; then\n  logger -t \"${log_tag}\" \"Target dataset ${target_dataset} not found; skipping.\"\n  exit 0\nfi\n\n_is_true() {\n  case \"${1}\" in\n    1|true|TRUE|True|yes|YES|on|ON) return 0 ;;\n    *) return 1 ;;\n  esac\n}\n\n# Process a single source/target dataset pair:\n#   1. Destroy GUID-conflicting snapshots (same name, different GUID)\n#   2. If prune_target_only is true, destroy target-only snapshots that are\n#      NEWER than the most recent common snapshot.  Older target-only snapshots\n#      are preserved \u2014 they may be needed by other replication chains (e.g. USB\n#      offsite sync) as common-snapshot anchors.\n_process_dataset() {\n  local src_ds=\"${1}\" tgt_ds=\"${2}\"\n\n  mapfile -t tgt_snaps < <(zfs list -t snapshot -H -o name -s creation \"${tgt_ds}\" 2>/dev/null || true)\n  if [[ ${#tgt_snaps[@]} -eq 0 ]]; then\n    return\n  fi\n\n  # --- pass 1: find last common snapshot index & destroy GUID conflicts ------\n  local last_common_idx=-1\n  local -a guid_conflicts=()\n  for i in \"${!tgt_snaps[@]}\"; do\n    local snap_name=\"${tgt_snaps[$i]#*@}\"\n    local src_snap=\"${src_ds}@${snap_name}\"\n\n    if zfs list -t snapshot -H -o name \"${src_snap}\" >/dev/null 2>&1; then\n      local src_guid tgt_guid\n      src_guid=\"$(zfs get -H -o value guid \"${src_snap}\" 2>/dev/null || true)\"\n      tgt_guid=\"$(zfs get -H -o value guid \"${tgt_snaps[$i]}\" 2>/dev/null || true)\"\n      if [[ -n \"${src_guid}\" && -n \"${tgt_guid}\" && \"${src_guid}\" != \"${tgt_guid}\" ]]; then\n        guid_conflicts+=(\"${tgt_snaps[$i]}\")\n      else\n        last_common_idx=\"${i}\"\n      fi\n    fi\n  done\n\n  # Destroy GUID conflicts\n  for snap in \"${guid_conflicts[@]+\"${guid_conflicts[@]}\"}\"; do\n    logger -t \"${log_tag}\" \"Destroying conflicting snapshot ${snap}\"\n    if ! zfs destroy \"${snap}\" >/dev/null 2>&1; then\n      logger -t \"${log_tag}\" \"Failed to destroy ${snap}\"\n    fi\n  done\n\n  # --- pass 2: prune target-only snapshots newer than last common snapshot ---\n  if _is_true \"${prune_target_only}\" && [[ ${last_common_idx} -ge 0 ]]; then\n    for i in \"${!tgt_snaps[@]}\"; do\n      # Skip snapshots at or before the last common snapshot\n      if [[ \"${i}\" -le ${last_common_idx} ]]; then\n        continue\n      fi\n\n      local snap_name=\"${tgt_snaps[$i]#*@}\"\n      local src_snap=\"${src_ds}@${snap_name}\"\n\n      # Only prune if this snapshot does not exist on the source\n      if ! zfs list -t snapshot -H -o name \"${src_snap}\" >/dev/null 2>&1; then\n        logger -t \"${log_tag}\" \"Destroying target-only snapshot ${tgt_snaps[$i]} (newer than last common)\"\n        if ! zfs destroy \"${tgt_snaps[$i]}\" >/dev/null 2>&1; then\n          logger -t \"${log_tag}\" \"Failed to destroy ${tgt_snaps[$i]}\"\n        fi\n      fi\n    done\n  elif _is_true \"${prune_target_only}\" && [[ ${last_common_idx} -lt 0 ]]; then\n    logger -t \"${log_tag}\" \"No common snapshot found for ${tgt_ds}; skipping target-only pruning\"\n  fi\n}\n\n# Enumerate datasets to process\nif _is_true \"${recursive}\"; then\n  mapfile -t target_datasets < <(zfs list -r -H -o name \"${target_dataset}\" 2>/dev/null || echo \"${target_dataset}\")\nelse\n  target_datasets=(\"${target_dataset}\")\nfi\n\nfor tgt_ds in \"${target_datasets[@]}\"; do\n  suffix=\"${tgt_ds#${target_dataset}}\"\n  src_ds=\"${source_dataset}${suffix}\"\n  _process_dataset \"${src_ds}\" \"${tgt_ds}\"\ndone\n",
+    "zfs-syncoid-replication-failure@.service": "[Unit]\nDescription=Alert on ZFS syncoid replication failure (%i)\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/zfs-syncoid-alert.sh \"%i\"\n",
+    "zfs-syncoid-replication.service": "[Unit]\nDescription=ZFS syncoid replication (ops-library)\nAfter=network-online.target\nWants=network-online.target\nOnFailure=zfs-syncoid-replication-failure@%n.service\n\n[Service]\nType=oneshot\nTimeoutStartSec=6h\nExecStartPre=/usr/local/bin/zfs-syncoid-abort-partial-receive.sh \"tank/owned\" \"true\"\nExecStartPre=/usr/local/bin/zfs-syncoid-prune-conflicts.sh \"fast/owned\" \"tank/owned\" \"true\" \"true\"\nExecStart=/usr/sbin/syncoid --recursive --recvoptions=\"o readonly=on\" --force-delete --no-sync-snap \"fast/owned\" \"tank/owned\"\nExecStart=/usr/sbin/syncoid --no-rollback \"fast/second\" \"tank/second\"\nExecStartPost=/usr/local/bin/zfs-syncoid-spindown.sh\n",
+    "zfs-syncoid-replication.timer": "[Unit]\nDescription=Run ZFS syncoid replication (ops-library)\n\n[Timer]\nOnCalendar=02:00\nRandomizedDelaySec=10m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+    "zfs-syncoid-spindown.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\npool=\"tank\"\nspindown_device_count=1\nspindown_retries=10\nspindown_sleep_sec=60\n\nspindown_devices=(\n  \"/dev/disk/by-id/owned\"\n)\n\nif [[ -n \"${pool}\" ]]; then\n  if command -v zpool >/dev/null 2>&1; then\n    attempt=0\n    while true; do\n      stats=$(zpool iostat -H -p \"${pool}\" 1 2 | tail -n 1 || true)\n      if [[ -n \"${stats}\" ]]; then\n        read -r _pool _alloc _free read_ops write_ops read_bytes write_bytes <<<\"${stats}\"\n        if [[ \"${read_ops:-0}\" != \"0\" || \"${write_ops:-0}\" != \"0\" || \"${read_bytes:-0}\" != \"0\" || \"${write_bytes:-0}\" != \"0\" ]]; then\n          if [[ \"${attempt}\" -ge \"${spindown_retries}\" ]]; then\n            logger -t zfs-syncoid-spindown \"Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); giving up after ${attempt} retries.\"\n            exit 0\n          fi\n          attempt=$((attempt + 1))\n          logger -t zfs-syncoid-spindown \"Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); retrying in ${spindown_sleep_sec}s (attempt ${attempt}/${spindown_retries}).\"\n          sleep \"${spindown_sleep_sec}\"\n          continue\n        fi\n      fi\n      break\n    done\n  fi\nfi\n\nif [[ \"${spindown_device_count}\" -eq 0 ]]; then\n  logger -t zfs-syncoid-spindown \"No spindown devices configured; skipping.\"\n  exit 0\nfi\n\nfor dev in \"${spindown_devices[@]}\"; do\n  if [[ -b \"${dev}\" ]]; then\n    if ! hdparm -y \"${dev}\" >/dev/null 2>&1; then\n      logger -t zfs-syncoid-spindown \"hdparm failed for ${dev}\"\n    fi\n  else\n    logger -t zfs-syncoid-spindown \"Device ${dev} not found; skipping.\"\n  fi\ndone\n",
+    "zfs-usb-alert.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nunit_name=\"${1:-unknown}\"\nsubject=\"[zfs-usb] ${unit_name} failed on $(hostname -s)\"\n\njournal_output=\"$(journalctl -u \"${unit_name}\" -n 200 --no-pager --output=short-iso || true)\"\n\nmail_body=$(cat <<MAIL\nZFS USB replication failure\nHost: $(hostname -f)\nUnit: ${unit_name}\nTime: $(date -Is)\n\nLast 200 journal lines:\n${journal_output}\nMAIL\n)\n\necho \"${mail_body}\" | mail -s \"${subject}\" \"root\"\n",
+    "zfs-usb-replication-failure@.service": "[Unit]\nDescription=Alert on ZFS USB replication failure (%i)\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/zfs-usb-alert.sh \"%i\"\n",
+    "zfs-usb-replication.service": "[Unit]\nDescription=ZFS USB replication (ops-library)\nAfter=network-online.target\nWants=network-online.target\nOnFailure=zfs-usb-replication-failure@%n.service\n\n[Service]\nType=oneshot\nTimeoutStartSec=8h\nExecStart=/usr/local/bin/zfs-usb-replication.sh\n",
+    "zfs-usb-replication.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nlog_tag=\"zfs-usb-replication\"\npool=\"vault\"\nkey_path=\"/root/.zfs-key-vault\"\nsyncoid_bin=\"/usr/sbin/syncoid\"\nforce_export=\"false\"\nspindown_enabled=\"true\"\nspindown_script=\"/usr/local/bin/zfs-usb-spindown.sh\"\nstate_path=\"/var/lib/zfs-usb-replication/status.json\"\nstate_writer=\"/usr/local/bin/zfs_usb_replication_state.py\"\nretention_script=\"/usr/local/bin/zfs_usb_snapshot_retention.py\"\nexportfs_lock_dir=\"/etc/exports.d\"\nset_canmount_off_for_readonly_recursive_targets=\"true\"\nanchor_helper=\"/usr/local/bin/zfs_usb_bookmark_anchors.py\"\nanchor_state_path=\"/var/lib/zfs-usb-replication/anchors.json\"\n\n# Drives of the offsite rotation. They share one pool name, so each present\n# drive is imported, replicated and exported on its own.\ndevice_names=(\n  \"owned-a\"\n  \"owned-b\"\n)\ndevice_paths=(\n  \"/dev/disk/by-id/owned-a\"\n  \"/dev/disk/by-id/owned-b\"\n)\ndevice_pool_guids=(\n  \"1234\"\n  \"\"\n)\n\n# write_state RESULT EXIT_CODE DEVICE_INDEX|\"\" [writer args...]\nwrite_state() {\n  local result=\"$1\"\n  local exit_code=\"$2\"\n  local index=\"$3\"\n  shift 3\n  local -a device_args=()\n  if [[ -n \"${index}\" ]]; then\n    device_args=(--device-path \"${device_paths[$index]}\")\n    if [[ -n \"${device_names[$index]}\" ]]; then\n      device_args+=(--device-name \"${device_names[$index]}\")\n    fi\n  else\n    device_args=(--device-path \"$(IFS=,; echo \"${device_paths[*]}\")\")\n  fi\n  if [[ -x \"${state_writer}\" ]]; then\n    if ! \"${state_writer}\" \\\n      --state-path \"${state_path}\" \\\n      --result \"${result}\" \\\n      --exit-code \"${exit_code}\" \\\n      --pool \"${pool}\" \\\n      \"${device_args[@]}\" \\\n      \"$@\"; then\n      logger -t \"${log_tag}\" \"Failed to persist USB replication state (${result})\"\n      return 1\n    fi\n  else\n    logger -t \"${log_tag}\" \"USB replication state writer not executable: ${state_writer}\"\n    return 1\n  fi\n}\n\ndevice_label() {\n  local index=\"$1\"\n  if [[ -n \"${device_names[$index]}\" ]]; then\n    printf '%s (%s)' \"${device_names[$index]}\" \"${device_paths[$index]}\"\n  else\n    printf '%s' \"${device_paths[$index]}\"\n  fi\n}\n\n# Print the -d arguments that restrict a pool import to one drive, so a second\n# attached drive carrying the same pool name can never be picked up instead.\nimport_search_args() {\n  local device=\"$1\"\n  local found=false\n  local member\n  for member in \"${device}\"-part*; do\n    if [[ -e \"${member}\" ]]; then\n      printf '%s\\n' \"-d\" \"${member}\"\n      found=true\n    fi\n  done\n  if [[ \"${found}\" != \"true\" ]]; then\n    printf '%s\\n' \"-d\" \"${device}\"\n  fi\n}\n\npool_imported() {\n  zpool list -H -o name 2>/dev/null | grep -qx \"${pool}\"\n}\n\n# True when the imported pool has a vdev on this drive (whole disk or one of\n# its partitions), compared by resolved device node.\npool_on_device() {\n  local device=\"$1\"\n  local device_real vdev vdev_real\n  device_real=\"$(readlink -f \"${device}\" 2>/dev/null || true)\"\n  [[ -n \"${device_real}\" ]] || return 1\n  while IFS= read -r vdev; do\n    [[ \"${vdev}\" == /* ]] || continue\n    vdev_real=\"$(readlink -f \"${vdev}\" 2>/dev/null || true)\"\n    if [[ \"${vdev_real}\" == \"${device_real}\" || \"${vdev_real}\" =~ ^${device_real}p?[0-9]+$ ]]; then\n      return 0\n    fi\n  done < <(zpool list -v -H -P \"${pool}\" 2>/dev/null | awk -F'\\t' '{print $2}')\n  return 1\n}\n\n# Runs in its own subshell per drive. Its variables are deliberately not local:\n# the EXIT trap (finish) runs after the function returned and still needs them.\nreplicate_device() {\n  index=\"$1\"\n  device=\"${device_paths[$index]}\"\n  expected_guid=\"${device_pool_guids[$index]}\"\n  label=\"$(device_label \"${index}\")\"\n  pool_preexisting=false\n  observed_guid=\"\"\n  signal_exit_code=0\n\n  handle_signal() {\n    signal_exit_code=\"$1\"\n    exit \"${signal_exit_code}\"\n  }\n  finish() {\n    local exit_code=$?\n    if [[ ${signal_exit_code} -ne 0 ]]; then\n      exit_code=${signal_exit_code}\n    fi\n    local -a usage_args=()\n    local export_failed=false\n    trap - EXIT\n    if pool_imported && pool_on_device \"${device}\"; then\n      local usage_line\n      usage_line=$(zpool list -Hp -o size,alloc,free \"${pool}\" 2>/dev/null || true)\n      if [[ -n \"${usage_line}\" ]]; then\n        local size_bytes alloc_bytes free_bytes\n        IFS=$'\\t' read -r size_bytes alloc_bytes free_bytes <<< \"${usage_line}\"\n        if [[ \"${size_bytes}\" =~ ^[0-9]+$ && \"${alloc_bytes}\" =~ ^[0-9]+$ && \"${free_bytes}\" =~ ^[0-9]+$ ]]; then\n          usage_args=(\n            --size-bytes \"${size_bytes}\"\n            --alloc-bytes \"${alloc_bytes}\"\n            --free-bytes \"${free_bytes}\"\n          )\n        fi\n      fi\n      if [[ \"${pool_preexisting}\" == \"true\" && \"${force_export}\" != \"true\" ]]; then\n        :\n      else\n        logger -t \"${log_tag}\" \"Exporting pool ${pool} from ${label}\"\n        zfs unmount -r \"${pool}\" >/dev/null 2>&1 || true\n        if ! zpool export \"${pool}\" >/dev/null 2>&1; then\n          export_failed=true\n          logger -t \"${log_tag}\" \"Failed to export pool ${pool} from ${label}\"\n        fi\n      fi\n    fi\n    if [[ -n \"${observed_guid}\" ]]; then\n      usage_args+=(--pool-guid \"${observed_guid}\")\n    fi\n    if [[ \"${export_failed}\" == \"true\" && ${exit_code} -eq 0 ]]; then\n      exit_code=1\n    fi\n    if [[ ${exit_code} -eq 0 ]]; then\n      if ! write_state \"success\" 0 \"${index}\" \"${usage_args[@]}\"; then\n        exit_code=1\n      fi\n    else\n      write_state \"failed\" \"${exit_code}\" \"${index}\" \"${usage_args[@]}\" || true\n    fi\n    exit \"${exit_code}\"\n  }\n  trap finish EXIT\n  trap 'handle_signal 129' HUP\n  trap 'handle_signal 130' INT\n  trap 'handle_signal 143' TERM\n\n  if pool_imported; then\n    if ! pool_on_device \"${device}\"; then\n      logger -t \"${log_tag}\" \"Pool ${pool} is already imported from another device; cannot replicate to ${label}\"\n      exit 1\n    fi\n    pool_preexisting=true\n  else\n    local -a search_args=()\n    mapfile -t search_args < <(import_search_args \"${device}\")\n    if [[ -n \"${expected_guid}\" ]]; then\n      logger -t \"${log_tag}\" \"Importing pool ${pool} (guid ${expected_guid}) from ${label}\"\n      zpool import \"${search_args[@]}\" -o cachefile=none \"${expected_guid}\"\n    else\n      logger -t \"${log_tag}\" \"Importing pool ${pool} from ${label}\"\n      zpool import \"${search_args[@]}\" -o cachefile=none \"${pool}\"\n    fi\n  fi\n\n  observed_guid=$(zpool get -H -o value guid \"${pool}\" 2>/dev/null || echo \"\")\n  if [[ -n \"${expected_guid}\" && \"${observed_guid}\" != \"${expected_guid}\" ]]; then\n    logger -t \"${log_tag}\" \"Pool ${pool} on ${label} has guid ${observed_guid}, expected ${expected_guid}; refusing to replicate\"\n    exit 1\n  fi\n\n  keystatus=$(zfs get -H -o value keystatus \"${pool}\" 2>/dev/null || echo \"\")\n  if [[ \"${keystatus}\" != \"available\" ]]; then\n    logger -t \"${log_tag}\" \"Loading key for pool ${pool}\"\n    zfs load-key -L \"file://${key_path}\" \"${pool}\"\n  fi\n\n  mkdir -p \"${exportfs_lock_dir}\"\n\n  if [[ \"${set_canmount_off_for_readonly_recursive_targets}\" == \"true\" ]]; then\n    :\n    if zfs list -H -o name \"tank/owned\" >/dev/null 2>&1; then\n      job_canmount=$(zfs get -H -o value canmount \"tank/owned\" 2>/dev/null || echo \"\")\n      job_readonly=$(zfs get -H -o value readonly \"tank/owned\" 2>/dev/null || echo \"\")\n      if [[ \"${job_readonly}\" == \"on\" && \"${job_canmount}\" != \"off\" ]]; then\n        logger -t \"${log_tag}\" \"Setting canmount=off on readonly recursive target tank/owned\"\n        zfs set canmount=off \"tank/owned\"\n      fi\n    fi\n  fi\n\n  zfs mount -a\n\n  logger -t \"${log_tag}\" \"Applying snapshot retention: vault/owned (60 days)\"\n  \"${retention_script}\" --source \"tank/owned\" --target \"vault/owned\" --keep-days \"60\" --prefix \"autosnap_\" --prefix \"syncoid_\"\n\n  freeing_bytes=$(zpool get -Hp -o value freeing \"${pool}\" 2>/dev/null || echo 0)\n  if [[ \"${freeing_bytes}\" =~ ^[0-9]+$ && ${freeing_bytes} -gt 0 ]]; then\n    logger -t \"${log_tag}\" \"Waiting for ${freeing_bytes} bytes of asynchronous frees on ${pool}\"\n    zpool wait -t free \"${pool}\"\n  fi\n\n  if [[ -x \"/usr/local/bin/zfs-syncoid-abort-partial-receive.sh\" ]]; then\n    \"/usr/local/bin/zfs-syncoid-abort-partial-receive.sh\" \"tank/owned\" \"true\"\n  else\n    logger -t \"${log_tag}\" \"WARNING: abort-partial-receive script not found at /usr/local/bin/zfs-syncoid-abort-partial-receive.sh\"\n  fi\n  logger -t \"${log_tag}\" \"Running syncoid: fast/owned -> tank/owned\"\n  \"${syncoid_bin}\" --recursive --recvoptions=\"o readonly=on\" --force-delete --no-sync-snap --no-sync-snap fast/owned tank/owned\n  logger -t \"${log_tag}\" \"Running syncoid: fast/second -> tank/second\"\n  \"${syncoid_bin}\" --no-sync-snap --no-rollback fast/second tank/second\n\n  logger -t \"${log_tag}\" \"Recording incremental anchors for ${label}\"\n  \"${anchor_helper}\" \\\n    --state-path \"${anchor_state_path}\" \\\n    --device-name \"${device_names[$index]}\" \\\n    --rotation-device \"owned-a\" \\\n    --rotation-device \"owned-b\" \\\n    --job \"fast/owned\" \"tank/owned\" \"true\" \\\n    --job \"fast/second\" \"tank/second\" \"false\" \\\n    --prune-prefix \"autosnap_\" \\\n    --prune-prefix \"syncoid_\" \\\n    \n\n  logger -t \"${log_tag}\" \"USB replication complete for pool ${pool} on ${label}\"\n}\n\nif [[ -z \"${pool}\" || -z \"${device_paths[0]:-}\" ]]; then\n  logger -t \"${log_tag}\" \"Missing device or pool configuration; aborting.\"\n  exit 1\nfi\n\npresent=()\npresent_count=0\nfor index in \"${!device_paths[@]}\"; do\n  if [[ -e \"${device_paths[$index]}\" ]]; then\n    present+=(\"${index}\")\n    present_count=$((present_count + 1))\n  fi\ndone\n\nif [[ ${present_count} -eq 0 ]]; then\n  logger -t \"${log_tag}\" \"USB device $(IFS=,; echo \"${device_paths[*]}\") not present; skipping replication.\"\n  for index in \"${!device_paths[@]}\"; do\n    if [[ -n \"${device_names[$index]}\" ]]; then\n      write_state \"skipped_absent\" 0 \"${index}\" --device-only || true\n    fi\n  done\n  write_state \"skipped_absent\" 0 \"\"\n  exit 0\nfi\n\nfor index in \"${!device_paths[@]}\"; do\n  if [[ ! -e \"${device_paths[$index]}\" && -n \"${device_names[$index]}\" ]]; then\n    logger -t \"${log_tag}\" \"USB device $(device_label \"${index}\") not present; skipping it.\"\n    write_state \"skipped_absent\" 0 \"${index}\" --device-only || true\n  fi\ndone\n\n# A signal stops the loop after the running drive recorded its failure.\nparent_signal=0\ntrap 'parent_signal=129' HUP\ntrap 'parent_signal=130' INT\ntrap 'parent_signal=143' TERM\n\noverall_rc=0\nfor index in \"${present[@]}\"; do\n  # Run each drive in its own subshell, outside any conditional context so\n  # errexit (re-enabled inside) still applies, and so its EXIT trap exports\n  # that drive's pool before the next drive is imported.\n  set +e\n  ( set -e; replicate_device \"${index}\" )\n  rc=$?\n  set -e\n  if [[ ${rc} -ne 0 && ${overall_rc} -eq 0 ]]; then\n    overall_rc=${rc}\n  fi\n  if [[ ${parent_signal} -ne 0 ]]; then\n    exit \"${parent_signal}\"\n  fi\ndone\n\nif [[ ${overall_rc} -ne 0 ]]; then\n  exit \"${overall_rc}\"\nfi\n\nif [[ \"${spindown_enabled}\" == \"true\" ]]; then\n  if [[ -x \"${spindown_script}\" ]]; then\n    \"${spindown_script}\" || true\n  else\n    logger -t \"${log_tag}\" \"Spindown script not executable: ${spindown_script}\"\n  fi\nfi\n",
+    "zfs-usb-replication.timer": "[Unit]\nDescription=Run ZFS USB replication (ops-library)\n\n[Timer]\nOnCalendar=Sun 04:00\nRandomizedDelaySec=30m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+    "zfs-usb-spindown.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\npool=\"tank\"\nspindown_device_count=1\n\nspindown_devices=(\n  \"/dev/disk/by-id/owned\"\n)\n\nif [[ -n \"${pool}\" ]]; then\n  if command -v zpool >/dev/null 2>&1; then\n    stats=$(zpool iostat -H -p \"${pool}\" 1 2 | tail -n 1 || true)\n    if [[ -n \"${stats}\" ]]; then\n      read -r _pool _alloc _free read_ops write_ops read_bytes write_bytes <<<\"${stats}\"\n      if [[ \"${read_ops:-0}\" != \"0\" || \"${write_ops:-0}\" != \"0\" || \"${read_bytes:-0}\" != \"0\" || \"${write_bytes:-0}\" != \"0\" ]]; then\n        logger -t zfs-usb-spindown \"Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); skipping spindown.\"\n        exit 0\n      fi\n    fi\n  fi\nfi\n\nif [[ \"${spindown_device_count}\" -eq 0 ]]; then\n  logger -t zfs-usb-spindown \"No spindown devices configured; skipping.\"\n  exit 0\nfi\n\nfor dev in \"${spindown_devices[@]}\"; do\n  if [[ -b \"${dev}\" ]]; then\n    # Avoid redundant standby commands for already-sleeping disks.\n    if command -v smartctl >/dev/null 2>&1; then\n      smart_out=\"$(smartctl -n standby \"${dev}\" 2>&1 || true)\"\n      if grep -q \"STANDBY mode\" <<<\"${smart_out}\"; then\n        continue\n      fi\n    fi\n    if ! hdparm -y \"${dev}\" >/dev/null 2>&1; then\n      logger -t zfs-usb-spindown \"hdparm failed for ${dev}\"\n    fi\n  else\n    logger -t zfs-usb-spindown \"Device ${dev} not found; skipping.\"\n  fi\ndone\n",
+    "minio-offsite-alert.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nunit_name=\"${1:-unknown}\"\nsubject=\"[minio-offsite] ${unit_name} failed on $(hostname -s)\"\n\njournal_output=\"$(journalctl -u \"${unit_name}\" -n 200 --no-pager --output=short-iso || true)\"\n\nmail_body=$(cat <<MAIL\nMinIO offsite replication failure\nHost: $(hostname -f)\nUnit: ${unit_name}\nTime: $(date -Is)\n\nLast 200 journal lines:\n${journal_output}\nMAIL\n)\n\necho \"${mail_body}\" | mail -s \"${subject}\" \"root\"\n",
+    "minio-offsite-replication-failure@.service": "[Unit]\nDescription=Alert on MinIO offsite replication failure (%i)\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/minio-offsite-alert.sh \"%i\"\n",
+    "minio-offsite-replication.service": "[Unit]\nDescription=MinIO offsite archive replication (ops-library)\nAfter=network-online.target\nWants=network-online.target\nOnFailure=minio-offsite-replication-failure@%n.service\n\n[Service]\nType=oneshot\nTimeoutStartSec=4h\nExecStart=/usr/local/bin/minio-offsite-replication.sh\n",
+    "minio-offsite-replication.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nlog_tag=\"minio-offsite-replication\"\nsource_user=\"root\"\nsource_host=\"owned.example\"\nsource_path=\"/opt/backups/minio\"\ndestination_path=\"/tank/backups/minio\"\nssh_key_path=\"/root/.ssh/minio-offsite-replication-ed25519\"\nssh_known_hosts_path=\"/root/.ssh/known_hosts\"\nssh_connect_timeout=\"30\"\nstatus_file=\"/var/lib/minio-offsite-replication/status.json\"\nstatus_dir=\"/var/lib/minio-offsite-replication\"\nlatest_marker_file=\"/var/lib/minio-offsite-replication/latest-archive.marker\"\nrsync_delete=\"false\"\nrequire_archives=\"false\"\nspindown_enabled=\"true\"\nspindown_script_path=\"/usr/local/bin/owned-spindown.sh\"\n\nssh_bin=\"/usr/bin/ssh\"\nrsync_bin=\"/usr/bin/rsync\"\n\narchive_patterns=(\n  \"*.tar.gz\"\n  \"*.tar.zst\"\n)\n\nrsync_args=(\n  \"--archive\"\n  \"--hard-links\"\n  \"--numeric-ids\"\n  \"--partial-dir=.rsync-partial\"\n)\n\nrun_spindown() {\n  if [[ \"${spindown_enabled}\" != \"true\" ]]; then\n    return 0\n  fi\n  if [[ -x \"${spindown_script_path}\" ]]; then\n    logger -t \"${log_tag}\" \"Running post-sync spindown hook: ${spindown_script_path}\"\n    if ! \"${spindown_script_path}\"; then\n      logger -t \"${log_tag}\" \"Post-sync spindown hook failed: ${spindown_script_path}\"\n    fi\n  else\n    logger -t \"${log_tag}\" \"Spindown script not executable: ${spindown_script_path}\"\n  fi\n}\n\nif [[ -z \"${source_host}\" || -z \"${source_path}\" || -z \"${destination_path}\" ]]; then\n  logger -t \"${log_tag}\" \"Missing required source/destination configuration.\"\n  exit 1\nfi\n\nif [[ ! -f \"${ssh_key_path}\" ]]; then\n  logger -t \"${log_tag}\" \"SSH key file not found: ${ssh_key_path}\"\n  exit 1\nfi\n\nif [[ ! -f \"${ssh_known_hosts_path}\" ]]; then\n  logger -t \"${log_tag}\" \"known_hosts file not found: ${ssh_known_hosts_path}\"\n  exit 1\nfi\n\nmkdir -p \"${destination_path}\" \"${status_dir}\"\n\nssh_command=\"${ssh_bin} -i ${ssh_key_path} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_known_hosts_path} -o ConnectTimeout=${ssh_connect_timeout}\"\n\nfor pattern in \"${archive_patterns[@]}\"; do\n  rsync_args+=( \"--include=${pattern}\" )\ndone\nrsync_args+=( \"--exclude=*\" )\nif [[ \"${rsync_delete}\" == \"true\" ]]; then\n  rsync_args+=( \"--delete\" )\nfi\n\nlogger -t \"${log_tag}\" \"Syncing MinIO archives from ${source_host}:${source_path} to ${destination_path}\"\n\"${rsync_bin}\" \\\n  \"${rsync_args[@]}\" \\\n  -e \"${ssh_command}\" \\\n  \"${source_user}@${source_host}:${source_path%/}/\" \\\n  \"${destination_path%/}/\"\n\nfind_args=( \"${destination_path}\" -maxdepth 1 -type f \"(\" )\nfor idx in \"${!archive_patterns[@]}\"; do\n  if [[ \"${idx}\" -gt 0 ]]; then\n    find_args+=( \"-o\" )\n  fi\n  find_args+=( -name \"${archive_patterns[$idx]}\" )\ndone\nfind_args+=( \")\" -printf '%T@ %p\\n' )\n\nlatest_archive=\"$(\n  {\n    find \"${find_args[@]}\" || true\n  } \\\n    | awk '\n        BEGIN { max = -1; file = \"\" }\n        {\n          ts = $1\n          $1 = \"\"\n          sub(/^ /, \"\", $0)\n          if (ts > max) {\n            max = ts\n            file = $0\n          }\n        }\n        END {\n          if (file != \"\") {\n            print file\n          }\n        }\n      '\n)\"\n\ngenerated_epoch=\"$(date +%s)\"\nno_archives=\"false\"\n\nif [[ -z \"${latest_archive}\" || ! -f \"${latest_archive}\" ]]; then\n  no_archives=\"true\"\n  latest_archive=\"\"\n  latest_epoch=\"\"\n  latest_size_bytes=\"\"\n  rm -f \"${latest_marker_file}\"\n  logger -t \"${log_tag}\" \"No MinIO archive found after sync under ${destination_path}\"\nelse\n  latest_epoch=\"$(stat -c '%Y' \"${latest_archive}\")\"\n  latest_size_bytes=\"$(stat -c '%s' \"${latest_archive}\")\"\n  : > \"${latest_marker_file}\"\n  touch -d \"@${latest_epoch}\" \"${latest_marker_file}\"\nfi\n\nexport STATUS_FILE=\"${status_file}\"\nexport SOURCE_HOST=\"${source_host}\"\nexport SOURCE_PATH=\"${source_path}\"\nexport DESTINATION_PATH=\"${destination_path}\"\nexport LATEST_ARCHIVE=\"${latest_archive}\"\nexport LATEST_EPOCH=\"${latest_epoch}\"\nexport LATEST_SIZE_BYTES=\"${latest_size_bytes}\"\nexport GENERATED_EPOCH=\"${generated_epoch}\"\nexport NO_ARCHIVES=\"${no_archives}\"\n\npython3 <<'PY'\nimport json\nimport os\nfrom datetime import datetime, timezone\n\nstatus_file = os.environ[\"STATUS_FILE\"]\ngenerated_epoch = int(os.environ[\"GENERATED_EPOCH\"])\nlatest_epoch_raw = os.environ.get(\"LATEST_EPOCH\", \"\").strip()\nlatest_size_raw = os.environ.get(\"LATEST_SIZE_BYTES\", \"\").strip()\nlatest_epoch = int(latest_epoch_raw) if latest_epoch_raw else None\npayload = {\n    \"generated_at\": datetime.fromtimestamp(generated_epoch, tz=timezone.utc).isoformat(),\n    \"source_host\": os.environ[\"SOURCE_HOST\"],\n    \"source_path\": os.environ[\"SOURCE_PATH\"],\n    \"destination_path\": os.environ[\"DESTINATION_PATH\"],\n    \"latest_archive\": os.environ.get(\"LATEST_ARCHIVE\") or None,\n    \"latest_archive_mtime_epoch\": latest_epoch,\n    \"latest_archive_mtime_iso\": (\n        datetime.fromtimestamp(latest_epoch, tz=timezone.utc).isoformat() if latest_epoch is not None else None\n    ),\n    \"latest_archive_size_bytes\": int(latest_size_raw) if latest_size_raw else None,\n    \"no_archives\": os.environ.get(\"NO_ARCHIVES\", \"false\").lower() == \"true\",\n}\n\ntmp_path = f\"{status_file}.tmp\"\nwith open(tmp_path, \"w\", encoding=\"utf-8\") as handle:\n    json.dump(payload, handle, sort_keys=True)\n    handle.write(\"\\n\")\nos.replace(tmp_path, status_file)\nPY\n\nif [[ \"${no_archives}\" == \"true\" ]]; then\n  if [[ \"${require_archives}\" == \"true\" ]]; then\n    logger -t \"${log_tag}\" \"Offsite sync failed: no archive found and require_archives=true\"\n    exit 1\n  fi\n  run_spindown\n  logger -t \"${log_tag}\" \"Offsite sync completed without archives (require_archives=false)\"\n  exit 0\nfi\n\nrun_spindown\nlogger -t \"${log_tag}\" \"Offsite sync complete; latest archive=${latest_archive}\"\n",
+    "minio-offsite-replication.timer": "[Unit]\nDescription=Run MinIO offsite archive replication (ops-library)\n\n[Timer]\nOnCalendar=05:00\nRandomizedDelaySec=15m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+    "mail-offsite-alert.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nunit_name=\"${1:-unknown}\"\nsubject=\"[mail-offsite] ${unit_name} failed on $(hostname -s)\"\n\njournal_output=\"$(journalctl -u \"${unit_name}\" -n 200 --no-pager --output=short-iso || true)\"\n\nmail_body=$(cat <<MAIL\nMail offsite replication failure\nHost: $(hostname -f)\nUnit: ${unit_name}\nTime: $(date -Is)\n\nLast 200 journal lines:\n${journal_output}\nMAIL\n)\n\necho \"${mail_body}\" | mail -s \"${subject}\" \"root\"\n",
+    "mail-offsite-replication-failure@.service": "[Unit]\nDescription=Alert on mail offsite replication failure (%i)\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/mail-offsite-alert.sh \"%i\"\n",
+    "mail-offsite-replication.service": "[Unit]\nDescription=Mail offsite replication (ops-library)\nAfter=network-online.target\nWants=network-online.target\nOnFailure=mail-offsite-replication-failure@%n.service\n\n[Service]\nType=oneshot\nTimeoutStartSec=4h\nExecStart=/usr/local/bin/mail-offsite-replication.sh\n",
+    "mail-offsite-replication.sh": "#!/usr/bin/env bash\nset -euo pipefail\n\nlog_tag=\"mail-offsite-replication\"\nsource_user=\"root\"\nsource_host=\"owned.example\"\nsource_vmail_path=\"/mnt/cryptdata/vmail\"\nsource_stage_path=\"/mnt/cryptdata/mail-backup-stage\"\nsource_stage_command=\"/usr/local/sbin/mail-backup-stage.sh\"\ndestination_path=\"/tank/backups/mail\"\ndestination_vmail_subdir=\"vmail\"\ndestination_stage_subdir=\"stage\"\nssh_key_path=\"/root/.ssh/mail-offsite-replication-ed25519\"\nssh_known_hosts_path=\"/root/.ssh/known_hosts\"\nssh_connect_timeout=\"30\"\nstatus_file=\"/var/lib/mail-offsite-replication/status.json\"\nstatus_dir=\"/var/lib/mail-offsite-replication\"\nlatest_marker_file=\"/var/lib/mail-offsite-replication/latest-success.marker\"\nsnapshot_enabled=\"true\"\nsnapshot_dataset=\"tank/backups/mail\"\nsnapshot_prefix=\"mail-sync\"\nsnapshot_keep=\"30\"\nspindown_enabled=\"true\"\nspindown_script_path=\"/usr/local/bin/owned-spindown.sh\"\n\nssh_bin=\"/usr/bin/ssh\"\nrsync_bin=\"/usr/bin/rsync\"\nzfs_bin=\"/usr/sbin/zfs\"\n\ndestination_vmail_path=\"${destination_path%/}/${destination_vmail_subdir}\"\ndestination_stage_path=\"${destination_path%/}/${destination_stage_subdir}\"\n\nvmail_rsync_args=(\n  \"--archive\"\n  \"--hard-links\"\n  \"--numeric-ids\"\n  \"--partial-dir=.rsync-partial\"\n  \"--delete\"\n)\n\nstage_rsync_args=(\n  \"--archive\"\n  \"--numeric-ids\"\n)\n\nrun_spindown() {\n  if [[ \"${spindown_enabled}\" != \"true\" ]]; then\n    return 0\n  fi\n  if [[ -x \"${spindown_script_path}\" ]]; then\n    logger -t \"${log_tag}\" \"Running post-sync spindown hook: ${spindown_script_path}\"\n    if ! \"${spindown_script_path}\"; then\n      logger -t \"${log_tag}\" \"Post-sync spindown hook failed: ${spindown_script_path}\"\n    fi\n  else\n    logger -t \"${log_tag}\" \"Spindown script not executable: ${spindown_script_path}\"\n  fi\n}\n\nif [[ -z \"${source_host}\" || -z \"${source_vmail_path}\" || -z \"${source_stage_path}\" || -z \"${destination_path}\" ]]; then\n  logger -t \"${log_tag}\" \"Missing required source/destination configuration.\"\n  exit 1\nfi\n\nif [[ ! -f \"${ssh_key_path}\" ]]; then\n  logger -t \"${log_tag}\" \"SSH key file not found: ${ssh_key_path}\"\n  exit 1\nfi\n\nif [[ ! -f \"${ssh_known_hosts_path}\" ]]; then\n  logger -t \"${log_tag}\" \"known_hosts file not found: ${ssh_known_hosts_path}\"\n  exit 1\nfi\n\nmkdir -p \"${destination_vmail_path}\" \"${destination_stage_path}\" \"${status_dir}\"\n\nssh_command=\"${ssh_bin} -i ${ssh_key_path} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_known_hosts_path} -o ConnectTimeout=${ssh_connect_timeout}\"\n\nlogger -t \"${log_tag}\" \"Running remote pre-sync stage command on ${source_host}: ${source_stage_command}\"\n\"${ssh_bin}\" \\\n  -i \"${ssh_key_path}\" \\\n  -o BatchMode=yes \\\n  -o StrictHostKeyChecking=yes \\\n  -o UserKnownHostsFile=\"${ssh_known_hosts_path}\" \\\n  -o ConnectTimeout=\"${ssh_connect_timeout}\" \\\n  \"${source_user}@${source_host}\" \\\n  \"${source_stage_command}\"\n\nlogger -t \"${log_tag}\" \"Syncing vmail from ${source_host}:${source_vmail_path} to ${destination_vmail_path}\"\n\"${rsync_bin}\" \\\n  \"${vmail_rsync_args[@]}\" \\\n  -e \"${ssh_command}\" \\\n  \"${source_user}@${source_host}:${source_vmail_path%/}/\" \\\n  \"${destination_vmail_path%/}/\"\n\nlogger -t \"${log_tag}\" \"Syncing stage data from ${source_host}:${source_stage_path} to ${destination_stage_path}\"\n\"${rsync_bin}\" \\\n  \"${stage_rsync_args[@]}\" \\\n  -e \"${ssh_command}\" \\\n  \"${source_user}@${source_host}:${source_stage_path%/}/\" \\\n  \"${destination_stage_path%/}/\"\n\nsnapshot_name=\"\"\nif [[ \"${snapshot_enabled}\" == \"true\" ]]; then\n  snapshot_name=\"${snapshot_dataset}@${snapshot_prefix}-$(date -u +%Y-%m-%dT%H-%M-%SZ)\"\n  logger -t \"${log_tag}\" \"Creating snapshot ${snapshot_name}\"\n  \"${zfs_bin}\" snapshot \"${snapshot_name}\"\n\n  if [[ \"${snapshot_keep}\" -gt 0 ]]; then\n    while IFS= read -r old_snapshot; do\n      [[ -n \"${old_snapshot}\" ]] || continue\n      \"${zfs_bin}\" destroy \"${old_snapshot}\"\n    done < <(\n      \"${zfs_bin}\" list -H -t snapshot -o name -s creation -r \"${snapshot_dataset}\" \\\n        | grep \"@${snapshot_prefix}-\" \\\n        | head -n -\"${snapshot_keep}\" || true\n    )\n  fi\nfi\n\nlatest_mail_file=\"$(\n  {\n    find \"${destination_vmail_path}\" -type f -printf '%T@ %p\\n' || true\n  } | awk '\n    BEGIN { max = -1; file = \"\" }\n    {\n      ts = $1\n      $1 = \"\"\n      sub(/^ /, \"\", $0)\n      if (ts > max) {\n        max = ts\n        file = $0\n      }\n    }\n    END {\n      if (file != \"\") {\n        print file\n      }\n    }\n  '\n)\"\nlatest_mail_epoch=\"\"\nif [[ -n \"${latest_mail_file}\" && -f \"${latest_mail_file}\" ]]; then\n  latest_mail_epoch=\"$(stat -c '%Y' \"${latest_mail_file}\")\"\nfi\n\nvmail_size_bytes=\"$(du -sb \"${destination_vmail_path}\" 2>/dev/null | awk '{print $1}' || true)\"\nif [[ -z \"${vmail_size_bytes}\" ]]; then\n  vmail_size_bytes=\"0\"\nfi\n\nstage_manifest_path=\"${destination_stage_path%/}/manifest.yml\"\nstage_manifest_timestamp=\"\"\nif [[ -f \"${stage_manifest_path}\" ]]; then\n  stage_manifest_timestamp=\"$(awk -F': ' '/^timestamp:/ {print $2}' \"${stage_manifest_path}\" | tail -n 1 || true)\"\nfi\n\nsync_epoch=\"$(date +%s)\"\n: > \"${latest_marker_file}\"\ntouch -d \"@${sync_epoch}\" \"${latest_marker_file}\"\n\nexport STATUS_FILE=\"${status_file}\"\nexport SOURCE_HOST=\"${source_host}\"\nexport SOURCE_VMAIL_PATH=\"${source_vmail_path}\"\nexport SOURCE_STAGE_PATH=\"${source_stage_path}\"\nexport DESTINATION_PATH=\"${destination_path}\"\nexport DESTINATION_VMAIL_PATH=\"${destination_vmail_path}\"\nexport DESTINATION_STAGE_PATH=\"${destination_stage_path}\"\nexport LATEST_MAIL_FILE=\"${latest_mail_file}\"\nexport LATEST_MAIL_EPOCH=\"${latest_mail_epoch}\"\nexport VMAIL_SIZE_BYTES=\"${vmail_size_bytes}\"\nexport STAGE_MANIFEST_TIMESTAMP=\"${stage_manifest_timestamp}\"\nexport SNAPSHOT_NAME=\"${snapshot_name}\"\nexport GENERATED_EPOCH=\"${sync_epoch}\"\n\npython3 <<'PY'\nimport json\nimport os\nfrom datetime import datetime, timezone\n\nstatus_file = os.environ[\"STATUS_FILE\"]\ngenerated_epoch = int(os.environ[\"GENERATED_EPOCH\"])\nlatest_epoch_raw = (os.environ.get(\"LATEST_MAIL_EPOCH\") or \"\").strip()\nlatest_epoch = int(latest_epoch_raw) if latest_epoch_raw else None\n\npayload = {\n    \"generated_at\": datetime.fromtimestamp(generated_epoch, tz=timezone.utc).isoformat(),\n    \"source_host\": os.environ[\"SOURCE_HOST\"],\n    \"source_vmail_path\": os.environ[\"SOURCE_VMAIL_PATH\"],\n    \"source_stage_path\": os.environ[\"SOURCE_STAGE_PATH\"],\n    \"destination_path\": os.environ[\"DESTINATION_PATH\"],\n    \"destination_vmail_path\": os.environ[\"DESTINATION_VMAIL_PATH\"],\n    \"destination_stage_path\": os.environ[\"DESTINATION_STAGE_PATH\"],\n    \"latest_mail_file\": os.environ.get(\"LATEST_MAIL_FILE\") or None,\n    \"latest_mail_file_mtime_epoch\": latest_epoch,\n    \"latest_mail_file_mtime_iso\": (\n        datetime.fromtimestamp(latest_epoch, tz=timezone.utc).isoformat() if latest_epoch is not None else None\n    ),\n    \"vmail_size_bytes\": int(os.environ.get(\"VMAIL_SIZE_BYTES\") or 0),\n    \"stage_manifest_timestamp\": os.environ.get(\"STAGE_MANIFEST_TIMESTAMP\") or None,\n    \"snapshot\": os.environ.get(\"SNAPSHOT_NAME\") or None,\n}\n\ntmp_path = f\"{status_file}.tmp\"\nwith open(tmp_path, \"w\", encoding=\"utf-8\") as handle:\n    json.dump(payload, handle, sort_keys=True)\n    handle.write(\"\\n\")\nos.replace(tmp_path, status_file)\nPY\n\nrun_spindown\nlogger -t \"${log_tag}\" \"Mail offsite sync complete; snapshot=${snapshot_name:-none}\"\n",
+    "mail-offsite-replication.timer": "[Unit]\nDescription=Run mail offsite replication (ops-library)\n\n[Timer]\nOnCalendar=04:00\nRandomizedDelaySec=15m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n"
+  },
+  "source_sha256": {
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-abort-partial-receive.sh.j2": "e55c94de977bf7e8ddcb7ffbfcf0f10591fe9dabf0b3719543d1fa086587b63f",
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-alert.sh.j2": "96f578a16d017c326b90e01ac88393ab551e64784deb235db92c0d5ebcf6d349",
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-prune-conflicts.sh.j2": "28828c75786f2cd8b2de4ed58417487a1fbd03f453501e32ffa82e28d3e1bccf",
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-replication-failure@.service.j2": "a4ab6cf3ab2e204116d0e8d5cf35a5fc614441bf051809f8e23142e582546984",
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-replication.service.j2": "2d0ad10dfa4b825264fbb23032a3fe0222beb054d60d7dd39c839b0bc21ebacf",
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-replication.timer.j2": "2034ad1ef89ed20dbc034ed6abaf5e8d673cce39f3454d1bda1677fc3c0007ca",
+    "roles/zfs_syncoid_replication/templates/zfs-syncoid-spindown.sh.j2": "23a2a33f35d884c9ca5324f1817b5e17f67ef6fa26af44d3509fd5151b9aa5c9",
+    "roles/zfs_usb_replication/templates/zfs-usb-alert.sh.j2": "24a16538a46a6966843d1553860af6ee580cc9b94225a1b73ae2f0610f729a57",
+    "roles/zfs_usb_replication/templates/zfs-usb-replication-failure@.service.j2": "e1c2ff56a537d4da51c7d608a17d5c8fb8518964ab83a32713bf87f1a2d8cca7",
+    "roles/zfs_usb_replication/templates/zfs-usb-replication.service.j2": "48f4d547ff0a21f3a9fed13b0c469a5430dd627cc426c39f43019ec30014ef40",
+    "roles/zfs_usb_replication/templates/zfs-usb-replication.sh.j2": "681d808f68c448e68eb8092f4a67142ef88170769a0c650976e850bf1163f518",
+    "roles/zfs_usb_replication/templates/zfs-usb-replication.timer.j2": "352312ae549e212716de13c8ec4c1edde02b0d38a9104f86b00d684cfe750334",
+    "roles/zfs_usb_replication/templates/zfs-usb-spindown.sh.j2": "a6b921ab7c10e561060914c017398cd6ce5eaa819ddbfd7bf32279f643f9415e",
+    "roles/minio_offsite_replication/templates/minio-offsite-alert.sh.j2": "6022fff4f02bdcaba69d5b8c141fe19b941c552982c20c651a5371d0c2bf3211",
+    "roles/minio_offsite_replication/templates/minio-offsite-replication-failure@.service.j2": "475f604fae9e8f63b4728fd0ffb43a28c288886d676b873d4edc50527f50a083",
+    "roles/minio_offsite_replication/templates/minio-offsite-replication.service.j2": "2d75a21f3764b87edd0c645a9cebdc2647169eb4b0c1a6be3a65c062812e7ec3",
+    "roles/minio_offsite_replication/templates/minio-offsite-replication.sh.j2": "1d87c0baefe9e097cf7615323b41154d99bc81a589f014f5071b7947ebfade10",
+    "roles/minio_offsite_replication/templates/minio-offsite-replication.timer.j2": "8a4044040085c0a1bf6d18cb286ce7503c6b346d1e5b6c60ced6c5f3ededf101",
+    "roles/mail_offsite_replication/templates/mail-offsite-alert.sh.j2": "6b5cb3a5a30360dbece0a524d306039a8a5de608f16d99c6da746799f3ccf30f",
+    "roles/mail_offsite_replication/templates/mail-offsite-replication-failure@.service.j2": "dae5e1bd30c4230a7db7afc36fe0401e41ce8ccae9aebcb684bceafd53262245",
+    "roles/mail_offsite_replication/templates/mail-offsite-replication.service.j2": "05c2d3ec16c83976e4a67e356af7b0995a04f9ac2ec30529df8c1788e3ae83ed",
+    "roles/mail_offsite_replication/templates/mail-offsite-replication.sh.j2": "3ea834b475b0c2d0d5727c47a147611f57511977439e39d4c51c84178be4435a",
+    "roles/mail_offsite_replication/templates/mail-offsite-replication.timer.j2": "a1fb0409ccb773da9e3272e0c514e29119f13775e5eb05eb917f2b0f95bbec32"
+  }
+}

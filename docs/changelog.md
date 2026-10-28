@@ -1842,3 +1842,14 @@
   directory no longer makes every later deploy resync and restart. It also
   passes `ssh_key`, `ssh_known_hosts_file` and `ssh_strict_host_key_checking`
   from host data to rsync's ssh.
+
+### ZFS storage and scheduled backup APIs
+
+- Add typed pool/dataset bundles with native desired-key validation before key
+  publication, original property/boot lifecycle policy and ordered dependencies.
+- Add explicit local/USB/archive/mail replication configuration APIs using the
+  original policy programs, RAM-only private-file equality and fresh peer keyscan.
+- Add the original delegated mail/MinIO source and restore-access preparation;
+  configuration deploys do not explicitly execute backups or storage maintenance.
+- Qualification is in progress; owned file-vdev/component evidence does not attest
+  production storage, physical USB/spindown or complete lifecycle parity.
