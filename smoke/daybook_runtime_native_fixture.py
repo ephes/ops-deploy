@@ -28,6 +28,7 @@ from ops_deploy.services.daybook_operations_runtime import (
     DaybookRuntimeConfig,
     RuntimeStopPolicy,
     RuntimeStopWindow,
+    stage_daybook_runtime,
     stop_daybook_runtime,
 )
 from ops_deploy.services.daybook_operations_runtime.inspect import SCRIPT, observation_payload, verify_daybook_runtime
@@ -212,6 +213,12 @@ def main() -> None:
         (controller / "src/daybook").mkdir(parents=True)
         (controller / "src/daybook/__init__.py").write_text("")
         (controller / "src/daybook/cli.py").write_text(APP)
+        (controller / "src/daybook/operations_runtime.py").write_text(
+            "import json,pathlib\nclass Config:\n @classmethod\n def load(cls,path,owner):\n"
+            "  value=json.loads(pathlib.Path(path).read_text())\n"
+            "  assert owner=='user' and value['schema']==5 and value['enabled'] is False\n"
+            "  return value\n"
+        )
         (controller / ".gitignore").write_text(".venv/\n__pycache__/\n")
         (controller / ".python-version").write_text("3.14.7\n")
         (controller / "pyproject.toml").write_text(
@@ -583,6 +590,48 @@ def main() -> None:
         assert len(repeat.mutating_changed_ops) == 1
         assert snapshot(protected) == before
         assert capability_present()
+        # Disabled-first configuration staging is a separate managed stage.
+        # It cannot activate/install the live label or update this exact code.
+        stage_cfg = cfg.model_copy(update={"action": "replace", "confirmed": True})
+        stage_protected = [path for path in protected if path != root / "operations.json"]
+        stage_before = snapshot(stage_protected)
+        staged = run_deploy_ssh(
+            stage_daybook_runtime,
+            stage_cfg,
+            token,
+            source,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert staged.succeeded, str(staged.error)
+        assert len(staged.mutating_changed_ops) == 1
+        assert json.loads((root / "operations.json").read_text())["enabled"] is False
+        assert job_pid(service) is None
+        assert capability_present()
+        assert snapshot(stage_protected) == stage_before
+        staged_before = snapshot(protected)
+        staged_repeat = run_deploy_ssh(
+            stage_daybook_runtime,
+            stage_cfg,
+            token,
+            source,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert staged_repeat.succeeded, str(staged_repeat.error)
+        assert staged_repeat.mutating_changed_ops == []
+        assert snapshot(protected) == staged_before
+        assert job_pid(service) is None
+        assert capability_present()
+        owned.report["disabled_replacement_first_managed_ops"] = 1
+        owned.report["disabled_replacement_repeat_managed_ops"] = 0
+        owned.report["disabled_replacement_no_activation_source_and_other_resources_equal"] = True
+        # Deliberate fresh fault setup below restores only this synthetic profile
+        # to enabled, exactly as initial fixture setup; not a production cutover.
+        (root / "operations.json").write_text(
+            render_resource(cfg.model_copy(update={"action": "cutover"}), "policy.json.j2")
+        )
+        before = snapshot(protected)
         # Fresh owned setup for genuine post-TERM timeout/restoration proof.
         # This is fixture setup, never a repair/restart on inventory.
         (root / "native-mode").write_text("ignore-term")

@@ -1,6 +1,7 @@
 """Protected Daybook runtime contracts and bounded host actions."""
 
 from .config import DaybookRuntimeConfig, RuntimeKind, RuntimeStopPolicy, RuntimeStopWindow, RuntimeWorkers
+from .stage import stage_daybook_runtime
 from .stop import stop_daybook_runtime
 
 __all__ = [
@@ -9,5 +10,6 @@ __all__ = [
     "RuntimeStopPolicy",
     "RuntimeStopWindow",
     "RuntimeWorkers",
+    "stage_daybook_runtime",
     "stop_daybook_runtime",
 ]

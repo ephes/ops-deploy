@@ -157,3 +157,37 @@ assigns only newly created config/store resources; recursively chowning the
 synchronized code and environment changes their metadata and causes a real uv
 outdated-environment result. The failed native attempts are retained; the
 production locked-environment guard is unchanged.
+
+
+`stage_daybook_runtime` implements the original disabled-first `install` and
+quiescent `replace` configuration stages after a separate guarded code install.
+It requires exact declared code/lock/interpreter state before writing. An enabled
+profile refuses `install`; replacement requires the label and serving process
+absent and all old store evidence drained, preserving API identity, kinds and
+store continuity. It writes only the disabled policy, private store/credential
+and staged plist. It never installs the live LaunchAgent, updates source or starts
+anything. Cutover, source fanout and normal dispatcher wiring remain separate.
+
+Staging status compares metadata/resources without application imports. Its
+verification design also retains original installed `Config.load` validation,
+including on current repeats after a rejected first, so a matching file cannot
+hide a client rejection. The constructor-only verification boundary is being
+qualified separately from executor status/Journal behavior; no inventory use of
+this new staging API is qualified or authorized by its source implementation.
+
+The proposed constructor-only repeat verification executes `Config.load` through
+the direct metadata account/environment/cwd path with `-I -B`, without login
+profiles, the application CLI, `Client.call` or Journal construction. The changed
+staging operation retains the original login-context validation separately; both
+suppress bytecode writes. This is an explicit new verification contract, pending
+whole-slice source/owned proof review before inventory use. TLS context setup can
+read native trust resources; no whole-host zero-I/O claim is made.
+
+Staging writes use descriptor-relative traversal, exclusive temporary files and
+atomic replacement without following directory links. Missing ancestors of the
+declared private store/credential directories are explicit private preparation;
+existing ancestors remain unchanged. Other resource parents must exist before
+any mutation. Legacy pre-schema-three delivery slots are read only during managed
+replacement to prove their original idle phase, never by a dry-run/status fact;
+ordinary current-schema verification counts directory entries without opening
+record bodies.

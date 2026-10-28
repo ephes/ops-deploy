@@ -158,6 +158,25 @@ class NativeProbes:
         return synced.returncode == 0
 
 
+def code_current(data, probes):
+    """Exact code/lock/interpreter environment, independent of profile activation."""
+    expected = data["source_hashes"]
+    if not expected or len(expected) > 2048:
+        raise ObservationError("runtime_observer_source_manifest_invalid")
+    current = probes.git("rev-parse", "HEAD").decode().strip() == data["revision"]
+    current = not probes.git("status", "--porcelain", "--untracked-files=all").strip() and current
+    root = pathlib.Path(data["checkout"])
+    for relative, digest in expected.items():
+        if (
+            pathlib.PurePosixPath(relative).is_absolute() or ".." in pathlib.PurePosixPath(relative).parts
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            raise ObservationError("runtime_observer_source_manifest_invalid")
+        result = safe_file(root / relative)
+        current = result is not None and hashlib.sha256(result[1]).hexdigest() == digest and current
+    return probes.runtime_current() and current
+
+
 def observe(data, probes=None):
     probes = probes or NativeProbes(data)
     profile_file = safe_file(data["policy"])
@@ -185,21 +204,7 @@ def observe(data, probes=None):
         return {"installed": True, "enabled": False, "source_current": False, "resources_current": False,
                 "healthy": False, "keeper_pid": None, "schema": profile["schema"], "workers": profile["workers"],
                 "halt_entries": None, "delivery_entries": None}
-    expected = data["source_hashes"]
-    if not expected or len(expected) > 2048:
-        raise ObservationError("runtime_observer_source_manifest_invalid")
-    current = probes.git("rev-parse", "HEAD").decode().strip() == data["revision"]
-    current = not probes.git("status", "--porcelain", "--untracked-files=all").strip() and current
-    root = pathlib.Path(data["checkout"])
-    for relative, digest in expected.items():
-        if (
-            pathlib.PurePosixPath(relative).is_absolute() or ".." in pathlib.PurePosixPath(relative).parts
-            or not re.fullmatch(r"[0-9a-f]{64}", digest)
-        ):
-            raise ObservationError("runtime_observer_source_manifest_invalid")
-        result = safe_file(root / relative)
-        current = result is not None and hashlib.sha256(result[1]).hexdigest() == digest and current
-    current = probes.runtime_current() and current
+    current = code_current(data, probes)
     if data["policy"] not in {resource["path"] for resource in data["resources"]}:
         raise ObservationError("runtime_observer_policy_resource_missing")
     resources = []

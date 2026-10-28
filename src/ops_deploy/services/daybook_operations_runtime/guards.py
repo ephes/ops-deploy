@@ -126,6 +126,7 @@ def require_profile_transition(
     label_loaded: bool,
     serving: bool,
     journals: Sequence[JournalEvidence] = (),
+    check_journals: bool = True,
 ) -> None:
     """Preserve original profile identity, store, kinds and replace drain proof."""
     if cfg.action == "rollback" and closed_out:
@@ -168,6 +169,8 @@ def require_profile_transition(
         return
     if label_loaded or serving:
         raise RuntimeGuardError("runtime_replace_requires_quiescence")
+    if not check_journals:
+        return
     if {journal.path for journal in journals} != set(paths) or len(journals) != len(set(paths)):
         raise RuntimeGuardError("runtime_journal_evidence_missing")
     for journal in journals:

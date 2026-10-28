@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add disabled-first Daybook runtime staging with original enabled-install,
+  quiescence, profile identity and drained-store guards; no source update or activation.
+
 - Isolate managed Daybook executor-status JSON from login-profile output while
   preserving the original login context, application effects and exit status.
 
