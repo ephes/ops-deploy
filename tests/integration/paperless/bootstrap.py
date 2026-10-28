@@ -12,6 +12,7 @@ from typing import Any
 
 SOURCES = Path("/etc/apt/sources.list.d/postgresql.sources")
 LISTS = Path("/var/lib/apt/lists")
+SSH_RUNTIME = Path("/run/sshd")
 MISSING = "[ERROR]: Task failed: Module failed: No package matching 'postgresql-17' is available"
 
 
@@ -92,3 +93,47 @@ def retain_update(harness: Any, output: str, result: dict[str, Any]) -> None:
     # Preserve the bounded prefix even on overflow; the result records the limit.
     (harness.EVIDENCE / "original-bootstrap-cache-update.log").write_bytes(body[:limit])
     assert not truncated, "owned apt output exceeded bound; no retry"
+
+
+def ssh_state(harness: Any) -> dict[str, Any]:
+    result = harness.command("systemctl", "show", "ssh.service", "--property=ActiveState,SubState,MainPID", timeout=30)
+    fields = dict(line.split("=", 1) for line in result.stdout.splitlines())
+    assert set(fields) == {"ActiveState", "SubState", "MainPID"}
+    try:
+        info = SSH_RUNTIME.lstat()
+    except FileNotFoundError:
+        directory = None
+    else:
+        directory = {
+            "mode": stat.S_IMODE(info.st_mode),
+            "uid": info.st_uid,
+            "gid": info.st_gid,
+            "is_directory": stat.S_ISDIR(info.st_mode),
+        }
+    return {"unit": fields, "runtime_directory": directory}
+
+
+def prepare_ssh(harness: Any) -> None:
+    before = ssh_state(harness)
+    harness.write(
+        "owned-ssh-prerequisite-started.json", {"before": before, "completion_receipt": "owned-ssh-prerequisite.json"}
+    )
+    result = harness.command("systemctl", "start", "ssh.service", timeout=30, check=False)
+    harness.write("owned-ssh-start-result.json", {"exit": result.returncode})
+    assert result.returncode == 0, "owned SSH prerequisite failed"
+    after = ssh_state(harness)
+    harness.write(
+        "owned-ssh-prerequisite.json",
+        {
+            "classification": (
+                "owned guest SSH prerequisite before original-role baseline; not an original deployment effect"
+            ),
+            "before": before,
+            "after": after,
+        },
+    )
+    assert after["unit"]["ActiveState"] == "active"
+    assert after["unit"]["SubState"] == "running"
+    assert after["unit"]["MainPID"].isdigit()
+    assert int(after["unit"]["MainPID"]) > 0
+    assert after["runtime_directory"] == {"mode": 0o755, "uid": 0, "gid": 0, "is_directory": True}

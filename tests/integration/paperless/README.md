@@ -105,3 +105,19 @@ permission to repair inventory apt state. The first failure remains separate.
 The cache-refresh attempt is recorded before execution; timeout and bounded
 partial output retain a separate result, and output overflow retains its actual
 exit and a marked20MiB prefix. Neither case permits the original-role retry.
+
+Run40734868340 confirmed the cache issue: the same public PGDG source initially
+had no downloaded lists or package candidate; the explicit refresh returned0,
+added lists and exposed PostgreSQL17, which the original retry installed. Both
+retries then stopped at `sshd -t` because `/run/sshd` was absent (76ok/21changed/
+1failed). Ubuntu's socket activation had not started SSH in the fresh container.
+All initial/retry failures, physical deltas, cache diagnostics and exits remain;
+run1/collection0/cleanup0, no Paperless pyinfra phase.
+
+The fixture now starts the actual owned `ssh.service` before the original-role
+baseline, recording its prior/actual state, PID and runtime-directory metadata.
+This models the running SSH prerequisite of the existing host and enables the
+already planned synthetic SFTP test. It does not manually create `/run/sshd`,
+change host authentication/settings, or publish ports. This prepared guest
+baseline and the separate cache recovery are not pristine original bootstrap
+success claims.

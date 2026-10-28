@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -149,3 +150,75 @@ def test_oversized_update_keeps_exit_and_bounded_prefix_before_refusal(tmp_path:
     assert result["exit"] == 100
     assert result["output_truncated"] is True
     assert (tmp_path / "original-bootstrap-cache-update.log").stat().st_size == 20 * 1024 * 1024
+
+
+@pytest.mark.parametrize("start_exit", [0, 1])
+def test_owned_ssh_prerequisite_uses_service_and_records_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, start_exit: int
+) -> None:
+    before = {"unit": {"ActiveState": "inactive", "SubState": "dead", "MainPID": "0"}, "runtime_directory": None}
+    after: dict[str, dict[str, str | int | bool]] = {
+        "unit": {"ActiveState": "active", "SubState": "running", "MainPID": "123"},
+        "runtime_directory": {"mode": 0o755, "uid": 0, "gid": 0, "is_directory": True},
+    }
+    h = fixture(tmp_path, "")
+    h.command.return_value = subprocess.CompletedProcess([], start_exit, "", "")
+    probe = Mock(side_effect=[before, after])
+    monkeypatch.setattr(bootstrap, "ssh_state", probe)
+    if start_exit:
+        with pytest.raises(AssertionError, match="SSH prerequisite failed"):
+            bootstrap.prepare_ssh(h)
+    else:
+        bootstrap.prepare_ssh(h)
+    h.command.assert_called_once_with("systemctl", "start", "ssh.service", timeout=30, check=False)
+    assert json.loads((tmp_path / "owned-ssh-start-result.json").read_text())["exit"] == start_exit
+    assert (tmp_path / "owned-ssh-prerequisite-started.json").is_file()
+    assert (tmp_path / "owned-ssh-prerequisite.json").exists() is (start_exit == 0)
+    assert probe.call_count == (1 if start_exit else 2)
+
+
+def test_ssh_state_reads_only_declared_unit_and_runtime_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / "sshd"
+    monkeypatch.setattr(bootstrap, "SSH_RUNTIME", directory)
+    h = SimpleNamespace(
+        command=Mock(
+            return_value=subprocess.CompletedProcess([], 0, "MainPID=0\nActiveState=inactive\nSubState=dead\n", "")
+        )
+    )
+    assert bootstrap.ssh_state(h)["runtime_directory"] is None
+    directory.mkdir(mode=0o755)
+    value = bootstrap.ssh_state(h)
+    assert value["runtime_directory"]["is_directory"] is True
+    assert value["runtime_directory"]["mode"] == 0o755
+    assert value["runtime_directory"]["uid"] == os.getuid()
+    assert value["runtime_directory"]["gid"] == os.getgid()
+    target = tmp_path / "actual-directory"
+    directory.rename(target)
+    directory.symlink_to(target, target_is_directory=True)
+    assert bootstrap.ssh_state(h)["runtime_directory"]["is_directory"] is False
+    h.command.assert_called_with(
+        "systemctl", "show", "ssh.service", "--property=ActiveState,SubState,MainPID", timeout=30
+    )
+
+
+@pytest.mark.parametrize("bad", ["inactive", "zero-pid", "symlink-directory"])
+def test_successful_start_command_does_not_mask_bad_ssh_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    after: dict[str, dict[str, str | int | bool]] = {
+        "unit": {"ActiveState": "active", "SubState": "running", "MainPID": "123"},
+        "runtime_directory": {"mode": 0o755, "uid": 0, "gid": 0, "is_directory": True},
+    }
+    if bad == "inactive":
+        after["unit"]["ActiveState"] = "inactive"
+    elif bad == "zero-pid":
+        after["unit"]["MainPID"] = "0"
+    else:
+        after["runtime_directory"]["is_directory"] = False
+    h = fixture(tmp_path, "")
+    monkeypatch.setattr(bootstrap, "ssh_state", Mock(side_effect=[{"before": "owned"}, after]))
+    with pytest.raises(AssertionError):
+        bootstrap.prepare_ssh(h)
+    assert (tmp_path / "owned-ssh-start-result.json").is_file()
