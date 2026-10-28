@@ -1,0 +1,29 @@
+{
+  "minio_user": "fixtureminio",
+  "minio_group": "fixtureminio",
+  "minio_home": "/srv/minio",
+  "minio_data_dirs": [
+    "/srv/minio/data"
+  ],
+  "minio_config_dir": "/etc/fixture-minio",
+  "minio_certs_dir": "/etc/fixture-minio/certs",
+  "minio_env_file": "/etc/default/fixture-minio",
+  "minio_api_port": 19001,
+  "minio_console_port": 19002,
+  "minio_tls_enable": true,
+  "minio_sse_enabled": true,
+  "minio_systemd_memory_max": "2G",
+  "minio_systemd_limit_nofile": 32768,
+  "minio_systemd_tasks_max": "4096",
+  "minio_traefik_host": "minio.example.test",
+  "minio_traefik_api_host": "objects.example.test",
+  "minio_traefik_cert_resolver": "letsencrypt",
+  "minio_internal_ip_ranges": [
+    "192.0.2.0/24",
+    "2001:db8::/32"
+  ],
+  "minio_root_user": "fixture-root",
+  "minio_root_password": "fixture-root-value",
+  "minio_sse_master_key": "fixture-key:synthetic-only",
+  "minio_console_basic_auth_password_hash": "$2y$05$abcdefghijklmnopqrstuu012345678901234567890123456789012"
+}

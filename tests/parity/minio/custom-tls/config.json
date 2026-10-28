@@ -1,0 +1,25 @@
+{
+  "user": "fixtureminio",
+  "group": "fixtureminio",
+  "home": "/srv/minio",
+  "data_dirs": [
+    "/srv/minio/data"
+  ],
+  "config_dir": "/etc/fixture-minio",
+  "certs_dir": "/etc/fixture-minio/certs",
+  "env_file": "/etc/default/fixture-minio",
+  "api_port": 19001,
+  "console_port": 19002,
+  "tls_enable": true,
+  "sse_enabled": true,
+  "systemd_memory_max": "2G",
+  "systemd_limit_nofile": 32768,
+  "systemd_tasks_max": "4096",
+  "traefik_host": "minio.example.test",
+  "traefik_api_host": "objects.example.test",
+  "traefik_cert_resolver": "letsencrypt",
+  "internal_ip_ranges": [
+    "192.0.2.0/24",
+    "2001:db8::/32"
+  ]
+}

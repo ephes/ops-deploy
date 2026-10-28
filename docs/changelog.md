@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Prepare a typed MinIO deployment with unchanged role templates and pinned
+  server/client artifacts. Compare the owned alias, buckets, signed user
+  credentials, policies and attachments before writes; refuse disabled users,
+  immutable policy drift and unknown client failures. Manage data-root metadata
+  without recursive object chmod/chown. Native and inventory qualification remain
+  pending; emulated CLI/helper evidence proves mechanisms only.
+
 - Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
   generic share APIs from ops-library cf3a0c74. Preserve existing credentials and
   disabled accounts with native add-only admission; retain restart debt across
