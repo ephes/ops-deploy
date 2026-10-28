@@ -536,3 +536,7 @@ At the API level, create the backup with `TailscaleBackupConfig(prefix=<inventor
 so the strict restore host prefix matches `TailscaleManualRestoreConfig(inventory_name=...)`.
 The `just backup` and `just restore-tailscale-manual` examples above are recipes in
 the external **ops-control** consumer, not this package’s justfile.
+
+The root `ops_deploy.infra` namespace resolves its Tailscale exports when requested,
+so an existing Fractal monitoring component can initialize first without a circular
+model import. Direct Tailscale subpackage APIs and typed root imports are unchanged.
