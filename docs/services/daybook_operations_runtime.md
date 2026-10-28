@@ -220,3 +220,14 @@ disposable fixture's isolated root; the protected objects themselves remain
 strict. Root uv is never invoked against a tree that failed this check. Binary
 hashes compare only the declared package executables in memory. Unsafe files or
 local metadata/read failures remain noncurrent, with no repair or execution.
+
+The metadata check recognizes only uv's two original bookkeeping lock leaves:
+`.venv/.lock` and the managed Python install directory's `.lock`. uv0.13.6
+creates these inert flock files mode0666. The pinned [Unix lock implementation](https://github.com/astral-sh/uv/blob/329bf9448afd9f9088d14a4d57fbc61eb454f117/crates/uv-fs/src/locked_file.rs) opens/locks these files and does not execute their contents. They may retain that mode only as
+root-owned regular single-link nonexecuting files under the same strict
+ancestry; their bodies are never read or hashed by the observer. No chmod or
+new lock policy is applied. Other writable objects, including another `.lock`
+name, code/startup files and `pyvenv.cfg`, still refuse before root uv execution.
+The separate native proof records the actual uv version and both exact metadata
+rows; an older whole-tree assumption that rejected these normal locks is retained
+as failed qualification evidence.

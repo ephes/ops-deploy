@@ -301,3 +301,58 @@ def test_root_metadata_tree_is_checked_without_file_body_reads(
 
     monkeypatch.setattr(module["os"], "open", forbidden_open)
     assert instance.root_metadata_current() is (fault == "none")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "none",
+        "lock-owner",
+        "lock-executable",
+        "lock-link",
+        "lock-hardlink",
+        "lock-directory",
+        "other-lock",
+        "pth-writable",
+    ],
+)
+def test_only_exact_inert_uv_locks_may_retain_original_writable_mode_without_body_reads(
+    module: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    values = data(tmp_path)
+    instance = module["NativeProbes"](values)
+    tree = instance.root_python_tree()
+    tree.mkdir(parents=True)
+    environment = Path(values["python"]).parent.parent
+    locks = [environment / ".lock", tree / ".lock"]
+    for path in locks:
+        path.write_bytes(b"INERT-OWNED-LOCK-NOT-READ")
+        path.chmod(0o666)
+    if fault == "lock-executable":
+        locks[0].chmod(0o777)
+    elif fault == "lock-link":
+        locks[0].unlink()
+        locks[0].symlink_to(locks[1])
+    elif fault == "lock-hardlink":
+        os.link(locks[0], tmp_path / "outside-walked-roots-lock-alias")
+    elif fault == "lock-directory":
+        locks[0].unlink()
+        locks[0].mkdir()
+    elif fault in {"other-lock", "pth-writable"}:
+        unsafe = environment / ("other.lock" if fault == "other-lock" else "startup.pth")
+        unsafe.write_bytes(b"OWNED-NOT-EXECUTED")
+        unsafe.chmod(0o666)
+    real_lstat = Path.lstat
+
+    def root_metadata(path: Path) -> os.stat_result:
+        info = list(real_lstat(path))
+        info[4] = 501 if fault == "lock-owner" and path == locks[0] else 0
+        return os.stat_result(info)
+
+    monkeypatch.setattr(Path, "lstat", root_metadata)
+
+    def forbidden_open(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("UV lock metadata guard must never read its body")
+
+    monkeypatch.setattr(module["os"], "open", forbidden_open)
+    assert instance.root_metadata_current() is (fault == "none")

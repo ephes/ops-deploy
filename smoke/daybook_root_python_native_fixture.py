@@ -197,6 +197,25 @@ def main() -> None:
             {"probe": "stdlib-interpreter", "as_gui": True, "root_selector": False},
             {"probe": "root-uv-lock-check", "as_gui": False, "root_selector": True},
         ]
+        uv_locks = [checkout / ".venv/.lock", tree / ".lock"]
+        for path in uv_locks:
+            info = path.lstat()
+            assert stat.S_ISREG(info.st_mode)
+            assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode), info.st_nlink) == (0, 0, 0o666, 1)
+            # Explicit synthetic fixture content only. UV uses the lock inode,
+            # never executes/imports its content; observer reads metadata only.
+            path.write_bytes(b"INERT-OWNED-LOCK-CONTENT")
+        assert probes.runtime_current() is True
+        owned.report["actual_uv_bookkeeping_locks"] = [
+            {
+                "path": str(path.relative_to(owned.root)),
+                "uid": path.stat().st_uid,
+                "gid": path.stat().st_gid,
+                "mode": oct(stat.S_IMODE(path.stat().st_mode)),
+                "nlink": path.stat().st_nlink,
+            }
+            for path in uv_locks
+        ]
         before = metadata([checkout, tree])
         for _ in range(2):
             assert probes.runtime_current() is True
@@ -211,6 +230,52 @@ def main() -> None:
             assert calls == expected
             faults.append({"name": name, "root_uv_find_reached": root_find})
 
+        lock = uv_locks[0]
+        lock.chmod(0o777)
+        try:
+            refuse_before_execution("uv-lock-executable", root_find=False)
+        finally:
+            lock.chmod(0o666)
+        assert probes.runtime_current() is True
+        os.chown(lock, actor.pw_uid, actor.pw_gid)
+        try:
+            refuse_before_execution("uv-lock-wrong-owner", root_find=False)
+        finally:
+            os.chown(lock, 0, 0)
+        assert probes.runtime_current() is True
+        alias = owned.root / "uv-lock-hardlink"
+        os.link(lock, alias)
+        try:
+            refuse_before_execution("uv-lock-multiple-links", root_find=False)
+        finally:
+            alias.unlink()
+        assert probes.runtime_current() is True
+        lock.unlink()
+        lock.symlink_to(uv_locks[1])
+        try:
+            refuse_before_execution("uv-lock-symlink", root_find=False)
+        finally:
+            lock.unlink()
+            lock.write_bytes(b"INERT-OWNED-LOCK-CONTENT")
+            lock.chmod(0o666)
+        assert probes.runtime_current() is True
+        lock.unlink()
+        lock.mkdir()
+        try:
+            refuse_before_execution("uv-lock-is-directory", root_find=False)
+        finally:
+            lock.rmdir()
+            lock.write_bytes(b"INERT-OWNED-LOCK-CONTENT")
+            lock.chmod(0o666)
+        assert probes.runtime_current() is True
+        unexpected = checkout / ".venv/unexpected.lock"
+        unexpected.write_bytes(b"INERT-UNAPPROVED-OWNED-LOCK")
+        unexpected.chmod(0o666)
+        try:
+            refuse_before_execution("unrecognized-writable-lock", root_find=False)
+        finally:
+            unexpected.unlink()
+        assert probes.runtime_current() is True
         copied.chmod(0o775)
         refuse_before_execution("copied-group-writable", root_find=False)
         copied.chmod(0o755)

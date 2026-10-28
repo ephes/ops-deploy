@@ -181,6 +181,11 @@ class NativeProbes:
         if environment != checkout and checkout not in environment.parents:
             roots = (*roots, environment)
         boundary = checkout.parent.parent
+        # uv's original root-managed environment/install locks are inert flock
+        # files created mode0666. Their contents are never imported/executed.
+        # Only these exact regular root-owned single-link nonexecuting leaves
+        # can retain that tool mode; ancestry, code, .pth and cfg stay strict.
+        uv_locks = {environment / ".lock", self.root_python_tree() / ".lock"}
         def unavailable(error):
             raise error
         for root in roots:
@@ -198,6 +203,11 @@ class NativeProbes:
                     info = path.lstat()
                     if info.st_uid != 0:
                         return False
+                    if path in uv_locks:
+                        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                                or stat.S_IMODE(info.st_mode) & 0o111):
+                            return False
+                        continue
                     if stat.S_ISLNK(info.st_mode):
                         try:
                             target = path.resolve(strict=True)

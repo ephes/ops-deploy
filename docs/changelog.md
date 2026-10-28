@@ -4,7 +4,8 @@
 
 - Observe the protected Inbox Python with its original root-managed interpreter
   tree and uv environment; validate the root regular-copy boundary before GUI
-  execution. Preserve existing user-owned uv observation semantics.
+  execution. Preserve existing user-owned uv observation semantics and the two
+  original inert uv bookkeeping locks without changing their modes.
 
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access
