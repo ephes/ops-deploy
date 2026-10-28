@@ -126,7 +126,12 @@ def main() -> None:
         command("/usr/sbin/chown", "runner:staff", str(tmpdir))
         tmux = "/opt/homebrew/bin/tmux"
         assert Path(tmux).is_file(), "native workflow installs this owned fixture prerequisite"
-        socket = "daybook-health-" + owned.suffix
+        # The unique owned parent already isolates this server. Repeating the
+        # long suffix here exceeds Darwin's AF_UNIX socket path limit.
+        socket = "health"
+        socket_path = tmpdir / ("tmux-" + str(actor.pw_uid)) / socket
+        assert len(str(socket_path).encode()) < 100
+        owned.report["owned_tmux_socket_path_bytes"] = len(str(socket_path).encode())
         owned.spawn(
             [
                 "/usr/bin/sudo",
@@ -142,9 +147,10 @@ def main() -> None:
                 "/dev/null",
                 "-L",
                 socket,
-            ]
+            ],
+            log=owned.evidence / "owned-tmux-server.log",
         )
-        wait(lambda: (tmpdir / ("tmux-" + str(actor.pw_uid)) / socket).is_socket())
+        wait(socket_path.is_socket)
         tmux_prefix = [
             "/usr/bin/sudo",
             "-H",
