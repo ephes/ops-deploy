@@ -4,7 +4,7 @@
 
 - Add the original Python/Rust observation deployment, rollback, shadow comparison and removal APIs.
 - Gate collection on declared changes or missing/stale observation state; unchanged fresh deploys verify read-only. This deliberately differs from Ansible's unconditional collection.
-- Preserve software-live's specific Nyxmon re-enable/scheduling semantics and installed shared helper. Native and inventory qualification are pending.
+- Preserve software-live's specific Nyxmon re-enable/scheduling semantics and installed shared helper. Owned Ubuntu Python and Debian 13 Rust native qualification passed 33 phases per leg, including 16 strict zero-change repeats. Full CI passed; inventory cutover remains a separate gate. Debian shares the runner kernel and the deliberate shadow fault performs a real rollback before failing.
 
 ## Unreleased
 

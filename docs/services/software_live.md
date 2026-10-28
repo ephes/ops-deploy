@@ -96,9 +96,25 @@ Daemon reload is conditional on actual unit/resource removal.
 
 ## Qualification status
 
-Implementation is prepared; inventory engine selection has not changed. Tests include
-actual operations, owned SQLite semantics, source hashes and independently rendered Ansible
-files from exact `cf3a0c74`. The owned native workflow covers Ubuntu 24 Python and a Debian 13
-systemd userspace guest with released Rust 0.1.1, plus switching and shadow behavior.
-Debian shares the Ubuntu runner kernel. Native results and inventory evidence must be reviewed
-before publication/cutover; this page does not yet claim either has completed.
+Inventory engine selection has not changed. Tests include actual operations, owned SQLite
+semantics, source hashes and independently rendered Ansible files from exact `cf3a0c74`.
+The [owned native run](https://github.com/ephes/ops-deploy/actions/runs/40609646598) passed
+both Ubuntu 24 Python and Debian 13 Rust 0.1.1 legs at implementation `5799bc457d66`.
+Each leg exercised 33 phases, including 16 healthy repeats with zero managed operations,
+zero uploads and exact protected snapshots. All 640 installed source resources matched
+that Git commit, with a noneditable installation. Both legs exercised implementation
+switching, authenticated shadow comparison, credential rotation, stale/missing-state
+collection, owned Nyxmon create/reenable/disable and data-preserving/explicit-data removal.
+
+The deliberate invalid-shadow fault performed five real Python rollback operations before
+rejecting the optional shadow release: two drop-ins were removed, systemd reloaded and the
+endpoint/timer restarted. Pins stayed unchanged. This fault is not a zero-change phase.
+The original Ansible role succeeded in the same fixture and rewrote observation state as
+expected; its collection behavior is distinct from the new freshness gate.
+
+Debian uses an isolated systemd userspace guest and shares the Ubuntu runner kernel.
+All fixture data and credentials were synthetic; no inventory data, credentials or sockets
+were mounted. No upgrade or reboot job was run. Owned SQLite rows and main-database bytes
+were strict, with sidecar bookkeeping observed separately. The [full CI matrix](https://github.com/ephes/ops-deploy/actions/runs/40609646540)
+also passed at the same implementation. Inventory cutover remains a separate gate;
+this result does not claim a live inventory deployment.
