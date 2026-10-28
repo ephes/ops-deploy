@@ -42,7 +42,9 @@
   Ansible reindexing is unchanged. Preserve the original uv0.13.5 dependency
   and generic override semantics without changing shared installer defaults.
   Follow only the release's expected same-origin schema redirect and require
-  final HTTP200, preserving the original readiness behavior.
+  final HTTP200, preserving the original readiness behavior. Skip writing Django
+  system checks only in the migration status probe; actual managed migrations
+  retain all checks and native repeats still require exact protected metadata.
 
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access

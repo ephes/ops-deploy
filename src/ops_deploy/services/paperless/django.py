@@ -59,7 +59,9 @@ def manage(cfg: PaperlessConfig, *arguments: str, quiet: bool = False) -> str:
 
 
 def migrations_pending(cfg: PaperlessConfig) -> bool:
-    command = migrations_state(manage(cfg, "migrate", "--check", "--plan") + " 2>/dev/null")
+    # Paperless system checks create/delete write-test files in data roots.
+    # Only this status command skips them; managed migrations retain all checks.
+    command = migrations_state(manage(cfg, "migrate", "--check", "--plan", "--skip-checks") + " 2>/dev/null")
     answer = probe(shlex.join(["sh", "-c", command]), name="Paperless migration state")
     if answer not in {"current", "pending"}:
         raise DeployError("Paperless migration inspection failed; refusing unknown schema changes")

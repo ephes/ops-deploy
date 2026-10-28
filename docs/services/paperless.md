@@ -124,7 +124,10 @@ preserve the original compiled-frontend precedence, and run collectstatic only
 when those assets or their declared dependencies change. These checks may update
 access metadata and do not claim global zero I/O.
 
-Migrations check actual pending schema work. Administrator checks select only
+Migrations check actual pending schema work with `migrate --check --plan
+--skip-checks`. Only that status command skips Django system checks: Paperless
+system checks create and delete write-test files in data/media/consume roots.
+Actual managed migrations retain every original system check. Administrator checks select only
 the declared identities and flags. Existing password/email values are left
 alone; strict missing-user failure can follow prior creation/promotions, as in
 the original role. Management programs travel via protected stdin and application

@@ -498,6 +498,7 @@ def main() -> None:
         path = CFG.uv_install_dir + "/" + binary
         assert before_uv["files"][path] == after_uv["files"][path]
         assert before_uv["public_program_hashes"][path] == after_uv["public_program_hashes"][path]
+    application_matrix.migration_status_roots(harness)
     deploy("02-healthy-repeat", zero=True)
     deploy("03-fish-healthy-repeat", zero=True, fish=True)
     ansible("04-original-current-repeat")

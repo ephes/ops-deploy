@@ -8,13 +8,15 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import yaml
 from pydantic import SecretStr
 from pyinfra.connectors.local import LocalConnector
 
-from tests.integration.paperless import evidence, harness
+from tests.integration.paperless import application_matrix, evidence, harness
 
 
 def test_native_guard_refuses_local_execution_before_any_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -194,3 +196,42 @@ def test_runner_image_receipt_does_not_require_cached_base_tag(tmp_path: Path, o
         assert json.loads((tmp_path / "images.json").read_text()) == [{"Id": "sha256:owned-image"}]
     else:
         assert not (tmp_path / "images.json").read_text()
+
+
+@pytest.mark.parametrize("fixed_writes", [False, True])
+def test_migration_root_control_detects_fixed_command_writes(
+    tmp_path: Path,
+    fixed_writes: bool,
+) -> None:
+    cfg = harness.CFG.model_copy(
+        update={"external_storage_root": str(tmp_path / "roots"), "sftp_chroot_dir": str(tmp_path / "scanner")}
+    )
+    paths = [Path(cfg.external_storage_root) / name for name in ("data", "media", "consume")]
+    paths.append(Path(cfg.sftp_chroot_dir) / "inbox")
+    for path in paths:
+        path.mkdir(parents=True)
+    receipts: list[Any] = []
+
+    def owned_command(*args: str, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "--skip-checks" not in args[-1] or fixed_writes:
+            for path in paths:
+                marker = path / "owned-write-test"
+                marker.write_text("")
+                marker.unlink()
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    fixture = SimpleNamespace(
+        CFG=cfg,
+        OWNED_ADMITTED=True,
+        command=owned_command,
+        public_metadata=harness.public_metadata,
+        write=lambda name, data: receipts.append(json.loads(json.dumps(data))),
+    )
+    if fixed_writes:
+        with pytest.raises(AssertionError, match="fixed migration status changed"):
+            application_matrix.migration_status_roots(fixture)
+    else:
+        application_matrix.migration_status_roots(fixture)
+    assert len(receipts) == 2
+    assert receipts[-1][0]["classification"] == "intentional-old-write-test-control"
+    assert receipts[-1][1]["skip_checks"] is True

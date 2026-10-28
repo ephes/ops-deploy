@@ -14,7 +14,43 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from ops_deploy.services.paperless.django import manage
 from ops_deploy.services.paperless.index_contract import expected_index_sentinels
+
+
+def migration_status_roots(harness: Any) -> None:
+    """Isolate old/fixed real management commands on the owned current app."""
+    assert harness.OWNED_ADMITTED
+    cfg = harness.CFG
+    paths = [Path(cfg.external_storage_root) / child for child in ("data", "media", "consume")]
+    paths.append(Path(cfg.sftp_chroot_dir) / "inbox")
+    results = []
+    for skip_checks in (False, True):
+        arguments = ("migrate", "--check", "--plan") + (("--skip-checks",) if skip_checks else ())
+        before = {str(path): harness.public_metadata(path) for path in paths}
+        result = harness.command("sh", "-c", manage(cfg, *arguments), check=False)
+        after = {str(path): harness.public_metadata(path) for path in paths}
+        differences = {
+            name: [field for field in before[name] if before[name][field] != after[name][field]] for name in before
+        }
+        record = {
+            "skip_checks": skip_checks,
+            "exit": result.returncode,
+            "before": before,
+            "after": after,
+            "changed_fields": differences,
+            "classification": "fixed-status-control" if skip_checks else "intentional-old-write-test-control",
+            "scope": "Owned synthetic roots only; application output withheld; no production attribution.",
+        }
+        results.append(record)
+        harness.write("migration-status-root-controls.json", results)
+        assert result.returncode == 0, "isolated current migration status failed"
+        if skip_checks:
+            assert before == after, "fixed migration status changed owned root metadata"
+        else:
+            assert all(set(fields) == {"mtime_ns", "ctime_ns"} for fields in differences.values()), (
+                "old migration status did not reproduce exact write-test root changes"
+            )
 
 
 def query(harness: Any, expression: str) -> Any:

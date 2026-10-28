@@ -128,3 +128,22 @@ def test_apply_requires_completion_and_hides_output(
     assert result.returncode == expected
     assert result.stdout == ""
     assert "synthetic-private-value" not in result.stderr
+
+
+def test_only_migration_status_skips_writing_system_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = []
+
+    def inspect_state(command: str, **kwargs: Any) -> str:
+        recorded.append(command)
+        return "pending"
+
+    monkeypatch.setattr(django, "probe", inspect_state)
+    assert django.migrations_pending(config()) is True
+    assert len(recorded) == 1
+    assert "migrate --check --plan --skip-checks" in recorded[0]
+    monkeypatch.setattr(django, "state", SimpleNamespace(is_executing=True))
+    commands = list(inspect.unwrap(django.migrate)(config()))
+    assert len(commands) == 1
+    assert "--skip-checks" not in commands[0].get_raw_value()
+    assert commands[0].get_raw_value() == django.manage(config(), "migrate", quiet=True)
+    assert "--skip-checks" not in django.shell_command(config())

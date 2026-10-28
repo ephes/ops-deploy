@@ -172,3 +172,20 @@ other service's shared defaults. Native snapshots explicitly include both uv
 binary identities/content and actual version; first adoption/upgrade must retain
 them exactly. Package-operation classifications remain honest: the first run
 reported package operations even though full package-version snapshots matched.
+
+
+The sixth attempt reached both successful first deployments and 102-operation
+repeats with zero managed changes/uploads, then failed strict snapshot equality:
+only mtime/ctime of data, media, consume and the consume bind alias changed.
+The original failure remains evidence, not a physical no-op result. Exact upstream
+Paperless path checks create/delete write-test files. A local causal experiment
+with the observed Django5.2.18 reproduced those writes; this alone does not prove
+native command attribution. Only the migration status probe now adds
+`--skip-checks`; managed migrations retain full system checks.
+
+The next owned run executes the old status command and fixed status command
+separately after adoption. It retains both complete selected root metadata
+snapshots, requires the old command's exact mtime/ctime delta and the fixed
+command's exact equality, then runs the unchanged strict healthy/fish repeats
+and full fault matrix. The old control intentionally writes synthetic roots;
+no timestamp exemption, production probe or claim of global zero I/O is added.
