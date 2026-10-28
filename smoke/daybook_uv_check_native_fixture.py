@@ -19,11 +19,24 @@ def main() -> None:
         assert version.startswith("uv 0.13.5 ")
         owned.report["fixture_uv_version"] = version
         result = command(
-            "/usr/bin/sudo", "-n", "-H", "-u", "runner", "--", "/usr/bin/env",
-            "PYTHONDONTWRITEBYTECODE=1", "S8_UV_CHECK_BIN=" + uv,
-            sys.executable, "-m", "pytest", "-vv", "-p", "no:cacheprovider",
+            "/usr/bin/sudo",
+            "-n",
+            "-H",
+            "-u",
+            "runner",
+            "--",
+            "/usr/bin/env",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "S8_UV_CHECK_BIN=" + uv,
+            sys.executable,
+            "-m",
+            "pytest",
+            "-vv",
+            "-p",
+            "no:cacheprovider",
             str(Path(__file__).resolve().parents[1] / "tests/test_daybook_uv_sdist.py"),
-            check=False, timeout=120,
+            check=False,
+            timeout=120,
         )
         (owned.evidence / "owned-sdist-check.log").write_text(result.stdout + result.stderr)
         print(result.stdout, flush=True)
@@ -36,8 +49,8 @@ def main() -> None:
             backend_tripwire="real setup build observed; no backend import or build during any check",
             metadata="whole owned project/environment bytes, inode, ownership, modes, mtime/ctime exact per check",
             scope="Owned sdist mechanism only; root interpreter guards unchanged and separately qualified. "
-                  "No installed Daybook app, inventory, launchd, model or credential invocation. "
-                  "UV temporary/cache I/O allowed; no global zero-I/O claim.",
+            "No installed Daybook app, inventory, launchd, model or credential invocation. "
+            "UV temporary/cache I/O allowed; no global zero-I/O claim.",
         )
     except BaseException as error:
         failure = error

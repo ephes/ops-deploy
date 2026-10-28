@@ -53,7 +53,8 @@ jobs:
           unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV PYTHONPATH PYTHONHOME
           test "$(git -C .implementation rev-parse HEAD)" = "$IMPLEMENTATION_SHA"
           test -z "$(git -C .implementation status --porcelain)"
-          uv venv --python 3.13 /private/var/tmp/mac-apps-controller
+          uv python install 3.13
+          uv venv --managed-python --python 3.13 /private/var/tmp/mac-apps-controller
           uv pip install --python /private/var/tmp/mac-apps-controller/bin/python \
             "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA" "uv==0.13.5" pytest
       - name: Run owned uv installed-sdist verification

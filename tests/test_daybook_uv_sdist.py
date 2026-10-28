@@ -27,6 +27,26 @@ def test_sdist_check_detects_drift_without_build_install_or_app_import(
     root = tmp_path.resolve()
     uv = os.environ.get("S8_UV_CHECK_BIN") or shutil.which("uv")
     assert uv is not None
+    python = sys.executable
+    if "/uv/python/cpython-" not in sys.base_prefix:
+        # CI can run pytest on system Python. Sessions intentionally requires a
+        # managed interpreter; prepare that real fixture prerequisite instead
+        # of weakening its production guard or faking interpreter metadata.
+        subprocess.run([uv, "python", "install", "3.13"], capture_output=True, check=True, timeout=120)
+        python = subprocess.run(
+            [uv, "python", "find", "--managed-python", "--no-python-downloads", "3.13"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout.strip()
+    version = subprocess.run(
+        [python, "-I", "-B", "-S", "-c", "import sys;print('%d.%d.%d'%sys.version_info[:3])"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout.strip()
     source = root / "owned_sdist-0.0.0"
     source.mkdir()
     marker = root / "backend-called"
@@ -61,9 +81,10 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(project / ".venv"))
     # Explicit owned setup only; its real backend marker is the positive control.
     subprocess.run(
-        [uv, "--directory", str(project), "sync", "--offline", "--no-python-downloads",
-         "--no-dev", "--python", sys.executable],
-        capture_output=True, check=True, timeout=30,
+        [uv, "--directory", str(project), "sync", "--offline", "--no-python-downloads", "--no-dev", "--python", python],
+        capture_output=True,
+        check=True,
+        timeout=30,
     )
     assert marker.read_text() == "backend imported"
     marker.unlink()
@@ -73,8 +94,8 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
         "uv_bin": uv,
         "checkout": str(project),
         "python": str(project / ".venv/bin/python"),
-        "python_version": ".".join(map(str, sys.version_info[:3])),
-        "sync_args": ["sync", "--frozen", "--no-dev", "--python", sys.executable],
+        "python_version": version,
+        "sync_args": ["sync", "--frozen", "--no-dev", "--python", python],
     }
     module = runpy.run_path(str(SCRIPT)) if kind == "runtime" else SESSIONS_MODULE
     probe = module["NativeProbes" if kind == "runtime" else "SourceProbes"](data)
