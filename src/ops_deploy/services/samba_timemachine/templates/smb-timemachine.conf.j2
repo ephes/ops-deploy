@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+# Time Machine share configuration
+# Include this in smb.conf with: include = /etc/samba/smb.conf.d/timemachine.conf
+
+[{{ samba_tm_share_name }}]
+    comment = Time Machine Backups
+    path = {{ samba_tm_path }}
+
+    # Access control
+    valid users = {{ samba_tm_users | map(attribute='name') | join(' ') }}
+    read only = no
+    browseable = {{ 'yes' if samba_tm_browseable else 'no' }}
+
+    # Permissions
+    create mask = 0660
+    directory mask = 0770
+    force user = {{ samba_tm_system_user }}
+    force group = {{ samba_tm_system_group }}
+
+    # Time Machine specific settings (vfs_fruit)
+    vfs objects = fruit streams_xattr
+    fruit:time machine = {{ 'yes' if samba_tm_fruit_timemachine else 'no' }}
+    fruit:time machine max size = {{ samba_tm_max_size }}
+
+    # Spotlight (disabled for Time Machine - not needed)
+    spotlight = no

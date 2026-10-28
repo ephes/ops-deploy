@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
+  generic share APIs from ops-library cf3a0c74. Preserve existing credentials and
+  disabled accounts with native add-only admission; retain restart debt across
+  interrupted config rollouts. Apply hdparm immediately only when its owned block
+  changes, without hardware-state attestation. New Samba includes go at global
+  end; existing include order remains untouched. See storage policy/Samba docs
+  for the fresh-case oracle exception, RID and physical-hardware limits.
+
 - Restore delegated macOS tunnel authorization transport/session parity with the
   original Ansible controller profile. Preserve strict identities, relay line
   and known hosts, validate/converge authorization before stopping the GUI job,

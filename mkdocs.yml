@@ -24,6 +24,7 @@ nav:
       - Local backups: concepts/local-backups.md
   - Base deploys: base.md
   - PostgreSQL and Redis: infra.md
+  - Storage policy and Samba: services/fractal_storage_services.md
   - Traefik: traefik.md
   - BIND: bind.md
   - Backups before a deploy: backups.md

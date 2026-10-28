@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+# Minimal Samba configuration
+# Individual shares are included as explicit snippets.
+
+[global]
+    workgroup = {{ samba_share_workgroup }}
+    server string = {{ samba_share_server_string }}
+
+    # Include this share's snippet
+    include = {{ samba_share_snippet_path }}
+
+    security = user
+    map to guest = never
+    server min protocol = {{ samba_share_min_protocol }}
+
+    socket options = TCP_NODELAY IPTOS_LOWDELAY
+    use sendfile = yes
+
+{% if samba_share_disable_printing %}
+    load printers = no
+    printing = bsd
+    printcap name = /dev/null
+    disable spoolss = yes
+{% endif %}
+
+    log file = /var/log/samba/log.%m
+    max log size = 1000
+    logging = file

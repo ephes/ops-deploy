@@ -1,0 +1,26 @@
+# Ansible managed
+# Generic Samba share snippet
+
+[{{ samba_share_name }}]
+    path = {{ samba_share_path }}
+    browseable = {{ 'yes' if samba_share_browseable else 'no' }}
+    read only = {{ 'yes' if samba_share_read_only else 'no' }}
+    guest ok = {{ 'yes' if samba_share_guest_ok else 'no' }}
+
+{% if samba_share_valid_users | length > 0 %}
+    valid users = {{ samba_share_valid_users | join(' ') }}
+{% endif %}
+
+    create mask = {{ samba_share_create_mask }}
+    directory mask = {{ samba_share_directory_mask }}
+
+{% if samba_share_force_user | length > 0 %}
+    force user = {{ samba_share_force_user }}
+{% endif %}
+{% if samba_share_force_group | length > 0 %}
+    force group = {{ samba_share_force_group }}
+{% endif %}
+
+{% for key, value in samba_share_extra_options.items() %}
+    {{ key }} = {{ value }}
+{% endfor %}

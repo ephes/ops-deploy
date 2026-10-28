@@ -1,0 +1,18 @@
+{% for template_name, template in sanoid_templates.items() %}
+[template_{{ template_name }}]
+{% for key, value in template.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+
+{% endfor %}
+{% for ds in sanoid_datasets if not (ds.sanoid_skip | default(false)) %}
+[{{ ds.name }}]
+use_template = {{ ds.template }}
+{% if ds.autosnap | default(none) is not none %}
+autosnap = {{ ds.autosnap }}
+{% endif %}
+{% if ds.autoprune | default(none) is not none %}
+autoprune = {{ ds.autoprune }}
+{% endif %}
+
+{% endfor %}

@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+# Minimal Samba configuration
+# Share definitions go in /etc/samba/smb.conf.d/*.conf
+
+[global]
+    workgroup = {{ samba_tm_workgroup }}
+    server string = {{ samba_tm_server_string }}
+
+    # Include Time Machine share configuration
+    # Note: Samba's include directive does not reliably expand globs on all distros,
+    # so we include the specific snippet file.
+    include = {{ samba_tm_snippet_path }}
+
+    # Security settings
+    security = user
+    map to guest = never
+
+    # Protocol settings
+    server min protocol = {{ samba_tm_min_protocol }}
+
+    # Performance settings
+    socket options = TCP_NODELAY IPTOS_LOWDELAY
+    use sendfile = yes
+
+{% if samba_tm_disable_printing %}
+    # Disable printing
+    load printers = no
+    printing = bsd
+    printcap name = /dev/null
+    disable spoolss = yes
+{% endif %}
+
+    # Logging
+    log file = /var/log/samba/log.%m
+    max log size = 1000
+    logging = file

@@ -14,6 +14,7 @@
     "graphyard_deploy": "bcc45e9b45e256272bfd1cce48cdf7b7da84b9fd987a58060d0ad64eaf3865a4",
     "graphyard_ingress_deploy": "d854e5654cd625189f01a214a4056eb371283af29c04b8593a403eed4e4db47b",
     "graphyard_vector_deploy": "654594f49168eec8990dd987979f0328a8e07cbb6264045dfd89f5a66b0132d1",
+    "hdparm_tune": "0498f7d8069a8eaefb90045ff60108c8e09713fa4d9dddfe483dcba19fd1e106",
     "homelab_deploy": "b110f03282424900d4006dc8e1d3a9250b615672b51b2c5f11e340fb05dbbb9e",
     "homelab_shared": "5c7b726538f1f0d9bc2f3e65f5a6c78e26adfacbfa58afb6f46155b0a34929dd",
     "jellyfin_deploy": "1f76f6c0c1a29a2241f52c530f2f71c03df4db08b6f13115ec926ad18ffd0eb4",
@@ -33,6 +34,9 @@
     "nyxmon_restore": "fb2057559d9a42938a6ca2e080115f3809a09de2c4785467429594eb3039c9bf",
     "open_webui_venv_deploy": "7b1f105c712ddc37682c90f18f5823fe5a59e9a698fe58b4e192f5368446d587",
     "rust_release_binary": "2ffb81bff977bf3bf10a650de9723dd47943d36071511b9adfc299cf6dd0f542",
+    "samba_share": "5d572568069783fbed03c599475610b9e8c67b2bafd2c3623f12c33f797ae431",
+    "samba_timemachine": "06b9cb0764bce89496687a480ebac9551c91c3129bf2d66e72e3252eda30a276",
+    "sanoid": "861798c083d941c7275bb812d7b1e9ea8e96e394ea9dd98dc124e66a931e4b9a",
     "thermal_metrics_endpoint": "78ceba6a7b41dc18aa60522f8dd1ead157fa53763c857eb0220132066480ab28",
     "thermal_metrics_exporter": "8a7a282a4049495e6b68488a8c3d55b6d2349caa229dd45a0b0368b8dcdf68cd",
     "traefik_deploy": "7edf2234a30dfa5f155cd3cf45c70ffc491565344814bddd6f1ea2e055a80df1",
@@ -44,5 +48,11 @@
     "work_app_restore": "8e77e479699afb7bec18e1101deca212df9cd44996bb8a86a7dd0f42be669c96",
     "work_app_shared": "42f3d908d13a05139b07b1c89e0a50cb21d710d331cb9b667b5868d6b12e0879",
     "zellij_ingress_deploy": "40c6bc5c3da9a1f616632af14b8e43ebc4e2147383ef954c17356c637109b250"
+  },
+  "role_commits": {
+    "hdparm_tune": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+    "sanoid": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+    "samba_timemachine": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+    "samba_share": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641"
   }
 }

@@ -1,0 +1,175 @@
+{
+  "provenance": "Actual ansible-playbook local template rendering; ops-library cf3a0c74",
+  "inputs": {
+    "hdparm": {
+      "devices": [
+        {
+          "device": "/dev/disk/by-id/owned-a",
+          "apm": 127,
+          "spindown_time": 241
+        },
+        {
+          "device": "/dev/disk/by-id/owned-b",
+          "apm": 127,
+          "acoustic_management": 128,
+          "spindown_time": 241
+        }
+      ],
+      "apply_now": true
+    },
+    "sanoid": {
+      "templates": {
+        "owned0": {
+          "autosnap": "yes",
+          "autoprune": "yes",
+          "hourly": 0,
+          "daily": 1,
+          "weekly": 0,
+          "monthly": 12
+        },
+        "owned1": {
+          "autosnap": "yes",
+          "autoprune": "yes",
+          "hourly": 0,
+          "daily": 2,
+          "weekly": 1,
+          "monthly": 11
+        },
+        "owned2": {
+          "autosnap": "yes",
+          "autoprune": "yes",
+          "hourly": 0,
+          "daily": 3,
+          "weekly": 2,
+          "monthly": 10
+        },
+        "owned3": {
+          "autosnap": "yes",
+          "autoprune": "yes",
+          "hourly": 0,
+          "daily": 4,
+          "weekly": 3,
+          "monthly": 9
+        },
+        "owned4": {
+          "autosnap": "no",
+          "autoprune": "yes",
+          "hourly": 0,
+          "daily": 5,
+          "weekly": 4,
+          "monthly": 8
+        },
+        "owned5": {
+          "autosnap": "no",
+          "autoprune": "yes",
+          "hourly": 0,
+          "daily": 6,
+          "weekly": 5,
+          "monthly": 7
+        }
+      },
+      "datasets": [
+        {
+          "name": "owned/d0",
+          "template": "owned0"
+        },
+        {
+          "name": "owned/d1",
+          "template": "owned1"
+        },
+        {
+          "name": "owned/d2",
+          "template": "owned2"
+        },
+        {
+          "name": "owned/d3",
+          "template": "owned3"
+        },
+        {
+          "name": "owned/d4",
+          "template": "owned4"
+        },
+        {
+          "name": "owned/d5",
+          "template": "owned5"
+        },
+        {
+          "name": "owned/d6",
+          "template": "owned0"
+        },
+        {
+          "name": "owned/d7",
+          "template": "owned1"
+        },
+        {
+          "name": "owned/d8",
+          "template": "owned2"
+        },
+        {
+          "name": "owned/skip-a",
+          "sanoid_skip": true
+        },
+        {
+          "name": "owned/skip-b",
+          "sanoid_skip": true
+        }
+      ],
+      "on_calendar": "01:00",
+      "randomized_delay_sec": "10m"
+    },
+    "tm": {
+      "users": [
+        "owned_tm"
+      ]
+    },
+    "shares": {
+      "shares": [
+        {
+          "name": "owned0",
+          "path": "/srv/owned0",
+          "valid_users": [
+            "owned_share"
+          ]
+        },
+        {
+          "name": "owned1",
+          "path": "/srv/owned1",
+          "valid_users": [
+            "owned_share"
+          ]
+        },
+        {
+          "name": "owned2",
+          "path": "/srv/owned2",
+          "valid_users": [
+            "owned_share"
+          ]
+        },
+        {
+          "name": "owned3",
+          "path": "/srv/owned3",
+          "valid_users": [
+            "owned_share"
+          ]
+        }
+      ],
+      "users": [
+        "owned_share"
+      ]
+    }
+  },
+  "outputs": {
+    "hdparm": "/dev/disk/by-id/owned-a {\n  apm = 127\n  spindown_time = 241\n}\n/dev/disk/by-id/owned-b {\n  apm = 127\n  acoustic_management = 128\n  spindown_time = 241\n}\n",
+    "sanoid.conf": "[template_owned0]\nautosnap = yes\nautoprune = yes\nhourly = 0\ndaily = 1\nweekly = 0\nmonthly = 12\n\n[template_owned1]\nautosnap = yes\nautoprune = yes\nhourly = 0\ndaily = 2\nweekly = 1\nmonthly = 11\n\n[template_owned2]\nautosnap = yes\nautoprune = yes\nhourly = 0\ndaily = 3\nweekly = 2\nmonthly = 10\n\n[template_owned3]\nautosnap = yes\nautoprune = yes\nhourly = 0\ndaily = 4\nweekly = 3\nmonthly = 9\n\n[template_owned4]\nautosnap = no\nautoprune = yes\nhourly = 0\ndaily = 5\nweekly = 4\nmonthly = 8\n\n[template_owned5]\nautosnap = no\nautoprune = yes\nhourly = 0\ndaily = 6\nweekly = 5\nmonthly = 7\n\n[owned/d0]\nuse_template = owned0\n\n[owned/d1]\nuse_template = owned1\n\n[owned/d2]\nuse_template = owned2\n\n[owned/d3]\nuse_template = owned3\n\n[owned/d4]\nuse_template = owned4\n\n[owned/d5]\nuse_template = owned5\n\n[owned/d6]\nuse_template = owned0\n\n[owned/d7]\nuse_template = owned1\n\n[owned/d8]\nuse_template = owned2\n\n",
+    "sanoid-ops-library.service": "[Unit]\nDescription=Sanoid snapshot management (ops-library)\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=/usr/sbin/sanoid --cron\n",
+    "sanoid-ops-library.timer": "[Unit]\nDescription=Run sanoid snapshot management (ops-library)\n\n[Timer]\nOnCalendar=01:00\nRandomizedDelaySec=10m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+    "tm/smb.conf": "# Ansible managed\n# Minimal Samba configuration\n# Share definitions go in /etc/samba/smb.conf.d/*.conf\n\n[global]\n    workgroup = WORKGROUP\n    server string = Time Machine Backup Server\n\n    # Include Time Machine share configuration\n    # Note: Samba's include directive does not reliably expand globs on all distros,\n    # so we include the specific snippet file.\n    include = /etc/samba/smb.conf.d/timemachine.conf\n\n    # Security settings\n    security = user\n    map to guest = never\n\n    # Protocol settings\n    server min protocol = SMB3\n\n    # Performance settings\n    socket options = TCP_NODELAY IPTOS_LOWDELAY\n    use sendfile = yes\n\n    # Disable printing\n    load printers = no\n    printing = bsd\n    printcap name = /dev/null\n    disable spoolss = yes\n\n    # Logging\n    log file = /var/log/samba/log.%m\n    max log size = 1000\n    logging = file\n",
+    "tm/smb-timemachine.conf": "# Ansible managed\n# Time Machine share configuration\n# Include this in smb.conf with: include = /etc/samba/smb.conf.d/timemachine.conf\n\n[timemachine]\n    comment = Time Machine Backups\n    path = /fast/timemachine\n\n    # Access control\n    valid users = owned_tm\n    read only = no\n    browseable = yes\n\n    # Permissions\n    create mask = 0660\n    directory mask = 0770\n    force user = timemachine\n    force group = timemachine\n\n    # Time Machine specific settings (vfs_fruit)\n    vfs objects = fruit streams_xattr\n    fruit:time machine = yes\n    fruit:time machine max size = 6T\n\n    # Spotlight (disabled for Time Machine - not needed)\n    spotlight = no\n",
+    "fruit": "# macOS/Time Machine compatibility (vfs_fruit)\n   vfs objects = fruit streams_xattr\n   fruit:metadata = stream\n   fruit:model = MacSamba\n   fruit:posix_rename = yes\n   fruit:veto_appledouble = no\n   fruit:nfs_aces = no\n   fruit:wipe_intentionally_left_blank_rfork = yes\n   fruit:delete_empty_adfiles = yes\n",
+    "share0": "# Ansible managed\n# Generic Samba share snippet\n\n[owned0]\n    path = /srv/owned0\n    browseable = yes\n    read only = no\n    guest ok = no\n\n    valid users = owned_share\n\n    create mask = 0660\n    directory mask = 0770\n\n\n",
+    "share-base": "# Ansible managed\n# Minimal Samba configuration\n# Individual shares are included as explicit snippets.\n\n[global]\n    workgroup = WORKGROUP\n    server string = Samba %h\n\n    # Include this share's snippet\n    include = /etc/samba/smb.conf.d/owned0.conf\n\n    security = user\n    map to guest = never\n    server min protocol = SMB3\n\n    socket options = TCP_NODELAY IPTOS_LOWDELAY\n    use sendfile = yes\n\n    load printers = no\n    printing = bsd\n    printcap name = /dev/null\n    disable spoolss = yes\n\n    log file = /var/log/samba/log.%m\n    max log size = 1000\n    logging = file\n",
+    "share1": "# Ansible managed\n# Generic Samba share snippet\n\n[owned1]\n    path = /srv/owned1\n    browseable = yes\n    read only = no\n    guest ok = no\n\n    valid users = owned_share\n\n    create mask = 0660\n    directory mask = 0770\n\n\n",
+    "share2": "# Ansible managed\n# Generic Samba share snippet\n\n[owned2]\n    path = /srv/owned2\n    browseable = yes\n    read only = no\n    guest ok = no\n\n    valid users = owned_share\n\n    create mask = 0660\n    directory mask = 0770\n\n\n",
+    "share3": "# Ansible managed\n# Generic Samba share snippet\n\n[owned3]\n    path = /srv/owned3\n    browseable = yes\n    read only = no\n    guest ok = no\n\n    valid users = owned_share\n\n    create mask = 0660\n    directory mask = 0770\n\n\n"
+  }
+}

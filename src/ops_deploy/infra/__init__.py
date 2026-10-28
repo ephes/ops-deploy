@@ -10,6 +10,7 @@ passwords) are deploy arguments, never config fields.
 from ops_deploy.infra.certbot_dns import CertbotDnsConfig, deploy_certbot_dns
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
+from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
 from ops_deploy.infra.postgres_install import (
     DatabaseSpec,
     ExtensionSpec,
@@ -45,6 +46,8 @@ __all__ = [
     "EncryptedVolumeConfig",
     "ExtensionSpec",
     "FileCertificate",
+    "HdparmDevice",
+    "HdparmTuneConfig",
     "PgHbaRule",
     "PostgresInstallConfig",
     "ProbeBaseline",
@@ -62,6 +65,7 @@ __all__ = [
     "deploy_certbot_dns",
     "deploy_docker_install",
     "deploy_encrypted_volume",
+    "deploy_hdparm_tune",
     "deploy_postgres_install",
     "deploy_redis_install",
     "deploy_traefik",

@@ -1,0 +1,8 @@
+[Unit]
+Description=Sanoid snapshot management (ops-library)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ sanoid_executable }} {{ sanoid_cron_args }}

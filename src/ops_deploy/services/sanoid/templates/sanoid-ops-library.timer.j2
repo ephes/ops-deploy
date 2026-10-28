@@ -1,0 +1,10 @@
+[Unit]
+Description=Run sanoid snapshot management (ops-library)
+
+[Timer]
+OnCalendar={{ sanoid_on_calendar }}
+RandomizedDelaySec={{ sanoid_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
