@@ -231,3 +231,22 @@ name, code/startup files and `pyvenv.cfg`, still refuse before root uv execution
 The separate native proof records the actual uv version and both exact metadata
 rows; an older whole-tree assumption that rejected these normal locks is retained
 as failed qualification evidence.
+
+
+The root parity component was qualified at immutable `f45583b`: native
+[40711152759](https://github.com/ephes/ops-deploy/actions/runs/40711152759)
+verified all762 installed package resources and fifteen genuine pre-execution
+fault cases, with successful cleanup. It exercised the installed observer's
+direct probes in controller Python3.13 plus actual GUI Python3.14.7 and root
+uv0.13.6. Two initial and one final direct-probe repeats preserved the selected
+source/interpreter metadata. Native cache/temporary I/O remains outside that
+comparison. This is neither a normal pyinfra deployment/zero-operation proof nor
+inventory/default qualification; full Inbox adoption remains separate.
+
+Canonical [40711152756](https://github.com/ephes/ops-deploy/actions/runs/40711152756)
+passed8207 tests with514 known skips on both Python versions. Earlier failed
+native runs remain part of the qualification history: the first fixture expected
+a later refusal phase, and subsequent diagnostics exposed the ordinary uv lock
+mode compatibility issue. The final scoped review retained its execution limits
+and repaired the hard-link regression's masked negative case; it did not relabel
+those failures or claim a whole-family live review.
