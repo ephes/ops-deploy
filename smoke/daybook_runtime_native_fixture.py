@@ -110,7 +110,7 @@ def main() -> None:
         owned.report["actual_direct_url_commit"] = direct["vcs_info"]["commit_id"]
         owned.report["actual_installed_resource_set_equal"] = True
         owned.report["limitations"].append(
-            "Workflow controller/action caches and checkout are disposable-VM setup, outside fixture cleanup; "
+            "Workflow tools/controller/action caches and checkout are disposable-VM setup, outside fixture cleanup; "
             "fixture app interpreter/cache are entirely under owned.root."
         )
         owned.report["native_provenance"] = (

@@ -60,6 +60,10 @@ jobs:
           uv venv --python 3.13 /private/var/tmp/mac-apps-controller
           uv pip install --python /private/var/tmp/mac-apps-controller/bin/python \
             "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
+      - name: Ensure native tmux fixture dependency
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew list --versions tmux || brew install tmux
       - name: Run owned native GUI SSH pure and guarded stop fixture
         run: |
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \

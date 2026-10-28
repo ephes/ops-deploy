@@ -118,3 +118,10 @@ creates its host session through a separate client, following the
 server and descendants under exact owned cleanup. Its uv interpreter and caches
 are explicitly confined to the owned root; workflow controller/action caches
 remain disposable-VM setup and are recorded as outside fixture cleanup.
+
+The hosted workflow installs a missing tmux formula as the ordinary runner user
+with Homebrew auto-update disabled. This is disposable fixture setup; it does not
+install or upgrade software on an inventory host. The
+[first attempt](https://github.com/ephes/ops-deploy/actions/runs/40636933117)
+failed at setup because tmux was missing, before any app/GUI/SSH case ran;
+its hosted artifacts have a seven-day retention period.
