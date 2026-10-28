@@ -1,0 +1,10 @@
+{
+  "library_head": "d88c3286b2fb58a8799663d6c1f3a9d6061af37b",
+  "role": "minio_deploy",
+  "ansible_version": "ansible-playbook [core 2.21.5]",
+  "templates": {
+    "minio.env.j2": "86d22e567aef9a136f74d0558531d42aa054faa3b2e752bcdc0f5ef2d4eb1dbf",
+    "minio.service.j2": "e34006cd0b17c015e218b41abb78c9833a45dab54401914b53a4c7ce3ff37b23",
+    "traefik-minio.yml.j2": "f3b6f5b7a6b94ae0f830a14577d25bc6c337eaa257d547b121869f1f405bd7f3"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "minio_console_basic_auth_enabled": false,
+  "minio_traefik_host": "console.example.test",
+  "minio_traefik_api_host": "storage.example.test",
+  "minio_data_dirs": [
+    "/srv/minio/one",
+    "/srv/minio/two"
+  ],
+  "minio_root_user": "fixture-root",
+  "minio_root_password": "fixture-root-value",
+  "minio_console_basic_auth_password_hash": "$2y$05$abcdefghijklmnopqrstuu012345678901234567890123456789012"
+}

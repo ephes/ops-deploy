@@ -1,0 +1,52 @@
+"""Owned AMD64 guest synthetic component proof; stdin credentials, no host service changes."""
+import hashlib,json,os,platform,subprocess,sys,time
+from pathlib import Path
+from urllib.parse import quote,urlsplit,urlunsplit
+ROOT=Path('/srv/s4-owned-lag-20b');MC='/usr/local/bin/mc'
+MC_SHA='01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891'
+v=json.load(sys.stdin);probe=Path(sys.argv[1]);expected=sys.argv[2]
+assert platform.machine()=='x86_64'
+assert hashlib.sha256(Path(MC).read_bytes()).hexdigest()==MC_SHA
+assert hashlib.sha256(probe.read_bytes()).hexdigest()==expected
+assert not ROOT.exists();ROOT.mkdir(mode=0o700)
+parts=urlsplit(v['endpoint']);assert parts.scheme=='http' and parts.hostname in {'127.0.0.1','localhost'} and parts.username is None and parts.password is None
+host=urlunsplit((parts.scheme,quote(v['user'],safe='')+':'+quote(v['password'],safe='')+'@'+parts.netloc,parts.path,parts.query,parts.fragment))
+env=dict(os.environ,MC_CONFIG_DIR=str(ROOT/'mc-config'),MC_HOST_s4owned=host,MINIO_ROOT_USER=v['user'],MINIO_ROOT_PASSWORD=v['password'])
+secrets=[v['password'],v['user'],host]
+def call(args,body=None,expected_exit=0):
+ p=subprocess.run(args,input=body,capture_output=True,text=True,env=env,timeout=90)
+ assert p.returncode==expected_exit,(args[0],p.returncode,expected_exit)
+ assert all(s not in p.stdout+p.stderr for s in secrets if s),'credential output detected'
+ return p
+primary='s4-owned-lag-primary-20b';statusbucket='s4-owned-lag-status-20b'
+for bucket in (primary,statusbucket):call([MC,'mb','s4owned/'+bucket])
+payload=dict(bucket=primary,queued_count=0,queued_bytes=0,parity_ok=True,object_delta=0,object_delta_tolerance=0,source_objects=1,destination_objects=1,size_diff_bytes=0,source_size_bytes=64,destination_size_bytes=64,size_diff_percent=0,parity_tolerance_percent=1)
+def put(bucket,key,data):call([MC,'pipe','s4owned/'+bucket+'/'+key],json.dumps(data))
+put(primary,'heartbeat.json',payload);put(statusbucket,'primary-status.json',payload)
+results=[]
+def run(label,jobs,code):
+ jobsfile=ROOT/(label+'-jobs.json');jobsfile.write_text(json.dumps(jobs))
+ p=call([sys.executable,str(probe),v['endpoint'],str(jobsfile)],expected_exit=code)
+ rows={j['name']:json.loads((Path(j['monitor_state_dir'])/'status.json').read_text()) for j in jobs}
+ for data in rows.values():assert all(s not in json.dumps(data) for s in secrets if s)
+ results.append(dict(label=label,exit=code,status=rows,stdout=p.stdout,stderr=p.stderr))
+ return rows
+base=dict(name='healthy',bucket=primary,heartbeat_key='heartbeat.json',required=True,warning_hours=2,critical_hours=6,monitor_state_dir=str(ROOT/'healthy'))
+false=dict(base,name='status-only',heartbeat=False,heartbeat_status_bucket=statusbucket,heartbeat_key='primary-status.json',monitor_state_dir=str(ROOT/'status-only'))
+rows=run('healthy-first',[base,false],0)
+assert all(x['level']=='ok' and x['parity_ok'] is True for x in rows.values())
+assert rows['status-only']['lag_basis']=='status_object_in_heartbeat_bucket'
+run('healthy-repeat',[base,false],0)
+missing=dict(base,name='missing-required',heartbeat_key='absent.json',monitor_state_dir=str(ROOT/'missing-required'))
+rows=run('missing-required',[missing],2);assert rows['missing-required']['critical_reasons']==['probe_error']
+optional=dict(missing,name='missing-optional',required=False,monitor_state_dir=str(ROOT/'missing-optional'))
+rows=run('missing-optional',[optional],0);assert rows['missing-optional']['level']=='critical'
+put(primary,'heartbeat.json',dict(payload,parity_ok=False,queued_count=1,object_delta=3))
+prior=(ROOT/'healthy/parity.marker').stat().st_mtime_ns
+rows=run('parity-breach',[base],2)
+assert 'replication_queue_nonzero' in rows['healthy']['critical_reasons'] and 'object_delta_exceeds_tolerance' in rows['healthy']['critical_reasons']
+assert (ROOT/'healthy/parity.marker').stat().st_mtime_ns==prior
+put(primary,'heartbeat.json',payload)
+rows=run('healthy-recovery',[base],0);assert rows['healthy']['level']=='ok'
+receipt=dict(public_ref='20b721bb949ab9156b6b62f95e04fc891d1f2830',probe_sha256=expected,mc_sha256=MC_SHA,architecture=platform.machine(),kernel=platform.release(),results=results,scope='Unmodified original lag program against exact pinned real AMD64mc and owned loopback MinIO with synthetic objects only. Managed probe writes expected, not no-op or whole typed/composite/hardware/inventory qualification. No service changes, production calls, external network, real credentials or data.')
+(ROOT/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))

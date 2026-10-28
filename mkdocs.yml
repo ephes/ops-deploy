@@ -77,6 +77,7 @@ nav:
       - llama_server (macOS native): services/llama_server.md
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md
+      - minio: services/minio.md
       - unifi: services/unifi.md
       - vaultwarden: services/vaultwarden.md
       - minecraft_java: services/minecraft_java.md

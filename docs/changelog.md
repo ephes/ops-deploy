@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Add a typed MinIO deployment with unchanged role templates and pinned
+  server/client artifacts. Compare the owned alias, buckets, signed user
+  credentials, policies and attachments before writes; refuse disabled users,
+  immutable policy drift and unknown client failures. Manage data-root metadata
+  without recursive object chmod/chown. Owned offline x86 KVM qualification
+  completed 28 phases and 13 strict zero-change repeats; inventory adoption remains
+  pending. Earlier emulated evidence remains mechanism-only. Add current-root
+  host-local admission, managed pinned-client/inactive-unit recovery and desired
+  root credential rollout. Preserve honest partial prerequisite changes on a later
+  IAM refusal and retain zero-change healthy repeats. The original Ansible
+  half-applied root-rotation failure is retained and safely refused before writes.
+  Use the verified official GitHub mc asset with exactly the same size/SHA/version
+  instead of its unavailable legacy URL; matching installs do not download. The
+  server source remains unavailable. The isolated offline KVM fixture records
+  actual enabled-KVM provenance, resource limits and verified owned cleanup.
+  Preserve failed attempts and separate the original S4 lag component receipt.
+
 - Add typed alert-mail relay, smartd and ZED APIs plus Fractal's storage/backup
   monitoring and separate Nyxmon check stage. Original collector programs, unit
   policies, Python/Rust switch and Fractal-specific SQL semantics are retained.
@@ -12,7 +29,6 @@
   existing installed missing configurations refuse before deployment. The pinned
   MinIO mc default source uses its official GitHub asset with the same version
   and SHA256; current exact bytes are neither fetched nor replaced.
-
 
 - Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
   generic share APIs from ops-library cf3a0c74. Preserve existing credentials and

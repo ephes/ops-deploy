@@ -1,0 +1,5 @@
+{
+  "minio_root_user": "fixture-root",
+  "minio_root_password": "fixture-root-value",
+  "minio_console_basic_auth_password_hash": "$2y$05$abcdefghijklmnopqrstuu012345678901234567890123456789012"
+}

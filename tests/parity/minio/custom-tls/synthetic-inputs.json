@@ -1,0 +1,5 @@
+{
+  "root_user": "fixture-root",
+  "root_password": "fixture-root-value",
+  "sse_master_key": "fixture-key:synthetic-only"
+}
