@@ -2,19 +2,22 @@
 
 ## Unreleased
 
-- Prepare a typed MinIO deployment with unchanged role templates and pinned
+- Add a typed MinIO deployment with unchanged role templates and pinned
   server/client artifacts. Compare the owned alias, buckets, signed user
   credentials, policies and attachments before writes; refuse disabled users,
   immutable policy drift and unknown client failures. Manage data-root metadata
-  without recursive object chmod/chown. Native and inventory qualification remain
-  pending; emulated CLI/helper evidence proves mechanisms only. Add current-root
+  without recursive object chmod/chown. Owned offline x86 KVM qualification
+  completed 28 phases and 13 strict zero-change repeats; inventory adoption remains
+  pending. Earlier emulated evidence remains mechanism-only. Add current-root
   host-local admission, managed pinned-client/inactive-unit recovery and desired
   root credential rollout. Preserve honest partial prerequisite changes on a later
-  IAM refusal and retain zero-change healthy repeats; native proof remains pending.
+  IAM refusal and retain zero-change healthy repeats. The original Ansible
+  half-applied root-rotation failure is retained and safely refused before writes.
   Use the verified official GitHub mc asset with exactly the same size/SHA/version
   instead of its unavailable legacy URL; matching installs do not download. The
-  server source remains unavailable. Prepare an isolated offline KVM fixture path
-  with explicit native provenance, resource limits and owned cleanup.
+  server source remains unavailable. The isolated offline KVM fixture records
+  actual enabled-KVM provenance, resource limits and verified owned cleanup.
+  Preserve failed attempts and separate the original S4 lag component receipt.
 
 - Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
   generic share APIs from ops-library cf3a0c74. Preserve existing credentials and

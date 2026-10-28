@@ -1,6 +1,6 @@
-# MinIO deployment (in preparation)
+# MinIO deployment
 
-The port of `minio_deploy` preserves the pinned server/client, service, environment and Traefik route. The private adapter composes encrypted-volume preparation first and accepts only its declared host. It does not own replication, lifecycle jobs, backup identities, unrelated aliases or object contents. This implementation is not yet qualified or selected by inventory metadata.
+The port of `minio_deploy` preserves the pinned server/client, service, environment and Traefik route. The private adapter composes encrypted-volume preparation first and accepts only its declared host. It does not own replication, lifecycle jobs, backup identities, unrelated aliases or object contents. The public runtime has completed owned native qualification; private inventory adoption and live receipts remain pending.
 
 ## Deliberate convergence changes
 
@@ -12,9 +12,9 @@ Bucket creation, anonymous access and versioning are inspected first. `versionin
 
 ## Artifact and proof limits
 
-The pinned upstream download URLs returned HTTP410 during research. An existing matching binary needs no download. Fresh installation requires the same verified artifact, not an invented replacement release. Owned fixtures may use read-only copies of those exact executables.
+The original server download URL still returns HTTP410; the client now uses an exact verified official GitHub asset (below). An existing matching binary needs no download. Fresh server installation requires the same verified artifact, not an invented replacement release. Owned fixtures used read-only copies of those exact executables.
 
-Local ARM/QEMU checks of the copied amd64 binaries established CLI/IAM mechanics only. They are explicitly emulated and do not qualify native systemd behavior, inventory adoption, object preservation or healthy repeat convergence. Native fixture, review and coordinated live receipts are still pending.
+Local ARM/QEMU checks of the copied amd64 binaries established CLI/IAM mechanics only. They are explicitly emulated and do not qualify native systemd behavior, inventory adoption, object preservation or healthy repeat convergence. Those earlier checks are distinct from the completed native fixture below; coordinated inventory/live receipts remain pending.
 
 Direct legacy Ansible deployment retains its old recursive directory handling, alias/identity upserts and unconditional bootstrap commands. After eventual adoption, use the metadata-aware deployment entry point. No new engine-refusal or rollback-acknowledgement guard is introduced.
 
@@ -60,13 +60,16 @@ before other configuration or IAM writes. If that admission refuses, the actual
 client installation or service start remains an explicitly reported partial
 recovery; it is never called a zero-change refusal. Unknown/foreign service or
 credential state still stops. No extra acknowledgement or manual repair is needed
-for these normal known-owned recovery paths. Qualification of these new paths is
-pending an inspected native fixture receipt.
+for these normal known-owned recovery paths. These paths completed the owned native matrix described below.
 
 The original Ansible role installs the client and starts the unit before bootstrap.
 It writes desired root credentials but defers its restart handler until later;
-there is no explicit flush before bootstrap uses the new credentials. Its real
-root-rotation result must therefore be observed separately, not assumed successful.
+there is no explicit flush before bootstrap uses the new credentials. The native original-role root rotation actually failed with exit 2 after changing
+the environment and before its deferred restart. That untouched half-applied
+state was then safely refused by pyinfra before any write: the new environment
+did not prove the active process credentials. The fixture recorded this result
+before an explicit synthetic environment reset/restart. This is an honest refusal
+limit, not a claim that every historical half-applied state automatically recovers.
 
 The original private play's loopback API/console port checks run before managed
 operations and accept only listeners owned by `minio.service`.
@@ -111,12 +114,32 @@ file-only drift and bcrypt reuse. A real owned-file negative test proves a bad
 download cannot replace the existing executable. The installer verifies its
 private temporary download before atomic replacement.
 
-The owned native harness is under `tests/integration/minio`: it will use exact
-binaries in a fresh x86 Ubuntu24 systemd guest on a GitHub-owned VM, with a shared
-kernel, synthetic objects/credentials and no private inventory mounts. The
-private download token is scoped to the runner download step and excluded from
-the guest. Installed-resource/direct_url proof and raw phase receipts are
-required. No native success or inventory switch is claimed yet.
+The completed offline KVM run used public artifact
+`1249bd010929a6e2d70796838d0f4b32807fa7fa`, with all 684 actually installed
+noneditable package resources equal to Git. QMP reported KVM present/enabled;
+the fresh x86 Ubuntu24 guest used its independent Linux 6.8 kernel and loopback
+only. All 28 MinIO phases completed, including 13 healthy repeats with zero managed
+operations/uploads and strict scoped before/after equality. Every pyinfra and
+original-role phase separately proved the unrelated alias unchanged without
+recording credential values. Missing-client recovery installed one artifact;
+stopped-unit recovery performed one managed start; root rotation performed
+three managed operations and no upload. Disabled-IAM refusals after a managed
+recovery prerequisite retain that actual partial change rather than claiming
+zero mutation. Immutable/extra-policy/disabled refusals, versioning retention,
+identity rotation and superseded cleanup were exercised on synthetic data.
+
+The original Ansible normal/missing-client/stopped-service cases succeeded with
+real writes; its root-rotation failure is retained as described above. Earlier
+failed build/QMP/bootstrap/fixture attempts remain separate evidence. In
+particular, attempt5 reached the matrix but failed a mutated fixture alias
+expectation; it was not relabeled successful. The final run retained full raw
+phase evidence, exited 0, and removed its exact owned containers/images before
+releasing the shared writer lock. No production IAM, object or service request
+was part of this owned qualification, and it makes no global-I/O claim.
+
+A separate, checksum-bound original S4 lag-probe component also completed six
+synthetic cases after the MinIO summary. Its expected marker/status writes are
+not zero-change, typed S4 deployment, composite, hardware or inventory proof.
 
 The prepared pyinfra client's fixed source is the official GitHub release asset
 `https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z`.
@@ -127,5 +150,6 @@ change the version or binary. An already matching client makes no download.
 Legacy Ansible/operator custom URLs are unchanged. The MinIO **server** source
 still returns410; no alternate server version or source is silently selected.
 
-An alternate offline native KVM transport is prepared under
-`tests/integration/minio/kvm/README.md`; execution and qualification remain pending.
+The executed offline native KVM transport and all retained attempt limits are
+documented under `tests/integration/minio/kvm/README.md`. Inventory deployment
+remains a separately coordinated step.

@@ -1,6 +1,11 @@
 # Owned MinIO native qualification
 
-Prepared harness; no native success is claimed before a completed receipt.
+The offline KVM route completed on public1249bd0: 28 MinIO phases, 13 strict
+zero-change repeats, every phase foreign-alias equality, plus a separate six-case
+S4 original lag component. All 684 installed resources matched Git/noneditable
+direct_url; final guest/runner/cleanup exits 0. This is owned synthetic native
+qualification, not inventory adoption. The private hosted route below remains
+unexecuted due the preserved pre-run billing failure.
 A private read-only-token workflow downloads only the two SHA-bound pinned
 executables, then anonymously checks out an exact public implementation SHA.
 Public scripts build a fresh Ubuntu24 systemd guest on an owned x86 GitHub VM.
