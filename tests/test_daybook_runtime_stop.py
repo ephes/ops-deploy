@@ -242,6 +242,9 @@ def test_original_role_stop_commands_and_bounds_are_the_source_oracle() -> None:
     ]
     status_task = next(t for t in tasks if t["name"] == "stop | Ask the server about each source this machine runs")
     assert status_task["become_flags"] == "-H -S -n -i"
+    host_task = next(t for t in tasks if t["name"] == "stop | Ask whether the capability host is running")
+    assert host_task["become_flags"] == "-H -S -n -i"
+    assert host_task["environment"] == {"TMUX_TMPDIR": "{{ daybook_operations_runtime_host_tmpdir }}"}
     defaults = yaml.safe_load((role / "defaults/main.yml").read_text())
     cfg = config()
     for name in ("quiet_retries", "quiet_delay", "stop_timeout", "poll_delay"):
@@ -250,6 +253,9 @@ def test_original_role_stop_commands_and_bounds_are_the_source_oracle() -> None:
     assert list(window.windows) == defaults["daybook_operations_runtime_stop_windows"]
     assert window.lead_minutes == defaults["daybook_operations_runtime_stop_window_lead_minutes"]
     assert window.timezone == defaults["daybook_operations_runtime_stop_window_timezone"]
+    code = yaml.safe_load((role / "tasks/code.yml").read_text())
+    python_find = next(task for task in code if task["name"] == "code | Find the pinned interpreter")
+    assert python_find["environment"]["UV_PYTHON_PREFERENCE"] == "only-managed"
     host_script = PACKAGE.joinpath("files/runtime_stop.py").read_text()
     assert '"/bin/kill", "-TERM", *pids' in host_script
     assert '"-KILL"' not in host_script

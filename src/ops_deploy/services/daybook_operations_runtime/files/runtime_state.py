@@ -88,9 +88,15 @@ class NativeProbes:
         env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": self.account.pw_dir,
                "PYTHONDONTWRITEBYTECODE": "1", **GIT_ENV, **(extra or {})}
         if user and os.geteuid() != self.account.pw_uid:
-            argv = ["/usr/bin/sudo", "-n", "-H", "-u", self.data["user"], "--", *argv]
+            # Preserve explicit command env across sudo env_reset. Metadata
+            # executes directly, without login profiles or their stdout/side
+            # effects. Absolute probes use a public cwd, independent of whether
+            # the SSH login user can traverse the target user's home.
+            argv = ["/usr/bin/sudo", "-n", "-H", "-u", self.data["user"], "--",
+                    "/usr/bin/env", *[key + "=" + value for key, value in env.items()], *argv]
         try:
-            return subprocess.run(argv, capture_output=True, env=env, timeout=30)
+            return subprocess.run(argv, capture_output=True, env=env,
+                                  cwd="/" if user else None, timeout=30)
         except (OSError, subprocess.TimeoutExpired):
             raise ObservationError("runtime_observer_probe_failed") from None
 

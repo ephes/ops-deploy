@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preserve the declared Daybook command environment across metadata delegation
+  with an explicit readable cwd and direct execution. Keep the same-user path
+  direct and retain authentication and timeout policies. Fixture setup selects
+  managed Python explicitly.
+
 - Add an owned Darwin GUI/SSH runtime-guard fixture with synthetic application
   state, actual installed-package provenance and explicit stop/failure/recovery
   effects. Its workflow is scoped to the implementation feature branch; it

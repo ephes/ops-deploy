@@ -244,6 +244,7 @@ def main() -> None:
                 [
                     "UV_PYTHON_INSTALL_DIR=" + str(root / "uv/python"),
                     "UV_CACHE_DIR=" + str(root / "uv/cache"),
+                    "UV_PYTHON_PREFERENCE=only-managed",
                     uv,
                 ]
             )
@@ -268,6 +269,26 @@ def main() -> None:
             "--python",
             "3.14.7",
         )
+        interpreter_metadata = json.loads(
+            command(
+                "/usr/bin/sudo",
+                "-H",
+                "-u",
+                "runner",
+                "--",
+                str(checkout / ".venv/bin/python"),
+                "-I",
+                "-B",
+                "-S",
+                "-c",
+                "import json,os,sys;print(json.dumps({'version':'%d.%d.%d'%sys.version_info[:3],"
+                "'owned_managed':os.path.realpath(sys.base_prefix).startswith("
+                "os.path.realpath(sys.argv[1])+'/cpython-3.14.7-')}))",
+                str(root / "uv/python"),
+            ).stdout
+        )
+        owned.report["fixture_interpreter"] = interpreter_metadata
+        assert interpreter_metadata == {"version": "3.14.7", "owned_managed": True}
         tmpdir = root / "tmux"
         tmpdir.mkdir(mode=0o700)
         journal = root / "store"

@@ -269,3 +269,33 @@ def test_current_unhealthy_runtime_stays_pure_verification(payload: dict[str, An
             )
             == "pure_verify"
         )
+
+
+@pytest.mark.parametrize("delegate", [False, True])
+def test_metadata_probe_uses_public_cwd_and_inner_command_environment(
+    payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch, delegate: bool
+) -> None:
+    from types import SimpleNamespace
+
+    account = SimpleNamespace(pw_uid=501, pw_dir="/Users/owned")
+    monkeypatch.setattr(pwd, "getpwnam", lambda _: account)
+    monkeypatch.setattr(os, "geteuid", lambda: 0 if delegate else 501)
+    called = Mock(return_value=subprocess.CompletedProcess([], 0, stdout=b"", stderr=b""))
+    monkeypatch.setattr(subprocess, "run", called)
+    probe = MODULE["NativeProbes"](payload)
+    arguments = ["/usr/bin/owned-tmux", "-L", "owned", "has-session", "-t", "=host"]
+    probe.run(arguments, user=True, extra={"TMUX_TMPDIR": "/owned/private-tmp"})
+    argv = called.call_args.args[0]
+    if delegate:
+        assert argv[:7] == ["/usr/bin/sudo", "-n", "-H", "-u", payload["user"], "--", "/usr/bin/env"]
+        assert "-i" not in argv
+        assert "-s" not in argv
+        assert "TMUX_TMPDIR=/owned/private-tmp" in argv[7:]
+        assert "GIT_OPTIONAL_LOCKS=0" in argv[7:]
+        assert "HOME=/Users/owned" in argv[7:]
+        assert argv[-len(arguments) :] == arguments
+    else:
+        assert argv == arguments
+        assert called.call_args.kwargs["env"]["TMUX_TMPDIR"] == "/owned/private-tmp"
+    assert called.call_args.kwargs["cwd"] == "/"
+    assert called.call_args.kwargs["timeout"] == 30

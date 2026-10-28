@@ -126,9 +126,23 @@ install or upgrade software on an inventory host. The
 failed at setup because tmux was missing, before any app/GUI/SSH case ran;
 its hosted artifacts have a seven-day retention period.
 
-The owned fixture records an initial observation diagnostic before normal pure
-verification. It uses the exact observer over the same SSH connector and retains
+The owned fixture records a diagnostic only after a failed normal verification,
+then still fails on that original result. It compares protected metadata and
+keeper PID before/after the diagnostic, which cannot pre-warm or replace the
+first normal observation. It uses the exact observer over the same SSH connector and retains
 only observer metadata, fixed failure categories and per-probe return codes with
 fixed stderr classifications. Child stderr, argv, environment and input bodies
 stay out of the receipt. This adds no retry, bypass or change to normal verifier
 success criteria; failed attempts remain failed evidence.
+
+Delegated metadata probes pass their explicit command environment after sudo,
+so `TMUX_TMPDIR` and Git selectors reach the target user despite sudo's normal
+environment reset. They execute directly with `/` as cwd and the target user's `HOME`, avoiding
+login-profile output and side effects. All probe paths are absolute; the SSH
+login user does not need traversal access to the target user's home. This is the new pure metadata contract;
+original Ansible's module wrapper isolated command stdout even when it used a
+login shell. Same-user probes also use the explicit public cwd. This changes
+no sudoers, authentication, SSH or timeout policy. Managed executor status keeps
+its separate original contract; it is not this pure metadata path. The owned
+fixture requests only managed Python and records its version and exact owned
+managed-prefix metadata before testing the runtime.
