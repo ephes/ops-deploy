@@ -1,0 +1,27 @@
+[Unit]
+Description=Authenticated software health JSON endpoint
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=observer
+Group=observer
+ExecStart=/usr/bin/python3 /usr/local/lib/fixture-software-live/software_live.py serve --config /etc/fixture-software-live/endpoint.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+[Install]
+WantedBy=multi-user.target

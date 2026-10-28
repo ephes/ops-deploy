@@ -1,0 +1,31 @@
+{
+  "policy": {
+    "host": "fixture",
+    "os": {
+      "expected_id": "ubuntu",
+      "product": "ubuntu"
+    },
+    "postgresql": {
+      "expected": false
+    },
+    "traefik": {
+      "expected": false,
+      "unit": "traefik.service",
+      "desired_version": null
+    },
+    "apt_max_age_seconds": 172800
+  },
+  "auth_user": "nyxmon",
+  "rust_version": "0.1.2",
+  "user": "observer",
+  "group": "observer",
+  "config_dir": "/etc/fixture-software-live",
+  "data_dir": "/var/lib/fixture-software-live",
+  "install_dir": "/usr/local/lib/fixture-software-live",
+  "port": 19110,
+  "on_calendar": "*:2/20",
+  "shadow_port": 19119,
+  "shadow_on_calendar": "*:4/20",
+  "impl": "rust",
+  "rust_shadow": true
+}

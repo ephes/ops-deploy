@@ -1,0 +1,11 @@
+# Managed by ops-library software_live (software_live_impl: rust).
+# Runs the pinned Rust release instead of the base unit's Python program;
+# removing this file (and daemon-reload) switches back to Python.
+[Service]
+ExecStart=
+ExecStart={{ _software_live_rust_binary }} collect --config {{ software_live_config_dir }}/policy.json --output {{ software_live_data_dir }}/state.json --cache {{ software_live_data_dir }}/upstream.json --group {{ software_live_group }}
+ExecStartPost=
+{% if software_live_inventory_export %}
+# Export failure must not change the existing monitor's observation result.
+ExecStartPost=-{{ _software_live_rust_binary }} export-inventory --config {{ software_live_data_dir }}/state.json --output /var/lib/software-estate-observations/software-health.json --group {{ software_live_inventory_group }}
+{% endif %}

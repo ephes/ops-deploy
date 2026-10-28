@@ -1,0 +1,27 @@
+[Unit]
+Description=Authenticated software health JSON endpoint
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=metrics
+Group=metrics
+ExecStart=/usr/bin/python3 /usr/local/lib/software-live/software_live.py serve --config /etc/software-live/endpoint.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+[Install]
+WantedBy=multi-user.target

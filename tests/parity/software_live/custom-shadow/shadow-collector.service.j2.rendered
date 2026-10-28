@@ -1,0 +1,20 @@
+[Unit]
+Description=Read-only software health observation (Rust shadow)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/lib/fixture-software-live/releases/0.1.2/software-live collect --report-usage --config /etc/fixture-software-live/policy.json --output /var/lib/fixture-software-live/shadow/state.json --cache /var/lib/fixture-software-live/shadow/upstream.json --group observer
+TimeoutStartSec=90
+Nice=10
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/fixture-software-live/shadow

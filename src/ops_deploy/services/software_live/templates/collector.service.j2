@@ -1,0 +1,24 @@
+[Unit]
+Description=Read-only software health observation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 {{ software_live_install_dir }}/software_live.py collect --config {{ software_live_config_dir }}/policy.json --output {{ software_live_data_dir }}/state.json --cache {{ software_live_data_dir }}/upstream.json --group {{ software_live_group }}
+{% if software_live_inventory_export %}
+# Export failure must not change the existing monitor's observation result.
+ExecStartPost=-/usr/bin/python3 {{ software_live_install_dir }}/software_live.py export-inventory --config {{ software_live_data_dir }}/state.json --output /var/lib/software-estate-observations/software-health.json --group {{ software_live_inventory_group }}
+{% endif %}
+TimeoutStartSec=90
+Nice=10
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths={{ software_live_data_dir }}{% if software_live_inventory_export %} -/var/lib/software-estate-observations{% endif %}
