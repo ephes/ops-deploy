@@ -563,3 +563,105 @@ All 792 previously qualified package resources were preserved byte-for-byte;
 the actual noneditable controller artifact's full 793-file set matched Git.
 This qualifies the owned Linux primitive, not removal of an inventory installation.
 Private routing adoption and a bounded real dry plan remain separate.
+
+## Declared ZFS storage and scheduled backup configuration
+
+`ops_deploy.infra.zfs_storage` provides `ZfsPoolConfig`, `ZfsDatasetConfig`,
+`ZfsStorageConfig` and their `deploy_zfs_pool`, `deploy_zfs_dataset` and
+`deploy_zfs_storage` functions. The bundle retains pool order and sorts datasets
+by path depth, then name. Supply encryption material separately as `SecretStr`
+values keyed by pool name; config models contain no credentials.
+
+```python
+from pydantic import SecretStr
+from ops_deploy.infra.zfs_storage import (
+    ZfsPoolConfig,
+    ZfsDatasetConfig,
+    ZfsStorageConfig,
+    deploy_zfs_storage,
+)
+
+pool = ZfsPoolConfig(
+    name="example",
+    vdevs=("/dev/disk/by-id/replace-with-declared-device",),
+    allow_create=True,
+    filesystem_properties={"compression": "lz4"},
+)
+config = ZfsStorageConfig(
+    pools=(pool,),
+    datasets=(ZfsDatasetConfig(name="example/data"),),
+)
+# Obtain this value from the normal secret store; never put a real key in source.
+deploy_zfs_storage(cfg=config, credentials={"example": SecretStr(source_key)})
+```
+
+The original explicit `allow_create` input remains required unless
+`validate_only=True`; `force_create` defaults to false. Unknown pool/dataset
+errors refuse creation rather than count as absence. For an existing encrypted
+root, native `zfs load-key -n` validates the desired source key from stdin before
+any key-file publication, including when its key is already loaded. Deployment
+does not rotate keys, unload them, export pools, recreate datasets, scrub or
+prune. It repairs declared properties and key metadata only when needed. The
+original boot unlock unit remains enabled/started, with its boot/stop lifecycle;
+a changed unit does not restart it during deployment. Validation-only retains
+the original package/module prerequisites but performs no pool/dataset/key writes.
+
+A separately deployed dataset can declare `parent_pool=pool` when an earlier
+pool operation will create its parent. Only that exact absent parent can be
+deferred during planning; actual execution still requires it. This does not add
+implicit `zfs create -p`. The original `mounted=False` policy does not unmount an
+existing filesystem. `casesensitivity` is creation-only, with a warning for
+existing macOS-policy mismatches. The source's `inherit_encryption` flag was
+unused by its create task: retaining it does not introduce `encryption=off`.
+Binary size comparisons use Decimal multiplication and truncation, including
+`none` versus zero. The source's `refreservation=auto` exception still performs
+an ordinary managed `zfs set` on each invocation; it is not a read-only no-op.
+
+`ops_deploy.infra.backup` provides `SyncoidConfig`, `UsbReplicationConfig`,
+`MinioArchiveConfig`, `MailReplicationConfig` and their four `deploy_*`
+functions. `SyncoidJob`, `UsbDrive` and `SnapshotRetention` retain explicit
+rollback, force-delete, partial-receive, bookmark-rotation and managed-prefix
+retention policies. The original scripts/templates are preserved; Sanoid stays
+its separate existing API. Deploy configures packages, declared directories,
+private keys, scripts and timers; it never explicitly invokes replication,
+mail staging, snapshot pruning, attestation or spindown. Timers retain their
+original `Persistent=true` behavior, so normal scheduling or a missed scheduled
+job can run independently of deployment.
+
+SSH private keys and USB pool keys are separate `SecretStr` deploy arguments.
+On-host private-file equality stays in RAM and produces no credential digest or
+file export; Linux OpenSSH validates private keys through a private anonymous
+RAM descriptor. Existing content is preserved when only mode/ownership changes. Mail-role and
+macmini restore-client private keys retain the original `regex_replace` literal
+newline transformation; MinIO private-key bytes remain unmodified.
+Known-host management performs a fresh ordinary peer keyscan every invocation,
+compares before writing and preserves unrelated entries, aliases, comments and
+other key types. It retains the original keyscan trust policy; it does not add
+an authentication channel or suppress future peer key changes.
+
+`ops_deploy.infra.backup.source` provides `BackupSourceConfig`,
+`BackupRestoreAccessConfig`, `deploy_backup_source`,
+`deploy_backup_restore_access` and `deploy_backup_restore_client` for the original delegated source scripts and
+the Fractal mail-restore forced-command key. They install the existing mail staging/restore programs;
+deploy never runs them or reads mail. The source play does not authorize keys on macmini; its existing SSH-key management retains that ownership. Existing unrelated Fractal root authorizations
+are retained in memory without exporting their file contents. A matching restore
+key with exactly the original six options may retain its existing option order;
+quote, escape or extra-option policy drift is reconciled to the canonical
+forced command. Key identity follows OpenSSH option boundaries without parsing
+free-form comments as keys. The control plane preserves the exact original interleave: call `deploy_backup_source`
+with `restore_client=False` on macmini for its wrapper files, then
+`deploy_backup_restore_access` on Fractal for its restore wrapper/key, then
+`deploy_backup_restore_client` on macmini for its private restore key and fresh
+peer keyscan. Run the Fractal backup roles next, followed by its original
+backup dataset subset. Direct single-host `deploy_backup_source` calls retain
+`restore_client=True` by default. The original pre-task key assertions still
+run before wrapper preparation even when client preparation is deferred.
+
+Owned ARM Ubuntu/ZFS2.2.2 fixtures cover encrypted file-vdev pools, a mirror,
+ordered datasets, source-key failures, native systemd/SSH configuration and
+strict repeats. Synthetic runtime fixtures exercise real syncoid/bookmark
+continuity and retention; physical USB/spindown efficacy is not attested.
+The unchanged retention helper relies on native ZFS hold refusal and can fail
+on a held candidate; it does not silently skip all held snapshots. Corrupt
+anchor JSON refuses before mutation, with the original JSON decoder exception.
+These component results do not constitute a production deployment receipt.

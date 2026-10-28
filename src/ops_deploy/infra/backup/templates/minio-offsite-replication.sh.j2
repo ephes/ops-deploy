@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_tag="minio-offsite-replication"
+source_user="{{ minio_offsite_replication_source_user }}"
+source_host="{{ minio_offsite_replication_source_host }}"
+source_path="{{ minio_offsite_replication_source_path }}"
+destination_path="{{ minio_offsite_replication_destination_path }}"
+ssh_key_path="{{ minio_offsite_replication_ssh_key_path }}"
+ssh_known_hosts_path="{{ minio_offsite_replication_ssh_known_hosts_path }}"
+ssh_connect_timeout="{{ minio_offsite_replication_ssh_connect_timeout }}"
+status_file="{{ minio_offsite_replication_status_file }}"
+status_dir="{{ minio_offsite_replication_status_dir }}"
+latest_marker_file="{{ minio_offsite_replication_latest_marker_file }}"
+rsync_delete="{{ minio_offsite_replication_rsync_delete | bool | ternary('true', 'false') }}"
+require_archives="{{ minio_offsite_replication_require_archives | bool | ternary('true', 'false') }}"
+spindown_enabled="{{ minio_offsite_replication_spindown_enabled | bool | ternary('true', 'false') }}"
+spindown_script_path="{{ minio_offsite_replication_spindown_script_path }}"
+
+ssh_bin="/usr/bin/ssh"
+rsync_bin="/usr/bin/rsync"
+
+{% if minio_offsite_replication_archive_patterns | length > 0 %}
+archive_patterns=(
+{% for pattern in minio_offsite_replication_archive_patterns %}
+  "{{ pattern }}"
+{% endfor %}
+)
+{% else %}
+archive_patterns=()
+{% endif %}
+
+{% if minio_offsite_replication_rsync_extra_args | length > 0 %}
+rsync_args=(
+{% for arg in minio_offsite_replication_rsync_extra_args %}
+  "{{ arg }}"
+{% endfor %}
+)
+{% else %}
+rsync_args=()
+{% endif %}
+
+run_spindown() {
+  if [[ "${spindown_enabled}" != "true" ]]; then
+    return 0
+  fi
+  if [[ -x "${spindown_script_path}" ]]; then
+    logger -t "${log_tag}" "Running post-sync spindown hook: ${spindown_script_path}"
+    if ! "${spindown_script_path}"; then
+      logger -t "${log_tag}" "Post-sync spindown hook failed: ${spindown_script_path}"
+    fi
+  else
+    logger -t "${log_tag}" "Spindown script not executable: ${spindown_script_path}"
+  fi
+}
+
+if [[ -z "${source_host}" || -z "${source_path}" || -z "${destination_path}" ]]; then
+  logger -t "${log_tag}" "Missing required source/destination configuration."
+  exit 1
+fi
+
+if [[ ! -f "${ssh_key_path}" ]]; then
+  logger -t "${log_tag}" "SSH key file not found: ${ssh_key_path}"
+  exit 1
+fi
+
+if [[ ! -f "${ssh_known_hosts_path}" ]]; then
+  logger -t "${log_tag}" "known_hosts file not found: ${ssh_known_hosts_path}"
+  exit 1
+fi
+
+mkdir -p "${destination_path}" "${status_dir}"
+
+ssh_command="${ssh_bin} -i ${ssh_key_path} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_known_hosts_path} -o ConnectTimeout=${ssh_connect_timeout}"
+
+for pattern in "${archive_patterns[@]}"; do
+  rsync_args+=( "--include=${pattern}" )
+done
+rsync_args+=( "--exclude=*" )
+if [[ "${rsync_delete}" == "true" ]]; then
+  rsync_args+=( "--delete" )
+fi
+
+logger -t "${log_tag}" "Syncing MinIO archives from ${source_host}:${source_path} to ${destination_path}"
+"${rsync_bin}" \
+  "${rsync_args[@]}" \
+  -e "${ssh_command}" \
+  "${source_user}@${source_host}:${source_path%/}/" \
+  "${destination_path%/}/"
+
+find_args=( "${destination_path}" -maxdepth 1 -type f "(" )
+for idx in "${!archive_patterns[@]}"; do
+  if [[ "${idx}" -gt 0 ]]; then
+    find_args+=( "-o" )
+  fi
+  find_args+=( -name "${archive_patterns[$idx]}" )
+done
+find_args+=( ")" -printf '%T@ %p\n' )
+
+latest_archive="$(
+  {
+    find "${find_args[@]}" || true
+  } \
+    | awk '
+        BEGIN { max = -1; file = "" }
+        {
+          ts = $1
+          $1 = ""
+          sub(/^ /, "", $0)
+          if (ts > max) {
+            max = ts
+            file = $0
+          }
+        }
+        END {
+          if (file != "") {
+            print file
+          }
+        }
+      '
+)"
+
+generated_epoch="$(date +%s)"
+no_archives="false"
+
+if [[ -z "${latest_archive}" || ! -f "${latest_archive}" ]]; then
+  no_archives="true"
+  latest_archive=""
+  latest_epoch=""
+  latest_size_bytes=""
+  rm -f "${latest_marker_file}"
+  logger -t "${log_tag}" "No MinIO archive found after sync under ${destination_path}"
+else
+  latest_epoch="$(stat -c '%Y' "${latest_archive}")"
+  latest_size_bytes="$(stat -c '%s' "${latest_archive}")"
+  : > "${latest_marker_file}"
+  touch -d "@${latest_epoch}" "${latest_marker_file}"
+fi
+
+export STATUS_FILE="${status_file}"
+export SOURCE_HOST="${source_host}"
+export SOURCE_PATH="${source_path}"
+export DESTINATION_PATH="${destination_path}"
+export LATEST_ARCHIVE="${latest_archive}"
+export LATEST_EPOCH="${latest_epoch}"
+export LATEST_SIZE_BYTES="${latest_size_bytes}"
+export GENERATED_EPOCH="${generated_epoch}"
+export NO_ARCHIVES="${no_archives}"
+
+python3 <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+
+status_file = os.environ["STATUS_FILE"]
+generated_epoch = int(os.environ["GENERATED_EPOCH"])
+latest_epoch_raw = os.environ.get("LATEST_EPOCH", "").strip()
+latest_size_raw = os.environ.get("LATEST_SIZE_BYTES", "").strip()
+latest_epoch = int(latest_epoch_raw) if latest_epoch_raw else None
+payload = {
+    "generated_at": datetime.fromtimestamp(generated_epoch, tz=timezone.utc).isoformat(),
+    "source_host": os.environ["SOURCE_HOST"],
+    "source_path": os.environ["SOURCE_PATH"],
+    "destination_path": os.environ["DESTINATION_PATH"],
+    "latest_archive": os.environ.get("LATEST_ARCHIVE") or None,
+    "latest_archive_mtime_epoch": latest_epoch,
+    "latest_archive_mtime_iso": (
+        datetime.fromtimestamp(latest_epoch, tz=timezone.utc).isoformat() if latest_epoch is not None else None
+    ),
+    "latest_archive_size_bytes": int(latest_size_raw) if latest_size_raw else None,
+    "no_archives": os.environ.get("NO_ARCHIVES", "false").lower() == "true",
+}
+
+tmp_path = f"{status_file}.tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, sort_keys=True)
+    handle.write("\n")
+os.replace(tmp_path, status_file)
+PY
+
+if [[ "${no_archives}" == "true" ]]; then
+  if [[ "${require_archives}" == "true" ]]; then
+    logger -t "${log_tag}" "Offsite sync failed: no archive found and require_archives=true"
+    exit 1
+  fi
+  run_spindown
+  logger -t "${log_tag}" "Offsite sync completed without archives (require_archives=false)"
+  exit 0
+fi
+
+run_spindown
+logger -t "${log_tag}" "Offsite sync complete; latest archive=${latest_archive}"

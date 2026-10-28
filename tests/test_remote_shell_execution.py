@@ -189,6 +189,9 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # MinIO uses the same encoded-source boundary, with secret payload on stdin.
     # Exercise its actual composed command through both shells below.
     encoded_minio = {"services/minio/files/iam_host.py"}
+    # The unchanged backup attestation program is uploaded with files.put,
+    # never interpolated into shell source; its actual file CLI is tested below.
+    uploaded_backup = {"infra/files/zfs_snapshot_file_attestation.py"}
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
@@ -199,6 +202,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_daybook_runtime
         | encoded_daybook_sessions
         | encoded_minio
+        | uploaded_backup
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
@@ -575,3 +579,27 @@ def test_minio_encoded_host_source_and_secret_stdin_through_real_login_shell(tmp
     assert json.loads(result.stdout) == {"pending": 0, "changed": False}
     assert result.stderr == ""
     assert alias_file.read_bytes() == before
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_backup_attestation_is_uploaded_and_its_real_file_cli_is_shell_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, login_shell: str
+) -> None:
+    from pyinfra.operations import files as file_ops
+
+    from ops_deploy.infra.backup import common
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(file_ops, "put", lambda **kwargs: calls.append(kwargs))
+    original = SRC / "infra/files/zfs_snapshot_file_attestation.py"
+    uploaded = tmp_path / "uploaded attestation.py"
+    common.original_file(original.name, str(uploaded), "0750")
+    assert len(calls) == 1
+    assert calls[0]["src"] == str(original)
+    assert calls[0]["dest"] == str(uploaded)
+    shutil.copyfile(str(calls[0]["src"]), uploaded)
+    command = shlex.join([sys.executable, str(uploaded), "--help"])
+    result = run_remote(command, login_shell, os.environ["PATH"])
+    assert result.returncode == 0, result.stderr
+    assert "--attestation-dir" in result.stdout
+    assert uploaded.read_bytes() == original.read_bytes()
