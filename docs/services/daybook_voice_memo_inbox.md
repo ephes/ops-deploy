@@ -101,3 +101,17 @@ checks. These are component/mechanism proofs with inert app code and fake auth,
 not real importer activation, data processing or an inventory rollout. Temporary
 UV/cache I/O and unique enabled launchd override rows are outside any claim of
 whole-machine I/O or state immutability.
+
+## Optional update interruption report
+
+`report_daybook_inbox_interruption` preserves the original optional best-effort
+pre-update summary. Metadata-only availability checks do not run the application.
+When an explicit managed install/update requests the report, the original GUI
+account context runs `voice-memos status --summary-only`. That command can read
+the application's ledger and is counted as managed application work. Only a
+validated nonnegative `long_in_flight_count` is logged as an operator summary; raw output and errors
+stay in memory. Missing or failed application summaries remain optional and do not introduce
+an acknowledgement or refusal. The ordinary current keeper verification path
+does not run this report. Genuine SDK/transport failures retain their failed
+operation result. Owned synthetic ledgers must qualify this behavior
+before any actual update requests it.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add managed Daybook runtime cutover/rollback and optional Inbox interruption-report components, preserving original reconciliation/start guards and private aggregate output boundaries. Inventory update/lifecycle adoption remains separate.
+
 - Add the original Voice Memo Inbox declaration, disabled-first component
   controller and final keeper resource composition. Keep root-source/Python
   replacement behind the original runtime/quiescence guards, preserve private

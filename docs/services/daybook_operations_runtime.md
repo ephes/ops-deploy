@@ -250,3 +250,35 @@ a later refusal phase, and subsequent diagnostics exposed the ordinary uv lock
 mode compatibility issue. The final scoped review retained its execution limits
 and repaired the hard-link regression's masked negative case; it did not relabel
 those failures or claim a whole-family live review.
+
+## Attended cutover and rollback component
+
+`transition_daybook_runtime` retains the original confirmed `cutover` and
+`rollback` actions and optional start. It checks the exact source, existing
+profile identity/store/kinds, closeout marker, loaded keeper and detached
+supervisor before mutation. Original executor `operations status` and `idle`
+commands remain managed application work: they can open the application Journal
+and expire authority. Their raw output stays in memory; only four aggregate
+status fields are interpreted. This is distinct from pure monitor verification.
+
+The transition stages credentials and the candidate, disables only the declared
+label, preserves the original idle wait, proves it unloaded, and checks all
+rollback-store entries before selecting a command. The first original command
+is saved once, including binary plist bytes. Closeout prevents recreating the
+backup. The selected policy is parsed through the original managed client
+constructor. Starting still requires reconciled server state before enabling
+and bootstrapping the exact label. A failed intermediate step retains its real
+partial effects; the component does not automatically restart or roll back.
+
+The original GUI account login context is retained for managed commands.
+Read-only metadata probes continue to use their separate direct context.
+This component does not install code, select a new source, quiesce a running
+keeper, or expand the runtime update's Inbox-only dependency into Sessions or
+Photos. Private normal routing, complete update composition and inventory
+qualification are separate work.
+
+The original `binding` selects one source for transition `status`/`idle`;
+`status_sources` selects the full monitoring/stop set. They retain separate
+original purposes, so the typed model adds no new membership restriction.
+Live and saved command metadata are checked before mutation and rechecked
+after unloading before replacement.
