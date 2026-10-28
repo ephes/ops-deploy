@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve checkout-only Sessions convergence while an unrelated Inbox-backed
+  supervisor runs; retain the original scoped system reconcile quiescence guard.
+
 - Preserve failed-operation cleanup when Sessions SFTP setup fails, and enable
   internal SFTP only in the disposable owned SSH fixture.
 

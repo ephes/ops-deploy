@@ -278,3 +278,49 @@ def test_actual_pyinfra_single_host_failed_operation_raises_fixed_base_error() -
         state.fail_hosts({target})
     assert type(failed.value) is PyinfraError
     assert state.failed_hosts == {target}
+
+
+@pytest.mark.parametrize(
+    ("category", "success", "observed"),
+    [
+        ("sessions_source_requires_reconcile_disabled_unloaded", False, 1),
+        ("sessions_source_reconcile_probe_failed", False, 0),
+        ("prefix sessions_source_requires_reconcile_disabled_unloaded", False, 0),
+        ("sessions_source_requires_reconcile_disabled_unloaded", True, 0),
+    ],
+)
+def test_native_reconcile_refusal_observer_retains_only_exact_failed_category(
+    monkeypatch: pytest.MonkeyPatch,
+    category: str,
+    success: bool,
+    observed: int,
+) -> None:
+    import runpy
+    from types import SimpleNamespace
+
+    from pyinfra.api import StringCommand
+    from pyinfra.connectors.ssh import SSHConnector
+    from pyinfra.connectors.util import CommandOutput, OutputLine
+
+    fixture = Path(__file__).resolve().parents[1] / "smoke/daybook_runtime_native_fixture.py"
+    monkeypatch.syspath_prepend(str(fixture.parent))
+    module = runpy.run_path(str(fixture))
+    private = "UNUSABLE-OWNED-PRIVATE-DIAGNOSTIC"
+    monkeypatch.setattr(
+        SSHConnector,
+        "run_shell_command",
+        lambda *_args, **_kwargs: (
+            success,
+            CommandOutput([OutputLine("stderr", category), OutputLine("stderr", private)]),
+        ),
+    )
+
+    def run(*args: object, **kwargs: object) -> object:
+        SSHConnector.run_shell_command(SSHConnector.__new__(SSHConnector), StringCommand("owned synthetic only"))
+        return SimpleNamespace(succeeded=success)
+
+    monkeypatch.setitem(module["source_run_with_upload_counter"].__globals__, "run_deploy_ssh", run)
+    _result, counts = module["source_run_with_upload_counter"](_owned_observe_reconcile_refusal=True)
+    assert counts["reconcile_refusal_events"] == observed
+    assert private not in json.dumps(counts)
+    assert category not in json.dumps(counts)

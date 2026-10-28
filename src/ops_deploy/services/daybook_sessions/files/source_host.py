@@ -126,19 +126,13 @@ def inspect(data, probes):
         if loaded.returncode not in {0, 113} or disabled.returncode:
             raise SourceError("sessions_source_reconcile_probe_failed")
         reconcile_ready = loaded.returncode == 113 and marker in (["true"], ["disabled"])
-    processes = probes.run(["/usr/bin/pgrep", "-u", data["user"], "-f", "[o]perations serve"])
-    if processes.returncode not in {0, 1}:
-        raise SourceError("sessions_source_supervisor_probe_failed")
-    return {"current": bool(current), "needs_bundle": needs_bundle, "in_use": processes.returncode == 0,
+    return {"current": bool(current), "needs_bundle": needs_bundle,
             "delegate": os.geteuid() != probes.account.pw_uid, "reconcile_ready": reconcile_ready}
 
 
-
-def require_quiescent(state):
+def require_reconcile_quiescent(state):
     if state["current"]:
         return
-    if state["in_use"]:
-        raise SourceError("sessions_source_requires_quiescent_supervisor")
     if not state["reconcile_ready"]:
         raise SourceError("sessions_source_requires_reconcile_disabled_unloaded")
 
@@ -214,7 +208,7 @@ def apply(data, probes):
         state = inspect(data, probes)
         if state["current"]:
             return
-        require_quiescent(state)
+        require_reconcile_quiescent(state)
         if not pathlib.Path(data["checkout"]).exists():
             probes.managed(["/usr/bin/git", "init", "--quiet", "--template=", data["checkout"]])
             probes.managed(probes.git_command("remote", "add", "origin", data["repo_url"]))
@@ -265,7 +259,7 @@ def main():
         probes = SourceProbes(data)
         action = sys.argv[1]
         if action == "prepare-transfer":
-            require_quiescent(inspect(data, probes))
+            require_reconcile_quiescent(inspect(data, probes))
             prepare_transfer(data)
             print("prepared")
         elif action == "cleanup-transfer":

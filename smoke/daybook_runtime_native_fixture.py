@@ -177,12 +177,15 @@ def capture_observation(
 
 
 def source_run_with_upload_counter(*args: Any, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
+    from contextlib import ExitStack
     from unittest.mock import patch
 
     import paramiko
+    from pyinfra.connectors.ssh import SSHConnector
 
     fail_upload = kwargs.pop("_owned_fail_upload", False)
     fail_setup = kwargs.pop("_owned_fail_sftp_setup", False)
+    observe_reconcile = kwargs.pop("_owned_observe_reconcile_refusal", False)
     counts: dict[str, Any] = {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
     original = paramiko.SFTPClient.putfo
 
@@ -204,12 +207,26 @@ def source_run_with_upload_counter(*args: Any, **kwargs: Any) -> tuple[Any, dict
         counts["succeeded"] += 1
         return result
 
+    original_shell = SSHConnector.run_shell_command
+
+    def observed_shell(connector: Any, *shell_args: Any, **shell_kwargs: Any) -> Any:
+        result = original_shell(connector, *shell_args, **shell_kwargs)
+        if not result[0]:
+            for line in result[1]:
+                if line.buffer_name == "stderr" and line.line == "sessions_source_requires_reconcile_disabled_unloaded":
+                    counts["reconcile_refusal_events"] += 1
+        # No raw command, stdout/stderr body or other category is retained.
+        return result
+
     # Count the actual SFTP transfer boundary, including individual attempts;
     # no file/body/argument is inspected or copied into the receipt.
-    with patch.object(paramiko.SFTPClient, "putfo", observed):
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(paramiko.SFTPClient, "putfo", observed))
+        if observe_reconcile:
+            counts["reconcile_refusal_events"] = 0
+            stack.enter_context(patch.object(SSHConnector, "run_shell_command", observed_shell))
         if fail_setup:
             from pyinfra.api.exceptions import ConnectError
-            from pyinfra.connectors.ssh import SSHConnector
 
             with patch.object(
                 SSHConnector,
@@ -656,7 +673,50 @@ def main() -> None:
             daybook_sessions_launchd_path="/usr/bin:/bin:/usr/sbin:/sbin",
         )
         session_before = snapshot([session_checkout])
-        source_refused, source_refusal_uploads = source_run_with_upload_counter(
+        system_label = "de.wersdoerfer.daybook.weeknotes-reconcile"
+        # Only read the original fixed namespace. This fixture never creates,
+        # disables/enables or bootstraps a real system reconcile label.
+        disabled_system = command("/bin/launchctl", "print-disabled", "system").stdout
+        assert system_label not in disabled_system
+        temporary_before_guard = set(Path("/private/var/tmp").glob("ops-deploy-daybook-source-*"))
+        system_guarded, system_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            DaybookSessionsConfig.model_validate(
+                {
+                    **session_cfg.model_dump(mode="json"),
+                    "daybook_sessions_launchd_scope": "system",
+                    "daybook_sessions_launchd_manage_state": True,
+                }
+            ),
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+            _owned_observe_reconcile_refusal=True,
+        )
+        assert not system_guarded.succeeded
+        guard_prefix = "Install exact Sessions source and locked managed environment | "
+        assert not system_guarded.op(
+            guard_prefix + "Prepare private temporary Daybook source upload directory"
+        ).succeeded
+        assert system_uploads == {
+            "attempted": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "paths": [],
+            "reconcile_refusal_events": 1,
+        }
+        assert set(Path("/private/var/tmp").glob("ops-deploy-daybook-source-*")) == temporary_before_guard
+        assert snapshot([session_checkout]) == session_before
+        assert snapshot(protected) == before
+        assert job_pid(service) == pid
+        owned.report["sessions_original_system_reconcile_guard_refuses_before_prep_upload"] = True
+        owned.report["sessions_original_system_reconcile_fixed_refusal_observed"] = system_uploads[
+            "reconcile_refusal_events"
+        ]
+        # Dedicated legacy source convergence must preserve an unrelated running
+        # Inbox-backed keeper: its own interpreter/source/resources are distinct.
+        source_first, source_uploads = source_run_with_upload_counter(
             install_sessions_source,
             session_cfg,
             session_source,
@@ -664,12 +724,44 @@ def main() -> None:
             host_name="owned-daybook",
             host_data=host_data,
         )
-        assert not source_refused.succeeded
-        assert source_refusal_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
-        assert snapshot([session_checkout]) == session_before
+        assert source_first.succeeded, str(source_first.error)
+        assert len(source_first.mutating_changed_ops) == 3
+        assert {key: value for key, value in source_uploads.items() if key != "paths"} == {
+            "attempted": 1,
+            "succeeded": 1,
+            "failed": 0,
+        }
+        assert len(source_uploads["paths"]) == 1
+        assert not Path(source_uploads["paths"][0]).parent.exists()
+        assert not Path(session_cfg.daybook_sessions_repo_bundle_path).exists()
+        assert (
+            command("/usr/bin/git", "-C", str(session_checkout), "rev-parse", "HEAD").stdout.strip() == session_revision
+        )
         assert snapshot(protected) == before
         assert job_pid(service) == pid
-        owned.report["sessions_source_running_refusal_before_upload_pid_preserved"] = True
+        assert capability_present()
+        session_current = snapshot([session_checkout])
+        source_repeat, source_repeat_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            session_cfg,
+            session_source,
+            session_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+        )
+        assert source_repeat.succeeded, str(source_repeat.error)
+        assert source_repeat.mutating_changed_ops == []
+        assert source_repeat_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
+        assert snapshot([session_checkout]) == session_current
+        assert snapshot(protected) == before
+        assert job_pid(service) == pid
+        assert capability_present()
+        owned.report["sessions_source_first_managed_ops"] = 3
+        owned.report["sessions_source_first_actual_sftp"] = source_uploads
+        owned.report["sessions_source_repeat_managed_ops"] = 0
+        owned.report["sessions_source_repeat_actual_sftp"] = source_repeat_uploads
+        owned.report["sessions_source_bundle_removed_runtime_resources_preserved"] = True
+        owned.report["sessions_legacy_first_repeat_unrelated_keeper_pid_resources_preserved"] = True
         stop_cfg = cfg.model_copy(update={"action": "stop", "confirmed": True})
         clock = command("/bin/date", "+%H:%M", env={**os.environ, "TZ": "Europe/Berlin"}).stdout.strip()
         assert clock < "23:58", "Owned full-day window fault needs a bounded midnight margin"
@@ -729,52 +821,6 @@ def main() -> None:
         assert len(repeat.mutating_changed_ops) == 1
         assert snapshot(protected) == before
         assert capability_present()
-        # The normal source API now runs after real supervisor quiescence.
-        source_first, source_uploads = source_run_with_upload_counter(
-            install_sessions_source,
-            session_cfg,
-            session_source,
-            session_bundle,
-            host_name="owned-daybook",
-            host_data=host_data,
-        )
-        assert source_first.succeeded, str(source_first.error)
-        assert len(source_first.mutating_changed_ops) == 3
-        assert {key: value for key, value in source_uploads.items() if key != "paths"} == {
-            "attempted": 1,
-            "succeeded": 1,
-            "failed": 0,
-        }
-        assert len(source_uploads["paths"]) == 1
-        assert not Path(source_uploads["paths"][0]).parent.exists()
-        assert not Path(session_cfg.daybook_sessions_repo_bundle_path).exists()
-        assert (
-            command("/usr/bin/git", "-C", str(session_checkout), "rev-parse", "HEAD").stdout.strip() == session_revision
-        )
-        assert snapshot(protected) == before
-        assert job_pid(service) is None
-        assert capability_present()
-        session_current = snapshot([session_checkout])
-        source_repeat, source_repeat_uploads = source_run_with_upload_counter(
-            install_sessions_source,
-            session_cfg,
-            session_source,
-            session_bundle,
-            host_name="owned-daybook",
-            host_data=host_data,
-        )
-        assert source_repeat.succeeded, str(source_repeat.error)
-        assert source_repeat.mutating_changed_ops == []
-        assert source_repeat_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
-        assert snapshot([session_checkout]) == session_current
-        assert snapshot(protected) == before
-        assert job_pid(service) is None
-        assert capability_present()
-        owned.report["sessions_source_first_managed_ops"] = 3
-        owned.report["sessions_source_first_actual_sftp"] = source_uploads
-        owned.report["sessions_source_repeat_managed_ops"] = 0
-        owned.report["sessions_source_repeat_actual_sftp"] = source_repeat_uploads
-        owned.report["sessions_source_bundle_removed_runtime_resources_preserved"] = True
         # Fresh, separate source-run fault: a new synthetic Main requires a
         # transfer, whose actual SFTP method is forced to fail before bytes move.
         # The original failed upload stays failed; cleanup must still run.

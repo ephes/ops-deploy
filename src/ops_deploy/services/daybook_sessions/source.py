@@ -107,7 +107,6 @@ def inspect_sessions_source(cfg: DaybookSessionsConfig, source: SourceTree) -> d
         if not isinstance(state, dict) or set(state) != {
             "current",
             "needs_bundle",
-            "in_use",
             "delegate",
             "reconcile_ready",
         }:
@@ -205,8 +204,6 @@ def install_sessions_source(cfg: DaybookSessionsConfig, source: SourceTree, bund
     data = source_payload(cfg, source)
     state = inspect_sessions_source(cfg, source)
     if not state["current"]:
-        if state["in_use"]:
-            raise DeployError("Sessions source changes require the original quiescent runtime update")
         if state["needs_bundle"]:
             data["transfer_dir"] = "/private/var/tmp/ops-deploy-daybook-source-" + uuid.uuid4().hex
             data["bundle_path"] = str(Path(data["transfer_dir"]) / Path(cfg.daybook_sessions_repo_bundle_path).name)

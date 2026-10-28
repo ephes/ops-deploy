@@ -109,13 +109,12 @@ class Probes:
         self.data = data
         self.account = self.native.account
         self.ready = False
-        self.running = False
         self.fail_sync = False
         self.syncs: list[list[str]] = []
 
     def run(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         if argv[0] == "/usr/bin/pgrep":
-            return subprocess.CompletedProcess(argv, 0 if self.running else 1, b"", b"")
+            raise AssertionError("Checkout-only Sessions convergence must not query unrelated supervisors")
         return cast(subprocess.CompletedProcess[bytes], self.native.run(argv, **kwargs))
 
     def git(self, *args: str) -> bytes:
@@ -176,19 +175,16 @@ def test_real_missing_commit_bundle_first_and_repeat_with_actual_git_bytes(
     assert len(probes.syncs) == 1
 
 
-def test_running_supervisor_refuses_before_checkout_or_uv_and_cleans_staged_bundle(
+def test_checkout_only_source_change_never_queries_unrelated_supervisors(
     checkout: tuple[dict[str, Any], Path, SourceTree],
 ) -> None:
-    data, bundle, _ = checkout
+    data, bundle, source = checkout
     probes = Probes(data)
-    probes.running = True
     stage_transfer(data, bundle)
-    before = snapshot(Path(data["checkout"]))
-    with pytest.raises(RuntimeError, match=r"^sessions_source_requires_quiescent_supervisor$"):
-        MODULE["apply"](data, probes)
-    assert snapshot(Path(data["checkout"])) == before
-    assert probes.syncs == []
-    assert not Path(data["bundle_path"]).exists()
+    MODULE["apply"](data, probes)
+    assert git(Path(data["checkout"]), "rev-parse", "HEAD") == source.commit
+    assert len(probes.syncs) == 1
+    assert not Path(data["transfer_dir"]).exists()
 
 
 @pytest.mark.parametrize("fault", ["untracked", "tracked", "linked", "missing"])
@@ -280,7 +276,6 @@ def test_fresh_checkout_uses_controller_bundle_without_host_network(
     assert git(Path(data["checkout"]), "remote", "get-url", "origin") == data["repo_url"]
     assert not Path(data["bundle_path"]).exists()
     assert MODULE["inspect"](data, probes)["current"] is True
-    probes.running = True
     before = snapshot(Path(data["checkout"]))
     MODULE["apply"](data, probes)
     assert snapshot(Path(data["checkout"])) == before
@@ -316,13 +311,10 @@ def test_sync_arguments_cannot_escape_declared_target_or_python(
         source_payload(cfg, source)
 
 
-@pytest.mark.parametrize(
-    ("current", "running", "delegate"), [(True, True, False), (False, False, True), (False, True, True)]
-)
-def test_normal_source_api_plans_upload_only_for_missing_quiescent_commit(
+@pytest.mark.parametrize(("current", "delegate"), [(True, False), (False, True), (False, False)])
+def test_normal_source_api_defers_reconcile_readiness_until_execution(
     checkout: tuple[dict[str, Any], Path, SourceTree],
     current: bool,
-    running: bool,
     delegate: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -338,7 +330,6 @@ def test_normal_source_api_plans_upload_only_for_missing_quiescent_commit(
     )
     state = {
         "current": current,
-        "in_use": running,
         "needs_bundle": not current,
         "delegate": delegate,
         "reconcile_ready": False,
@@ -348,14 +339,9 @@ def test_normal_source_api_plans_upload_only_for_missing_quiescent_commit(
     # Actual encoded CLI/owned SSH tests cover the real input/transport boundary.
     monkeypatch.setattr(source_module, "inspect_sessions_source", lambda *_: state)
     run = run_deploy_fake(install_sessions_source, cfg, source, bundle, responses={"uname -s": ["Darwin"]})
-    if running and not current:
-        assert not run.succeeded
-        assert run.uploaded_paths == []
-        assert run.executed_commands == []
-    else:
-        assert run.succeeded, run.error
-        assert len(run.uploaded_paths) == int(not current)
-        assert len(run.mutating_changed_ops) == (0 if current else 3)
+    assert run.succeeded, run.error
+    assert len(run.uploaded_paths) == int(not current)
+    assert len(run.mutating_changed_ops) == (0 if current else 3)
     assert run.fish_unsafe_commands == []
 
 
@@ -497,10 +483,10 @@ def test_source_drift_requires_original_system_reconcile_disabled_unloaded(
     assert state["current"] is False
     assert state["reconcile_ready"] is allowed
     if allowed:
-        MODULE["require_quiescent"](state)
+        MODULE["require_reconcile_quiescent"](state)
     else:
         with pytest.raises(RuntimeError, match=r"^sessions_source_requires_reconcile_disabled_unloaded$"):
-            MODULE["require_quiescent"](state)
+            MODULE["require_reconcile_quiescent"](state)
     assert commands
     assert all(argv[1] in {"print", "print-disabled"} for argv in commands)
     assert snapshot(Path(data["checkout"])) == before

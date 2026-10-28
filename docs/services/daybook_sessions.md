@@ -56,9 +56,12 @@ The stage retains tracked-force semantics and no-fetch mode’s untracked refusa
 (update mode retains unrelated untracked files), exact managed
 Python, original frozen sync inputs and the original service-user login context
 for managed Git/build commands. Explicit environment reaches that context after
-sudo. It neither imports the application nor runs the classifier probe. Current
-source/environment can verify while the supervisor runs; changes require the
-original update fanout to quiesce it first, with a second check before mutation. For managed system scope, the source stage
+sudo. It neither imports the application nor runs the classifier probe. The dedicated
+Sessions checkout may converge while an unrelated Inbox-backed supervisor runs.
+Its source stage does not mutate that supervisor’s code, policy or resources.
+There is no user-wide operations-serving barrier or force/ack bypass. Shared
+environment/config changes are a separate resource-composition concern; the
+original runtime update remains Inbox-only. For managed system scope, the source stage
 also requires the original exact reconcile daemon to be persistently disabled
 and unloaded before any source drift: the complete role must run its original
 early reconcile quiesce first. This standalone component refuses that missing
