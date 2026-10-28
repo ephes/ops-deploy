@@ -121,7 +121,11 @@ replacement changes only its exact old program fragment; an upstream file
 without that fragment is left unchanged. NLTK datasets retain their original
 creates-only gates. Static assets inspect public installed program files,
 preserve the original compiled-frontend precedence, and run collectstatic only
-when those assets or their declared dependencies change. These checks may update
+when those assets or their declared dependencies change. The frontend overlay
+uses the original recursive remote-copy semantics: only its root has a fixed0755
+mode; identical children retain their metadata, while changed/missing files use
+source modes and missing subtrees preserve source metadata. Inspection does not
+invent a recursive executable-bit requirement. These checks may update
 access metadata and do not claim global zero I/O.
 
 Migrations check actual pending schema work with `migrate --check --plan

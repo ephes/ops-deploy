@@ -8,9 +8,9 @@ host-local; the controller receives a boolean only. No search backend is opened.
 
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import stat
+from pathlib import Path
 
 
 class Refusal(ValueError):
@@ -77,7 +77,7 @@ def expected_files(settings):
 
 def inspect_static(settings):
     target, expected = expected_files(settings)
-    for relative, (source, frontend) in expected.items():
+    for relative, (source, _) in expected.items():
         destination = target / relative
         # Parent symlinks could redirect a fixed static path into user data.
         parents = [target.joinpath(*relative.parts[:index]) for index in range(1, len(relative.parts))]
@@ -86,11 +86,34 @@ def inspect_static(settings):
         try:
             if digest(destination) != digest(source):
                 return {"pending": True}
-            if frontend and stat.S_IMODE(destination.stat().st_mode) != 0o755:
-                return {"pending": True}
         except FileNotFoundError:
             return {"pending": True}
     return {"pending": False}
+
+
+def overlay_frontend(frontend, destination):
+    # Ansible remote_src directory copying applies mode=0755 to the root,
+    # preserves identical children, and copies source modes for changed/missing
+    # files. In particular, collectstatic's identical compressed files survive.
+    destination.mkdir(parents=True, exist_ok=True)
+    os.chmod(destination, 0o755)
+    for source in frontend.rglob("*"):
+        relative = source.relative_to(frontend)
+        output = destination / relative
+        if source.is_symlink():
+            raise Refusal("frontend program asset must not be a symlink")
+        if source.is_dir():
+            if not output.exists():
+                shutil.copytree(source, output)
+        elif source.is_file():
+            try:
+                if digest(output) == digest(source):
+                    continue
+            except FileNotFoundError:
+                pass
+            output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, output, follow_symlinks=False)
+            shutil.copymode(source, output, follow_symlinks=False)
 
 
 def apply_static(settings):
@@ -106,21 +129,7 @@ def apply_static(settings):
                 if count > 50000 or (Path(directory) / name).is_symlink():
                     raise Refusal("static output tree is oversized or contains a symlink")
     call_command("collectstatic", interactive=False, clear=True, verbosity=0)
-    destination = target / "frontend"
-    destination.mkdir(parents=True, exist_ok=True)
-    os.chmod(destination, 0o755)
-    for source in frontend.rglob("*"):
-        relative = source.relative_to(frontend)
-        output = destination / relative
-        if source.is_symlink():
-            raise Refusal("frontend program asset must not be a symlink")
-        if source.is_dir():
-            output.mkdir(parents=True, exist_ok=True)
-            os.chmod(output, 0o755)
-        elif source.is_file():
-            output.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, output, follow_symlinks=False)
-            os.chmod(output, 0o755)
+    overlay_frontend(frontend, target / "frontend")
     if inspect_static(settings)["pending"]:
         raise Refusal("static program assets remain pending after collection")
     return {"collected": True}

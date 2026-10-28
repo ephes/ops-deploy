@@ -1,7 +1,8 @@
 # Owned Paperless native fixture (under preparation)
 
-The matrix source is implemented; it has not run. Runtime and harness source
-review and exact feature publication precede dispatch.
+The matrix source is implemented and the retained runs below provide partial
+evidence; full application/recovery qualification remains pending. Runtime and
+harness source review and exact feature publication precede each dispatch.
 It uses public `ephes/ops-deploy` GitHub Actions on a disposable Ubuntu24 x86 VM,
 with a fresh Ubuntu24 systemd Docker userspace. The guest shares that VM's
 kernel. This is not KVM, physical scanner or inventory qualification.
@@ -189,3 +190,23 @@ snapshots, requires the old command's exact mtime/ctime delta and the fixed
 command's exact equality, then runs the unchanged strict healthy/fish repeats
 and full fault matrix. The old control intentionally writes synthetic roots;
 no timestamp exemption, production probe or claim of global zero I/O is added.
+
+Run40758213091’s current and upgrade legs passed the real old/fixed migration-status controls
+and ordinary/fish healthy repeats with exact complete snapshots and zero managed
+changes/uploads. Both then failed the zero-change expectation after an original
+Ansible repeat: typed static collection ran once, changing only the static tree.
+The typed implementation incorrectly required0755 on every frontend file.
+Ansible2.21.5 recursive `remote_src` copy applies the declared mode to the root,
+preserves equal children and uses source modes for changed/missing files; its
+actual frontend files were0644/0664. The isolated original-module regression
+confirms that distinction. The typed overlay now preserves matching children,
+copies changed/missing file modes and missing subtree metadata, and inspects
+content without imposing a recursive mode the original did not manage.
+The next matrix retains exact source/destination public-program hashes and modes
+around both writers. Earlier raw snapshots establish the mode mismatch, but
+cannot retroactively prove equality of every program body. Both runners recorded
+run exit1, collection exit0 and cleanup exit0. All824 installed resources and
+58 collected guest files per leg were independently verified. Strict complete
+snapshot equality on healthy repeats remains required; no mode exemption is
+introduced in those comparisons. Full application/recovery qualification is
+still pending, and every original failure remains retained.

@@ -51,6 +51,8 @@
   final HTTP200, preserving the original readiness behavior. Skip writing Django
   system checks only in the migration status probe; actual managed migrations
   retain all checks and native repeats still require exact protected metadata.
+  Preserve original recursive frontend-copy permissions and unchanged children;
+  stop treating every non-executable frontend asset as drift.
 
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access

@@ -11,11 +11,64 @@ import subprocess
 import time
 import urllib.parse
 import urllib.request
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from ops_deploy.services.paperless.django import manage
 from ops_deploy.services.paperless.index_contract import expected_index_sentinels
+
+
+def static_program_observation(harness: Any, label: str) -> None:
+    """Retain exact public program comparisons around the original writer."""
+    assert harness.OWNED_ADMITTED
+    cfg = harness.CFG
+    settings = {
+        "release_dir": f"{cfg.site_root}/paperless-ngx-v{cfg.version}",
+        "venv": f"{cfg.site_root}/.venv",
+        "static_root": f"{cfg.site_root}/staticfiles",
+    }
+    program = files("ops_deploy.services.paperless").joinpath("files/static_assets.py").read_text()
+    program += "\nimport json\nsettings=json.loads(" + repr(json.dumps(settings)) + ")\n"
+    program += """
+def program_file_observation(path):
+    result = {'sha256': None, 'mode': None, 'error': None}
+    try:
+        result['mode'] = stat.S_IMODE(path.lstat().st_mode)
+        result['sha256'] = digest(path).hex()
+    except (OSError, Refusal) as error:
+        result['error'] = type(error).__name__
+    return result
+
+observation = {'pending': None, 'files': {}, 'inspection_error': None}
+try:
+    target, expected = expected_files(settings)
+    for relative, (source, frontend) in expected.items():
+        observation['files'][str(relative)] = {
+            'frontend': frontend,
+            'source': program_file_observation(source),
+            'destination': program_file_observation(target / relative),
+        }
+    observation['pending'] = inspect_static(settings)['pending']
+except (OSError, Refusal) as error:
+    observation['inspection_error'] = type(error).__name__
+print(json.dumps(observation, sort_keys=True))
+"""
+    result = harness.app(program, check=False)
+    try:
+        observation = json.loads(result.stdout)
+    except ValueError:
+        observation = {"inspection_error": "invalid-program-result"}
+    harness.write(label + "-static-program.json", {"exit": result.returncode, "observation": observation})
+    assert result.returncode == 0, "owned static observation command failed"
+    assert observation["inspection_error"] is None, "owned static observation refused unsafe state"
+    assert observation["pending"] is False, "owned static program differs from the declared source contract"
+    assert all(
+        value["source"]["error"] is None
+        and value["destination"]["error"] is None
+        and value["source"]["sha256"] == value["destination"]["sha256"]
+        for value in observation["files"].values()
+    )
 
 
 def migration_status_roots(harness: Any) -> None:

@@ -235,3 +235,56 @@ def test_migration_root_control_detects_fixed_command_writes(
     assert len(receipts) == 2
     assert receipts[-1][0]["classification"] == "intentional-old-write-test-control"
     assert receipts[-1][1]["skip_checks"] is True
+
+
+@pytest.mark.parametrize("kind", ["same", "different", "missing", "symlink", "fifo"])
+def test_actual_static_observer_keeps_receipt_for_unsafe_or_missing_output(tmp_path: Path, kind: str) -> None:
+    import sys
+
+    source = tmp_path / "paperless-ngx-v3.2.1/static/frontend"
+    source.mkdir(parents=True)
+    (source / "owned.js").write_bytes(b"same")
+    output = tmp_path / "staticfiles/frontend"
+    output.mkdir(parents=True)
+    destination = output / "owned.js"
+    if kind in {"same", "different"}:
+        destination.write_bytes(b"same" if kind == "same" else b"different")
+    elif kind == "symlink":
+        destination.symlink_to(source / "owned.js")
+    elif kind == "fifo":
+        os.mkfifo(destination)
+    # Execute the actual generated standalone observer. Only Django's finder
+    # registry is synthetic; frontend source enumeration/digests/refusals are real.
+    prefix = """import sys,types
+for name in ('django', 'django.apps', 'django.contrib', 'django.contrib.staticfiles',
+             'django.contrib.staticfiles.finders'):
+    sys.modules[name] = types.ModuleType(name)
+sys.modules['django.apps'].apps = None
+sys.modules['django.contrib.staticfiles.finders'].get_finders = lambda: []
+"""
+    written: dict[str, Any] = {}
+
+    def app(program: str, *, check: bool) -> subprocess.CompletedProcess[str]:
+        assert not check
+        return subprocess.run([sys.executable, "-c", prefix + program], capture_output=True, text=True, timeout=10)
+
+    fixture = SimpleNamespace(
+        OWNED_ADMITTED=True,
+        CFG=SimpleNamespace(site_root=str(tmp_path), version="3.2.1"),
+        app=app,
+        write=lambda name, record: written.update({name: record}),
+    )
+    if kind == "same":
+        application_matrix.static_program_observation(fixture, "owned")
+    else:
+        with pytest.raises(AssertionError):
+            application_matrix.static_program_observation(fixture, "owned")
+    receipt = written["owned-static-program.json"]
+    assert receipt["exit"] == 0
+    observed = receipt["observation"]["files"]["frontend/owned.js"]["destination"]
+    if kind in {"missing", "symlink", "fifo"}:
+        assert observed["sha256"] is None
+        assert observed["error"] == {"missing": "FileNotFoundError", "symlink": "OSError", "fifo": "Refusal"}[kind]
+    else:
+        assert observed["error"] is None
+        assert observed["sha256"] == hashlib.sha256(destination.read_bytes()).hexdigest()
