@@ -1,0 +1,37 @@
+[Unit]
+Description=Backup metrics HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ backup_metrics_endpoint_user }}
+Group={{ backup_metrics_endpoint_group }}
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 {{ backup_metrics_endpoint_server_path }} \
+  --bind {{ backup_metrics_endpoint_bind }} \
+  --port {{ backup_metrics_endpoint_port }} \
+  --path {{ backup_metrics_endpoint_path }} \
+  --json-path {{ backup_metrics_endpoint_json_path }} \
+  --htpasswd-file {{ backup_metrics_endpoint_htpasswd_path }}
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+[Install]
+WantedBy=multi-user.target

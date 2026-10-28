@@ -1,0 +1,11 @@
+[Unit]
+Description=Run MinIO replication lag/parity monitor every {{ fractal_minio_replication_monitor_timer_interval_sec | default(300) }} seconds
+
+[Timer]
+OnBootSec={{ fractal_minio_replication_monitor_timer_on_boot_sec | default(120) }}
+OnUnitActiveSec={{ fractal_minio_replication_monitor_timer_interval_sec | default(300) }}
+AccuracySec=10
+RandomizedDelaySec={{ fractal_minio_replication_monitor_timer_randomized_delay_sec | default(20) }}
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,31 @@
+{
+  "role_source": "ops-library cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641, unchanged at d88 docs head",
+  "inline_source": "original orchestration lag program and systemd templates, no collector policy modifications",
+  "sha256": {
+    "infra/smartd/templates/smartd.conf.j2": "7b000e4d0539a84dd7e38b586d78c7c1b9a3b45a39d34faed9f5294d5809782b",
+    "infra/zed/templates/zpool-scrub@.timer.j2": "531d7bfd5ccdee2124f4060d4f1453745e4b875e6b83d6d95d02018ff9b49d21",
+    "infra/zed/templates/zpool-scrub@.service.j2": "2d243e4654acc7d053d56bdd9d9e16168f71edc4bf4591f3fbaf26a0636a5828",
+    "services/fractal_monitoring/templates/nyxmon-storage-metrics.py.j2": "1cb4c8bc4d17c30507db66508ff2f929618cd06bac4618dd34300cf4bed8dbae",
+    "services/fractal_monitoring/templates/storage_metrics_httpd.py.j2": "1ba6173b661afd87e23b8bd95d6dcd2f378c041acd4330e7fcaa83177170ebf4",
+    "services/fractal_monitoring/templates/storage-metrics-collector.service.j2": "a3a2398ae7d2d2454acc4f5ba1630ed64f4e57e4809d6d5ffc89cbfedeb9d9d3",
+    "services/fractal_monitoring/templates/storage-metrics-collector.timer.j2": "622f853ee71bafbc449c7f8b5750306158637478c7670c1d420be60d9f58a986",
+    "services/fractal_monitoring/templates/storage-metrics-endpoint.service.j2": "b6e3546fdb89ab6684e34a2f705a7ebc8e52e18be0289b578fae696e1d33817e",
+    "services/fractal_monitoring/templates/backup-metrics-endpoint.service.j2": "5b8c85ceb2f26eb8646c3b216697c9ce0b79157a0794996972404e2a246f715f",
+    "services/fractal_monitoring/templates/backup-metrics-collector.service.j2": "10828186cd0ae894fb0a6f00bb467b9c2d0aebd694decf7d790c2b48e8beacb4",
+    "services/fractal_monitoring/templates/backup-metrics-collector.timer.j2": "e65d9b65e85d0d9e2848c613edb744a3d6ccfc55559085b4226739f369713e81",
+    "services/fractal_monitoring/templates/backup_metrics_httpd.py.j2": "abb2a6557b538bae401d1ff3820a012378d3b71c39486cfc5cc0f6f981e7bdc0",
+    "services/fractal_monitoring/templates/backup_metrics_exporter.py.j2": "ce48fcf7478d143e163bf33f8220d2a3aead5f93244fbc0fb6b1682cfe3ecfcf",
+    "services/fractal_monitoring/files/backup_metrics_usb_health.py": "3320248c1c74befa7ab9747cf4437d7bb7766c1383701401506a62ed41c11fbf",
+    "services/fractal_monitoring/files/minio_replication_lag_probe.py": "a83cec6f0768601fb10ebad2f72edc18c04004d24d5232da73c7c36ca802ebf2",
+    "services/fractal_monitoring/templates/minio-replication-lag-check.service.j2": "b1dd6934606bc12d6e71d9e9d65f37bdef7c9e9bff9f44a5c0d6f56989741221",
+    "services/fractal_monitoring/templates/minio-replication-lag-check.timer.j2": "dba0300f1ef2a445da2fb9da6a38ae84603d51bcb7981f11b350adfeb942d3f5"
+  },
+  "role_behavior_sha256": {
+    "mail_relay_client": "67cc87f83942b7949c4fa9de5c2ee90c782b43ae49a96b361830a89d2a2754b4",
+    "smartd": "f26344e045cccf98c709e846eb6630439bd91561fa8632eafffc140062949464",
+    "zed": "b4a33ed07a8a2a5ab40191d3f48bb64e012afc8b910c4cf2b1988b9f06d86f78",
+    "nyxmon_storage_exporter": "2204f25cf9792ce590127e58352f58529e1c41b75343fbc3b270e46c2e5fdd0c",
+    "storage_metrics_endpoint": "44ba0e19c8c8133ff5ab62a42860972dbef7d0eb678eb3be9fefd8b5bae0e70c",
+    "backup_metrics_endpoint": "01559e6ec86d894ec2db51d994d8b788f6b8dc8528f42a89eb8fcc7deba0485b"
+  }
+}

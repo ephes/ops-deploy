@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect backup metrics every {{ backup_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+OnActiveSec={{ backup_metrics_endpoint_timer_on_boot_sec }}
+OnUnitInactiveSec={{ backup_metrics_endpoint_timer_interval }}
+AccuracySec={{ backup_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ backup_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

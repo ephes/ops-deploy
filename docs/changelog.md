@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add typed alert-mail relay, smartd and ZED APIs plus Fractal's storage/backup
+  monitoring and separate Nyxmon check stage. Original collector programs, unit
+  policies, Python/Rust switch and Fractal-specific SQL semantics are retained.
+  Current fresh compatible caches avoid collection; changed collector resources,
+  missing/stale/incompatible caches trigger an explicitly managed refresh.
+- Fresh Postfix bootstrap fills only an absent main.cf from the installed
+  distribution default after genuinely absent package/tool/config admission;
+  existing installed missing configurations refuse before deployment. The pinned
+  MinIO mc default source uses its official GitHub asset with the same version
+  and SHA256; current exact bytes are neither fetched nor replaced.
+
+
 - Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
   generic share APIs from ops-library cf3a0c74. Preserve existing credentials and
   disabled accounts with native add-only admission; retain restart debt across

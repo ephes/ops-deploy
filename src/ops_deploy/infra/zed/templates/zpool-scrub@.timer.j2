@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly ZFS scrub for pool %i
+
+[Timer]
+OnCalendar={{ zed_scrub_timer_on_calendar }}
+RandomizedDelaySec={{ zed_scrub_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

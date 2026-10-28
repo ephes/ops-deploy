@@ -11,6 +11,7 @@ from ops_deploy.infra.certbot_dns import CertbotDnsConfig, deploy_certbot_dns
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
+from ops_deploy.infra.mail_relay_client import MailRelayClientConfig, deploy_mail_relay_client
 from ops_deploy.infra.postgres_install import (
     DatabaseSpec,
     ExtensionSpec,
@@ -19,6 +20,7 @@ from ops_deploy.infra.postgres_install import (
     deploy_postgres_install,
 )
 from ops_deploy.infra.redis_install import RedisInstallConfig, deploy_redis_install
+from ops_deploy.infra.smartd import SmartdConfig, SmartdDevice, deploy_smartd
 from ops_deploy.infra.traefik_backup import (
     TraefikBackupConfig,
     TraefikRestoreConfig,
@@ -38,6 +40,7 @@ from ops_deploy.infra.traefik_probes import (
 )
 from ops_deploy.infra.traefik_remove import TraefikRemoveConfig, deploy_traefik_remove
 from ops_deploy.infra.vector_apt_install import VectorAptInstallConfig, deploy_vector_apt_install, vector_apt_steps
+from ops_deploy.infra.zed import ZedConfig, deploy_zed
 
 __all__ = [
     "CertbotDnsConfig",
@@ -48,6 +51,7 @@ __all__ = [
     "FileCertificate",
     "HdparmDevice",
     "HdparmTuneConfig",
+    "MailRelayClientConfig",
     "PgHbaRule",
     "PostgresInstallConfig",
     "ProbeBaseline",
@@ -55,25 +59,31 @@ __all__ = [
     "ProbeError",
     "ProbeSpec",
     "RedisInstallConfig",
+    "SmartdConfig",
+    "SmartdDevice",
     "TraefikBackupConfig",
     "TraefikDeployConfig",
     "TraefikHealthProbesConfig",
     "TraefikRemoveConfig",
     "TraefikRestoreConfig",
     "VectorAptInstallConfig",
+    "ZedConfig",
     "capture_traefik_health_probes",
     "deploy_certbot_dns",
     "deploy_docker_install",
     "deploy_encrypted_volume",
     "deploy_hdparm_tune",
+    "deploy_mail_relay_client",
     "deploy_postgres_install",
     "deploy_redis_install",
+    "deploy_smartd",
     "deploy_traefik",
     "deploy_traefik_backup",
     "deploy_traefik_health_probes",
     "deploy_traefik_remove",
     "deploy_traefik_restore",
     "deploy_vector_apt_install",
+    "deploy_zed",
     "docker_steps",
     "vector_apt_steps",
     "verify_traefik_health_probes",

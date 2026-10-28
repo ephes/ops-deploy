@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect storage metrics every {{ storage_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+# OnActiveSec= provides an independent activation anchor if the boot trigger is
+# already exhausted or service activation history is unavailable. OnCalendar=
+# is the Persistent= wall-clock backstop.
+OnBootSec={{ storage_metrics_endpoint_timer_on_boot_sec }}
+OnActiveSec={{ storage_metrics_endpoint_timer_interval }}
+OnUnitActiveSec={{ storage_metrics_endpoint_timer_interval }}
+OnCalendar={{ storage_metrics_endpoint_timer_on_calendar }}
+AccuracySec={{ storage_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ storage_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

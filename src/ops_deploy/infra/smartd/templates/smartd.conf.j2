@@ -1,0 +1,13 @@
+# Managed by Ansible (ops-library smartd role)
+#
+# See `man smartd.conf` for details.
+#
+# Device type handling: If type is set (e.g., ata, nvme, scsi, sat, auto),
+# "-d <type>" is rendered. If type is omitted or "auto", smartd auto-detects.
+
+{% for dev in smartd_devices %}
+{% set dev_type = dev.type | default('auto') %}
+{% set short_schedule = dev.smartd_short_test_schedule | default(smartd_short_test_schedule) %}
+{% set long_schedule = dev.smartd_long_test_schedule | default(smartd_long_test_schedule) %}
+{{ dev.device }}{% if dev_type != 'auto' %} -d {{ dev_type }}{% endif %}{% if dev.smartd_no_spinup | default(false) | bool %} -n standby{% endif %} -a -o on -S on -s ({{ short_schedule }}|{{ long_schedule }}) -W {{ smartd_temp_diff }},{{ smartd_temp_info }},{{ smartd_temp_crit }} -m {{ smartd_mail_to }}
+{% endfor %}

@@ -1,0 +1,848 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+from backup_metrics_usb_health import (
+    build_usb_replication_health,
+    load_replication_state,
+    select_usb_usage,
+)
+
+UNITS = json.loads(r'''{{ backup_metrics_endpoint_units | to_json }}''')
+LOCAL_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_local_datasets | to_json }}''')
+USB_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_usb_datasets | to_json }}''')
+USB_ENABLED = {{ backup_metrics_endpoint_usb_enabled | bool | ternary('True', 'False') }}
+USB_POOL = {{ backup_metrics_endpoint_usb_pool | to_json }}
+USB_DEVICE = {{ backup_metrics_endpoint_usb_device | to_json }}
+USB_DEVICES = [
+    path
+    for path in json.loads(r'''{{ backup_metrics_endpoint_usb_devices | to_json }}''') or [USB_DEVICE]
+    if path
+]
+USB_REPLICATION_STATUS_PATH = {{ backup_metrics_endpoint_usb_replication_status_path | to_json }}
+USB_CAPACITY_WARNING_RATIO = {{ backup_metrics_endpoint_usb_capacity_warning_ratio | float }}
+USB_CAPACITY_CRITICAL_RATIO = {{ backup_metrics_endpoint_usb_capacity_critical_ratio | float }}
+USB_PROTECTION_MAX_AGE_HOURS = {{ backup_metrics_endpoint_usb_protection_max_age_hours | float }}
+FILE_BACKUPS = json.loads(r'''{{ backup_metrics_endpoint_file_backups | default([]) | to_json }}''')
+SYSTEMCTL_TIMEOUT = {{ backup_metrics_endpoint_systemctl_timeout | int }}
+ZFS_TIMEOUT = {{ backup_metrics_endpoint_zfs_timeout | int }}
+ZFS_RETRIES = {{ backup_metrics_endpoint_zfs_retries | int }}
+ZFS_RETRY_DELAY = {{ backup_metrics_endpoint_zfs_retry_delay | int }}
+QUIET_HOURS_ENABLED = {{ backup_metrics_endpoint_quiet_hours_enabled | default(false) | bool | ternary('True', 'False') }}
+QUIET_HOURS_START = "{{ backup_metrics_endpoint_quiet_hours_start | default('06:00') }}"
+QUIET_HOURS_END = "{{ backup_metrics_endpoint_quiet_hours_end | default('22:00') }}"
+QUIET_HOURS_SKIP_LOCAL_SNAPSHOT_PROBES = {{ backup_metrics_endpoint_quiet_hours_skip_local_snapshot_probes | default(true) | bool | ternary('True', 'False') }}
+CACHE_JSON_PATH = {{ backup_metrics_endpoint_cache_json_path | default(backup_metrics_endpoint_json_path) | to_json }}
+
+
+def _run(argv: list[str], timeout: int) -> tuple[int, str, str]:
+    try:
+        result = subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timeout after {timeout}s"
+    except FileNotFoundError:
+        return 127, "", f"command not found: {argv[0] if argv else 'unknown'}"
+
+
+def _run_with_retries(
+    argv: list[str],
+    timeout: int,
+    retries: int,
+    retry_delay: int,
+    retryable_rcs: set[int],
+) -> tuple[int, str, str, int]:
+    attempts = 0
+    while True:
+        attempts += 1
+        rc, stdout, stderr = _run(argv, timeout)
+        if rc == 0:
+            return rc, stdout, stderr, attempts
+        if rc not in retryable_rcs or attempts >= retries + 1:
+            return rc, stdout, stderr, attempts
+        time.sleep(retry_delay)
+
+
+def _now_epoch() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
+
+def _parse_hhmm(value: str) -> tuple[int, int] | None:
+    try:
+        parts = value.split(":")
+        if len(parts) != 2:
+            return None
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return None
+        return hour, minute
+    except (TypeError, ValueError):
+        return None
+
+
+def _in_quiet_hours() -> bool:
+    if not QUIET_HOURS_ENABLED:
+        return False
+    start = _parse_hhmm(QUIET_HOURS_START)
+    end = _parse_hhmm(QUIET_HOURS_END)
+    if not start or not end:
+        return False
+
+    now = datetime.now().time()
+    now_min = now.hour * 60 + now.minute
+    start_min = start[0] * 60 + start[1]
+    end_min = end[0] * 60 + end[1]
+
+    if start_min == end_min:
+        return False
+    if start_min < end_min:
+        return start_min <= now_min < end_min
+    return now_min >= start_min or now_min < end_min
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _epoch_to_iso(epoch: int | None) -> str | None:
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+
+def _snapshot_age(creation_epoch: int | None, now_epoch: int) -> tuple[int | None, float | None]:
+    if creation_epoch is None:
+        return None, None
+    age_seconds = max(0, now_epoch - creation_epoch)
+    return age_seconds, round(age_seconds / 3600, 2)
+
+
+def _usec_to_epoch(raw: str | None) -> int | None:
+    if not raw:
+        return None
+    if not raw.isdigit():
+        return None
+    usec = int(raw)
+    if usec <= 0:
+        return None
+    return usec // 1_000_000
+
+
+def _systemctl_show(unit: str, properties: list[str]) -> dict[str, str]:
+    args = ["systemctl", "show", unit]
+    for prop in properties:
+        args.extend(["-p", prop])
+    rc, stdout, stderr = _run(args, SYSTEMCTL_TIMEOUT)
+    if rc != 0:
+        return {
+            "unit": unit,
+            "exists": "false",
+            "error": stderr or stdout or f"systemctl show failed ({rc})",
+        }
+
+    data: dict[str, str] = {"unit": unit}
+    for line in stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        data[key] = value
+
+    load_state = data.get("LoadState", "")
+    data["exists"] = "false" if load_state in ("", "not-found") else "true"
+    return data
+
+
+def _timer_status(name: str) -> dict[str, Any]:
+    props = [
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "UnitFileState",
+        "Result",
+        "LastTriggerUSec",
+        "NextElapseUSecRealtime",
+    ]
+    raw = _systemctl_show(name, props)
+    exists = raw.get("exists") == "true"
+    last_trigger_epoch = _usec_to_epoch(raw.get("LastTriggerUSec"))
+    next_elapse_epoch = _usec_to_epoch(raw.get("NextElapseUSecRealtime"))
+
+    return {
+        "unit": name,
+        "exists": exists,
+        "load_state": raw.get("LoadState"),
+        "active_state": raw.get("ActiveState"),
+        "sub_state": raw.get("SubState"),
+        "unit_file_state": raw.get("UnitFileState"),
+        "result": raw.get("Result"),
+        "last_trigger_epoch": last_trigger_epoch,
+        "last_trigger_iso": _epoch_to_iso(last_trigger_epoch),
+        "next_elapse_epoch": next_elapse_epoch,
+        "next_elapse_iso": _epoch_to_iso(next_elapse_epoch),
+        "error": raw.get("error"),
+    }
+
+
+def _service_status(name: str) -> dict[str, Any]:
+    props = [
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "UnitFileState",
+        "Result",
+        "ExecMainCode",
+        "ExecMainStatus",
+        "ExecMainStartTimestampUSec",
+        "ExecMainExitTimestampUSec",
+        "ActiveEnterTimestampUSec",
+        "ActiveExitTimestampUSec",
+    ]
+    raw = _systemctl_show(name, props)
+    exists = raw.get("exists") == "true"
+    start_epoch = _usec_to_epoch(raw.get("ExecMainStartTimestampUSec"))
+    exit_epoch = _usec_to_epoch(raw.get("ExecMainExitTimestampUSec"))
+    active_enter_epoch = _usec_to_epoch(raw.get("ActiveEnterTimestampUSec"))
+    active_exit_epoch = _usec_to_epoch(raw.get("ActiveExitTimestampUSec"))
+
+    exec_main_status = raw.get("ExecMainStatus")
+    return {
+        "unit": name,
+        "exists": exists,
+        "load_state": raw.get("LoadState"),
+        "active_state": raw.get("ActiveState"),
+        "sub_state": raw.get("SubState"),
+        "unit_file_state": raw.get("UnitFileState"),
+        "result": raw.get("Result"),
+        "exec_main_code": raw.get("ExecMainCode"),
+        "exec_main_status": int(exec_main_status) if exec_main_status and exec_main_status.isdigit() else None,
+        "exec_main_start_epoch": start_epoch,
+        "exec_main_start_iso": _epoch_to_iso(start_epoch),
+        "exec_main_exit_epoch": exit_epoch,
+        "exec_main_exit_iso": _epoch_to_iso(exit_epoch),
+        "active_enter_epoch": active_enter_epoch,
+        "active_enter_iso": _epoch_to_iso(active_enter_epoch),
+        "active_exit_epoch": active_exit_epoch,
+        "active_exit_iso": _epoch_to_iso(active_exit_epoch),
+        "error": raw.get("error"),
+    }
+
+
+def _unit_ok(unit: dict[str, Any], required: bool) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+
+    timer = unit.get("timer")
+    service = unit.get("service")
+
+    if timer:
+        if not timer.get("exists"):
+            if required:
+                issues.append("timer_missing")
+        else:
+            if timer.get("active_state") != "active":
+                issues.append("timer_not_active")
+
+    if service:
+        if not service.get("exists"):
+            if required:
+                issues.append("service_missing")
+        else:
+            active_state = service.get("active_state")
+            exec_main_status = service.get("exec_main_status")
+            if active_state == "failed":
+                issues.append("service_failed")
+            result = service.get("result")
+            if result and result not in ("success", "exit-code", "done", "") and active_state != "active":
+                issues.append(f"service_result_{result}")
+            if (
+                exec_main_status is not None
+                and exec_main_status != 0
+                and active_state not in ("active", "failed")
+            ):
+                issues.append(f"service_exit_status_{exec_main_status}")
+
+    return len(issues) == 0, issues
+
+
+def _latest_snapshot(dataset: str) -> dict[str, Any]:
+    rc, stdout, stderr, attempts = _run_with_retries(
+        [
+            "zfs",
+            "list",
+            "-H",
+            "-p",
+            "-t",
+            "snapshot",
+            "-d",
+            "1",
+            "-o",
+            "name,creation",
+            "-S",
+            "creation",
+            dataset,
+        ],
+        ZFS_TIMEOUT,
+        ZFS_RETRIES,
+        ZFS_RETRY_DELAY,
+        {124},
+    )
+    if rc != 0:
+        return {
+            "dataset": dataset,
+            "ok": False,
+            "snapshot": None,
+            "creation_epoch": None,
+            "creation_iso": None,
+            "age_seconds": None,
+            "age_hours": None,
+            "probe_attempts": attempts,
+            "probe_retries_used": max(0, attempts - 1),
+            "error": stderr or stdout or f"zfs list failed ({rc})",
+        }
+
+    line = next((item for item in stdout.splitlines() if item.strip()), "")
+    if not line:
+        return {
+            "dataset": dataset,
+            "ok": False,
+            "snapshot": None,
+            "creation_epoch": None,
+            "creation_iso": None,
+            "age_seconds": None,
+            "age_hours": None,
+            "probe_attempts": attempts,
+            "probe_retries_used": max(0, attempts - 1),
+            "error": "no snapshots found",
+        }
+
+    parts = line.split("\t")
+    if len(parts) < 2:
+        parts = line.split()
+    if len(parts) < 2:
+        return {
+            "dataset": dataset,
+            "ok": False,
+            "snapshot": None,
+            "creation_epoch": None,
+            "creation_iso": None,
+            "age_seconds": None,
+            "age_hours": None,
+            "probe_attempts": attempts,
+            "probe_retries_used": max(0, attempts - 1),
+            "error": "unexpected zfs output format",
+        }
+
+    snapshot = parts[0]
+    creation_raw = parts[1]
+    try:
+        creation_epoch = int(creation_raw)
+    except ValueError:
+        creation_epoch = None
+
+    now_epoch = _now_epoch()
+    age_seconds, age_hours = _snapshot_age(creation_epoch, now_epoch)
+
+    return {
+        "dataset": dataset,
+        "ok": creation_epoch is not None,
+        "snapshot": snapshot,
+        "creation_epoch": creation_epoch,
+        "creation_iso": _epoch_to_iso(creation_epoch),
+        "age_seconds": age_seconds,
+        "age_hours": age_hours,
+        "probe_attempts": attempts,
+        "probe_retries_used": max(0, attempts - 1),
+        "error": None if creation_epoch is not None else "invalid creation timestamp",
+    }
+
+
+def _load_cached_local_snapshots(path: str) -> dict[str, dict[str, Any]]:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    snapshots = payload.get("snapshots", {}).get("local", [])
+    if not isinstance(snapshots, list):
+        return {}
+
+    by_dataset: dict[str, dict[str, Any]] = {}
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        dataset = item.get("dataset")
+        if not dataset or not isinstance(dataset, str):
+            continue
+        by_dataset[dataset] = item
+    return by_dataset
+
+
+def _load_cached_usb_metrics(path: str) -> dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    usb = payload.get("usb")
+    if not isinstance(usb, dict):
+        return {}
+
+    cached: dict[str, Any] = {}
+    numeric_fields = {
+        "last_known_used_ratio",
+        "last_known_size_bytes",
+        "last_known_alloc_bytes",
+        "last_known_free_bytes",
+        "last_known_observed_epoch",
+    }
+    string_fields = {
+        "last_known_observed_iso",
+    }
+
+    for field in numeric_fields:
+        value = usb.get(field)
+        if isinstance(value, (int, float)):
+            cached[field] = value
+
+    for field in string_fields:
+        value = usb.get(field)
+        if isinstance(value, str) and value:
+            cached[field] = value
+
+    return cached
+
+
+def _snapshot_from_cache(dataset: str, cached: dict[str, Any], reason: str) -> dict[str, Any]:
+    now_epoch = _now_epoch()
+    creation_raw = cached.get("creation_epoch")
+    creation_epoch: int | None
+    if isinstance(creation_raw, int):
+        creation_epoch = creation_raw
+    elif isinstance(creation_raw, str) and creation_raw.isdigit():
+        creation_epoch = int(creation_raw)
+    else:
+        creation_epoch = None
+
+    age_seconds, age_hours = _snapshot_age(creation_epoch, now_epoch)
+    cached_ok = cached.get("ok")
+    if isinstance(cached_ok, bool):
+        ok = cached_ok
+    else:
+        ok = creation_epoch is not None
+
+    return {
+        "dataset": dataset,
+        "ok": ok,
+        "snapshot": cached.get("snapshot"),
+        "creation_epoch": creation_epoch,
+        "creation_iso": _epoch_to_iso(creation_epoch),
+        "age_seconds": age_seconds,
+        "age_hours": age_hours,
+        "probe_attempts": 0,
+        "probe_retries_used": 0,
+        "probe_skipped": True,
+        "probe_skip_reason": reason,
+        "source": "cache",
+        "error": cached.get("error"),
+    }
+
+
+def _parse_max_age_hours(raw: Any, default: float = 48.0) -> float:
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return float(raw.strip())
+        except ValueError:
+            return default
+    return default
+
+
+def _file_backup_status(item: dict[str, Any], now_epoch: int) -> dict[str, Any]:
+    check_id = str(item.get("id") or item.get("path") or "unknown")
+    label = str(item.get("label") or check_id)
+    path_raw = str(item.get("path") or "")
+    glob_pattern = str(item.get("glob") or "*.tar.*")
+    max_age_hours = _parse_max_age_hours(item.get("max_age_hours"), default=48.0)
+    required = _as_bool(item.get("required", True))
+    enabled = _as_bool(item.get("enabled", True))
+
+    payload: dict[str, Any] = {
+        "id": check_id,
+        "label": label,
+        "path": path_raw,
+        "glob": glob_pattern,
+        "max_age_hours": max_age_hours,
+        "required": required,
+        "enabled": enabled,
+        "ok": None,
+        "stale": None,
+        "latest_file": None,
+        "latest_mtime_epoch": None,
+        "latest_mtime_iso": None,
+        "age_seconds": None,
+        "age_hours": None,
+        "error": None,
+    }
+    if not enabled:
+        payload["error"] = "disabled"
+        return payload
+
+    if not path_raw:
+        payload["ok"] = False
+        payload["error"] = "path_not_set"
+        return payload
+
+    base_path = Path(path_raw)
+    if not base_path.exists():
+        payload["ok"] = False
+        payload["error"] = "path_missing"
+        return payload
+
+    try:
+        if base_path.is_file():
+            candidates = [base_path]
+        else:
+            candidates = [entry for entry in base_path.glob(glob_pattern) if entry.is_file()]
+    except OSError as exc:
+        payload["ok"] = False
+        payload["error"] = f"glob_failed: {exc}"
+        return payload
+
+    if not candidates:
+        payload["ok"] = False
+        payload["error"] = "no_matching_files"
+        return payload
+
+    try:
+        stat_results = [(entry, entry.stat()) for entry in candidates]
+    except OSError as exc:
+        payload["ok"] = False
+        payload["error"] = f"stat_failed: {exc}"
+        return payload
+    latest_file, latest_stat = max(stat_results, key=lambda pair: pair[1].st_mtime)
+    latest_epoch = int(latest_stat.st_mtime)
+
+    age_seconds = max(0, now_epoch - latest_epoch)
+    age_hours = round(age_seconds / 3600, 2)
+    stale = age_hours > max_age_hours
+
+    payload.update(
+        {
+            "ok": not stale,
+            "stale": stale,
+            "latest_file": str(latest_file),
+            "latest_mtime_epoch": latest_epoch,
+            "latest_mtime_iso": _epoch_to_iso(latest_epoch),
+            "age_seconds": age_seconds,
+            "age_hours": age_hours,
+            "error": None,
+        }
+    )
+    return payload
+
+
+def _pool_imported(pool: str) -> bool:
+    rc, _, _ = _run(["zpool", "list", "-H", "-o", "name", pool], ZFS_TIMEOUT)
+    return rc == 0
+
+
+def _pool_usage(pool: str) -> dict[str, Any]:
+    rc, stdout, stderr = _run(
+        ["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health", pool],
+        ZFS_TIMEOUT,
+    )
+    if rc != 0:
+        return {
+            "ok": False,
+            "error": stderr or stdout or f"zpool list failed ({rc})",
+        }
+
+    line = next((item for item in stdout.splitlines() if item.strip()), "")
+    parts = line.split()
+    if len(parts) != 5:
+        return {
+            "ok": False,
+            "error": "unexpected zpool list output",
+        }
+
+    _, size_raw, alloc_raw, free_raw, health = parts
+    try:
+        size_bytes = int(size_raw)
+        alloc_bytes = int(alloc_raw)
+        free_bytes = int(free_raw)
+    except ValueError:
+        return {
+            "ok": False,
+            "error": "non-numeric zpool size output",
+        }
+
+    if size_bytes <= 0:
+        return {
+            "ok": False,
+            "error": "invalid zpool size output",
+        }
+
+    return {
+        "ok": True,
+        "health": health,
+        "size_bytes": size_bytes,
+        "alloc_bytes": alloc_bytes,
+        "free_bytes": free_bytes,
+        "used_ratio": alloc_bytes / size_bytes,
+    }
+
+
+def main() -> int:
+    now_epoch = _now_epoch()
+    quiet_active = _in_quiet_hours()
+    payload: dict[str, Any] = {
+        "ts": now_epoch,
+        "generated_at": _epoch_to_iso(now_epoch),
+        "quiet_hours": {
+            "enabled": QUIET_HOURS_ENABLED,
+            "active": quiet_active,
+            "skip_local_snapshot_probes": QUIET_HOURS_SKIP_LOCAL_SNAPSHOT_PROBES,
+        },
+        "units": {},
+        "snapshots": {
+            "local": [],
+            "usb": [],
+        },
+        "file_backups": [],
+        "usb": {
+            "enabled": USB_ENABLED,
+            "enabled_value": 1 if USB_ENABLED else 0,
+            "pool": USB_POOL,
+            "pool_imported": None,
+            "pool_imported_value": 0,
+            "device_path": USB_DEVICES[0] if USB_DEVICES else None,
+            "device_paths": list(USB_DEVICES),
+            "present_device_paths": [],
+            "device_present": None,
+            "device_present_value": 0,
+            "last_known_used_ratio": None,
+            "last_known_size_bytes": None,
+            "last_known_alloc_bytes": None,
+            "last_known_free_bytes": None,
+            "last_known_observed_epoch": None,
+            "last_known_observed_iso": None,
+        },
+        "usb_replication": {},
+        "summary": {},
+    }
+
+    for item in UNITS:
+        unit_id = item.get("id") or item.get("timer") or item.get("service") or "unknown"
+        required = _as_bool(item.get("required", True))
+        unit_payload: dict[str, Any] = {
+            "required": required,
+        }
+        timer_name = item.get("timer")
+        service_name = item.get("service")
+
+        if timer_name:
+            unit_payload["timer"] = _timer_status(timer_name)
+        if service_name:
+            unit_payload["service"] = _service_status(service_name)
+
+        ok, issues = _unit_ok(unit_payload, required)
+        unit_payload["ok"] = ok
+        unit_payload["issues"] = issues
+        payload["units"][unit_id] = unit_payload
+
+    cached_local_by_dataset: dict[str, dict[str, Any]] = {}
+    if quiet_active and QUIET_HOURS_SKIP_LOCAL_SNAPSHOT_PROBES:
+        cached_local_by_dataset = _load_cached_local_snapshots(CACHE_JSON_PATH)
+
+    payload["usb"].update(_load_cached_usb_metrics(CACHE_JSON_PATH))
+
+    for dataset in LOCAL_DATASETS:
+        if quiet_active and QUIET_HOURS_SKIP_LOCAL_SNAPSHOT_PROBES:
+            cached = cached_local_by_dataset.get(dataset)
+            if cached:
+                payload["snapshots"]["local"].append(
+                    _snapshot_from_cache(dataset, cached, "quiet_hours")
+                )
+                continue
+            print(
+                f"backup_metrics_exporter: quiet-hours cache miss for local dataset {dataset}; "
+                f"falling back to live zfs probe (cache path: {CACHE_JSON_PATH})",
+                file=sys.stderr,
+            )
+        payload["snapshots"]["local"].append(_latest_snapshot(dataset))
+
+    for item in FILE_BACKUPS:
+        if isinstance(item, dict):
+            payload["file_backups"].append(_file_backup_status(item, now_epoch))
+
+    if USB_DEVICES:
+        present_devices = [path for path in USB_DEVICES if os.path.exists(path)]
+        payload["usb"]["present_device_paths"] = present_devices
+        if present_devices:
+            payload["usb"]["device_path"] = present_devices[0]
+        payload["usb"]["device_present"] = bool(present_devices)
+        payload["usb"]["device_present_value"] = 1 if payload["usb"]["device_present"] else 0
+
+    usb_enabled = bool(USB_ENABLED)
+    usb_live_usage_observed = False
+    if not usb_enabled:
+        for dataset in USB_DATASETS:
+            payload["snapshots"]["usb"].append(
+                {
+                    "dataset": dataset,
+                    "ok": None,
+                    "snapshot": None,
+                    "creation_epoch": None,
+                    "creation_iso": None,
+                    "age_seconds": None,
+                    "age_hours": None,
+                    "error": "usb_disabled",
+                }
+            )
+    else:
+        pool_imported = _pool_imported(USB_POOL)
+        payload["usb"]["pool_imported"] = pool_imported
+        payload["usb"]["pool_imported_value"] = 1 if pool_imported else 0
+
+        if not pool_imported:
+            for dataset in USB_DATASETS:
+                payload["snapshots"]["usb"].append(
+                    {
+                        "dataset": dataset,
+                        "ok": None,
+                        "snapshot": None,
+                        "creation_epoch": None,
+                        "creation_iso": None,
+                        "age_seconds": None,
+                        "age_hours": None,
+                        "error": "usb_pool_not_imported",
+                    }
+                )
+        else:
+            usage = _pool_usage(USB_POOL)
+            if usage.get("ok"):
+                usb_live_usage_observed = True
+                payload["usb"]["last_known_used_ratio"] = usage["used_ratio"]
+                payload["usb"]["last_known_size_bytes"] = usage["size_bytes"]
+                payload["usb"]["last_known_alloc_bytes"] = usage["alloc_bytes"]
+                payload["usb"]["last_known_free_bytes"] = usage["free_bytes"]
+                payload["usb"]["last_known_observed_epoch"] = now_epoch
+                payload["usb"]["last_known_observed_iso"] = _epoch_to_iso(now_epoch)
+            else:
+                payload["usb"]["usage_error"] = usage.get("error")
+
+            for dataset in USB_DATASETS:
+                payload["snapshots"]["usb"].append(_latest_snapshot(dataset))
+
+    required_units_ok = all(
+        unit.get("ok", False)
+        for unit in payload["units"].values()
+        if unit.get("required")
+    )
+    local_snapshots_ok = all(
+        bool(item.get("ok"))
+        for item in payload["snapshots"]["local"]
+    ) if payload["snapshots"]["local"] else False
+    enabled_file_backups = [
+        item for item in payload["file_backups"]
+        if item.get("enabled") is True
+    ]
+    required_file_backups = [
+        item for item in enabled_file_backups
+        if item.get("required") is True
+    ]
+    file_backups_ok = (
+        all(bool(item.get("ok")) for item in enabled_file_backups)
+        if enabled_file_backups else True
+    )
+    required_file_backups_ok = (
+        all(bool(item.get("ok")) for item in required_file_backups)
+        if required_file_backups else True
+    )
+
+    usb_snapshots = payload["snapshots"]["usb"]
+    usb_snapshots_ok: bool | None
+    if not usb_enabled:
+        usb_state = "disabled"
+        usb_snapshots_ok = None
+    elif payload["usb"]["pool_imported"] is False:
+        usb_state = "offline"
+        usb_snapshots_ok = None
+    else:
+        usb_state = "online"
+        usb_snapshots_ok = all(bool(item.get("ok")) for item in usb_snapshots)
+
+    usb_pool_offline = usb_state == "offline"
+    payload["usb"]["state"] = usb_state
+    payload["usb"]["state_code"] = {"disabled": 0, "offline": 1, "online": 2}[usb_state]
+
+    usb_replication_state, usb_replication_state_error = load_replication_state(
+        USB_REPLICATION_STATUS_PATH
+    )
+    payload["usb"].update(
+        select_usb_usage(
+            payload["usb"],
+            usb_replication_state,
+            live_observed=usb_live_usage_observed,
+        )
+    )
+    syncoid_usb_unit = payload["units"].get("syncoid_usb", {})
+    syncoid_usb_ok = syncoid_usb_unit.get("ok")
+    payload["usb_replication"] = build_usb_replication_health(
+        enabled=usb_enabled,
+        device_present=payload["usb"].get("device_present"),
+        unit_ok=syncoid_usb_ok if isinstance(syncoid_usb_ok, bool) else None,
+        state=usb_replication_state,
+        state_error=usb_replication_state_error,
+        selected_usage=payload["usb"],
+        warning_ratio=USB_CAPACITY_WARNING_RATIO,
+        critical_ratio=USB_CAPACITY_CRITICAL_RATIO,
+        protection_max_age_hours=USB_PROTECTION_MAX_AGE_HOURS,
+        now_epoch=now_epoch,
+    )
+    overall_ok = (
+        required_units_ok
+        and local_snapshots_ok
+        and (usb_snapshots_ok in (None, True))
+        and payload["usb_replication"]["ok"]
+        and required_file_backups_ok
+    )
+    payload["summary"] = {
+        "required_units_ok": required_units_ok,
+        "local_snapshots_ok": local_snapshots_ok,
+        "file_backups_ok": file_backups_ok,
+        "required_file_backups_ok": required_file_backups_ok,
+        "usb_snapshots_ok": usb_snapshots_ok,
+        "usb_state": usb_state,
+        "usb_pool_offline": usb_pool_offline,
+        "usb_replication_ok": payload["usb_replication"]["ok"],
+        "overall_ok": overall_ok,
+    }
+
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
