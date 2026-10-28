@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add an owned Darwin GUI/SSH runtime-guard fixture with synthetic application
+  state, actual installed-package provenance and explicit stop/failure/recovery
+  effects. Its workflow is scoped to the implementation feature branch; it
+  grants no inventory or source-transition authorization.
+
 - Add the original hosted runtime stop sequence with shared window/quiescence
   predicates, executor-status effects counted as managed work, graceful TERM
   and keeper restoration on failure. Inventory dispatch remains unchanged

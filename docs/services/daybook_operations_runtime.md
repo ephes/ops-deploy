@@ -92,3 +92,29 @@ The stop API is under qualification. It has not been invoked on an inventory
 host; guarded replace/cutover and source fanout still follow before normal
 routing and any engine switch. Existing stop confirmation semantics are kept;
 this adds no new owner acknowledgment or activation path.
+
+The owned `daybook-runtime-native.yml` harness uses a disposable ARM Darwin
+runner, an immutable noneditable Git installation, a unique GUI keeper and tmux
+capability host, synthetic Daybook code, an owned loopback SSH transport and
+unusable fixture credentials. It enumerates the actual installed package set
+(excluding interpreter bytecode), compares all resource bytes to Git and checks
+the distribution's exact Git direct URL. Existing Mac application fixtures are
+not replayed by this workflow.
+
+The fixture exercises pure SSH verification repeats, window/halt/busy/unanswered
+refusals preserving the keeper PID, a graceful stop and already-stopped managed
+recovery, and an actual TERM timeout that must restore the keeper on unchanged
+code. Selected source/resource/store metadata and the capability host are
+protected throughout; deliberate fixture fault setup is recorded separately.
+The monitor rows and application are synthetic, so this does not qualify a real
+Daybook source transition, default service or inventory host. Exact owned cleanup
+may terminate its own remaining fixture processes; production stop uses TERM
+only. A real local CLI negative test proves the harness refuses non-hosted use
+before any host resource or package verification is attempted.
+
+The fixture starts the tmux server in foreground mode without a command and
+creates its host session through a separate client, following the
+[tmux manual](https://github.com/tmux/tmux/blob/master/tmux.1). This retains the
+server and descendants under exact owned cleanup. Its uv interpreter and caches
+are explicitly confined to the owned root; workflow controller/action caches
+remain disposable-VM setup and are recorded as outside fixture cleanup.
