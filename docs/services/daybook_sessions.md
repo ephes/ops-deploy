@@ -162,3 +162,38 @@ startup/report transport has a separate five-second allowance, without extending
 the configured model execution budget. An absent or incomplete cleanup report
 fails the deployment. No real model/probe or source/profile transition is
 authorized by these APIs or owned proofs.
+
+The separate `daybook-resources-native.yml` case confines system/GUI timer and
+filesystem mechanisms to a wholly disposable hosted ARM VM. It uses unique owned
+labels, real root/GUI ownership and unusable fake auth. Idle and missing-plist
+jobs retire through the installed shared `Launchd` methods; running jobs must
+refuse with their exact PID and plist preserved. A repeat must make no timer
+mutations. Cleanup unloads only those labels and resets only actually disabled entries to
+enabled; macOS may retain explicit enabled rows. This is explicit fixture I/O,
+not global launchd-database absence or a read-only setup claim.
+
+That case separately exercises original rendered root/user resource modes,
+root-to-GUI browser access without launching a browser, unsafe profile/control
+refusals, refreshed-auth preservation without body reads, one fake missing-auth
+seed and its strict repeat. A synthetic root operational proof checks only the
+metadata mechanism. The exact private twelve-module Weeknotes semantics retain
+separate bound-code evidence; no private application source is published in the
+fixture. It does not replay the source/stop/model fixture, create a fixed global
+reconcile label, qualify inventory defaults or authorize real source/model work.
+
+The original `repo_update: false` contract disables network fetching on the
+target, rather than pinning its installed checkout. The normal controller still
+resolves remote Main once and supplies its bundle; the original role explicitly
+checks out that resolved commit locally when HEAD differs. Existing checkouts
+therefore retain the normal Main convergence semantics and its transition review.
+
+The resource fixture also invokes the production `/usr/bin/python3 -I -B`
+interpreter with the same installed helper bytes for root-to-GUI browser/auth
+metadata checks and an actual system retirement/repeat. Other mechanism
+assertions execute those installed bytes in the controller's Python3.13; the
+receipt distinguishes both interpreter scopes.
+
+The native workflow's feature-branch package path filter follows all installed
+package resources. It installs the immutable noneditable Git package and records
+actual dependency behavior; listing `uv.lock` as a trigger does not claim that
+its Git-package installation resolves every transitive dependency from that lock.

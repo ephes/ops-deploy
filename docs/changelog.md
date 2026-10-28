@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a separate disposable Darwin resource-mechanism fixture for unique
+  system/GUI timer retirement/refusal, root/user template modes, browser access
+  and fake auth/control guards. Keep private identity semantics and inventory
+  qualification separate; document original no-target-fetch Main convergence.
+
 - Build the Sessions protected resource substage with original filesystem,
   browser/private-control, refreshed-auth, identity-proof and timer contracts.
   Add draft original controller ordering, install-missing prerequisites and
