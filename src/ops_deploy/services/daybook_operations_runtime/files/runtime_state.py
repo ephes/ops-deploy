@@ -278,13 +278,15 @@ class NativeProbes:
         environment = pathlib.Path(data["python"]).parent.parent
         if not (environment / "pyvenv.cfg").is_file():
             return False
-        # --check never synchronizes. Existing lock, no network/download/build;
+        # --check only plans, including for an already installed sdist. Adding
+        # --no-build rejects that locked distribution before the dry check.
+        # Existing lock, no network/download/install/backend execution;
         # native temporary cache I/O is distinct from service-managed changes.
         # Root-owned Inbox retains its ORIGINAL root uv selector/environment;
         # legacy user checkouts retain their existing GUI-user uv tree.
         root_owned = data.get("owner", "user") == "root"
         synced = self.run([data["uv_bin"], "--directory", data["checkout"], "sync", "--check", "--frozen",
-            "--no-dev", "--offline", "--no-python-downloads", "--no-build", "--no-cache",
+            "--no-dev", "--offline", "--no-python-downloads", "--no-cache",
             "--python", data["python_version"]], user=not root_owned,
             extra=self.root_python_env() if root_owned else None)
         return synced.returncode == 0

@@ -28,8 +28,10 @@ class SourceProbes(NativeProbes):
         grp.getgrnam(data["group"])  # fail before any staging if the declared group is missing
 
     def locked_environment_current(self):
+        # --check plans without building/installing. --no-build would reject
+        # an already installed locked sdist before that check (uv 0.13.5).
         argv = [self.data["uv_bin"], "--directory", self.data["checkout"], *self.data["sync_args"],
-                "--check", "--offline", "--no-python-downloads", "--no-build", "--no-cache"]
+                "--check", "--offline", "--no-python-downloads", "--no-cache"]
         return self.run(argv, user=True, extra={
             "UV_PROJECT_ENVIRONMENT": self.data["checkout"] + "/.venv",
             "UV_PYTHON_PREFERENCE": "only-managed", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",

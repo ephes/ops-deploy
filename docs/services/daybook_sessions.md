@@ -75,6 +75,15 @@ checkout with an unborn HEAD can retry the same controller bundle normally,
 restoring a missing declared origin; no-fetch mode refuses unborn checkouts.
 Target/Python overrides in sync arguments are refused before work begins.
 
+Source and runtime environment verification use frozen, offline `uv sync --check`
+with Python downloads and persistent caching disabled. The check does not build,
+install or import the application. It deliberately omits `--no-build`: uv 0.13.5
+otherwise rejects a correctly installed locked source distribution before
+checking the environment. A missing installed distribution still fails without
+repair. Actual synchronization remains separate managed work with the original
+arguments; this compatibility fix changes neither dependencies nor interpreter
+versions. Native temporary/cache bookkeeping is not a whole-host zero-I/O claim.
+
 A missing commit explicitly prepares a per-run private temporary directory and
 transfers one mode-0600 code bundle with the existing SSH identity. Descriptor
 checks publish that file to the service account without pyinfra sudo uploads;

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Correct Daybook frozen environment checks for already installed source
+  distributions on uv 0.13.5. Retain offline/no-download checks and genuine
+  dependency-drift failures without executing a build or repairing the environment.
+  Original managed synchronization and root/user interpreter guards are unchanged.
+
 - Add typed Tailscale core, cached metrics, dedicated Nyxmon continuity and
   private identity lifecycle APIs. Preserve four-host normal policy, selected
   preference convergence, ordinary upstream key rotation detection and
