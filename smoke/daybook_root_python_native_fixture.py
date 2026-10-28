@@ -7,6 +7,7 @@ import os
 import pwd
 import runpy
 import shutil
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,53 @@ def metadata(paths: list[Path]) -> dict[str, tuple[int, ...]]:
         for path in [root, *root.rglob("*")]
         for s in [path.lstat()]
     }
+
+
+def metadata_diagnostic(owned: OwnedMac, checkout: Path, tree: Path) -> dict[str, Any]:
+    """Owned code/package metadata only; never change the actual guard result."""
+    categories: dict[str, dict[str, Any]] = {}
+    roots = (checkout, tree)
+    boundary = checkout.parent.parent
+
+    def note(category: str, path: Path, info: os.stat_result) -> None:
+        row = categories.setdefault(
+            category,
+            {
+                "count": 0,
+                "first_path": str(path.relative_to(owned.root))
+                if path.is_relative_to(owned.root)
+                else "system-ancestor",
+                "first_uid": info.st_uid,
+                "first_mode": oct(stat.S_IMODE(info.st_mode)),
+            },
+        )
+        row["count"] += 1
+
+    for root in roots:
+        for path in (root, *root.parents):
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
+                note("ancestor-kind-owner", path, info)
+            protected = path == boundary or boundary in path.parents
+            if info.st_mode & 0o022 and (protected or not info.st_mode & stat.S_ISVTX):
+                note("ancestor-writable", path, info)
+        for parent, dirs, names in os.walk(root, followlinks=False):
+            for name in [*dirs, *names]:
+                path = Path(parent) / name
+                info = path.lstat()
+                if info.st_uid != 0:
+                    note("entry-owner", path, info)
+                if stat.S_ISLNK(info.st_mode):
+                    try:
+                        target = path.resolve(strict=True)
+                    except (OSError, RuntimeError):
+                        note("linked-missing-or-loop", path, info)
+                    else:
+                        if not any(target == own or own in target.parents for own in roots):
+                            note("linked-outside-protected-roots", path, info)
+                elif not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)) or info.st_mode & 0o022:
+                    note("entry-kind-writable", path, info)
+    return categories
 
 
 def main() -> None:
@@ -88,6 +136,7 @@ def main() -> None:
             "checkout": str(checkout),
         }
         calls = []
+        diagnostics = []
 
         class Probes(module["NativeProbes"]):
             def run(self, argv: list[str], user: bool = False, extra: Any = None) -> Any:
@@ -97,12 +146,20 @@ def main() -> None:
                     else ("root-uv-find" if argv[1:3] == ["python", "find"] else "root-uv-lock-check")
                 )
                 calls.append({"probe": category, "as_gui": user, "root_selector": extra == self.root_python_env()})
-                return super().run(argv, user=user, extra=extra)
+                result = super().run(argv, user=user, extra=extra)
+                diagnostics.append(
+                    {"probe": category, "returncode": result.returncode, "stderr_present": bool(result.stderr)}
+                )
+                return result
 
         probes = Probes(data)
         assert probes.root_python_tree() == tree
         assert probes.runtime_current() is False
-        assert [row["probe"] for row in calls] == ["root-uv-find"]
+        owned.report["initial_symlink_probe_history"] = list(calls)
+        owned.report["initial_metadata_diagnostic"] = metadata_diagnostic(owned, checkout, tree)
+        # A symlink may already be rejected by the earlier metadata tree guard.
+        # Neither path may execute the copied interpreter or root lock query.
+        assert [row["probe"] for row in calls] in ([], ["root-uv-find"])
 
         def materialize() -> None:
             temporary = copied.with_name("python.managed")
@@ -118,7 +175,11 @@ def main() -> None:
         assert copied.stat().st_uid == 0
         assert copied.stat().st_nlink == 1
         calls.clear()
-        assert probes.runtime_current() is True
+        owned.report["copied_metadata_diagnostic"] = metadata_diagnostic(owned, checkout, tree)
+        current = probes.runtime_current()
+        owned.report["copied_probe_history"] = list(calls)
+        owned.report["probe_diagnostics"] = diagnostics
+        assert current is True
         assert calls == [
             {"probe": "root-uv-find", "as_gui": False, "root_selector": True},
             {"probe": "stdlib-interpreter", "as_gui": True, "root_selector": False},
