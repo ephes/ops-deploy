@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Keep new Tailscale namespace exports available without eagerly importing their
+  Fractal endpoint model. Existing Fractal components can again initialize first
+  in a fresh interpreter; direct APIs, model fields and deployment behavior are
+  unchanged. Add independent-process import-order regression tests.
+
 - Correct Daybook frozen environment checks for already installed source
   distributions on uv 0.13.5. Retain offline/no-download checks and genuine
   dependency-drift failures without executing a build or repairing the environment.

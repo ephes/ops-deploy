@@ -7,6 +7,8 @@ outside the size-capped helpers/ops/core layer. Secrets (database and Redis
 passwords) are deploy arguments, never config fields.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from ops_deploy.infra.certbot_dns import CertbotDnsConfig, deploy_certbot_dns
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
@@ -22,21 +24,6 @@ from ops_deploy.infra.postgres_install import (
 )
 from ops_deploy.infra.redis_install import RedisInstallConfig, deploy_redis_install
 from ops_deploy.infra.smartd import SmartdConfig, SmartdDevice, deploy_smartd
-from ops_deploy.infra.tailscale import (
-    TailscaleBackupConfig,
-    TailscaleConfig,
-    TailscaleManualRestoreConfig,
-    TailscaleMetricsConfig,
-    TailscaleNyxmonConfig,
-    TailscaleNyxmonTarget,
-    TailscaleRemoveConfig,
-    deploy_tailscale,
-    deploy_tailscale_backup,
-    deploy_tailscale_manual_restore,
-    deploy_tailscale_metrics,
-    deploy_tailscale_nyxmon,
-    deploy_tailscale_remove,
-)
 from ops_deploy.infra.traefik_backup import (
     TraefikBackupConfig,
     TraefikRestoreConfig,
@@ -119,3 +106,49 @@ __all__ = [
     "vector_apt_steps",
     "verify_traefik_health_probes",
 ]
+
+if TYPE_CHECKING:
+    from ops_deploy.infra.tailscale import (
+        TailscaleBackupConfig,
+        TailscaleConfig,
+        TailscaleManualRestoreConfig,
+        TailscaleMetricsConfig,
+        TailscaleNyxmonConfig,
+        TailscaleNyxmonTarget,
+        TailscaleRemoveConfig,
+        deploy_tailscale,
+        deploy_tailscale_backup,
+        deploy_tailscale_manual_restore,
+        deploy_tailscale_metrics,
+        deploy_tailscale_nyxmon,
+        deploy_tailscale_remove,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    # Only the new Tailscale aliases depend on Fractal's endpoint model.
+    # Resolve them after this package initializes so importing an existing
+    # Fractal component first cannot re-enter its partially defined models.
+    if name in (
+        "TailscaleBackupConfig",
+        "TailscaleConfig",
+        "TailscaleManualRestoreConfig",
+        "TailscaleMetricsConfig",
+        "TailscaleNyxmonConfig",
+        "TailscaleNyxmonTarget",
+        "TailscaleRemoveConfig",
+        "deploy_tailscale",
+        "deploy_tailscale_backup",
+        "deploy_tailscale_manual_restore",
+        "deploy_tailscale_metrics",
+        "deploy_tailscale_nyxmon",
+        "deploy_tailscale_remove",
+    ):
+        import ops_deploy.infra.tailscale as tailscale
+
+        return getattr(tailscale, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
