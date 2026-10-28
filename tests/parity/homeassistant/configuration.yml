@@ -1,0 +1,107 @@
+---
+- name: "Template secrets.yaml"
+  ansible.builtin.template:
+    src: secrets.yaml.j2
+    dest: "{{ homeassistant_config_path }}/secrets.yaml"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0600"
+    backup: true
+  when: homeassistant_manage_secrets | bool
+
+- name: "Check existing configuration file"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/configuration.yaml"
+  register: _ha_configuration_stat
+
+- name: "Template configuration.yaml"
+  ansible.builtin.template:
+    src: configuration.yaml.j2
+    dest: "{{ homeassistant_config_path }}/configuration.yaml"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+    backup: true
+  when:
+    - homeassistant_manage_configuration | bool
+    - homeassistant_overwrite_config | bool or not _ha_configuration_stat.stat.exists
+
+- name: "Remove legacy MET weather YAML platform"
+  ansible.builtin.replace:
+    path: "{{ homeassistant_config_path }}/configuration.yaml"
+    regexp: "(?ms)^# Weather \\(you can configure your preferred weather provider\\)\\nweather:\\n  - platform: met\\n    name: Home\\n\\n"
+    replace: ""
+    backup: true
+  when:
+    - homeassistant_manage_configuration | bool
+    - homeassistant_remove_legacy_met_weather_yaml | bool
+    - _ha_configuration_stat.stat.exists
+  notify: restart homeassistant
+
+- name: "Report skipped legacy MET weather YAML removal"
+  ansible.builtin.debug:
+    msg: >-
+      homeassistant_remove_legacy_met_weather_yaml only applies when
+      homeassistant_manage_configuration is true because it removes the
+      role-generated configuration block.
+  when:
+    - homeassistant_remove_legacy_met_weather_yaml | bool
+    - not (homeassistant_manage_configuration | bool)
+
+- name: "Remove obsolete role-generated YAML integration blocks"
+  ansible.builtin.replace:
+    path: "{{ homeassistant_config_path }}/configuration.yaml"
+    regexp: "{{ item }}"
+    replace: ""
+    backup: true
+  loop:
+    - |-
+      (?m)^# System monitor$
+      ^system_monitor:$
+      ^  process:$
+      ^    - python3$
+      ^  resources:$
+      ^    - type: disk_use_percent$
+      ^      arg: /$
+      ^    - type: memory_free$
+      ^    - type: memory_use_percent$
+      ^    - type: processor_use$
+      ^    - type: processor_temperature$
+      ^    - type: last_boot$\n\n?
+    - |-
+      (?m)^# Discovery$
+      ^discovery:$
+      ^  ignore:$
+      ^    - sonos$
+      ^    - samsung_tv$\n\n?
+  when:
+    - homeassistant_manage_configuration | bool
+    - _ha_configuration_stat.stat.exists
+  notify: restart homeassistant
+
+- name: "Check include files"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/{{ item }}"
+  loop: "{{ homeassistant_include_files }}"
+  register: _ha_include_stats
+  when: homeassistant_manage_includes | bool
+
+- name: "Build include map"
+  ansible.builtin.set_fact:
+    _ha_include_exists: "{{ _ha_include_exists | default({}) | combine({item.item: item.stat.exists}) }}"
+  loop: "{{ _ha_include_stats.results | default([]) }}"
+  when: homeassistant_manage_includes | bool
+
+- name: "Manage include files"
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ homeassistant_config_path }}/{{ item }}"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+    backup: true
+    force: "{{ homeassistant_overwrite_config | bool }}"
+  loop: "{{ homeassistant_include_files }}"
+  when:
+    - homeassistant_manage_includes | bool
+    - homeassistant_overwrite_config | bool or not (_ha_include_exists[item] | default(false))

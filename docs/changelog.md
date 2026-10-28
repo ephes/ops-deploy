@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Begin the Home Assistant configuration ownership port with the original
+  overwrite/include/secret guards and exact generated-block cleanup ordering.
+  Preserve physical runtime path derivations and original HA/Matter units.
+  This is a tested source foundation; no deployment API or inventory switch.
+
 - Add the original fixed-path software-estate removal as a typed lifecycle
   operation, preserving directory/file/link removal and an absent-path no-op.
   It does not restore the retired pilot or change deploy-default counts. Owned

@@ -1,0 +1,31 @@
+[Unit]
+Description=Home Assistant
+After=network-online.target
+Wants=network-online.target
+{% if homeassistant_manage_matter_server %}
+After={{ homeassistant_matter_server_service_name }}.service
+Wants={{ homeassistant_matter_server_service_name }}.service
+{% endif %}
+
+[Service]
+Type=simple
+User={{ homeassistant_user }}
+Group={{ homeassistant_group }}
+WorkingDirectory={{ homeassistant_site_path }}
+Environment="PATH={{ homeassistant_virtualenv_link }}/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME={{ homeassistant_home }}"
+ExecStart={{ homeassistant_virtualenv_path }}/bin/hass --config {{ homeassistant_config_path }} --log-file {{ homeassistant_logs_path }}/homeassistant.log
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Basic security settings - removed strict hardening that may cause issues
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Allow access to USB devices for Zigbee/Matter integrations
+SupplementaryGroups=dialout
+DevicePolicy=auto
+
+[Install]
+WantedBy=multi-user.target

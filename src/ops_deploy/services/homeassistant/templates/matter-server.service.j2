@@ -1,0 +1,20 @@
+[Unit]
+Description=Matter Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ homeassistant_user }}
+Group={{ homeassistant_group }}
+WorkingDirectory={{ homeassistant_site_path }}
+Environment="PATH={{ homeassistant_matter_server_virtualenv_path }}/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME={{ homeassistant_home }}"
+ExecStart={{ homeassistant_matter_server_virtualenv_path }}/bin/matter-server --storage-path {{ homeassistant_matter_server_storage_path }} --port {{ homeassistant_matter_server_port }} --vendorid {{ homeassistant_matter_server_vendor_id }} --fabricid {{ homeassistant_matter_server_fabric_id }} --log-level {{ homeassistant_matter_server_log_level }}{{ ' --log-file ' ~ homeassistant_matter_server_log_file if homeassistant_matter_server_log_file | length > 0 else '' }}
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
