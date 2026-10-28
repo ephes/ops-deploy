@@ -1,0 +1,55 @@
+# Original ops-library cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641
+# roles/daybook_operations_runtime_deploy/tasks/stop.yml rescue block, unchanged.
+  rescue:
+    - name: stop | Read the command the label would load
+      ansible.builtin.slurp:
+        src: "{{ daybook_operations_runtime_plist }}"
+      register: daybook_operations_runtime_stop_plist
+      failed_when: false
+
+    - name: stop | Decide whether the label still runs the keeper
+      ansible.builtin.set_fact:
+        # Only the keeper is loaded back, never whatever else the file might hold.
+        daybook_operations_runtime_stop_is_keeper: >-
+          {{ daybook_operations_runtime_stop_plist.content is defined
+             and (daybook_operations_runtime_stop_plist.content | b64decode) is search('<string>host-keep</string>') }}
+
+    - name: stop | Enable the keeper label
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", enable, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+      changed_when: true
+      failed_when: false
+      when: daybook_operations_runtime_stop_is_keeper | bool
+
+    - name: stop | Boot the keeper back in
+      # Nothing was replaced: the keeper adopts the supervisor session if it is
+      # still finishing, or starts the supervisor again on the code it ran.
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", bootstrap, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}", "{{ daybook_operations_runtime_plist }}"]
+      register: daybook_operations_runtime_stop_restored
+      changed_when: true
+      # Judged by the look below, not by the exit status: launchctl answers a
+      # label that is still loaded with an error too.
+      failed_when: false
+      when: daybook_operations_runtime_stop_is_keeper | bool
+
+    - name: stop | Look for the keeper again
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", print, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+      register: daybook_operations_runtime_stop_back
+      changed_when: false
+      failed_when: false
+      retries: 6
+      delay: "{{ daybook_operations_runtime_poll_delay }}"
+      until: daybook_operations_runtime_stop_back.rc == 0
+      no_log: true
+
+    - name: stop | Fail after trying to restore the keeper
+      ansible.builtin.fail:
+        msg: >-
+          The supervisor could not be stopped cleanly ({{ ansible_failed_task.name | default('unknown step') }}).
+          {{ 'The keeper is loaded again on the unchanged code; nothing was replaced. Run again later.'
+             if daybook_operations_runtime_stop_back.rc == 0 else
+             'The keeper could NOT be loaded again (launchctl bootstrap: ' ~ (daybook_operations_runtime_stop_restored.rc
+             | default('not run, the label does not hold the keeper')) ~ '); no supervisor is kept alive. Nothing was
+             replaced. Attend to it now.' }}

@@ -10,10 +10,11 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .config import DaybookRuntimeConfig
-from .status import SourceStatus
+if TYPE_CHECKING:
+    from .config import DaybookRuntimeConfig
+    from .status import SourceStatus
 
 
 class RuntimeGuardError(RuntimeError):
@@ -68,13 +69,8 @@ class StopState:
         return self.label_loaded or self.serving
 
 
-def require_stop_ready(cfg: DaybookRuntimeConfig, state: StopState, *, preflight: bool = False) -> None:
-    """Original pre-mutation quiescence requirements, not a stop implementation.
-
-    Sources supplied here come from the explicitly accounted original transition
-    observation. Pure monitor data must not silently replace its expiry semantics.
-    The observation is never inferred read-only merely because this predicate is.
-    """
+def require_stop_prerequisites(cfg: DaybookRuntimeConfig, state: StopState) -> None:
+    """Original checks before quiet waits, without claiming readiness yet."""
     if cfg.mode != "host":
         raise RuntimeGuardError("runtime_stop_requires_host_mode")
     if not state.aqua:
@@ -85,6 +81,16 @@ def require_stop_ready(cfg: DaybookRuntimeConfig, state: StopState, *, preflight
         raise RuntimeGuardError("runtime_capability_host_unavailable")
     if not state.store_readable or state.halts != 0:
         raise RuntimeGuardError("runtime_store_halted_or_unreadable")
+
+
+def require_stop_ready(cfg: DaybookRuntimeConfig, state: StopState, *, preflight: bool = False) -> None:
+    """Original pre-mutation quiescence requirements, not a stop implementation.
+
+    Sources supplied here come from the explicitly accounted original transition
+    observation. Pure monitor data must not silently replace its expiry semantics.
+    The observation is never inferred read-only merely because this predicate is.
+    """
+    require_stop_prerequisites(cfg, state)
     if state.running or preflight:
         names = [source.binding for source in state.sources]
         if len(names) != len(set(names)) or set(names) != set(cfg.status_sources):

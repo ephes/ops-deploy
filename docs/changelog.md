@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the original hosted runtime stop sequence with shared window/quiescence
+  predicates, executor-status effects counted as managed work, graceful TERM
+  and keeper restoration on failure. Inventory dispatch remains unchanged
+  while stop/replace/cutover native qualification is in progress.
+
 - Port the original Daybook Sessions/Archive/Weeknotes declaration and eleven
   resource templates, retaining retired timers, identity and auth boundaries.
   Add pure local runtime observation and original transition predicates as

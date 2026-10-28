@@ -69,3 +69,26 @@ lead), recheck-before-stop requirement, already-stopped recovery, quiet store an
 source guards, profile identity and kind/store continuity, and replacement drain
 proof. They do not perform a transition by themselves. Original executor-status
 expiry effects remain managed update effects, separate from pure monitoring.
+
+The guarded stop API (`stop_daybook_runtime`) retains the original hosted-mode
+stop sequence: Aqua/keeper/host/store checks, run-window guard, bounded quiet
+waits and per-source original executor status, a fresh local check and second
+window guard, keeper bootout, graceful supervisor SIGTERM, exit/session/drain
+proof. Failure inside the stop sequence attempts to recover only the keeper on
+unchanged code before failing. As in the original role's rescue, this also applies
+to a serving-only recovery whose keeper label was already unloaded: it can load
+the existing keeper again, so this is a managed recovery effect, not a claim that
+all initial launchd state is preserved. It never kills the capability host or uses SIGKILL.
+
+This stop stage is **managed**, including executor/Journal effects when a prior
+failure already stopped the supervisor. It is not used by pure default
+verification or presented as a read-only check. The original CLI's own bounds
+are retained without adding an outer executor-status deadline. Local metadata
+commands remain bounded. `RuntimeStopPolicy` carries the original window inputs;
+the role's empty-window/zero-lead defaults are separate from the private update
+wrapper's existing 20-minute lead and two Europe/Berlin windows.
+
+The stop API is under qualification. It has not been invoked on an inventory
+host; guarded replace/cutover and source fanout still follow before normal
+routing and any engine switch. Existing stop confirmation semantics are kept;
+this adds no new owner acknowledgment or activation path.

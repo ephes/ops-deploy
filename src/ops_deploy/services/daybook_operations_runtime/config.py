@@ -56,6 +56,28 @@ class RuntimeWorkers(RoleConfig):
         return self
 
 
+class RuntimeStopWindow(RoleConfig):
+    start: Annotated[str, Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")]
+    end: Annotated[str, Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")]
+
+
+class RuntimeStopPolicy(RoleConfig):
+    """Original stop-window inputs; the private update wrapper supplies windows."""
+
+    windows: tuple[RuntimeStopWindow, ...] = ()
+    lead_minutes: Annotated[StrictInt, Field(ge=0)] = 0
+    timezone: Annotated[str, Field(pattern=r"^[A-Za-z0-9_+/-]+$")] = "Europe/Berlin"
+
+    @model_validator(mode="after")
+    def _same_day(self) -> Self:
+        for window in self.windows:
+            start = int(window.start[:2]) * 60 + int(window.start[3:])
+            end = int(window.end[:2]) * 60 + int(window.end[3:])
+            if start - self.lead_minutes < 0 or start >= end:
+                raise ValueError("stop window and lead must fit one day")
+        return self
+
+
 class DaybookRuntimeConfig(RoleConfig):
     """Nonsecret declaration. Revision is the once-per-run resolved Main commit.
 
