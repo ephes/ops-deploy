@@ -221,3 +221,60 @@ def test_native_sftp_setup_injection_requires_actual_callback_path(
     else:
         with pytest.raises(AssertionError):
             module["source_run_with_upload_counter"](_owned_fail_sftp_setup=True)
+
+
+@pytest.mark.parametrize("case", ["ordinary", "escaped_connect", "early_failure", "unrelated_error", "unreached"])
+def test_native_setup_failure_distinguishes_normal_failed_op_from_escaped_or_early_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    import runpy
+
+    from pyinfra.api.exceptions import ConnectError, PyinfraError
+
+    from ops_deploy.testing import DeployRun, OpResult
+
+    fixture = Path(__file__).resolve().parents[1] / "smoke/daybook_runtime_native_fixture.py"
+    monkeypatch.syspath_prepend(str(fixture.parent))
+    module = runpy.run_path(str(fixture))
+    prefix = "Install exact Sessions source and locked managed environment | "
+    error = (
+        ConnectError("No hosts remaining!")
+        if case == "escaped_connect"
+        else PyinfraError("unrelated" if case == "unrelated_error" else "No hosts remaining!")
+    )
+    run = DeployRun(
+        ops=[
+            OpResult(
+                prefix + "Prepare private temporary Daybook source upload directory", True, case != "early_failure"
+            ),
+            OpResult(prefix + "Stage exact Daybook Main source bundle", False, False),
+        ],
+        error=error,
+    )
+    counts = {
+        "attempted": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "paths": [],
+        "setup_attempted": 0 if case == "unreached" else 1,
+    }
+    if case == "ordinary":
+        module["assert_source_setup_failure"](run, counts)
+    else:
+        with pytest.raises(AssertionError):
+            module["assert_source_setup_failure"](run, counts)
+
+
+def test_actual_pyinfra_single_host_failed_operation_raises_fixed_base_error() -> None:
+    from pyinfra.api import Config, Inventory, State
+    from pyinfra.api.exceptions import PyinfraError
+
+    inventory = Inventory((["owned-unconnected-metadata-only"], {}))
+    state = State(inventory, Config())
+    target = inventory.get_host("owned-unconnected-metadata-only")
+    state.activate_host(target)
+    with pytest.raises(PyinfraError, match=r"^No hosts remaining!$") as failed:
+        state.fail_hosts({target})
+    assert type(failed.value) is PyinfraError
+    assert state.failed_hosts == {target}

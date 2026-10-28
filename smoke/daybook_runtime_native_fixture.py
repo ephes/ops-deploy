@@ -224,6 +224,22 @@ def source_run_with_upload_counter(*args: Any, **kwargs: Any) -> tuple[Any, dict
     return result, counts
 
 
+def assert_source_setup_failure(run: Any, counts: dict[str, Any]) -> None:
+    from pyinfra.api.exceptions import PyinfraError
+
+    assert not run.succeeded
+    # Single-host normal failed-op accounting raises this fixed base error
+    # after callbacks. An escaped ConnectError is a different subclass/path.
+    assert type(run.error) is PyinfraError
+    assert str(run.error) == "No hosts remaining!"
+    prefix = "Install exact Sessions source and locked managed environment | "
+    prepared = run.op(prefix + "Prepare private temporary Daybook source upload directory")
+    assert prepared.succeeded
+    assert prepared.changed
+    assert not run.op(prefix + "Stage exact Daybook Main source bundle").succeeded
+    assert counts == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": [], "setup_attempted": 1}
+
+
 def main() -> None:
     owned = OwnedMac("daybook-runtime")
     failure: BaseException | None = None
@@ -814,12 +830,8 @@ def main() -> None:
             host_data=host_data,
             _owned_fail_sftp_setup=True,
         )
-        assert not setup_failure.succeeded
-        assert setup_failure.error is None  # ordinary failed op, no escaped ConnectError
-        prefix = "Install exact Sessions source and locked managed environment | "
-        assert setup_failure.op(prefix + "Prepare private temporary Daybook source upload directory").succeeded
-        assert not setup_failure.op(prefix + "Stage exact Daybook Main source bundle").succeeded
-        assert setup_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": [], "setup_attempted": 1}
+        owned.report["sessions_source_sftp_setup_error_type"] = type(setup_failure.error).__name__
+        assert_source_setup_failure(setup_failure, setup_uploads)
         assert set(Path("/private/var/tmp").glob("ops-deploy-daybook-source-*")) == temporary_before
         assert snapshot([session_checkout]) == session_current
         assert snapshot(protected) == before
