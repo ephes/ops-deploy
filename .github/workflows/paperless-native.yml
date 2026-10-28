@@ -7,6 +7,15 @@ on:
         description: Exact reviewed public ops-deploy commit (40 lowercase hex)
         required: true
         type: string
+      fixture_cases:
+        description: 'JSON selection: ["current","upgrade"], ["current"], or ["upgrade"]'
+        required: true
+        default: '["current","upgrade"]'
+        type: choice
+        options:
+          - '["current","upgrade"]'
+          - '["current"]'
+          - '["upgrade"]'
 
 permissions:
   contents: read
@@ -18,11 +27,11 @@ concurrency:
 jobs:
   native:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix:
-        fixture_case: [current, upgrade]
+        fixture_case: ${{ fromJSON(inputs.fixture_cases) }}
     steps:
       - name: Validate immutable source
         env:
