@@ -48,6 +48,11 @@ def owner_main(path: Path) -> None:
     root = home / (".ops-mac-tunnel-" + data["suffix"])
     assert not root.exists()
     root.mkdir(mode=0o700)
+    # Session cache is separately owned, outside the strict resource snapshot.
+    control_parent = home / (".ops-mac-cp-" + data["suffix"])
+    assert not control_parent.exists()
+    control_socket = control_parent / "authorization.sock"
+    assert not control_socket.exists()
     known = root / "known-hosts"
     known.write_text(data["known_host"])
     label = "com.example.ops-mac-apps.tunnel." + data["suffix"]
@@ -60,6 +65,8 @@ def owner_main(path: Path) -> None:
         target_port=data["https_port"],
         local_port=port(),
         ssh_port=data["ssh_port"],
+        ssh_connect_timeout=30,
+        ssh_control_path=str(control_socket),
         label=label,
         directory=PurePosixPath(root / "application"),
         plist=PurePosixPath(root / "agent.plist"),
@@ -110,6 +117,8 @@ def owner_main(path: Path) -> None:
         proof["repeats"][name] = changes
 
     try:
+        control_parent.mkdir(mode=0o700)
+        proof["authorization_cache_prepared_by_fixture"] = True
         command("/bin/launchctl", "print", "gui/" + str(os.getuid()))
         proof["first_changes"] = deploy(cfg)
         assert proof["first_changes"]
@@ -121,6 +130,19 @@ def owner_main(path: Path) -> None:
         effective = command("/usr/bin/ssh", "-G", "-F", str(directory / "ssh_config"), "managed-tunnel").stdout
         assert "\nport " + str(data["ssh_port"]) + "\n" in "\n" + effective
         proof["effective_ssh_port"] = data["ssh_port"]
+        master = command(
+            "/usr/bin/ssh",
+            "-S",
+            cfg.ssh_control_path,
+            "-O",
+            "check",
+            "-p",
+            str(data["ssh_port"]),
+            data["relay_user"] + "@127.0.0.1",
+            check=False,
+        )
+        assert master.returncode == 0
+        proof["authorization_session"] = {"connect_timeout": 30, "multiplex_master_confirmed": True}
         no_op(cfg, "fresh-stopped")
         lifecycle("start")
         for _ in range(100):
@@ -149,6 +171,14 @@ def owner_main(path: Path) -> None:
         key.chmod(0o600)
         assert hashlib.sha256(key.read_bytes()).hexdigest() == key_before
         proof["unsafe_identity_refused_running_job_preserved"] = True
+        # A failed real relay connection must not stop the running GUI tunnel.
+        # Use a distinct owned control path so this fault cannot reuse its master.
+        denied = cfg.model_copy(update={"ssh_port": port(), "ssh_control_path": str(control_parent / "denied.sock")})
+        protected = snapshot(root)
+        deploy(denied, succeeds=False)
+        assert snapshot(root) == protected
+        assert "pid = " + first_pid in command("/bin/launchctl", "print", service).stdout
+        proof["relay_connection_failure_refused_running_job_preserved"] = True
         proof["loaded_enabled_install_stopped_changes"] = deploy(cfg)
         assert proof["loaded_enabled_install_stopped_changes"]
         assert command("/bin/launchctl", "print", service, check=False).returncode != 0
@@ -173,11 +203,50 @@ def owner_main(path: Path) -> None:
         command("/bin/launchctl", "disable", service, check=False)
         command("/bin/launchctl", "bootout", service, check=False)
         proof["job_unloaded"] = command("/bin/launchctl", "print", service, check=False).returncode != 0
+        # Close only this fixture's private controller socket before cleanup.
+        command(
+            "/usr/bin/ssh",
+            "-S",
+            cfg.ssh_control_path,
+            "-O",
+            "exit",
+            "-p",
+            str(data["ssh_port"]),
+            data["relay_user"] + "@127.0.0.1",
+            check=False,
+        )
+        proof["authorization_session_closed"] = (
+            command(
+                "/usr/bin/ssh",
+                "-S",
+                cfg.ssh_control_path,
+                "-O",
+                "check",
+                "-p",
+                str(data["ssh_port"]),
+                data["relay_user"] + "@127.0.0.1",
+                check=False,
+            ).returncode
+            != 0
+        )
+        proof["authorization_socket_removed"] = not control_socket.exists()
+        if proof["authorization_socket_removed"]:
+            try:
+                control_parent.rmdir()
+            except OSError as error:
+                proof["authorization_cache_cleanup_error_type"] = type(error).__name__
+        proof["authorization_cache_removed"] = not control_parent.exists()
         try:
             shutil.rmtree(root)
         except OSError as error:
             proof["cleanup_error_type"] = type(error).__name__
-        proof["cleanup"] = proof["job_unloaded"] and not root.exists()
+        proof["cleanup"] = (
+            proof["job_unloaded"]
+            and not root.exists()
+            and proof["authorization_session_closed"]
+            and proof["authorization_socket_removed"]
+            and proof["authorization_cache_removed"]
+        )
         proof["limitations"] = ["The unique disabled GUI-label override remains until this disposable VM is destroyed."]
         if failure is not None or not proof["cleanup"]:
             proof["status"] = "failed"

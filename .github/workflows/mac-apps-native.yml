@@ -22,6 +22,13 @@ on:
         required: true
         type: string
 
+      fixture:
+        description: Owned fixture selection (tunnel for an isolated transport repair)
+        required: false
+        type: choice
+        options: [all, tunnel]
+        default: all
+
 permissions:
   contents: read
 
@@ -39,17 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Unprivileged: the descriptor identity algorithm and uv as the runner.
-          - {fixture: identity, privileged: false, timeout: 15}
-          - {fixture: uv, privileged: false, timeout: 15}
-          # Root fixtures own unique accounts, labels, ports and roots; separate
-          # jobs keep each application's RAM/disk use within one hosted VM.
-          - {fixture: tunnel, privileged: true, timeout: 20}
-          - {fixture: opsgate, privileged: true, timeout: 40}
-          - {fixture: llama, privileged: true, timeout: 60}
-          - {fixture: voxhelm, privileged: true, timeout: 90}
-          - {fixture: voxhelm_worker, privileged: true, timeout: 90}
+        include: ${{ fromJSON(inputs.fixture == 'tunnel' && '[{"fixture":"tunnel","privileged":true,"timeout":20}]' || '[{"fixture":"identity","privileged":false,"timeout":15},{"fixture":"uv","privileged":false,"timeout":15},{"fixture":"tunnel","privileged":true,"timeout":20},{"fixture":"opsgate","privileged":true,"timeout":40},{"fixture":"llama","privileged":true,"timeout":60},{"fixture":"voxhelm","privileged":true,"timeout":90},{"fixture":"voxhelm_worker","privileged":true,"timeout":90}]') }}
     env:
       IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.event.pull_request.head.sha }}
       MAC_APPS_EVIDENCE_DIR: /private/var/tmp/mac-apps-evidence

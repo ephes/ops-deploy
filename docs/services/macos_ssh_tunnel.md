@@ -59,3 +59,41 @@ fixtures create unique accounts, labels, ports and a private root; cleanup
 removes only those, waiting for the exact PIDs of their launchd jobs and
 spawned helpers, and always writes a receipt (including the first failure's
 type and code location, never its message) even when setup is refused.
+
+## Delegated authorization transport
+
+Relay authorization uses the original delegated SSH session model: compression,
+`ControlMaster=auto` and `ControlPersist=60s`. Set `ssh_connect_timeout` to the
+original controller's configured connection budget (default10), and
+`ssh_control_path` to its existing absolute control-socket pattern when selected;
+`%h`, `%p` and `%r` are supported. For example, a controller configured with
+Ansible timeout30 and `/tmp/ansible-ssh-%%h-%%p-%%r` supplies `ssh_connect_timeout=30`
+and an absolute `ssh_control_path`, such as
+`/Users/operator/.ansible/cp/ansible-ssh-%h-%p-%r`. This keeps the same basename
+under the existing owner-private `~/.ansible/cp` directory.
+The cache-location deviation from shared `/tmp` is deliberate: an explicit
+cache parent must already be a canonical directory owned by the actual owner
+with mode0700; existing sockets must be owner-owned mode0600 sockets. The
+status fact never creates or hardens that directory. An absent/untrusted cache
+uses the ordinary direct SSH fallback. Unselected generic profiles retain
+`ControlMaster=no` and `ControlPath=none`.
+
+This affects authorization transport only; all four
+tunnel resources and the explicit start/stop/controller remain byte-identical.
+
+Existing identity and strict initial-connection known-host checks remain mandatory.
+An explicit multiplex profile trusts a same-owner previously authenticated cached
+session, like the original Ansible controller; it does not revalidate known hosts
+on each reused channel. Existing shared `/tmp` control sockets are never used or
+modified. Planning checks
+actual relay authorization, and any changed install actually converges it before
+stopping the local job. A relay failure is not treated as success. The local
+post-install verification then checks identity, resources, disabled state and
+absence of the named GUI job without another remote authorization roundtrip,
+matching the original local role. SSH retains its connection deadline; the port's
+invented whole-command30-second limit is removed for this original delegated
+step. Local subprocess and stop/listener bounds remain unchanged.
+
+For an isolated repair, dispatch the native workflow with `fixture=tunnel` and
+an exact implementation SHA. The default `all` and PR selection retain all seven
+owned fixtures. No inventory target is accepted by this workflow.

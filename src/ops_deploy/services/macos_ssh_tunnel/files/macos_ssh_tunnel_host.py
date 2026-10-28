@@ -19,8 +19,8 @@ import time
 from pathlib import Path
 
 
-def run(argv, check=True, **kwargs):
-    result = subprocess.run(argv, capture_output=True, text=True, timeout=30, **kwargs)
+def run(argv, check=True, timeout=30, **kwargs):
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, **kwargs)
     if check and result.returncode:
         raise RuntimeError("owner-local tunnel command failed")
     return result
@@ -58,17 +58,53 @@ def identity(cfg):
     )
 
 
+def trusted_control_path(cfg):
+    path = cfg.get("ssh_control_path")
+    if path is None:
+        return None
+    # Never create/harden a persistent directory during a status fact. A
+    # missing/untrusted cache uses OpenSSH's ordinary direct-session fallback.
+    expanded = path.replace("%h", cfg["host"]).replace("%p", str(cfg["ssh_port"])).replace("%r", cfg["user"])
+    parent = Path(expanded).parent
+    try:
+        info = parent.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        return None
+    if parent.resolve() != parent:
+        return None
+    try:
+        socket_info = os.lstat(expanded)
+    except FileNotFoundError:
+        return path
+    if (not stat.S_ISSOCK(socket_info.st_mode) or socket_info.st_uid != os.geteuid()
+            or stat.S_IMODE(socket_info.st_mode) != 0o600):
+        return None
+    return path
+
+
 def authorize(cfg, public, check):
     if cfg.get("relay_home") is None:
         return True
     line = 'restrict,port-forwarding,permitopen="' + cfg["target"] + ':' + str(cfg["target_port"]) + '",command="/usr/bin/false" ' + public + " " + cfg["identity_comment"]
     remote = shlex.join(["/usr/bin/python3", "-B", "-c", cfg["relay_script"]])
-    result = run([
-        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-        "-o", "UpdateHostKeys=no", "-o", "ControlMaster=no", "-o", "ControlPath=none",
-        "-o", "ConnectTimeout=10", "-o", "UserKnownHostsFile=" + cfg["known_hosts"],
-        "-p", str(cfg["ssh_port"]), cfg["user"] + "@" + cfg["host"], remote,
-    ], input=json.dumps({"home": cfg["relay_home"], "line": line, "comment": cfg["identity_comment"], "check": check}) + "\n")
+    # Match the original delegated Ansible SSH session. Connection setup keeps
+    # its explicit deadline; the original task had no extra whole-command cap.
+    argv = ["/usr/bin/ssh"]
+    control_path = trusted_control_path(cfg)
+    if control_path is not None:
+        argv += ["-C", "-o", "ControlMaster=auto", "-o", "ControlPersist=60s", "-o", "ControlPath=" + control_path]
+    else:
+        argv += ["-o", "ControlMaster=no", "-o", "ControlPath=none"]
+    argv += [
+        "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no",
+        "-o", "ConnectTimeout=" + str(cfg["ssh_connect_timeout"]),
+        "-o", "UserKnownHostsFile=" + cfg["known_hosts"],
+    ]
+    argv += ["-p", str(cfg["ssh_port"]), cfg["user"] + "@" + cfg["host"], remote]
+    result = run(argv, timeout=None,
+        input=json.dumps({"home": cfg["relay_home"], "line": line, "comment": cfg["identity_comment"], "check": check}) + "\n")
     data = json.loads(result.stdout)
     return data["current"] if check else True
 
@@ -97,7 +133,7 @@ def mode_for(cfg, path):
     return 0o700 if path == str(Path(cfg["directory"]) / "tunnel_control.py") else 0o600
 
 
-def current(cfg):
+def current(cfg, *, check_authorization=True):
     if cfg["state"] == "absent":
         paths = list(cfg["contents"]) + [str(Path(cfg["directory"]) / "config.lock")]
         return disabled(cfg) and not loaded(cfg) and all(not os.path.lexists(p) for p in paths)
@@ -105,7 +141,7 @@ def current(cfg):
         found = identity(cfg)
         if found["state"] != "current":
             return False
-        if not authorize(cfg, found["public_key"], True):
+        if check_authorization and not authorize(cfg, found["public_key"], True):
             return False
     for path in [cfg["directory"], cfg["log_directory"]]:
         if not directory_current(path, 0o700):
@@ -206,7 +242,9 @@ def main():
     elif action == "apply":
         apply(cfg)
     elif action == "verify":
-        if not current(cfg):
+        # Authorization was actually checked/converged before local mutation.
+        # The original role's post-install checks concern local stopped state.
+        if not current(cfg, check_authorization=False):
             raise RuntimeError("owner-session stopped tunnel verification failed")
         print("Tunnel deployment is converged; automatic start remains disabled.")
     else:

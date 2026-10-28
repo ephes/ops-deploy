@@ -34,6 +34,10 @@ class MacosSshTunnelConfig(RoleConfig):
     # Bounded extension for explicitly selected relays/owned high-port fixtures;
     # default22 keeps the original template's exact bytes and behavior.
     ssh_port: int = Field(default=22, ge=1, le=65535)
+    # Controller transport settings, separate from the unchanged tunnel templates.
+    # Callers may mirror their original Ansible connection profile explicitly.
+    ssh_connect_timeout: int = Field(default=10, ge=1)
+    ssh_control_path: str | None = None
     ignore_ssl_errors: Annotated[bool, Field(strict=True)] = False
     ca_file: PurePosixPath | None = None
     health_path: Annotated[str, Field(pattern=r"^/[A-Za-z0-9/_.-]*$")] = "/"
@@ -68,6 +72,15 @@ class MacosSshTunnelConfig(RoleConfig):
                 raise ValueError("tunnel paths must be normalized absolute paths with safe literal characters")
         return value
 
+    @field_validator("ssh_control_path")
+    @classmethod
+    def _control_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            literal = re.sub(r"%[hpr]", "x", value)
+            if not re.fullmatch(r"/[A-Za-z0-9_./-]+", literal) or os.path.normpath(value) != value:
+                raise ValueError("SSH control path must be absolute with literal characters and %h/%p/%r tokens")
+        return value
+
     @model_validator(mode="after")
     def _defaults(self) -> Self:
         if any(value == "CHANGEME" for value in (self.owner, self.host, self.user, self.target)):
@@ -89,6 +102,7 @@ class MacosSshTunnelConfig(RoleConfig):
         if self.relay_home is not None and not self.manage_identity:
             raise ValueError("relay authorization requires the managed forwarding identity")
         assert self.directory is not None
+        assert self.plist is not None
         managed = [
             self.plist,
             self.directory / "ssh_config",
@@ -96,6 +110,17 @@ class MacosSshTunnelConfig(RoleConfig):
             self.directory / "tunnel_control.py",
             self.directory / "config.lock",
         ]
+        if self.ssh_control_path is not None:
+            expanded = (
+                self.ssh_control_path.replace("%h", self.host)
+                .replace("%p", str(self.ssh_port))
+                .replace("%r", self.user)
+            )
+            control = PurePosixPath(expanded)
+            protected = {self.identity, PurePosixPath(str(self.identity) + ".pub"), self.known_hosts, *managed}
+            trees = (self.directory, self.log_directory, self.plist.parent)
+            if control in protected or any(tree == control or tree in control.parents for tree in trees):
+                raise ValueError("SSH control socket must remain outside protected tunnel resource trees")
         if len(set(managed)) != len(managed) or set(managed) & {
             self.directory,
             self.log_directory,

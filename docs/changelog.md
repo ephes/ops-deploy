@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Restore delegated macOS tunnel authorization transport/session parity with the
+  original Ansible controller profile. Preserve strict identities, relay line
+  and known hosts, validate/converge authorization before stopping the GUI job,
+  and verify local stopped/resources state without an extra remote roundtrip.
+  Keep local bounds; remove the added whole-SSH30-second deadline. Owned tunnel
+  native proof can be selected independently of unchanged application fixtures.
+
 - Add the host-local OS apt maintenance API and exact Nyxmon check upsert
   semantics, with actual cf3 role-template parity. Preserve existing state,
   scheduled apt/reboot policy and disabled-role behavior; reload/restart only
