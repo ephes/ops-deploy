@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Preserve bounded sanitized Paperless native phase progress before timeout,
+  and allow an explicit upgrade-only fixture selection with a100-minute guest
+  deadline. The current50-phase native matrix passed; the upgrade's earlier
+  70-minute timeout and incomplete phase remain failed evidence, with no
+  inventory adoption or application runtime change.
+
 - Add managed Daybook runtime cutover/rollback and optional Inbox interruption
   summary components, preserving original reconciliation/start guards. Owned
   root/GUI/SSH transition/report assertions and exact817 package provenance

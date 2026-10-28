@@ -20,7 +20,9 @@ with2CPU/6GiB RAM/no additional swap/2048PIDs and one20MiB local log. There are
 no host source/data/credential/socket bind mounts or published ports. Disk use
 is bounded by the finite disposable runner filesystem and runtime deadline;
 Docker overlay storage has no additional per-container disk quota here.
-Build and execution have15/70-minute limits, beneath the90-minute workflow cap.
+Build has a15-minute limit; current execution has70 minutes and upgrade100
+minutes, beneath the130-minute workflow cap. Dispatch can select either leg or
+both; a completed current matrix need not be replayed for an upgrade-only retry.
 No unrelated runner resources are removed to make room.
 
 The guest receives an explicit non-secret environment allowlist and anonymously
@@ -69,7 +71,11 @@ declared administrator flags, with two bounded index metadata files. Password,
 shadow and environment bodies are compared in memory only; no credential body
 or durable verifier digest is written. Raw CLI output is temporarily private,
 bounded to20MiB and sanitized before evidence publication, including values split
-across write calls. This is not a global physical-I/O or document-freshness claim.
+across write calls. A sanitized prefix is also flushed during each typed phase,
+with a possible incomplete secret prefix withheld; termination does not fabricate
+the missing tail. Per-phase progress records bounded UTC/elapsed time and fixed
+operation names only, never command argv/stdin/responses. This is not a global
+physical-I/O or document-freshness claim.
 
 Runner cleanup preserves evidence before removing exactly its container and
 image, then verifies their absence and records execution/cleanup exits
@@ -262,4 +268,23 @@ migration-status probe. Its fault oracle now records those eight observed timest
 writes, requires every other field exact, and rejects extra changes or unchanged/
 backwards expected timestamps. It does not add skip-checks to managed reindex,
 change application code, or exempt metadata from any healthy-repeat assertion.
-The actual repaired missing-index recovery and remaining matrix are still pending.
+Run40777068134 completed the current matrix:50 phases,26 healthy strict repeats
+with102 successful operations each, zero managed changes/uploads and entire
+captured public/private equality. Real missing-entire-index recovery, ordinary
+retry after an injected failure with prior service-state resumption, Python/
+release recovery, SFTP/OCR/search and the remaining current cases passed. The
+two declared synthetic scanner-password rotation/restoration phases intentionally
+changed private content; they are not no-op phases. All329 collected file hashes
+and the actual825 noneditable package resources matched9ac; run/collection/
+cleanup exits were0. The guest shares the owned VM kernel; no physical-device or
+inventory qualification follows.
+
+The same run's upgrade leg reached38 completed typed phases, including the real
+3.0.4→3.2.1 upgrade with12 managed operations and20 strict zero-change repeats,
+then exhausted the outer70-minute deadline during `incomplete-release-recovery`.
+Its before snapshot is retained, but no after/completion receipt or final summary
+exists; interrupted effects and the underlying in-flight operation are unknown.
+All260 collected hashes and825 package resources match9ac; run124/collection0/
+cleanup0 remain a failed, incomplete matrix. This motivates the finite100-minute
+upgrade allowance and durable sanitized progress, not a claim of a runtime bug
+or a successful interrupted phase. No completed assertion is weakened.

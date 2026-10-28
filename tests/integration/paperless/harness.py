@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import gzip
 import hashlib
 import io
@@ -13,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 from dataclasses import asdict, dataclass
 from importlib.resources import files as resources
@@ -26,6 +28,7 @@ from pyinfra.api import Config, Inventory, State
 from pyinfra.api.connect import connect_all, disconnect_all
 from pyinfra.api.deploy import add_deploy
 from pyinfra.api.operations import run_ops
+from pyinfra.api.state import BaseStateCallback
 from pyinfra.connectors.local import LocalConnector
 
 from ops_deploy.services.paperless import PaperlessConfig, PaperlessCredentials, deploy_paperless
@@ -45,20 +48,77 @@ OWNED_ADMITTED = False
 class BoundedLog(io.TextIOBase):
     """Keep raw CLI bytes private and bounded until redaction is complete."""
 
-    def __init__(self, stream: io.TextIOWrapper, limit: int = 20 * 1024 * 1024) -> None:
+    def __init__(
+        self,
+        stream: io.TextIOWrapper,
+        limit: int = 20 * 1024 * 1024,
+        sanitized_stream: io.TextIOWrapper | None = None,
+    ) -> None:
         self.stream = stream
         self.limit = limit
         self.size = 0
+        self.sanitized_stream = sanitized_stream
+        self.pending = ""
 
     def write(self, text: str) -> int:
         size = len(text.encode())
         if self.size + size > self.limit:
             raise RuntimeError("owned CLI log exceeds bound")
         self.size += size
-        return self.stream.write(text)
+        written = self.stream.write(text)
+        if self.sanitized_stream is not None:
+            # Retain a possible split secret prefix until the next write. Even
+            # abrupt process termination may expose only the redacted prefix.
+            self.pending = sanitize(self.pending + text)
+            keep = max((len(value) for value in VALUES), default=1) - 1
+            end = max(0, len(self.pending) - keep)
+            self.sanitized_stream.write(self.pending[:end])
+            self.pending = self.pending[end:]
+            self.sanitized_stream.flush()
+        return written
 
     def flush(self) -> None:
         self.stream.flush()
+        if self.sanitized_stream is not None:
+            self.sanitized_stream.flush()
+
+
+class PhaseProgress:
+    """Bounded metadata-only progress; never command argv, stdin or responses."""
+
+    def __init__(self, label: str) -> None:
+        assert "/" not in label
+        self.path = EVIDENCE / (label + "-progress.log")
+        self.started = time.monotonic()
+        self.events = 0
+
+    def record(self, event: str, names: list[str] | None = None) -> None:
+        self.events += 1
+        assert self.events <= 512
+        names = names or []
+        assert len(names) <= 10
+        assert all(len(name) <= 512 for name in names)
+        data = {
+            "event": event,
+            "names": names,
+            "elapsed_seconds": time.monotonic() - self.started,
+            "utc": datetime.datetime.now(datetime.UTC).isoformat(),
+        }
+        with self.path.open("a") as stream:
+            stream.write(sanitize(json.dumps(data)) + "\n")
+            stream.flush()
+
+    def callback(self) -> BaseStateCallback:
+        class Callback(BaseStateCallback):
+            @staticmethod
+            def operation_start(state: State, op_hash: Any) -> None:
+                self.record("operation-start", sorted(state.get_op_meta(op_hash).names))
+
+            @staticmethod
+            def operation_end(state: State, op_hash: Any) -> None:
+                self.record("operation-end", sorted(state.get_op_meta(op_hash).names))
+
+        return Callback()
 
 
 def value() -> SecretStr:
@@ -273,11 +333,14 @@ def deploy(
     fish: bool = False,
     shared_redis_password: SecretStr | None = None,
 ) -> dict[str, Any]:
+    progress = PhaseProgress(label)
+    progress.record("before-snapshot-start")
     before = snapshot(cfg)
     before_receipt = snapshot_receipt(label, "before", before)
     write(label + "-started.json", {"before": before_receipt, "completion_receipt": label + ".json"})
     uploads: list[bool] = []
     state = State(Inventory(([("@local", {})], {})), Config())
+    state.add_callback_handler(progress.callback())
     original, original_put = LocalConnector.run_shell_command, LocalConnector.put_file
     error = None
     log = EVIDENCE / (label + ".log")
@@ -298,25 +361,32 @@ def deploy(
         open(
             ROOT / "private-current-cli.log", "w", opener=lambda path, flags: os.open(path, flags, 0o600)
         ) as raw_stream,
-        BoundedLog(raw_stream) as stream,
+        log.open("w") as sanitized_stream,
+        BoundedLog(raw_stream, sanitized_stream=sanitized_stream) as stream,
         contextlib.redirect_stdout(stream),
         contextlib.redirect_stderr(stream),
     ):
         try:
+            progress.record("connect-start")
             connect_all(state)
+            progress.record("prepare-start")
             add_deploy(state, deploy_paperless, cfg=cfg, credentials=creds, shared_redis_password=shared_redis_password)
+            progress.record("execute-start")
             run_ops(state)
         except Exception:
             error = traceback.format_exc()
         finally:
             operations = collect_ops(state, "@local")
             disconnect_all(state)
+            progress.record("executor-returned")
     private_log = ROOT / "private-current-cli.log"
     raw = private_log.read_text()
     exposed = any(secret in raw for secret in VALUES)
     log.write_text(sanitize(raw))
     private_log.unlink()
+    progress.record("after-snapshot-start")
     after = snapshot(cfg)
+    progress.record("after-snapshot-complete")
     managed = [op.name for op in operations if op.changed and not op.read_only]
     failed = [op.name for op in operations if not op.succeeded]
     result = {

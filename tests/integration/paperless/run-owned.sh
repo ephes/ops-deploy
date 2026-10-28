@@ -71,7 +71,9 @@ docker exec "$NAME" env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
     sh -c 'test ! -e /etc/ops-paperless-owned-id && printf "%s\n" "$1" > /etc/ops-paperless-owned-id' sh "$OWNED_ID"
 # Only these explicit non-secret fields enter the guest. No host binds/ports,
 # agent socket, checkout credentials, Actions runtime token or inventory data.
-timeout 70m docker exec "$NAME" env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+GUEST_DEADLINE=70m
+if [[ $PAPERLESS_FIXTURE_CASE == upgrade ]]; then GUEST_DEADLINE=100m; fi
+timeout "$GUEST_DEADLINE" docker exec "$NAME" env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     HOME=/root LANG=C.UTF-8 GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
     GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
     PAPERLESS_FIXTURE_CASE="$PAPERLESS_FIXTURE_CASE" \

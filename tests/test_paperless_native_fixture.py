@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -74,6 +76,176 @@ def test_split_synthetic_log_value_is_redacted_after_complete_capture(
         log.write(secret[:5])
         log.write(secret[5:])
     assert harness.sanitize(path.read_text()) == "<synthetic-redacted>"
+
+
+@pytest.mark.parametrize("split", range(1, 16))
+def test_streamed_log_withholds_secret_split_across_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, split: int
+) -> None:
+    secret = "synthetic-value!"
+    monkeypatch.setattr(harness, "VALUES", [secret])
+    raw, public = tmp_path / "raw", tmp_path / "public"
+    with raw.open("w") as r, public.open("w") as p, harness.BoundedLog(r, sanitized_stream=p) as log:
+        log.write("begin " + secret[:split])
+        log.flush()
+        assert secret[:split] not in public.read_text()
+        log.write(secret[split:] + " end " + "x" * 100)
+        log.flush()
+        assert secret not in public.read_text()
+        assert "<synthetic-redacted>" in public.read_text()
+
+
+def test_actual_timeout_keeps_sanitized_partial_evidence_and_no_fake_completion(tmp_path: Path) -> None:
+    root, output = tmp_path / "private", tmp_path / "evidence"
+    root.mkdir()
+    output.mkdir()
+    program = """import sys,time
+from pathlib import Path
+from tests.integration.paperless import harness as h
+h.ROOT=Path(sys.argv[1]);h.EVIDENCE=Path(sys.argv[2])
+h.VALUES=['owned-split-secret-value']
+h.snapshot=lambda cfg:h.Snapshot({'owned':True},{})
+h.connect_all=lambda state:None
+h.disconnect_all=lambda state:None
+def slow(*args,**kwargs):
+ print('progress '+h.VALUES[0][:7],end='',flush=True)
+ print(h.VALUES[0][7:]+' safe-prefix '+'x'*100,flush=True)
+ (h.EVIDENCE/'timeout-ready.json').write_text('{"ready":true}')
+ time.sleep(30)
+h.add_deploy=slow
+h.deploy('owned-timeout')
+"""
+    repo = Path(__file__).resolve().parents[1]
+    proc = subprocess.Popen(
+        [sys.executable, "-c", program, str(root), str(output)],
+        cwd=repo,
+        env=dict(os.environ, PYTHONPATH=str(repo)),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while not (output / "timeout-ready.json").exists():
+            assert proc.poll() is None, "owned child failed before readiness"
+            assert time.monotonic() < deadline, "owned child did not reach readiness"
+            time.sleep(0.02)
+        with pytest.raises(subprocess.TimeoutExpired):
+            proc.wait(timeout=0.1)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.communicate(timeout=10)
+    assert (output / "owned-timeout-started.json").exists()
+    assert not (output / "owned-timeout.json").exists()
+    assert not (output / "owned-timeout-after.json.gz").exists()
+    log = (output / "owned-timeout.log").read_text()
+    assert "<synthetic-redacted>" in log
+    assert "safe-prefix" in log
+    assert "owned-split-secret-value" not in log
+    progress = [json.loads(line) for line in (output / "owned-timeout-progress.log").read_text().splitlines()]
+    assert progress[-1]["event"] == "prepare-start"
+    assert all(row["utc"] and row["elapsed_seconds"] >= 0 for row in progress)
+    manifest = evidence.manifest(output)
+    collected = manifest["files"]
+    assert isinstance(collected, dict)
+    assert "owned-timeout-before.json.gz" in collected
+    assert not any("private" in name for name in collected)
+
+
+@pytest.mark.parametrize(("case", "expected"), [("current", "70m"), ("upgrade", "100m")])
+def test_runner_keeps_finite_case_specific_deadline(case: str, expected: str) -> None:
+    source = (Path(__file__).parent / "integration/paperless/run-owned.sh").read_text()
+    selector = source[source.index("GUEST_DEADLINE=") : source.index('timeout "$GUEST_DEADLINE"')]
+    result = subprocess.run(
+        ["bash", "-euc", selector + '\nprintf "%s" "$GUEST_DEADLINE"'],
+        env={"PAPERLESS_FIXTURE_CASE": case},
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 0
+    assert result.stdout == expected
+
+
+def test_actual_local_operation_callback_records_names_without_command_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyinfra.api import Config, Inventory, State
+    from pyinfra.api.connect import connect_all, disconnect_all
+    from pyinfra.api.operation import add_op
+    from pyinfra.api.operations import run_ops
+    from pyinfra.operations import server
+
+    monkeypatch.setattr(harness, "EVIDENCE", tmp_path)
+    progress = harness.PhaseProgress("owned-callback")
+    state = State(Inventory(([("@local", {})], {})), Config())
+    state.add_callback_handler(progress.callback())
+    connect_all(state)
+    try:
+        add_op(state, server.shell, name="Owned progress", commands="printf command-body-not-evidence")
+        run_ops(state)
+    finally:
+        disconnect_all(state)
+    body = (tmp_path / "owned-callback-progress.log").read_text()
+    rows = [json.loads(line) for line in body.splitlines()]
+    assert [row["event"] for row in rows] == ["operation-start", "operation-end"]
+    assert all(row["names"] == ["Owned progress"] for row in rows)
+    assert "command-body-not-evidence" not in body
+
+
+def test_actual_cleanup_trap_retains_timeout_and_removes_only_owned_resources(tmp_path: Path) -> None:
+    source = (Path(__file__).parent / "integration/paperless/run-owned.sh").read_text()
+    cleanup = source[source.index("cleanup() {") : source.index("# GitHub documents")]
+    output = tmp_path / "evidence"
+    output.mkdir()
+    for name in ("container", "image", "unrelated"):
+        (tmp_path / name).touch()
+    docker = tmp_path / "docker"
+    docker.write_text("""#!/bin/sh
+printf '%s\n' "$*" >> "$OWNED_TEST/calls"
+case "$*" in
+ 'logs owned-test') exit 0;;
+ 'inspect owned-test') printf '{}';;
+ 'exec owned-test python3 /opt/paperless-evidence.py') printf '{"files":{},"total_size":0}';;
+ "cp owned-test:/var/tmp/paperless-evidence/. $EVIDENCE/") printf 'partial' > "$EVIDENCE/partial.log";;
+ 'rm -f owned-test') rm "$OWNED_TEST/container";;
+ 'image rm owned-test:1') rm "$OWNED_TEST/image";;
+ 'container inspect owned-test') test -e "$OWNED_TEST/container";;
+ 'image inspect owned-test:1') test -e "$OWNED_TEST/image";;
+ *) exit 99;;
+esac
+""")
+    docker.chmod(0o700)
+    # This is a cleanup-shell control, not a native Docker/timeout test. The
+    # separate child test above exercises a real timeout and retained evidence.
+    timeout = tmp_path / "timeout"
+    timeout.write_text('#!/bin/sh\nshift\nexec "$@"\n')
+    timeout.chmod(0o700)
+    result = subprocess.run(
+        ["bash", "-euc", cleanup + "\nexit 124"],
+        env={
+            "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+            "NAME": "owned-test",
+            "IMAGE": "owned-test:1",
+            "EVIDENCE": str(output),
+            "OWNED_TEST": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 124
+    assert json.loads((output / "runner-exit.json").read_text()) == {
+        "run_exit": 124,
+        "collection_exit": 0,
+        "cleanup_exit": 0,
+    }
+    assert (output / "partial.log").read_text() == "partial"
+    assert not (tmp_path / "container").exists()
+    assert not (tmp_path / "image").exists()
+    assert (tmp_path / "unrelated").exists()
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert next(i for i, value in enumerate(calls) if value.startswith("cp ")) < calls.index("rm -f owned-test")
 
 
 def test_actual_fixture_refusal_records_bounded_log_without_host_commands(
