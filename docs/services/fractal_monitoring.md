@@ -147,7 +147,11 @@ Owned native evidence covers real Ubuntu24 ARM Postfix bootstrap/refusal/repeat,
 Python HTTP/auth/realm/cache behavior and real ZFS2.2 file-vdev metadata. SMART
 lifecycle proof uses an explicitly emulated scsi_debug device, with fixture-only
 virtualization-condition and SMART-capability setup; it proves no physical
-NVMe/SATA efficacy. Original failed prototypes are retained. Exact AMD64 mc +
-MinIO execution qualification and inventory preflight/live qualification are
-pending; no migration completion, owner/lifecycle acceptance or hardware
-attestation is claimed by these APIs.
+NVMe/SATA efficacy. Original failed prototypes are retained. A separate owned
+AMD64 KVM guest ran the exact pinned mc and MinIO with the unmodified lag program:
+healthy first/repeat and status-only heartbeat passed, missing required objects
+returned critical/exit2, optional critical returned exit0, parity breach retained
+the grace marker, and recovery passed. Those probes wrote their declared synthetic
+status/marker files; this is component evidence, not a typed composite no-op.
+Inventory preflight/live qualification remains pending. No migration completion,
+owner/lifecycle acceptance or hardware attestation is claimed by these APIs.
