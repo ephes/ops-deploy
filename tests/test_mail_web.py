@@ -6,6 +6,7 @@ import ast
 import base64
 import hashlib
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -237,11 +238,17 @@ def test_snappy_app_normalized_ini_is_exact_noop(tmp_path: Path, mode: int) -> N
     body = b'; app normalized\n[security]\nforce_https = "On"\nadmin_totp = "preserve"\n[version]\ncurrent = "2.38.2"\n'
     path.write_bytes(body)
     path.chmod(mode)
+    # Make the read eligible to advance atime even on relatime filesystems.
+    os.utime(path, ns=(1, path.stat().st_mtime_ns))
     before = path.stat()
     content, desired_mode = m.snappy_ini(str(path), "[security]\nforce_https = On\n", shutil.which("php"))
     assert content == body
     assert desired_mode == mode
-    assert path.stat() == before
+    after = path.stat()
+    # Reading can advance atime; all other stat fields and write timestamps must remain exact.
+    assert after[:7] + after[8:] == before[:7] + before[8:]
+    assert after.st_mtime_ns == before.st_mtime_ns
+    assert after.st_ctime_ns == before.st_ctime_ns
 
 
 def test_snappy_owned_change_preserves_unowned_settings(tmp_path: Path) -> None:
