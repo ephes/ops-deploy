@@ -1,0 +1,54 @@
+name: Owned Paperless native qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed public ops-deploy commit (40 lowercase hex)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owned-paperless-native
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture_case: [current, upgrade]
+    steps:
+      - name: Validate immutable source
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.implementation_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: "0.13.4"
+          enable-cache: false
+      - name: Run reviewed owned guest
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+          PAPERLESS_FIXTURE_EVIDENCE: ${{ runner.temp }}/paperless-native-evidence
+          PAPERLESS_FIXTURE_CASE: ${{ matrix.fixture_case }}
+        run: |
+          export UV_BIN="$(command -v uv)"
+          bash tests/integration/paperless/run-owned.sh
+      - name: Preserve partial and final evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: paperless-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.fixture_case }}
+          path: ${{ runner.temp }}/paperless-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
