@@ -16,17 +16,17 @@ from pyinfra.operations import apt, files, server, systemd
 from pyinfra.operations.util import any_changed
 
 from ops_deploy.base._common import require_linux
-from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
+from ops_deploy.base.uv_install import deploy_uv_install
 from ops_deploy.core.secrets import SecretContent
-from ops_deploy.helpers import http_check, mark_read_only, postgres_database, service_rollout, systemd_unit
+from ops_deploy.helpers import mark_read_only, postgres_database, service_rollout, systemd_unit
 from ops_deploy.helpers.probes import probe
 from ops_deploy.helpers.python_security import verify_trust
-from ops_deploy.infra.postgres_install import PostgresInstallConfig, deploy_postgres_install
+from ops_deploy.infra.postgres_install import PostgresInstallConfig, deploy_postgres_install, missing_packages
 from ops_deploy.infra.redis_install import RedisInstallConfig, deploy_redis_install
 from ops_deploy.ops import secret_file
 
 from . import assets, django, layout, operations, python_runtime, scanner
-from .config import RELEASE_SHA256, PaperlessConfig, PaperlessCredentials, validate_credentials
+from .config import RELEASE_SHA256, PaperlessConfig, PaperlessCredentials, PaperlessUvConfig, validate_credentials
 from .render import render
 
 PACKAGES = (
@@ -88,6 +88,14 @@ def version_packages() -> tuple[str, ...]:
     return ("libleptonica6",) if parts >= (25, 4) else ()
 
 
+def prerequisites() -> None:
+    # Ansible apt counts installed virtual providers. Reuse the existing
+    # PostgreSQL admission instead of repeatedly reinstalling provided names.
+    missing = missing_packages((*PACKAGES, *version_packages()))
+    if missing:
+        apt.packages(name="Install Paperless prerequisite packages", packages=missing)
+
+
 def dependency_configs(
     cfg: PaperlessConfig,
     credentials: PaperlessCredentials,
@@ -118,6 +126,7 @@ def deploy_paperless(
     postgres: PostgresInstallConfig | None = None,
     redis: RedisInstallConfig | None = None,
     shared_redis_password: SecretStr | None = None,
+    uv: PaperlessUvConfig | None = None,
 ) -> None:
     """Original dependency order, conditional app recovery and D2 index admission.
 
@@ -127,6 +136,9 @@ def deploy_paperless(
     """
     try:
         pg, rd = dependency_configs(cfg, credentials, postgres, redis, shared_redis_password)
+        uv = uv or PaperlessUvConfig(install_dir=cfg.uv_install_dir)
+        if uv.install_dir != cfg.uv_install_dir:
+            raise ValueError("Paperless uv dependency install directory differs from its role setting")
     except ValueError as error:
         raise DeployError(str(error)) from None
     require_linux("paperless")
@@ -138,8 +150,18 @@ def deploy_paperless(
     # skip the original preflight before dependency writes.
     if cfg.python_security_floor_enabled and host.get_fact(File, path=str(python)) is not None:
         verify_trust(python, user=cfg.username, home=home, name="Paperless environment before dependency changes")
-    uv_missing = not host.get_fact(File, path="/usr/local/bin/uv")
-    deploy_uv_install(cfg=UvInstallConfig())
+    uv_missing = not host.get_fact(File, path=cfg.uv_binary)
+    deploy_uv_install(cfg=uv)
+    if uv.create_symlinks and uv.install_dir != uv.symlink_dir:
+        for binary in ("uv", "uvx"):
+            files.link(
+                name=f"Create original uv compatibility link {binary}",
+                path=f"{uv.symlink_dir}/{binary}",
+                target=f"{uv.install_dir}/{binary}",
+                user=uv.owner,
+                group=uv.group,
+                force=True,
+            )
     deploy_redis_install(cfg=rd, password=credentials.redis_password)
     deploy_postgres_install(cfg=pg)
     database = postgres_database(
@@ -151,7 +173,7 @@ def deploy_paperless(
         port=pg.port,
         enabled=pg.service_enabled,
     )
-    apt.packages(name="Install Paperless prerequisite packages", packages=[*PACKAGES, *version_packages()])
+    prerequisites()
     user = layout.account(cfg)
     new_layout = user.will_change or not host.get_fact(Directory, path=cfg.site_root)
     layout.directories(cfg)
@@ -280,4 +302,4 @@ def deploy_paperless(
             group="root",
             mode="0644",
         )
-    http_check(f"http://127.0.0.1:{cfg.app_port}/api/", status=200, retries=10, delay=6, timeout=10)
+    mark_read_only(operations.http_health(name="Verify Paperless HTTP readiness", cfg=cfg))

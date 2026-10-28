@@ -179,3 +179,9 @@ def rebuild_index(
         if not index_needs_rebuild(cfg, triggers):
             return
     yield StringCommand(host_command("reindex"), _stdin=StdinLines(reindex_payload(cfg)), _get_pty=False)
+
+
+@operation()
+def http_health(cfg: PaperlessConfig) -> Generator[StringCommand, None, None]:
+    """Readiness follows only the release's one same-origin schema redirect."""
+    yield StringCommand(host_command("health"), _stdin=StdinLines(json.dumps({"port": cfg.app_port})), _get_pty=False)

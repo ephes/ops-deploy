@@ -8,7 +8,8 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictInt, model_validator
 
-from ops_deploy.base._common import RoleConfig
+from ops_deploy.base._common import RoleConfig, Sha256, Version
+from ops_deploy.base.uv_install import UvInstallConfig
 from ops_deploy.core.config import UnixUser
 from ops_deploy.helpers.traefik import Hostname
 
@@ -24,6 +25,28 @@ def canonical_path(value: str) -> str:
 CanonicalPath = Annotated[str, AfterValidator(canonical_path)]
 OneLine = Annotated[str, Field(pattern=r"^[^\x00-\x1f\x7f\r\n]*$")]
 Positive = Annotated[StrictInt, Field(ge=1, le=65535)]
+
+
+class PaperlessUvConfig(UvInstallConfig):
+    """Original Paperless uv dependency defaults, without changing other callers."""
+
+    version: Version = "0.13.5"
+    checksums: dict[str, Sha256] = Field(
+        default_factory=lambda: {
+            "x86_64-unknown-linux-gnu": "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f",
+            "aarch64-unknown-linux-gnu": "4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403",
+            "x86_64-apple-darwin": "b0f52b0e3945b4107d89024ea38e625683011fbfc05a0d98f9fa2d6dcee28c66",
+            "aarch64-apple-darwin": "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73",
+        }
+    )
+    create_symlinks: StrictBool = False
+    symlink_dir: CanonicalPath = "/usr/local/bin"
+
+    @model_validator(mode="after")
+    def original_linux_contract(self) -> Self:
+        if self.darwin:
+            raise ValueError("Paperless requires the Linux uv dependency")
+        return self
 
 
 class PaperlessConfig(RoleConfig):
@@ -42,6 +65,8 @@ class PaperlessConfig(RoleConfig):
     external_storage_root: CanonicalPath = "/mnt/cryptdata/paperless"
     version: Literal["3.2.1"] = "3.2.1"
     python_version: Literal["3.14"] = "3.14"
+    uv_install_dir: CanonicalPath = "/usr/local/bin"
+    uv_binary: CanonicalPath = "/usr/local/bin/uv"
     force_reinstall: StrictBool = False
     force_reindex: StrictBool = False
     python_security_floor_enabled: StrictBool = True
@@ -104,6 +129,7 @@ class PaperlessConfig(RoleConfig):
         result.setdefault("group", username)
         home = result.setdefault("home_path", f"/home/{username}")
         result.setdefault("site_root", f"{home}/site")
+        result.setdefault("uv_binary", result.get("uv_install_dir", "/usr/local/bin") + "/uv")
         return result
 
     @model_validator(mode="after")

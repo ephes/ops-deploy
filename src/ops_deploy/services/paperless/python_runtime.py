@@ -62,7 +62,7 @@ def ensure_venv(cfg: PaperlessConfig, deferred: bool = False) -> Generator[Strin
             cfg,
             shlex.join(
                 [
-                    "/usr/local/bin/uv",
+                    cfg.uv_binary,
                     "venv",
                     "--clear",
                     "--python",
@@ -100,7 +100,7 @@ def package_state(cfg: PaperlessConfig) -> dict[str, bool]:
 def dependencies_current(cfg: PaperlessConfig) -> bool:
     command = as_service(
         cfg,
-        shlex.join(["/usr/local/bin/uv", "pip", "check", "--python", f"{cfg.site_root}/.venv/bin/python"]),
+        shlex.join([cfg.uv_binary, "pip", "check", "--python", f"{cfg.site_root}/.venv/bin/python"]),
     )
     # uv distinguishes dependency inconsistencies (1) from inspection failures
     # (2). Never export its package/path diagnostics into inventory logs.
@@ -112,7 +112,7 @@ def dependencies_current(cfg: PaperlessConfig) -> bool:
 
 
 def install_commands(cfg: PaperlessConfig, *, application: bool, supporting: bool) -> tuple[str, ...]:
-    base = ["/usr/local/bin/uv", "pip", "install", "--python", f"{cfg.site_root}/.venv"]
+    base = [cfg.uv_binary, "pip", "install", "--python", f"{cfg.site_root}/.venv"]
     if cfg.python_security_floor_enabled:
         base += ["--constraint", f"{cfg.site_root}/.python-security-constraints.txt"]
     commands = []

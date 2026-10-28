@@ -15,6 +15,7 @@ import subprocess
 import sys
 import traceback
 from dataclasses import asdict, dataclass
+from importlib.resources import files as resources
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -161,6 +162,8 @@ def snapshot(cfg: PaperlessConfig = CFG) -> Snapshot:
         site / "venv",
         site / f".paperless-installed-{cfg.version}",
         site / "gunicorn.conf.py",
+        Path(cfg.uv_install_dir) / "uv",
+        Path(cfg.uv_install_dir) / "uvx",
         Path("/etc/fstab"),
         Path("/etc/ssh/sshd_config.d/sftp-scanner.conf"),
         Path("/etc/apparmor.d/local/gs"),
@@ -242,6 +245,7 @@ def snapshot(cfg: PaperlessConfig = CFG) -> Snapshot:
             "venv": program_tree(site / ".venv"),
             "static": program_tree(site / "staticfiles"),
             "packages": command("dpkg-query", "-W", "-f=${Package}=${Version}\n").stdout,
+            "uv_version": command(cfg.uv_binary, "--version").stdout if Path(cfg.uv_binary).is_file() else None,
             "consume_default_acl": command(
                 "getfacl", "-cp", cfg.external_storage_root + "/consume", check=False
             ).stdout,
@@ -455,7 +459,45 @@ def main() -> None:
 
     prepare_ssh(harness)
     original_install(harness, "3.2.1" if case == "current" else "3.0.4")
-    deploy("01-pyinfra-adoption" if case == "current" else "01-pyinfra-upgrade")
+    providers = command(
+        "dpkg-query",
+        "-W",
+        "-f=${db:Status-Abbrev}|${Package}|${Provides}\n",
+        "libfreetype-dev",
+        "libfreetype6-dev",
+        "redis-server",
+        "redis-tools",
+        check=False,
+    )
+    write(
+        "original-package-provider-observation.json",
+        {
+            "exit": providers.returncode,
+            "selected_operational_packages": providers.stdout,
+            "scope": "Owned package metadata; absent literal virtual package may make dpkg-query nonzero.",
+        },
+    )
+    health_source = resources("ops_deploy.services.paperless").joinpath("files/health.py").read_text()
+    readiness = command(
+        "python3", "-I", "-B", "-c", health_source, stdin=json.dumps({"port": CFG.app_port}), timeout=170, check=False
+    )
+    write(
+        "original-readiness.json",
+        {
+            "exit": readiness.returncode,
+            "source_sha256": hashlib.sha256(health_source.encode()).hexdigest(),
+            "response": json.loads(readiness.stdout) if readiness.returncode == 0 else None,
+        },
+    )
+    assert readiness.returncode == 0, "owned original readiness did not satisfy exact release redirect contract"
+    adopted = deploy("01-pyinfra-adoption" if case == "current" else "01-pyinfra-upgrade")
+    before_uv = json.loads(gzip.decompress((EVIDENCE / adopted["before"]["file"]).read_bytes()))
+    after_uv = json.loads(gzip.decompress((EVIDENCE / adopted["after"]["file"]).read_bytes()))
+    assert before_uv["uv_version"] == after_uv["uv_version"]
+    for binary in ("uv", "uvx"):
+        path = CFG.uv_install_dir + "/" + binary
+        assert before_uv["files"][path] == after_uv["files"][path]
+        assert before_uv["public_program_hashes"][path] == after_uv["public_program_hashes"][path]
     deploy("02-healthy-repeat", zero=True)
     deploy("03-fish-healthy-repeat", zero=True, fish=True)
     ansible("04-original-current-repeat")

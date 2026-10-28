@@ -146,3 +146,29 @@ with the actual service UID, start the previously stopped configured units, and
 pass a strict0managed/0upload repeat. The old-helper control is not a full old
 package deployment or a zero-managed-operation claim. The native result of this
 runtime repair is still outstanding; no inventory mkdir/reindex is authorized.
+
+Run40741436081 retained both original cache/index failures and completed the
+explicitly prepared original retry (122ok/12changed/0failed). Both typed first
+phases then reached their final readiness operation and failed: `/api/` returned
+302, but the shared HTTP helper deliberately does not follow redirects. Current
+adoption recorded4 managed operations and upgrade14, with103 of104 operations
+successful in each; these are partial managed effects, not healthy or zero-write
+qualification. Both run1/collection0/cleanup0 receipts,70 collected guest files
+and90 downloaded files are retained. Actual full823 resource sets/direct_url
+match the executed source. No later repeat, OCR/SFTP or missing-index fault case
+was reached.
+
+The exact3.2.1 URL source redirects to `schema/view/`, confirmed separately with
+the release's RedirectView expression under locked Django5.2.16. The failed run
+did not retain the actual Location header. The next guest records that header,
+the allowed same-origin destination and actual final200 before typed adoption;
+no response body is collected. The new Paperless-specific readiness check
+rejects external/unexpected redirects and unsuccessful final responses.
+
+The same attempt exposed a uv dependency mismatch: the original role installed
+0.13.5, while the shared typed default requested0.13.4. Paperless now supplies
+the original0.13.5 dependency defaults and caller settings without changing any
+other service's shared defaults. Native snapshots explicitly include both uv
+binary identities/content and actual version; first adoption/upgrade must retain
+them exactly. Package-operation classifications remain honest: the first run
+reported package operations even though full package-version snapshots matched.

@@ -95,3 +95,24 @@ def test_missing_dependency_invalidates_otherwise_current_application(monkeypatc
         "application": False,
         "supporting": True,
     }
+
+
+def test_original_custom_uv_binary_is_used_by_every_package_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = PaperlessConfig(traefik_domain="home.example.test", uv_install_dir="/opt/owned-uv")
+    assert cfg.uv_binary == "/opt/owned-uv/uv"
+    commands = python_runtime.install_commands(cfg, application=True, supporting=True)
+    assert all("/opt/owned-uv/uv pip install" in command for command in commands)
+    observed = []
+
+    def probe(command: str, **kwargs: object) -> str:
+        observed.append(command)
+        return "current"
+
+    monkeypatch.setattr(python_runtime, "probe", probe)
+    assert python_runtime.dependencies_current(cfg)
+    assert "/opt/owned-uv/uv pip check" in observed[0]
+    monkeypatch.setattr(python_runtime, "interpreter_state", lambda cfg: "missing")
+    monkeypatch.setattr(python_runtime, "state", SimpleNamespace(is_executing=True))
+    operations = list(inspect.unwrap(python_runtime.ensure_venv)(cfg))
+    assert len(operations) == 1
+    assert "/opt/owned-uv/uv venv" in str(operations[0])

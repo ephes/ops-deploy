@@ -34,7 +34,10 @@
   inventory adoption remain pending. Repair missing-entire-index recovery by
   creating only the absent leaf as the service user before the upstream rebuild;
   refuse unsafe ancestors and preserve existing directory metadata. Original
-  Ansible reindexing is unchanged.
+  Ansible reindexing is unchanged. Preserve the original uv0.13.5 dependency
+  and generic override semantics without changing shared installer defaults.
+  Follow only the release's expected same-origin schema redirect and require
+  final HTTP200, preserving the original readiness behavior.
 
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access

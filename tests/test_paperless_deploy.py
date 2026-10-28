@@ -169,15 +169,19 @@ def test_original_restart_dependencies_through_deploy_caller(change: str, monkey
     monkeypatch.setattr(MODULE, "service_rollout", rollout)
     monkeypatch.setattr(MODULE.server, "shell", lambda *a, **k: current)
     monkeypatch.setattr(MODULE, "mark_read_only", lambda op: op)
+    real_health = MODULE.operations.http_health
+    readiness_operations = []
 
     def stop(*args: Any, **kwargs: Any) -> None:
+        readiness_operations.append(real_health(*args, **kwargs))
         raise DeployError("owned boundary after unit composition; no commands executed")
 
-    monkeypatch.setattr(MODULE, "http_check", stop)
+    monkeypatch.setattr(MODULE.operations, "http_health", stop)
     cfg = PaperlessConfig(traefik_domain="home.example.test", traefik_enabled=False)
     result = run_deploy_fake(deploy_paperless, cfg, credentials(), responses=fakehost.UBUNTU)
     assert not result.succeeded
     assert not result.executed_commands
+    assert len(readiness_operations) == 1
     expected = {
         "migration": (False, False, False, False),
         "static": (False, False, False, False),
@@ -189,3 +193,40 @@ def test_original_restart_dependencies_through_deploy_caller(change: str, monkey
         "ocr": (False, True, False, True),
     }
     assert observed == list(zip(cfg.units, expected[change], strict=True))
+
+
+def test_paperless_uv_default_does_not_change_shared_default_and_invalid_mapping_refuses() -> None:
+    from ops_deploy.base.uv_install import UvInstallConfig
+    from ops_deploy.services.paperless import PaperlessUvConfig
+
+    assert UvInstallConfig().version == "0.13.4"
+    assert PaperlessUvConfig().version == "0.13.5"
+    cfg = PaperlessConfig(traefik_domain="home.example.test")
+    run = run_deploy_fake(
+        deploy_paperless,
+        cfg,
+        credentials(),
+        uv=PaperlessUvConfig(install_dir="/opt/foreign"),
+        responses=fakehost.UBUNTU,
+    )
+    assert not run.succeeded
+    assert not run.ops
+    assert not run.executed_commands
+
+
+def test_original_installed_virtual_provider_avoids_reinstall_but_missing_provider_installs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ops_deploy.infra import postgres_install
+
+    monkeypatch.setattr(MODULE, "version_packages", lambda: ())
+    installed = "\n".join("ii |" + name + "|" for name in MODULE.PACKAGES if name != "libfreetype6-dev")
+    installed += "\nii |libfreetype-dev|libfreetype6-dev (= 2.13.2)"
+    monkeypatch.setattr(postgres_install, "output", lambda query: installed)
+    observed = []
+    monkeypatch.setattr(MODULE.apt, "packages", lambda **kwargs: observed.append(kwargs))
+    MODULE.prerequisites()
+    assert not observed
+    installed = installed.replace("libfreetype6-dev (= 2.13.2)", "")
+    MODULE.prerequisites()
+    assert observed == [{"name": "Install Paperless prerequisite packages", "packages": ["libfreetype6-dev"]}]

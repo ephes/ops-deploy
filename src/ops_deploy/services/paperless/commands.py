@@ -22,6 +22,7 @@ def host_command(script: str, *, interpreter: str = "python3") -> str:
         "runtime_state",
         "python_assets",
         "release",
+        "health",
     }:
         raise ValueError("unknown Paperless host helper")
     if interpreter != "python3":

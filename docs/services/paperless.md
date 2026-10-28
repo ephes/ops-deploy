@@ -12,6 +12,28 @@ environment is also tested. These local checks do not qualify systemd, database,
 scanner or application behavior on Linux. The runtime remains pinned to the
 declared 3.2.1 release and Python 3.14.
 
+Paperless's uv dependency uses the original role's 0.13.5 checksums and defaults
+through `PaperlessUvConfig`; the shared `UvInstallConfig` default for other
+services is unchanged. Callers may supply that dependency's original version,
+checksum, owner/group, update/force and deprecated compatibility-link settings.
+Its install directory must match `PaperlessConfig.uv_install_dir`; the original
+`uv_binary` setting selects every Paperless environment/package command. The
+private adapter retains generic `uv_*` inventory names and the role-level
+`paperless_uv_install_dir` precedence. This avoids the demonstrated 0.13.5 to
+0.13.4 downgrade in the first owned typed attempt.
+
+Prerequisite package admission reuses the existing installed-package/`Provides`
+lookup, matching Ansible's treatment of virtual packages. An installed provider
+avoids a redundant install; a genuinely missing package still queues installation.
+
+Readiness retains the original final HTTP200 requirement. The release redirects
+`/api/` to its schema UI; the Paperless-specific check admits only that one
+same-origin `/api/schema/view/` destination and requires its actual final200.
+Unexpected redirects, loops and failed final responses refuse. Each of ten
+attempts has a ten-second deadline, with six seconds between attempts. It reads
+no response body, supplies no credentials, and leaves the shared no-redirect
+HTTP helper unchanged. Native and inventory qualification remain pending.
+
 The approved search-index change replaces unconditional Ansible reindexing with
 explicit release/package/migration/force triggers and bounded checks of index
 metadata, schema/language sentinels and the live-document SQL count. The source
