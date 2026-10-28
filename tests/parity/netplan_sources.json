@@ -1,0 +1,10 @@
+{
+  "source_ref": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "scope": "Only netplan_config templates; global940 baseline unchanged.",
+  "resources": {
+    "netplan-route-guard.sh.j2": "700ff60f0fe9e6a7895ee3e82f0835343fbf42cae609335d21f4a730bca62f3f",
+    "netplan-route-guard.timer.j2": "e938dbcf992755b28420b7a0e606003411f5e265bc1fe8d8d977a8ccd6804226",
+    "netplan.yaml.j2": "3865ac4bcc5767cc04032fcc6b676f0df3982f18c55fba6ae020eb2139004804",
+    "netplan-route-guard.service.j2": "8e4c28eed3a83cf213382affe9ef05200108c7c569ce9e80c7202afc40a21fa7"
+  }
+}

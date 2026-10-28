@@ -487,3 +487,52 @@ refusal and the plan; the owned native fixture
 runs it on a real LUKS loop device: fresh, repeat, closed mapper, lost lines,
 changed options, keyfile drift, the refusals, recovery and the role run after
 it.
+
+## Persistent network and Tailscale
+
+`ops_deploy.infra.netplan` exposes `NetplanConfig` and `deploy_netplan` for the
+original networkd route-guard and NetworkManager configuration. The four original
+role templates remain byte-identical. Healthy repeats do not reconfigure or
+exercise recovery. Declared drift uses native merged-input validation before
+publication and one bounded transient activation job observed through the
+existing SSH connection; queued jobs are not cancelled as if already complete.
+Unknown outcome or uncertain owned-job cleanup requires retaining writer
+ownership and inspecting the saved failure, without automatic replay/repair.
+Physical LAN and boot/initramfs recovery require separate evidence.
+
+`ops_deploy.infra.tailscale` provides the native core, cached endpoint, dedicated
+Nyxmon SQL and explicit backup/manual-LAN-restore/remove APIs. Current native
+component qualification binds Tailscale1.104.2. Running nodes retain identity;
+only selected CorpDNS/RouteAll drift invokes `set`. Public repository key refresh
+still checks upstream on every ordinary run and compares validated bytes before
+replacement. `latest` retains the original package-present semantics.
+
+Cached metrics retain their original Python/pinned-Rust policy, timer and
+cgroup-BPF controls. Fresh compatible error telemetry stays visible; missing,
+stale, incompatible or changed collector inputs cause an explicitly managed
+refresh. Dry plans never collect. Dedicated Tailscale SQL changes only original
+configuration fields and preserves disabled/status/processing/schedule columns,
+including during a configuration edit. SQLite check uses read-only database
+mode; this is not a claim of global zero filesystem I/O or absence of SQLite
+coordination metadata.
+
+Backups intentionally copy identity material using the original layout, archive
+and optional controller fetch. The declared operator directory defaults to
+`~/backups/tailscale`, with directory0700/archive0600 and a private remote handoff;
+there is no agent-workspace restriction. The original hot-rsync consistency
+limit remains. The legacy default backup prefix is `manual`, while restore
+requires the inventory-host prefix: `just backup tailscale macmini macmini`
+creates the appropriate archive for `just restore-tailscale-manual latest macmini`.
+A newer foreign-prefix archive still makes legacy `latest` refuse; automatic
+host-filtered latest selection is a separate follow-up. Ordinary metadata restore stays excluded: explicit manual restore
+requires a LAN/out-of-band connection and validates before stopping/replacing
+state. A failed restore never silently repairs or retries. Removal preserves
+original stop-before-best-effort-logout ordering (online revocation unattested).
+Because the actual1.104.2 vendor purge script deletes state, `purge_state=False`
+removes without dpkg purge; true explicitly purges. Inventory adoption, complete
+composite/lifecycle and hardware qualification remain separate from these APIs.
+
+At the API level, create the backup with `TailscaleBackupConfig(prefix=<inventory_name>)`
+so the strict restore host prefix matches `TailscaleManualRestoreConfig(inventory_name=...)`.
+The `just backup` and `just restore-tailscale-manual` examples above are recipes in
+the external **ops-control** consumer, not this package’s justfile.

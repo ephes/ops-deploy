@@ -12,6 +12,7 @@ from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_i
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
 from ops_deploy.infra.mail_relay_client import MailRelayClientConfig, deploy_mail_relay_client
+from ops_deploy.infra.netplan import NetplanConfig, deploy_netplan
 from ops_deploy.infra.postgres_install import (
     DatabaseSpec,
     ExtensionSpec,
@@ -21,6 +22,21 @@ from ops_deploy.infra.postgres_install import (
 )
 from ops_deploy.infra.redis_install import RedisInstallConfig, deploy_redis_install
 from ops_deploy.infra.smartd import SmartdConfig, SmartdDevice, deploy_smartd
+from ops_deploy.infra.tailscale import (
+    TailscaleBackupConfig,
+    TailscaleConfig,
+    TailscaleManualRestoreConfig,
+    TailscaleMetricsConfig,
+    TailscaleNyxmonConfig,
+    TailscaleNyxmonTarget,
+    TailscaleRemoveConfig,
+    deploy_tailscale,
+    deploy_tailscale_backup,
+    deploy_tailscale_manual_restore,
+    deploy_tailscale_metrics,
+    deploy_tailscale_nyxmon,
+    deploy_tailscale_remove,
+)
 from ops_deploy.infra.traefik_backup import (
     TraefikBackupConfig,
     TraefikRestoreConfig,
@@ -52,6 +68,7 @@ __all__ = [
     "HdparmDevice",
     "HdparmTuneConfig",
     "MailRelayClientConfig",
+    "NetplanConfig",
     "PgHbaRule",
     "PostgresInstallConfig",
     "ProbeBaseline",
@@ -61,6 +78,13 @@ __all__ = [
     "RedisInstallConfig",
     "SmartdConfig",
     "SmartdDevice",
+    "TailscaleBackupConfig",
+    "TailscaleConfig",
+    "TailscaleManualRestoreConfig",
+    "TailscaleMetricsConfig",
+    "TailscaleNyxmonConfig",
+    "TailscaleNyxmonTarget",
+    "TailscaleRemoveConfig",
     "TraefikBackupConfig",
     "TraefikDeployConfig",
     "TraefikHealthProbesConfig",
@@ -74,9 +98,16 @@ __all__ = [
     "deploy_encrypted_volume",
     "deploy_hdparm_tune",
     "deploy_mail_relay_client",
+    "deploy_netplan",
     "deploy_postgres_install",
     "deploy_redis_install",
     "deploy_smartd",
+    "deploy_tailscale",
+    "deploy_tailscale_backup",
+    "deploy_tailscale_manual_restore",
+    "deploy_tailscale_metrics",
+    "deploy_tailscale_nyxmon",
+    "deploy_tailscale_remove",
     "deploy_traefik",
     "deploy_traefik_backup",
     "deploy_traefik_health_probes",

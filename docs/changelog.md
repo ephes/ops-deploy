@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add typed Tailscale core, cached metrics, dedicated Nyxmon continuity and
+  private identity lifecycle APIs. Preserve four-host normal policy, selected
+  preference convergence, ordinary upstream key rotation detection and
+  original endpoint resources. Use private archive handoff; correct package
+  removal so default non-purge actually retains state with vendor1.104.2.
+  Manual restore validates before disruption; inventory adoption stays separate.
+
+- Add typed persistent Netplan configuration with original networkd route-guard
+  and NetworkManager templates, change/health-gated activation, strict Fractal
+  route verification and bounded same-connection activation/reconnect handling.
+  Preserve native failures and require proven owned-job cleanup; inventory
+  adoption remains separately qualified.
+
 - Observe the protected Inbox Python with its original root-managed interpreter
   tree and uv environment; validate the root regular-copy boundary before GUI
   execution. Preserve existing user-owned uv observation semantics and the two

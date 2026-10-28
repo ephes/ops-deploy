@@ -1,0 +1,22 @@
+[Unit]
+Description=Collect Tailscale metrics every {{ tailscale_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+# OnBootSec= and OnUnitActiveSec= are both monotonic. Once the one-shot boot
+# trigger has fired, missing service activation history can leave neither with
+# a future elapse. systemd then parks the timer as `active (elapsed)` with
+# `NextElapseUSecMonotonic=infinity`; the payload freezes while every `summary`
+# assertion built on it stays confidently green. OnActiveSec= anchors on the
+# timer unit's own activation, providing an independent future trigger.
+OnBootSec={{ tailscale_metrics_endpoint_timer_on_boot_sec }}
+OnActiveSec={{ tailscale_metrics_endpoint_timer_interval }}
+OnUnitActiveSec={{ tailscale_metrics_endpoint_timer_interval }}
+# Wall-clock backstop: the only trigger type Persistent= actually applies to,
+# and the one that re-arms the timer even if every monotonic anchor is lost.
+OnCalendar={{ tailscale_metrics_endpoint_timer_on_calendar }}
+AccuracySec={{ tailscale_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ tailscale_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

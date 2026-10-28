@@ -1,0 +1,42 @@
+[Unit]
+Description=Tailscale metrics HTTP endpoint
+After=tailscaled.service network-online.target
+Wants=tailscaled.service network-online.target
+
+[Service]
+Type=exec
+User={{ tailscale_metrics_endpoint_user }}
+Group={{ tailscale_metrics_endpoint_group }}
+WorkingDirectory=/usr/local/bin
+{% if tailscale_metrics_endpoint_require_effective_ip_filter | bool %}
+ExecStartPre=+/bin/sh -ec '{{ tailscale_metrics_endpoint_bpftool_bin }} cgroup show /sys/fs/cgroup/system.slice/%n | grep -q cgroup_inet_ingress && {{ tailscale_metrics_endpoint_bpftool_bin }} cgroup show /sys/fs/cgroup/system.slice/%n | grep -q cgroup_inet_egress'
+{% endif %}
+ExecStart=/usr/bin/python3 {{ tailscale_metrics_endpoint_server_path }} \
+  --bind {{ tailscale_metrics_endpoint_bind }} \
+  --port {{ tailscale_metrics_endpoint_port }} \
+  --path {{ tailscale_metrics_endpoint_path }} \
+  --json-path {{ tailscale_metrics_endpoint_json_path }} \
+  --htpasswd-file {{ tailscale_metrics_endpoint_htpasswd_path }}
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+{% for network in tailscale_metrics_endpoint_ip_address_allow %}
+IPAddressAllow={{ network }}
+{% endfor %}
+
+ReadOnlyPaths={{ tailscale_metrics_endpoint_data_dir }}
+
+[Install]
+WantedBy=multi-user.target
