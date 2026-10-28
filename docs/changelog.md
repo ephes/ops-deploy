@@ -9,6 +9,12 @@
   legacy shared-environment stop ordering and no implicit unpinned upgrade.
   This is a tested source foundation; no deployment API or inventory switch.
 
+- Add the original Voice Memo Inbox declaration, disabled-first component
+  controller and final keeper resource composition. Keep root-source/Python
+  replacement behind the original runtime/quiescence guards, preserve private
+  credential comparison and logs, and use checked per-run source transfer.
+  Inventory routing, runtime update and activation adoption remain separate.
+
 - Add the original fixed-path software-estate removal as a typed lifecycle
   operation, preserving directory/file/link removal and an absent-path no-op.
   It does not restore the retired pilot or change deploy-default counts. Owned
