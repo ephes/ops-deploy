@@ -97,3 +97,25 @@ step. Local subprocess and stop/listener bounds remain unchanged.
 For an isolated repair, dispatch the native workflow with `fixture=tunnel` and
 an exact implementation SHA. The default `all` and PR selection retain all seven
 owned fixtures. No inventory target is accepted by this workflow.
+
+## Transport repair qualification
+
+The isolated [owned ARM Darwin tunnel run](https://github.com/ephes/ops-deploy/actions/runs/40609684700)
+built the exact reviewed implementation wheel, verified all 617 expected tracked
+resource bytes in its noneditable install, and proved a real multiplex master.
+Four stopped/absent recovery states repeated without managed changes. Invalid
+identity and relay connection failures preserved the running GUI job; cleanup
+closed the owned master and removed its socket and private cache directory.
+The native receipt does not enumerate extra installed files or assert a Git
+`direct_url`; those are separate controller checks.
+
+The combined [full CI matrix](https://github.com/ephes/ops-deploy/actions/runs/40611069357)
+passed on Python 3.12 and 3.13. A separate fresh immutable controller check
+enumerated all 640 package files, matched the full set and bytes to Git, and
+verified its noneditable exact Git provenance. Actual normal owner-session
+default recovery, explicit repeat and convenience deploy/check also succeeded;
+the three deploy calls executed only read-only verification with zero managed
+changes or uploads. Recovery retained the already-stopped job, resources,
+identity and relay authorization. Earlier deployment failures remain in the
+operator receipt; this is successful recovery rather than a new stop transition.
+Normal private-cache socket/session I/O is not a whole-host zero-I/O assertion.

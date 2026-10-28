@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Qualify delegated tunnel transport recovery on owned ARM Darwin and the normal
+  owner-session path: actual default recovery and explicit/convenience repeats
+  verify the already-stopped install without managed changes or uploads.
+  Preserve earlier failure evidence and distinguish native expected-resource
+  byte proof from the separate complete immutable installed-controller proof.
+
 - Restore delegated macOS tunnel authorization transport/session parity with the
   original Ansible controller profile. Preserve strict identities, relay line
   and known hosts, validate/converge authorization before stopping the GUI job,
