@@ -53,6 +53,17 @@ def metadata_diagnostic(owned: OwnedMac, checkout: Path, tree: Path) -> dict[str
             },
         )
         row["count"] += 1
+        row.setdefault("entries", []).append(
+            {
+                "path": str(path.relative_to(owned.root)) if path.is_relative_to(owned.root) else "system-ancestor",
+                "uid": info.st_uid,
+                "gid": info.st_gid,
+                "mode": oct(stat.S_IMODE(info.st_mode)),
+                "nlink": info.st_nlink,
+                "regular": stat.S_ISREG(info.st_mode),
+                "directory": stat.S_ISDIR(info.st_mode),
+            }
+        )
 
     for root in roots:
         for path in (root, *root.parents):
@@ -89,6 +100,7 @@ def main() -> None:
         actor = pwd.getpwnam("runner")
         uv = shutil.which("uv")
         assert uv
+        owned.report["fixture_uv_version"] = command(uv, "--version").stdout.strip()
         base = owned.root / "Daybook"
         checkout = base / "voice-memo-inbox/daybook"
         checkout.mkdir(parents=True)
