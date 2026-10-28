@@ -182,6 +182,7 @@ def source_run_with_upload_counter(*args: Any, **kwargs: Any) -> tuple[Any, dict
     import paramiko
 
     fail_upload = kwargs.pop("_owned_fail_upload", False)
+    fail_setup = kwargs.pop("_owned_fail_sftp_setup", False)
     counts: dict[str, Any] = {"attempted": 0, "succeeded": 0, "failed": 0, "paths": []}
     original = paramiko.SFTPClient.putfo
 
@@ -206,7 +207,20 @@ def source_run_with_upload_counter(*args: Any, **kwargs: Any) -> tuple[Any, dict
     # Count the actual SFTP transfer boundary, including individual attempts;
     # no file/body/argument is inspected or copied into the receipt.
     with patch.object(paramiko.SFTPClient, "putfo", observed):
-        result = run_deploy_ssh(*args, **kwargs)
+        if fail_setup:
+            from pyinfra.api.exceptions import ConnectError
+            from pyinfra.connectors.ssh import SSHConnector
+
+            with patch.object(
+                SSHConnector,
+                "get_file_transfer_connection",
+                side_effect=ConnectError("owned injected SFTP setup failure"),
+            ) as injected_setup:
+                result = run_deploy_ssh(*args, **kwargs)
+                assert injected_setup.call_count == 1
+                counts["setup_attempted"] = injected_setup.call_count
+        else:
+            result = run_deploy_ssh(*args, **kwargs)
     return result, counts
 
 
@@ -788,6 +802,30 @@ def main() -> None:
         assert capability_present()
         owned.report["sessions_source_injected_sftp_failure_cleanup_and_old_source_exact"] = True
         owned.report["sessions_source_failed_actual_sftp_attempts"] = failed_uploads
+        # SFTP negotiation can fail while the ordinary SSH connection remains
+        # usable. It must remain a failed op and still remove its private prep.
+        temporary_before = set(Path("/private/var/tmp").glob("ops-deploy-daybook-source-*"))
+        setup_failure, setup_uploads = source_run_with_upload_counter(
+            install_sessions_source,
+            fault_source_cfg,
+            SourceTree(session_controller, fault_revision),
+            fault_bundle,
+            host_name="owned-daybook",
+            host_data=host_data,
+            _owned_fail_sftp_setup=True,
+        )
+        assert not setup_failure.succeeded
+        assert setup_failure.error is None  # ordinary failed op, no escaped ConnectError
+        prefix = "Install exact Sessions source and locked managed environment | "
+        assert setup_failure.op(prefix + "Prepare private temporary Daybook source upload directory").succeeded
+        assert not setup_failure.op(prefix + "Stage exact Daybook Main source bundle").succeeded
+        assert setup_uploads == {"attempted": 0, "succeeded": 0, "failed": 0, "paths": [], "setup_attempted": 1}
+        assert set(Path("/private/var/tmp").glob("ops-deploy-daybook-source-*")) == temporary_before
+        assert snapshot([session_checkout]) == session_current
+        assert snapshot(protected) == before
+        assert job_pid(service) is None
+        assert capability_present()
+        owned.report["sessions_source_sftp_setup_failure_remains_failed_cleanup_and_source_exact"] = True
         # Disabled-first configuration staging is a separate managed stage.
         # It cannot activate/install the live label or update this exact code.
         stage_cfg = cfg.model_copy(update={"action": "replace", "confirmed": True})

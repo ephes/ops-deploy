@@ -190,3 +190,34 @@ def test_native_upload_counter_observes_actual_sftp_method_without_body(
         "paths": ["/private/var/tmp/ops-deploy-daybook-source-" + "a" * 32 + "/source.bundle"],
     }
     assert private not in json.dumps(counts)
+
+
+@pytest.mark.parametrize("reached", [False, True])
+def test_native_sftp_setup_injection_requires_actual_callback_path(
+    monkeypatch: pytest.MonkeyPatch,
+    reached: bool,
+) -> None:
+    import runpy
+    from contextlib import suppress
+    from types import SimpleNamespace
+
+    from pyinfra.api.exceptions import ConnectError
+    from pyinfra.connectors.ssh import SSHConnector
+
+    fixture = Path(__file__).resolve().parents[1] / "smoke/daybook_runtime_native_fixture.py"
+    monkeypatch.syspath_prepend(str(fixture.parent))
+    module = runpy.run_path(str(fixture))
+
+    def run(*args: object, **kwargs: object) -> object:
+        if reached:
+            with suppress(ConnectError):
+                SSHConnector.get_file_transfer_connection(None)
+        return SimpleNamespace(succeeded=False)
+
+    monkeypatch.setitem(module["source_run_with_upload_counter"].__globals__, "run_deploy_ssh", run)
+    if reached:
+        _result, counts = module["source_run_with_upload_counter"](_owned_fail_sftp_setup=True)
+        assert counts["setup_attempted"] == 1
+    else:
+        with pytest.raises(AssertionError):
+            module["source_run_with_upload_counter"](_owned_fail_sftp_setup=True)

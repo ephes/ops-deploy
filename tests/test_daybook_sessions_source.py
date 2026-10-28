@@ -550,3 +550,26 @@ def test_original_earlier_quiesce_can_satisfy_fresh_apply_after_status(
     MODULE["apply"](data, probes)
     assert git(Path(data["checkout"]), "rev-parse", "HEAD") == source.commit
     assert not Path(data["transfer_dir"]).exists()
+
+
+@pytest.mark.parametrize("failure", [True, False])
+def test_bundle_upload_normalizes_only_setup_failure_into_failed_operation(failure: bool) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from pyinfra.api.exceptions import ConnectError
+
+    from ops_deploy.services.daybook_sessions.source import BundleUploadCommand
+
+    upload = Mock(side_effect=ConnectError("unusable owned private diagnostic") if failure else None, return_value=True)
+    target = SimpleNamespace(put_file=upload)
+    state = SimpleNamespace(print_output=False, print_input=False)
+    command = BundleUploadCommand("/owned/source.bundle", "/owned/private/target.bundle")
+    assert command.execute(cast(Any, state), cast(Any, target), {}) is (not failure)
+    upload.assert_called_once_with(
+        "/owned/source.bundle",
+        "/owned/private/target.bundle",
+        remote_temp_filename=None,
+        print_output=False,
+        print_input=False,
+    )

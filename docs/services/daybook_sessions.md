@@ -80,7 +80,9 @@ connector remains usable. The existing pyinfra state callback also cleans a fail
 before host failure skips later operations; a cleanup transport failure remains
 an explicit error, and never changes the original failed result. Preparation
 is a managed operation: a source first has three managed operations and one
-actual SFTP transfer; a current repeat has zero of both. An already present commit
+actual SFTP transfer; a current repeat has zero of both. SFTP-setup connection
+errors are normalized to a failed operation so the ordinary failure cleanup
+callback runs while SSH remains usable; they never become success. An already present commit
 needs no transfer. Git/uv output stays in memory and fixed error categories reach logs. A
 failed synchronization remains a failure after checkout; no rollback is claimed.
 Source parents are prepared by the complete role, which is still being ported.

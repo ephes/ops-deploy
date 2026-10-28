@@ -304,6 +304,7 @@ class OwnedMac:
             f"PidFile {self.root}/transport-sshd.pid\nAuthorizedKeysFile {authorized}\n"
             "PasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM no\n"
             "PermitRootLogin prohibit-password\nAllowUsers root\nStrictModes yes\nLogLevel INFO\n"
+            "Subsystem sftp internal-sftp\n"
         )
         command("/usr/sbin/sshd", "-t", "-f", str(config))
         process = self.spawn(["/usr/sbin/sshd", "-D", "-e", "-f", str(config)], self.evidence / "transport-sshd.log")

@@ -8,16 +8,19 @@ import json
 import shlex
 import subprocess
 import uuid
+from collections.abc import Generator
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from pyinfra import host, logger
-from pyinfra.api import DeployError, Host, State, deploy
+from pyinfra.api import DeployError, Host, State, StringCommand, deploy, operation
+from pyinfra.api.arguments import ConnectorArguments
+from pyinfra.api.command import FileUploadCommand
+from pyinfra.api.exceptions import ConnectError
 from pyinfra.api.operation import OperationMeta
 from pyinfra.api.state import BaseStateCallback
 from pyinfra.facts.server import Command, Os
-from pyinfra.operations import files as file_ops
 
 from ops_deploy.core.git_source import SourceTree
 from ops_deploy.core.secrets import SecretContent
@@ -126,6 +129,28 @@ def verify_controller_bundle(bundle: Path, revision: str) -> None:
         raise ValueError("Sessions controller bundle does not carry the declared commit")
 
 
+class BundleUploadCommand(FileUploadCommand):
+    """Keep SFTP-setup errors in normal failed-op/callback accounting."""
+
+    def execute(self, state: State, target: Host, connector_arguments: ConnectorArguments) -> bool:
+        try:
+            return bool(super().execute(state, target, connector_arguments))
+        except ConnectError:
+            # pyinfra's upload executor catches OSError/SSHException but not
+            # ConnectError. A false result triggers its ordinary failure cleanup
+            # callback; the transfer is never relabeled successful.
+            logger.error("Sessions source SFTP setup failed")
+            return False
+
+
+@operation()
+def upload_sessions_bundle(src: str, dest: str) -> Generator[FileUploadCommand | StringCommand, None, None]:
+    # Ordinary existing-identity SFTP; no sudo upload/shared plaintext staging.
+    # The parent is already owner-private 0700 until descriptor publication.
+    yield BundleUploadCommand(src, dest)
+    yield StringCommand(shlex.join(["/bin/chmod", "0600", dest]))
+
+
 def register_transfer_cleanup(
     data: dict[str, Any],
     prepared: OperationMeta,
@@ -190,11 +215,10 @@ def install_sessions_source(cfg: DaybookSessionsConfig, source: SourceTree, bund
                 command=source_command("prepare-transfer"),
                 content=SecretContent(json.dumps(data) + "\n"),
             )
-            uploaded = file_ops.put(
+            uploaded = upload_sessions_bundle(
                 name="Stage exact Daybook Main source bundle",
                 src=str(bundle),
                 dest=data["bundle_path"],
-                mode="0600",
             )
             data["staged_bundle"] = True
         applied = secret_stdin(

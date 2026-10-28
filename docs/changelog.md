@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve failed-operation cleanup when Sessions SFTP setup fails, and enable
+  internal SFTP only in the disposable owned SSH fixture.
+
 - Add the Daybook Sessions controller-bundle source and locked environment stage,
   with quiescence checks and zero-upload current repeats; resource deployment and activation remain separate.
 
