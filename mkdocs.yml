@@ -74,6 +74,7 @@ nav:
       - voxhelm (macOS native): services/voxhelm.md
       - voxhelm_remote_worker (macOS native): services/voxhelm_remote_worker.md
       - llama_server (macOS native): services/llama_server.md
+      - Daybook operations runtime: services/daybook_operations_runtime.md
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md
       - unifi: services/unifi.md

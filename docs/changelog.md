@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Define the protected Daybook schema-five runtime profile and action-aware
+  default decision, retaining disabled installation and the original guarded
+  update boundary. Add a pure monitor-only status client with strict TLS,
+  bounded response parsing and a six-field operational metadata result; no
+  executor-status fallback, Journal construction or inventory switch.
+
 - Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
   generic share APIs from ops-library cf3a0c74. Preserve existing credentials and
   disabled accounts with native add-only admission; retain restart debt across

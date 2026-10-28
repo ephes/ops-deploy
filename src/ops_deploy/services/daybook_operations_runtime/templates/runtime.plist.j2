@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{{ daybook_operations_runtime_label | e }}</string>
+<key>ProgramArguments</key><array>
+<string>{{ daybook_operations_runtime_python | e }}</string><string>-I</string><string>-c</string>
+<string>from daybook.cli import main; raise SystemExit(main())</string>
+{% if daybook_operations_runtime_mode == 'host' %}
+{# The keeper: it creates the capability host if it is missing (with `ensure`'s
+   lock and marker), starts the supervisor inside it as its own session, and exits
+   when either is gone so launchd starts it again. It schedules nothing. #}
+<string>operations</string><string>host-keep</string>
+<string>--policy</string><string>{{ daybook_operations_runtime_policy | e }}</string>
+<string>--policy-owner</string><string>{{ daybook_operations_runtime_owner | e }}</string>
+<string>--socket</string><string>{{ daybook_operations_runtime_host_socket | e }}</string>
+<string>--host-session</string><string>{{ daybook_operations_runtime_host_session | e }}</string>
+<string>--tmux</string><string>{{ daybook_operations_runtime_host_tmux | e }}</string>
+<string>--tmpdir</string><string>{{ daybook_operations_runtime_host_tmpdir | e }}</string>
+<string>--application</string><string>{{ daybook_operations_runtime_host_application | e }}</string>
+<string>--lock</string><string>{{ daybook_operations_runtime_host_lock | e }}</string>
+{% else %}
+<string>operations</string><string>serve</string><string>--policy</string><string>{{ daybook_operations_runtime_policy | e }}</string>
+<string>--policy-owner</string><string>{{ daybook_operations_runtime_owner | e }}</string>
+{% endif %}
+</array>
+<key>EnvironmentVariables</key><dict><key>HOME</key><string>{{ daybook_operations_runtime_home | e }}</string><key>PATH</key><string>/usr/bin:/bin</string>
+{% if daybook_operations_runtime_mode == 'host' %}<key>TMUX_TMPDIR</key><string>{{ daybook_operations_runtime_host_tmpdir | e }}</string>{% endif %}
+</dict>
+{# The server owns the due times, so launchd must not also schedule this.
+   KeepAlive is safe only because a source that stopped for an operator records
+   that stop in the store's halts/ directory: the restarted supervisor reads the
+   marker and dispatches nothing for it, instead of walking back into the state a
+   person was meant to look at. Without that marker this key would be a retry loop. #}
+<key>KeepAlive</key><true/>
+{% if daybook_operations_runtime_mode == 'host' %}
+{# The keeper opens a window only through `ensure`, which does nothing while a
+   marked host answers; the throttle bounds how often a host that cannot be
+   created is tried again. The host is a GUI application, so only in Aqua. #}
+<key>ThrottleInterval</key><integer>30</integer>
+<key>LimitLoadToSessionType</key><string>Aqua</string>
+{% endif %}
+<key>RunAtLoad</key><true/>
+<key>ProcessType</key><string>Background</string>
+</dict></plist>

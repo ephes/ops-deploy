@@ -1,0 +1,19 @@
+{# Schema 5: the machine's identity, the kinds of work it can run, its pool and its
+   store. No source: the source list is the server's. A kind may say whether it is
+   long work and carry its adapter's local settings (`run`); the memo kinds get the
+   importer policy there. Written disabled by every action except `cutover`. #}
+{% set kinds = [] %}
+{% for kind in daybook_operations_runtime_kinds %}
+{%   if kind.adapter in daybook_operations_runtime_importer_adapters and 'run' not in kind %}
+{%     set _ = kinds.append(kind | combine({'run': {'importer_policy': daybook_operations_runtime_importer_policy}})) %}
+{%   else %}
+{%     set _ = kinds.append(kind) %}
+{%   endif %}
+{% endfor %}
+{{ {
+  'schema': 5, 'enabled': daybook_operations_runtime_action == 'cutover',
+  'api_url': daybook_operations_runtime_api_url, 'credential_path': daybook_operations_runtime_credential,
+  'journal': daybook_operations_runtime_journal,
+  'workers': daybook_operations_runtime_workers,
+  'kinds': kinds
+} | to_nice_json }}
