@@ -21,7 +21,8 @@ disabled. The installed old commit must never replace desired Main to manufactur
 a no-op. Revision text alone is not proof of source/resource equality.
 
 The new pure verification contract uses `GET /v1/status` with a separate existing
-**monitor-purpose** credential. The executor credential is denied by that route.
+**monitor-purpose** credential through the existing redacted `SecretValues`
+container, under its `monitor_token` key. The executor credential is denied by that route.
 There is no retry, redirect or fallback to executor `operations status --binding`,
 which can expire server authority and opens a local Journal. Existing guarded
 update effects remain separate and must be counted as managed effects.

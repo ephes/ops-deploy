@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ops_deploy.core.secrets import SecretContent
 from ops_deploy.services.daybook_operations_runtime.status import MAX_STATUS_BYTES, StatusError, fetch_status
+from tests.test_daybook_runtime_contract import access
 
 MONITOR = "fixture-monitor-not-real-" + "x" * 32
 EXECUTOR = "fixture-executor-not-real-" + "y" * 32
@@ -114,12 +114,12 @@ def test_real_https_monitor_access_and_repeated_reads(endpoint: tuple[ThreadingH
     context = ssl.create_default_context(cafile=str(cert))
     with patch("ssl.create_default_context", return_value=context):
         for _ in range(2):
-            result = fetch_status(origin, SecretContent(MONITOR), ["regular"])
+            result = fetch_status(origin, access(MONITOR), ["regular"])
             assert result[0].active_state == "assigned"
             assert result[0].expiry_pending is True
             assert "DROP-ME" not in repr(result)
         with pytest.raises(StatusError, match="monitor_http_failed"):
-            fetch_status(origin, SecretContent(EXECUTOR), ["regular"])
+            fetch_status(origin, access(EXECUTOR), ["regular"])
     assert requests == ["/v1/status"] * 3
 
 
@@ -131,12 +131,12 @@ def test_real_redirect_and_oversized_response_fail_once(
     server.fixture_mode = mode  # type: ignore[attr-defined]
     context = ssl.create_default_context(cafile=str(cert))
     with patch("ssl.create_default_context", return_value=context), pytest.raises(StatusError):
-        fetch_status(f"https://localhost:{server.server_port}", SecretContent(MONITOR), ["regular"])
+        fetch_status(f"https://localhost:{server.server_port}", access(MONITOR), ["regular"])
     assert requests == ["/v1/status"]
 
 
 def test_real_untrusted_tls_fails_before_http_request(endpoint: tuple[ThreadingHTTPServer, Path, list[str]]) -> None:
     server, _, requests = endpoint
     with pytest.raises(StatusError, match="monitor_transport_failed"):
-        fetch_status(f"https://localhost:{server.server_port}", SecretContent(MONITOR), ["regular"])
+        fetch_status(f"https://localhost:{server.server_port}", access(MONITOR), ["regular"])
     assert requests == []

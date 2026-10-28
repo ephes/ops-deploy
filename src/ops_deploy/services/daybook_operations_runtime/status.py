@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from ops_deploy.core.secrets import SecretContent
+from ops_deploy.core.secrets import SecretValues
 
 MAX_STATUS_BYTES = 256 * 1024
 STATUS_TIMEOUT = 30
@@ -110,9 +110,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def fetch_status(origin: str, monitor_token: SecretContent, sources: Sequence[str]) -> tuple[SourceStatus, ...]:
+def fetch_status(origin: str, monitor_access: SecretValues, sources: Sequence[str]) -> tuple[SourceStatus, ...]:
     """One HTTPS GET using an existing monitor-purpose token. No fallback/retry.
 
+    ``monitor_access["monitor_token"]`` is the existing monitor-purpose token.
     This is deliberately separate from the runtime's executor credential. Server
     purpose checks are authoritative: an executor token produces a real failure.
     """
@@ -135,10 +136,10 @@ def fetch_status(origin: str, monitor_token: SecretContent, sources: Sequence[st
         raise StatusError("monitor_invalid_origin")
     try:
         _ = parsed.port
-        token = monitor_token.reveal().decode("ascii")
-    except (ValueError, UnicodeError):
+        token = monitor_access["monitor_token"]
+    except (KeyError, ValueError):
         raise StatusError("monitor_invalid_access") from None
-    if not re.fullmatch(r"[A-Za-z0-9._~-]{32,256}", token) or "CHANGEME" in token:
+    if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._~-]{32,256}", token) or "CHANGEME" in token:
         raise StatusError("monitor_invalid_access")
     request = urllib.request.Request(
         origin + "/v1/status", headers={"Authorization": "Bearer " + token, "Accept": "application/json"}, method="GET"

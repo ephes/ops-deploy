@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pydantic import ValidationError
 
-from ops_deploy.core.secrets import SecretContent
+from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.daybook_operations_runtime import DaybookRuntimeConfig, RuntimeKind, RuntimeWorkers
 from ops_deploy.services.daybook_operations_runtime.decision import InstalledRuntime, normal_action
 from ops_deploy.services.daybook_operations_runtime.render import render_credential, render_resource, role_values
@@ -29,6 +29,10 @@ from ops_deploy.services.daybook_operations_runtime.status import (
     fetch_status,
     parse_status,
 )
+
+
+def access(value: str) -> SecretValues:
+    return SecretValues(SecretRef("fixture.yml"), {"monitor_token": value})
 
 
 def config(**values: Any) -> DaybookRuntimeConfig:
@@ -225,7 +229,7 @@ def test_status_duplicate_sources_and_size_fail_closed() -> None:
 
 
 def test_monitor_is_single_exact_get_tls_bounded_and_no_redirect_or_fallback() -> None:
-    token = SecretContent("fixture-monitor-not-real-" + "x" * 32)
+    token = access("fixture-monitor-not-real-" + "x" * 32)
     response = Mock(status=200)
     response.read.return_value = payload()
     response.__enter__ = Mock(return_value=response)
@@ -238,7 +242,7 @@ def test_monitor_is_single_exact_get_tls_bounded_and_no_redirect_or_fallback() -
     request = opener.open.call_args.args[0]
     assert request.full_url == "https://example.test/v1/status"
     assert request.method == "GET"
-    assert request.headers["Authorization"] == "Bearer " + token.reveal().decode()
+    assert request.headers["Authorization"] == "Bearer " + token["monitor_token"]
     assert opener.open.call_count == 1
     assert opener.open.call_args.kwargs == {"timeout": STATUS_TIMEOUT}
     response.read.assert_called_once_with(MAX_STATUS_BYTES + 1)
@@ -254,7 +258,7 @@ def test_http_failures_close_without_reading_error_body_or_retry(code: int) -> N
     opener = Mock()
     opener.open.side_effect = error
     with patch("urllib.request.build_opener", return_value=opener), pytest.raises(StatusError) as failure:
-        fetch_status("https://example.test", SecretContent("x" * 32), ["regular"])
+        fetch_status("https://example.test", access("x" * 32), ["regular"])
     assert str(failure.value) == "monitor_http_failed"
     assert body.closed
     assert opener.open.call_count == 1
@@ -276,5 +280,21 @@ def test_http_failures_close_without_reading_error_body_or_retry(code: int) -> N
 )
 def test_noncanonical_origins_never_send_authorization(origin: str) -> None:
     with patch("urllib.request.build_opener") as build, pytest.raises(StatusError, match="invalid_origin"):
-        fetch_status(origin, SecretContent("x" * 32), ["regular"])
+        fetch_status(origin, access("x" * 32), ["regular"])
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {},
+        {"monitor_token": ""},
+        {"monitor_token": "x" * 32 + "\nprivate"},
+        {"monitor_token": None},
+        {"monitor_token": 123},
+    ],
+)
+def test_missing_or_invalid_monitor_access_is_sanitized_before_transport(values: dict[str, Any]) -> None:
+    with patch("urllib.request.build_opener") as build, pytest.raises(StatusError, match="monitor_invalid_access"):
+        fetch_status("https://example.test", SecretValues(SecretRef("fixture.yml"), values), ["regular"])
     build.assert_not_called()
