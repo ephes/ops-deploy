@@ -11,7 +11,7 @@ from pydantic import SecretStr, ValidationError
 
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.minio import MinioConfig, MinioCredentials, MinioPolicy, deploy_minio
-from ops_deploy.services.minio.config import MC_SHA256, MINIO_SHA256
+from ops_deploy.services.minio.config import MC_DOWNLOAD_URL, MC_SHA256, MC_VERSION, MINIO_SHA256
 from ops_deploy.services.minio.deploy import host_command
 from ops_deploy.services.minio.render import render
 from ops_deploy.testing import FakeRun, run_deploy_fake
@@ -38,6 +38,8 @@ def facts(cfg: MinioConfig, creds: MinioCredentials = CREDS, *, pending: int = 0
         f"sha256sum {cfg.mc_bin_path} ": [f"{MC_SHA256}  {cfg.mc_bin_path}"],
         host_command("data_roots"): ["current"],
         host_command("iam_host", "check"): [json.dumps({"pending": pending, "changed": False})],
+        host_command("iam_host", "inspect-current"): [json.dumps({"pending": pending, "changed": False})],
+        host_command("iam_host", "recovery"): [json.dumps({"recover_client": False, "recover_service": False})],
     }
     for path in cfg.data_dirs:
         result.update(fakehost.directory(path, user=cfg.user, mode="drwxr-x---"))
@@ -72,7 +74,10 @@ def test_iam_rotation_alone_has_one_operation_without_restart_or_upload() -> Non
 def test_unknown_iam_response_stops_before_any_operation() -> None:
     cfg = MinioConfig(bootstrap_with_mc=True)
     response = facts(cfg)
-    response[host_command("iam_host", "check")] = ["refused: client could not execute", "ops-deploy-probe-failed"]
+    response[host_command("iam_host", "inspect-current")] = [
+        "refused: client could not execute",
+        "ops-deploy-probe-failed",
+    ]
     run = execute(cfg, response)
     assert run.error is not None
     assert run.ops == []
@@ -119,7 +124,14 @@ def test_existing_console_bcrypt_hash_and_role_route_are_preserved() -> None:
 
 def test_fresh_server_starts_before_bootstrap_and_does_not_restart_again() -> None:
     cfg = MinioConfig(bootstrap_with_mc=True)
-    run = execute(cfg, {**fakehost.UBUNTU, host_command("data_roots"): ["empty"]})
+    run = execute(
+        cfg,
+        {
+            **fakehost.UBUNTU,
+            host_command("data_roots"): ["empty"],
+            host_command("iam_host", "check"): [json.dumps({"pending": 1, "changed": False})],
+        },
+    )
     assert run.succeeded, run.error
     changed = run.mutating_changed_ops
     assert changed.index(PREFIX + "Start minio.service") < changed.index(
@@ -238,8 +250,67 @@ def test_both_original_port_preflights_precede_managed_operations() -> None:
 def test_existing_unavailable_iam_refuses_before_recovery_changes(reason: str) -> None:
     cfg = MinioConfig(bootstrap_with_mc=True)
     response = facts(cfg)
-    response[host_command("iam_host", "check")] = ["refused: " + reason, "ops-deploy-probe-failed"]
+    response[host_command("iam_host", "inspect-current")] = ["refused: " + reason, "ops-deploy-probe-failed"]
     run = execute(cfg, response)
     assert run.error is not None
     assert run.ops == []
     assert run.uploads == []
+
+
+def test_missing_client_is_managed_before_late_iam_refusal_and_no_env_write() -> None:
+    cfg = MinioConfig(bootstrap_with_mc=True)
+    response = facts(cfg)
+    response[host_command("iam_host", "recovery")] = [json.dumps({"recover_client": True, "recover_service": False})]
+    response[f"sha256sum {cfg.mc_bin_path} "] = ["old-client"]
+    response[host_command("iam_host", "inspect-current")] = {"success": False, "stdout": ["refused: disabled user"]}
+    run = execute(cfg, response)
+    assert not run.succeeded
+    assert run.mutating_changed_ops == [PREFIX + "Download pinned MinIO recovery client"]
+    assert run.uploads == []
+    assert not any("restart" in command for command in run.executed_commands)
+
+
+def test_root_rotation_uses_current_admission_then_desired_env_restart_and_iam() -> None:
+    cfg = MinioConfig(bootstrap_with_mc=True)
+    desired = MinioCredentials(root_user=SecretStr("fixture-root-new"), root_password=SecretStr("fixture-new-value"))
+    response = facts(cfg, CREDS, pending=1)
+    run = execute(cfg, response, desired)
+    assert run.succeeded, run.error
+    changes = run.mutating_changed_ops
+    assert (
+        changes.index(PREFIX + "Write MinIO environment")
+        < changes.index(PREFIX + "Restart minio.service")
+        < changes.index(PREFIX + "Converge declared MinIO IAM and bucket configuration")
+    )
+    assert run.uploads == []  # secret_file transports protected stdin, not an upload.
+    assert any("inspect-current" in event.value for event in run.events if event.kind == "fact")
+
+
+def test_successful_client_recovery_downloads_once_before_late_admission() -> None:
+    cfg = MinioConfig(bootstrap_with_mc=True)
+    response = facts(cfg)
+    response[host_command("iam_host", "recovery")] = [json.dumps({"recover_client": True, "recover_service": False})]
+    response[f"sha256sum {cfg.mc_bin_path} "] = ["old-client"]
+    run = execute(cfg, response)
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == [PREFIX + "Download pinned MinIO recovery client"]
+    assert run.uploads == []
+
+
+def test_verified_official_mc_source_is_used_only_for_missing_or_drifted_client() -> None:
+    assert MC_DOWNLOAD_URL == (
+        "https://github.com/minio/mc/releases/download/" + MC_VERSION + "/mc.linux-amd64." + MC_VERSION
+    )
+    cfg = MinioConfig(bootstrap_with_mc=True)
+    current = execute(cfg, facts(cfg))
+    assert current.succeeded, current.error
+    assert not any("curl -fsSL" in command for command in current.executed_commands)
+    response = facts(cfg)
+    response[host_command("iam_host", "recovery")] = [json.dumps({"recover_client": True, "recover_service": False})]
+    response[f"sha256sum {cfg.mc_bin_path} "] = ["old-client"]
+    missing = execute(cfg, response)
+    assert missing.succeeded, missing.error
+    downloads = [command for command in missing.executed_commands if "curl -fsSL" in command]
+    assert len(downloads) == 1
+    assert MC_DOWNLOAD_URL in downloads[0]
+    assert MC_SHA256 in downloads[0]

@@ -42,16 +42,31 @@ home `/home/minio`, data `/var/lib/minio/data`, root-owned environment
 API9001 and console9002. The server and client are fixed to the checksummed
 versions in the role. Paths must be canonical; API/console ports must differ.
 A truly fresh deployment has no unit/environment and empty or absent data roots;
-existing data requires successful read-only ownership and IAM admission first.
+existing data requires successful read-only descendant-ownership admission.
 
-An existing deployment with bootstrap enabled must already have a working `mc`
-and reachable server accepting the supplied root credentials. Root credential
-rotation, enabling bootstrap when `mc` is absent, and repair of a stopped or
-broken server are outside this adoption contract: they refuse during planning,
-before any queued write. Use the separately reviewed legacy recovery procedure
-for those cases; do not bypass IAM admission or reinterpret failed access as
-missing users. Fresh deployment with empty data remains supported. The native
-fixture includes these three explicit refusal cases.
+Healthy existing servers inspect every owned IAM contract with current root
+credentials read only inside the host helper from the root-owned0600 environment.
+The parser accepts the declared literal fields, rejects duplicate/unknown or
+ambiguous lines, and never evaluates shell content or returns credential material.
+A desired root rotation writes the protected environment, performs the normal
+change-gated restart, then rechecks desired credentials before alias/IAM changes.
+
+A missing or mismatched pinned client is installed as a managed prerequisite.
+A known inactive/failed unit is started with its existing valid configuration
+before desired configuration changes. Recovery requires the declared root-owned
+unit, pinned executable, unchanged non-root environment, no drop-ins or pending
+daemon reload, and an unambiguous systemd state. Full IAM admission then runs
+before other configuration or IAM writes. If that admission refuses, the actual
+client installation or service start remains an explicitly reported partial
+recovery; it is never called a zero-change refusal. Unknown/foreign service or
+credential state still stops. No extra acknowledgement or manual repair is needed
+for these normal known-owned recovery paths. Qualification of these new paths is
+pending an inspected native fixture receipt.
+
+The original Ansible role installs the client and starts the unit before bootstrap.
+It writes desired root credentials but defers its restart handler until later;
+there is no explicit flush before bootstrap uses the new credentials. Its real
+root-rotation result must therefore be observed separately, not assumed successful.
 
 The original private play's loopback API/console port checks run before managed
 operations and accept only listeners owned by `minio.service`.
@@ -102,3 +117,15 @@ kernel, synthetic objects/credentials and no private inventory mounts. The
 private download token is scoped to the runner download step and excluded from
 the guest. Installed-resource/direct_url proof and raw phase receipts are
 required. No native success or inventory switch is claimed yet.
+
+The prepared pyinfra client's fixed source is the official GitHub release asset
+`https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z`.
+An anonymous download was verified at30535864bytes with the unchanged SHA256
+`01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891`.
+This explicitly replaces the unavailable legacy dl.min.io client URL; it does not
+change the version or binary. An already matching client makes no download.
+Legacy Ansible/operator custom URLs are unchanged. The MinIO **server** source
+still returns410; no alternate server version or source is silently selected.
+
+An alternate offline native KVM transport is prepared under
+`tests/integration/minio/kvm/README.md`; execution and qualification remain pending.

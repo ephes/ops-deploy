@@ -301,7 +301,9 @@ def configured() -> tuple[MinioConfig, MinioCredentials]:
     return cfg, credentials
 
 
-def ansible(cfg: MinioConfig, creds: MinioCredentials) -> None:
+def ansible(
+    cfg: MinioConfig, creds: MinioCredentials, *, label: str = "ansible-role", allow_failure: bool = False
+) -> int:
     variables = {"minio_" + key: value for key, value in cfg.model_dump(mode="json").items()}
     assert creds.console_basic_auth_password is not None
     root = creds.root_password.get_secret_value()
@@ -310,6 +312,9 @@ def ansible(cfg: MinioConfig, creds: MinioCredentials) -> None:
         minio_root_user=creds.root_user.get_secret_value(),
         minio_root_password=root,
         minio_console_basic_auth_password=auth,
+        # Exact owned artifacts replace unavailable410 download URLs only.
+        minio_download_url="file:///opt/minio-artifacts/minio",
+        minio_mc_download_url="file:///opt/minio-artifacts/mc",
     )
     play = [
         {
@@ -334,10 +339,10 @@ def ansible(cfg: MinioConfig, creds: MinioCredentials) -> None:
         check=False,
         env={**os.environ, "ANSIBLE_COLLECTIONS_PATH": str(ROOT / "collections")},
     )
-    (EVIDENCE / "ansible-role.log").write_text(sanitize(result.stdout + result.stderr))
+    (EVIDENCE / (label + ".log")).write_text(sanitize(result.stdout + result.stderr))
     after = snapshot()
     write(
-        "ansible-role.json",
+        label + ".json",
         {
             "exit": result.returncode,
             "before": before,
@@ -348,7 +353,9 @@ def ansible(cfg: MinioConfig, creds: MinioCredentials) -> None:
         },
     )
     path.unlink()
-    assert result.returncode == 0, "original Ansible role failed"
+    if not allow_failure:
+        assert result.returncode == 0, "original Ansible role failed"
+    return result.returncode
 
 
 def main() -> None:
@@ -382,31 +389,35 @@ def main() -> None:
     deploy("04-fish-repeat", cfg, creds, zero=True, fish=True)
     ansible(cfg, creds)
     deploy("05-after-ansible-repeat", cfg, creds, zero=True)
-    # Existing-host recovery and root-credential changes fail closed during
-    # admission; they never perform a partial rollout before IAM is inspectable.
-    new_root = creds.model_copy(update={"root_password": value()})
-    fault = deploy("05a-root-rotation-refusal", cfg, new_root, failure=True)
-    assert fault["before"] == fault["after"]
-    assert not fault["managed"]
-    assert not fault["uploads"]
+    # Original tasks with only exact-artifact file URLs substituted for410.
+    # Preserve each real result; delayed restart may make root rotation fail.
     installed_mc = Path("/usr/local/bin/mc")
     held_mc = ROOT / "mc-held"
     installed_mc.rename(held_mc)
-    try:
-        fault = deploy("05b-missing-client-refusal", cfg, creds, failure=True)
-        assert fault["before"] == fault["after"]
-        assert not fault["managed"]
-        assert not fault["uploads"]
-    finally:
-        held_mc.rename(installed_mc)
+    ansible(cfg, creds, label="ansible-missing-client")
+    held_mc.unlink()
     command("systemctl", "stop", "minio.service")
-    try:
-        fault = deploy("05c-stopped-service-refusal", cfg, creds, failure=True)
-        assert fault["before"] == fault["after"]
-        assert not fault["managed"]
-        assert not fault["uploads"]
-    finally:
-        command("systemctl", "start", "minio.service")
+    ansible(cfg, creds, label="ansible-stopped-service")
+    original_env = Path("/etc/default/minio").read_bytes()
+    legacy_rotated = creds.model_copy(update={"root_password": value()})
+    legacy_exit = ansible(cfg, legacy_rotated, label="ansible-root-rotation", allow_failure=True)
+    if legacy_exit:
+        half_applied = deploy("05-original-half-applied-root-admission", cfg, legacy_rotated, failure=True)
+        assert half_applied["before"] == half_applied["after"]
+        assert not half_applied["managed"]
+        assert not half_applied["uploads"]
+        write(
+            "original-half-applied-adjudication.json",
+            {
+                "original_exit": legacy_exit,
+                "environment_changed": Path("/etc/default/minio").read_bytes() != original_env,
+                "pyinfra_result": "safe refusal before writes; current env did not prove active credentials",
+                "fixture_reset_follows": True,
+            },
+        )
+    # Explicit owned-fixture reset AFTER saving the real original result.
+    Path("/etc/default/minio").write_bytes(original_env)
+    command("systemctl", "restart", "minio.service")
     for _attempt in range(60):
         try:
             with urllib.request.urlopen("http://127.0.0.1:9001/minio/health/live", timeout=2) as response:
@@ -416,7 +427,36 @@ def main() -> None:
             pass
         time.sleep(1)
     else:
-        raise RuntimeError("owned service did not recover after explicit fixture stop")
+        raise RuntimeError("owned fixture reset did not become healthy")
+    mc("alias", "import", "local", stdin=json.dumps(alias), shared=True)
+    deploy("05a-after-original-recovery-observations", cfg, creds, zero=True)
+
+    new_root = creds.model_copy(update={"root_password": value()})
+    rotation = deploy("05b-root-rotation", cfg, new_root)
+    assert len(rotation["managed"]) == 3
+    assert rotation["uploads"] == 0  # protected stdin environment transport
+    assert rotation["before"]["objects"] == rotation["after"]["objects"]
+    assert rotation["before"]["iam"] == rotation["after"]["iam"]
+    creds = new_root
+    alias["secretKey"] = creds.root_password.get_secret_value()
+    mc("alias", "import", "local", stdin=json.dumps(alias))
+    deploy("05c-root-rotation-repeat", cfg, creds, zero=True)
+    installed_mc.rename(held_mc)
+    restored = deploy("05d-missing-client-recovery", cfg, creds)
+    assert len(restored["managed"]) == 1
+    assert restored["uploads"] == 1
+    assert restored["before"]["unit"] == restored["after"]["unit"]
+    assert restored["before"]["objects"] == restored["after"]["objects"]
+    assert restored["before"]["iam"] == restored["after"]["iam"]
+    held_mc.unlink()
+    deploy("05e-client-recovery-repeat", cfg, creds, zero=True)
+    command("systemctl", "stop", "minio.service")
+    restored = deploy("05f-stopped-service-recovery", cfg, creds)
+    assert len(restored["managed"]) == 1
+    assert restored["uploads"] == 0
+    assert restored["before"]["objects"] == restored["after"]["objects"]
+    assert restored["before"]["iam"] == restored["after"]["iam"]
+    deploy("05g-service-recovery-repeat", cfg, creds, zero=True)
     # A top-level directory mode repair must preserve every descendant.
     os.chmod(DATA, 0o700)
     changed = deploy("06-data-root-mode", cfg, creds)
@@ -431,6 +471,24 @@ def main() -> None:
     assert fault["before"] == fault["after"]
     assert not fault["managed"]
     assert not fault["uploads"]
+    blocked_root = deploy(
+        "08a-disabled-root-rotation-refusal", cfg, creds.model_copy(update={"root_password": value()}), failure=True
+    )
+    assert blocked_root["before"] == blocked_root["after"]
+    assert not blocked_root["managed"]
+    installed_mc.rename(held_mc)
+    partial = deploy("08b-client-recovery-disabled-refusal", cfg, creds, failure=True)
+    assert len(partial["managed"]) == 1
+    assert partial["uploads"] == 1
+    assert partial["before"]["objects"] == partial["after"]["objects"]
+    assert partial["before"]["iam"] == partial["after"]["iam"]
+    held_mc.unlink()
+    command("systemctl", "stop", "minio.service")
+    partial = deploy("08c-service-recovery-disabled-refusal", cfg, creds, failure=True)
+    assert len(partial["managed"]) == 1
+    assert partial["uploads"] == 0
+    assert partial["before"]["objects"] == partial["after"]["objects"]
+    assert partial["before"]["iam"] == partial["after"]["iam"]
     mc("admin", "user", "enable", "local", access)
     deploy("09-enabled-repeat", cfg, creds, zero=True)
     drift = policy(

@@ -7,7 +7,14 @@
   credentials, policies and attachments before writes; refuse disabled users,
   immutable policy drift and unknown client failures. Manage data-root metadata
   without recursive object chmod/chown. Native and inventory qualification remain
-  pending; emulated CLI/helper evidence proves mechanisms only.
+  pending; emulated CLI/helper evidence proves mechanisms only. Add current-root
+  host-local admission, managed pinned-client/inactive-unit recovery and desired
+  root credential rollout. Preserve honest partial prerequisite changes on a later
+  IAM refusal and retain zero-change healthy repeats; native proof remains pending.
+  Use the verified official GitHub mc asset with exactly the same size/SHA/version
+  instead of its unavailable legacy URL; matching installs do not download. The
+  server source remains unavailable. Prepare an isolated offline KVM fixture path
+  with explicit native provenance, resource limits and owned cleanup.
 
 - Add persistent hdparm policy, Sanoid timer/policy, Samba Time Machine and batched
   generic share APIs from ops-library cf3a0c74. Preserve existing credentials and

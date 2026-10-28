@@ -145,3 +145,100 @@ def test_data_probe_preserves_owned_tree_and_never_reads_object_bodies(
         data.inspect([str(tmp_path)], "fixture", "fixture")
     assert "owned-object" not in str(error.value)
     assert child.stat() == after
+
+
+def test_current_environment_is_literal_and_duplicate_or_ambiguous_fields_refuse() -> None:
+    body = (
+        'MINIO_ROOT_USER="old-root"\nMINIO_ROOT_PASSWORD="literal-$not-executed"\n'
+        'MINIO_VOLUMES="/data"\nMINIO_OPTS="--address 127.0.0.1:9001"\n'
+    )
+    assert HOST.environment_values(body)["MINIO_ROOT_PASSWORD"] == "literal-$not-executed"
+    for extra in (
+        'MINIO_ROOT_USER="duplicate"\n',
+        'export MINIO_ROOT_USER="other"\n',
+        'OTHER="value"\n',
+        "MINIO_ROOT_PASSWORD=$(id)\n",
+    ):
+        with pytest.raises(HOST.Refused):
+            HOST.environment_values(body + extra)
+    with pytest.raises(HOST.Refused):
+        HOST.environment_values(body.replace('MINIO_ROOT_USER="old-root"', 'MINIO_ROOT_USER=""'))
+
+
+@pytest.mark.parametrize("inactive", [False, True])
+@pytest.mark.parametrize("missing_client", [False, True])
+def test_known_recovery_prerequisites_do_not_return_current_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inactive: bool, missing_client: bool
+) -> None:
+    import hashlib
+    from types import SimpleNamespace
+
+    binary = tmp_path / "minio"
+    binary.write_bytes(b"owned-synthetic-minio")
+    binary.chmod(0o755)
+    client = tmp_path / "mc"
+    if not missing_client:
+        client.write_bytes(b"owned-synthetic-mc")
+        client.chmod(0o755)
+    original_lstat = Path.lstat
+
+    def owned_lstat(path: Path) -> Any:
+        info = original_lstat(path)
+        if path in (binary, client):
+            values = list(info)
+            values[4] = values[5] = 0
+            return type(info)(values)
+        return info
+
+    # This Mac unit fixture models root ownership; native proof uses real root.
+    monkeypatch.setattr(Path, "lstat", owned_lstat)
+    existing = (
+        'MINIO_ROOT_USER="old-root"\nMINIO_ROOT_PASSWORD="old-secret"\n'
+        'MINIO_VOLUMES="/data"\nMINIO_OPTS="--address 127.0.0.1:9001"\n'
+    )
+    desired = existing.replace("old-root", "new-root").replace("old-secret", "new-secret")
+    context = {
+        "env_file": "/etc/default/minio",
+        "service_unit": "/etc/systemd/system/minio.service",
+        "unit": "owned-unit",
+        "environment": desired,
+        "bin_path": str(binary),
+        "minio_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+        "mc_sha256": hashlib.sha256(b"owned-synthetic-mc").hexdigest(),
+    }
+    payload = {"mc": str(client), "recovery": context}
+    monkeypatch.setattr(
+        HOST, "protected_text", lambda path, mode: existing if path == context["env_file"] else "owned-unit"
+    )
+    output = (
+        "LoadState=loaded\nActiveState="
+        + ("inactive\nSubState=dead" if inactive else "active\nSubState=running")
+        + "\nFragmentPath=/etc/systemd/system/minio.service\nDropInPaths=\nNeedDaemonReload=no\n"
+    )
+    monkeypatch.setattr(
+        HOST.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=output, stderr="")
+    )
+    assert HOST.recovery_state(payload) == {"recover_client": missing_client, "recover_service": inactive}
+    assert HOST.current_credentials(payload) == ("old-root", "old-secret")
+    assert "old-secret" not in json.dumps(HOST.recovery_state(payload))
+    monkeypatch.setattr(
+        HOST.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout=output.replace("DropInPaths=", "DropInPaths=/foreign.conf"), stderr=""
+        ),
+    )
+    with pytest.raises(HOST.Refused, match="identity"):
+        HOST.recovery_state(payload)
+
+
+def test_protected_environment_rejects_symlink_and_foreign_metadata(tmp_path: Path) -> None:
+    target = tmp_path / "environment"
+    target.write_text('MINIO_ROOT_USER="synthetic"')
+    link = tmp_path / "link"
+    link.symlink_to(target)
+    with pytest.raises(HOST.Refused):
+        HOST.protected_text(str(link), 0o600)
+    target.chmod(0o644)
+    with pytest.raises(HOST.Refused):
+        HOST.protected_text(str(target), 0o600)

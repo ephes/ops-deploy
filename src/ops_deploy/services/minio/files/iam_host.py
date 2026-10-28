@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -16,6 +18,97 @@ from pathlib import Path
 
 class Refused(RuntimeError):
     """A constant, non-sensitive diagnostic safe to return to the controller."""
+
+
+def protected_text(path, mode):
+    """Read a declared root-owned regular file without following a symlink."""
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "r") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0:
+                raise Refused("existing MinIO configuration has foreign ownership or type")
+            if stat.S_IMODE(info.st_mode) != mode or info.st_nlink != 1 or info.st_size > 65536:
+                raise Refused("existing MinIO configuration has unsafe metadata")
+            return source.read()
+    except OSError:
+        raise Refused("existing MinIO configuration is unavailable") from None
+
+
+def environment_values(text):
+    """Parse our literal EnvironmentFile grammar; never execute shell content."""
+    values = {}
+    allowed = {"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "MINIO_VOLUMES", "MINIO_OPTS", "MINIO_KMS_SECRET_KEY"}
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        match = re.fullmatch(r'([A-Z_]+)="([^"\\\r\n\x00]*)"', line)
+        if not match or match[1] not in allowed or match[1] in values:
+            raise Refused("existing MinIO environment is ambiguous or unsupported")
+        values[match[1]] = match[2]
+    if not {"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "MINIO_VOLUMES", "MINIO_OPTS"} <= values.keys():
+        raise Refused("existing MinIO environment is incomplete")
+    if not values["MINIO_ROOT_USER"] or not values["MINIO_ROOT_PASSWORD"]:
+        raise Refused("existing MinIO root credentials are empty")
+    return values
+
+
+def current_credentials(payload):
+    values = environment_values(protected_text(payload["recovery"]["env_file"], 0o600))
+    return values["MINIO_ROOT_USER"], values["MINIO_ROOT_PASSWORD"]
+
+
+def recovery_state(payload):
+    """Recognize only pinned-client absence/drift and a known inactive unit."""
+    import hashlib
+
+    context = payload["recovery"]
+    current = environment_values(protected_text(context["env_file"], 0o600))
+    result = subprocess.run(
+        ["systemctl", "show", "minio.service", "-p", "LoadState", "-p", "ActiveState", "-p", "SubState",
+         "-p", "FragmentPath", "-p", "DropInPaths", "-p", "NeedDaemonReload"], capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode or result.stderr:
+        raise Refused("MinIO service state is unavailable")
+    pairs = [line.split("=", 1) for line in result.stdout.splitlines()]
+    if any(len(pair) != 2 for pair in pairs) or len({pair[0] for pair in pairs}) != len(pairs):
+        raise Refused("MinIO service state is malformed")
+    service = dict(pairs)
+    if set(service) != {"LoadState", "ActiveState", "SubState", "FragmentPath", "DropInPaths", "NeedDaemonReload"}:
+        raise Refused("MinIO service state is incomplete")
+    if service["LoadState"] != "loaded" or service["FragmentPath"] != context["service_unit"] or service["DropInPaths"]:
+        raise Refused("MinIO service identity is unknown")
+    state = service["ActiveState"], service["SubState"]
+    if state not in (("active", "running"), ("inactive", "dead"), ("failed", "failed")):
+        raise Refused("MinIO service is in an unknown or transitional state")
+    recover_service = state != ("active", "running")
+    if recover_service:
+        if service["NeedDaemonReload"] != "no":
+            raise Refused("inactive MinIO loaded unit differs from its on-disk configuration")
+        if protected_text(context["service_unit"], 0o644) != context["unit"]:
+            raise Refused("inactive MinIO unit is not the declared owned unit")
+        desired = environment_values(context["environment"])
+        root_fields = {"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"}
+        if {key: value for key, value in current.items() if key not in root_fields} != {
+            key: value for key, value in desired.items() if key not in root_fields
+        }:
+            raise Refused("inactive MinIO has unknown non-root configuration")
+        binary = Path(context["bin_path"])
+        info = binary.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+                or stat.S_IMODE(info.st_mode) != 0o755
+                or hashlib.sha256(binary.read_bytes()).hexdigest() != context["minio_sha256"]):
+            raise Refused("inactive MinIO executable is not pinned")
+    client = Path(payload["mc"])
+    if client.is_symlink():
+        raise Refused("MinIO client path is a symlink")
+    recover_client = not client.exists()
+    if not recover_client:
+        info = client.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise Refused("MinIO client path is not a regular executable")
+        recover_client = (info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o755
+                          or hashlib.sha256(client.read_bytes()).hexdigest() != context["mc_sha256"])
+    return {"recover_client": recover_client, "recover_service": recover_service}
 
 
 def normalized(policy):
@@ -351,14 +444,19 @@ def main():
     os.umask(0o077)
     try:
         action = sys.argv[1]
-        if action not in ("check", "apply"):
+        if action not in ("check", "apply", "inspect-current", "recovery"):
             raise Refused("unknown requested action")
         payload = json.load(sys.stdin)
+        if action == "recovery":
+            print(json.dumps(recovery_state(payload)))
+            return
+        access, root = (current_credentials(payload) if action == "inspect-current" else
+                        (payload["root_user"], payload["root_password"]))
         # root access is verified through scoped operations below; imported alias
         # config only lives in this private temporary directory.
         with tempfile.TemporaryDirectory(prefix="ops-minio-admin-") as directory:
             client = Client([payload["mc"]], directory)
-            client.import_alias(payload["alias"], alias_document(payload["endpoint"], payload["root_user"], payload["root_password"]))
+            client.import_alias(payload["alias"], alias_document(payload["endpoint"], access, root))
             pending = inspect(client, payload)
             if action == "apply" and pending:
                 apply(client, payload, pending)

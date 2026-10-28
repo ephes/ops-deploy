@@ -6,25 +6,27 @@ import base64
 import hashlib
 import json
 import shlex
+from collections.abc import Generator
 from importlib.resources import files as resources
 from io import StringIO
 from pathlib import Path, PurePosixPath
 
-from pyinfra import host
-from pyinfra.api import DeployError, deploy
+from pydantic import SecretStr
+from pyinfra import host, state
+from pyinfra.api import DeployError, StringCommand, deploy, operation
 from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.files import File, Sha256File
-from pyinfra.operations import apt, files, server
+from pyinfra.operations import apt, files, server, systemd
 
 from ops_deploy.base._common import require_linux, require_systemd
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers import BasicAuth, TraefikRoute, mark_read_only, traefik_route, wait_port
-from ops_deploy.helpers.probes import probe, stdin_arguments
+from ops_deploy.helpers.probes import StdinLines, probe, stdin_arguments
 from ops_deploy.helpers.systemd import service_rollout
 from ops_deploy.ops.secret_file import secret_file
 from ops_deploy.services.minio.config import (
+    MC_DOWNLOAD_URL,
     MC_SHA256,
-    MC_VERSION,
     MINIO_SHA256,
     MINIO_VERSION,
     MinioConfig,
@@ -36,7 +38,13 @@ RESOURCE = resources("ops_deploy.services.minio")
 
 
 def host_command(script: str, action: str | None = None) -> str:
-    if script not in ("iam_host", "data_roots") or action not in (None, "check", "apply"):
+    if script not in ("iam_host", "data_roots") or action not in (
+        None,
+        "check",
+        "apply",
+        "inspect-current",
+        "recovery",
+    ):
         raise ValueError("unknown MinIO host helper/action")
     source = base64.b64encode(RESOURCE.joinpath(f"files/{script}.py").read_bytes()).decode()
     loader = f"import base64;exec(compile(base64.b64decode('{source}'),'<minio-host>','exec'))"
@@ -88,6 +96,15 @@ def iam_payload(cfg: MinioConfig, credentials: MinioCredentials) -> str:
             "endpoint": f"http{'s' if cfg.tls_enable else ''}://{cfg.bind_host}:{cfg.api_port}",
             "root_user": credentials.root_user.get_secret_value(),
             "root_password": root,
+            "recovery": {
+                "env_file": cfg.env_file,
+                "service_unit": cfg.service_unit,
+                "bin_path": cfg.bin_path,
+                "minio_sha256": MINIO_SHA256,
+                "mc_sha256": MC_SHA256,
+                "unit": render("minio.service.j2", cfg, credentials),
+                "environment": render("minio.env.j2", cfg, credentials),
+            },
             "shared_config": cfg.mc_config_dir,
             "buckets": [bucket.model_dump(mode="json") for bucket in cfg.buckets],
             "policies": [policy.model_dump(mode="json", exclude={"content"}) for policy in cfg.policies],
@@ -97,8 +114,9 @@ def iam_payload(cfg: MinioConfig, credentials: MinioCredentials) -> str:
     )
 
 
-def iam_pending(payload: str) -> int:
-    output = probe(host_command("iam_host", "check"), stdin=payload, name="MinIO owned IAM inspection")
+def iam_pending(payload: str, *, current: bool = False) -> int:
+    action = "inspect-current" if current else "check"
+    output = probe(host_command("iam_host", action), stdin=payload, name="MinIO owned IAM inspection")
     if output is None:
         raise DeployError("MinIO IAM inspection failed; refusing writes after an unknown response")
     try:
@@ -110,6 +128,27 @@ def iam_pending(payload: str) -> int:
         return int(result["pending"])
     except (ValueError, KeyError, TypeError):
         raise DeployError("MinIO IAM inspection returned an invalid result; refusing writes") from None
+
+
+@operation()
+def converge_iam(payload: SecretStr, deferred: bool) -> Generator[StringCommand, None, None]:
+    """Inspect at execution after prerequisites; never call an empty apply a change."""
+    raw = payload.get_secret_value()
+    if (deferred and not state.is_executing) or iam_pending(raw, current=not state.is_executing):
+        yield StringCommand(host_command("iam_host", "apply"), _stdin=StdinLines(raw), _get_pty=False)
+
+
+def recovery(payload: str) -> tuple[bool, bool]:
+    output = probe(host_command("iam_host", "recovery"), stdin=payload, name="MinIO local recovery prerequisites")
+    try:
+        result = json.loads(output or "")
+        if set(result) != {"recover_client", "recover_service"} or any(
+            type(value) is not bool for value in result.values()
+        ):
+            raise ValueError
+        return result["recover_client"], result["recover_service"]
+    except (ValueError, TypeError):
+        raise DeployError("MinIO recovery identity is unknown; refusing writes") from None
 
 
 def binary(path: str, local: Path | None, checksum: str, url: str, title: str) -> OperationMeta:
@@ -167,18 +206,52 @@ def deploy_minio(cfg: MinioConfig, credentials: MinioCredentials) -> None:
     data_state = probe(host_command("data_roots"), stdin=ownership, name="MinIO descendant ownership")
     if data_state not in ("current", "empty"):
         raise DeployError("MinIO data ownership admission failed; no recursive repair is permitted")
-    # A genuinely fresh server has no unit yet. Existing installations must
-    # answer the complete admission before any deploy operation is queued.
+    # Existing installations inspect with protected current credentials. Known
+    # missing-client/inactive-unit prerequisites are explicit managed recovery;
+    # their later IAM refusal must retain the actual partial-change receipt.
     fresh = (
         host.get_fact(File, path=cfg.service_unit) is None
         and host.get_fact(File, path=cfg.env_file) is None
         and data_state == "empty"
     )
     payload = iam_payload(cfg, credentials)
-    pending = iam_pending(payload) if cfg.bootstrap_with_mc and not fresh else 0
+    recover_client = recover_service = False
+    if cfg.bootstrap_with_mc and not fresh:
+        recover_client, recover_service = recovery(payload)
+        if not (recover_client or recover_service):
+            iam_pending(payload, current=True)
 
     for port in (cfg.api_port, cfg.console_port):
         port_preflight(port)
+
+    if recover_client:
+        binary(
+            cfg.mc_bin_path,
+            cfg.local_mc_binary,
+            MC_SHA256,
+            MC_DOWNLOAD_URL,
+            "MinIO recovery client",
+        )
+    if recover_service:
+        systemd.service(
+            name="Recover known inactive MinIO using existing configuration", service="minio.service", running=True
+        )
+        for port in (cfg.api_port, cfg.console_port):
+            wait_port(
+                port,
+                host=cfg.bind_host,
+                retries=cfg.healthcheck_timeout,
+                delay=1,
+                name=f"Wait for recovered MinIO port {port}",
+            )
+    if recover_client or recover_service:
+        mark_read_only(
+            server.shell(
+                name="Admit owned IAM after managed recovery prerequisites",
+                commands=[host_command("iam_host", "inspect-current")],
+                **stdin_arguments(payload),
+            )
+        )
 
     server.group(name="Ensure MinIO group", group=cfg.group, system=True)
     server.user(
@@ -263,24 +336,24 @@ def deploy_minio(cfg: MinioConfig, credentials: MinioCredentials) -> None:
         )
 
     if cfg.bootstrap_with_mc:
-        binary(
-            cfg.mc_bin_path,
-            cfg.local_mc_binary,
-            MC_SHA256,
-            f"https://dl.min.io/client/mc/release/linux-amd64/archive/mc.{MC_VERSION}",
-            "MinIO client",
-        )
+        if not recover_client:
+            binary(
+                cfg.mc_bin_path,
+                cfg.local_mc_binary,
+                MC_SHA256,
+                MC_DOWNLOAD_URL,
+                "MinIO client",
+            )
         files.directory(
             name="Ensure MinIO policy directory", path=cfg.policy_dir, user="root", group="root", mode="0750"
         )
         for policy in cfg.policies:
             put(f"{cfg.policy_dir}/{policy.name}.json", policy.file_content, mode="0640")
-        if fresh or pending:
-            server.shell(
-                name="Converge declared MinIO IAM and bucket configuration",
-                commands=[host_command("iam_host", "apply")],
-                **stdin_arguments(payload),
-            )
+        converge_iam(
+            name="Converge declared MinIO IAM and bucket configuration",
+            payload=SecretStr(payload),
+            deferred=fresh or recover_client or recover_service,
+        )
         # Superseded files are removed only after the helper has proved the
         # replacement attached and obsolete server policy absent.
         for old in cfg.superseded:
