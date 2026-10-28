@@ -6,9 +6,11 @@ fresh hosted ARM VM; its exact process/session cleanup is fixture work only.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.metadata
 import importlib.resources
+import io
 import json
 import os
 import pwd
@@ -28,7 +30,7 @@ from ops_deploy.services.daybook_operations_runtime import (
     RuntimeStopWindow,
     stop_daybook_runtime,
 )
-from ops_deploy.services.daybook_operations_runtime.inspect import verify_daybook_runtime
+from ops_deploy.services.daybook_operations_runtime.inspect import SCRIPT, observation_payload, verify_daybook_runtime
 from ops_deploy.services.daybook_operations_runtime.render import credential_text, render_resource
 from ops_deploy.services.daybook_operations_runtime.status import SourceStatus
 from ops_deploy.testing import run_deploy_ssh
@@ -86,6 +88,76 @@ def wait(predicate: Any) -> None:
             return
         time.sleep(0.1)
     raise AssertionError("owned native readiness did not converge")
+
+
+def diagnostic_command() -> str:
+    # Fixed metadata only, using the EXACT observer and normal connector. Child
+    # stderr stays in memory and is classified; no argv/env/body is returned.
+    diagnostic = """import json,sys
+history=[]
+class DiagnosticProbes(NativeProbes):
+ def run(self,argv,**kwargs):
+  labels={'/usr/bin/git':'git','/bin/launchctl':'launchctl','/usr/bin/pgrep':'pgrep',self.data['python']:'interpreter',self.data['uv_bin']:'uv-check',self.data['host_tmux']:'tmux'}
+  probe=labels.get(argv[0],'other')
+  try:result=super().run(argv,**kwargs)
+  except Exception:
+   history.append({'probe':probe,'returncode':None,'stderr_category':'probe-raised'})
+   raise
+  category='nonempty' if result.stderr else 'empty'
+  for needle,label in [(b'getcwd','cwd'),(b'current working directory','cwd'),
+                       (b'permission denied','permission'),(b'operation not permitted','permission'),
+                       (b'dubious ownership','git-owner'),(b'no interpreter found','python-selection'),
+                       (b'no such file','missing')]:
+   if needle in result.stderr.lower():category=label;break
+  history.append({'probe':probe,'returncode':result.returncode,'stderr_category':category})
+  return result
+try:
+ raw=sys.stdin.buffer.read(MAX_INPUT+1)
+ if len(raw)>MAX_INPUT:raise ObservationError("runtime_observer_request_too_large")
+ data=json.loads(raw)
+ result={'state':observe(data,DiagnosticProbes(data))}
+except Exception as error:
+ result={'failure':str(error) if isinstance(error,ObservationError) else type(error).__name__}
+result['probes']=history
+print(json.dumps(result,sort_keys=True))
+"""
+    source = SCRIPT.decode()
+    # Separate module name prevents the production script's main from running.
+    launcher = (
+        "import base64;ns={'__name__':'owned_diagnostic'};exec(compile(base64.b64decode('"
+        + base64.b64encode(source.encode()).decode()
+        + "'),'<owned-observer>','exec'),ns);exec(compile(base64.b64decode('"
+        + base64.b64encode(diagnostic.encode()).decode()
+        + "'),'<owned-diagnostic>','exec'),ns)"
+    )
+    return shlex.join(["/usr/bin/python3", "-I", "-B", "-c", launcher])
+
+
+def capture_observation(
+    cfg: DaybookRuntimeConfig, token: dict[str, str], source: SourceTree, host_data: dict[str, Any]
+) -> dict[str, Any]:
+    from pyinfra import host
+    from pyinfra.facts.server import Command
+
+    captured: dict[str, Any] = {}
+
+    def capture() -> None:
+        try:
+            payload = observation_payload(cfg, token, source)
+            with io.StringIO(json.dumps(payload) + "\n") as stream:
+                output = host.get_fact(Command, command=diagnostic_command(), _stdin=stream, _get_pty=False)
+            captured.update(json.loads(output or "{}"))
+        except Exception as error:
+            captured.clear()
+            captured["failure"] = type(error).__name__
+
+    try:
+        result = run_deploy_ssh(capture, host_name="owned-daybook", host_data=host_data)
+    except Exception as error:
+        return {"failure": type(error).__name__}
+    if not result.succeeded:
+        return {"failure": type(result.error).__name__ if result.error is not None else "OwnedFactFailed"}
+    return captured
 
 
 def main() -> None:
@@ -373,6 +445,23 @@ def main() -> None:
                 host_name="owned-daybook",
                 host_data=host_data,
             )
+            if not result.succeeded:
+                # The normal verifier was first. Preserve its failure; diagnostic
+                # can never turn it into a passing first/repeat or pre-warm it.
+                owned.report["normal_verify_failed_before_diagnostic"] = True
+                owned.report["normal_verify_failure"] = {
+                    "error_type": type(result.error).__name__ if result.error is not None else "OperationFailed",
+                    "failed_ops": [op.name for op in result.ops if not op.succeeded],
+                }
+                diagnostic_before = snapshot(protected)
+                diagnostic_pid = job_pid(service)
+                owned.report["failed_observation_diagnostic"] = capture_observation(cfg, token, source, host_data)
+                owned.report["diagnostic_protected_metadata_equal"] = snapshot(protected) == diagnostic_before
+                owned.report["diagnostic_keeper_pid_equal"] = job_pid(service) == diagnostic_pid
+                owned.report["failed_verify_protected_metadata_equal"] = diagnostic_before == before
+                assert owned.report["diagnostic_protected_metadata_equal"]
+                assert owned.report["diagnostic_keeper_pid_equal"]
+                # Always fail on ORIGINAL result even if diagnostic is healthy.
             assert result.succeeded, str(result.error)
             assert result.mutating_changed_ops == []
             assert job_pid(service) == pid

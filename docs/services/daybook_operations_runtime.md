@@ -125,3 +125,10 @@ install or upgrade software on an inventory host. The
 [first attempt](https://github.com/ephes/ops-deploy/actions/runs/40636933117)
 failed at setup because tmux was missing, before any app/GUI/SSH case ran;
 its hosted artifacts have a seven-day retention period.
+
+The owned fixture records an initial observation diagnostic before normal pure
+verification. It uses the exact observer over the same SSH connector and retains
+only observer metadata, fixed failure categories and per-probe return codes with
+fixed stderr classifications. Child stderr, argv, environment and input bodies
+stay out of the receipt. This adds no retry, bypass or change to normal verifier
+success criteria; failed attempts remain failed evidence.
