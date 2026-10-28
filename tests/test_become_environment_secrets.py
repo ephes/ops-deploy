@@ -133,6 +133,7 @@ NON_LOADED_NAME_MATCHES = {
     "infra/traefik_tx/runner.py": {
         "services/unifi/files/health.py",
         "services/paperless/files/release.py",
+        "services/paperless/files/health.py",
     },
 }
 
@@ -445,7 +446,10 @@ def test_every_module_loader_names_its_host_script_or_is_listed() -> None:
     assert unnamed == set(LOADS_NO_HOST_SCRIPT)
 
 
-@pytest.mark.parametrize("unrelated", ["services/unifi/files/health.py", "services/paperless/files/release.py"])
+@pytest.mark.parametrize(
+    "unrelated",
+    ["services/unifi/files/health.py", "services/paperless/files/release.py", "services/paperless/files/health.py"],
+)
 def test_traefik_generated_probe_does_not_link_unrelated_host_script(unrelated: str) -> None:
     trees = _trees()
     runner = "infra/traefik_tx/runner.py"
