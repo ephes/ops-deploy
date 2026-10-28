@@ -130,6 +130,116 @@ class NativeProbes:
             session_ok = session.returncode == 0
         return command_ok and pid is not None and serving.returncode == 0 and session_ok, int(pid[1]) if pid else None
 
+    def root_python_tree(self):
+        # Original Inbox install: shared pinned root tree is a sibling of its
+        # protected voice-memo-inbox install, never the GUI user's uv tree.
+        return pathlib.Path(self.data["checkout"]).parent.parent / "python"
+
+    def root_python_env(self):
+        return {"HOME": "/var/root", "UV_NO_PROGRESS": "1",
+                "UV_PYTHON_INSTALL_DIR": str(self.root_python_tree()),
+                "UV_PYTHON_PREFERENCE": "only-managed", "UV_PYTHON_DOWNLOADS": "never"}
+
+    def protected_binary_hash(self, name, *, copied):
+        path = pathlib.Path(name)
+        if any(parent.is_symlink() for parent in path.parents):
+            return None
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except (FileNotFoundError, OSError):
+            return None
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022
+                    or info.st_size > 256 * 1024 * 1024
+                    or (copied and (info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o755))):
+                return None
+            digest = hashlib.sha256()
+            remaining = 256 * 1024 * 1024 + 1
+            while remaining:
+                body = os.read(fd, min(65536, remaining))
+                if not body:
+                    break
+                digest.update(body)
+                remaining -= len(body)
+            return digest.digest() if remaining else None
+        except OSError:
+            return None
+        finally:
+            os.close(fd)
+
+    def root_metadata_current(self):
+        """Original root-owned code/environment tree before any root uv query.
+
+        Metadata only. A root-owned sticky temporary ancestor outside the
+        protected tree can contain the disposable fixture's owned root; every
+        protected tree object remains root-owned and non-writable by others.
+        """
+        checkout = pathlib.Path(self.data["checkout"])
+        roots = (checkout, self.root_python_tree())
+        environment = pathlib.Path(self.data["python"]).parent.parent
+        if environment != checkout and checkout not in environment.parents:
+            roots = (*roots, environment)
+        boundary = checkout.parent.parent
+        def unavailable(error):
+            raise error
+        for root in roots:
+            for path in (root, *root.parents):
+                info = path.lstat()
+                if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
+                    return False
+                protected = (path == boundary or boundary in path.parents
+                             or any(path == owned or owned in path.parents for owned in roots))
+                if info.st_mode & 0o022 and (protected or not info.st_mode & stat.S_ISVTX):
+                    return False
+            for parent, dirs, filenames in os.walk(root, followlinks=False, onerror=unavailable):
+                for name in [*dirs, *filenames]:
+                    path = pathlib.Path(parent) / name
+                    info = path.lstat()
+                    if info.st_uid != 0:
+                        return False
+                    if stat.S_ISLNK(info.st_mode):
+                        try:
+                            target = path.resolve(strict=True)
+                        except (OSError, RuntimeError):
+                            return False
+                        if not any(target == owned or owned in target.parents for owned in roots):
+                            return False
+                    elif (not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))
+                          or info.st_mode & 0o022):
+                        return False
+        config = (pathlib.Path(self.data["python"]).parent.parent / "pyvenv.cfg").lstat()
+        return stat.S_ISREG(config.st_mode) and config.st_nlink == 1
+
+    def root_interpreter_home(self):
+        try:
+            if not self.root_metadata_current():
+                return None
+            return self._root_interpreter_home()
+        except (OSError, ObservationError):
+            return None
+
+    def _root_interpreter_home(self):
+        data = self.data
+        found = self.run([data["uv_bin"], "python", "find", "--no-project", data["python_version"]],
+                         extra=self.root_python_env())
+        if found.returncode:
+            return None
+        source = found.stdout.decode("utf-8", "replace").strip()
+        root = str(self.root_python_tree())
+        version = data["python_version"]
+        if not re.fullmatch(re.escape(root + "/cpython-" + version) + r"-[^/]+/bin/python3\.14", source):
+            return None
+        source_hash = self.protected_binary_hash(source, copied=False)
+        copied_hash = self.protected_binary_hash(data["python"], copied=True)
+        if source_hash is None or copied_hash is None or not hmac.compare_digest(source_hash, copied_hash):
+            return None
+        config = safe_file(pathlib.Path(data["python"]).parent.parent / "pyvenv.cfg")
+        home = str(pathlib.Path(source).parent)
+        if config is None or re.findall(rb"(?m)^home = (.*)$", config[1]) != [home.encode()]:
+            return None
+        return str(pathlib.Path(home).parent)
+
     def runtime_current(self):
         data = self.data
         if not pathlib.Path(data["python"]).is_file() or not pathlib.Path(data["uv_bin"]).is_file():
@@ -137,10 +247,18 @@ class NativeProbes:
         environment = pathlib.Path(data["python"]).parent.parent
         if not (environment / "pyvenv.cfg").is_file():
             return False
+        if data.get("owner", "user") == "root":
+            expected = self.root_interpreter_home()
+            if expected is None:
+                return False
+            predicate = "sys.base_prefix==sys.argv[2]"
+        else:
+            expected = ""
+            predicate = "'/uv/python/cpython-'+v+'-' in sys.base_prefix"
         interpreter = self.run([data["python"], "-I", "-B", "-S", "-c",
             "import sys;v='%d.%d.%d'%sys.version_info[:3];"
-            "raise SystemExit(0 if v==sys.argv[1] and '/uv/python/cpython-'+v+'-' in sys.base_prefix else 1)",
-            data["python_version"]], user=True)
+            "raise SystemExit(0 if v==sys.argv[1] and " + predicate + " else 1)",
+            data["python_version"], *([expected] if data.get("owner", "user") == "root" else [])], user=True)
         if interpreter.returncode:
             return False
         return self.locked_environment_current()
@@ -152,9 +270,13 @@ class NativeProbes:
             return False
         # --check never synchronizes. Existing lock, no network/download/build;
         # native temporary cache I/O is distinct from service-managed changes.
+        # Root-owned Inbox retains its ORIGINAL root uv selector/environment;
+        # legacy user checkouts retain their existing GUI-user uv tree.
+        root_owned = data.get("owner", "user") == "root"
         synced = self.run([data["uv_bin"], "--directory", data["checkout"], "sync", "--check", "--frozen",
             "--no-dev", "--offline", "--no-python-downloads", "--no-build", "--no-cache",
-            "--python", data["python_version"]], user=True)
+            "--python", data["python_version"]], user=not root_owned,
+            extra=self.root_python_env() if root_owned else None)
         return synced.returncode == 0
 
 

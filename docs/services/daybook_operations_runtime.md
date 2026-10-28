@@ -191,3 +191,32 @@ any mutation. Legacy pre-schema-three delivery slots are read only during manage
 replacement to prove their original idle phase, never by a dry-run/status fact;
 ordinary current-schema verification counts directory entries without opening
 record bodies.
+
+
+The pure runtime observer retains the original interpreter ownership split.
+User-owned checkouts use their existing GUI user's uv-managed tree. The
+protected Inbox's root-owned checkout uses the original sibling
+`/Library/Application Support/Daybook/python` tree, root `HOME=/var/root` and
+`UV_PYTHON_INSTALL_DIR` for uv find and offline lock checking. The tree derives
+from the original Inbox install root; there is no new selector flag. Before a
+root copy is executed as the GUI user for the isolated stdlib version probe,
+its root ownership, regular single-link, 0755 mode, exact pinned source bytes and
+`pyvenv.cfg` home must match the root-managed source interpreter. No digest is
+logged. A failed check remains noncurrent; observation never repairs it.
+
+The separate owned root Python fixture exercises that original root layout
+with disposable synthetic source and Python3.14.7. Installation, lock/sync and
+binary materialization are explicit managed fixture setup. No app is imported,
+no launchd job is started and no inventory source, profile, TCC authorization or
+interpreter is changed by that proof. User-owned Sessions and resource proofs
+remain separate; root qualification cannot be inferred from their user uv paths.
+
+The root pre-execution check also verifies root ownership and non-writable-by-
+others metadata for the protected code/environment and pinned Python tree,
+including directory ancestry, package/startup files and the regular single-link
+`pyvenv.cfg`. It reads no package/config bodies in that metadata walk. A
+root-owned sticky temporary ancestor outside the protected roots permits the
+disposable fixture's isolated root; the protected objects themselves remain
+strict. Root uv is never invoked against a tree that failed this check. Binary
+hashes compare only the declared package executables in memory. Unsafe files or
+local metadata/read failures remain noncurrent, with no repair or execution.

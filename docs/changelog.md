@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Observe the protected Inbox Python with its original root-managed interpreter
+  tree and uv environment; validate the root regular-copy boundary before GUI
+  execution. Preserve existing user-owned uv observation semantics.
+
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access
   and fake auth/control guards. Keep private identity semantics and inventory
