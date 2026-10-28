@@ -150,3 +150,10 @@ no sudoers, authentication, SSH or timeout policy. Managed executor status keeps
 its separate original contract; it is not this pure metadata path. The owned
 fixture requests only managed Python and records its version and exact owned
 managed-prefix metadata before testing the runtime.
+
+
+Fixture ownership is established before editable synchronization. Later setup
+assigns only newly created config/store resources; recursively chowning the
+synchronized code and environment changes their metadata and causes a real uv
+outdated-environment result. The failed native attempts are retained; the
+production locked-environment guard is unchanged.

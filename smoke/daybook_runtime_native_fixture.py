@@ -347,7 +347,28 @@ def main() -> None:
         (root / "credential.json").chmod(0o600)
         (root / "native-mode").write_text("idle")
         (root / "native-status-count").write_text("")
-        command("/usr/sbin/chown", "-R", "runner:staff", str(root))
+        # A recursive chown here would alter the synchronized editable source's
+        # ctime and make uv correctly request a reinstall. Only these newly
+        # created fixture resources need ownership; code/venv/cache stay intact.
+        command(
+            "/usr/sbin/chown",
+            "runner:staff",
+            *map(
+                str,
+                [
+                    tmpdir,
+                    journal,
+                    journal / "deliveries",
+                    journal / "halts",
+                    root / "operations.json",
+                    root / "credential.json",
+                    root / "agent.plist",
+                    root / "staged.plist",
+                    root / "native-mode",
+                    root / "native-status-count",
+                ],
+            ),
+        )
         owned.spawn(
             [
                 "/usr/bin/sudo",
