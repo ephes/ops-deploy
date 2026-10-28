@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on MinIO offsite replication failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart={{ minio_offsite_replication_alert_script_path }} "%i"

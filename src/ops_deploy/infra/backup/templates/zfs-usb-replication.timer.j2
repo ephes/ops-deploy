@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ZFS USB replication (ops-library)
+
+[Timer]
+OnCalendar={{ zfs_usb_replication_on_calendar }}
+RandomizedDelaySec={{ zfs_usb_replication_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

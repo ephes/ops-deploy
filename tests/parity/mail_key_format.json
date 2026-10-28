@@ -1,0 +1,8 @@
+{
+  "provenance": "Actual original Ansible regex_replace on NONSECRET synthetic text; no SSH private material",
+  "results": {
+    "public-synthetic-source": "public-synthetic-source\n",
+    "public-synthetic-source\n": "public-synthetic-source\n\n",
+    "public-synthetic-source\n\n": "public-synthetic-source\n\n\n"
+  }
+}

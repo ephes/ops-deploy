@@ -1,0 +1,104 @@
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+
+source_dataset="${1:-}"
+target_dataset="${2:-}"
+recursive="${3:-false}"
+prune_target_only="${4:-false}"
+log_tag="zfs-syncoid-prune"
+
+if [[ -z "${source_dataset}" || -z "${target_dataset}" ]]; then
+  logger -t "${log_tag}" "Usage: ${0} <source_dataset> <target_dataset>"
+  exit 1
+fi
+
+if ! zfs list -H -o name "${target_dataset}" >/dev/null 2>&1; then
+  logger -t "${log_tag}" "Target dataset ${target_dataset} not found; skipping."
+  exit 0
+fi
+
+_is_true() {
+  case "${1}" in
+    1|true|TRUE|True|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Process a single source/target dataset pair:
+#   1. Destroy GUID-conflicting snapshots (same name, different GUID)
+#   2. If prune_target_only is true, destroy target-only snapshots that are
+#      NEWER than the most recent common snapshot.  Older target-only snapshots
+#      are preserved — they may be needed by other replication chains (e.g. USB
+#      offsite sync) as common-snapshot anchors.
+_process_dataset() {
+  local src_ds="${1}" tgt_ds="${2}"
+
+  mapfile -t tgt_snaps < <(zfs list -t snapshot -H -o name -s creation "${tgt_ds}" 2>/dev/null || true)
+  if [[ ${#tgt_snaps[@]} -eq 0 ]]; then
+    return
+  fi
+
+  # --- pass 1: find last common snapshot index & destroy GUID conflicts ------
+  local last_common_idx=-1
+  local -a guid_conflicts=()
+  for i in "${!tgt_snaps[@]}"; do
+    local snap_name="${tgt_snaps[$i]#*@}"
+    local src_snap="${src_ds}@${snap_name}"
+
+    if zfs list -t snapshot -H -o name "${src_snap}" >/dev/null 2>&1; then
+      local src_guid tgt_guid
+      src_guid="$(zfs get -H -o value guid "${src_snap}" 2>/dev/null || true)"
+      tgt_guid="$(zfs get -H -o value guid "${tgt_snaps[$i]}" 2>/dev/null || true)"
+      if [[ -n "${src_guid}" && -n "${tgt_guid}" && "${src_guid}" != "${tgt_guid}" ]]; then
+        guid_conflicts+=("${tgt_snaps[$i]}")
+      else
+        last_common_idx="${i}"
+      fi
+    fi
+  done
+
+  # Destroy GUID conflicts
+  for snap in "${guid_conflicts[@]+"${guid_conflicts[@]}"}"; do
+    logger -t "${log_tag}" "Destroying conflicting snapshot ${snap}"
+    if ! zfs destroy "${snap}" >/dev/null 2>&1; then
+      logger -t "${log_tag}" "Failed to destroy ${snap}"
+    fi
+  done
+
+  # --- pass 2: prune target-only snapshots newer than last common snapshot ---
+  if _is_true "${prune_target_only}" && [[ ${last_common_idx} -ge 0 ]]; then
+    for i in "${!tgt_snaps[@]}"; do
+      # Skip snapshots at or before the last common snapshot
+      if [[ "${i}" -le ${last_common_idx} ]]; then
+        continue
+      fi
+
+      local snap_name="${tgt_snaps[$i]#*@}"
+      local src_snap="${src_ds}@${snap_name}"
+
+      # Only prune if this snapshot does not exist on the source
+      if ! zfs list -t snapshot -H -o name "${src_snap}" >/dev/null 2>&1; then
+        logger -t "${log_tag}" "Destroying target-only snapshot ${tgt_snaps[$i]} (newer than last common)"
+        if ! zfs destroy "${tgt_snaps[$i]}" >/dev/null 2>&1; then
+          logger -t "${log_tag}" "Failed to destroy ${tgt_snaps[$i]}"
+        fi
+      fi
+    done
+  elif _is_true "${prune_target_only}" && [[ ${last_common_idx} -lt 0 ]]; then
+    logger -t "${log_tag}" "No common snapshot found for ${tgt_ds}; skipping target-only pruning"
+  fi
+}
+
+# Enumerate datasets to process
+if _is_true "${recursive}"; then
+  mapfile -t target_datasets < <(zfs list -r -H -o name "${target_dataset}" 2>/dev/null || echo "${target_dataset}")
+else
+  target_datasets=("${target_dataset}")
+fi
+
+for tgt_ds in "${target_datasets[@]}"; do
+  suffix="${tgt_ds#${target_dataset}}"
+  src_ds="${source_dataset}${suffix}"
+  _process_dataset "${src_ds}" "${tgt_ds}"
+done
+{% endraw %}

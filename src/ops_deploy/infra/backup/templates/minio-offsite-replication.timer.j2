@@ -1,0 +1,10 @@
+[Unit]
+Description=Run MinIO offsite archive replication (ops-library)
+
+[Timer]
+OnCalendar={{ minio_offsite_replication_on_calendar }}
+RandomizedDelaySec={{ minio_offsite_replication_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
