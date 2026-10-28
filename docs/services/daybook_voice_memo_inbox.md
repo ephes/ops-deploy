@@ -115,3 +115,10 @@ an acknowledgement or refusal. The ordinary current keeper verification path
 does not run this report. Genuine SDK/transport failures retain their failed
 operation result. Owned synthetic ledgers must qualify this behavior
 before any actual update requests it.
+
+The optional report's owned mechanism was exercised in native run40781491228
+at immutable8065a29: the actual GUI/SSH/SDK response was exactly reported/count3
+from a synthetic ledger whose selected metadata remained unchanged. Raw app
+responses stayed in host memory. The run's initial failed receipt label and its
+metadata-only correction are documented with the runtime qualification above.
+This is not a real importer-ledger invocation or inventory/default qualification.

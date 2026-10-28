@@ -272,11 +272,13 @@ def main() -> None:
         phase(owned, "closed-out-rollback-refusal", closed)
         assert not closed.succeeded
         assert snapshot(protected) == before
+        assert ledger_before == snapshot([ledger])
         owned.report.update(
+            status="passed",
             synthetic_app_only=True,
             real_api_calls=0,
             real_ledger_reads=0,
-            synthetic_ledger_metadata_exact=ledger_before == snapshot([ledger]),
+            synthetic_ledger_metadata_exact=True,
             original_command_bytes_exact=True,
             expected_faults=3,
         )
