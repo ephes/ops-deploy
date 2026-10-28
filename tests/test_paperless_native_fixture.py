@@ -158,3 +158,39 @@ def test_ansible_early_failure_never_leaves_secret_playbook(
         harness.ansible("owned-failed-ansible")
     assert not (tmp_path / "owned-ansible.yml").exists()
     assert not (tmp_path / "owned-failed-ansible.json").exists()
+
+
+@pytest.mark.parametrize("owned_image_present", [True, False])
+def test_runner_image_receipt_does_not_require_cached_base_tag(tmp_path: Path, owned_image_present: bool) -> None:
+    """Execute the real receipt command with a Docker inventory lacking a base tag."""
+    source = (Path(__file__).parent / "integration/paperless/run-owned.sh").read_text()
+    commands = [line for line in source.splitlines() if line.startswith("docker image inspect ")]
+    assert len(commands) == 1
+    docker = tmp_path / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$@" > "$CALLS"\n'
+        'test "$OWNED_PRESENT" = true || exit 1\n'
+        'test "$#" = 3 && test "$1" = image && test "$2" = inspect && test "$3" = "$IMAGE" || exit 1\n'
+        'printf \'[{"Id":"sha256:owned-image"}]\\n\'\n'
+    )
+    docker.chmod(0o700)
+    result = subprocess.run(
+        ["bash", "-euc", commands[0]],
+        env={
+            "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+            "IMAGE": "ops-owned-paperless:synthetic",
+            "EVIDENCE": str(tmp_path),
+            "CALLS": str(tmp_path / "calls"),
+            "OWNED_PRESENT": str(owned_image_present).lower(),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert (result.returncode == 0) is owned_image_present
+    if owned_image_present:
+        assert json.loads((tmp_path / "images.json").read_text()) == [{"Id": "sha256:owned-image"}]
+    else:
+        assert not (tmp_path / "images.json").read_text()

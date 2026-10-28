@@ -77,3 +77,12 @@ separately. Collection accepts only512 flat regular files, at most40MiB each and
 remains separate from run and cleanup exits. Failure never starts an automatic retry. No production deployment,
 document inspection, lifecycle action or version upgrade is authorized by this
 fixture.
+
+Initial run40731203287 built both owned Ubuntu images, then stopped before
+container creation because the runner also tried to inspect a local
+`ubuntu:24.04` tag. BuildKit had resolved the base by digest without creating that
+tag. Both legs retained the full build logs and nine partial runner artifacts:
+run exit1, collection exit1 (no container), cleanup exit0 (owned image absent).
+No guest or application phase ran. The runner now inspects only its actual owned
+image; the resolved upstream base digest is evidence in the retained full
+BuildKit log, not inferred from a possibly absent or unrelated local base tag.

@@ -51,7 +51,9 @@ df -Pk "$SOURCE" "$DOCKER_ROOT" > "$EVIDENCE/initial-capacity.txt"
 awk 'NR > 1 && $4 < 12582912 {failed=1} END {exit failed}' "$EVIDENCE/initial-capacity.txt"
 timeout 15m docker build --label "ops.owned=$OWNED_ID" -t "$IMAGE" \
     -f "$SOURCE/tests/integration/paperless/Dockerfile" "$SOURCE/tests/integration/paperless"
-docker image inspect "$IMAGE" ubuntu:24.04 > "$EVIDENCE/images.json"
+# BuildKit may cache the base by digest without creating a local Ubuntu tag.
+# The full build log records its resolved digest; inspect only our owned image.
+docker image inspect "$IMAGE" > "$EVIDENCE/images.json"
 docker run -d --name "$NAME" --label "ops.owned=$OWNED_ID" \
     --privileged --cgroupns=private --cpus=2 --memory=6g --memory-swap=6g --pids-limit=2048 \
     --log-driver=local --log-opt=max-size=20m --log-opt=max-file=1 --log-opt=compress=false \
