@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add the original fixed-path software-estate removal as a typed lifecycle
+  operation, preserving directory/file/link removal and an absent-path no-op.
+  It does not restore the retired pilot or change deploy-default counts.
+
 - Keep new Tailscale namespace exports available without eagerly importing their
   Fractal endpoint model. Existing Fractal components can again initialize first
   in a fresh interpreter; direct APIs, model fields and deployment behavior are

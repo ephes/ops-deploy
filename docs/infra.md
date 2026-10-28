@@ -540,3 +540,21 @@ the external **ops-control** consumer, not this package’s justfile.
 The root `ops_deploy.infra` namespace resolves its Tailscale exports when requested,
 so an existing Fractal monitoring component can initialize first without a circular
 model import. Direct Tailscale subpackage APIs and typed root imports are unchanged.
+
+## Retired software-estate tools
+
+`ops_deploy.infra.software_estate_remove` provides
+`SoftwareEstateRemoveConfig` and `remove_software_estate`. It preserves the
+original two-task removal role: the installation path must be exactly
+`/usr/local/lib/software-estate`, then that leaf is absent. A directory and its
+contents, a regular file, or a symbolic link are removed without a backup;
+removing a link does not remove its target. An already absent path is unchanged.
+No service, account, package, inventory data or unrelated path is managed.
+
+The private removal command retains its existing confirmation and macmini scope.
+This is a lifecycle-only component, not a new deployable service or restored
+software-estate pilot. Tests exercise the standard operation with real local
+facts and execution in a temporary owned directory, including strict unchanged
+peer metadata and zero-change repeats; the fixed real installation path is
+never touched by those tests. Linux CI execution and inventory-plan evidence
+must be reported separately from local source checks.
