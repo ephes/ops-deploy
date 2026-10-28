@@ -5,6 +5,8 @@
 - Begin the Home Assistant configuration ownership port with the original
   overwrite/include/secret guards and exact generated-block cleanup ordering.
   Preserve physical runtime path derivations and original HA/Matter units.
+  Carry over separate Python/Matter replacement and install decisions, including
+  legacy shared-environment stop ordering and no implicit unpinned upgrade.
   This is a tested source foundation; no deployment API or inventory switch.
 
 - Add the original fixed-path software-estate removal as a typed lifecycle

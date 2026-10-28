@@ -42,3 +42,21 @@ This schema does not yet install dependencies or perform service rollout. UV
 include precedence, package/security/environment recovery, application flows and
 all lifecycle paths remain implementation work. No physical no-op or application
 acceptance follows from template or input tests.
+
+## Python replacement decisions in preparation
+
+The prepared `python_state` module evaluates the original Home Assistant and
+Matter replacement/install decisions without executing probes or changing a host.
+Home Assistant replacement includes force, llama.cpp rebuild, missing or mismatched
+Python, broken pip and legacy Matter contamination. Matter uses its separate
+environment, pip and chip dependency checks. Unpinned application specifications
+retain the original behavior: an existing binary does not implicitly upgrade.
+
+Replacement preserves the original ordering: stop an existing Matter unit before
+an existing Home Assistant unit when replacing the old Home Assistant environment,
+even when Matter management is now disabled. Missing environments do not invent
+existing-unit stop actions. A malformed interpreter response remains an error.
+Tests evaluate the bound original task expressions over all combinations of these
+predicates. This is source parity, not an executed virtualenv or recovery proof;
+host probe wiring, UV installation, package security constraints, service rollout
+and native recovery remain unfinished.

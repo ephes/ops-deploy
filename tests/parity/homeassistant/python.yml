@@ -1,0 +1,244 @@
+---
+- name: "Check for requested Python version"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_uv_path }} python find {{ homeassistant_python_version }}"
+  register: _ha_uv_python_find
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "Install requested Python version via uv"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_uv_path }} python install {{ homeassistant_python_version }}"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  when: _ha_uv_python_find.rc != 0
+  # A new patch moves uv's cpython-<minor> link, so the existing virtualenvs
+  # already report it and are not rebuilt. Restart so the running processes
+  # leave the old interpreter.
+  notify: "{{ ['restart homeassistant'] + (['restart matter server'] if homeassistant_manage_matter_server | bool else []) }}"
+
+- name: "Determine python executable path"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_uv_path }} python find {{ homeassistant_python_version }}"
+  register: _ha_python_exec_path
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+
+- name: "Set python executable fact"
+  ansible.builtin.set_fact:
+    _ha_python_executable: "{{ _ha_python_exec_path.stdout | trim }}"
+
+- name: "Check existing virtualenv Python binary"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_virtualenv_path }}/bin/python"
+  register: _ha_venv_python_stat
+
+- name: "Detect current virtualenv Python version"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_virtualenv_path }}/bin/python --version"
+  register: _ha_current_python_version
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: _ha_venv_python_stat.stat.exists
+
+- name: "Check current virtualenv pip availability"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_virtualenv_path }}/bin/python -m pip --version"
+  register: _ha_current_pip_check
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: _ha_venv_python_stat.stat.exists
+
+- name: "Check for legacy Matter server package in Home Assistant virtualenv"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_virtualenv_path }}/bin/python -m pip show python-matter-server"
+  register: _ha_legacy_matter_server_package_check
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: _ha_venv_python_stat.stat.exists
+
+- name: "Set Python version mismatch fact"
+  ansible.builtin.set_fact:
+    _ha_python_mismatch: "{{ (_ha_current_python_version.stdout | default('')).split()[1] != homeassistant_python_version }}"
+  when:
+    - _ha_venv_python_stat.stat.exists
+    - _ha_current_python_version.stdout is defined
+
+- name: "Set virtualenv replacement fact"
+  ansible.builtin.set_fact:
+    _ha_replace_virtualenv: >-
+      {{
+        homeassistant_force_reinstall | bool
+        or (_ha_llama_cpp_rebuild | default(false) | bool)
+        or not _ha_venv_python_stat.stat.exists
+        or (_ha_python_mismatch | default(false))
+        or ((_ha_current_pip_check.rc | default(0)) != 0)
+        or ((_ha_legacy_matter_server_package_check.rc | default(1)) == 0)
+      }}
+
+- name: "Check existing Home Assistant systemd unit"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_systemd_unit_path }}"
+  register: _ha_systemd_unit_stat
+  when:
+    - _ha_replace_virtualenv | bool
+    - _ha_venv_python_stat.stat.exists
+
+- name: "Check existing Matter server systemd unit"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_matter_server_systemd_unit_path }}"
+  register: _ha_matter_systemd_unit_stat
+  when:
+    - _ha_replace_virtualenv | bool
+    - _ha_venv_python_stat.stat.exists
+
+- name: "Stop Matter server before replacing Home Assistant virtualenv"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_matter_server_service_name }}"
+    state: stopped
+  when:
+    - _ha_replace_virtualenv | bool
+    - _ha_venv_python_stat.stat.exists
+    - _ha_matter_systemd_unit_stat.stat.exists is defined
+    - _ha_matter_systemd_unit_stat.stat.exists
+
+- name: "Stop Home Assistant before replacing virtualenv"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_service_name }}"
+    state: stopped
+  when:
+    - _ha_replace_virtualenv | bool
+    - _ha_venv_python_stat.stat.exists
+    - _ha_systemd_unit_stat.stat.exists is defined
+    - _ha_systemd_unit_stat.stat.exists
+
+- name: "Remove existing virtualenv when replacement is required"
+  ansible.builtin.file:
+    path: "{{ homeassistant_virtualenv_path }}"
+    state: absent
+  when: _ha_replace_virtualenv | bool
+
+- name: "Create uv virtualenv"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_uv_path }} venv --seed --python {{ _ha_python_executable }}"
+    chdir: "{{ homeassistant_site_path }}"
+    creates: "{{ homeassistant_virtualenv_path }}"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+
+- name: "Ensure convenience symlink exists"
+  ansible.builtin.file:
+    src: "{{ homeassistant_virtualenv_path }}"
+    dest: "{{ homeassistant_virtualenv_link }}"
+    state: link
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+
+- name: "Record virtualenv Python version"
+  ansible.builtin.copy:
+    dest: "{{ homeassistant_virtualenv_version_file }}"
+    content: "{{ homeassistant_python_version }}\n"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+
+- name: "Ensure Home Assistant virtualenv ownership"
+  ansible.builtin.file:
+    path: "{{ homeassistant_virtualenv_path }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    recurse: true
+  notify: restart homeassistant
+
+- name: "Check if Home Assistant binary exists"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_virtualenv_path }}/bin/hass"
+  register: _ha_hass_binary
+
+- name: "Read installed Home Assistant version"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_virtualenv_path }}/bin/hass --version"
+  register: _ha_current_version
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: _ha_hass_binary.stat.exists
+
+- name: "Set installed version fact"
+  ansible.builtin.set_fact:
+    _ha_installed_version: "{{ (_ha_current_version.stdout | default('')).split()[0] }}"
+  when:
+    - _ha_current_version is defined
+    - (_ha_current_version.stdout | default('')) | length > 0
+
+- name: "Determine desired Home Assistant version"
+  ansible.builtin.set_fact:
+    _ha_desired_version: "{{ (homeassistant_package_spec.split('==')[1]).strip() }}"
+  when: "'==' in homeassistant_package_spec"
+
+- name: "Ensure desired version fact exists"
+  ansible.builtin.set_fact:
+    _ha_desired_version: "{{ _ha_desired_version | default('') }}"
+
+- name: "Detect Home Assistant version drift"
+  ansible.builtin.set_fact:
+    _ha_version_mismatch: >-
+      {{ (_ha_desired_version | length > 0) and (_ha_installed_version | default('')) != _ha_desired_version }}
+
+- name: "Install Home Assistant via uv pip"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_virtualenv_path }} {{ homeassistant_package_spec }} {{ homeassistant_python_security_constraint_args }}"
+    chdir: "{{ homeassistant_site_path }}"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  when: homeassistant_force_reinstall | bool
+        or (_ha_llama_cpp_rebuild | default(false) | bool)
+        or not _ha_hass_binary.stat.exists
+        or (_ha_version_mismatch | default(false))
+  register: _ha_install
+  changed_when: true
+  notify: restart homeassistant
+
+- name: "Install Home Assistant extra Python packages via uv pip"
+  ansible.builtin.command:
+    argv: "{{ [homeassistant_uv_path, 'pip', 'install', '--python', homeassistant_virtualenv_path] + homeassistant_python_security_constraint_argv + homeassistant_extra_package_specs }}"
+    chdir: "{{ homeassistant_site_path }}"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  register: _ha_extra_package_install
+  changed_when: >-
+    (_ha_extra_package_install.stdout ~ _ha_extra_package_install.stderr)
+    is search('Installed|Updated|Uninstalled|Prepared|Built')
+  when: homeassistant_extra_package_specs | length > 0
+  notify: restart homeassistant
+
+- name: "Capture installed Home Assistant version"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_virtualenv_path }}/bin/hass --version"
+  register: _ha_version
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "Set installed Home Assistant version fact"
+  ansible.builtin.set_fact:
+    homeassistant_installed_version: "{{ _ha_version.stdout | default('unknown') }}"
