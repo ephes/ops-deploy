@@ -1,7 +1,7 @@
 # Daybook operations runtime
 
 This implementation slice defines the protected schema-five profile, original
-runtime resource rendering and monitor-only verification boundary. Host install,
+runtime resource rendering and distinct metadata/managed health boundaries. Host install,
 stop/update transitions and normal routing are being qualified separately; this
 slice does not switch an inventory engine or authorize a live source update.
 
@@ -14,17 +14,17 @@ are byte-for-byte copies of ops-library cf3a0c74.
 
 The normal default decision uses the current Main revision resolved once for the
 whole run. An enabled installation with exact declared source/lock/runtime and
-resource equality selects pure verification. A change selects the original
+resource equality selects verification on unchanged resources. A change selects the original
 guarded stop → importer install → replace → cutover/start → verify update flow,
 once all dependent APIs are qualified. Fresh or disabled installations stay
 disabled. The installed old commit must never replace desired Main to manufacture
-a no-op. Health is checked by pure verification, separately from source/resource
-drift: a current halted or stopped keeper fails verification for operator attention
+a no-op. Original CLI health is managed work on both empty and nonempty stores,
+separate from source/resource drift: a current halted or stopped keeper fails verification
 without selecting a mutating update. An existing disabled profile does not require
 a running GUI job or store during observation; normal disabled installation
 converges those prerequisites without activation. Revision text alone is not proof of source/resource equality.
 
-The new pure verification contract uses `GET /v1/status` with a separate existing
+The limited pure metadata/monitor contract uses `GET /v1/status` with a separate existing
 **monitor-purpose** credential through the existing redacted `SecretValues`
 container, under its `monitor_token` key. The executor credential is denied by that route.
 There is no retry, redirect or fallback to executor `operations status --binding`,
@@ -68,7 +68,7 @@ Transition predicates retain the original same-day run windows (including their
 lead), recheck-before-stop requirement, already-stopped recovery, quiet store and
 source guards, profile identity and kind/store continuity, and replacement drain
 proof. They do not perform a transition by themselves. Original executor-status
-expiry effects remain managed update effects, separate from pure monitoring.
+expiry effects remain managed application effects, separate from pure monitoring.
 
 The guarded stop API (`stop_daybook_runtime`) retains the original hosted-mode
 stop sequence: Aqua/keeper/host/store checks, run-window guard, bounded quiet
@@ -81,7 +81,7 @@ the existing keeper again, so this is a managed recovery effect, not a claim tha
 all initial launchd state is preserved. It never kills the capability host or uses SIGKILL.
 
 This stop stage is **managed**, including executor/Journal effects when a prior
-failure already stopped the supervisor. It is not used by pure default
+failure already stopped the supervisor. It is not used by unchanged-resource
 verification or presented as a read-only check. The original CLI's own bounds
 are retained without adding an outer executor-status deadline. Its managed status
 command retains the original login context; an inner subprocess captures only
@@ -314,3 +314,42 @@ passed8600 tests with518 known skips on each Python version; all817 runtime
 resources remained byte/mode exact8065. These component proofs add no inventory
 default and authorize no real source/profile/keeper transition. Normal routing,
 managed original CLI-health parity and lifecycle adoption remain separate work.
+
+## Original managed health, update check and closeout
+
+`verify_daybook_runtime_health` retains the original role's exact health
+predicate: genuine CLI exit0, the local profile enabled and local status other
+than `unreadable`. It runs the original GUI-account `operations status` once for
+every declared source on both empty and nonempty stores. This application work
+can read its own Journal and expire server authority. It is always a managed
+operation, including ordinary repeats on unchanged configuration/code. Only
+verified/count metadata leaves the host; raw record, status and error bodies
+stay in memory. A failed CLI or unreadable local record remains a genuine failure.
+
+Remote source `enabled`, `needs_operator` and `expiry_pending` are reported
+metadata, not original refusal predicates or reasons to activate a source.
+The separate monitor credential does not establish the executor credential's
+binding-GET success. Pure local-resource/monitor observations are useful for
+planning and comparison; normal full verification also invokes original managed
+CLI health. No empty-store shortcut or blanket active-work barrier is added.
+
+`check_daybook_runtime_update` preserves the existing update-check workflow: the
+original confirmed hosted-stop declaration, GUI/capability/store/window checks
+and one original executor status per source, without quiet retries, bootout,
+signals or source replacement. Its old read-only label was inaccurate; typed
+update-check counts this as managed application work. Existing metadata
+observation is sufficient for safe planning, so no extra preflight product flow
+or migration acknowledgement is required ahead of normal update.
+
+`closeout_daybook_runtime` preserves the original confirmed closeout action. It
+deletes only the saved original command and publishes the original marker,
+leaving the running keeper, source, profile and credentials alone. Repeated
+closeout verifies the current marker and missing backup without a managed
+change. Static marker validation precedes backup removal; partial filesystem
+failures remain failures. Closeout ends rollback, so actual destructive lifecycle
+execution is separate from owned mechanism qualification.
+
+This slice is under source/owned qualification. Private normal routing, complete
+update composition, live transitions and default qualification remain pending.
+
+Managed health preserves the original `verify_retries` / `poll_delay` metadata startup budget before its once-per-source CLI calls: each original keeper/process/session stage gets its initial attempt plus the declared retries (13 attempts / 12 waits for the default12), following Ansible2.21 task execution. It retries only keeper/process/session observations, with no executor CLI retry. Unknown probe failures remain genuine failures.

@@ -476,12 +476,24 @@ def test_django_site_marker_fact_lists_only_markers(
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
-@pytest.mark.parametrize("component", ["stop", "transition"])
+@pytest.mark.parametrize("component", ["stop", "transition", "health", "preflight", "closeout"])
 def test_encoded_daybook_runtime_command_through_real_login_shell(login_shell: str, component: str) -> None:
+    from collections.abc import Callable
+
+    from ops_deploy.services.daybook_operations_runtime.closeout import closeout_command
+    from ops_deploy.services.daybook_operations_runtime.health import health_command
+    from ops_deploy.services.daybook_operations_runtime.preflight import preflight_command
     from ops_deploy.services.daybook_operations_runtime.stop import stop_command
     from ops_deploy.services.daybook_operations_runtime.transition import transition_command
 
-    command = stop_command() if component == "stop" else transition_command()
+    factories: dict[str, Callable[[], str]] = {
+        "stop": stop_command,
+        "transition": transition_command,
+        "health": health_command,
+        "preflight": preflight_command,
+        "closeout": lambda: closeout_command("verify"),
+    }
+    command = factories[component]()
     parts = shlex.split(command)
     assert parts[0] == "/usr/bin/python3"
     # Keep the encoded command and shell wrapping; use the test environment's
@@ -500,7 +512,8 @@ def test_encoded_daybook_runtime_command_through_real_login_shell(login_shell: s
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr.strip() == f"runtime_{component}_failed"
+    suffix = "failed" if component in {"stop", "transition"} else "unavailable"
+    assert result.stderr.strip() == f"runtime_{component}_{suffix}"
     assert private not in result.stdout + result.stderr
 
 
