@@ -105,8 +105,9 @@ class BindConfig(RoleConfig):
     service_name: Annotated[str, _match(re.compile(r"[A-Za-z0-9@_.-]+"), "unit name")] = "named"
     config_dir: AbsolutePath = "/etc/bind"
     working_dir: AbsolutePath = "/var/cache/bind"
-    # None: the role's choice from the host's distribution (named.conf.root-hints on
-    # Debian 13 and later, named.conf.default-zones elsewhere).
+    # None: the choice from the host's release (named.conf.root-hints on Debian 13
+    # and Ubuntu 26.04 and later, named.conf.default-zones elsewhere), or the one
+    # of the two that exists when that file is missing (render.builtin_zones_file).
     builtin_zones_file: AbsolutePath | None = None
     # Controller directory holding the zone files (the role's ``bind_zone_files_dir``).
     zone_files_dir: str

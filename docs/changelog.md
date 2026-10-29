@@ -13,6 +13,55 @@
   Paired source/role controls remain distinct; inventory/default/activation
   qualification is separate.
 
+- `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
+  `srs_enabled` the deploy picks the layout by postsrsd's installed major (else
+  apt's candidate; a read-only check after the install refuses a different
+  major). Hosts with postsrsd 1.x installed keep their files, `tcp:` maps and
+  operations byte-identical; a host still without postsrsd only gains the
+  read-only candidate probe and that check.
+  On 2.x it renders `/etc/postsrsd.conf` from the same inputs and the same secret
+  file (addresses 1.x issued still reverse), removes the 1.x
+  `/etc/default/postsrsd`, restarts postsrsd and checks a socketmap round trip
+  before main.cf switches to `socketmap:unix:srs:forward`/`reverse` and Postfix
+  restarts. `srs_listen_addr` and the SRS ports are refused on 2.x unless left at
+  their defaults. New owned systemd fixture test against Postfix 3.10 and
+  postsrsd 2.0.11 (`tests/test_mail_relay_postsrsd_docker.py`).
+
+- `bind`: Ubuntu 26.04 and later (BIND 9.20, whose `bind9` ships
+  `named.conf.root-hints` and removes `named.conf.default-zones` and the
+  `db.*` builtin zone files) now include `named.conf.root-hints`, as Debian 13
+  already did; before, the deploy rendered the missing `default-zones`
+  include and refused (named-checkconf). When the release's file is missing
+  and the other one exists in `/etc/bind`, the deploy includes that one and
+  warns. A package dpkg has unpacked but not configured (a release upgrade
+  leaves `bind9` half-configured) is no longer reinstalled before the
+  configuration, so the deploy repairs it and `dpkg --configure -a` completes.
+  Ubuntu 24.04, Debian 12 and Debian 13 render byte-identical files, and
+  hosts with installed or absent packages plan the same operations.
+  `docs/bind.md` describes the in-place release upgrade.
+
+- `mastodon`: rebuild native gems after an OS/ABI change. For an otherwise
+  current bundle the inspection runs one read-only `ldd` pass (as the service
+  user) over the installed native extensions; locked gems that link a missing
+  shared library (such as `charlock_holmes` after the libicu soname bump of a
+  release upgrade, which `bundle check` does not notice) get `bundle pristine`
+  after `bundle install`, with a fail-closed `ldd` re-check before the bundle
+  marker is written. The bundle key is unchanged and healthy bundles report no
+  missing library, so existing hosts do not rebuild.
+
+- `redis_install`: new optional `package_version` (a Debian version such as
+  `6:7.4.12-1rl1~noble1`) installs `redis-server` (`package_name`) and
+  `redis-tools` at exactly that version (upgrade or downgrade), pins both in
+  `/etc/apt/preferences.d/redis` (`preferences_path`, priority 1001) so apt
+  upgrades keep them, refreshes the apt cache before a version change or after
+  the repository file changed, restores the data, log and config directory
+  owners and modes the packages' maintainer scripts reset during the change, and
+  restarts a server that still runs the replaced binary (a `policy-rc.d` can
+  refuse the package's own restart), so a second run is converged. Default
+  `None`: every existing configuration plans byte-identical operations and
+  commands (differential over 3,072 fake-host scenarios against the previous
+  code).
+
 - `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
   `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
   render `PasswordAuthentication` and `PermitRootLogin` into the same sshd
