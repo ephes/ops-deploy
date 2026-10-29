@@ -20,6 +20,12 @@
   Fresh wheel checksums also govern corrected-wheel transfer after a failed
   import in the same controller process.
 
+- Add a targeted pyinfra upgrade for existing role-managed Mastodon 4.6.9
+  installations to 4.7.4, addressing GHSA-288h-6j8h-6x5j. It takes protected
+  database/config/media backups, installs the tag's Ruby and Node versions,
+  separates pre- and post-deployment migrations, updates service and maintenance
+  runtime paths, and checks application, streaming and migration health.
+
 - `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
   `srs_enabled` the deploy picks the layout by postsrsd's installed major (else
   apt's candidate; a read-only check after the install refuses a different
