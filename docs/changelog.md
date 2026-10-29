@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare the Home Assistant area-registry protocol component with original
+  field ownership/selection, protected input and explicit partial-effect counts.
+  Owned WebSocket/original-script controls do not yet qualify native deployment.
+
 - Prepare protected host-local Matter, OTBR and Wyoming integration flows with
   original entry selectors, API readiness/auth/flow semantics and honest partial
   request effects; full HA/native application qualification remains pending.

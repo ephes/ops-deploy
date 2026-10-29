@@ -439,3 +439,31 @@ planning without API calls, shared readiness, first/repeat behavior and fault
 classification. They do not qualify real HA onboarding/config flows, TLS, radios
 or native deployment. Area/pipeline/bridge management and active canaries remain
 separate work; this component does not replace or disable them.
+
+## Prepared area-registry protocol component
+
+The area helper preserves original ID-first selection (no name fallback when an
+ID is supplied), last duplicate lookup, alias normalization and only the declared
+alias/temperature/humidity fields. Unlisted areas and fields are left alone.
+Repeated desired entries retain the original snapshot comparison order; a later
+unresolvable entry can fail after an earlier update. Failure reports keep the
+attempted and acknowledged update counts rather than implying rollback.
+
+The original service virtualenv/interpreter and user are selected. API URL
+rewriting retains the original localhost-substring/default-IPv4 rule with the
+explicit application port. WebSocket TLS uses aiohttp defaults independently of
+HTTP readiness settings. Tokens, area bodies/IDs and responses stay in host RAM;
+protected stdin carries configuration and fixed status/counts return without a
+result file. Inspection sends authentication and a list request, never an area
+update. Application re-reads the list before applying declared changes. The
+configured API timeout bounds the whole exchange, including unmatched messages
+and stalled peers; an expired or failed update may already have remote effects.
+
+This is a protocol component, not a complete deployment API. The outer deploy
+still must compose original HTTP readiness, selected enable flags, service-user
+prerequisites and execution-only managed updates. Owned loopback tests run both
+the captured original script and the new helper against synthetic registries,
+including partial failures, and exercise real WebSocket transport. The dev-only
+aiohttp 3.14.5 dependency matches the selected HA release; it does not install or
+upgrade any inventory application. Actual HA API, service-user execution and
+native deployment qualification remain pending.
