@@ -377,3 +377,22 @@ when execution later fails; there is no automatic rollback or zero-effect claim.
 These are controller-local filesystem/SDK controls, not Linux application proof.
 The final deploy API and non-stock template aliases remain part of outer source
 completion; no inventory engine is switched by this prepared component.
+
+## Prepared ingress component
+
+The shipped Traefik template retains the original router names, TLS empty-map
+versus certResolver behavior, header values, ordered middleware/entrypoint lists
+and local-address fallback. The backend defaults to the original application
+port `10020`, matching the application configuration renderer. A missing IPv4 fact uses `192.168.178.50`; an explicit
+empty value is not silently replaced. The original future `traefik_mode` field
+still has no implementation effect.
+
+The writer creates the root-owned 0755 dynamic directory and exact 0644
+`homeassistant.yml`, returning only the file result for the original notification.
+The default handler is informational because Traefik watches its configuration;
+no restart or reload is invented. Disabled ingress does not read or change the
+existing route. An exact protected rendered body can be supplied for an alternate
+template; resolving that operator template and any selected external handler
+remains the outer caller's responsibility. This is not yet a complete private
+override binding. Source-bound render/default and SDK write controls are not
+native routing, certificate or application readiness qualification.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare Home Assistant's original Traefik route rendering and file writes,
+  preserving the informational default handler and file-only notification.
+  Native routing and complete deployment integration remain pending.
+
 - Prepare Home Assistant managed trust drop-in writes and execution-only
   post-handler verification with original file-only notifications and no repair
   fallback; native systemd and full deployment integration remain pending.
