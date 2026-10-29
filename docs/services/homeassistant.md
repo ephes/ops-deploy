@@ -131,3 +131,14 @@ checks cannot prove global zero I/O or physical-device behavior. Original policy
 failures are not silently remediated, and explicit existing trust overrides are
 not rewritten. Caller sequencing, application/package installation and native
 qualification remain unfinished; this component is not yet a deployment API.
+
+
+The prepared interpreter component preserves `uv python find VERSION` followed
+by installation only on a nonzero find result. The managed operation performs
+fresh queries at execution and verifies availability after installation. Its
+actual change result is intended for the original deferred HA/optional Matter
+restart notifications. Later virtualenv observations must occur after this step:
+installing a Python patch can retarget UV's minor-version link and make an
+existing virtualenv current without rebuilding it. Cold-plan deferral is limited
+to declared earlier user/UV creation prerequisites. Synthetic SDK tests establish
+operation ordering and failure behavior, not real UV download or symlink changes.

@@ -18,6 +18,8 @@
   and retain final version/help checks without changing shared UV defaults.
   Prepare original Python trust-floor preflight, constraints and fresh post-install
   verification with exact inspector/policy source parity and bytecode suppression.
+  Prepare the original requested-Python install gate with execution-time queries
+  before later virtualenv decisions; retain failed-install outcomes.
   This is a tested source foundation; no deployment API or inventory switch.
 
 - Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
