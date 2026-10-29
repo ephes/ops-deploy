@@ -19,11 +19,13 @@ from pyinfra.api import DeployError, deploy
 from pyinfra.facts.server import Which
 from pyinfra.operations import files, server, systemd
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, require_systemd
+from ops_deploy.base._common import RoleConfig, require_systemd
 from ops_deploy.base._units import ACTIVE, ENABLED, unit_name, unit_states
 from ops_deploy.helpers.probes import probe
 from ops_deploy.infra.traefik_deploy import Port
 from ops_deploy.infra.traefik_lifecycle_state import names_in, path_state, refuse_managed
+
+SpacedAbsolutePath = Annotated[str, Field(pattern=r"^/[A-Za-z0-9._/ +\-]*$")]
 
 
 class TraefikRemoveConfig(RoleConfig):
@@ -33,12 +35,12 @@ class TraefikRemoveConfig(RoleConfig):
     # Overrides both ``preserve_*``.
     force_complete: bool = False
     service_name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.@-]+$")] = "traefik"
-    binary_path: AbsolutePath = "/usr/local/bin/traefik"
-    config_dir: AbsolutePath = "/etc/traefik"
-    static_config: AbsolutePath | None = None
-    dynamic_dir: AbsolutePath | None = None
-    acme_dir: AbsolutePath | None = None
-    log_dir: AbsolutePath = "/var/log/traefik"
+    binary_path: SpacedAbsolutePath = "/usr/local/bin/traefik"
+    config_dir: SpacedAbsolutePath = "/etc/traefik"
+    static_config: SpacedAbsolutePath | None = None
+    dynamic_dir: SpacedAbsolutePath | None = None
+    acme_dir: SpacedAbsolutePath | None = None
+    log_dir: SpacedAbsolutePath = "/var/log/traefik"
     remove_firewall_rules: bool = True
     http_port: Port = 80
     https_port: Port = 443

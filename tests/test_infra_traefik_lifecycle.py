@@ -347,3 +347,27 @@ def test_service_name_keeps_original_literal_unit_file_suffix_contract() -> None
     assert result.succeeded, result.error
     assert "systemctl stop custom.service || true" in result.executed_commands
     assert "rm -f /etc/systemd/system/custom.service.service" in result.executed_commands
+
+
+def test_literal_spaced_lifecycle_paths_keep_other_validation_and_backup_contracts() -> None:
+    restore_cfg = TraefikRestoreConfig(
+        root="/custom archives",
+        archive="chosen archive.tar.gz",
+        required_mount="/custom disk",
+        staging_dir="/custom disk/restore stage",
+        acme_path="/custom live/acme state.json",
+        acme_dir="/custom live",
+    )
+    assert restore_cfg.root == "/custom archives"
+    assert restore_cfg.archive == "chosen archive.tar.gz"
+    assert restore_cfg.staging_dir == "/custom disk/restore stage"
+    remove_cfg = TraefikRemoveConfig(
+        confirm=True, binary_path="/custom bin/traefik", config_dir="/custom config", log_dir="/custom logs"
+    )
+    assert remove_cfg.binary_path == "/custom bin/traefik"
+    for archive in ["../chosen archive.tar.gz", "chosen;command.tar.gz", "chosen\narchive.tar.gz"]:
+        with pytest.raises(ValueError, match="validation error"):
+            TraefikRestoreConfig(archive=archive)
+    # The established deployment/backup shared path policy is unchanged.
+    with pytest.raises(ValueError, match="validation error"):
+        TraefikBackupConfig(root="/custom archives")

@@ -209,3 +209,18 @@ def test_named_ansible_cron_cleanup_preserves_every_other_byte() -> None:
     assert module.selected_cron(body) == ["Pi-hole gravity update"]
     assert module.without_selected(body) == "# retain exact spaces  \n#Ansible: Keep\n7 1 * * * /unowned\n# tail\n"
     assert module.without_selected(module.without_selected(body)) == module.without_selected(body)
+
+
+def test_dns_custom_spaced_paths_remain_literal_and_shell_quoted() -> None:
+    cfg = DnsRemoveConfig(
+        confirm=True,
+        restore_systemd_resolved=False,
+        unbound_config_dir="/custom unbound/config",
+        ddns_state_dir="/custom state/owned ddns",
+    )
+    result = remove(cfg, snapshot(cfg, present=True))
+    assert result.succeeded, result.error
+    assert "rm -rf -- '/custom unbound/config'" in result.executed_commands
+    assert "rm -rf -- '/custom state/owned ddns'" in result.executed_commands
+    with pytest.raises(ValueError, match="validation error"):
+        DnsRemoveConfig(ddns_config_dir="/custom;command")

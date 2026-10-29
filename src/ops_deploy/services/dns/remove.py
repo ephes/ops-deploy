@@ -8,14 +8,14 @@ import shlex
 import stat
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Any, Self, cast
+from typing import Annotated, Any, Self, cast
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pyinfra import logger
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, server, systemd
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, require_linux, require_systemd
+from ops_deploy.base._common import RoleConfig, require_linux, require_systemd
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe, stdin_arguments
 
@@ -52,17 +52,20 @@ RESOLVED_FILE = "/lib/systemd/system/systemd-resolved.service"
 FALLBACK = "# Fallback DNS configuration\nnameserver 1.1.1.1\nnameserver 1.0.0.1\nnameserver 8.8.8.8\n"
 
 
+SpacedAbsolutePath = Annotated[str, Field(pattern=r"^/[A-Za-z0-9._/ +\-]*$")]
+
+
 class DnsRemoveConfig(RoleConfig):
     confirm: bool = False
     restore_systemd_resolved: bool = True
-    unbound_config_dir: AbsolutePath = "/etc/unbound/unbound.conf.d"
-    unbound_lib_dir: AbsolutePath = "/var/lib/unbound"
-    ddns_script_path: AbsolutePath = "/usr/local/bin/ddns-update"
-    ddns_config_dir: AbsolutePath = "/etc/ddns"
-    ddns_log_dir: AbsolutePath = "/var/log/ddns"
-    ddns_state_dir: AbsolutePath = "/var/lib/ddns"
-    ddns_status_endpoint_server_path: AbsolutePath = "/usr/local/bin/ddns_status_httpd.py"
-    ddns_status_endpoint_htpasswd_dir: AbsolutePath = "/etc/ddns-status-endpoint"
+    unbound_config_dir: SpacedAbsolutePath = "/etc/unbound/unbound.conf.d"
+    unbound_lib_dir: SpacedAbsolutePath = "/var/lib/unbound"
+    ddns_script_path: SpacedAbsolutePath = "/usr/local/bin/ddns-update"
+    ddns_config_dir: SpacedAbsolutePath = "/etc/ddns"
+    ddns_log_dir: SpacedAbsolutePath = "/var/log/ddns"
+    ddns_state_dir: SpacedAbsolutePath = "/var/lib/ddns"
+    ddns_status_endpoint_server_path: SpacedAbsolutePath = "/usr/local/bin/ddns_status_httpd.py"
+    ddns_status_endpoint_htpasswd_dir: SpacedAbsolutePath = "/etc/ddns-status-endpoint"
 
     @field_validator(
         "unbound_config_dir",

@@ -240,3 +240,29 @@ def test_zip_member_integrity_is_checked_before_staging(tmp_path: Path, kind: st
         HOST.restore(cfg, "apply")
     assert not Path(cfg["staging_dir"]).exists()
     assert not Path(cfg["acme_path"]).exists()
+
+
+def test_spaced_archive_staging_and_acme_paths_use_literal_filesystem_names(tmp_path: Path) -> None:
+    spaced = tmp_path / "owned root with spaces"
+    spaced.mkdir()
+    path = archive(spaced)
+    renamed = path.with_name("chosen archive.tar.gz")
+    path.rename(renamed)
+    cfg = request(
+        spaced,
+        archive=renamed.name,
+        staging_dir=str(spaced / "restore stage"),
+        acme_path=str(spaced / "live directory/acme state.json"),
+    )
+    # The original archive chooses the destination basename; construct the matching synthetic member.
+    with tarfile.open(renamed, "w:gz") as handle:
+        member = tarfile.TarInfo("payload/acme/acme state.json")
+        member.size = len(BODY)
+        handle.addfile(member, io.BytesIO(BODY))
+    assert HOST.restore(cfg, "apply")["acme_published"]
+    destination = Path(cfg["acme_path"])
+    before = identity(destination)
+    assert destination.read_bytes() == BODY
+    HOST.restore(cfg, "apply")
+    assert identity(destination) == before
+    assert not Path(cfg["staging_dir"]).exists()

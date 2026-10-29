@@ -45,7 +45,7 @@ from ops_deploy.services._lifecycle.local_backup import (
 
 Prefix = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
 # An archive name below the backup root, or an absolute path.
-ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._/+-]+)$")]
+ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._/ +\-]+)$")]
 
 
 def _mode_input(value: object) -> object:
@@ -89,16 +89,20 @@ class TraefikBackupConfig(SnapshotRetention):
         return {"root": self.root}
 
 
+SpacedAbsolutePath = Annotated[str, Field(pattern=r"^/[A-Za-z0-9._/ +\-]*$")]
+
+
 class TraefikRestoreConfig(MountGuard):
     # ``latest``: the newest ``*.tar.gz`` in ``root`` by modification time.
     archive: ArchiveName = "latest"
-    root: AbsolutePath = "/opt/backups/traefik"
-    staging_dir: AbsolutePath = "/tmp/traefik-restore"
+    required_mount: SpacedAbsolutePath | None = None
+    root: SpacedAbsolutePath = "/opt/backups/traefik"
+    staging_dir: SpacedAbsolutePath = "/tmp/traefik-restore"
     staging_mode: Mode = "0700"
     archive_extension: Annotated[str, Field(pattern=r"^[A-Za-z0-9.]+$")] = "tar.gz"
     dry_run: bool = False
-    acme_path: AbsolutePath = "/etc/traefik/acme/acme.json"
-    acme_dir: AbsolutePath | None = None
+    acme_path: SpacedAbsolutePath = "/etc/traefik/acme/acme.json"
+    acme_dir: SpacedAbsolutePath | None = None
     acme_owner: Identity = "root"
     acme_group: Identity = "root"
     acme_dir_mode: Mode = "0700"
