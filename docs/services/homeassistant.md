@@ -513,3 +513,28 @@ controller value; complete registry bodies remain on the host. It performs no
 API requests or storage writes. Original HTTP readiness, enabled outer stages,
 STT wait and service-user protocol composition are still unfinished. These
 owned storage/expression controls are not native or inventory qualification.
+
+## Prepared built-in conversation execution
+
+The original `llama_cpp_provision.py` is packaged byte-for-byte. Its managed-entry
+ownership checks, local-intent fallback before retirement/key rotation, no-tools
+configuration and real active response canary remain intact. The controller
+installs the same service-owned helper and supplies its original configuration
+through protected stdin as the service user. No token, registry body, prompt or
+canary response is logged. Only a masked entity ID and completion/change flags
+remain in invocation memory for later pipeline wiring.
+
+Selected execution is explicitly managed, including a healthy unchanged canary.
+The helper's `changed:false` is a separate application report, not a claim of zero
+API activity or zero managed operations. Dry registration never invokes the
+helper. Failures preserve the original helper's sanitized operator diagnostic, clear
+previous canary success and report possible partial effects;
+they do not invent a zero-effect result. The finite controller deadline can stop
+waiting without proving remote quiescence, so timeout is a failed, uncertain run.
+
+Owned controls include all 17 original synthetic transport-boundary tests,
+real loopback HTTP/WebSocket healthy/auth/error canaries, and actual pyinfra
+plan/execution controls with a synthetic helper. They do not exercise a real HA
+model/provider or qualify native deployment. Original legacy-component discovery,
+one-time clean-environment migration, readiness/handler resets and full outer
+selection still need composition; this helper is not the full deployment API.

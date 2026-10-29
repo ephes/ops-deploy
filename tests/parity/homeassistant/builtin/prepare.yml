@@ -1,0 +1,82 @@
+---
+- name: llama_cpp_prepare | Install built-in conversation provisioning helper
+  ansible.builtin.copy:
+    src: llama_cpp_provision.py
+    dest: "{{ homeassistant_llama_cpp_helper_path }}"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0755"
+
+- name: llama_cpp_prepare | Check legacy custom component
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/custom_components/custom_conversation"
+  register: _ha_legacy_component
+
+- name: llama_cpp_prepare | Check existing Home Assistant environment library directory
+  ansible.builtin.stat:
+    path: "{{ homeassistant_virtualenv_path }}/lib"
+  register: _ha_existing_library
+
+- name: llama_cpp_prepare | Find legacy LiteLLM package metadata without importing it
+  ansible.builtin.find:
+    paths: "{{ homeassistant_virtualenv_path }}/lib"
+    patterns: ["litellm*.dist-info"]
+    file_type: directory
+    recurse: true
+  register: _ha_legacy_litellm
+  when: _ha_existing_library.stat.exists
+
+- name: llama_cpp_prepare | Record one-time clean environment migration
+  ansible.builtin.set_fact:
+    _ha_llama_cpp_rebuild: "{{ _ha_legacy_component.stat.exists or (_ha_legacy_litellm.matched | default(0) | int > 0) }}"
+
+- name: llama_cpp_prepare | Check legacy config entry storage
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
+  register: _ha_legacy_storage
+
+- name: llama_cpp_prepare | Read legacy config entry storage
+  ansible.builtin.slurp:
+    path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
+  register: _ha_legacy_storage_raw
+  no_log: true
+  when: _ha_legacy_storage.stat.exists
+
+- name: llama_cpp_prepare | Select legacy config entries
+  ansible.builtin.set_fact:
+    _ha_legacy_entry_ids: "{{ ((_ha_legacy_storage_raw.content | b64decode | from_json).data.entries | selectattr('domain', 'equalto', 'custom_conversation') | map(attribute='entry_id') | list) if _ha_legacy_storage.stat.exists else [] }}"
+
+- name: llama_cpp_prepare | Retire legacy voice bridge before upgrading
+  when:
+    - _ha_legacy_entry_ids | length > 0
+    - not ansible_check_mode
+  block:
+    - name: llama_cpp_prepare | Ensure API is ready for legacy bridge retirement
+      ansible.builtin.include_tasks: integration_api_ready.yml
+
+    - name: llama_cpp_prepare | Move old pipelines to local intents and remove legacy integration
+      ansible.builtin.command:
+        argv:
+          - "{{ homeassistant_virtualenv_path }}/bin/python"
+          - "{{ homeassistant_llama_cpp_helper_path }}"
+        stdin: "{{ {'action': 'retire', 'api_url': homeassistant_api_url, 'api_token': homeassistant_api_token, 'forwarded_for': homeassistant_api_forwarded_for, 'forwarded_proto': homeassistant_api_forwarded_proto, 'validate_certs': homeassistant_api_validate_certs, 'storage_path': homeassistant_config_path + '/.storage/core.config_entries', 'base_url': homeassistant_llama_cpp_base_url, 'api_key': homeassistant_llama_cpp_api_key, 'model': homeassistant_llama_cpp_model, 'instructions': homeassistant_llama_cpp_instructions, 'canary_text': homeassistant_llama_cpp_canary_text} | to_json }}"  # pragma: allowlist secret
+      become: true
+      become_user: "{{ homeassistant_user }}"
+      register: _ha_legacy_retire
+      changed_when: _ha_legacy_retire.rc == 0 and (_ha_legacy_retire.stdout | from_json).changed | bool
+      failed_when: false
+      no_log: true
+
+    - name: llama_cpp_prepare | Report sanitized built-in conversation helper failure
+      ansible.builtin.fail:
+        msg: >-
+          Built-in conversation provisioning failed:
+          {{ (_ha_legacy_retire.stdout | from_json).error | default('unknown error')
+              if _ha_legacy_retire.stdout | trim is match('^\{')
+              else 'helper could not start; inspect service logs' }}
+      when: _ha_legacy_retire.rc != 0
+
+- name: llama_cpp_prepare | Remove retired Custom Conversation component
+  ansible.builtin.file:
+    path: "{{ homeassistant_config_path }}/custom_components/custom_conversation"
+    state: absent

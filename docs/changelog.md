@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Prepare the unchanged original Home Assistant built-in conversation helper
+  with protected, execution-only canary calls and honest partial-failure state.
+
 - Prepare Home Assistant named-storage pipeline selection with protected
   controller input/output, original discovery/default rules and no registry writes.
 
