@@ -312,8 +312,8 @@ transition through real bash and fish, preserving protected stdin and sanitized
 errors. [Canonical40783227181](https://github.com/ephes/ops-deploy/actions/runs/40783227181)
 passed8600 tests with518 known skips on each Python version; all817 runtime
 resources remained byte/mode exact8065. These component proofs add no inventory
-default and authorize no real source/profile/keeper transition. Normal routing,
-managed original CLI-health parity and lifecycle adoption remain separate work.
+default and authorize no real source/profile/keeper transition. Normal routing and inventory adoption of managed original CLI health and
+lifecycle actions remain separate work.
 
 ## Original managed health, update check and closeout
 
@@ -349,7 +349,38 @@ change. Static marker validation precedes backup removal; partial filesystem
 failures remain failures. Closeout ends rollback, so actual destructive lifecycle
 execution is separate from owned mechanism qualification.
 
-This slice is under source/owned qualification. Private normal routing, complete
-update composition, live transitions and default qualification remain pending.
+[Owned native40791011004](https://github.com/ephes/ops-deploy/actions/runs/40791011004)
+passed on immutable `1147256`: the actual noneditable installed set contained
+exactly873 package resources, all bytes matching Git and its direct URL. Synthetic
+root/GUI/SSH cases proved empty health first/repeat and readable nonempty health,
+each one managed operation with two actual CLI calls; intentionally disabled
+remote sources and attention flags remained accepted. Managed update-check
+first/repeat likewise called both declared sources without stopping the keeper.
+Unreadable, CLI-nonzero and busy-source cases genuinely failed after respectively
+one, one and two actual CLI calls; failed operation `changed:false` does not mean
+no application work happened. Closeout changed only its backup/marker resources,
+its repeat had no managed change, and the keeper PID stayed fixed. Cleanup passed.
 
-Managed health preserves the original `verify_retries` / `poll_delay` metadata startup budget before its once-per-source CLI calls: each original keeper/process/session stage gets its initial attempt plus the declared retries (13 attempts / 12 waits for the default12), following Ansible2.21 task execution. It retries only keeper/process/session observations, with no executor CLI retry. Unknown probe failures remain genuine failures.
+The initial native40790627690 failed during tmux setup before health ran; its raw
+receipt/log and successful cleanup remain retained. The bounded fixture repair
+shortened its socket basename inside the unique owned directory. A separate local
+same-context control records a105-byte socket-path failure and short-path success,
+including the terminating byte budget. The old native setup did not retain tmux
+stderr, so this does not establish its exclusive original cause.
+
+[Canonical40791010910](https://github.com/ephes/ops-deploy/actions/runs/40791010910)
+passed8867 tests with521 known skips on both Python versions. The scoped review
+ended with one diagnostic Suggestion and no Critical/Warning findings; sandbox
+execution limits and the initial INVALID review are retained. The comment now
+acknowledges that exit1 may include a denied sudo context: bounded nonreadiness
+still fails if persistent and is never treated as success. This is owned synthetic
+component proof, not actual private-adapter or inventory qualification. Private
+normal routing, complete update composition, live transitions and defaults remain
+pending.
+
+Managed health preserves the original `verify_retries` / `poll_delay` metadata
+startup budget before its once-per-source CLI calls. Each original keeper,
+process and session stage gets its initial attempt plus the declared retries:
+13 attempts and12 waits for the default12, following Ansible2.21 task execution.
+Only these metadata observations retry; executor CLI calls do not. Unknown probe
+failures remain genuine failures.
