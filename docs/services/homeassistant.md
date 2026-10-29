@@ -2,7 +2,8 @@
 
 The Home Assistant port is being implemented against the original public
 `homeassistant_deploy`, backup, restore, remove and trust-maintenance contracts.
-There is no deployment API, private engine switch or native qualification yet.
+Prepared deployment and maintenance APIs exist; the private engine switch and
+native qualification remain outstanding.
 The selected application, Python and Matter versions are not being upgraded.
 
 ## Configuration ownership foundation
@@ -872,3 +873,46 @@ replacement notifications and repeat behavior are retained; bodies remain in
 protected stdin and are not logged. This is the protected body boundary, with
 owned local-file evidence. General private controller-template search/rendering
 and native qualification remain separate work.
+
+
+## Prepared removal
+
+`services.homeassistant.remove.remove_homeassistant` accepts
+`HomeAssistantRemoveConfig`. It requires `confirm_removal=True` before any target
+probe and a Linux target. All eleven original selection flags default to true:
+`remove_service`, `remove_traefik`, `remove_udev_rule`, `remove_virtualenv`,
+`remove_config_dir`, `remove_data_dir`, `remove_logs_dir`, `remove_bin_dir`,
+`remove_site_dir`, `remove_user` and `remove_group`.
+
+The user, group and service name independently default to `homeassistant`. Home
+follows the user; site follows home; config/data/logs/bin and both virtualenv paths
+follow site. The unit path follows the service name. Explicit paths are retained;
+root and traversal paths are refused. The route and udev paths keep the original
+fixed defaults. The bound original defaults and task files live under
+`tests/parity/homeassistant/remove`.
+
+For the normal systemd unit created by this role, service removal disables before
+stopping. A disable failure skips stop; either service failure permits the later
+unit removal and daemon reload, matching the original ignored task. The failed
+pyinfra operation remains visible in results. Missing/invalid service inspection
+also remains a visible ignored failure. The probe retains the original permanent
+`is-enabled` interpretation, including static/generated/transient and the special
+runtime/indirect/alias cases. SysV fallback and systemd bus-error recovery are not
+qualified by this prepared entry point.
+
+Paths are removed in the original order: unit and daemon reload, route, udev rule,
+virtualenv and compatibility link, then config/data/logs/bin/site. A selected leaf
+file, directory or symlink is removed without following the leaf symlink or
+creating a renamed backup. Removing site also removes its contents, even if an
+individual child flag is false. User removal invokes `userdel -r` when
+`remove_site_dir` is true, otherwise `userdel`; failures are fatal and stop group
+removal. The group is last. Matter and OTBR are outside this removal role.
+
+Tests execute only owned temporary filesystem paths and fake service/account
+commands, with separate confirmation, each-flag, ordering, ignored-failure and
+repeat checks. An additional controller oracle exercised the actual installed
+Ansible systemd module against an owned fake `systemctl` and confirmed successful,
+disable-failure and stop-failure ordering. No real service/account removal has
+run. Private registration, installed CLI binding and disposable native lifecycle
+qualification remain outstanding; this source does not authorize inventory
+removal.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prepare Home Assistant removal with the original confirmation, eleven selection
+  flags, dependent paths, disable-before-stop order and account home-removal
+  policy. Owned filesystem and fake service/account checks cover the source;
+  private registration and native removal qualification remain outstanding.
+
 - Home Assistant include template lookup now follows the original existing-file
   guard. Prepared deployments can supply protected rendered include bodies;
   skipped existing files no longer require an available controller template.
