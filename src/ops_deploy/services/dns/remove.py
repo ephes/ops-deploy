@@ -10,7 +10,7 @@ from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Self, cast
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pyinfra import logger
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, server, systemd
@@ -78,9 +78,13 @@ class DnsRemoveConfig(RoleConfig):
         "ddns_status_endpoint_htpasswd_dir",
     )
     @classmethod
-    def canonical_path(cls, value: str) -> str:
+    def canonical_path(cls, value: str, info: ValidationInfo) -> str:
         if ".." in PurePosixPath(value).parts:
             raise ValueError("DNS removal paths cannot contain parent traversal")
+        # The original role applies its state-directory guard to the literal
+        # variable. Stripping a trailing slash/dot could turn a skip into deletion.
+        if info.field_name == "ddns_state_dir":
+            return value
         return str(PurePosixPath(value))
 
     @model_validator(mode="after")

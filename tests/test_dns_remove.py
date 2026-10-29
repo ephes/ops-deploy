@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shlex
 import stat
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -224,3 +225,26 @@ def test_dns_custom_spaced_paths_remain_literal_and_shell_quoted() -> None:
     assert "rm -rf -- '/custom state/owned ddns'" in result.executed_commands
     with pytest.raises(ValueError, match="validation error"):
         DnsRemoveConfig(ddns_config_dir="/custom;command")
+
+
+@pytest.mark.parametrize("value", ["/custom/owned-ddns/", "/custom/owned-ddns/.", "/ddns"])
+def test_original_state_guard_uses_raw_spelling_without_broadening_deletion(value: str) -> None:
+    cfg = DnsRemoveConfig(confirm=True, restore_systemd_resolved=False, ddns_state_dir=value)
+    result = remove(cfg, snapshot(cfg, present=True))
+    assert result.succeeded, result.error
+    # The old canonicalizer caused an actual explicit rm proposal here, even
+    # though the literal original role predicate skips the auxiliary path.
+    assert "rm -rf -- " + str(PurePosixPath(value)) not in result.executed_commands
+    assert cfg.ddns_state_dir == value
+    assert value not in selected_paths(cfg)
+
+
+@pytest.mark.parametrize("value", ["/custom/./owned ddns", "/./ddns", "///ddns", "/.//ddns"])
+def test_original_raw_state_guard_keeps_spelling_sensitive_aliases(value: str) -> None:
+    cfg = DnsRemoveConfig(confirm=True, restore_systemd_resolved=False, ddns_state_dir=value)
+    assert cfg.ddns_state_dir == value
+    assert cfg.ddns_state_dir in selected_paths(cfg)
+    result = remove(cfg, snapshot(cfg, present=True))
+    assert result.succeeded, result.error
+    # These aliases deliberately match the literal original role predicate.
+    assert "rm -rf -- " + shlex.quote(value) in result.executed_commands

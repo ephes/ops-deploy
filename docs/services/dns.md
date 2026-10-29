@@ -85,7 +85,13 @@ presence does not trigger repeated daemon reloads. Removal creates no backup.
 listener wait and stub symlink policy; a missing distribution unit uses the fixed
 public fallback resolver. False leaves resolver configuration alone. Custom role
 paths remain supported, and a DDNS state path is removed only when its basename
-contains `ddns`. The confirmation and bounded path checks precede mutation.
+contains `ddns` and the original literal nested-absolute-path regex matches.
+The raw state-variable spelling is retained: trailing `/` or `/.` and root-level
+literal `/ddns` remain original skips. The predicate is spelling-sensitive:
+`/./ddns`, `///ddns` and `/.//ddns` match the original raw expression and select
+that same root-level directory for removal. No canonical-path equivalence is
+assumed by this legacy condition; account/home removal remains independent.
+The confirmation and bounded path checks precede mutation.
 Account existence uses `pwd.getpwnam` metadata, without a broad user/shadow fact.
 Required package/path metadata errors refuse; optional unit/firewall/account/cron
 cleanup keeps the source's explicit tolerance and does not label unknown state
