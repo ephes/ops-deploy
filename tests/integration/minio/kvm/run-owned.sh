@@ -4,6 +4,8 @@ set -euo pipefail
 [[ $(id -u) == 0 && $(uname -m) == x86_64 && -c /dev/kvm ]]
 [[ ${IMPLEMENTATION_SHA:?} =~ ^[0-9a-f]{40}$ && ${MINIO_OWNED_ID:?} =~ ^[0-9a-f]{16}$ ]]
 [[ -z ${GITHUB_ACTIONS:-} && -z ${GH_TOKEN:-} && -z ${GITHUB_TOKEN:-} && -z ${SSH_AUTH_SOCK:-} ]]
+MINIO_COMPONENT=${MINIO_COMPONENT:-normal}
+case "$MINIO_COMPONENT" in normal|policy-rollback) ;; *) exit 2 ;; esac
 ROOT="/tmp/ops-owned-minio-kvm-$MINIO_OWNED_ID"
 [[ ${MINIO_FIXTURE_ROOT:?} == "$ROOT" && -d $ROOT && ! -L $ROOT ]]
 [[ $(stat -c '%u:%g:%a' "$ROOT") == 0:0:700 ]]
@@ -71,6 +73,7 @@ git -C "$ROOT/source" checkout --detach "$IMPLEMENTATION_SHA" >> "$ROOT/evidence
 # BuildKit caches requiring broad prune. If unavailable, fail before guest launch.
 DOCKER_BUILDKIT=0 timeout --signal=TERM --kill-after=20s 40m docker build --force-rm --no-cache --memory 5g --memory-swap 5g --cpu-period 100000 --cpu-quota 200000 \
     --build-arg "OWNED_ID=$MINIO_OWNED_ID" --build-arg "IMPLEMENTATION_SHA=$IMPLEMENTATION_SHA" \
+    --build-arg "MINIO_COMPONENT=$MINIO_COMPONENT" \
     -t "$IMAGE" "$ROOT/source/tests/integration/minio/kvm" > "$ROOT/evidence/build.log" 2>&1
 docker image inspect "$IMAGE" > "$ROOT/evidence/image.json"
 docker create --name "$NAME" --label "io.ops.minio.fixture=$MINIO_OWNED_ID" \

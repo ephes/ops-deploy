@@ -94,13 +94,41 @@
   owned Linux filesystem repeat tests; full application qualification remains open.
   This is a tested source foundation; no deployment API or inventory switch.
 
+- Qualify the separate MinIO named-policy maintenance component in an offline
+  x86 KVM guest with the exact pinned binaries:24 typed phases,10 strict
+  zero-managed/zero-upload repeats and five expected failures with actual partial
+  detach/removal effects retained. The original nine tagged tasks and typed
+  operation agree on foreign-holder refusal after declared detachment. Normal
+  deployment is unchanged; private maintenance adoption remains separate.
+
+- Add the source-backed ordinary restore archive-upload helper with the original
+  first-name/all-archives behavior, existing-root ownership/mode preservation,
+  bounded transfer and explicit partial-failure identity. Owned Linux primitive
+  proof is separate from production restore and private wrapper adoption.
+
+- Qualify normal Paperless inventory adoption with the immutable905-resource
+  artifact: EV-first default111 successful operations/4 managed/2 uploads,
+  explicit repeat110/0/0 with strict protected-state equality. Preserve the
+  first runner's expected-five count assertion (later PostgreSQL cache already
+  current), separate RAM-key scope and all native failure evidence. No first
+  replay, application upgrade, reindex or real document upload; lifecycle
+  conversion remains separate.
+
+- Prepare the original user-owned Daybook runtime code prerequisite with exact
+  source/locked-Python predicates and original in-use replacement guards. Reuse
+  checked private source transfer without changing shared Sessions behavior.
+  Owned user-SSH/Python qualification passed: first4 managed/1actualSFTP,
+  repeat0/0, active-current keeper preserved, in-use change refused before
+  transfer, quiescent replacement3/1 and repeat0/0. Actual907-resource artifact
+  and cleanup passed. Private normal-routing/inventory adoption remain separate.
+
 - Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
   50 typed phases per leg,26 strict zero-managed/zero-upload repeats per leg,
   real synthetic OCR/SFTP/search and recovery controls. Upgrade first performed
   12 managed operations/zero uploads. Exact installed artifacts and cleanup passed;
   retain original fixture recoveries, earlier failed attempts and shared-kernel/
-  metadata/freshness limits. Private inventory and separate lifecycle adoption
-  remain pending.
+  metadata/freshness limits. Inventory adoption is recorded separately above;
+  lifecycle conversion remains tracked.
 
 - Preserve bounded sanitized Paperless native phase progress before timeout,
   and allow an explicit upgrade-only fixture selection with a100-minute guest

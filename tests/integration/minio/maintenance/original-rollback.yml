@@ -1,0 +1,98 @@
+- name: Inspect dedicated Daybook weeknotes source policy before rollback
+  ansible.builtin.command:
+    argv:
+    - /usr/local/bin/mc
+    - admin
+    - policy
+    - info
+    - --json
+    - local
+    - '{{ daybook_weeknotes_source_policy_name }}'
+  register: daybook_weeknotes_source_rollback_info
+  failed_when: false
+  changed_when: false
+- name: Refuse unexpected dedicated policy inspection failure
+  ansible.builtin.assert:
+    that:
+    - (daybook_weeknotes_source_rollback_info.stdout | from_json).error.cause.error.Code
+      == 'XMinioAdminNoSuchPolicy'
+    fail_msg: Could not prove whether the dedicated Daybook weeknotes source policy
+      exists.
+  when: daybook_weeknotes_source_rollback_info.rc != 0
+- name: Detach dedicated Daybook weeknotes source policy
+  ansible.builtin.command:
+    argv:
+    - /usr/local/bin/mc
+    - admin
+    - policy
+    - detach
+    - local
+    - '{{ daybook_weeknotes_source_policy_name }}'
+    - --user
+    - '{{ daybook_sessions_secrets.aws_access_key_id }}'
+  register: daybook_weeknotes_source_policy_detach
+  failed_when: false
+  changed_when: daybook_weeknotes_source_policy_detach.rc == 0
+  no_log: true
+  when: daybook_weeknotes_source_rollback_info.rc == 0
+- name: Verify dedicated Daybook weeknotes source policy is detached
+  ansible.builtin.command:
+    argv:
+    - /usr/local/bin/mc
+    - admin
+    - policy
+    - entities
+    - --json
+    - local
+    - --policy
+    - '{{ daybook_weeknotes_source_policy_name }}'
+  register: daybook_weeknotes_source_rollback_entities
+  changed_when: false
+  no_log: true
+  when: daybook_weeknotes_source_rollback_info.rc == 0
+- name: Assert dedicated Daybook weeknotes source policy is detached
+  ansible.builtin.assert:
+    that:
+    - "daybook_sessions_secrets.aws_access_key_id not in (\n  (\n    (daybook_weeknotes_source_rollback_entities.stdout\
+      \ | from_json).result.policyMappings\n    | default([])\n  )\n  | map(attribute='users')\
+      \ | flatten | list\n)"
+    fail_msg: The dedicated Daybook weeknotes source policy remains attached; refusing
+      removal.
+  no_log: true
+  when: daybook_weeknotes_source_rollback_info.rc == 0
+- name: Remove detached dedicated Daybook weeknotes source policy
+  ansible.builtin.command:
+    argv:
+    - /usr/local/bin/mc
+    - admin
+    - policy
+    - remove
+    - local
+    - '{{ daybook_weeknotes_source_policy_name }}'
+  register: daybook_weeknotes_source_policy_remove
+  changed_when: daybook_weeknotes_source_policy_remove.rc == 0
+  when: daybook_weeknotes_source_rollback_info.rc == 0
+- name: Verify dedicated Daybook weeknotes source policy is absent
+  ansible.builtin.command:
+    argv:
+    - /usr/local/bin/mc
+    - admin
+    - policy
+    - info
+    - --json
+    - local
+    - '{{ daybook_weeknotes_source_policy_name }}'
+  register: daybook_weeknotes_source_rollback_final_info
+  failed_when: false
+  changed_when: false
+- name: Assert dedicated Daybook weeknotes source policy is absent
+  ansible.builtin.assert:
+    that:
+    - daybook_weeknotes_source_rollback_final_info.rc != 0
+    - (daybook_weeknotes_source_rollback_final_info.stdout | from_json).error.cause.error.Code
+      == 'XMinioAdminNoSuchPolicy'
+    fail_msg: The dedicated Daybook weeknotes source policy still exists after rollback.
+- name: Remove dedicated Daybook weeknotes source policy file
+  ansible.builtin.file:
+    path: /etc/minio/policies/{{ daybook_weeknotes_source_policy_name }}.json
+    state: absent

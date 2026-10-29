@@ -309,4 +309,9 @@ run/collection/cleanup were0/0/0. The1064-line full job log had no error markers
 This completes the owned current+upgrade matrix together with the already passed
 current run, without replaying it. It preserves the earlier upgrade timeout124
 and unknown interrupted operation as a failed historical attempt. Production
-adoption, physical hardware and separate lifecycle actions remain unqualified.
+adoption remained separate at native completion; it subsequently passed the
+bounded macmini plan/default-first/explicit-repeat on2026-10-29 with the composed
+905-resource artifact. Actual first111 successful operations/4 managed/2 uploads
+and repeat110/0/0 are described in the public service contract, including the
+retained expected-five count assertion and separate RAM-key boundaries. This
+fixture itself does not prove inventory, physical hardware or lifecycle actions.

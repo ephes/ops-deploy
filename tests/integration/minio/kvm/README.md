@@ -1,8 +1,11 @@
-# Prepared offline KVM fixture
+# Offline KVM fixture
 
-This alternate transport is prepared, not executed or qualified. The private
-GitHub run40651848171 failed before allocation because of an account billing
-annotation. No token or billing setting is changed by this alternative.
+The normal MinIO matrix completed on this transport in the sixth owned attempt,
+with the earlier failures below retained. Its scope and subsequent normal live
+adoption are recorded in the [MinIO contract](../../../../docs/services/minio.md).
+The separate policy-rollback component below is newly prepared and has not run
+natively. The private GitHub run40651848171 failed before allocation because of
+an account billing annotation. No token or billing setting is changed here.
 
 The reviewed private wrapper transports only the selected public runner and two
 SHA-bound licensed executables over existing root SSH, and supervises an owned
@@ -118,3 +121,45 @@ separate receipt and any post-MinIO error do not overwrite the MinIO summary.
 This proves neither the typed S4 deployment nor composite, hardware or inventory
 behavior. Both copied fixture inputs are hash-checked before execution; no server
 configuration, admin action, external network or production data is involved.
+
+## Qualified named-policy maintenance matrix
+
+`MINIO_COMPONENT=normal` remains the default. The exact enum
+`MINIO_COMPONENT=policy-rollback` selects only the new maintenance harness;
+unknown values fail before build, and the selected value is written into the
+guest image and checked again at entry. Maintenance does not replay the normal
+deployment or S4 matrix. It retains the same KVM, offline, memory, CPU, disk,
+deadline, evidence and exact-label cleanup boundaries above.
+
+This component starts the SHA-bound server as an owned loopback-only child,
+using only newly generated synthetic identities and a named synthetic object.
+It does not install or change a service unit. Actual installed pyinfra performs
+named-policy detach/remove/local-file absence, with strict healthy repeats and
+ordinary retries after declared partial failures. An owned mc wrapper delegates
+all normal calls to the exact binary; its targeted failures distinguish detach
+without an effect, successful detach followed by a failure, failed removal and
+failed final inspection. Unknown initial inspection must leave the selected
+state unchanged. No raw credentials or private alias bodies enter collected
+evidence; alias equality stays in RAM and the receipt records only the result
+and metadata. Known synthetic object hashes, account enablement, unrelated policy
+attachments, exact binaries and server PID are protected between phases.
+
+The foreign-holder comparison runs the nine original tagged rollback tasks with
+synthetic variables and an isolated `MC_CONFIG_DIR`. Only the five mc executable
+paths change to the exact fixture artifact. This is a selected-task oracle,
+not an unmodified full private play. An original failure counts as the server's
+foreign-holder refusal only if the actual failed task is removal and independent
+observations prove the declared user detached while the foreign holder and
+local file remain. All other failures stop qualification. Typed and original
+outcomes must match; the harness does not presume that the server permits or
+refuses removal. The maintenance-only native run at `990523fb` completed24 typed phases and the
+original selected-task oracle. Ten successful repeats had exact entire selected
+snapshots and zero managed operations/uploads. Five expected typed failures
+include real partial detach/removal effects even when the managed list is empty;
+unknown initial inspection and failed-before-effect detachment stayed unchanged.
+The real server refused foreign-holder removal after detaching the declared user,
+for both original and typed paths. All100 collected file hashes/sizes and907
+installed resources matched their manifests/Git; enabled KVM and an independent
+Ubuntu24.04 x86 kernel were recorded. Guest/runner and exact cleanup exited0.
+This is separate maintenance-component proof, not a replay of normal deployment,
+production policy revocation or private maintenance-route adoption.

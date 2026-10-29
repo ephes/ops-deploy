@@ -14,6 +14,8 @@ trap finish EXIT
 [[ -z $(env | grep -Ei '(token|secret|ssh_auth|github_api|actions_runtime)' || true) ]]
 IMPLEMENTATION_SHA=$(cat /etc/ops-minio-implementation)
 MINIO_OWNED_ID=$(cat /etc/ops-minio-owned-id)
+COMPONENT=$(cat /etc/ops-minio-component)
+case "$COMPONENT" in normal|policy-rollback) ;; *) exit 2 ;; esac
 [[ $IMPLEMENTATION_SHA =~ ^[0-9a-f]{40}$ && $MINIO_OWNED_ID =~ ^[0-9a-f]{16}$ ]]
 grep -Eq "(^| )ops_minio_owned=$MINIO_OWNED_ID( |$)" /proc/cmdline
 [[ ! -e /etc/default/minio && ! -e /etc/systemd/system/minio.service && ! -e /var/lib/minio ]]
@@ -35,4 +37,8 @@ cd /opt/controller
 .venv/bin/python tests/integration/minio/verify-installed.py kvm-owned
 install -d /opt/minio-fixture/collections/ansible_collections/local
 mv /opt/minio-library /opt/minio-fixture/collections/ansible_collections/local/ops_library
-.venv/bin/python tests/integration/minio/harness.py /var/tmp/minio-evidence
+if [[ $COMPONENT == normal ]]; then
+    .venv/bin/python tests/integration/minio/harness.py /var/tmp/minio-evidence
+else
+    .venv/bin/python tests/integration/minio/maintenance/harness.py /var/tmp/minio-evidence
+fi
