@@ -384,3 +384,45 @@ process and session stage gets its initial attempt plus the declared retries:
 13 attempts and12 waits for the default12, following Ansible2.21 task execution.
 Only these metadata observations retry; executor CLI calls do not. Unknown probe
 failures remain genuine failures.
+
+## User-owned code prerequisite (under qualification)
+
+`ops_deploy.services.daybook_operations_runtime.code.install_daybook_runtime_code`
+prepares the original user-owned target's source and locked environment. The
+connecting identity must be that existing GUI user. Studio's root-owned source
+remains the separate Inbox dependency. This component neither starts the runtime
+nor changes its profile, credentials, journal or launchd jobs.
+
+The code predicate checks the exact once-resolved Main revision and declared
+tracked code, a clean checkout, frozen dependencies and the original exact
+managed-Python home/version. Current code can remain in use. Replacing code or
+changing the environment requires the original keeper label unloaded and no
+`operations serve` running for that user. Unknown process/tool failures remain
+unavailable; they do not establish quiescence. These checks belong to this
+runtime code prerequisite, not to unrelated legacy Sessions checkouts.
+
+Planning uses metadata/code/lock predicates only. A queued read-only guard also
+runs before managed preparation or transfer. A genuine change creates a private
+per-run upload directory, uses ordinary connecting-identity SFTP, verifies the
+bundle descriptor and commit, and cleans the exact temporary directory on success
+or failure. The temporary handoff replaces the old persistent deployment-bundle
+cache; the application does not consume that cache. Existing old cache files are
+left alone. No credential file or durable credential verifier is created.
+
+As in the original role, a readable different revision removes only the declared
+checkout before Git initialization, bundle-ref fetching and detached checkout.
+The code refuses a dirty checkout that remains on the same declared revision.
+A missing exact Python patch is installed with the original `--no-bin` selector;
+installation respects an inherited user download policy. Synchronization retains
+frozen/no-dev/managed-Python semantics and cannot download another interpreter.
+A failed build, lock check or interpreter-home postcondition stays failed.
+UV predicates and managed work inherit the same user location/config context
+(including XDG/UV directories), with the same explicit UV overrides. Interpreter
+selection and home drift are checked before the lock predicate. Managed
+source/build work uses the original user context; application imports,
+CLI status, constructor validation and model calls are absent from this component.
+
+This source slice is not yet qualified. Its synthetic Git/controller tests are
+separate from the forthcoming owned user-SSH/real-Python proof and eventual
+normal inventory workflow. Private normal routing and real source transitions
+remain under the existing deployment review and maintenance-window contract.
