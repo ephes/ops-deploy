@@ -220,8 +220,11 @@ def test_streaming_redactor_never_persists_split_secret(tmp_path: Path, monkeypa
     for split in range(len(secret) + 1):
         raw_path = tmp_path / "raw"
         durable_path = tmp_path / "durable"
-        with raw_path.open("w") as raw, durable_path.open("w") as durable:
-            stream = fixture.BoundedLog(raw, durable)
+        with (
+            raw_path.open("w") as raw,
+            durable_path.open("w") as durable,
+            fixture.BoundedLog(raw, durable) as stream,
+        ):
             stream.write("before " + secret[:split])
             stream.flush()
             assert secret not in durable_path.read_text()
