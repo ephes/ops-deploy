@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add confirmed DNS removal and complete the source-backed Traefik restore/remove
+  lifecycle APIs with literal custom paths, transaction refusal, nonmutating
+  archive validation and original ACME-only/default staging semantics. Preserve
+  original cleanup tolerance and private force/keep flag behavior. Owned native
+  component evidence is separate from inventory lifecycle qualification.
+
 - Qualify the separate MinIO named-policy maintenance component in an offline
   x86 KVM guest with the exact pinned binaries:24 typed phases,10 strict
   zero-managed/zero-upload repeats and five expected failures with actual partial
