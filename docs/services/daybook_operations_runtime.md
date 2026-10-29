@@ -385,7 +385,7 @@ process and session stage gets its initial attempt plus the declared retries:
 Only these metadata observations retry; executor CLI calls do not. Unknown probe
 failures remain genuine failures.
 
-## User-owned code prerequisite (under qualification)
+## User-owned code prerequisite
 
 `ops_deploy.services.daybook_operations_runtime.code.install_daybook_runtime_code`
 prepares the original user-owned target's source and locked environment. The
@@ -422,7 +422,20 @@ selection and home drift are checked before the lock predicate. Managed
 source/build work uses the original user context; application imports,
 CLI status, constructor validation and model calls are absent from this component.
 
-This source slice is not yet qualified. Its synthetic Git/controller tests are
-separate from the forthcoming owned user-SSH/real-Python proof and eventual
-normal inventory workflow. Private normal routing and real source transitions
-remain under the existing deployment review and maintenance-window contract.
+The [owned native proof](https://github.com/ephes/ops-deploy/actions/runs/40801523101)
+at `e4bb6c0` passed with actual user-SSH/SFTP, UV0.13.5 and Python3.14.7:
+first4 managed operations/1actualSFTP, strict repeat0/0, current enabled keeper
+PID/resources preserved, changed source refused before transfer while in use,
+quiescent replacement3/1, and replacement repeat0/0. All907 installed package
+resources matched immutable Git, with exact installed-set/direct-URL and
+noneditable provenance. Temporary resources were cleaned up. The genuine all7
+unsafe inherited SDK field positive control was blocked before any privileged
+command; actual component handoffs disabled every escalation field.
+
+The fixture used a disposable loopback-only user sshd and owned UV install/cache
+directories, not real inventory identities or Atlas availability. Selected
+managed metadata equality does not claim global zero I/O. Synthetic Git/SDK
+regressions and [canonical CI](https://github.com/ephes/ops-deploy/actions/runs/40801523031)
+are separate evidence: both Python versions passed9334 tests/522 skipped.
+Private normal routing and real inventory/source transitions remain separate
+qualification work under the original maintenance-window contract.
