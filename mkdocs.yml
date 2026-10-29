@@ -76,6 +76,7 @@ nav:
       - voxhelm_remote_worker (macOS native): services/voxhelm_remote_worker.md
       - llama_server (macOS native): services/llama_server.md
       - Daybook operations runtime: services/daybook_operations_runtime.md
+      - Disabled voice-memo attention: services/daybook_voice_memo_attention.md
       - Daybook Sessions: services/daybook_sessions.md
       - Photos offload components: services/daybook_photos_offload.md
       - Voice Memo Inbox components: services/daybook_voice_memo_inbox.md

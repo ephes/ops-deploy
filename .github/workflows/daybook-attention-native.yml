@@ -1,0 +1,78 @@
+name: Native Daybook attention components
+
+on:
+  push:
+    branches: [pyinfra-daybook-attention-20261029]
+    paths:
+      - .github/workflows/daybook-attention-native.yml
+      - smoke/daybook_attention_native_fixture.py
+      - smoke/mac_apps_owned.py
+      - smoke/daybook_resources_native_fixture.py
+      - smoke/daybook_runtime_native_fixture.py
+      - src/ops_deploy/**
+      - pyproject.toml
+      - uv.lock
+      - tests/test_daybook_voice_memo_attention*.py
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed implementation commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-daybook-attention-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      IMPLEMENTATION_SHA: ${{ inputs.implementation_sha || github.sha }}
+      MAC_APPS_EVIDENCE_DIR: /private/var/tmp/mac-apps-evidence
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate immutable implementation selection
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.IMPLEMENTATION_SHA }}
+          path: .implementation
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Install exact noneditable Git implementation outside checkout
+        run: |
+          unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV PYTHONPATH PYTHONHOME
+          test "$(git -C .implementation rev-parse HEAD)" = "$IMPLEMENTATION_SHA"
+          test -z "$(git -C .implementation status --porcelain)"
+          uv python install 3.13
+          uv venv --managed-python --python 3.13 /private/var/tmp/mac-apps-controller
+          uv pip install --python /private/var/tmp/mac-apps-controller/bin/python \
+            "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA" "uv==0.13.5" pytest
+      - name: Run owned root GUI attention component proof
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" MAC_APPS_EVIDENCE_DIR="$MAC_APPS_EVIDENCE_DIR" \
+            PATH="$PATH" PYTHONDONTWRITEBYTECODE=1 \
+            /private/var/tmp/mac-apps-controller/bin/python ".implementation/smoke/daybook_attention_native_fixture.py"
+      - name: Make owned evidence readable
+        if: always()
+        run: |
+          mkdir -p "$MAC_APPS_EVIDENCE_DIR"
+          sudo chown -R "$(id -u):$(id -g)" "$MAC_APPS_EVIDENCE_DIR"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: native-daybook-attention-${{ github.run_id }}
+          path: /private/var/tmp/mac-apps-evidence
+          if-no-files-found: error
+          retention-days: 7

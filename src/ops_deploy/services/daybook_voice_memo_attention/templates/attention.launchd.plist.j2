@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{{ daybook_voice_memo_attention_launchd_label | e }}</string>
+  <key>ProgramArguments</key><array>
+    <string>{{ daybook_voice_memo_attention_venv | e }}/bin/python</string>
+    <string>-I</string><string>-m</string><string>daybook.attention</string>
+    <string>--config</string><string>{{ daybook_voice_memo_attention_config_path | e }}</string>
+    <string>serve</string>
+  </array>
+  <key>Disabled</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>900</integer>
+  <key>Umask</key><integer>63</integer>
+  <key>WorkingDirectory</key><string>{{ daybook_voice_memo_attention_runtime_dir | e }}</string>
+  <key>StandardOutPath</key><string>{{ daybook_voice_memo_attention_runtime_dir | e }}/tick.log</string>
+  <key>StandardErrorPath</key><string>{{ daybook_voice_memo_attention_runtime_dir | e }}/tick.err.log</string>
+</dict></plist>
