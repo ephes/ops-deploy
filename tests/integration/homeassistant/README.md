@@ -96,3 +96,10 @@ credential/model/prompt rotations and managed configuration overwrite remain
 explicit followups. Component-level source/owned controls do not substitute for
 those application cases. Backup/restore/remove and trust-only maintenance also
 remain separate; a successful first matrix does not close these paths.
+
+
+The guest exports `OPS_LIBRARY_PATH` as the exact owned absolute original
+collection checkout from process start and unsets `OPS_DEPLOY_PATH`. Before the
+harness runs, it verifies that checkout at
+`9d88de8f9d04498bbb6d71174792534e87db4a88`. The first matrix exercises the installed
+public deployment API; private CLI binding remains a separate qualification.

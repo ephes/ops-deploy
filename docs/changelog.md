@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The owned Home Assistant native guest now exports its exact original-library
+  checkout and verifies that revision before the harness, with `OPS_DEPLOY_PATH`
+  explicitly unset. Runtime and matrix scope are unchanged.
+
 - Prepare an owned Home Assistant current/upgrade application matrix with exact
   installed-artifact proof, real onboarding/canaries and synthetic loopback peers.
   This is fixture source only; no native, inventory or physical-device success

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export OPS_LIBRARY_PATH=/opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
+unset OPS_DEPLOY_PATH
 [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]]
 [[ $(id -u) == 0 && $(uname -m) == x86_64 && $(cat /proc/1/comm) == systemd ]]
 [[ ${IMPLEMENTATION_SHA:?} =~ ^[0-9a-f]{40}$ ]]
@@ -27,4 +29,5 @@ install -d -m 0700 /opt/homeassistant-fixture
 install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
 git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach 9d88de8f9d04498bbb6d71174792534e87db4a88
+[[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == 9d88de8f9d04498bbb6d71174792534e87db4a88 ]]
 .venv/bin/python -m tests.integration.homeassistant.harness
