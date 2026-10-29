@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
+  `srs_enabled` the deploy picks the layout by postsrsd's installed major (else
+  apt's candidate; a read-only check after the install refuses a different
+  major). Hosts with postsrsd 1.x installed keep their files, `tcp:` maps and
+  operations byte-identical; a host still without postsrsd only gains the
+  read-only candidate probe and that check.
+  On 2.x it renders `/etc/postsrsd.conf` from the same inputs and the same secret
+  file (addresses 1.x issued still reverse), removes the 1.x
+  `/etc/default/postsrsd`, restarts postsrsd and checks a socketmap round trip
+  before main.cf switches to `socketmap:unix:srs:forward`/`reverse` and Postfix
+  restarts. `srs_listen_addr` and the SRS ports are refused on 2.x unless left at
+  their defaults. New owned systemd fixture test against Postfix 3.10 and
+  postsrsd 2.0.11 (`tests/test_mail_relay_postsrsd_docker.py`).
+
 - `bind`: Ubuntu 26.04 and later (BIND 9.20, whose `bind9` ships
   `named.conf.root-hints` and removes `named.conf.default-zones` and the
   `db.*` builtin zone files) now include `named.conf.root-hints`, as Debian 13

@@ -39,6 +39,86 @@ by their existing services. Plaintext credentials use protected stdin, never arg
 or environment; fixed diagnostics do not disclose secrets or stored verifiers.
 
 
+## postsrsd 1.x and 2.x
+
+postsrsd 1.x (Ubuntu 24.04, Debian 13: 1.10) reads `/etc/default/postsrsd` and
+answers Postfix `tcp:` lookup tables. postsrsd 2.x (Ubuntu 26.04: 2.0.11) reads
+`/etc/postsrsd.conf` and answers only `socketmap:` tables. With `srs_enabled`
+the deploy picks the layout by postsrsd's major version: the installed
+package's (`dpkg -l`; an installed package is never upgraded here), otherwise
+apt's candidate (`apt-cache policy postsrsd`). When apt knows no candidate yet
+(empty package lists before the deploy's own `apt update`), the 1.x layout is
+planned; a read-only check right after the package install then refuses a
+different installed major before any configuration is written, and the next run
+plans for the installed one. Any other major is refused.
+
+**1.x** is unchanged: the same files, `tcp:<srs_listen_addr>:<port>` maps, op
+order and listener waits as before 2.x support (byte-identical renders, pinned
+by `tests/test_mail_relay_postsrsd.py`).
+
+**2.x** renders `/etc/postsrsd.conf` from the same inputs:
+
+| postsrsd 1.x (`/etc/default/postsrsd`) | postsrsd 2.x (`/etc/postsrsd.conf`) |
+| --- | --- |
+| `SRS_DOMAIN` (`srs_domain`) | `srs-domain` |
+| `SRS_EXCLUDE_DOMAINS` (`srs_exclude_domains`, each as `.domain` and `domain`) | `domains`, the same list |
+| `SRS_SECRET` (`srs_secret_file`) | `secrets-file`, the same file and secret |
+| `SRS_SEPARATOR`, `SRS_HASHLENGTH`, `SRS_HASHMIN` (`=`, 4, 4) | `separator`, `hash-length`, `hash-minimum` |
+| `RUN_AS`, `CHROOT` (`postsrsd`, `/var/lib/postsrsd`) | `unprivileged-user`, `chroot-dir` |
+| `SRS_LISTEN_ADDR`, `SRS_FORWARD_PORT`, `SRS_REVERSE_PORT` | `socketmap = unix:/var/spool/postfix/srs` |
+
+main.cf then names `socketmap:unix:srs:forward` and
+`socketmap:unix:srs:reverse` (relative to the queue directory, where the
+chrooted cleanup daemon finds the socket); everything else in main.cf stays the
+same. `srs_listen_addr`, `srs_forward_port` and `srs_reverse_port` have no 2.x
+meaning and are refused unless they keep their defaults; the SRS domains and the
+secret path must be plain names (they are quoted into the file). The secret file
+is the one 1.x used, so addresses 1.x issued still reverse: with the same secret,
+1.10 and 2.0.11 issue identical SRS0/SRS1 addresses and each reverses the
+other's. 2.x keeps `syslog = off` (its messages go to the journal) and
+`original-envelope = embedded` (stateless, like 1.x).
+
+On 2.x the deploy switches postsrsd before Postfix: the secret, `postsrsd.conf`,
+removal of the 1.x `/etc/default/postsrsd`, postsrsd enable/start/restart, and a
+read-only socketmap round trip (a foreign sender is rewritten into the SRS domain
+and back; an own domain and its subdomains are not rewritten) all run before
+main.cf names the socketmap and Postfix restarts. The foreign sender is
+`ops-deploy-srs-probe@` the first of `srs-probe.invalid`, `srs-probe.example`,
+`srs-probe.test` and `srs-probe.localhost` that is neither the SRS domain nor
+an exclusion or below one; if none is left the deploy refuses before any change.
+
+After a release upgrade from 24.04 to 26.04 the package's postinst starts
+postsrsd 2.x on its packaged `/etc/postsrsd.conf` while main.cf still names the
+1.x `tcp:` tables. Until `mail_relay` is deployed again, cleanup refuses every
+message with a temporary error ("map lookup problem ... try again later"):
+senders retry and local mail waits in the maildrop, nothing bounces. Deploy
+`mail_relay` right after the upgrade.
+
+`tests/test_mail_relay_postsrsd_docker.py` runs the 2.x deploy against real
+Postfix 3.10 and postsrsd 2.0.11 under systemd. It is skipped unless
+`MAIL_RELAY_POSTSRSD_DOCKER_CONTAINER` holds the full ID of a running container
+named `ops-deploy-mail-relay-postsrsd2-20261029`, labelled
+`ops-deploy.fixture=mail-relay-postsrsd2` and
+`ops-deploy.run=mail-relay-postsrsd2-20261029`, with `--network none`, not
+privileged, `--cgroupns private`, `SYS_ADMIN` and `SYS_PTRACE` (the Postfix
+master check reads `/proc/<pid>/exe`) as the only added capabilities, no mounts,
+ports or devices, `--security-opt apparmor=unconfined`, and tmpfs only on `/run`,
+`/run/lock`, `/var/spool/postfix` and `/var/lib/postgrey` (owned by postgrey).
+Build it from `ubuntu:26.04` with `postfix/main_mailer_type` preseeded to
+`No configuration`, `systemd systemd-sysv python3 postfix postgrey
+libsasl2-modules sasl2-bin ca-certificates postsrsd ssl-cert` installed,
+`/etc/postsrsd.conf` copied to `/opt/postsrsd.conf.packaged`, postfix, postgrey
+and postsrsd enabled, and as entry point `/sbin/init` after remounting
+`/sys/fs/cgroup` read-write. Each test resets it to the shape a release upgrade
+leaves (2.x on its packaged configuration, the 1.x defaults file, a 1.x main.cf
+and the SRS secret). It covers the switch (socketmap round trip before the
+Postfix restart, no 1.x file or listener left, secret bytes and inode kept),
+`postmap -q` against the configured tables in the queue directory, a message
+through `sendmail` and the chrooted cleanup daemon (sender rewritten, a bounce
+to the SRS address reversed, an own sender untouched), a second run without a
+managed change or a new daemon PID, and a drifted `postsrsd.conf` restored with
+a postsrsd restart only.
+
 ## Example
 
 ```python
