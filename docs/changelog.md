@@ -13,6 +13,15 @@
   source with synthetic status/privacy controls; no service mutation yet.
   This is a tested source foundation; no deployment API or inventory switch.
 
+- Preserve original managed Daybook runtime health and update-check predicates,
+  including intentionally disabled remote sources and real unreadable/CLI
+  failures. Keep application work explicit on repeats. Add the original
+  confirmed closeout action without stopping the keeper. Owned root/GUI/SSH
+  health/check/closeout first/repeats and three genuine failures passed, with
+  exact873 installed resources; canonical8867/521 passed on both Python versions.
+  Preserve failed initial socket setup and advisory review limits; inventory
+  adoption remains separate.
+
 - Add managed Daybook runtime cutover/rollback and optional Inbox interruption
   summary components, preserving original reconciliation/start guards. Owned
   root/GUI/SSH transition/report assertions and exact817 package provenance
