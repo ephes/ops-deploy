@@ -44,6 +44,8 @@ it is not described as zero managed changes. Pure planning checks never import
 the application. The successful wheel receipt is published only after the
 actual import succeeds. Failed installation keeps the label disabled/unloaded
 and preserves the prior receipt, runtime state, activation records and logs.
+Recovering with a corrected wheel transfers its current bytes before installing
+the environment, including recovery within the same controller process.
 The import retains the original role's unbounded command lifetime. No new
 deadline is imposed on application code during this compatibility migration.
 

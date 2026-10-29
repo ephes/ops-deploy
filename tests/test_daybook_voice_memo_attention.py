@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import plistlib
@@ -10,9 +11,12 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+import pyinfra.api.facts as sdk_facts
 import pytest
 import yaml
 from pydantic import ValidationError
+from pyinfra.api.util import get_file_sha1
+from pyinfra.facts.files import Directory, File, Sha1File
 
 from ops_deploy.services.daybook_voice_memo_attention import DaybookVoiceMemoAttentionConfig
 from ops_deploy.services.daybook_voice_memo_attention import deploy as api
@@ -121,6 +125,47 @@ def test_actual_caller_disabled_install_order_and_wheel_transfer(wheel: Path, mo
     assert actions == ["quiesce", "directories", "environment", "verify-import", "resources"]
     assert result.uploaded_paths == [cfg.daybook_voice_memo_attention_install_root + "/" + wheel.name]
     assert not any(action in actions for action in ("serve", "discover", "baseline", "activate"))
+
+
+def test_fresh_component_digest_wins_over_sdk_cached_source_filename(
+    wheel: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wheel.write_bytes(b"OWNED prior failed wheel")
+    prior = get_file_sha1(str(wheel))
+    wheel.write_bytes(b"OWNED recovered wheel")
+    assert hashlib.sha1(wheel.read_bytes()).hexdigest() != prior
+    cfg = config(wheel)
+    destination = cfg.daybook_voice_memo_attention_install_root + "/" + wheel.name
+    original_fact = sdk_facts._get_fact
+
+    def fact(
+        state: Any,
+        host: Any,
+        cls: Any,
+        args: Any = None,
+        kwargs: Any = None,
+        ensure_hosts: Any = None,
+        apply_failed_hosts: bool = True,
+    ) -> Any:
+        if cls is File:
+            path = (kwargs or {}).get("path")
+            return {"user": "root", "group": "wheel", "mode": 644} if path == destination else None
+        if cls is Directory:
+            return {"user": "root", "group": "wheel", "mode": 755}
+        if cls is Sha1File:
+            return prior
+        return original_fact(state, host, cls, args, kwargs, ensure_hosts, apply_failed_hosts)
+
+    monkeypatch.setattr(sdk_facts, "_get_fact", fact)
+    monkeypatch.setattr(
+        api,
+        "observe",
+        lambda _: {"quiescent": True, "directories": True, "wheel": False, "environment": True, "resources": True},
+    )
+    result = run_deploy_fake(api.install_daybook_voice_memo_attention, cfg, responses={"uname -s": ["Darwin"]})
+    assert result.succeeded, result.error
+    assert result.uploaded_paths == [destination]
+    assert result.uploads[0][1] == b"OWNED recovered wheel"
 
 
 def test_status_command_binds_original_disabled_payload(wheel: Path) -> None:

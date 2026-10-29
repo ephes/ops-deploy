@@ -6,6 +6,8 @@
   Python patch/root environment, separate GUI-owner isolated import, original
   launchd declaration and successful-wheel receipt. Application import remains
   managed repeat work; source tests are separate from native/inventory proof.
+  Fresh wheel checksums also govern corrected-wheel transfer after a failed
+  import in the same controller process.
 
 - `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
   `srs_enabled` the deploy picks the layout by postsrsd's installed major (else

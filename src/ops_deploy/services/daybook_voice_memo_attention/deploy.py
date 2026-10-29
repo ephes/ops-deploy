@@ -95,6 +95,10 @@ def install_daybook_voice_memo_attention(cfg: DaybookVoiceMemoAttentionConfig) -
             user="root",
             group="wheel",
             mode="0644",
+            # Fresh component observation already proved destination mismatch.
+            # The SDK caches local digests by filename for the process lifetime;
+            # do not let that stale cache suppress a recovery wheel transfer.
+            force=True,
         )
     if not state["environment"] or not state["wheel"]:
         managed("Converge original attention Python and wheel installation", "environment")
