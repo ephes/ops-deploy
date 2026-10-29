@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepared Home Assistant protected configuration/secrets/include rendering,
+  preserving the original template bytes, defaults and path-derived SQLite URL;
+  physical configuration writes and native application qualification remain pending.
+
 - Prepare Home Assistant/Matter unit writes, original desired states and deferred
   service-handler components. Keep unconditional daemon reloads declared managed,
   original restart/enablement semantics and partial unit-install failures.

@@ -274,3 +274,19 @@ Matter/trust verification still need the outer deployment's multiple boundaries.
 No full deployment API is exported yet. Actual SDK tests cover current/missing
 units, explicit states, flags and a failed unit metadata install with its prior
 upload preserved; these synthetic connector tests are not native service proof.
+
+## Prepared configuration rendering
+
+The configuration renderer copies the original configuration, secrets and six
+stock include templates byte for byte, retaining whitespace, comments, ordering
+and the original interpolation rules. Configuration values retain role defaults;
+the default SQLite URL follows the declared config path, independently of the
+data path. Explicit database URLs and already-resolved UniFi/optional example
+credentials use protected values. Every rendered body is returned as `SecretStr`,
+including configuration and includes; consumers must keep unwrapped bytes in
+protected stdin or host-local memory, never a durable controller receipt.
+
+This component does not resolve the host's UniFi credential, parse or normalize
+user YAML, write files, create backups, or notify a handler. Physical template
+versus replace symlink behavior and named backup semantics remain a separate
+writer implementation. Source/template tests are not native application proof.
