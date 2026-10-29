@@ -176,6 +176,8 @@ def test_actual_maintenance_summary_through_tooling_main(
         harness.main()
     assert closed == [True]
     summary = json.loads((generated / "summary.json").read_text())
+    if outcome != "matrix-failed":
+        assert summary["component"] == "policy-rollback"
     if outcome == "numeric-success":
         summary["success"] = 1
     evidence = tmp_path / "evidence"

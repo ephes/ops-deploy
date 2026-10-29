@@ -41,3 +41,8 @@ synthetic root environment after the original rotation observation. New pyinfra
 recovery-first changes are classified separately from strict healthy repeats.
 The private hosted run40651848171 failed before runner allocation due GitHub
 account billing; no workflow step or native scenario executed in that run.
+
+The standalone maintenance guest summary records `component: policy-rollback`.
+Private transport requires this collected, hash-verified summary and literal
+success before accepting maintenance completion; the requested selector alone
+is not execution evidence. The normal component remains unchanged.

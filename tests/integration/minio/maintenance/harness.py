@@ -301,7 +301,7 @@ class Fixture:
                 for key in ("label", "managed", "uploads", "error", "failed", "expected_fault", "secret_logged")
             }
         )
-        self.write("summary.json", {"success": False, "phases": self.phases})
+        self.write("summary.json", {"component": "policy-rollback", "success": False, "phases": self.phases})
         assert bool(error or failed) == failure, label
         assert not exposed, label
         assert not uploads, label
@@ -498,7 +498,7 @@ def main() -> None:
     fixture = Fixture(evidence)
     try:
         matrix(fixture)
-        fixture.write("summary.json", {"success": True, "phases": fixture.phases})
+        fixture.write("summary.json", {"component": "policy-rollback", "success": True, "phases": fixture.phases})
     finally:
         fixture.close()
 
