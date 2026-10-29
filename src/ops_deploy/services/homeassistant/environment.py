@@ -37,7 +37,7 @@ def create_command(cfg: HomeAssistantRuntimeConfig, kind: Kind, executable: str)
 
 
 @operation()
-def _environment(
+def _prepare_virtualenv(
     cfg: HomeAssistantRuntimeConfig,
     kind: Kind,
     llama_cpp_rebuild: bool,
@@ -104,7 +104,7 @@ def prepare_environment(
     Pass the preceding ``install_python`` result as ``python_install`` so a
     pending requested interpreter (even with existing user/UV) defers the plan.
     """
-    return _environment(
+    return _prepare_virtualenv(
         name="Prepare Matter virtualenv" if matter else "Prepare Home Assistant virtualenv",
         cfg=cfg,
         kind="matter" if matter else "homeassistant",

@@ -791,3 +791,14 @@ def notify(cfg):
         ("services/app/files/manage.py", "DJANGO_SECRET_KEY"),
         ("services/app/files/notify.py", "SMTP_PASSWORD"),
     }
+
+
+def test_homeassistant_virtualenv_remains_scanned_after_specific_builder_naming() -> None:
+    # Package-wide name matching must not conflate this operation with unrelated
+    # environment/content renderers. This changes no scanner rule or exemption.
+    relative = "services/homeassistant/environment.py"
+    trees = _trees()
+    assert "_prepare_virtualenv" in switch_builders(trees)[relative]
+    function = next(node for node in _functions(trees[relative]) if node.name == "_prepare_virtualenv")
+    function.body.append(ast.parse("leaking = {'OWNED_SYNTHETIC_TOKEN': 'fixture'}").body[0])
+    assert (relative, "OWNED_SYNTHETIC_TOKEN") in {(path, name) for path, name, _ in python_findings(trees)}
