@@ -231,6 +231,36 @@ def test_drop_in_only_with_per_source_limits() -> None:
     assert [entry["path"] for entry in bundle["files"]] == ["/etc/ssh/sshd_config.d/99-ssh-guard.conf"]
 
 
+def test_auth_directives_on_top_of_a_confirmed_dropin() -> None:
+    """fail2ban off, the per-source drop-in already there: only the drop-in, its check and the reload."""
+
+    before = SshGuardConfig(fail2ban_enabled=False, per_source_net_block_size="32:64", timed_revert_seconds=900)
+    cfg = before.model_copy(update={"password_authentication": "no", "permit_root_login": "prohibit-password"})
+    responses = {
+        **probe(openssh="OpenSSH_9.6p1 Ubuntu-3ubuntu13.20, OpenSSL 3.0.13 30 Jan 2024", sshd_session=False),
+        **fakehost.UBUNTU,
+        **fakehost.directory("/etc/ssh/sshd_config.d"),
+        **fakehost.file("/etc/ssh/sshd_config.d/99-ssh-guard.conf", render_dropin(before)),
+    }
+    responses = with_tx(responses, "confirmed 1 0123456789abcdef0123456789abcdef")
+
+    bundle = plan_bundle(run_timed(responses, cfg))
+
+    assert bundle["expect_generation"] == 1
+    assert [step["name"] for step in bundle["steps"]] == [
+        "Ensure /etc/ssh/sshd_config.d",
+        "Write /etc/ssh/sshd_config.d/99-ssh-guard.conf",
+        "Validate the sshd configuration",
+        "Reload ssh for the new drop-in",
+    ]
+    assert bundle["steps"][1]["content"] == render_dropin(cfg)
+    assert render_dropin(cfg).endswith(
+        "PerSourceNetBlockSize 32:64\nPasswordAuthentication no\nPermitRootLogin prohibit-password\n"
+    )
+    assert bundle["steps"][2]["command"] == validate_command(cfg)
+    assert [entry["path"] for entry in bundle["files"]] == ["/etc/ssh/sshd_config.d/99-ssh-guard.conf"]
+
+
 # --- parity: the timed steps are the plain deploy's operations ------------------------
 
 
@@ -252,6 +282,10 @@ def scenarios() -> dict[str, tuple[SshGuardConfig, dict[str, Any]]]:
         "no fail2ban": (no_fail2ban, exposed_host()),
         "filter fix off": (DEFAULT.model_copy(update={"fail2ban_sshd_filter_fix": "off"}), exposed_host()),
         "classic backend": (DEFAULT.model_copy(update={"fail2ban_backend": "auto"}), exposed_host()),
+        "auth directives": (
+            no_fail2ban.model_copy(update={"password_authentication": "no", "permit_root_login": "prohibit-password"}),
+            exposed_host(),
+        ),
     }
 
 

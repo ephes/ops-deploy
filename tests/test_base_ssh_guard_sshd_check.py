@@ -33,7 +33,18 @@ PENALTIES_10_3 = (
 )
 
 
-def check(tmp_path: Path, effective: str, *, sshd_t: int = 0) -> tuple[subprocess.CompletedProcess[str], Path]:
+FULL = SshGuardConfig(
+    per_source_max_startups="05",
+    max_auth_tries="04",
+    max_startups="010:30:100",
+    per_source_net_block_size="32:064",
+    per_source_penalties="authfail:5m max:600 overflow:permissive max-sources4:065536",
+)
+
+
+def check(
+    tmp_path: Path, effective: str, *, sshd_t: int = 0, cfg: SshGuardConfig | None = None
+) -> tuple[subprocess.CompletedProcess[str], Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     stub = bin_dir / "sshd"
@@ -43,14 +54,7 @@ def check(tmp_path: Path, effective: str, *, sshd_t: int = 0) -> tuple[subproces
     output.write_text(effective + "\n")
     dropin = tmp_path / "99-ssh-guard.conf"
     dropin.write_text("# drop-in\n")
-    cfg = SshGuardConfig(
-        sshd_dropin_path=str(dropin),
-        per_source_max_startups="05",
-        max_auth_tries="04",
-        max_startups="010:30:100",
-        per_source_net_block_size="32:064",
-        per_source_penalties="authfail:5m max:600 overflow:permissive max-sources4:065536",
-    )
+    cfg = (cfg or FULL).model_copy(update={"sshd_dropin_path": str(dropin)})
     env = {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
@@ -102,4 +106,47 @@ def test_a_failing_syntax_check_removes_the_dropin(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "Invalid sshd config" in result.stderr
+    assert not dropin.exists()
+
+
+# R1b-like drop-in on OpenSSH 9.6 (no penalties): per-source limits plus the two auth directives.
+AUTH = SshGuardConfig(
+    per_source_net_block_size="32:64",
+    password_authentication="no",
+    permit_root_login="prohibit-password",
+)
+AUTH_GOOD = "persourcemaxstartups 5\npersourcenetblocksize 32:64\npasswordauthentication no"
+
+
+@pytest.mark.parametrize(
+    "printed",
+    ["permitrootlogin without-password", "permitrootlogin prohibit-password"],
+    ids=["openssh-9.6", "openssh-10.3"],
+)
+def test_auth_values_as_each_release_prints_them_pass(tmp_path: Path, printed: str) -> None:
+    result, dropin = check(tmp_path, f"{AUTH_GOOD}\n{printed}", cfg=AUTH)
+
+    assert result.returncode == 0, result.stderr
+    assert dropin.exists()
+
+
+@pytest.mark.parametrize(
+    ("effective", "message"),
+    [
+        (f"{AUTH_GOOD}\npermitrootlogin yes", "does not show: permitrootlogin prohibit-password"),
+        (f"{AUTH_GOOD}\npermitrootlogin forced-commands-only", "does not show: permitrootlogin prohibit-password"),
+        (AUTH_GOOD, "does not show: permitrootlogin prohibit-password"),
+        (
+            f"{AUTH_GOOD.replace('passwordauthentication no', 'passwordauthentication yes')}\n"
+            "permitrootlogin without-password",
+            "does not show: passwordauthentication no",
+        ),
+    ],
+    ids=["root login shadowed", "other root mode", "no root line", "password shadowed"],
+)
+def test_shadowed_auth_values_remove_the_dropin(tmp_path: Path, effective: str, message: str) -> None:
+    result, dropin = check(tmp_path, effective, cfg=AUTH)
+
+    assert result.returncode == 1
+    assert message in result.stderr
     assert not dropin.exists()

@@ -269,6 +269,8 @@ keys, and checks of the running jail and of sshd's effective values.
 | `per_source_net_block_size` | `""` | not in the role: `<ipv4 0-32>:<ipv6 0-128>` (`32:64` groups an IPv6 /64) |
 | `per_source_penalties` | `""` | not in the role: `no`, or `key:value` settings OpenSSH knows (`authfail:5m max:600`), each key once |
 | `per_source_penalty_exempt_list` | `""` | not in the role: comma-separated addresses/networks |
+| `password_authentication` | `None` | not in the role: `None` leaves the directive out; `"yes"` or `"no"` writes `PasswordAuthentication` |
+| `permit_root_login` | `None` | not in the role: `None` leaves the directive out; `"yes"`, `"prohibit-password"`, `"forced-commands-only"` or `"no"` writes `PermitRootLogin` (the old spelling `without-password` is refused) |
 | `timed_revert_seconds` | `0` | not in the role: `0` off; 60..3600 runs every change under a timed revert (below) |
 
 Values written into the files must not contain line breaks or other control
@@ -282,8 +284,19 @@ by ops-library ssh_guard_deploy. Do not edit.` header). The extra jail keys
 follow the role's lines in the order `banaction`, `journalmatch`, `action`;
 the extra directives follow `PerSourceMaxStartups`, `MaxAuthTries`,
 `LoginGraceTime` in the order `MaxStartups`, `PerSourceNetBlockSize`,
-`PerSourcePenalties`, `PerSourcePenaltyExemptList`. All files are
-`root:root 0644`, their directories `root:root 0755`.
+`PerSourcePenalties`, `PerSourcePenaltyExemptList`, `PasswordAuthentication`,
+`PermitRootLogin`. All files are `root:root 0644`, their directories
+`root:root 0755`.
+
+`password_authentication` and `permit_root_login` default to `None`: no line,
+so every existing configuration renders the same drop-in and the same checks
+byte for byte. They change who can log in, so set them only with
+`timed_revert_seconds` on a host whose only way back is SSH, and check a new
+key login (and that a password login is refused) before the confirm. They are
+plain directives in the drop-in: `PasswordAuthentication no` does not turn off
+`KbdInteractiveAuthentication` (a PAM password prompt), and a `Match` block in
+the main configuration can still set either for matching connections; neither
+is checked here.
 
 ### Planning
 
@@ -375,8 +388,11 @@ as the protection.
 it (lowercase; numbers without leading zeros; `LoginGraceTime` in seconds;
 `PerSourcePenalties` part by part, words exactly and numbers by value, so
 `authfail:5m` matches OpenSSH 10.0's `authfail:300` and 10.3's
-`authfail:300.000000`). sshd takes the first value it reads for most directives,
-so an earlier drop-in that sets the same one wins; OpenSSH 10.0 takes the last
+`authfail:300.000000`; `PermitRootLogin prohibit-password` as either
+`prohibit-password` or `without-password`, which OpenSSH 9.6 prints for it).
+sshd takes the first value it reads for most directives,
+so an earlier drop-in that sets the same one wins (as does a line of the main
+configuration before its `Include`); OpenSSH 10.0 takes the last
 `PerSourceNetBlockSize`. Either way the effective value differs. On any
 failure the drop-in is removed and the deploy fails before the reload, with
 `Invalid sshd config; removed <path>.` or `sshd -T does not show: <line>;

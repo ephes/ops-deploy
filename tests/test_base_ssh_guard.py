@@ -919,3 +919,121 @@ def test_effective_lines_skip_values_sshd_prints_differently() -> None:
 def test_config_is_frozen() -> None:
     with pytest.raises(ValidationError):
         DEFAULT.fail2ban_maxretry = 1  # type: ignore[misc]
+
+
+# --- PasswordAuthentication / PermitRootLogin (optional, off by default) ---------------
+
+AUTH = SshGuardConfig(
+    fail2ban_enabled=False,
+    per_source_net_block_size="32:64",
+    password_authentication="no",
+    permit_root_login="prohibit-password",
+)
+OPENSSH_96 = "OpenSSH_9.6p1 Ubuntu-3ubuntu13.20, OpenSSL 3.0.13 30 Jan 2024"
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [DEFAULT, NFT_HOST, IPTABLES_HOST, *PARITY.values()],
+    ids=["defaults", "nftables host", "iptables host", *(f"parity {name}" for name in PARITY)],
+)
+def test_auth_directives_are_off_by_default_and_render_nothing(cfg: SshGuardConfig) -> None:
+    assert cfg.password_authentication is None
+    assert cfg.permit_root_login is None
+    dropin = render_dropin(cfg)
+    command = validate_command(cfg)
+    for word in ("passwordauthentication", "permitrootlogin"):
+        assert word not in dropin.lower()
+        assert word not in command.lower()
+        assert all(word not in line for line in effective_lines(cfg))
+    assert " -e " not in command
+
+
+def test_auth_directives_follow_the_other_directives() -> None:
+    cfg = AUTH.model_copy(update={"max_auth_tries": "4", "per_source_penalties": "authfail:5m"})
+
+    assert render_dropin(cfg) == HEADER + (
+        "PerSourceMaxStartups 5\nMaxAuthTries 4\nPerSourceNetBlockSize 32:64\nPerSourcePenalties authfail:5m\n"
+        "PasswordAuthentication no\nPermitRootLogin prohibit-password\n"
+    )
+    assert render_dropin(SshGuardConfig(per_source_max_startups="", password_authentication="yes")) == (
+        HEADER + "PasswordAuthentication yes\n"
+    )
+    assert render_dropin(SshGuardConfig(per_source_max_startups="", permit_root_login="no")) == (
+        HEADER + "PermitRootLogin no\n"
+    )
+
+
+def test_auth_directives_are_checked_with_sshd_capital_t() -> None:
+    assert effective_lines(AUTH) == [
+        "persourcemaxstartups 5",
+        "persourcenetblocksize 32:64",
+        "passwordauthentication no",
+        "permitrootlogin prohibit-password",
+    ]
+    command = validate_command(AUTH)
+    assert "for want in 'persourcemaxstartups 5' 'persourcenetblocksize 32:64' 'passwordauthentication no';" in (
+        command
+    )
+    # OpenSSH 9.6 prints prohibit-password as without-password; either form passes.
+    assert (
+        "grep -qixF -e 'permitrootlogin prohibit-password' -e 'permitrootlogin without-password' || "
+        "{ rm -f -- /etc/ssh/sshd_config.d/99-ssh-guard.conf; "
+        "echo 'sshd -T does not show: permitrootlogin prohibit-password; "
+        "removed /etc/ssh/sshd_config.d/99-ssh-guard.conf.' >&2; exit 1; }"
+    ) in command
+    # Other PermitRootLogin values print as given.
+    assert "'permitrootlogin no'" in validate_command(SshGuardConfig(permit_root_login="no"))
+    assert " -e " not in validate_command(SshGuardConfig(permit_root_login="no"))
+
+
+def test_auth_directives_need_no_openssh_version_and_change_only_the_dropin() -> None:
+    """A host with the per-source drop-in gets the two auth lines: write, check, reload; nothing else."""
+
+    before = AUTH.model_copy(update={"password_authentication": None, "permit_root_login": None})
+    responses = {
+        **probe(openssh=OPENSSH_96, sshd_session=False),
+        **fakehost.UBUNTU,
+        **fakehost.directory("/etc/ssh/sshd_config.d"),
+        **fakehost.file(DROPIN, render_dropin(before)),
+    }
+
+    result = run(responses, AUTH)
+
+    assert result.mutating_changed_ops == [WRITE_DROPIN, VALIDATE, RELOAD]
+    assert validate_command(AUTH) in result.executed_commands
+    assert result.upload(DROPIN).decode() == render_dropin(AUTH)
+    assert RESTART_CMD not in result.executed_commands
+
+
+def test_converged_auth_directives_change_nothing() -> None:
+    responses = {
+        **probe(openssh=OPENSSH_96, sshd_session=False),
+        **fakehost.UBUNTU,
+        **fakehost.directory("/etc/ssh/sshd_config.d"),
+        **fakehost.file(DROPIN, render_dropin(AUTH)),
+    }
+
+    result = run(responses, AUTH)
+
+    assert result.changed_ops == []
+    assert result.executed_commands == []
+
+
+@pytest.mark.parametrize(
+    ("field", "bad"),
+    [
+        ("password_authentication", "No"),
+        ("password_authentication", ""),
+        ("password_authentication", True),
+        ("password_authentication", "no\nPermitRootLogin yes"),
+        ("permit_root_login", "without-password"),
+        ("permit_root_login", "Prohibit-Password"),
+        ("permit_root_login", ""),
+        ("permit_root_login", False),
+        ("permit_root_login", "no\nPasswordAuthentication yes"),
+    ],
+)
+def test_auth_directives_refuse_other_values(field: str, bad: object) -> None:
+    with pytest.raises(ValidationError):
+        SshGuardConfig.model_validate({field: bad})

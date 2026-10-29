@@ -110,6 +110,16 @@
   owned Linux filesystem repeat tests; full application qualification remains open.
   This is a tested source foundation; no deployment API or inventory switch.
 
+- `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
+  `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
+  render `PasswordAuthentication` and `PermitRootLogin` into the same sshd
+  drop-in, after the existing directives, checked with `sshd -t` and the
+  `sshd -T` effective-value check (`prohibit-password` also matches the
+  `without-password` OpenSSH 9.6 prints) and covered by the timed revert like
+  every drop-in change. Both default to `None` (no line): the drop-in, its
+  checks and the timed-revert bundle stay byte-identical for every existing
+  configuration.
+
 - Qualify the separate MinIO named-policy maintenance component in an offline
   x86 KVM guest with the exact pinned binaries:24 typed phases,10 strict
   zero-managed/zero-upload repeats and five expected failures with actual partial

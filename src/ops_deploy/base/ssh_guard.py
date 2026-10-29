@@ -21,6 +21,8 @@ rewrites nothing. On top of the role the deploy
 - renders more sshd per-source directives, refused while planning when the
   host's OpenSSH is too old for them, and checks a changed drop-in with
   ``sshd -t`` and its effective values with ``sshd -T`` before the reload.
+- optionally renders ``PasswordAuthentication`` and ``PermitRootLogin`` into
+  the same drop-in (off by default: no line), checked the same way.
 
 fail2ban is restarted only when its filter, jail or packages changed and ssh is
 reloaded only when the drop-in changed, so a converged host reports no change.
@@ -113,6 +115,16 @@ JournalMatch = Annotated[str, Field(pattern=rf"^([A-Z0-9_]+={_TOKEN}( \+ [A-Z0-9
 MaxStartups = Annotated[str, Field(pattern=r"^([0-9]+:[0-9]+:[0-9]+)?$")]
 NetBlockSize = Annotated[str, Field(pattern=r"^([0-9]+:[0-9]+)?$")]
 ExemptList = Annotated[str, Field(pattern=r"^([0-9A-Fa-f.:/]+(,[0-9A-Fa-f.:/]+)*)?$")]
+
+# ``PermitRootLogin`` values; ``without-password`` is only an older spelling of
+# ``prohibit-password`` and is not accepted as input.
+PermitRootLogin = Literal["yes", "prohibit-password", "forced-commands-only", "no"]
+# ``sshd -T`` lines a rendered value may also print as: OpenSSH 9.6 prints
+# ``PermitRootLogin prohibit-password`` as ``permitrootlogin without-password``,
+# 10.3 as ``permitrootlogin prohibit-password``.
+PRINTED_ALIASES: dict[str, tuple[str, ...]] = {
+    "permitrootlogin prohibit-password": ("permitrootlogin without-password",),
+}
 
 # OpenSSH release that first parses each gated directive.
 DIRECTIVE_SINCE: dict[str, tuple[int, int]] = {
@@ -213,6 +225,10 @@ class SshGuardConfig(RoleConfig):
     per_source_net_block_size: NetBlockSize = ""
     per_source_penalties: Line = ""
     per_source_penalty_exempt_list: ExemptList = ""
+    # Not in the role; None (the default) leaves the directive out, so the
+    # drop-in stays byte-identical for every existing configuration.
+    password_authentication: Literal["yes", "no"] | None = None
+    permit_root_login: PermitRootLogin | None = None
     # Not in the role. 0: off (the plain deploy). Otherwise the seconds after
     # which an unconfirmed change is reverted (docs/base.md, "Timed revert").
     timed_revert_seconds: StrictInt = 0
@@ -284,6 +300,8 @@ def dropin_directives(cfg: SshGuardConfig) -> list[tuple[str, str]]:
         ("PerSourceNetBlockSize", cfg.per_source_net_block_size),
         ("PerSourcePenalties", cfg.per_source_penalties),
         ("PerSourcePenaltyExemptList", cfg.per_source_penalty_exempt_list),
+        ("PasswordAuthentication", cfg.password_authentication or ""),
+        ("PermitRootLogin", cfg.permit_root_login or ""),
     )
     return [(key, value) for key, value in directives if value]
 
@@ -307,7 +325,8 @@ def effective_lines(cfg: SshGuardConfig) -> list[str]:
     ``60``). A role field whose printed form cannot be derived here (free text
     that ``sshd -t`` may still accept) gets no line; ``sshd -t`` checks it.
     PerSourcePenalties other than ``no`` is matched by part
-    (``penalty_tokens``).
+    (``penalty_tokens``). A line in ``PRINTED_ALIASES`` also matches its
+    aliases.
     """
 
     lines = []
@@ -350,13 +369,20 @@ def validate_command(cfg: SshGuardConfig) -> str:
     if not lines and not penalties:
         return command
     command += f"; eff=$(sshd -T -f {SSHD_CONFIG}) || " + fail(shlex.quote(f"sshd -T failed; {removed}"))
-    if lines:
-        wanted = " ".join(shlex.quote(line) for line in lines)
+    plain = [line for line in lines if line not in PRINTED_ALIASES]
+    if plain:
+        wanted = " ".join(shlex.quote(line) for line in plain)
         command += (
             f'; for want in {wanted}; do printf "%s\\n" "$eff" | grep -qixF -- "$want" || '
             + fail(f'"sshd -T does not show: $want; {removed}"')
             + "; done"
         )
+    for line in lines:
+        if line in PRINTED_ALIASES:
+            patterns = " ".join(f"-e {shlex.quote(form)}" for form in (line, *PRINTED_ALIASES[line]))
+            command += f'; printf "%s\\n" "$eff" | grep -qixF {patterns} || ' + fail(
+                shlex.quote(f"sshd -T does not show: {line}; {removed}")
+            )
     if penalties:
         # Part by part: a word must match exactly, a number by value (OpenSSH
         # 10.3 prints the times as 300.000000, earlier releases as 300).
