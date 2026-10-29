@@ -15,6 +15,14 @@
   replay, application upgrade, reindex or real document upload; lifecycle
   conversion remains separate.
 
+- Prepare the original user-owned Daybook runtime code prerequisite with exact
+  source/locked-Python predicates and original in-use replacement guards. Reuse
+  checked private source transfer without changing shared Sessions behavior.
+  Owned user-SSH/Python qualification passed: first4 managed/1actualSFTP,
+  repeat0/0, active-current keeper preserved, in-use change refused before
+  transfer, quiescent replacement3/1 and repeat0/0. Actual907-resource artifact
+  and cleanup passed. Private normal-routing/inventory adoption remain separate.
+
 - Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
   50 typed phases per leg,26 strict zero-managed/zero-upload repeats per leg,
   real synthetic OCR/SFTP/search and recovery controls. Upgrade first performed
