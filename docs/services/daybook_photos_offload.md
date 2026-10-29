@@ -2,8 +2,8 @@
 
 `DaybookPhotosOffloadConfig` and `install_daybook_photos_offload` preserve the
 original `daybook_photos_offload_deploy` declaration and its two templates. This
-component is under source/owned qualification; no inventory target, default
-engine, Photos activation or lifecycle is qualified by these controller tests.
+component has disposable macOS mechanism proof; no inventory target, default
+engine, Photos activation or lifecycle is qualified by that owned evidence.
 
 The original checkout is root-owned under
 `/Library/Application Support/Daybook/photos-offload/daybook`. Existing installs
@@ -64,5 +64,19 @@ Focused tests include actual owned Git clone/fetch/update/attestation refusals,
 private transfer IO/fault cleanup, GUI resource files and environment replacement
 with controlled probes, exact original template/default oracles, launchd state
 machine faults and the real controller entrypoint. Root/ACL/UV identity is
-simulated in some local tests and is not native proof. Actual root-to-GUI,
-launchd and SFTP behavior require the disposable native fixture before adoption.
+simulated in some local tests and is separate from native proof.
+
+The disposable macOS run on immutable `f42d8ce78a839c647e4ea22d7ee96173a340bac8`
+verified the complete 925-resource noneditable installed set and direct Git
+provenance. Actual root-to-GUI environment/resource work and SSH/SFTP completed:
+first 7 managed operations/1 upload, strict repeat 0/0, environment-only rebuild
+1/0, existing Main update 5/1 preserving Git/environment identities and logs,
+and final repeat 0/0. Missing attestation refused before operations; an injected
+upload-setup failure and a genuine digest-publication failure retained their
+partial effects and exact temporary cleanup. All seven inherited SDK privilege
+fields were disabled/cleared in actual handoffs. The unrelated GUI keeper PID
+and plist stayed unchanged; owned cleanup completed. This proves disabled
+installation mechanisms, while optional enabled activation retains separate
+paired/state-machine coverage. The fixture used an empty owned library and an
+inert import sentinel; entry reads and process-wide app calls were not counted,
+and no whole-host zero-I/O claim is made.
