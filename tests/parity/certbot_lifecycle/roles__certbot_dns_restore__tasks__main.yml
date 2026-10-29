@@ -1,0 +1,103 @@
+---
+- name: Validate archive input
+  ansible.builtin.assert:
+    that:
+      - certbot_dns_restore_archive is defined
+      - certbot_dns_restore_archive | length > 0
+    fail_msg: "certbot_dns_restore_archive must be provided"
+
+- name: Find archive when using latest
+  ansible.builtin.find:
+    paths: "{{ certbot_dns_restore_root }}"
+    patterns: "*.{{ certbot_dns_restore_archive_extension }}"
+    file_type: file
+  register: certbot_dns_restore_candidates
+  when: certbot_dns_restore_archive == 'latest'
+
+- name: Select latest archive
+  ansible.builtin.set_fact:
+    certbot_dns_restore_selected_archive: "{{ (certbot_dns_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path | default('') }}"
+  when: certbot_dns_restore_archive == 'latest'
+
+- name: Use explicit archive path
+  ansible.builtin.set_fact:
+    certbot_dns_restore_selected_archive: "{{ certbot_dns_restore_archive if certbot_dns_restore_archive.startswith('/') else certbot_dns_restore_root ~ '/' ~ certbot_dns_restore_archive }}"
+  when: certbot_dns_restore_archive != 'latest'
+
+- name: Fail when no archive found
+  ansible.builtin.fail:
+    msg: "No Certbot backup archives found in {{ certbot_dns_restore_root }}"
+  when:
+    - certbot_dns_restore_archive == 'latest'
+    - (certbot_dns_restore_selected_archive | default('')) | length == 0
+
+- name: Ensure selected archive exists
+  ansible.builtin.stat:
+    path: "{{ certbot_dns_restore_selected_archive }}"
+  register: certbot_dns_restore_archive_stat
+
+- name: Fail when archive is missing
+  ansible.builtin.fail:
+    msg: "Archive not found: {{ certbot_dns_restore_selected_archive }}"
+  when: not certbot_dns_restore_archive_stat.stat.exists | default(false)
+
+- name: Validate, stage and replace the Certbot directory
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/replace_from_archive.yml"
+  vars:
+    restore_archive_src: "{{ certbot_dns_restore_selected_archive }}"
+    restore_archive_root: "{{ certbot_dns_dir | dirname }}"
+    restore_archive_allowed_tops: ["{{ certbot_dns_dir | basename }}"]
+
+- name: Ensure ownership on Certbot directory
+  ansible.builtin.file:
+    path: "{{ certbot_dns_dir }}"
+    state: directory
+    recurse: true
+    owner: "{{ certbot_dns_restore_owner }}"
+    group: "{{ certbot_dns_restore_group }}"
+
+- name: Ensure Certbot directory mode
+  ansible.builtin.file:
+    path: "{{ certbot_dns_dir }}"
+    state: directory
+    mode: "{{ certbot_dns_restore_dir_mode }}"
+
+# Each DNS provider has its own credentials file (certbot_dns_deploy); a host
+# normally has only one of them, so fix whichever exist.
+- name: Check for credentials files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ [certbot_dns_credentials_file | default(''), certbot_dns_rfc2136_credentials_file | default('')] | select | list }}"
+  register: certbot_dns_restore_credentials_stat
+
+- name: Fix credentials file permissions
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: file
+    owner: "{{ certbot_dns_restore_owner }}"
+    group: "{{ certbot_dns_restore_group }}"
+    mode: "{{ certbot_dns_restore_credentials_mode }}"
+  loop: "{{ certbot_dns_restore_credentials_stat.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Validate renewal with dry-run (optional)
+  ansible.builtin.command: certbot renew --dry-run
+  when: certbot_dns_restore_run_dry_renew | bool
+  register: certbot_dns_restore_renew
+  changed_when: false
+
+- name: Show dry-run output
+  ansible.builtin.debug:
+    var: certbot_dns_restore_renew.stdout_lines
+  when:
+    - certbot_dns_restore_run_dry_renew | bool
+    - certbot_dns_restore_renew.stdout_lines is defined
+
+- name: Report retained pre-restore copy
+  ansible.builtin.debug:
+    msg: >-
+      Restored {{ certbot_dns_dir }} from {{ certbot_dns_restore_selected_archive }}.
+      Pre-restore copy: {{ restore_archive_reports | default([]) | map(attribute='path') | select | list | join(', ') or 'none (no live directory)' }}.
+      The owner prunes pre-restore copies by hand.

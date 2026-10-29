@@ -1,0 +1,77 @@
+{
+  "ops_library": "3627919c9ad03d75057cca8ec9869dfb3458abc0",
+  "files": {
+    "roles__certbot_dns_backup__README.md": {
+      "original_path": "roles/certbot_dns_backup/README.md",
+      "sha256": "8937229df24ced84b9e5f8fd3dd21ca64cf46a6ecf14c1e1ed8b0b6ecdf3dd97"
+    },
+    "roles__certbot_dns_backup__tasks__main.yml": {
+      "original_path": "roles/certbot_dns_backup/tasks/main.yml",
+      "sha256": "9bb417f23b349c0d70dd9482687823d94e7f1fec7c24a9bcf41aa5ba2cfa694b"
+    },
+    "roles__certbot_dns_backup__defaults__main.yml": {
+      "original_path": "roles/certbot_dns_backup/defaults/main.yml",
+      "sha256": "b60dd89455df3cf892092dd884e9643fbcc99a2fd57ffd9aa82f825362db915a"
+    },
+    "roles__certbot_dns_restore__README.md": {
+      "original_path": "roles/certbot_dns_restore/README.md",
+      "sha256": "a825c90eef60e5941e50d5250bd853eff7a6f5d9272db35c5cbe26f9956c6141"
+    },
+    "roles__certbot_dns_restore__tasks__main.yml": {
+      "original_path": "roles/certbot_dns_restore/tasks/main.yml",
+      "sha256": "8db8de6ffddc2f5da01e6bbb9ab443a9bff79000ccf7769dd9b5aa6d842f0f88"
+    },
+    "roles__certbot_dns_restore__defaults__main.yml": {
+      "original_path": "roles/certbot_dns_restore/defaults/main.yml",
+      "sha256": "3c55866e395a78bff097180cd6e37070235e613cd83db224220b6348f10be69f"
+    },
+    "roles__certbot_dns_restore__molecule__default__verify.yml": {
+      "original_path": "roles/certbot_dns_restore/molecule/default/verify.yml",
+      "sha256": "180227846bd281da60e49a2b798b09c14b1fa8e2146fcb7938134058036ecc55"
+    },
+    "roles__certbot_dns_restore__molecule__default__molecule.yml": {
+      "original_path": "roles/certbot_dns_restore/molecule/default/molecule.yml",
+      "sha256": "50e274316eb2f9e4b5383d340da8b3ef842613b1901103b55c6d30566e223166"
+    },
+    "roles__certbot_dns_restore__molecule__default__converge.yml": {
+      "original_path": "roles/certbot_dns_restore/molecule/default/converge.yml",
+      "sha256": "c79e61b7ff8bf373b62e2c47fbe62c61863f693ce9ce9a66a5445e96c8da1dec"
+    },
+    "roles__certbot_dns_restore__molecule__default__requirements.yml": {
+      "original_path": "roles/certbot_dns_restore/molecule/default/requirements.yml",
+      "sha256": "c4322345b7961595178786df5a8a33286210b5e5a4c2b13b21c31d0b5d0f64b1"
+    },
+    "roles__restore_preserve_internal__README.md": {
+      "original_path": "roles/restore_preserve_internal/README.md",
+      "sha256": "aab779eb41de3002cadbe4724cc4adae45cda4783bf2270efd4aafa832d5cc52"
+    },
+    "roles__restore_preserve_internal__tasks__preflight.yml": {
+      "original_path": "roles/restore_preserve_internal/tasks/preflight.yml",
+      "sha256": "f441a77d8b222f65e99431e1094583ae413f714d98bd29187f22532fd2e58e39"
+    },
+    "roles__restore_preserve_internal__tasks__validate.yml": {
+      "original_path": "roles/restore_preserve_internal/tasks/validate.yml",
+      "sha256": "9f33fb32ad580e8058f50df214ce67e6a7648d3873de7577fd20d743040b39b3"
+    },
+    "roles__restore_preserve_internal__tasks__replace_from_archive_top.yml": {
+      "original_path": "roles/restore_preserve_internal/tasks/replace_from_archive_top.yml",
+      "sha256": "df9fb5c8f64270478d8dab26572223c6b2d2f0c35d841d9e6c84604105ae2aa0"
+    },
+    "roles__restore_preserve_internal__tasks__main.yml": {
+      "original_path": "roles/restore_preserve_internal/tasks/main.yml",
+      "sha256": "f0fda795578fde351bb2471d0ac5b3628c3198ab88aa2acbf2469e9595437579"
+    },
+    "roles__restore_preserve_internal__tasks__replace_from_archive.yml": {
+      "original_path": "roles/restore_preserve_internal/tasks/replace_from_archive.yml",
+      "sha256": "4bf01610cb0419c2e16ee30384fdd9f2cc1674293ebca179cba947517b31641c"
+    },
+    "roles__restore_preserve_internal__files__archive_members.py.txt": {
+      "original_path": "roles/restore_preserve_internal/files/archive_members.py",
+      "sha256": "fcab97cbf0568bb879ed0dcea5129fd07cfb6a9fba4045a45b59d76115f6d152"
+    },
+    "roles__restore_preserve_internal__files__preserve.py.txt": {
+      "original_path": "roles/restore_preserve_internal/files/preserve.py",
+      "sha256": "0beb00a2b77cd9813a62169bb52ca2489885840742d8913a3654b94ee8659974"
+    }
+  }
+}

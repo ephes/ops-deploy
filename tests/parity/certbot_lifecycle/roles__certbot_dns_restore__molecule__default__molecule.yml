@@ -1,0 +1,44 @@
+---
+driver:
+  name: docker
+
+platforms:
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-ubuntu2404-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    tmpfs:
+      - /run
+      - /tmp
+
+provisioner:
+  name: ansible
+  inventory:
+    host_vars:
+      "instance-${MOLECULE_RUN_ID:-local}":
+        ansible_user: root
+        ansible_remote_tmp: /tmp/.ansible/tmp
+  playbooks:
+    converge: converge.yml
+    verify: verify.yml
+  env:
+    ANSIBLE_FORCE_COLOR: "true"
+    ANSIBLE_VERBOSITY: "1"
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/..:~/.ansible/roles:/etc/ansible/roles"
+
+verifier:
+  name: ansible
+
+scenario:
+  name: default
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - cleanup
+    - destroy

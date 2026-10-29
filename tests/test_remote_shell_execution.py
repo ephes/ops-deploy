@@ -35,6 +35,7 @@ from ops_deploy.helpers.probes import (
     verify_probe,
     when_present,
 )
+from ops_deploy.infra import certbot_lifecycle
 from ops_deploy.ops.secret_file import encode_payload, install_command
 from ops_deploy.services.chesslab import ChesslabConfig
 from ops_deploy.services.chesslab.deploy import _users_probe as _chesslab_users_probe
@@ -193,6 +194,14 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # The unchanged backup attestation program is uploaded with files.put,
     # never interpolated into shell source; its actual file CLI is tested below.
     uploaded_backup = {"infra/files/zfs_snapshot_file_attestation.py"}
+    # Certbot concatenates these exact original sources and its host driver,
+    # then base64-encodes the whole program. Exercise that actual composed wire
+    # with protected stdin through both real shells below.
+    encoded_certbot = {
+        "infra/files/certbot_archive_members.py",
+        "infra/files/certbot_preserve.py",
+        "infra/files/certbot_lifecycle_host.py",
+    }
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
@@ -204,6 +213,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_daybook_sessions
         | encoded_minio
         | uploaded_backup
+        | encoded_certbot
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
@@ -606,3 +616,42 @@ def test_backup_attestation_is_uploaded_and_its_real_file_cli_is_shell_safe(
     assert result.returncode == 0, result.stderr
     assert "--attestation-dir" in result.stdout
     assert uploaded.read_bytes() == original.read_bytes()
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_certbot_encoded_original_sources_and_stdin_through_real_login_shell(tmp_path: Path, login_shell: str) -> None:
+    source = tmp_path / "cert state"
+    source.mkdir()
+    body = source / "synthetic.pem"
+    body.write_text("synthetic certificate body")
+    root = tmp_path / "backup root"
+    payload = certbot_lifecycle.CertbotDnsBackupConfig(
+        src=str(source), root=str(root), owner=str(os.getuid()), group=str(os.getgid()), fetch_local=False
+    ).model_dump(mode="json")
+    payload.update(_timestamp="20261030T010203", protected_marker=TRICKY)
+    command = certbot_lifecycle._command("backup-plan")
+    assert certbot_lifecycle.HOST_SCRIPT not in command
+    assert TRICKY not in command
+    remote = make_unix_command(StringCommand(command)).get_raw_value()
+    assert not fish_unsafe(remote)
+    stdin = stdin_arguments(json.dumps(payload))
+    assert repr(stdin["_stdin"]) == "<stdin redacted>"
+    assert stdin["_get_pty"] is False
+    result = subprocess.run(
+        [login_shell, "-c", remote],
+        input="".join(stdin["_stdin"]),
+        env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(result.stdout) == {
+        "valid": True,
+        "timestamp": "20261030T010203",
+        "archive": str(root / "manual-20261030T010203.tar.gz"),
+        "managed": True,
+        "restrict": [],
+    }
+    assert result.stderr == ""
+    assert not root.exists()
+    assert body.read_text() == "synthetic certificate body"

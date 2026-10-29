@@ -1,0 +1,10 @@
+---
+- name: validate | Refuse overlapping restore paths and preservation copies
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/../restore_preserve_internal/files/preserve.py
+      --validate-layout {{ restore_preserve_mutable_paths | map('quote') | join(' ') }}
+      --source {{ restore_preserve_source | quote }}
+    executable: "{{ ansible_facts.python.executable | default('/usr/bin/python3') }}"
+  changed_when: false
+  check_mode: false

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the original Certbot DNS/edge state backup and restore APIs, preserving
+  archive privacy, internal Certbot links, retained pre-restore copies and
+  mount-point preservation. Explicit validation avoids publication; the original
+  renewal command and optional edge Postfix reload remain managed work.
+
 - Add confirmed Navidrome, MeTube and Jellyfin removal APIs with the original
   independent flags, exact Jellyfin package purge and MeTube change-triggered
   handlers. Downloads remain retained by default; account removal keeps the

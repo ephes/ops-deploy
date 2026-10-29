@@ -1,0 +1,95 @@
+---
+- name: Validate source directory exists
+  ansible.builtin.stat:
+    path: "{{ certbot_dns_backup_src }}"
+  register: certbot_dns_backup_src_stat
+
+- name: Fail when source directory is missing
+  ansible.builtin.fail:
+    msg: "Certbot directory not found: {{ certbot_dns_backup_src }}"
+  when: not certbot_dns_backup_src_stat.stat.exists | default(false)
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    certbot_dns_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Compute backup paths
+  ansible.builtin.set_fact:
+    certbot_dns_backup_archive: "{{ certbot_dns_backup_root }}/{{ certbot_dns_backup_prefix }}-{{ certbot_dns_backup_timestamp }}.{{ certbot_dns_backup_archive_extension }}"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ certbot_dns_backup_owner }}"
+    group: "{{ certbot_dns_backup_group }}"
+    mode: "{{ certbot_dns_backup_dir_mode }}"
+  loop:
+    - "{{ certbot_dns_backup_root }}"
+
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ certbot_dns_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: certbot_dns_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ certbot_dns_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ certbot_dns_backup_src }}"
+    dest: "{{ certbot_dns_backup_archive }}"
+    format: "{{ certbot_dns_backup_archive_format }}"
+    mode: "0600"
+  when: certbot_dns_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ certbot_dns_backup_local_dir }}"
+    state: directory
+    mode: "{{ certbot_dns_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: certbot_dns_backup_fetch_local | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ certbot_dns_backup_archive }}"
+    dest: "{{ certbot_dns_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - certbot_dns_backup_fetch_local | bool
+    - certbot_dns_backup_create_archive | bool
+
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ certbot_dns_backup_local_dir }}/{{ certbot_dns_backup_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - certbot_dns_backup_fetch_local | bool
+    - certbot_dns_backup_create_archive | bool
+    - not ansible_check_mode
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: |
+      Certbot backup complete: {{ certbot_dns_backup_archive }}
+      Local copy: {{ certbot_dns_backup_fetch_local | ternary(certbot_dns_backup_local_dir ~ '/' ~ (certbot_dns_backup_archive | basename), 'not fetched') }}

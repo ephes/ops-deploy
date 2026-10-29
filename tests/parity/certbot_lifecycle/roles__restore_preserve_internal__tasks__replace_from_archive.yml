@@ -1,0 +1,65 @@
+---
+# Internal include contract: restore_archive_src (archive on the managed host),
+# restore_archive_root (parent directory, for example /etc) and
+# restore_archive_allowed_tops (directory names below that parent).
+# Members are validated before anything is extracted; every replaced live
+# directory is kept as a pre-restore copy. Exposes restore_archive_reports.
+- name: replace_from_archive | Validate archive members before any live change
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/../restore_preserve_internal/files/archive_members.py
+      {{ restore_archive_src | quote }}
+      {% for top in restore_archive_allowed_tops %}--allow-top {{ top | quote }} {% endfor %}
+    executable: "{{ ansible_facts.python.executable | default('/usr/bin/python3') }}"
+  register: restore_archive_members
+  changed_when: false
+  check_mode: false
+
+- name: replace_from_archive | Record archive top-level directories
+  ansible.builtin.set_fact:
+    restore_archive_tops: >-
+      {{ restore_archive_members.stdout_lines | select('match', '^ARCHIVE_TOPS ')
+         | list | last | regex_replace('^ARCHIVE_TOPS ', '') | from_json }}
+    restore_archive_reports: []
+
+- name: replace_from_archive | Stage, preserve and replace
+  when: not ansible_check_mode
+  block:
+    - name: replace_from_archive | Create staging directory next to the live directories
+      ansible.builtin.tempfile:
+        state: directory
+        path: "{{ restore_archive_root }}"
+        prefix: ".restore-staging-"
+      register: restore_archive_staging
+
+    - name: replace_from_archive | Extract archive into staging
+      ansible.builtin.unarchive:
+        src: "{{ restore_archive_src }}"
+        dest: "{{ restore_archive_staging.path }}"
+        remote_src: true
+
+    - name: replace_from_archive | Check staged directories before touching live data
+      ansible.builtin.stat:
+        path: "{{ restore_archive_staging.path }}/{{ item }}"
+        follow: false
+      loop: "{{ restore_archive_tops }}"
+      register: restore_archive_staged
+
+    - name: replace_from_archive | Fail when a staged top-level entry is not a directory
+      ansible.builtin.assert:
+        that:
+          - restore_archive_staged.results | rejectattr('stat.isdir', 'defined') | list | length == 0
+          - restore_archive_staged.results | rejectattr('stat.isdir') | list | length == 0
+        fail_msg: "Staged archive content is not a directory for every top-level entry"
+
+    - name: replace_from_archive | Preserve and replace each live directory
+      ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/replace_from_archive_top.yml"
+      loop: "{{ restore_archive_tops }}"
+      loop_control:
+        loop_var: restore_archive_top
+  always:
+    - name: replace_from_archive | Remove staging directory
+      ansible.builtin.file:
+        path: "{{ restore_archive_staging.path }}"
+        state: absent
+      when: restore_archive_staging.path is defined

@@ -1,0 +1,14 @@
+---
+# Restore settings for certbot_dns_restore
+
+certbot_dns_restore_archive: ""
+certbot_dns_restore_root: "{{ backup_root_prefix | default('/opt/backups') }}/certbot-dns"
+certbot_dns_restore_archive_extension: "tar.gz"
+certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"
+certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"
+certbot_dns_dir: "/etc/letsencrypt"
+certbot_dns_restore_owner: root
+certbot_dns_restore_group: root
+certbot_dns_restore_credentials_mode: "0600"
+certbot_dns_restore_dir_mode: "0700"
+certbot_dns_restore_run_dry_renew: true

@@ -1,0 +1,16 @@
+---
+# Backup settings for certbot_dns_backup
+
+certbot_dns_backup_root: "{{ backup_root_prefix | default('/opt/backups') }}/certbot-dns"
+certbot_dns_backup_prefix: manual
+certbot_dns_backup_src: "/etc/letsencrypt"
+certbot_dns_backup_owner: root
+certbot_dns_backup_group: root
+certbot_dns_backup_file_mode: "0600"
+certbot_dns_backup_dir_mode: "0700"
+certbot_dns_backup_archive_format: gz   # produces .tar.gz
+certbot_dns_backup_archive_extension: tar.gz
+certbot_dns_backup_create_archive: true
+certbot_dns_backup_fetch_local: true
+certbot_dns_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/certbot-dns"
+certbot_dns_backup_local_dir_mode: "0700"
