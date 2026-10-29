@@ -779,3 +779,15 @@ Normal repeat is deliberately **not** described as zero managed work: the origin
 apt refresh, extra-package resolution, desired-state daemon reload and selected
 conversation canary remain actual operations. Read-only status marking describes
 managed configuration ownership, not global I/O or background service effects.
+
+## Prepared owned application matrix
+
+The [owned native fixture](https://github.com/ephes/ops-deploy/tree/pyinfra-homeassistant-20261028/tests/integration/homeassistant)
+uses a disposable public GitHub Ubuntu24 systemd container, sharing its VM kernel.
+It is prepared source, not yet an application or inventory qualification. The
+matrix compares the unchanged original role with real installed typed HA2026.10.2,
+a declared2026.10.1 upgrade, Python3.14.8 and Matter8.1.2. Synthetic loopback model,
+Wyoming and OTBR peers exercise actual application APIs without hardware or a
+real model-provider request. Existing-host prerequisites and every fault/reset
+remain explicit; ordinary refresh/reload/canary operations are not called zero
+managed work. See the fixture README for privacy, resource and cleanup boundaries.

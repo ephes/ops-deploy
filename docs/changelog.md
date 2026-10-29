@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Prepare an owned Home Assistant current/upgrade application matrix with exact
+  installed-artifact proof, real onboarding/canaries and synthetic loopback peers.
+  This is fixture source only; no native, inventory or physical-device success
+  is claimed before actual execution and complete receipts.
+
+
 - Prepare full Home Assistant normal-role composition with original selected
   integrations, legacy retirement, trust checks, active canaries and consumed
   handler notifications. Full owned application/native qualification is pending;
