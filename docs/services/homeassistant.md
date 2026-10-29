@@ -142,3 +142,27 @@ installing a Python patch can retarget UV's minor-version link and make an
 existing virtualenv current without rebuilding it. Cold-plan deferral is limited
 to declared earlier user/UV creation prerequisites. Synthetic SDK tests establish
 operation ordering and failure behavior, not real UV download or symlink changes.
+
+
+The prepared recursive environment-ownership component checks descendant
+metadata, because the SDK directory operation only recurses when the root's
+owner/group differs. It preserves the original role's `follow=true` behavior:
+symlinks and existing targets participate, including linked directory contents
+and intermediate links. Thus the scope includes UV interpreter targets reached
+from the declared virtualenv; it is not confined to lexical descendants. No file
+bodies or path listings are returned. Existing modes and modification times stay
+unchanged, and already-correct ownership never invokes chown. Missing ancestors
+are created with the original ownership/umask behavior. Only a root link is
+resolved first; a missing root beneath a dangling ancestor retains the original
+failure instead of creating that ancestor link's target. A link cycle or a root
+resolving to `/` fails before repair; this is an early guard, not a claim that the
+original module had identical partial-failure effects.
+
+Owned local Colima ARM/Linux primitive tests exercise real descendant ownership
+repair, hardlinks, dangling links, existing external targets, link chains and
+strict full-metadata repeats. The test container has no network or host mounts,
+a read-only root filesystem and a bounded temporary filesystem; its owned image
+and container are removed afterward. These are typed filesystem primitive tests,
+not execution of the complete original Ansible role or native Home Assistant,
+Matter, radio or inventory qualification. Caller sequencing and full native
+application/lifecycle proof remain unfinished.
