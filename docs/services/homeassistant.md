@@ -856,3 +856,19 @@ of normal Matter management. Each udev handler remains separately selectable
 and respects the udev enable flag. An unknown selector fails immediately after
 a changed route, before service-state tasks; an unchanged or disabled route
 does not resolve it. This source preparation adds no inventory/native evidence.
+
+## Protected include bodies and lookup timing
+
+`include_rendered` maps selected include names to `SecretStr` bodies supplied
+by the controller. An explicit body may replace a stock template or provide a
+custom include; names without a body retain the packaged-template lookup. Only
+names in `include_files` are looked up; unused mapping entries are ignored so a
+controller may reuse one body mapping with different include selections. The
+full deployment forwards this mapping to the configuration component.
+Resolution happens after the original initial-existence/overwrite guard, so an
+existing skipped include does not need an available source template. A selected
+missing source still fails when the task needs it. Existing backup, permissions,
+replacement notifications and repeat behavior are retained; bodies remain in
+protected stdin and are not logged. This is the protected body boundary, with
+owned local-file evidence. General private controller-template search/rendering
+and native qualification remain separate work.

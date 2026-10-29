@@ -257,3 +257,88 @@ def test_source_model_and_payload_repr_hide_declared_credentials() -> None:
     )
     assert "owned-explicit-private" not in repr(source)
     assert "owned-variable-private" not in str(source.protected_payload())
+
+
+def test_existing_nonstock_include_skips_missing_controller_template(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    root = Path(cfg.config_path)
+    root.mkdir()
+    (root / "owned-custom.yaml").write_text("retained: true\n")
+    before = snapshot(root)
+    ops, changes = execute(cfg, ConfigurationPolicy(manage_includes=True), include_files=("owned-custom.yaml",))
+    assert not any(op.changed for op in ops)
+    assert not changes.homeassistant_changed()
+    assert snapshot(root) == before
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_protected_custom_include_body_obeys_original_guard_and_repeat(
+    tmp_path: Path, overwrite: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = config(tmp_path)
+    root = Path(cfg.config_path)
+    root.mkdir()
+    custom = root / "owned-custom.yaml"
+    custom.write_text("retained: true\n")
+    body = "owned_marker: protected-custom-include-8291\n"
+    policy = ConfigurationPolicy(manage_includes=True, overwrite_config=overwrite)
+    ops, changes = execute(
+        cfg, policy, include_files=("owned-custom.yaml",), include_rendered={"owned-custom.yaml": SecretStr(body)}
+    )
+    assert custom.read_text() == (body if overwrite else "retained: true\n")
+    assert sum(op.changed for op in ops) == int(overwrite)
+    assert len(list(root.glob("owned-custom.yaml.*~"))) == int(overwrite)
+    assert not changes.homeassistant_changed()
+    assert body.strip() not in caplog.text
+    before = snapshot(root)
+    ops, changes = execute(
+        cfg, policy, include_files=("owned-custom.yaml",), include_rendered={"owned-custom.yaml": SecretStr(body)}
+    )
+    assert not any(op.changed for op in ops)
+    assert not changes.homeassistant_changed()
+    assert snapshot(root) == before
+
+
+def test_missing_selected_include_body_still_fails_without_creating_destination(tmp_path: Path) -> None:
+    from jinja2 import TemplateNotFound
+
+    cfg = config(tmp_path)
+    root = Path(cfg.config_path)
+    root.mkdir()
+    with pytest.raises(TemplateNotFound):
+        execute(cfg, ConfigurationPolicy(manage_includes=True), include_files=("owned-custom.yaml",))
+    assert list(root.iterdir()) == []
+
+
+def test_disabled_includes_never_resolve_missing_template() -> None:
+    result = run_deploy_fake(
+        configure_files,
+        HomeAssistantRuntimeConfig(),
+        ConfigurationPolicy(),
+        ConfigurationValues(),
+        include_files=("owned-custom.yaml",),
+    )
+    assert result.succeeded
+    assert not result.events
+    assert not result.ops
+
+
+@pytest.mark.parametrize("filename", ["owned-custom.yaml", "automations.yaml"])
+def test_new_custom_or_overridden_stock_include_uses_exact_protected_body(
+    tmp_path: Path, filename: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = config(tmp_path)
+    root = Path(cfg.config_path)
+    root.mkdir()
+    body = "owned_marker: protected-fresh-include-3914\n"
+    policy = ConfigurationPolicy(manage_includes=True)
+    ops, changes = execute(cfg, policy, include_files=(filename,), include_rendered={filename: SecretStr(body)})
+    assert (root / filename).read_text() == body
+    assert sum(op.changed for op in ops) == 1
+    assert not changes.homeassistant_changed()
+    assert not list(root.glob("*~"))
+    assert body.strip() not in caplog.text
+    before = snapshot(root)
+    ops, _ = execute(cfg, policy, include_files=(filename,), include_rendered={filename: SecretStr("later body")})
+    assert not any(op.changed for op in ops)
+    assert snapshot(root) == before

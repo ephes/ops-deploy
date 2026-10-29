@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Home Assistant include template lookup now follows the original existing-file
+  guard. Prepared deployments can supply protected rendered include bodies;
+  skipped existing files no longer require an available controller template.
+
 - Home Assistant prepared deployment honors the original Traefik handler selector,
   including role-qualified names, changed-template failure timing, original
   restart/udev conditions and one execution per handler-flush boundary.

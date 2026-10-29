@@ -462,3 +462,22 @@ def test_full_deploy_selected_notification_wiring_and_failure_boundary(
     if selector == "restart matter server":
         assert commands.count("restart matter-server.service") == 1
         assert commands.index("printf service-state") < commands.index("restart matter-server.service")
+
+
+def test_full_deploy_passes_protected_include_body_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import SecretStr
+
+    stub_composition(monkeypatch)
+    captured = []
+
+    def configure(*args: Any, **kw: Any) -> Any:
+        captured.append((kw["include_files"], kw["include_rendered"]))
+        return SimpleNamespace(homeassistant_changed=lambda: False)
+
+    monkeypatch.setattr(module, "configure_files", configure)
+    cfg = HomeAssistantDeployConfig(
+        include_files=("owned.yaml",), include_rendered={"owned.yaml": SecretStr("owned-protected-body-391")}
+    )
+    module.deploy_homeassistant.__wrapped__(cfg=cfg)
+    assert captured == [(cfg.include_files, cfg.include_rendered)]
+    assert "owned-protected-body-391" not in repr(cfg)

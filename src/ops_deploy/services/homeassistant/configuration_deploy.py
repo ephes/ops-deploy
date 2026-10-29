@@ -10,8 +10,9 @@ from __future__ import annotations
 import base64
 import json
 import shlex
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from importlib.resources import files
 from typing import Any
 
@@ -146,6 +147,7 @@ def _configuration_file(
     skip_existing: bool,
     require_existing: bool,
     predecessors: tuple[OperationMeta, ...],
+    content: Callable[[], SecretStr] | None = None,
 ) -> Generator[StringCommand, None, None]:
     if initial is not None:
         exists = initial.exists.get(filename)
@@ -153,6 +155,12 @@ def _configuration_file(
             raise OperationError("Home Assistant configuration baseline is missing")
         if (skip_existing and exists) or (require_existing and not exists):
             return
+    if content is not None:
+        # Original template lookup follows the item's when/existence guard.
+        # An existing skipped include need not have any controller source.
+        payload = json.loads(protected.get_secret_value())
+        payload["content"] = content().get_secret_value()
+        protected = SecretStr(json.dumps(payload))
     if not state.is_executing and (deferred or any(item.will_change for item in predecessors)):
         # Actual execution regenerates this operation and inspects after the
         # preceding declared writes. No credential or current body is guessed.
@@ -160,6 +168,10 @@ def _configuration_file(
         return
     if _pending(cfg, protected):
         yield StringCommand(file_command(cfg), _stdin=StdinLines(protected.get_secret_value()), _get_pty=False)
+
+
+def _include_content(filename: str, rendered: Mapping[str, SecretStr]) -> SecretStr:
+    return rendered[filename] if filename in rendered else render_include(filename)
 
 
 def configure_files(
@@ -170,9 +182,10 @@ def configure_files(
     unifi: UnifiSecretSource | None = None,
     examples: ConfigurationSecretExamples | None = None,
     include_files: tuple[str, ...] = INCLUDES,
+    include_rendered: Mapping[str, SecretStr] | None = None,
     deferred: bool = False,
 ) -> ConfigurationChanges:
-    """Compose known stock configuration tasks after account/layout creation.
+    """Compose stock or explicitly rendered configuration after account/layout creation.
 
     ``deferred`` is only for a declared pending prerequisite. This internal
     component performs no prerequisite repair, API call or handler flush.
@@ -188,6 +201,7 @@ def configure_files(
         skip_existing: bool = False,
         require_existing: bool = False,
         predecessors: tuple[OperationMeta, ...] = (),
+        content: Callable[[], SecretStr] | None = None,
     ) -> OperationMeta:
         payload = SecretStr(
             json.dumps(
@@ -212,6 +226,7 @@ def configure_files(
             skip_existing=skip_existing,
             require_existing=require_existing,
             predecessors=predecessors,
+            content=content,
         )
 
     if policy.manage_secrets:
@@ -266,8 +281,9 @@ def configure_files(
             task(
                 filename,
                 "template",
-                {"content": render_include(filename).get_secret_value()},
+                {},
                 initial=includes,
                 skip_existing=not policy.overwrite_config,
+                content=partial(_include_content, filename, include_rendered or {}),
             )
     return ConfigurationChanges(tuple(replacements))

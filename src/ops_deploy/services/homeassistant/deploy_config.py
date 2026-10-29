@@ -69,6 +69,7 @@ class HomeAssistantDeployConfig(RoleConfig):
     ingress: HomeAssistantIngressConfig = Field(default_factory=HomeAssistantIngressConfig)
     ingress_rendered: SecretStr | None = None
     include_files: tuple[str, ...] = INCLUDES
+    include_rendered: dict[str, SecretStr] = Field(default_factory=dict)
     api: HomeAssistantApiConfig = Field(default_factory=HomeAssistantApiConfig)
     additional_packages: tuple[str, ...] = (
         "build-essential",

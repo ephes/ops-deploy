@@ -254,6 +254,7 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         unifi=cfg.unifi,
         examples=cfg.secret_examples,
         include_files=cfg.include_files,
+        include_rendered=cfg.include_rendered,
         deferred=True,
     )
     pending.homeassistant.append(configuration.homeassistant_changed)
