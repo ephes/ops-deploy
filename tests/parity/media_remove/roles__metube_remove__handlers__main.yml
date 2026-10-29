@@ -1,0 +1,10 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false

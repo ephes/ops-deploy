@@ -1,0 +1,119 @@
+---
+# Core paths and identity
+metube_user: metube
+metube_group: metube
+metube_extra_groups:
+  - jellyfin
+metube_home: /var/lib/metube
+metube_shell: /usr/sbin/nologin
+metube_manage_user: true
+
+metube_install_dir: /opt/metube
+metube_app_dir: "{{ metube_install_dir }}"
+metube_venv_path: /opt/metube/venv
+# UI staging checkout plus corepack/pnpm/npm caches (HOME of the UI build).
+metube_ui_build_root: /var/cache/metube
+metube_service_name: metube
+metube_service_unit: /etc/systemd/system/metube.service
+metube_service_enabled: true
+metube_service_state: started
+metube_env_dir: /etc/metube
+metube_env_file: "{{ metube_env_dir }}/metube.env"
+
+# Networking
+metube_host: 127.0.0.1
+metube_port: 8081
+
+# Data paths
+metube_download_dir: /mnt/cryptdata/media/video/youtube
+metube_audio_download_dir: "{{ metube_download_dir }}"
+metube_state_dir: /var/lib/metube
+metube_temp_dir: "{{ metube_download_dir }}"
+
+# Application settings
+metube_download_template: "%(title)s [%(id)s].%(ext)s"
+# Upstream always downloads concurrently; 1 gives sequential downloads.
+metube_max_concurrent_downloads: 3
+metube_default_theme: auto
+metube_enable_accesslog: false
+metube_loglevel: INFO
+metube_ytdl_options:
+  merge_output_format: mp4
+  subtitles_langs:
+    - en
+  write_subs: true
+  write_auto_subs: true
+
+# Traefik exposure
+metube_traefik_enabled: true
+metube_traefik_host: "metube.example.com"
+metube_traefik_cert_resolver: ""  # empty -> use file-provider certs
+metube_traefik_entrypoints:
+  - web-secure
+metube_traefik_config_path: /etc/traefik/dynamic/metube.yml
+metube_traefik_middlewares: []
+metube_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+
+# Basic auth (Traefik)
+metube_basic_auth_enabled: true
+metube_basic_auth_user: "metube"
+metube_basic_auth_password: ""
+metube_basic_auth_password_hash: ""
+metube_basic_auth_remove_header: true
+
+# Source and tooling
+metube_repo_url: https://github.com/alexta69/metube.git
+metube_repo_version: master
+metube_manage_uv: true
+metube_uv_version: "0.13.5"  # Keep aligned with uv_install version/checksums.
+metube_uv_path: /usr/local/bin/uv
+metube_python_version: "3.14"
+metube_nodejs_version: 24
+# Oldest Node.js release (within metube_nodejs_version) the UI build accepts;
+# an older installed release is upgraded. Angular CLI 22 needs 24.15.0.
+# Empty disables the check.
+metube_nodejs_min_version: "24.15.0"
+
+# Packages
+metube_system_packages:
+  - git
+  - ffmpeg
+  - aria2
+  - apache2-utils
+
+# Backup/restore defaults
+metube_backup_root: /opt/backups/metube
+metube_backup_prefix: manual
+metube_backup_archive_format: gz
+metube_backup_archive_extension: tar.gz
+metube_backup_fetch_local: true
+metube_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/metube"
+metube_backup_dir_mode: "0700"
+metube_backup_file_mode: "0600"
+metube_backup_owner: root
+metube_backup_group: root
+metube_backup_create_archive: true
+metube_backup_stop_service: true
+metube_backup_include_state: true
+metube_backup_include_config: true
+metube_backup_include_systemd: true
+metube_backup_include_traefik: true
+metube_backup_generate_manifest: true
+metube_backup_use_delete: true
+metube_backup_retain: 7
+
+metube_restore_cleanup: true
+metube_restore_archive: latest
+metube_restore_restart: true
+metube_restore_root: "{{ metube_backup_root }}"
+
+# Health checks
+metube_healthcheck_enabled: true
+metube_healthcheck_url: "http://127.0.0.1:{{ metube_port }}/"
+metube_healthcheck_timeout: 45
+metube_healthcheck_retries: 5

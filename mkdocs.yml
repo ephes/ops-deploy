@@ -69,6 +69,7 @@ nav:
       - thermal_monitoring: services/thermal_monitoring.md
       - fractal_monitoring: services/fractal_monitoring.md
       - metube (native): services/metube.md
+      - Media removal: services/media-removal.md
       - ollama (macOS native): services/ollama.md
       - macos_ssh_tunnel (macOS owner session): services/macos_ssh_tunnel.md
       - opsgate (macOS native): services/opsgate.md

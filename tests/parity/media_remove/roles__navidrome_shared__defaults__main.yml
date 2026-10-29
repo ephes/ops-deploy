@@ -1,0 +1,123 @@
+---
+# Shared defaults for Navidrome roles
+
+navidrome_user: navidrome
+navidrome_group: navidrome
+navidrome_home: /var/lib/navidrome
+navidrome_shell: /usr/sbin/nologin
+navidrome_extra_groups: []
+navidrome_install_dir: /opt/navidrome
+navidrome_bin_path: "{{ navidrome_install_dir }}/navidrome"
+navidrome_bin_link_path: /usr/local/bin/navidrome
+navidrome_create_symlink: true
+
+navidrome_data_dir: /var/lib/navidrome
+navidrome_cache_dir: "{{ navidrome_data_dir }}/cache"
+navidrome_log_dir: /var/log/navidrome
+navidrome_music_folder: /mnt/cryptdata/media/music
+navidrome_music_folder_mode: "0755"
+navidrome_config_path: /etc/navidrome.toml
+navidrome_service_name: navidrome
+navidrome_service_unit: /etc/systemd/system/navidrome.service
+navidrome_rescan_service_unit: /etc/systemd/system/navidrome-rescan.service
+navidrome_rescan_timer_unit: /etc/systemd/system/navidrome-rescan.timer
+navidrome_rescan_full: false
+
+# Networking
+navidrome_listen_address: 127.0.0.1
+navidrome_port: 4533
+navidrome_external_url: "https://music.example.com"
+
+# Version pinning (override when bumping)
+navidrome_version: "0.64.2"
+navidrome_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  aarch64: arm64
+  arm64: arm64
+navidrome_download_arch: "{{ navidrome_arch_map[ansible_architecture] | default('amd64') }}"
+navidrome_download_url: "https://github.com/navidrome/navidrome/releases/download/v{{ navidrome_version }}/navidrome_{{ navidrome_version }}_linux_{{ navidrome_download_arch }}.tar.gz"
+# Must be updated in the same change as navidrome_version.
+# From https://github.com/navidrome/navidrome/releases/download/v<version>/navidrome_checksums.txt
+navidrome_checksums:
+  amd64: "sha256:fdd87fd107818667c2c50bc24dc6ce856962c795b3822a91f95c066cfad2c53e"
+  arm64: "sha256:6d1683428cb6d99cdabc3da815b94cc161de5904820130c5b9e2e42c34dcdb15"
+navidrome_download_checksum: "{{ navidrome_checksums[navidrome_download_arch] | default('sha256:') }}"
+
+# Application configuration
+navidrome_log_level: info
+navidrome_enable_insights_collector: false
+# Navidrome 0.63.0 flipped the upstream default to true. Pinned to false so an
+# upgrade does not silently start handing out public share links; set to true
+# deliberately if sharing is wanted.
+navidrome_enable_sharing: false
+navidrome_enable_transcoding_config: false
+navidrome_reverse_proxy_whitelist:
+  - 127.0.0.1/32
+  - ::1/128
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - 100.64.0.0/10
+  - fd7a:115c:a1e0::/48
+navidrome_scan_schedule: "@every 6h"
+navidrome_scan_on_startup: true
+navidrome_scan_watcher_wait: "30s"
+navidrome_scanner_follow_symlinks: false
+
+# Systemd/resource tuning
+navidrome_systemd_memory_max: ""
+navidrome_systemd_tasks_max: ""
+navidrome_systemd_nofile: 16384
+navidrome_systemd_after: "network.target"
+
+# Traefik exposure
+navidrome_traefik_enabled: true
+navidrome_traefik_host: "music.example.com"
+navidrome_traefik_cert_resolver: ""  # empty -> use file-provider certs
+navidrome_traefik_entrypoints:
+  - web-secure
+navidrome_traefik_config_path: /etc/traefik/dynamic/navidrome.yml
+navidrome_traefik_middlewares: []
+navidrome_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+
+# Traefik basic auth (bcrypt hashes recommended)
+navidrome_basic_auth_enabled: true
+navidrome_basic_auth_user: "navidrome"
+navidrome_basic_auth_password: ""
+navidrome_basic_auth_password_hash: ""
+navidrome_basic_auth_remove_header: true
+
+# Backup/restore defaults
+navidrome_backup_root: /opt/backups/navidrome
+navidrome_backup_prefix: manual
+navidrome_backup_archive_format: gz
+navidrome_backup_archive_extension: tar.gz
+navidrome_backup_fetch_local: true
+navidrome_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/navidrome"
+navidrome_backup_dir_mode: "0700"
+navidrome_backup_file_mode: "0600"
+navidrome_backup_owner: root
+navidrome_backup_group: root
+navidrome_backup_stop_service: true
+navidrome_backup_include_logs: true
+navidrome_backup_include_traefik: true
+navidrome_backup_generate_manifest: true
+navidrome_backup_use_delete: true
+navidrome_backup_retain: 7
+
+navidrome_restore_cleanup: true
+navidrome_restore_archive: latest
+navidrome_restore_restart: true
+navidrome_restore_root: "{{ navidrome_backup_root }}"
+
+# Health checks
+navidrome_healthcheck_enabled: true
+navidrome_healthcheck_url: "http://127.0.0.1:{{ navidrome_port }}/"
+navidrome_healthcheck_timeout: 30
+navidrome_healthcheck_retries: 3
