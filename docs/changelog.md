@@ -5,7 +5,8 @@
 - Add confirmed DNS removal and complete the source-backed Traefik restore/remove
   lifecycle APIs with literal custom paths, transaction refusal, nonmutating
   archive validation and original ACME-only/default staging semantics, including literal custom paths
-  with ordinary spaces. Preserve
+  with ordinary spaces. Keep the original DDNS state guard on the raw path,
+  preserving trailing-separator/dot skips before any deletion. Preserve
   original cleanup tolerance and private force/keep flag behavior. Owned native
   component evidence is separate from inventory lifecycle qualification.
 
