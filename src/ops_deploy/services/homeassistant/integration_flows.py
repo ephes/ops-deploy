@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import shlex
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from importlib.resources import files
 from typing import Any, Literal
@@ -220,7 +220,11 @@ def _check_readiness(
 
 
 def ensure_api_readiness(
-    runtime: HomeAssistantRuntimeConfig, api: HomeAssistantApiConfig, readiness: ApiReadiness
+    runtime: HomeAssistantRuntimeConfig,
+    api: HomeAssistantApiConfig,
+    readiness: ApiReadiness,
+    *,
+    required: Callable[[], bool] | None = None,
 ) -> OperationMeta:
     """Original authenticated status-only GET/retry, execution-only and cached.
 
@@ -248,5 +252,6 @@ def ensure_api_readiness(
             payload=SecretStr(json.dumps(value)),
             readiness=readiness,
             timeout=budget + 30,
+            _if=required,
         )
     )

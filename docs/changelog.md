@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Compose prepared Home Assistant pipeline selection, conditional readiness,
+  service-user STT wait and protected protocol operations with API-free planning
+  and drift-only writes; retain original voice/list differences and partial errors.
+  Bind result state to one host and account for inspect transport loss per host.
+
 - Wire prepared Home Assistant area readiness and protocol into execution-time
   pyinfra operations, retaining API-free planning, drift-only updates, strict
   counter privacy and honest failed-response uncertainty.

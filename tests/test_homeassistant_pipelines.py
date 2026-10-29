@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import sys
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
@@ -63,7 +64,7 @@ def initial() -> dict[str, Any]:
 
 
 @asynccontextmanager
-async def endpoint(state: dict[str, Any], fault: str = "normal") -> Any:
+async def endpoint(state: dict[str, Any], fault: str = "normal", persist: Callable[[], None] | None = None) -> Any:
     calls: list[dict[str, Any]] = []
 
     async def websocket(request: web.Request) -> web.WebSocketResponse:
@@ -101,13 +102,21 @@ async def endpoint(state: dict[str, Any], fault: str = "normal") -> Any:
                 state["preferred_pipeline"] = body["pipeline_id"]
             else:
                 raise AssertionError(kind)
+            if persist is not None and kind in {"create", "update", "set_preferred"}:
+                persist()
             await ws.send_json({"id": 999999, "success": True, "result": "unmatched-private"})
             await ws.send_json(
                 {"id": body["id"], "success": fault != kind, "result": result, "error": "unexported-fault"}
             )
         return ws
 
+    async def ready(request: web.Request) -> web.Response:
+        assert request.headers["Authorization"] == "Bearer " + TOKEN
+        calls.append({"type": "readiness"})
+        return web.Response(status=200)
+
     app = web.Application()
+    app.router.add_get("/api/", ready)
     app.router.add_get("/api/websocket", websocket)
     runner = web.AppRunner(app, shutdown_timeout=0.1)
     await runner.setup()

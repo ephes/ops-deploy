@@ -696,3 +696,42 @@ real loopback API and LocalConnector controls prove
 plan silence, readiness ordering, first update, zero-managed repeat and actual
 write-before-error retention. These are component tests, not live HA or device
 qualification.
+
+
+### Pipeline execution composition (prepared)
+
+List and standalone voice selection now run in a separate read-only operation
+before protocol work. Only the named storage files are read in the original root
+context; selected operational fields remain protected controller/host process
+memory. Current invocation canary results supply automatic conversation IDs.
+The custom-conversation fallback retains its original warning; an enabled
+built-in automatic agent still requires its successful active canary. No
+registry or API call occurs while planning, and unresolved operation rows are
+not reported as proven unchanged.
+
+A list then performs original cached readiness and service-user API inspection,
+applying only pending changes. Standalone voice first compares its stored target
+and enabled fields; a matching target skips readiness and WebSocket calls.
+Needed standalone changes retain the original service-user STT registry wait
+(initial attempt plus retries), while TTS provider IDs do not need an entity-
+registry wait. Preparation and service-user readability are distinct. The wait
+reads only the selected registry, does not import HA, and returns fixed status
+and attempt counts rather than entity IDs or bodies. Its finite controller
+ceiling covers configured delays plus a grace period; timeout does not prove
+remote quiescence.
+
+API inspection/apply preserves fixed counter validation and host-specific SDK
+failure accounting. Unknown failures clear prior success; an acknowledged error
+after a configuration request may retain real partial changes. No automatic
+rollback, restart or response-body export is added. Owned synthetic named files,
+loopback HTTP/WebSocket and real LocalConnector tests exercise list/create/
+preferred and voice first/repeat, no-API converged voice, missing STT, auth and
+partial response faults. Full outer role selection, native application and
+inventory adoption remain pending.
+
+Pipeline result, readiness and conversation objects belong to one host invocation.
+Create them inside each host's deploy function; reusing a pipeline result on a
+different host fails during registration, before target inspection or execution.
+Inspect transport loss is reported through a failed SDK callback, so the failed
+host is accounted for and unrelated hosts can continue. Owned controls cover
+separate-host selections and successful service-user STT wait before updates.
