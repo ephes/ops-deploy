@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare standalone Home Assistant API readiness with the original retry/cache
+  semantics and an execution-time cache reset after handler boundaries. No API
+  calls occur during registration; no registry or configuration POST is added.
+
 - Prepare the unchanged original Home Assistant built-in conversation helper
   with protected, execution-only canary calls and honest partial-failure state.
 

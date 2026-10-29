@@ -538,3 +538,23 @@ plan/execution controls with a synthetic helper. They do not exercise a real HA
 model/provider or qualify native deployment. Original legacy-component discovery,
 one-time clean-environment migration, readiness/handler resets and full outer
 selection still need composition; this helper is not the full deployment API.
+
+
+### Shared API readiness boundaries (prepared)
+
+The original authenticated `/api/` status GET can run independently of a config
+flow. It retains initial-plus-retry behavior, proxy/TLS/redirect handling and the
+invocation-local ready cache; it opens no registry and sends no configuration
+POST. Readiness executes only in the operation phase, with protected payloads and
+fixed status output. It is classified read-only for managed configuration; HTTP
+logging and background service activity are not claimed physically immutable.
+The SDK still records executed callback operations as changed, separate from
+this read-only classification.
+
+After each original handler flush, `reset_api_readiness` must be registered at
+that exact execution boundary. Resetting the Python field while registering the
+whole deployment is too early: the earlier readiness operation can set it true
+again before the later request. Actual local-connector controls reproduce that
+wrong ordering (one GET) and the corrected boundary (two GETs), with no requests
+in either dry-plan variant. The outer deployment still supplies original flags
+and the handler flush; this component is not whole-service/native qualification.

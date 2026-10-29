@@ -115,10 +115,10 @@ def run(payload, report=None):
             raise ValueError('invalid deadline')
         previous_handler = signal.signal(signal.SIGALRM, deadline_expired)
         previous_timer = signal.setitimer(signal.ITIMER_REAL, deadline)
-        if payload['action'] not in ('inspect', 'apply'):
+        if payload['action'] not in ('inspect', 'apply', 'readiness'):
             raise ValueError('unsupported action')
-        report['needed'] = needs_config(payload)
-        if payload['action'] == 'inspect' or not report['needed']:
+        report['needed'] = False if payload['action'] == 'readiness' else needs_config(payload)
+        if payload['action'] == 'inspect' or (payload['action'] == 'apply' and not report['needed']):
             report['phase'] = 'complete'
             report['success'] = True
             return report
@@ -175,6 +175,10 @@ def run(payload, report=None):
                     if attempt >= max(0, api['retries']):
                         raise
                     time.sleep(api['retry_delay'])
+        if payload['action'] == 'readiness':
+            report['phase'] = 'complete'
+            report['success'] = True
+            return report
         if payload['domain'] == 'matter' and payload.get('manage_matter_server', False):
             report['phase'] = 'matter-port'
             deadline = time.monotonic() + api['timeout']

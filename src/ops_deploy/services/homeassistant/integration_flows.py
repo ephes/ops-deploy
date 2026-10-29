@@ -22,6 +22,7 @@ from pyinfra.api.host import Host
 from pyinfra.api.operation import OperationMeta
 
 from ops_deploy.base._common import RoleConfig
+from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import StdinLines
 
 from .runtime_config import HomeAssistantRuntimeConfig
@@ -187,4 +188,65 @@ def integrate(
         apply_payload=SecretStr(json.dumps(value)),
         readiness=readiness,
         timeout=budget + 30,
+    )
+
+
+def _reset_readiness(state: State, host: Host, readiness: ApiReadiness) -> None:
+    readiness.ready = False
+
+
+@operation()
+def _reset_readiness_at_boundary(readiness: ApiReadiness) -> Generator[FunctionCommand, None, None]:
+    # Registration must not clear the cache before preceding operations execute.
+    yield FunctionCommand(_reset_readiness, (readiness,), {})
+
+
+def reset_api_readiness(readiness: ApiReadiness) -> OperationMeta:
+    """Register immediately AFTER the original handler-flush operations.
+
+    Only controller RAM changes; the boundary runs even if no handler notified.
+    Dry registration does not execute this callback or make a network request.
+    """
+    return mark_read_only(
+        _reset_readiness_at_boundary(name="Reset Home Assistant API readiness after handlers", readiness=readiness)
+    )
+
+
+@operation()
+def _check_readiness(
+    command: str, payload: SecretStr, readiness: ApiReadiness, timeout: int
+) -> Generator[FunctionCommand, None, None]:
+    yield FunctionCommand(_apply, (command, payload, readiness, timeout), {})
+
+
+def ensure_api_readiness(
+    runtime: HomeAssistantRuntimeConfig, api: HomeAssistantApiConfig, readiness: ApiReadiness
+) -> OperationMeta:
+    """Original authenticated status-only GET/retry, execution-only and cached.
+
+    No registry inspection or configuration POST. This operation is read-only
+    with respect to managed configuration, not a claim that HTTP has no logging
+    or background service effects. Caller supplies original enablement.
+    """
+    api.validate_selected()
+    budget = (max(0, api.retries) + 1) * (api.timeout * 11 + max(0, api.retry_delay)) + 60
+    value: dict[str, Any] = {
+        "action": "readiness",
+        "api": {
+            **api.model_dump(exclude={"url", "token", "default_ipv4"}),
+            "url": api.url.get_secret_value(),
+            "token": api.token.get_secret_value(),
+        },
+        "deadline_seconds": budget,
+    }
+    if api.default_ipv4 is not None:
+        value["default_ipv4"] = api.default_ipv4
+    return mark_read_only(
+        _check_readiness(
+            name="Wait for Home Assistant API",
+            command=flow_command(runtime),
+            payload=SecretStr(json.dumps(value)),
+            readiness=readiness,
+            timeout=budget + 30,
+        )
     )

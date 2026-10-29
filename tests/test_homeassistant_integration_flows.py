@@ -657,3 +657,127 @@ def test_late_deadline_during_actual_cleanup_keeps_progress(
     finally:
         actual_setitimer(signal.ITIMER_REAL, *old_timer)
         signal.signal(signal.SIGALRM, old_handler)
+
+
+@pytest.mark.parametrize(
+    ("cached", "failures", "expected_success", "requests"),
+    [(True, 9, True, 0), (False, 0, True, 1), (False, 1, True, 2), (False, 3, False, 3)],
+)
+def test_standalone_readiness_has_no_registry_or_post_and_preserves_retries(
+    tmp_path: Path, cached: bool, failures: int, expected_success: bool, requests: int
+) -> None:
+    calls: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            calls.append(self.path)
+            self.send_response(503 if len(calls) <= failures else 200)
+            self.end_headers()
+            self.wfile.write(b"synthetic private status body is not exported")
+
+        def do_POST(self) -> None:
+            raise AssertionError("readiness must never POST")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    try:
+        api = payload(tmp_path)["api"]
+        api.update(url=f"http://127.0.0.1:{server.server_port}", retries=2)
+        # Deliberately no config_path/domain/desired: readiness must not open a registry.
+        result = flow.run({"action": "readiness", "api": api, "ready": cached})
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
+    assert result["success"] is expected_success
+    assert result["ready"] is expected_success
+    assert calls == ["/api/"] * requests
+    assert result["http_requests"] == requests
+    assert result["mutation_attempts"] == 0
+    assert result["changed"] is False
+    assert result["needed"] is False
+    assert "synthetic private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("diff", [False, True])
+@pytest.mark.parametrize("wrong_registration_time_reset", [False, True])
+def test_actual_sdk_readiness_reset_occurs_at_handler_boundary(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, diff: bool, wrong_registration_time_reset: bool
+) -> None:
+    from pydantic import SecretStr
+    from pyinfra.api import Config, Inventory, State
+    from pyinfra.api.connect import connect_all, disconnect_all
+    from pyinfra.api.deploy import add_deploy
+    from pyinfra.api.operations import run_ops
+
+    from ops_deploy.services.homeassistant.integration_flows import (
+        ApiReadiness,
+        HomeAssistantApiConfig,
+        ensure_api_readiness,
+        reset_api_readiness,
+    )
+    from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+    from ops_deploy.testing.harness import collect_ops
+
+    calls: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            calls.append(self.path)
+            assert self.headers["Authorization"] == "Bearer owned-only-token-0123456789-0123456789"
+            self.send_response(200)
+            self.end_headers()
+
+        def do_POST(self) -> None:
+            raise AssertionError("no managed API call expected")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    readiness = ApiReadiness()
+    api = HomeAssistantApiConfig(
+        url=SecretStr(f"http://127.0.0.1:{server.server_port}"),
+        token=SecretStr("owned-only-token-0123456789-0123456789"),
+        retries=0,
+        retry_delay=0,
+        timeout=2,
+    )
+    runtime = HomeAssistantRuntimeConfig(config_path=str(tmp_path))
+    state = State(Inventory(([("@local", {})], {})), Config(DIFF=diff))
+
+    def deploy() -> None:
+        ensure_api_readiness(runtime, api, readiness)
+        ensure_api_readiness(runtime, api, readiness)
+        # The negative reproduces the tempting but wrong plain Python reset:
+        # registration finishes before the first readiness operation executes.
+        if wrong_registration_time_reset:
+            readiness.ready = False
+        else:
+            reset_api_readiness(readiness)
+        ensure_api_readiness(runtime, api, readiness)
+
+    try:
+        connect_all(state)
+        add_deploy(state, deploy)
+        assert calls == []
+        assert readiness.ready is False
+        run_ops(state)
+        operations = collect_ops(state, "@local")
+        assert all(op.succeeded for op in operations)
+        assert all(op.read_only for op in operations)
+        assert sum(op.changed and not op.read_only for op in operations) == 0
+        assert calls == ["/api/"] * (1 if wrong_registration_time_reset else 2)
+        assert readiness.ready is True
+        assert "owned-only-token" not in caplog.text
+    finally:
+        disconnect_all(state)
+        server.shutdown()
+        server.server_close()
+        worker.join()
