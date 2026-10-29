@@ -1,4 +1,4 @@
-"""Prepared original unit trust admission; no drop-in or service mutations."""
+"""Original trust admission, managed drop-in write and post-handler verification."""
 
 from __future__ import annotations
 
@@ -6,11 +6,18 @@ import base64
 import hashlib
 import json
 import shlex
+from collections.abc import Generator
 from importlib.resources import files
+from io import StringIO
+from pathlib import PurePosixPath
 from typing import Literal
 
-from pyinfra.api import DeployError
+from pyinfra.api import DeployError, FunctionCommand, OperationError, State, StringCommand, operation
+from pyinfra.api.host import Host
+from pyinfra.api.operation import OperationMeta
+from pyinfra.operations import files as file_ops
 
+from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe
 
 from .runtime_config import HomeAssistantRuntimeConfig
@@ -61,6 +68,10 @@ def inspect_trust(
         trust_command(cfg, mode, allow_missing_unit=allow_missing_unit),
         name=f"Home Assistant unit trust {mode}",
     )
+    return _validated_report(result)
+
+
+def _validated_report(result: str | None) -> dict[str, object]:
     try:
         value = json.loads(result or "")
         base = {"load_state", "active_state", "managed_dropin", "problems"}
@@ -83,3 +94,58 @@ def inspect_trust(
         # Unchanged original messages contain keys/paths only, never values.
         raise DeployError("Home Assistant unit trust: " + "; ".join(value["problems"]))
     return dict(value)
+
+
+def write_managed_dropin(cfg: HomeAssistantRuntimeConfig) -> OperationMeta | None:
+    """Original root-owned directory/file; caller already ran trust preflight.
+
+    Return only the file result: a directory metadata correction alone did not
+    notify the original reload/restart handlers. This component does not flush
+    handlers or remove an existing drop-in when management is disabled.
+    """
+    if not cfg.uv_system_certs:
+        return None
+    file_ops.directory(
+        name="Ensure Home Assistant trust drop-in directory",
+        path=str(PurePosixPath(cfg.uv_system_certs_dropin_path).parent),
+        user="root",
+        group="root",
+        mode="0755",
+    )
+    return file_ops.put(
+        name="Write Home Assistant managed trust drop-in",
+        src=StringIO(dropin_text()),
+        dest=cfg.uv_system_certs_dropin_path,
+        user="root",
+        group="root",
+        mode="0644",
+    )
+
+
+def _verify_after_handlers(state: State, host: Host, cfg: HomeAssistantRuntimeConfig) -> None:
+    success, output = host.run_shell_command(
+        StringCommand(trust_command(cfg, "verify")), print_output=False, print_input=False, _timeout=60
+    )
+    if not success:
+        raise OperationError("Home Assistant unit trust verification command failed")
+    try:
+        _validated_report(str(output.stdout))
+    except DeployError as error:
+        raise OperationError(str(error)) from None
+
+
+@operation()
+def _verify_running_trust(cfg: HomeAssistantRuntimeConfig) -> Generator[FunctionCommand, None, None]:
+    yield FunctionCommand(_verify_after_handlers, (cfg,), {})
+
+
+def verify_running_trust(cfg: HomeAssistantRuntimeConfig) -> OperationMeta | None:
+    """Original verification only for managed trust and desired started state.
+
+    Register after the original final handler flush. Planning never executes the
+    verification callback. A failed actual report remains failure, without a
+    restart/repair or automatic fallback to alternative trust configuration.
+    """
+    if not cfg.uv_system_certs or cfg.service_state != "started":
+        return None
+    return mark_read_only(_verify_running_trust(name="Verify running Home Assistant managed trust", cfg=cfg))

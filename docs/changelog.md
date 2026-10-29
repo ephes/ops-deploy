@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare Home Assistant managed trust drop-in writes and execution-only
+  post-handler verification with original file-only notifications and no repair
+  fallback; native systemd and full deployment integration remain pending.
+
 - Compose prepared Home Assistant configuration tasks with original initial-file
   guards, protected secret handling, execution-time rechecks and replacement-only
   restart notifications; retain actual dry-plan and partial-failure evidence.

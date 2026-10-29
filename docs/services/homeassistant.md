@@ -98,9 +98,16 @@ inspection program and exact managed drop-in bytes. It preserves the original
 unknown-drop-in, manager/environment trust, reload and running-process guards,
 including the explicit missing-unit preflight option. Owned synthetic systemctl
 and proc fixtures exercise its actual encoded command and verify that private
-environment values never enter its status output. This does not install the
-drop-in, restart a unit, qualify a real systemd process, or complete the separate
-UV system-certificate maintenance workflow.
+environment values never enter its status output. The separate prepared writer
+creates the original root-owned 0755 drop-in directory and exact 0644 file,
+returning only the file change for handler notification. Disabled management
+leaves an existing drop-in untouched. Post-handler verification runs only for
+managed certificates with desired state `started`; planning does not execute it,
+and a failed running-process report fails without repair or fallback. Verification
+uses a fresh direct command with suppressed output, rather than the planning
+probe path; command/schema failures remain failed host operations. Synthetic
+SDK controls prove ordering and notification selection, not real systemd trust
+or completion of the separate UV system-certificate maintenance workflow.
 
 The prepared account/layout component retains the original append-only dialout
 membership, home/shell settings and ordered0755 directory ownership. It returns

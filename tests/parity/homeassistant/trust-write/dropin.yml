@@ -1,0 +1,19 @@
+---
+- name: uv_system_certs_dropin | Create the drop-in directory
+  ansible.builtin.file:
+    path: "{{ homeassistant_uv_system_certs_dropin_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: uv_system_certs_dropin | Write the managed UV_SYSTEM_CERTS drop-in
+  ansible.builtin.template:
+    src: uv-system-certs.conf.j2
+    dest: "{{ homeassistant_uv_system_certs_dropin_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: _ha_uv_certs_dropin
+  become: true
