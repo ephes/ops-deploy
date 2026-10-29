@@ -272,8 +272,8 @@ def _sqlite_private(cfg: NyxmonConfig) -> OperationMeta:
             # between find and chown counts as done (the role's recursive
             # chown fails on exactly that race).
             f'{exposed} | while read -r f; do {{ chown -h {owner} "$f" && chmod 0600 "$f"; }} 2>/dev/null '
-            '|| ! test -e "$f" || exit 1; done',
-            f'test -z "$({exposed} 2>/dev/null)"',
+            '|| { case "$f" in */db.sqlite3-*) ! test -e "$f" ;; *) false ;; esac; } || exit 1; done',
+            f'test -f {site}/db.sqlite3 && test -z "$({exposed} 2>/dev/null)"',
         ],
         _if=lambda: pending is None or bool(pending.strip()),
     )

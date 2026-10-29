@@ -28,6 +28,7 @@ from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, python, server
 
 from ops_deploy.base._common import AbsolutePath, output
+from ops_deploy.services._lifecycle import archive_permissions
 from ops_deploy.services._lifecycle.local_backup import SnapshotRetention, backup_preflight, retention
 from ops_deploy.services.work_app._lifecycle import SLUG, WorkAppPaths
 
@@ -168,6 +169,10 @@ def deploy_work_app_backup(cfg: WorkAppBackupConfig) -> None:
         server.shell(name="Check the backup root and name", commands=[preflight], _shell_executable="bash")
     for path in (cfg.root, backup_dir, *(f"{backup_dir}/{sub}" for sub in SUBDIRECTORIES)):
         files.directory(name=f"Ensure {path}", path=path, user="root", group="root", mode="0700")
+    server.shell(
+        name="Restrict existing backup archives",
+        commands=[archive_permissions(cfg.root)],
+    )
 
     if present["database"]:
         target = f"{backup_dir}/database/{os.path.basename(cfg.database_path)}"
@@ -203,7 +208,10 @@ def deploy_work_app_backup(cfg: WorkAppBackupConfig) -> None:
     if cfg.create_archive:
         server.shell(
             name=f"Create {archive}",
-            commands=[f"(umask 077 && tar -C {shlex.quote(cfg.root)} -czf {shlex.quote(archive)} {shlex.quote(name)})"],
+            commands=[
+                f"(umask 077 && tar -C {shlex.quote(cfg.root)} -czf {shlex.quote(archive)} {shlex.quote(name)})"
+                f" && chmod 0600 {shlex.quote(archive)}"
+            ],
         )
     if cfg.retention:
         server.shell(

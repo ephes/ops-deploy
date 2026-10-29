@@ -1,6 +1,8 @@
 """Deploy-level scenarios for nyxmon against the fake connector."""
 
 import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,13 @@ from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.helpers.traefik import hash_password, render_route
 from ops_deploy.services.nyxmon import NyxmonConfig, deploy_nyxmon
-from ops_deploy.services.nyxmon.deploy import SQLITE_PRIVACY, TEMPLATE_PACKAGE, render_env, traefik_config
+from ops_deploy.services.nyxmon.deploy import (
+    SQLITE_PRIVACY,
+    TEMPLATE_PACKAGE,
+    _sqlite_private,
+    render_env,
+    traefik_config,
+)
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 from tests.hsts import hsts_headers
@@ -321,8 +329,6 @@ def test_exposed_database_is_restricted(cfg: NyxmonConfig, secrets: SecretValues
     run = deploy(cfg, secrets, responses)
 
     assert run.mutating_changed_ops == ["Deploy nyxmon | Restrict SQLite database and sidecars"]
-    fix = next(c for c in run.executed_commands if "chown -h nyxmon:nyxmon" in c)
-    assert '|| ! test -e "$f" || exit 1' in fix  # a vanished journal is not a failure
 
 
 def test_opsgate_disabled_skips_token_and_check(tmp_path: Path) -> None:
@@ -418,3 +424,41 @@ def test_role_validations(tmp_path: Path, overrides: dict[str, Any]) -> None:
 
 def test_route_sends_hsts_without_preload(cfg: NyxmonConfig, secrets: SecretValues) -> None:
     assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1
+
+
+@pytest.mark.parametrize("filename", ["db.sqlite3-journal", "db.sqlite3.backup", "db.sqlite3"])
+def test_sqlite_privacy_only_tolerates_vanishing_transient_sidecars(
+    cfg: NyxmonConfig, tmp_path: Path, filename: str
+) -> None:
+    site = tmp_path / "database-state"
+    site.mkdir()
+    (site / "db.sqlite3").write_text("fixture database")
+    target = site / filename
+    target.touch()
+    bindir = tmp_path / "race-bin"
+    bindir.mkdir()
+    marker = tmp_path / "race-fired"
+    for name, body in {
+        "find": 'if [ -e "$RACE_TARGET" ]; then printf "%s\\n" "$RACE_TARGET"; fi',
+        "chown": 'echo fired > "$RACE_MARKER"; rm "$RACE_TARGET"; exit 1',
+    }.items():
+        path = bindir / name
+        path.write_text(f"#!/bin/sh\n{body}\n")
+        path.chmod(0o755)
+    planned = run_deploy_fake(_sqlite_private, cfg, responses={SQLITE_PROBE: ["missing"]})
+    assert planned.succeeded, planned.error
+    command = "\n".join(planned.executed_commands).replace(str(cfg.site_path), str(site))
+    result = subprocess.run(
+        ["sh", "-ec", command],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}:{os.environ['PATH']}",
+            "RACE_TARGET": str(target),
+            "RACE_MARKER": str(marker),
+        },
+    )
+    assert marker.exists(), "The injected disappearance must execute"
+    assert (result.returncode == 0) == (filename == "db.sqlite3-journal"), result.stderr

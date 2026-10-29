@@ -256,7 +256,17 @@ def deploy_metube(cfg: MetubeConfig, basic_auth: BasicAuth | None = None) -> Non
         update=True,
         cache_time=3600,
     )
-    deploy_uv_install(cfg=UvInstallConfig())
+    # This staged API explicitly selects 0.13.4 above. Do not silently inherit
+    # a newer shared default or pair this URL with that release's checksums.
+    deploy_uv_install(
+        cfg=UvInstallConfig(
+            version=cfg.uv_version,
+            checksums={
+                "x86_64-unknown-linux-gnu": "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f",
+                "aarch64-unknown-linux-gnu": "1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab",
+            },
+        )
+    )
     _node(cfg)
     system_user(cfg.user, home=cfg.home, shell="/usr/sbin/nologin")
     for group in cfg.extra_groups:

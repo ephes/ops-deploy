@@ -20,6 +20,7 @@ nav:
       - Git source: concepts/git-source.md
       - Deploy helpers: concepts/helpers.md
       - Testing deploys: concepts/testing.md
+      - Role parity reconciliation: concepts/parity-reconciliation-2026-10-30.md
       - Smoke target: concepts/smoke.md
       - Local backups: concepts/local-backups.md
   - Base deploys: base.md

@@ -148,7 +148,7 @@ def test_uv_install(smoke_host: SmokeHost) -> None:
     try:
         first, _ = twice(smoke_host, "uv install", deploy_uv_install, UvInstallConfig(install_dir=install_dir))
         assert first.mutating_changed_ops
-        assert smoke_host.out(f"{install_dir}/uv --version").startswith("uv 0.13.4 ")
+        assert smoke_host.out(f"{install_dir}/uv --version").startswith("uv 0.13.5 ")
         assert smoke_host.out(f"stat -c '%a %U' {install_dir}/uvx") == "755 root"
         assert smoke_host.out(f"ls -A {install_dir}") == "uv\nuvx"
     finally:

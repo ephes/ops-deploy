@@ -107,6 +107,7 @@ class FastdeployBackupConfig(SnapshotRetention):
     logs_output: Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")] = "logs/fastdeploy.journal"
     metadata_extra: dict[str, Any] = Field(default_factory=dict)
     file_mode: Annotated[str, Field(pattern=r"^0[0-7]{3}$")] = "0640"
+    archive_mode: Annotated[str, Field(pattern=r"^0[0-7]{3}$")] = "0600"
     rsync_delete: bool = True
     runner_excludes: tuple[Annotated[str, Field(pattern=r"^[A-Za-z0-9._/*-]+$")], ...] = (".config/sops/age/keys.txt",)
 
@@ -254,6 +255,7 @@ def backup_values(cfg: FastdeployBackupConfig, backup_dir: str, *, stamp: str = 
         "B_LOGS_OUTPUT": cfg.logs_output,
         "B_EXTRA": json.dumps(cfg.metadata_extra),
         "B_FILE_MODE": cfg.file_mode,
+        "B_ARCHIVE_MODE": cfg.archive_mode,
         "B_RSYNC_DELETE": flag(cfg.rsync_delete),
         "B_RUNNER_EXCLUDES": cfg.runner_excludes,
     }

@@ -107,6 +107,18 @@ content, and `systemctl show` output for the unit. `tests/test_toy.py`
 
 ## Drift from ops-library
 
+The [2026-10-30 reconciliation](parity-reconciliation-2026-10-30.md) records
+the disposition and regression coverage of the previously failing roles.
+`role_commits` overrides the manifest's default source revision for an
+individually reviewed role; drift failures report that role's actual baseline.
+
+Paired role-oracle tests also import Ansible's native filters. Supply that
+test-only dependency when checking a source checkout:
+
+```bash
+OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core pytest
+```
+
 The ports follow ops-library's roles, which keep changing. Parity tests
 compare rendered files with the vendored role templates
 (`tests/parity/ansible`), but a role can also change what it does (remove a

@@ -156,7 +156,7 @@ deploy instead.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `0.13.4` | change together with `checksums` |
+| `version` | `0.13.5` | change together with `checksums` |
 | `checksums` | the role's sha256 for x86_64 and aarch64 Linux | keyed by release target |
 | `install_dir` | `/usr/local/bin` | not `/` |
 | `owner`, `group` | `root` | |
@@ -172,7 +172,7 @@ The default path and commands remain Linux-only. `darwin=True` explicitly
 selects the native Darwin installer; callers must supply the selected native
 version, matching `aarch64-apple-darwin`/`x86_64-apple-darwin` checksums, and the
 native ownership (normally `root:wheel`). The Mac application roles select
-`0.13.5`; this does not change the existing Linux `0.13.4` defaults.
+`0.13.5`; Linux defaults now select the same release with their own checksums.
 The Darwin branch uses the target's `/usr/bin/python3`, verifies the archive
 and both staged executables before publication, and retains the installed
 binaries when validation fails. An already-current installation creates no

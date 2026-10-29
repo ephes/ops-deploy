@@ -195,11 +195,11 @@ def test_original_restart_dependencies_through_deploy_caller(change: str, monkey
     assert observed == list(zip(cfg.units, expected[change], strict=True))
 
 
-def test_paperless_uv_default_does_not_change_shared_default_and_invalid_mapping_refuses() -> None:
+def test_paperless_uv_default_tracks_role_and_invalid_mapping_refuses() -> None:
     from ops_deploy.base.uv_install import UvInstallConfig
     from ops_deploy.services.paperless import PaperlessUvConfig
 
-    assert UvInstallConfig().version == "0.13.4"
+    assert UvInstallConfig().version == "0.13.5"
     assert PaperlessUvConfig().version == "0.13.5"
     cfg = PaperlessConfig(traefik_domain="home.example.test")
     run = run_deploy_fake(
