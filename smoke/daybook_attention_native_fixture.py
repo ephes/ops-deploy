@@ -84,6 +84,16 @@ def run(owned: OwnedMac, transport: dict[str, Any], cfg: DaybookVoiceMemoAttenti
     return result
 
 
+def import_result(result: Any) -> Any:
+    # Real SDK operation names include their enclosing @deploy name. Retain
+    # exact action identity while accepting that standard deployment prefix.
+    selected = [
+        row for row in result.ops if row.name.endswith(" | Verify original attention isolated application import")
+    ]
+    assert len(selected) == 1
+    return selected[0]
+
+
 def main() -> None:
     owned = OwnedMac("daybook-attention")
     failure: BaseException | None = None
@@ -184,9 +194,7 @@ def main() -> None:
         assert not failed.succeeded
         assert type(failed.error) is PyinfraError
         assert (runtime / "owned-failed-import").read_text() == "1"
-        import_op = next(
-            row for row in failed.ops if row.name == "Verify original attention isolated application import"
-        )
+        import_op = import_result(failed)
         assert not import_op.succeeded
         assert receipt.read_bytes() == original_receipt
         assert counter.read_text() == "3"
