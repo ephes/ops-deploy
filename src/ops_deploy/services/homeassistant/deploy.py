@@ -123,6 +123,17 @@ def _any_pending(callbacks: tuple[Callable[[], bool], ...]) -> Callable[[], bool
     return lambda: any(callback() for callback in callbacks)
 
 
+def _missing_handler(state: State, host: Host) -> None:
+    raise OperationError("Selected Home Assistant Traefik notification handler does not exist")
+
+
+@operation()
+def _validate_notification() -> Generator[FunctionCommand, None, None]:
+    # Original notification lookup fails immediately after a changed template,
+    # before the service-state task; an unchanged template does not look it up.
+    yield FunctionCommand(_missing_handler, (), {})
+
+
 @dataclass
 class _PendingHandlers:
     """Registration-time queue consumed once; callbacks evaluate completed results."""
@@ -132,22 +143,60 @@ class _PendingHandlers:
     matter: list[Callable[[], bool]] = field(default_factory=list)
     udev: OperationMeta | None = None
     ingress: OperationMeta | None = None
+    matter_selected: bool = False
+    udev_reload: list[Callable[[], bool]] = field(default_factory=list)
+    udev_trigger: list[Callable[[], bool]] = field(default_factory=list)
+
+    def notify_ingress(self, meta: OperationMeta | None, selector: str, cfg: HomeAssistantRuntimeConfig) -> None:
+        if meta is None:
+            return
+        for prefix in ("homeassistant_deploy : ", "local.ops_library.homeassistant_deploy : "):
+            if selector.startswith(prefix):
+                selector = selector[len(prefix) :]
+                break
+        match selector:
+            case "reload systemd":
+                self.reload.append(meta.did_change)
+            case "restart homeassistant":
+                self.homeassistant.append(meta.did_change)
+            case "restart matter server":
+                self.matter.append(meta.did_change)
+                self.matter_selected = True
+            case "reload udev rules" | "trigger udev":
+                if cfg.enable_udev_rule:
+                    pending = self.udev_reload if selector == "reload udev rules" else self.udev_trigger
+                    pending.append(meta.did_change)
+            case "reload traefik config":
+                self.ingress = meta
+            case _:
+                mark_read_only(
+                    _validate_notification(name="Validate selected Home Assistant notification", _if=meta.did_change)
+                )
 
     def flush(self, cfg: HomeAssistantRuntimeConfig) -> None:
         reload, ha, matter = tuple(self.reload), tuple(self.homeassistant), tuple(self.matter)
         self.reload.clear()
         self.homeassistant.clear()
         self.matter.clear()
+        matter_selected, self.matter_selected = self.matter_selected, False
         if reload or ha or matter:
             flush_service_handlers(
                 cfg,
                 reload_required=_any_pending(reload),
                 homeassistant_required=_any_pending(ha),
                 matter_required=_any_pending(matter),
+                matter_selected=matter_selected,
             )
-        if self.udev is not None:
-            run_udev_handlers(self.udev)
+        if self.udev is not None or self.udev_reload or self.udev_trigger:
+            reload_udev, trigger_udev = tuple(self.udev_reload), tuple(self.udev_trigger)
+            run_udev_handlers(
+                self.udev,
+                reload_required=_any_pending(reload_udev) if reload_udev else None,
+                trigger_required=_any_pending(trigger_udev) if trigger_udev else None,
+            )
             self.udev = None
+            self.udev_reload.clear()
+            self.udev_trigger.clear()
         if self.ingress is not None:
             mark_read_only(_traefik_notice(name="Home Assistant Traefik watcher notice", _if=self.ingress.did_change))
             self.ingress = None
@@ -223,7 +272,9 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     if dropin is not None:
         pending.reload.append(dropin.did_change)
         pending.homeassistant.append(dropin.did_change)
-    pending.ingress = write_ingress(cfg.ingress, rendered=cfg.ingress_rendered)
+    pending.notify_ingress(
+        write_ingress(cfg.ingress, rendered=cfg.ingress_rendered), cfg.ingress.reload_handler, runtime
+    )
     ensure_service_states(runtime)
     if cfg.areas():
         manage_area_registry(runtime, cfg.api, readiness, cfg.areas(), AreaResult(), app_port=values.app_port)

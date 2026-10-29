@@ -93,6 +93,7 @@ def flush_service_handlers(
     reload_required: Callable[[], bool],
     homeassistant_required: Callable[[], bool],
     matter_required: Callable[[], bool],
+    matter_selected: bool = False,
 ) -> None:
     """Original handler order and enabled=true, using completed dependencies.
 
@@ -109,7 +110,7 @@ def flush_service_handlers(
             enabled=True,
             _if=homeassistant_required,
         )
-    if cfg.manage_matter_server and cfg.matter_server_restart_on_change:
+    if (cfg.manage_matter_server or matter_selected) and cfg.matter_server_restart_on_change:
         systemd.service(
             name="Restart Matter server after changes",
             service=cfg.matter_server_service_name,

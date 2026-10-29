@@ -405,3 +405,60 @@ def test_original_include_selection_reaches_full_deployment(
     cfg = HomeAssistantDeployConfig(include_files=names)
     module.deploy_homeassistant._inner(cfg=cfg)
     assert observed == [names]
+
+
+@pytest.mark.parametrize(
+    ("selector", "changed", "enabled"),
+    [
+        ("restart matter server", True, True),
+        ("owned missing handler", True, True),
+        ("owned missing handler", False, True),
+        ("owned missing handler", True, False),
+    ],
+)
+def test_full_deploy_selected_notification_wiring_and_failure_boundary(
+    monkeypatch: pytest.MonkeyPatch, selector: str, changed: bool, enabled: bool
+) -> None:
+    from pyinfra.operations import server
+
+    from ops_deploy.services.homeassistant.services import flush_service_handlers
+    from ops_deploy.testing import run_deploy_fake
+    from tests import fakehost
+
+    stub_composition(monkeypatch)
+    quiet = SimpleNamespace(
+        homeassistant_changed=lambda: False, matter_changed=lambda: False, reload_required=lambda: False
+    )
+    for name in ("configure_python_runtime", "configure_files", "write_units"):
+        monkeypatch.setattr(module, name, lambda *args, **kw: quiet)
+    for name in ("configure_layout", "write_managed_dropin"):
+        monkeypatch.setattr(module, name, lambda *args, **kw: None)
+    monkeypatch.setattr(module, "flush_service_handlers", flush_service_handlers)
+    monkeypatch.setattr(
+        module,
+        "write_ingress",
+        lambda cfg, **kw: (
+            server.shell(name="Owned route result", commands=["printf route"], _if=lambda: changed)
+            if cfg.enabled
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "ensure_service_states",
+        lambda cfg: server.shell(name="Owned service-state task", commands=["printf service-state"]),
+    )
+    cfg = HomeAssistantDeployConfig(
+        runtime={"manage_matter_server": False}, ingress={"reload_handler": selector, "enabled": enabled}
+    )
+    run = run_deploy_fake(
+        lambda: module.deploy_homeassistant(cfg=cfg),
+        responses={**fakehost.LINUX, **fakehost.service("matter-server.service")},
+    )
+    missing = selector == "owned missing handler" and changed and enabled
+    assert run.succeeded is not missing, run.error
+    commands = "\n".join(run.executed_commands)
+    assert ("printf service-state" in commands) is not missing
+    if selector == "restart matter server":
+        assert commands.count("restart matter-server.service") == 1
+        assert commands.index("printf service-state") < commands.index("restart matter-server.service")

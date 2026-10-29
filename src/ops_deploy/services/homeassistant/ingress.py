@@ -25,6 +25,7 @@ class HomeAssistantIngressConfig(RoleConfig):
     certresolver: str = "letsencrypt"
     app_port: Annotated[StrictInt, Field(ge=1, le=65535)] = 10020
     default_ipv4: str | None = None
+    reload_handler: str = "reload traefik config"
 
 
 def render_ingress(cfg: HomeAssistantIngressConfig) -> SecretStr:
@@ -42,7 +43,7 @@ def write_ingress(cfg: HomeAssistantIngressConfig, *, rendered: SecretStr | None
 
     The stock handler only explains Traefik's file watcher. A caller selecting
     another original template can supply its exact protected rendered body; a
-    selected external handler belongs to that caller's later handler boundary.
+    selected handler belongs to the normal deploy's later handler boundary.
     This component never guesses a process reload/restart from a file change.
     """
     if not cfg.enabled:

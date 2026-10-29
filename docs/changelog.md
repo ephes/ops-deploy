@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Home Assistant prepared deployment honors the original Traefik handler selector,
+  including role-qualified names, changed-template failure timing, original
+  restart/udev conditions and one execution per handler-flush boundary.
+
 - Home Assistant normal readiness now retries malformed HTTP responses within
   the original URI retry policy, while its total deadline still exits immediately.
 

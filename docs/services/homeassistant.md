@@ -841,3 +841,18 @@ failed URI attempts and retries them within the original count. The whole
 operation deadline still exits immediately. An owned malformed-status-then200
 control reproduces the earlier premature failure and verifies recovery; it
 performs no configuration POST and adds no native application evidence.
+
+## Selected Traefik notification
+
+`ingress.reload_handler` defaults to the original `reload traefik config` notice.
+It accepts the six original role handler names: `reload systemd`,
+`restart homeassistant`, `restart matter server`, `reload udev rules`,
+`trigger udev`, and `reload traefik config`. Bare names and the original
+`homeassistant_deploy : ` or `local.ops_library.homeassistant_deploy : ` prefixes
+select the same handler. A changed route queues it at the existing handler flush;
+normal and selected notifications run that handler once at that boundary.
+Matter's explicitly selected restart depends on its restart flag, independently
+of normal Matter management. Each udev handler remains separately selectable
+and respects the udev enable flag. An unknown selector fails immediately after
+a changed route, before service-state tasks; an unchanged or disabled route
+does not resolve it. This source preparation adds no inventory/native evidence.

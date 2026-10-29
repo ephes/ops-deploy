@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib.resources import files as resources
 from io import StringIO
 
@@ -59,13 +60,24 @@ def configure_layout(cfg: HomeAssistantRuntimeConfig) -> OperationMeta | None:
     )
 
 
-def run_udev_handlers(rule: OperationMeta | None) -> None:
+def run_udev_handlers(
+    rule: OperationMeta | None,
+    *,
+    reload_required: Callable[[], bool] | None = None,
+    trigger_required: Callable[[], bool] | None = None,
+) -> None:
     """Call only at the original handler-flush boundary, after configuration."""
-    if rule is None:
-        return
-    server.shell(
-        name="Reload Home Assistant udev rules", commands=["udevadm control --reload-rules"], _if=rule.did_change
-    )
-    server.shell(
-        name="Trigger Home Assistant tty udev", commands=["udevadm trigger --subsystem-match=tty"], _if=rule.did_change
-    )
+    if rule is not None or reload_required is not None:
+        server.shell(
+            name="Reload Home Assistant udev rules",
+            commands=["udevadm control --reload-rules"],
+            _if=lambda: (rule is not None and rule.did_change()) or (reload_required is not None and reload_required()),
+        )
+    if rule is not None or trigger_required is not None:
+        server.shell(
+            name="Trigger Home Assistant tty udev",
+            commands=["udevadm trigger --subsystem-match=tty"],
+            _if=lambda: (
+                (rule is not None and rule.did_change()) or (trigger_required is not None and trigger_required())
+            ),
+        )
