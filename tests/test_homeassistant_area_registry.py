@@ -89,7 +89,13 @@ async def endpoint(state: list[dict[str, Any]], outcome: str = "normal") -> Any:
                 await ws.send_json({"id": body["id"], "success": outcome != "update-fail", "error": "private-error"})
         return ws
 
+    async def ready(request: web.Request) -> web.Response:
+        assert request.headers["Authorization"] == "Bearer " + TOKEN
+        calls.append({"type": "readiness"})
+        return web.Response(status=200)
+
     app = web.Application()
+    app.router.add_get("/api/", ready)
     app.router.add_get("/api/websocket", websocket)
     app.router.add_get("/prefix/api/websocket", websocket)
     runner = web.AppRunner(app, shutdown_timeout=0.1)
@@ -370,3 +376,203 @@ def test_actual_controller_rejects_inconsistent_effect_reports(change: dict[str,
     target = cast(Host, SimpleNamespace(run_shell_command=answer))
     with pytest.raises(OperationError, match="invalid fixed report"):
         run_area_protocol(target, "owned-placeholder", SecretStr("{}"), timeout=3)
+
+
+@pytest.mark.parametrize("fault", ["normal", "update-fail", "auth-fail"])
+def test_actual_managed_sdk_area_plan_first_repeat_and_partial_failure(tmp_path: Path, fault: str) -> None:
+    """Real child LocalConnector/protocol against a synthetic loopback server."""
+    script = r"""
+import base64,json,shlex,sys
+from dataclasses import asdict
+from pathlib import Path
+from unittest.mock import patch
+from pydantic import SecretStr
+from pyinfra.api import Config,Inventory,State
+from pyinfra.api.connect import connect_all,disconnect_all
+from pyinfra.api.deploy import add_deploy
+from pyinfra.api.operations import run_ops
+from pyinfra.api.exceptions import PyinfraError
+from ops_deploy.services.homeassistant import area_registry as module
+from ops_deploy.services.homeassistant.integration_flows import ApiReadiness,HomeAssistantApiConfig
+from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+from ops_deploy.testing.harness import collect_ops
+value=json.load(sys.stdin)
+runtime=HomeAssistantRuntimeConfig()
+runtime=runtime.model_copy(update={'security':runtime.security.model_copy(update={'system_python':sys.executable})})
+api=HomeAssistantApiConfig(url=SecretStr(value['url']),token=SecretStr(value['token']),timeout=3,retries=0,retry_delay=0)
+command=shlex.join([sys.executable,'-I','-B',value['program']])
+results=[]
+# Reuse the result object to prove stale success cannot survive the next failure.
+result=module.AreaResult(completed=True,reported_changed=True,mutation_attempts=99,applied=99)
+for iteration in range(value['runs']):
+    state=State(Inventory(([('@local',{})],{})),Config())
+    registered=[]
+    try:
+        connect_all(state)
+        with patch.object(module,'area_command',lambda runtime:command):
+            add_deploy(state,lambda:registered.extend(module.manage_area_registry(
+                runtime,api,ApiReadiness(),value['updates'],result,app_port=10020)))
+        # This marker lets the parent prove registration has made no HTTP/WS calls.
+        print('PLANNED',flush=True)
+        input()
+        error=False
+        try:run_ops(state)
+        except PyinfraError:error=True
+        ops=collect_ops(state,'@local')
+        results.append({'error':error,'succeeded':all(x.succeeded for x in ops),
+                        'managed':sum(x.changed and not x.read_only for x in ops),'result':asdict(result),
+                        'did_error':registered[-1].did_error(),
+                        'failed_hosts':sorted(h.name for h in state.failed_hosts)})
+        print('DONE',flush=True)
+    finally:disconnect_all(state)
+print('RESULT '+json.dumps(results),flush=True)
+"""
+
+    async def scenario() -> None:
+        current = initial()
+        async with endpoint(current, fault) as (url, calls):
+            # The endpoint's GET handler below returns status only; no body read.
+            value = {
+                "url": url,
+                "token": TOKEN,
+                "runs": 2 if fault == "normal" else 1,
+                "updates": [{"area_id": "owned", "aliases": ["Changed"]}],
+                "program": str(files("ops_deploy.services.homeassistant").joinpath("files/area_registry.py")),
+            }
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                script,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, "NETRC": str(tmp_path / "absent-owned-netrc")},
+            )
+            assert process.stdin is not None
+            assert process.stdout is not None
+            assert process.stderr is not None
+            try:
+                process.stdin.write((json.dumps(value) + "\n").encode())
+                await process.stdin.drain()
+                for _ in range(value["runs"]):
+                    before = len(calls)
+                    line = await asyncio.wait_for(process.stdout.readline(), 20)
+                    assert line == b"PLANNED\n", line
+                    assert len(calls) == before
+                    process.stdin.write(b"continue\n")
+                    await process.stdin.drain()
+                    assert await asyncio.wait_for(process.stdout.readline(), 20) == b"DONE\n"
+                process.stdin.close()
+                stdout, stderr = await asyncio.wait_for(process.communicate(), 30)
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                    await process.communicate()
+            assert process.returncode == 0, stderr.decode()
+            assert TOKEN.encode() not in stdout + stderr
+            assert b"private-error" not in stdout + stderr
+            result = json.loads(stdout.decode().strip().removeprefix("RESULT "))
+            if fault == "normal":
+                assert [item["managed"] for item in result] == [1, 0]
+                assert all(item["succeeded"] and not item["error"] for item in result)
+                assert all(not item["did_error"] and item["failed_hosts"] == [] for item in result)
+                assert result[1]["result"] == {
+                    "completed": True,
+                    "reported_changed": False,
+                    "mutation_attempts": 0,
+                    "applied": 0,
+                }
+                assert current[0]["aliases"] == ["Changed"]
+                assert [call["type"] for call in calls] == [
+                    "readiness",
+                    "config/area_registry/list",
+                    "config/area_registry/list",
+                    "config/area_registry/update",
+                    "readiness",
+                    "config/area_registry/list",
+                ]
+                assert current[1] == initial()[1]
+            else:
+                assert not result[0]["succeeded"]
+                assert result[0]["did_error"] is True
+                assert result[0]["failed_hosts"] == ["@local"]
+                assert result[0]["result"]["completed"] is False
+                assert result[0]["result"]["mutation_attempts"] == (1 if fault == "update-fail" else 0)
+                if fault == "update-fail":
+                    assert current[0]["aliases"] == ["Changed"]  # Failure retains actual partial write.
+
+    # Use line-oriented payload so the child remains available for plan barriers.
+    script = script.replace("value=json.load(sys.stdin)", "value=json.loads(sys.stdin.readline())")
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", ["timeout", "invalid"])
+def test_apply_unknown_failure_clears_prior_inspection_success(failure: str) -> None:
+    from types import SimpleNamespace
+    from typing import cast
+
+    from pyinfra.api import OperationError, State
+    from pyinfra.api.host import Host
+
+    from ops_deploy.services.homeassistant.area_registry import AreaResult, _apply_areas
+
+    def answer(*args: Any, **kwargs: Any) -> Any:
+        if failure == "timeout":
+            raise TimeoutError("private response must not escape")
+        return False, SimpleNamespace(stdout="private malformed body")
+
+    target = cast(Host, SimpleNamespace(run_shell_command=answer))
+    result = AreaResult(True, False, 0, 0)
+    with pytest.raises(OperationError, match="partial effects or remote activity") as caught:
+        _apply_areas(cast(State, None), target, "owned", SecretStr("{}"), 1, result)
+    assert "private" not in str(caught.value)
+    assert result == AreaResult()
+
+
+def test_inspection_failure_completes_only_failed_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pyinfra import host
+    from pyinfra.api import Config, Inventory, State
+    from pyinfra.api.connect import connect_all, disconnect_all
+    from pyinfra.api.deploy import add_deploy
+    from pyinfra.api.host import Host
+    from pyinfra.api.operation import OperationMeta
+    from pyinfra.api.operations import run_ops
+
+    from ops_deploy.services.homeassistant import area_registry as module
+
+    registered: dict[str, OperationMeta] = {}
+    results: dict[str, module.AreaResult] = {}
+
+    def observe(target: Host, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        failed = target.name.endswith("bad")
+        return {
+            **areas.new_report(),
+            "success": not failed,
+            "phase": "authenticate" if failed else "complete",
+            "error": "RuntimeError" if failed else "",
+        }
+
+    monkeypatch.setattr(module, "run_area_protocol", observe)
+    state = State(Inventory((["@fake/bad", "@fake/good"], {})), Config())
+
+    def deploy() -> None:
+        result = module.AreaResult()
+        results[host.name] = result
+        registered[host.name] = module._manage_areas(
+            command="owned", inspect_payload=SecretStr("{}"), apply_payload=SecretStr("{}"), timeout=1, result=result
+        )
+
+    try:
+        connect_all(state)
+        add_deploy(state, deploy)
+        run_ops(state)
+        assert registered["@fake/bad"].did_error()
+        assert not registered["@fake/bad"].did_succeed()
+        assert registered["@fake/good"].did_succeed()
+        assert not registered["@fake/good"].did_error()
+        assert {item.name for item in state.failed_hosts} == {"@fake/bad"}
+        assert {item.name for item in state.active_hosts} == {"@fake/good"}
+        assert results["@fake/good"].completed
+        assert not results["@fake/bad"].completed
+    finally:
+        disconnect_all(state)

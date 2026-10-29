@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Generator
+from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from pydantic import SecretStr
-from pyinfra.api import OperationError, StringCommand
+from pyinfra import host, state
+from pyinfra.api import FunctionCommand, OperationError, State, StringCommand, operation
 from pyinfra.api.host import Host
+from pyinfra.api.operation import OperationMeta
 
 from ops_deploy.helpers.probes import StdinLines
 from ops_deploy.helpers.python import _as_user
 
-from .integration_flows import HomeAssistantApiConfig
+from .integration_flows import ApiReadiness, HomeAssistantApiConfig, ensure_api_readiness
 from .runtime_config import HomeAssistantRuntimeConfig
 
 
@@ -111,3 +115,104 @@ def run_area_protocol(target: Host, command: str, payload: SecretStr, *, timeout
     except (ValueError, TypeError):
         raise OperationError("Home Assistant area protocol returned an invalid fixed report") from None
     return result
+
+
+@dataclass
+class AreaResult:
+    """Fixed counters only, reset on execution; no area IDs/names/bodies."""
+
+    completed: bool = False
+    reported_changed: bool | None = None
+    mutation_attempts: int | None = None
+    applied: int | None = None
+
+    def reset(self) -> None:
+        self.completed = False
+        self.reported_changed = None
+        self.mutation_attempts = None
+        self.applied = None
+
+
+def _checked_area_report(
+    target: Host, command: str, payload: SecretStr, timeout: int, result: AreaResult
+) -> dict[str, Any]:
+    try:
+        report = run_area_protocol(target, command, payload, timeout=timeout)
+    except (TimeoutError, OperationError):
+        raise OperationError(
+            "Home Assistant area protocol failed without a complete report; "
+            "partial effects or remote activity may exist"
+        ) from None
+    result.reported_changed = report["changed"]
+    result.mutation_attempts = report["mutation_attempts"]
+    result.applied = report["applied"]
+    if not report["success"]:
+        raise OperationError(
+            "Home Assistant area protocol failed during "
+            + report["phase"]
+            + f" after {report['mutation_attempts']} mutation attempts; prior effects may remain"
+        )
+    return report
+
+
+def _apply_areas(state: State, host: Host, command: str, payload: SecretStr, timeout: int, result: AreaResult) -> None:
+    # Clear the preceding inspection counts: an invalid apply response cannot
+    # turn its known zero attempts into a false zero-effect failure report.
+    result.reset()
+    _checked_area_report(host, command, payload, timeout, result)
+    result.completed = True
+
+
+def _inspection_failure(state: State, host: Host, message: str) -> None:
+    # pyinfra records callback errors per host; generator exceptions bypass its
+    # completion/error accounting and can abort unrelated hosts in the batch.
+    raise OperationError(message)
+
+
+@operation()
+def _manage_areas(
+    command: str, inspect_payload: SecretStr, apply_payload: SecretStr, timeout: int, result: AreaResult
+) -> Generator[FunctionCommand, None, None]:
+    # Original check mode does not call this API. Planning must also work before
+    # the application/venv exists; the unresolved row is not claimed read-only.
+    if state.is_executing:
+        result.reset()
+        try:
+            report = _checked_area_report(host, command, inspect_payload, timeout, result)
+        except OperationError as error:
+            yield FunctionCommand(_inspection_failure, (str(error),), {})
+            return
+        if report["pending"] == 0:
+            result.completed = True
+            return
+    yield FunctionCommand(_apply_areas, (command, apply_payload, timeout, result), {})
+
+
+def manage_area_registry(
+    runtime: HomeAssistantRuntimeConfig,
+    api: HomeAssistantApiConfig,
+    readiness: ApiReadiness,
+    updates: list[dict[str, Any]],
+    result: AreaResult,
+    *,
+    app_port: int,
+) -> tuple[OperationMeta, OperationMeta]:
+    """Original selected area task group after service startup, not a full deploy.
+
+    Caller retains original enablement. Readiness executes before fresh protected
+    inspection; only actual drift yields a managed apply. Plan has no API calls
+    and retains an unresolved managed row. Repeat still reads API state, with no
+    configuration request when converged. No global I/O or hardware claim.
+    """
+    inspect_payload = area_payload(api, updates, "inspect", app_port=app_port)
+    apply_payload = area_payload(api, updates, "apply", app_port=app_port)
+    ready = ensure_api_readiness(runtime, api, readiness)
+    change = _manage_areas(
+        name="Reconcile Home Assistant area registry",
+        command=area_command(runtime),
+        inspect_payload=inspect_payload,
+        apply_payload=apply_payload,
+        timeout=api.timeout,
+        result=result,
+    )
+    return ready, change

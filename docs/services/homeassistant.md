@@ -674,3 +674,25 @@ HTTP controls prove checksum failure preservation, metadata-only/current cases,
 gzip and original auth behavior. These are filesystem/protocol component
 proofs, not native HA/model/radio or live inventory qualification; full outer
 optional selection/readiness/handler composition remains pending.
+
+
+### Area execution composition (prepared)
+
+The selected area task group now registers the original cached HTTP readiness
+before an execution-time WebSocket inspection. Planning makes no API call, even
+before the application virtualenv exists, and keeps an unresolved managed row;
+it does not pretend that row is proven unchanged. Execution applies only actual
+owned-field drift. A converged repeat still reads API state but sends no area
+update. The original enablement and service-start/handler ordering belong to the
+full deployment composition, which remains pending.
+
+Only fixed success/change/attempt counters leave the helper. Unknown or malformed
+apply results clear prior inspection success and retain partial-effects/remote-
+activity uncertainty; no area names, registry bodies or response errors appear in
+controller diagnostics. Inspection failures are emitted through an SDK command
+callback so pyinfra completes failure accounting for that host and permits other
+hosts in the batch to finish; they do not escape the command generator. Owned
+real loopback API and LocalConnector controls prove
+plan silence, readiness ordering, first update, zero-managed repeat and actual
+write-before-error retention. These are component tests, not live HA or device
+qualification.

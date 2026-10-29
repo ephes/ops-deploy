@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Wire prepared Home Assistant area readiness and protocol into execution-time
+  pyinfra operations, retaining API-free planning, drift-only updates, strict
+  counter privacy and honest failed-response uncertainty.
+
 - Prepare Home Assistant's optional Custom Conversation installer with original
   pinned archive/stamp and selected GNU tar semantics. Verify downloads before
   replacement, retain original metadata-only behavior and partial extraction
