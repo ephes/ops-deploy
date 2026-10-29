@@ -35,6 +35,21 @@ def _backup(path: Path) -> None:
                 raise
 
 
+def _unifi_password(source: dict[str, Any]) -> str:
+    """Original explicit → selected file/variable precedence, entirely host-local."""
+    value = source.get("explicit") or ""
+    if not value and source["source"] == "file":
+        try:
+            value = Path(source["file"]).read_bytes().decode("utf-8", errors="surrogateescape").strip()
+        except OSError:
+            value = ""  # Original slurp has failed_when:false.
+    if not value and source["source"] == "variable" and source.get("variable"):
+        value = source["variable"]
+    if not value:
+        raise ValueError("UniFi credential unavailable for managed secrets")
+    return str(value)
+
+
 def process(payload: dict[str, Any], effects: dict[str, bool]) -> None:
     """Check or apply exactly one original template/replace task.
 
@@ -43,8 +58,14 @@ def process(payload: dict[str, Any], effects: dict[str, bool]) -> None:
     normal filesystem behavior, as in the original modules. No parents are made.
     """
     kind, action = payload["kind"], payload["action"]
-    if kind not in {"template", "replace"} or action not in {"check", "apply"}:
+    if kind not in {"template", "replace", "secrets"} or action not in {"check", "apply"}:
         raise ValueError("unsupported configuration action")
+    if kind == "secrets":
+        # Called only for the original manage_secrets task. This never returns
+        # the effective credential to a controller or emits a durable digest.
+        content = payload["prefix"] + _unifi_password(payload["unifi"]) + payload["suffix"]
+        payload = {**payload, "content": content}
+        kind = "template"
     path = Path(payload["path"])
     link = path.is_symlink()
     try:
@@ -55,7 +76,7 @@ def process(payload: dict[str, Any], effects: dict[str, bool]) -> None:
             raise
         current, previous = None, None
     if kind == "template":
-        desired = payload["content"].encode("utf-8")
+        desired = payload["content"].encode("utf-8", errors="surrogateescape")
         uid = pwd.getpwnam(payload["user"]).pw_uid
         gid = grp.getgrnam(payload["group"]).gr_gid
         mode = int(payload["mode"], 8)

@@ -40,6 +40,10 @@
     "tasks/configuration.yml": {
       "fixture": "tasks__configuration.yml",
       "sha256": "5cf5482dddabfc163eefd2020ab70faffa4b4eb7d1c553598aa5a095c187d1b6"
+    },
+    "tasks/unifi.yml": {
+      "fixture": "tasks__unifi.yml",
+      "sha256": "04f20132cdbb5bd4f56ddb65de14279b0f63db820fcae4c0b5f1cdce092fe25c"
     }
   }
 }

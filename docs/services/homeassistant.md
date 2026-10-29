@@ -319,3 +319,25 @@ best effort behavior. A replacement has no explicit owner/mode arguments, so
 it does not add a mandatory repair after that tolerated error. Other metadata
 errors remain failures. The paired injected-error oracle uses actual Ansible
 `atomic_move`; it is not proof of a real unprivileged foreign-owner scenario.
+
+### Prepared host-local UniFi secret resolution
+
+The managed secrets task now has a host-local source path: a nonempty explicit
+value wins unchanged; otherwise only the selected file or variable source is
+used. File reads tolerate the original read failure and trim decoded content.
+Explicit and variable values retain whitespace. A missing value fails only the
+managed secrets operation; there is no automatic fallback to another source.
+
+The controller prepares two protected template halves around a unique temporary
+marker, removes that marker, and sends the halves with protected source inputs.
+The effective file-sourced credential is inserted only on the host. It is never
+returned, hashed into a receipt, or placed in a process argument. Original
+quoting and optional commented-example interpolation remain unchanged. Probe
+mode may read the declared source file but does not write the destination.
+Full deployment/task ordering and the unmanaged-secrets routing remain pending
+outer composition; this is not native or inventory credential qualification.
+
+An owned original-Ansible control also confirmed surrogate-escaped non-UTF-8
+file bytes survive the original slurp/template path. The protected host helper
+keeps that byte behavior instead of silently replacing or rejecting those bytes.
+This is a compatibility observation, not a claim that the result is valid YAML.

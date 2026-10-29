@@ -7,6 +7,8 @@ must not serialize the unwrapped bodies into controller evidence.
 
 from __future__ import annotations
 
+import secrets
+
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictFloat, StrictInt, StrictStr
 
 from .render import templates
@@ -43,18 +45,19 @@ class ConfigurationValues(BaseModel):
     unifi_site: StrictStr = "default"
 
 
-class ConfigurationSecrets(BaseModel):
-    """Already-resolved values; host-local UniFi source resolution is separate.
-
-    Optional commented examples preserve the original template's defaults.
-    Empty values stay empty; the original Jinja default filter is not boolean.
-    """
+class ConfigurationSecretExamples(BaseModel):
+    """Optional commented examples; explicit empty values retain original meaning."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
-    unifi_password_effective: SecretStr
     mqtt_password: SecretStr | None = None
     db_password: SecretStr | None = None
     weather_api_key: SecretStr | None = None
+
+
+class ConfigurationSecrets(ConfigurationSecretExamples):
+    """Already-resolved values; host-local UniFi source resolution is separate."""
+
+    unifi_password_effective: SecretStr
 
 
 def render_configuration(runtime: HomeAssistantRuntimeConfig, values: ConfigurationValues) -> SecretStr:
@@ -80,3 +83,19 @@ def render_secrets(values: ConfigurationSecrets) -> SecretStr:
 def render_include(name: str) -> SecretStr:
     """Original stock include bytes; unknown templates retain loader refusal."""
     return SecretStr(templates().get_template(name + ".j2").render())
+
+
+def render_secret_parts(examples: ConfigurationSecretExamples) -> tuple[SecretStr, SecretStr]:
+    """Original template around one host-local UniFi insertion, both halves protected.
+
+    The random marker never leaves this function. Retry a collision rather than
+    rejecting or altering any declared example credential. The host concatenates
+    prefix + effective credential + suffix without new escaping/normalization.
+    """
+    while True:
+        marker = "ops-ha-unifi-slot-" + secrets.token_hex(16)
+        values = ConfigurationSecrets(unifi_password_effective=SecretStr(marker), **examples.model_dump())
+        body = render_secrets(values).get_secret_value()
+        if body.count(marker) == 1:
+            prefix, suffix = body.split(marker)
+            return SecretStr(prefix), SecretStr(suffix)

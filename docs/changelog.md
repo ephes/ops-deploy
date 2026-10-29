@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare host-local UniFi credential resolution and protected secrets-template
+  insertion with original explicit/file/variable precedence; no credential export
+  or fallback, and no full deployment/native qualification claim.
+
 - Prepare the Home Assistant host-local configuration file primitive with original
   template/replace symlink and backup behavior, metadata repair, protected output
   and explicit partial-effect reporting. Full task wiring/native proof is pending.
