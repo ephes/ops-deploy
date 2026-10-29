@@ -1,0 +1,38 @@
+[Unit]
+Description=Paperless-ngx Web Server
+After=network.target postgresql.service redis-server.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=archivist
+Group=archivist
+WorkingDirectory=/srv/archive-app/site/paperless-ngx/src
+EnvironmentFile=/srv/archive-app/site/.env
+Environment="PATH=/srv/archive-app/site/.venv/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/srv/archive-app/site/.venv/lib/python3.14/site-packages"
+Environment="PAPERLESS_NLTK_DIR=/usr/share/nltk_data"
+
+ExecStart=/srv/archive-app/site/.venv/bin/gunicorn -c /srv/archive-app/site/gunicorn.conf.py --bind 0.0.0.0:12030 --workers 2 --worker-class gthread --threads 2 --worker-tmp-dir /dev/shm --timeout 120 paperless.wsgi:application
+
+Restart=on-failure
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+ReadWritePaths=/srv/archive-data /srv/archive-app/site
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

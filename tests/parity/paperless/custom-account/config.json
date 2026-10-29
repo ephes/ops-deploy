@@ -1,0 +1,16 @@
+{
+  "traefik_domain": "home.example.org",
+  "username": "archivist",
+  "home_path": "/srv/archive-app",
+  "external_storage_root": "/srv/archive-data",
+  "time_zone": "UTC",
+  "app_port": 12030,
+  "scanner_username": "scanbot",
+  "scanner_group": "scanbot",
+  "ignore_dates": [
+    "01.02.1970",
+    "02.03.1980"
+  ],
+  "traefik_cert_resolver": "letsencrypt",
+  "filename_format": "{{ title }}"
+}

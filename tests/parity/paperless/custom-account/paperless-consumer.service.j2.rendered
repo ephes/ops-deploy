@@ -1,0 +1,42 @@
+[Unit]
+Description=Paperless-ngx Document Consumer
+After=network.target redis-server.service postgresql.service paperless.service
+Wants=redis-server.service postgresql.service paperless.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+User=archivist
+Group=archivist
+WorkingDirectory=/srv/archive-app/site/paperless-ngx/src
+
+# Environment
+EnvironmentFile=/srv/archive-app/site/.env
+Environment="PATH=/srv/archive-app/site/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PAPERLESS_NLTK_DIR=/usr/share/nltk_data"
+
+# Run the document consumer command
+ExecStart=/srv/archive-app/site/.venv/bin/python manage.py document_consumer
+
+# Process management
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=30
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+ReadWritePaths=/srv/archive-data/media /srv/archive-data/data /srv/archive-data/consume /srv/archive-app/site/logs /tmp
+
+[Install]
+WantedBy=multi-user.target

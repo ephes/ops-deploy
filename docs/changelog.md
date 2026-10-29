@@ -15,6 +15,20 @@
   entry point or native device qualification yet.
   This is a tested source foundation; no deployment API or inventory switch.
 
+- Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
+  50 typed phases per leg,26 strict zero-managed/zero-upload repeats per leg,
+  real synthetic OCR/SFTP/search and recovery controls. Upgrade first performed
+  12 managed operations/zero uploads. Exact installed artifacts and cleanup passed;
+  retain original fixture recoveries, earlier failed attempts and shared-kernel/
+  metadata/freshness limits. Private inventory and separate lifecycle adoption
+  remain pending.
+
+- Preserve bounded sanitized Paperless native phase progress before timeout,
+  and allow an explicit upgrade-only fixture selection with a100-minute guest
+  deadline. The current50-phase native matrix passed; the upgrade's earlier
+  70-minute timeout and incomplete phase remain failed evidence, with no
+  inventory adoption or application runtime change.
+
 - Preserve original managed Daybook runtime health and update-check predicates,
   including intentionally disabled remote sources and real unreadable/CLI
   failures. Keep application work explicit on repeats. Add the original
@@ -72,6 +86,23 @@
   execution. Preserve existing user-owned uv observation semantics and the two
   original inert uv bookkeeping locks without changing their modes. Qualify the
   separate owned root mechanism and fault cases; inventory adoption stays separate.
+
+- Prepare the checksum-bound Paperless3.2.1 API with the original dependency,
+  scanner, service and template contracts, recoverable app installation and
+  conditional metadata/count-based reindexing. Existing admin credentials stay
+  untouched; healthy package, bind-mount and ownership steps avoid repeated
+  writes. Owned native OCR/SFTP, PostgreSQL and recovery qualification passed;
+  private inventory adoption remains pending. Repair missing-entire-index recovery by
+  creating only the absent leaf as the service user before the upstream rebuild;
+  refuse unsafe ancestors and preserve existing directory metadata. Original
+  Ansible reindexing is unchanged. Preserve the original uv0.13.5 dependency
+  and generic override semantics without changing shared installer defaults.
+  Follow only the release's expected same-origin schema redirect and require
+  final HTTP200, preserving the original readiness behavior. Skip writing Django
+  system checks only in the migration status probe; actual managed migrations
+  retain all checks and native repeats still require exact protected metadata.
+  Preserve original recursive frontend-copy permissions and unchanged children;
+  stop treating every non-executable frontend asset as drift.
 
 - Add a separate disposable Darwin resource-mechanism fixture for unique
   system/GUI timer retirement/refusal, root/user template modes, browser access

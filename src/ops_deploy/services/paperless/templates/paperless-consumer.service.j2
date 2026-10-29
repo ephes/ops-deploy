@@ -1,0 +1,42 @@
+[Unit]
+Description=Paperless-ngx Document Consumer
+After=network.target redis-server.service postgresql.service {{ paperless_service_name }}.service
+Wants=redis-server.service postgresql.service {{ paperless_service_name }}.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+User={{ paperless_username }}
+Group={{ paperless_group }}
+WorkingDirectory={{ paperless_manage_dir }}
+
+# Environment
+EnvironmentFile={{ paperless_env_file }}
+Environment="PATH={{ paperless_virtualenv }}/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PAPERLESS_NLTK_DIR={{ paperless_nltk_data_path }}"
+
+# Run the document consumer command
+ExecStart={{ paperless_python_bin }} manage.py document_consumer
+
+# Process management
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=30
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+ReadWritePaths={{ paperless_media_path }} {{ paperless_data_path }} {{ paperless_consume_path }} {{ paperless_site_root }}/logs /tmp
+
+[Install]
+WantedBy=multi-user.target

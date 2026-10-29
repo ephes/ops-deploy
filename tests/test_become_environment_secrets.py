@@ -127,10 +127,14 @@ LOADS_NO_HOST_SCRIPT: dict[str, str] = {
 }
 
 
-# The runner's staged generated Traefik probe is also called health.py. Its
-# module loader loads engine.py, never the unrelated UniFi host script.
+# The runner names its generated health probe and release lifecycle. Its loader
+# loads engine.py, never the unrelated UniFi/Paperless host scripts.
 NON_LOADED_NAME_MATCHES = {
-    "infra/traefik_tx/runner.py": {"services/unifi/files/health.py"},
+    "infra/traefik_tx/runner.py": {
+        "services/unifi/files/health.py",
+        "services/paperless/files/release.py",
+        "services/paperless/files/health.py",
+    },
 }
 
 
@@ -442,15 +446,18 @@ def test_every_module_loader_names_its_host_script_or_is_listed() -> None:
     assert unnamed == set(LOADS_NO_HOST_SCRIPT)
 
 
-def test_traefik_generated_probe_does_not_link_unrelated_unifi_script() -> None:
+@pytest.mark.parametrize(
+    "unrelated",
+    ["services/unifi/files/health.py", "services/paperless/files/release.py", "services/paperless/files/health.py"],
+)
+def test_traefik_generated_probe_does_not_link_unrelated_host_script(unrelated: str) -> None:
     trees = _trees()
     runner = "infra/traefik_tx/runner.py"
-    unifi = "services/unifi/files/health.py"
-    assert unifi in _named(trees[runner], [unifi])
-    assert unifi not in _links(trees)[runner]
+    assert unrelated in _named(trees[runner], [unrelated])
+    assert unrelated not in _links(trees)[runner]
     # Direct imports are not suppressed by the basename-only disambiguation.
-    trees[runner] = ast.parse("import ops_deploy.services.unifi.files.health")
-    assert unifi in _links(trees)[runner]
+    trees[runner] = ast.parse("import " + _module(unrelated))
+    assert unrelated in _links(trees)[runner]
 
 
 STUBS = """

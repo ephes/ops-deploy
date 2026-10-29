@@ -1,0 +1,4 @@
+{
+  "traefik_domain": "home.example.net",
+  "redis_requirepass_enabled": true
+}
