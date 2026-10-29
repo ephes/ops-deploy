@@ -7,6 +7,8 @@
   Preserve physical runtime path derivations and original HA/Matter units.
   Carry over separate Python/Matter replacement and install decisions, including
   legacy shared-environment stop ordering and no implicit unpinned upgrade.
+  Prepare service-user status probes in separate environment/application phases,
+  avoiding old application imports when its environment will be replaced.
   This is a tested source foundation; no deployment API or inventory switch.
 
 - Add the original Voice Memo Inbox declaration, disabled-first component

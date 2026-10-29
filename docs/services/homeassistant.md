@@ -60,3 +60,16 @@ Tests evaluate the bound original task expressions over all combinations of thes
 predicates. This is source parity, not an executed virtualenv or recovery proof;
 host probe wiring, UV installation, package security constraints, service rollout
 and native recovery remain unfinished.
+
+Prepared observation wiring runs the bounded original interpreter/package probes
+as the declared service user, with bytecode disabled and status-only results.
+It separates interpreter/pip/legacy-package inspection from application version
+and Matter chip imports: an environment selected for replacement never runs the
+old application's version/import commands first. Tests execute the actual encoded
+helper using owned synthetic executables and a local identity stub. They prove
+command sequencing and response validation, not actual Home Assistant or Matter
+behavior, service-user privilege separation, or physical no-op on a target.
+Existence follows the original `stat` behavior without following symlinks. A
+dangling Python link therefore fails version inspection before replacement;
+a failed application command retains the original empty-version/install
+decision, including the lack of an implicit upgrade for an unpinned spec.
