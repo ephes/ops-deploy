@@ -467,3 +467,28 @@ including partial failures, and exercise real WebSocket transport. The dev-only
 aiohttp 3.14.5 dependency matches the selected HA release; it does not install or
 upgrade any inventory application. Actual HA API, service-user execution and
 native deployment qualification remain pending.
+
+## Prepared pipeline protocol component
+
+The pipeline helper handles already-resolved desired definitions through the
+original list/create/update/set-preferred WebSocket calls. Unlike area selection,
+a missing pipeline ID falls back to the first matching name. Creates append the
+returned record to the comparison snapshot; updates retain the original cached
+record, including the original behavior for duplicate desired declarations.
+Unlisted pipelines are preserved. Omitted wake-word and local-intent fields
+inherit existing values, and updates preserve existing acknowledgement media.
+Without a preferred declaration, the current preferred pipeline is left unchanged.
+
+Inspection only authenticates and lists. It reports the first needed mutation,
+not a complete operation count or simulated ID for a future create. Application
+re-reads the list, applies in order and retains attempted/acknowledged mutation
+counts through create/update/preferred failures. Tokens and pipeline bodies/IDs
+remain in host memory; no result file is created. The configured API timeout
+bounds the whole exchange. Failed sends or responses may already have effects.
+
+This host protocol component still needs the original registry auto-detection,
+desired-definition preparation, validation, readiness and managed controller
+composition. The separate existing-pipeline STT/TTS path is not replaced by the
+list/create interface. Owned real WebSocket/original-inline-script comparisons
+exercise these protocol semantics, not complete role prerequisites, live HA
+application behavior or native deployment.

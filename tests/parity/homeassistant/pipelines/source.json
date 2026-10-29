@@ -1,0 +1,5 @@
+{
+  "path": "roles/homeassistant_deploy/tasks/assist_pipelines.yml",
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "sha256": "1102194e8fd34181166d2ffcdab3b67bbb00f6745186a4fc93da55a3527b8fc2"
+}

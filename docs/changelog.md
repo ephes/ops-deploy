@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare the Home Assistant pipeline protocol with original creation, update,
+  field preservation and preferred selection; actual owned protocol controls
+  retain partial effects without claiming complete role/native qualification.
+
 - Prepare the Home Assistant area-registry protocol component with original
   field ownership/selection, protected input and explicit partial-effect counts.
   Owned WebSocket/original-script controls do not yet qualify native deployment.
