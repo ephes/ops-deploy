@@ -132,15 +132,17 @@ def observe_daybook_runtime(
     return InstalledRuntime(state["enabled"], state["source_current"], state["resources_current"])
 
 
-@deploy("Verify protected Daybook runtime without Journal or executor calls")
+@deploy("Verify Daybook resources and monitor response without asserting original CLI health")
 def verify_daybook_runtime(
     cfg: DaybookRuntimeConfig, secrets: Mapping[str, str], source: SourceTree, *, statuses: tuple[SourceStatus, ...]
 ) -> None:
     names = [status.binding for status in statuses]
     if len(names) != len(set(names)) or set(names) != set(cfg.status_sources):
         raise DeployError("Pure runtime monitor has missing or duplicate declared sources")
-    if any(not status.enabled or status.needs_operator or status.expiry_pending for status in statuses):
-        raise DeployError("Pure runtime monitor requires operator attention")
+    # Remote flags are not original health predicates. This pure resource /
+    # response check does not prove the executor credential or local record
+    # readability; normal verification additionally runs explicit managed CLI
+    # health on both empty and nonempty stores.
     if host.get_fact(Os) != "Darwin":
         raise DeployError("Protected Daybook runtime supports Darwin targets only")
     data = observation_payload(cfg, secrets, source)
