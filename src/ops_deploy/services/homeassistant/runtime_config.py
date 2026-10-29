@@ -10,6 +10,8 @@ from pydantic import Field, StrictBool, StrictInt, model_validator
 from ops_deploy.base._common import AbsolutePath, RoleConfig, Version
 from ops_deploy.core.config import ServiceName, UnixUser
 
+from .uv import HomeAssistantUvConfig
+
 Port = Annotated[StrictInt, Field(ge=1, le=65535)]
 Positive = Annotated[StrictInt, Field(ge=1)]
 Plain = Annotated[str, Field(min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$")]
@@ -32,6 +34,9 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     virtualenv_link: AbsolutePath = "/home/homeassistant/site/venv"
     virtualenv_version_file: AbsolutePath = "/home/homeassistant/site/.venv/.ansible-python-version"
     python_version: Version = "3.14.8"
+    manage_uv: StrictBool = True
+    uv: HomeAssistantUvConfig = Field(default_factory=HomeAssistantUvConfig)
+    uv_path: AbsolutePath = "/usr/local/bin/uv"
     package_spec: Plain = "homeassistant"
     extra_package_specs: tuple[Plain, ...] = ()
     force_reinstall: StrictBool = False
@@ -70,6 +75,15 @@ class HomeAssistantRuntimeConfig(RoleConfig):
         if not isinstance(value, dict):
             return value
         result = dict(value)
+        uv = result.get("uv", {})
+        install_dir = (
+            uv.install_dir
+            if isinstance(uv, HomeAssistantUvConfig)
+            else uv.get("install_dir", "/usr/local/bin")
+            if isinstance(uv, dict)
+            else "/usr/local/bin"
+        )
+        result.setdefault("uv_path", str(install_dir).rstrip("/") + "/uv")
         result.setdefault("group", result.get("user", "homeassistant"))
         result.setdefault("home", "/home/" + str(result.get("user", "homeassistant")))
         result.setdefault("site_path", str(result["home"]) + "/site")

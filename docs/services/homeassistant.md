@@ -39,9 +39,28 @@ Python/package guards are covered by source tests. The original default package
 spec remains unpinned; actual selected private versions will be mapped explicitly.
 
 This schema does not yet install dependencies or perform service rollout. UV
-include precedence, package/security/environment recovery, application flows and
+private include-variable mapping, package/security/environment recovery, application flows and
 all lifecycle paths remain implementation work. No physical no-op or application
 acceptance follows from template or input tests.
+
+The prepared UV component uses the original Home Assistant 0.13.5 version and
+complete checksum defaults, leaving the shared installer's 0.13.4 defaults
+unchanged. Its nested `uv` settings represent the resolved original include:
+HA version/path/update/force settings are distinct from generic checksum/owner/
+group settings. The original `homeassistant_uv_install_user` is inert in the
+dependency role and gains no new ownership authority. Deprecated symlinks remain
+disabled. `manage_uv=false` skips this entire component; an explicit `uv_path`
+for later application commands remains independent of the install directory.
+When enabled, it uses the existing checksum-verified installer and retains the
+original final version/help checks, classified as read-only commands. Fake-host
+tests cover current, outdated, update-disabled, forced, symlink and explicit
+path/owner cases. Its original role gate runs before the shared installer:
+with updates disabled, a broken existing UV is not silently replaced and must
+fail its final functionality check; a missing UVX alone is not an original
+replacement trigger. The shared installer's broader recovery behavior remains
+unchanged for other callers. Real install,
+ownership, interruption and healthy-repeat proof remains part of the forthcoming
+native matrix, not a consequence of these synthetic command checks.
 
 ## Python replacement decisions in preparation
 

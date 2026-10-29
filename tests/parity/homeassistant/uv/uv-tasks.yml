@@ -1,0 +1,186 @@
+---
+# Install uv package manager to a system-wide location
+
+- name: Validate installation directory
+  assert:
+    that:
+      - uv_install_dir is defined
+      - uv_install_dir | length > 0
+      - uv_install_dir != "/"
+    fail_msg: "uv_install_dir must be defined and cannot be root directory"
+
+- name: Ensure installation directory exists
+  file:
+    path: "{{ uv_install_dir }}"
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Check if uv is already installed
+  stat:
+    path: "{{ uv_install_dir }}/uv"
+  register: uv_installed
+
+- name: Check if existing uv is a symlink (needs replacement)
+  set_fact:
+    uv_is_symlink: "{{ uv_installed.stat.islnk | default(false) }}"
+  when: uv_installed.stat.exists
+
+- name: Get current uv version if installed
+  command: "{{ uv_install_dir }}/uv --version"
+  register: current_uv_version
+  changed_when: false
+  failed_when: false
+  # Read-only probe: also run it under --check so the version comparison works.
+  check_mode: false
+  when:
+    - uv_installed.stat.exists
+    - not (uv_is_symlink | default(false))
+
+- name: Parse current version
+  set_fact:
+    current_version: "{{ current_uv_version.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
+  when:
+    - uv_installed.stat.exists
+    - not (uv_is_symlink | default(false))
+    - current_uv_version.rc == 0
+
+- name: Determine if installation is needed
+  set_fact:
+    needs_install: >-
+      {{
+        not uv_installed.stat.exists or
+        (uv_is_symlink | default(false)) or
+        uv_force_reinstall or
+        (uv_update_existing and (current_version | default('')) != uv_version)
+      }}
+
+- name: Report the pending uv install or update (check mode)
+  ansible.builtin.debug:
+    msg: "Would install uv {{ uv_version }} at {{ uv_install_dir }}/uv"
+  changed_when: true
+  when:
+    - needs_install | bool
+    - ansible_check_mode
+
+- name: Install or update uv
+  when:
+    - needs_install | bool
+    - not ansible_check_mode
+  block:
+    - name: Create temporary directory for installation
+      tempfile:
+        state: directory
+        suffix: .uv_install
+      register: temp_dir
+
+    - name: Select uv release target
+      ansible.builtin.set_fact:
+        uv_release_target: "{{ {'x86_64': 'x86_64', 'aarch64': 'aarch64', 'arm64': 'aarch64'}.get(ansible_architecture, 'unsupported') }}-{{ 'apple-darwin' if ansible_facts.os_family == 'Darwin' else 'unknown-linux-gnu' }}"
+
+    - name: Validate pinned uv release
+      ansible.builtin.assert:
+        that:
+          - uv_version != 'latest'
+          - uv_release_target in uv_checksum
+        fail_msg: "Set a pinned uv_version and matching uv_checksum for this platform."
+
+    - name: Download verified uv archive
+      ansible.builtin.get_url:
+        url: "https://github.com/astral-sh/uv/releases/download/{{ uv_version }}/uv-{{ uv_release_target }}.tar.gz"
+        checksum: "{{ uv_checksum[uv_release_target] }}"
+        dest: "{{ temp_dir.path }}/uv.tar.gz"
+        mode: '0644'
+        timeout: 30
+
+    - name: Extract verified uv archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -xzf
+          - "{{ temp_dir.path }}/uv.tar.gz"
+          - -C
+          - "{{ temp_dir.path }}"
+      changed_when: true
+
+    - name: Remove existing symlink if present
+      file:
+        path: "{{ uv_install_dir }}/{{ item }}"
+        state: absent
+      loop:
+        - uv
+        - uvx
+      when: uv_is_symlink | default(false)
+      become: yes
+
+    - name: Install uv and uvx
+      ansible.builtin.copy:
+        src: "{{ temp_dir.path }}/uv-{{ uv_release_target }}/{{ item }}"
+        dest: "{{ uv_install_dir }}/{{ item }}"
+        remote_src: true
+        owner: "{{ uv_install_owner }}"
+        group: "{{ uv_install_group }}"
+        mode: '0755'
+      loop:
+        - uv
+        - uvx
+      become: true
+
+    - name: Ensure uv binaries are owned by root and world-executable
+      file:
+        path: "{{ uv_install_dir }}/{{ item }}"
+        owner: "{{ uv_install_owner }}"
+        group: "{{ uv_install_group }}"
+        mode: '0755'
+      loop:
+        - uv
+        - uvx
+      become: yes
+
+  always:
+    - name: Clean up temporary directory
+      ansible.builtin.file:
+        path: "{{ temp_dir.path }}"
+        state: absent
+      when: temp_dir.path is defined
+
+- name: Create system-wide symlinks (deprecated - use uv_install_dir instead)
+  file:
+    src: "{{ uv_install_dir }}/{{ item }}"
+    dest: "{{ uv_symlink_dir }}/{{ item }}"
+    state: link
+    force: yes
+  loop:
+    - uv
+    - uvx
+  when:
+    - uv_create_symlinks
+    - uv_install_dir != uv_symlink_dir
+  become: yes
+
+- name: Verify uv installation
+  command: "{{ uv_install_dir }}/uv --version"
+  register: uv_version_check
+  changed_when: false
+  failed_when: uv_version_check.rc != 0
+  check_mode: false
+  # In check mode a pending install has not happened yet; nothing to verify.
+  when: not (ansible_check_mode and needs_install | bool)
+
+- name: Set final version fact
+  set_fact:
+    installed_uv_version: "{{ uv_version_check.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
+  when: uv_version_check is not skipped
+
+- name: Display installation result
+  debug:
+    msg: "uv {{ installed_uv_version }} is installed at {{ uv_install_dir }}/uv"
+  when: uv_version_check is not skipped
+
+- name: Test uv functionality
+  command: "{{ uv_install_dir }}/uv --help"
+  register: uv_help_test
+  changed_when: false
+  failed_when: uv_help_test.rc != 0
+  check_mode: false
+  when: uv_version_check is not skipped
