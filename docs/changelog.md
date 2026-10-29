@@ -2,13 +2,21 @@
 
 ## Unreleased
 
+- Qualify normal Paperless inventory adoption with the immutable905-resource
+  artifact: EV-first default111 successful operations/4 managed/2 uploads,
+  explicit repeat110/0/0 with strict protected-state equality. Preserve the
+  first runner's expected-five count assertion (later PostgreSQL cache already
+  current), separate RAM-key scope and all native failure evidence. No first
+  replay, application upgrade, reindex or real document upload; lifecycle
+  conversion remains separate.
+
 - Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
   50 typed phases per leg,26 strict zero-managed/zero-upload repeats per leg,
   real synthetic OCR/SFTP/search and recovery controls. Upgrade first performed
   12 managed operations/zero uploads. Exact installed artifacts and cleanup passed;
   retain original fixture recoveries, earlier failed attempts and shared-kernel/
-  metadata/freshness limits. Private inventory and separate lifecycle adoption
-  remain pending.
+  metadata/freshness limits. Inventory adoption is recorded separately above;
+  lifecycle conversion remains tracked.
 
 - Preserve bounded sanitized Paperless native phase progress before timeout,
   and allow an explicit upgrade-only fixture selection with a100-minute guest

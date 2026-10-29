@@ -166,9 +166,11 @@ rollout starts/enables them and restarts only for declared relevant changes.
 Migrations and static-file repair do not independently request a restart, matching
 the original role; a reindex still performs its explicitly managed stop/resume.
 The Traefik route retains the original template and watcher behavior. Final
-health checks require all four units active and HTTP200 from loopback `/api/`.
+health checks require all four units active and the loopback `/api/` response
+to follow only the validated same-origin schema-UI redirect and terminate at
+HTTP200.
 
-## Owned qualification and remaining adoption
+## Owned qualification and inventory adoption
 
 Current run40777068134 at9ac completed50 typed phases (47 healthy and3 expected
 faults); upgrade-only run40788020395 at02d completed50 (48 healthy and2 expected
@@ -197,6 +199,23 @@ or production qualification. Original bootstrap needed explicitly recorded
 package-cache/index-directory and lost-SSH-handler fixture recovery; there is no
 pristine original-bootstrap success claim. Every earlier failure is retained,
 including the first upgrade deadline124 with unknown interrupted effects.
-Private normal deployment still requires its own bounded inventory plan/first/
-repeat. Backup, restore, removal and the other lifecycle routes remain tracked
-separately; this normal-deploy qualification does not claim they are converted.
+The separate macmini inventory adoption completed on2026-10-29 using the exact
+905-resource artifact: normal EV-first default deployment111 successful
+operations,4 managed changes/2 uploads, then explicit repeat110 successful
+operations with0 managed changes/0 uploads. Only the original UV manager0.13.4→
+0.13.5, Redis cache, missing constraints file and exact route preload-line removal
+changed; package versions, application/index state and service PIDs stayed strict.
+The original runner expected5 managed changes and stopped after successful first
+because PostgreSQL's later cache operation reported no change. That failed
+assertion is retained; the first was never replayed. The separately adjudicated
+repeat passed strict whole protected-state checks and released the owned mutex.
+
+Only named operational paths, two index metadata files and read-only aggregate
+SQL count were observed; no document bodies/names or application index opener.
+Raw private bodies remained remote; ephemeral comparison keys/values stayed in
+process RAM. Separate first/repeat keys do not prove cross-process private-body
+equality, though all persisted operational fields matched and the desired route/
+constraints were rebound. Loopback HTTPS status is certificate-unverified and
+there is no global zero-I/O claim. Backup, restore, removal and direct legacy
+entrypoint retirement remain tracked separately; deployment does not qualify
+those paths.
