@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prepare Home Assistant's optional Custom Conversation installer with original
+  pinned archive/stamp and selected GNU tar semantics. Verify downloads before
+  replacement, retain original metadata-only behavior and partial extraction
+  failures, and defer handler notifications to full deployment composition.
+
 - Prepare Home Assistant's optional Custom Conversation protocol with original
   config-flow/options/canary semantics, protected stdin/RAM-only result handling,
   bounded execution and honest partial-failure reporting. Owned synthetic

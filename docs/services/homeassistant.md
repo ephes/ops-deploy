@@ -631,3 +631,46 @@ options, removal, healthy and failed canaries, duplicates and malformed input;
 actual pyinfra local-connector controls cover plan/execution, invalid reports
 and timeout uncertainty. These synthetic controls do not qualify a real HA
 model/provider, native application deployment or inventory adoption.
+
+
+### Optional Custom Conversation installation (prepared)
+
+The installation component retains the original pinned 1.6.1 release/checksum,
+operator URL override, parent ownership/modes and version-plus-checksum stamp.
+An already matching archive makes no network request; owner/mode drift alone is
+reconciled. A transfer is staged and checksum-verified before atomic replacement,
+so bad HTTP or checksum results retain the old archive. The declared original
+get_url transport defaults include proxy environment, verified TLS, gzip,
+challenge-based URL Basic/Digest credentials and host-local netrc; URLs and
+credentials stay in protected stdin/remote RAM. No Ansible runtime is invoked.
+
+Only a missing/unreadable/mismatched trimmed stamp selects component reinstall.
+The exact component root is removed without following a root symlink, then GNU
+tar extracts the original named subtree with strip-components=2 and declared
+owner/group arguments. GNU tar ignores ownership flags during extraction, so the
+component then follows the original per-listed-member/top-folder `lchown` pass;
+it does not recursively walk unrelated paths or follow member symlinks. Ordinary
+archive modes and timestamps retain the original post-ownership semantics. The final 0644
+stamp contains version and SHA plus a newline. Matching stamps deliberately
+skip content verification, as the original role does. Only successful extraction
+or stamp changes notify a later HA handler; downloading an archive or fixing
+parent metadata alone does not. For an existing archive symlink, ownership applies
+to the link itself. On Linux, the typed metadata step omits Ansible's temporary
+chmod-and-restore of the link target, preserving its final mode without that
+unnecessary target write; symlink permissions are not settable there.
+
+Removal/extraction remains non-atomic to match the original task sequence. An
+extraction failure can remove the old component despite a failed operation
+report; temporary download staging also causes filesystem activity even when
+verification fails. No rollback or zero-effect result is invented. Observation
+reads the named archive/stamp, with possible atime updates; it does not walk user
+data. Helper requests retain the original ten-second socket timeout, while the
+controller adds a configurable 900-second command limit. A controller timeout is
+not proof of remote process quiescence.
+
+Owned Linux userspace controls exercise real GNU tar root-file/directory/link
+cases, archive metadata and strict content/inode/mtime/ctime repeats. Synthetic
+HTTP controls prove checksum failure preservation, metadata-only/current cases,
+gzip and original auth behavior. These are filesystem/protocol component
+proofs, not native HA/model/radio or live inventory qualification; full outer
+optional selection/readiness/handler composition remains pending.

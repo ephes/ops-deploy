@@ -1,0 +1,95 @@
+---
+- name: "Validate Custom Conversation install variables"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_custom_conversation_version | length > 0
+      - homeassistant_custom_conversation_sha256 | length > 0
+    quiet: true
+    fail_msg: >-
+      homeassistant_custom_conversation_enabled is true but the pinned component
+      version and/or sha256 checksum are unset. Set
+      homeassistant_custom_conversation_version and
+      homeassistant_custom_conversation_sha256 in group_vars.
+
+- name: "Set Custom Conversation component paths"
+  ansible.builtin.set_fact:
+    _ha_cc_download_dir: "{{ homeassistant_site_path }}/downloads"
+    _ha_cc_tarball_path: "{{ homeassistant_site_path }}/downloads/custom-conversation-{{ homeassistant_custom_conversation_version }}.tar.gz"
+    _ha_cc_custom_components_dir: "{{ homeassistant_config_path }}/custom_components"
+    _ha_cc_component_dir: "{{ homeassistant_config_path }}/custom_components/custom_conversation"
+    _ha_cc_stamp_path: "{{ homeassistant_config_path }}/custom_components/custom_conversation/.ansible-cc-version"
+
+- name: "Ensure Home Assistant custom_components directory exists"
+  ansible.builtin.file:
+    path: "{{ _ha_cc_custom_components_dir }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0755"
+
+- name: "Ensure Home Assistant downloads directory exists"
+  ansible.builtin.file:
+    path: "{{ _ha_cc_download_dir }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0755"
+
+- name: "Download pinned Custom Conversation release tarball"
+  ansible.builtin.get_url:
+    url: "{{ homeassistant_custom_conversation_download_url }}"
+    dest: "{{ _ha_cc_tarball_path }}"
+    checksum: "sha256:{{ homeassistant_custom_conversation_sha256 }}"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+
+- name: "Read installed Custom Conversation component version stamp"
+  ansible.builtin.slurp:
+    path: "{{ _ha_cc_stamp_path }}"
+  register: _ha_cc_stamp
+  failed_when: false
+  changed_when: false
+
+# The stamp records version AND sha256: a checksum (or artifact) change at an
+# unchanged version string must still trigger a reinstall, otherwise the
+# deployed component silently diverges from the configured pinned artifact.
+- name: "Determine whether the Custom Conversation component needs (re)install"
+  ansible.builtin.set_fact:
+    _ha_cc_component_needs_install: >-
+      {{
+        (_ha_cc_stamp.content is not defined)
+        or (
+          (_ha_cc_stamp.content | b64decode | trim)
+          != (homeassistant_custom_conversation_version ~ ' ' ~ homeassistant_custom_conversation_sha256)
+        )
+      }}
+
+- name: "Install Custom Conversation component from the pinned tarball"
+  when: _ha_cc_component_needs_install | bool
+  block:
+    - name: "Remove any previously installed Custom Conversation component"
+      ansible.builtin.file:
+        path: "{{ _ha_cc_component_dir }}"
+        state: absent
+
+    - name: "Unpack the Custom Conversation custom component"
+      ansible.builtin.unarchive:
+        src: "{{ _ha_cc_tarball_path }}"
+        dest: "{{ _ha_cc_custom_components_dir }}"
+        remote_src: true
+        owner: "{{ homeassistant_user }}"
+        group: "{{ homeassistant_group }}"
+        extra_opts:
+          - "--strip-components=2"
+          - "custom-conversation-{{ homeassistant_custom_conversation_version }}/custom_components/custom_conversation"
+      notify: restart homeassistant
+
+    - name: "Record installed Custom Conversation component version"
+      ansible.builtin.copy:
+        dest: "{{ _ha_cc_stamp_path }}"
+        content: "{{ homeassistant_custom_conversation_version }} {{ homeassistant_custom_conversation_sha256 }}\n"
+        owner: "{{ homeassistant_user }}"
+        group: "{{ homeassistant_group }}"
+        mode: "0644"
+      notify: restart homeassistant
