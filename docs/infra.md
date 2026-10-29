@@ -106,6 +106,8 @@ Differences from the role, on purpose:
 |---|---|---|
 | `package_name` | `redis-server` | `redis-tools` is always installed too |
 | `add_official_repo` | `False` | adds `redis-official.sources` with `apt_repo`, `apt_suite` (`None`: the host's codename), `apt_components`, `repo_key_url`, `repo_keyring_path` |
+| `package_version` | `None` | a Debian version (`6:7.4.12-1rl1~noble1`): both packages installed at exactly that version, upgraded or downgraded, and pinned in `preferences_path` (see below). `None`: the role's behaviour, an installed version is never changed |
+| `preferences_path` | `/etc/apt/preferences.d/redis` | only written with `package_version` |
 | `bind_addresses` | `("127.0.0.1", "::1")` | at least one |
 | `port`, `protected_mode`, `supervised_mode`, `databases` | `6379`, `True`, `systemd`, `16` | |
 | `requirepass_enabled` | `False` | needs `password` |
@@ -133,6 +135,26 @@ restart if the server still answers `PING` without a password while one is
 configured, or started before the current `redis.conf` was written; finally a
 read-only `PING` (with the password on stdin), as the ops-control playbook's
 post task does.
+
+With `package_version` (not in the role; default off, so every configuration
+without it plans exactly what it did before): an apt preferences file pins
+`package_name` and `redis-tools` to that version with priority 1001, so
+`apt upgrade`/`dist-upgrade` neither moves them to a newer release in the same
+repository (packages.redis.io carries 7.4.x and 8.x side by side) nor leaves
+them on an older one. The packages are installed as `<name>=<version>` with
+`--allow-downgrades`, so the same field moves a host back to an older build.
+When an installed version differs, the apt cache is refreshed first (also
+when the repository file is new), and after the install the data, log and
+config directories and `redis.conf` get their owners and modes back: the
+packages' maintainer scripts reset them (`redis-tools` makes `/etc/redis`
+`redis:redis 2770` and `/var/log/redis` `redis:adm 2750`) after the plan was
+made, so the `directory` steps alone would leave that for the next run. The
+packages keep a changed `redis.conf` (`--force-confold`) and restart Redis
+through `invoke-rc.d`, which a `policy-rc.d` may refuse (containers): with
+`package_version` the deploy also restarts the service when it started before
+`redis-server` was replaced (the file's change time against the unit's start,
+checked when the step runs, so a restart the package made is not repeated).
+Removing `package_version` later leaves the preferences file in place.
 
 Differences from the role, on purpose:
 

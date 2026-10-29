@@ -24,6 +24,19 @@
   marker is written. The bundle key is unchanged and healthy bundles report no
   missing library, so existing hosts do not rebuild.
 
+- `redis_install`: new optional `package_version` (a Debian version such as
+  `6:7.4.12-1rl1~noble1`) installs `redis-server` (`package_name`) and
+  `redis-tools` at exactly that version (upgrade or downgrade), pins both in
+  `/etc/apt/preferences.d/redis` (`preferences_path`, priority 1001) so apt
+  upgrades keep them, refreshes the apt cache before a version change or after
+  the repository file changed, restores the data, log and config directory
+  owners and modes the packages' maintainer scripts reset during the change, and
+  restarts a server that still runs the replaced binary (a `policy-rc.d` can
+  refuse the package's own restart), so a second run is converged. Default
+  `None`: every existing configuration plans byte-identical operations and
+  commands (differential over 3,072 fake-host scenarios against the previous
+  code).
+
 - `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
   `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
   render `PasswordAuthentication` and `PermitRootLogin` into the same sshd
