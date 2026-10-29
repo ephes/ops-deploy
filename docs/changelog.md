@@ -10,7 +10,9 @@
   Prepare service-user status probes in separate environment/application phases,
   avoiding old application imports when its environment will be replaced.
   Prepare the unchanged original unit-trust inspection and managed drop-in
-  source with synthetic status/privacy controls; no service mutation yet.
+  source with synthetic status/privacy controls. Prepare the original account/
+  directory/udev component with change-bound deferred handlers; no deployment
+  entry point or native device qualification yet.
   This is a tested source foundation; no deployment API or inventory switch.
 
 - Preserve original managed Daybook runtime health and update-check predicates,

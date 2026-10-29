@@ -1,0 +1,10 @@
+{
+  "library_ref": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "tasks/user.yml": "9eccc14bf302eb69f80faf17187249f09d9e15f77e010d6f5f21848c282ec7e6",
+    "tasks/directories.yml": "85a895f85e3a4989cecb154794bd073477ef4406a298161bf48f3e342b993677",
+    "tasks/udev.yml": "cc1332dea5981b74da15740a3a6af95957bd2df5d45bb6a7503291b00eb54abd",
+    "handlers/main.yml": "1f68bb69d2062a94a2c31e62a5613a534c853e30bbc2e03bc912e14e8290c0ca",
+    "templates/99-homeassistant-zbt1.rules.j2": "76122dd641cc25b127080f92437eace32af4d8102cd5fff611726d8eb5dd91fb"
+  }
+}

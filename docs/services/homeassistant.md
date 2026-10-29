@@ -82,3 +82,11 @@ and proc fixtures exercise its actual encoded command and verify that private
 environment values never enter its status output. This does not install the
 drop-in, restart a unit, qualify a real systemd process, or complete the separate
 UV system-certificate maintenance workflow.
+
+The prepared account/layout component retains the original append-only dialout
+membership, home/shell settings and ordered0755 directory ownership. It returns
+the exact static udev-rule dependency for the original deferred handler boundary;
+reload-rules and tty trigger run only when that rule changed. Synthetic connector
+checks cover current-rule suppression and unrelated group preservation. This is
+not a public deploy entry point or a native udev/radio/system-account proof; full
+validation, trust and package prerequisites must precede its eventual caller.

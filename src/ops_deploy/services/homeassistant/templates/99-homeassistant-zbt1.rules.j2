@@ -1,0 +1,4 @@
+# Home Assistant Connect ZBT-1 Zigbee/Matter device
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{manufacturer}=="Nabu Casa", ATTRS{product}=="Home Assistant Connect ZBT-1", SYMLINK+="zigbee", GROUP="dialout", MODE="0660"
+# Alternative rule using by-id path
+SUBSYSTEM=="tty", ENV{ID_USB_INTERFACE_NUM}=="00", ENV{ID_VENDOR_ID}=="10c4", ENV{ID_MODEL_ID}=="ea60", ENV{ID_USB_VENDOR}=="Nabu_Casa", ENV{ID_USB_MODEL}=="Home_Assistant_Connect_ZBT-1", GROUP="dialout", MODE="0660"

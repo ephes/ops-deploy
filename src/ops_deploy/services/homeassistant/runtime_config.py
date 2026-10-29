@@ -20,6 +20,8 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     user: UnixUser = "homeassistant"
     group: UnixUser = "homeassistant"
     shell: AbsolutePath = "/bin/bash"
+    enable_udev_rule: StrictBool = True
+    udev_rule_path: AbsolutePath = "/etc/udev/rules.d/99-homeassistant-zbt1.rules"
     home: AbsolutePath = "/home/homeassistant"
     site_path: AbsolutePath = "/home/homeassistant/site"
     config_path: AbsolutePath = "/home/homeassistant/site/config"
