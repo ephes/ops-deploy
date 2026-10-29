@@ -2,16 +2,17 @@
 
 ## Unreleased
 
-- Prepare a separately selected offline KVM matrix for named MinIO policy
-  maintenance, with exact-binary fault/retry cases and the original tagged-task
-  foreign-holder oracle. This fixture is not yet native-qualified and does not
-  replay normal deployment or authorize production policy removal.
+- Qualify the separate MinIO named-policy maintenance component in an offline
+  x86 KVM guest with the exact pinned binaries:24 typed phases,10 strict
+  zero-managed/zero-upload repeats and five expected failures with actual partial
+  detach/removal effects retained. The original nine tagged tasks and typed
+  operation agree on foreign-holder refusal after declared detachment. Normal
+  deployment is unchanged; private maintenance adoption remains separate.
 
-- Prepare explicit MinIO named-policy retirement with the original detach/error,
-  independent user-absence proof and server removal semantics. Verify absence
-  before local policy-file removal and retain partial failures; normal MinIO
-  deployment remains unchanged. Synthetic helper/recording tests do not replace
-  the outstanding exact-binary owned native qualification.
+- Add the source-backed ordinary restore archive-upload helper with the original
+  first-name/all-archives behavior, existing-root ownership/mode preservation,
+  bounded transfer and explicit partial-failure identity. Owned Linux primitive
+  proof is separate from production restore and private wrapper adoption.
 
 - Qualify normal Paperless inventory adoption with the immutable905-resource
   artifact: EV-first default111 successful operations/4 managed/2 uploads,
@@ -20,6 +21,14 @@
   current), separate RAM-key scope and all native failure evidence. No first
   replay, application upgrade, reindex or real document upload; lifecycle
   conversion remains separate.
+
+- Prepare the original user-owned Daybook runtime code prerequisite with exact
+  source/locked-Python predicates and original in-use replacement guards. Reuse
+  checked private source transfer without changing shared Sessions behavior.
+  Owned user-SSH/Python qualification passed: first4 managed/1actualSFTP,
+  repeat0/0, active-current keeper preserved, in-use change refused before
+  transfer, quiescent replacement3/1 and repeat0/0. Actual907-resource artifact
+  and cleanup passed. Private normal-routing/inventory adoption remain separate.
 
 - Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
   50 typed phases per leg,26 strict zero-managed/zero-upload repeats per leg,

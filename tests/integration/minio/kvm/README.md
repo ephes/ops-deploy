@@ -122,7 +122,7 @@ This proves neither the typed S4 deployment nor composite, hardware or inventory
 behavior. Both copied fixture inputs are hash-checked before execution; no server
 configuration, admin action, external network or production data is involved.
 
-## Prepared named-policy maintenance matrix
+## Qualified named-policy maintenance matrix
 
 `MINIO_COMPONENT=normal` remains the default. The exact enum
 `MINIO_COMPONENT=policy-rollback` selects only the new maintenance harness;
@@ -152,5 +152,14 @@ foreign-holder refusal only if the actual failed task is removal and independent
 observations prove the declared user detached while the foreign holder and
 local file remain. All other failures stop qualification. Typed and original
 outcomes must match; the harness does not presume that the server permits or
-refuses removal. Native execution and any later private pin/maintenance adoption
-remain pending. No production policy revocation is authorized by these tests.
+refuses removal. The maintenance-only native run at `990523fb` completed24 typed phases and the
+original selected-task oracle. Ten successful repeats had exact entire selected
+snapshots and zero managed operations/uploads. Five expected typed failures
+include real partial detach/removal effects even when the managed list is empty;
+unknown initial inspection and failed-before-effect detachment stayed unchanged.
+The real server refused foreign-holder removal after detaching the declared user,
+for both original and typed paths. All100 collected file hashes/sizes and907
+installed resources matched their manifests/Git; enabled KVM and an independent
+Ubuntu24.04 x86 kernel were recorded. Guest/runner and exact cleanup exited0.
+This is separate maintenance-component proof, not a replay of normal deployment,
+production policy revocation or private maintenance-route adoption.

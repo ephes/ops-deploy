@@ -181,6 +181,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     encoded_daybook_runtime = {
         "services/daybook_operations_runtime/files/runtime_stop.py",
         "services/daybook_operations_runtime/files/runtime_transition.py",
+        "services/daybook_operations_runtime/files/runtime_code_guard.py",
     }
     # Sessions resource_command also always base64-encodes this source. The
     # actual composed CLI with protected stdin and its synthetic model probe is
@@ -480,11 +481,12 @@ def test_django_site_marker_fact_lists_only_markers(
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
-@pytest.mark.parametrize("component", ["stop", "transition", "health", "preflight", "closeout"])
+@pytest.mark.parametrize("component", ["stop", "transition", "health", "preflight", "closeout", "code"])
 def test_encoded_daybook_runtime_command_through_real_login_shell(login_shell: str, component: str) -> None:
     from collections.abc import Callable
 
     from ops_deploy.services.daybook_operations_runtime.closeout import closeout_command
+    from ops_deploy.services.daybook_operations_runtime.code import code_command
     from ops_deploy.services.daybook_operations_runtime.health import health_command
     from ops_deploy.services.daybook_operations_runtime.preflight import preflight_command
     from ops_deploy.services.daybook_operations_runtime.stop import stop_command
@@ -496,6 +498,7 @@ def test_encoded_daybook_runtime_command_through_real_login_shell(login_shell: s
         "health": health_command,
         "preflight": preflight_command,
         "closeout": lambda: closeout_command("verify"),
+        "code": lambda: code_command("status"),
     }
     command = factories[component]()
     parts = shlex.split(command)

@@ -6,7 +6,7 @@ The port of `minio_deploy` preserves the pinned server/client, service, environm
 
 The client checks before writing. It compares the declared shared alias locally without returning credentials, and imports it through stdin only when different. IAM inspection and signed requests use a private temporary client config; credentials never appear in command arguments or probe output. Existing enabled users are rotated only after a recognized signature mismatch. A disabled managed user stops the run. Transport errors, malformed output and unrecognized server errors are failures, never evidence that a user or policy is absent.
 
-Each declared policy is compared after canonicalizing only statement order and the set-valued Action/Resource fields. Mutable policy drift is updated in place. The versioned weeknotes source policy is immutable: drift requires a new reviewed policy name. Its separate maintenance rollback remains tracked conversion work; the current adapter refuses the disabled setting with a legacy-play pointer until an equivalent guarded workflow is implemented and qualified. This is not a permanent Ansible exception. Superseded policy detachment/removal happens only when present, after proving the replacement attachment. Superseded retirement requires an additive identity; the configuration rejects retirement on an exact identity. Exact-policy identities also require no group membership; additive identities retain their original weaker attachment contract.
+Each declared policy is compared after canonicalizing only statement order and the set-valued Action/Resource fields. Mutable policy drift is updated in place. The versioned weeknotes source policy is immutable: drift requires a new reviewed policy name. Its separate maintenance rollback now has an owned native-qualified typed operation; private routing remains tracked conversion work. The current deployed adapter still refuses the disabled setting with a legacy-play pointer until that private equivalent is adopted. This is not a permanent Ansible exception. Superseded policy detachment/removal happens only when present, after proving the replacement attachment. Superseded retirement requires an additive identity; the configuration rejects retirement on an exact identity. Exact-policy identities also require no group membership; additive identities retain their original weaker attachment contract.
 
 Bucket creation, anonymous access and versioning are inspected first. `versioning=false` means leave the existing versioning state alone, not disable it. Data directory ownership/mode applies only to each top-level directory. A read-only foreign-owner search stops on the first descendant mismatch; it never chmods/chowns stored objects recursively. On a healthy store this admission walks every descendant metadata entry, so its cost grows with the object tree. It has no separate probe timeout and reads no object bodies.
 
@@ -180,10 +180,9 @@ metadata-only whole-root latency limit above. Loopback route/status checks are
 not certificate validation. Explicit maintenance rollback and other lifecycle
 workflows remain separately tracked; the Ansible role is unchanged.
 
-### Explicit policy rollback conversion in preparation
+### Native-qualified policy rollback component
 
-The normal deployment remains unchanged. A separate host-local helper is being
-prepared for the original tag-scoped `daybook_weeknotes_source_policy_enabled=false`
+The normal deployment remains unchanged. A separate host-local helper is available for the original tag-scoped `daybook_weeknotes_source_policy_enabled=false`
 maintenance path: inspect the explicitly named policy, attempt detachment of the
 declared identity, independently prove that identity absent, remove the policy,
 and require the precise missing-policy response. An ignored detach error is not
@@ -192,10 +191,19 @@ follow a real partial detach; it is not zero mutation.
 
 The original rollback does not require an exact document comparison or a new
 replacement policy, so this path adds neither gate. Other holders retain the
-server's actual removal behavior. The prepared `policy_rollback` module exposes a separate typed operation; it is
+server's actual removal behavior. The `policy_rollback` module exposes a separate typed operation; it is
 not wired into the private CLI. It uses protected stdin and a disposable private
 client alias, retains independent final absence verification before the named
 local document removal, and never invokes full normal IAM reconciliation.
-Synthetic response/operation and actual encoded-helper tests do not qualify real
-MinIO execution. Owned exact-binary proof and private routing remain pending. No production policy revocation is needed
-merely to qualify this implementation.
+The exact pinned server and client completed the separate offline x86 KVM
+maintenance matrix at `990523fbdd4f5c73b150375f6b73870245fba35a`:24 typed phases,
+including10 successful whole-snapshot repeats with zero managed operations and
+uploads, plus five expected failures. All907 installed resources matched Git and
+noneditable provenance; KVM enabled/present, independent guest kernel and exact
+cleanup were recorded. The original nine-task foreign-holder comparison exited2
+at server removal after detaching the declared identity; typed behavior matched.
+Unrelated policy/identity, alias, known synthetic object, binary and process
+projections stayed exact. Failed operations can already detach or remove server
+state even when pyinfra's managed list is empty; those raw effects remain explicit.
+Private maintenance routing is still pending. No production policy revocation
+was performed or is needed merely to qualify this implementation.
