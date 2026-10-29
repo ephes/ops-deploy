@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `bind`: Ubuntu 26.04 and later (BIND 9.20, whose `bind9` ships
+  `named.conf.root-hints` and removes `named.conf.default-zones` and the
+  `db.*` builtin zone files) now include `named.conf.root-hints`, as Debian 13
+  already did; before, the deploy rendered the missing `default-zones`
+  include and refused (named-checkconf). When the release's file is missing
+  and the other one exists in `/etc/bind`, the deploy includes that one and
+  warns. A package dpkg has unpacked but not configured (a release upgrade
+  leaves `bind9` half-configured) is no longer reinstalled before the
+  configuration, so the deploy repairs it and `dpkg --configure -a` completes.
+  Ubuntu 24.04, Debian 12 and Debian 13 render byte-identical files, and
+  hosts with installed or absent packages plan the same operations.
+  `docs/bind.md` describes the in-place release upgrade.
+
 - `mastodon`: rebuild native gems after an OS/ABI change. For an otherwise
   current bundle the inspection runs one read-only `ldd` pass (as the service
   user) over the installed native extensions; locked gems that link a missing
