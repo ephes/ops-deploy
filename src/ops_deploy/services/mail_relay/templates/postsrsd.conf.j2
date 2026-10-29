@@ -1,0 +1,39 @@
+# Managed by ops-deploy (mail_relay). Do not edit on the server.
+#
+# postsrsd 2.x reads this file (postsrsd -C /etc/postsrsd.conf). It replaces the
+# postsrsd 1.x /etc/default/postsrsd and keeps its settings. Postfix reaches the
+# daemon through the socketmap below; 2.x has no tcp: lookup tables, so main.cf
+# switches to socketmap: tables in the same deploy.
+
+# Domain the rewritten envelope sender lives in. Its MX must point at this relay,
+# so bounces to SRS0.../SRS1... addresses come back here and can be reversed, and
+# its SPF must authorise this host or the rewrite defeats its own purpose.
+srs-domain = "{{ mail_relay_srs_domain }}"
+
+# Domains that must NEVER be rewritten -- our own senders. Each domain is listed
+# twice on purpose: postsrsd matches a bare name as that domain exactly, and a
+# leading dot as its subdomains but NOT the domain itself. Both forms are needed
+# or service subdomains (a fediverse server at fedi.<own domain>, for example)
+# would get their envelope sender rewritten, breaking DMARC alignment for mail we
+# send ourselves.
+domains = { {{ (mail_relay_srs_exclude_domains | map('regex_replace', '^', '.') | list + mail_relay_srs_exclude_domains | list) | unique | map('regex_replace', '^(.*)$', '"\\1"') | join(', ') }} }
+
+# The same signing secret as postsrsd 1.x (first line signs, every line
+# verifies), so SRS addresses issued before the switch still reverse.
+secrets-file = "{{ mail_relay_srs_secret_file }}"
+separator = "="
+hash-length = 4
+hash-minimum = 4
+original-envelope = embedded
+always-rewrite = off
+
+# Postfix: sender_canonical_maps = {{ mail_relay_srs_socketmap_table }}:forward,
+# recipient_canonical_maps = {{ mail_relay_srs_socketmap_table }}:reverse (relative
+# to the queue directory, where the chrooted cleanup daemon finds it).
+socketmap = unix:{{ mail_relay_srs_socket }}
+keep-alive = 30
+
+unprivileged-user = "postsrsd"
+chroot-dir = "/var/lib/postsrsd"
+syslog = off
+debug = off

@@ -23,7 +23,13 @@ from ops_deploy.ops import secret_file
 from ops_deploy.services._mail_config import finish_restart, prepare_configs, validate_native
 from ops_deploy.services._mail_postfix import ensure_maps, verify_master
 from ops_deploy.services.mail_relay.config import MailRelayConfig
-from ops_deploy.services.mail_relay.render import render_role
+from ops_deploy.services.mail_relay.postsrsd import (
+    check_socketmap_inputs,
+    planned_major,
+    verify_installed_major,
+    verify_socketmap,
+)
+from ops_deploy.services.mail_relay.render import PostsrsdMajor, render_role
 
 SASL = (Path(__file__).parent / "files" / "mail_relay_sasl.py").read_text()
 
@@ -70,6 +76,7 @@ def recursor_check(address: str) -> OperationMeta:
 @deploy("Deploy native mail edge relay")
 def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
     password = _credential(secrets, "sasl_password")
+    excluded: tuple[str, ...] = ()
     if cfg.srs_enabled:
         _credential(secrets, "srs_secret")
         excluded = cfg.srs_exclude_domains if cfg.srs_exclude_domains is not None else cfg.domains
@@ -81,8 +88,17 @@ def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
     if cfg.local_recursor_enabled:
         packages.append("bind9-dnsutils")
     installed = host.get_fact(DebPackages)
+    # postsrsd 1.x: /etc/default/postsrsd and tcp: maps; 2.x: postsrsd.conf and socketmap: maps.
+    srs_major: PostsrsdMajor | None = None
+    srs_pending = False
+    if cfg.srs_enabled:
+        srs_major, srs_pending = planned_major(installed)
+        if srs_major == 2:
+            check_socketmap_inputs(cfg, excluded)
     missing = any(package.partition("=")[0] not in installed for package in packages)
     apt.packages(name="Install mail relay packages", packages=packages, update=missing, cache_time=3600)
+    if srs_major is not None and srs_pending:
+        verify_installed_major(srs_major)
     restart_inputs: list[OperationMeta] = []
     reload_inputs: list[OperationMeta] = []
     postfix = prepare_configs("postfix", restart_inputs)
@@ -91,7 +107,7 @@ def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
         files.directory(name="Ensure relay config directory", path=path, user="root", group="root", mode="0755")
 
     def put(template: str, destination: str, *, mode: str = "0644", secret: bool = False) -> OperationMeta:
-        body = render_role(template, cfg, secrets)
+        body = render_role(template, cfg, secrets, postsrsd_major=srs_major or 1)
         if secret:
             return secret_file(
                 name="Install protected relay configuration",
@@ -110,6 +126,33 @@ def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
             mode=mode,
         )
 
+    srs_inputs: list[OperationMeta] = []
+    srs = prepare_configs("postsrsd", srs_inputs) if srs_major == 2 else None
+
+    def srs_secret() -> OperationMeta:
+        return secret_file(
+            name="Retain configured SRS signing secret",
+            path=cfg.srs_secret_file,
+            content=SecretContent(secrets["srs_secret"] + "\n"),
+            user="root",
+            group="root",
+            mode="0600",
+        )
+
+    if srs is not None:
+        # postsrsd 2.x first: Postfix's socketmap: maps below only go live once
+        # the daemon answers them with the managed configuration and secret.
+        srs_inputs += [
+            srs_secret(),
+            put("postsrsd.conf.j2", "/etc/postsrsd.conf"),
+            files.file(name="Remove the postsrsd 1.x defaults file", path="/etc/default/postsrsd", present=False),
+        ]
+        service_rollout(
+            "postsrsd",
+            restart_when=[*srs_inputs, srs.operation],
+            always_restart=srs.owed or "postsrsd" not in installed,
+        )
+        verify_socketmap(cfg, excluded)
     restart_inputs += [
         put("main.cf.j2", "/etc/postfix/main.cf"),
         put("master.cf.j2", "/etc/postfix/master.cf"),
@@ -181,20 +224,9 @@ def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
             put("postgrey_whitelist_clients.j2", "/etc/postgrey/whitelist_clients"),
         ]
         validate_native(["bash", "-n", "/etc/default/postgrey"], "Validate relay postgrey defaults")
-    srs_inputs: list[OperationMeta] = []
-    srs = prepare_configs("postsrsd", srs_inputs) if cfg.srs_enabled else None
-    if cfg.srs_enabled:
-        srs_inputs += [
-            secret_file(
-                name="Retain configured SRS signing secret",
-                path=cfg.srs_secret_file,
-                content=SecretContent(secrets["srs_secret"] + "\n"),
-                user="root",
-                group="root",
-                mode="0600",
-            ),
-            put("postsrsd.default.j2", "/etc/default/postsrsd"),
-        ]
+    if srs_major == 1:
+        srs = prepare_configs("postsrsd", srs_inputs)
+        srs_inputs += [srs_secret(), put("postsrsd.default.j2", "/etc/default/postsrsd")]
         validate_native(["bash", "-n", "/etc/default/postsrsd"], "Validate relay postsrsd defaults")
     resolved_inputs: list[OperationMeta] = []
     resolved = prepare_configs("systemd-resolved", resolved_inputs)
@@ -220,7 +252,7 @@ def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
             restart_when=[*grey_inputs, grey.operation],
             always_restart=grey.owed or "postgrey" not in installed,
         )
-    if srs is not None:
+    if srs is not None and srs_major == 1:
         service_rollout(
             "postsrsd",
             restart_when=[*srs_inputs, srs.operation],
@@ -272,7 +304,7 @@ def deploy_mail_relay(cfg: MailRelayConfig, secrets: SecretValues) -> None:
         wait_port(587, name="Verify relay authenticated submission listener")
     if cfg.greylisting_enabled:
         wait_port(cfg.greylisting_port, name="Verify relay postgrey listener")
-    if cfg.srs_enabled:
+    if srs_major == 1:
         wait_port(cfg.srs_forward_port, host=cfg.srs_listen_addr, name="Verify relay SRS forward listener")
         wait_port(cfg.srs_reverse_port, host=cfg.srs_listen_addr, name="Verify relay SRS reverse listener")
     if cfg.local_recursor_enabled:

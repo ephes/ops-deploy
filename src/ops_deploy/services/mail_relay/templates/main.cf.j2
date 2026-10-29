@@ -41,7 +41,9 @@ transport_maps = hash:/etc/postfix/transport
 # listed first and the IDN map still sees everything else. Overwriting rather
 # than composing here silently breaks IDN recipient rewriting.
 {% set _rcpt_maps = [] %}
-{% if mail_relay_srs_enabled %}
+{% if mail_relay_srs_enabled and mail_relay_postsrsd_socketmap %}
+{% set _ = _rcpt_maps.append(mail_relay_srs_socketmap_table ~ ':reverse') %}
+{% elif mail_relay_srs_enabled %}
 {% set _ = _rcpt_maps.append('tcp:' ~ mail_relay_srs_listen_addr ~ ':' ~ mail_relay_srs_reverse_port) %}
 {% endif %}
 {% if mail_relay_recipient_rewrites | length > 0 %}
@@ -57,7 +59,11 @@ recipient_canonical_classes = envelope_recipient
 # rewrite the visible From: header, so recipients would see the SRS address
 # instead of who actually wrote to them. Postfix's default for this parameter is
 # "envelope_sender, header_sender", so it must be set explicitly, not left out.
+{% if mail_relay_postsrsd_socketmap %}
+sender_canonical_maps = {{ mail_relay_srs_socketmap_table }}:forward
+{% else %}
 sender_canonical_maps = tcp:{{ mail_relay_srs_listen_addr }}:{{ mail_relay_srs_forward_port }}
+{% endif %}
 sender_canonical_classes = envelope_sender
 {% endif %}
 
