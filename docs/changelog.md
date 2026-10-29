@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepared Home Assistant inventory network input now follows the original
+  metadata-only default-route lookup, preserving explicit addresses and absent
+  route semantics without selecting the SSH transport address.
+
 - Prepare an owned Home Assistant current/upgrade application matrix with exact
   installed-artifact proof, real onboarding/canaries and synthetic loopback peers.
   This is fixture source only; no native, inventory or physical-device success

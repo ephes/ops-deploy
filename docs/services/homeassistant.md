@@ -791,3 +791,14 @@ Wyoming and OTBR peers exercise actual application APIs without hardware or a
 real model-provider request. Existing-host prerequisites and every fault/reset
 remain explicit; ordinary refresh/reload/canary operations are not called zero
 managed work. See the fixture README for privacy, resource and cleanup boundaries.
+
+### Original gathered network input
+
+Prepared inventory composition uses `network_inputs.resolve_target_network`
+before deployment to obtain the original kernel route source for
+`ip -4 route get 8.8.8.8`. This lookup sends no packet and changes no routes.
+Only the original first matching line's `src` fills missing API/ingress facts;
+explicit caller values remain unchanged. Missing commands/routes retain absent
+facts and do not prove readiness or substitute the SSH/Tailscale address.
+The first frozen native fixture supplied its actual guest address explicitly;
+that result does not qualify this later target-fact composition by implication.
