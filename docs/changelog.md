@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Home Assistant prepared runtime preserves independent original constraint
+  argv and command-string overrides, including explicit empty inputs and the
+  dependency between their defaults. Security-file writes and checks remain
+  independent; this source change does not claim native qualification.
+
 - `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
   `srs_enabled` the deploy picks the layout by postsrsd's installed major (else
   apt's candidate; a read-only check after the install refuses a different

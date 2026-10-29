@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, Self
 
@@ -50,6 +51,8 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     security: HomeAssistantSecurityConfig = Field(default_factory=HomeAssistantSecurityConfig)
     python_security_environments: tuple[SecurityEnvironment, ...] = ()
     python_security_constraints_path: AbsolutePath = "/home/homeassistant/site/.python-security-constraints.txt"
+    python_security_constraint_argv: tuple[str, ...] = ()
+    python_security_constraint_args: str = ""
     uv_system_certs: StrictBool = True
     uv_system_certs_dropin_path: AbsolutePath = "/etc/systemd/system/homeassistant.service.d/50-uv-system-certs.conf"
     uv_system_certs_allowed_dropins: tuple[AbsolutePath, ...] = ()
@@ -101,6 +104,15 @@ class HomeAssistantRuntimeConfig(RoleConfig):
             ("python_security_constraints_path", ".python-security-constraints.txt"),
         ):
             result.setdefault(field, str(result["site_path"]) + "/" + suffix)
+        result.setdefault(
+            "python_security_constraint_argv",
+            ["--constraint", result["python_security_constraints_path"]]
+            if result.get("python_security_floor_enabled", True)
+            else [],
+        )
+        constraint_argv = result["python_security_constraint_argv"]
+        if isinstance(constraint_argv, (tuple, list)) and all(isinstance(item, str) for item in constraint_argv):
+            result.setdefault("python_security_constraint_args", shlex.join(constraint_argv))
         for prefix in ("", "matter_server_"):
             result.setdefault(
                 prefix + "virtualenv_version_file", str(result[prefix + "virtualenv_path"]) + "/.ansible-python-version"

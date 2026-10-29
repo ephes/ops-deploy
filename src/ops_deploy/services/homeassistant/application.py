@@ -29,12 +29,10 @@ def application_command(cfg: HomeAssistantRuntimeConfig, kind: Kind) -> str:
     # The original ansible.command cmd string splits the declared spec using
     # shell-style argv parsing, without a shell. Preserve quotes/options as argv.
     try:
-        specs = shlex.split(spec)
+        specs = shlex.split(spec + " " + cfg.python_security_constraint_args)
     except ValueError:
-        raise DeployError("Home Assistant application specification has invalid quoting") from None
+        raise DeployError("Home Assistant application specification or constraints have invalid quoting") from None
     argv = [cfg.uv_path, "pip", "install", "--python", venv, *specs]
-    if cfg.python_security_floor_enabled:
-        argv += ["--constraint", cfg.python_security_constraints_path]
     return f"cd {shlex.quote(cfg.site_path)} && " + _as_user(cfg.user, PurePosixPath(cfg.home), {}, argv)
 
 

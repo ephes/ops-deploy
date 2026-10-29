@@ -802,3 +802,16 @@ explicit caller values remain unchanged. Missing commands/routes retain absent
 facts and do not prove readiness or substitute the SSH/Tailscale address.
 The first frozen native fixture supplied its actual guest address explicitly;
 that result does not qualify this later target-fact composition by implication.
+
+## Original constraint argument overrides
+
+`runtime.python_security_constraint_argv` preserves the original list passed to
+extra-package installs. When omitted it derives from the security-floor flag and
+constraints path. `runtime.python_security_constraint_args` preserves the original
+command-string suffix for Home Assistant and Matter installs; when omitted it
+quotes and joins the effective argv list. Explicit empty overrides remain empty,
+and independent overrides remain independent. These inputs do not disable the
+separate constraints-file write, security preflight or post-install checks.
+Application specifications and the suffix are parsed together with shell-style
+quoting, then executed as quoted argv without evaluating shell substitutions.
+This closes source input parity only; it adds no native or inventory evidence.

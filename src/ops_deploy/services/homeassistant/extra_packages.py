@@ -24,8 +24,7 @@ _CHANGED = re.compile("Installed|Updated|Uninstalled|Prepared|Built")
 
 def extra_packages_command(cfg: HomeAssistantRuntimeConfig) -> str:
     argv = [cfg.uv_path, "pip", "install", "--python", cfg.virtualenv_path]
-    if cfg.python_security_floor_enabled:
-        argv += ["--constraint", cfg.python_security_constraints_path]
+    argv += list(cfg.python_security_constraint_argv)
     argv += list(cfg.extra_package_specs)
     return f"cd {shlex.quote(cfg.site_path)} && " + _as_user(cfg.user, PurePosixPath(cfg.home), {}, argv)
 
