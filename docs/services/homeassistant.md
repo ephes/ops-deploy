@@ -254,3 +254,23 @@ restart happens inside this component. SDK cold/current, selected/unselected
 Matter, record-only repair, changed/audit-only extras and failed-install tests
 prove sequencing with synthetic responses and real SDK file operations. Native
 application/venv/filesystem behavior and hardware remain unqualified.
+
+### Prepared service units and handler boundaries
+
+The unit component writes the byte-bound original HA and optional Matter
+templates as root-owned 0644 files. It returns actual change dependencies and
+does not reload or restart immediately. The separate desired-state component
+keeps HA-before-Matter ordering, explicit started/stopped/restarted/reloaded
+states and enablement. As in the original `service.yml`, every selected service
+requests a daemon reload even when already current. This is declared managed
+execution, not a zero-managed repeat.
+
+The handler component retains reload-before-HA-before-Matter order, each original
+restart-on-change switch and the original handler's `enabled: true` (even when
+the desired-state setting disables that service). Its caller must supply only
+notifications pending at that particular original flush boundary; reusing old
+true callbacks would incorrectly repeat a restart. Config flows and final
+Matter/trust verification still need the outer deployment's multiple boundaries.
+No full deployment API is exported yet. Actual SDK tests cover current/missing
+units, explicit states, flags and a failed unit metadata install with its prior
+upload preserved; these synthetic connector tests are not native service proof.

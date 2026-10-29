@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare Home Assistant/Matter unit writes, original desired states and deferred
+  service-handler components. Keep unconditional daemon reloads declared managed,
+  original restart/enablement semantics and partial unit-install failures.
+
 - Compose the prepared Home Assistant/Matter Python environment, records,
   ownership and application components with original deferred notification
   semantics. Preserve Matter's conditional second ownership check before install;

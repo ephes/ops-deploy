@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/ephes/ops-library",
+  "revision": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "tasks/systemd.yml": {
+      "fixture": "systemd.yml",
+      "sha256": "bb98e2eeccc339844c78da131432b3fe740b691fcff56aeba9b53864149dd010"
+    },
+    "tasks/service.yml": {
+      "fixture": "service.yml",
+      "sha256": "7e10197e083a85bff1739270d80a8aa94873d217ad5e26a5458200d3fb81f3de"
+    },
+    "handlers/main.yml": {
+      "fixture": "service-handlers.yml",
+      "sha256": "1f68bb69d2062a94a2c31e62a5613a534c853e30bbc2e03bc912e14e8290c0ca"
+    }
+  }
+}
