@@ -80,6 +80,11 @@ def deploy_release(cfg: MastodonReleaseConfig, secrets: SecretValues) -> None:
     logger.info("Mastodon selected source: " + cfg.source_commit)
     logger.info("Mastodon runtime tool commits: " + json.dumps(cfg.runtime_tool_commits, sort_keys=True))
     logger.info("Mastodon candidate pending migration identities: " + json.dumps(observed["pending_migrations"]))
+    if observed["dependencies"].get("native_rebuild"):
+        logger.info(
+            "Mastodon native gems linking missing libraries (rebuild): "
+            + json.dumps(observed["dependencies"]["native_rebuild"])
+        )
     # Render and inspect ALL managed configuration before the first write.
     content = {
         name: render(cfg, name)

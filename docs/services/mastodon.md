@@ -109,3 +109,22 @@ Dependency verification uses `bundle check --dry-run`: plain Bundler checks can
 touch an unchanged lockfile and create false restart debt. Both planning and
 post-install verification preserve lockfile bytes and timestamps; genuine
 after-start changes retain the existing precise restart-debt behavior.
+
+`bundle check` does not load native extensions, so it still passes after an OS
+release upgrade replaced a shared library that a compiled gem links (for example
+`charlock_holmes` and the libicu soname, 74 on Ubuntu 24.04 and 78 on 26.04). For an
+otherwise current bundle the inspection therefore also runs one read-only `ldd`
+pass, as the service user, over the native extensions of the current Ruby ABI
+directory in `bundle_path`. A locked gem with a `not found` library makes the
+bundle step due: after `bundle install` it runs `bundle pristine <gems>` for exactly
+those gems (rebuilt from the cached `.gem` against the new libraries), then
+`bundle check` and the `ldd` pass again, and fails without writing the bundle
+marker if a library is still missing. The usual asset build, cache clear and
+restart follow. The bundle key is unchanged and a healthy bundle reports no
+missing library, so existing hosts do not rebuild. Leftover gem directories of
+no locked spec, other Ruby ABI directories and `libruby` (already loaded by the
+Ruby process) are ignored; a missing library in a Git-sourced or unrecognised
+extension path stops the inspection instead of guessing. The rebuild needs the
+build tools and the new `-dev` headers (such as `libicu-dev`), which a release
+upgrade carries forward when they were installed. The planning log names the
+gems before the rebuild.

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `mastodon`: rebuild native gems after an OS/ABI change. For an otherwise
+  current bundle the inspection runs one read-only `ldd` pass (as the service
+  user) over the installed native extensions; locked gems that link a missing
+  shared library (such as `charlock_holmes` after the libicu soname bump of a
+  release upgrade, which `bundle check` does not notice) get `bundle pristine`
+  after `bundle install`, with a fail-closed `ldd` re-check before the bundle
+  marker is written. The bundle key is unchanged and healthy bundles report no
+  missing library, so existing hosts do not rebuild.
+
 - `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
   `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
   render `PasswordAuthentication` and `PermitRootLogin` into the same sshd
