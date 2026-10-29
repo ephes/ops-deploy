@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `daybook_photos_archive_sync`: add the original direct-owner, single-writer
+  archive installation with exact Main bundle admission, clean/interrupted Git
+  convergence, pinned user Python and managed console smoke. Preserve all 35
+  defaults/two dormant templates, disabled-first label state and data paths.
+  Source/owned mechanism proof remains separate from inventory/activation.
+
 - Add the original Photos offload component: protected root checkout and trust
   attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with
   exact cleanup, GUI-owned Python environment/resources, and exact-label

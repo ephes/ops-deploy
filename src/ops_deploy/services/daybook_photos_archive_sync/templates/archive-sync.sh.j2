@@ -1,0 +1,85 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+cd -- {{ daybook_photos_archive_sync_checkout_path | quote }}
+[[ "$(/bin/pwd -P)" == {{ daybook_photos_archive_sync_checkout_path | quote }} ]] || {
+  echo 'archive-sync: checkout path identity changed' >&2
+  exit 78
+}
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+[[ "$(/usr/bin/git -C . -c core.fsmonitor=false rev-parse HEAD)" == {{ daybook_photos_archive_sync_repo_ref | quote }} ]] || {
+  echo 'archive-sync: checkout is not at the pinned revision' >&2
+  exit 78
+}
+[[ -z "$(/usr/bin/git -C . -c core.fsmonitor=false status --porcelain=v1 --untracked-files=all)" ]] || {
+  echo 'archive-sync: checkout is not clean' >&2
+  exit 78
+}
+
+set +e
+{{ daybook_photos_archive_sync_timeout_bin | quote }} \
+  --signal=TERM \
+  --kill-after=5 \
+  {{ daybook_photos_archive_sync_photos_access_timeout_seconds | int }} \
+  /usr/bin/env -i \
+  HOME={{ daybook_photos_archive_sync_service_home | quote }} \
+  USER={{ daybook_photos_archive_sync_service_user | quote }} \
+  LOGNAME={{ daybook_photos_archive_sync_service_user | quote }} \
+  PATH={{ daybook_photos_archive_sync_path | quote }} \
+  PYTHONDONTWRITEBYTECODE=1 \
+  {{ (daybook_photos_archive_sync_venv_path ~ '/bin/python') | quote }} \
+  -c 'import os, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    data = os.read(fd, 1)
+    os.close(fd)
+except PermissionError:
+    raise SystemExit(77)
+except (FileNotFoundError, NotADirectoryError):
+    raise SystemExit(66)
+except OSError:
+    raise SystemExit(74)
+raise SystemExit(0 if data else 65)' \
+  {{ (daybook_photos_archive_sync_library_path ~ '/database/Photos.sqlite') | quote }}
+photos_access_status=$?
+set -e
+case "$photos_access_status" in
+  0) ;;
+  77|124|137)
+    echo "archive-sync: launchd Photos.sqlite access failed with status $photos_access_status; grant Full Disk Access to the LaunchAgent interpreter (/bin/bash) before activation" >&2
+    exit 77
+    ;;
+  66)
+    echo 'archive-sync: configured Photos.sqlite path does not exist or is not a directory' >&2
+    exit 66
+    ;;
+  *)
+    echo "archive-sync: Photos.sqlite preflight failed with status $photos_access_status" >&2
+    exit 74
+    ;;
+esac
+
+exec {{ daybook_photos_archive_sync_timeout_bin | quote }} \
+  --signal=TERM \
+  --kill-after=60 \
+  {{ daybook_photos_archive_sync_timeout_seconds | int }} \
+  /usr/bin/env -i \
+  HOME={{ daybook_photos_archive_sync_service_home | quote }} \
+  USER={{ daybook_photos_archive_sync_service_user | quote }} \
+  LOGNAME={{ daybook_photos_archive_sync_service_user | quote }} \
+  PATH={{ daybook_photos_archive_sync_path | quote }} \
+  PYTHONDONTWRITEBYTECODE=1 \
+  {{ (daybook_photos_archive_sync_venv_path ~ '/bin/daybook') | quote }} \
+  photos archive-sync \
+  --execute \
+  --summary-only \
+  --library {{ daybook_photos_archive_sync_library_path | quote }} \
+  --source-root {{ daybook_photos_archive_sync_source_root | quote }} \
+  --state {{ daybook_photos_archive_sync_state_path | quote }} \
+  --mount-point {{ daybook_photos_archive_sync_mount_point | quote }} \
+  --expected-smb-server {{ daybook_photos_archive_sync_expected_smb_server | quote }} \
+  --expected-smb-share {{ daybook_photos_archive_sync_expected_smb_share | quote }} \
+  --expected-writer-host {{ daybook_photos_archive_sync_expected_writer_host | quote }}{% if daybook_photos_archive_sync_use_folder_map | bool %} \
+  --folder-map {{ daybook_photos_archive_sync_folder_map_path | quote }}{% endif %}
