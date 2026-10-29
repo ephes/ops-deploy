@@ -38,10 +38,10 @@ original whitespace behavior. Optional Matter dependencies, logging and original
 Python/package guards are covered by source tests. The original default package
 spec remains unpinned; actual selected private versions will be mapped explicitly.
 
-This schema does not yet install dependencies or perform service rollout. UV
-private include-variable mapping, package/security/environment recovery, application flows and
-all lifecycle paths remain implementation work. No physical no-op or application
-acceptance follows from template or input tests.
+The prepared components below implement UV, trust and Python environment/package
+steps, but the full entry point, private include-variable mapping, service
+rollout, application flows and lifecycle paths remain implementation work.
+No physical no-op or application acceptance follows from template/input tests.
 
 The prepared UV component uses the original Home Assistant 0.13.5 version and
 complete checksum defaults, leaving the shared installer's 0.13.4 defaults
@@ -77,8 +77,8 @@ even when Matter management is now disabled. Missing environments do not invent
 existing-unit stop actions. A malformed interpreter response remains an error.
 Tests evaluate the bound original task expressions over all combinations of these
 predicates. This is source parity, not an executed virtualenv or recovery proof;
-host probe wiring, UV installation, package security constraints, service rollout
-and native recovery remain unfinished.
+prepared host probes, UV/security and environment/package composition are
+described below. Service rollout and actual native recovery remain unfinished.
 
 Prepared observation wiring runs the bounded original interpreter/package probes
 as the declared service user, with bytecode disabled and status-only results.
@@ -129,8 +129,8 @@ planning report. Inspector programs import certifi/pip only, never Home Assistan
 and retain isolated Python execution with added bytecode suppression. These
 checks cannot prove global zero I/O or physical-device behavior. Original policy
 failures are not silently remediated, and explicit existing trust overrides are
-not rewritten. Caller sequencing, application/package installation and native
-qualification remain unfinished; this component is not yet a deployment API.
+not rewritten. The Python sequence is now composed below; outer caller sequencing and native
+qualification remain unfinished. This component is not a deployment API.
 
 
 The prepared interpreter component preserves `uv python find VERSION` followed
@@ -164,8 +164,8 @@ strict full-metadata repeats. The test container has no network or host mounts,
 a read-only root filesystem and a bounded temporary filesystem; its owned image
 and container are removed afterward. These are typed filesystem primitive tests,
 not execution of the complete original Ansible role or native Home Assistant,
-Matter, radio or inventory qualification. Caller sequencing and full native
-application/lifecycle proof remain unfinished.
+Matter, radio or inventory qualification. Full deployment sequencing and native application/lifecycle proof remain
+unfinished.
 
 ### Prepared virtualenv replacement
 
@@ -181,8 +181,8 @@ creation row; execution always performs the real observation. A failed creation
 after stopping/removal remains failed with those partial effects, with no
 automatic restart or invented rollback. SDK sequencing tests use synthetic
 facts; real HA/Matter replacement and recovery remain in the future native
-matrix. Package installation, record/link/ownership composition and deployment
-entry point are still being implemented.
+matrix. Prepared package and record/link/ownership composition is described
+below; the complete deployment entry point remains unfinished.
 
 The caller passes the actual preceding `install_python` operation as
 `python_install` to `prepare_environment`. A planned Python installation thus
@@ -203,10 +203,10 @@ service-user/HOME/site, shell-style package-spec argv parsing without a shell,
 and security constraints; invalid quoting fails before registering effects.
 No application-specific command timeout is added: the original package install
 tasks have none, while the owned qualification runner has its separate finite
-job deadline. Install failure remains failure, with no service restart/rollback from this
-component. Extra-package resolution and final version/ownership/handler
-composition remain separate unfinished work. These SDK tests do not qualify
-real HA/Matter application installation or recovery.
+job deadline. Install failure remains failure, with no service restart/rollback
+from this component. Extras and record/ownership composition are described
+below; outer service-handler wiring remains unfinished. These SDK tests do not
+qualify real HA/Matter application installation or recovery.
 
 ### Prepared extra-package resolution and notification
 
@@ -228,3 +228,29 @@ is rejected by OperationMeta. SDK tests and the bound original Jinja expression
 cover this distinction. Exact native UV/application/cache behavior and full
 deployment/handler composition remain pending. Do not advertise this component
 as global physical no-I/O or completed HA deployment qualification.
+
+### Prepared Python-runtime composition
+
+The unexported composition now orders requested-Python installation, HA
+replacement, convenience link, version record, recursive ownership, main
+application and extra-package resolution before optional separate Matter
+storage/log/chip directories, environment, record, ownership and application.
+Matter's second pre-install ownership check runs only when its application
+actually needs installation, after its chip/version observation. That embedded
+recursive check retains the original task's lack of a timeout, unlike the
+separate 300-second ownership rows. It shares the application operation: a failed
+or hung check is reported under application installation, and prior ownership
+effects are not rolled back. Known earlier
+operation dependencies defer cold planning probes; real execution rechecks each
+state. This component still requires the outer original validation, trust,
+account/UV/constraint prerequisites and final configuration/security/service
+flush logic; it is not the completed deployment entry point.
+
+Returned notification callbacks use completed operations: original Python,
+ownership and application changes notify HA (and managed Matter); HA extras
+use only their original successful-output expression. Version record or
+convenience-link changes alone do not invent a restart notification. No service
+restart happens inside this component. SDK cold/current, selected/unselected
+Matter, record-only repair, changed/audit-only extras and failed-install tests
+prove sequencing with synthetic responses and real SDK file operations. Native
+application/venv/filesystem behavior and hardware remain unqualified.

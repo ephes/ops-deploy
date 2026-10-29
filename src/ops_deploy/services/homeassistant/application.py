@@ -17,6 +17,7 @@ from pyinfra.api.operation import OperationMeta
 
 from ops_deploy.helpers.python import _as_user
 
+from .ownership import _ownership
 from .python_observation import Kind, _observe
 from .python_state import homeassistant_application_required, matter_application_required
 from .runtime_config import HomeAssistantRuntimeConfig
@@ -57,6 +58,12 @@ def _application(
         )
         if not required:
             return
+    if kind == "matter":
+        # Original second recursive ownership task runs only when installation
+        # is needed, after its application/chip probes and before uv pip.
+        # Like the original task this embedded check has no separate timeout;
+        # its effects/failure belong to this application operation.
+        yield from _ownership._inner(cfg=cfg, path=cfg.matter_server_virtualenv_path, deferred=pending)
     yield StringCommand(application_command(cfg, kind))
 
 

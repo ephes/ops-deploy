@@ -12,10 +12,15 @@ from pyinfra.connectors.fake import FakeConnector
 from pyinfra.connectors.util import CommandOutput
 from pyinfra.operations import server
 
-from ops_deploy.services.homeassistant import application
+from ops_deploy.services.homeassistant import application, ownership
 from ops_deploy.services.homeassistant.python_state import EnvironmentState
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 from ops_deploy.testing import run_deploy_fake
+
+
+@pytest.fixture(autouse=True)
+def current_install_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ownership, "probe", lambda *args, **kwargs: "current")
 
 
 @pytest.mark.parametrize("matter", [False, True])
@@ -151,3 +156,15 @@ def test_invalid_declared_spec_stops_before_any_operation() -> None:
     assert not run.succeeded
     assert run.ops == []
     assert run.executed_commands == []
+
+
+def test_matter_repairs_actual_pending_ownership_before_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(application, "_observe", lambda *args: EnvironmentState(True, application_exists=False))
+    monkeypatch.setattr(ownership, "probe", lambda *args, **kwargs: "pending")
+    cfg = HomeAssistantRuntimeConfig()
+    run = run_deploy_fake(lambda: application.install_application(cfg, matter=True))
+    assert run.succeeded, run.error
+    assert len(run.executed_commands) == 2
+    assert "ha-venv-ownership" in run.executed_commands[0]
+    assert run.executed_commands[1] == application.application_command(cfg, "matter")
+    assert len(run.mutating_changed_ops) == 1

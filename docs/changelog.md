@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Compose the prepared Home Assistant/Matter Python environment, records,
+  ownership and application components with original deferred notification
+  semantics. Preserve Matter's conditional second ownership check before install;
+  native deployment and outer configuration/service wiring remain pending.
+
 - Prepare original Home Assistant extra-package resolution as explicit managed
   execution, retaining output-bound restart notification on actual package work.
   Avoid hidden UV check-mode writes and false zero-managed/read-only claims.
