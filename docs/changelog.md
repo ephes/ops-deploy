@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Home Assistant normal readiness now retries malformed HTTP responses within
+  the original URI retry policy, while its total deadline still exits immediately.
+
 - Prepare Home Assistant's separate UV trust-maintenance sequence, preserving
   existing-unit admission, changed-drop-in restart, HTTP health and final running
   trust verification. Private/native qualification remains separate.

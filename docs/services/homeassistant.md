@@ -835,3 +835,9 @@ planning performs only the original unit/store admission. URL/credential/body da
 stay protected, and only logical request counts/status leave the health helper.
 This is source preparation; owned systemd/native qualification and private command
 binding remain separate work. No production restart is performed merely for proof.
+
+The normal integration readiness retry also treats malformed HTTP responses as
+failed URI attempts and retries them within the original count. The whole
+operation deadline still exits immediately. An owned malformed-status-then200
+control reproduces the earlier premature failure and verifies recovery; it
+performs no configuration POST and adds no native application evidence.

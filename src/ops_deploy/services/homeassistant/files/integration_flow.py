@@ -171,7 +171,11 @@ def run(payload, report=None):
                     request('/api/')
                     report['ready'] = True
                     break
-                except (OSError, ValueError, RuntimeError):
+                except DeadlineExceeded:
+                    raise
+                except Exception:
+                    # Original until/retries repeats every failed URI attempt,
+                    # including malformed HTTP status and auth/transport errors.
                     if attempt >= max(0, api['retries']):
                         raise
                     time.sleep(api['retry_delay'])

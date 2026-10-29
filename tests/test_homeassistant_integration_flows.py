@@ -781,3 +781,59 @@ def test_actual_sdk_readiness_reset_occurs_at_handler_boundary(
         server.shutdown()
         server.server_close()
         worker.join()
+
+
+def test_readiness_retries_malformed_http_status_like_original_uri(tmp_path: Path) -> None:
+    requests: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            requests.append(self.path)
+            if len(requests) == 1:
+                self.wfile.write(b"owned malformed status\r\n\r\n")
+                self.close_connection = True
+                return
+            self.send_response(200)
+            self.end_headers()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    try:
+        value = payload(tmp_path)
+        value["action"] = "readiness"
+        value["api"]["url"] = f"http://127.0.0.1:{server.server_port}"
+        value["api"]["retries"] = 1
+        result = flow.run(value)
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
+    assert result["success"]
+    assert result["ready"]
+    assert requests == ["/api/", "/api/"]
+    assert result["http_requests"] == 2
+    assert result["mutation_attempts"] == 0
+    assert not result["changed"]
+
+
+def test_readiness_total_deadline_is_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+
+    def transport(*args: Any) -> Any:
+        calls.append(True)
+        raise flow.DeadlineExceeded()
+
+    monkeypatch.setattr(flow, "request_transport", transport)
+    value = payload(tmp_path)
+    value["action"] = "readiness"
+    value["api"]["url"] = "http://owned"
+    value["api"]["retries"] = 3
+    result = flow.run(value)
+    assert not result["success"]
+    assert result["error"] == "DeadlineExceeded"
+    assert calls == [True]
+    assert result["mutation_attempts"] == 0
