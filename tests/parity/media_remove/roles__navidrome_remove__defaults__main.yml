@@ -1,0 +1,9 @@
+---
+# Navidrome removal defaults
+
+navidrome_confirm_removal: false
+navidrome_remove_data: true
+navidrome_remove_logs: true
+navidrome_remove_binary: true
+navidrome_remove_user: true
+navidrome_remove_traefik_config: true

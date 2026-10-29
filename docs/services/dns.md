@@ -3,8 +3,7 @@
 `ops_deploy.services.dns` ports the ordinary Unbound deployment, including its
 blocklist updater/timer, RFC2136 DDNS updater/timer and optional authenticated
 status endpoint. The private adapter adds the existing conditional Nyxmon check.
-This is separate from authoritative BIND, router/DHCP configuration and DNS
-removal. The ordinary private adapter applies to macmini. Native Ubuntu 24.04
+This is separate from authoritative BIND, router/DHCP configuration ; removal is a separate confirmed lifecycle operation below. The ordinary private adapter applies to macmini. Native Ubuntu 24.04
 qualification covers installation, changes, recovery and no-write convergence;
 inventory rollout records belong in the private operator repository.
 
@@ -69,3 +68,38 @@ and owned Rust layout repair followed by a no-write repeat. Its explicit upstrea
 activation is fixture setup, separate from deployment/no-op accounting. Historical
 failed runs are retained; an earlier release-host resolution failure has no
 claimed root cause. See the fixture README for the evidence boundaries.
+
+
+## Confirmed removal
+
+`DnsRemoveConfig(confirm=True)` and `deploy_dns_remove` preserve the original
+Unbound/DDNS removal route. It stops/disables the six named services/timers,
+removes the declared DDNS resources and account/home, purges Unbound including
+residual package configuration, deletes its named cache/state leftovers, removes
+only the five original UFW allow rules and three named Ansible root cron entries,
+and cleans the declared Pi-hole leftovers. Unrelated cron/rules remain intact.
+The original stopped/disabled blocklist unit files are retained; their mere
+presence does not trigger repeated daemon reloads. Removal creates no backup.
+
+`restore_systemd_resolved=True` retains the original enable/start, tolerated local
+listener wait and stub symlink policy; a missing distribution unit uses the fixed
+public fallback resolver. False leaves resolver configuration alone. Custom role
+paths remain supported, and a DDNS state path is removed only when its basename
+contains `ddns` and the original literal nested-absolute-path regex matches.
+The raw state-variable spelling is retained: trailing `/` or `/.` and root-level
+literal `/ddns` remain original skips. The predicate is spelling-sensitive:
+`/./ddns`, `///ddns` and `/.//ddns` match the original raw expression and select
+that same root-level directory for removal. No canonical-path equivalence is
+assumed by this legacy condition; account/home removal remains independent.
+The confirmation and bounded path checks precede mutation.
+Account existence uses `pwd.getpwnam` metadata, without a broad user/shadow fact.
+Required package/path metadata errors refuse; optional unit/firewall/account/cron
+cleanup keeps the source's explicit tolerance and does not label unknown state
+absent. A repeat with known absent resources performs no managed changes; the
+optional resolved listener wait remains a read-only TCP connection, not a DNS query.
+Owned package/account/cron/UFW/systemd tests establish component behavior only;
+no destructive inventory removal has been performed or qualified by them.
+
+Lifecycle custom paths accept ordinary spaces while retaining absolute-path,
+parent-traversal and bounded-resource checks. Shell metacharacter/control-character
+admission remains unchanged; the shared deploy/backup path policy is unchanged.

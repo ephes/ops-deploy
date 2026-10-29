@@ -1,0 +1,104 @@
+---
+# Shared defaults for Jellyfin roles
+
+jellyfin_user: jellyfin
+jellyfin_group: jellyfin
+jellyfin_service_name: jellyfin
+jellyfin_service_unit: /lib/systemd/system/jellyfin.service
+jellyfin_service_enabled: true
+jellyfin_service_state: started
+
+jellyfin_data_dir: /var/lib/jellyfin
+jellyfin_config_dir: /etc/jellyfin
+jellyfin_log_dir: /var/log/jellyfin
+
+jellyfin_media_directories:
+  - /mnt/cryptdata/media/video/movies
+  - /mnt/cryptdata/media/video/tv
+  - /mnt/cryptdata/media/video/youtube
+jellyfin_media_dir_owner: root
+jellyfin_media_dir_group: root
+jellyfin_media_dir_mode: "0755"
+jellyfin_create_media_dirs: true
+
+jellyfin_http_port: 8096
+jellyfin_https_port: 8920
+
+# Repository configuration
+jellyfin_repo_base: https://repo.jellyfin.org
+jellyfin_repo_family_map:
+  Debian: debian
+  Ubuntu: ubuntu
+jellyfin_repo_distro: "{{ jellyfin_repo_family_map[ansible_facts.distribution] | default('debian') }}"
+jellyfin_repo_release: "{{ ansible_facts.distribution_release | default('bookworm') }}"
+jellyfin_repo_component: main
+jellyfin_repo_list_file: /etc/apt/sources.list.d/jellyfin.list
+jellyfin_repo_key_url: "{{ jellyfin_repo_base }}/{{ jellyfin_repo_distro }}/jellyfin_team.gpg.key"
+jellyfin_repo_keyring: /usr/share/keyrings/jellyfin-archive-keyring.gpg
+jellyfin_repo_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  aarch64: arm64
+  arm64: arm64
+jellyfin_repo_arch: "{{ jellyfin_repo_arch_map[ansible_facts.architecture | default(ansible_architecture | default('amd64'))] | default('amd64') }}"
+
+# Packages
+jellyfin_ffmpeg_candidates:
+  - jellyfin-ffmpeg6
+  - jellyfin-ffmpeg5
+  - jellyfin-ffmpeg
+jellyfin_packages_base:
+  - jellyfin
+  - apache2-utils  # for htpasswd hashing
+
+# Traefik exposure
+jellyfin_traefik_enabled: true
+jellyfin_traefik_host: media.example.com
+jellyfin_traefik_entrypoints:
+  - web-secure
+jellyfin_traefik_cert_resolver: ""  # empty -> use file-provider certs
+jellyfin_traefik_config_path: /etc/traefik/dynamic/jellyfin.yml
+jellyfin_traefik_middlewares: []
+jellyfin_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+
+# Traefik basic auth (bcrypt hashes recommended)
+jellyfin_basic_auth_enabled: true
+jellyfin_basic_auth_user: jellyfin
+jellyfin_basic_auth_password: ""
+jellyfin_basic_auth_password_hash: ""
+jellyfin_basic_auth_remove_header: true
+
+# Backup/restore defaults
+jellyfin_backup_root: /opt/backups/jellyfin
+jellyfin_backup_prefix: manual
+jellyfin_backup_archive_format: gz
+jellyfin_backup_archive_extension: tar.gz
+jellyfin_backup_fetch_local: true
+jellyfin_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/jellyfin"
+jellyfin_backup_dir_mode: "0700"
+jellyfin_backup_file_mode: "0600"
+jellyfin_backup_owner: root
+jellyfin_backup_group: root
+jellyfin_backup_stop_service: true
+jellyfin_backup_include_logs: true
+jellyfin_backup_include_traefik: true
+jellyfin_backup_use_delete: true
+jellyfin_backup_retain: 7
+jellyfin_backup_generate_manifest: true
+
+jellyfin_restore_cleanup: true
+jellyfin_restore_archive: latest
+jellyfin_restore_restart: true
+jellyfin_restore_stop_service: true
+jellyfin_restore_root: "{{ jellyfin_backup_root }}"
+
+# Health checks
+jellyfin_healthcheck_enabled: true
+jellyfin_healthcheck_url: "http://127.0.0.1:{{ jellyfin_http_port }}/"
+jellyfin_healthcheck_timeout: 60
+jellyfin_healthcheck_retries: 5

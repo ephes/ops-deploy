@@ -20,6 +20,20 @@
   Fresh wheel checksums also govern corrected-wheel transfer after a failed
   import in the same controller process.
 
+- Add confirmed Navidrome, MeTube and Jellyfin removal APIs with the original
+  independent flags, exact Jellyfin package purge and MeTube change-triggered
+  handlers. Downloads remain retained by default; account removal keeps the
+  original home-removal interaction. Named metadata failures refuse before
+  mutation and already-absent repeats perform no managed operations.
+
+- Add confirmed DNS removal and complete the source-backed Traefik restore/remove
+  lifecycle APIs with literal custom paths, transaction refusal, nonmutating
+  archive validation and original ACME-only/default staging semantics, including literal custom paths
+  with ordinary spaces. Keep the original DDNS state guard on the raw path,
+  preserving trailing-separator/dot skips before any deletion. Preserve
+  original cleanup tolerance and private force/keep flag behavior. Owned native
+  component evidence is separate from inventory lifecycle qualification.
+
 - Add a targeted pyinfra upgrade for existing role-managed Mastodon 4.6.9
   installations to 4.7.4, addressing GHSA-288h-6j8h-6x5j. It takes protected
   database/config/media backups, installs the tag's Ruby and Node versions,

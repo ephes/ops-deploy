@@ -1,0 +1,83 @@
+---
+- name: Validate removal confirmation
+  ansible.builtin.assert:
+    that:
+      - jellyfin_confirm_removal | bool
+    fail_msg: |
+      Jellyfin removal not confirmed.
+      Set jellyfin_confirm_removal: true to proceed.
+
+- name: Stop and disable Jellyfin service
+  ansible.builtin.systemd:
+    name: "{{ jellyfin_service_name }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove Jellyfin systemd unit
+  ansible.builtin.file:
+    path: "{{ jellyfin_service_unit }}"
+    state: absent
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove Jellyfin packages
+  ansible.builtin.apt:
+    name:
+      - jellyfin
+      - jellyfin-ffmpeg6
+      - jellyfin-ffmpeg5
+      - jellyfin-ffmpeg
+    state: absent
+    purge: true
+  when: jellyfin_remove_packages | bool
+
+- name: Remove Jellyfin config directory
+  ansible.builtin.file:
+    path: "{{ jellyfin_config_dir }}"
+    state: absent
+  when: jellyfin_remove_config | bool
+
+- name: Remove Jellyfin data directory
+  ansible.builtin.file:
+    path: "{{ jellyfin_data_dir }}"
+    state: absent
+  when: jellyfin_remove_data | bool
+
+- name: Remove Jellyfin log directory
+  ansible.builtin.file:
+    path: "{{ jellyfin_log_dir }}"
+    state: absent
+  when: jellyfin_remove_logs | bool
+
+- name: Remove Traefik configuration
+  ansible.builtin.file:
+    path: "{{ jellyfin_traefik_config_path }}"
+    state: absent
+  when: jellyfin_remove_traefik_config | bool
+
+- name: Remove Jellyfin user
+  ansible.builtin.user:
+    name: "{{ jellyfin_user }}"
+    state: absent
+    remove: true
+  when: jellyfin_remove_user | bool
+
+- name: Remove Jellyfin group
+  ansible.builtin.group:
+    name: "{{ jellyfin_group }}"
+    state: absent
+  when: jellyfin_remove_user | bool
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      Jellyfin removal completed.
+      Packages: {{ 'removed' if jellyfin_remove_packages else 'preserved' }}
+      Config: {{ 'removed' if jellyfin_remove_config else 'preserved' }}
+      Data: {{ 'removed' if jellyfin_remove_data else 'preserved' }}
+      Logs: {{ 'removed' if jellyfin_remove_logs else 'preserved' }}
+      Traefik config: {{ 'removed' if jellyfin_remove_traefik_config else 'preserved' }}
+      User/group: {{ 'removed' if jellyfin_remove_user else 'preserved' }}

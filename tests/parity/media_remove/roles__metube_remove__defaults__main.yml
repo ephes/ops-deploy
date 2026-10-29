@@ -1,0 +1,9 @@
+---
+metube_confirm_removal: false
+metube_remove_service: true
+metube_remove_install_dir: true
+metube_remove_state: true
+metube_remove_env: true
+metube_remove_traefik_config: true
+metube_remove_downloads: false
+metube_remove_user: true

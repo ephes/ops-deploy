@@ -179,3 +179,7 @@ Differences:
 - `mounts_required` is an addition (empty by default).
 - The bcrypt hash is computed on the controller; `apache2-utils` is still
   installed (it is one of the role's base packages).
+
+Confirmed [removal](media-removal.md) is available through `JellyfinRemoveConfig`
+and `deploy_jellyfin_remove`, preserving the original four-package purge and
+independent keep flags. Media directories are outside its declared targets.

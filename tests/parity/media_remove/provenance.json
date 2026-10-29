@@ -1,0 +1,45 @@
+{
+  "original_commit": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "files": {
+    "roles__navidrome_remove__tasks__main.yml": {
+      "original_path": "roles/navidrome_remove/tasks/main.yml",
+      "sha256": "17f034351a711ffd87c6a454d2780ec0f9a558607de27474c70ed2da0176910d"
+    },
+    "roles__navidrome_remove__defaults__main.yml": {
+      "original_path": "roles/navidrome_remove/defaults/main.yml",
+      "sha256": "1efa348b36c97a4b1b4a9cc7b792650fbbf2709ec9d00902c8aa99f9ae192bf3"
+    },
+    "roles__navidrome_shared__defaults__main.yml": {
+      "original_path": "roles/navidrome_shared/defaults/main.yml",
+      "sha256": "4ba094fc3f9e463d6262f919b4b803bd3cf6f7cfb26ea88edc89a14a99edce3f"
+    },
+    "roles__metube_remove__tasks__main.yml": {
+      "original_path": "roles/metube_remove/tasks/main.yml",
+      "sha256": "4d666cfe73509286e526330fd71094335e2f38cf85de3bbc4bbf804bd2ecc13e"
+    },
+    "roles__metube_remove__defaults__main.yml": {
+      "original_path": "roles/metube_remove/defaults/main.yml",
+      "sha256": "605b455fbdd105571c2dad0e681caf9aa0a9de1fa47fd4d5ceb09e10ccdc8336"
+    },
+    "roles__metube_shared__defaults__main.yml": {
+      "original_path": "roles/metube_shared/defaults/main.yml",
+      "sha256": "d2f241ba449bea5b9c7a4de83672302c9e224f9019e914637306cd90bf4777fe"
+    },
+    "roles__metube_remove__handlers__main.yml": {
+      "original_path": "roles/metube_remove/handlers/main.yml",
+      "sha256": "ff646c7b38c0df7ba5f0fe38dd6dcf4d7dc04b851deb2910360ce6273255c1f4"
+    },
+    "roles__jellyfin_remove__tasks__main.yml": {
+      "original_path": "roles/jellyfin_remove/tasks/main.yml",
+      "sha256": "57faa0ce014acc5bc78ddb3df51272b05a51e3bdc31d07e0613d32ea91e75f71"
+    },
+    "roles__jellyfin_remove__defaults__main.yml": {
+      "original_path": "roles/jellyfin_remove/defaults/main.yml",
+      "sha256": "5814e1072ffeaf1eba95b626d9e2c93d38886efccc3403fabd625de3c47bfb8c"
+    },
+    "roles__jellyfin_shared__defaults__main.yml": {
+      "original_path": "roles/jellyfin_shared/defaults/main.yml",
+      "sha256": "58f5054329c56217b58f0848bbb993747fe7e75ceaf0ac62fb003359180f6ff0"
+    }
+  }
+}

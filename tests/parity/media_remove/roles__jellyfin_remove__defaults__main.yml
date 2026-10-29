@@ -1,0 +1,10 @@
+---
+# Jellyfin removal defaults
+
+jellyfin_confirm_removal: false
+jellyfin_remove_packages: true
+jellyfin_remove_data: true
+jellyfin_remove_logs: true
+jellyfin_remove_config: true
+jellyfin_remove_traefik_config: true
+jellyfin_remove_user: true

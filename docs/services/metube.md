@@ -40,8 +40,9 @@ window with the operator.
 
 The environment/unit/route preserve the deployed role defaults. The public
 config intentionally exposes the qualified native path rather than every role
-option. This module implements deploy only: backup, restore, removal and fresh
-media-volume provisioning are separate concerns.
+option. Confirmed [removal](media-removal.md) is available separately through
+`MetubeRemoveConfig` and `deploy_metube_remove`; downloads default to retained.
+Backup, restore and fresh media-volume provisioning remain separate concerns.
 
 Run the dedicated actual Linux qualification with:
 
