@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{ daybook_photos_offload_launchd_label | e }}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ daybook_photos_offload_launcher_path | e }}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{ daybook_photos_offload_checkout_path | e }}</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>ThrottleInterval</key>
+  <integer>{{ daybook_photos_offload_throttle_interval_seconds | int }}</integer>
+  <key>StartCalendarInterval</key>
+  <array>
+{% for schedule in daybook_photos_offload_start_calendar %}
+    <dict>
+      <key>Hour</key>
+      <integer>{{ schedule.Hour | int }}</integer>
+      <key>Minute</key>
+      <integer>{{ schedule.Minute | int }}</integer>
+    </dict>
+{% endfor %}
+  </array>
+  <key>StandardOutPath</key>
+  <string>{{ daybook_photos_offload_stdout_log | e }}</string>
+  <key>StandardErrorPath</key>
+  <string>{{ daybook_photos_offload_stderr_log | e }}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>{{ daybook_photos_offload_service_home | e }}</string>
+    <key>USER</key>
+    <string>{{ daybook_photos_offload_service_user | e }}</string>
+    <key>LOGNAME</key>
+    <string>{{ daybook_photos_offload_service_user | e }}</string>
+    <key>PATH</key>
+    <string>{{ daybook_photos_offload_path | e }}</string>
+  </dict>
+</dict>
+</plist>

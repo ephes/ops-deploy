@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add the original Photos offload component: protected root checkout and trust
+  attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with
+  exact cleanup, GUI-owned Python environment/resources, and exact-label
+  quiescence plus fail-closed optional activation. Preserve the 31 original
+  variables/two templates, disabled installation, unrelated keeper and existing
+  log contents. Local role/Git/IO/SDK/negative controls are separate from pending
+  disposable native and inventory qualification.
+
 - `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
   `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
   render `PasswordAuthentication` and `PermitRootLogin` into the same sshd

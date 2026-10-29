@@ -1,0 +1,42 @@
+{
+  "daybook_photos_offload_enabled": true,
+  "daybook_photos_offload_launchd_enabled": false,
+  "daybook_photos_offload_service_user": "CHANGEME",
+  "daybook_photos_offload_service_group": "staff",
+  "daybook_photos_offload_service_home": "/Users/{{ daybook_photos_offload_service_user }}",
+  "ansible_become_flags": "-H -i",
+  "daybook_photos_offload_repo_url": "https://github.com/ephes/daybook.git",
+  "daybook_photos_offload_checkout_path": "/Library/Application Support/Daybook/photos-offload/daybook",
+  "daybook_photos_offload_checkout_attestation_path": "/Library/Application Support/Daybook/photos-offload/managed-v1",
+  "daybook_photos_offload_repo_bundle_src": "CHANGEME",
+  "daybook_photos_offload_repo_bundle_path": "{{ daybook_photos_offload_checkout_path | dirname }}/source.bundle",
+  "daybook_photos_offload_repo_ref": "CHANGEME",
+  "daybook_photos_offload_uv_bin": "/opt/homebrew/bin/uv",
+  "daybook_photos_offload_python_version": "3.14.7",
+  "daybook_photos_offload_venv_path": "{{ daybook_photos_offload_checkout_path }}/.venv",
+  "daybook_photos_offload_path": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  "daybook_photos_offload_system_group": "wheel",
+  "daybook_photos_offload_library_path": "{{ daybook_photos_offload_service_home }}/Pictures/Photos Library.photoslibrary",
+  "daybook_photos_offload_runtime_dir": "{{ daybook_photos_offload_service_home }}/.daybook/photos-offload",
+  "daybook_photos_offload_state_path": "{{ daybook_photos_offload_runtime_dir }}/ledger.json",
+  "daybook_photos_offload_config_dir": "{{ daybook_photos_offload_service_home }}/.config/daybook-photos-offload",
+  "daybook_photos_offload_launcher_path": "{{ daybook_photos_offload_config_dir }}/reconcile.sh",
+  "daybook_photos_offload_log_dir": "{{ daybook_photos_offload_runtime_dir }}/logs",
+  "daybook_photos_offload_stdout_log": "{{ daybook_photos_offload_log_dir }}/reconcile.log",
+  "daybook_photos_offload_stderr_log": "{{ daybook_photos_offload_log_dir }}/reconcile.err.log",
+  "daybook_photos_offload_launchd_label": "de.wersdoerfer.daybook.photos-offload",
+  "daybook_photos_offload_launchd_plist_path": "{{ daybook_photos_offload_service_home }}/Library/LaunchAgents/{{ daybook_photos_offload_launchd_label }}.plist",
+  "daybook_photos_offload_launchd_manage_state": true,
+  "daybook_photos_offload_readiness_timeout_seconds": 30,
+  "daybook_photos_offload_throttle_interval_seconds": 300,
+  "daybook_photos_offload_start_calendar": [
+    {
+      "Hour": 8,
+      "Minute": 10
+    },
+    {
+      "Hour": 20,
+      "Minute": 10
+    }
+  ]
+}

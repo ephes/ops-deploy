@@ -1,0 +1,62 @@
+#!/bin/bash
+set -euo pipefail
+
+umask 077
+exec 3>&2
+exec 2>/dev/null
+generic_failure() {
+  status=$?
+  trap - ERR
+  printf 'daybook: scheduled Photos offload reconciliation failed.\n' >&3
+  exit "$status"
+}
+trap generic_failure ERR
+
+cd -- {{ daybook_photos_offload_checkout_path | quote }}
+[[ "$(/bin/pwd -P)" == {{ daybook_photos_offload_checkout_path | quote }} ]]
+[[ "$(/usr/bin/stat -f '%Su:%Lp' .)" == root:755 ]]
+[[ "$(/usr/bin/stat -f '%Su:%Lp' .git)" == root:755 ]]
+[[ -d .venv ]]
+[[ ! -L .venv ]]
+[[ "$(/usr/bin/stat -f '%Su:%Lp' .venv)" == {{ (daybook_photos_offload_service_user ~ ':700') | quote }} ]]
+
+git_env=(
+  /usr/bin/env -i
+  HOME={{ daybook_photos_offload_service_home | quote }}
+  USER={{ daybook_photos_offload_service_user | quote }}
+  LOGNAME={{ daybook_photos_offload_service_user | quote }}
+  PATH={{ daybook_photos_offload_path | quote }}
+  GIT_CONFIG_GLOBAL=/dev/null
+  GIT_CONFIG_SYSTEM=/dev/null
+)
+git_safe=(-c {{ ('safe.directory=' ~ daybook_photos_offload_checkout_path) | quote }})
+config_names=$("${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" config --no-includes --local --name-only --list)
+unexpected_config=$(printf '%s\n' "$config_names" | /usr/bin/grep -Ev '^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode)|remote\.origin\.(url|fetch)|branch\.[^.]+\.(remote|merge))$' || true)
+[[ -z "$unexpected_config" ]]
+[[ "$("${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" -c core.fsmonitor=false rev-parse HEAD)" == {{ daybook_photos_offload_repo_ref | quote }} ]]
+[[ "$("${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" -c core.fsmonitor=false rev-parse --show-toplevel)" == {{ daybook_photos_offload_checkout_path | quote }} ]]
+[[ -z "$("${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" -c core.fsmonitor=false status --porcelain=v1 --untracked-files=all)" ]]
+index_flags=$("${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" -c core.fsmonitor=false ls-files -v)
+unsafe_index=$(printf '%s\n' "$index_flags" | /usr/bin/grep -E '^[a-zS]' || true)
+[[ -z "$unsafe_index" ]]
+"${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" -c core.fsmonitor=false diff --no-ext-diff --no-textconv --quiet HEAD --
+ignored_content=$("${git_env[@]}" /usr/bin/git -C . "${git_safe[@]}" -c core.fsmonitor=false ls-files --others --ignored --exclude-standard --directory)
+unsafe_ignored=$(printf '%s\n' "$ignored_content" | /usr/bin/grep -Ev '^\.venv/' || true)
+[[ -z "$unsafe_ignored" ]]
+
+printf '[%s] starting read-only Photos offload reconcile\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+/usr/bin/env -i \
+  HOME={{ daybook_photos_offload_service_home | quote }} \
+  USER={{ daybook_photos_offload_service_user | quote }} \
+  LOGNAME={{ daybook_photos_offload_service_user | quote }} \
+  PATH={{ daybook_photos_offload_path | quote }} \
+  PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONPATH={{ (daybook_photos_offload_checkout_path ~ '/src') | quote }} \
+  {{ (daybook_photos_offload_venv_path ~ '/bin/python') | quote }} \
+  -c 'from daybook.cli import main; raise SystemExit(main())' \
+  photos offload-reconcile \
+  --library {{ daybook_photos_offload_library_path | quote }} \
+  --state {{ daybook_photos_offload_state_path | quote }} \
+  --readiness-timeout-seconds {{ daybook_photos_offload_readiness_timeout_seconds | int }} \
+  --summary-only
+trap - ERR
