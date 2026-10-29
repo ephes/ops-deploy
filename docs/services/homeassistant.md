@@ -207,3 +207,24 @@ job deadline. Install failure remains failure, with no service restart/rollback 
 component. Extra-package resolution and final version/ownership/handler
 composition remain separate unfinished work. These SDK tests do not qualify
 real HA/Matter application installation or recovery.
+
+### Prepared extra-package resolution and notification
+
+The original nonempty extra-package list runs `uv pip install` on every normal
+invocation. The typed component preserves that command as **declared managed
+execution**, including when UV only audits already-current packages. It is not
+marked read-only and is not counted as a zero-managed SDK repeat. This avoids a
+hidden `uv --check` planning query: owned UV research observed initial lock and
+interpreter-cache metadata writes from check mode. The component invokes no UV
+command during planning; the actual command and any cache/lock effects are part
+of execution. It preserves each spec as one argv argument, original constraints
+before specs, service user/HOME/site and no added application-specific timeout.
+
+Deferred HA restart notification uses the original successful-output expression
+`Installed|Updated|Uninstalled|Prepared|Built`, not merely the SDK managed-row
+flag. A current audit therefore executes without requesting a restart. Failure
+remains failed with any actual partial effects; premature notification access
+is rejected by OperationMeta. SDK tests and the bound original Jinja expression
+cover this distinction. Exact native UV/application/cache behavior and full
+deployment/handler composition remain pending. Do not advertise this component
+as global physical no-I/O or completed HA deployment qualification.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare original Home Assistant extra-package resolution as explicit managed
+  execution, retaining output-bound restart notification on actual package work.
+  Avoid hidden UV check-mode writes and false zero-managed/read-only claims.
+
 - Prepare post-environment Home Assistant/Matter application installation with
   original pinned/unpinned, force, rebuild and chip-repair semantics and exact
   service-user/constraint arguments; no deployment API or native claim yet.
