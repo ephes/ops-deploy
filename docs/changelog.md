@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Prepare Home Assistant's optional Custom Conversation protocol with original
+  config-flow/options/canary semantics, protected stdin/RAM-only result handling,
+  bounded execution and honest partial-failure reporting. Owned synthetic
+  HTTP/WebSocket and pyinfra controls cover this component; full deployment and
+  native qualification remain pending.
+
 - Prepare Home Assistant legacy conversation metadata discovery and exact-path
   removal, preserving original rebuild selection and exposing only fixed flags.
   Owned original-task comparisons retain scoped-search and partial-observation

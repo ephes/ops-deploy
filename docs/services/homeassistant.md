@@ -585,3 +585,49 @@ Python replacement. The removal handles a file, directory or dangling link,
 without following its root link; actual local-connector first/repeat controls
 preserve the unrelated link target. These components do not yet compose the full
 retirement/upgrade sequence or prove native application and inventory behavior.
+
+
+### Custom Conversation protocol (prepared)
+
+The optional Custom Conversation component preserves the original 1.6.1 config
+flow, owned credential/model comparison, options normalization and real
+conversation canary. Ten protocol functions remain AST-identical to the captured
+original helper. A reconfigure flow uses the domain handler plus `entry_id`;
+options repair preserves the operator's agents, ignored intents and Langfuse
+values. Empty instructions restore the exact version-bound component default.
+Multiple entries are rejected before any API mutation even when disabling, as
+in the original outer task; disabling one entry makes the original DELETE.
+
+All runtime settings, credentials and canary text travel in protected stdin,
+not task environment or command arguments. The host reads only the named
+`core.config_entries`; registry/model response bodies and credentials are not
+exported. The selected entity is returned to protected controller process RAM
+for later pipeline composition. There is no target result file. Error reports
+retain source-owned step/status/hints and exception classes, suppress upstream
+response details and count attempted mutations. The controller retains phase,
+attempt count and partial-effect status in its invocation result and exposes
+those fixed fields with a sanitized failure diagnostic. Failure or timeout can leave
+partial effects; the controller timeout does not prove remote quiescence.
+
+REST/WebSocket timeouts use the shared `HomeAssistantApiConfig.timeout`, matching
+original `homeassistant_api_timeout`. The separate controller deadline defaults
+to 3,600 seconds and is configurable. This is a deliberate finite supervision
+limit on the originally unbounded command: a sufficiently slow sequence of
+otherwise permitted retries can hit it. It is not claimed to encompass every
+retry combination or unsolicited WebSocket stream; that outcome fails with
+uncertain remote activity rather than inventing quiescence or an automatic retry.
+
+The API URL's scheme, port and path prefix, forwarded headers and original
+aiohttp certificate verification are preserved. This helper does not adopt a
+`validate_certs:false` override from another integration. A successful unchanged
+configuration still performs the real `conversation/process` canary and is a
+managed operation; helper `changed:false` is not zero API activity. Registration
+and dry planning do not run it. The outer role still needs to supply the original
+enabled-or-existing selection, readiness, component installation and handler
+flush ordering before this is a complete deployment path.
+
+Owned controls exercise real loopback HTTP/WebSocket creation, reconfiguration,
+options, removal, healthy and failed canaries, duplicates and malformed input;
+actual pyinfra local-connector controls cover plan/execution, invalid reports
+and timeout uncertainty. These synthetic controls do not qualify a real HA
+model/provider, native application deployment or inventory adoption.
