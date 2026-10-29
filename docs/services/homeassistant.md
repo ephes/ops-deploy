@@ -916,3 +916,27 @@ disable-failure and stop-failure ordering. No real service/account removal has
 run. Private registration, installed CLI binding and disposable native lifecycle
 qualification remain outstanding; this source does not authorize inventory
 removal.
+
+
+## Protected lazy controller-template callbacks
+
+`HomeAssistantDeployConfig.with_template_renderers(include=..., ingress=...)`
+returns a copy with private controller callbacks. Their context is absent from
+config repr, model fields and serialization, and survives ordinary model copies
+such as target network fact resolution. The original config remains unchanged.
+
+The include callback receives the selected filename only after the original
+initial existence/overwrite guard. Its protected `SecretStr` result is cached for
+that selected task across plan/execution regeneration, keeping a single original
+render result rather than changing generated metadata between phases. Disabled
+include management and skipped existing files never invoke it. Explicit
+`include_rendered` entries take precedence; absent callback/map entries still use
+the packaged stock renderer. Ingress accepts a protected zero-argument callback,
+invoked only when enabled; explicit `ingress_rendered` still wins.
+
+Owned filesystem checks cover guard timing, one selected render, exact protected
+bytes, explicit-body precedence and no body in logs. Full composer checks verify
+lazy forwarding and serialization isolation. The private controller must supply
+its original Ansible action and effective variable/fact context; these public
+callbacks do not load inventory, templates, secrets or a new rendering provider.
+Native qualification and private registration remain separate.

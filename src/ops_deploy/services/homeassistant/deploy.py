@@ -255,6 +255,7 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         examples=cfg.secret_examples,
         include_files=cfg.include_files,
         include_rendered=cfg.include_rendered,
+        include_renderer=cfg._include_renderer,
         deferred=True,
     )
     pending.homeassistant.append(configuration.homeassistant_changed)
@@ -274,7 +275,12 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         pending.reload.append(dropin.did_change)
         pending.homeassistant.append(dropin.did_change)
     pending.notify_ingress(
-        write_ingress(cfg.ingress, rendered=cfg.ingress_rendered), cfg.ingress.reload_handler, runtime
+        write_ingress(
+            cfg.ingress,
+            rendered=cfg.ingress_rendered if cfg.ingress_rendered is not None else cfg._ingress_renderer,
+        ),
+        cfg.ingress.reload_handler,
+        runtime,
     )
     ensure_service_states(runtime)
     if cfg.areas():

@@ -12,7 +12,7 @@ import json
 import shlex
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
-from functools import partial
+from functools import cache, partial
 from importlib.resources import files
 from typing import Any
 
@@ -170,8 +170,14 @@ def _configuration_file(
         yield StringCommand(file_command(cfg), _stdin=StdinLines(protected.get_secret_value()), _get_pty=False)
 
 
-def _include_content(filename: str, rendered: Mapping[str, SecretStr]) -> SecretStr:
-    return rendered[filename] if filename in rendered else render_include(filename)
+def _include_content(
+    filename: str,
+    rendered: Mapping[str, SecretStr],
+    renderer: Callable[[str], SecretStr] | None,
+) -> SecretStr:
+    if filename in rendered:
+        return rendered[filename]
+    return render_include(filename) if renderer is None else renderer(filename)
 
 
 def configure_files(
@@ -183,6 +189,7 @@ def configure_files(
     examples: ConfigurationSecretExamples | None = None,
     include_files: tuple[str, ...] = INCLUDES,
     include_rendered: Mapping[str, SecretStr] | None = None,
+    include_renderer: Callable[[str], SecretStr] | None = None,
     deferred: bool = False,
 ) -> ConfigurationChanges:
     """Compose stock or explicitly rendered configuration after account/layout creation.
@@ -284,6 +291,6 @@ def configure_files(
                 {},
                 initial=includes,
                 skip_existing=not policy.overwrite_config,
-                content=partial(_include_content, filename, include_rendered or {}),
+                content=cache(partial(_include_content, filename, include_rendered or {}, include_renderer)),
             )
     return ConfigurationChanges(tuple(replacements))

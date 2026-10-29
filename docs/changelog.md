@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepared Home Assistant deployments can attach protected lazy original-template
+  callbacks. Existing skipped includes and disabled ingress never invoke them;
+  callback context is excluded from config repr and serialization.
+
 - Prepare Home Assistant removal with the original confirmation, eleven selection
   flags, dependent paths, disable-before-stop order and account home-removal
   policy. Owned filesystem and fake service/account checks cover the source;

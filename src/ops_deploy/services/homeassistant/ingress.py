@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from io import StringIO
 from typing import Annotated
 
@@ -38,7 +39,11 @@ def render_ingress(cfg: HomeAssistantIngressConfig) -> SecretStr:
     return SecretStr(templates().get_template("homeassistant.traefik.yml.j2").render(**context))
 
 
-def write_ingress(cfg: HomeAssistantIngressConfig, *, rendered: SecretStr | None = None) -> OperationMeta | None:
+def write_ingress(
+    cfg: HomeAssistantIngressConfig,
+    *,
+    rendered: SecretStr | Callable[[], SecretStr] | None = None,
+) -> OperationMeta | None:
     """Original directory/file modes and only the template's notification.
 
     The stock handler only explains Traefik's file watcher. A caller selecting
@@ -55,7 +60,7 @@ def write_ingress(cfg: HomeAssistantIngressConfig, *, rendered: SecretStr | None
         group="root",
         mode="0755",
     )
-    body = render_ingress(cfg) if rendered is None else rendered
+    body = render_ingress(cfg) if rendered is None else rendered() if callable(rendered) else rendered
     return files.put(
         name="Write Home Assistant Traefik route",
         src=StringIO(body.get_secret_value()),

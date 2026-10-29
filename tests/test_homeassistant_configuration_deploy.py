@@ -342,3 +342,53 @@ def test_new_custom_or_overridden_stock_include_uses_exact_protected_body(
     ops, _ = execute(cfg, policy, include_files=(filename,), include_rendered={filename: SecretStr("later body")})
     assert not any(op.changed for op in ops)
     assert snapshot(root) == before
+
+
+@pytest.mark.parametrize(("existing", "overwrite"), [(False, False), (True, False), (True, True)])
+def test_lazy_original_renderer_runs_once_after_existence_guard(
+    tmp_path: Path, existing: bool, overwrite: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = config(tmp_path)
+    root = Path(cfg.config_path)
+    root.mkdir()
+    path = root / "owned-custom.yaml"
+    if existing:
+        path.write_text("retained: true\n")
+    calls = []
+    body = "owned_marker: protected-lazy-5921\n"
+
+    def render(filename: str) -> SecretStr:
+        calls.append(filename)
+        return SecretStr(body)
+
+    ops, _ = execute(
+        cfg,
+        ConfigurationPolicy(manage_includes=True, overwrite_config=overwrite),
+        include_files=(path.name,),
+        include_renderer=render,
+    )
+    selected = not existing or overwrite
+    assert calls == ([path.name] if selected else [])
+    assert path.read_text() == (body if selected else "retained: true\n")
+    assert sum(op.changed for op in ops) == int(selected)
+    assert body.strip() not in caplog.text
+
+
+def test_disabled_include_renderer_and_explicit_body_precedence(tmp_path: Path) -> None:
+    def fail(filename: str) -> SecretStr:
+        raise AssertionError("unselected renderer invoked")
+
+    cfg = config(tmp_path)
+    root = Path(cfg.config_path)
+    root.mkdir()
+    ops, _ = execute(cfg, ConfigurationPolicy(), include_renderer=fail)
+    assert not ops
+    ops, _ = execute(
+        cfg,
+        ConfigurationPolicy(manage_includes=True),
+        include_files=("owned.yaml",),
+        include_renderer=fail,
+        include_rendered={"owned.yaml": SecretStr("explicit: true\n")},
+    )
+    assert sum(op.changed for op in ops) == 1
+    assert (root / "owned.yaml").read_text() == "explicit: true\n"

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any, Self
 
-from pydantic import Field, SecretStr, StrictBool, StrictInt, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, StrictBool, StrictInt, model_validator
 
 from ops_deploy.base._common import RoleConfig
 
@@ -61,6 +62,21 @@ class AssistSelection(RoleConfig):
 
 
 class HomeAssistantDeployConfig(RoleConfig):
+    _include_renderer: Callable[[str], SecretStr] | None = PrivateAttr(default=None)
+    _ingress_renderer: Callable[[], SecretStr] | None = PrivateAttr(default=None)
+
+    def with_template_renderers(
+        self,
+        *,
+        include: Callable[[str], SecretStr] | None = None,
+        ingress: Callable[[], SecretStr] | None = None,
+    ) -> Self:
+        """Attach protected lazy controller callbacks without serializing context."""
+        result = self.model_copy()
+        result._include_renderer = include
+        result._ingress_renderer = ingress
+        return result
+
     runtime: HomeAssistantRuntimeConfig = Field(default_factory=HomeAssistantRuntimeConfig)
     configuration: ConfigurationPolicy = Field(default_factory=ConfigurationPolicy)
     values: ConfigurationValues = Field(default_factory=ConfigurationValues)

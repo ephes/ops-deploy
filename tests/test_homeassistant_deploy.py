@@ -481,3 +481,40 @@ def test_full_deploy_passes_protected_include_body_mapping(monkeypatch: pytest.M
     module.deploy_homeassistant.__wrapped__(cfg=cfg)
     assert captured == [(cfg.include_files, cfg.include_rendered)]
     assert "owned-protected-body-391" not in repr(cfg)
+
+
+def test_full_deploy_protected_lazy_callbacks_are_not_serialized_or_eagerly_called(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic import SecretStr
+
+    stub_composition(monkeypatch)
+    observed = {}
+
+    def include(filename: str) -> SecretStr:
+        raise AssertionError("callback must remain lazy until selected file task")
+
+    def ingress() -> SecretStr:
+        raise AssertionError("callback must remain lazy until enabled ingress task")
+
+    def configure(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        observed["include"] = kwargs["include_renderer"]
+        return SimpleNamespace(homeassistant_changed=lambda: False)
+
+    def write(*args: Any, **kwargs: Any) -> None:
+        observed["ingress"] = kwargs["rendered"]
+
+    monkeypatch.setattr(module, "configure_files", configure)
+    monkeypatch.setattr(module, "write_ingress", write)
+    original = HomeAssistantDeployConfig()
+    cfg = original.with_template_renderers(include=include, ingress=ingress)
+    assert original._include_renderer is None
+    assert original._ingress_renderer is None
+    assert cfg.model_dump() == original.model_dump()
+    assert cfg.model_dump_json() == original.model_dump_json()
+    assert repr(cfg) == repr(original)
+    module.deploy_homeassistant.__wrapped__(cfg=cfg)
+    assert observed == {"include": include, "ingress": ingress}
+    copied = cfg.model_copy(update={"additional_packages": ()})
+    assert copied._include_renderer is include
+    assert copied._ingress_renderer is ingress

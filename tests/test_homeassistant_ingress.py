@@ -113,3 +113,24 @@ def test_disabled_and_selected_rendered_override() -> None:
     assert run.succeeded
     assert run.uploads == [(cfg.dynamic_dir + "/homeassistant.yml", body.get_secret_value().encode())]
     assert not any("systemctl" in command for command in run.executed_commands)
+
+
+def test_disabled_ingress_does_not_call_original_renderer() -> None:
+    def fail() -> SecretStr:
+        raise AssertionError("unselected original renderer")
+
+    result = run_deploy_fake(write_ingress, HomeAssistantIngressConfig(enabled=False), rendered=fail)
+    assert result.succeeded
+    assert not result.ops
+
+
+def test_selected_ingress_calls_original_renderer_once() -> None:
+    calls = []
+
+    def render() -> SecretStr:
+        calls.append(True)
+        return SecretStr("http:\n  routers: {}\n")
+
+    result = run_deploy_fake(write_ingress, HomeAssistantIngressConfig(), rendered=render)
+    assert result.succeeded
+    assert calls == [True]
