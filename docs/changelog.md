@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add confirmed DNS removal and complete the source-backed Traefik restore/remove
+  lifecycle APIs with literal custom paths, transaction refusal, nonmutating
+  archive validation and original ACME-only/default staging semantics. Preserve
+  original cleanup tolerance and private force/keep flag behavior. Owned native
+  component evidence is separate from inventory lifecycle qualification.
+
 - `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
   `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
   render `PasswordAuthentication` and `PermitRootLogin` into the same sshd
