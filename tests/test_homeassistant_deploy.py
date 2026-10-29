@@ -29,6 +29,7 @@ def test_original_defaults_and_dependent_inputs() -> None:
     original = yaml.safe_load(fixture.read_text())
     cfg = HomeAssistantDeployConfig()
     assert cfg.additional_packages == tuple(original["homeassistant_additional_packages"])
+    assert cfg.include_files == tuple(original["homeassistant_include_files"])
     assert cfg.runtime.python_version == original["homeassistant_python_version"]
     assert cfg.runtime.package_spec == original["homeassistant_package_spec"]
     assert cfg.custom.enabled == original["homeassistant_custom_conversation_enabled"]
@@ -387,3 +388,20 @@ def test_root_exports_exact_reviewed_composition() -> None:
 
     assert ExportedConfig is HomeAssistantDeployConfig
     assert deploy_homeassistant is module.deploy_homeassistant
+
+
+@pytest.mark.parametrize("names", [(), ("scenes.yaml",), ("scripts.yaml", "automations.yaml")])
+def test_original_include_selection_reaches_full_deployment(
+    names: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_composition(monkeypatch)
+    observed: list[tuple[str, ...]] = []
+
+    def configure(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        observed.append(kwargs["include_files"])
+        return SimpleNamespace(homeassistant_changed=lambda: False)
+
+    monkeypatch.setattr(module, "configure_files", configure)
+    cfg = HomeAssistantDeployConfig(include_files=names)
+    module.deploy_homeassistant._inner(cfg=cfg)
+    assert observed == [names]

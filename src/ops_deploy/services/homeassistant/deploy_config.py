@@ -12,7 +12,7 @@ from ops_deploy.base._common import RoleConfig
 
 from .builtin_conversation import BuiltinConversationConfig
 from .configuration import ConfigurationPolicy
-from .configuration_deploy import UnifiSecretSource
+from .configuration_deploy import INCLUDES, UnifiSecretSource
 from .configuration_render import ConfigurationSecretExamples, ConfigurationValues
 from .custom_component import CustomComponentConfig
 from .custom_conversation import CustomConversationConfig
@@ -68,6 +68,7 @@ class HomeAssistantDeployConfig(RoleConfig):
     secret_examples: ConfigurationSecretExamples = Field(default_factory=ConfigurationSecretExamples)
     ingress: HomeAssistantIngressConfig = Field(default_factory=HomeAssistantIngressConfig)
     ingress_rendered: SecretStr | None = None
+    include_files: tuple[str, ...] = INCLUDES
     api: HomeAssistantApiConfig = Field(default_factory=HomeAssistantApiConfig)
     additional_packages: tuple[str, ...] = (
         "build-essential",

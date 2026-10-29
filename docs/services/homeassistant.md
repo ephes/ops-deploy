@@ -815,3 +815,9 @@ separate constraints-file write, security preflight or post-install checks.
 Application specifications and the suffix are parsed together with shell-style
 quoting, then executed as quoted argv without evaluating shell substitutions.
 This closes source input parity only; it adds no native or inventory evidence.
+
+The full prepared deployment also forwards `include_files` to the existing
+configuration component. Its original six-file default, explicit empty list,
+subset and order are retained. Selected stock templates use their original
+packaged bytes. Arbitrary controller-template lookup remains a separate original
+override gap; this list forwarding does not claim that lookup is implemented.

@@ -199,7 +199,13 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     if not values.internal_url and cfg.api.default_ipv4 is not None:
         values = values.model_copy(update={"internal_url": f"http://{cfg.api.default_ipv4}:{values.app_port}"})
     configuration = configure_files(
-        runtime, cfg.configuration, values, unifi=cfg.unifi, examples=cfg.secret_examples, deferred=True
+        runtime,
+        cfg.configuration,
+        values,
+        unifi=cfg.unifi,
+        examples=cfg.secret_examples,
+        include_files=cfg.include_files,
+        deferred=True,
     )
     pending.homeassistant.append(configuration.homeassistant_changed)
     if cfg.builtin_enabled:

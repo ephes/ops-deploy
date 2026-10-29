@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Home Assistant full prepared deployment now forwards the original include-file
+  selection, retaining explicit empty/subset/order overrides and the stock six-file
+  default. Arbitrary controller-template resolution remains separate work.
+
 - Home Assistant prepared runtime preserves independent original constraint
   argv and command-string overrides, including explicit empty inputs and the
   dependency between their defaults. Security-file writes and checks remain
