@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `daybook_voice_memo_attention`: add the original disabled-only wheel component, preserving the exact
+  Python patch/root environment, separate GUI-owner isolated import, original
+  launchd declaration and successful-wheel receipt. Application import remains
+  managed repeat work; source tests are separate from native/inventory proof.
+
 - `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
   `srs_enabled` the deploy picks the layout by postsrsd's installed major (else
   apt's candidate; a read-only check after the install refuses a different

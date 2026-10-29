@@ -1,0 +1,16 @@
+{
+  "daybook_voice_memo_attention_enabled": false,
+  "daybook_voice_memo_attention_service_user": "CHANGEME",
+  "daybook_voice_memo_attention_service_home": "/Users/{{ daybook_voice_memo_attention_service_user }}",
+  "daybook_voice_memo_attention_wheel_src": "CHANGEME",
+  "daybook_voice_memo_attention_install_root": "/Library/Application Support/Daybook/voice-memo-attention",
+  "daybook_voice_memo_attention_venv": "{{ daybook_voice_memo_attention_install_root }}/venv",
+  "daybook_voice_memo_attention_uv_bin": "/opt/homebrew/bin/uv",
+  "daybook_voice_memo_attention_python_version": "3.14.7",
+  "daybook_voice_memo_attention_python_install_dir": "/Library/Application Support/Daybook/python",
+  "daybook_voice_memo_attention_runtime_dir": "{{ daybook_voice_memo_attention_service_home }}/.local/state/daybook/voice-memo-attention",
+  "daybook_voice_memo_attention_config_path": "{{ daybook_voice_memo_attention_runtime_dir }}/config.json",
+  "daybook_voice_memo_attention_config": {},
+  "daybook_voice_memo_attention_launchd_label": "de.wersdoerfer.daybook.voice-memo-attention",
+  "daybook_voice_memo_attention_plist_path": "{{ daybook_voice_memo_attention_service_home }}/Library/LaunchAgents/{{ daybook_voice_memo_attention_launchd_label }}.plist"
+}
