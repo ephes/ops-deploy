@@ -1,0 +1,30 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart homeassistant
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_service_name }}"
+    state: restarted
+    enabled: true
+  when: homeassistant_restart_on_change
+
+- name: restart matter server
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_matter_server_service_name }}"
+    state: restarted
+    enabled: true
+  when: homeassistant_matter_server_restart_on_change | bool
+
+- name: reload udev rules
+  ansible.builtin.command: udevadm control --reload-rules
+  when: homeassistant_enable_udev_rule
+
+- name: trigger udev
+  ansible.builtin.command: udevadm trigger --subsystem-match=tty
+  when: homeassistant_enable_udev_rule
+
+- name: reload traefik config
+  ansible.builtin.debug:
+    msg: "Traefik watches dynamic configs automatically"

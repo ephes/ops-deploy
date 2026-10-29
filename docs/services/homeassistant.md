@@ -735,3 +735,47 @@ different host fails during registration, before target inspection or execution.
 Inspect transport loss is reported through a failed SDK callback, so the failed
 host is accounted for and unrelated hosts can continue. Owned controls cover
 separate-host selections and successful service-user STT wait before updates.
+
+### Normal deployment composition (prepared)
+
+`HomeAssistantDeployConfig` and `deploy_homeassistant`, exported from
+`ops_deploy.services.homeassistant`, now compose the original normal role's components.
+This source is awaiting full owned application qualification and is not yet
+selected by private service metadata. It does not qualify hardware, Thread/radio
+state, model services or backup/restore/remove.
+
+The configuration combines `runtime`, file ownership `configuration`, rendered
+`values`, `unifi`, `secret_examples`, `ingress` and `api` with the original selected
+area/integration/conversation/pipeline branches. Declared pipeline and area JSON
+are `SecretStr` values; selected runtime IDs remain in invocation memory.
+`values.app_port` supplies omitted API/ingress defaults, and the configured Matter
+port supplies the omitted integration URL. An omitted default IPv4 in API or ingress derives from the other component,
+matching the original single default-route fact; explicit overrides remain unchanged.
+Explicit endpoints remain unchanged.
+The default package remains the original unpinned `homeassistant`; an actual
+inventory pin is not silently supplied by this public API. Built-in conversation
+retains the original pinned Core >=2026.10.2 requirement and active canary.
+
+The deployment preserves environment/unit/system trust admission, the existing
+UV prerequisite, packages/account/layout/UV/constraints, legacy retirement before
+Python replacement, security verification, configuration, units/ingress/service
+state, areas and three simple flows. Custom component installation and built-in
+conversation each retain their original handler flush/readiness-reset boundary.
+Only notifications pending at a boundary can restart services; later flushes do
+not reuse earlier callbacks. Matter import checks and running trust verification
+remain after the final applicable handlers. Application checks execute as the
+service user and retain raw output only transiently, reporting fixed failure
+messages. Their controller ceiling is 3600 seconds; timeout does not prove remote
+quiescence or zero effects.
+
+Planning reads the original named metadata prerequisites/selection, without
+calling an application API or a conversation model. The legacy metadata search
+remains scoped to the configured virtualenv/lib; custom selection returns only
+the named registry's domain count. No unrelated registry body or entry ID is
+exported. New installation prerequisites defer dependent Python/configuration
+inspection until execution; raw plan rows can therefore remain unresolved.
+
+Normal repeat is deliberately **not** described as zero managed work: the original
+apt refresh, extra-package resolution, desired-state daemon reload and selected
+conversation canary remain actual operations. Read-only status marking describes
+managed configuration ownership, not global I/O or background service effects.

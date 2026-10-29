@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prepare full Home Assistant normal-role composition with original selected
+  integrations, legacy retirement, trust checks, active canaries and consumed
+  handler notifications. Full owned application/native qualification is pending;
+  managed refresh/resolution/reload work is retained, not labelled a zero repeat.
+
 - Compose prepared Home Assistant pipeline selection, conditional readiness,
   service-user STT wait and protected protocol operations with API-free planning
   and drift-only writes; retain original voice/list differences and partial errors.
