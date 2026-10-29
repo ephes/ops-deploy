@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare Home Assistant's separate UV trust-maintenance sequence, preserving
+  existing-unit admission, changed-drop-in restart, HTTP health and final running
+  trust verification. Private/native qualification remains separate.
+
 - Home Assistant full prepared deployment now forwards the original include-file
   selection, retaining explicit empty/subset/order overrides and the stock six-file
   default. Arbitrary controller-template resolution remains separate work.

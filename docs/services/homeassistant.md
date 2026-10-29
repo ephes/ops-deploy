@@ -821,3 +821,17 @@ configuration component. Its original six-file default, explicit empty list,
 subset and order are retained. Selected stock templates use their original
 packaged bytes. Arbitrary controller-template lookup remains a separate original
 override gap; this list forwarding does not claim that lookup is implemented.
+
+## Prepared standalone trust maintenance
+
+`trust_maintenance.maintain_homeassistant_trust` implements the original separate
+`uv_system_certs.yml` task sequence. It requires enabled management and an existing
+acceptable unit, checks the system trust store, writes only the managed drop-in,
+restarts with daemon reload only when that file changed, waits for the configured
+health URL (HTTP200, certificate validation disabled, original retry/delay), and
+verifies the running service. It does not run normal package/configuration tasks.
+Health and final running checks execute even when the drop-in is already current;
+planning performs only the original unit/store admission. URL/credential/body data
+stay protected, and only logical request counts/status leave the health helper.
+This is source preparation; owned systemd/native qualification and private command
+binding remain separate work. No production restart is performed merely for proof.

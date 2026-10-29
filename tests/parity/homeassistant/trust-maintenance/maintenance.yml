@@ -1,0 +1,49 @@
+---
+# Maintenance entry point (tasks_from: uv_system_certs.yml) for an existing,
+# running Home Assistant: apply only the managed UV_SYSTEM_CERTS=1 drop-in,
+# restart when it changed, wait for health and verify the running service.
+# Nothing else of the role runs: no packages, sources, versions or config.
+- name: uv_system_certs | Require the feature to be enabled
+  ansible.builtin.assert:
+    that:
+      - homeassistant_uv_system_certs | bool
+    fail_msg: homeassistant_uv_system_certs is false; nothing to apply.
+    quiet: true
+
+- name: uv_system_certs | Check the existing unit before any change
+  ansible.builtin.include_tasks: uv_system_certs_check.yml
+  vars:
+    _ha_uv_certs_mode: preflight
+
+- name: uv_system_certs | Check the system CA store the drop-in points uv at
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: system_store.yml
+
+- name: uv_system_certs | Install the managed drop-in
+  ansible.builtin.include_tasks: uv_system_certs_dropin.yml
+
+- name: uv_system_certs | Restart Home Assistant for the new drop-in
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when: _ha_uv_certs_dropin is changed
+  become: true
+
+- name: uv_system_certs | Wait for Home Assistant
+  ansible.builtin.uri:
+    url: "{{ homeassistant_uv_system_certs_health_url }}"
+    status_code: 200
+    validate_certs: false
+  register: _ha_uv_certs_health
+  retries: "{{ homeassistant_uv_system_certs_health_retries }}"
+  delay: "{{ homeassistant_uv_system_certs_health_delay }}"
+  until: _ha_uv_certs_health.status == 200
+  when: not ansible_check_mode
+
+- name: uv_system_certs | Verify the running service
+  ansible.builtin.include_tasks: uv_system_certs_check.yml
+  vars:
+    _ha_uv_certs_mode: verify
+  when: not ansible_check_mode
