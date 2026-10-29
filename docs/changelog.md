@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare Home Assistant virtualenv replacement with execution-time interpreter
+  observation, original service stop/create ordering and explicit partial-failure
+  behavior. This component is not yet an exported or native-qualified deploy.
+
 - Begin the Home Assistant configuration ownership port with the original
   overwrite/include/secret guards and exact generated-block cleanup ordering.
   Preserve physical runtime path derivations and original HA/Matter units.

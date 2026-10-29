@@ -166,3 +166,26 @@ and container are removed afterward. These are typed filesystem primitive tests,
 not execution of the complete original Ansible role or native Home Assistant,
 Matter, radio or inventory qualification. Caller sequencing and full native
 application/lifecycle proof remain unfinished.
+
+### Prepared virtualenv replacement
+
+The unexported environment component resolves the selected interpreter and reads
+Python/pip/legacy-package state again at execution, after the requested Python
+installation. It preserves Matter-before-HA stopping for an existing HA
+environment, including an old Matter unit when Matter management is disabled.
+The missing-Python case preserves the original no-stop path. Removal handles
+files, links and directories; creation uses the original service user, HOME,
+site working directory, implicit HA `.venv` and explicit Matter destination.
+Cold plans with a known pending creation prerequisite expose an unresolved
+creation row; execution always performs the real observation. A failed creation
+after stopping/removal remains failed with those partial effects, with no
+automatic restart or invented rollback. SDK sequencing tests use synthetic
+facts; real HA/Matter replacement and recovery remain in the future native
+matrix. Package installation, record/link/ownership composition and deployment
+entry point are still being implemented.
+
+The caller passes the actual preceding `install_python` operation as
+`python_install` to `prepare_environment`. A planned Python installation thus
+makes environment planning explicitly unresolved even when user and UV already
+exist; it is not misclassified as an unavailable prerequisite. Execution still
+fails before any stop/removal if the requested interpreter remains unavailable.
