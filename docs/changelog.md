@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Prepare Home Assistant named-storage pipeline selection with protected
+  controller input/output, original discovery/default rules and no registry writes.
+
 - Prepare Home Assistant standalone STT/TTS protocol updates while preserving
   conversation/wake/preferred fields and retaining partial-error effects.
 

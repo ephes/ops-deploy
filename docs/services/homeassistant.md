@@ -501,3 +501,15 @@ pipeline. Owned original-inline comparisons cover both flags, current state and
 failed-after-effect updates. The original storage-based target/engine resolution
 and STT entity wait (TTS explicitly skips that wait) are still required outer
 work; these protocol tests do not stand in for those prerequisites.
+
+The prepared host-local state reader now selects desired definitions and the
+standalone voice target from only the three named storage files. It preserves
+first exact Wyoming host/port and entity selection, undefined-versus-empty engine
+semantics, boolean conversion, preferred-target/language fallbacks and original
+entity-file existence requirements. Explicit built-in conversation selection
+still requires its active canary outside check mode. The root-context reader
+returns only selected operational fields over suppressed output into a masked
+controller value; complete registry bodies remain on the host. It performs no
+API requests or storage writes. Original HTTP readiness, enabled outer stages,
+STT wait and service-user protocol composition are still unfinished. These
+owned storage/expression controls are not native or inventory qualification.
