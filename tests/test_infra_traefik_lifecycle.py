@@ -1,5 +1,7 @@
 """Traefik backup, restore and removal against the fake connector."""
 
+import json
+import shlex
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -16,6 +18,7 @@ from ops_deploy.infra import (
     deploy_traefik_restore,
 )
 from ops_deploy.infra.traefik_backup import _canonical, _dynamic_tree_check, _resolved_paths
+from ops_deploy.infra.traefik_lifecycle_state import NAMES_SCRIPT, PATH_SCRIPT
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -83,7 +86,27 @@ def test_backup_is_allowed_on_transaction_managed_hosts() -> None:
 
 
 def restore(cfg: TraefikRestoreConfig, responses: dict[str, Any]) -> FakeRun:
-    return run_deploy_fake(deploy_traefik_restore, cfg, responses=responses)
+    from ops_deploy.infra.traefik_backup import RESTORE_SCRIPT
+
+    command = shlex.join(["python3", "-I", "-c", RESTORE_SCRIPT]) + " validate"
+    selected = None
+    if cfg.archive == "latest" and responses.get("find /opt/backups/traefik -maxdepth 1"):
+        selected = "/opt/backups/traefik/manual-2.tar.gz"
+    elif cfg.archive != "latest":
+        candidate = cfg.archive if cfg.archive.startswith("/") else cfg.root + "/" + cfg.archive
+        if responses.get("test -e " + candidate):
+            selected = candidate
+    metadata = {
+        shlex.join(["python3", "-I", "-c", PATH_SCRIPT, "/var/lib/traefik-transactions"]): [
+            json.dumps(
+                {"mode": 0o40700, "uid": 0, "gid": 0}
+                if responses.get("test -e /var/lib/traefik-transactions")
+                else None
+            )
+        ],
+        command: [json.dumps({"valid": True, "archive": selected})] if selected else ["ops-deploy-probe-failed"],
+    }
+    return run_deploy_fake(deploy_traefik_restore, cfg, responses={**responses, **metadata})
 
 
 LATEST = {"find /opt/backups/traefik -maxdepth 1": ["1760000000.5 /opt/backups/traefik/manual-2.tar.gz"]}
@@ -94,33 +117,31 @@ def test_restore_of_latest_archive_puts_acme_back() -> None:
 
     assert result.succeeded, result.error
     (script,) = result.executed_commands
-    assert script.startswith(
-        "set -e; rm -rf /tmp/traefik-restore; trap 'rm -rf /tmp/traefik-restore' EXIT; "
-        "mkdir -m 0700 /tmp/traefik-restore; tar -xzf /opt/backups/traefik/manual-2.tar.gz -C /tmp/traefik-restore; "
-    )
-    # The EXIT trap removes the staging directory whether the restore succeeds or fails.
-    assert script.rstrip().endswith(
-        'install -o root -g root -m 0600 "$payload"/acme/acme.json /etc/traefik/acme/acme.json;'
-    )
+    assert script.endswith(" apply")
+    # Real archive validation/publication and strict repeat are exercised by
+    # test_traefik_restore_host against synthetic filesystem state.
+    payload = json.loads(result.stdin[-1][1])
+    assert payload["archive"] == "/opt/backups/traefik/manual-2.tar.gz"
+    assert payload["include_acme"] is True
 
 
 def test_restore_without_acme_restores_nothing() -> None:
     result = restore(TraefikRestoreConfig(), LATEST)
 
     assert result.succeeded, result.error
-    assert "acme.json" not in result.executed_commands[0]
+    assert json.loads(result.stdin[-1][1])["include_acme"] is False
 
 
 def test_restore_of_named_archive_must_exist() -> None:
     cfg = TraefikRestoreConfig(archive="manual-1.tar.gz")
 
-    assert "archive not found: /opt/backups/traefik/manual-1.tar.gz" in str(restore(cfg, {}).error)
+    assert "validation failed before mutation" in str(restore(cfg, {}).error)
     found = restore(cfg, {"test -e /opt/backups/traefik/manual-1.tar.gz": ["yes"]})
-    assert "tar -xzf /opt/backups/traefik/manual-1.tar.gz" in found.executed_commands[0]
+    assert json.loads(found.stdin[-1][1])["archive"] == "/opt/backups/traefik/manual-1.tar.gz"
 
 
 def test_restore_without_archives_is_refused() -> None:
-    assert "no Traefik backup archives" in str(restore(TraefikRestoreConfig(), {}).error)
+    assert "validation failed before mutation" in str(restore(TraefikRestoreConfig(), {}).error)
 
 
 @pytest.mark.parametrize("enrolled", [True, False])
@@ -171,7 +192,30 @@ CONFIRMED = TraefikRemoveConfig(confirm=True)
 
 
 def remove(cfg: TraefikRemoveConfig, responses: dict[str, Any]) -> FakeRun:
-    return run_deploy_fake(deploy_traefik_remove, cfg, responses=responses)
+    # Explicit metadata answers replace the legacy test-e/find answers. Unknown
+    # product queries still receive no answer and must refuse, never mean absent.
+    metadata: dict[str, Any] = {}
+    paths = [
+        "/var/lib/traefik-transactions",
+        cfg.binary_path,
+        cfg.config_dir,
+        cfg.log_dir,
+        cfg.static_config or f"{cfg.config_dir}/traefik.toml",
+        cfg.dynamic_dir or f"{cfg.config_dir}/dynamic",
+        cfg.acme_dir or f"{cfg.config_dir}/acme",
+        f"/etc/systemd/system/{cfg.service_name}.service",
+        "/etc/logrotate.d/traefik",
+    ]
+    for path in paths:
+        present = any(k.startswith(f"test -e {path}") and v for k, v in responses.items())
+        value = {"uid": 0, "gid": 0, "mode": 0o100600} if present else None
+        metadata[shlex.join(["python3", "-I", "-c", PATH_SCRIPT, path])] = [json.dumps(value)]
+    for path in [cfg.config_dir, "/tmp"]:
+        listed = responses.get(f"find {path} -mindepth 1", [])
+        metadata[shlex.join(["python3", "-I", "-c", NAMES_SCRIPT, path])] = [
+            json.dumps([Path(name).name for name in listed])
+        ]
+    return run_deploy_fake(deploy_traefik_remove, cfg, responses={**responses, **metadata})
 
 
 def test_removal_keeps_routes_and_certificates_by_default() -> None:
@@ -187,8 +231,8 @@ def test_removal_keeps_routes_and_certificates_by_default() -> None:
         "rm -rf /etc/traefik/traefik.toml",
         "rm -rf /var/log/traefik",
         "rm -rf /etc/logrotate.d/traefik",
-        "ufw delete allow 80/tcp",
-        "ufw delete allow 443/tcp",
+        "ufw delete allow 80/tcp || true",
+        "ufw delete allow 443/tcp || true",
         "rm -rf /tmp/traefik-restore",
     ]
 
@@ -248,3 +292,58 @@ def test_removal_refuses_transaction_managed_hosts(enrolled: bool) -> None:
 
     assert "guarded Traefik transaction workflow" in str(result.error)
     assert result.executed_commands == []
+
+
+def test_optional_restore_mount_is_checked_with_bash_before_archive_validation() -> None:
+    from ops_deploy.services._lifecycle.local_backup import mount_check
+
+    cfg = TraefikRestoreConfig(required_mount="/owned-mount", staging_dir="/owned-mount/stage", dry_run=True)
+    assert cfg.required_mount is not None
+    command = shlex.join(["bash", "-c", mount_check(cfg.required_mount, cfg.staging_dir)])
+    result = restore(cfg, {**LATEST, command: ["mounted"]})
+    assert result.succeeded, result.error
+    assert not result.uploads
+    assert all(op.read_only for op in result.ops)
+    assert any(command in event.value for event in result.events if event.kind == "fact")
+    refused = restore(cfg, {**LATEST, command: ["ops-deploy-probe-failed"]})
+    assert not refused.succeeded
+    assert "required restore mount is unavailable" in str(refused.error)
+    assert not refused.executed_commands
+    assert not refused.uploads
+
+
+@pytest.mark.parametrize("archive", ["../elsewhere.tar.gz", "child/../../elsewhere.zip"])
+def test_relative_restore_archive_must_stay_below_root(archive: str) -> None:
+    with pytest.raises(ValueError, match="below the backup root"):
+        TraefikRestoreConfig(archive=archive)
+
+
+@pytest.mark.parametrize(
+    "path", ["/usr/local/bin", "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/etc/systemd", "/etc/systemd/system"]
+)
+def test_traefik_remove_refuses_shared_executable_and_unit_roots(path: str) -> None:
+    with pytest.raises(ValueError, match="declared Traefik resource"):
+        TraefikRemoveConfig(confirm=True, binary_path=path)
+
+
+def test_service_name_keeps_original_literal_unit_file_suffix_contract() -> None:
+    # Original role writes {{ traefik_service_name }}.service literally even
+    # when an operator supplied an existing suffix; systemctl normalizes control.
+    cfg = TraefikRemoveConfig(confirm=True, service_name="custom.service")
+    result = remove(
+        cfg,
+        {
+            "cat /proc/1/comm": ["systemd"],
+            "for unit in custom.service": [
+                "Id=custom.service",
+                "LoadState=loaded",
+                "ActiveState=active",
+                "UnitFileState=enabled",
+                "---",
+            ],
+            **fakehost.file("/etc/systemd/system/custom.service.service", "owned unit"),
+        },
+    )
+    assert result.succeeded, result.error
+    assert "systemctl stop custom.service || true" in result.executed_commands
+    assert "rm -f /etc/systemd/system/custom.service.service" in result.executed_commands

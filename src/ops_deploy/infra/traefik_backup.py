@@ -7,8 +7,8 @@ the containing directory and archive stay private even without ACME.
 
 Only regular files/directories are supported for dynamic snapshots: symlinks
 and special entries refuse rather than follow data outside the selected tree.
-Restore is unchanged, ACME-only, has no dry-run contract and refuses
-transaction-managed hosts. It never publishes archived dynamic routes.
+Restore remains ACME-only and refuses transaction-managed hosts. Its explicit
+dry_run path validates without staging or publication. It never publishes archived dynamic routes.
 
 ``required_mount`` keeps the backup root (and the restore's staging
 directory) on an external disk and ``retain_count``/``retain_days`` limit the
@@ -19,6 +19,7 @@ fails.
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import stat
@@ -26,14 +27,14 @@ from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Self
 
-from pydantic import Field, model_validator
-from pyinfra import host
+from pydantic import BeforeValidator, Field, field_validator, model_validator
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, python, server
 
 from ops_deploy.base._common import AbsolutePath, output
+from ops_deploy.helpers.probes import probe, stdin_arguments, verify_probe
 from ops_deploy.infra._common import directory
-from ops_deploy.infra.traefik_deploy import refuse_transaction_managed
+from ops_deploy.infra.traefik_lifecycle_state import refuse_managed
 from ops_deploy.services._lifecycle.local_backup import (
     MountGuard,
     SnapshotRetention,
@@ -44,7 +45,22 @@ from ops_deploy.services._lifecycle.local_backup import (
 
 Prefix = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
 # An archive name below the backup root, or an absolute path.
-ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._/+-]+\.tar\.gz)$")]
+ArchiveName = Annotated[str, Field(pattern=r"^(latest|/?[A-Za-z0-9._/+-]+)$")]
+
+
+def _mode_input(value: object) -> object:
+    return format(value, "04o") if type(value) is int else value
+
+
+Mode = Annotated[str, BeforeValidator(_mode_input), Field(pattern=r"^0?[0-7]{3}$")]
+
+
+def _identity_input(value: object) -> object:
+    return str(value) if type(value) is int else value
+
+
+Identity = Annotated[str, BeforeValidator(_identity_input), Field(pattern=r"^(?:[a-z_][a-z0-9_-]*|[0-9]+)$")]
+RESTORE_SCRIPT = (Path(__file__).parent / "files/traefik_restore_host.py").read_text()
 
 
 class TraefikBackupConfig(SnapshotRetention):
@@ -78,10 +94,38 @@ class TraefikRestoreConfig(MountGuard):
     archive: ArchiveName = "latest"
     root: AbsolutePath = "/opt/backups/traefik"
     staging_dir: AbsolutePath = "/tmp/traefik-restore"
+    staging_mode: Mode = "0700"
+    archive_extension: Annotated[str, Field(pattern=r"^[A-Za-z0-9.]+$")] = "tar.gz"
+    dry_run: bool = False
     acme_path: AbsolutePath = "/etc/traefik/acme/acme.json"
+    acme_dir: AbsolutePath | None = None
+    acme_owner: Identity = "root"
+    acme_group: Identity = "root"
+    acme_dir_mode: Mode = "0700"
+    acme_mode: Mode = "0600"
     include_acme: bool = False
     # Transaction-managed hosts are refused, as by the role.
     transaction_required: bool = False
+
+    @field_validator("archive")
+    @classmethod
+    def bounded_archive(cls, value: str) -> str:
+        if not value.startswith("/") and ".." in PurePosixPath(value).parts:
+            raise ValueError("Relative archive names must stay below the backup root")
+        return value
+
+    @field_validator("root", "staging_dir", "acme_path", "acme_dir")
+    @classmethod
+    def canonical_path(cls, value: str | None) -> str | None:
+        if value is not None and ".." in PurePosixPath(value).parts:
+            raise ValueError("Traefik restore paths cannot contain parent traversal")
+        return str(PurePosixPath(value)) if value is not None else None
+
+    @model_validator(mode="after")
+    def bounded_staging(self) -> Self:
+        if self.staging_dir in {"/", "/tmp", "/etc", "/var", "/var/lib"}:
+            raise ValueError("staging_dir must identify the declared restore work directory")
+        return self
 
     def guarded_paths(self) -> dict[str, str]:
         return {"staging_dir": self.staging_dir}
@@ -256,51 +300,50 @@ def deploy_traefik_backup(cfg: TraefikBackupConfig) -> None:
         )
 
 
-def _selected_archive(cfg: TraefikRestoreConfig) -> str:
-    if cfg.archive != "latest":
-        path = cfg.archive if cfg.archive.startswith("/") else f"{cfg.root}/{cfg.archive}"
-        if not _exists(path):
-            raise DeployError(f"traefik_restore: archive not found: {path}")
-        return path
-    newest = output(
-        f"find {shlex.quote(cfg.root)} -maxdepth 1 -type f -name '*.tar.gz' -printf '%T@ %p\\n' | sort -rn | head -n 1"
-    ).strip()
-    if not newest:
-        raise DeployError(f"traefik_restore: no Traefik backup archives found in {cfg.root}")
-    return newest.partition(" ")[2]
-
-
 @deploy("Traefik restore")
 def deploy_traefik_restore(cfg: TraefikRestoreConfig) -> None:
-    """Unpack a backup archive in ``staging_dir`` and put its ACME state back."""
+    """Validate without writes, or stage/restore only the source ACME payload.
 
-    refuse_transaction_managed(cfg.transaction_required, "traefik_restore")
-    archive = _selected_archive(cfg)
-    if cfg.required_mount:
-        server.shell(
-            name=f"Check {cfg.required_mount} is mounted",
-            commands=[mount_check(cfg.required_mount, cfg.staging_dir)],
-            _shell_executable="bash",
+    Normal staging/extraction/cleanup is transient managed work even with
+    include_acme=false. Only the explicit dry_run path is nonmutating.
+    """
+    refuse_managed(cfg.transaction_required, "traefik_restore")
+    if (
+        cfg.required_mount
+        and probe(
+            shlex.join(["bash", "-c", mount_check(cfg.required_mount, cfg.staging_dir)]),
+            name="Traefik restore required mount",
         )
-    staging = shlex.quote(cfg.staging_dir)
-    acme = PurePosixPath(cfg.acme_path)
-    put_back = ""
-    if cfg.include_acme:
-        source = f'"$payload"/acme/{shlex.quote(acme.name)}'
-        put_back = (
-            f'[ -f {source} ] || {{ echo "ACME state file not found in archive payload" >&2; exit 1; }}; '
-            f"install -d -o root -g root -m 0700 {shlex.quote(str(acme.parent))}; "
-            f"install -o root -g root -m 0600 {source} {shlex.quote(cfg.acme_path)}; "
-        )
-    server.shell(
-        name=f"Restore from {archive}",
-        commands=[
-            f"set -e; rm -rf {staging}; trap {shlex.quote(f'rm -rf {staging}')} EXIT; mkdir -m 0700 {staging}; "
-            f"tar -xzf {shlex.quote(archive)} -C {staging}; "
-            f"payload=$(find {staging} -mindepth 1 -maxdepth 1 -type d | head -n 1); "
-            '[ -n "$payload" ] || { echo "no payload directory in the archive" >&2; exit 1; }; '
-            f"{put_back}"
-        ],
+        is None
+    ):
+        raise DeployError("traefik_restore: required restore mount is unavailable")
+
+    payload = cfg.model_dump(mode="json")
+    command = shlex.join(["python3", "-I", "-c", RESTORE_SCRIPT])
+    raw = probe(
+        command + " validate", name="Traefik archive/path validation before mutation", stdin=json.dumps(payload)
     )
-    if not cfg.include_acme:
-        host.noop("include_acme is off; nothing restored")
+    try:
+        result = json.loads(raw) if raw is not None else None
+    except ValueError:
+        result = None
+    if (
+        not isinstance(result, dict)
+        or set(result) != {"valid", "archive"}
+        or result["valid"] is not True
+        or not isinstance(result["archive"], str)
+    ):
+        raise DeployError("traefik_restore: archive/path validation failed before mutation")
+    payload["archive"] = result["archive"]
+    if cfg.dry_run:
+        verify_probe(
+            command + " validate",
+            name="Traefik archive validation only; no staging/publication",
+            stdin=json.dumps(payload),
+        )
+    else:
+        server.shell(
+            name="Original ACME-only restore with private staging and cleanup",
+            commands=[command + " apply"],
+            **stdin_arguments(json.dumps(payload)),
+        )

@@ -8,7 +8,6 @@ import stat
 import subprocess
 import tarfile
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
@@ -293,10 +292,11 @@ def test_missing_fetched_archive_is_not_success(tmp_path: Path) -> None:
         _private_local_file(str(tmp_path / "missing"))
 
 
-@pytest.mark.parametrize("options", [{"include_dynamic": True}, {"dry_run": True}])
-def test_restore_does_not_claim_dynamic_or_dry_run_support(options: dict[str, Any]) -> None:
+def test_restore_does_not_claim_dynamic_support_and_has_explicit_validation_only_option() -> None:
     with pytest.raises(ValidationError, match="Extra inputs"):
-        TraefikRestoreConfig.model_validate(options)
+        TraefikRestoreConfig.model_validate({"include_dynamic": True})
+    assert TraefikRestoreConfig(dry_run=True).dry_run
+    assert not TraefikRestoreConfig().dry_run
 
 
 @pytest.mark.parametrize("target", ["directory", "archive"])

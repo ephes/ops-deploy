@@ -22,7 +22,6 @@ from ops_deploy.infra import (
     TraefikBackupConfig,
     TraefikRestoreConfig,
     deploy_traefik_backup,
-    deploy_traefik_restore,
 )
 from ops_deploy.infra.traefik_backup import _canonical, _dynamic_tree_check, _resolved_paths
 from ops_deploy.services._lifecycle import script
@@ -580,18 +579,17 @@ def test_traefik_backup_without_an_archive_still_prunes() -> None:
 
 
 def test_a_failed_mount_check_stops_the_traefik_restore() -> None:
+    from tests.test_infra_traefik_lifecycle import restore
+
     staging = "/opt/backups/traefik/.restore-work"
     cfg = TraefikRestoreConfig(required_mount=MOUNT, staging_dir=staging)
-    check = f"require_mount /opt/backups {staging}"
-    responses = {
-        "find /opt/backups/traefik -maxdepth 1": ["1.0 /opt/backups/traefik/manual-1.tar.gz"],
-        check: {"success": False},
-    }
-    run = run_deploy_fake(deploy_traefik_restore, cfg, responses=responses)
-
+    check = shlex.join(["bash", "-c", mount_check(MOUNT, staging)])
+    run = restore(cfg, {check: ["ops-deploy-probe-failed"]})
     assert not run.succeeded
-    (command,) = run.executed_commands
-    assert check in command
+    assert "required restore mount is unavailable" in str(run.error)
+    assert not run.executed_commands
+    assert not run.uploads
+    assert any(check in event.value for event in run.events if event.kind == "fact")
 
 
 @pytest.mark.parametrize("payload", [True, False])
@@ -607,11 +605,13 @@ def test_traefik_restore_removes_the_staging_directory_on_success_and_failure(tm
             tar.add(content / "loose", arcname="loose")
     staging = tmp_path / "staging"
     cfg = TraefikRestoreConfig(archive=str(archive), staging_dir=str(staging))
-    run = run_deploy_fake(deploy_traefik_restore, cfg, responses={f"test -e {archive}": ["yes"]})
+    from tests.test_infra_traefik_lifecycle import restore
+
+    run = restore(cfg, {f"test -e {archive}": ["yes"]})
     assert run.succeeded, run.error
     (command,) = run.executed_commands
 
-    result = subprocess.run(["sh", "-c", command], capture_output=True, text=True)
+    result = subprocess.run(["sh", "-c", command], input=run.stdin[-1][1], capture_output=True, text=True)
 
     assert (result.returncode == 0) is payload, result.stderr
     assert not staging.exists()

@@ -683,45 +683,63 @@ write otherwise; with `retain_count`/`retain_days` it prunes the snapshots it
 recorded after packing (also without an archive), never the one just written
 and never an unrecorded one ([Local backups](concepts/local-backups.md)).
 
-**Backup coverage does not qualify restoration.** Dynamic payloads are never
-published by `deploy_traefik_restore`: it remains ACME-only, has no `dry_run`
-option and still refuses transaction-managed hosts. Do not copy an archived
-Native route into a watched directory; recovery needs the owning service's
-reviewed canonical/quarantine workflow. No new private lifecycle registration,
-deployment or positive restore/removal qualification is implied by this change.
+**Backup and restore cover different payloads.** Dynamic payloads are never
+published by `deploy_traefik_restore`: it remains ACME-only and refuses
+transaction-managed hosts. Do not copy an archived Native route into a watched
+directory; recovery needs the owning service's canonical/quarantine workflow.
+Owned restore/removal component tests do not establish inventory qualification.
 
 ## deploy_traefik_restore
 
-`deploy_traefik_restore(cfg)`; `TraefikRestoreConfig` fields: `archive`
-(`latest`, a name below `root` or an absolute path), `root`, `staging_dir`
-(`/tmp/traefik-restore`), `acme_path`, `include_acme` (`False`),
-`transaction_required` and `required_mount` (`None`; `staging_dir` must lie
-below it, and the mount is checked before the staging directory is made).
+`TraefikRestoreConfig` accepts `archive` (`latest`, a name below `root`, or an
+absolute path), `root` (`/opt/backups/traefik`), `staging_dir`
+(`/tmp/traefik-restore`), `staging_mode` (`0700`), `archive_extension` (`tar.gz`),
+`acme_path`, optional `acme_dir`, `include_acme` (`False`), `acme_owner` and
+`acme_group` (`root`), `acme_dir_mode` (`0700`), `acme_mode` (`0600`), `dry_run`
+(`False`), `transaction_required` and optional `required_mount` (`None`).
+The ordinary restore retains its original temporary staging policy. A caller
+that explicitly supplies `required_mount` must put staging below that mount;
+this is separate from the backup route's external-mount policy.
 
-`latest` picks the newest `*.tar.gz` in `root` by modification time. The
-archive is unpacked into a fresh `staging_dir` (`0700`), its first top-level
-directory is the payload, and with `include_acme` its `acme/acme.json` is put
-back as `root:root 0600` (directory `0700`); `staging_dir` is removed
-whether the restore succeeds or fails (an `EXIT` trap). As in the role,
-Traefik is not restarted. Without `include_acme` nothing is
-restored.
+`latest` selects the newest regular file with the configured extension. The
+reader supports the original archive producer's `tar`, `gz`, `bz2`, `xz` and
+`zip` formats. It validates compression, member names/types, one unambiguous
+payload, and publication paths/identities before staging. Links, special members,
+parent traversal, duplicates and damaged archives refuse before writes.
+`dry_run=True` performs this validation without extracting or publishing;
+normal restore creates and removes temporary staging even when `include_acme`
+is false, so it is managed work. With `include_acme`, only the payload's
+`acme/<acme_path basename>` is published using the declared ownership/modes.
+Already-equal ACME bytes/metadata are retained. Staging is removed after an
+extraction/publication attempt, including failure; Traefik is not restarted.
+No dynamic route or general configuration restore is implied.
+
+Both the Boolean transaction setting and the existence of
+`/var/lib/traefik-transactions` refuse restore/removal during preparation. The
+guard reads directory metadata, never transaction record bodies.
 
 ## deploy_traefik_remove
 
-`deploy_traefik_remove(cfg)`; `TraefikRemoveConfig` fields: `confirm`
-(`False`; required), `preserve_certificates` and `preserve_dynamic_configs`
-(`True`), `force_complete` (`False`; overrides both), `binary_path`,
-`config_dir`, `log_dir`, `remove_firewall_rules` (`True`), `http_port`,
-`https_port`, `dashboard_port` and `transaction_required`.
+`TraefikRemoveConfig` keeps the public safe defaults: `confirm=False`,
+`preserve_certificates=True`, `preserve_dynamic_configs=True`, and
+`force_complete=False` (which overrides both preserve flags). It also accepts
+`service_name`, `binary_path`, `config_dir`, optional explicit `static_config`,
+`dynamic_dir` and `acme_dir`, `log_dir`, `remove_firewall_rules=True`, the three
+HTTP/HTTPS/dashboard ports and `transaction_required`.
 
-Steps: refuse transaction-managed hosts and unconfirmed runs; stop and
-disable Traefik (failures ignored, as in the role); remove the unit file and
-reload systemd; remove the binary and `traefik.toml`; the dynamic configs and
-the ACME directory unless preserved; `config_dir` when nothing but hidden
-entries is left in it (the role's `find` skips hidden entries; never `/etc`);
-the log directory and log rotation; the UFW rules for the HTTP, HTTPS and
-dashboard ports; every non-hidden `/tmp/traefik*` entry. Each step runs only
-when there is something to remove, so a second run changes nothing.
+Steps preserve the original role: tolerant stop/disable; remove the unit file
+and reload systemd when present; remove the binary and static configuration;
+remove dynamic/ACME directories unless preserved; remove a configuration root
+with only hidden entries (never `/etc`); remove logs/logrotate, the selected UFW
+allow rules, and non-hidden `/tmp/traefik*` entries. Custom paths and ports remain
+literal. `service_name` follows the role's literal `<service_name>.service`
+unit-file path while systemctl normalizes control; use a bare name, as the
+original defaults do, to avoid a doubled suffix. Relative archive names cannot
+traverse above their root; explicit absolute archive paths remain supported.
+Unknown required metadata refuses before mutation. A converged removal
+performs no managed commands. The private ordinary wrapper has the original
+**different** defaults: force complete and preserve neither; keep flags require
+`--standard` to clear force. This distinction does not change the public defaults.
 
 ## Patch-line release resolver
 

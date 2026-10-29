@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add confirmed DNS removal and complete the source-backed Traefik restore/remove
+  lifecycle APIs with literal custom paths, transaction refusal, nonmutating
+  archive validation and original ACME-only/default staging semantics. Preserve
+  original cleanup tolerance and private force/keep flag behavior. Owned native
+  component evidence is separate from inventory lifecycle qualification.
+
 - Add a targeted pyinfra upgrade for existing role-managed Mastodon 4.6.9
   installations to 4.7.4, addressing GHSA-288h-6j8h-6x5j. It takes protected
   database/config/media backups, installs the tag's Ruby and Node versions,
