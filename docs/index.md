@@ -48,7 +48,8 @@ src/ops_deploy/
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
   services/unifi/      UniFi configuration convergence on an existing installation (no bootstrap or upgrades)
   services/metube/    Native Git + staged Angular + uv MeTube
-  services/jellyfin/   Jellyfin from its apt repository behind Traefik (port of the jellyfin_deploy role, deploy only)
+  services/navidrome/ Confirmed original Navidrome removal
+  services/jellyfin/   Jellyfin deploy and confirmed removal
   services/vaultwarden/ vaultwarden from the vendor's .deb packages (port of the vaultwarden_deploy role)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share
   services/_metrics_httpd/ the Python/Rust metrics-httpd switch of the endpoint deploys (thermal, logyard, static_site)

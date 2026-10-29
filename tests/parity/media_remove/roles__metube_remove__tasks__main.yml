@@ -1,0 +1,80 @@
+---
+- name: Verify removal confirmation
+  ansible.builtin.assert:
+    that:
+      - metube_confirm_removal | bool
+    fail_msg: "Set metube_confirm_removal=true to proceed with removal."
+
+- name: Stop and disable metube service
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+  when: metube_remove_service | bool
+
+- name: Remove systemd unit
+  ansible.builtin.file:
+    path: "{{ metube_service_unit }}"
+    state: absent
+  notify: reload systemd
+  when: metube_remove_service | bool
+
+- name: Remove env/config directory
+  ansible.builtin.file:
+    path: "{{ metube_env_dir }}"
+    state: absent
+  when: metube_remove_env | bool
+
+- name: Remove Traefik config
+  ansible.builtin.file:
+    path: "{{ metube_traefik_config_path }}"
+    state: absent
+  notify: reload traefik
+  when: metube_remove_traefik_config | bool
+
+- name: Remove state directory
+  ansible.builtin.file:
+    path: "{{ metube_state_dir }}"
+    state: absent
+  when: metube_remove_state | bool
+
+- name: Remove downloads directory
+  ansible.builtin.file:
+    path: "{{ metube_download_dir }}"
+    state: absent
+  when: metube_remove_downloads | bool
+
+- name: Remove install directory (sources + venv) and UI build cache
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ metube_install_dir }}"
+    - "{{ metube_ui_build_root }}"
+  when: metube_remove_install_dir | bool
+
+- name: Remove metube user
+  ansible.builtin.user:
+    name: "{{ metube_user }}"
+    state: absent
+    remove: true
+  when: metube_remove_user | bool
+
+- name: Remove metube group
+  ansible.builtin.group:
+    name: "{{ metube_group }}"
+    state: absent
+  when: metube_remove_user | bool
+
+- name: Removal summary
+  ansible.builtin.debug:
+    msg: |
+      MeTube removal complete.
+      Service: {{ 'removed' if metube_remove_service else 'preserved' }}
+      Install dir: {{ 'removed' if metube_remove_install_dir else 'preserved' }} ({{ metube_install_dir }})
+      State dir: {{ 'removed' if metube_remove_state else 'preserved' }} ({{ metube_state_dir }})
+      Downloads: {{ 'removed' if metube_remove_downloads else 'preserved' }} ({{ metube_download_dir }})
+      Env dir: {{ 'removed' if metube_remove_env else 'preserved' }} ({{ metube_env_dir }})
+      Traefik config: {{ 'removed' if metube_remove_traefik_config else 'preserved' }} ({{ metube_traefik_config_path }})
+      User/group: {{ 'removed' if metube_remove_user else 'preserved' }}

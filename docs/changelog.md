@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add confirmed Navidrome, MeTube and Jellyfin removal APIs with the original
+  independent flags, exact Jellyfin package purge and MeTube change-triggered
+  handlers. Downloads remain retained by default; account removal keeps the
+  original home-removal interaction. Named metadata failures refuse before
+  mutation and already-absent repeats perform no managed operations.
+
 - Add confirmed DNS removal and complete the source-backed Traefik restore/remove
   lifecycle APIs with literal custom paths, transaction refusal, nonmutating
   archive validation and original ACME-only/default staging semantics, including literal custom paths

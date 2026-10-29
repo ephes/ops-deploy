@@ -1,0 +1,92 @@
+---
+- name: Validate removal confirmation
+  ansible.builtin.assert:
+    that:
+      - navidrome_confirm_removal | bool
+    fail_msg: |
+      Navidrome removal not confirmed.
+      Set navidrome_confirm_removal: true to proceed.
+
+- name: Stop and disable Navidrome service
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove Navidrome systemd units
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ navidrome_service_unit }}"
+    - "{{ navidrome_rescan_service_unit }}"
+    - "{{ navidrome_rescan_timer_unit }}"
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove Navidrome configuration file
+  ansible.builtin.file:
+    path: "{{ navidrome_config_path }}"
+    state: absent
+
+- name: Remove Navidrome data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ navidrome_data_dir }}"
+    - "{{ navidrome_cache_dir }}"
+  when: navidrome_remove_data | bool
+
+- name: Remove Navidrome log directory
+  ansible.builtin.file:
+    path: "{{ navidrome_log_dir }}"
+    state: absent
+  when: navidrome_remove_logs | bool
+
+- name: Remove Navidrome binary and symlink
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ navidrome_bin_path }}"
+    - "{{ navidrome_bin_link_path }}"
+  when: navidrome_remove_binary | bool
+
+- name: Remove Navidrome install directory
+  ansible.builtin.file:
+    path: "{{ navidrome_install_dir }}"
+    state: absent
+  when: navidrome_remove_binary | bool
+
+- name: Remove Traefik configuration
+  ansible.builtin.file:
+    path: "{{ navidrome_traefik_config_path }}"
+    state: absent
+  when: navidrome_remove_traefik_config | bool
+
+- name: Remove Navidrome user
+  ansible.builtin.user:
+    name: "{{ navidrome_user }}"
+    state: absent
+    remove: true
+  when: navidrome_remove_user | bool
+
+- name: Remove Navidrome group
+  ansible.builtin.group:
+    name: "{{ navidrome_group }}"
+    state: absent
+  when: navidrome_remove_user | bool
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      Navidrome removal completed.
+      Data: {{ 'removed' if navidrome_remove_data else 'preserved' }}
+      Logs: {{ 'removed' if navidrome_remove_logs else 'preserved' }}
+      Binary: {{ 'removed' if navidrome_remove_binary else 'preserved' }}
+      Traefik config: {{ 'removed' if navidrome_remove_traefik_config else 'preserved' }}
+      User: {{ 'removed' if navidrome_remove_user else 'preserved' }}
