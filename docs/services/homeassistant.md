@@ -109,3 +109,25 @@ reload-rules and tty trigger run only when that rule changed. Synthetic connecto
 checks cover current-rule suppression and unrelated group preservation. This is
 not a public deploy entry point or a native udev/radio/system-account proof; full
 validation, trust and package prerequisites must precede its eventual caller.
+
+
+## Trust-floor component in preparation
+
+The prepared `security` component copies the original `python_security_floor`
+inspectors and controller policy. Nested `security` inputs carry the original
+package floors, Requires-Python constraints, distrusted fingerprints, optional
+managed-base binding and explicit policy overrides. The original HA/Matter
+list of environments remains independently overridable. Missing interpreters
+are skipped only during preflight; a dangling link counts as an existing path
+and its failed inspection is not silently treated as absent.
+
+Preflight inspects existing environments and, when enabled, the system CA
+store before deployment writes. Constraint files limit package resolution and
+do not install packages. The post-install read-only operation obtains fresh
+reports at execution time and applies the same policy; it does not reuse a
+planning report. Inspector programs import certifi/pip only, never Home Assistant,
+and retain isolated Python execution with added bytecode suppression. These
+checks cannot prove global zero I/O or physical-device behavior. Original policy
+failures are not silently remediated, and explicit existing trust overrides are
+not rewritten. Caller sequencing, application/package installation and native
+qualification remain unfinished; this component is not yet a deployment API.

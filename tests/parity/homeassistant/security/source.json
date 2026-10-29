@@ -1,0 +1,41 @@
+{
+  "head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "roles__python_security_floor__defaults__main.yml": {
+      "source": "roles/python_security_floor/defaults/main.yml",
+      "sha256": "eb455a83dede1e4a6d7ee5f0e8d56bdf544f2ce80d875da275576e5d892e69c8"
+    },
+    "roles__python_security_floor__tasks__verify.yml": {
+      "source": "roles/python_security_floor/tasks/verify.yml",
+      "sha256": "859e85a25b3ba1a9b009188971462cef6811b0d213a453dccc680f18d623e736"
+    },
+    "roles__python_security_floor__tasks__system_store.yml": {
+      "source": "roles/python_security_floor/tasks/system_store.yml",
+      "sha256": "c04df39e5a697f8ee6fec68001ec32ed7ab15bd97e91c1005cc58c03df32e0ae"
+    },
+    "roles__python_security_floor__tasks__constraints.yml": {
+      "source": "roles/python_security_floor/tasks/constraints.yml",
+      "sha256": "69120f84886fb1b3ef01bffacd1ecb8c5ba35a898e6d3e42583e8d25d7bb746b"
+    },
+    "roles__homeassistant_deploy__tasks__security_preflight.yml": {
+      "source": "roles/homeassistant_deploy/tasks/security_preflight.yml",
+      "sha256": "a33131a3bf223e6b748017a1446a7f6051d4c0ffc77360ae7aeb6d43e23d789e"
+    },
+    "roles__homeassistant_deploy__tasks__security_verify.yml": {
+      "source": "roles/homeassistant_deploy/tasks/security_verify.yml",
+      "sha256": "5198c7367b87e8bfa95457284dc52e0410117e83143a1c5d1fcfc867c0cbc016"
+    },
+    "plugins__filter__python_security.py.txt": {
+      "source": "plugins/filter/python_security.py",
+      "sha256": "95597b758b088a9a60970a6f23b8d8f63c3f65876122a41c851f5e38c3a00d5e"
+    },
+    "roles__python_security_floor__files__inspect_python_security.py.txt": {
+      "source": "roles/python_security_floor/files/inspect_python_security.py",
+      "sha256": "f1da3be41d14dfed671653d684974856d8e56d2376b8fb114357754422161cb9"
+    },
+    "roles__python_security_floor__files__inspect_ca_file.py.txt": {
+      "source": "roles/python_security_floor/files/inspect_ca_file.py",
+      "sha256": "798fb03aab62882d188303c296a3c43da2a6d7b1e150b645bbeb715e3dbc6365"
+    }
+  }
+}

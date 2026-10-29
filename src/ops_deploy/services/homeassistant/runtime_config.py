@@ -10,6 +10,7 @@ from pydantic import Field, StrictBool, StrictInt, model_validator
 from ops_deploy.base._common import AbsolutePath, RoleConfig, Version
 from ops_deploy.core.config import ServiceName, UnixUser
 
+from .security_config import HomeAssistantSecurityConfig, SecurityEnvironment
 from .uv import HomeAssistantUvConfig
 
 Port = Annotated[StrictInt, Field(ge=1, le=65535)]
@@ -46,6 +47,8 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     service_state: ServiceState = "started"
     systemd_unit_path: AbsolutePath = "/etc/systemd/system/homeassistant.service"
     python_security_floor_enabled: StrictBool = True
+    security: HomeAssistantSecurityConfig = Field(default_factory=HomeAssistantSecurityConfig)
+    python_security_environments: tuple[SecurityEnvironment, ...] = ()
     python_security_constraints_path: AbsolutePath = "/home/homeassistant/site/.python-security-constraints.txt"
     uv_system_certs: StrictBool = True
     uv_system_certs_dropin_path: AbsolutePath = "/etc/systemd/system/homeassistant.service.d/50-uv-system-certs.conf"
@@ -106,6 +109,15 @@ class HomeAssistantRuntimeConfig(RoleConfig):
             result.setdefault(prefix + "systemd_unit_path", f"/etc/systemd/system/{service}.service")
         result.setdefault("matter_server_storage_path", str(result["data_path"]) + "/matter-server")
         result.setdefault("matter_server_log_file", str(result["logs_path"]) + "/matter-server.log")
+        result.setdefault(
+            "python_security_environments",
+            [{"path": result["virtualenv_path"], "label": "Home Assistant environment"}]
+            + (
+                [{"path": result["matter_server_virtualenv_path"], "label": "Matter server environment"}]
+                if result.get("manage_matter_server", False)
+                else []
+            ),
+        )
         result.setdefault(
             "uv_system_certs_dropin_path",
             f"/etc/systemd/system/{result.get('service_name', 'homeassistant')}.service.d/50-uv-system-certs.conf",

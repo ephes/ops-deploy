@@ -79,11 +79,16 @@ def test_bound_original_defaults_and_templates() -> None:
             if (
                 isinstance(value, str)
                 and "{{" in value
-                and key in {"homeassistant_" + k for k in HomeAssistantRuntimeConfig.model_fields}
+                and key
+                in {
+                    "homeassistant_" + k
+                    for k in HomeAssistantRuntimeConfig.model_fields
+                    if k not in {"security", "python_security_environments"}
+                }
             ):
                 resolved[key] = env.from_string(value).render(**resolved)
     # Nested dependency defaults/precedence have their own exact role oracle.
-    for key, value in cfg.model_dump(exclude={"uv"}).items():
+    for key, value in cfg.model_dump(exclude={"uv", "security", "python_security_environments"}).items():
         expected = resolved["homeassistant_" + key]
         assert value == (tuple(expected) if isinstance(expected, list) else expected), key
     for name in ("homeassistant.service.j2", "matter-server.service.j2"):

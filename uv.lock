@@ -1031,6 +1031,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bcrypt" },
     { name = "jinja2" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "pyinfra" },
     { name = "pyyaml" },
@@ -1052,6 +1053,7 @@ dev = [
 requires-dist = [
     { name = "bcrypt", specifier = ">=4.2" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "packaging", specifier = ">=24" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pyinfra", specifier = "==3.10.*" },
     { name = "pyyaml", specifier = ">=6.0" },
