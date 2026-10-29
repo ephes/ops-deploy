@@ -558,3 +558,30 @@ again before the later request. Actual local-connector controls reproduce that
 wrong ordering (one GET) and the corrected boundary (two GETs), with no requests
 in either dry-plan variant. The outer deployment still supplies original flags
 and the handler flush; this component is not whole-service/native qualification.
+
+
+### Legacy conversation migration (prepared)
+
+Before the built-in conversation path upgrades Python, the original preparation
+observes the named `custom_components/custom_conversation` entry with `lstat`,
+searches only the configured virtualenv's `lib` metadata for real directory
+names matching `litellm*.dist-info`, and selects the `custom_conversation` domain
+from the named `core.config_entries` registry. The new host-local component
+returns only presence/rebuild/retirement booleans and a skipped-metadata count;
+no entry ID, registry body, package name or error path leaves the helper. The
+controller command has a finite 90-second timeout. No package import or API call
+is made by this observation. Reading metadata/registry bytes can update atime.
+
+The search preserves original `find` behavior: descendant directory links are
+not followed, hidden candidates are skipped but hidden parents are traversed,
+and inaccessible/non-directory library metadata is skipped with a count rather
+than invented complete-observation certainty or a new refusal. Actual original
+Ansible seven-task controls match eight owned cases, including a dangling
+component, package-directory symlink and non-directory `lib`.
+
+The outer role must retain the initial rebuild flag, call the real original
+retirement helper when selected, then remove the exact component path before
+Python replacement. The removal handles a file, directory or dangling link,
+without following its root link; actual local-connector first/repeat controls
+preserve the unrelated link target. These components do not yet compose the full
+retirement/upgrade sequence or prove native application and inventory behavior.

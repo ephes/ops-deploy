@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prepare Home Assistant legacy conversation metadata discovery and exact-path
+  removal, preserving original rebuild selection and exposing only fixed flags.
+  Owned original-task comparisons retain scoped-search and partial-observation
+  limits; full retirement/upgrade composition remains pending.
+
 - Prepare standalone Home Assistant API readiness with the original retry/cache
   semantics and an execution-time cache reset after handler boundaries. No API
   calls occur during registration; no registry or configuration POST is added.
