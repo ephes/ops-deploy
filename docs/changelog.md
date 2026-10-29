@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Complete owned Paperless current and3.0.4-to-3.2.1 upgrade qualification:
+  50 typed phases per leg,26 strict zero-managed/zero-upload repeats per leg,
+  real synthetic OCR/SFTP/search and recovery controls. Upgrade first performed
+  12 managed operations/zero uploads. Exact installed artifacts and cleanup passed;
+  retain original fixture recoveries, earlier failed attempts and shared-kernel/
+  metadata/freshness limits. Private inventory and separate lifecycle adoption
+  remain pending.
+
 - Preserve bounded sanitized Paperless native phase progress before timeout,
   and allow an explicit upgrade-only fixture selection with a100-minute guest
   deadline. The current50-phase native matrix passed; the upgrade's earlier
@@ -70,8 +78,8 @@
   scanner, service and template contracts, recoverable app installation and
   conditional metadata/count-based reindexing. Existing admin credentials stay
   untouched; healthy package, bind-mount and ownership steps avoid repeated
-  writes. Native OCR/SFTP, PostgreSQL and recovery qualification and private
-  inventory adoption remain pending. Repair missing-entire-index recovery by
+  writes. Owned native OCR/SFTP, PostgreSQL and recovery qualification passed;
+  private inventory adoption remains pending. Repair missing-entire-index recovery by
   creating only the absent leaf as the service user before the upstream rebuild;
   refuse unsafe ancestors and preserve existing directory metadata. Original
   Ansible reindexing is unchanged. Preserve the original uv0.13.5 dependency

@@ -1,9 +1,9 @@
-# Paperless migration preparation
+# Paperless deployment and recovery
 
-The prepared `PaperlessConfig`, `PaperlessCredentials` and `deploy_paperless`
+The `PaperlessConfig`, `PaperlessCredentials` and `deploy_paperless`
 API composes the checksum-bound 3.2.1 release and current `paperless_deploy`
-role behavior. It has not been adopted in the inventory. Native application
-qualification is still outstanding; this is not a supported production entry point.
+role behavior. Owned current-release and 3.0.4-to-3.2.1 upgrade application
+matrices passed. Private inventory adoption remains a separate pending step.
 
 The initial typed configuration renders all eight original role templates byte
 for byte in three synthetic Ansible oracle cases: defaults, authenticated Redis,
@@ -32,13 +32,15 @@ same-origin `/api/schema/view/` destination and requires its actual final200.
 Unexpected redirects, loops and failed final responses refuse. Each of ten
 attempts has a ten-second deadline, with six seconds between attempts. It reads
 no response body, supplies no credentials, and leaves the shared no-redirect
-HTTP helper unchanged. Native and inventory qualification remain pending.
+HTTP helper unchanged. The owned actual response was302 with `Location:
+schema/view/`, resolving to `/api/schema/view/` and final200; inventory adoption
+remains separate.
 
 The approved search-index change replaces unconditional Ansible reindexing with
 explicit release/package/migration/force triggers and bounded checks of index
 metadata, schema/language sentinels and the live-document SQL count. The source
 manager in the release's locked `django-soft-delete` 1.0.23 filters
-`deleted_at IS NULL`; the final query still needs owned application proof. The schema fingerprint
+`deleted_at IS NULL`; the owned application/schema and soft-delete cases passed. The schema fingerprint
 now matches the exact release field descriptors using its locked whoosh-compat
 0.3.0 types in an isolated local source oracle. That oracle loads only the two
 schema modules without the application/backend package initializer; it is not
@@ -55,7 +57,8 @@ count mismatch and additional reindexing. The prepared managed helper stops all
 configured Paperless units and attempts to resume every previously running unit
 after success or an ordinary failure. A stop, reindex or resume failure remains
 nonzero. Local simulated command tests cover these failures and ordinary retry;
-actual systemd/application recovery still requires the native fixture. Abrupt
+actual owned systemd/application failure, prior-state resumption and ordinary
+retry also passed. Abrupt
 process or host loss cannot guarantee resumption. Application command output is
 discarded to avoid logging document metadata. The helper retains the original
 role's lack of a separate reindex timeout.
@@ -69,19 +72,22 @@ management command. This repairs a demonstrated upstream/original-role gap:
 `wipe_index()` iterates a missing directory and fails before rebuilding. The
 original role remains unchanged. The new owned case removes the entire index,
 checks the exact old helper's failure, then requires normal typed recovery and a
-strict healthy repeat; that native result is still pending.
+strict healthy repeat. Both current and upgrade matrices passed that recovery;
+the old helper's retained failure changes only its expected system-check root
+timestamps and is never called a zero-mutation phase.
 
 The prepared count command uses one fixed `COUNT(*)` with the release's
 soft-delete predicate, a read-only PostgreSQL transaction and a 30-second
 statement timeout. It returns only the aggregate and refuses query errors or
-unexpected output. Actual application schema/manager parity remains unqualified
-until the owned native fixture runs.
+unexpected output. Actual owned application schema/manager parity and soft-delete
+convergence passed in both matrices.
 
 This preparation does not change the original Ansible role, which still rebuilds
-on every deployment. Native application, OCR/SFTP, recovery and live qualification
-remain outstanding. No production document or index contents were inspected.
+on every deployment. Owned application, OCR/SFTP and recovery qualification
+passed; inventory adoption remains pending. No production document or index
+contents were inspected.
 
-## Prepared deployment and recovery
+## Deployment and recovery
 
 Existing Python trust floors are checked before dependencies change. The
 deployment reuses the uv, Redis and PostgreSQL17 implementations, then installs
@@ -137,9 +143,10 @@ alone; strict missing-user failure can follow prior creation/promotions, as in
 the original role. Management programs travel via protected stdin and application
 output is suppressed. An explicit blocking stdin bootstrap avoids Django's
 interactive-console race, and apply steps must emit their completion marker.
-Actual Paperless Django initialization effects remain to
-be measured in the owned native fixture; the local Django auth/static oracles
-do not establish full application or PostgreSQL behavior.
+Owned old-command controls changed four roots' mtime/ctime; the corrected status
+command kept all captured metadata exact. Healthy ordinary/fish/recovery repeats
+also preserved entire captured state. This does not claim global zero I/O or
+exclude natural effects outside the declared projection.
 
 Scanner passwords use libcrypt comparison and protected chpasswd stdin only
 when different; empty passwords remain unmanaged. A mounted SFTP inbox is not
@@ -161,15 +168,35 @@ the original role; a reindex still performs its explicitly managed stop/resume.
 The Traefik route retains the original template and watcher behavior. Final
 health checks require all four units active and HTTP200 from loopback `/api/`.
 
-## Qualification still required
+## Owned qualification and remaining adoption
 
-The owned native plan uses a fresh public GitHub Ubuntu24 x86 VM with a systemd
-Docker userspace. Its kernel is shared with that disposable VM; it is not a KVM
-or hardware proof. No inventory, host-data, credential or Docker-socket mounts
-are permitted. Actual OCR/SFTP, PostgreSQL manager/count, index recovery, yescrypt,
-ACL/mount and service first/repeat/failure cases remain required before adoption.
+Current run40777068134 at9ac completed50 typed phases (47 healthy and3 expected
+faults); upgrade-only run40788020395 at02d completed50 (48 healthy and2 expected
+faults), including the actual3.0.4-to-3.2.1 upgrade with12 managed operations and
+zero uploads. Each leg has26 healthy zero-managed/zero-upload repeats with102
+successful operations and entire captured public/private state equality. The two
+declared synthetic scanner-password rotation/restoration phases intentionally
+change private state. Original Ansible and the failing old index helper are
+separate observations, never no-op claims.
+
+Real PostgreSQL17, Redis, four systemd units, expected schema redirect/final200,
+synthetic SFTP/OCR/authenticated search, SQL/soft-delete/schema/language/count,
+index failure/resume/retry, Python/release/package/static recovery, yescrypt,
+recursive ACL and bind recovery passed. Current covers missing/unexecutable
+Python; upgrade covers wrong Python and missing supporting distributions. Both
+runs collected complete evidence and cleaned their owned resources with exits0.
+Their825/849 installed noneditable resource maps matched their immutable sources.
+The final905-resource composition preserves all873 separately qualified peer
+resources and all32 Paperless resources from these runs; no peer-only native
+replay is claimed.
+
 The [concrete native fixture](https://github.com/ephes/ops-deploy/tree/main/tests/integration/paperless)
-has separate fresh current-release and 3.0.4-to-3.2.1 upgrade legs. Its source
-and local guard tests are preparation, not evidence that those cases have run.
-Backup, restore, removal and the campaign's other lifecycle routes are tracked
-separately; this normal-deploy preparation does not claim they are converted.
+uses disposable public GitHub Ubuntu24 x86 VMs with systemd Docker userspaces
+sharing each VM's kernel. It is not KVM, a physical scanner/encrypted-device proof,
+or production qualification. Original bootstrap needed explicitly recorded
+package-cache/index-directory and lost-SSH-handler fixture recovery; there is no
+pristine original-bootstrap success claim. Every earlier failure is retained,
+including the first upgrade deadline124 with unknown interrupted effects.
+Private normal deployment still requires its own bounded inventory plan/first/
+repeat. Backup, restore, removal and the other lifecycle routes remain tracked
+separately; this normal-deploy qualification does not claim they are converted.

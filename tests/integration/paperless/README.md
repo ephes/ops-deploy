@@ -1,8 +1,8 @@
-# Owned Paperless native fixture (under preparation)
+# Owned Paperless native fixture
 
-The matrix source is implemented and the retained runs below provide partial
-evidence; full application/recovery qualification remains pending. Runtime and
-harness source review and exact feature publication precede each dispatch.
+The current and upgrade matrices completed successfully in runs40777068134 and
+40788020395 respectively. Earlier partial/failed evidence remains retained below.
+Runtime and harness source review and exact feature publication precede each dispatch.
 It uses public `ephes/ops-deploy` GitHub Actions on a disposable Ubuntu24 x86 VM,
 with a fresh Ubuntu24 systemd Docker userspace. The guest shares that VM's
 kernel. This is not KVM, physical scanner or inventory qualification.
@@ -35,7 +35,7 @@ checked out. All document/account/password data is generated synthetic input.
 No inference/model request is part of the fixture.
 
 Two fresh VM legs start with the original role at3.2.1 and3.0.4 respectively;
-the latter upgrades through the prepared3.2.1 deployment. No downgrade is used
+the latter upgrades through the typed3.2.1 deployment. No downgrade is used
 as fixture setup. Each uses actual1GiB tmpfs for synthetic data. Its path-shaped
 source label lets genuine Ansible14.5 mount facts report it; no facts are injected.
 This is neither encryption nor a block-device proof. A new systemd machine ID
@@ -54,7 +54,7 @@ fault setup/restoration is explicit and retained separately from deploy effects.
 The exact old OCR fragment and ownership repair also run through actual helpers
 on a separate synthetic program tree; that is distinguished from installed
 OCR source, which may no longer contain the old fragment.
-Those cases are not claimed qualified until actual receipts are accepted.
+The two completed matrices below qualify these owned cases within the stated scope.
 Original Ansible rewrites and actual partial failures must remain visible.
 
 Healthy repeats require every actual operation successful, zero managed changes
@@ -288,3 +288,25 @@ All260 collected hashes and825 package resources match9ac; run124/collection0/
 cleanup0 remain a failed, incomplete matrix. This motivates the finite100-minute
 upgrade allowance and durable sanitized progress, not a claim of a runtime bug
 or a successful interrupted phase. No completed assertion is weakened.
+
+
+Upgrade-only run40788020395 at02d completed all50 typed phases (48 healthy,
+2 expected faults). Its actual3.0.4-to-3.2.1 first apply performed12 managed
+operations and zero uploads. All26 healthy zero-managed repeats had102 successful
+operations, zero uploads and entire public/private captured-state equality. The
+separate old missing-index helper still failed as expected with only its declared
+system-check root timestamp changes. Synthetic scanner password change/restore
+intentionally changed private state; neither is a no-op claim. Incomplete release,
+legacy current-directory, wrong Python, missing supporting package and all index/
+scanner recovery cases reached their strict successful repeat.
+
+Actual SFTP upload/OCR/authenticated search passed on generated data, as did the
+observed302 `schema/view/` to same-origin `/api/schema/view/` final200 path and
+installed virtual package provider. The original lost SSH handler was completed
+only by its source-bound labelled fixture recovery. All374 collected file sizes/
+hashes and all849 actual installed noneditable package resources matched02d;
+run/collection/cleanup were0/0/0. The1064-line full job log had no error markers.
+This completes the owned current+upgrade matrix together with the already passed
+current run, without replaying it. It preserves the earlier upgrade timeout124
+and unknown interrupted operation as a failed historical attempt. Production
+adoption, physical hardware and separate lifecycle actions remain unqualified.
