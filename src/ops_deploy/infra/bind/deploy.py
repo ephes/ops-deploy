@@ -5,7 +5,11 @@ directories, keeps ``named.conf.keys``, ``named.conf.options``,
 ``named.conf.local``, the static zone files and ``named.conf`` equal to the
 role's output, seeds dynamic zone files once, removes the key file when no
 key is configured, keeps named enabled and running, reloads it after a change
-and checks every authoritative zone with ``dig``.
+and checks every authoritative zone with ``dig``. ``named.conf`` includes the
+package's builtin zones as the host's release ships them
+(``named.conf.root-hints`` on Debian 13 and Ubuntu 26.04 and later,
+``named.conf.default-zones`` before), falling back to the one of the two that
+exists when the release's file is missing (:func:`choose_builtin_zones_file`).
 
 The files are compared and installed by one small host script
 (``files/bind_config.sh``, standard tools only). It checks every candidate
@@ -51,8 +55,15 @@ from ops_deploy.helpers import mark_read_only
 from ops_deploy.helpers.probes import probe
 from ops_deploy.infra._common import directory
 from ops_deploy.infra.bind.config import BindConfig, BindZone
-from ops_deploy.infra.bind.render import builtin_zones_file, keys_text, render_local, render_named_conf, render_options
-from ops_deploy.infra.postgres_install import missing_packages
+from ops_deploy.infra.bind.render import (
+    DEFAULT_ZONES,
+    ROOT_HINTS,
+    builtin_zones_file,
+    keys_text,
+    render_local,
+    render_named_conf,
+    render_options,
+)
 from ops_deploy.ops.secret_file import secret_stdin
 
 HOST_SCRIPT = (Path(__file__).parent / "files" / "bind_config.sh").read_text()
@@ -62,7 +73,10 @@ DEFAULT_PATHS = {"config_dir": "/etc/bind", "working_dir": "/var/cache/bind", "d
 # "db." and dot-separated labels (Debian's naming): never a named.conf* file,
 # rndc.key, bind.keys, zones.rfc1918 or a staged ".ops-deploy-new." file.
 _ZONE_FILE = re.compile(r"db\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*")
-# The zone files the bind9 package ships in /etc/bind (Debian 12, Ubuntu), which its builtin zones load.
+# The zone files the bind9 package ships in /etc/bind up to Debian 12 and Ubuntu 24.04, which its
+# named.conf.default-zones loads. Debian 13 and Ubuntu 26.04 ship none (a release upgrade may leave
+# them behind); refused on every release, before the host is contacted, so a configuration stays
+# valid across the upgrade.
 PACKAGED_ZONE_FILES = ("db.0", "db.127", "db.255", "db.empty", "db.local")
 
 
@@ -144,6 +158,60 @@ def distribution() -> tuple[str, int | None]:
     name, _, version = text.partition(" ")
     major = version.split(".", 1)[0]
     return ("Debian" if name == "debian" else name), (int(major) if major.isdigit() else None)
+
+
+# dpkg states (second letter of db:Status-Abbrev) in which a package's files are all unpacked:
+# installed, and the unpacked, half-configured and trigger states a release upgrade can leave.
+_UNPACKED = frozenset("iUFWt")
+
+
+def missing_packages(packages: tuple[str, ...]) -> list[str]:
+    """``packages`` that are neither unpacked nor provided by an unpacked package (to install with apt).
+
+    ``postgres_install.missing_packages`` with one difference: a package dpkg has
+    unpacked but not configured (``iU``, ``iF``, ``iW``, ``it``) counts as there.
+    A release upgrade leaves ``bind9`` half-configured while ``named.conf``
+    still includes a file the new package removed; ``apt-get install`` would
+    first re-run its failing configure script and stop before this deploy
+    installs the configuration that lets it succeed. Hosts whose packages are
+    all installed (``ii``) or absent get the same answer as before.
+    """
+
+    have: set[str] = set()
+    query = "dpkg-query -W -f='${db:Status-Abbrev}|${Package}|${Provides}\\n'"
+    for line in output(query).splitlines():
+        status, _, rest = line.partition("|")
+        if len(status) < 2 or status[0] != "i" or status[1] not in _UNPACKED:
+            continue
+        name, _, provides = rest.partition("|")
+        have.add(name)
+        have.update(item.split()[0] for item in provides.split(",") if item.strip())
+    return [package for package in packages if package not in have]
+
+
+def builtin_files_present(cfg: BindConfig) -> frozenset[str]:
+    """Which of ``named.conf.default-zones`` and ``named.conf.root-hints`` exist in ``config_dir`` (read-only)."""
+
+    names = (DEFAULT_ZONES, ROOT_HINTS)
+    found = output(
+        f"for name in {' '.join(names)}; do "
+        f'if [ -f {shlex.quote(cfg.config_dir)}/"$name" ]; then echo "$name"; fi; done'
+    )
+    return frozenset(line for line in found.split() if line in names)
+
+
+def choose_builtin_zones_file(cfg: BindConfig) -> str:
+    """The builtin-zones include for this host: its release, or the packaged file present (see render)."""
+
+    name, major = distribution()
+    by_release = builtin_zones_file(cfg, name, major)
+    chosen = builtin_zones_file(cfg, name, major, builtin_files_present(cfg))
+    if chosen != by_release:
+        logger.warning(
+            f"{host.print_prefix}bind: {by_release} (the choice for {name} {major}) is missing; "
+            f"including {chosen}, which exists"
+        )
+    return chosen
 
 
 @dataclass(frozen=True)
@@ -265,8 +333,7 @@ def deploy_bind(cfg: BindConfig, tsig_secrets: Mapping[str, SecretStr] | None = 
     require_systemd("bind")
     secrets = check_secrets(cfg, tsig_secrets)
     sources = zone_sources(cfg)
-    name, major = distribution()
-    files = entries(cfg, builtin_zones_file(cfg, name, major), secrets, sources)
+    files = entries(cfg, choose_builtin_zones_file(cfg), secrets, sources)
     stdin = payload(files)
 
     found = probe(host_command(cfg, "probe", files), name="BIND files", stdin=stdin)

@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from ops_deploy.infra.bind import BindConfig, BindZone, TsigKey, deploy_bind
+from ops_deploy.infra.bind import BindConfig, BindZone, TsigKey, deploy_bind, render_named_conf
 from ops_deploy.infra.bind.deploy import HOST_SCRIPT, check_secrets, entries, host_command, payload, read_probe
-from ops_deploy.infra.bind.render import render_keys
+from ops_deploy.infra.bind.render import builtin_zones_file, render_keys, ships_root_hints
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from ops_deploy.testing.harness import fish_unsafe
 from tests import fakehost
@@ -33,6 +33,9 @@ INSTALL = P + "Install the BIND configuration (validated first)"
 RELOAD = P + "Reload named"
 DISTRIBUTION = 'printf "%s %s" "$ID"'
 UFW = "command -v ufw"
+PRESENT = "for name in named.conf.default-zones named.conf.root-hints; do"
+DEFAULT_ZONES = 'include "/etc/bind/named.conf.default-zones";\n'
+ROOT_HINTS = 'include "/etc/bind/named.conf.root-hints";\n'
 
 
 @pytest.fixture
@@ -335,6 +338,158 @@ def test_debian_13_includes_the_root_hints(zones_dir: Path) -> None:
 
     text = base64.b64decode(apply_stdin(result).splitlines()[-1]).decode()
     assert text.endswith('include "/etc/bind/named.conf.root-hints";\n')
+
+
+def probe_named_conf(result: FakeRun) -> str:
+    """``named.conf`` as the probe compared it (the last file on its stdin, with keys configured)."""
+
+    [stdin] = [text for command, text in result.stdin if PROBE in command]
+    return base64.b64decode(stdin.splitlines()[-1]).decode()
+
+
+def _role_rule(distribution: str, major: int | None) -> str:
+    """The include before Ubuntu 26.04 support: the role's rule, unchanged since the port."""
+
+    debian13 = distribution == "Debian" and major is not None and major >= 13
+    return f"/etc/bind/{'named.conf.root-hints' if debian13 else 'named.conf.default-zones'}"
+
+
+@pytest.mark.parametrize("distribution", ["Debian", "Ubuntu", "ubuntu", "Linuxmint", "debian", ""])
+@pytest.mark.parametrize("major", [None, 10, 11, 12, 13, 14, 20, 22, 24, 25, 26, 27, 30])
+def test_the_include_is_the_roles_except_on_ubuntu_26_04_and_later(
+    zones_dir: Path, distribution: str, major: int | None
+) -> None:
+    cfg = config(zones_dir)
+    ubuntu26 = distribution in ("Ubuntu", "ubuntu") and major is not None and major >= 26
+
+    by_release = builtin_zones_file(cfg, distribution, major)
+
+    assert ships_root_hints(distribution, major) == by_release.endswith("root-hints")
+    if ubuntu26:
+        assert by_release == "/etc/bind/named.conf.root-hints"
+    else:
+        assert by_release == _role_rule(distribution, major)
+    # The release's file present (alone or with the other one), or neither file: the release decides.
+    own = by_release.rsplit("/", 1)[1]
+    for present in (set(), {own}, {"named.conf.default-zones", "named.conf.root-hints"}, {"zones.rfc1918"}):
+        assert builtin_zones_file(cfg, distribution, major, present) == by_release
+    # Only the other file present: that one.
+    [other] = {"named.conf.default-zones", "named.conf.root-hints"} - {own}
+    assert builtin_zones_file(cfg, distribution, major, {other}) == f"/etc/bind/{other}"
+    # A configured file always wins.
+    assert builtin_zones_file(config(zones_dir, builtin_zones_file="/x/y"), distribution, major, {other}) == "/x/y"
+
+
+@pytest.mark.parametrize(
+    ("release", "present", "include"),
+    [
+        # Ubuntu 24.04: the package's default-zones (alone, with a stray root-hints, or before bind9 is installed).
+        ("ubuntu 24.04", ["named.conf.default-zones"], DEFAULT_ZONES),
+        ("ubuntu 24.04", ["named.conf.default-zones", "named.conf.root-hints"], DEFAULT_ZONES),
+        ("ubuntu 24.04", [], DEFAULT_ZONES),
+        # Debian 13: root-hints (alone, or with a default-zones a release upgrade left); Debian 12 as before.
+        ("debian 13", ["named.conf.root-hints"], ROOT_HINTS),
+        ("debian 13", ["named.conf.default-zones", "named.conf.root-hints"], ROOT_HINTS),
+        ("debian 12", ["named.conf.default-zones"], DEFAULT_ZONES),
+        # Ubuntu 26.04 (BIND 9.20): root-hints, also before bind9 is installed and next to a leftover.
+        ("ubuntu 26.04", ["named.conf.root-hints"], ROOT_HINTS),
+        ("ubuntu 26.04", [], ROOT_HINTS),
+        ("ubuntu 26.04", ["named.conf.default-zones", "named.conf.root-hints"], ROOT_HINTS),
+        ("ubuntu 26.10", ["named.conf.root-hints"], ROOT_HINTS),
+    ],
+)
+def test_the_include_follows_the_release(zones_dir: Path, release: str, present: list[str], include: str) -> None:
+    cfg = config(zones_dir)
+    responses = host(cfg, extra={DISTRIBUTION: [release], PRESENT: present})
+
+    result = run(cfg, responses)
+
+    assert probe_named_conf(result).endswith(include)
+    assert result.mutating_changed_ops == []
+
+
+@pytest.mark.parametrize(
+    ("release", "distribution", "major", "own"),
+    [
+        ("ubuntu 24.04", "ubuntu", 24, "named.conf.default-zones"),
+        ("debian 13", "Debian", 13, "named.conf.root-hints"),
+        ("debian 12", "Debian", 12, "named.conf.default-zones"),
+    ],
+)
+def test_existing_releases_probe_the_same_named_conf_as_before(
+    zones_dir: Path, release: str, distribution: str, major: int, own: str
+) -> None:
+    """Existing releases (Ubuntu 24.04, Debian 12 and 13): the bytes of the role's rule, whatever else is there."""
+
+    cfg = config(zones_dir)
+    before = render_named_conf(cfg, _role_rule(distribution, major))
+
+    for present in ([own], [], ["named.conf.default-zones", "named.conf.root-hints"]):
+        result = run(cfg, host(cfg, extra={DISTRIBUTION: [release], PRESENT: present}))
+        assert probe_named_conf(result) == before
+
+
+def test_a_missing_release_file_falls_back_to_the_one_present(
+    zones_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = config(zones_dir)
+    responses = host(cfg, extra={DISTRIBUTION: ["ubuntu 25.10"], PRESENT: ["named.conf.root-hints"]})
+
+    result = run(cfg, responses)
+
+    assert probe_named_conf(result).endswith(ROOT_HINTS)
+    assert "named.conf.default-zones (the choice for ubuntu 25) is missing" in caplog.text
+    # The release's own file present: no fallback, no warning.
+    caplog.clear()
+    run(cfg, host(cfg, extra={DISTRIBUTION: ["ubuntu 24.04"], PRESENT: ["named.conf.default-zones"]}))
+    assert "is missing" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("statuses", "installs"),
+    [
+        # A release upgrade left bind9 half-configured (or only unpacked): no apt run before the repair.
+        (["iF |bind9|", "ii |bind9-utils|", "ii |bind9-dnsutils|dnsutils"], None),
+        (["iU |bind9|", "iU |bind9-utils|", "iU |bind9-dnsutils|dnsutils"], None),
+        (["iW |bind9|", "it |bind9-utils|", "ii |dnsutils|"], None),
+        # As before: removed (config files left), half-installed or unknown packages are installed.
+        (["rc |bind9|", "ii |bind9-utils|", "ii |dnsutils|"], "bind9"),
+        (["iH |bind9|", "ii |bind9-utils|", "ii |dnsutils|"], "bind9"),
+        (["ri |bind9|", "ii |bind9-utils|", "ii |dnsutils|"], "bind9"),
+        (["ii |bind9|", "ii |bind9-utils|"], "dnsutils"),
+        ([], "bind9 bind9-utils dnsutils"),
+    ],
+)
+def test_unpacked_packages_are_not_reinstalled_before_the_configuration(
+    zones_dir: Path, statuses: list[str], installs: str | None
+) -> None:
+    cfg = config(zones_dir)
+    responses = host(cfg, ["change /etc/bind/named.conf"], extra={DISTRIBUTION: ["ubuntu 26.04"]})
+    responses["dpkg-query -W"] = statuses
+
+    result = run(cfg, responses)
+
+    ops = result.mutating_changed_ops
+    if installs is None:
+        assert P + "Install BIND packages" not in ops
+    else:
+        assert ops.index(P + "Install BIND packages") < ops.index(INSTALL)
+        assert any(f"install {installs}" in command for command in result.executed_commands)
+    assert INSTALL in ops
+
+
+def test_the_presence_probe_is_read_only_and_fish_safe(zones_dir: Path) -> None:
+    cfg = config(zones_dir)
+
+    result = run(cfg, host(cfg))
+
+    [command] = [command for command in result.fact_commands if PRESENT in command]
+    assert not [command for command in result.executed_commands if PRESENT in command]
+    assert not fish_unsafe(command)
+    assert not result.fish_unsafe_commands
+    assert "/etc/bind/" in command
+    assert 'if [ -f /etc/bind/"$name" ]; then echo "$name"; fi; done 2>/dev/null || true' in command
+    assert not any(word in command for word in (" rm ", " mv ", " cp ", " > ", "install ", "touch "))
 
 
 def test_the_command_lines_are_fish_safe_and_carry_no_content(zones_dir: Path) -> None:

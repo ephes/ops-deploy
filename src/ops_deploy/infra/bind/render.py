@@ -4,14 +4,16 @@ The five templates (``bind_macros.j2`` included) are shipped unchanged, so
 ``named.conf``, ``named.conf.options``, ``named.conf.local`` and
 ``named.conf.keys`` are byte-identical to the role's for the same inputs
 (``tests/test_infra_bind_parity.py`` compares them with files Ansible itself
-rendered). Ansible renders with ``trim_blocks``, strips the final newline like
+rendered); the builtin-zones include follows the role's rule except on Ubuntu
+26.04 and later, which the role predates (:func:`builtin_zones_file`). Ansible
+renders with ``trim_blocks``, strips the final newline like
 Jinja2 does by default and restores one when the template ended in a newline.
 The only Ansible filter the templates use is ``bool``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from functools import cache
 from typing import Any
 
@@ -104,13 +106,48 @@ def role_vars(cfg: BindConfig, builtin_zones_file: str, secrets: Mapping[str, st
     }
 
 
-def builtin_zones_file(cfg: BindConfig, distribution: str, major_version: int | None) -> str:
-    """``bind_builtin_zones_file``: the role's default from Ansible's distribution facts."""
+DEFAULT_ZONES = "named.conf.default-zones"
+ROOT_HINTS = "named.conf.root-hints"
+
+
+def ships_root_hints(distribution: str, major_version: int | None) -> bool:
+    """Whether the release's ``bind9`` ships ``named.conf.root-hints`` instead of ``named.conf.default-zones``.
+
+    Debian 13 and later (the role's rule) and Ubuntu 26.04 and later (BIND
+    9.20; the role predates it). ``distribution`` is Ansible's
+    ``ansible_distribution`` or the os-release ID: Ubuntu matches in either
+    spelling, Debian as the deploy reports it.
+    """
+
+    if major_version is None:
+        return False
+    if distribution == "Debian":
+        return major_version >= 13
+    return distribution in ("Ubuntu", "ubuntu") and major_version >= 26
+
+
+def builtin_zones_file(
+    cfg: BindConfig, distribution: str, major_version: int | None, present: Collection[str] | None = None
+) -> str:
+    """``bind_builtin_zones_file``: the include for the package's builtin zones.
+
+    The release decides (:func:`ships_root_hints`). ``present``, the names of
+    those two files that exist in ``config_dir`` (the deploy looks), overrides
+    it only when the release's file is missing and the other one exists, as on
+    a release between the two rules; with neither or both present (before
+    ``bind9`` is installed, or with a file a release upgrade left behind) the
+    release's choice stands. A set ``builtin_zones_file`` wins.
+    """
 
     if cfg.builtin_zones_file is not None:
         return cfg.builtin_zones_file
-    debian13 = distribution == "Debian" and major_version is not None and major_version >= 13
-    return f"{cfg.config_dir}/{'named.conf.root-hints' if debian13 else 'named.conf.default-zones'}"
+    if ships_root_hints(distribution, major_version):
+        chosen, other = ROOT_HINTS, DEFAULT_ZONES
+    else:
+        chosen, other = DEFAULT_ZONES, ROOT_HINTS
+    if present is not None and chosen not in present and other in present:
+        chosen = other
+    return f"{cfg.config_dir}/{chosen}"
 
 
 def render_named_conf(cfg: BindConfig, builtin_zones_file: str) -> str:
