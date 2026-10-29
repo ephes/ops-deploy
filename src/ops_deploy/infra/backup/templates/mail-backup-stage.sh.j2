@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+stage_dir="{{ fractal_mail_offsite_replication_source_stage_path | default('/mnt/cryptdata/mail-backup-stage') }}"
+vmail_dir="{{ fractal_mail_offsite_replication_source_vmail_path | default('/mnt/cryptdata/vmail') }}"
+
+if ! mountpoint -q /mnt/cryptdata; then
+  echo "FATAL: /mnt/cryptdata is not mounted" >&2
+  exit 1
+fi
+
+if [[ ! -d "${vmail_dir}" ]]; then
+  echo "FATAL: vmail directory not found at ${vmail_dir}" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+found_maildir="false"
+for domain_dir in "${vmail_dir}"/*/; do
+  for user_dir in "${domain_dir}"*/; do
+    if [[ -d "${user_dir}cur" && -d "${user_dir}new" && -d "${user_dir}tmp" ]]; then
+      found_maildir="true"
+      break 2
+    fi
+  done
+done
+shopt -u nullglob
+
+if [[ "${found_maildir}" != "true" ]]; then
+  echo "FATAL: No valid Maildir structure found under ${vmail_dir}" >&2
+  exit 1
+fi
+
+mkdir -p "${stage_dir}"
+
+db_tmp="${stage_dir}/database.dump.tmp"
+cfg_tmp="${stage_dir}/config.tar.gz.tmp"
+manifest_tmp="${stage_dir}/manifest.yml.tmp"
+
+runuser -u postgres -- pg_dump --format=custom --dbname=mail > "${db_tmp}"
+mv -f "${db_tmp}" "${stage_dir}/database.dump"
+
+tar -czf "${cfg_tmp}" \
+  /etc/postfix /etc/dovecot /etc/opendkim /etc/rspamd
+mv -f "${cfg_tmp}" "${stage_dir}/config.tar.gz"
+
+cat > "${manifest_tmp}" <<MANIFEST
+timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+host: $(hostname -f)
+components: [database, config]
+MANIFEST
+mv -f "${manifest_tmp}" "${stage_dir}/manifest.yml"

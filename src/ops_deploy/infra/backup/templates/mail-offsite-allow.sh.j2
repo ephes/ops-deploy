@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_tag="mail-offsite-rsync-auth"
+allowed_vmail="{{ fractal_mail_offsite_replication_source_vmail_path | default('/mnt/cryptdata/vmail') | regex_replace('/+$', '') }}"
+allowed_stage="{{ fractal_mail_offsite_replication_source_stage_path | default('/mnt/cryptdata/mail-backup-stage') | regex_replace('/+$', '') }}"
+stage_script="{{ fractal_mail_backup_stage_script_path }}"
+original_command="${SSH_ORIGINAL_COMMAND:-}"
+
+deny() {
+  logger -t "${log_tag}" "Denied command: ${original_command}"
+  echo "Access denied." >&2
+  exit 1
+}
+
+[[ -n "${original_command}" ]] || deny
+
+if [[ "${original_command}" == "${stage_script}" ]]; then
+  exec "${stage_script}"
+fi
+
+read -r -a cmd_parts <<< "${original_command}"
+cmd_count="$(printf '%s\n' "${cmd_parts[@]}" | wc -l | tr -d ' ')"
+[[ "${cmd_count}" -ge 5 ]] || deny
+[[ "${cmd_parts[0]}" == "rsync" ]] || deny
+[[ "${cmd_parts[1]}" == "--server" ]] || deny
+[[ "${cmd_parts[2]}" == "--sender" ]] || deny
+
+requested_path="${cmd_parts[-1]}"
+requested_path="${requested_path%/}"
+requested_path="${requested_path%/.}"
+
+case "${requested_path}" in
+  "${allowed_vmail}"|"${allowed_stage}") ;;
+  *) deny ;;
+esac
+
+exec /usr/bin/rsync "${cmd_parts[@]:1}"

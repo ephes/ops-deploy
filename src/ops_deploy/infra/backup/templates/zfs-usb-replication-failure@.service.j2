@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on ZFS USB replication failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart={{ zfs_usb_replication_alert_script_path }} "%i"

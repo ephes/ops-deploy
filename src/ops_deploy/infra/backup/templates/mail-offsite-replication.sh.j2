@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_tag="mail-offsite-replication"
+source_user="{{ mail_offsite_replication_source_user }}"
+source_host="{{ mail_offsite_replication_source_host }}"
+source_vmail_path="{{ mail_offsite_replication_source_vmail_path }}"
+source_stage_path="{{ mail_offsite_replication_source_stage_path }}"
+source_stage_command="{{ mail_offsite_replication_source_stage_command }}"
+destination_path="{{ mail_offsite_replication_destination_path }}"
+destination_vmail_subdir="{{ mail_offsite_replication_destination_vmail_subdir }}"
+destination_stage_subdir="{{ mail_offsite_replication_destination_stage_subdir }}"
+ssh_key_path="{{ mail_offsite_replication_ssh_key_path }}"
+ssh_known_hosts_path="{{ mail_offsite_replication_ssh_known_hosts_path }}"
+ssh_connect_timeout="{{ mail_offsite_replication_ssh_connect_timeout }}"
+status_file="{{ mail_offsite_replication_status_file }}"
+status_dir="{{ mail_offsite_replication_status_dir }}"
+latest_marker_file="{{ mail_offsite_replication_latest_marker_file }}"
+snapshot_enabled="{{ mail_offsite_replication_snapshot_enabled | bool | ternary('true', 'false') }}"
+snapshot_dataset="{{ mail_offsite_replication_snapshot_dataset }}"
+snapshot_prefix="{{ mail_offsite_replication_snapshot_prefix }}"
+snapshot_keep="{{ mail_offsite_replication_snapshot_keep | int }}"
+spindown_enabled="{{ mail_offsite_replication_spindown_enabled | bool | ternary('true', 'false') }}"
+spindown_script_path="{{ mail_offsite_replication_spindown_script_path }}"
+
+ssh_bin="/usr/bin/ssh"
+rsync_bin="/usr/bin/rsync"
+zfs_bin="/usr/sbin/zfs"
+
+destination_vmail_path="${destination_path%/}/${destination_vmail_subdir}"
+destination_stage_path="${destination_path%/}/${destination_stage_subdir}"
+
+{% if mail_offsite_replication_vmail_rsync_extra_args | length > 0 %}
+vmail_rsync_args=(
+{% for arg in mail_offsite_replication_vmail_rsync_extra_args %}
+  "{{ arg }}"
+{% endfor %}
+)
+{% else %}
+vmail_rsync_args=()
+{% endif %}
+
+{% if mail_offsite_replication_stage_rsync_extra_args | length > 0 %}
+stage_rsync_args=(
+{% for arg in mail_offsite_replication_stage_rsync_extra_args %}
+  "{{ arg }}"
+{% endfor %}
+)
+{% else %}
+stage_rsync_args=()
+{% endif %}
+
+run_spindown() {
+  if [[ "${spindown_enabled}" != "true" ]]; then
+    return 0
+  fi
+  if [[ -x "${spindown_script_path}" ]]; then
+    logger -t "${log_tag}" "Running post-sync spindown hook: ${spindown_script_path}"
+    if ! "${spindown_script_path}"; then
+      logger -t "${log_tag}" "Post-sync spindown hook failed: ${spindown_script_path}"
+    fi
+  else
+    logger -t "${log_tag}" "Spindown script not executable: ${spindown_script_path}"
+  fi
+}
+
+if [[ -z "${source_host}" || -z "${source_vmail_path}" || -z "${source_stage_path}" || -z "${destination_path}" ]]; then
+  logger -t "${log_tag}" "Missing required source/destination configuration."
+  exit 1
+fi
+
+if [[ ! -f "${ssh_key_path}" ]]; then
+  logger -t "${log_tag}" "SSH key file not found: ${ssh_key_path}"
+  exit 1
+fi
+
+if [[ ! -f "${ssh_known_hosts_path}" ]]; then
+  logger -t "${log_tag}" "known_hosts file not found: ${ssh_known_hosts_path}"
+  exit 1
+fi
+
+mkdir -p "${destination_vmail_path}" "${destination_stage_path}" "${status_dir}"
+
+ssh_command="${ssh_bin} -i ${ssh_key_path} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_known_hosts_path} -o ConnectTimeout=${ssh_connect_timeout}"
+
+logger -t "${log_tag}" "Running remote pre-sync stage command on ${source_host}: ${source_stage_command}"
+"${ssh_bin}" \
+  -i "${ssh_key_path}" \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile="${ssh_known_hosts_path}" \
+  -o ConnectTimeout="${ssh_connect_timeout}" \
+  "${source_user}@${source_host}" \
+  "${source_stage_command}"
+
+logger -t "${log_tag}" "Syncing vmail from ${source_host}:${source_vmail_path} to ${destination_vmail_path}"
+"${rsync_bin}" \
+  "${vmail_rsync_args[@]}" \
+  -e "${ssh_command}" \
+  "${source_user}@${source_host}:${source_vmail_path%/}/" \
+  "${destination_vmail_path%/}/"
+
+logger -t "${log_tag}" "Syncing stage data from ${source_host}:${source_stage_path} to ${destination_stage_path}"
+"${rsync_bin}" \
+  "${stage_rsync_args[@]}" \
+  -e "${ssh_command}" \
+  "${source_user}@${source_host}:${source_stage_path%/}/" \
+  "${destination_stage_path%/}/"
+
+snapshot_name=""
+if [[ "${snapshot_enabled}" == "true" ]]; then
+  snapshot_name="${snapshot_dataset}@${snapshot_prefix}-$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+  logger -t "${log_tag}" "Creating snapshot ${snapshot_name}"
+  "${zfs_bin}" snapshot "${snapshot_name}"
+
+  if [[ "${snapshot_keep}" -gt 0 ]]; then
+    while IFS= read -r old_snapshot; do
+      [[ -n "${old_snapshot}" ]] || continue
+      "${zfs_bin}" destroy "${old_snapshot}"
+    done < <(
+      "${zfs_bin}" list -H -t snapshot -o name -s creation -r "${snapshot_dataset}" \
+        | grep "@${snapshot_prefix}-" \
+        | head -n -"${snapshot_keep}" || true
+    )
+  fi
+fi
+
+latest_mail_file="$(
+  {
+    find "${destination_vmail_path}" -type f -printf '%T@ %p\n' || true
+  } | awk '
+    BEGIN { max = -1; file = "" }
+    {
+      ts = $1
+      $1 = ""
+      sub(/^ /, "", $0)
+      if (ts > max) {
+        max = ts
+        file = $0
+      }
+    }
+    END {
+      if (file != "") {
+        print file
+      }
+    }
+  '
+)"
+latest_mail_epoch=""
+if [[ -n "${latest_mail_file}" && -f "${latest_mail_file}" ]]; then
+  latest_mail_epoch="$(stat -c '%Y' "${latest_mail_file}")"
+fi
+
+vmail_size_bytes="$(du -sb "${destination_vmail_path}" 2>/dev/null | awk '{print $1}' || true)"
+if [[ -z "${vmail_size_bytes}" ]]; then
+  vmail_size_bytes="0"
+fi
+
+stage_manifest_path="${destination_stage_path%/}/manifest.yml"
+stage_manifest_timestamp=""
+if [[ -f "${stage_manifest_path}" ]]; then
+  stage_manifest_timestamp="$(awk -F': ' '/^timestamp:/ {print $2}' "${stage_manifest_path}" | tail -n 1 || true)"
+fi
+
+sync_epoch="$(date +%s)"
+: > "${latest_marker_file}"
+touch -d "@${sync_epoch}" "${latest_marker_file}"
+
+export STATUS_FILE="${status_file}"
+export SOURCE_HOST="${source_host}"
+export SOURCE_VMAIL_PATH="${source_vmail_path}"
+export SOURCE_STAGE_PATH="${source_stage_path}"
+export DESTINATION_PATH="${destination_path}"
+export DESTINATION_VMAIL_PATH="${destination_vmail_path}"
+export DESTINATION_STAGE_PATH="${destination_stage_path}"
+export LATEST_MAIL_FILE="${latest_mail_file}"
+export LATEST_MAIL_EPOCH="${latest_mail_epoch}"
+export VMAIL_SIZE_BYTES="${vmail_size_bytes}"
+export STAGE_MANIFEST_TIMESTAMP="${stage_manifest_timestamp}"
+export SNAPSHOT_NAME="${snapshot_name}"
+export GENERATED_EPOCH="${sync_epoch}"
+
+python3 <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+
+status_file = os.environ["STATUS_FILE"]
+generated_epoch = int(os.environ["GENERATED_EPOCH"])
+latest_epoch_raw = (os.environ.get("LATEST_MAIL_EPOCH") or "").strip()
+latest_epoch = int(latest_epoch_raw) if latest_epoch_raw else None
+
+payload = {
+    "generated_at": datetime.fromtimestamp(generated_epoch, tz=timezone.utc).isoformat(),
+    "source_host": os.environ["SOURCE_HOST"],
+    "source_vmail_path": os.environ["SOURCE_VMAIL_PATH"],
+    "source_stage_path": os.environ["SOURCE_STAGE_PATH"],
+    "destination_path": os.environ["DESTINATION_PATH"],
+    "destination_vmail_path": os.environ["DESTINATION_VMAIL_PATH"],
+    "destination_stage_path": os.environ["DESTINATION_STAGE_PATH"],
+    "latest_mail_file": os.environ.get("LATEST_MAIL_FILE") or None,
+    "latest_mail_file_mtime_epoch": latest_epoch,
+    "latest_mail_file_mtime_iso": (
+        datetime.fromtimestamp(latest_epoch, tz=timezone.utc).isoformat() if latest_epoch is not None else None
+    ),
+    "vmail_size_bytes": int(os.environ.get("VMAIL_SIZE_BYTES") or 0),
+    "stage_manifest_timestamp": os.environ.get("STAGE_MANIFEST_TIMESTAMP") or None,
+    "snapshot": os.environ.get("SNAPSHOT_NAME") or None,
+}
+
+tmp_path = f"{status_file}.tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, sort_keys=True)
+    handle.write("\n")
+os.replace(tmp_path, status_file)
+PY
+
+run_spindown
+logger -t "${log_tag}" "Mail offsite sync complete; snapshot=${snapshot_name:-none}"

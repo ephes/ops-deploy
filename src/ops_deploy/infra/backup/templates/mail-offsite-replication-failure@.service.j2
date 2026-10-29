@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on mail offsite replication failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart={{ mail_offsite_replication_alert_script_path }} "%i"

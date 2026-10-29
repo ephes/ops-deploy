@@ -11,6 +11,14 @@
   avoiding old application imports when its environment will be replaced.
   This is a tested source foundation; no deployment API or inventory switch.
 
+- Add managed Daybook runtime cutover/rollback and optional Inbox interruption
+  summary components, preserving original reconciliation/start guards. Owned
+  root/GUI/SSH transition/report assertions and exact817 package provenance
+  passed; canonical8600/518 passed on both Python versions after a test-only
+  encoded-shell classifier repair. Preserve the raw native receipt's failed-label
+  omission explicitly; its status correction changes no runtime resources.
+  Inventory update/lifecycle/default adoption remains separate.
+
 - Add the original Voice Memo Inbox declaration, disabled-first component
   controller and final keeper resource composition. Keep root-source/Python
   replacement behind the original runtime/quiescence guards, preserve private
@@ -1857,3 +1865,16 @@
   directory no longer makes every later deploy resync and restart. It also
   passes `ssh_key`, `ssh_known_hosts_file` and `ssh_strict_host_key_checking`
   from host data to rsync's ssh.
+
+### ZFS storage and scheduled backup APIs
+
+- Add typed pool/dataset bundles with native desired-key validation before key
+  publication, original property/boot lifecycle policy and ordered dependencies.
+- Add explicit local/USB/archive/mail replication configuration APIs using the
+  original policy programs, RAM-only private-file equality and fresh peer keyscan.
+- Add the original delegated mail/MinIO source and restore-access preparation;
+  configuration deploys do not explicitly execute backups or storage maintenance.
+  Preserve equivalent reordered forced-key options and unrelated comments while
+  repairing quoted/escaped policy drift with OpenSSH identity boundaries.
+- Qualification is in progress; owned file-vdev/component evidence does not attest
+  production storage, physical USB/spindown or complete lifecycle parity.

@@ -1,0 +1,32 @@
+[Unit]
+Description=ZFS syncoid replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+{% if zfs_syncoid_replication_alert_enabled | bool %}OnFailure={{ zfs_syncoid_replication_service_name }}-failure@%n.service
+{% endif %}
+
+[Service]
+Type=oneshot
+TimeoutStartSec={{ zfs_syncoid_replication_timeout_sec }}
+{% for job in zfs_syncoid_replication_jobs %}
+{% set args = [] %}
+{% set default_args = zfs_syncoid_replication_default_args %}
+{% if job.no_rollback is defined and not job.no_rollback %}
+{% set default_args = zfs_syncoid_replication_default_args | reject('equalto', '--no-rollback') | list %}
+{% endif %}
+{% if job.recursive | default(false) %}{% set _ = args.append('--recursive') %}{% endif %}
+{% if job.readonly | default(false) %}{% set _ = args.append('--recvoptions="o readonly=on"') %}{% endif %}
+{% if job.force_delete | default(false) %}{% set _ = args.append('--force-delete') %}{% endif %}
+{% for arg in default_args %}{% set _ = args.append(arg) %}{% endfor %}
+{% for arg in job.extra_args | default([]) %}{% set _ = args.append(arg) %}{% endfor %}
+{% if job.abort_partial_receive | default(false) %}
+ExecStartPre={{ zfs_syncoid_replication_abort_partial_receive_script_path }} "{{ job.target }}" "{{ job.recursive | default(false) | bool | ternary('true', 'false') }}"
+{% endif %}
+{% if job.prune_conflicting_snapshots | default(false) %}
+ExecStartPre={{ zfs_syncoid_replication_prune_script_path }} "{{ job.source }}" "{{ job.target }}" "{{ job.recursive | default(false) | bool | ternary('true', 'false') }}" "{{ job.prune_target_only_snapshots | default(false) | bool | ternary('true', 'false') }}"
+{% endif %}
+ExecStart={{ ([zfs_syncoid_replication_syncoid_path] + args + ['"' ~ job.source ~ '"', '"' ~ job.target ~ '"']) | join(' ') }}
+{% endfor %}
+{% if zfs_syncoid_replication_spindown_enabled | bool and (zfs_syncoid_replication_spindown_devices | length > 0) %}
+ExecStartPost={{ zfs_syncoid_replication_spindown_script_path }}
+{% endif %}

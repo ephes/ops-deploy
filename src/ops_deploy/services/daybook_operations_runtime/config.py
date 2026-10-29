@@ -115,6 +115,7 @@ class DaybookRuntimeConfig(RoleConfig):
     staged_plist: PurePosixPath | None = None
     legacy_plist: PurePosixPath | None = None
     closeout_marker: PurePosixPath | None = None
+    binding: Name = "regular"
     status_sources: tuple[Name, ...] = ("regular",)
     quiet_retries: Annotated[StrictInt, Field(ge=1)] = 30
     quiet_delay: Annotated[StrictInt, Field(ge=0)] = 10

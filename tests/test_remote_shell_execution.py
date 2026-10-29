@@ -175,9 +175,13 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         "services/software_live/files/software_live_impl.py",
         "services/software_live/files/live_state_host.py",
     }
-    # Runtime stop is also always base64 encoded by stop_command, never raw
-    # Python in shell source. The actual composed command is exercised below.
-    encoded_daybook_runtime = {"services/daybook_operations_runtime/files/runtime_stop.py"}
+    # Runtime stop/transition are always encoded by their command builders,
+    # never raw Python in shell source. Both actual composed commands execute
+    # through bash AND fish with protected stdin below.
+    encoded_daybook_runtime = {
+        "services/daybook_operations_runtime/files/runtime_stop.py",
+        "services/daybook_operations_runtime/files/runtime_transition.py",
+    }
     # Sessions resource_command also always base64-encodes this source. The
     # actual composed CLI with protected stdin and its synthetic model probe is
     # executed through both real shells in test_daybook_sessions_resource_cli.
@@ -185,6 +189,9 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # MinIO uses the same encoded-source boundary, with secret payload on stdin.
     # Exercise its actual composed command through both shells below.
     encoded_minio = {"services/minio/files/iam_host.py"}
+    # The unchanged backup attestation program is uploaded with files.put,
+    # never interpolated into shell source; its actual file CLI is tested below.
+    uploaded_backup = {"infra/files/zfs_snapshot_file_attestation.py"}
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
@@ -195,6 +202,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_daybook_runtime
         | encoded_daybook_sessions
         | encoded_minio
+        | uploaded_backup
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20
@@ -472,10 +480,13 @@ def test_django_site_marker_fact_lists_only_markers(
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
-def test_encoded_daybook_stop_command_through_real_login_shell(login_shell: str) -> None:
+@pytest.mark.parametrize("component", ["stop", "transition"])
+def test_encoded_daybook_runtime_command_through_real_login_shell(login_shell: str, component: str) -> None:
     from ops_deploy.services.daybook_operations_runtime.stop import stop_command
+    from ops_deploy.services.daybook_operations_runtime.transition import transition_command
 
-    parts = shlex.split(stop_command())
+    command = stop_command() if component == "stop" else transition_command()
+    parts = shlex.split(command)
     assert parts[0] == "/usr/bin/python3"
     # Keep the encoded command and shell wrapping; use the test environment's
     # interpreter instead of an optional host shim or CLT installation prompt.
@@ -493,7 +504,7 @@ def test_encoded_daybook_stop_command_through_real_login_shell(login_shell: str)
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr.strip() == "runtime_stop_failed"
+    assert result.stderr.strip() == f"runtime_{component}_failed"
     assert private not in result.stdout + result.stderr
 
 
@@ -555,3 +566,27 @@ def test_minio_encoded_host_source_and_secret_stdin_through_real_login_shell(tmp
     assert json.loads(result.stdout) == {"pending": 0, "changed": False}
     assert result.stderr == ""
     assert alias_file.read_bytes() == before
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_backup_attestation_is_uploaded_and_its_real_file_cli_is_shell_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, login_shell: str
+) -> None:
+    from pyinfra.operations import files as file_ops
+
+    from ops_deploy.infra.backup import common
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(file_ops, "put", lambda **kwargs: calls.append(kwargs))
+    original = SRC / "infra/files/zfs_snapshot_file_attestation.py"
+    uploaded = tmp_path / "uploaded attestation.py"
+    common.original_file(original.name, str(uploaded), "0750")
+    assert len(calls) == 1
+    assert calls[0]["src"] == str(original)
+    assert calls[0]["dest"] == str(uploaded)
+    shutil.copyfile(str(calls[0]["src"]), uploaded)
+    command = shlex.join([sys.executable, str(uploaded), "--help"])
+    result = run_remote(command, login_shell, os.environ["PATH"])
+    assert result.returncode == 0, result.stderr
+    assert "--attestation-dir" in result.stdout
+    assert uploaded.read_bytes() == original.read_bytes()

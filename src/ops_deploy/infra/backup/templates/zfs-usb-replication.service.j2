@@ -1,0 +1,11 @@
+[Unit]
+Description=ZFS USB replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+{% if zfs_usb_replication_alert_enabled | bool %}OnFailure={{ zfs_usb_replication_service_name }}-failure@%n.service
+{% endif %}
+
+[Service]
+Type=oneshot
+TimeoutStartSec={{ zfs_usb_replication_timeout_sec }}
+ExecStart=/usr/local/bin/zfs-usb-replication.sh

@@ -186,3 +186,58 @@ def require_profile_transition(
             )
         if not drained:
             raise RuntimeGuardError("runtime_old_store_not_drained")
+
+
+@dataclass(frozen=True)
+class TransitionStatus:
+    """Four whitelisted aggregate fields from ORIGINAL managed CLI status."""
+
+    enabled: bool
+    status: str
+    active_state: str | None
+    server_enabled: bool
+
+
+def parse_transition_status(payload: Mapping[str, Any]) -> TransitionStatus:
+    """No I/O; caller discards the raw app response after extracting metadata."""
+    try:
+        enabled, status, server = payload["enabled"], payload["status"], payload["server"]
+        active, remote_enabled = server["active_state"], server["enabled"]
+        if (
+            type(enabled) is not bool
+            or type(remote_enabled) is not bool
+            or status not in {"idle", "awaiting", "blocked"}
+            or (
+                active is not None
+                and active not in {"pending", "assigned", "awaiting_apply", "needs_reconciliation", "failed"}
+            )
+        ):
+            raise ValueError
+    except (ValueError, KeyError, TypeError):
+        raise RuntimeGuardError("runtime_transition_status_invalid") from None
+    return TransitionStatus(enabled, status, active, remote_enabled)
+
+
+def require_transition_status(action: str, state: TransitionStatus) -> None:
+    """Original pre-configuration cutover/rollback reconciliation predicates."""
+    if action not in {"cutover", "rollback"}:
+        raise RuntimeGuardError("runtime_transition_action_invalid")
+    if (
+        (state.enabled and action != "rollback")
+        or state.status not in {"idle", "awaiting", "blocked"}
+        or state.active_state in {"assigned", "awaiting_apply"}
+        or (action == "rollback" and state.server_enabled)
+    ):
+        raise RuntimeGuardError("runtime_existing_state_not_reconciled")
+
+
+def require_start_status(action: str, state: TransitionStatus) -> None:
+    """Original readiness after selected policy publication, before enable/bootstrap."""
+    if action not in {"cutover", "rollback"}:
+        raise RuntimeGuardError("runtime_transition_action_invalid")
+    if (
+        state.active_state is not None
+        or (action == "cutover" and state.status != "idle")
+        or state.server_enabled != (action == "cutover")
+    ):
+        raise RuntimeGuardError("runtime_start_not_reconciled")

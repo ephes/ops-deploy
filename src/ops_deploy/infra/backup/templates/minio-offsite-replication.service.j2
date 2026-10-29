@@ -1,0 +1,11 @@
+[Unit]
+Description=MinIO offsite archive replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+{% if minio_offsite_replication_alert_enabled | bool %}OnFailure={{ minio_offsite_replication_service_name }}-failure@%n.service
+{% endif %}
+
+[Service]
+Type=oneshot
+TimeoutStartSec={{ minio_offsite_replication_timeout_sec }}
+ExecStart={{ minio_offsite_replication_script_path }}

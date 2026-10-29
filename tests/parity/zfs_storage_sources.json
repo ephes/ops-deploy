@@ -1,0 +1,22 @@
+{
+  "source_ref": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+  "scope": "Exact selected pool/dataset runtime only; global940 baseline unchanged.",
+  "resources": {
+    "roles/zfs_pool_deploy/tasks/unlock_service.yml": "bd7ece346926d34f27bbc10fe2eb15289d47985cb9ad992fbe78d44e3995e6fe",
+    "roles/zfs_pool_deploy/tasks/packages.yml": "3aaceb466fe32d462de38a5331ae5788db837e95ac5f674aa19e46f9d63fce06",
+    "roles/zfs_pool_deploy/tasks/configure.yml": "4b94f5b29ca6805e94dfb3bd4226dbcc2b78b3ca764a1c3e3b73a88e92005341",
+    "roles/zfs_pool_deploy/tasks/keyfile.yml": "3aa23632758104d5b6c74c3e602f149e4b60880ecfdb85fde526d2f83302c5f8",
+    "roles/zfs_pool_deploy/tasks/validate.yml": "4b2bfbad1142699abcdc4fe295ec29a2a42bc0cf81ea0da43a28f4f349e37133",
+    "roles/zfs_pool_deploy/tasks/create_pool.yml": "64e512dcb28e4c244108c4a88784521b90bbbdb97086766f81c51241d2ef1f37",
+    "roles/zfs_pool_deploy/tasks/main.yml": "b3773836b0f8138f3db6be4f1c2e747ca0ed2aa5ea6128fc1245103c6b1bf49b",
+    "roles/zfs_pool_deploy/defaults/main.yml": "3a4cd1909ef787571cfc7b3a398e1a704976fd643825f948ffb1d44c53c60aa7",
+    "roles/zfs_pool_deploy/templates/zfs-unlock-pool.service.j2": "66b4e7d4d0f79f83d24f08ef068581f60df91d1f7dd5b469f804f8fec80f4bf5",
+    "roles/zfs_dataset/tasks/validate.yml": "f530f4a13a10f7207e5b8a71d1402f9f4bcff2d1dc53490df97291e327ff75d8",
+    "roles/zfs_dataset/tasks/create_dataset.yml": "831637d3835bf4afb1fdc0036f036f791ee590e95f6888c2aa91962e7aa79701",
+    "roles/zfs_dataset/tasks/configure_dataset.yml": "58361510235dd7477ba7df0aa0b8bf9fc3c0656d7561689b5a9b62a529496e31",
+    "roles/zfs_dataset/tasks/main.yml": "aef03635568015a5764ebf66f2963ba7acf5ecc51356993256ac0ffe6b5b6a46",
+    "roles/zfs_dataset/defaults/main.yml": "07ade4ab2beaeff62c46abc9845db0cb7a9c109060ce43cf4ee0e6e681b35162",
+    "roles/zfs_dataset/handlers/main.yml": "cd70cba10b5d5f452513f00d7adc0a769f96573f4a4b35b715ddd08a7faffeb6",
+    "plugins/filter/zfs.py": "cfac1e19605507dc3436e5c44bd4f3858efc360bf0913c8b6b5323cb533f8ae2"
+  }
+}
