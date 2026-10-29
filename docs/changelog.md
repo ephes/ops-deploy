@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare the Home Assistant host-local configuration file primitive with original
+  template/replace symlink and backup behavior, metadata repair, protected output
+  and explicit partial-effect reporting. Full task wiring/native proof is pending.
+
 - Prepared Home Assistant protected configuration/secrets/include rendering,
   preserving the original template bytes, defaults and path-derived SQLite URL;
   physical configuration writes and native application qualification remain pending.

@@ -290,3 +290,32 @@ This component does not resolve the host's UniFi credential, parse or normalize
 user YAML, write files, create backups, or notify a handler. Physical template
 versus replace symlink behavior and named backup semantics remain a separate
 writer implementation. Source/template tests are not native application proof.
+
+### Prepared physical configuration primitive
+
+The host-local file primitive accepts one protected template or replacement
+task at a time. Templates replace a leaf symlink, retain its target, repair
+declared ownership/mode, and make the original PID/time-named backup on content
+changes or link replacement. Replacement tasks follow the leaf link, retain
+its identity, preserve target metadata with the original atomic-move EPERM
+tolerance, and back up beside the original path
+only when the exact expression changes the body. Missing parents are not made;
+missing replacement files fail. A matching regular file is not rewritten.
+
+Only fixed status/effect flags and exception class names leave this helper.
+`effects_started` distinguishes an attempted apply from a completed backup,
+body write or metadata change: failures can leave a partial backup or newly
+written body, so a failed operation is not evidence of zero effects. Ordinary
+retry converges remaining metadata/content work. Current/rendered bytes, their
+digests and backup filenames are not emitted. No global filesystem-I/O claim
+is made; reading a file may update access time.
+
+This primitive has local synthetic filesystem/original-Ansible controls only.
+The complete configuration task ordering, UniFi resolution and pyinfra wiring
+remain pending, as do native Ubuntu/application and inventory qualification.
+
+The temporary-file attribute copy keeps the original ordering and EPERM-only
+best effort behavior. A replacement has no explicit owner/mode arguments, so
+it does not add a mandatory repair after that tolerated error. Other metadata
+errors remain failures. The paired injected-error oracle uses actual Ansible
+`atomic_move`; it is not proof of a real unprivileged foreign-owner scenario.
