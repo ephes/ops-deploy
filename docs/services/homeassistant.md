@@ -73,3 +73,12 @@ Existence follows the original `stat` behavior without following symlinks. A
 dangling Python link therefore fails version inspection before replacement;
 a failed application command retains the original empty-version/install
 decision, including the lack of an implicit upgrade for an unpinned spec.
+
+The prepared unit-trust adapter sends the unchanged original systemd/proc
+inspection program and exact managed drop-in bytes. It preserves the original
+unknown-drop-in, manager/environment trust, reload and running-process guards,
+including the explicit missing-unit preflight option. Owned synthetic systemctl
+and proc fixtures exercise its actual encoded command and verify that private
+environment values never enter its status output. This does not install the
+drop-in, restart a unit, qualify a real systemd process, or complete the separate
+UV system-certificate maintenance workflow.
