@@ -41,7 +41,7 @@ The role's `bind_*` variables without the prefix, with the role's defaults:
 | `packages` | `bind9`, `bind9-utils`, `dnsutils` | installed when missing |
 | `service_name` | `named` | |
 | `config_dir`, `working_dir`, `dynamic_zone_dir` | `/etc/bind`, `/var/cache/bind`, `/var/lib/bind` | static zones, transfer-backed zones and dynamic zones live there; the deploy refuses other values (see [Paths and zone files](#paths-and-zone-files)) |
-| `builtin_zones_file` | `None` | `None`: the role's choice, `named.conf.root-hints` on Debian 13 and later, else `named.conf.default-zones` (read from `/etc/os-release`, as Ansible's facts are); the deploy refuses a set value |
+| `builtin_zones_file` | `None` | `None`: the include the host's release ships, `named.conf.root-hints` on Debian 13 and Ubuntu 26.04 and later, else `named.conf.default-zones` (read from `/etc/os-release`, as Ansible's facts are), with a file-presence fallback (see [Builtin zones and release upgrades](#builtin-zones-and-release-upgrades)); the deploy refuses a set value |
 | `zone_files_dir` | required | controller directory with the zone files (the role's default derives it from the playbook directory) |
 | `config_owner`, `config_group`, `config_mode`, `service_user` | `root`, `bind`, `0644`, `bind` | |
 | `zone_default_type`, `zone_transfer_backed_types` | `master`, `slave`/`secondary` | |
@@ -71,9 +71,11 @@ contacts the host it refuses:
   dot-separated labels of letters, digits, `-` and `_` (Debian's naming, as in
   `db.example.org` or `db.192.0.2`), that another zone uses too, that holds
   `.jnl`, or that is one of the `bind9` package's own zone files in
-  `/etc/bind` (`db.0`, `db.127`, `db.255`, `db.empty`, `db.local`, which its
-  builtin zones load). An absolute `file`, which the role allows for a
-  transfer-backed zone, is refused as well.
+  `/etc/bind` (`db.0`, `db.127`, `db.255`, `db.empty`, `db.local`, which
+  `named.conf.default-zones` loads up to Debian 12 and Ubuntu 24.04; refused
+  on every release, so a configuration stays valid across a release upgrade).
+  An absolute `file`, which the role allows for a transfer-backed zone, is
+  refused as well.
 
 So every file the deploy writes or removes is one of the four `named.conf`
 files in `/etc/bind`, a static zone file there, or a dynamic zone file it
@@ -99,7 +101,10 @@ any of the steps, the paths and zone file names are checked (see
    files would change and BIND is installed, it also runs the checks of
    step 3, so a configuration named would reject fails while planning. A
    dynamic zone's file and journal are only looked up, never read or compared.
-2. Missing packages are installed (apt cache refreshed first). `config_dir`
+2. Missing packages are installed (apt cache refreshed first); a package
+   that is installed, or unpacked but not yet configured (`iU`, `iF`, `iW`,
+   `it`, as a release upgrade leaves it), or provided by such a package,
+   counts as there. `config_dir`
    `root:bind 0755`, `working_dir` (with transfer-backed zones) and
    `dynamic_zone_dir` (with dynamic zones) `bind:bind 0775`, special bits
    cleared as Ansible's `file` does.
@@ -151,6 +156,43 @@ last load, as after the clock was set back, is refused before any change;
 restarting named, or waiting, clears it). It keeps no state of its own. The
 staged files are shared between runs: only the run holding the lock removes
 them.
+
+## Builtin zones and release upgrades
+
+`named.conf` ends with an `include` of the file in which the `bind9` package
+defines its builtin zones. Up to Debian 12 and Ubuntu 24.04 (BIND 9.18) that
+is `named.conf.default-zones`, which loads `db.0`, `db.127`, `db.255`,
+`db.empty` and `db.local`. Debian 13 and Ubuntu 26.04 (BIND 9.20) ship only
+`named.conf`, `named.conf.local`, `named.conf.options` and
+`named.conf.root-hints` (the root hint zone; named's own empty zones replace
+the `db.*` files), and their `bind9` removes the old files on upgrade
+(`dpkg-maintscript-helper rm_conffile`). So the deploy picks:
+
+- `named.conf.root-hints` on Debian 13 and later (the role's rule) and on
+  Ubuntu 26.04 and later (the role predates it and still picks
+  `named.conf.default-zones` there, so the role and this deploy no longer
+  take turns on such a host);
+- `named.conf.default-zones` on every other release;
+- the other one of the two when the release's file is missing from
+  `/etc/bind` and the other one exists (a read-only `[ -f ]` while planning),
+  with a warning, as on a release between the two rules. With neither file
+  (before `bind9` is installed) or both (a copy an upgrade left behind) the
+  release decides. On Ubuntu 24.04 and Debian 13 hosts the bytes are those of
+  the role's rule, whatever else is in `/etc/bind`.
+
+An in-place release upgrade (Debian 12 to 13, Ubuntu 24.04 to 26.04) removes
+`named.conf.default-zones` while the installed `named.conf` still includes
+it: named fails to start and `bind9` stays half-configured (`iF`). Keep the
+managed `named.conf`, `named.conf.local` and `named.conf.options` at the
+conffile prompts, then run this deploy once the new `/etc/os-release` is in
+place. A package dpkg has unpacked but not configured counts as installed
+(step 2 runs no `apt-get install`, which would re-run the failing configure
+script first); the probe and `named-checkconf` see the new release, the
+deploy installs the `named.conf.root-hints` include, starts or reloads named,
+and `dpkg --configure -a` then completes. BIND 9.20's `named-checkconf` accepts every statement the
+templates render (`type master` and `type secondary` included); options in
+`extra_options` or `extra_config` that 9.20 removed fail that check before
+anything is installed.
 
 ## Dynamic zones
 
@@ -209,7 +251,12 @@ a secret).
   reload on the next run (`reload-pending`); the role's handler is lost then
   and needs `rndc reload` by hand.
 - The apt cache is refreshed only before an install (the role refreshes it on
-  every run).
+  every run), and a package dpkg has unpacked but not configured is not
+  reinstalled (see [Builtin zones and release upgrades](#builtin-zones-and-release-upgrades)).
+- The builtin-zones include on Ubuntu 26.04 and later is
+  `named.conf.root-hints` (the role's `named.conf.default-zones` does not
+  exist there), and a release's missing file falls back to the other one
+  present (see [Builtin zones and release upgrades](#builtin-zones-and-release-upgrades)).
 - Stricter values (each is rendered verbatim into the configuration): no
   control characters, zone and key names from a fixed character set, known
   zone types and HMAC algorithms, a zone `file` that is one file name below
@@ -232,7 +279,11 @@ a secret).
   fresh, changed file, refusals, `reload-pending`, leftovers, secrets only on
   stdin, fish-safe command lines, no keys, secondary, verify, UFW, Debian 13,
   other paths and zone file names refused before the host is contacted) and
-  the config validation.
+  the config validation; the builtin-zones include for every release (the
+  role's rule except Ubuntu 26.04 and later, against a copy of that rule),
+  the file-presence fallback and its warning, Ubuntu 24.04, Debian 12 and
+  Debian 13 probing the same `named.conf` bytes as before whatever is in
+  `/etc/bind`, and unpacked but unconfigured packages not reinstalled.
 - `tests/test_infra_bind_docker.py`: real named 9.18, `named-checkconf`,
   `named-checkzone`, `nsupdate` and `rndc` in an owned systemd container,
   skipped unless `BIND_DOCKER_CONTAINER` holds the full ID of a running

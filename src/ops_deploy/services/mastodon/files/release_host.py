@@ -426,6 +426,70 @@ def bundle_key(cfg):
     )
 
 
+def locked_gem_dirs(cfg):
+    """Map installed gem directory names of the locked GEM specs to gem names."""
+    names = {}
+    for line in (Path(cfg["site_path"]) / "Gemfile.lock").read_text().splitlines():
+        match = re.fullmatch(r"    ([^ ()]+) \(([^ ()]+)\)", line)
+        if match:
+            names.setdefault(match.group(1) + "-" + match.group(2), set()).add(match.group(1))
+    return names
+
+
+def native_gem_name(locked, directory):
+    # Precompiled platform gems install as name-version-platform under a plain lock entry.
+    found = set()
+    for prefix, names in locked.items():
+        if directory == prefix or re.fullmatch(re.escape(prefix) + r"-[A-Za-z0-9_.]+(?:-[A-Za-z0-9_.]+)*", directory):
+            found |= names
+    return found
+
+
+def native_broken(cfg):
+    """Locked gems whose native extensions link a shared library ldd cannot find.
+
+    The expected cause is an OS/ABI change, such as the libicu soname bump of a
+    release upgrade. Bundler's own check does not load extensions and still passes.
+    """
+    abi = ".".join(cfg["ruby_version"].split("-")[0].split(".")[:2]) + ".0"
+    base = Path(cfg["bundle_path"]) / "ruby" / abi
+    if not base.is_dir() or base.is_symlink():
+        return []
+    extensions = sorted(
+        str(Path(root) / name)
+        for root, _dirs, names in os.walk(base)
+        for name in names
+        if name.endswith(".so") and "\n" not in name and (Path(root) / name).is_file()
+        and not (Path(root) / name).is_symlink()
+    )
+    if not extensions:
+        return []
+    # ldd runs as the service user: no root tracing of application-built objects.
+    result = user(cfg, ["ldd", *extensions], optional=True)
+    require(result.returncode in (0, 1), "cannot inspect native extension links")
+    missing = set()
+    headers = set(extensions)
+    current = extensions[0] if len(extensions) == 1 else None
+    for line in result.stdout.splitlines():
+        if line.endswith(":") and line[:-1] in headers:
+            current = line[:-1]
+        elif line.strip().endswith("=> not found") and not line.strip().startswith("libruby.so"):
+            # libruby is already loaded by the Ruby process that requires the extension.
+            require(current is not None, "cannot attribute native extension links")
+            missing.add(current)
+    locked = locked_gem_dirs(cfg) if missing else {}
+    broken = set()
+    for path in missing:
+        parts = Path(path).relative_to(base).parts
+        directory = parts[1] if parts[0] == "gems" and len(parts) > 2 else None
+        if parts[0] == "extensions" and len(parts) > 4:
+            directory = parts[3]
+        require(directory is not None, "a native extension outside locked registry gems links a missing library")
+        # Directories of no locked spec are unused leftovers of earlier bundles.
+        broken |= native_gem_name(locked, directory)
+    return sorted(broken)
+
+
 def yarn_key(cfg):
     return fingerprint(
         cfg, ["source_commit", "source_files", "node_version", "yarn_use_corepack", "yarn_global_install", "yarn_flags"]
@@ -519,9 +583,12 @@ def dependencies_state(cfg, runtime):
         and ruby_ready
         and user(cfg, ["bundle", "check", "--dry-run"], optional=True).returncode == 0
     )
+    # The ABI check runs only for an otherwise current bundle: no key change, no rebuild when healthy.
+    native = native_broken(cfg) if cfg["bundle_install"] and bundle_current else []
     yarn_current = state_read("yarn") == yarn_key(cfg) and node_ready and yarn_output(cfg)
     return {
-        "bundle": cfg["bundle_install"] and not bundle_current,
+        "bundle": cfg["bundle_install"] and (not bundle_current or bool(native)),
+        "native_rebuild": native,
         "yarn": cfg["yarn_install"] and not yarn_current,
         "assets": cfg["precompile_assets"] and (state_read("assets") != assets_key(cfg) or not assets_output(cfg)),
     }
@@ -534,8 +601,13 @@ def bundle(cfg):
     if cfg["bundle_deployment"]:
         user(cfg, ["bundle", "config", "set", "--local", "deployment", "true"])
     user(cfg, ["bundle", "install", "--jobs", str(cfg["bundle_jobs"]), "--retry", str(cfg["bundle_retry"])])
+    broken = native_broken(cfg)
+    if broken:
+        # Installed gems are skipped by install; pristine rebuilds them from the cached .gem.
+        user(cfg, ["bundle", "pristine", *broken])
     verify_source(cfg)
     user(cfg, ["bundle", "check", "--dry-run"])
+    require(not native_broken(cfg), "native gem extensions still link missing libraries after rebuild")
     state_write("bundle", bundle_key(cfg))
 
 
