@@ -62,3 +62,50 @@ tests/                pytest, no network, well under 10 s
 - Python 3.12 or newer on the controller.
 - pyinfra pinned to `3.10.*`. pyinfra 3.10 deprecates `MaskString`; use
   `pyinfra.api.hiddenvalue.HiddenValue` (ruff bans the old name here).
+
+## Mastodon incident upgrade
+
+`ops_deploy.services.mastodon_upgrade.upgrade_mastodon(domain)` is a targeted
+upgrade of an existing `/home/mastodon/live` installation from 4.6.9 to 4.7.4.
+It is not a bootstrap deploy or general Mastodon lifecycle implementation.
+Run it through a private inventory wrapper, as root, one host at a time,
+with staging verified before production. The controller must use this checkout.
+
+The procedure requires a clean checkout, healthy web/Sidekiq/streaming/nginx
+services, an inactive maintenance job, and at least 20 GiB free.
+The fixed layout is the `mastodon` Unix user and PostgreSQL database,
+`mastodon-web`, `mastodon-sidekiq`, `mastodon-streaming`, and `mastodon-nginx`
+units, an enabled `mastodon-maintenance.timer`, and loopback ports 10042 (web)
+and 10043 (streaming). Preflight verifies timer enablement, `DB_NAME`, and
+both endpoints before taking a backup or changing source. Other layouts,
+including the normal deploy's default ports, are outside this procedure.
+It creates a root-only `/opt/backups/mastodon/security-4.7.4` directory with a
+PostgreSQL
+custom dump, global roles, environment/bundler/unit/maintenance configuration,
+and local media excluding refetchable `public/system/cache`. Application
+services stop during the backup and restart on exit; the maintenance timer is
+paused during source updates and restored after successful verification.
+
+It installs Ruby 4.0.9 and Node 24.19.0 before switching source, installs
+dependencies, builds assets, runs pre-deployment migrations, updates the three
+application units and maintenance unit/script, restarts the application, then
+runs post-deployment migrations. Existing systemd drop-ins stay in place.
+The fetched v4.7.4 tag must resolve to
+`d04059fc80be5cbba6b4dd5a8b94d63ffff09f2c` before runtime installation proceeds.
+Between the source checkout and service restart, existing processes keep the
+old runtime. A process that crashes or recycles in this window can fail to
+restart against the new source. Monitor service health during this window;
+after a failed dependency/asset/migration step, inspect service logs and finish
+the upgrade before treating the installation as healthy. A retry's initial
+service check does not by itself establish readiness.
+Verification checks the loopback instance API reports 4.7.4, streaming health,
+service status, bundle completeness and absence of pending migrations.
+
+A dry run only plans operations; it does not execute remote script preflight.
+Re-running a completed backup verifies its checksums and preserves it. A partial
+backup directory is deliberately refused: inspect it and move it aside before
+retrying. An upgrade failure stops further operations; inspect the last step
+and services before retrying. Once migrations have run, do not merely check out
+the old tag: restoring the old application requires a coordinated restore of
+the database and configuration from the protected backup. Backups contain
+credentials and must remain root-readable only, including controller copies.
