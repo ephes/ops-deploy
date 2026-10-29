@@ -1,4 +1,4 @@
-"""Prepared original list/create/update/preferred pipeline protocol.
+"""Prepared original list/preferred and standalone voice get/update protocols.
 
 Desired definitions are resolved by the caller. Bodies/IDs remain in host RAM;
 fixed counts retain partial effects. No result file or deployment API here.
@@ -115,6 +115,46 @@ async def reconcile(payload, command, report):
         report['applied'] += 1
 
 
+
+async def reconcile_voice(payload, command, report):
+    """Original standalone enabled STT/TTS update; no create/preferred path."""
+    report['phase'] = 'get'
+    response = await command({'type': 'assist_pipeline/pipeline/get', 'pipeline_id': payload['pipeline_id']})
+    if not response.get('success'):
+        raise RuntimeError('pipeline get failed')
+    current = response['result']
+    desired = payload['voice']
+    selected = {}
+    changed = False
+    for kind in ('stt', 'tts'):
+        for field in (kind + '_engine', kind + '_language'):
+            old = current.get(field) or ''
+            selected[field] = desired[field] if payload['manage_' + kind] else old
+            changed = changed or selected[field] != old
+    selected['tts_voice'] = ((desired.get('tts_voice') or None) if payload['manage_tts']
+                             else (current.get('tts_voice') or None))
+    changed = changed or (selected['tts_voice'] or '') != (current.get('tts_voice') or '')
+    report['phase'] = 'compare'
+    if not changed:
+        return
+    report['pending'] += 1
+    if payload['action'] == 'inspect':
+        return
+    body = {
+        'type': 'assist_pipeline/pipeline/update', 'pipeline_id': current['id'],
+        **{field: current[field] for field in ('conversation_engine', 'conversation_language', 'language', 'name')},
+        **{field: val or None for field, val in selected.items()},
+        'wake_word_entity': current.get('wake_word_entity'), 'wake_word_id': current.get('wake_word_id'),
+        'prefer_local_intents': current.get('prefer_local_intents', False),
+    }
+    if 'acknowledge_media_id' in current:
+        body['acknowledge_media_id'] = current['acknowledge_media_id']
+    report['phase'] = 'update'
+    response = await command(body, mutation=True)
+    if not response.get('success'):
+        raise RuntimeError('voice update failed')
+    report['applied'] += 1
+
 def new_report():
     return dict(success=False, phase='input', pending=0, mutation_attempts=0,
                 applied=0, changed=False, error='')
@@ -157,7 +197,13 @@ async def exchange(payload, report):
                 hello = await receive()
             if hello.get('type') != 'auth_ok':
                 raise RuntimeError('authentication failed')
-            await reconcile(payload, command, report)
+            mode = payload.get('mode', 'list')
+            if mode == 'voice':
+                await reconcile_voice(payload, command, report)
+            elif mode == 'list':
+                await reconcile(payload, command, report)
+            else:
+                raise ValueError('unsupported mode')
             report['phase'] = 'complete'
 
 

@@ -88,6 +88,8 @@ async def endpoint(state: dict[str, Any], fault: str = "normal") -> Any:
             result: Any = {}
             if kind == "list":
                 result = state
+            elif kind == "get":
+                result = next(item for item in state["pipelines"] if item["id"] == body["pipeline_id"])
             elif kind == "create":
                 result = {key: val for key, val in body.items() if key not in {"id", "type"}}
                 result["id"] = "created-" + str(len(state["pipelines"]))
@@ -280,5 +282,154 @@ def test_actual_helper_main_and_original_hash() -> None:
             assert report["mutation_attempts"] == 0
             assert len(calls) == 1
             assert TOKEN.encode() not in stdout
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("manage_stt", "manage_tts", "current"),
+    [
+        (True, False, False),
+        (False, True, False),
+        (True, True, False),
+        (True, True, True),
+        (False, False, False),
+    ],
+)
+def test_standalone_voice_original_requests_state_and_repeat(
+    tmp_path: Path, manage_stt: bool, manage_tts: bool, current: bool
+) -> None:
+    async def scenario() -> None:
+        desired = {
+            "stt_engine": "stt.owned" if current else "stt.new",
+            "stt_language": "en" if current else "de",
+            "tts_engine": "tts.owned" if current else "tts.new",
+            "tts_language": "en" if current else "de",
+            "tts_voice": "" if current else "owned-voice",
+        }
+        old, new = initial(), initial()
+        output = tmp_path / "voice-result.json"
+        tasks = yaml.safe_load(ORIGINAL.with_name("voice.yml").read_text())
+        script = next(
+            item["ansible.builtin.command"]["argv"][-1]
+            for item in tasks
+            if item["name"] == "Update Assist pipeline voice engines via Home Assistant WebSocket API"
+        )
+        async with endpoint(old) as (url, old_calls):
+            env = dict(
+                os.environ,
+                HA_API_URL=url,
+                HA_TIMEOUT="3",
+                HA_RESULT_PATH=str(output),
+                HA_PIPELINE_ID="selected",
+                HA_MANAGE_STT=str(manage_stt).lower(),
+                HA_MANAGE_TTS=str(manage_tts).lower(),
+                **{
+                    "HA_" + key.upper() + ("_ID" if key.endswith("engine") else ""): val for key, val in desired.items()
+                },
+            )
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-I",
+                "-B",
+                "-c",
+                script,
+                env=env,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(process.communicate(json.dumps({"HA_TOKEN": TOKEN}).encode()), 10)
+            assert process.returncode == 0
+            original = json.loads(output.read_text())
+        async with endpoint(new) as (url, new_calls):
+            value = {
+                **payload(url, []),
+                "mode": "voice",
+                "pipeline_id": "selected",
+                "manage_stt": manage_stt,
+                "manage_tts": manage_tts,
+                "voice": desired,
+            }
+            before = copy.deepcopy(new)
+            plan = await pipelines.run({**value, "action": "inspect"}, pipelines.new_report())
+            assert plan["success"]
+            assert plan["pending"] == int(original["changed"])
+            assert plan["mutation_attempts"] == 0
+            assert new == before
+            new_calls.clear()
+            first = await pipelines.run(value, pipelines.new_report())
+            assert first["success"]
+            assert first["changed"] == original["changed"]
+            assert new == old
+            assert new_calls == old_calls
+            after = copy.deepcopy(new)
+            new_calls.clear()
+            repeat = await pipelines.run(value, pipelines.new_report())
+            assert repeat["success"]
+            assert repeat["mutation_attempts"] == repeat["applied"] == 0
+            assert new == after
+            assert new_calls == [{"type": "assist_pipeline/pipeline/get", "pipeline_id": "selected", "id": 1}]
+            assert new["preferred_pipeline"] == before["preferred_pipeline"]
+            for key in (
+                "wake_word_entity",
+                "wake_word_id",
+                "prefer_local_intents",
+                "acknowledge_media_id",
+                "conversation_engine",
+            ):
+                assert new["pipelines"][0][key] == before["pipelines"][0][key]
+
+    asyncio.run(scenario())
+
+
+def test_standalone_voice_partial_update_failure_and_source_hash() -> None:
+    receipt = json.loads(ORIGINAL.with_name("source.json").read_text())["voice"]
+    assert hashlib.sha256(ORIGINAL.with_name("voice.yml").read_bytes()).hexdigest() == receipt["sha256"]
+
+    async def scenario() -> None:
+        state = initial()
+        async with endpoint(state, "update") as (url, _calls):
+            value = {
+                **payload(url, []),
+                "mode": "voice",
+                "pipeline_id": "selected",
+                "manage_stt": True,
+                "manage_tts": False,
+                "voice": {"stt_engine": "stt.new", "stt_language": "de"},
+            }
+            report = await pipelines.run(value, pipelines.new_report())
+            assert not report["success"]
+            assert report["phase"] == "update"
+            assert report["mutation_attempts"] == 1
+            assert report["applied"] == 0
+            assert report["changed"]
+            assert state["pipelines"][0]["stt_engine"] == "stt.new"
+            assert "selected" not in json.dumps(report)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("fault", ["get", "stall", "closed"])
+def test_voice_get_fault_has_exact_phase_and_no_attempt(fault: str) -> None:
+    async def scenario() -> None:
+        state = initial()
+        async with endpoint(state, fault) as (url, calls):
+            value = {
+                **payload(url, []),
+                "mode": "voice",
+                "pipeline_id": "selected",
+                "manage_stt": True,
+                "manage_tts": False,
+                "voice": {"stt_engine": "stt.new", "stt_language": "de"},
+            }
+            if fault == "stall":
+                value["timeout"] = 0.05
+            report = await pipelines.run(value, pipelines.new_report())
+        assert not report["success"]
+        assert report["phase"] == "get"
+        assert report["mutation_attempts"] == 0
+        assert state == initial()
+        assert calls == [{"type": "assist_pipeline/pipeline/get", "pipeline_id": "selected", "id": 1}]
 
     asyncio.run(scenario())

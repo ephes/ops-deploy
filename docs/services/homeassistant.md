@@ -492,3 +492,12 @@ composition. The separate existing-pipeline STT/TTS path is not replaced by the
 list/create interface. Owned real WebSocket/original-inline-script comparisons
 exercise these protocol semantics, not complete role prerequisites, live HA
 application behavior or native deployment.
+
+The separate voice protocol now has its own `get`/conditional `update` path. It
+re-reads one declared pipeline and changes only enabled STT/TTS engine, language
+and voice selections. Conversation, name/language, wake-word, local-intent,
+acknowledgement and preferred selection stay intact; this path never creates a
+pipeline. Owned original-inline comparisons cover both flags, current state and
+failed-after-effect updates. The original storage-based target/engine resolution
+and STT entity wait (TTS explicitly skips that wait) are still required outer
+work; these protocol tests do not stand in for those prerequisites.

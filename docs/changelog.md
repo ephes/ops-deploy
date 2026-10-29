@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Prepare Home Assistant standalone STT/TTS protocol updates while preserving
+  conversation/wake/preferred fields and retaining partial-error effects.
+
 - Prepare the Home Assistant pipeline protocol with original creation, update,
   field preservation and preferred selection; actual owned protocol controls
   retain partial effects without claiming complete role/native qualification.
