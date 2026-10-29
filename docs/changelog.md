@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prepare a separately selected offline KVM matrix for named MinIO policy
+  maintenance, with exact-binary fault/retry cases and the original tagged-task
+  foreign-holder oracle. This fixture is not yet native-qualified and does not
+  replay normal deployment or authorize production policy removal.
+
 - Prepare explicit MinIO named-policy retirement with the original detach/error,
   independent user-absence proof and server removal semantics. Verify absence
   before local policy-file removal and retain partial failures; normal MinIO

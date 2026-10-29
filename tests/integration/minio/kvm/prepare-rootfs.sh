@@ -2,6 +2,8 @@
 # Public dependency/bootstrap preparation only; no MinIO or fixture execution.
 set -euo pipefail
 SHA=${1:?}; OWNED_ID=${2:?}
+COMPONENT=${3:-normal}
+case "$COMPONENT" in normal|policy-rollback) ;; *) exit 2 ;; esac
 [[ $SHA =~ ^[0-9a-f]{40}$ && $OWNED_ID =~ ^[0-9a-f]{16}$ ]]
 [[ $(uname -m) == x86_64 && $(id -u) == 0 ]]
 [[ -z ${GH_TOKEN:-} && -z ${GITHUB_TOKEN:-} && -z ${SSH_AUTH_SOCK:-} ]]
@@ -18,6 +20,7 @@ git -c credential.helper= clone https://github.com/ephes/ops-library.git /opt/mi
 git -C /opt/minio-library checkout --detach d88c3286b2fb58a8799663d6c1f3a9d6061af37b
 printf '%s\n' "$SHA" > /etc/ops-minio-implementation
 printf '%s\n' "$OWNED_ID" > /etc/ops-minio-owned-id
+printf '%s\n' "$COMPONENT" > /etc/ops-minio-component
 printf '/dev/vda / ext4 defaults 0 1\n' > /etc/fstab
 rm -f /.dockerenv /run/.containerenv
 : > /etc/machine-id
