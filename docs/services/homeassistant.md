@@ -396,3 +396,46 @@ template; resolving that operator template and any selected external handler
 remains the outer caller's responsibility. This is not yet a complete private
 override binding. Source-bound render/default and SDK write controls are not
 native routing, certificate or application readiness qualification.
+
+## Prepared Matter, OTBR and Wyoming flow component
+
+The three simple config flows inspect only the configured
+`.storage/core.config_entries` file on the target. Original first-domain URL
+selection and exact Wyoming host/port matching are retained; unrelated registry
+fields and entries are not exported. A current entry needs no API request.
+Planning only inspects the registry; execution rechecks it before the managed
+flow. Missing configuration is represented as pending work, not a new admission
+barrier. Malformed/unreadable storage fails with a fixed diagnostic.
+
+Needed flows preserve readiness GET, forwarded headers, timeout/retry settings,
+optional Matter port wait, start/submit requests and `already_configured` handling.
+Readiness is shared in RAM within one host/role invocation; the outer deploy must
+reset it after the original Custom Conversation handler flush. Original URI safe
+GET redirects, separate per-request cookie jars, gzip/JSON handling, user agent
+and URL/default-NETRC authentication precedence are retained. Credentials and
+responses stay in host memory; input travels through protected stdin, and only
+fixed phase/status/request-attempt counts return. Counts describe explicit
+readiness/start/submit attempts, not internal redirect or auth-challenge hops.
+No result file is written. The configured security `system_python` runs both
+inspection and execution. A process-local wall-clock deadline covers the whole
+helper, including redirects, auth retries and response reads; it stops with a
+fixed phase/attempt report before the controller's additional grace expires.
+Socket timeout is not misrepresented as a whole-request deadline. External
+termination or transport loss can still leave effects unobserved and must not
+be reported as zero changes.
+
+An observed original Ansible defect is distinguished from intended flow handling:
+a first `already_configured` result skips submission but leaves a registered
+skipped result, causing the final guard/message to fail. The prepared component
+accepts that explicit result as intended by the original skip branch. It still
+fails HTTP 200 without a parsed flow ID or explicit `already_configured` result;
+a submitted flow must finish with `create_entry` or `already_configured`.
+Failed configuration request
+attempts can have remote effects: receipts must retain the attempted count and
+phase, never claim atomic rollback or zero effects from a failed response.
+
+Controller-local synthetic HTTP/registry and actual SDK controls exercise
+planning without API calls, shared readiness, first/repeat behavior and fault
+classification. They do not qualify real HA onboarding/config flows, TLS, radios
+or native deployment. Area/pipeline/bridge management and active canaries remain
+separate work; this component does not replace or disable them.

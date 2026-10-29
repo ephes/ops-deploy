@@ -1,0 +1,268 @@
+---
+# General settings
+homeassistant_user: homeassistant
+homeassistant_group: "{{ homeassistant_user }}"
+homeassistant_shell: /bin/bash
+homeassistant_home: "/home/{{ homeassistant_user }}"
+homeassistant_site_path: "{{ homeassistant_home }}/site"
+homeassistant_config_path: "{{ homeassistant_site_path }}/config"
+homeassistant_data_path: "{{ homeassistant_site_path }}/data"
+homeassistant_logs_path: "{{ homeassistant_site_path }}/logs"
+homeassistant_bin_path: "{{ homeassistant_site_path }}/bin"
+
+# Python / uv
+homeassistant_manage_uv: true
+homeassistant_uv_install_dir: /usr/local/bin
+homeassistant_uv_install_user: root
+homeassistant_uv_version: "0.13.5"  # Keep aligned with uv_install version/checksums.
+homeassistant_uv_update_existing: true
+homeassistant_uv_force_reinstall: false
+homeassistant_uv_path: "{{ homeassistant_uv_install_dir }}/uv"
+homeassistant_python_version: "3.14.8"
+homeassistant_virtualenv_path: "{{ homeassistant_site_path }}/.venv"
+homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
+homeassistant_package_spec: "homeassistant"
+homeassistant_extra_package_specs: []
+
+# Keep certifi/pip at python_security_floor's floors: refuse existing
+# environments below them before changing anything, pass a constraint file to
+# every uv pip install this role runs (constraints never add packages; a
+# dependency capping certifi below the floor fails the resolution before
+# anything is installed) and verify the environments afterwards.
+homeassistant_python_security_floor_enabled: true
+homeassistant_python_security_constraints_path: "{{ homeassistant_site_path }}/.python-security-constraints.txt"
+homeassistant_python_security_constraint_argv: >-
+  {{ ['--constraint', homeassistant_python_security_constraints_path]
+     if (homeassistant_python_security_floor_enabled | bool) else [] }}
+homeassistant_python_security_constraint_args: >-
+  {{ homeassistant_python_security_constraint_argv | map('quote') | join(' ') }}
+# The environments the floors are checked in.
+homeassistant_python_security_environments: >-
+  {{ [{'path': homeassistant_virtualenv_path, 'label': 'Home Assistant environment'}]
+     + ([{'path': homeassistant_matter_server_virtualenv_path, 'label': 'Matter server environment'}]
+        if (homeassistant_manage_matter_server | bool) else []) }}
+homeassistant_force_reinstall: false
+homeassistant_virtualenv_version_file: "{{ homeassistant_virtualenv_path }}/.ansible-python-version"
+
+# Service
+homeassistant_service_name: homeassistant
+homeassistant_service_enabled: true
+homeassistant_service_state: started
+homeassistant_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service"
+
+# Home Assistant installs integration requirements at runtime with its own
+# bundled uv, whose built-in roots can lag behind CA distrust decisions. With
+# this on, a managed drop-in sets UV_SYSTEM_CERTS=1 so that uv uses the
+# operating system's CA store. Refused (before any change) when the unit or
+# the running service already has other trust settings, an EnvironmentFile or
+# other drop-ins, or when the system store still trusts a distrusted root.
+homeassistant_uv_system_certs: true
+homeassistant_uv_system_certs_dropin_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service.d/50-uv-system-certs.conf"
+# Other drop-ins of the unit reviewed as not setting trust (paths); any other
+# drop-in makes the check refuse.
+homeassistant_uv_system_certs_allowed_dropins: []
+# Health check after a maintenance restart (no authentication needed).
+homeassistant_uv_system_certs_health_url: "{{ homeassistant_api_url }}/manifest.json"
+homeassistant_uv_system_certs_health_retries: 60
+homeassistant_uv_system_certs_health_delay: 5
+homeassistant_app_port: 10020
+homeassistant_host: "0.0.0.0"
+
+# Matter server (optional)
+homeassistant_manage_matter_server: false
+homeassistant_matter_server_package_spec: "python-matter-server[server]"
+homeassistant_matter_server_virtualenv_path: "{{ homeassistant_site_path }}/.venv-matter-server"
+homeassistant_matter_server_virtualenv_version_file: "{{ homeassistant_matter_server_virtualenv_path }}/.ansible-python-version"
+homeassistant_matter_server_service_name: matter-server
+homeassistant_matter_server_service_enabled: true
+homeassistant_matter_server_service_state: started
+homeassistant_matter_server_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_matter_server_service_name }}.service"
+homeassistant_matter_server_storage_path: "{{ homeassistant_data_path }}/matter-server"
+homeassistant_matter_server_port: 5580
+homeassistant_matter_server_vendor_id: 0xFFF1
+homeassistant_matter_server_fabric_id: 1
+homeassistant_matter_server_log_level: info
+homeassistant_matter_server_log_file: "{{ homeassistant_logs_path }}/matter-server.log"
+homeassistant_matter_server_restart_on_change: true
+homeassistant_matter_server_chip_factory_dir: /data
+
+# Home Assistant API (integration provisioning)
+homeassistant_api_url: "http://localhost:{{ homeassistant_app_port }}"
+homeassistant_api_token: ""
+homeassistant_api_timeout: 30
+homeassistant_api_validate_certs: true
+homeassistant_api_retries: 30
+homeassistant_api_retry_delay: 5
+homeassistant_api_forwarded_for: ""
+homeassistant_api_forwarded_proto: "http"
+
+# Matter integration (HA config entry)
+homeassistant_manage_matter_integration: false
+homeassistant_matter_integration_url: "ws://localhost:{{ homeassistant_matter_server_port }}/ws"
+
+# OTBR integration (HA config entry)
+homeassistant_manage_otbr_integration: false
+homeassistant_otbr_integration_url: "http://127.0.0.1:8081"
+
+# Wyoming integration (HA config entry)
+homeassistant_manage_wyoming_integration: false
+homeassistant_wyoming_host: ""
+homeassistant_wyoming_port: 10300
+
+# Core llama_cpp conversation agent (no custom component or LiteLLM).
+homeassistant_llama_cpp_enabled: false
+homeassistant_llama_cpp_base_url: ""
+homeassistant_llama_cpp_api_key: ""
+homeassistant_llama_cpp_model: ""
+homeassistant_llama_cpp_instructions: ""
+homeassistant_llama_cpp_canary_text: "Reply with the single word OK."
+homeassistant_llama_cpp_helper_path: "{{ homeassistant_bin_path }}/llama_cpp_provision.py"
+
+# Custom Conversation integration (HA config entry + pinned custom component)
+# Bridges Home Assistant Assist to an OpenAI-compatible Chat Completions endpoint
+# (e.g. the OpenClaw gateway) via the michelle-avery/custom-conversation component.
+# Feature is fully off unless homeassistant_custom_conversation_enabled is true.
+homeassistant_custom_conversation_enabled: false
+homeassistant_custom_conversation_version: "1.6.1"
+# sha256 of the pinned GitHub release tarball
+# https://github.com/michelle-avery/custom-conversation/archive/refs/tags/<version>.tar.gz
+homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"  # pragma: allowlist secret
+homeassistant_custom_conversation_download_url: >-
+  https://github.com/michelle-avery/custom-conversation/archive/refs/tags/{{ homeassistant_custom_conversation_version }}.tar.gz
+# LiteLLM provider key the component routes through. "openai" selects the
+# OpenAI-compatible path (supports a custom base URL), which is what the
+# OpenClaw gateway Chat Completions endpoint speaks.
+homeassistant_custom_conversation_provider: "openai"
+homeassistant_custom_conversation_base_url: ""
+homeassistant_custom_conversation_api_key: ""
+homeassistant_custom_conversation_model: ""
+homeassistant_custom_conversation_instructions: ""
+# Reserved: custom-conversation 1.6.1 exposes no per-request timeout field
+# (it delegates to LiteLLM's default, which already exceeds 60s). Kept for
+# forward-compatibility; currently not wired to any component setting.
+homeassistant_custom_conversation_request_timeout: 60
+# Canary prompt used to prove the resolved conversation agent actually answers
+# before Assist pipelines are pointed at it.
+homeassistant_custom_conversation_canary_text: "Reply with the single word OK."
+
+# Assist pipeline STT selection
+homeassistant_manage_assist_pipeline_stt_engine: false
+homeassistant_manage_assist_pipeline_tts_engine: false
+homeassistant_assist_pipeline_id: ""
+homeassistant_assist_pipeline_stt_engine_id: ""
+homeassistant_assist_pipeline_stt_language: ""
+homeassistant_assist_pipeline_tts_engine_id: ""
+homeassistant_assist_pipeline_tts_language: ""
+homeassistant_assist_pipeline_tts_voice: ""
+homeassistant_assist_pipelines: []
+
+# Area registry management
+homeassistant_area_registry_updates: []
+
+# Configuration management toggles
+homeassistant_manage_configuration: false
+homeassistant_manage_secrets: false
+homeassistant_manage_includes: false
+homeassistant_overwrite_config: false
+homeassistant_remove_legacy_met_weather_yaml: false
+
+# Location / recorder defaults (safe placeholders – override per environment)
+homeassistant_name: "Home Assistant"
+homeassistant_latitude: 0.0
+homeassistant_longitude: 0.0
+homeassistant_elevation: 0
+homeassistant_unit_system: metric
+homeassistant_time_zone: UTC
+homeassistant_country: "DE"
+homeassistant_currency: "EUR"
+
+homeassistant_recorder_keep_days: 10
+homeassistant_recorder_commit_interval: 5
+
+# Database / recorder backend
+homeassistant_db_url: "sqlite:///{{ homeassistant_config_path }}/home-assistant_v2.db"
+
+# HTTP / networking
+homeassistant_external_url: ""
+homeassistant_internal_url: ""
+homeassistant_trusted_proxies:
+  - "127.0.0.1"
+  - "::1"
+homeassistant_additional_packages:
+  - build-essential
+  - python3-dev
+  - libffi-dev
+  - libssl-dev
+  - libjpeg-dev
+  - libturbojpeg
+  - zlib1g-dev
+  - autoconf
+  - libopenjp2-7
+  - libtiff-dev
+  - libtiff6
+  - libfreetype6-dev
+  - libwebp-dev
+  - tzdata
+  - ffmpeg
+  - sqlite3  # Required for homeassistant_backup role
+
+# Udev rule management
+homeassistant_enable_udev_rule: true
+homeassistant_udev_rule_path: /etc/udev/rules.d/99-homeassistant-zbt1.rules
+
+# UniFi password discovery
+homeassistant_unifi_password_source: "file"  # pragma: allowlist secret; file|variable
+homeassistant_unifi_password_file: /home/unifi/.homeassistant_unifi_password  # pragma: allowlist secret
+homeassistant_unifi_password_variable: ""
+
+# Traefik integration
+homeassistant_traefik_enabled: true
+homeassistant_traefik_domain: ""  # REQUIRED - your Traefik domain (e.g., home.example.com)
+homeassistant_traefik_entrypoints:
+  - web-secure
+homeassistant_traefik_middlewares:
+  - homeassistant-headers
+homeassistant_traefik_local_middlewares:
+  - homeassistant-headers
+  - homeassistant-websocket
+homeassistant_traefik_local_hostname: "homeassistant.local"
+homeassistant_traefik_mode: single  # single|dual (future)
+homeassistant_traefik_dynamic_dir: /etc/traefik/dynamic
+homeassistant_traefik_certresolver: letsencrypt
+homeassistant_traefik_template: homeassistant.traefik.yml.j2
+homeassistant_traefik_reload_handler: reload traefik config
+
+# Include file management (applied when homeassistant_manage_includes true)
+homeassistant_include_files:
+  - automations.yaml
+  - scripts.yaml
+  - scenes.yaml
+  - groups.yaml
+  - persons.yaml
+  - presence_automations.yaml
+
+# Template source options
+homeassistant_templates_base: "{{ role_path }}/templates"
+
+# Service URLs used inside templates
+homeassistant_unifi_username: homeassistant
+homeassistant_unifi_host: "192.168.178.94"
+homeassistant_unifi_port: 8443
+homeassistant_unifi_site: default
+homeassistant_unifi_verify_ssl: false
+homeassistant_unifi_track_new_devices: false
+homeassistant_unifi_detection_time: 180
+homeassistant_unifi_consider_home: 180
+homeassistant_unifi_password: ""
+
+# Logging defaults
+homeassistant_logger_default: warning
+homeassistant_logger_logs:
+  homeassistant.core: info
+  homeassistant.components.http: info
+
+# Idempotency guard
+homeassistant_initial_deploy: false
+
+# Handler control
+homeassistant_restart_on_change: true

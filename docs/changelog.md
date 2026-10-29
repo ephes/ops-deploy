@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare protected host-local Matter, OTBR and Wyoming integration flows with
+  original entry selectors, API readiness/auth/flow semantics and honest partial
+  request effects; full HA/native application qualification remains pending.
+
 - Prepare Home Assistant's original Traefik route rendering and file writes,
   preserving the informational default handler and file-only notification.
   Native routing and complete deployment integration remain pending.
