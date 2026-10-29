@@ -15,6 +15,8 @@ import pytest
 import yaml
 from jinja2.nativetypes import NativeEnvironment
 
+from tests.fakehost import command_host
+
 SPEC = importlib.util.spec_from_file_location(
     "ha_owned_pipeline_state", str(files("ops_deploy.services.homeassistant").joinpath("files/pipeline_state.py"))
 )
@@ -260,10 +262,8 @@ def test_main_returns_fixed_error_without_private_body(tmp_path: Path) -> None:
 
 def test_actual_controller_protects_selected_values_and_execution_context(tmp_path: Path) -> None:
     from types import SimpleNamespace
-    from typing import cast
 
     from pydantic import SecretStr
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.pipeline_state import read_pipeline_preparation
     from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
@@ -283,7 +283,7 @@ def test_actual_controller_protects_selected_values_and_execution_context(tmp_pa
         return True, SimpleNamespace(stdout=json.dumps({"success": True, "result": selected}))
 
     result = read_pipeline_preparation(
-        cast(Host, SimpleNamespace(run_shell_command=answer)),
+        command_host(answer),
         HomeAssistantRuntimeConfig(),
         "list",
         SecretStr(json.dumps(config)),
@@ -306,16 +306,14 @@ def test_actual_controller_protects_selected_values_and_execution_context(tmp_pa
 )
 def test_controller_error_does_not_export_selected_or_error_bodies(raw: str, success: bool) -> None:
     from types import SimpleNamespace
-    from typing import cast
 
     from pydantic import SecretStr
     from pyinfra.api import OperationError
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.pipeline_state import read_pipeline_preparation
     from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 
-    host = cast(Host, SimpleNamespace(run_shell_command=lambda *a, **k: (success, SimpleNamespace(stdout=raw))))
+    host = command_host(lambda *a, **k: (success, SimpleNamespace(stdout=raw)))
     with pytest.raises(OperationError, match=r"^Home Assistant pipeline preparation failed$"):
         read_pipeline_preparation(host, HomeAssistantRuntimeConfig(), "list", SecretStr("{}"), timeout=5)
 

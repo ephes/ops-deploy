@@ -24,6 +24,7 @@ from ops_deploy.services.homeassistant.builtin_conversation import (
 )
 from ops_deploy.services.homeassistant.integration_flows import HomeAssistantApiConfig
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+from tests.fakehost import command_host
 
 PROGRAM = Path(str(files("ops_deploy.services.homeassistant").joinpath("files/llama_cpp_provision.py")))
 SPEC = importlib.util.spec_from_file_location("owned_builtin_helper", PROGRAM)
@@ -266,7 +267,6 @@ def test_failed_or_invalid_result_clears_previous_canary_and_reports_partial_eff
 
     from pydantic import SecretStr
     from pyinfra.api import OperationError, State
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.builtin_conversation import _execute
 
@@ -279,7 +279,7 @@ def test_failed_or_invalid_result_clears_previous_canary_and_reports_partial_eff
     with pytest.raises(OperationError, match="partial effects may exist") as error:
         _execute(
             cast(State, None),
-            cast(Host, SimpleNamespace(run_shell_command=execute)),
+            command_host(execute),
             "owned-command",
             SecretStr("{}"),
             1,
@@ -311,16 +311,10 @@ def test_original_sanitized_operator_recovery_diagnostic_is_retained(message: st
 
     from pydantic import SecretStr
     from pyinfra.api import OperationError, State
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.builtin_conversation import _execute
 
-    target = cast(
-        Host,
-        SimpleNamespace(
-            run_shell_command=lambda *a, **k: (False, SimpleNamespace(stdout=json.dumps({"error": message})))
-        ),
-    )
+    target = command_host(lambda *a, **k: (False, SimpleNamespace(stdout=json.dumps({"error": message}))))
     with pytest.raises(OperationError) as error:
         _execute(cast(State, None), target, "owned-command", SecretStr("{}"), 1, "ensure", ConversationResult())
     assert message in str(error.value)

@@ -15,6 +15,7 @@ from pyinfra.api.host import Host
 from ops_deploy.helpers.probes import StdinLines
 
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 def preparation_command(cfg: HomeAssistantRuntimeConfig) -> str:
@@ -36,12 +37,11 @@ def read_pipeline_preparation(
     does not replace the original managed HTTP readiness or STT availability wait.
     """
     payload = json.dumps({"mode": mode, "options": json.loads(options.get_secret_value())})
-    success, output = target.run_shell_command(
+    success, output = run_protected_command(
+        target,
         StringCommand(preparation_command(cfg)),
         _stdin=StdinLines(payload),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
         _timeout=timeout,
     )
     try:

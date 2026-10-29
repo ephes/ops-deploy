@@ -20,6 +20,7 @@ from ops_deploy.helpers.python import _as_user
 from .builtin_conversation import ConversationResult
 from .integration_flows import HomeAssistantApiConfig
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 class CustomConversationConfig(RoleConfig):
@@ -113,12 +114,11 @@ def _execute(
     result.mutation_attempts = None
     result.partial_possible = None
     try:
-        success, output = host.run_shell_command(
+        success, output = run_protected_command(
+            host,
             StringCommand(command),
             _stdin=StdinLines(payload.get_secret_value()),
             _get_pty=False,
-            print_input=False,
-            print_output=False,
             _timeout=timeout,
         )
     except TimeoutError:

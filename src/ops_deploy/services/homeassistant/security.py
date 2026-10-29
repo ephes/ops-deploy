@@ -26,6 +26,7 @@ from ops_deploy.helpers.python import _as_user
 
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security_policy import python_security_constraints, python_security_report_violations
+from .transport import run_protected_command
 
 
 def _script(name: str) -> str:
@@ -48,10 +49,9 @@ def environment_command(cfg: HomeAssistantRuntimeConfig, python: str) -> str:
 
 
 def _read(target: Host, command: str, *, label: str = "Home Assistant trust inspection") -> str:
-    success, output = target.run_shell_command(
+    success, output = run_protected_command(
+        target,
         StringCommand(command),
-        print_output=False,
-        print_input=False,
         _timeout=60,
     )
     if not success:

@@ -940,3 +940,28 @@ lazy forwarding and serialization isolation. The private controller must supply
 its original Ansible action and effective variable/fact context; these public
 callbacks do not load inventory, templates, secrets or a new rendering provider.
 Native qualification and private registration remain separate.
+
+
+## Protected transport and privilege inheritance
+
+Home Assistant's direct protected inspection/protocol calls use
+`transport.run_protected_command`. The helper follows pyinfra's fact argument
+resolution: explicit connector overrides, current operation, deploy context, host
+data, then config. It retains sudo/su identity, environment, shell, PTY and timeout
+settings. An explicit false sudo override remains false. Each caller keeps its
+existing command, protected stdin, timeout and result/error interpretation.
+
+Both input and output printing stay disabled even when verbose fact logging is
+selected; the helper does not toggle shared state output settings. Unsupported
+connector overrides, including attempts to enable body printing, fail before the
+connector. It uses the already selected host connector and does not substitute
+an SSH identity or modify inventory. Native regular operations continue through
+pyinfra's standard executor.
+
+Actual SDK config/host/deploy/operation precedence and a full decorated
+operation-to-security-reader-to-fake-connector chain are covered without running
+SSH, sudo or host changes. The exact previous reader reproduced a missing sudo
+argument under a sudo-enabled config; the repaired reader forwards that setting.
+Existing protocol failure tests now give their controlled connectors a real SDK
+host context. These controls qualify source forwarding and privacy; nonroot
+inventory execution still requires separate native/CLI qualification.

@@ -17,6 +17,7 @@ from pyinfra.api.operation import OperationMeta
 from ops_deploy.helpers.python import _as_user
 
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 def interpreter_command(cfg: HomeAssistantRuntimeConfig, action: str) -> str:
@@ -25,9 +26,7 @@ def interpreter_command(cfg: HomeAssistantRuntimeConfig, action: str) -> str:
 
 def find_python(cfg: HomeAssistantRuntimeConfig) -> str | None:
     """Original find: a nonzero result requests installation; success trims stdout."""
-    success, output = host.run_shell_command(
-        StringCommand(interpreter_command(cfg, "find")), print_output=False, print_input=False, _timeout=60
-    )
+    success, output = run_protected_command(host, StringCommand(interpreter_command(cfg, "find")), _timeout=60)
     return str(output.stdout).strip() if success else None
 
 

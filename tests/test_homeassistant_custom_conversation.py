@@ -24,6 +24,7 @@ from ops_deploy.services.homeassistant.custom_conversation import (
 )
 from ops_deploy.services.homeassistant.integration_flows import HomeAssistantApiConfig
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+from tests.fakehost import command_host
 
 PROGRAM = Path(str(files("ops_deploy.services.homeassistant").joinpath("files/custom_conversation.py")))
 FIXTURE = Path(__file__).parent / "parity/homeassistant/custom-conversation"
@@ -438,7 +439,6 @@ def test_invalid_report_resets_prior_success_without_body_disclosure(raw: str) -
     from typing import cast
 
     from pyinfra.api import OperationError, State
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.custom_conversation import CustomConversationResult, _execute
 
@@ -452,7 +452,7 @@ def test_invalid_report_resets_prior_success_without_body_disclosure(raw: str) -
     with pytest.raises(OperationError, match="partial effects may exist") as error:
         _execute(
             cast(State, None),
-            cast(Host, SimpleNamespace(run_shell_command=invoke)),
+            command_host(invoke),
             "owned-command",
             SecretStr("{}"),
             1,
@@ -500,7 +500,6 @@ def test_valid_sanitized_failure_exposes_phase_and_attempts(count: int) -> None:
     from typing import cast
 
     from pyinfra.api import OperationError, State
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.custom_conversation import CustomConversationResult, _execute
 
@@ -511,9 +510,7 @@ def test_valid_sanitized_failure_exposes_phase_and_attempts(count: int) -> None:
         "mutation_attempts": count,
         "partial_possible": count > 0,
     }
-    target = cast(
-        Host, SimpleNamespace(run_shell_command=lambda *a, **k: (False, SimpleNamespace(stdout=json.dumps(report))))
-    )
+    target = command_host(lambda *a, **k: (False, SimpleNamespace(stdout=json.dumps(report))))
     result = CustomConversationResult()
     with pytest.raises(OperationError) as error:
         _execute(cast(State, None), target, "owned-command", SecretStr("{}"), 1, True, result)

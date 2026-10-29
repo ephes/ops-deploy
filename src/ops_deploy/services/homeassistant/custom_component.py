@@ -20,6 +20,7 @@ from ops_deploy.base._common import RoleConfig, Sha256
 from ops_deploy.helpers.probes import StdinLines
 
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 class CustomComponentConfig(RoleConfig):
@@ -74,12 +75,11 @@ def component_command(cfg: HomeAssistantRuntimeConfig) -> str:
 
 
 def _needed(cfg: HomeAssistantRuntimeConfig, component: CustomComponentConfig, check: str) -> bool:
-    success, output = host.run_shell_command(
+    success, output = run_protected_command(
+        host,
         StringCommand(component_command(cfg)),
         _stdin=StdinLines(component_payload(cfg, component, check).get_secret_value()),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
         _timeout=90,
     )
     try:

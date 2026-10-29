@@ -22,6 +22,7 @@ from ops_deploy.services.homeassistant import security, security_policy
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 from ops_deploy.services.homeassistant.security_config import HomeAssistantSecurityConfig
 from ops_deploy.testing import run_deploy_fake
+from tests.fakehost import command_host
 
 FIXTURE = Path(__file__).parent / "parity/homeassistant/security"
 
@@ -214,8 +215,7 @@ def test_actual_original_lstat_counts_dangling_link_as_existing(
 
 
 def test_failed_command_names_declared_context_but_does_not_export_stderr() -> None:
-    target = Mock()
-    target.run_shell_command.return_value = (False, Mock(stderr="untrusted-private-error"))
+    target = command_host(Mock(return_value=(False, Mock(stderr="untrusted-private-error"))))
     with pytest.raises(OperationError, match="Owned environment: inspection command failed") as caught:
         security._read(target, "synthetic-command", label="Owned environment")
     assert "untrusted-private-error" not in str(caught.value)

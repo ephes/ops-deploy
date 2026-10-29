@@ -25,6 +25,7 @@ from .builtin_conversation import ConversationResult
 from .integration_flows import ApiReadiness, HomeAssistantApiConfig, ensure_api_readiness
 from .pipeline_state import read_pipeline_preparation
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 Mode = Literal["list", "voice"]
 
@@ -130,12 +131,11 @@ def _wait_stt(
         "retries": api.retries,
         "delay": api.retry_delay,
     }
-    success, output = host.run_shell_command(
+    success, output = run_protected_command(
+        host,
         StringCommand(pipeline_command(runtime, wait=True)),
         _stdin=StdinLines(json.dumps(payload)),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
         _timeout=max(0, api.retries) * max(0, api.retry_delay) + 90,
     )
     try:
@@ -184,12 +184,11 @@ def pipeline_payload(
 def _protocol(target: Host, command: str, payload: SecretStr, timeout: int, result: PipelineResult) -> dict[str, Any]:
     result.reset_outcome()
     try:
-        success, output = target.run_shell_command(
+        success, output = run_protected_command(
+            target,
             StringCommand(command),
             _stdin=StdinLines(payload.get_secret_value()),
             _get_pty=False,
-            print_input=False,
-            print_output=False,
             _timeout=timeout + 30,
         )
         report = json.loads(str(output.stdout))

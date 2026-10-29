@@ -107,3 +107,13 @@ UBUNTU: dict[str, Any] = {
     "uname -m": ["x86_64"],
     "cat /proc/1/comm": ["systemd"],
 }
+
+
+def command_host(runner: Any) -> Any:
+    """Real SDK host context around a controlled connector, without connecting."""
+    from pyinfra.api import Config, Inventory, State
+
+    state = State(Inventory(([("owned-command-fixture", {})], {})), Config())
+    target = state.inventory.get_host("owned-command-fixture")
+    target.run_shell_command = runner  # type: ignore[method-assign]  # Controlled test connector.
+    return target

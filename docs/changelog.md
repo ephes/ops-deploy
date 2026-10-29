@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepared Home Assistant protected inspections now inherit pyinfra operation,
+  deploy, host and config connector settings, including sudo/su and explicit
+  disable overrides, while keeping stdin/stdout hidden even in verbose mode.
+
 - Prepared Home Assistant deployments can attach protected lazy original-template
   callbacks. Existing skipped includes and disabled ingress never invoke them;
   callback context is excluded from config repr and serialization.

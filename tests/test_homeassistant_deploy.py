@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from ops_deploy.services.homeassistant.deploy_config import HomeAssistantDeployConfig
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+from tests.fakehost import command_host
 
 module = importlib.import_module("ops_deploy.services.homeassistant.deploy")
 TOKEN = "owned-deploy-token-with-at-least-32-characters"
@@ -376,7 +377,7 @@ def test_selection_transport_error_is_sanitized(monkeypatch: pytest.MonkeyPatch,
     def fail(*args: Any, **kwargs: Any) -> Any:
         raise error_type("unexported-transport-detail")
 
-    monkeypatch.setattr(module, "host", SimpleNamespace(run_shell_command=fail))
+    monkeypatch.setattr(module, "host", command_host(fail))
     with pytest.raises(module.DeployError, match="prerequisite/selection inspection failed") as caught:
         module._selection(HomeAssistantRuntimeConfig(), "uv")
     assert "unexported" not in str(caught.value)

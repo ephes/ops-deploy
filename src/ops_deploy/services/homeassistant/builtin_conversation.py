@@ -21,6 +21,7 @@ from ops_deploy.helpers.python import _as_user
 
 from .integration_flows import HomeAssistantApiConfig
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 Action = Literal["ensure", "disable", "retire"]
 
@@ -108,12 +109,11 @@ def _execute(
     result.reported_changed = None
     result.entity_id = SecretStr("")
     try:
-        success, output = host.run_shell_command(
+        success, output = run_protected_command(
+            host,
             StringCommand(command),
             _stdin=StdinLines(payload.get_secret_value()),
             _get_pty=False,
-            print_input=False,
-            print_output=False,
             _timeout=timeout,
         )
     except TimeoutError:

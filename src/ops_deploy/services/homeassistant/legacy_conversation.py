@@ -18,6 +18,7 @@ from ops_deploy.helpers.probes import StdinLines
 
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import _present
+from .transport import run_protected_command
 
 
 @dataclass(frozen=True)
@@ -43,12 +44,11 @@ def inspect_legacy_conversation(target: Host, cfg: HomeAssistantRuntimeConfig) -
         f"import base64;exec(compile(base64.b64decode({base64.b64encode(source).decode()!r}),'<ha-legacy>','exec'))"
     )
     command = shlex.join([cfg.security.system_python, "-I", "-B", "-c", launcher])
-    success, output = target.run_shell_command(
+    success, output = run_protected_command(
+        target,
         StringCommand(command),
         _stdin=StdinLines(json.dumps({"config_path": cfg.config_path, "virtualenv_path": cfg.virtualenv_path})),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
         _timeout=90,
     )
     try:

@@ -20,6 +20,7 @@ from ops_deploy.helpers.probes import StdinLines
 
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import security_preflight
+from .transport import run_protected_command
 from .trust import inspect_trust, verify_running_trust, write_managed_dropin
 
 
@@ -46,11 +47,10 @@ def health_command(cfg: HomeAssistantRuntimeConfig) -> str:
 
 
 def _health(state: State, host: Host, command: str, payload: SecretStr, timeout: int) -> None:
-    success, output = host.run_shell_command(
+    success, output = run_protected_command(
+        host,
         StringCommand(command),
         _stdin=StdinLines(payload.get_secret_value()),
-        print_input=False,
-        print_output=False,
         _get_pty=False,
         _timeout=timeout,
     )

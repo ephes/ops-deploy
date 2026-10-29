@@ -21,6 +21,7 @@ from ops_deploy.helpers.python import _as_user
 
 from .integration_flows import ApiReadiness, HomeAssistantApiConfig, ensure_api_readiness
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 def validate_updates(updates: list[dict[str, Any]]) -> None:
@@ -76,12 +77,11 @@ def run_area_protocol(target: Host, command: str, payload: SecretStr, *, timeout
     The original HTTP readiness/enable flag and cold-bootstrap sequencing belong
     to the forthcoming outer deployment. This is not a complete deploy API.
     """
-    success, output = target.run_shell_command(
+    success, output = run_protected_command(
+        target,
         StringCommand(command),
         _stdin=StdinLines(payload.get_secret_value()),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
         _timeout=timeout + 30,
     )
     try:

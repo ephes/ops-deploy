@@ -22,6 +22,7 @@ from pydantic import SecretStr
 from ops_deploy.services.homeassistant.area_registry import area_command, area_payload, validate_updates
 from ops_deploy.services.homeassistant.integration_flows import HomeAssistantApiConfig
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+from tests.fakehost import command_host
 
 SPEC = importlib.util.spec_from_file_location(
     "ha_areas_owned", str(files("ops_deploy.services.homeassistant").joinpath("files/area_registry.py"))
@@ -359,10 +360,8 @@ def test_validation_is_original_role_prelude_and_sources_bound() -> None:
 )
 def test_actual_controller_rejects_inconsistent_effect_reports(change: dict[str, Any]) -> None:
     from types import SimpleNamespace
-    from typing import cast
 
     from pyinfra.api import OperationError
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.area_registry import run_area_protocol
 
@@ -373,7 +372,7 @@ def test_actual_controller_rejects_inconsistent_effect_reports(change: dict[str,
         assert not kwargs["print_output"]
         return result["success"], SimpleNamespace(stdout=json.dumps(result))
 
-    target = cast(Host, SimpleNamespace(run_shell_command=answer))
+    target = command_host(answer)
     with pytest.raises(OperationError, match="invalid fixed report"):
         run_area_protocol(target, "owned-placeholder", SecretStr("{}"), timeout=3)
 
@@ -512,7 +511,6 @@ def test_apply_unknown_failure_clears_prior_inspection_success(failure: str) -> 
     from typing import cast
 
     from pyinfra.api import OperationError, State
-    from pyinfra.api.host import Host
 
     from ops_deploy.services.homeassistant.area_registry import AreaResult, _apply_areas
 
@@ -521,7 +519,7 @@ def test_apply_unknown_failure_clears_prior_inspection_success(failure: str) -> 
             raise TimeoutError("private response must not escape")
         return False, SimpleNamespace(stdout="private malformed body")
 
-    target = cast(Host, SimpleNamespace(run_shell_command=answer))
+    target = command_host(answer)
     result = AreaResult(True, False, 0, 0)
     with pytest.raises(OperationError, match="partial effects or remote activity") as caught:
         _apply_areas(cast(State, None), target, "owned", SecretStr("{}"), 1, result)

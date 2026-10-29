@@ -21,6 +21,7 @@ from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe
 
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 def dropin_text() -> str:
@@ -123,9 +124,7 @@ def write_managed_dropin(cfg: HomeAssistantRuntimeConfig) -> OperationMeta | Non
 
 
 def _verify_after_handlers(state: State, host: Host, cfg: HomeAssistantRuntimeConfig) -> None:
-    success, output = host.run_shell_command(
-        StringCommand(trust_command(cfg, "verify")), print_output=False, print_input=False, _timeout=60
-    )
+    success, output = run_protected_command(host, StringCommand(trust_command(cfg, "verify")), _timeout=60)
     if not success:
         raise OperationError("Home Assistant unit trust verification command failed")
     try:

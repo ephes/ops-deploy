@@ -42,6 +42,7 @@ from .python_runtime import configure_python_runtime
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import security_preflight, verify_security, write_constraints
 from .services import ensure_service_states, flush_service_handlers, write_units
+from .transport import run_protected_command
 from .trust import inspect_trust, verify_running_trust, write_managed_dropin
 from .uv import install_uv
 
@@ -53,12 +54,11 @@ def _selection(cfg: HomeAssistantRuntimeConfig, kind: Literal["uv", "custom"]) -
     )
     path = cfg.uv_path if kind == "uv" else cfg.config_path + "/.storage/core.config_entries"
     try:
-        success, output = host.run_shell_command(
+        success, output = run_protected_command(
+            host,
             StringCommand(shlex.join([cfg.security.system_python, "-I", "-B", "-c", launcher])),
             _stdin=StdinLines(json.dumps({"kind": kind, "path": path})),
             _get_pty=False,
-            print_input=False,
-            print_output=False,
             _timeout=90,
         )
     except (OSError, SSHException):
@@ -80,11 +80,10 @@ def _checked_command(state: State, host: Host, command: str, label: str) -> None
     # Original check_config/import commands can print configuration/model details.
     # Keep output host-local/controller transient only; emit no raw stdout/stderr.
     try:
-        success, _ = host.run_shell_command(
+        success, _ = run_protected_command(
+            host,
             StringCommand(command),
             _get_pty=False,
-            print_input=False,
-            print_output=False,
             _timeout=3600,
         )
     except (OSError, SSHException):

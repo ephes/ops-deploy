@@ -26,6 +26,7 @@ from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import StdinLines
 
 from .runtime_config import HomeAssistantRuntimeConfig
+from .transport import run_protected_command
 
 
 class HomeAssistantApiConfig(RoleConfig):
@@ -80,12 +81,11 @@ def flow_command(cfg: HomeAssistantRuntimeConfig) -> str:
 
 
 def _run(target: Host, command: str, payload: SecretStr, *, timeout: int) -> dict[str, Any]:
-    success, output = target.run_shell_command(
+    success, output = run_protected_command(
+        target,
         StringCommand(command),
         _stdin=StdinLines(payload.get_secret_value()),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
         _timeout=timeout,
     )
     try:

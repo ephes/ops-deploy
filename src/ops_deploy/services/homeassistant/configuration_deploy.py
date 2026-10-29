@@ -35,6 +35,7 @@ from .configuration_render import (
 )
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import _present
+from .transport import run_protected_command
 
 INCLUDES = (
     "automations.yaml",
@@ -101,12 +102,11 @@ def file_command(cfg: HomeAssistantRuntimeConfig) -> str:
 def _pending(cfg: HomeAssistantRuntimeConfig, protected: SecretStr) -> bool:
     payload = json.loads(protected.get_secret_value())
     payload["action"] = "check"
-    success, output = host.run_shell_command(
+    success, output = run_protected_command(
+        host,
         StringCommand(file_command(cfg)),
         _stdin=StdinLines(json.dumps(payload)),
         _get_pty=False,
-        print_input=False,
-        print_output=False,
     )
     try:
         report = json.loads(output.stdout)
