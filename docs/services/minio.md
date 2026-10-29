@@ -179,3 +179,23 @@ export IAM. The qualified normal descendant ownership admission still has the
 metadata-only whole-root latency limit above. Loopback route/status checks are
 not certificate validation. Explicit maintenance rollback and other lifecycle
 workflows remain separately tracked; the Ansible role is unchanged.
+
+### Explicit policy rollback conversion in preparation
+
+The normal deployment remains unchanged. A separate host-local helper is being
+prepared for the original tag-scoped `daybook_weeknotes_source_policy_enabled=false`
+maintenance path: inspect the explicitly named policy, attempt detachment of the
+declared identity, independently prove that identity absent, remove the policy,
+and require the precise missing-policy response. An ignored detach error is not
+success until independent verification proves detachment. Failed removal can
+follow a real partial detach; it is not zero mutation.
+
+The original rollback does not require an exact document comparison or a new
+replacement policy, so this path adds neither gate. Other holders retain the
+server's actual removal behavior. The prepared `policy_rollback` module exposes a separate typed operation; it is
+not wired into the private CLI. It uses protected stdin and a disposable private
+client alias, retains independent final absence verification before the named
+local document removal, and never invokes full normal IAM reconciliation.
+Synthetic response/operation and actual encoded-helper tests do not qualify real
+MinIO execution. Owned exact-binary proof and private routing remain pending. No production policy revocation is needed
+merely to qualify this implementation.

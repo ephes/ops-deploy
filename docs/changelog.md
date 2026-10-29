@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Prepare explicit MinIO named-policy retirement with the original detach/error,
+  independent user-absence proof and server removal semantics. Verify absence
+  before local policy-file removal and retain partial failures; normal MinIO
+  deployment remains unchanged. Synthetic helper/recording tests do not replace
+  the outstanding exact-binary owned native qualification.
+
 - Qualify normal Paperless inventory adoption with the immutable905-resource
   artifact: EV-first default111 successful operations/4 managed/2 uploads,
   explicit repeat110/0/0 with strict protected-state equality. Preserve the
