@@ -128,3 +128,38 @@ result = local_snapshot(runner, policy, "myservice", "runtime", ["/srv/myservice
   the run with `SnapshotError` (the new archive stays).
 - `local_snapshot_command` is the same as one shell command for a pyinfra
   operation.
+
+## Local archives before an ordinary restore
+
+`ops_deploy.backups.restore_upload.upload_restore_archives` supplies the existing
+ordinary restore wrapper's upload prelude. This is managed controller work before
+restore, not a pyinfra dry operation. The private wrapper supplies a single
+inventory-resolved `SshTarget` for both upload and the subsequent restore.
+
+An immediate local `.tar.gz` or `.tar.zst` entry triggers a remote check. The
+original first-name rule is preserved: inspect the first `*.tar.*` entry, and
+upload if its name does not contain `.tar.gz` or `.tar.zst`. An unexpected first
+suffix therefore still requests upload even if another remote archive exists.
+The transfer includes **all** non-hidden local `*.tar.*` entries, not only the
+requested archive or latest backup. Archive bodies are never interpreted.
+
+A missing remote root is created root-owned with mode 0700; an existing root
+retains its owner and mode. A unique private `/tmp/_backup_upload.XXXXXXXXXX`
+directory receives the real rsync transfer. Files are then moved into the root,
+all root archive matches receive its owner/group and mode 0600, and the empty
+staging directory is removed. The requested archive is selected by the existing
+restore implementation afterwards. No checksum or acknowledgement gate is added.
+
+The helper uses the existing bounded process-group runner and a bounded remote
+rsync server. Check, prepare, transfer and finish failures stop before restore.
+An error can follow real root creation, transfer or a partial move; it never
+means zero mutation. Failure retains the unique staging identity when known.
+An uncertain remote result must be investigated before any cleanup or retry;
+killing the controller's SSH process is not evidence of remote quiescence.
+
+The [owned primitive fixture](https://github.com/ephes/ops-deploy/tree/main/tests/integration/restore_upload)
+uses synthetic archives in a networkless, unprivileged Linux container, with
+real rsync and Linux ownership/mode operations. It replaces only SSH with a local
+owned destination; separate tests check the exact inventory SSH argv. It does not
+qualify a production restore or any service's archive/content recovery behavior.
+Private normal-wrapper adoption is a separate follow-up.

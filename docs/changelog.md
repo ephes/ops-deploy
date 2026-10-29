@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the source-backed ordinary restore archive-upload helper with the original
+  first-name/all-archives behavior, existing-root ownership/mode preservation,
+  bounded transfer and explicit partial-failure identity. Owned Linux primitive
+  proof is separate from production restore and private wrapper adoption.
+
 - Qualify normal Paperless inventory adoption with the immutable905-resource
   artifact: EV-first default111 successful operations/4 managed/2 uploads,
   explicit repeat110/0/0 with strict protected-state equality. Preserve the
