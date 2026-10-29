@@ -6,7 +6,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from ops_deploy.infra import RedisInstallConfig, deploy_redis_install
-from ops_deploy.infra.redis_install import needs_restart, render_config
+from ops_deploy.infra.redis_install import needs_restart, render_config, render_preferences, runs_replaced_binary
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.fakehost import LINUX
@@ -192,6 +192,9 @@ def test_refuses_bad_passwords(password: SecretStr | None, message: str) -> None
         {"timeout": -1},
         {"save_rules": ("900",)},
         {"validate_config": True},
+        {"package_version": "7.4.12 "},
+        {"package_version": "redis-server=7.4.12"},
+        {"package_version": ""},
         {"unknown": 1},
     ],
 )
@@ -237,3 +240,149 @@ def test_armored_official_key_is_converted_binary_left_alone() -> None:
 
     binary = run({f"head -c 10 {key}": ["\x99\x01"], **base}, cfg, None)
     assert not any("gpg --dearmor" in c for c in binary.executed_commands)
+
+
+OLD = "6:7.4.1-1rl1~bullseye1"
+NEW = "6:7.4.12-1rl1~noble1"
+PINNED = RedisInstallConfig(add_official_repo=True, apt_suite="noble", package_version=NEW)
+PREFS = "/etc/apt/preferences.d/redis"
+SOURCES = "/etc/apt/sources.list.d/redis-official.sources"
+KEY = "/usr/share/keyrings/redis-official-archive-keyring.gpg"
+RESTORE = "Redis | Restore Redis directory owners and modes after the package change"
+
+
+def pinned_host(version: str, *, repo: bool = True, prefs: bool = True, binary: str = "1500") -> dict[str, Any]:
+    """Converged for ``PINNED`` except for the installed version (and, optionally, repo and pin)."""
+
+    responses = {
+        **fakehost.directory("/usr/share/keyrings"),
+        **fakehost.directory("/etc/apt/sources.list.d"),
+        **fakehost.directory("/etc/apt/preferences.d"),
+        "printf 'binary|%s": [f"binary|{binary}", "start|2000"],
+        **converged(PINNED, None),
+    }
+    responses["dpkg -l"] = [f"ii  {name}  {version}  amd64  {name}" for name in ("redis-server", "redis-tools")] + [
+        f"ii  {name}  1.0  amd64  {name}" for name in ("curl", "gnupg")
+    ]
+    if repo:
+        sources = (
+            "Components: main\nEnabled: yes\nX-Repolib-Name: redis-official\n"
+            f"Signed-By: {KEY}\nSuites: noble\nTypes: deb\nURIs: https://packages.redis.io/deb\n"
+        )
+        responses = {
+            f"head -c 10 {KEY}": ["\x99\x01"],
+            **fakehost.file(KEY, "x"),
+            **fakehost.file(SOURCES, sources),
+            **responses,
+        }
+    if prefs:
+        responses = {**fakehost.file(PREFS, render_preferences(PINNED)), **responses}
+    return responses
+
+
+def test_preferences_pin_both_packages() -> None:
+    assert render_preferences(PINNED) == (
+        "Package: redis-server redis-tools\nPin: version 6:7.4.12-1rl1~noble1\nPin-Priority: 1001\n"
+    )
+
+
+def test_package_version_converged_host_changes_nothing() -> None:
+    result = run(pinned_host(NEW), PINNED, None)
+
+    assert result.mutating_changed_ops == []
+    assert not any("apt-get update" in c or "install" in c for c in result.executed_commands)
+
+
+def test_package_version_replaces_another_installed_version() -> None:
+    # A host on a local build of another suite, the repository and pin not there yet.
+    result = run(pinned_host(OLD, repo=False, prefs=False), PINNED, None)
+
+    assert result.mutating_changed_ops == [
+        "Redis | Install redis-official apt signing key",
+        "Redis | Configure redis-official apt repository",
+        "Redis | Pin the Redis packages to 6:7.4.12-1rl1~noble1",
+        "Redis | Update apt cache for Redis 6:7.4.12-1rl1~noble1",
+        "Redis | Install Redis packages",
+        RESTORE,
+    ]
+    assert result.upload(PREFS).decode() == render_preferences(PINNED)
+    commands = result.executed_commands
+    install = next(i for i, c in enumerate(commands) if "redis-server=6:7.4.12-1rl1~noble1" in c)
+    assert "--allow-downgrades" in commands[install]
+    assert "redis-tools=6:7.4.12-1rl1~noble1" in commands[install]
+    # The postinst resets them while installing; restored afterwards, in the same run.
+    tail = commands[install + 1 :]
+    assert "chown redis:redis /var/lib/redis && chmod 0750 /var/lib/redis && chmod u-s,g-s,o-t /var/lib/redis" in tail
+    assert "chown redis:redis /var/log/redis && chmod 0755 /var/log/redis && chmod u-s,g-s,o-t /var/log/redis" in tail
+    assert "chown root:root /etc/redis && chmod 0755 /etc/redis && chmod u-s,g-s,o-t /etc/redis" in tail
+    conf = "/etc/redis/redis.conf"
+    assert f"[ ! -e {conf} ] || {{ chown root:redis {conf} && chmod 0640 {conf}; }}" in tail
+    # Same redis.conf: neither written nor restarted by the deploy (the package restarts it).
+    assert WRITE not in result.changed_ops
+    assert "systemctl restart redis-server" not in commands
+
+
+def test_package_version_downgrade_and_repo_change() -> None:
+    # Back to an older build through the deploy (the rollback route): same steps, downgrade allowed.
+    older = PINNED.model_copy(update={"package_version": "6:7.4.1-1rl1~noble1"})
+    result = run(pinned_host(NEW), older, None)
+
+    assert result.mutating_changed_ops == [
+        "Redis | Pin the Redis packages to 6:7.4.1-1rl1~noble1",
+        "Redis | Update apt cache for Redis 6:7.4.1-1rl1~noble1",
+        "Redis | Install Redis packages",
+        RESTORE,
+    ]
+    assert any("--allow-downgrades" in c and "redis-server=6:7.4.1-1rl1~noble1" in c for c in result.executed_commands)
+
+
+def test_package_version_fresh_host_needs_no_restore() -> None:
+    result = run({**LINUX, "command -v apt-get": ["/usr/bin/apt-get"]}, PINNED, None)
+
+    assert RESTORE not in result.changed_ops
+    assert "redis-server=6:7.4.12-1rl1~noble1" in "\n".join(result.executed_commands)
+    # The new repository's index is fetched before the pinned install.
+    commands = result.executed_commands
+    update = max(i for i, c in enumerate(commands) if "apt-get update" in c)
+    install = next(i for i, c in enumerate(commands) if "redis-server=6:7.4.12-1rl1~noble1" in c)
+    assert update < install
+
+
+def test_without_package_version_nothing_new_is_planned() -> None:
+    # The default keeps the role's behaviour: no pin, no versioned install, no restore.
+    cfg = RedisInstallConfig(add_official_repo=True, apt_suite="noble")
+    responses = {**LINUX, "command -v apt-get": ["/usr/bin/apt-get"], "dpkg -l": [f"ii  redis-server  {OLD}  amd64  x"]}
+
+    result = run(responses, cfg, None)
+
+    names = [op.name for op in result.ops]
+    assert not any("Pin the Redis" in n or "Restore Redis" in n or "Update apt cache for" in n for n in names)
+    assert not any(PREFS in c or "--allow-downgrades" in c for c in result.executed_commands)
+
+
+REPLACED = "Redis | Restart redis-server if it runs a replaced binary"
+
+
+def test_server_started_before_its_binary_was_replaced_is_restarted() -> None:
+    # A policy-rc.d (containers) refuses the package's own restart.
+    result = run(pinned_host(NEW, binary="3000"), PINNED, None)
+
+    assert result.mutating_changed_ops == [REPLACED]
+    assert "systemctl restart redis-server" in result.executed_commands
+
+
+def test_runs_replaced_binary() -> None:
+    assert runs_replaced_binary(["binary|3", "start|2"])
+    assert not runs_replaced_binary(["binary|2", "start|2"])
+    assert not runs_replaced_binary(["binary|1", "start|2"])
+    # Unknown times (no binary, stopped server) never trigger a restart.
+    assert not runs_replaced_binary(["binary|", "start|2"])
+    assert not runs_replaced_binary(["binary|3", "start|"])
+    assert not runs_replaced_binary([])
+
+
+def test_replaced_binary_is_only_checked_with_a_package_version() -> None:
+    result = run(converged())
+
+    assert not any("binary|" in c for c in result.executed_commands)
+    assert REPLACED not in [op.name for op in result.ops]

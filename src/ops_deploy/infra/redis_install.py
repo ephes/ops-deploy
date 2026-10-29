@@ -12,14 +12,17 @@ from __future__ import annotations
 import hashlib
 import shlex
 from collections.abc import Generator
+from io import StringIO
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pyinfra import host
 from pyinfra.api import DeployError, deploy, operation
+from pyinfra.api.operation import OperationMeta
+from pyinfra.facts.deb import DebPackages
 from pyinfra.facts.server import Command, Which
-from pyinfra.operations import apt, server, systemd
+from pyinfra.operations import apt, files, server, systemd
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig, output, require_linux
 from ops_deploy.core.config import UnixUser
@@ -28,6 +31,9 @@ from ops_deploy.helpers import mark_read_only
 from ops_deploy.infra._common import apt_repository, codename, directory
 from ops_deploy.infra.postgres_install import PackageName, RepoWord, Url
 from ops_deploy.ops import secret_file, secret_stdin
+
+# A Debian package version: optional epoch, upstream version, optional revision.
+DebVersion = Annotated[str, Field(pattern=r"^([0-9]+:)?[0-9][A-Za-z0-9.+~-]*$")]
 
 MaxmemoryPolicy = Literal[
     "noeviction",
@@ -56,6 +62,12 @@ class RedisInstallConfig(RoleConfig):
     apt_components: tuple[RepoWord, ...] = ("main",)
     repo_key_url: Url = "https://packages.redis.io/gpg"
     repo_keyring_path: AbsolutePath = "/usr/share/keyrings/redis-official-archive-keyring.gpg"
+    # None (the role): apt installs the packages once and never changes an
+    # installed version. A version: ``package_name`` and ``redis-tools`` are
+    # installed at exactly that version (upgraded or downgraded) and pinned
+    # there in ``preferences_path``, so ``apt upgrade`` keeps them.
+    package_version: DebVersion | None = None
+    preferences_path: AbsolutePath = "/etc/apt/preferences.d/redis"
 
     bind_addresses: tuple[str, ...] = Field(default=("127.0.0.1", "::1"), min_length=1)
     port: int = Field(default=6379, ge=1, le=65535)
@@ -149,6 +161,70 @@ def render_config(cfg: RedisInstallConfig, password: SecretStr | None) -> str:
     )
 
 
+def render_preferences(cfg: RedisInstallConfig) -> str:
+    """The apt pin for ``package_version`` (priority 1001: also wins over a newer version)."""
+
+    return f"Package: {cfg.package_name} redis-tools\nPin: version {cfg.package_version}\nPin-Priority: 1001\n"
+
+
+def _version_changes(cfg: RedisInstallConfig) -> bool:
+    """Whether an installed Redis package is not at ``package_version`` (decided while planning)."""
+
+    installed = host.get_fact(DebPackages) or {}
+    return any(
+        set(installed[name]) != {cfg.package_version} for name in (cfg.package_name, "redis-tools") if name in installed
+    )
+
+
+def _install_pinned(cfg: RedisInstallConfig, repo: OperationMeta | None) -> bool:
+    """Pin and install ``package_version``; True when it replaces an installed version."""
+
+    files.put(
+        name=f"Pin the Redis packages to {cfg.package_version}",
+        src=StringIO(render_preferences(cfg)),
+        dest=cfg.preferences_path,
+        user="root",
+        group="root",
+        mode="0644",
+    )
+    changing = _version_changes(cfg)
+    if changing:
+        apt.update(name=f"Update apt cache for Redis {cfg.package_version}")
+    elif repo is not None:
+        apt.update(name="Update apt cache for the Redis repository", _if=repo.did_change)
+    apt.packages(
+        name="Install Redis packages",
+        packages=[f"{cfg.package_name}={cfg.package_version}", f"redis-tools={cfg.package_version}"],
+        update=True,
+        cache_time=3600,
+        allow_downgrades=True,
+    )
+    return changing
+
+
+def _restore_directories(cfg: RedisInstallConfig, config_dir: str) -> None:
+    """Owners and modes the packages' maintainer scripts reset when they change version.
+
+    ``files.directory`` puts owner and mode back, but ``chmod 0755`` keeps the
+    setgid bit the package sets, and whether to clear it was decided from the
+    directories as they were while planning; without this the next run would
+    still change them.
+    """
+
+    commands = []
+    for path, owner, mode in (
+        (cfg.data_dir, f"{cfg.user}:{cfg.group}", "0750"),
+        (cfg.log_dir, f"{cfg.user}:{cfg.group}", "0755"),
+        (config_dir, "root:root", "0755"),
+    ):
+        quoted = shlex.quote(path)
+        commands.append(f"chown {shlex.quote(owner)} {quoted} && chmod {mode} {quoted} && chmod u-s,g-s,o-t {quoted}")
+    config = shlex.quote(cfg.config_path)
+    # redis.conf is kept on an upgrade (``--force-confold``); a dpkg-statoverride may still own it.
+    commands.append(f"[ ! -e {config} ] || {{ chown root:{shlex.quote(cfg.group)} {config} && chmod 0640 {config}; }}")
+    server.shell(name="Restore Redis directory owners and modes after the package change", commands=commands)
+
+
 def _check_password(cfg: RedisInstallConfig, password: SecretStr | None) -> None:
     if not cfg.requirepass_enabled:
         return
@@ -201,6 +277,36 @@ def _restart_if_stale(cfg: RedisInstallConfig) -> Generator[str, None, None]:
     yield f"systemctl restart {shlex.quote(cfg.service_name)}"
 
 
+def _binary_probe(cfg: RedisInstallConfig) -> str:
+    """Prints ``binary|<ctime>`` (when the installed ``redis-server`` was replaced) and ``start|<epoch>``."""
+
+    unit = shlex.quote(cfg.service_name)
+    return (
+        'printf \'binary|%s\\n\' "$(stat -L -c %Z "$(command -v redis-server)" 2>/dev/null)"; '
+        f"started=$(systemctl show -p ActiveEnterTimestamp --value {unit}); "
+        f'printf \'start|%s\\n\' "$(date -d "$started" +%s 2>/dev/null)"'
+    )
+
+
+def runs_replaced_binary(lines: list[str]) -> bool:
+    """Whether the server started before its binary was replaced (unknown times: no)."""
+
+    values = dict(line.partition("|")[::2] for line in lines)
+    binary, start = values.get("binary", ""), values.get("start", "")
+    return binary.isdigit() and start.isdigit() and int(binary) > int(start)
+
+
+@operation()
+def _restart_if_replaced(cfg: RedisInstallConfig) -> Generator[str, None, None]:
+    # The packages restart Redis after a version change only through
+    # invoke-rc.d, which a policy-rc.d may refuse; checked when it runs, so a
+    # restart the package did make is not repeated.
+    if not runs_replaced_binary((host.get_fact(Command, command=_binary_probe(cfg)) or "").splitlines()):
+        host.noop(f"{cfg.service_name} runs the installed redis-server")
+        return
+    yield f"systemctl restart {shlex.quote(cfg.service_name)}"
+
+
 def _ping(cfg: RedisInstallConfig, password: SecretStr | None) -> None:
     target = shlex.join(["redis-cli", "-h", cfg.check_host or cfg.bind_addresses[0], "-p", str(cfg.port), "PING"])
     check = f'[ "$({target})" = PONG ]'
@@ -223,11 +329,12 @@ def deploy_redis_install(cfg: RedisInstallConfig, password: SecretStr | None = N
         raise DeployError("redis_install needs a Debian-family host")
     _check_password(cfg, password)
 
+    repo: OperationMeta | None = None
     if cfg.add_official_repo:
         suite = cfg.apt_suite or codename()
         if not suite:
             raise DeployError("redis_install: cannot tell the host's release codename; set apt_suite")
-        apt_repository(
+        repo = apt_repository(
             name="redis-official",
             key_url=cfg.repo_key_url,
             keyring=cfg.repo_keyring_path,
@@ -236,15 +343,21 @@ def deploy_redis_install(cfg: RedisInstallConfig, password: SecretStr | None = N
             components=cfg.apt_components,
             dearmor=True,
         )
-    # The role refreshes the cache on every run; an hour-old cache is enough here.
-    apt.packages(
-        name="Install Redis packages", packages=[cfg.package_name, "redis-tools"], update=True, cache_time=3600
-    )
+    if cfg.package_version is None:
+        # The role refreshes the cache on every run; an hour-old cache is enough here.
+        apt.packages(
+            name="Install Redis packages", packages=[cfg.package_name, "redis-tools"], update=True, cache_time=3600
+        )
+        changing = False
+    else:
+        changing = _install_pinned(cfg, repo)
 
     for path, mode in ((cfg.data_dir, "0750"), (cfg.log_dir, "0755")):
         directory(path, user=cfg.user, group=cfg.group, mode=mode)
     config_dir = str(PurePosixPath(cfg.config_path).parent)
     directory(config_dir, user="root", group="root", mode="0755")
+    if changing:
+        _restore_directories(cfg, config_dir)
 
     rendered = render_config(cfg, password)
     content = SecretContent(rendered)
@@ -291,4 +404,6 @@ def deploy_redis_install(cfg: RedisInstallConfig, password: SecretStr | None = N
         )
     systemd.service(name=f"Ensure {cfg.service_name}", service=cfg.service_name, running=True, enabled=True)
     _restart_if_stale(name=f"Restart {cfg.service_name} if it runs an older configuration", cfg=cfg)
+    if cfg.package_version is not None:
+        _restart_if_replaced(name=f"Restart {cfg.service_name} if it runs a replaced binary", cfg=cfg)
     _ping(cfg, password)
