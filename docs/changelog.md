@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prepare post-environment Home Assistant/Matter application installation with
+  original pinned/unpinned, force, rebuild and chip-repair semantics and exact
+  service-user/constraint arguments; no deployment API or native claim yet.
+
 - Prepare Home Assistant virtualenv replacement with execution-time interpreter
   observation, original service stop/create ordering and explicit partial-failure
   behavior. This component is not yet an exported or native-qualified deploy.

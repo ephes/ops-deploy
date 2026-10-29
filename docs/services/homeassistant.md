@@ -189,3 +189,21 @@ The caller passes the actual preceding `install_python` operation as
 makes environment planning explicitly unresolved even when user and UV already
 exist; it is not misclassified as an unavailable prerequisite. Execution still
 fails before any stop/removal if the requested interpreter remains unavailable.
+
+### Prepared application installation
+
+The separate unexported application component observes application presence and
+version after environment preparation. It binds the preceding environment
+operation during planning so a soon-to-be-replaced HA/chip environment is not
+imported. Execution queries fresh post-rebuild state. Original force, legacy HA
+rebuild, missing binary, explicit `==` drift and Matter chip-import repair
+predicates are shared with the source-bound policy oracle. Existing unpinned
+applications are not implicitly upgraded. The command preserves original
+service-user/HOME/site, shell-style package-spec argv parsing without a shell,
+and security constraints; invalid quoting fails before registering effects.
+No application-specific command timeout is added: the original package install
+tasks have none, while the owned qualification runner has its separate finite
+job deadline. Install failure remains failure, with no service restart/rollback from this
+component. Extra-package resolution and final version/ownership/handler
+composition remain separate unfinished work. These SDK tests do not qualify
+real HA/Matter application installation or recovery.

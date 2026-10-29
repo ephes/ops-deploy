@@ -42,6 +42,26 @@ def _python_mismatch(state: EnvironmentState, desired: str) -> bool:
     return parts[1] != desired
 
 
+def homeassistant_application_required(
+    cfg: HomeAssistantRuntimeConfig, state: EnvironmentState, *, llama_cpp_rebuild: bool = False
+) -> bool:
+    return (
+        cfg.force_reinstall
+        or llama_cpp_rebuild
+        or not state.application_exists
+        or _version_mismatch(cfg.package_spec, state.installed_version)
+    )
+
+
+def matter_application_required(cfg: HomeAssistantRuntimeConfig, state: EnvironmentState) -> bool:
+    return (
+        cfg.force_reinstall
+        or not state.application_exists
+        or _version_mismatch(cfg.matter_server_package_spec, state.installed_version)
+        or state.chip_status != 0
+    )
+
+
 def homeassistant_decision(
     cfg: HomeAssistantRuntimeConfig,
     state: EnvironmentState,
@@ -67,12 +87,7 @@ def homeassistant_decision(
             stops.append(cfg.matter_server_service_name)
         if unit_exists:
             stops.append(cfg.service_name)
-    install = (
-        cfg.force_reinstall
-        or llama_cpp_rebuild
-        or not state.application_exists
-        or _version_mismatch(cfg.package_spec, state.installed_version)
-    )
+    install = homeassistant_application_required(cfg, state, llama_cpp_rebuild=llama_cpp_rebuild)
     # Replacement removes the old application binary before its subsequent stat.
     return EnvironmentDecision(replace, replace or install, tuple(stops))
 
@@ -86,10 +101,5 @@ def matter_decision(
     mismatch = _python_mismatch(state, cfg.python_version)
     replace = cfg.force_reinstall or not state.python_exists or mismatch or state.pip_status != 0
     stops = (cfg.matter_server_service_name,) if replace and state.python_exists and unit_exists else ()
-    install = (
-        cfg.force_reinstall
-        or not state.application_exists
-        or _version_mismatch(cfg.matter_server_package_spec, state.installed_version)
-        or state.chip_status != 0
-    )
+    install = matter_application_required(cfg, state)
     return EnvironmentDecision(replace, replace or install, stops)
