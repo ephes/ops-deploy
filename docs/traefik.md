@@ -951,3 +951,7 @@ external archive mount refuses before target writes; the converged path bypasses
 archive handling. Local archive growth is retained and no retention APPLY occurs.
 See `tests/integration/traefik_routine/README.md` for the isolated qualification
 contract. Inventory qualifications belong in the private operator receipt.
+
+Lifecycle custom paths accept ordinary spaces while retaining absolute-path,
+parent-traversal and bounded-resource checks. Shell metacharacter/control-character
+admission remains unchanged; the shared deploy/backup path policy is unchanged.

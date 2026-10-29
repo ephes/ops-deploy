@@ -93,3 +93,7 @@ absent. A repeat with known absent resources performs no managed changes; the
 optional resolved listener wait remains a read-only TCP connection, not a DNS query.
 Owned package/account/cron/UFW/systemd tests establish component behavior only;
 no destructive inventory removal has been performed or qualified by them.
+
+Lifecycle custom paths accept ordinary spaces while retaining absolute-path,
+parent-traversal and bounded-resource checks. Shell metacharacter/control-character
+admission remains unchanged; the shared deploy/backup path policy is unchanged.
