@@ -288,8 +288,8 @@ protected stdin or host-local memory, never a durable controller receipt.
 
 This component does not resolve the host's UniFi credential, parse or normalize
 user YAML, write files, create backups, or notify a handler. Physical template
-versus replace symlink behavior and named backup semantics remain a separate
-writer implementation. Source/template tests are not native application proof.
+versus replace symlink behavior and named backup semantics are handled by the
+separate host-local primitive below. Source/template tests are not native application proof.
 
 ### Prepared physical configuration primitive
 
@@ -311,8 +311,9 @@ digests and backup filenames are not emitted. No global filesystem-I/O claim
 is made; reading a file may update access time.
 
 This primitive has local synthetic filesystem/original-Ansible controls only.
-The complete configuration task ordering, UniFi resolution and pyinfra wiring
-remain pending, as do native Ubuntu/application and inventory qualification.
+The configuration task composition below wires these primitives and UniFi
+resolution. Full deployment and native Ubuntu/application/inventory qualification
+remain pending.
 
 The temporary-file attribute copy keeps the original ordering and EPERM-only
 best effort behavior. A replacement has no explicit owner/mode arguments, so
@@ -334,10 +335,38 @@ The effective file-sourced credential is inserted only on the host. It is never
 returned, hashed into a receipt, or placed in a process argument. Original
 quoting and optional commented-example interpolation remain unchanged. Probe
 mode may read the declared source file but does not write the destination.
-Full deployment/task ordering and the unmanaged-secrets routing remain pending
-outer composition; this is not native or inventory credential qualification.
+The configuration composition below skips the unmanaged-secrets branch entirely.
+Full deployment ordering remains pending outer composition; this is not native
+or inventory credential qualification.
 
 An owned original-Ansible control also confirmed surrogate-escaped non-UTF-8
 file bytes survive the original slurp/template path. The protected host helper
 keeps that byte behavior instead of silently replacing or rejecting those bytes.
 This is a compatibility observation, not a claim that the result is valid YAML.
+
+### Prepared configuration task composition
+
+`configure_files` orders the managed secrets task, initial configuration stat,
+guarded template, exact legacy/obsolete replacements, then initial include stats
+and the six stock includes. Original pre-template existence controls replacement
+eligibility; overwrite does not cause a newly created file to be treated as
+preexisting. Existing includes are left alone when overwrite is false, including
+a broken leaf link, matching the original stat guard. Only actual replacement
+changes request the later Home Assistant restart; template writes do not.
+
+The actual SDK regenerates each operation for execution. When a known pending
+prerequisite or predecessor makes current contents obsolete for planning, the
+plan reports a pending write and execution re-inspects the resulting file. It
+does not call execution callbacks while planning or claim the pending row is
+read-only. Metadata baseline operations are explicitly read-only. Unmanaged
+configuration, includes and secrets cause no body or credential probes.
+
+Owned local SDK tests cover fresh creation, whole-metadata repeat equality
+(excluding access time), overwrite/replacement ordering and notifications,
+read-only planning, initial broken links and cold prerequisite deferral. A
+preexisting invalid replacement path fails during planning before writes. A
+separate fault introduced after planning proves an earlier secrets write remains
+when execution later fails; there is no automatic rollback or zero-effect claim.
+These are controller-local filesystem/SDK controls, not Linux application proof.
+The final deploy API and non-stock template aliases remain part of outer source
+completion; no inventory engine is switched by this prepared component.

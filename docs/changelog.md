@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compose prepared Home Assistant configuration tasks with original initial-file
+  guards, protected secret handling, execution-time rechecks and replacement-only
+  restart notifications; retain actual dry-plan and partial-failure evidence.
+
 - Prepare host-local UniFi credential resolution and protected secrets-template
   insertion with original explicit/file/variable precedence; no credential export
   or fallback, and no full deployment/native qualification claim.
