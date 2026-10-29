@@ -121,6 +121,9 @@ LOADS_NO_HOST_SCRIPT: dict[str, str] = {
     "infra/traefik_tx/runner.py": "the staged copy of infra/traefik_tx/engine.py (a package module)",
     "infra/traefik_tx/retention.py": "engine.py next to it (infra/traefik_tx/engine.py, a package module)",
     "services/fastdeploy/files/ensure_token_user.py": "FastDeploy's own commands.py in the site directory",
+    "services/homeassistant/files/inspect_python_security.py": (
+        "the selected environment's certifi, pip and pip._vendor.certifi packages; no ops-deploy host script"
+    ),
     "services/daybook_sessions/files/identity_host.py": (
         "the hash-bound twelve Daybook application modules and rendered identity helper, not an ops-deploy host script"
     ),
@@ -444,6 +447,23 @@ def test_every_module_loader_names_its_host_script_or_is_listed() -> None:
         assert excluded <= _named(trees[relative], scripts)
         assert relative in LOADS_NO_HOST_SCRIPT
     assert unnamed == set(LOADS_NO_HOST_SCRIPT)
+
+
+def test_security_inspector_loader_classification_keeps_secret_scan_active() -> None:
+    trees = _trees()
+    relative = "services/homeassistant/files/inspect_python_security.py"
+    assert _uses_a_loader(trees[relative])
+    # This records what dynamic imports mean; it never exempts the program from
+    # the actual command/environment checks. A real injected violation must fail.
+    source = (
+        (PACKAGE / relative).read_text()
+        + """
+def synthetic_violation():
+    return ["runuser", "-u", "owned", "--", "env", "OWNER_TOKEN=synthetic"]
+"""
+    )
+    trees[relative] = ast.parse(source)
+    assert any(path == relative and name == "OWNER_TOKEN" for path, name, _ in python_findings(trees))
 
 
 @pytest.mark.parametrize(
