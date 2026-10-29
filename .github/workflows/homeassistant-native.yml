@@ -1,0 +1,63 @@
+name: Owned Home Assistant native qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      implementation_sha:
+        description: Exact reviewed public ops-deploy commit (40 lowercase hex)
+        required: true
+        type: string
+      fixture_cases:
+        description: 'JSON selection: ["current","upgrade"], ["current"], or ["upgrade"]'
+        required: true
+        default: '["current","upgrade"]'
+        type: choice
+        options:
+          - '["current","upgrade"]'
+          - '["current"]'
+          - '["upgrade"]'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owned-homeassistant-native
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture_case: ${{ fromJSON(inputs.fixture_cases) }}
+    steps:
+      - name: Validate immutable source
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+        run: '[[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.implementation_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: "0.13.4"
+          enable-cache: false
+      - name: Run reviewed owned guest
+        env:
+          IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
+          HOMEASSISTANT_FIXTURE_EVIDENCE: ${{ runner.temp }}/homeassistant-native-evidence
+          HOMEASSISTANT_FIXTURE_CASE: ${{ matrix.fixture_case }}
+        run: |
+          export UV_BIN="$(command -v uv)"
+          bash tests/integration/homeassistant/run-owned.sh
+      - name: Preserve partial and final evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: homeassistant-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.fixture_case }}
+          path: ${{ runner.temp }}/homeassistant-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
