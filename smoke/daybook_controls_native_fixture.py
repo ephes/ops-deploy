@@ -93,7 +93,7 @@ def main() -> None:
         }
         protected = []
         configurations = {}
-        for service in ("photos", "archive", "attention"):
+        for service in ("photos", "archive", "attention", "inbox"):
             home = owned.root / ("home-" + service)
             agents = home / "Library/LaunchAgents"
             agents.mkdir(parents=True)
@@ -120,6 +120,16 @@ def main() -> None:
                 confirmed=service == "attention",
             )
             cfg = cfg.model_copy(update={"home": str(home), "label": label})
+            if service == "inbox":
+                long_label = label + "-long"
+                owned.adopt_gui_label(actor.pw_uid, long_label)
+                long_plist = agents / (long_label + ".plist")
+                create_plist(long_plist, long_label, actor.pw_uid, actor.pw_gid)
+                command("/bin/launchctl", "enable", "gui/" + str(actor.pw_uid) + "/" + long_label)
+                command("/bin/launchctl", "bootstrap", "gui/" + str(actor.pw_uid), str(long_plist))
+                wait(lambda selected=long_label: job_pid("gui/" + str(actor.pw_uid) + "/" + selected) is not None)
+                cfg = cfg.model_copy(update={"long_label": long_label})
+                protected.append(long_plist)
             configurations[service] = (cfg, plist)
         before = snapshot(protected)
         for service, (cfg, plist) in configurations.items():
@@ -151,8 +161,8 @@ def main() -> None:
             status="passed",
             protected_synthetic_data_metadata_preserved=True,
             real_application_calls=0,
-            successful_control_operations=7,
-            actual_control_invocations=8,
+            successful_control_operations=9,
+            actual_control_invocations=10,
             expected_failed_control_operations=1,
             removal_scope="Only fixture-created attention plist; no inventory restore/remove or data action.",
             repeat_scope="One original managed cleanup attempt sequence each repeat; no zero-op claim.",

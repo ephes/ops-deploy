@@ -28,19 +28,26 @@ DIRECT: ConnectorArguments = {
 }
 
 
-def control_command() -> str:
+def control_command(*, inbox: bool = False) -> str:
     pieces = ["import base64,sys,types"]
-    for name, package, resource in (
-        ("ops_control_filesystem", "ops_deploy.services.daybook_sessions", "files/resources_host.py"),
-        ("ops_control_launchd", "ops_deploy.services.daybook_photos_offload", "files/photos_controls.py"),
-    ):
+    modules = (
+        ()
+        if inbox
+        else (
+            ("ops_control_filesystem", "ops_deploy.services.daybook_sessions", "files/resources_host.py"),
+            ("ops_control_launchd", "ops_deploy.services.daybook_photos_offload", "files/photos_controls.py"),
+        )
+    )
+    for name, package, resource in modules:
         encoded = base64.b64encode(files(package).joinpath(resource).read_bytes()).decode()
         pieces.append(
             f"m=types.ModuleType('{name}');sys.modules[m.__name__]=m;"
             f"exec(compile(base64.b64decode('{encoded}'),'<{name}>','exec'),m.__dict__)"
         )
     encoded = base64.b64encode(
-        files("ops_deploy.services.daybook_controls").joinpath("files/controls_host.py").read_bytes()
+        files("ops_deploy.services.daybook_controls")
+        .joinpath("files/inbox_emergency_host.py" if inbox else "files/controls_host.py")
+        .read_bytes()
     ).decode()
     pieces.append(f"exec(compile(base64.b64decode('{encoded}'),'<daybook-control>','exec'),{{'__name__':'__main__'}})")
     return shlex.join(["/usr/bin/python3", "-I", "-B", "-c", ";".join(pieces)])
@@ -62,7 +69,7 @@ def run_daybook_control(cfg: DaybookControlConfig) -> None:
     # attempts. Never label this operation read-only or claim a zero-op repeat.
     secret_stdin(
         name="Disable exact Daybook label and remove only an explicitly confirmed attention plist",
-        command=control_command(),
+        command=control_command(inbox=cfg.service == "inbox"),
         content=SecretContent(json.dumps(data) + "\n"),
         **DIRECT,
     )

@@ -2,7 +2,7 @@ name: Native Daybook control components
 
 on:
   push:
-    branches: [pyinfra-daybook-controls-20261030]
+    branches: [pyinfra-daybook-controls-20261030, pyinfra-daybook-inbox-emergency-20261030]
     paths:
       - .github/workflows/daybook-controls-native.yml
       - smoke/daybook_controls_native_fixture.py

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Extend explicit Daybook controls with the original Inbox two-lane emergency
+  disable: both persistent overrides precede either bootout, and both lanes
+  must be proven disabled/unloaded. No application, source, credentials or state
+  body is read; the runtime installer and default service routes are unchanged.
+
 - Add explicit fixed-label Photos/archive disable and confirmed attention plist
   removal components, preserving original connections, cleanup attempts and data
   retention. Source/native mechanism qualification remains separate from real
