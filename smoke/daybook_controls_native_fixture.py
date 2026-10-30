@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import plistlib
 import pwd
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -14,23 +15,38 @@ from daybook_archive_native_fixture import user_transport
 from daybook_resources_native_fixture import provenance, wait
 from daybook_runtime_native_fixture import snapshot
 from mac_apps_owned import OwnedMac, command, job_pid
+from pyinfra.connectors.ssh import SSHConnector
 
 from ops_deploy.services.daybook_controls import DaybookControlConfig, run_daybook_control
+from ops_deploy.services.daybook_weeknotes_controls import WeeknotesDisableConfig, disable_weeknotes_schedule
 from ops_deploy.testing import run_deploy_ssh
 
 
-def run(owned: OwnedMac, cfg: DaybookControlConfig, transport: Any, phase: str) -> Any:
+def run(owned: OwnedMac, cfg: Any, transport: Any, phase: str, deploy_fn: Any = run_daybook_control) -> Any:
     uploads = 0
     original = paramiko.SFTPClient.putfo
+    original_shell = SSHConnector.run_shell_command
+    tokens = []
 
     def put(*args: Any, **kwargs: Any) -> Any:
         nonlocal uploads
         uploads += 1
         return original(*args, **kwargs)
 
-    with patch.object(paramiko.SFTPClient, "putfo", put):
+    def shell(connector: Any, *args: Any, **kwargs: Any) -> Any:
+        assert all(kwargs.get(key) in {False, None} for key in ("_sudo", "_doas", "_dzdo"))
+        assert all(kwargs.get(key) in {"", None} for key in ("_sudo_user", "_su_user", "_doas_user", "_dzdo_user"))
+        result = original_shell(connector, *args, **kwargs)
+        tokens.extend(
+            line
+            for line in result[1].stdout_lines
+            if line in {"DAYBOOK_RECONCILE_DISABLED_CHANGED", "DAYBOOK_RECONCILE_ALREADY_DISABLED"}
+        )
+        return result
+
+    with patch.object(paramiko.SFTPClient, "putfo", put), patch.object(SSHConnector, "run_shell_command", shell):
         result = run_deploy_ssh(
-            run_daybook_control,
+            deploy_fn,
             cfg,
             host_name="owned-control",
             host_data=transport,
@@ -47,6 +63,7 @@ def run(owned: OwnedMac, cfg: DaybookControlConfig, transport: Any, phase: str) 
         "managed": len(result.mutating_changed_ops),
         "actual_sftp": uploads,
         "error_type": type(result.error).__name__ if result.error else None,
+        "weeknotes_result_tokens": tokens,
     }
     assert uploads == 0
     assert job_pid(owned.report["keeper_service"]) == owned.report["keeper_pid"]
@@ -70,6 +87,7 @@ def create_plist(path: Path, label: str, uid: int, gid: int) -> None:
 def main() -> None:
     owned = OwnedMac("daybook-controls")
     failure: BaseException | None = None
+    week_label: str | None = None
     try:
         provenance(owned)
         actor = pwd.getpwnam("runner")
@@ -121,6 +139,13 @@ def main() -> None:
             )
             cfg = cfg.model_copy(update={"home": str(home), "label": label})
             configurations[service] = (cfg, plist)
+        week_label = owned.label("weeknotes-disable")
+        week_plist = owned.root / "weeknotes.plist"
+        create_plist(week_plist, week_label, 0, 0)
+        command("/bin/launchctl", "bootstrap", "system", str(week_plist))
+        wait(lambda: job_pid("system/" + week_label) is not None)
+        week_cfg = WeeknotesDisableConfig().model_copy(update={"label": week_label, "plist": str(week_plist)})
+        protected.append(week_plist)
         before = snapshot(protected)
         for service, (cfg, plist) in configurations.items():
             transport = direct_transport if service == "archive" else root_transport
@@ -147,13 +172,32 @@ def main() -> None:
         assert len(recovered.mutating_changed_ops) == 1
         assert not plist.exists()
         assert snapshot(protected) == before
+        for phase in ("weeknotes-first", "weeknotes-repeat"):
+            result = run(owned, week_cfg, root_transport, phase, disable_weeknotes_schedule)
+            assert result.succeeded
+            assert len(result.mutating_changed_ops) == 1
+            assert job_pid("system/" + week_label) is None
+            disabled = command("/bin/launchctl", "print-disabled", "system").stdout
+            assert re.search(r'(?m)^\s*"' + re.escape(week_label) + r'"\s*=>\s*(?:true|disabled)\s*$', disabled)
+            expected = (
+                "DAYBOOK_RECONCILE_DISABLED_CHANGED"
+                if phase.endswith("first")
+                else "DAYBOOK_RECONCILE_ALREADY_DISABLED"
+            )
+            assert owned.report["phases"][phase]["weeknotes_result_tokens"] == [expected]
+        refused = run(
+            owned, week_cfg, direct_transport, "weeknotes-wrong-transport-refusal", disable_weeknotes_schedule
+        )
+        assert not refused.succeeded
+        assert len(refused.mutating_changed_ops) == 0
+        assert snapshot(protected) == before
         owned.report.update(
             status="passed",
             protected_synthetic_data_metadata_preserved=True,
             real_application_calls=0,
-            successful_control_operations=7,
-            actual_control_invocations=8,
-            expected_failed_control_operations=1,
+            successful_control_operations=9,
+            actual_control_invocations=11,
+            expected_failed_control_operations=2,
             removal_scope="Only fixture-created attention plist; no inventory restore/remove or data action.",
             repeat_scope="One original managed cleanup attempt sequence each repeat; no zero-op claim.",
         )
@@ -165,6 +209,17 @@ def main() -> None:
             owned.cleanup()
         except BaseException as error:
             failure = failure or error
+        try:
+            if week_label is not None:
+                command("/bin/launchctl", "enable", "system/" + week_label, check=False)
+                disabled = command("/bin/launchctl", "print-disabled", "system").stdout
+                assert not re.search(r'(?m)^\s*"' + re.escape(week_label) + r'"\s*=>\s*(?:true|disabled)\s*$', disabled)
+                owned.report["weeknotes_system_disable_override_cleared"] = True
+        except BaseException as error:
+            failure = failure or error
+            owned.fail(error)
+        if failure is not None:
+            owned.report["status"] = "failed"
         owned.receipt()
     if failure is not None:
         raise failure

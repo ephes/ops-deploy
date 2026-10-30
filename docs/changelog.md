@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Port the original exact-label Weeknotes system schedule emergency disable.
+  Preserve its conditional disable/bootout shell, root connection and data
+  retention. This controls only the retired LaunchDaemon, never the independent
+  operations supervisor source or any identity/application work.
+
 - Add explicit fixed-label Photos/archive disable and confirmed attention plist
   removal components, preserving original connections, cleanup attempts and data
   retention. Source/native mechanism qualification remains separate from real
