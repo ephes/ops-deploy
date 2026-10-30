@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{ daybook_photos_archive_sync_launchd_label | e }}</string>
+  <key>ProgramArguments</key>
+  <array><string>{{ daybook_photos_archive_sync_launcher_path | e }}</string></array>
+  <key>WorkingDirectory</key>
+  <string>{{ daybook_photos_archive_sync_checkout_path | e }}</string>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>{{ daybook_photos_archive_sync_interval_seconds | int }}</integer>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>{{ daybook_photos_archive_sync_stdout_log | e }}</string>
+  <key>StandardErrorPath</key>
+  <string>{{ daybook_photos_archive_sync_stderr_log | e }}</string>
+</dict>
+</plist>

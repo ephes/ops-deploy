@@ -15,6 +15,7 @@ import stat
 import sys
 import uuid
 from contextlib import ExitStack
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -23,6 +24,7 @@ import paramiko
 from daybook_resources_native_fixture import provenance, wait
 from daybook_runtime_native_fixture import snapshot
 from mac_apps_owned import OwnedMac, command, job_pid
+from photo_activation_helpers import rescue_case
 from pyinfra.api import deploy
 from pyinfra.api.exceptions import ConnectError, PyinfraError
 from pyinfra.connectors.ssh import SSHConnector
@@ -33,6 +35,7 @@ from ops_deploy.services.daybook_photos_offload import (
     install_daybook_photos_offload,
 )
 from ops_deploy.services.daybook_photos_offload import deploy as api
+from ops_deploy.services.daybook_photos_offload.config import CalendarEntry
 from ops_deploy.services.daybook_photos_offload.payload import component_payload
 from ops_deploy.testing import run_deploy_ssh
 
@@ -68,13 +71,25 @@ def configuration(owned: OwnedMac, source: SourceTree, bundle: Path, uv: str, ac
         "launchd_label": label,
         "launchd_plist_path": str(home / "Library/LaunchAgents" / (label + ".plist")),
     }
-    return cfg.model_copy(update={"daybook_photos_offload_" + key: value for key, value in paths.items()})
+    updates: dict[str, Any] = {"daybook_photos_offload_" + key: value for key, value in paths.items()}
+    future = datetime.now() + timedelta(hours=13)
+    updates["daybook_photos_offload_start_calendar"] = [CalendarEntry(Hour=future.hour, Minute=future.minute)]
+    return cfg.model_copy(update=updates)
+
+
+def inert_photos_source(owned: OwnedMac) -> str:
+    marker = owned.root / "home/owned-unexpected-photos-import"
+    return (
+        "from pathlib import Path\nPath("
+        + repr(str(marker))
+        + ").touch()\nraise AssertionError('inert Photos app must not import')\n"
+    )
 
 
 def source_tree(owned: OwnedMac, uv: str) -> tuple[SourceTree, Path]:
     root = owned.root / "controller-source"
     (root / "src/daybook").mkdir(parents=True)
-    (root / "src/daybook/__init__.py").write_text("raise AssertionError('Photos fixture must never import app')\n")
+    (root / "src/daybook/__init__.py").write_text(inert_photos_source(owned))
     (root / "pyproject.toml").write_text(
         '[project]\nname="owned-photos"\nversion="0.0.0"\nrequires-python=">=3.14.7"\ndependencies=[]\n'
     )
@@ -347,9 +362,7 @@ def main() -> None:
         git_inode, environment_inode = (install / ".git").stat().st_ino, venv.stat().st_ino
         logs = [Path(cfg.daybook_photos_offload_stdout_log), Path(cfg.daybook_photos_offload_stderr_log)]
         logs_before = snapshot(logs)
-        (source.path / "src/daybook/__init__.py").write_text(
-            "raise AssertionError('updated inert Photos app must not import')\n"
-        )
+        (source.path / "src/daybook/__init__.py").write_text(inert_photos_source(owned) + "# owned next Main\n")
         command("/usr/bin/git", "-C", str(source.path), "add", ".")
         command(
             "/usr/bin/git",
@@ -384,7 +397,7 @@ def main() -> None:
         # wrong transfer digest fails publication without modifying old source.
         fault_root = owned.root / "fault-controller-source"
         command("/usr/bin/git", "clone", "--quiet", "--no-hardlinks", str(source.path), str(fault_root))
-        (fault_root / "src/daybook/__init__.py").write_text("raise AssertionError('owned fault app never imported')\n")
+        (fault_root / "src/daybook/__init__.py").write_text(inert_photos_source(owned) + "# owned fault source\n")
         command("/usr/bin/git", "-C", str(fault_root), "add", ".")
         command(
             "/usr/bin/git",
@@ -418,6 +431,68 @@ def main() -> None:
         final = run(owned, transport, cfg, source, bundle, name="final-repeat")
         assert final.succeeded
         assert not final.mutating_changed_ops
+        active = cfg.model_copy(update={"daybook_photos_offload_launchd_enabled": True})
+        selected = "gui/" + str(actor.pw_uid) + "/" + cfg.daybook_photos_offload_launchd_label
+        protected_activation = snapshot([keeper_plist, *logs, venv, install / ".git"])
+
+        def require_enabled_loaded(phase: str) -> None:
+            assert command("/bin/launchctl", "print", selected, check=False).returncode == 0
+            overrides = command("/bin/launchctl", "print-disabled", "gui/" + str(actor.pw_uid), check=False)
+            assert overrides.returncode == 0
+            assert ('"' + cfg.daybook_photos_offload_launchd_label + '" => disabled') not in overrides.stdout
+            assert ('"' + cfg.daybook_photos_offload_launchd_label + '" => true') not in overrides.stdout
+            owned.report["phases"][phase]["post_repeat_enabled_loaded"] = True
+
+        enabled = run(owned, transport, active, source, bundle, name="activation-first")
+        assert enabled.succeeded
+        assert len(enabled.mutating_changed_ops) == 1
+        assert command("/bin/launchctl", "print", selected, check=False).returncode == 0
+        assert job_pid(selected) is None
+        enabled_repeat = run(owned, transport, active, source, bundle, name="activation-strict-repeat")
+        assert enabled_repeat.succeeded
+        assert not enabled_repeat.mutating_changed_ops
+        assert owned.report["phases"]["activation-strict-repeat"]["actual_sftp"]["attempted"] == 0
+        require_enabled_loaded("activation-strict-repeat")
+        assert snapshot([keeper_plist, *logs, venv, install / ".git"]) == protected_activation
+        disabled = run(owned, transport, cfg, source, bundle, name="disabled-install-after-activation")
+        assert disabled.succeeded
+        assert len(disabled.mutating_changed_ops) == 1
+        assert command("/bin/launchctl", "print", selected, check=False).returncode == 113
+        for fault in ("none", "disable", "bootout"):
+            rescue_case(
+                owned,
+                actor,
+                transport,
+                label=cfg.daybook_photos_offload_launchd_label,
+                plist=cfg.daybook_photos_offload_launchd_plist_path,
+                kind="photos",
+                cleanup_fault=fault,
+            )
+            assert job_pid(service) == pid
+            assert snapshot([keeper_plist, *logs, venv, install / ".git"]) == protected_activation
+        recovered = run(owned, transport, active, source, bundle, name="activation-recovery")
+        assert recovered.succeeded
+        assert len(recovered.mutating_changed_ops) == 1
+        strict = run(owned, transport, active, source, bundle, name="activation-recovery-repeat")
+        assert strict.succeeded
+        assert not strict.mutating_changed_ops
+        require_enabled_loaded("activation-recovery-repeat")
+        assert job_pid(selected) is None
+        assert not (home / "owned-unexpected-photos-import").exists()
+        owned.report["activation"] = {
+            "original_RunAtLoad": False,
+            "fixture_calendar_substitution": [row.model_dump() for row in active.daybook_photos_offload_start_calendar],
+            "fixture_calendar_at_least_12_hours_ahead_at_setup": True,
+            "production_calendar_not_modified": True,
+            "first_managed": 1,
+            "strict_repeat_managed": 0,
+            "unexpected_inert_app_import_marker_absent": True,
+            "protected_synthetic_metadata_preserved": True,
+            "scope": (
+                "Original model validated before owned paths/label/calendar substitutions; "
+                "no actual Photos app/data/TCC call."
+            ),
+        }
         owned.report.update(
             status="passed",
             unrelated_keeper_pid=pid,
@@ -427,10 +502,12 @@ def main() -> None:
             library_observation_limit=(
                 "Only an empty owned directory was constructed; entry reads are not instrumented."
             ),
-            application_import_sentinel="Inert app raises if imported; no process-wide app-call counter is claimed.",
+            application_import_sentinel=(
+                "Inert app writes only an owned import marker then raises; marker absent across all phases."
+            ),
             scope=(
                 "Disposable original Photos mechanisms only; paired private declarations separate; "
-                "no inventory/default/activation claim."
+                "owned activation mechanism only; no inventory/default/actual Photos activation claim."
             ),
         )
     except BaseException as error:

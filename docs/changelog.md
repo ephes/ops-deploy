@@ -7,6 +7,45 @@
   mount-point preservation. Explicit validation avoids publication; the original
   renewal command and optional edge Postfix reload remain managed work.
 
+- Extend the owned Photos/archive activation proofs without changing packaged
+  deployment resources. Preserve Photos' idle calendar/strict repeat and the
+  archive agent's immediate RunAtLoad/managed repeat behavior. Disarm archive
+  data commands with an attested fixture proxy; qualify installed control-class
+  rescue and partial cleanup independently of real inventory/data execution.
+
+- Add the separate original fresh-apply-bound Weeknotes timer activation rail,
+  preserving retirement/confirmation, exact epoch/proof/artifact admission,
+  disabled/unloaded precondition and no-kickstart enable/bootstrap. Keep private
+  hashes in the target process and report post-enable failures distinctly.
+  Re-qualify the existing identity rail after its callback extension; inert
+  mechanism proof grants no actual application or inventory qualification.
+
+- Add the explicit original Weeknotes identity operator rail as managed app
+  work, with exact installed-code/Main/intent admission and original apply
+  confirmation. Preserve no-replace seed and verify-before-root-proof behavior;
+  no source installation, timer activation or actual post/data qualification.
+
+- Port the original exact-label Weeknotes system schedule emergency disable.
+  Preserve its conditional disable/bootout shell, root connection and data
+  retention. This controls only the retired LaunchDaemon, never the independent
+  operations supervisor source or any identity/application work.
+
+- Extend explicit Daybook controls with the original Inbox two-lane emergency
+  disable: both persistent overrides precede either bootout, and both lanes
+  must be proven disabled/unloaded. No application, source, credentials or state
+  body is read; the runtime installer and default service routes are unchanged.
+
+- Add explicit fixed-label Photos/archive disable and confirmed attention plist
+  removal components, preserving original connections, cleanup attempts and data
+  retention. Source/native mechanism qualification remains separate from real
+  inventory operator execution.
+
+- `daybook_photos_archive_sync`: add the original direct-owner, single-writer
+  archive installation with exact Main bundle admission, clean/interrupted Git
+  convergence, pinned user Python and managed console smoke. Preserve all 35
+  defaults/two dormant templates, disabled-first label state and data paths.
+  Source/owned mechanism proof remains separate from inventory/activation.
+
 - Add the original Photos offload component: protected root checkout and trust
   attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with
   exact cleanup, GUI-owned Python environment/resources, and exact-label

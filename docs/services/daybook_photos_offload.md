@@ -80,3 +80,23 @@ installation mechanisms, while optional enabled activation retains separate
 paired/state-machine coverage. The fixture used an empty owned library and an
 inert import sentinel; entry reads and process-wide app calls were not counted,
 and no whole-host zero-I/O claim is made.
+
+
+The extended owned activation fixture exercises the installed immutable Git API
+through root SSH: first activation enables/loads its unique agent; a current
+repeat has zero managed operations and zero SFTP, and disabled installation
+quiesces it again. The original model validates first, followed by disclosed
+owned path/label substitutions and a calendar thirteen hours ahead. This keeps
+`RunAtLoad: false` and prevents a fixture-time scheduled app invocation; it does
+not prove that the production calendar fired. An inert import sentinel must
+remain untouched, and synthetic protected metadata and a separate keeper remain
+exact.
+
+Separate installed unchanged control-class dependency-injection cases forward a
+real successful bootstrap and prove the label loaded before injecting failure.
+They exercise both real rescue commands and each cleanup failure. A successful
+rescue reports `photos_control_activation_failed_quiesced`; either failed cleanup
+must report `photos_control_activation_failed_NOT_quiesced` with the actual
+state. The fixture explicitly quiesces only its owned label afterward. These
+mechanism cases do not claim naturally occurring full-installer faults or real
+inventory/application qualification.
