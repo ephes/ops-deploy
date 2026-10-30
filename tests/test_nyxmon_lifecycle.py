@@ -78,8 +78,8 @@ def test_backup_copies_state_writes_metadata_and_fetches(tmp_path: Path) -> None
         "services": ["nyxmon-monitor.service", "nyxmon.service"],
     }
     assert (
-        f"cd /opt/backups/nyxmon && tar -C /opt/backups/nyxmon -czf manual-{STAMP}.tar.gz manual-{STAMP}"
-        in result.executed_commands
+        f"(umask 077; cd /opt/backups/nyxmon && tar -C /opt/backups/nyxmon -czf manual-{STAMP}.tar.gz manual-{STAMP})"
+        f" && chmod 0600 {DIR}.tar.gz" in result.executed_commands
     )
     assert "nyxmon backup | Fetch the backup archive" in result.changed_ops
     assert local.stat().st_mode & 0o777 == 0o700
@@ -234,3 +234,46 @@ def test_removal_needs_confirmation() -> None:
 
     assert "removal not confirmed" in str(result.error)
     assert result.executed_commands == []
+
+
+def test_remove_only_owned_privacy_dropin_and_keep_operator_directory() -> None:
+    directory = "/etc/systemd/system/nyxmon.service.d"
+    responses = {
+        **installed(),
+        f"test -e {directory}/sqlite-privacy.conf &&": ["yes"],
+        f"test -e {directory} &&": ["yes"],
+        f"find {directory} -mindepth 1": [f"{directory}/operator.conf"],
+    }
+    run = run_deploy_fake(deploy_nyxmon_remove, NyxmonRemoveConfig(confirm=True), responses=responses)
+    assert run.succeeded, run.error
+    assert f"rm -rf {directory}/sqlite-privacy.conf" in run.executed_commands
+    assert not any(f"rmdir -- {directory}" in command for command in run.executed_commands)
+    assert not any(command == f"rm -rf {directory}" for command in run.executed_commands)
+
+
+def test_remove_empty_privacy_directory_uses_nonrecursive_rmdir() -> None:
+    directory = "/etc/systemd/system/nyxmon.service.d"
+    run = run_deploy_fake(
+        deploy_nyxmon_remove,
+        NyxmonRemoveConfig(confirm=True),
+        responses={**installed(), f"test -e {directory} &&": ["yes"]},
+    )
+    assert run.succeeded, run.error
+    assert f"rmdir -- {directory}" in run.executed_commands
+    assert f"rm -rf {directory}" not in run.executed_commands
+
+
+def test_remove_directory_after_its_only_owned_dropin() -> None:
+    directory = "/etc/systemd/system/nyxmon.service.d"
+    run = run_deploy_fake(
+        deploy_nyxmon_remove,
+        NyxmonRemoveConfig(confirm=True),
+        responses={
+            **installed(),
+            f"test -e {directory}/sqlite-privacy.conf &&": ["yes"],
+            f"test -e {directory} &&": ["yes"],
+        },
+    )
+    assert run.succeeded, run.error
+    commands = run.executed_commands
+    assert commands.index(f"rm -rf {directory}/sqlite-privacy.conf") < commands.index(f"rmdir -- {directory}")

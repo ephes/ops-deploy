@@ -36,7 +36,7 @@ of the test suite that touches a network or a host.
     `known_hosts`, so every connection uses `StrictHostKeyChecking=yes`.
     `smoke-up` refreshes it.
 - `smoke/provision.sh` (run as root on every `smoke-up`) installs what a
-  service deploy expects to find, pinned to what macmini runs: rsync and
+  service deploy expects to find, using its independently pinned fixture versions: rsync and
   python3, `build-essential` (some wheels, such as asyncpg for Python 3.14,
   do not exist for arm64 and are built from source, as macmini can), uv
   0.13.4 in `/usr/local/bin`, Traefik 3.7.14 as `traefik.service` with the

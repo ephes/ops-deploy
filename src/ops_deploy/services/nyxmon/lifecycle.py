@@ -229,7 +229,10 @@ def deploy_nyxmon_backup(cfg: NyxmonBackupConfig) -> None:
     if cfg.create_archive:
         server.shell(
             name=f"Create {archive}",
-            commands=[f"cd {shlex.quote(cfg.root)} && tar -C {shlex.quote(cfg.root)} -czf {name}.tar.gz {name}"],
+            commands=[
+                f"(umask 077; cd {shlex.quote(cfg.root)} && tar -C {shlex.quote(cfg.root)} -czf {name}.tar.gz {name})"
+                f" && chmod 0600 {shlex.quote(archive)}"
+            ],
         )
     if cfg.retention:
         server.shell(
@@ -326,6 +329,14 @@ def deploy_nyxmon_remove(cfg: NyxmonRemoveConfig) -> None:
     reload = False
     for name in names:
         reload = remove_path(f"/etc/systemd/system/{name}.service") or reload
+        directory = f"/etc/systemd/system/{name}.service.d"
+        reload = remove_path(f"{directory}/sqlite-privacy.conf") or reload
+        if exists(directory) and not output(
+            f"find {shlex.quote(directory)} -mindepth 1 -maxdepth 1 ! -name sqlite-privacy.conf -print -quit"
+        ):
+            # rmdir refuses a directory populated after the probe; never recursively remove operator drop-ins.
+            server.shell(name=f"Remove empty {directory}", commands=[f"rmdir -- {shlex.quote(directory)}"])
+            reload = True
     remove_path(cfg.traefik_config_file)
     databases = output(f"find {shlex.quote(cfg.home)} -name '*.sqlite3*'").split()
     if databases:

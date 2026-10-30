@@ -67,7 +67,7 @@ def converged(cfg: OpenWebUIConfig, **drift: Any) -> dict[str, Any]:
         **host_facts(),
         venv_probe(cfg): ["python=3.11.14"],
         installed_probe(cfg): ["0.7.2"],
-        "/usr/local/bin/uv --version": ["uv 0.13.4 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uv --version": ["uv 0.13.5 (x86_64-unknown-linux-gnu)"],
         **fakehost.stat("/usr/local/bin/uvx"),
         **fakehost.directory("/usr/local/bin"),
         **fakehost.accounts({"openwebui": "/home/openwebui"}),

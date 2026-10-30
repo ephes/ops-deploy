@@ -98,8 +98,10 @@ def test_mirrored_roles_did_not_change(role: str) -> None:
     path = Path(OPS_LIBRARY, "roles", role)
 
     assert path.is_dir(), f"role {role} is gone from ops-library; retire or re-check its port"
+    manifest = json.loads(MANIFEST.read_text())
+    source = manifest.get("role_commits", {}).get(role, manifest["ops_library"])
     assert role_digest(path) == recorded()[role], (
-        f"role {role} changed since ops-library {json.loads(MANIFEST.read_text())['ops_library']}: "
+        f"role {role} changed since ops-library {source}: "
         "port the change, then update tests/parity/ops_library_roles.json "
         "(or OPS_LIBRARY_PATH is not a checkout of ops-library main)"
     )

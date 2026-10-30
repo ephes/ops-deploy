@@ -34,11 +34,11 @@ class UvInstallConfig(RoleConfig):
     # Explicit opt-in: Linux defaults and its existing installation path remain unchanged.
     darwin: bool = False
     # Version and checksums change together (the role's defaults).
-    version: Version = "0.13.4"
+    version: Version = "0.13.5"
     checksums: dict[str, Sha256] = Field(
         default_factory=lambda: {
-            "x86_64-unknown-linux-gnu": "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f",
-            "aarch64-unknown-linux-gnu": "1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab",
+            "x86_64-unknown-linux-gnu": "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f",
+            "aarch64-unknown-linux-gnu": "4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403",
         }
     )
     # Must be world-readable: every service user runs uv from here.
@@ -58,7 +58,7 @@ class UvInstallConfig(RoleConfig):
 
 
 def installed_version(binary: str) -> str:
-    """``uv 0.13.4 (...)`` -> ``0.13.4``; empty when missing or broken."""
+    """``uv 0.13.5 (...)`` -> ``0.13.5``; empty when missing or broken."""
 
     match = re.match(r"^uv ([0-9.]+)", output(f"{binary} --version"))
     return match.group(1) if match else ""

@@ -9,7 +9,7 @@ from tests import fakehost
 from tests.fakehost import LINUX
 
 X86 = {**LINUX, "uname -m": ["x86_64"]}
-SHA_X86 = "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f"
+SHA_X86 = "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f"
 
 
 def installed(version: str) -> dict[str, Any]:
@@ -26,7 +26,7 @@ def test_installs_verified_release_when_missing() -> None:
 
     assert run.succeeded, run.error
     command = install_command(run)
-    assert "https://github.com/astral-sh/uv/releases/download/0.13.4/uv-x86_64-unknown-linux-gnu.tar.gz" in command
+    assert "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-unknown-linux-gnu.tar.gz" in command
     assert f"echo {SHA_X86}'  '\"$tmp/release.tar.gz\" | sha256sum -c --quiet -" in command
     # Checksum first, then each binary staged and renamed into place, then a version check.
     assert command.index("sha256sum") < command.index("install -o root -g root -m 0755")
@@ -38,7 +38,7 @@ def test_installs_verified_release_when_missing() -> None:
 def test_same_version_changes_nothing() -> None:
     responses = {
         **X86,
-        **installed("0.13.4"),
+        **installed("0.13.5"),
         **fakehost.directory("/usr/local/bin"),
         **fakehost.file("/usr/local/bin/uvx", "binary", mode="-rwxr-xr-x"),
     }
@@ -65,7 +65,7 @@ def test_other_version_is_replaced_unless_updates_are_off() -> None:
 
 
 def test_symlinked_uv_is_replaced() -> None:
-    responses = {**X86, **installed("0.13.4"), **fakehost.symlink("/usr/local/bin/uv", "/root/.local/bin/uv")}
+    responses = {**X86, **installed("0.13.5"), **fakehost.symlink("/usr/local/bin/uv", "/root/.local/bin/uv")}
 
     run = run_deploy_fake(deploy_uv_install, UvInstallConfig(), responses=responses)
 
@@ -73,7 +73,7 @@ def test_symlinked_uv_is_replaced() -> None:
 
 
 def test_force_reinstall() -> None:
-    responses = {**X86, **installed("0.13.4")}
+    responses = {**X86, **installed("0.13.5")}
 
     run = run_deploy_fake(deploy_uv_install, UvInstallConfig(force_reinstall=True), responses=responses)
 
@@ -109,7 +109,7 @@ def test_rejects_invalid_config(overrides: dict[str, Any]) -> None:
 
 
 def test_missing_uvx_is_reinstalled() -> None:
-    responses = {**X86, **installed("0.13.4"), **fakehost.directory("/usr/local/bin")}
+    responses = {**X86, **installed("0.13.5"), **fakehost.directory("/usr/local/bin")}
 
     run = run_deploy_fake(deploy_uv_install, UvInstallConfig(), responses=responses)
 

@@ -40,6 +40,16 @@
   original cleanup tolerance and private force/keep flag behavior. Owned native
   component evidence is separate from inventory lifecycle qualification.
 
+- Reconcile twelve ops-library parity failures with per-role source revisions
+  and documented dispositions. Backups now restrict existing archives and
+  create private new archives (FastDeploy exposes `archive_mode`, default
+  `0600`). Nyxmon restores deployed directory modes after rsync, removes only
+  owned privacy drop-ins, and fails on disappearance of persistent database
+  files. Linux uv defaults advance to `0.13.5` with matching checksums; MeTube retains
+  its explicit `0.13.4` selection with matching checksums. Refresh
+  Chesslab/weeknotes environment template oracles without changing their
+  systemd output. See the dated parity reconciliation for scope and evidence.
+
 - Add a targeted pyinfra upgrade for existing role-managed Mastodon 4.6.9
   installations to 4.7.4, addressing GHSA-288h-6j8h-6x5j. It takes protected
   database/config/media backups, installs the tag's Ruby and Node versions,

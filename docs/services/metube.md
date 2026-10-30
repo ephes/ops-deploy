@@ -54,7 +54,7 @@ It owns a named Lima VM and fixture paths only. The fixture starts from a
 prepared systemd host: its base image has Git/build tools and the smoke
 provisioner installs uv/uvx 0.13.4. MeTube's first application install exercises
 its apt packages, NodeSource install, service account/directories, actual Python
-download via uv, source/runtime/UI and systemd. The inherited shared uv
+download via uv, source/runtime/UI and systemd. The selected uv
 installer's missing-binary branch is not exercised by that fixture; complete
 fresh-machine or media-volume provisioning is not claimed. It builds actual upstream
 Angular, installs real frozen Python dependencies, tests first deployment,
@@ -63,3 +63,9 @@ Angular build that succeeds in the wrong output directory, build failure and
 retry, and requires each
 immediate repeat to have zero mutating operations. Owned media/state sentinels
 must survive every pass. It never downloads real media.
+
+## Explicit uv selection
+
+The staged MeTube API retains its reviewed `uv_version=0.13.4` selection and
+matching Linux checksums. It passes these explicitly to the uv installer;
+the shared installer's `0.13.5` default does not change this selected toolchain.

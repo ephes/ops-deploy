@@ -149,7 +149,11 @@ prefix `manual`, timestamp the host's local `%Y%m%dT%H%M%S`) with
 `database/db.sqlite3`, `static/`, `env/.env`, `configs/work-app.service`,
 `configs/traefik.yml`, `metadata.yml` and `manifest.sha256`, packs it as
 `<dir>.tar.gz` and fetches the archive to `~/backups/work_app` (`0700`) on the
-controller. Directories are `0700 root`, copied files `0600 root`.
+controller. Directories are `0700 root`, copied files and archives `0600 root`.
+Every backup restricts existing regular archives directly in the root to
+`0600`, including when no new archive is requested. Symlinks and nested
+snapshots are left alone. New archives use `umask 077` and an explicit final
+chmod.
 
 - The database is copied with `sqlite3 .backup` (up to `sqlite_retries`
   attempts, 2 s apart) while the service runs. Like ops-library's SQLite

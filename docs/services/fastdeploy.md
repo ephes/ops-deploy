@@ -227,6 +227,13 @@ mount is there and the root resolves below it; `retain_count`/`retain_days`
 record the snapshot and prune the recorded ones after packing, before the
 fetch ([Local backups](../concepts/local-backups.md)).
 
+Archives are private from their first byte (`umask 077`) and finish with
+`archive_mode` (default `0600`), whether or not fetched. Every backup also
+restricts existing regular archives directly in the backup root to that mode,
+even with `create_archive=False`. Snapshots and symlink targets are not traversed.
+For a non-root SSH fetch, use an explicit mode such as `0640` and arrange the
+archive's ownership/group access separately.
+
 **Restore.** It follows the role and `restore_pilot_internal`:
 
 - **Validate.** `latest` is the newest `.tar.gz`/`.tar.zst` under the root,

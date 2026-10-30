@@ -20,6 +20,12 @@ from ops_deploy.base._units import ACTIVE, ENABLED, unit_states
 from ops_deploy.helpers.traefik import DYNAMIC_DIR, route_guard_command
 
 COMMON = Path(__file__).parent / "common.sh"
+ARCHIVE_PERMISSIONS = Path(__file__).parent / "archive_permissions.sh"
+
+
+def archive_permissions(root: str, mode: str = "0600") -> str:
+    """Restrict existing regular archives without traversing snapshots or links."""
+    return ARCHIVE_PERMISSIONS.read_text() + f"\nrestrict_archives {shlex.quote(root)} {shlex.quote(mode)}"
 
 
 def flag(value: bool) -> str:
@@ -35,7 +41,9 @@ def script(body: Path, values: Mapping[str, str | Sequence[str]], *, call: str =
             lines.append(f"{name}={shlex.quote(value)}")
         else:
             lines.append(f"{name}=({' '.join(shlex.quote(item) for item in value)})")
-    return "\n".join([*lines, COMMON.read_text(), body.read_text(), call]).rstrip() + "\n"
+    return (
+        "\n".join([*lines, COMMON.read_text(), ARCHIVE_PERMISSIONS.read_text(), body.read_text(), call]).rstrip() + "\n"
+    )
 
 
 def exists(path: str) -> bool:

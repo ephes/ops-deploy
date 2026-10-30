@@ -58,6 +58,7 @@ fd_backup() {
     if [ -n "$B_MOUNT" ]; then require_mount "$B_MOUNT" "$B_ROOT"; fi
     if [ "$B_RECORD" = 1 ]; then require_new_snapshot "$B_ROOT" "${B_DIR##*/}"; fi
     ensure_dir root "$PG_ADMIN" 0750 "$B_ROOT"
+    restrict_archives "$B_ROOT" "$B_ARCHIVE_MODE"
     ensure_dir root "$PG_ADMIN" 0750 "$B_DIR"
     local sub
     for sub in database services config deploy_runners deploy_workspace systemd traefik sudoers logs; do
@@ -161,11 +162,11 @@ META
     if [ "$B_CREATE_ARCHIVE" = 1 ]; then
         artifact="$B_DIR.$B_FORMAT"
         if [ "$B_FORMAT" = tar.gz ]; then
-            (cd "$B_ROOT" && tar -C "$B_ROOT" -czf "$name.tar.gz" "$name")
+            (umask 077; cd "$B_ROOT" && tar -C "$B_ROOT" -czf "$name.tar.gz" "$name")
         else
-            (cd "$B_ROOT" && tar -C "$B_ROOT" --zstd -cf "$name.tar.zst" "$name")
+            (umask 077; cd "$B_ROOT" && tar -C "$B_ROOT" --zstd -cf "$name.tar.zst" "$name")
         fi
-        if [ "$B_FETCH" = 1 ]; then chmod 0644 "$artifact"; fi
+        chmod "$B_ARCHIVE_MODE" "$artifact"
     fi
     if [ "$B_RECORD" = 1 ]; then record_snapshot "$B_ROOT" "$name"; fi
     if [ "$B_PRUNE" = 1 ]; then prune_snapshots "$B_ROOT" "$B_KEEP" "$B_CUTOFF" "$name"; fi

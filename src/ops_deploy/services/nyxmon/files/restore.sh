@@ -76,6 +76,10 @@ restore() {
         dest=${spec#*:}
         if [ -d "$src" ]; then rsync -a --delete "$src/" "$dest/"; fi
     done
+    # rsync -a also copies the archived directory's 0700 mode onto its destination.
+    for spec in "${DIRS[@]}"; do
+        ensure_dir "$OWNER" "$GROUP" 0755 "${spec#*:}"
+    done
     for spec in "${CONFIGS[@]}"; do
         IFS=: read -r mode name dest <<<"$spec"
         if [ -e "$content/config/$name" ]; then

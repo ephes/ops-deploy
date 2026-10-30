@@ -213,6 +213,10 @@ backup writes the role's `metadata.yml` (`to_nice_yaml`) and
 checks the mount and stops before creating anything otherwise; with
 retention, the recorded snapshots are pruned after packing, before the fetch.
 
+New archives use `umask 077` and finish at `0600`. Every backup also restricts
+existing regular archives directly in the root to `0600`, without following
+symlinks or descending into snapshot directories.
+
 **Restore.** One bash script on the host runs the role's phases in order:
 
 1. Validate. With `required_mount`, check the mount first. Pick `latest`
@@ -224,7 +228,8 @@ retention, the recorded snapshots are pruned after packing, before the fetch.
 4. Take a safety copy of the site directory (`<site>.pre-restore-<timestamp>`).
 5. Stop both services. Put back the database (`nyxmon 0600`) and run its
    integrity check, then the directories (`rsync --delete`), config files and
-   units. Fix ownership and start both services.
+   units. Restore destination directory modes to `0755` after rsync, fix
+   ownership and start both services.
 6. Verify: `nyxmon.service` enabled and started, then the HTTP probe on
    `/admin/login/` with `X-Forwarded-Proto: https`.
 
@@ -241,9 +246,10 @@ route on the host is not changed by a restore.
 removes the unit files, the route and `/home/nyxmon` (with the database). It
 ends every process of the `nyxmon` user (SIGTERM, then SIGKILL, then
 `systemd-run pkill`), removes the user and group, the `/tmp/*nyxmon*` entries
-and the runtime drop-ins in `/run/systemd/system`. Like the role, it keeps
-the `sqlite-privacy.conf` drop-ins the deploy installs in
-`/etc/systemd/system/nyxmon*.service.d/`. It only acts on what exists, so a
+and the runtime drop-ins in `/run/systemd/system`. It removes the owned
+`sqlite-privacy.conf` drop-ins in `/etc/systemd/system/nyxmon*.service.d/`,
+then removes only empty directories with nonrecursive `rmdir`. Operator
+drop-ins remain untouched. It only acts on what exists, so a
 second run changes nothing.
 
 ## Tests

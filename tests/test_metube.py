@@ -179,3 +179,19 @@ def test_rollout_guard_only_queries_busy_queue_for_actual_live_drift(drift: str)
     else:
         assert len(commands) == 1
         assert "systemctl is-active --quiet metube" in commands[0]
+
+
+def test_explicit_metube_uv_pin_keeps_its_matching_checksums(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    responses = {
+        "node --version": ["v24.22.1"],
+        "uname -m": ["x86_64"],
+        **fakehost.LINUX,
+    }
+    with patch("ops_deploy.services.metube.deploy.fetch_source", return_value=SourceTree(tmp_path, "a" * 40)):
+        run = run_deploy_fake(deploy_metube, MetubeConfig(extra_groups=()), AUTH, responses=responses)
+    assert run.succeeded, run.error
+    install = next(command for command in run.executed_commands if "release.tar.gz" in command)
+    assert "/download/0.13.4/uv-x86_64-unknown-linux-gnu.tar.gz" in install
+    assert "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f" in install
+    assert "/download/0.13.5/" not in install

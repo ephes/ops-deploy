@@ -13,8 +13,8 @@ scanner or application behavior on Linux. The runtime remains pinned to the
 declared 3.2.1 release and Python 3.14.
 
 Paperless's uv dependency uses the original role's 0.13.5 checksums and defaults
-through `PaperlessUvConfig`; the shared `UvInstallConfig` default for other
-services is unchanged. Callers may supply that dependency's original version,
+through `PaperlessUvConfig`; the independent shared `UvInstallConfig` default
+now also selects 0.13.5. Callers may supply that dependency's original version,
 checksum, owner/group, update/force and deprecated compatibility-link settings.
 Its install directory must match `PaperlessConfig.uv_install_dir`; the original
 `uv_binary` setting selects every Paperless environment/package command. The

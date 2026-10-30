@@ -69,7 +69,9 @@ def test_backup_writes_the_roles_layout(tmp_path: Path) -> None:
         assert line in metadata
     manifest = next(c for c in commands if "manifest.sha256" in c)
     assert "find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum" in manifest
-    assert f"(umask 077 && tar -C /opt/backups/work_app -czf {BACKUP}.tar.gz manual-{STAMP})" in commands
+    assert (
+        f"(umask 077 && tar -C /opt/backups/work_app -czf {BACKUP}.tar.gz manual-{STAMP}) && chmod 0600 {BACKUP}.tar.gz"
+    ) in commands
     assert "work_app backup | Fetch the backup archive" in run.changed_ops
     assert (tmp_path / "local").stat().st_mode & 0o777 == 0o700
 

@@ -147,7 +147,7 @@ def test_unknown_platform_requires_explicit_pin(tmp_path: Path, monkeypatch: pyt
 
 def test_darwin_is_explicit_and_linux_defaults_are_unchanged() -> None:
     cfg = UvInstallConfig()
-    assert cfg.version == "0.13.4"
+    assert cfg.version == "0.13.5"
     assert cfg.group == "root"
     assert cfg.darwin is False
     native_cfg = UvInstallConfig(darwin=True, version="0.13.5", group="wheel", checksums={TARGET: SHA})
