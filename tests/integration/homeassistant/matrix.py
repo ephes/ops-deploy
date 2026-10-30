@@ -209,8 +209,8 @@ def registry(token: str) -> dict[str, Any]:
 def run() -> None:
     case = os.environ["HOMEASSISTANT_FIXTURE_CASE"]
     assert case in {"current", "upgrade"}
-    seed()
     baseline = "2026.10.2" if case == "current" else "2026.10.1"
+    seed(baseline)
     original("00-original-existing-host-bootstrap", original_vars(baseline))
     wait_http()
     token = api("seed")["token"]

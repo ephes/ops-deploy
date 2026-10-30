@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Correct the declared existing-host Home Assistant native fixture baseline by
+  pre-provisioning Python, the pip-seeded venv and selected HA package, then
+  initializing its original Matter dependency closure before
+  the unchanged original role. Retain failed bootstrap evidence; no successful
+  native qualification or automatic replay is claimed. Original phase00 creation/
+  install paths are not covered by this existing-host baseline.
+
 - The owned Home Assistant native guest now exports its exact original-library
   checkout and verifies that revision before the harness, with `OPS_DEPLOY_PATH`
   explicitly unset. Runtime and matrix scope are unchanged.

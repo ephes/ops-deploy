@@ -1,7 +1,7 @@
 # Prepared owned Home Assistant application fixture
 
-Source preparation only: no HA application run, inventory adoption or hardware
-qualification has happened yet. The root deployment API remains prepared until
+The first owned run failed during original Ansible bootstrap before any typed
+phase; no successful native, inventory or hardware qualification is claimed. The root deployment API remains prepared until
 the actual matrix and complete receipts pass. Backup/restore/remove are separate.
 
 ## Isolation and exact sources
@@ -24,6 +24,29 @@ no after-snapshot exists. No stale resource removal or automatic fixture repair.
 
 `prerequisites.py` seeds the exact official UV0.13.5 archive/checksum, a synthetic
 existing service account/minimal unmanaged configuration, and the udev daemon.
+It also seeds the selected HA/Python environment with pip, then calls that exact
+HA version's original loader/RequirementsManager for Matter's complete declared
+dependency and after-dependency closure. The loader and manifests are SHA-bound;
+its actual `matter.config_flow` import must pass before the original role starts.
+The original pip/legacy-package probes also run against the seeded environment,
+and its original decision must retain the environment/application. Missing pip
+or an accidentally installed legacy `python-matter-server` aborts before the role.
+The interpreter, pip-seeded virtualenv and selected HA package are all
+pre-provisioned existing-host state. Phase00 therefore does not exercise the
+original interpreter installation, virtualenv creation or HA package installation
+paths, nor their changed results/restart notifications. Later typed replacement
+phases are separate coverage, not original pristine-bootstrap proof.
+No HA application or integration is started by this prerequisite. Public package
+and loader diagnostics are retained, including failures. A failure aborts before
+any role/matrix phase; it never skips the original postcheck.
+
+This corrects failed run40972365656: the original postcheck imported Matter before
+the original role's fresh environment had optional `aiohasupervisor` installed.
+Both original failed artifacts and cleanup receipts remain evidence; installing
+only that one package or bypassing the import is not the baseline. Exact original
+requirements-loader/import oracles pass both selected versions on the owned Mac
+controller, which is not Linux/systemd qualification. A separately authorized new
+run is still required; no automatic failure replay.
 The unchanged original role requires UV to exist before its own later installer.
 These are labelled existing-host prerequisites, never pristine original bootstrap.
 The public library is pinned to9d88 (unchanged cf3 runtime). The current leg uses
