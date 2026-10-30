@@ -366,7 +366,8 @@ def admit() -> None:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Use canonical module state for both direct and module execution."""
     admitted = False
     completed = False
     try:
@@ -391,3 +392,9 @@ if __name__ == "__main__":
             )
     if not completed:
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    from .harness import main as canonical_main
+
+    canonical_main()

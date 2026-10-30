@@ -186,3 +186,50 @@ collection checkout from process start and unsets `OPS_DEPLOY_PATH`. Before the
 harness runs, it verifies that checkout at
 `9d88de8f9d04498bbb6d71174792534e87db4a88`. The first matrix exercises the installed
 public deployment API; private CLI binding remains a separate qualification.
+
+
+## Interpreter diagnostic source after c701
+
+Run41139171439 proved the corrected Matter native load and stable readiness in
+both guests. Upgrade planning passed; the first typed mutation then failed in the
+Python lookup after two managed operations and one upload. Current selection
+failed separately in the original STT entity resolution. Preserve those partial
+results; neither case qualifies the application matrix.
+
+This feature's guest entry is a single **current interpreter-only diagnostic**.
+Dispatch this revision only with the explicit workflow input
+`fixture_cases='["current"]'`; the unchanged published workflow's default
+current+upgrade input is not the diagnostic scope. Root authorizes the exact
+immutable source and this input before dispatch. An upgrade input deliberately
+fails admission and must not be used as a diagnostic retry.
+
+It shares the exact checksum-pinned UV0.13.5/account seed, creates only the owned
+Python3.14.8 environment, and runs no original role, HA/Matter package, service,
+provider or application matrix. Direct fixed `runuser -- env HOME=...` lookups
+retain inherited environment; a separately labelled control removes only the
+observed UV/XDG/VIRTUAL_ENV keys. Evidence includes command output, cwd, uid/gid
+and those environment names, never environment values. The actual SDK query and
+original install operation run through real State/LocalConnector contexts in a
+bounded child (900seconds, 1MiB combined process output; each recorded stream is
+limited to16KiB with explicit truncation). The install operation first finds the seeded interpreter. If that lookup
+succeeds, it completes without executing an install command; that result does
+not exercise or qualify the post-install lookup/failure path. Only a failed
+initial lookup reaches the install command and its fresh post-install find.
+The install may mutate only this owned interpreter. UV seed is bounded to600seconds; direct finds to60seconds. Both parent
+and child require owned hosted-guest identity before effects.
+
+The fixture oracle `reviewed_transport.py` is byte-identical to public feature
+1295d7d75a299d09fa98e1460c75b2e9b0fcc6bc's protected transport. Comparing it with
+the frozen production lookup is diagnostic, not adoption or an attribution of
+cause. All971 production resources are unchanged. The diagnostic records actual
+SDK failed-host and operation-completion state, including the existing escaped
+generator error. Completion of diagnostic collection does not imply a successful
+lookup or application deployment. Source controls use fixed synthetic commands
+through the real SDK; actual Linux/UV behavior still requires a separately
+approved immutable guest run.
+
+The full matrix entry now delegates to the canonical harness module, so phases
+recorded by the matrix's imported typed caller appear in its summary even when a
+later phase fails. Strict per-phase comparisons remain unchanged. Full current
+and upgrade execution, remaining faults/lifecycles, original STT diagnosis and
+ordinary private controller binding remain open.

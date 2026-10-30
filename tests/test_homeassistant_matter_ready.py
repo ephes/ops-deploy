@@ -261,9 +261,10 @@ def test_diagnostic_is_only_admitted_seed_original_and_readiness(
     assert receipts["summary.json"]["typed_phases_executed"] == 0
 
 
-def test_matrix_entry_is_frozen_without_changing_workflow() -> None:
+def test_interpreter_diagnostic_entry_is_frozen_without_changing_workflow() -> None:
     script = Path("tests/integration/homeassistant/run-guest.sh").read_text()
-    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.harness\n")
+    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.diagnose_interpreter\n")
+    assert "[[ $HOMEASSISTANT_FIXTURE_CASE == current ]]" in script
     assert "tests.integration.homeassistant.diagnose_matter\n" not in script
 
 

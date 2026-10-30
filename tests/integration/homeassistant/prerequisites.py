@@ -51,9 +51,8 @@ def configuration(ipv4: str) -> str:
     return yaml.safe_dump(value, sort_keys=False)
 
 
-def seed(baseline: str) -> None:
-    if baseline not in VERSIONS:
-        raise ValueError("unqualified owned Home Assistant baseline")
+def seed_uv_account() -> dict[str, object]:
+    """Exact shared UV/account baseline; does not install or start HA."""
     if Path("/home/homeassistant").exists():
         raise RuntimeError("owned existing-host prerequisite requires fresh home path")
     cfg = HomeAssistantUvConfig()
@@ -82,6 +81,17 @@ def seed(baseline: str) -> None:
         raise RuntimeError("owned UV prerequisite version mismatch")
     command("useradd", "--create-home", "--shell", "/bin/bash", "--groups", "dialout", "homeassistant")
     user = pwd.getpwnam("homeassistant")
+    return {
+        "uv": {"url": url, "archive_sha256": digest, "version": version, "binaries": installed},
+        "account": {"uid": user.pw_uid, "gid": user.pw_gid},
+    }
+
+
+def seed(baseline: str) -> None:
+    if baseline not in VERSIONS:
+        raise ValueError("unqualified owned Home Assistant baseline")
+    prerequisite = seed_uv_account()
+    user = pwd.getpwnam("homeassistant")
     config = Path("/home/homeassistant/site/config")
     config.mkdir(parents=True, mode=0o755)
     for path in (config.parent, config):
@@ -104,7 +114,7 @@ def seed(baseline: str) -> None:
         "existing-host-prerequisites.json",
         {
             "classification": "explicit fixture baseline, not pristine original role bootstrap",
-            "uv": {"url": url, "archive_sha256": digest, "version": version, "binaries": installed},
+            "uv": prerequisite["uv"],
             "configuration": {"source": "public minimal synthetic fixture", "metadata": metadata(selected)},
             "account": {"uid": user.pw_uid, "gid": user.pw_gid},
             "application_dependencies": application,

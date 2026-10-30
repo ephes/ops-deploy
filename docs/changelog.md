@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Preserve partial Home Assistant native failure evidence and prepare a bounded
+  interpreter-only UV/Python/actual-SDK diagnostic before another application
+  replay. Compare the unchanged lookup with the reviewed protected transport,
+  retain failure accounting and public command context, and correct the matrix
+  summary's duplicate module identity. All971 production resources are unchanged;
+  this source preparation does not qualify application or inventory behavior.
+  This revision requires explicit `fixture_cases='["current"]'`, not the
+  published workflow's current+upgrade default. The install probe only reaches
+  post-install lookup when its initial lookup fails.
+
 - Correct the owned existing-host Matter fixture OS baseline with Ubuntu
   `libnl-route-3-200`, following the captured original CHIP native-loader failure
   in run41134898722. Add bounded installed-wheel/native-load provenance before
