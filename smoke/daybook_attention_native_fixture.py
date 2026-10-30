@@ -6,11 +6,14 @@ import base64
 import csv
 import hashlib
 import io
+import json
 import os
 import plistlib
 import pwd
 import sys
+import types
 import zipfile
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -25,6 +28,7 @@ from ops_deploy.services.daybook_voice_memo_attention import (
     DaybookVoiceMemoAttentionConfig,
     install_daybook_voice_memo_attention,
 )
+from ops_deploy.services.daybook_voice_memo_attention.deploy import payload
 from ops_deploy.testing import run_deploy_ssh
 
 
@@ -92,6 +96,131 @@ def import_result(result: Any) -> Any:
     ]
     assert len(selected) == 1
     return selected[0]
+
+
+def preserved_configuration(
+    owned: OwnedMac,
+    transport: dict[str, Any],
+    cfg: DaybookVoiceMemoAttentionConfig,
+    actor: Any,
+    counter: Path,
+) -> None:
+    """Owned native files only; every normal repeat still runs the real import."""
+    path = Path(cfg.daybook_voice_memo_attention_config_path)
+    runtime = path.parent
+    auth = [
+        runtime / "reader-elsewhere.json",
+        runtime / "transport/client.json",
+        runtime / "transport/identity",
+        runtime / "transport/known_hosts",
+        runtime / "activation.json",
+    ]
+    auth[1].parent.mkdir(mode=0o700)
+    os.chown(auth[1].parent, actor.pw_uid, actor.pw_gid)
+    for item in auth:
+        if not item.exists():
+            item.write_text("OWNED private preservation sentinel " + item.name)
+            item.chmod(0o600)
+            os.chown(item, actor.pw_uid, actor.pw_gid)
+    production = {
+        **cfg.daybook_voice_memo_attention_config,
+        "profile": "production",
+        "source": {"kind": "s3", "endpoint_url": "https://owned.invalid/", "credentials_file": str(auth[0])},
+    }
+    formatted = ("\n  " + json.dumps(production, indent=3) + "  \n").encode()
+    path.write_bytes(formatted)
+    path.chmod(0o400)
+    protected = snapshot([path, *auth])
+    for index, name in enumerate(("production-preserved", "production-preserved-repeat"), 6):
+        result = run(owned, transport, cfg, name)
+        assert result.succeeded
+        assert len(result.mutating_changed_ops) == 1
+        assert owned.report["phases"][name]["actual_sftp"] == {"attempted": 0, "succeeded": 0}
+        assert counter.read_text() == str(index)
+        assert snapshot([path, *auth]) == protected
+
+    # Enabled and linked/writable existing configs fail actual SSH fact admission
+    # before any upload, GUI change, or managed import. Restore only owned files.
+    for kind in ("enabled", "hardlink", "symlink", "writable"):
+        if kind == "enabled":
+            path.write_text(json.dumps({**production, "enabled": True}))
+        elif kind == "hardlink":
+            os.link(path, runtime / "owned-config-link")
+        elif kind == "symlink":
+            path.unlink()
+            path.symlink_to(auth[0])
+        else:
+            path.chmod(0o620)
+        before = snapshot(auth)
+        rejected = run(owned, transport, cfg, "configuration-refused-" + kind)
+        assert not rejected.succeeded
+        assert len(rejected.mutating_changed_ops) == 0
+        assert owned.report["phases"]["configuration-refused-" + kind]["actual_sftp"] == {
+            "attempted": 0,
+            "succeeded": 0,
+        }
+        assert counter.read_text() == "7"
+        assert snapshot(auth) == before
+        path.unlink()
+        if kind == "hardlink":
+            (runtime / "owned-config-link").unlink()
+        path.write_bytes(formatted)
+        path.chmod(0o400)
+        os.chown(path, actor.pw_uid, actor.pw_gid)
+
+    # Execute installed host/filesystem code with the actual Darwin no-replace
+    # link primitive; inject a concurrent creator immediately before that link.
+    filesystem = types.ModuleType("ops_attention_filesystem")
+    exec(
+        compile(
+            files("ops_deploy.services.daybook_sessions").joinpath("files/resources_host.py").read_bytes(),
+            "<owned-installed-filesystem>",
+            "exec",
+        ),
+        filesystem.__dict__,
+    )
+    host = types.ModuleType("owned_attention_host")
+    with patch.dict(sys.modules, {filesystem.__name__: filesystem}):
+        exec(
+            compile(
+                files("ops_deploy.services.daybook_voice_memo_attention")
+                .joinpath("files/attention_host.py")
+                .read_bytes(),
+                "<owned-installed-attention>",
+                "exec",
+            ),
+            host.__dict__,
+        )
+    installation = host.Installation(payload(cfg))
+    original_link = os.link
+    winners = []
+    path.unlink()
+
+    def concurrent_creator(source: Any, destination: Any, **kwargs: Any) -> Any:
+        assert destination == path.name
+        path.write_bytes(formatted)
+        path.chmod(0o400)
+        os.chown(path, actor.pw_uid, actor.pw_gid)
+        winners.append(snapshot([path, *auth]))
+        return original_link(source, destination, **kwargs)
+
+    with patch.object(filesystem.os, "link", concurrent_creator):
+        installation.publish_resources()
+    assert len(winners) == 1
+    assert snapshot([path, *auth]) == winners[0]
+    assert not list(runtime.glob(".daybook-sessions-*"))
+    repeat = run(owned, transport, cfg, "concurrent-production-repeat")
+    assert repeat.succeeded
+    assert len(repeat.mutating_changed_ops) == 1
+    assert counter.read_text() == "8"
+    assert owned.report["phases"]["concurrent-production-repeat"]["actual_sftp"] == {"attempted": 0, "succeeded": 0}
+    assert snapshot([path, *auth]) == winners[0]
+    owned.report.update(
+        existing_formatted_production_config_bytes_and_metadata_exact=True,
+        owned_authentication_files_bytes_and_metadata_exact=True,
+        native_no_replace_creator_preserved=True,
+        enabled_and_unsafe_configuration_refused_before_managed_work=True,
+    )
 
 
 def main() -> None:
@@ -211,8 +340,9 @@ def main() -> None:
         assert final.succeeded
         assert len(final.mutating_changed_ops) == 1
         assert counter.read_text() == "5"
+        preserved_configuration(owned, transport, cfg, actor, counter)
         owned.report.update(
-            successful_inert_module_imports=5,
+            successful_inert_module_imports=8,
             failed_inert_module_imports=1,
             managed_import_each_repeat=True,
             protected_synthetic_state_and_log_metadata_exact=True,

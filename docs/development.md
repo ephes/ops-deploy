@@ -16,6 +16,44 @@ The project uses [uv](https://docs.astral.sh/uv/) and [just](https://just.system
 
 CI (`.github/workflows/ci.yml`) runs `just check` steps on Python 3.12 and 3.13.
 
+## Optional original-role oracle checks
+
+Setting `OPS_LIBRARY_PATH` enables additional comparisons with the original
+Ansible roles. Use an absolute path to the intended owned checkout and record
+its Git HEAD. Some tests import Ansible filters in the **pytest interpreter**;
+a separate `ansible --version` or `ansible-playbook` on `PATH` does not prove that
+those imports work. For these optional checks, install the qualified test tool
+into the same owned environment after syncing (no product dependency change):
+
+```bash
+uv sync --locked
+uv pip install --python .venv/bin/python 'ansible-core==2.21.5'
+OPS_LIBRARY_PATH=/absolute/path/to/owned/ops-library uv run --locked python - <<'PYTHON'
+import importlib.metadata
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import ansible
+import pytest
+
+library = Path(os.environ["OPS_LIBRARY_PATH"])
+assert library.is_absolute()
+assert importlib.metadata.version("ansible-core") == "2.21.5"
+print("pytest Python:", sys.executable, "Ansible:", ansible.__file__)
+print("original roles:", library,
+      subprocess.check_output(["git", "-C", str(library), "rev-parse", "HEAD"], text=True).strip())
+raise SystemExit(pytest.main(["-q", "tests/test_daybook_inbox_declaration.py"]))
+PYTHON
+```
+
+Select the applicable oracle tests in that final argument. If a broader run
+fails solely because this optional import is missing, retain the initial result,
+repair that owned environment and rerun the exact failed nodes plus the checks
+that did not execute. Report both runs; do not describe them as an uninterrupted
+passing suite or replay unrelated native qualification.
+
 ## Rules enforced by tests and lint
 
 - Never enable pyinfra privilege arguments or choose another user in `ops_deploy`

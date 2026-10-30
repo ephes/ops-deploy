@@ -49,7 +49,22 @@ the environment, including recovery within the same controller process.
 The import retains the original role's unbounded command lifetime. No new
 deadline is imposed on application code during this compatibility migration.
 
-Private configuration travels on protected stdin and is compared in memory.
+The supplied disabled configuration is a fresh-install seed. An existing valid,
+disabled synthetic or production configuration remains byte for byte unchanged,
+including formatting, owner, permissions, inode and modification timestamps.
+The target validates its bounded contents against the application configuration
+shape in memory; it never opens the referenced reader credentials or follows
+transport or activation references. Unsafe or enabled configurations fail before
+managed installation work. Missing configuration is published with no-replace
+semantics: a concurrent creator wins and its disabled configuration is validated
+without overwriting it. This intentionally fixes the original template overwrite
+behavior, which could replace a retired production configuration with the
+synthetic fresh-install default. The public controller model remains unchanged:
+an existing valid configuration is authoritative, so an unused supplied seed
+does not block its preservation. A malformed fresh seed is refused by target
+validation before publication. Activation remains a separate operator action.
+
+Private seed configuration travels on protected stdin.
 No private configuration checksum, application output or exception detail is
 published. The disabled plist retains `RunAtLoad`, failed-exit `KeepAlive` and
 the original 900-second throttle, but is never bootstrapped or enabled. The
@@ -59,6 +74,9 @@ activation policy when binding this component.
 
 Source tests cover the original declarations, actual controller operation
 ordering, disabled/unload failures, old-interpreter rebuild, managed GUI import
-and failed-import receipt continuity. Disposable native mechanism qualification
+and failed-import receipt continuity, existing disabled configuration/authentication
+continuity, unsafe/enabled configuration refusal and real no-replace publication
+races. The owned macOS fixture repeats those configuration cases through actual
+SSH and runs an inert wheel import on every successful converge. Disposable native mechanism qualification
 and a real inventory migration remain separate evidence; source tests alone do
 not establish either.

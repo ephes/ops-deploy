@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Preserve existing disabled Attention production or synthetic configuration
+  bytes and metadata instead of overwriting them with the fresh-install seed.
+  Validate private configuration on the target, seed missing files without
+  replacement, and keep credential references unopened. Unsafe or enabled
+  configurations refuse installation; the original managed wheel import still
+  runs on each successful converge and activation remains separate.
+
 - Add the original Certbot DNS/edge state backup and restore APIs, preserving
   archive privacy, internal Certbot links, retained pre-restore copies and
   mount-point preservation. Explicit validation avoids publication; the original
