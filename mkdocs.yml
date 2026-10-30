@@ -82,6 +82,7 @@ nav:
       - Daybook Sessions: services/daybook_sessions.md
       - Photos offload components: services/daybook_photos_offload.md
       - Nikon archive components: services/daybook_photos_archive_sync.md
+      - Daybook launchd operators: services/daybook_controls.md
       - Voice Memo Inbox components: services/daybook_voice_memo_inbox.md
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md

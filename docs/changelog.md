@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add explicit fixed-label Photos/archive disable and confirmed attention plist
+  removal components, preserving original connections, cleanup attempts and data
+  retention. Source/native mechanism qualification remains separate from real
+  inventory operator execution.
+
 - `daybook_photos_archive_sync`: add the original direct-owner, single-writer
   archive installation with exact Main bundle admission, clean/interrupted Git
   convergence, pinned user Python and managed console smoke. Preserve all 35
