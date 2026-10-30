@@ -121,7 +121,7 @@ def main() -> None:
             )
             cfg = cfg.model_copy(update={"home": str(home), "label": label})
             if service == "inbox":
-                long_label = label + "-long"
+                long_label = "com.example.ops-mac-apps.control-inbox-long." + owned.suffix
                 owned.adopt_gui_label(actor.pw_uid, long_label)
                 long_plist = agents / (long_label + ".plist")
                 create_plist(long_plist, long_label, actor.pw_uid, actor.pw_gid)
