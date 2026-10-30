@@ -45,6 +45,14 @@ class Thresholds(BaseModel):
     security_index_critical_hours: Positive = 168
     pending_security_warning_hours: Positive = 72
     pending_security_critical_hours: Positive = 168
+    # Third-party updates (vendor repositories, backports) that nothing on
+    # the host installs (unattended-upgrades takes only the distribution's
+    # origins; such an update can need a configuration change, so it is
+    # never automatic). Warning only, after 30 days: one missed monthly
+    # maintenance pass. Shorter would keep the check yellow after every
+    # upstream release of a tool with a monthly cadence (Vector); with no
+    # limit nobody would see a repository that is never updated.
+    pending_third_party_warning_hours: Positive = 720
     # Hosts rebooted by hand (classes A and B, and C until its window exists).
     reboot_warning_hours: Positive = 168
     reboot_critical_hours: Positive = 504
@@ -87,6 +95,8 @@ def report_rules(
     unattended_upgrades: bool = True,
     security_index: bool = True,
     reboot_window: bool = False,
+    track_latest_stable: bool = False,
+    third_party_updates: bool = False,
 ) -> list[dict[str, Any]]:
     """The rules on one report under ``prefix``.
 
@@ -94,6 +104,17 @@ def report_rules(
     (off until the policy is rolled out there). ``security_index``: also
     watch the age of the security index (left out where ``software_live``
     already does). ``reboot_window``: the host reboots itself in a window.
+
+    ``track_latest_stable``: the host always runs the newest stable release.
+    A warning from the day a newer stable cycle is released
+    (``os.releases_behind`` above 0, no grace period) replaces the planning
+    rules on the support horizon (``upgrade_due``, ``support_days_remaining``);
+    the hard EOL deadlines stay as a backstop. Without it the support and EOL
+    rules apply as before.
+
+    ``third_party_updates``: warn when a pending third-party update (an
+    origin unattended-upgrades does not take) is older than
+    ``pending_third_party_warning_hours``.
     """
 
     p = prefix
@@ -117,12 +138,25 @@ def report_rules(
     rules += [
         _rule(f"{p}.apt.pending_security_max_age_hours", "<=", t.pending_security_warning_hours, "warning"),
         _rule(f"{p}.apt.pending_security_max_age_hours", "<=", t.pending_security_critical_hours, "critical"),
+    ]
+    if third_party_updates:
+        rules.append(
+            _rule(f"{p}.apt.pending_third_party_max_age_hours", "<=", t.pending_third_party_warning_hours, "warning")
+        )
+    rules += [
         _rule(f"{p}.reboot.required_age_hours", "<=", reboot[0], "warning"),
         _rule(f"{p}.reboot.required_age_hours", "<=", reboot[1], "critical"),
         _rule(f"{p}.reboot.uptime_days", "<=", t.uptime_warning_days, "warning"),
         _rule(f"{p}.reboot.uptime_days", "<=", t.uptime_critical_days, "critical"),
-        _rule(f"{p}.os.upgrade_due", "==", False, "warning"),
-        _rule(f"{p}.os.support_days_remaining", ">=", t.support_warning_days, "warning"),
+    ]
+    if track_latest_stable:
+        rules.append(_rule(f"{p}.os.releases_behind", "<=", 0, "warning"))
+    else:
+        rules += [
+            _rule(f"{p}.os.upgrade_due", "==", False, "warning"),
+            _rule(f"{p}.os.support_days_remaining", ">=", t.support_warning_days, "warning"),
+        ]
+    rules += [
         _rule(f"{p}.os.eol_days_remaining", ">=", t.eol_warning_days, "warning"),
         _rule(f"{p}.os.eol_days_remaining", ">=", t.eol_critical_days, "critical"),
         _rule(f"{p}.os.lifecycle_sources_agree", "==", True, "warning"),
@@ -132,12 +166,23 @@ def report_rules(
 
 
 def endpoint_rules(
-    t: Thresholds, *, unattended_upgrades: bool = True, security_index: bool = True, reboot_window: bool = False
+    t: Thresholds,
+    *,
+    unattended_upgrades: bool = True,
+    security_index: bool = True,
+    reboot_window: bool = False,
+    track_latest_stable: bool = False,
+    third_party_updates: bool = False,
 ) -> list[dict[str, Any]]:
     """A host's own endpoint: a fresh report, then :func:`report_rules` on it."""
 
     rules = report_rules(
-        t, unattended_upgrades=unattended_upgrades, security_index=security_index, reboot_window=reboot_window
+        t,
+        unattended_upgrades=unattended_upgrades,
+        security_index=security_index,
+        reboot_window=reboot_window,
+        track_latest_stable=track_latest_stable,
+        third_party_updates=third_party_updates,
     )
     return [_rule("$.meta.age_seconds", "<", t.report_max_age_seconds, "critical"), *rules]
 
@@ -149,6 +194,8 @@ def remote_rules(
     unattended_upgrades: bool = True,
     security_index: bool = True,
     reboot_window: bool = False,
+    track_latest_stable: bool = False,
+    third_party_updates: bool = False,
 ) -> list[dict[str, Any]]:
     """One host in the pull file: the pull ran, reached the host, and the report is fresh."""
 
@@ -164,6 +211,8 @@ def remote_rules(
             unattended_upgrades=unattended_upgrades,
             security_index=security_index,
             reboot_window=reboot_window,
+            track_latest_stable=track_latest_stable,
+            third_party_updates=third_party_updates,
         ),
     ]
 

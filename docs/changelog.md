@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- `os_lifecycle` and `unattended_upgrades` (refresh on current main, with the
+  two entries further down): `UnattendedUpgradesConfig.debian_stable_updates`
+  (Debian only, needs `debian_point_releases`) adds the
+  `origin=Debian,codename=${distro_codename}-updates,label=Debian` origin,
+  derived from the codename. The report's `os.releases_behind` now also takes
+  the Debian archive's own suite (`os.archive_suite`: the Release file of the
+  host's codename says `oldstable` from the next release's day on), with
+  `os.releases_behind_data` for the lifecycle data alone; `apt` gains
+  `pending_third_party_count`, `pending_third_party_max_age_hours` and
+  `pending_third_party` (updates from origins outside the distribution, such
+  as Vector's repository, which unattended-upgrades never takes; aged in the
+  existing first-seen file). Rules: `track_latest_stable` warns from the day a
+  newer stable cycle is released (`os.releases_behind` above 0, or unknown)
+  instead of the `upgrade_due` and `support_days_remaining` planning rules (the
+  EOL rules stay); `third_party_updates` warns when a pending third-party
+  update is older than `pending_third_party_warning_hours` (720, 30 days).
+  Both are off by default, so existing rule lists are unchanged.
+
 - Add the original Photos offload component: protected root checkout and trust
   attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with
   exact cleanup, GUI-owned Python environment/resources, and exact-label

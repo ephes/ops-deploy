@@ -6,7 +6,8 @@ Skipped unless ``UNATTENDED_UPGRADES_DOCKER_CONTAINERS`` holds the full IDs
 PID 1 without network, with both packages installed. The test checks what the
 fake connector cannot: apt really reads the drop-in (``#clear`` replaces the
 packaged origins), unattended-upgrade resolves the security-only origins for
-the release's codename, needrestart evaluates its drop-in, the packaged
+the release's codename (on Debian also with point releases and
+``<codename>-updates``), needrestart evaluates its drop-in, the packaged
 ``20auto-upgrades`` and ``50unattended-upgrades`` are left byte for byte, a
 converged run changes nothing, and the read-only check fails when another
 drop-in adds an origin. The Docker CLI is wrapped so that pyinfra can only
@@ -172,6 +173,27 @@ def test_security_only_policy_converges_and_leaves_packaged_files_alone(containe
     assert mutating(second) == []
     assert [op.name for op in second.ops if op.changed] == [CHECK]
     assert container.snapshot(APT_DROPIN, NEEDRESTART_DROPIN) == files
+
+
+def test_debian_point_releases_and_stable_updates_resolve_for_the_codename(container: Container) -> None:
+    if container.distro != "debian":
+        pytest.skip("Debian origins only")
+    cfg = UnattendedUpgradesConfig(debian_point_releases=True, debian_stable_updates=True)
+    run = container.deploy(cfg)
+    assert run.succeeded, run.error
+
+    allowed = re.search(r"^Allowed origins are: (.*)$", container.dry_run(), re.MULTILINE)
+    assert allowed is not None
+    codename = container.codename
+    assert allowed.group(1) == (
+        f"origin=Debian,codename={codename}-security,label=Debian-Security, "
+        f"origin=Debian,codename={codename},label=Debian, "
+        f"origin=Debian,codename={codename}-updates,label=Debian"
+    )
+    second = container.deploy(cfg)
+    assert second.succeeded, second.error
+    assert mutating(second) == []
+    assert container.deploy(UnattendedUpgradesConfig()).succeeded
 
 
 @pytest.mark.parametrize(

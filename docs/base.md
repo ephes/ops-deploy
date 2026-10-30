@@ -703,6 +703,7 @@ to port: hosts ran the package defaults, and one bootstrap playbook wrote
 | Field | Default | |
 |---|---|---|
 | `debian_point_releases` | `False` | Debian only: also take the main archive's point-release updates (Debian's packaged default); refused on Ubuntu |
+| `debian_stable_updates` | `False` | Debian only, needs `debian_point_releases`: also take the `<codename>-updates` suite (`stable-updates`: tzdata, ca-certificates and other updates that cannot wait for the next point release; not in Debian's packaged default) |
 | `package_blacklist` | `()` | package name regexes never upgraded (`Package-Blacklist`; letters, digits and `.+*^$_:-`) |
 | `remove_unused_kernel_packages` | `True` | `Remove-Unused-Kernel-Packages` |
 | `remove_unused_dependencies` | `False` | `Remove-Unused-Dependencies` |
@@ -737,13 +738,15 @@ Origins, as `Unattended-Upgrade::Origins-Pattern` entries
 
 | Release | Origins |
 |---|---|
-| Debian 12, 13 | `origin=Debian,codename=${distro_codename}-security,label=Debian-Security`; with `debian_point_releases` also `origin=Debian,codename=${distro_codename},label=Debian` |
+| Debian 12, 13 | `origin=Debian,codename=${distro_codename}-security,label=Debian-Security`; with `debian_point_releases` also `origin=Debian,codename=${distro_codename},label=Debian`; with `debian_stable_updates` also `origin=Debian,codename=${distro_codename}-updates,label=Debian` (derived from the codename, so a release upgrade needs no change) |
 | Ubuntu 24.04 | `origin=Ubuntu,archive=${distro_codename}` (the release pocket, frozen at release: only new dependencies of security updates), `-security`, and the ESM pockets `UbuntuESMApps` `-apps-security` and `UbuntuESM` `-infra-security` (used only with Ubuntu Pro). `-updates` is never taken, as in Ubuntu's own default |
 
 Compared with the package defaults this drops Debian's point-release origin
 (unless asked for) and the Debian pre-bullseye security origin; Ubuntu's
 origins are unchanged. Packages from other repositories (PGDG, Docker,
-Tailscale, vendor kernels) are never upgraded by it.
+Tailscale, vendor kernels, Vector) are never upgraded by it: a vendor
+release can need a configuration change. `os_lifecycle` reports them as
+pending third-party updates.
 
 Missing `unattended-upgrades` (and `needrestart`, unless unmanaged) are
 installed after an `apt-get update` (cache older than an hour). Installed

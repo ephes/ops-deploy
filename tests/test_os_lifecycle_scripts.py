@@ -77,6 +77,7 @@ DEBIAN_APT = """NOTE: This is only a simulation!
 Inst openssl [3.0.15-1~deb12u1] (3.0.17-1~deb12u2 Debian-Security:12/stable-security [amd64])
 Inst libssl3 [3.0.15-1~deb12u1] (3.0.17-1~deb12u2 Debian-Security:12/stable-security [amd64]) []
 Inst tzdata [2025a-0+deb12u1] (2025b-0+deb12u1 Debian:12.12/stable [all])
+Inst vector [0.53.0-1] (0.60.0-1 apt.vector.dev [amd64])
 Conf openssl (3.0.17-1~deb12u2 Debian-Security:12/stable-security [amd64])
 """
 UBUNTU_APT = (
@@ -128,6 +129,89 @@ def test_debian_13_is_current() -> None:
     assert os_["upgrade_due"] is False
     assert os_["releases_behind"] == 0
     assert os_["release_upgrade_available"] is False
+
+
+FORKY = {"cycle": "14", "codename": "Forky", "releaseDate": "2027-06-12", "support": "2030-06-12", "eol": "2032-06-30"}
+
+
+def trixie_on(today: dt.date, archive: tuple[str | None, int | None] = (None, None)) -> dict[str, Any]:
+    return status.lifecycle(  # type: ignore[no-any-return]
+        {"ID": "debian", "VERSION_ID": "13", "VERSION_CODENAME": "trixie"},
+        status.parse_distro_info(DEBIAN_CSV, "debian"),
+        status.parse_snapshot([FORKY, *SNAPSHOT["debian"]]),
+        today=today,
+        horizon_days=365,
+        tolerance_days=31,
+        snapshot_fetched=dt.date(2027, 6, 1),
+        archive=archive,
+    )
+
+
+def test_a_newer_stable_counts_from_its_release_day() -> None:
+    before = trixie_on(dt.date(2027, 6, 11))
+    release_day = trixie_on(dt.date(2027, 6, 12))
+
+    assert (before["releases_behind"], before["latest_stable_cycle"]) == (0, "13")
+    assert (release_day["releases_behind"], release_day["latest_stable_cycle"]) == (1, "14")
+    assert release_day["release_upgrade_available"] is True
+    # Regular support of 13 still runs for a year: the EOL view is not due yet.
+    assert release_day["upgrade_due"] is False
+
+
+def test_the_archive_suite_says_oldstable_before_the_data_knows_the_release() -> None:
+    # Lifecycle data without Debian 14, but the mirror already moved trixie to oldstable.
+    os_ = debian12(VERSION_ID="13", VERSION_CODENAME="trixie")
+    assert (os_["releases_behind"], os_["archive_suite"]) == (0, None)
+
+    moved = status.lifecycle(
+        {"ID": "debian", "VERSION_ID": "13", "VERSION_CODENAME": "trixie"},
+        status.parse_distro_info(DEBIAN_CSV, "debian"),
+        status.parse_snapshot(SNAPSHOT["debian"]),
+        today=TODAY,
+        horizon_days=365,
+        tolerance_days=31,
+        snapshot_fetched=dt.date(2026, 10, 1),
+        archive=("oldstable", 1),
+    )
+
+    assert (moved["releases_behind"], moved["releases_behind_data"], moved["archive_suite"]) == (1, 0, "oldstable")
+    assert moved["latest_stable_cycle"] == "13"
+
+
+def test_the_archive_suite_never_lowers_what_the_data_says() -> None:
+    os_ = trixie_on(dt.date(2027, 6, 12), archive=("stable", 0))
+
+    assert (os_["releases_behind"], os_["releases_behind_data"]) == (1, 1)
+
+
+def release_file(suite: str, codename: str = "trixie", origin: str = "Debian", label: str = "Debian") -> str:
+    return (
+        "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
+        f"Origin: {origin}\nLabel: {label}\nSuite: {suite}\nVersion: 13.7\nCodename: {codename}\n"
+        "Date: Sat, 12 Sep 2026 07:55:41 UTC\nSHA256:\n abc 1 main/Suite: oldstable\n"
+    )
+
+
+def test_the_debian_archive_suite_from_apt_lists(tmp_path: Path) -> None:
+    lists = tmp_path / "var/lib/apt/lists"
+    lists.mkdir(parents=True)
+    assert status.debian_archive(tmp_path, "trixie") == (None, None)
+
+    (lists / "deb.debian.org_debian_dists_trixie_InRelease").write_text(release_file("stable"))
+    (lists / "deb.debian.org_debian_dists_trixie-updates_InRelease").write_text(
+        release_file("oldstable-updates", "trixie-updates")
+    )
+    (lists / "vendor.example_dists_trixie_InRelease").write_text(release_file("oldstable", origin="Vendor"))
+    (lists / "deb.debian.org_debian_dists_trixie-backports_InRelease").write_text(
+        release_file("oldstable", "trixie-backports", "Debian Backports", "Debian Backports")
+    )
+    assert status.debian_archive(tmp_path, "trixie") == ("stable", 0)
+
+    # A second, fresher mirror that already moved trixie on.
+    (lists / "mirror.example_debian_dists_trixie_Release").write_text(release_file("oldstable"))
+    assert status.debian_archive(tmp_path, "trixie") == ("oldstable", 1)
+    assert status.debian_archive(tmp_path, "") == (None, None)
+    assert status.debian_archive(tmp_path, "../x") == (None, None)
 
 
 def test_sources_that_differ_by_more_than_the_tolerance_disagree() -> None:
@@ -212,17 +296,38 @@ def test_security_updates_are_found_by_origin() -> None:
     debian = status.parse_simulation(DEBIAN_APT)
     ubuntu = status.parse_simulation(UBUNTU_APT)
 
-    assert [(p["package"], p["security"]) for p in debian] == [
-        ("openssl", True),
-        ("libssl3", True),
-        ("tzdata", False),
+    assert [(p["package"], p["security"], p["third_party"]) for p in debian] == [
+        ("openssl", True, False),
+        ("libssl3", True, False),
+        ("tzdata", False, False),
+        ("vector", False, True),
     ]
-    assert [(p["package"], p["version"], p["security"]) for p in ubuntu] == [
-        ("libssl3t64", "3.0.13-0ubuntu3.5", True),
-        ("docker-ce", "5:27.4.0-1~ubuntu.24.04~noble", False),
-        ("linux-image-6.8.0-90-generic", "6.8.0-90.91", True),
+    assert debian[3]["origins"] == ["apt.vector.dev"]
+    assert [(p["package"], p["version"], p["security"], p["third_party"]) for p in ubuntu] == [
+        ("libssl3t64", "3.0.13-0ubuntu3.5", True, False),
+        ("docker-ce", "5:27.4.0-1~ubuntu.24.04~noble", False, True),
+        ("linux-image-6.8.0-90-generic", "6.8.0-90.91", True, False),
     ]
     assert ubuntu[1]["origins"] == ["Docker CE:noble/noble"]
+
+
+@pytest.mark.parametrize(
+    ("origin", "third_party"),
+    [
+        ("Debian:13.7/stable", False),
+        ("Debian:13-updates/stable-updates", False),
+        ("Debian-Security:13/stable-security", False),
+        ("Debian Backports:stable-backports/stable-backports", True),
+        ("apt.vector.dev", True),
+        ("vector:stable", True),
+        ("Ubuntu:24.04/noble-updates", False),
+        ("Docker CE:noble/noble", True),
+    ],
+)
+def test_third_party_is_any_origin_outside_the_distribution(origin: str, third_party: bool) -> None:
+    (item,) = status.parse_simulation(f"Inst pkg [1] (2 {origin} [amd64])\n")
+
+    assert item["third_party"] is third_party
 
 
 def test_the_last_uu_run_and_its_result() -> None:
@@ -273,6 +378,8 @@ def root(tmp_path: Path) -> Path:
     touch(tmp_path / "etc/os-release", NOW, 'ID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n')
     touch(tmp_path / "usr/share/distro-info/debian.csv", NOW, DEBIAN_CSV)
     touch(tmp_path / "var/lib/apt/lists/deb.debian.org_debian-security_dists_bookworm-security_InRelease", NOW - 7200)
+    lists = tmp_path / "var/lib/apt/lists"
+    touch(lists / "deb.debian.org_debian_dists_bookworm_InRelease", NOW - 7200, release_file("oldstable", "bookworm"))
     touch(tmp_path / "usr/bin/unattended-upgrade", NOW)
     touch(tmp_path / "var/lib/apt/periodic/unattended-upgrades-stamp", NOW - 36000)
     touch(tmp_path / "var/run/reboot-required", NOW - 40 * 3600)
@@ -309,7 +416,11 @@ POLICY: dict[str, Any] = {
 
 def test_a_full_report(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(status.os, "uname", lambda: os.uname_result(("Linux", "x", "6.1.0-37-amd64", "#1", "x86_64")))
-    seen = {"openssl 3.0.17-1~deb12u2": NOW - 80 * 3600, "gone 1.0": NOW - 999 * 3600}
+    seen = {
+        "openssl 3.0.17-1~deb12u2": NOW - 80 * 3600,
+        "gone 1.0": NOW - 999 * 3600,
+        "vector 0.60.0-1": NOW - 900 * 3600,
+    }
 
     report, new_seen = status.build_report(POLICY, seen, root=root, run=fake_run, now=NOW)
 
@@ -317,15 +428,24 @@ def test_a_full_report(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert report["host"] == "marina"
     assert report["errors"] == []
     assert report["os"]["upgrade_due"] is True
+    assert report["os"]["archive_suite"] == "oldstable"
+    assert report["os"]["releases_behind"] == 1
     assert report["apt"] == {
         "security_index_age_hours": 2.0,
-        "pending_total": 3,
+        "pending_total": 4,
         "pending_security_count": 2,
         "pending_security_max_age_hours": 80.0,
         "pending_security": ["libssl3 3.0.17-1~deb12u2", "openssl 3.0.17-1~deb12u2"],
+        "pending_third_party_count": 1,
+        "pending_third_party_max_age_hours": 900.0,
+        "pending_third_party": ["vector 0.60.0-1 (apt.vector.dev)"],
         "held": ["postgresql-17"],
     }
-    assert new_seen == {"openssl 3.0.17-1~deb12u2": NOW - 80 * 3600, "libssl3 3.0.17-1~deb12u2": NOW}
+    assert new_seen == {
+        "openssl 3.0.17-1~deb12u2": NOW - 80 * 3600,
+        "libssl3 3.0.17-1~deb12u2": NOW,
+        "vector 0.60.0-1": NOW - 900 * 3600,
+    }
     assert report["uu"]["installed"] is True
     assert report["uu"]["enabled"] is True
     assert report["uu"]["last_success_age_hours"] == 10.0
