@@ -83,6 +83,37 @@ def test_debian_point_releases_add_the_main_archive() -> None:
     ]
 
 
+def test_debian_stable_updates_add_the_codename_updates_suite() -> None:
+    cfg = UnattendedUpgradesConfig(debian_point_releases=True, debian_stable_updates=True)
+
+    origins = [line for line in apt_settings(cfg, "debian") if "Origins-Pattern" in line]
+    assert [line.removeprefix("Unattended-Upgrade::Origins-Pattern:: ") for line in origins] == [
+        '"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";',
+        '"origin=Debian,codename=${distro_codename},label=Debian";',
+        '"origin=Debian,codename=${distro_codename}-updates,label=Debian";',
+    ]
+    # Derived from the codename unattended-upgrade substitutes, never a fixed release name.
+    dropin = render_apt_dropin(cfg, "debian")
+    assert '        "origin=Debian,codename=${distro_codename}-updates,label=Debian";' in dropin
+    assert "trixie" not in dropin
+    assert "bookworm" not in dropin
+
+
+def test_stable_updates_need_point_releases() -> None:
+    with pytest.raises(ValidationError, match="debian_stable_updates needs debian_point_releases"):
+        UnattendedUpgradesConfig(debian_stable_updates=True)
+
+
+def test_stable_updates_are_refused_on_ubuntu() -> None:
+    cfg = UnattendedUpgradesConfig(debian_point_releases=True, debian_stable_updates=True)
+
+    run = run_deploy_fake(deploy_unattended_upgrades, cfg, responses=host("ubuntu 24.04"))
+
+    assert not run.succeeded
+    assert "debian_point_releases is for Debian hosts only" in str(run.error)
+    assert run.ops == []
+
+
 def test_ubuntu_takes_security_and_esm_but_never_updates() -> None:
     origins = [line for line in apt_settings(DEFAULT, "ubuntu") if "Origins-Pattern" in line]
 

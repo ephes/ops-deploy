@@ -7,8 +7,8 @@ Two modes, both run with ``python3 -I`` and only the standard library:
     Run as root by ``os-lifecycle-collector.service``. Builds the report and
     writes ``DIR/state.json`` atomically (``root:<state_group> 0640``). It also
     keeps ``DIR/pending-security-seen.json`` (root only): when each pending
-    security update (package and version) was first seen, so the report can
-    say how old the oldest one is. Nothing else on the host is changed:
+    security or third-party update (package and version) was first seen, so
+    the report can say how old the oldest one is. Nothing else on the host is changed:
     ``apt-get`` only simulates, without locks and without writing its caches.
 
 ``show --state-dir DIR``
@@ -60,6 +60,14 @@ _INST = re.compile(r"^Inst (\S+)(?: \[[^\]]*\])? \((\S+) ([^()]*)\)(?: \[[^\]]*\
 _ARCH = re.compile(r"\s*\[[^\]]*\]\s*$")
 _KERNEL = re.compile(r"(\d+\.\d+\.\d+-\d+)")
 _UU_START = "Starting unattended upgrades script"
+# Release-file labels of the distributions' own archives (release, security,
+# point-release updates). Anything else is a third-party origin (vendor
+# repositories, backports): unattended-upgrades never takes those here.
+_DEBIAN_LABELS = frozenset({"Debian", "Debian-Security"})
+# The suite a Debian codename's archive carries: "stable" until the next
+# release, then "oldstable" from the release day on (the archive switches it).
+_ARCHIVE_BEHIND = {"stable": 0, "oldstable": 1, "oldoldstable": 2}
+_RELEASE_FIELD = re.compile(r"^(Origin|Label|Suite|Codename): ?(.*)$")
 _LOG_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 Run = Callable[[list[str]], tuple[int, str]]
@@ -177,6 +185,50 @@ def _days(until: dt.date | None, today: dt.date) -> int | None:
     return None if until is None else (until - today).days
 
 
+def release_fields(text: str) -> dict[str, str]:
+    """``Origin``, ``Label``, ``Suite`` and ``Codename`` of an apt ``Release``/``InRelease`` file (first of each)."""
+
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        match = _RELEASE_FIELD.match(line)
+        if match and match.group(1) not in fields:
+            fields[match.group(1)] = match.group(2).strip()
+    return fields
+
+
+def debian_archive(root: Path, codename: str) -> tuple[str | None, int | None]:
+    """The suite of the Debian archive for ``codename`` in apt's lists, and how many releases that is behind.
+
+    ``(None, None)`` when no Debian (``Origin``/``Label`` ``Debian``) release
+    file of that codename is there, or its suite is not one of
+    :data:`_ARCHIVE_BEHIND`. With several mirrors the one furthest behind
+    wins: a mirror that already says ``oldstable`` is the fresher one.
+    """
+
+    if not re.fullmatch(r"[a-z]+", codename):
+        return None, None
+    lists = root / "var/lib/apt/lists"
+    found: list[tuple[int, str]] = []
+    for pattern in (f"*_dists_{codename}_InRelease", f"*_dists_{codename}_Release"):
+        for path in sorted(lists.glob(pattern)):
+            try:
+                fields = release_fields(path.read_text(errors="replace"))
+            except OSError:
+                continue
+            suite = fields.get("Suite", "")
+            if (
+                fields.get("Origin") == "Debian"
+                and fields.get("Label") == "Debian"
+                and fields.get("Codename") == codename
+                and suite in _ARCHIVE_BEHIND
+            ):
+                found.append((_ARCHIVE_BEHIND[suite], suite))
+    if not found:
+        return None, None
+    behind, suite = max(found)
+    return suite, behind
+
+
 def lifecycle(
     os_release: dict[str, str],
     distro_info: list[dict[str, Any]],
@@ -186,8 +238,17 @@ def lifecycle(
     horizon_days: int,
     tolerance_days: int,
     snapshot_fetched: dt.date | None,
+    archive: tuple[str | None, int | None] = (None, None),
 ) -> dict[str, Any]:
-    """The ``os`` section: cycle, support horizon, the newest stable cycle, whether an upgrade is due."""
+    """The ``os`` section: cycle, support horizon, the newest stable cycle, whether an upgrade is due.
+
+    ``releases_behind`` counts the stable cycles newer than this one that
+    are released (release date on or before ``today``) in the lifecycle
+    data, and takes the Debian archive's own suite (``archive``, from
+    :func:`debian_archive`) when that says more: the archive turns
+    ``oldstable`` on the release day, before any lifecycle data is
+    refreshed. Unknown on both sides is ``null``.
+    """
 
     os_id = os_release.get("ID", "")
     cycle = os_release.get("VERSION_ID", "")
@@ -208,7 +269,10 @@ def lifecycle(
     }
     latest = max(stable, key=_version_tuple) if stable else None
     current = _version_tuple(cycle) if cycle else ()
-    behind = sum(1 for name in stable if current and _version_tuple(name) > current) if current else None
+    data_behind = sum(1 for name in stable if current and _version_tuple(name) > current) if current else None
+    archive_suite, archive_behind = archive
+    known = [value for value in (data_behind, archive_behind) if value is not None]
+    behind = max(known) if known else None
     support_days = _days(support_end, today)
     eol_days = _days(eol, today)
     if support_days is None or eol_days is None:
@@ -228,6 +292,8 @@ def lifecycle(
         "phase": phase,
         "latest_stable_cycle": latest,
         "releases_behind": behind,
+        "releases_behind_data": data_behind,
+        "archive_suite": archive_suite,
         "upgrade_due": due,
         "release_upgrade_available": bool(behind) if behind is not None else None,
         "lifecycle_source": "distro-info" if local else ("endoflife-snapshot" if remote else None),
@@ -239,8 +305,20 @@ def lifecycle(
 # -- apt ----------------------------------------------------------------------------------
 
 
+def _distribution_origin(origin: str) -> bool:
+    """An origin of the distribution itself: apt prints ``<Label>:<Version>/<Archive>`` (or the site, no label)."""
+
+    label, sep, _ = origin.partition(":")
+    return bool(sep) and (label in _DEBIAN_LABELS or label.startswith("Ubuntu"))
+
+
 def parse_simulation(text: str) -> list[dict[str, Any]]:
-    """``Inst`` lines of ``apt-get -s dist-upgrade``: package, new version, origins, security or not."""
+    """``Inst`` lines of ``apt-get -s dist-upgrade``: package, new version, origins, security, third-party.
+
+    Third-party: none of the origins is the distribution's own (a vendor
+    repository without a ``Label``, such as Vector's, prints only its site;
+    backports carry their own label).
+    """
 
     found = []
     for line in text.splitlines():
@@ -249,7 +327,16 @@ def parse_simulation(text: str) -> list[dict[str, Any]]:
             continue
         origins = [part.strip() for part in _ARCH.sub("", match.group(3)).split(",") if part.strip()]
         security = any("-security" in origin or origin.startswith("Debian-Security:") for origin in origins)
-        found.append({"package": match.group(1), "version": match.group(2), "origins": origins, "security": security})
+        third_party = bool(origins) and not any(_distribution_origin(origin) for origin in origins)
+        found.append(
+            {
+                "package": match.group(1),
+                "version": match.group(2),
+                "origins": origins,
+                "security": security,
+                "third_party": third_party,
+            }
+        )
     return found
 
 
@@ -276,9 +363,16 @@ def apt_status(root: Path, run: Run, now: float, seen: dict[str, float]) -> tupl
     if code != 0:
         raise RuntimeError(f"apt-get -s dist-upgrade exited {code}")
     pending = parse_simulation(output)
-    security = [item for item in pending if item["security"]]
-    current = {f"{item['package']} {item['version']}": seen.get(f"{item['package']} {item['version']}", now) for item in security}
-    oldest = min(current.values()) if current else None
+
+    def first_seen(items: list[dict[str, Any]]) -> dict[str, float]:
+        keys = (f"{item['package']} {item['version']}" for item in items)
+        return {key: seen.get(key, now) for key in keys}
+
+    security = first_seen([item for item in pending if item["security"]])
+    third_items = [item for item in pending if item["third_party"]]
+    third = first_seen(third_items)
+    oldest = min(security.values()) if security else None
+    oldest_third = min(third.values()) if third else None
     code, held = run(["apt-mark", "showhold"])
     return (
         {
@@ -286,10 +380,15 @@ def apt_status(root: Path, run: Run, now: float, seen: dict[str, float]) -> tupl
             "pending_total": len(pending),
             "pending_security_count": len(security),
             "pending_security_max_age_hours": _hours(oldest, now) if oldest is not None else 0,
-            "pending_security": sorted(current)[:50],
+            "pending_security": sorted(security)[:50],
+            "pending_third_party_count": len(third),
+            "pending_third_party_max_age_hours": _hours(oldest_third, now) if oldest_third is not None else 0,
+            "pending_third_party": sorted(
+                f"{item['package']} {item['version']} ({', '.join(item['origins'])})" for item in third_items
+            )[:50],
             "held": sorted(line.strip() for line in held.splitlines() if line.strip()) if code == 0 else None,
         },
-        current,
+        {**security, **third},
     )
 
 
@@ -442,6 +541,7 @@ def build_report(
         distro = release.get("ID", "")
         info_path = root / f"usr/share/distro-info/{distro}.csv"
         info = parse_distro_info(info_path.read_text(), distro) if info_path.exists() else []
+        archive = debian_archive(root, release.get("VERSION_CODENAME", "")) if distro == "debian" else (None, None)
         return lifecycle(
             release,
             info,
@@ -450,6 +550,7 @@ def build_report(
             horizon_days=int(policy.get("upgrade_horizon_days", 365)),
             tolerance_days=int(policy.get("lifecycle_tolerance_days", 31)),
             snapshot_fetched=_date(snapshot.get("fetched_at")),
+            archive=archive,
         )
 
     apt_result = section("apt", lambda: apt_status(root, run, now, seen))

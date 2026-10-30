@@ -7,7 +7,8 @@ upgrade never meets a modified conffile:
 
 * ``/etc/apt/apt.conf.d/52ops-deploy-unattended-upgrades`` turns the daily
   run on (``APT::Periodic``), replaces the packaged origin lists with
-  ``#clear`` (security origins only, see :func:`origins`), sets the package
+  ``#clear`` (security origins, optionally Debian's point releases and
+  ``<codename>-updates``, see :func:`origins`), sets the package
   blacklist, kernel and dependency cleanup and the automatic reboot (off by
   default). It sorts after ``20auto-upgrades`` and ``50unattended-upgrades``,
   so its scalar values win and the cleared lists hold only its entries.
@@ -53,6 +54,11 @@ STAT_KIND = "LC_ALL=C LANG=C stat -c %F"
 DEBIAN_SECURITY = ("origin=Debian,codename=${distro_codename}-security,label=Debian-Security",)
 # The Debian main archive, which changes at point releases (the package default).
 DEBIAN_POINT_RELEASES = "origin=Debian,codename=${distro_codename},label=Debian"
+# Debian's ``<codename>-updates`` suite (``stable-updates``): updates that
+# cannot wait for the next point release (tzdata, ca-certificates, clamav and
+# the like), each part of that point release later. Same origin and label as
+# the main archive, so only the codename tells them apart.
+DEBIAN_STABLE_UPDATES = "origin=Debian,codename=${distro_codename}-updates,label=Debian"
 # Ubuntu's packaged default without ``-updates``: the release pocket (frozen at
 # release, so it only supplies new dependencies of security updates), the
 # security pocket and the two ESM security pockets (used only with Ubuntu Pro).
@@ -79,6 +85,9 @@ class UnattendedUpgradesConfig(RoleConfig):
     # (Debian's packaged default). Refused on Ubuntu, whose ``-updates``
     # pocket is never taken.
     debian_point_releases: bool = False
+    # Debian only, with ``debian_point_releases``: also take the
+    # ``<codename>-updates`` suite (not in Debian's packaged default).
+    debian_stable_updates: bool = False
     # Package name regexes unattended-upgrades never upgrades.
     package_blacklist: tuple[PackagePattern, ...] = ()
     remove_unused_kernel_packages: bool = True
@@ -113,6 +122,14 @@ class UnattendedUpgradesConfig(RoleConfig):
             raise ValueError("needrestart_skip_services needs needrestart 'automatic' or 'list'")
         return self
 
+    @model_validator(mode="after")
+    def _updates_need_point_releases(self) -> UnattendedUpgradesConfig:
+        # The -updates suite builds on the point-release archive; alone it
+        # could pull a package whose dependencies wait in that archive.
+        if self.debian_stable_updates and not self.debian_point_releases:
+            raise ValueError("debian_stable_updates needs debian_point_releases")
+        return self
+
     @property
     def packages(self) -> tuple[str, ...]:
         return ("unattended-upgrades",) + (() if self.needrestart == "unmanaged" else ("needrestart",))
@@ -125,7 +142,11 @@ def origins(cfg: UnattendedUpgradesConfig, distro: str) -> tuple[str, ...]:
         if cfg.debian_point_releases:
             raise DeployError("unattended_upgrades: debian_point_releases is for Debian hosts only")
         return UBUNTU_SECURITY
-    return DEBIAN_SECURITY + ((DEBIAN_POINT_RELEASES,) if cfg.debian_point_releases else ())
+    return (
+        DEBIAN_SECURITY
+        + ((DEBIAN_POINT_RELEASES,) if cfg.debian_point_releases else ())
+        + ((DEBIAN_STABLE_UPDATES,) if cfg.debian_stable_updates else ())
+    )
 
 
 def _flag(value: bool) -> str:

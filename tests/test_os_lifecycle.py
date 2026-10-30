@@ -28,6 +28,7 @@ from ops_deploy.services.os_lifecycle import (
     endpoint_rules,
     lifecycle_check,
     remote_rules,
+    report_rules,
 )
 from ops_deploy.services.os_lifecycle import deploy as oslc
 from ops_deploy.testing import FakeRun, run_deploy_fake
@@ -188,6 +189,103 @@ def test_remote_rules_watch_the_pull_and_the_window_thresholds() -> None:
     assert ("$.hosts.marina.report.reboot.required_age_hours", "<=", 192, "warning") in rules
     assert ("$.hosts.marina.report.reboot.required_age_hours", "<=", 360, "critical") in rules
     assert all(r[0].startswith(("$.meta.", "$.hosts.marina.")) for r in rules)
+
+
+def failing(rules: list[dict[str, Any]], report: dict[str, Any]) -> list[tuple[str, str]]:
+    """The rules a report fails, as Nyxmon's json-metrics evaluates them (a missing or null value fails)."""
+
+    compare = {
+        "<": lambda a, b: a < b,
+        "<=": lambda a, b: a <= b,
+        ">": lambda a, b: a > b,
+        ">=": lambda a, b: a >= b,
+        "==": lambda a, b: a == b,
+        "!=": lambda a, b: a != b,
+    }
+    failed = []
+    for rule in rules:
+        value: Any = report
+        for part in rule["path"].removeprefix("$.").split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        if value is None or not compare[rule["op"]](value, rule["value"]):
+            failed.append((rule["path"], rule["severity"]))
+    return failed
+
+
+def test_track_latest_stable_replaces_the_support_rules() -> None:
+    default = paths(report_rules(Thresholds()))
+    tracked = paths(report_rules(Thresholds(), track_latest_stable=True))
+
+    assert ("$.os.releases_behind", "<=", 0, "warning") in tracked
+    assert ("$.os.releases_behind", "<=", 0, "warning") not in default
+    for rule in [("$.os.upgrade_due", "==", False, "warning"), ("$.os.support_days_remaining", ">=", 365, "warning")]:
+        assert rule in default
+        assert rule not in tracked
+    # The hard EOL deadlines stay for both.
+    for rule in [("$.os.eol_days_remaining", ">=", 180, "warning"), ("$.os.eol_days_remaining", ">=", 60, "critical")]:
+        assert rule in default
+        assert rule in tracked
+    remote = paths(remote_rules(Thresholds(), "heis", track_latest_stable=True))
+    assert ("$.hosts.heis.report.os.releases_behind", "<=", 0, "warning") in remote
+
+
+def os_section(**values: Any) -> dict[str, Any]:
+    return {
+        "os": {
+            "releases_behind": 0,
+            "upgrade_due": False,
+            "support_days_remaining": 640,
+            "eol_days_remaining": 1340,
+            "lifecycle_sources_agree": True,
+            "lifecycle_data_age_days": 10,
+            **values,
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("values", "tracked", "default"),
+    [
+        # The day before Debian 14: current stable, nothing fails.
+        ({}, [], []),
+        # Its release day: Debian 13 still has 423 days of regular support.
+        ({"releases_behind": 1, "support_days_remaining": 423}, [("$.os.releases_behind", "warning")], []),
+        # A year later the EOL view warns too; the tracked host warned since the release day.
+        (
+            {"releases_behind": 1, "support_days_remaining": 58},
+            [("$.os.releases_behind", "warning")],
+            [("$.os.support_days_remaining", "warning")],
+        ),
+        # Unknown is not green.
+        ({"releases_behind": None}, [("$.os.releases_behind", "warning")], []),
+    ],
+)
+def test_the_latest_stable_rule_on_reports(
+    values: dict[str, Any], tracked: list[tuple[str, str]], default: list[tuple[str, str]]
+) -> None:
+    report = os_section(**values)
+    os_rules = [r for r in report_rules(Thresholds()) if r["path"].startswith("$.os.")]
+    tracked_rules = [r for r in report_rules(Thresholds(), track_latest_stable=True) if r["path"].startswith("$.os.")]
+
+    assert failing(tracked_rules, report) == tracked
+    assert failing(os_rules, report) == default
+
+
+def test_third_party_updates_warn_after_30_days_only_when_watched() -> None:
+    rule = ("$.apt.pending_third_party_max_age_hours", "<=", 720, "warning")
+
+    assert rule not in paths(report_rules(Thresholds()))
+    rules = report_rules(Thresholds(), third_party_updates=True)
+    assert rule in paths(rules)
+    third = [r for r in rules if "third_party" in r["path"]]
+    assert failing(third, {"apt": {"pending_third_party_max_age_hours": 0}}) == []
+    assert failing(third, {"apt": {"pending_third_party_max_age_hours": 720.0}}) == []
+    assert failing(third, {"apt": {"pending_third_party_max_age_hours": 720.5}}) == [
+        ("$.apt.pending_third_party_max_age_hours", "warning")
+    ]
+    assert failing(third, {"apt": None}) == [("$.apt.pending_third_party_max_age_hours", "warning")]
+    remote = paths(remote_rules(Thresholds(), "marina", third_party_updates=True))
+    assert ("$.hosts.marina.report.apt.pending_third_party_max_age_hours", "<=", 720, "warning") in remote
 
 
 def test_a_check_keeps_its_json_types() -> None:
