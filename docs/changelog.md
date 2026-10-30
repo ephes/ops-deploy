@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Extend the owned Photos/archive activation proofs without changing packaged
+  deployment resources. Preserve Photos' idle calendar/strict repeat and the
+  archive agent's immediate RunAtLoad/managed repeat behavior. Disarm archive
+  data commands with an attested fixture proxy; qualify installed control-class
+  rescue and partial cleanup independently of real inventory/data execution.
+
 - Add the separate original fresh-apply-bound Weeknotes timer activation rail,
   preserving retirement/confirmation, exact epoch/proof/artifact admission,
   disabled/unloaded precondition and no-kickstart enable/bootstrap. Keep private

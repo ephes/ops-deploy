@@ -51,12 +51,14 @@ the declared label before writes and verifies that state afterward. The original
 plist has `RunAtLoad: true` and no `Disabled` key; its persistent launchctl
 disabled override is therefore essential. A separately authorized activation
 may select `launchd_enabled: true`; the original enable/bootstrap/verification
-and failed-activation disable/bootout behavior are retained. This public option
-does not establish real activation qualification or change an operator's
-existing confirmation/attendance policy.
+and failed-activation disable/bootout behavior are retained. Activation immediately starts that launcher because `RunAtLoad` is true. Every
+full enabled installer call, including a current repeat, quiesces, runs managed
+`--help`, then re-enables/bootstrap the agent (three managed operations); it is
+not a zero-change repeat. This public option does not establish real inventory
+activation qualification or change the original confirmation/attendance policy.
 
 The generated launcher contains the original bounded Photos SQL privacy
-preflight, exact SMB identity and one-way archival execution. Installation never
+preflight, exact SMB identity and one-way archival execution. Disabled installation never
 runs that launcher, opens the Photos database, lists the camera working folder,
 mounts/authenticates a share, initializes a ledger or reads a folder map/log
 body. Data declarations remain outside its source/resource operations. It
@@ -79,3 +81,25 @@ and unique labels. Those substitutions are not revalidated against production
 it qualifies the mechanism under owned paths. Source tests separately exercise
 the original writer/path/schedule validation; this is not a claim of native
 validation of a real inventory declaration.
+
+
+The owned activation fixture preserves the original `RunAtLoad: true` plist and
+launcher template, including its Git checks. After validating the original
+model it substitutes owned paths/label and an exact-hash root-owned timeout
+proxy. Only `--version` forwards to GNU timeout; both launcher data commands are
+recorded as closed synthetic metadata and disarmed before Python/Photos access
+or archive execution. The fixture waits for both disarmed calls after each full
+activation. This proves launchd mechanisms, not real Photos access, TCC, SMB or
+synchronization. It makes no claim that the launcher never started.
+
+Installed unchanged control-class dependency-injection cases use direct-owner
+SSH, target-attest the exact rendered actor-owned launcher and root-owned proxy
+before any bootstrap, then forward a real successful bootstrap before reporting
+an injected failure. Rescue must try both disable and bootout. Failure of either
+cleanup is reported as `photos_control_activation_failed_NOT_quiesced`, with the
+actual state retained; the fixture explicitly recovers only its owned label.
+The incorrect-hash refusal runs natively before activation. A separate local
+missing-admission guard test uses only a harmless fake class and proves refusal
+before even that fake activation.
+These class-level cases are distinct from naturally occurring full-installer
+failures. All data and state in this proof are synthetic.

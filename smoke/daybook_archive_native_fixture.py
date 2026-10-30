@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import plistlib
 import pwd
@@ -16,10 +18,13 @@ import paramiko
 from daybook_resources_native_fixture import provenance, wait
 from daybook_runtime_native_fixture import snapshot
 from mac_apps_owned import OwnedMac, command, job_pid, port
+from photo_activation_helpers import rescue_case
 
 from ops_deploy.core.git_source import SourceTree
 from ops_deploy.services.daybook_photos_archive_sync import DaybookPhotosArchiveSyncConfig
 from ops_deploy.services.daybook_photos_archive_sync import deploy as api
+from ops_deploy.services.daybook_photos_archive_sync.payload import payload as archive_payload
+from ops_deploy.services.daybook_photos_archive_sync.render import render_resources
 from ops_deploy.testing import run_deploy_ssh
 
 
@@ -139,7 +144,7 @@ def run(
     owned: OwnedMac, transport: Any, cfg: Any, tree: SourceTree, artifact: Path, phase: str, *, fault: bool = False
 ) -> Any:
     counts = {"attempted": 0, "succeeded": 0}
-    original_put, original_payload = paramiko.SFTPClient.putfo, api.payload
+    original_put, original_payload = paramiko.SFTPClient.putfo, archive_payload
 
     def upload(client: Any, stream: Any, destination: str, *args: Any, **kwargs: Any) -> Any:
         counts["attempted"] += 1
@@ -183,6 +188,54 @@ def run(
     return result
 
 
+def timeout_proxy(owned: OwnedMac, runtime: Path) -> tuple[Path, str, Path]:
+    """RunAtLoad=true launcher is real; ONLY these two data commands are inert."""
+    events = runtime / "owned-timeout-events.jsonl"
+    proxy = owned.root / "owned-timeout-proxy"
+    body = (
+        "#!/usr/bin/python3\nimport json,os,subprocess,sys\nfrom pathlib import Path\n"
+        "args=sys.argv[1:]\n"
+        "if args==['--version']:\n raise SystemExit(subprocess.call(['/opt/homebrew/bin/gtimeout','--version']))\n"
+        "assert args[0]=='--signal=TERM'\n"
+        "kind='photos-access-disarmed' if '-c' in args else 'archive-execute-disarmed'\n"
+        "if kind=='archive-execute-disarmed':\n"
+        " assert 'photos' in args and 'archive-sync' in args and '--execute' in args\n"
+        "row={'kind':kind,'uid':os.geteuid(),'forwarded':False}\n"
+        "fd=os.open(" + repr(str(events)) + ",os.O_WRONLY|os.O_CREAT|os.O_APPEND|os.O_NOFOLLOW,0o600)\n"
+        "try: os.write(fd,(json.dumps(row,sort_keys=True)+'\\n').encode())\n"
+        "finally: os.close(fd)\n"
+        "# NEVER execute the requested interpreter/app or open Photos.sqlite.\n"
+        "raise SystemExit(0)\n"
+    ).encode()
+    proxy.write_bytes(body)
+    os.chown(proxy, 0, 0)
+    proxy.chmod(0o755)
+    return proxy, hashlib.sha256(body).hexdigest(), events
+
+
+def disarmed_events(path: Path, uid: int) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    for row in rows:
+        assert set(row) == {"kind", "uid", "forwarded"}
+        assert row["kind"] in {"photos-access-disarmed", "archive-execute-disarmed"}
+        assert row["uid"] == uid
+        assert row["forwarded"] is False
+    return rows
+
+
+def wait_disarmed_archive_launch(predicate: Any) -> None:
+    # The original RunAtLoad launcher includes Git admission and two CLT Python
+    # proxy startups. Allow cold disposable runners up to one minute to finish.
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.1)
+    raise AssertionError("owned disarmed archive launcher did not converge within 60 seconds")
+
+
 def main() -> None:
     owned = OwnedMac("daybook-archive")
     failure: BaseException | None = None
@@ -207,6 +260,7 @@ def main() -> None:
         home.mkdir(mode=0o700)
         os.chown(home, actor.pw_uid, actor.pw_gid)
         runtime = home / ".daybook/owned-archive"
+        proxy, proxy_sha256, proxy_events = timeout_proxy(owned, runtime)
         tree, artifact = source(owned, uv, runtime)
         cfg = DaybookPhotosArchiveSyncConfig(
             inventory_hostname="owned-writer",
@@ -226,7 +280,7 @@ def main() -> None:
             "checkout_path": str(install / "daybook"),
             "venv_path": str(install / "daybook/.venv"),
             "uv_bin": uv,
-            "timeout_bin": "/opt/homebrew/bin/gtimeout",
+            "timeout_bin": str(proxy),
             "runtime_dir": str(runtime),
             "state_path": str(runtime / "ledger.json"),
             "folder_map_path": str(runtime / "folder-map.json"),
@@ -332,9 +386,89 @@ def main() -> None:
         assert (runtime / "owned-cli-count").read_text() == "5"
         assert (runtime / "owned-import-count").read_text() == "5"
         assert snapshot(protected_paths) == protected
+        active = next_cfg.model_copy(update={"daybook_photos_archive_sync_launchd_enabled": True})
+        selected = "gui/" + str(actor.pw_uid) + "/" + label
+        assert (
+            plistlib.loads(Path(cfg.daybook_photos_archive_sync_launchd_plist_path).read_bytes())["RunAtLoad"] is True
+        )
+
+        def enabled_phase(name: str) -> None:
+            before_events = disarmed_events(proxy_events, actor.pw_uid)
+            help_before = int((runtime / "owned-cli-count").read_text())
+            result = run(owned, transport, active, next_tree, next_artifact, name)
+            assert result.succeeded
+            assert len(result.mutating_changed_ops) == 3
+            wait_disarmed_archive_launch(
+                lambda: (
+                    len(disarmed_events(proxy_events, actor.pw_uid)) >= len(before_events) + 2
+                    and job_pid(selected) is None
+                )
+            )
+            after = disarmed_events(proxy_events, actor.pw_uid)
+            assert after[: len(before_events)] == before_events
+            assert [row["kind"] for row in after[len(before_events) :]] == [
+                "photos-access-disarmed",
+                "archive-execute-disarmed",
+            ]
+            assert command("/bin/launchctl", "print", selected, check=False).returncode == 0
+            assert int((runtime / "owned-cli-count").read_text()) == help_before + 1
+            assert int((runtime / "owned-import-count").read_text()) == help_before + 1
+            assert snapshot(protected_paths) == protected
+
+        enabled_phase("activation-first")
+        enabled_phase("activation-managed-repeat")
+        disabled = run(owned, transport, next_cfg, next_tree, next_artifact, "disabled-install-after-activation")
+        assert disabled.succeeded
+        assert len(disabled.mutating_changed_ops) == 2
+        assert command("/bin/launchctl", "print", selected, check=False).returncode == 113
+        launcher = cfg.daybook_photos_archive_sync_launcher_path
+        launcher_body = next(row["content"] for row in render_resources(active) if row["path"] == launcher)
+        assert isinstance(launcher_body, str)
+        launcher_sha256 = hashlib.sha256(launcher_body.encode()).hexdigest()
+
+        def archive_rescue(fault: str, *, guard_refusal: bool = False) -> None:
+            rescue_case(
+                owned,
+                actor,
+                transport,
+                label=label,
+                plist=cfg.daybook_photos_archive_sync_launchd_plist_path,
+                kind="archive",
+                cleanup_fault=fault,
+                archive_launcher=launcher,
+                archive_proxy=str(proxy),
+                archive_launcher_sha256=launcher_sha256,
+                archive_proxy_sha256=proxy_sha256,
+                archive_proxy_events=str(proxy_events),
+                expect_proxy_hash_refusal=guard_refusal,
+            )
+
+        archive_rescue("none", guard_refusal=True)
+        assert command("/bin/launchctl", "print", selected, check=False).returncode == 113
+        for fault in ("none", "disable", "bootout"):
+            archive_rescue(fault)
+            assert snapshot(protected_paths) == protected
+            assert job_pid(keeper_service) == owned.report["keeper_pid"]
+        enabled_phase("activation-recovery")
+        enabled_phase("activation-recovery-managed-repeat")
+        assert (runtime / "owned-cli-count").read_text() == "10"
+        assert (runtime / "owned-import-count").read_text() == "10"
+        owned.report["activation"] = {
+            "original_RunAtLoad": True,
+            "whole_api_first_and_repeat_managed_each": 3,
+            "original_launcher_started_immediately_with_only_owned_proxy_data_commands": True,
+            "all_recorded_proxy_calls_disarmed": True,
+            "disarmed_proxy_call_count": len(disarmed_events(proxy_events, actor.pw_uid)),
+            "proxy_root_0755_sha256": proxy_sha256,
+            "owned_timeout_proxy_substitution_revalidated": False,
+            "real_Photos_or_archive_app_execute_calls": 0,
+            "scope": (
+                "Original model first, owned path/label/timeout-proxy copy; no real TCC/data access or sync proof."
+            ),
+        }
         owned.report.update(
             status="passed",
-            actual_inert_managed_help_calls=5,
+            actual_inert_managed_help_calls=10,
             source_Git_and_environment_inode_preserved=True,
             synthetic_data_metadata_preserved=True,
             real_media_library_model_financial_body_calls=False,
@@ -348,10 +482,16 @@ def main() -> None:
         owned.fail(error)
     finally:
         try:
-            owned.cleanup()
+            reset = []
+            for selected in owned.labels:
+                if selected.startswith("gui/"):
+                    command("/bin/launchctl", "bootout", selected, check=False)
+                    command("/bin/launchctl", "enable", selected, check=False)
+                    reset.append(selected)
+            owned.report["owned_unique_disabled_entries_reset_enabled"] = reset
         except BaseException as error:
             failure = failure or error
-        owned.receipt()
+        failure = owned.finish(failure)
     if failure is not None:
         raise failure
 
