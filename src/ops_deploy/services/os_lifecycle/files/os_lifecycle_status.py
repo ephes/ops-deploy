@@ -58,7 +58,10 @@ APT_SIMULATE = [
 # "Inst <pkg> [<old>] (<new> <origin>, <origin> [<arch>])", sometimes followed by " []".
 _INST = re.compile(r"^Inst (\S+)(?: \[[^\]]*\])? \((\S+) ([^()]*)\)(?: \[[^\]]*\])?\s*$")
 _ARCH = re.compile(r"\s*\[[^\]]*\]\s*$")
-_KERNEL = re.compile(r"(\d+\.\d+\.\d+-\d+)")
+# The kernel version in a release or package name: Ubuntu and Debian up to 12
+# carry an ABI number (6.8.0-146-generic, 6.1.0-40-amd64), Debian 13 a
+# "+deb<N>" suffix instead (6.12.113+deb13-amd64).
+_KERNEL = re.compile(r"(\d+\.\d+\.\d+(?:-\d+|\+deb\d+))")
 _UU_START = "Starting unattended upgrades script"
 # Release-file labels of the distributions' own archives (release, security,
 # point-release updates). Anything else is a third-party origin (vendor
@@ -269,7 +272,8 @@ def lifecycle(
     }
     latest = max(stable, key=_version_tuple) if stable else None
     current = _version_tuple(cycle) if cycle else ()
-    data_behind = sum(1 for name in stable if current and _version_tuple(name) > current) if current else None
+    # No released cycle in either source: unknown, not "current".
+    data_behind = sum(1 for name in stable if _version_tuple(name) > current) if current and stable else None
     archive_suite, archive_behind = archive
     known = [value for value in (data_behind, archive_behind) if value is not None]
     behind = max(known) if known else None
