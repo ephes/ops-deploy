@@ -289,6 +289,28 @@ def test_an_unknown_release_reports_nulls() -> None:
     assert os_["lifecycle_source"] is None
 
 
+def test_no_lifecycle_data_leaves_releases_behind_unknown() -> None:
+    def trixie(archive: tuple[str | None, int | None]) -> dict[str, Any]:
+        return status.lifecycle(  # type: ignore[no-any-return]
+            {"ID": "debian", "VERSION_ID": "13", "VERSION_CODENAME": "trixie"},
+            [],
+            [],
+            today=TODAY,
+            horizon_days=365,
+            tolerance_days=31,
+            snapshot_fetched=None,
+            archive=archive,
+        )
+
+    unknown = trixie((None, None))
+    assert (unknown["releases_behind"], unknown["releases_behind_data"]) == (None, None)
+    assert unknown["latest_stable_cycle"] is None
+    assert unknown["release_upgrade_available"] is None
+    # The archive alone still answers.
+    assert trixie(("stable", 0))["releases_behind"] == 0
+    assert trixie(("oldstable", 1))["releases_behind"] == 1
+
+
 # -- apt, unattended-upgrades, reboot ----------------------------------------------------------
 
 
@@ -362,6 +384,35 @@ def test_kernel_versions_ignore_removed_packages_and_meta_packages() -> None:
     )
 
     assert status.kernel_versions(output) == ["6.1.0-37", "6.1.0-40"]
+
+
+def test_debian_13_kernel_names_are_versions() -> None:
+    output = (
+        "linux-image-6.1.0-54-cloud-amd64 install ok installed\n"
+        "linux-image-6.12.107+deb13-cloud-amd64 install ok installed\n"
+        "linux-image-6.12.113+deb13-cloud-amd64 install ok installed\n"
+        "linux-image-cloud-amd64 install ok installed\n"
+    )
+
+    assert status.kernel_versions(output) == ["6.1.0-54", "6.12.107+deb13", "6.12.113+deb13"]
+
+
+def test_a_stale_debian_13_kernel_requires_a_reboot(tmp_path: Path) -> None:
+    touch(tmp_path / "proc/uptime", NOW, "86400.0 1.0\n")
+    touch(tmp_path / "var/lib/dpkg/info/linux-image-6.12.113+deb13-cloud-amd64.list", NOW - 30 * 3600)
+
+    def dpkg(argv: list[str]) -> tuple[int, str]:
+        return 0, (
+            "linux-image-6.12.107+deb13-cloud-amd64 install ok installed\n"
+            "linux-image-6.12.113+deb13-cloud-amd64 install ok installed\n"
+        )
+
+    stale = status.reboot_status(tmp_path, dpkg, NOW, "6.12.107+deb13-cloud-amd64", "C")
+    current = status.reboot_status(tmp_path, dpkg, NOW, "6.12.113+deb13-cloud-amd64", "C")
+
+    assert (stale["required"], stale["reasons"], stale["kernel_check"]) == (True, ["stale_kernel"], "compared")
+    assert (stale["newest_installed_kernel"], stale["required_age_hours"]) == ("6.12.113+deb13", 30.0)
+    assert (current["required"], current["kernel_check"], current["required_age_hours"]) == (False, "compared", 0)
 
 
 # -- the whole report on a fixture root --------------------------------------------------------

@@ -18,7 +18,10 @@
   instead of the `upgrade_due` and `support_days_remaining` planning rules (the
   EOL rules stay); `third_party_updates` warns when a pending third-party
   update is older than `pending_third_party_warning_hours` (720, 30 days).
-  Both are off by default, so existing rule lists are unchanged.
+  Both are off by default, so existing rule lists are unchanged. The
+  stale-kernel signal now reads Debian 13 kernel names (`6.12.113+deb13-amd64`;
+  before, they gave `kernel_check: no-version` and never a reboot warning), and
+  `releases_behind` is `null` when no source knows any released cycle.
 
 - Add the original Photos offload component: protected root checkout and trust
   attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with

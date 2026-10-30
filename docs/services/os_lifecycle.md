@@ -222,7 +222,9 @@ host leaves `ssh`.
   or `oldoldstable` (2) from the day the next release is out, before any
   lifecycle data is refreshed (the daily `apt-daily` index refresh brings it
   in). `releases_behind_data` is the count from the lifecycle data alone;
-  `archive_suite` is `null` without such a file (or on Ubuntu). `upgrade_due`: Debian once regular support has ended, Ubuntu
+  `archive_suite` is `null` without such a file (or on Ubuntu); with neither
+  lifecycle data nor that file `releases_behind` is `null` (unknown fails the
+  rule). `upgrade_due`: Debian once regular support has ended, Ubuntu
   within `upgrade_horizon_days` (365) of its end. `phase`: `standard`,
   `extended` (LTS/after regular support), `eol` or `unknown`.
 - **Security updates:** the `Inst` lines of the simulation whose origin is a
@@ -243,7 +245,8 @@ host leaves `ssh`.
   `ERROR`).
 - **Reboot:** `/var/run/reboot-required` or a newer installed `linux-image-*`
   than the running kernel (the same comparison as `os_apt_maintenance`; a
-  deliberately pinned older kernel therefore reports `stale_kernel`). The age
+  deliberately pinned older kernel therefore reports `stale_kernel`). Kernel
+  versions are `x.y.z-N` (Ubuntu, Debian up to 12) or `x.y.z+debN` (Debian 13). The age
   is the marker's mtime or the newest kernel's dpkg `.list` mtime.
   `kernel_check` says whether the kernels were compared (`compared`) or why
   not: `no-dpkg-kernels` (`dpkg-query` matched no `linux-image-*`, a kernel
