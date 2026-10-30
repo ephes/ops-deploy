@@ -2,11 +2,20 @@
 
 ## Unreleased
 
+- Correct the owned existing-host Matter fixture OS baseline with Ubuntu
+  `libnl-route-3-200`, following the captured original CHIP native-loader failure
+  in run41134898722. Add bounded installed-wheel/native-load provenance before
+  unchanged readiness, then restore the original current/upgrade matrix entry
+  with that gate before selected/typed phases. This is fixture source, with corrected native execution
+  pending separate authorization; original role and all 971 production resources
+  remain unchanged and pristine installation is outside this baseline.
+
 - Add bounded owned Matter startup diagnostics and stable unit/port readiness
   after the original Home Assistant bootstrap. This frozen guest entry runs only
   the current prerequisite diagnostic, not the application matrix. Preserve both
   failed run41017001167 cases and strict no-mutation comparisons; production
-  resources are unchanged and the underlying Matter failure remains unproven.
+  resources are unchanged. The later single diagnostic identified the missing
+  native-library prerequisite documented above.
 
 - Correct the declared existing-host Home Assistant native fixture baseline by
   pre-provisioning Python, the pip-seeded venv and selected HA package, then

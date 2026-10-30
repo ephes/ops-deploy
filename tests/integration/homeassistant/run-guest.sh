@@ -30,5 +30,5 @@ install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
 git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach 9d88de8f9d04498bbb6d71174792534e87db4a88
 [[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == 9d88de8f9d04498bbb6d71174792534e87db4a88 ]]
-# This frozen source runs only the prerequisite diagnostic, never the44-phase matrix.
-.venv/bin/python -m tests.integration.homeassistant.diagnose_matter
+# Current/upgrade matrix: original native loading and readiness gate every selected/typed phase.
+.venv/bin/python -m tests.integration.homeassistant.harness

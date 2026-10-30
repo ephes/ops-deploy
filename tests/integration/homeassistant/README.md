@@ -55,21 +55,25 @@ The unchanged original role requires UV to exist before its own later installer.
 These are labelled existing-host prerequisites, never pristine original bootstrap.
 The public library is pinned to9d88 (unchanged cf3 runtime). The current leg uses
 HA2026.10.2; upgrade begins with2026.10.1 then requests2026.10.2. Both retain
-Python3.14.8 and actual Matter8.1.2. `application-provenance.json` records declared
+Python3.14.8 and actual Matter 8.1.2. `application-provenance.json` records declared
 public release artifacts, not a claim that each dependency download was hashed.
 Actual installed versions/distributions are recorded in every snapshot.
 
-## Frozen Matter diagnostic entry
+## Frozen current/upgrade matrix entry
 
-This branch's `run-guest.sh` invokes `diagnose_matter`, **not the matrix**.
-Dispatch only `fixture_cases=["current"]` with its reviewed immutable source SHA.
-It performs admission, current-version existing-host seed, unchanged original
-bootstrap and Matter readiness. It creates no onboarding user/token, starts no
-synthetic API peers and executes no selected-original or typed phases. Its summary
-labels this purpose; success only means the prerequisite became ready. The
-normal matrix remains source, with the same new readiness gate before onboarding
-or selected/typed work. A later full matrix needs a separately reviewed source
-entry and explicit authorization; this diagnostic is not a44-phase retry.
+This branch's `run-guest.sh` invokes the original `harness` current/upgrade matrix.
+Dispatch only `fixture_cases=["current","upgrade"]` with its reviewed immutable
+source SHA and separate coordinator authorization. Each leg performs admission,
+its declared existing-host seed, unchanged original bootstrap, actual original
+native-library load proof, then Matter readiness before onboarding or any
+selected-original/typed phase. The original phase scope and strict comparisons
+remain unchanged. A failed native oracle captures bounded startup diagnostics
+and aborts before any selected/typed phase; it never repairs the guest.
+
+The prior single diagnostic run41134898722 remains a failure with verified
+collection/cleanup. Its `diagnose_matter` helper remains current-only source but
+is no longer the guest entry. This matrix preparation does not constitute a
+successful corrected native run or authorize automatic failure replay.
 
 Readiness requires the loopback5580 port and a loaded, active/running Matter unit
 with a positive PID and unchanged PID/restart count for20seconds within90seconds.
@@ -84,7 +88,32 @@ outer guest100minute/build15minute/job130minute bounds and cleanup remain intact
 Only this disposable synthetic Matter service's diagnostics are exported: no HA
 journal, auth registry, model/audio/user body or host data is collected. Existing
 synthetic-value redaction is retained. This replaces the prior evidence gap with
-bounded startup evidence; it does not claim a failure cause before execution.
+bounded startup evidence.
+
+Run 41134898722 established the prerequisite failure: original Matter 8.1.2 with
+CHIP 2025.7.0 failed `ctypes.CDLL` because `libnl-route-3.so.200` was absent. Both
+netlink packages were absent from the captured dpkg inventory. The unchanged
+original role declares neither, and no owned private inventory source overrides
+its additional-package list. This does not establish how any live host acquired
+the dependency. The fixture image now preinstalls Ubuntu `libnl-route-3-200`
+(which depends on `libnl-3-200`) as explicit existing-host OS state. Neither the
+original role nor any of the 971 production resource changes; pristine installation
+coverage still excludes this preinstalled dependency.
+
+The official [CHIP 2025.7.0 wheel](https://pypi.org/project/home-assistant-chip-core/2025.7.0/)
+`home_assistant_chip_core-2025.7.0-cp37-abi3-manylinux_2_31_x86_64.whl`
+SHA256 is `afde5db4bdaf3065eef4c641041de94530353fbd6ab8aa40fa2fd09c8ac1bbec`.
+Its ELF `DT_NEEDED` includes both netlink libraries; Python package metadata
+contains Python dependencies only. Ubuntu's [Noble package file list](https://packages.ubuntu.com/noble/amd64/libnl-route-3-200/filelist)
+identifies the missing SONAME's provider. The diagnostic records installed Debian
+versions, `readelf --dynamic`, and actual service-account `ctypes.CDLL` using the
+original CHIP resolver, with the installed native binary, direct CHIP imports and metadata hashes
+checked against that wheel. Each command has a 15-second/1 MiB bound, using the
+existing owned-process cleanup. This does not initialize a second CHIP stack or
+restart the service. Any failure is retained and stops before readiness; success
+still requires the unchanged 90-second/20-second stable unit/port oracle. Corrected
+native loading/readiness remains pending a separately authorized run; the failed
+run and cleanup are retained, never relabelled successful.
 
 `api.py` uses HA's own interpreter/aiohttp and real onboarding user creation,
 authorization-code exchange and WebSocket long-lived-token command. Credentials

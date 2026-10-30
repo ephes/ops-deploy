@@ -183,9 +183,13 @@ def test_diagnostics_bound_log_and_refuse_nonregular_paths(
         assert result["log"] == ({"absent": True} if kind == "missing" else {"collection_failed": True})
 
 
-def test_original_bootstrap_cannot_reach_selected_or_typed_with_unready_matter(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("case", ["current", "upgrade"])
+@pytest.mark.parametrize("failure", ["native", "ready"])
+def test_original_bootstrap_cannot_reach_selected_or_typed_with_unready_matter(
+    monkeypatch: pytest.MonkeyPatch, case: str, failure: str
+) -> None:
     calls: list[Any] = []
-    monkeypatch.setenv("HOMEASSISTANT_FIXTURE_CASE", "current")
+    monkeypatch.setenv("HOMEASSISTANT_FIXTURE_CASE", case)
     monkeypatch.setattr(matrix, "seed", lambda *args: calls.append("seed"))
     monkeypatch.setattr(matrix, "original_vars", lambda *args: {})
     monkeypatch.setattr(matrix, "original", lambda name, variables: calls.append(name))
@@ -193,14 +197,23 @@ def test_original_bootstrap_cannot_reach_selected_or_typed_with_unready_matter(m
     def refuse() -> None:
         raise RuntimeError("owned unready")
 
+    def native() -> None:
+        calls.append("native")
+        if failure == "native":
+            refuse()
+
+    monkeypatch.setattr(matrix, "verify_native_dependencies", native)
+    monkeypatch.setattr(matrix, "diagnostics", lambda: calls.append("diagnostics"))
     monkeypatch.setattr(matrix, "wait_ready", refuse)
     monkeypatch.setattr(matrix, "wait_http", lambda: pytest.fail("must not reach onboarding or later matrix"))
     with pytest.raises(RuntimeError, match="owned unready"):
         matrix.run()
-    assert calls == ["seed", "00-original-existing-host-bootstrap"]
+    assert calls == ["seed", "00-original-existing-host-bootstrap", "native"] + (
+        ["diagnostics"] if failure == "native" else []
+    )
 
 
-@pytest.mark.parametrize("failure", [None, "bootstrap", "ready"])
+@pytest.mark.parametrize("failure", [None, "bootstrap", "native", "ready"])
 def test_diagnostic_is_only_admitted_seed_original_and_readiness(
     monkeypatch: pytest.MonkeyPatch, failure: str | None
 ) -> None:
@@ -221,6 +234,12 @@ def test_diagnostic_is_only_admitted_seed_original_and_readiness(
         if failure == "ready":
             raise RuntimeError("owned failure")
 
+    def native() -> None:
+        calls.append("native")
+        if failure == "native":
+            raise RuntimeError("owned failure")
+
+    monkeypatch.setattr(diagnose_matter, "verify_native_dependencies", native)
     monkeypatch.setattr(diagnose_matter, "original", original)
     monkeypatch.setattr(diagnose_matter, "wait_ready", ready)
     monkeypatch.setattr(diagnose_matter, "diagnostics", lambda: calls.append("diagnostics"))
@@ -235,15 +254,17 @@ def test_diagnostic_is_only_admitted_seed_original_and_readiness(
         ("seed", "2026.10.2"),
         ("00-original-existing-host-bootstrap", {"version": "2026.10.2"}),
     ]
-    assert calls[3:] == (["diagnostics"] if failure == "bootstrap" else ["ready"])
+    assert calls[3:] == (
+        ["diagnostics"] if failure == "bootstrap" else ["native", "diagnostics" if failure == "native" else "ready"]
+    )
     assert receipts["summary.json"]["completed"] is (failure is None)
     assert receipts["summary.json"]["typed_phases_executed"] == 0
 
 
-def test_diagnostic_entry_is_frozen_without_changing_workflow() -> None:
+def test_matrix_entry_is_frozen_without_changing_workflow() -> None:
     script = Path("tests/integration/homeassistant/run-guest.sh").read_text()
-    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.diagnose_matter\n")
-    assert "tests.integration.homeassistant.harness\n" not in script
+    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.harness\n")
+    assert "tests.integration.homeassistant.diagnose_matter\n" not in script
 
 
 def test_rejected_upgrade_keeps_actual_case_and_performs_no_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:

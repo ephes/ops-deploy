@@ -793,9 +793,14 @@ remain explicit; ordinary refresh/reload/canary operations are not called zero
 managed work. See the fixture README for privacy, resource and cleanup boundaries.
 
 The revised owned run passed original bootstrap but exposed an auto-restarting
-Matter prerequisite. A separate frozen diagnostic entry now runs only current
-bootstrap and bounded Matter readiness/startup evidence. It does not execute the
-application matrix. The prepared matrix also requires stable Matter PID/restart
+Matter prerequisite. The single owned diagnostic identified a missing
+`libnl-route-3.so.200`; the fixture image now declares Ubuntu `libnl-route-3-200`
+as pre-existing OS state. Original role and production resources are unchanged;
+this does not establish any live host's package provenance. A bounded original
+CHIP resolver/CDLL oracle records installed dependency identity before readiness.
+The frozen entry now returns to the original current/upgrade matrix, requiring
+this native-load proof and bounded Matter readiness/startup evidence before any
+selected or typed phase. The matrix requires stable Matter PID/restart
 count and port readiness before selected phases, retaining all strict snapshot
 comparisons. Neither the diagnostic source nor local tests constitute native
 application or inventory qualification.
