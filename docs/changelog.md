@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add bounded owned Matter startup diagnostics and stable unit/port readiness
+  after the original Home Assistant bootstrap. This frozen guest entry runs only
+  the current prerequisite diagnostic, not the application matrix. Preserve both
+  failed run41017001167 cases and strict no-mutation comparisons; production
+  resources are unchanged and the underlying Matter failure remains unproven.
+
 - Correct the declared existing-host Home Assistant native fixture baseline by
   pre-provisioning Python, the pip-seeded venv and selected HA package, then
   initializing its original Matter dependency closure before

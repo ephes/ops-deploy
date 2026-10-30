@@ -1,7 +1,11 @@
 # Prepared owned Home Assistant application fixture
 
 The first owned run failed during original Ansible bootstrap before any typed
-phase; no successful native, inventory or hardware qualification is claimed. The root deployment API remains prepared until
+phase. The revised existing-host run41017001167 passed bootstrap in both cases,
+then current failed the original Matter port wait and upgrade refused a unit
+change during its read-only plan. Matter was already auto-restarting before
+both phases; its startup cause was not captured. No successful native, inventory
+or hardware qualification is claimed. The root deployment API remains prepared until
 the actual matrix and complete receipts pass. Backup/restore/remove are separate.
 
 ## Isolation and exact sources
@@ -54,6 +58,33 @@ HA2026.10.2; upgrade begins with2026.10.1 then requests2026.10.2. Both retain
 Python3.14.8 and actual Matter8.1.2. `application-provenance.json` records declared
 public release artifacts, not a claim that each dependency download was hashed.
 Actual installed versions/distributions are recorded in every snapshot.
+
+## Frozen Matter diagnostic entry
+
+This branch's `run-guest.sh` invokes `diagnose_matter`, **not the matrix**.
+Dispatch only `fixture_cases=["current"]` with its reviewed immutable source SHA.
+It performs admission, current-version existing-host seed, unchanged original
+bootstrap and Matter readiness. It creates no onboarding user/token, starts no
+synthetic API peers and executes no selected-original or typed phases. Its summary
+labels this purpose; success only means the prerequisite became ready. The
+normal matrix remains source, with the same new readiness gate before onboarding
+or selected/typed work. A later full matrix needs a separately reviewed source
+entry and explicit authorization; this diagnostic is not a44-phase retry.
+
+Readiness requires the loopback5580 port and a loaded, active/running Matter unit
+with a positive PID and unchanged PID/restart count for20seconds within90seconds.
+It only observes; it never restarts or repairs the service. Strict phase
+before/after comparators are unchanged. The readiness receipt includes fixed
+systemd Result, ExecMainCode, ExecMainStatus and NRestarts fields. Both success and
+failure capture at most200 Matter journal lines (1MiB output ceiling,10seconds)
+and the final1MiB of the owned regular Matter logfile. Unit observations have a
+5second command deadline; owned command groups are killed/reaped on limits.
+Missing/nonregular logs and collection failures remain explicit. The existing
+outer guest100minute/build15minute/job130minute bounds and cleanup remain intact.
+Only this disposable synthetic Matter service's diagnostics are exported: no HA
+journal, auth registry, model/audio/user body or host data is collected. Existing
+synthetic-value redaction is retained. This replaces the prior evidence gap with
+bounded startup evidence; it does not claim a failure cause before execution.
 
 `api.py` uses HA's own interpreter/aiohttp and real onboarding user creation,
 authorization-code exchange and WebSocket long-lived-token command. Credentials

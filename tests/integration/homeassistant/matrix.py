@@ -28,6 +28,7 @@ from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntim
 
 from .fixture import EVIDENCE, VALUES, command, default_ipv4, metadata, write
 from .harness import API_URL, CONFIG, HOME, api, original, snapshot, typed, wait_http
+from .matter_ready import wait_ready
 from .model_server import MODEL
 from .prerequisites import seed
 
@@ -212,6 +213,7 @@ def run() -> None:
     baseline = "2026.10.2" if case == "current" else "2026.10.1"
     seed(baseline)
     original("00-original-existing-host-bootstrap", original_vars(baseline))
+    wait_ready()
     wait_http()
     token = api("seed")["token"]
     assert isinstance(token, str)

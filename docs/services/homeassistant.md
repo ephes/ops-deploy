@@ -791,3 +791,11 @@ Wyoming and OTBR peers exercise actual application APIs without hardware or a
 real model-provider request. Existing-host prerequisites and every fault/reset
 remain explicit; ordinary refresh/reload/canary operations are not called zero
 managed work. See the fixture README for privacy, resource and cleanup boundaries.
+
+The revised owned run passed original bootstrap but exposed an auto-restarting
+Matter prerequisite. A separate frozen diagnostic entry now runs only current
+bootstrap and bounded Matter readiness/startup evidence. It does not execute the
+application matrix. The prepared matrix also requires stable Matter PID/restart
+count and port readiness before selected phases, retaining all strict snapshot
+comparisons. Neither the diagnostic source nor local tests constitute native
+application or inventory qualification.
