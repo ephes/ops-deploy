@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Port the original exact-label Weeknotes system schedule emergency disable.
+  Preserve its conditional disable/bootout shell, root connection and data
+  retention. This controls only the retired LaunchDaemon, never the independent
+  operations supervisor source or any identity/application work.
+
 - Extend explicit Daybook controls with the original Inbox two-lane emergency
   disable: both persistent overrides precede either bootout, and both lanes
   must be proven disabled/unloaded. No application, source, credentials or state
