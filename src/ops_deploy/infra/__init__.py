@@ -28,6 +28,12 @@ from ops_deploy.infra.backup import (
     deploy_usb_replication,
 )
 from ops_deploy.infra.certbot_dns import CertbotDnsConfig, deploy_certbot_dns
+from ops_deploy.infra.certbot_lifecycle import (
+    CertbotDnsBackupConfig,
+    CertbotDnsRestoreConfig,
+    deploy_certbot_dns_backup,
+    deploy_certbot_dns_restore,
+)
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
@@ -74,7 +80,9 @@ from ops_deploy.infra.zfs_storage import (
 __all__ = [
     "BackupRestoreAccessConfig",
     "BackupSourceConfig",
+    "CertbotDnsBackupConfig",
     "CertbotDnsConfig",
+    "CertbotDnsRestoreConfig",
     "DatabaseSpec",
     "DockerInstallConfig",
     "EncryptedVolumeConfig",
@@ -122,6 +130,8 @@ __all__ = [
     "deploy_backup_restore_client",
     "deploy_backup_source",
     "deploy_certbot_dns",
+    "deploy_certbot_dns_backup",
+    "deploy_certbot_dns_restore",
     "deploy_docker_install",
     "deploy_encrypted_volume",
     "deploy_hdparm_tune",

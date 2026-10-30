@@ -1,0 +1,41 @@
+---
+- name: replace_from_archive_top | Preserve live directory
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/main.yml"
+  vars:
+    restore_preserve_path: "{{ restore_archive_root }}/{{ restore_archive_top }}"
+    restore_preserve_empty: true
+
+- name: replace_from_archive_top | Collect pre-restore copy report
+  ansible.builtin.set_fact:
+    restore_archive_reports: "{{ restore_archive_reports + [restore_preserve_report] }}"
+
+# The live directory keeps its own owner and mode, taken from the pre-restore
+# copy: a renamed copy is the old directory, and a copied mount point's copy
+# was verified identical including the top directory's metadata (emptying the
+# mount resets it). A directory that did not exist takes them from the staged
+# directory.
+- name: replace_from_archive_top | Move staged directory contents into place
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ ! -e "$LIVE" ]; then
+      mkdir -m 0700 -- "$LIVE"
+    fi
+    if [ -n "$(ls -A -- "$LIVE")" ]; then
+      echo "live directory is not empty after preservation: $LIVE" >&2
+      exit 1
+    fi
+    if [ -n "$REF" ] && [ -d "$REF" ]; then
+      chown --reference="$REF" -- "$LIVE"
+      chmod --reference="$REF" -- "$LIVE"
+    fi
+    find "$STAGED" -mindepth 1 -maxdepth 1 -exec mv -t "$LIVE" -- {} +
+  args:
+    executable: /bin/bash
+  environment:
+    LIVE: "{{ restore_archive_root }}/{{ restore_archive_top }}"
+    STAGED: "{{ restore_archive_staging.path }}/{{ restore_archive_top }}"
+    REF: >-
+      {{ restore_preserve_report.path if restore_preserve_report.method in ['rename', 'copy']
+         else (restore_archive_staging.path ~ '/' ~ restore_archive_top)
+         if restore_preserve_report.method == 'absent' else '' }}
+  changed_when: true

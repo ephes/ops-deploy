@@ -1,0 +1,34 @@
+---
+# Internal include contract: restore_preserve_path, restore_preserve_empty.
+# Caller must quiesce writers before this include and retain its report.
+- name: Initialize preservation report
+  ansible.builtin.set_fact:
+    restore_preserve_report: {path: null, size_bytes: 0, method: "check-mode"}
+    restore_preserve_result: {}
+
+- name: Preserve current directory before restore
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/../restore_preserve_internal/files/preserve.py
+      {{ restore_preserve_path | quote }}
+      {{ '' if restore_preserve_empty | default(true) | bool else '--keep-live' }}
+    executable: "{{ ansible_facts.python.executable | default('/usr/bin/python3') }}"
+  register: restore_preserve_result
+  changed_when: restore_preserve_result.stdout | trim | length > 0
+  when: not ansible_check_mode
+
+- name: Record retained pre-restore copy
+  ansible.builtin.set_fact:
+    restore_preserve_report: >-
+      {{ restore_preserve_result.stdout_lines | select('match', '^RESTORE_PRESERVED ')
+         | list | last | regex_replace('^RESTORE_PRESERVED ', '') | from_json }}
+  when:
+    - not ansible_check_mode
+    - restore_preserve_result.stdout | trim | length > 0
+
+- name: Report retained pre-restore copy
+  ansible.builtin.debug:
+    msg: "Pre-restore copy: {{ restore_preserve_report }}. Owner prunes copies by hand."
+  when:
+    - not ansible_check_mode
+    - restore_preserve_result.stdout | trim | length > 0

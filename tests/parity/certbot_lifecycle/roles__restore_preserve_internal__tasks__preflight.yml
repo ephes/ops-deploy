@@ -1,0 +1,10 @@
+---
+- name: preflight | Check mounts and preservation space before stopping writers
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/../restore_preserve_internal/files/preserve.py
+      {{ restore_preserve_path | quote }} --preflight
+      {{ '' if restore_preserve_empty | default(true) | bool else '--keep-live' }}
+    executable: "{{ ansible_facts.python.executable | default('/usr/bin/python3') }}"
+  changed_when: false
+  check_mode: false

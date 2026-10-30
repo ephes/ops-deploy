@@ -1,0 +1,65 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read restored certificate through the live symlink
+      ansible.builtin.slurp:
+        src: /etc/letsencrypt/live/example.org/cert.pem
+      register: certbot_molecule_cert
+
+    - name: Stat restored tree
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/letsencrypt
+        - /etc/letsencrypt/live
+        - /etc/letsencrypt/archive
+        - /etc/letsencrypt/renewal
+        - /etc/letsencrypt/accounts
+        - /etc/letsencrypt/dns-credentials.ini
+        - /letsencrypt
+      register: certbot_molecule_stats
+
+    - name: Find pre-restore copies and leftover staging directories
+      ansible.builtin.find:
+        paths: /etc
+        patterns: "letsencrypt.pre-restore-*,.restore-staging-*"
+        file_type: directory
+        hidden: true
+      register: certbot_molecule_siblings
+
+    - name: Read bad-restore evidence
+      ansible.builtin.slurp:
+        src: /tmp/certbot-molecule-bad.json
+      register: certbot_molecule_bad
+
+    - name: Set verify facts
+      ansible.builtin.set_fact:
+        certbot_molecule_copies: "{{ certbot_molecule_siblings.files | map(attribute='path') | select('search', 'pre-restore') | list }}"
+        certbot_molecule_staging: "{{ certbot_molecule_siblings.files | map(attribute='path') | select('search', 'restore-staging') | list }}"
+        certbot_molecule_bad_result: "{{ certbot_molecule_bad.content | b64decode | from_json }}"
+
+    - name: Read the pre-restore certificate
+      ansible.builtin.slurp:
+        src: "{{ certbot_molecule_copies[0] }}/archive/example.org/cert1.pem"
+      register: certbot_molecule_old_cert
+
+    - name: Assert the backup was restored into /etc/letsencrypt
+      ansible.builtin.assert:
+        that:
+          - certbot_molecule_cert.content | b64decode == "backed-up-cert\n"
+          - certbot_molecule_stats.results[:6] | map(attribute='stat.exists') | list is all
+          - certbot_molecule_stats.results[0].stat.mode == "0700"
+          - certbot_molecule_stats.results[5].stat.mode == "0600"
+          - not certbot_molecule_stats.results[6].stat.exists
+          - certbot_molecule_copies | length == 1
+          - certbot_molecule_old_cert.content | b64decode == "changed-after-backup\n"
+          - certbot_molecule_staging | length == 0
+
+    - name: Assert the bad archive failed before any live change
+      ansible.builtin.assert:
+        that:
+          - certbot_molecule_bad_result.failed_task is search('Validate archive members')
+          - certbot_molecule_bad_result.before == certbot_molecule_bad_result.after

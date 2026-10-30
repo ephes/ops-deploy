@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the original Certbot DNS/edge state backup and restore APIs, preserving
+  archive privacy, internal Certbot links, retained pre-restore copies and
+  mount-point preservation. Explicit validation avoids publication; the original
+  renewal command and optional edge Postfix reload remain managed work.
+
 - Add the original Photos offload component: protected root checkout and trust
   attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with
   exact cleanup, GUI-owned Python environment/resources, and exact-label

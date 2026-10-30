@@ -1,0 +1,111 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    certbot_dns_backup_root: /tmp/certbot-backups
+    certbot_dns_backup_fetch_local: false
+    certbot_dns_restore_root: /tmp/certbot-backups
+    certbot_dns_restore_run_dry_renew: false
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Create Certbot directories
+      ansible.builtin.file:
+        path: "/etc/letsencrypt/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: [live/example.org, archive/example.org, renewal, accounts/acme]
+
+    - name: Seed Certbot files
+      ansible.builtin.copy:
+        dest: "/etc/letsencrypt/{{ item.path }}"
+        content: "{{ item.content }}"
+        mode: "0600"
+      loop:
+        - {path: archive/example.org/cert1.pem, content: "backed-up-cert\n"}
+        - {path: renewal/example.org.conf, content: "renewal\n"}
+        - {path: accounts/acme/regr.json, content: "{}\n"}
+        - {path: dns-credentials.ini, content: "dns_token = example\n"}
+
+    - name: Link live certificate like Certbot does
+      ansible.builtin.file:
+        src: ../../archive/example.org/cert1.pem
+        dest: /etc/letsencrypt/live/example.org/cert.pem
+        state: link
+
+  tasks:
+    - name: Back up Certbot state with the real backup role
+      ansible.builtin.include_role:
+        name: certbot_dns_backup
+
+    - name: Change live state after the backup
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/archive/example.org/cert1.pem
+        content: "changed-after-backup\n"
+        mode: "0600"
+
+    - name: Restore the latest backup
+      ansible.builtin.include_role:
+        name: certbot_dns_restore
+      vars:
+        certbot_dns_restore_archive: latest
+
+    - name: Build an archive with a member outside letsencrypt/
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import io, tarfile
+            with tarfile.open("/tmp/bad-certbot.tar.gz", "w:gz") as tar:
+                for name in ("letsencrypt/renewal/x.conf", "letsencrypt/../evil"):
+                    info = tarfile.TarInfo(name)
+                    info.size = 4
+                    tar.addfile(info, io.BytesIO(b"evil"))
+        creates: /tmp/bad-certbot.tar.gz
+
+    - name: Record live state before the bad restore
+      ansible.builtin.find:
+        paths: /etc
+        patterns: "letsencrypt*,.restore-staging-*"
+        file_type: any
+        hidden: true
+      register: certbot_molecule_before_bad
+
+    - name: Try to restore the bad archive
+      block:
+        - name: Restore bad archive
+          ansible.builtin.include_role:
+            name: certbot_dns_restore
+          vars:
+            certbot_dns_restore_archive: /tmp/bad-certbot.tar.gz
+
+        - name: Bad archive must not restore
+          ansible.builtin.fail:
+            msg: The bad archive was restored
+      rescue:
+        - name: Record that the bad archive failed
+          ansible.builtin.set_fact:
+            certbot_molecule_bad_failed: "{{ ansible_failed_task.name }}"
+
+    - name: Record live state after the bad restore
+      ansible.builtin.find:
+        paths: /etc
+        patterns: "letsencrypt*,.restore-staging-*"
+        file_type: any
+        hidden: true
+      register: certbot_molecule_after_bad
+
+    - name: Save bad-restore evidence for verify
+      ansible.builtin.copy:
+        dest: /tmp/certbot-molecule-bad.json
+        content: "{{ {'failed_task': certbot_molecule_bad_failed | default(''),
+                     'before': certbot_molecule_before_bad.files | map(attribute='path') | sort,
+                     'after': certbot_molecule_after_bad.files | map(attribute='path') | sort} | to_json }}"
+        mode: "0600"

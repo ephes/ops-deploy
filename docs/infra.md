@@ -687,3 +687,7 @@ The unchanged retention helper relies on native ZFS hold refusal and can fail
 on a held candidate; it does not silently skip all held snapshots. Corrupt
 anchor JSON refuses before mutation, with the original JSON decoder exception.
 These component results do not constitute a production deployment receipt.
+
+Certbot state [backup and restore](certbot-lifecycle.md) are separate public
+lifecycle APIs; certificate deployment and its existing lineage guards remain
+unchanged.
