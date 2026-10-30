@@ -84,6 +84,7 @@ nav:
       - Nikon archive components: services/daybook_photos_archive_sync.md
       - Daybook launchd operators: services/daybook_controls.md
       - Weeknotes schedule control: services/daybook_weeknotes_controls.md
+      - Weeknotes identity operators: services/daybook_weeknotes_identity.md
       - Voice Memo Inbox components: services/daybook_voice_memo_inbox.md
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md

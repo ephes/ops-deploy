@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the explicit original Weeknotes identity operator rail as managed app
+  work, with exact installed-code/Main/intent admission and original apply
+  confirmation. Preserve no-replace seed and verify-before-root-proof behavior;
+  no source installation, timer activation or actual post/data qualification.
+
 - Port the original exact-label Weeknotes system schedule emergency disable.
   Preserve its conditional disable/bootout shell, root connection and data
   retention. This controls only the retired LaunchDaemon, never the independent
