@@ -404,6 +404,66 @@ def timer_case(owned: OwnedMac, resource: Any, launchd: Any) -> None:
     )
 
 
+def auth_rotation_case(owned: OwnedMac, resource: Any, controls: Any, launchd: Any) -> None:
+    """Only synthetic staged/refreshed auth; real owned launchd state admission."""
+    actor = pwd.getpwnam("runner")
+    cfg = configuration(owned, actor)
+    label = owned.label("auth-rotation")
+    # Original model validated first; substitute only an owned unique label.
+    values = cfg.model_copy(
+        update={
+            "daybook_weeknotes_reconcile_launchd_label": label,
+            "daybook_weeknotes_reconcile_pi_auth_rotate": True,
+        }
+    ).model_dump(mode="json")
+    data = {"config": values}
+    source = Path(values["daybook_weeknotes_reconcile_pi_auth_source"])
+    dest = Path(values["daybook_weeknotes_reconcile_pi_agent_dir"]) / "auth.json"
+    protected = [
+        source,
+        Path(values["daybook_weeknotes_reconcile_runtime_dir"]) / "state.json",
+        Path(values["daybook_weeknotes_reconcile_runtime_dir"]) / ".state.json.lock",
+    ]
+    before = file_state(protected)
+    prior = file_state([dest])
+    controller = launchd.Launchd("system")
+    refuse(
+        lambda: controls.seed_auth(data, controller),
+        "sessions_auth_rotation_requires_quiescence",
+        resource.ResourceError,
+    )
+    assert file_state([dest]) == prior
+    command("/bin/launchctl", "disable", "system/" + label)
+    controls.seed_auth(data, controller)
+    assert dest.read_bytes() == source.read_bytes()  # both fixture-created fake bodies only
+    first_inode = dest.stat().st_ino
+    controls.seed_auth(data, controller)
+    assert dest.read_bytes() == source.read_bytes()
+    assert dest.stat().st_ino != first_inode  # explicit rotate:true copies again, as original
+    resource.put_bytes(
+        {"path": str(dest), "owner": actor.pw_name, "group": "staff", "mode": 0o600},
+        b"UNUSABLE-OWNED-REFRESH-AFTER-ROTATION",
+    )
+    refreshed = file_state([dest])
+    preserve = {"config": {**values, "daybook_weeknotes_reconcile_pi_auth_rotate": False}}
+    with patch.object(controls.os, "read", side_effect=AssertionError("normal repeat must not read auth")):
+        controls.seed_auth(preserve, controller)
+    assert file_state([dest]) == refreshed
+    assert file_state(protected) == before
+    owned.report["auth_rotation"] = {
+        "scope": (
+            "Original installed helper, synthetic auth only; validated config then "
+            "unvalidated owned label substitution."
+        ),
+        "real_enabled_state_refused_without_auth_write": True,
+        "real_disabled_unloaded_rotation_publications": 2,
+        "explicit_repeat_rotate_true_replaces_again": True,
+        "normal_rotate_false_repeat_body_reads": 0,
+        "protected_synthetic_source_state_lock_metadata_preserved": True,
+        "real_credentials_or_application_calls": 0,
+    }
+
+
 def main() -> None:
     owned = OwnedMac("daybook-resources")
     failure: BaseException | None = None
@@ -411,6 +471,7 @@ def main() -> None:
         provenance(owned)
         with installed_helpers() as (resource, controls, launchd):
             filesystem_case(owned, resource, controls)
+            auth_rotation_case(owned, resource, controls, launchd)
             timer_case(owned, resource, launchd)
         owned.report["status"] = "passed"
     except BaseException as error:

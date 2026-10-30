@@ -238,7 +238,7 @@ def invoke(data, run, action):
     return value, action_report(action, value)
 
 
-def execute(data, *, run=None):
+def execute(data, *, run=None, after_verified=None):
     if (os.geteuid() != 0 or type(data["uid"]) is not int or data["uid"] <= 0
             or pwd.getpwnam(data["owner"]).pw_uid != data["uid"]
             or data["action"] not in {"prepare", "dry-run", "apply", "verify", "status"}
@@ -260,6 +260,8 @@ def execute(data, *, run=None):
         if before != body:
             put_bytes({"path": data["proof"], "owner": "root", "group": "wheel", "mode": 0o600}, body)
             proof_written = True
+        if after_verified is not None:
+            after_verified(data, verified)
     return {"schema_version": 1, "action": data["action"], "seed_checked": data["action"] != "status", "proof_written": proof_written, "report": report}
 
 

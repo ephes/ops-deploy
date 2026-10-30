@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add the separate original fresh-apply-bound Weeknotes timer activation rail,
+  preserving retirement/confirmation, exact epoch/proof/artifact admission,
+  disabled/unloaded precondition and no-kickstart enable/bootstrap. Keep private
+  hashes in the target process and report post-enable failures distinctly.
+  Re-qualify the existing identity rail after its callback extension; inert
+  mechanism proof grants no actual application or inventory qualification.
+
 - Add the explicit original Weeknotes identity operator rail as managed app
   work, with exact installed-code/Main/intent admission and original apply
   confirmation. Preserve no-replace seed and verify-before-root-proof behavior;

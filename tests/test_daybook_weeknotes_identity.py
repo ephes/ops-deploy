@@ -363,3 +363,96 @@ def test_apply_and_verify_must_bind_the_same_plan_before_proof(rail: Any) -> Non
     with pytest.raises(rail.host.OperatorError, match="plan_mismatch"):
         rail.host.execute(rail.data, run=mismatched)
     assert not Path(rail.data["proof"]).exists()
+
+
+def test_after_verified_callback_gets_fresh_hash_on_first_and_unchanged_proof_repeat(rail: Any) -> None:
+    rail.host.execute(rail.data, run=rail.run)
+    rail.data.update(action="apply", confirmation=APPLY_PHRASE)
+    calls = []
+
+    def callback(data: Any, verified: Any) -> None:
+        proof = json.loads(Path(data["proof"]).read_text())
+        assert proof["plan_hash"] == verified["plan_hash"]
+        calls.append(verified["plan_hash"])
+
+    first = rail.host.execute(rail.data, run=rail.run, after_verified=callback)
+    repeat = rail.host.execute(rail.data, run=rail.run, after_verified=callback)
+    assert first["proof_written"] is True
+    assert repeat["proof_written"] is False
+    assert calls == ["c" * 64, "c" * 64]
+    rail.faults["verify"] = True
+    with pytest.raises(rail.host.OperatorError):
+        rail.host.execute(rail.data, run=rail.run, after_verified=callback)
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("fault", [None, "verify", "hash"])
+def test_real_identity_and_activation_callback_composition(
+    rail: Any, monkeypatch: pytest.MonkeyPatch, fault: str | None
+) -> None:
+    rail.host.execute(rail.data, run=rail.run)
+    rail.data.update(action="apply", confirmation=APPLY_PHRASE, scheduler_label="com.example.owned.weeknotes")
+    env = Path(rail.data["env_file"])
+    env.write_bytes(b"DAYBOOK_WEEKNOTES_POST_IDENTITY_EPOCH=monday-after-v1\n")
+    Path(rail.data["env_checksum"]).write_text(hashlib.sha256(env.read_bytes()).hexdigest() + "  " + str(env) + "\n")
+    plist = env.parent / "owned.plist"
+    plist.write_bytes(b"OWNED inert plist")
+    plist.chmod(0o644)
+    rail.data["scheduler_plist"] = str(plist)
+    rail.data["activation"] = {
+        "retired": False,
+        "confirmation": "ENABLE monday-after-v1 draft schedule",
+        "reconcile_launcher": rail.data["launcher"],
+        "launchctl_bin": "/bin/launchctl",
+    }
+    original_read = rail.host.read_control
+
+    def read(name: str, uid: int, mode: int, **kwargs: Any) -> Any:
+        return original_read(name, os.getuid() if name == str(plist) and uid == 0 else uid, mode, **kwargs)
+
+    monkeypatch.setattr(rail.host, "read_control", read)
+    monkeypatch.setitem(sys.modules, "ops_weeknotes_identity", rail.host)
+    activation = types.ModuleType("owned_activation_composition")
+    body = (
+        importlib.resources.files("ops_deploy.services.daybook_weeknotes_activation")
+        .joinpath("files/activation_host.py")
+        .read_bytes()
+    )
+    exec(compile(body, "<owned activation composition>", "exec"), activation.__dict__)
+    calls = []
+    state = {"loaded": False, "disabled": True}
+
+    def control(_data: Any, *argv: str) -> Any:
+        calls.append(argv[0])
+        if argv[0] == "print":
+            return types.SimpleNamespace(returncode=0 if state["loaded"] else 113, stdout=b"")
+        if argv[0] == "print-disabled":
+            text = '"' + rail.data["scheduler_label"] + '" => ' + ("true" if state["disabled"] else "false") + "\n"
+            return types.SimpleNamespace(returncode=0, stdout=text.encode())
+        if argv[0] == "enable":
+            state["disabled"] = False
+        if argv[0] == "bootstrap":
+            state["loaded"] = True
+        return types.SimpleNamespace(returncode=0, stdout=b"")
+
+    def run(data: Any, argv: Any) -> Any:
+        result = rail.run(data, argv)
+        if fault == "hash" and argv == [data["launcher"], "verify"]:
+            value = json.loads(result.stdout)
+            value["plan_hash"] = "d" * 64
+            result.stdout = json.dumps(value).encode()
+        return result
+
+    if fault is not None:
+        rail.faults["verify"] = fault == "verify"
+        with pytest.raises(rail.host.OperatorError):
+            activation.execute(rail.data, runner=run, control=control)
+        assert "enable" not in calls
+        assert not Path(rail.data["proof"]).exists()
+        return
+    first = activation.execute(rail.data, runner=run, control=control)
+    assert first["proof_written"] is True
+    state.update(loaded=False, disabled=True)  # the outer API's separately qualified disable
+    repeat = activation.execute(rail.data, runner=run, control=control)
+    assert repeat["proof_written"] is False
+    assert calls.count("enable") == 2

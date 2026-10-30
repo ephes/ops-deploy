@@ -85,6 +85,7 @@ nav:
       - Daybook launchd operators: services/daybook_controls.md
       - Weeknotes schedule control: services/daybook_weeknotes_controls.md
       - Weeknotes identity operators: services/daybook_weeknotes_identity.md
+      - Weeknotes activation: services/daybook_weeknotes_activation.md
       - Voice Memo Inbox components: services/daybook_voice_memo_inbox.md
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md
