@@ -31,6 +31,7 @@ nav:
   - BIND: bind.md
   - Backups before a deploy: backups.md
   - Services:
+      - Daybook work source access: services/daybook_work_source_access.md
       - toy: services/toy.md
       - toyweb: services/toyweb.md
       - nyxmon: services/nyxmon.md

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the original dedicated Daybook work-source access installer with its fixed
+  read-only MinIO policy, private ownership marker and provisioning lock. Preserve
+  disabled, foreign and drifted identity refusals; retain genuine managed
+  verification on repeat and never provision during dry planning.
+
 - Preserve existing disabled Attention production or synthetic configuration
   bytes and metadata instead of overwriting them with the fresh-install seed.
   Validate private configuration on the target, seed missing files without
