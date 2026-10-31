@@ -31,6 +31,7 @@ nav:
   - BIND: bind.md
   - Backups before a deploy: backups.md
   - Services:
+      - Daybook attention reader: services/daybook_voice_memo_attention_reader.md
       - Daybook work source access: services/daybook_work_source_access.md
       - toy: services/toy.md
       - toyweb: services/toyweb.md

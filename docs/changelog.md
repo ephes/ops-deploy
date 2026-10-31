@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add the original dedicated voice-memo prefix reader installer, preserving exact
+  ownership, prefix policy, disabled/foreign/drift refusals and managed verification
+  repeats. IAM installation remains separate from application retirement and never
+  activates a reviewer or silently enables an existing disabled identity.
+
 - Add the original dedicated Daybook work-source access installer with its fixed
   read-only MinIO policy, private ownership marker and provisioning lock. Preserve
   disabled, foreign and drifted identity refusals; retain genuine managed
