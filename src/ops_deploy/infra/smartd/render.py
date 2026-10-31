@@ -22,6 +22,10 @@ def render(cfg: SmartdConfig) -> str:
             values["smartd_short_test_schedule"] = row.short_schedule
         if row.long_schedule is not None:
             values["smartd_long_test_schedule"] = row.long_schedule
+        for key in ("temp_diff", "temp_info", "temp_crit"):
+            value = getattr(row, key)
+            if value is not None:
+                values["smartd_" + key] = value
         devices.append(values)
     values = {"smartd_" + key: value for key, value in cfg.model_dump().items()}
     values["smartd_devices"] = devices

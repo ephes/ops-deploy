@@ -15,6 +15,10 @@ class SmartdDevice(RoleConfig):
     no_spinup: StrictBool = False
     short_schedule: str | None = None
     long_schedule: str | None = None
+    # Per-device smartd -W DIFF,INFO,CRIT; None keeps SmartdConfig's temp_*.
+    temp_diff: Annotated[StrictInt, Field(ge=0)] | None = None
+    temp_info: Annotated[StrictInt, Field(ge=0)] | None = None
+    temp_crit: Annotated[StrictInt, Field(ge=0)] | None = None
 
     @field_validator("name", "type")
     @classmethod

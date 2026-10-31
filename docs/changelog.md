@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `infra.smartd`: per-device `temp_diff`/`temp_info`/`temp_crit` on
+  `SmartdDevice` override the role-wide smartd `-W` thresholds for that device
+  (port of the ops-library smartd role's per-device `smartd_temp_*` keys; the
+  vendored template and parity digests follow it). Devices without overrides
+  render the same `-W` line; the rendered file gains a two-line header comment.
+
 - Add the original shared Daybook notifier endpoint installer with bounded private
   stdin, fixed forced-command authorization, compile-only source validation and
   additive administrator-key preservation. Existing semantically exact config
