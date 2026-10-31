@@ -51,6 +51,39 @@
   failed_when: false
   changed_when: false
 
+# The exact public patch is selected only for the official qualified archive.
+# This read-only check also runs in check mode without requiring a new archive.
+- name: "Inspect Custom Conversation compatibility patch"
+  ansible.builtin.command:
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path + '/files/custom_conversation_patch.py') }}"
+      - check
+      - --archive
+      - "{{ _ha_cc_tarball_path }}"
+      - --component
+      - "{{ _ha_cc_component_dir }}"
+      - --stamp
+      - "{{ _ha_cc_stamp_path }}"
+      - --version
+      - "{{ homeassistant_custom_conversation_version }}"
+      - --checksum
+      - "{{ homeassistant_custom_conversation_sha256 }}"
+  register: _ha_cc_patch_check
+  changed_when: false
+  check_mode: false
+  when:
+    - homeassistant_custom_conversation_version == '1.7.0'
+    - homeassistant_custom_conversation_sha256 == 'a81433682ab0da8439dddb3eb549ca57c4e5b20d64b6797b2568b524903a0d52'
+
+- name: "Set Custom Conversation desired version and patch identity"
+  ansible.builtin.set_fact:
+    _ha_cc_expected_stamp: >-
+      {{ (_ha_cc_patch_check.stdout | from_json).expected_stamp
+         if _ha_cc_patch_check.stdout is defined
+         else (homeassistant_custom_conversation_version ~ ' ' ~ homeassistant_custom_conversation_sha256) }}
+
 # The stamp records version AND sha256: a checksum (or artifact) change at an
 # unchanged version string must still trigger a reinstall, otherwise the
 # deployed component silently diverges from the configured pinned artifact.
@@ -61,13 +94,34 @@
         (_ha_cc_stamp.content is not defined)
         or (
           (_ha_cc_stamp.content | b64decode | trim)
-          != (homeassistant_custom_conversation_version ~ ' ' ~ homeassistant_custom_conversation_sha256)
+          != _ha_cc_expected_stamp
         )
+        or ((_ha_cc_patch_check.stdout | default('{}') | from_json).needs_install | default(false))
       }}
 
 - name: "Install Custom Conversation component from the pinned tarball"
   when: _ha_cc_component_needs_install | bool
   block:
+    - name: "Verify Custom Conversation patch candidate before replacement"
+      ansible.builtin.command:
+        argv:
+          - "{{ homeassistant_virtualenv_path }}/bin/python"
+          - -c
+          - "{{ lookup('ansible.builtin.file', role_path + '/files/custom_conversation_patch.py') }}"
+          - prepare
+          - --archive
+          - "{{ _ha_cc_tarball_path }}"
+          - --component
+          - "{{ _ha_cc_component_dir }}"
+          - --stamp
+          - "{{ _ha_cc_stamp_path }}"
+          - --version
+          - "{{ homeassistant_custom_conversation_version }}"
+          - --checksum
+          - "{{ homeassistant_custom_conversation_sha256 }}"
+      changed_when: false
+      when: _ha_cc_patch_check.stdout is defined
+
     - name: "Remove any previously installed Custom Conversation component"
       ansible.builtin.file:
         path: "{{ _ha_cc_component_dir }}"
@@ -85,10 +139,32 @@
           - "custom-conversation-{{ homeassistant_custom_conversation_version }}/custom_components/custom_conversation"
       notify: restart homeassistant
 
+    - name: "Apply qualified Custom Conversation ignored-intent compatibility patch"
+      ansible.builtin.command:
+        argv:
+          - "{{ homeassistant_virtualenv_path }}/bin/python"
+          - -c
+          - "{{ lookup('ansible.builtin.file', role_path + '/files/custom_conversation_patch.py') }}"
+          - apply
+          - --archive
+          - "{{ _ha_cc_tarball_path }}"
+          - --component
+          - "{{ _ha_cc_component_dir }}"
+          - --stamp
+          - "{{ _ha_cc_stamp_path }}"
+          - --version
+          - "{{ homeassistant_custom_conversation_version }}"
+          - --checksum
+          - "{{ homeassistant_custom_conversation_sha256 }}"
+      register: _ha_cc_patch_apply
+      changed_when: (_ha_cc_patch_apply.stdout | from_json).changed
+      when: _ha_cc_patch_check.stdout is defined
+      notify: restart homeassistant
+
     - name: "Record installed Custom Conversation component version"
       ansible.builtin.copy:
         dest: "{{ _ha_cc_stamp_path }}"
-        content: "{{ homeassistant_custom_conversation_version }} {{ homeassistant_custom_conversation_sha256 }}\n"
+        content: "{{ _ha_cc_expected_stamp }}\n"
         owner: "{{ homeassistant_user }}"
         group: "{{ homeassistant_group }}"
         mode: "0644"

@@ -1,7 +1,11 @@
 {
-  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
-  "task_sha256": "fc3507e5121b715ac028e1c6cca875af1ca6104cdec99fbb189571c9680baeb3",
+  "library_head": "0cb32a609d07e342502fce115cd2943b1a412ba7",
+  "task_sha256": "d42460c38dc0b4e82f687a6109b0c6997a15d59f6fa0a03fa60202c0254126f2",
   "source": "roles/homeassistant_deploy/tasks/custom_conversation_component.yml",
   "get_url_oracle": "Ansible14.5 actual original single task owned current/metadata/mismatch/badSHA cases; source and outcomes retained in private campaign evidence",
-  "extraction_oracle": "Actual owned Ubuntu24 GNU tar exact TgzArchive.unarchive argv; no full-role/native-HA claim"
+  "extraction_oracle": "Actual owned Ubuntu24 GNU tar exact TgzArchive.unarchive argv; no full-role/native-HA claim",
+  "patch_source": "roles/homeassistant_deploy/files/custom_conversation_patch.py",
+  "patch_file": "patch.py.txt",
+  "patch_sha256": "c53d29e173cb4fbbf1e58f8b7ae04229d6992d2253c663fdc3bdc69e1da5700b",
+  "patch_oracle": "Actual official1.7 archive, actual HA2026.10.2 sparse form schema and original Ansible2.21.5 selected tasks; first/repeat/drift/candidate-refusal controls; full native separate"
 }

@@ -9,8 +9,9 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from importlib.resources import files as resources
 from io import StringIO
+from typing import Any
 
-from pydantic import Field, SecretStr, StrictInt
+from pydantic import Field, SecretStr, StrictInt, model_validator
 from pyinfra import host, state
 from pyinfra.api import OperationError, StringCommand, operation
 from pyinfra.api.operation import OperationMeta
@@ -19,15 +20,25 @@ from pyinfra.operations import files
 from ops_deploy.base._common import RoleConfig, Sha256
 from ops_deploy.helpers.probes import StdinLines
 
+from .custom_conversation_patch import expected_stamp
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
 
 
 class CustomComponentConfig(RoleConfig):
-    version: str = Field(default="1.6.1", min_length=1)
-    sha256: Sha256 = "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"
+    version: str = Field(default="1.7.0", min_length=1)
+    sha256: Sha256 = "a81433682ab0da8439dddb3eb549ca57c4e5b20d64b6797b2568b524903a0d52"
     download_url: SecretStr | None = None
     command_timeout: StrictInt = Field(default=900, ge=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def known_version_checksum(cls, value: Any) -> Any:
+        # An explicit checksum always wins. Preserve the qualified old
+        # version-only override without guessing checksums for custom releases.
+        if isinstance(value, dict) and "sha256" not in value and value.get("version") == "1.6.1":
+            return {**value, "sha256": "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"}
+        return value
 
     def url(self) -> str:
         if self.download_url is not None:
@@ -70,7 +81,14 @@ def component_payload(cfg: HomeAssistantRuntimeConfig, component: CustomComponen
 def component_command(cfg: HomeAssistantRuntimeConfig) -> str:
     source = resources("ops_deploy.services.homeassistant").joinpath("files/custom_component.py").read_bytes()
     encoded = base64.b64encode(source).decode()
-    launcher = f"import base64;exec(compile(base64.b64decode({encoded!r}),'<ha-cc-component>','exec'))"
+    patch_source = resources("ops_deploy.services.homeassistant").joinpath("custom_conversation_patch.py").read_bytes()
+    patch_encoded = base64.b64encode(patch_source).decode()
+    launcher = (
+        "import base64,sys,types;m=types.ModuleType('ha_cc_patch');"
+        f"exec(compile(base64.b64decode({patch_encoded!r}),'<ha-cc-patch>','exec'),m.__dict__);"
+        "sys.modules['ha_cc_patch']=m;"
+        f"exec(compile(base64.b64decode({encoded!r}),'<ha-cc-component>','exec'))"
+    )
     return shlex.join([cfg.security.system_python, "-I", "-B", "-c", launcher])
 
 
@@ -172,7 +190,7 @@ def install_custom_component(
     )
     stamp = files.put(
         name="Record Home Assistant Custom Conversation version and checksum",
-        src=StringIO(component.version + " " + component.sha256 + "\n"),
+        src=StringIO(expected_stamp(component.version, component.sha256) + "\n"),
         dest=cfg.config_path + "/custom_components/custom_conversation/.ansible-cc-version",
         user=cfg.user,
         group=cfg.group,

@@ -165,9 +165,34 @@ class HomeAssistantDeployConfig(RoleConfig):
                 else {**api, "default_ipv4": ingress_ip}
             )
         custom = result.get("custom", {})
-        version = custom.version if isinstance(custom, CustomConversationConfig) else custom.get("version", "1.6.1")
-        if "custom_component" not in result:
-            result["custom_component"] = {"version": version}
+        component = result.get("custom_component", {})
+        custom_fields = custom.model_fields_set if isinstance(custom, CustomConversationConfig) else custom
+        component_fields = component.model_fields_set if isinstance(component, CustomComponentConfig) else component
+        custom_version = custom.version if isinstance(custom, CustomConversationConfig) else custom.get("version")
+        component_version = (
+            component.version if isinstance(component, CustomComponentConfig) else component.get("version")
+        )
+        version = (
+            custom_version
+            if "version" in custom_fields
+            else component_version
+            if "version" in component_fields
+            else "1.7.0"
+        )
+        # Preserve version-only overrides through both original coupled inputs.
+        # Explicit versions/checksums remain authoritative, including custom pairs.
+        if "version" not in custom_fields:
+            result["custom"] = (
+                custom.model_copy(update={"version": version})
+                if isinstance(custom, CustomConversationConfig)
+                else {**custom, "version": version}
+            )
+        if "version" not in component_fields:
+            result["custom_component"] = (
+                CustomComponentConfig.model_validate({**component.model_dump(exclude_unset=True), "version": version})
+                if isinstance(component, CustomComponentConfig)
+                else {**component, "version": version}
+            )
         return result
 
     def areas(self) -> list[dict[str, Any]]:

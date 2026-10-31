@@ -38,7 +38,7 @@ CONF_INSTRUCTIONS_PROMPT = "instructions_prompt"
 CONF_LANGFUSE_SECTION = "langfuse"
 CONF_ENABLE_LANGFUSE = "enable_langfuse"
 
-# Mirrors custom-conversation v1.6.1 const.DEFAULT_INSTRUCTIONS_PROMPT.
+# Mirrors custom-conversation v1.6.1/v1.7.0 const.DEFAULT_INSTRUCTIONS_PROMPT.
 # The component's options flow rewrites an empty instructions_prompt
 # back to this default (config_flow.async_step_init) and the prompt
 # manager falls back to it when the key is absent. Embedding the exact
@@ -52,14 +52,14 @@ DEFAULT_INSTRUCTIONS_PROMPT = (
     "Answer questions about the world truthfully.\n"
     "Answer in plain text. Keep it simple and to the point.\n"
 )
-# The constant above is verified against exactly this component
-# version. Empty desired instructions ("restore the component
+# The constant above is verified against exactly these component
+# versions. Empty desired instructions ("restore the component
 # default") with any OTHER pinned version fails fast in main()
 # instead of comparing against a possibly-stale constant, which
 # would re-apply options and report changed on every run.
 # Format matches homeassistant_custom_conversation_version (bare
 # semver, no leading "v" — the tag URL template adds nothing).
-DEFAULT_PROMPT_VERIFIED_VERSION = "1.6.1"
+DEFAULT_PROMPT_VERIFIED_VERSIONS = ("1.6.1", "1.7.0")
 
 # The component validates credentials by issuing GET <base_url>/models
 # (providers.LiteLLMProvider.get_supported_models). A non-200 response
@@ -245,14 +245,17 @@ async def set_options(session, entry_id, current_options):
     agents = current_options.get(CONF_AGENTS_SECTION) or {}
     langfuse = current_options.get(CONF_LANGFUSE_SECTION) or {}
     ignored = current_options.get(CONF_IGNORED_INTENTS_SECTION) or {}
-    # The options form schema requires ignored_intents to be a
-    # LIST. An empty list is the correct "no stored value"
-    # submission: the component's own handler replaces a falsy
-    # list with its canonical default (llm.AssistAPI.IGNORE_INTENTS),
-    # so we never hardcode that HA-version-coupled default here.
+    # Preserve operator lists, including an explicit empty list. Only
+    # 1.7.0 distinguishes absent from empty: its real form schema supplies
+    # the component default for an empty section. Older/custom versions
+    # keep the original empty-list submission and component-side behavior.
     ignored_list = ignored.get(CONF_IGNORED_INTENTS)
-    if not isinstance(ignored_list, list):
-        ignored_list = []
+    ignored_section = (
+        {} if COMPONENT_VERSION == "1.7.0"
+        else {CONF_IGNORED_INTENTS: []}
+    )
+    if isinstance(ignored_list, list):
+        ignored_section = {CONF_IGNORED_INTENTS: ignored_list}
     status, data = await rest(
         session,
         "POST",
@@ -269,7 +272,7 @@ async def set_options(session, entry_id, current_options):
             CONF_ENABLE_HASS_AGENT: agents.get(CONF_ENABLE_HASS_AGENT, True),
             CONF_ENABLE_LLM_AGENT: agents.get(CONF_ENABLE_LLM_AGENT, True),
         },
-        CONF_IGNORED_INTENTS_SECTION: {CONF_IGNORED_INTENTS: ignored_list},
+        CONF_IGNORED_INTENTS_SECTION: ignored_section,
         CONF_CUSTOM_PROMPTS_SECTION: {CONF_INSTRUCTIONS_PROMPT: INSTRUCTIONS},
         CONF_LANGFUSE_SECTION: {
             CONF_ENABLE_LANGFUSE: langfuse.get(CONF_ENABLE_LANGFUSE, False),
@@ -429,10 +432,10 @@ async def main():
     # Original outer task rejects duplicates even when disabling.
     if len(current) > 1:
         raise ProvisionError("multiple custom_conversation entries")
-    if ENABLED and not INSTRUCTIONS and COMPONENT_VERSION != DEFAULT_PROMPT_VERIFIED_VERSION:
+    if ENABLED and not INSTRUCTIONS and COMPONENT_VERSION not in DEFAULT_PROMPT_VERIFIED_VERSIONS:
         raise ProvisionError(
             "empty instructions ('restore component default') are only "
-            f"supported with pinned component {DEFAULT_PROMPT_VERIFIED_VERSION}; "
+            f"supported with pinned component {', '.join(DEFAULT_PROMPT_VERIFIED_VERSIONS)}; "
             "the requested version differs or is unset. Verify the new version's "
             "DEFAULT_INSTRUCTIONS_PROMPT and update the helper constant, or "
             "set explicit instructions."

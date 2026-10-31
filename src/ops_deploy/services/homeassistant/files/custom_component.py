@@ -21,6 +21,8 @@ import tempfile
 import urllib.parse
 import urllib.request
 
+from ha_cc_patch import apply as apply_patch, expected_stamp, needs_patch, prepare
+
 
 def checksum(path):
     try:
@@ -137,10 +139,15 @@ def needs_install(payload):
             actual = handle.read().strip()
     except (OSError, UnicodeError):
         return True
-    return actual != payload["version"] + " " + payload["sha256"]
+    return actual != expected_stamp(payload["version"], payload["sha256"]) or needs_patch(
+        payload["component"], payload["version"], payload["sha256"]
+    )
 
 
 def extract(payload, report):
+    # Verify the known candidate before replacing any installed tree. Installed
+    # patch drift itself selects reconciliation, never a new admission refusal.
+    desired_patch = prepare(payload["archive"], payload["version"], payload["sha256"])
     component = payload["component"]
     report["effects_started"] = True
     if os.path.islink(component) or (os.path.lexists(component) and not os.path.isdir(component)):
@@ -190,6 +197,7 @@ def extract(payload, report):
                 folders.append(folder)
     for folder in folders:
         ownership(os.path.join(payload["parent"], folder), uid, gid)
+    apply_patch(component, desired_patch)
     report["changed"] = True
 
 

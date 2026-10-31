@@ -9,7 +9,6 @@
     "model_body",
     "create_entry",
     "reconfigure_entry",
-    "set_options",
     "data_drift",
     "options_drift",
     "canary"
@@ -20,7 +19,8 @@
     "ws_entities",
     "resolve_entity",
     "finish",
-    "main"
+    "main",
+    "set_options"
   ],
-  "scope": "Protocol preparation; protected stdin replaces task environment, RAM-only report replaces result file, upstream details sanitized, mutation attempts counted. Not full role/native qualification."
+  "scope": "Protocol preparation; protected stdin replaces task environment, RAM-only report replaces result file, upstream details sanitized, mutation attempts counted. Not full role/native qualification. Qualified1.7.0 options repair changes only missing ignored-list submission;1.6.1/custom payload parity retains captured original control."
 }

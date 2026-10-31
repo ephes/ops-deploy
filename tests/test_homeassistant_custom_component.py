@@ -13,16 +13,19 @@ import os
 import pwd
 import stat
 import subprocess
+import sys
 import tarfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from pydantic import SecretStr
 
+from ops_deploy.services.homeassistant import custom_conversation_patch
 from ops_deploy.services.homeassistant.custom_component import CustomComponentConfig, component_payload
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 
@@ -32,7 +35,8 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC is not None
 assert SPEC.loader is not None
 helper = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(helper)
+with patch.dict(sys.modules, {"ha_cc_patch": custom_conversation_patch}):
+    SPEC.loader.exec_module(helper)
 
 
 def parameters(tmp_path: Path) -> dict[str, Any]:
@@ -254,8 +258,8 @@ def test_failed_extract_retains_actual_partial_removal(tmp_path: Path) -> None:
 
 def test_controller_default_and_custom_source_preserved() -> None:
     default = CustomComponentConfig()
-    assert default.version == "1.6.1"
-    assert default.sha256 == "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"
+    assert default.version == "1.7.0"
+    assert default.sha256 == "a81433682ab0da8439dddb3eb549ca57c4e5b20d64b6797b2568b524903a0d52"
     value = json.loads(component_payload(HomeAssistantRuntimeConfig(), default, "check-install").get_secret_value())
     assert value["stamp"].endswith("/custom_components/custom_conversation/.ansible-cc-version")
     custom = CustomComponentConfig(download_url=SecretStr("https://owned.invalid/custom?token=synthetic"))
@@ -288,7 +292,7 @@ def test_actual_localconnector_archive_plan_and_repeat(tmp_path: Path, diff: boo
     cfg = cfg.model_copy(
         update={"site_path": str(site), "security": cfg.security.model_copy(update={"system_python": sys.executable})}
     )
-    destination = site / "downloads/custom-conversation-1.6.1.tar.gz"
+    destination = site / f"downloads/custom-conversation-{component.version}.tar.gz"
     for number in (1, 2):
         state = State(Inventory(([("@local", {})], {})), Config(DIFF=diff))
         try:
@@ -366,6 +370,19 @@ def test_original_task_source_binding() -> None:
     root = Path(__file__).parent / "parity/homeassistant/custom-component"
     source = json.loads((root / "source.json").read_text())
     assert hashlib.sha256((root / "component.yml").read_bytes()).hexdigest() == source["task_sha256"]
+    captured_patch = (root / source["patch_file"]).read_bytes()
+    assert hashlib.sha256(captured_patch).hexdigest() == source["patch_sha256"]
+    actual_patch = files("ops_deploy.services.homeassistant").joinpath("custom_conversation_patch.py").read_bytes()
+    assert actual_patch == captured_patch
+
+
+@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="paired original collection not configured")
+def test_original_component_and_patch_capture_match_paired_source() -> None:
+    root = Path(__file__).parent / "parity/homeassistant/custom-component"
+    source = json.loads((root / "source.json").read_text())
+    library = Path(os.environ["OPS_LIBRARY_PATH"])
+    assert (root / "component.yml").read_bytes() == (library / source["source"]).read_bytes()
+    assert (root / source["patch_file"]).read_bytes() == (library / source["patch_source"]).read_bytes()
 
 
 @pytest.mark.skipif(
@@ -473,3 +490,72 @@ def test_archive_symlink_metadata_preserves_unrelated_target(tmp_path: Path) -> 
     assert repeat["success"] is True
     assert repeat["changed"] is False
     assert repeat["effects_started"] is False
+
+
+def test_qualified_old_version_only_and_explicit_checksum_overrides() -> None:
+    from ops_deploy.services.homeassistant import HomeAssistantDeployConfig
+
+    old = "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"
+    assert CustomComponentConfig(version="1.6.1").sha256 == old
+    for version in ("1.6.1", "1.7.0", "owned-custom"):
+        component = CustomComponentConfig(version=version, sha256="a" * 64)
+        assert component.sha256 == "a" * 64
+        assert component.url().endswith("/" + version + ".tar.gz")
+    for version in ("1.6.1", "1.7.0"):
+        cfg = HomeAssistantDeployConfig(custom={"version": version})
+        assert cfg.custom.version == cfg.custom_component.version == version
+        assert cfg.custom_component.sha256 == CustomComponentConfig(version=version).sha256
+
+
+@pytest.mark.parametrize("object_inputs", [False, True])
+def test_missing_component_or_helper_version_follows_explicit_old_pin(object_inputs: bool) -> None:
+    from ops_deploy.services.homeassistant import HomeAssistantDeployConfig
+    from ops_deploy.services.homeassistant.custom_conversation import CustomConversationConfig
+
+    cases: list[dict[str, Any]] = [
+        {"custom_component": {"version": "1.6.1"}},
+        {"custom": {"version": "1.6.1"}},
+        {"custom": {"version": "1.6.1"}, "custom_component": {"sha256": "a" * 64}},
+        {"custom": {"provider": "owned"}, "custom_component": {"version": "1.6.1", "sha256": "a" * 64}},
+    ]
+    for values in cases:
+        explicit_checksum = "sha256" in values.get("custom_component", {})
+        if object_inputs:
+            if "custom" in values:
+                values["custom"] = CustomConversationConfig(**values["custom"])
+            if "custom_component" in values:
+                values["custom_component"] = CustomComponentConfig(**values["custom_component"])
+        cfg = HomeAssistantDeployConfig(**values)
+        assert cfg.custom.version == cfg.custom_component.version == "1.6.1"
+        assert cfg.custom_component.sha256 == (
+            "a" * 64 if explicit_checksum else CustomComponentConfig(version="1.6.1").sha256
+        )
+
+
+def test_selected_patch_corrupt_candidate_refuses_before_managed_removal(tmp_path: Path) -> None:
+    data = parameters(tmp_path)
+    data.update(version=custom_conversation_patch.VERSION, sha256=custom_conversation_patch.ARCHIVE_SHA256)
+    root = Path(data["component"])
+    root.mkdir()
+    source = root / "config_flow.py"
+    source.write_bytes(b"owned existing installed drift")
+    Path(data["stamp"]).write_text(custom_conversation_patch.expected_stamp(data["version"], data["sha256"]))
+    before = {p.name: (p.read_bytes(), p.stat().st_ino, p.stat().st_mtime_ns) for p in root.iterdir()}
+    # The complete production host helper must notice file drift despite a current stamp.
+    check = helper.run(data)
+    assert check["success"] is True
+    assert check["changed"] is True
+    assert check["effects_started"] is False
+    Path(data["archive"]).write_bytes(b"owned corrupt candidate")
+    data["action"] = "extract"
+    result = helper.run(data)
+    assert result == {
+        "success": False,
+        "error": "ValueError",
+        "changed": False,
+        "effects_started": False,
+        "archive_replaced": False,
+        "component_removed": False,
+        "extracted": False,
+    }
+    assert before == {p.name: (p.read_bytes(), p.stat().st_ino, p.stat().st_mtime_ns) for p in root.iterdir()}

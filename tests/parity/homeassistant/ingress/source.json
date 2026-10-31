@@ -1,5 +1,5 @@
 {
-  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "library_head": "0cb32a609d07e342502fce115cd2943b1a412ba7",
   "files": {
     "tasks/traefik.yml": {
       "fixture": "tasks.yml",
@@ -15,7 +15,7 @@
     },
     "defaults/main.yml": {
       "fixture": "defaults.yml",
-      "sha256": "9abb91998726048b438e0660ac2f00b6a7fdd8dd58b9e35d2345cbc84163e42c"
+      "sha256": "83db819513a3c4d366eb1d33626fc5c128b7be6f2056d3a0125c596ce436e5e2"
     }
   }
 }

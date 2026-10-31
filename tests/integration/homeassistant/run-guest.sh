@@ -28,7 +28,7 @@ uv pip install --python /opt/homeassistant-ansible/bin/python ansible==14.5.0 an
 install -d -m 0700 /opt/homeassistant-fixture
 install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
-git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach b43028a9483bd23dfaef9bd41123fbaa217c2e19
-[[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == b43028a9483bd23dfaef9bd41123fbaa217c2e19 ]]
+git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach 0cb32a609d07e342502fce115cd2943b1a412ba7
+[[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == 0cb32a609d07e342502fce115cd2943b1a412ba7 ]]
 # Full current+upgrade matrix after explicit owned existing-host HTTP confirmation.
 .venv/bin/python -m tests.integration.homeassistant.harness
