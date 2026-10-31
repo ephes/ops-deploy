@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from io import StringIO
 from typing import Annotated
 
@@ -12,7 +13,9 @@ from pyinfra.operations import files
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig
 
+from .configuration_deploy import TaskRenderer, protected_template, render_task
 from .render import templates
+from .runtime_config import HomeAssistantRuntimeConfig
 
 
 class HomeAssistantIngressConfig(RoleConfig):
@@ -43,6 +46,8 @@ def write_ingress(
     cfg: HomeAssistantIngressConfig,
     *,
     rendered: SecretStr | Callable[[], SecretStr] | None = None,
+    task_renderer: TaskRenderer | None = None,
+    runtime: HomeAssistantRuntimeConfig | None = None,
 ) -> OperationMeta | None:
     """Original directory/file modes and only the template's notification.
 
@@ -60,6 +65,15 @@ def write_ingress(
         group="root",
         mode="0755",
     )
+    if task_renderer is not None:
+        if runtime is None:
+            raise ValueError("Original ingress renderer requires runtime context")
+        return protected_template(
+            runtime,
+            label="Write Home Assistant Traefik route",
+            path=cfg.dynamic_dir.rstrip("/") + "/homeassistant.yml",
+            content=partial(render_task, task_renderer, "ingress"),
+        )
     body = render_ingress(cfg) if rendered is None else rendered() if callable(rendered) else rendered
     return files.put(
         name="Write Home Assistant Traefik route",

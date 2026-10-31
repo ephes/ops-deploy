@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, SecretStr, StrictStr
 from pyinfra import host, state
-from pyinfra.api import OperationError, StringCommand, operation
+from pyinfra.api import FunctionCommand, Host, OperationError, State, StringCommand, operation
 from pyinfra.api.operation import OperationMeta
 
 from ops_deploy.base._common import AbsolutePath
@@ -36,6 +36,14 @@ from .configuration_render import (
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import _present
 from .transport import run_protected_command
+
+TaskRenderer = Callable[[str, str | None, bool], SecretStr]
+
+
+def render_task(renderer: TaskRenderer, kind: str, item: str | None = None) -> SecretStr:
+    """Pass the actual SDK stage to the selected original task renderer."""
+    return renderer(kind, item, bool(state.is_executing))
+
 
 INCLUDES = (
     "automations.yaml",
@@ -148,7 +156,8 @@ def _configuration_file(
     require_existing: bool,
     predecessors: tuple[OperationMeta, ...],
     content: Callable[[], SecretStr] | None = None,
-) -> Generator[StringCommand, None, None]:
+    protected_failure: bool = False,
+) -> Generator[StringCommand | FunctionCommand, None, None]:
     if initial is not None:
         exists = initial.exists.get(filename)
         if exists is None:
@@ -159,7 +168,13 @@ def _configuration_file(
         # Original template lookup follows the item's when/existence guard.
         # An existing skipped include need not have any controller source.
         payload = json.loads(protected.get_secret_value())
-        payload["content"] = content().get_secret_value()
+        try:
+            payload["content"] = content().get_secret_value()
+        except Exception:
+            if not protected_failure:
+                raise
+            yield FunctionCommand(_context_failure, (), {})
+            return
         protected = SecretStr(json.dumps(payload))
     if not state.is_executing and (deferred or any(item.will_change for item in predecessors)):
         # Actual execution regenerates this operation and inspects after the
@@ -180,6 +195,64 @@ def _include_content(
     return render_include(filename) if renderer is None else renderer(filename)
 
 
+def _context_failure(_state: State, _host: Host) -> None:
+    raise OperationError("Home Assistant original task context failed")
+
+
+@operation()
+def _capture_context(stage: str, capture: Callable[[str, bool], None]) -> Generator[FunctionCommand, None, None]:
+    try:
+        capture(stage, state.is_executing)
+    except Exception:
+        # Actual SDK failure completion/retry accounting, without an escaped
+        # generator exception carrying controller variables or target results.
+        yield FunctionCommand(_context_failure, (), {})
+
+
+def capture_context(stage: str, capture: Callable[[str, bool], None] | None) -> None:
+    if capture is not None:
+        mark_read_only(_capture_context(name="Capture original Home Assistant " + stage, stage=stage, capture=capture))
+
+
+def protected_template(
+    cfg: HomeAssistantRuntimeConfig,
+    *,
+    label: str,
+    path: str,
+    content: Callable[[], SecretStr],
+    user: str = "root",
+    group: str = "root",
+    mode: str = "0644",
+    backup: bool = False,
+) -> OperationMeta:
+    """Selected original template through the existing protected file operation."""
+    return _configuration_file(
+        name=label,
+        cfg=cfg,
+        protected=SecretStr(
+            json.dumps(
+                {
+                    "kind": "template",
+                    "action": "apply",
+                    "path": path,
+                    "user": user,
+                    "group": group,
+                    "mode": mode,
+                    "backup": backup,
+                }
+            )
+        ),
+        deferred=False,
+        initial=None,
+        filename=path,
+        skip_existing=False,
+        require_existing=False,
+        predecessors=(),
+        content=content,
+        protected_failure=True,
+    )
+
+
 def configure_files(
     cfg: HomeAssistantRuntimeConfig,
     policy: ConfigurationPolicy,
@@ -190,6 +263,8 @@ def configure_files(
     include_files: tuple[str, ...] = INCLUDES,
     include_rendered: Mapping[str, SecretStr] | None = None,
     include_renderer: Callable[[str], SecretStr] | None = None,
+    task_renderer: TaskRenderer | None = None,
+    task_capture: Callable[[str, bool], None] | None = None,
     deferred: bool = False,
 ) -> ConfigurationChanges:
     """Compose stock or explicitly rendered configuration after account/layout creation.
@@ -234,9 +309,13 @@ def configure_files(
             require_existing=require_existing,
             predecessors=predecessors,
             content=content,
+            protected_failure=task_renderer is not None,
         )
 
-    if policy.manage_secrets:
+    capture_context("unifi", task_capture)
+    if policy.manage_secrets and task_renderer is not None:
+        task("secrets.yaml", "template", {}, content=partial(render_task, task_renderer, "secrets"))
+    elif policy.manage_secrets:
         prefix, suffix = render_secret_parts(examples or ConfigurationSecretExamples())
         task(
             "secrets.yaml",
@@ -247,6 +326,9 @@ def configure_files(
                 "unifi": json.loads((unifi or UnifiSecretSource()).protected_payload().get_secret_value()),
             },
         )
+    # Original stat runs after the secrets template even when configuration
+    # management is disabled. Direct stock callers keep metadata-only guards.
+    capture_context("configuration_stat", task_capture)
     replacements: list[OperationMeta] = []
     if policy.manage_configuration:
         initial = _InitialFiles()
@@ -261,9 +343,10 @@ def configure_files(
         template = task(
             "configuration.yaml",
             "template",
-            {"content": render_configuration(cfg, values).get_secret_value()},
+            {"content": render_configuration(cfg, values).get_secret_value()} if task_renderer is None else {},
             initial=initial,
             skip_existing=not policy.overwrite_config,
+            content=partial(render_task, task_renderer, "configuration") if task_renderer is not None else None,
         )
         patterns = ((LEGACY_MET,) if policy.remove_legacy_met_weather_yaml else ()) + OBSOLETE
         for pattern in patterns:
@@ -278,6 +361,7 @@ def configure_files(
                 )
             )
     if policy.manage_includes:
+        capture_context("include_stat", task_capture)
         includes = _InitialFiles()
         mark_read_only(
             _capture_initial(
@@ -291,6 +375,10 @@ def configure_files(
                 {},
                 initial=includes,
                 skip_existing=not policy.overwrite_config,
-                content=cache(partial(_include_content, filename, include_rendered or {}, include_renderer)),
+                content=(
+                    partial(render_task, task_renderer, "include", filename)
+                    if task_renderer is not None
+                    else cache(partial(_include_content, filename, include_rendered or {}, include_renderer))
+                ),
             )
     return ConfigurationChanges(tuple(replacements))
