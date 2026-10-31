@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import importlib
 import importlib.util
 import os
 import sys
@@ -27,7 +28,8 @@ def test_actual_original_validation_and_authorized_key_transition(
     authorized_module = os.environ.get("ANSIBLE_POSIX_MODULE")
     if not library or not authorized_module:
         pytest.skip("paired original-role oracle requires OPS_LIBRARY_PATH and ANSIBLE_POSIX_MODULE")
-    from ansible.template import Templar, trust_as_template  # type: ignore[import-untyped]
+    template = importlib.import_module("ansible.template")
+    Templar, trust_as_template = template.Templar, template.trust_as_template
 
     def load(name: str, path: Path) -> Any:
         spec = importlib.util.spec_from_file_location(name, path)
