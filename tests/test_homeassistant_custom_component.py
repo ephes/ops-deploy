@@ -177,12 +177,12 @@ def test_real_synthetic_download_preserves_original_destination_on_failure(
             assert calls[0]["Authorization"] == wanted_auth
 
 
-def make_archive(path: Path) -> None:
+def make_archive(path: Path, version: str = "1.6.1") -> None:
     with tarfile.open(path, "w:gz") as archive:
         for name, mode, body in [
-            ("custom-conversation-1.6.1/custom_components/custom_conversation", 0o750, None),
-            ("custom-conversation-1.6.1/custom_components/custom_conversation/main.py", 0o640, b"synthetic code"),
-            ("custom-conversation-1.6.1/ignored.txt", 0o600, b"not selected"),
+            (f"custom-conversation-{version}/custom_components/custom_conversation", 0o750, None),
+            (f"custom-conversation-{version}/custom_components/custom_conversation/main.py", 0o640, b"synthetic code"),
+            (f"custom-conversation-{version}/ignored.txt", 0o600, b"not selected"),
         ]:
             info = tarfile.TarInfo(name)
             info.mode = mode
@@ -323,7 +323,8 @@ def test_actual_localconnector_archive_plan_and_repeat(tmp_path: Path, diff: boo
 
 
 @pytest.mark.skipif(not GNU_TAR, reason="Full selected extraction operation requires original GNU tar")
-def test_actual_pyinfra_full_component_first_repeat_and_notifications(tmp_path: Path) -> None:
+@pytest.mark.parametrize("version", ["1.6.1", "1.7.0"])
+def test_actual_pyinfra_full_component_first_repeat_and_notifications(tmp_path: Path, version: str) -> None:
     import sys
 
     from pyinfra.api import Config, Inventory, State
@@ -335,7 +336,7 @@ def test_actual_pyinfra_full_component_first_repeat_and_notifications(tmp_path: 
     from ops_deploy.testing.harness import collect_ops
 
     source = tmp_path / "source.tar.gz"
-    make_archive(source)
+    make_archive(source, version)
     cfg = HomeAssistantRuntimeConfig(user=pwd.getpwuid(os.getuid()).pw_name, group=grp.getgrgid(os.getgid()).gr_name)
     cfg = cfg.model_copy(
         update={
@@ -345,7 +346,7 @@ def test_actual_pyinfra_full_component_first_repeat_and_notifications(tmp_path: 
         }
     )
     component = CustomComponentConfig(
-        sha256=hashlib.sha256(source.read_bytes()).hexdigest(), download_url=SecretStr(source.as_uri())
+        version=version, sha256=hashlib.sha256(source.read_bytes()).hexdigest(), download_url=SecretStr(source.as_uri())
     )
     changes: list[CustomComponentChanges] = []
     root = Path(cfg.config_path) / "custom_components/custom_conversation"
@@ -559,3 +560,16 @@ def test_selected_patch_corrupt_candidate_refuses_before_managed_removal(tmp_pat
         "extracted": False,
     }
     assert before == {p.name: (p.read_bytes(), p.stat().st_ino, p.stat().st_mtime_ns) for p in root.iterdir()}
+
+
+@pytest.mark.skipif(not GNU_TAR, reason="Version member refusal requires original GNU tar")
+def test_actual_gnu_archive_version_mismatch_refuses_extraction(tmp_path: Path) -> None:
+    data = parameters(tmp_path)
+    make_archive(Path(data["archive"]), "1.6.1")
+    data.update(version="1.7.0", action="extract")
+    result = helper.run(data)
+    assert result["success"] is False
+    assert result["error"] == "RuntimeError"
+    assert result["effects_started"] is True
+    assert result["extracted"] is False
+    assert not Path(data["component"]).exists()
