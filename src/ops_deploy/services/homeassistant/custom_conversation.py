@@ -30,7 +30,7 @@ class CustomConversationConfig(RoleConfig):
     api_key: SecretStr = SecretStr("")
     model: SecretStr = SecretStr("")
     instructions: SecretStr = SecretStr("")
-    version: str = "1.6.1"
+    version: str = "1.7.0"
     canary_text: SecretStr = SecretStr("Reply with the single word OK.")
     canary_timeout: StrictInt = Field(default=90, ge=1)
     resolve_retries: StrictInt = Field(default=20, ge=1)

@@ -612,9 +612,9 @@ retirement/upgrade sequence or prove native application and inventory behavior.
 
 ### Custom Conversation protocol (prepared)
 
-The optional Custom Conversation component preserves the original 1.6.1 config
+The optional Custom Conversation component uses the upstream 1.7.0 config
 flow, owned credential/model comparison, options normalization and real
-conversation canary. Ten protocol functions remain AST-identical to the captured
+conversation canary. Nine protocol functions remain AST-identical to the captured
 original helper. A reconfigure flow uses the domain handler plus `entry_id`;
 options repair preserves the operator's agents, ignored intents and Langfuse
 values. Empty instructions restore the exact version-bound component default.
@@ -658,7 +658,7 @@ model/provider, native application deployment or inventory adoption.
 
 ### Optional Custom Conversation installation (prepared)
 
-The installation component retains the original pinned 1.6.1 release/checksum,
+The installation component uses the qualified upstream 1.7.0 release/checksum and retains the
 operator URL override, parent ownership/modes and version-plus-checksum stamp.
 An already matching archive makes no network request; owner/mode drift alone is
 reconciled. A transfer is staged and checksum-verified before atomic replacement,
@@ -808,7 +808,7 @@ managed configuration ownership, not global I/O or background service effects.
 The [owned native fixture](https://github.com/ephes/ops-deploy/tree/pyinfra-homeassistant-20261028/tests/integration/homeassistant)
 uses a disposable public GitHub Ubuntu24 systemd container, sharing its VM kernel.
 It is prepared source, not yet an application or inventory qualification. The
-matrix compares the unchanged original role with real installed typed HA2026.10.2,
+matrix compares the unchanged original role with real installed typed HA 2026.10.2,
 a declared2026.10.1 upgrade, Python3.14.8 and Matter8.1.2. Synthetic loopback model,
 Wyoming and OTBR peers exercise actual application APIs without hardware or a
 real model-provider request. Existing-host prerequisites and every fault/reset
@@ -1052,7 +1052,7 @@ does not resolve the previous upgrade34 PID/readiness failure. Final shared
 artifact/native and ordinary private wrapper qualification remain required.
 
 
-The owned49af full matrix reached phase32 in both cases but failed phase34 after
+The owned49af full matrix reached phase32 in both cases but failed phase 34 after
 a process-ID change during the expected missing-STT fault. The frozen322f
 current-only diagnostic preserved the exact00→34 history and collects bounded
 systemd/cgroup/PID1-manager metadata without reading application/model/audio
@@ -1061,7 +1061,7 @@ remaining phases, actual inventory or the ordinary private caller.
 
 
 That run41166332402 observed HA application exit100 near303seconds, an automatic
-systemd restart and no observed cgroup OOM events. HA2026.10.2 source stages new
+systemd restart and no observed cgroup OOM events. HA 2026.10.2 source stages new
 HTTP YAML settings as a five-minute trial; without explicit user confirmation it
 restarts into stable settings. Actual original-class controls reproduce this
 behavior, but the failed run did not capture HTTP state. A new current-only
@@ -1082,3 +1082,29 @@ attempt accounting. All comparisons stay in RAM and only finite status is retain
 Both current/upgrade keep the full fault matrix, strict comparisons and limits.
 This fixture-only operator action changes no production deployment behavior; the
 1063-resource candidate also preserves the published6ed Notifier peers.
+
+
+### Custom Conversation compatibility repair
+
+The default 1.7.0 release removes obsolete HA LLM API references that prevent
+1.6.1 options forms from opening on HA 2026.10. Known version-only 1.6.1 overrides
+retain the old checksum; explicit version/checksum/URL overrides still win.
+Both releases share the verified default instructions text; unknown versions
+with empty instructions retain the existing refusal, while explicit instructions
+keep their custom-version path. The 1.7.0 helper leaves absent ignored-intent lists
+to the actual form schema default and preserves explicit empty/operator lists.
+Legacy/custom versions keep their original submission behavior. Real options
+flows and canaries, partial-effect reporting and timeouts remain unchanged.
+
+The prior d825 full matrix remains failed at 35 after successful HTTP baseline
+confirmation and phase 34 recovery. Paired original classes/forms and full-module
+imports prove this source repair; final Linux real-HTTP canary, full matrix and
+ordinary private/inventory qualification remain separate requirements.
+
+For the exact official 1.7.0 archive, the public installer applies the same
+`ignored-intent-names-v1` helper as the original role. Only the ignored-intent
+selector accepts custom names, preserving the full exclusion policy for intents
+that are not registered yet. Candidate archive/source hashes are checked before
+replacing an installed tree. Patch identity and desired file hash join the stamp;
+installed patch drift selects normal reinstall, while a correct repeat performs
+no extraction, patch or restart. Explicit old/custom archive pairs are unchanged.

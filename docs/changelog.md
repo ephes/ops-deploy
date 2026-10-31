@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update Home Assistant's Custom Conversation default to 1.7.0 for current HA
+  options compatibility; preserve old explicit pins, verified default instructions
+  and real schema defaults versus explicit empty ignored-intent lists. Apply the
+  original source-bound selector fix for the exact archive and include its public
+  patch identity/file hash in convergence.
+
 - Complete the owned Home Assistant existing-host HTTP baseline through the
   original explicit confirmation API after reachability/onboarding and exact
   synthetic pending-state admission. Retain finite before/after/effect evidence,

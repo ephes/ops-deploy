@@ -7,11 +7,12 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import sys
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiohttp import web
@@ -158,7 +159,8 @@ def test_secondary_and_default_prompt_normalization(tmp_path: Path) -> None:
         "malformed-storage",
     ],
 )
-def test_real_owned_http_websocket_protocol(tmp_path: Path, case: str) -> None:
+@pytest.mark.parametrize("version", ["1.6.1", "1.7.0"])
+def test_real_owned_http_websocket_protocol(tmp_path: Path, case: str, version: str) -> None:
     async def scenario() -> None:
         storage = tmp_path / "core.config_entries"
         current = entry()
@@ -285,6 +287,7 @@ def test_real_owned_http_websocket_protocol(tmp_path: Path, case: str) -> None:
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
         data = payload(storage, f"http://127.0.0.1:{runner.addresses[0][1]}/prefix")
+        data["settings"]["HA_CC_VERSION"] = version
         if case in {"disable", "disabled-absent", "duplicate-disabled", "delete-error"}:
             data["settings"]["HA_CC_ENABLED"] = "0"
         if case == "create-prompt":
@@ -520,3 +523,55 @@ def test_valid_sanitized_failure_exposes_phase_and_attempts(count: int) -> None:
     assert result.partial_possible is (count > 0)
     assert not result.completed
     assert ("helper made no mutation attempt" in str(error.value)) is (count == 0)
+
+
+@pytest.mark.parametrize("version", ["1.6.1", "1.7.0", "owned-custom"])
+@pytest.mark.parametrize("ignored", [None, [], ["OwnedIntent"], "invalid"])
+def test_options_absent_and_empty_match_qualified_version(tmp_path: Path, version: str, ignored: object) -> None:
+    data = payload(tmp_path / "entries")
+    data["settings"]["HA_CC_VERSION"] = version
+    actual = load_helper(data)
+    tree = ast.parse((FIXTURE / "original-program.py.txt").read_text())
+    tree.body.pop()
+    original: dict[str, Any] = {"__name__": "owned_original"}
+    with (
+        patch.dict(os.environ, {**data["settings"], "HA_RESULT_PATH": "/unused-owned-result"}),
+        patch("sys.stdin", io.StringIO(json.dumps(data["secrets"]))),
+    ):
+        exec(compile(tree, "<original-custom>", "exec"), original)
+    current = entry()["options"]
+    current.pop("ignored_intents_section")
+    if ignored is not None:
+        current["ignored_intents_section"] = {"ignored_intents": ignored}
+
+    async def submitted(helper: dict[str, Any]) -> dict[str, Any]:
+        calls: list[dict[str, Any]] = []
+
+        async def rest(_session: Any, _method: str, _path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+            calls.append(body)
+            return (
+                (200, {"type": "form", "step_id": "init", "flow_id": "owned"})
+                if len(calls) == 1
+                else (200, {"type": "create_entry"})
+            )
+
+        helper["rest"] = rest
+        await helper["set_options"](object(), "owned-entry", current)
+        return calls[1]
+
+    before = asyncio.run(submitted(original))
+    after = asyncio.run(submitted(actual))
+    if version != "1.7.0" or isinstance(ignored, list):
+        assert after == before
+    else:
+        assert after == {**before, "ignored_intents_section": {}}
+
+
+def test_unknown_explicit_instructions_still_reach_original_protocol(tmp_path: Path) -> None:
+    data = payload(tmp_path / "entries")
+    data["settings"].update(HA_CC_VERSION="owned-custom", HA_CC_INSTRUCTIONS="owned explicit")
+    helper = load_helper(data)
+    helper["load_current"] = AsyncMock(return_value=[])
+    helper["create_entry"] = AsyncMock(side_effect=RuntimeError("owned-protocol-boundary"))
+    with pytest.raises(RuntimeError, match="owned-protocol-boundary"):
+        asyncio.run(helper["main"]())

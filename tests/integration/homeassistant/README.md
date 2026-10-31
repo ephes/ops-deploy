@@ -5,9 +5,10 @@
 This revision restores the unchanged full current+upgrade fault matrix through
 its final phases; dispatch explicitly `fixture_cases='["current","upgrade"]'`
 only with the frozen immutable artifact and coordinator GO. It preserves all
-qualified49af HA runtime plus the four6ed Notifier resources (1063 total), both
-originalb430 pins, original task/typed ordering, comparisons, retries, timeouts,
-resource limits, peer ownership and cleanup. The diagnostic-only sources below
+qualified49af HA runtime and four6ed Notifier resources, plus the coupled Custom
+Conversation 1.7.0 repair (1064 packaged resources). Both original pins are
+`0cb32a609d07e342502fce115cd2943b1a412ba7`. Original task/typed ordering, comparisons, retries, timeouts,
+resource limits, peer ownership and cleanup remain unchanged. The diagnostic-only sources below
 remain available as historical controls, but are not this guest's entry point.
 
 Run41169358743 confirmed the incomplete owned fixture baseline: after original00
@@ -34,6 +35,16 @@ production deployment logic or automatic promotion on an inventory host. No
 configuration/update endpoint, seed-file rewrite, timeout extension or readiness
 relaxation is introduced. Confirmation source checks do not qualify the complete
 matrix; actual both-case execution and ordinary private caller remain required.
+
+The previous d825 run41171023635 failed in both cases at phase35 options-start
+HTTP500 after successful HTTP baseline completion and phase34 recovery. Those
+partial mutations remain failed evidence. The current component repair uses the
+upstream HA-compatible 1.7.0 release, preserves known 1.6.1 overrides, and applies
+only the exact archive-bound ignored-intent selector correction. It preserves
+full default exclusions and future/unregistered operator names. Stamp plus
+patched-file identity make correct repeats inert and repair installed drift.
+No options/canary bypass or limit change is introduced. Phase39 derives its
+faulted archive path from the selected version and still asserts it exists.
 
 ## Frozen39f HTTP trial-state diagnostic entry
 
@@ -257,7 +268,7 @@ The matrix includes stopped service, wrong API token, empty canary, preserved
 operator configuration, missing version record, missing entire environment,
 explicit force reinstall, foreign trust drop-in refusal, wrong constraints,
 invalid configuration, selected/unrelated areas, standalone voice/missing STT,
-custom1.6.1 install/repeat/stamp/archive recovery/disable/recreate and actual legacy
+custom1.7.0 install/repeat/stamp/archive recovery/disable/recreate and actual legacy
 custom/LiteLLM retirement back to builtin. Each synthetic fault/reset is labelled;
 no production restart, data restore, radio operation or IAM mutation is implied.
 Existing component-level file-template/ownership/overwrite controls remain

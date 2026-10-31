@@ -122,7 +122,8 @@ def run(selected: HomeAssistantDeployConfig, token: str) -> None:
     stamp.write_text("owned-wrong-stamp\n")
     typed("37-custom-stamp-recovery", custom)
     typed("38-custom-stamp-repeat", custom, stable=True)
-    archive = HOME / "downloads/custom-conversation-1.6.1.tar.gz"
+    archive = HOME / f"downloads/custom-conversation-{custom.custom_component.version}.tar.gz"
+    assert archive.is_file(), "selected custom component archive must exist before owned fault"
     archive.write_bytes(b"owned-invalid-archive\n")
     typed("39-custom-archive-recovery", custom)
     typed("40-custom-archive-repeat", custom, stable=True)
