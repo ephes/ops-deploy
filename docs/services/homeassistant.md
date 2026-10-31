@@ -1053,8 +1053,21 @@ artifact/native and ordinary private wrapper qualification remain required.
 
 
 The owned49af full matrix reached phase32 in both cases but failed phase34 after
-a process-ID change during the expected missing-STT fault. The subsequent
-current-only diagnostic preserves the exact00→34 history and collects bounded
+a process-ID change during the expected missing-STT fault. The frozen322f
+current-only diagnostic preserved the exact00→34 history and collects bounded
 systemd/cgroup/PID1-manager metadata without reading application/model/audio
 bodies or changing limits/readiness. It stops before35 and does not qualify the
 remaining phases, actual inventory or the ordinary private caller.
+
+
+That run41166332402 observed HA application exit100 near303seconds, an automatic
+systemd restart and no observed cgroup OOM events. HA2026.10.2 source stages new
+HTTP YAML settings as a five-minute trial; without explicit user confirmation it
+restarts into stable settings. Actual original-class controls reproduce this
+behavior, but the failed run did not capture HTTP state. A new current-only
+diagnostic therefore performs unchanged original00/bootstrap/onboarding and one
+read-only `http/config` projection, then stops before original01/peers/typed work.
+Only fixed slot/error enums and boolean status/port comparisons are retained,
+never HTTP settings or private digests. No promotion, wait or readiness change is
+authorized by this source preparation; confirmed existing-host baseline versus
+incomplete fixture onboarding remains a separate decision after observation.

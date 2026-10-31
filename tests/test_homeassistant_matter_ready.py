@@ -265,7 +265,7 @@ def test_voice_prefix_entry_keeps_corrected_library_and_current_only() -> None:
     from tests.integration.homeassistant.harness import ORIGINAL_LIBRARY_SHA
 
     script = Path("tests/integration/homeassistant/run-guest.sh").read_text()
-    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.diagnose_voice\n")
+    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.diagnose_http\n")
     assert "[[ ${HOMEASSISTANT_FIXTURE_CASE:?} == current ]]" in script
     assert "== upgrade" not in script
     assert "checkout --detach " + ORIGINAL_LIBRARY_SHA + "\n" in script

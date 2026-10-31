@@ -1,8 +1,37 @@
 # Prepared owned Home Assistant application fixture
 
-## Current voice-failure diagnostic entry
+## Current HTTP trial-state diagnostic entry
 
-This revision runs one **current00→34 prefix**, preserving the exact existing-host
+This revision runs unchanged current seed, originalb430 bootstrap00, Matter/native
+readiness and existing synthetic user/token onboarding, then reads the existing
+admin WebSocket `http/config` command once. It stops before original01, synthetic
+peers and every typed phase. Dispatch only `fixture_cases='["current"]'` with the
+exact immutable feature and coordinator GO. Both original-library pins remain
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19`; all1059 packaged runtime resources,
+seed, readiness, original tasks, workflow and outer cleanup remain unchanged.
+
+Run41166332402 observed HA exit100 approximately303seconds after startup,
+systemd auto-restart and zero observed cgroup OOM counters. Exact HA2026.10.2
+source has a300second HTTP YAML migration trial: unconfirmed settings are marked
+`not_promoted`, HA requests restart and activates stable settings. The fixture
+seeds YAML port10020 without HTTP confirmation; its user/token onboarding is
+separate. An actual original-class source oracle reproduced that transition and
+contrasted confirmed-existing and no-YAML baselines. The completed native run
+captured no HTTP state, so this remains a candidate until observed.
+
+`diagnose_http` retains the HTTP response in RAM and exports only finite active
+slot/error enums, pending/revert booleans and fixed port-equality booleans. It
+never persists settings, arbitrary strings, timestamps, proxy lists, paths,
+configuration digests or tokens. Unexpected shapes/types fail with fixed errors.
+`http-status-projection.json` contains that projection; `HTTP-DIAGNOSTIC.json`
+records completed stages even on failure. Existing collection and cleanup still
+run. No HTTP configure/promote/service write, forced flush, changed retry/limit,
+extra wait or full44 replay is introduced. This does not qualify a fixture repair,
+production deployment, ordinary private caller, inventory or hardware.
+
+## Frozen322f voice-failure diagnostic entry
+
+Frozen322f ran one **current00→34 prefix**, preserving the exact existing-host
 seed, original bootstrap/selection/repeat, typed operations and deliberate fault
 history of frozen49af. Dispatch only `fixture_cases='["current"]'` with its frozen
 immutable source and explicit coordinator GO. The guest rejects upgrade before
@@ -106,7 +135,7 @@ Actual installed versions/distributions are recorded in every snapshot.
 The frozen b9/739 revision's `run-guest.sh` invoked the original `harness`
 current/upgrade matrix. Its authorized input was
 `fixture_cases=["current","upgrade"]`; frozen49af restored that same two-case
-scope before the current prefix diagnostic.
+scope before the frozen322f prefix diagnostic.
 Each matrix leg performed admission,
 its declared existing-host seed, unchanged original bootstrap, actual original
 native-library load proof, then Matter readiness before onboarding or any
@@ -229,8 +258,9 @@ remain separate; a successful first matrix does not close these paths.
 The guest exports `OPS_LIBRARY_PATH` as the exact owned absolute original
 collection checkout from process start and unsets `OPS_DEPLOY_PATH`. Before the
 harness runs, it verifies that checkout at
-`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. The current diagnostic executes typed
-operations only through34; private CLI binding remains a separate qualification.
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. The current HTTP diagnostic executes
+no typed operations. Frozen322f executed
+typed operations only through34; private CLI binding remains separate.
 
 
 ## Frozen cafbe interpreter diagnostic after c701

@@ -30,5 +30,5 @@ install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
 git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach b43028a9483bd23dfaef9bd41123fbaa217c2e19
 [[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == b43028a9483bd23dfaef9bd41123fbaa217c2e19 ]]
-# One current00→34 prefix with read-only exit diagnostics; no phase35 or later.
-.venv/bin/python -m tests.integration.homeassistant.diagnose_voice
+# One current original00/onboarding/HTTP status observation; no01, peers or typed phases.
+.venv/bin/python -m tests.integration.homeassistant.diagnose_http

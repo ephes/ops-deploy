@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a bounded current-only Home Assistant HTTP trial-state diagnostic after
+  original bootstrap and user/token onboarding. It reads only `http/config`,
+  exports finite metadata, and stops before selected/typed phases without
+  promoting settings or changing readiness. Retain the exit100/303second failure
+  and distinguish source-reproduced HTTP rollback from unobserved native state.
+
 - Add an owned current00–34 Home Assistant voice-fault diagnostic with bounded
   systemd/cgroup exit evidence and unchanged production, limits and comparisons.
 
