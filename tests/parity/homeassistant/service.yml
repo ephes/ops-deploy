@@ -1,0 +1,15 @@
+---
+- name: "Ensure Home Assistant service state"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_service_name }}"
+    enabled: "{{ homeassistant_service_enabled | bool }}"
+    state: "{{ homeassistant_service_state }}"
+    daemon_reload: true
+
+- name: "Ensure Matter server service state"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_matter_server_service_name }}"
+    enabled: "{{ homeassistant_matter_server_service_enabled | bool }}"
+    state: "{{ homeassistant_matter_server_service_state }}"
+    daemon_reload: true
+  when: homeassistant_manage_matter_server

@@ -1,0 +1,30 @@
+---
+# Read-only: the system CA file and certificate directories (defaults: the
+# Debian/Ubuntu store as native loaders such as rustls-native-certs find it)
+# hold none of python_security_floor_distrusted_roots, as OpenSSL loads them.
+# Use before pointing a client at the system store.
+- name: system_store | Read the CA certificates in {{ python_security_floor_system_store }}
+  ansible.builtin.command:
+    argv: >-
+      {{ [python_security_floor_system_python, '-I', '-c', lookup('ansible.builtin.file', 'inspect_ca_file.py'),
+          python_security_floor_system_store] + python_security_floor_system_store_dirs }}
+  register: _python_security_floor_store
+  changed_when: false
+  check_mode: false
+  become: "{{ python_security_floor_become | bool }}"
+
+- name: system_store | Refuse distrusted roots in {{ python_security_floor_system_store }}
+  ansible.builtin.assert:
+    that:
+      - _python_security_floor_store_hits | length == 0
+    fail_msg: >-
+      {{ python_security_floor_system_store }} or {{ python_security_floor_system_store_dirs | join(', ') }} still trusts
+      {{ _python_security_floor_store_hits | join(', ') }}. Update the
+      distribution CA store first; nothing was changed.
+    quiet: true
+  vars:
+    _python_security_floor_store_hits: >-
+      {{ python_security_floor_distrusted_roots
+         | selectattr('sha256', 'in',
+             (_python_security_floor_store.stdout | from_json).fingerprints | map('upper') | list)
+         | map(attribute='name') | list }}

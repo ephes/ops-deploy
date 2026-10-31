@@ -1,0 +1,21 @@
+{
+  "library_ref": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "ha-include.yml": {
+      "source": "roles/homeassistant_deploy/tasks/uv.yml",
+      "sha256": "929517e95435e07b6431f20d46f265528b0d22fd9b109c9556eaaccb1c0fbaa2"
+    },
+    "ha-defaults.yml": {
+      "source": "roles/homeassistant_deploy/defaults/main.yml",
+      "sha256": "9abb91998726048b438e0660ac2f00b6a7fdd8dd58b9e35d2345cbc84163e42c"
+    },
+    "uv-defaults.yml": {
+      "source": "roles/uv_install/defaults/main.yml",
+      "sha256": "822fabf4911417664eae4736be2ab9663ad41ee82f3fe8398f3071498dd38842"
+    },
+    "uv-tasks.yml": {
+      "source": "roles/uv_install/tasks/main.yml",
+      "sha256": "93752372303303f7fe9464452e1280801550d797b716565fac189e307421e2f3"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "homeassistant==2026.10.1": {
+    "metadata_url": "https://pypi.org/pypi/homeassistant/2026.10.1/json",
+    "requires_python": ">=3.14.2",
+    "artifacts": [
+      {
+        "filename": "homeassistant-2026.10.1-py3-none-any.whl",
+        "size": 62241157,
+        "url": "https://files.pythonhosted.org/packages/48/e2/a6c3560689bd6180f88cc1bd3cbdf1cc8cfb1e76b39ae44aa10245def81c/homeassistant-2026.10.1-py3-none-any.whl",
+        "digests": {
+          "blake2b_256": "48e2a6c3560689bd6180f88cc1bd3cbdf1cc8cfb1e76b39ae44aa10245def81c",
+          "md5": "407b665ce86c337b79163b6f9b5c347c",
+          "sha256": "2c3f82b25ec4c62905c2bd229acdd7fa075d1d6b2d701f89b5aaa1d278f01b70"
+        }
+      },
+      {
+        "filename": "homeassistant-2026.10.1.tar.gz",
+        "size": 38339431,
+        "url": "https://files.pythonhosted.org/packages/60/24/97718eff869862e21a0dce6e4eb6f4ebbbad54d388b4ae15b086f3678a06/homeassistant-2026.10.1.tar.gz",
+        "digests": {
+          "blake2b_256": "602497718eff869862e21a0dce6e4eb6f4ebbbad54d388b4ae15b086f3678a06",
+          "md5": "6cfb46a79b05d1dc88dc3e0cb964b462",
+          "sha256": "7c8af73af7b496e7726a1975bbf02ccae6fd543a4d0f0caad9690e656779b015"
+        }
+      }
+    ]
+  },
+  "homeassistant==2026.10.2": {
+    "metadata_url": "https://pypi.org/pypi/homeassistant/2026.10.2/json",
+    "requires_python": ">=3.14.2",
+    "artifacts": [
+      {
+        "filename": "homeassistant-2026.10.2-py3-none-any.whl",
+        "size": 62346075,
+        "url": "https://files.pythonhosted.org/packages/a6/ce/3b0a366560d77ae211094c21bfc2215284e02c140bf0fe8d677f97466dc8/homeassistant-2026.10.2-py3-none-any.whl",
+        "digests": {
+          "blake2b_256": "a6ce3b0a366560d77ae211094c21bfc2215284e02c140bf0fe8d677f97466dc8",
+          "md5": "a92727c340c3a7ace6dda47f8fee66bf",
+          "sha256": "50478723a035c70d6c70b298f6135949b68b002d072b48996b2852decc55d318"
+        }
+      },
+      {
+        "filename": "homeassistant-2026.10.2.tar.gz",
+        "size": 38425900,
+        "url": "https://files.pythonhosted.org/packages/5f/81/13120a50086b32a0cab5e35557093cac23372ecd020bdf8885a24c9643b6/homeassistant-2026.10.2.tar.gz",
+        "digests": {
+          "blake2b_256": "5f8113120a50086b32a0cab5e35557093cac23372ecd020bdf8885a24c9643b6",
+          "md5": "c050300cf25b125b6844cc74bb97020d",
+          "sha256": "8ac170048d44c2c9993c2fa1ac0ee9ba892912aac74c655139ef5af7b0c216bb"
+        }
+      }
+    ]
+  },
+  "python-matter-server==8.1.2": {
+    "metadata_url": "https://pypi.org/pypi/python-matter-server/8.1.2/json",
+    "requires_python": ">=3.12",
+    "artifacts": [
+      {
+        "filename": "python_matter_server-8.1.2-py3-none-any.whl",
+        "size": 169131,
+        "url": "https://files.pythonhosted.org/packages/01/da/b1c4c3b5626470354c1a199124f65b07526f84f4063b28f2d490611d28a7/python_matter_server-8.1.2-py3-none-any.whl",
+        "digests": {
+          "blake2b_256": "01dab1c4c3b5626470354c1a199124f65b07526f84f4063b28f2d490611d28a7",
+          "md5": "2137f7db34f254ceef28fb49298f1a8e",
+          "sha256": "eccd1ef6deccd7dbcba21835e727d701d75e12c98a62cd30bf765e53cf3afe16"
+        }
+      },
+      {
+        "filename": "python_matter_server-8.1.2.tar.gz",
+        "size": 153831,
+        "url": "https://files.pythonhosted.org/packages/55/0e/ea175a671bd3324da7a51374639e7ada1c85b2746b72238948139d1014c4/python_matter_server-8.1.2.tar.gz",
+        "digests": {
+          "blake2b_256": "550eea175a671bd3324da7a51374639e7ada1c85b2746b72238948139d1014c4",
+          "md5": "845789e1423cb394a100dfb99eed2011",
+          "sha256": "9af42cafe3331a843fa6bed52bbf59381350660a7764a97ed5b9e66f46af0b14"
+        }
+      }
+    ]
+  }
+}

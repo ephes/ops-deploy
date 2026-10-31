@@ -1,0 +1,23 @@
+---
+- name: "Install systemd unit"
+  ansible.builtin.template:
+    src: homeassistant.service.j2
+    dest: "{{ homeassistant_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart homeassistant
+
+- name: "Install Matter server systemd unit"
+  ansible.builtin.template:
+    src: matter-server.service.j2
+    dest: "{{ homeassistant_matter_server_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart matter server
+  when: homeassistant_manage_matter_server

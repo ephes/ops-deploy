@@ -1,0 +1,10 @@
+---
+- name: "Create Home Assistant user"
+  ansible.builtin.user:
+    name: "{{ homeassistant_user }}"
+    shell: "{{ homeassistant_shell }}"
+    home: "{{ homeassistant_home }}"
+    create_home: true
+    groups:
+      - dialout
+    append: true

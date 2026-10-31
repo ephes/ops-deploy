@@ -1,0 +1,25 @@
+---
+# Before any change: existing environments must already meet the certifi/pip
+# floors (python_security_floor). The installs below only change certifi when
+# they run (version change, recreated or forced environment), so an existing
+# environment below the floor is refused here, not "fixed" by chance later.
+- name: "security_preflight | Check for existing Home Assistant Python environments"
+  ansible.builtin.stat:
+    path: "{{ item.path }}/bin/python"
+  loop: "{{ homeassistant_python_security_environments }}"
+  loop_control:
+    label: "{{ item.label }}"
+  register: _ha_security_existing
+
+- name: "security_preflight | Verify existing environments' trust floors"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ _ha_security_env.item.path }}/bin/python"
+    python_security_floor_user: "{{ homeassistant_user }}"
+    python_security_floor_label: "{{ _ha_security_env.item.label }}"
+  loop: "{{ _ha_security_existing.results | selectattr('stat.exists') | list }}"
+  loop_control:
+    loop_var: _ha_security_env
+    label: "{{ _ha_security_env.item.label }}"

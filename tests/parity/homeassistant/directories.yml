@@ -1,0 +1,18 @@
+---
+- name: "Ensure Home Assistant directories exist"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0755"
+  loop:
+    - "{{ homeassistant_home }}"
+    - "{{ homeassistant_home }}/.local"
+    - "{{ homeassistant_home }}/.local/share"
+    - "{{ homeassistant_home }}/.local/share/uv"
+    - "{{ homeassistant_site_path }}"
+    - "{{ homeassistant_config_path }}"
+    - "{{ homeassistant_data_path }}"
+    - "{{ homeassistant_logs_path }}"
+    - "{{ homeassistant_bin_path }}"

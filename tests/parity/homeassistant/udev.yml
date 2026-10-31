@@ -1,0 +1,11 @@
+---
+- name: "Install Zigbee/Matter udev rule"
+  ansible.builtin.template:
+    src: 99-homeassistant-zbt1.rules.j2
+    dest: "{{ homeassistant_udev_rule_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload udev rules
+    - trigger udev

@@ -1,0 +1,26 @@
+{
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "integration_sha256": "e8078bea1a686d3fa49f691e20389d731edcd1966e956303b078dae9aa4194f5",
+  "original_program_sha256": "c3e2db414e9dd356e98e00260e118f41fe2d8d4502832953954924c83620b004",
+  "unchanged_function_asts": [
+    "ws_url",
+    "load_current",
+    "credentials_body",
+    "model_body",
+    "create_entry",
+    "reconfigure_entry",
+    "set_options",
+    "data_drift",
+    "options_drift",
+    "canary"
+  ],
+  "changed_functions": [
+    "rest",
+    "flow_error",
+    "ws_entities",
+    "resolve_entity",
+    "finish",
+    "main"
+  ],
+  "scope": "Protocol preparation; protected stdin replaces task environment, RAM-only report replaces result file, upstream details sanitized, mutation attempts counted. Not full role/native qualification."
+}

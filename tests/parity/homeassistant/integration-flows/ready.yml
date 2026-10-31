@@ -1,0 +1,28 @@
+---
+- name: "Default Home Assistant API forwarded address"
+  ansible.builtin.set_fact:
+    homeassistant_api_forwarded_for: "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+  when: (homeassistant_api_forwarded_for | default('')) | length == 0
+
+- name: "Wait for Home Assistant API"
+  ansible.builtin.uri:
+    url: "{{ homeassistant_api_url }}/api/"
+    method: GET
+    status_code: 200
+    headers:
+      Authorization: "Bearer {{ homeassistant_api_token }}"
+      X-Forwarded-For: "{{ homeassistant_api_forwarded_for }}"
+      X-Forwarded-Proto: "{{ homeassistant_api_forwarded_proto }}"
+    validate_certs: "{{ homeassistant_api_validate_certs | bool }}"
+    timeout: "{{ homeassistant_api_timeout }}"
+  register: _ha_api_ready
+  retries: "{{ homeassistant_api_retries }}"
+  delay: "{{ homeassistant_api_retry_delay }}"
+  until: _ha_api_ready.status == 200
+  no_log: true
+  when: not (_ha_api_ready_once | default(false))
+
+- name: "Mark Home Assistant API ready"
+  ansible.builtin.set_fact:
+    _ha_api_ready_once: true
+  when: not (_ha_api_ready_once | default(false))

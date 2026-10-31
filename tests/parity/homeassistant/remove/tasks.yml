@@ -1,0 +1,92 @@
+---
+- name: "Display removal banner"
+  ansible.builtin.debug:
+    msg: |
+      ════════════════════════════════════════════════════════
+      🗑️  Home Assistant Removal
+      ════════════════════════════════════════════════════════
+
+- name: "Require explicit confirmation"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_confirm_removal | bool
+    fail_msg: |
+      Removal not confirmed.
+
+      Set homeassistant_confirm_removal: true (or use the provided Just command)
+      to remove Home Assistant. This operation is destructive.
+
+- name: "Stop and disable Home Assistant service"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_service_name }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+  when: homeassistant_remove_service | bool
+
+- name: "Remove systemd unit file"
+  ansible.builtin.file:
+    path: "{{ homeassistant_systemd_unit_path }}"
+    state: absent
+  when: homeassistant_remove_service | bool
+
+- name: "Reload systemd daemon"
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: homeassistant_remove_service | bool
+
+- name: "Remove Traefik dynamic config"
+  ansible.builtin.file:
+    path: "{{ homeassistant_traefik_config_path }}"
+    state: absent
+  when: homeassistant_remove_traefik | bool
+
+- name: "Remove udev rule"
+  ansible.builtin.file:
+    path: "{{ homeassistant_udev_rule_path }}"
+    state: absent
+  when: homeassistant_remove_udev_rule | bool
+
+- name: "Remove virtualenv directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ homeassistant_virtualenv_path }}"
+    - "{{ homeassistant_virtualenv_link }}"
+  when: homeassistant_remove_virtualenv | bool
+
+- name: "Remove Home Assistant directories"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop:
+    - { path: "{{ homeassistant_config_path }}", enabled: "{{ homeassistant_remove_config_dir }}" }
+    - { path: "{{ homeassistant_data_path }}", enabled: "{{ homeassistant_remove_data_dir }}" }
+    - { path: "{{ homeassistant_logs_path }}", enabled: "{{ homeassistant_remove_logs_dir }}" }
+    - { path: "{{ homeassistant_bin_path }}", enabled: "{{ homeassistant_remove_bin_dir }}" }
+    - { path: "{{ homeassistant_site_path }}", enabled: "{{ homeassistant_remove_site_dir }}" }
+  when: item.enabled | bool
+
+- name: "Remove Home Assistant user"
+  ansible.builtin.user:
+    name: "{{ homeassistant_user }}"
+    state: absent
+    remove: "{{ homeassistant_remove_site_dir | bool }}"
+  when: homeassistant_remove_user | bool
+
+- name: "Remove Home Assistant group"
+  ansible.builtin.group:
+    name: "{{ homeassistant_group }}"
+    state: absent
+  when: homeassistant_remove_group | bool
+
+- name: "Removal summary"
+  ansible.builtin.debug:
+    msg: |
+      ✅ Home Assistant removal complete.
+      - Service removed: {{ homeassistant_remove_service }}
+      - Traefik config removed: {{ homeassistant_remove_traefik }}
+      - Site directory removed: {{ homeassistant_remove_site_dir }}
+      - User removed: {{ homeassistant_remove_user }}

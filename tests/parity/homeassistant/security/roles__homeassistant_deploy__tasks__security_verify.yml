@@ -1,0 +1,13 @@
+---
+- name: "security_verify | Verify Home Assistant environments' trust floors after installation"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ _ha_security_env.path }}/bin/python"
+    python_security_floor_user: "{{ homeassistant_user }}"
+    python_security_floor_label: "{{ _ha_security_env.label }}"
+  loop: "{{ homeassistant_python_security_environments }}"
+  loop_control:
+    loop_var: _ha_security_env
+    label: "{{ _ha_security_env.label }}"

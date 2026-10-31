@@ -1,0 +1,18 @@
+---
+- name: "Ensure Traefik dynamic directory exists"
+  ansible.builtin.file:
+    path: "{{ homeassistant_traefik_dynamic_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "Render Traefik config"
+  ansible.builtin.template:
+    src: "{{ homeassistant_traefik_template }}"
+    dest: "{{ homeassistant_traefik_dynamic_dir }}/homeassistant.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - "{{ homeassistant_traefik_reload_handler }}"

@@ -1,0 +1,7 @@
+{
+  "library_commit": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "roles/homeassistant_deploy/tasks/python.yml": "41fa257b6eed48f8b45adfc9aad8655a6a978604e5c856b2b73bdcfca19f91cb",
+    "roles/homeassistant_deploy/tasks/matter_server.yml": "01808e9b326a74733fd8420afc70f1bd30c584124c0c70c4c78a5cd5a8e38f05"
+  }
+}

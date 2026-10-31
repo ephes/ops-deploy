@@ -1,0 +1,49 @@
+{
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "templates/configuration.yaml.j2": {
+      "fixture": "configuration.yaml.j2",
+      "sha256": "59113e9b316a93f505c6cf636be5a85899fc02fa44ba4aeaeb01b02b1873131e"
+    },
+    "templates/secrets.yaml.j2": {
+      "fixture": "secrets.yaml.j2",
+      "sha256": "27df4ed5b9e9604c9e6df3d89c982813ea56685b3303b695b6f2d15793f7f547"
+    },
+    "templates/automations.yaml.j2": {
+      "fixture": "automations.yaml.j2",
+      "sha256": "a7aeaec491cc4ec9df1f0b994eae18726b2726dfe399a4b3dc1da4faf61f04d2"
+    },
+    "templates/scripts.yaml.j2": {
+      "fixture": "scripts.yaml.j2",
+      "sha256": "9f4dcf6d9821593ed17e125956e7e537a8db5cd8c877e01b7d4fca79b87ca0d1"
+    },
+    "templates/scenes.yaml.j2": {
+      "fixture": "scenes.yaml.j2",
+      "sha256": "aa4b654b2f0c0b406ac73bfe14b6993c9417ec5e412f6c21dcd252f148cd8a8b"
+    },
+    "templates/groups.yaml.j2": {
+      "fixture": "groups.yaml.j2",
+      "sha256": "3e57ed5870d24a450ef1d13b948e74945b380146cfd343bdb6143e5a9f9fae76"
+    },
+    "templates/persons.yaml.j2": {
+      "fixture": "persons.yaml.j2",
+      "sha256": "5510aad20a77689ff4fb6b6cf1ef53c455626243b840ff5bb6a197478e5511d0"
+    },
+    "templates/presence_automations.yaml.j2": {
+      "fixture": "presence_automations.yaml.j2",
+      "sha256": "34dec2369f45f39abd46d9efddbc1393726fd1dc798b85535603c2e780a6356d"
+    },
+    "defaults/main.yml": {
+      "fixture": "defaults__main.yml",
+      "sha256": "9abb91998726048b438e0660ac2f00b6a7fdd8dd58b9e35d2345cbc84163e42c"
+    },
+    "tasks/configuration.yml": {
+      "fixture": "tasks__configuration.yml",
+      "sha256": "5cf5482dddabfc163eefd2020ab70faffa4b4eb7d1c553598aa5a095c187d1b6"
+    },
+    "tasks/unifi.yml": {
+      "fixture": "tasks__unifi.yml",
+      "sha256": "04f20132cdbb5bd4f56ddb65de14279b0f63db820fcae4c0b5f1cdce092fe25c"
+    }
+  }
+}

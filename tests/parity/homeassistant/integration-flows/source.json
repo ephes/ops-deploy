@@ -1,0 +1,25 @@
+{
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "tasks/matter_integration.yml": {
+      "fixture": "matter.yml",
+      "sha256": "060adb8de06d3678139aa3e844282f04b09b8fa34cef7522122b88134a1ea489"
+    },
+    "tasks/otbr_integration.yml": {
+      "fixture": "otbr.yml",
+      "sha256": "17158d267bccca6f71a426d37d52a57bf9ffabf8377b1abb5b2fc8dccdfc876b"
+    },
+    "tasks/wyoming_integration.yml": {
+      "fixture": "wyoming.yml",
+      "sha256": "99779ff1cc6baa20ca2f2416b97ded5ad250056c5c6979d8c3ed6cc3c4afa2f9"
+    },
+    "tasks/integration_api_ready.yml": {
+      "fixture": "ready.yml",
+      "sha256": "c0b2812fb709fc4787f63ea0e1df41cff46283382a951202473d04d89aedfee6"
+    },
+    "defaults/main.yml": {
+      "fixture": "defaults.yml",
+      "sha256": "9abb91998726048b438e0660ac2f00b6a7fdd8dd58b9e35d2345cbc84163e42c"
+    }
+  }
+}

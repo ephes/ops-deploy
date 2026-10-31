@@ -1,0 +1,13 @@
+---
+- name: "Ensure uv binary is installed"
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ homeassistant_uv_install_dir }}"
+    uv_install_user: "{{ homeassistant_uv_install_user }}"
+    uv_version: "{{ homeassistant_uv_version }}"
+    uv_update_existing: "{{ homeassistant_uv_update_existing }}"
+    uv_force_reinstall: "{{ homeassistant_uv_force_reinstall }}"
+    uv_create_symlinks: false
+    uv_symlink_dir: "{{ homeassistant_uv_install_dir }}"
+  when: homeassistant_manage_uv | bool

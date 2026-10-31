@@ -1,0 +1,114 @@
+---
+- name: "Initialize Wyoming integration state"
+  ansible.builtin.set_fact:
+    _ha_wyoming_entry_id: ""
+
+- name: "Check Home Assistant config entries storage"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
+  register: _ha_config_entries_stat
+
+- name: "Read Home Assistant config entries storage"
+  ansible.builtin.slurp:
+    path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
+  register: _ha_config_entries_raw
+  when: _ha_config_entries_stat.stat.exists
+
+- name: "Extract existing Wyoming integration entry id"
+  ansible.builtin.set_fact:
+    _ha_wyoming_entry_id: >-
+      {{
+        (
+          (
+            ((_ha_config_entries_raw.content | b64decode | from_json).data | default({}, true)).entries
+            | default([], true)
+          )
+          | selectattr('domain', 'equalto', 'wyoming')
+          | selectattr('data.host', 'defined')
+          | selectattr('data.port', 'defined')
+          | selectattr('data.host', 'equalto', homeassistant_wyoming_host)
+          | selectattr('data.port', 'equalto', homeassistant_wyoming_port | int)
+          | map(attribute='entry_id')
+          | list
+          | first
+        ) | default('', true)
+      }}
+  when: _ha_config_entries_stat.stat.exists
+
+- name: "Determine if Wyoming integration provisioning is needed"
+  ansible.builtin.set_fact:
+    _ha_wyoming_integration_needs_config: "{{ _ha_wyoming_entry_id | length == 0 }}"
+
+- name: "Provision Wyoming integration via Home Assistant API"
+  when:
+    - _ha_wyoming_integration_needs_config | bool
+    - not ansible_check_mode
+  block:
+    - name: "Ensure Home Assistant API is ready"
+      ansible.builtin.include_tasks: integration_api_ready.yml
+
+    - name: "Start Wyoming config flow"
+      ansible.builtin.uri:
+        url: "{{ homeassistant_api_url }}/api/config/config_entries/flow"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ homeassistant_api_token }}"
+          Content-Type: "application/json"
+          X-Forwarded-For: "{{ homeassistant_api_forwarded_for }}"
+          X-Forwarded-Proto: "{{ homeassistant_api_forwarded_proto }}"
+        body_format: json
+        body:
+          handler: wyoming
+        return_content: true
+        status_code: 200
+        validate_certs: "{{ homeassistant_api_validate_certs | bool }}"
+        timeout: "{{ homeassistant_api_timeout }}"
+      register: _ha_wyoming_flow
+      no_log: true
+
+    - name: "Handle Wyoming config flow aborts"
+      when: (_ha_wyoming_flow.json.type | default('')) == 'abort'
+      block:
+        - name: "Skip Wyoming config flow when already configured"
+          ansible.builtin.debug:
+            msg: "Wyoming integration already configured; skipping."
+          when: (_ha_wyoming_flow.json.reason | default('')) == 'already_configured'
+
+        - name: "Fail when Wyoming config flow aborts unexpectedly"
+          ansible.builtin.fail:
+            msg: "Wyoming config flow aborted: {{ _ha_wyoming_flow.json.reason | default('unknown') }}."
+          when: (_ha_wyoming_flow.json.reason | default('')) != 'already_configured'
+
+    - name: "Submit Wyoming config flow"
+      ansible.builtin.uri:
+        url: "{{ homeassistant_api_url }}/api/config/config_entries/flow/{{ _ha_wyoming_flow.json.flow_id }}"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ homeassistant_api_token }}"
+          Content-Type: "application/json"
+          X-Forwarded-For: "{{ homeassistant_api_forwarded_for }}"
+          X-Forwarded-Proto: "{{ homeassistant_api_forwarded_proto }}"
+        body_format: json
+        body:
+          host: "{{ homeassistant_wyoming_host }}"
+          port: "{{ homeassistant_wyoming_port | int }}"
+        return_content: true
+        status_code: 200
+        validate_certs: "{{ homeassistant_api_validate_certs | bool }}"
+        timeout: "{{ homeassistant_api_timeout }}"
+      register: _ha_wyoming_flow_result
+      no_log: true
+      when: _ha_wyoming_flow.json.flow_id is defined
+
+    - name: "Fail when Wyoming config flow does not complete"
+      ansible.builtin.fail:
+        msg: >-
+          Wyoming config flow did not complete; verify the Wyoming server is reachable and the API token is valid.
+          Result: {{ _ha_wyoming_flow_result.json | to_json }}
+      when:
+        - _ha_wyoming_flow_result is defined
+        - (_ha_wyoming_flow_result.json.type | default('')) not in ['create_entry']
+        - not (
+            (_ha_wyoming_flow_result.json.type | default('')) == 'abort'
+            and (_ha_wyoming_flow_result.json.reason | default('')) == 'already_configured'
+          )
