@@ -1,0 +1,11 @@
+---
+- name: "Install ZBT-2 udev rule"
+  ansible.builtin.template:
+    src: 99-otbr-zbt2.rules.j2
+    dest: "{{ otbr_udev_rule_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload udev rules
+    - trigger udev

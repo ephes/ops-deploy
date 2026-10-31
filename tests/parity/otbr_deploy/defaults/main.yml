@@ -1,0 +1,80 @@
+---
+# Defaults for otbr_deploy role.
+
+otbr_repo_url: "https://github.com/openthread/ot-br-posix.git"
+otbr_repo_version: "main"
+otbr_install_dir: "/opt/ot-br-posix"
+
+otbr_manage_packages: true
+otbr_prereq_packages:
+  - ca-certificates
+  - curl
+  - git
+  - lsb-release
+  - sudo
+
+otbr_remove_bind: true
+otbr_bind_packages:
+  - bind9
+otbr_bind_services:
+  - named.service
+  - named-resolvconf.service
+
+otbr_force_bootstrap: false
+otbr_force_rebuild: false
+otbr_bootstrap_marker: "{{ otbr_install_dir }}/.otbr-bootstrap"
+otbr_build_config_path: "{{ otbr_install_dir }}/.otbr-build-config"
+
+otbr_agent_bin: "/usr/sbin/otbr-agent"
+otbr_agent_defaults_path: "/etc/default/otbr-agent"
+
+otbr_rcp_device: "CHANGEME"
+otbr_rcp_baudrate: 460800
+otbr_wpan_interface: "wpan0"
+otbr_infra_interface: ""
+otbr_backbone_interface: "{{ otbr_infra_interface }}"
+
+otbr_rest_api_enabled: true
+otbr_rest_listen_address: "127.0.0.1"
+otbr_rest_listen_port: 8081
+otbr_agent_extra_opts: ""
+otbr_no_auto_attach: false
+
+otbr_web_enabled: false
+
+otbr_mdns: "openthread"
+otbr_dhcp6_pd_client: "none"
+otbr_backbone_router: true
+otbr_border_routing: true
+otbr_nat64: true
+otbr_discovery_proxy: true
+otbr_firewall: true
+otbr_build_options: ""
+
+otbr_build_env:
+  REST_API: "{{ otbr_rest_api_enabled | ternary('1', '0') }}"
+  WEB_GUI: "{{ otbr_web_enabled | ternary('1', '0') }}"
+  OTBR_MDNS: "{{ otbr_mdns }}"
+  OTBR_DHCP6_PD_CLIENT: "{{ otbr_dhcp6_pd_client }}"
+  BACKBONE_ROUTER: "{{ otbr_backbone_router | ternary('1', '0') }}"
+  BORDER_ROUTING: "{{ otbr_border_routing | ternary('1', '0') }}"
+  NAT64: "{{ otbr_nat64 | ternary('1', '0') }}"
+  DISCOVERY_PROXY: "{{ otbr_discovery_proxy | ternary('1', '0') }}"
+  FIREWALL: "{{ otbr_firewall | ternary('1', '0') }}"
+  INFRA_IF_NAME: "{{ otbr_infra_interface }}"
+  OTBR_OPTIONS: "{{ otbr_build_options }}"
+
+otbr_service_name: "otbr-agent"
+otbr_web_service_name: "otbr-web"
+otbr_service_enabled: true
+otbr_service_state: started
+otbr_restart_on_change: true
+
+otbr_manage_udev: true
+otbr_udev_rule_path: "/etc/udev/rules.d/99-otbr-zbt2.rules"
+otbr_udev_group: "dialout"
+otbr_udev_mode: "0660"
+otbr_udev_vid: "303a"
+otbr_udev_pids:
+  - "4001"
+  - "831a"

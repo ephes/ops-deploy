@@ -1,0 +1,15 @@
+---
+- name: "Ensure otbr-agent service state"
+  ansible.builtin.systemd:
+    name: "{{ otbr_service_name }}"
+    enabled: "{{ otbr_service_enabled }}"
+    state: "{{ otbr_service_state }}"
+    daemon_reload: true
+
+- name: "Ensure otbr-web service state"
+  ansible.builtin.systemd:
+    name: "{{ otbr_web_service_name }}"
+    enabled: true
+    state: "{{ otbr_service_state }}"
+    daemon_reload: true
+  when: otbr_web_enabled | bool

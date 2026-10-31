@@ -93,6 +93,7 @@ nav:
       - minio: services/minio.md
       - Home Assistant (in preparation): services/homeassistant.md
       - paperless (prepared): services/paperless.md
+      - OTBR: services/otbr.md
       - unifi: services/unifi.md
       - vaultwarden: services/vaultwarden.md
       - minecraft_java: services/minecraft_java.md

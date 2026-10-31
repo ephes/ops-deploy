@@ -1,0 +1,4 @@
+# Home Assistant Connect ZBT-2 (ESP32-S3 USB serial)
+{% for pid in otbr_udev_pids %}
+SUBSYSTEM=="tty", ATTRS{idVendor}=="{{ otbr_udev_vid }}", ATTRS{idProduct}=="{{ pid }}", GROUP="{{ otbr_udev_group }}", MODE="{{ otbr_udev_mode }}"
+{% endfor %}

@@ -1,0 +1,7 @@
+---
+- name: "Install OTBR prerequisite packages"
+  ansible.builtin.apt:
+    name: "{{ otbr_prereq_packages }}"
+    state: present
+    update_cache: true
+  when: otbr_manage_packages | bool

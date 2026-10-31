@@ -1,0 +1,29 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart otbr-agent
+  ansible.builtin.systemd:
+    name: "{{ otbr_service_name }}"
+    state: restarted
+    enabled: "{{ otbr_service_enabled }}"
+  when:
+    - otbr_restart_on_change | bool
+    - otbr_service_state == 'started'
+
+- name: restart otbr-web
+  ansible.builtin.systemd:
+    name: "{{ otbr_web_service_name }}"
+    state: restarted
+    enabled: true
+  when:
+    - otbr_restart_on_change | bool
+    - otbr_web_enabled | bool
+    - otbr_service_state == 'started'
+
+- name: reload udev rules
+  ansible.builtin.command: udevadm control --reload-rules
+
+- name: trigger udev
+  ansible.builtin.command: udevadm trigger --subsystem-match=tty

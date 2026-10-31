@@ -15,6 +15,16 @@
   configurations refuse installation; the original managed wheel import still
   runs on each successful converge and activation remains separate.
 
+- Add the original OTBR source/build, agent/web and udev component with typed
+  desired state, exact original templates and explicit installed-versus-resolved
+  source effects. Retain moving-main forced recursive updates and original
+  service/BIND/package triggers. Invalidate step success records before selected
+  attempts and publish only after success so source-only setup/bootstrap failures
+  remain retryable; keep the eleven original build lines and hardware policy.
+  Preserve selected original APT wildcard/candidate/purge semantics with deferred
+  memory-only metadata, the implicit OS dependency and normal managed commands;
+  normalize relative Git origins consistently and bound option values.
+
 - Add the original Certbot DNS/edge state backup and restore APIs, preserving
   archive privacy, internal Certbot links, retained pre-restore copies and
   mount-point preservation. Explicit validation avoids publication; the original

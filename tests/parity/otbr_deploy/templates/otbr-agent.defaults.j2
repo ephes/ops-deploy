@@ -1,0 +1,3 @@
+# Managed by Ansible - OTBR agent defaults
+OTBR_AGENT_OPTS="-I {{ otbr_wpan_interface }} -B {{ otbr_backbone_interface }} spinel+hdlc+uart://{{ otbr_rcp_device }}?uart-baudrate={{ otbr_rcp_baudrate }}{% if otbr_rest_api_enabled %} --rest-listen-address {{ otbr_rest_listen_address }} --rest-listen-port {{ otbr_rest_listen_port }}{% endif %}{% if otbr_agent_extra_opts | length > 0 %} {{ otbr_agent_extra_opts }}{% endif %}"
+OTBR_NO_AUTO_ATTACH={{ otbr_no_auto_attach | ternary('1', '0') }}

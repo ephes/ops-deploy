@@ -1,0 +1,16 @@
+{
+  "README.md": "d4b28b904a75bd6cf84a2f0fafb01c80f0fcadee5316953a47a42685793b3a50",
+  "tasks/remove_bind.yml": "d1659e4449eee5dc6e28401f7cdba647daf9dd23224eba1392a15e9befd5739f",
+  "tasks/source.yml": "d804f0eb8e4ad3963cd80572796145c02b88ba61aa8de9dd8cc37188d793da9a",
+  "tasks/packages.yml": "d4c3551ea090cdd64f98c20ef07058a5ca82f1d49711a769e3e3e14b14b5ab1e",
+  "tasks/udev.yml": "f80ca251745676134454df7ef4ac66e03c78d18964a4a969923b459b7cd3c318",
+  "tasks/validate.yml": "750f6bf08e6dcca3b122aabcc6955a098674fb46042c9b490251f090b39caa0e",
+  "tasks/service.yml": "642edeab048e90f0491911b69c0324d309231f51e82ad58bf0351097502da878",
+  "tasks/configuration.yml": "6756ba03e6fb004e82f013673069d9579bc3838c15b999d27c0a328dafe24d4f",
+  "tasks/main.yml": "8d7cc9bef73de2c8ce346c93ff8103ef22ff729c3b19337954fbdd2027866799",
+  "tasks/build.yml": "b7ecc0abce070d8540155ebab9468bf9fc6eee009e36cedf476325a99525d671",
+  "defaults/main.yml": "9cfd787a5a9c390595563a791f3eed56ce341265a2bf09c406b5b1deb9e7ede8",
+  "templates/otbr-agent.defaults.j2": "4c3c3b76ae43082709bc2081ad7bcbd7c45d0c8ab872fd70ba53f32f47c1c080",
+  "templates/99-otbr-zbt2.rules.j2": "c821254b80c13af870470022cab372f84a3686b5cdf419b3f011614e301b9017",
+  "handlers/main.yml": "7fc129cc66557a8ba12ece00943ba2f32bd05c9d55de5ab90c148bb59743fd17"
+}
