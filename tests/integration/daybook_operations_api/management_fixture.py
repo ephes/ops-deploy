@@ -68,6 +68,21 @@ def package_proof() -> None:
     )
 
 
+def source_clone_command(source: Path, destination: Path) -> list[str]:
+    """Allow only this owned read-only checkout across the container uid boundary."""
+    return [
+        "git",
+        "-c",
+        "safe.directory=" + str(source / ".git"),
+        "clone",
+        "--quiet",
+        "--no-hardlinks",
+        "--",
+        str(source),
+        str(destination),
+    ]
+
+
 def command(argv: list[str], *, stdin: bytes | None = None, timeout: int = 600) -> bytes:
     result = subprocess.run(argv, input=stdin, capture_output=True, timeout=timeout)
     if result.returncode:
@@ -118,11 +133,10 @@ def managed(cfg: OperationsApiConfig, action: str, *, expected: bool, category: 
     return value
 
 
-def paired_rsync_repeat() -> None:
+def paired_rsync_repeat(archive: bytes) -> None:
     export = Path("/tmp/operations-public-export")
     assert not export.exists()
     export.mkdir()
-    archive = command(["git", "-C", str(SITE), "archive", DAYBOOK])
     command(["tar", "-xf", "-", "-C", str(export)], stdin=archive)
     original_site = HOME / "original-site"
     original_site.mkdir()
@@ -281,7 +295,7 @@ def main() -> None:
                 "CREATE DATABASE daybook_operations OWNER daybook_operations;",
             ]
         )
-        command(["git", "clone", "--quiet", "https://github.com/ephes/daybook.git", str(SITE)])
+        command(source_clone_command(Path("/daybook-source"), SITE))
         command(["git", "-C", str(SITE), "checkout", "--detach", DAYBOOK])
         assert command(["git", "-C", str(SITE), "rev-parse", "HEAD"]).decode().strip() == DAYBOOK
         old = command(["git", "-C", str(SITE), "show", OLD + ":src/daybook/operations_protocol.py"])
@@ -293,6 +307,9 @@ def main() -> None:
             new_namespace,
         )
         assert set(new_namespace["ADAPTERS"]) - set(old_namespace["ADAPTERS"]) == {"ops.traefik_patch.v1"}
+        # Export while this freshly cloned checkout is still owned by root.
+        # After chown, Git correctly refuses root access to a foreign-owned repo.
+        archive = command(["git", "-C", str(SITE), "archive", DAYBOOK])
         command(["chown", "-R", "daybook-operations:daybook-operations", str(HOME)])
         user(
             [
@@ -304,7 +321,7 @@ def main() -> None:
                 "/usr/local/bin/uv sync --frozen --no-dev --group operations-api --python 3.14.7",
             ]
         )
-        paired_rsync_repeat()
+        paired_rsync_repeat(archive)
         CONF.mkdir(mode=0o750)
         cfg = OperationsApiConfig(source_path=SITE)
         pins = OperationsApiPins(

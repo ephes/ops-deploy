@@ -1,9 +1,12 @@
 # Operations API owned Linux qualification
 
-This fixture owns a disposable PostgreSQL17 container. It mounts only public
-implementation source and a new evidence directory, never host SSH, application
-configuration, database storage or credentials. The Daybook source selection is
-an immutable public Git commit; fixtures use synthetic profiles and work rows.
+This fixture owns a disposable PostgreSQL17 container. It mounts public
+implementation source, a fixed private Daybook checkout read-only, and a new
+evidence directory. It never mounts host SSH, application configuration, database
+storage or credentials. Daybook is a private repository: its own private hosted
+workflow checks out exact45ac with existing read-only repository authorization
+and `persist-credentials:false`. No private code is uploaded to public artifacts.
+Fixtures use synthetic profiles and work rows.
 
 The real packaged management helper runs `migrate --noinput` and
 `provision_operations` under a dedicated service user, sourcing the rendered
@@ -17,9 +20,12 @@ actual SDK with existing/source/dependency/configuration/ownership states. Docke
 does not provide a real systemd host; this fixture does not claim systemd or live
 inventory qualification. Normal target dry/first/repeat evidence remains required.
 
-The configured `Daybook Operations API native` workflow runs on the dedicated
-feature branch and accepts an explicit immutable implementation SHA for manual
-dispatch. `run-container.sh` refuses non-hosted execution and object collisions;
+The private Daybook `Operations API deployment native` workflow runs on its
+dedicated fixture branch and selects an exact public implementation SHA. The
+public repository keeps canonical CI and the reusable harness; it cannot fetch
+the private source unauthenticated. `prepare_source.py` requires the fixed clean
+source and old protocol object, refusing stored authentication or object
+alternates. `run-container.sh` refuses non-hosted execution and object collisions;
 it removes only its newly created container, anonymous volumes and image tag.
 The actual installed package is checked against every Git resource and its
 noneditable `direct_url.json` before fixture preparation.
