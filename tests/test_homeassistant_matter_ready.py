@@ -261,13 +261,13 @@ def test_diagnostic_is_only_admitted_seed_original_and_readiness(
     assert receipts["summary.json"]["typed_phases_executed"] == 0
 
 
-def test_full_matrix_entry_keeps_corrected_library_and_both_cases() -> None:
+def test_current_diagnostic_entry_keeps_corrected_library() -> None:
     from tests.integration.homeassistant.harness import ORIGINAL_LIBRARY_SHA
 
     script = Path("tests/integration/homeassistant/run-guest.sh").read_text()
-    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.harness\n")
-    assert "[[ ${HOMEASSISTANT_FIXTURE_CASE:?} == current || $HOMEASSISTANT_FIXTURE_CASE == upgrade ]]" in script
-    assert "[[ $HOMEASSISTANT_FIXTURE_CASE == current ]]" not in script
+    assert script.endswith(".venv/bin/python -m tests.integration.homeassistant.diagnose_wyoming\n")
+    assert "[[ ${HOMEASSISTANT_FIXTURE_CASE:?} == current ]]" in script
+    assert "|| $HOMEASSISTANT_FIXTURE_CASE == upgrade" not in script
     assert "checkout --detach " + ORIGINAL_LIBRARY_SHA + "\n" in script
     assert '[[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == ' + ORIGINAL_LIBRARY_SHA + " ]]\n" in script
     assert "tests.integration.homeassistant.diagnose_interpreter\n" not in script

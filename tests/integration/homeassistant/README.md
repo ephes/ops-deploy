@@ -300,3 +300,32 @@ that freshly finds Python yields a fixed bookkeeping callback for that earlier
 change, preserving HA and selected Matter notifications without another install.
 Planning, a failed install, an initially present interpreter and a separate
 invocation do not set or inherit that progress. This does not alter SDK internals.
+
+
+## Single original Wyoming diagnostic after b9
+
+Run41155972520 current failed in original selected phase01, before typed phases,
+with the corrected original739 regexes: its desired STT engine remained empty.
+The captured registry metadata did not include the fields needed to distinguish
+entity setup, matching and persistence. That failure is retained; no race or
+protocol cause is claimed. The separate diagnostic entry executes only unchanged
+current seed, original00, Matter readiness, onboarding, peers and original01 once.
+It observes live/disk Wyoming entry/entity identifiers and status, actual installed
+Wyoming Describe/Info capabilities, fixed HA unit properties and a bounded owned
+startup journal before/after the selected pass, including its failure. Each live
+request retains the existing 120-second API deadline; local commands are bounded
+to5/10/20 seconds and1MiB, disk registries to4MiB and4096 selected records. No
+entry data/options, tokens, audio or model bodies are exported. No extra wait,
+restart, explicit engine, bypass, retry, typed phase or full44 replay is added.
+Collector failures remain fixed metadata and do not suppress the original failure.
+All1050 production resources, original role pin and existing matrix/admission/
+cleanup sources remain unchanged. Dispatch requires a frozen reviewed packet.
+
+The before-stage protocol probe may report `ModuleNotFoundError` when the HA
+venv has not yet installed Wyoming integration requirements. It never installs
+that dependency for diagnosis. The after-stage uses the actual installed client.
+Observed metadata collection consumes bounded time; a successful diagnostic
+original pass alone would not establish a production repair or disprove timing
+issues. Original onboarding/health and Matter prerequisite failure evidence are
+retained. If evidence writing itself fails during an original failure, a fixed
+stderr notice records that secondary failure while preserving the primary error.

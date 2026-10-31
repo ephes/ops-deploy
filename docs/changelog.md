@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add an isolated, single-pass original Home Assistant Wyoming diagnostic after
+  the corrected original STT selection still failed in the owned current case.
+  Capture bounded synthetic protocol/startup and live/disk registry metadata
+  without changing production resources, engine selection or retry behavior.
+  This source does not qualify the full application matrix or inventory.
+
 - Compose reviewed Home Assistant context/lifecycle helpers with the owned-native
   interpreter cwd/retry repair while preserving current peer resources. Prepare
   the full application matrix against the immutable original-role voice-regex
