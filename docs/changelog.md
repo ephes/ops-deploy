@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pin the bounded Home Assistant original-stage diagnostic to the live Assist registry repair; keep its runtime and observation scope unchanged.
+
 - Add an isolated, single-pass original Home Assistant Wyoming diagnostic after
   the corrected original STT selection still failed in the owned current case.
   Capture bounded synthetic protocol/startup and live/disk registry metadata

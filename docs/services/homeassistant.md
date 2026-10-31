@@ -1011,9 +1011,14 @@ The original command oracle shows that Ansible does not always choose HOME; the
 explicit service-home cwd is an intentional correction. Successful owned cleanup
 and all972 installed resource bytes were verified. No application phase ran.
 
-The next composed matrix preserves current public peer resources, later original
+The frozen b9 composed matrix preserved then-current public peer resources, later original
 context/override/lifecycle helpers and the exact native-qualified interpreter.
-Its original role source is immutable73928436a5e6fcee81fc16835087f599366fa46a,
+Its original role source was immutable73928436a5e6fcee81fc16835087f599366fa46a,
 with four STT/TTS prefix-regex corrections qualified against original task and
 typed selection controls. Full44 current/upgrade application qualification,
 remaining faults/lifecycles and ordinary private binding remain open.
+
+The current-only original-stage diagnostic now uses immutable library
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19` for the live entity readiness repair.
+It retains the bounded 688c observation scope and unchanged packaged runtime;
+it does not run the full matrix or qualify the typed repair.

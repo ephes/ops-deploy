@@ -1,10 +1,11 @@
 # Prepared owned Home Assistant application fixture
 
-## Current composed matrix candidate
+## Current original-stage repair diagnostic
 
-The guest entry is the current/upgrade application matrix. It uses the immutable
-original library `73928436a5e6fcee81fc16835087f599366fa46a`, including the four
-reviewed STT/TTS entity-prefix regex corrections. The original negative and
+The guest entry runs only current original stages 00→01 with bounded read-only
+Wyoming diagnostics. It uses immutable original library
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19`, including the four reviewed STT/TTS
+entity-prefix regex corrections and live entity registry readiness. The original negative and
 corrected task controls remain separate evidence; no explicit engine setting
 masks autodetection. The interpreter implementation is byte-identical to
 `84168b4ae24cdee413ee0c146f9ff6ef2a8e79f9`, qualified in owned run41151886038.
@@ -16,6 +17,9 @@ remaining faults/lifecycles and ordinary private binding remain unqualified.
 The earlier diagnostic sections below describe their frozen revisions and
 retained evidence, not this candidate's guest entry. Dispatch requires this
 candidate's immutable source/provenance and explicit coordinator authorization.
+Use only `fixture_cases=["current"]` for this diagnostic. The frozen matrix and
+interpreter sections below retain historical design/evidence, not instructions
+to dispatch this revision with their original inputs.
 
 
 The first owned run failed during original Ansible bootstrap before any typed
@@ -37,8 +41,8 @@ noneditable distribution/direct_url and full Git resource-set/every-byte identit
 are recorded before application work. Only anonymous exact public source enters.
 No production inventory, real device, model-provider or Thread data is read.
 
-Current/upgrade cases can be selected separately to retain completed evidence
-when a later fixture repair needs a bounded retry. Collection and cleanup retain
+The shared workflow supports current/upgrade selections for frozen matrix
+revisions. This diagnostic admits only the current case. Collection and cleanup retain
 separate exits and exact owned resources. Interrupted effects remain unknown when
 no after-snapshot exists. No stale resource removal or automatic fixture repair.
 
@@ -71,7 +75,9 @@ controller, which is not Linux/systemd qualification. A separately authorized ne
 run is still required; no automatic failure replay.
 The unchanged original role requires UV to exist before its own later installer.
 These are labelled existing-host prerequisites, never pristine original bootstrap.
-The public library is now pinned to739284, with the original four regex corrections. The current leg uses
+The frozen full matrix used library739284 with the four regex corrections.
+The current original-stage diagnostic advances only that library pin to b430.
+The current leg uses
 HA2026.10.2; upgrade begins with2026.10.1 then requests2026.10.2. Both retain
 Python3.14.8 and actual Matter 8.1.2. `application-provenance.json` records declared
 public release artifacts, not a claim that each dependency download was hashed.
@@ -79,9 +85,10 @@ Actual installed versions/distributions are recorded in every snapshot.
 
 ## Frozen current/upgrade matrix entry
 
-This branch's `run-guest.sh` invokes the original `harness` current/upgrade matrix.
-Dispatch only `fixture_cases=["current","upgrade"]` with its reviewed immutable
-source SHA and separate coordinator authorization. Each leg performs admission,
+The frozen b9/739 revision's `run-guest.sh` invoked the original `harness`
+current/upgrade matrix. Its authorized input was
+`fixture_cases=["current","upgrade"]`; that is not this diagnostic's input.
+Each matrix leg performed admission,
 its declared existing-host seed, unchanged original bootstrap, actual original
 native-library load proof, then Matter readiness before onboarding or any
 selected-original/typed phase. The original phase scope and strict comparisons
@@ -90,8 +97,9 @@ and aborts before any selected/typed phase; it never repairs the guest.
 
 The prior single diagnostic run41134898722 remains a failure with verified
 collection/cleanup. Its `diagnose_matter` helper remains current-only source but
-is no longer the guest entry. This matrix preparation does not constitute a
-successful corrected native run or authorize automatic failure replay.
+was superseded by that frozen matrix entry. The current guest instead invokes
+`diagnose_wyoming`, original00→01 only. Neither historical section authorizes
+automatic failure replay.
 
 Readiness requires the loopback5580 port and a loaded, active/running Matter unit
 with a positive PID and unchanged PID/restart count for20seconds within90seconds.
@@ -130,8 +138,8 @@ checked against that wheel. Each command has a 15-second/1 MiB bound, using the
 existing owned-process cleanup. This does not initialize a second CHIP stack or
 restart the service. Any failure is retained and stops before readiness; success
 still requires the unchanged 90-second/20-second stable unit/port oracle. Corrected
-native loading/readiness remains pending a separately authorized run; the failed
-run and cleanup are retained, never relabelled successful.
+native loading/readiness subsequently passed in run41139171439, as recorded
+below; the preceding failed run and cleanup remain failures.
 
 `api.py` uses HA's own interpreter/aiohttp and real onboarding user creation,
 authorization-code exchange and WebSocket long-lived-token command. Credentials
@@ -151,7 +159,7 @@ The original and typed internal_url both remain the explicit loopback URL. The s
 python-otbr-api3.0.0) against ephemeral loopback ports; that control alone is not
 HA/native qualification. Run it with those three `uv run --with` dependencies.
 
-## Matrix and evidence
+## Frozen matrix scope and evidence
 
 The original role bootstrap/current-selected/repeat is retained alongside actual
 installed typed planning/first/repeat/fish and original-after-typed comparison.
@@ -202,8 +210,8 @@ remain separate; a successful first matrix does not close these paths.
 The guest exports `OPS_LIBRARY_PATH` as the exact owned absolute original
 collection checkout from process start and unsets `OPS_DEPLOY_PATH`. Before the
 harness runs, it verifies that checkout at
-`73928436a5e6fcee81fc16835087f599366fa46a`. The first matrix exercises the installed
-public deployment API; private CLI binding remains a separate qualification.
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. This diagnostic does not execute
+typed application operations; private CLI binding remains a separate qualification.
 
 
 ## Frozen cafbe interpreter diagnostic after c701
@@ -302,7 +310,7 @@ Planning, a failed install, an initially present interpreter and a separate
 invocation do not set or inherit that progress. This does not alter SDK internals.
 
 
-## Single original Wyoming diagnostic after b9
+## Frozen 688c original Wyoming diagnostic after b9
 
 Run41155972520 current failed in original selected phase01, before typed phases,
 with the corrected original739 regexes: its desired STT engine remained empty.
@@ -318,8 +326,9 @@ to5/10/20 seconds and1MiB, disk registries to4MiB and4096 selected records. No
 entry data/options, tokens, audio or model bodies are exported. No extra wait,
 restart, explicit engine, bypass, retry, typed phase or full44 replay is added.
 Collector failures remain fixed metadata and do not suppress the original failure.
-All1050 production resources, original role pin and existing matrix/admission/
-cleanup sources remain unchanged. Dispatch requires a frozen reviewed packet.
+At frozen688c, all1050 production resources, original role pin and existing
+matrix/admission/cleanup sources were unchanged from b9. The current repair
+diagnostic changes only the original pin and documentation as described below.
 
 The before-stage protocol probe may report `ModuleNotFoundError` when the HA
 venv has not yet installed Wyoming integration requirements. It never installs
@@ -329,3 +338,15 @@ original pass alone would not establish a production repair or disprove timing
 issues. Original onboarding/health and Matter prerequisite failure evidence are
 retained. If evidence writing itself fails during an original failure, a fixed
 stderr notice records that secondary failure while preserving the primary error.
+
+### Live-registry repair diagnostic
+
+The current-only original 00→01 diagnostic now pins original library
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19` in both guest checkout and harness
+admission. That source replaces stale saved entity readiness with authenticated
+live registry projection, retaining inherited entry identity or the saved exact
+endpoint fallback. It preserves the existing readiness/retry and TLS policy.
+The preceding 688c failure and all bounded observations remain evidence; this
+run does not exercise typed application operations or the full matrix. All
+packaged runtime files, seed, diagnostic code, cleanup, and strict comparisons
+remain unchanged from 688c. The separate upgrade recovery failure is unresolved.

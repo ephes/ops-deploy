@@ -28,7 +28,7 @@ uv pip install --python /opt/homeassistant-ansible/bin/python ansible==14.5.0 an
 install -d -m 0700 /opt/homeassistant-fixture
 install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
-git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach 73928436a5e6fcee81fc16835087f599366fa46a
-[[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == 73928436a5e6fcee81fc16835087f599366fa46a ]]
+git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach b43028a9483bd23dfaef9bd41123fbaa217c2e19
+[[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == b43028a9483bd23dfaef9bd41123fbaa217c2e19 ]]
 # Single current original-stage diagnostic; no typed/full application matrix.
 .venv/bin/python -m tests.integration.homeassistant.diagnose_wyoming

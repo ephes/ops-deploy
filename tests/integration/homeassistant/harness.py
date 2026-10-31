@@ -29,7 +29,7 @@ from ops_deploy.testing.harness import collect_ops
 
 from .fixture import EVIDENCE, ROOT, VALUES, BoundedLog, PhaseProgress, command, metadata, public_file, sanitize, write
 
-ORIGINAL_LIBRARY_SHA = "73928436a5e6fcee81fc16835087f599366fa46a"
+ORIGINAL_LIBRARY_SHA = "b43028a9483bd23dfaef9bd41123fbaa217c2e19"
 PHASES: list[dict[str, Any]] = []
 HOME = Path("/home/homeassistant/site")
 CONFIG = HOME / "config"
