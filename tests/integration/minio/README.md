@@ -53,8 +53,8 @@ is not execution evidence. The normal component remains unchanged.
 `user_retirement/harness.py` in a throwaway container with a read-only root
 filesystem and everything except the evidence directory on tmpfs. It uses actual
 pyinfra with the local connector and a real server and client, on synthetic
-identities only: plan, ten refusals with whole-state equality, removal of two users,
-two zero-change repeats, a partly retired list, and a recorded client argv with no
+identities only: plan, eleven refusals (five typed, six reaching the host with
+whole-state equality), removal of two users, two zero-change repeats, a partly retired list, and a recorded client argv with no
 credential on it. The evidence directory receives `summary.json` and one log per phase.
 
 It ran with the release client `RELEASE.2025-08-13T08-35-41Z` (linux-arm64) against
