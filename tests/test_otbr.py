@@ -54,6 +54,64 @@ def test_default_build_record_exact_original_order_and_custom_environment_replac
     assert build_environment(config(build_env={})) == {}
 
 
+def test_original_raw_template_truthiness_is_distinct_from_bool_task_conditions() -> None:
+    cfg = config(
+        nat64=False,
+        rest_api_enabled=False,
+        web_enabled=False,
+        no_auto_attach=False,
+        original_template_flags={
+            "nat64": "false",
+            "rest_api_enabled": "false",
+            "web_enabled": "false",
+            "no_auto_attach": "false",
+        },
+    )
+    assert cfg.nat64 is cfg.rest_api_enabled is cfg.web_enabled is cfg.no_auto_attach is False
+    assert build_environment(cfg)["NAT64"] == "1"
+    assert build_environment(cfg)["REST_API"] == build_environment(cfg)["WEB_GUI"] == "1"
+    assert "NAT64=1\n" in build_record(cfg)
+    assert "--rest-listen-address" in render(cfg, "otbr-agent.defaults.j2")
+    assert render(cfg, "otbr-agent.defaults.j2").endswith("OTBR_NO_AUTO_ATTACH=1\n")
+    effects = build_effects(cfg, source_changed=True, marker_exists=True, agent_exists=True, record_current=True)
+    assert effects.restart_agent_after_setup
+    assert not effects.restart_web_after_setup
+
+
+def test_original_template_flags_cannot_override_nonflag_settings() -> None:
+    with pytest.raises(ValidationError):
+        config(original_template_flags={"service_state": "restarted"})
+    native = config(original_template_flags={"rest_api_enabled": True, "web_enabled": False, "no_auto_attach": False})
+    original = config()
+    assert build_record(native) == build_record(original)
+    assert build_environment(native) == build_environment(original)
+    for name in ("otbr-agent.defaults.j2", "99-otbr-zbt2.rules.j2"):
+        assert render(native, name) == render(original, name)
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "rest_api_enabled",
+        "web_enabled",
+        "backbone_router",
+        "border_routing",
+        "nat64",
+        "discovery_proxy",
+        "firewall",
+        "no_auto_attach",
+    ],
+)
+@pytest.mark.parametrize("row", json.loads((ROOT / "parity/otbr_bool_coercion.json").read_text())["rows"])
+def test_original_raw_flags_require_the_matching_original_boolean_condition(flag: str, row: dict[str, Any]) -> None:
+    raw, expected = row["input"], row["bool"]
+    assert row["actual_template_bool"] is expected
+    valid = config(**{flag: expected}, original_template_flags={flag: raw})
+    assert getattr(valid, flag) is expected
+    with pytest.raises(ValidationError, match="original template flag must match"):
+        config(**{flag: not expected}, original_template_flags={flag: raw})
+
+
 @pytest.mark.parametrize(("rest", "noattach", "extra", "web"), list(itertools.product([False, True], repeat=4)))
 def test_templates_preserve_original_literal_options(rest: bool, noattach: bool, extra: bool, web: bool) -> None:
     cfg = config(

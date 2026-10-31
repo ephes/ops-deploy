@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, JsonValue, field_validator, model_validator
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig
 
@@ -12,6 +12,16 @@ Word = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:@+-]+$", min_length=1)]
 Mode = Annotated[str, Field(pattern=r"^0?[0-7]{3,4}$")]
 Line = Annotated[str, Field(pattern=r"^[^\r\n\x00]*$")]
 NonEmptyLine = Annotated[str, Field(pattern=r"^[^\r\n\x00]+$", min_length=1)]
+OriginalTemplateFlag = Literal[
+    "rest_api_enabled",
+    "web_enabled",
+    "backbone_router",
+    "border_routing",
+    "nat64",
+    "discovery_proxy",
+    "firewall",
+    "no_auto_attach",
+]
 
 
 class OtbrConfig(RoleConfig):
@@ -51,6 +61,10 @@ class OtbrConfig(RoleConfig):
     build_options: Line = ""
     # An explicit mapping replaces the default mapping; never silently merge.
     build_env: dict[str, str] | None = None
+    # Original Ansible ternary/Jinja truthiness can differ from |bool task
+    # conditions (e.g. quoted "false"). Normal adapters retain those eight raw
+    # values only for the original build record/environment and templates.
+    original_template_flags: dict[OriginalTemplateFlag, JsonValue] = Field(default_factory=dict)
     service_name: Word = "otbr-agent"
     web_service_name: Word = "otbr-web"
     service_enabled: bool = True
@@ -65,6 +79,12 @@ class OtbrConfig(RoleConfig):
 
     @model_validator(mode="after")
     def original_validation(self) -> Self:
+        for key, raw in self.original_template_flags.items():
+            # Exact original core bool semantics for JSON values, including its
+            # legacy numeric-one fallback. Template/Jinja truthiness stays raw.
+            normalized = raw.lower() in ("yes", "on", "true", "1") if isinstance(raw, str) else raw == 1
+            if getattr(self, key) != normalized:
+                raise ValueError("original template flag must match its original boolean condition")
         if self.rest_api_enabled and not self.rest_listen_address:
             raise ValueError("REST listen address is required when REST is enabled")
         if self.install_dir == "/":

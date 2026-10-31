@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preserve original OTBR ternary/template truthiness for eight explicitly
+  retained raw flags while keeping original boolean task conditions separate.
+  Native boolean/default inputs retain identical build, record and template
+  bytes; command handlers and hardware policy are unchanged.
+
 - Add the original dedicated voice-memo prefix reader installer, preserving exact
   ownership, prefix policy, disabled/foreign/drift refusals and managed verification
   repeats. IAM installation remains separate from application retirement and never

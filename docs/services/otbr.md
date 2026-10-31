@@ -116,3 +116,16 @@ Plain relative repository paths are normalized against the original command
 working directory before resolving, cloning, comparing or setting origin. A
 repeat therefore uses the same repository. Leading Git options are rejected as
 source values; transport and authenticated URL configuration stay supported.
+
+The private original-role adapter can retain `original_template_flags` for the
+original eight template/build-record flags: REST, web, backbone, border routing,
+NAT64, discovery proxy, firewall and no-auto-attach. This finite map preserves
+raw Ansible ternary/Jinja truthiness, which differs from the role's `|bool`
+operation conditions for values such as quoted `"false"`. It affects only the
+original rendered templates and eleven build settings lines/default environment;
+service/build predicates continue to use the normalized boolean fields. It
+cannot override nonflag settings, service actions, hardware or arbitrary render
+values. Native booleans and an absent map keep the previous exact behavior.
+Each retained raw flag must normalize to its matching boolean condition using
+the original core boolean semantics; inconsistent pairs are rejected. This
+retains one original input's two meanings without admitting unrelated settings.

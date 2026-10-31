@@ -1,0 +1,161 @@
+{
+  "original_core_version": "2.21.5",
+  "original_core801_sha256": "9e6c1ff93b5f065e9dce44fda519406905b57bbe36fb0f519b07c1d556b38c9a",
+  "actual_filter_and_template_equal": true,
+  "rows": [
+    {
+      "input": null,
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": true,
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": false,
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": "true",
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "false",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "TRUE",
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "yes",
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "no",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "on",
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "off",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "1",
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "0",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": 1,
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": 0,
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": 2,
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": "other",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": [],
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": {},
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": 1.0,
+      "bool": true,
+      "actual_template_bool": true,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": 0.0,
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": false
+    },
+    {
+      "input": -1.0,
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": "1.0",
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": [
+        1
+      ],
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    },
+    {
+      "input": {
+        "x": 1
+      },
+      "bool": false,
+      "actual_template_bool": false,
+      "actual_ternary_truth": true
+    }
+  ]
+}

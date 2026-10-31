@@ -8,7 +8,7 @@ from typing import Any
 
 import jinja2
 
-from ops_deploy.infra.otbr.config import OtbrConfig
+from ops_deploy.infra.otbr.config import OriginalTemplateFlag, OtbrConfig
 
 
 def resolved_interfaces(cfg: OtbrConfig, default_ipv4_interface: str | None = None) -> OtbrConfig:
@@ -26,16 +26,19 @@ def resolved_interfaces(cfg: OtbrConfig, default_ipv4_interface: str | None = No
 
 
 def build_values(cfg: OtbrConfig) -> dict[str, str]:
+    def flag(name: OriginalTemplateFlag) -> str:
+        return str(int(bool(cfg.original_template_flags.get(name, getattr(cfg, name)))))
+
     return {
-        "REST_API": str(int(cfg.rest_api_enabled)),
-        "WEB_GUI": str(int(cfg.web_enabled)),
+        "REST_API": flag("rest_api_enabled"),
+        "WEB_GUI": flag("web_enabled"),
         "OTBR_MDNS": cfg.mdns,
         "OTBR_DHCP6_PD_CLIENT": cfg.dhcp6_pd_client,
-        "BACKBONE_ROUTER": str(int(cfg.backbone_router)),
-        "BORDER_ROUTING": str(int(cfg.border_routing)),
-        "NAT64": str(int(cfg.nat64)),
-        "DISCOVERY_PROXY": str(int(cfg.discovery_proxy)),
-        "FIREWALL": str(int(cfg.firewall)),
+        "BACKBONE_ROUTER": flag("backbone_router"),
+        "BORDER_ROUTING": flag("border_routing"),
+        "NAT64": flag("nat64"),
+        "DISCOVERY_PROXY": flag("discovery_proxy"),
+        "FIREWALL": flag("firewall"),
         "INFRA_IF_NAME": cfg.infra_interface,
         "OTBR_OPTIONS": cfg.build_options,
     }
@@ -62,7 +65,10 @@ def _templates() -> jinja2.Environment:
 
 
 def render(cfg: OtbrConfig, name: str) -> str:
-    return _templates().get_template(name).render(**{"otbr_" + key: value for key, value in cfg.model_dump().items()})
+    values: dict[str, Any] = cfg.model_dump()
+    for key, value in cfg.original_template_flags.items():
+        values[key] = value
+    return _templates().get_template(name).render(**{"otbr_" + key: value for key, value in values.items()})
 
 
 @dataclass(frozen=True)
