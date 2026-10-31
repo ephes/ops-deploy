@@ -1050,3 +1050,11 @@ b430 role passed owned original00→01 with enabled live engines, unchanged HA P
 no restart and successful cleanup. That bounded result ran no typed phases and
 does not resolve the previous upgrade34 PID/readiness failure. Final shared
 artifact/native and ordinary private wrapper qualification remain required.
+
+
+The owned49af full matrix reached phase32 in both cases but failed phase34 after
+a process-ID change during the expected missing-STT fault. The subsequent
+current-only diagnostic preserves the exact00→34 history and collects bounded
+systemd/cgroup/PID1-manager metadata without reading application/model/audio
+bodies or changing limits/readiness. It stops before35 and does not qualify the
+remaining phases, actual inventory or the ordinary private caller.

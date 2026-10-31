@@ -1,20 +1,42 @@
 # Prepared owned Home Assistant application fixture
 
-## Current composed application matrix
+## Current voice-failure diagnostic entry
 
-The guest entry is the full current/upgrade matrix via the canonical harness.
-Use `fixture_cases=["current","upgrade"]` only with this candidate's frozen
-source, complete installed artifact identity and explicit coordinator GO.
-Both original-library checkout and admission use immutable
-`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. Its live entity readiness repair passed
-bounded current original00→01 in run41161928127; no typed operations ran there.
-That result does not clear the earlier upgrade34 PID/readiness failure.
+This revision runs one **current00→34 prefix**, preserving the exact existing-host
+seed, original bootstrap/selection/repeat, typed operations and deliberate fault
+history of frozen49af. Dispatch only `fixture_cases='["current"]'` with its frozen
+immutable source and explicit coordinator GO. The guest rejects upgrade before
+application work and stops before phase35 even if phase34 recovers. It never
+claims a successful full matrix. Original-library checkout and admission both
+remain `b43028a9483bd23dfaef9bd41123fbaa217c2e19`.
 
-This composition preserves Reader7c, the qualified finite OTBR flag semantics,
-typed live-registry repair be452 and the native-qualified interpreter repair84168.
-Full current/upgrade, remaining faults/lifecycles and ordinary private binding
-remain unqualified. The diagnostic helpers and historical evidence below remain
-available as source controls; they are not this revision's guest entry.
+Full run41162968871 failed in both cases at phase34 API readiness after the
+expected phase33 missing-STT failure changed Home Assistant's PID. Matter's PID
+was unchanged. Phase32 strict comparisons passed; current original00/01/02/07
+and upgrade00/07 passed. Both31 typed phase records, partial mutations, all1059
+installed resource maps and cleanup are retained. Phases35–46 did not execute.
+PID change alone does not establish the exit cause, and container OOMKilled=false
+does not rule out an application-process OOM kill.
+
+`diagnose_voice` wraps only the existing fixture call sites. It captures bounded
+read-only systemd exit/restart properties, fixed root/HA-unit cgroup memory
+counters/limits, cgroup/PID namespace and membership, journald service status and
+only PID1's Home Assistant unit manager journal before/after phases32/33/34.
+Application journals, model/audio/configuration/registry bodies are not read.
+All commands use the existing bounded process-group runner (at most1MiB output,
+5seconds each; manager journal100lines/10seconds). Memory reads additionally cap
+each fixed cgroup file at4096bytes. An unavailable/empty journal is missing
+evidence, never proof that no exit or restart occurred. No observer service is
+activated and no CPU/memory/PID limit, retry, sleep, readiness or strict comparator
+changes. Collector failures are recorded; a final evidence failure cannot hide
+an earlier phase failure. `VOICE-DIAGNOSTIC.json` records partial canonical phase
+rows and whether the exact prefix returned through34, separately from full-matrix
+qualification. Synthetic peers and the unchanged outer guest cleanup still run.
+
+The complete current/upgrade entry remains in frozen49af, preserving Reader,
+WorkSource, finite OTBR flag semantics, typed live registry and interpreter fixes.
+The diagnostics here do not authorize another full run, shared Main/private pin
+adoption, actual inventory, hardware or ordinary private caller qualification.
 
 
 The first owned run failed during original Ansible bootstrap before any typed
@@ -36,8 +58,8 @@ noneditable distribution/direct_url and full Git resource-set/every-byte identit
 are recorded before application work. Only anonymous exact public source enters.
 No production inventory, real device, model-provider or Thread data is read.
 
-The shared workflow supports current/upgrade selections. The current matrix
-requires both cases; frozen original-only diagnostics admit current alone. Collection and cleanup retain
+The shared workflow supports current/upgrade selections. This diagnostic admits
+current alone; the separate full matrix requires both cases. Collection and cleanup retain
 separate exits and exact owned resources. Interrupted effects remain unknown when
 no after-snapshot exists. No stale resource removal or automatic fixture repair.
 
@@ -72,7 +94,7 @@ The unchanged original role requires UV to exist before its own later installer.
 These are labelled existing-host prerequisites, never pristine original bootstrap.
 The frozen full matrix used library739284 with the four regex corrections.
 The qualified original-stage diagnostic advanced that library pin to b430;
-this application matrix retains the corrected original source.
+this diagnostic retains the corrected original source.
 The current leg uses
 HA2026.10.2; upgrade begins with2026.10.1 then requests2026.10.2. Both retain
 Python3.14.8 and actual Matter 8.1.2. `application-provenance.json` records declared
@@ -83,8 +105,8 @@ Actual installed versions/distributions are recorded in every snapshot.
 
 The frozen b9/739 revision's `run-guest.sh` invoked the original `harness`
 current/upgrade matrix. Its authorized input was
-`fixture_cases=["current","upgrade"]`; the current corrected matrix restores
-that same two-case scope.
+`fixture_cases=["current","upgrade"]`; frozen49af restored that same two-case
+scope before the current prefix diagnostic.
 Each matrix leg performed admission,
 its declared existing-host seed, unchanged original bootstrap, actual original
 native-library load proof, then Matter readiness before onboarding or any
@@ -207,8 +229,8 @@ remain separate; a successful first matrix does not close these paths.
 The guest exports `OPS_LIBRARY_PATH` as the exact owned absolute original
 collection checkout from process start and unsets `OPS_DEPLOY_PATH`. Before the
 harness runs, it verifies that checkout at
-`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. The current matrix executes typed
-application operations; private CLI binding remains a separate qualification.
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. The current diagnostic executes typed
+operations only through34; private CLI binding remains a separate qualification.
 
 
 ## Frozen cafbe interpreter diagnostic after c701
@@ -220,11 +242,9 @@ failed separately in the original STT entity resolution. Preserve those partial
 results; neither case qualifies the application matrix.
 
 The frozen cafbe feature's guest entry was a single **current interpreter-only diagnostic**.
-Dispatch this revision only with the explicit workflow input
-`fixture_cases='["current"]'`; the unchanged published workflow's default
-current+upgrade input is not the diagnostic scope. Root authorizes the exact
-immutable source and this input before dispatch. An upgrade input deliberately
-fails admission and must not be used as a diagnostic retry.
+Its authorized workflow input was `fixture_cases='["current"]'`; the published
+workflow default was outside that historical diagnostic scope. Its upgrade input
+failed admission. These historical instructions do not authorize a new dispatch.
 
 It shares the exact checksum-pinned UV0.13.5/account seed, creates only the owned
 Python3.14.8 environment, and runs no original role, HA/Matter package, service,
@@ -251,7 +271,7 @@ lookup or application deployment. Source controls use fixed synthetic commands
 through the real SDK; actual Linux/UV behavior still requires a separately
 approved immutable guest run.
 
-The full matrix entry now delegates to the canonical harness module, so phases
+The frozen full matrix entry delegates to the canonical harness module, so phases
 recorded by the matrix's imported typed caller appear in its summary even when a
 later phase fails. Strict per-phase comparisons remain unchanged. Full current
 and upgrade execution, remaining faults/lifecycles, original STT diagnosis and
@@ -261,7 +281,7 @@ ordinary private controller binding remain open.
 ## Interpreter repair controls after cafbe
 
 The frozen84168 guest entry retained the same single-current, interpreter-only scope.
-No application matrix is dispatched by this source. Native execution of the
+No application matrix was dispatched by that frozen source. Native execution of the
 repair requires a separately frozen source/provenance packet and Root GO.
 
 The cafbe native result established the failure: service-user UV discovery
@@ -293,7 +313,7 @@ succeeded. SDK change results remain the restart-notification input.
 Original command processes are limited to 120 seconds each; each direct UV repair
 command is limited to 120 seconds; the SDK child has a 900-second outer bound,
 command/query timeouts, and bounded public output. Original and typed native
-repair results passed in run41151886038; this composed application matrix remains pending. This is
+repair results passed in run41151886038; full-matrix completion remains open after the retained49af failure. This is
 not full Home Assistant, private workflow, inventory or hardware qualification.
 
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add an owned current00–34 Home Assistant voice-fault diagnostic with bounded
+  systemd/cgroup exit evidence and unchanged production, limits and comparisons.
+
 - Preserve original OTBR ternary/template truthiness for eight explicitly
   retained raw flags while keeping original boolean task conditions separate.
   Native boolean/default inputs retain identical build, record and template
