@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add the original shared Daybook notifier endpoint installer with bounded private
+  stdin, fixed forced-command authorization, compile-only source validation and
+  additive administrator-key preservation. Existing semantically exact config
+  and authorization retain their bytes and metadata; repeats perform genuine
+  managed validation without sending or importing application code.
+
 - Preserve original OTBR ternary/template truthiness for eight explicitly
   retained raw flags while keeping original boolean task conditions separate.
   Native boolean/default inputs retain identical build, record and template
