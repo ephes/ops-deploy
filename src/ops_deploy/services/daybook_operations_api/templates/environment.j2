@@ -1,0 +1,24 @@
+{# The systemd unit reads this file as written. With task_shell_environment the same
+   values are rendered double-quoted for the 0600 companion that management tasks
+   source, so no secret ever travels in a task environment or a command line. #}
+{% macro env_value(value) -%}
+{%- if task_shell_environment | default(false) -%}
+"{{ value | string | replace('\\', '\\\\') | replace('"', '\\"') | replace('$', '\\$') | replace('`', '\\`') }}"
+{%- else -%}
+{{ value }}
+{%- endif -%}
+{%- endmacro %}
+OPERATIONS_SECRET_KEY={{ env_value(daybook_operations_api_secret_key) }}
+OPERATIONS_DATABASE_URL={{ env_value(daybook_operations_api_database_url) }}
+OPERATIONS_SIGNING_KEYS={{ env_value(daybook_operations_api_signing_keys | to_json) if task_shell_environment | default(false) else "'" ~ (daybook_operations_api_signing_keys | to_json) ~ "'" }}
+OPERATIONS_SIGNING_KEY_ID={{ env_value(daybook_operations_api_signing_key_id) }}
+OPERATIONS_ALLOWED_HOSTS={{ env_value('localhost,127.0.0.1,' ~ daybook_operations_api_domain) }}
+OPERATIONS_RECORD_LIMIT={{ env_value(daybook_operations_api_record_limit) }}
+OPERATIONS_STORAGE_PATH={{ env_value(daybook_operations_api_storage_path) }}
+OPERATIONS_STORAGE_SAMPLE_INTERVAL={{ env_value(daybook_operations_api_storage_sample_interval) }}
+OPERATIONS_STORAGE_SAMPLE_MAX_AGE={{ env_value(daybook_operations_api_storage_sample_max_age) }}
+OPERATIONS_NOMINAL_RECORDS_PER_DAY={{ env_value(daybook_operations_api_nominal_records_per_day) }}
+OPERATIONS_CAPACITY_WARN_UTILIZATION={{ env_value(daybook_operations_api_capacity_warn_utilization) }}
+OPERATIONS_CAPACITY_CRITICAL_UTILIZATION={{ env_value(daybook_operations_api_capacity_critical_utilization) }}
+OPERATIONS_CAPACITY_WARN_DAYS={{ env_value(daybook_operations_api_capacity_warn_days) }}
+OPERATIONS_CAPACITY_CRITICAL_DAYS={{ env_value(daybook_operations_api_capacity_critical_days) }}

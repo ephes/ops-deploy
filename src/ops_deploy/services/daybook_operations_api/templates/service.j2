@@ -1,0 +1,25 @@
+[Unit]
+Description=Daybook operations {{ item }}
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User={{ daybook_operations_api_user }}
+Group={{ daybook_operations_api_user }}
+WorkingDirectory={{ daybook_operations_api_site }}/services/operations_api
+EnvironmentFile={{ daybook_operations_api_config_dir }}/environment
+{% if item == 'api' %}
+ExecStart={{ daybook_operations_api_venv }}/bin/gunicorn --bind 127.0.0.1:{{ daybook_operations_api_port }} --workers 2 --timeout 30 --limit-request-line 2048 --limit-request-field_size 2048 operations_api.wsgi:application
+{% else %}
+ExecStart={{ daybook_operations_api_venv }}/bin/python {{ daybook_operations_api_site }}/services/operations_api/manage.py reconcile_operations --loop
+{% endif %}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
