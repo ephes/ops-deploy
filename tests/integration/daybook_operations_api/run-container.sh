@@ -4,6 +4,7 @@ set -euo pipefail
 [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
 [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
 [[ "$IMPLEMENTATION_SHA" =~ ^[0-9a-f]{40}$ ]]
+python3 tests/integration/daybook_operations_api/prepare_source.py "$DAYBOOK_SOURCE"
 name="daybook-operations-api-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 image="$name:fixture"
 export_parent="$RUNNER_TEMP/$name"
@@ -39,6 +40,7 @@ image_id=$(docker image inspect --format '{{.Id}}' "$image")
 container_id=$(docker create --name "$name" \
     --mount "type=bind,source=$PWD,target=/source,readonly" \
     --mount "type=bind,source=$export_parent,target=/evidence" \
+    --mount "type=bind,source=$DAYBOOK_SOURCE,target=/daybook-source,readonly" \
     -e GITHUB_ACTIONS=true -e RUNNER_ENVIRONMENT=github-hosted \
     -e GITHUB_RUN_ID -e IMPLEMENTATION_SHA -e UV_PYTHON=3.13 \
     "$image" bash -euc '
