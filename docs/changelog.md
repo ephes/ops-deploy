@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `infra.redis_install` with `add_official_repo` (via `apt_repository(...,
+  dearmor=True)`): the keyring check no longer reads the keyring's first bytes
+  back as a fact. A dearmored keyring starts with byte 0x99, which pyinfra
+  cannot decode as text, so each run with the keyring in place logged a
+  `UnicodeDecodeError` traceback and the check decided on empty output. The
+  host now prints one word (`missing`, `armored`, `binary`, `other`) and the
+  key is replaced unless it is `binary`; empty files and files that are no
+  OpenPGP key are now repaired too. A converged host with a valid keyring
+  still changes nothing. Other apt keys (Docker, PostgreSQL, Vector, Jellyfin,
+  Tailscale) never read key bytes back and are unchanged.
+
 - `infra.smartd`: per-device `temp_diff`/`temp_info`/`temp_crit` on
   `SmartdDevice` override the role-wide smartd `-W` thresholds for that device
   (port of the ops-library smartd role's per-device `smartd_temp_*` keys; the

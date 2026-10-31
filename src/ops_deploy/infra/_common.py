@@ -55,6 +55,34 @@ def sources_path(name: str) -> str:
     return f"/etc/apt/sources.list.d/{name}.sources"
 
 
+# First byte of a binary OpenPGP public-key packet: old format with a one-,
+# two- or four-byte length (0x98, 0x99, 0x9a) or new format (0xc6).
+_KEY_PACKET_TAGS = ("98", "99", "9a", "c6")
+
+
+def keyring_state_command(keyring: str) -> str:
+    """Shell test that prints one word for ``keyring``: ``missing``, ``armored``, ``binary`` or ``other``.
+
+    The decision is made on the host and only that word comes back: a binary
+    keyring's bytes (a packet tag such as 0x99) are not UTF-8, and pyinfra
+    cannot decode them as a fact's output.
+    """
+
+    path = shlex.quote(keyring)
+    tags = "|".join(_KEY_PACKET_TAGS)
+    return (
+        f"if [ ! -s {path} ]; then echo missing; "
+        f"elif head -c 5 {path} | grep -q -- -----; then echo armored; "
+        f"else case $(od -An -tx1 -N1 {path} | tr -d ' ') in {tags}) echo binary;; *) echo other;; esac; fi"
+    )
+
+
+def keyring_state(keyring: str) -> str:
+    """:func:`keyring_state_command` as a fact; ``missing`` when the test itself fails."""
+
+    return output(keyring_state_command(keyring)).strip() or "missing"
+
+
 def apt_repository(
     *,
     name: str,
@@ -71,7 +99,9 @@ def apt_repository(
     ``dearmor``: the URL serves an ASCII-armored key but ``keyring`` ends in
     ``.gpg``, which apt reads as binary; the key is converted with ``gpg
     --dearmor``, also when an armored copy is already there (the role stores
-    it as served, which apt then ignores).
+    it as served, which apt then ignores). Whether the keyring is already
+    binary is decided on the host (:func:`keyring_state`); its bytes are never
+    read back.
     """
 
     files.directory(
@@ -79,13 +109,12 @@ def apt_repository(
     )
     if not dearmor:
         files.download(name=f"Install {name} apt signing key", src=key_url, dest=keyring, mode="0644")
-    elif not (present := bool(host.get_fact(File, path=keyring))) or output(
-        f"head -c 10 {shlex.quote(keyring)}"
-    ).startswith("-----"):
-        # Missing, or armored (what the role and earlier runs stored): convert.
-        # Refresh the cache only while the repository is not configured yet:
-        # with its key missing or armored, a refresh fails before the repair.
-        configured = present or bool(host.get_fact(File, path=sources_path(name)))
+    elif (state := keyring_state(keyring)) != "binary":
+        # Missing or empty, armored (what the role and earlier runs stored) or
+        # not a key at all: convert. Refresh the cache only while the
+        # repository is not configured yet: with its key missing or armored, a
+        # refresh fails before the repair.
+        configured = state != "missing" or bool(host.get_fact(File, path=sources_path(name)))
         apt.packages(name="Install curl and gnupg", packages=["curl", "gnupg"], update=not configured, cache_time=3600)
         tmp = shlex.quote(f"{keyring}.ops-deploy-new")
         server.shell(

@@ -164,7 +164,12 @@ Differences from the role, on purpose:
   configuration.
 - The apt cache is refreshed when older than an hour, not on every run.
 - With `add_official_repo` the armored key is stored dearmored at the `.gpg`
-  path (the role stores it armored, which apt does not read there).
+  path (the role stores it armored, which apt does not read there). Whether
+  the keyring there is already binary is decided on the host, and only one
+  word comes back (`missing`, `armored`, `binary` or `other`; the first byte
+  must be an OpenPGP public-key packet tag). The key is downloaded and
+  converted again unless it is `binary`, so an empty file or an error page is
+  repaired too.
 - `validate_config` (try a candidate in a throwaway `redis-server` first) is
   not ported; it is off in every inventory.
 - Whether to back up is decided from the file before the run, so on a fresh
