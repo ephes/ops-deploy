@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Complete the owned Home Assistant existing-host HTTP baseline through the
+  original explicit confirmation API after reachability/onboarding and exact
+  synthetic pending-state admission. Retain finite before/after/effect evidence,
+  refuse drift, and restore the complete current+upgrade matrix with published
+  Notifier peers. Production roles, runtime and inventory behavior are unchanged.
+
 - Add a bounded current-only Home Assistant HTTP trial-state diagnostic after
   original bootstrap and user/token onboarding. It reads only `http/config`,
   exports finite metadata, and stops before selected/typed phases without
@@ -10,6 +16,12 @@
 
 - Add an owned current00–34 Home Assistant voice-fault diagnostic with bounded
   systemd/cgroup exit evidence and unchanged production, limits and comparisons.
+
+- Add the original shared Daybook notifier endpoint installer with bounded private
+  stdin, fixed forced-command authorization, compile-only source validation and
+  additive administrator-key preservation. Existing semantically exact config
+  and authorization retain their bytes and metadata; repeats perform genuine
+  managed validation without sending or importing application code.
 
 - Preserve original OTBR ternary/template truthiness for eight explicitly
   retained raw flags while keeping original boolean task conditions separate.

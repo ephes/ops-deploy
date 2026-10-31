@@ -6,7 +6,7 @@ unset OPS_DEPLOY_PATH
 [[ $(id -u) == 0 && $(uname -m) == x86_64 && $(cat /proc/1/comm) == systemd ]]
 [[ ${IMPLEMENTATION_SHA:?} =~ ^[0-9a-f]{40}$ ]]
 [[ ${HOMEASSISTANT_OWNED_ID:?} =~ ^homeassistant-[0-9]+-[0-9]+$ ]]
-[[ ${HOMEASSISTANT_FIXTURE_CASE:?} == current ]]
+[[ ${HOMEASSISTANT_FIXTURE_CASE:?} == current || ${HOMEASSISTANT_FIXTURE_CASE:?} == upgrade ]]
 [[ $(cat /etc/ops-homeassistant-owned-id) == "$HOMEASSISTANT_OWNED_ID" ]]
 [[ -z $(env | grep -Ei '(token|secret|ssh_auth|github_api|actions_runtime)' || true) ]]
 . /etc/os-release
@@ -30,5 +30,5 @@ install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library
 git -C /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library checkout --detach b43028a9483bd23dfaef9bd41123fbaa217c2e19
 [[ $(git -C "$OPS_LIBRARY_PATH" rev-parse HEAD) == b43028a9483bd23dfaef9bd41123fbaa217c2e19 ]]
-# One current original00/onboarding/HTTP status observation; no01, peers or typed phases.
-.venv/bin/python -m tests.integration.homeassistant.diagnose_http
+# Full current+upgrade matrix after explicit owned existing-host HTTP confirmation.
+.venv/bin/python -m tests.integration.homeassistant.harness

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import runpy
 import secrets
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -115,6 +117,20 @@ async def _execute(value: dict[str, Any]) -> dict[str, Any]:
         return {"token": await seed_user(url)}  # Parent captures in RAM, never evidence/stdout forwarding.
     if value["action"] == "ws":
         return {"result": await websocket(url, value["token"], value["command"])}
+    if value["action"] == "confirm-http-baseline":
+        if urlsplit(url).port != 10020:
+            raise ValueError("HTTP confirmation requires the owned fixture port")
+        # Fixed reviewed fixture source; -I intentionally excludes ambient
+        # import paths. No request/provider path selects executable source.
+        helper = runpy.run_path(str(Path(__file__).with_name("http_baseline.py")))
+
+        async def request(command: dict[str, Any]) -> Any:
+            return await websocket(url, value["token"], command)
+
+        result = await helper["complete"](request, value["command"]["ipv4"])
+        if not isinstance(result, dict):
+            raise ValueError("invalid owned HTTP baseline result")
+        return result
     if value["action"] == "health":
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session,

@@ -1071,3 +1071,14 @@ Only fixed slot/error enums and boolean status/port comparisons are retained,
 never HTTP settings or private digests. No promotion, wait or readiness change is
 authorized by this source preparation; confirmed existing-host baseline versus
 incomplete fixture onboarding remains a separate decision after observation.
+
+The read-only39f run41169358743 then observed pending10020 with a rollback deadline
+and stable/default8123, without selected/typed work or promotion. The restored
+full matrix completes only that known synthetic existing-host setup: API200 and
+user/token onboarding, exact original schema/source validation and whole pending
+configuration equality, one explicit original confirmation, then stable10020/no
+pending/no deadline. Unexpected states fail before the write; later failures keep
+attempt accounting. All comparisons stay in RAM and only finite status is retained.
+Both current/upgrade keep the full fault matrix, strict comparisons and limits.
+This fixture-only operator action changes no production deployment behavior; the
+1063-resource candidate also preserves the published6ed Notifier peers.

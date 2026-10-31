@@ -224,6 +224,8 @@ def run() -> None:
     token = api("seed")["token"]
     assert isinstance(token, str)
     VALUES.append(token)
+    health = api("health", token=token)
+    assert health == {"status": 200}, "owned HTTP baseline must be reachable before confirmation"
     write(
         "api-onboarding.json",
         {
@@ -231,9 +233,12 @@ def run() -> None:
             "actual_token_exchange": True,
             "actual_long_lived_token": True,
             "frontend_core_onboarding_completed": False,
-            "health": api("health", token=token),
+            "health": health,
         },
     )
+    confirmation = api("confirm-http-baseline", token=token, command_value={"ipv4": default_ipv4()})
+    write("http-baseline-completion.json", confirmation)
+    assert confirmation.get("confirmed") is True, "owned existing-host HTTP baseline confirmation failed"
     with peers():
         selected = config(token=token, selected=True)
         if case == "current":

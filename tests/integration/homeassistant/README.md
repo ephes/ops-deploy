@@ -1,8 +1,43 @@
 # Prepared owned Home Assistant application fixture
 
-## Current HTTP trial-state diagnostic entry
+## Current restored full matrix and confirmed HTTP baseline
 
-This revision runs unchanged current seed, originalb430 bootstrap00, Matter/native
+This revision restores the unchanged full current+upgrade fault matrix through
+its final phases; dispatch explicitly `fixture_cases='["current","upgrade"]'`
+only with the frozen immutable artifact and coordinator GO. It preserves all
+qualified49af HA runtime plus the four6ed Notifier resources (1063 total), both
+originalb430 pins, original task/typed ordering, comparisons, retries, timeouts,
+resource limits, peer ownership and cleanup. The diagnostic-only sources below
+remain available as historical controls, but are not this guest's entry point.
+
+Run41169358743 confirmed the incomplete owned fixture baseline: after original00
+and user/token onboarding, HTTP was pending on10020 with a revert deadline,
+while stable/default remained8123. Original2026.10.1 and2026.10.2 HTTP config and
+WebSocket modules are byte-identical. Their actual source oracle establishes
+300second rollback/restart and explicit confirmation semantics. This corroborates
+the earlier exit100 near303seconds; the failed full runs remain failures.
+
+The fixture now completes its declared existing-host HTTP setup after successful
+user/token onboarding and demonstrated API200, before peers/original01/typed work.
+It loads the exact original schema and guards both HTTP source hashes/version,
+then requires the complete known synthetic pending configuration and original
+default stable configuration, with no error and an active trial deadline. All
+settings comparisons remain in RAM. Only then does it request the original
+`http/config/promote` once and read back stable10020, no pending slot and no
+scheduled revert. Missing, failed, unexpected or mismatched configurations refuse
+without a confirmation request. A failure after a request retains attempted-write
+accounting; it never retries. `http-baseline-completion.json` contains only fixed
+status/effect fields and the finite before/after projection, no settings/digests.
+
+This is explicit synthetic operator confirmation in the owned fixture, not
+production deployment logic or automatic promotion on an inventory host. No
+configuration/update endpoint, seed-file rewrite, timeout extension or readiness
+relaxation is introduced. Confirmation source checks do not qualify the complete
+matrix; actual both-case execution and ordinary private caller remain required.
+
+## Frozen39f HTTP trial-state diagnostic entry
+
+Frozen39f ran unchanged current seed, originalb430 bootstrap00, Matter/native
 readiness and existing synthetic user/token onboarding, then reads the existing
 admin WebSocket `http/config` command once. It stops before original01, synthetic
 peers and every typed phase. Dispatch only `fixture_cases='["current"]'` with the
@@ -87,8 +122,8 @@ noneditable distribution/direct_url and full Git resource-set/every-byte identit
 are recorded before application work. Only anonymous exact public source enters.
 No production inventory, real device, model-provider or Thread data is read.
 
-The shared workflow supports current/upgrade selections. This diagnostic admits
-current alone; the separate full matrix requires both cases. Collection and cleanup retain
+The shared workflow supports current/upgrade selections. Frozen39f admitted
+current alone; this restored full matrix requires both cases. Collection and cleanup retain
 separate exits and exact owned resources. Interrupted effects remain unknown when
 no after-snapshot exists. No stale resource removal or automatic fixture repair.
 
@@ -123,7 +158,7 @@ The unchanged original role requires UV to exist before its own later installer.
 These are labelled existing-host prerequisites, never pristine original bootstrap.
 The frozen full matrix used library739284 with the four regex corrections.
 The qualified original-stage diagnostic advanced that library pin to b430;
-this diagnostic retains the corrected original source.
+the restored matrix retains the corrected original source.
 The current leg uses
 HA2026.10.2; upgrade begins with2026.10.1 then requests2026.10.2. Both retain
 Python3.14.8 and actual Matter 8.1.2. `application-provenance.json` records declared
@@ -135,7 +170,7 @@ Actual installed versions/distributions are recorded in every snapshot.
 The frozen b9/739 revision's `run-guest.sh` invoked the original `harness`
 current/upgrade matrix. Its authorized input was
 `fixture_cases=["current","upgrade"]`; frozen49af restored that same two-case
-scope before the frozen322f prefix diagnostic.
+scope before the frozen322f prefix diagnostic; this revision restores that complete matrix.
 Each matrix leg performed admission,
 its declared existing-host seed, unchanged original bootstrap, actual original
 native-library load proof, then Matter readiness before onboarding or any
@@ -258,7 +293,7 @@ remain separate; a successful first matrix does not close these paths.
 The guest exports `OPS_LIBRARY_PATH` as the exact owned absolute original
 collection checkout from process start and unsets `OPS_DEPLOY_PATH`. Before the
 harness runs, it verifies that checkout at
-`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. The current HTTP diagnostic executes
+`b43028a9483bd23dfaef9bd41123fbaa217c2e19`. The frozen39f HTTP diagnostic executed
 no typed operations. Frozen322f executed
 typed operations only through34; private CLI binding remains separate.
 

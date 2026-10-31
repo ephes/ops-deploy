@@ -3,54 +3,15 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
-from typing import Any
 
 from .diagnose_wyoming import _evidence
 from .fixture import VALUES, write
 from .harness import admit, api, original, wait_http
+from .http_baseline import project as project
 from .matrix import original_vars
 from .matter_native import verify_native_dependencies
 from .matter_ready import diagnostics, wait_ready
 from .prerequisites import seed
-
-
-def project(value: Any) -> dict[str, Any]:
-    """Discard configuration bodies; only finite enums and booleans leave RAM."""
-    if not isinstance(value, dict) or set(value) != {"stable", "pending", "revert_at", "active_config_type", "default"}:
-        raise ValueError("invalid owned HTTP status response")
-    active = value["active_config_type"]
-    if not isinstance(active, str) or active not in {"stable", "pending", "default", "default_legacy_port"}:
-        raise ValueError("invalid owned HTTP active slot")
-    deadline = value["revert_at"]
-    if deadline is not None:
-        try:
-            if not isinstance(deadline, str) or datetime.fromisoformat(deadline).tzinfo is None:
-                raise ValueError
-        except ValueError:
-            raise ValueError("invalid owned HTTP revert deadline") from None
-    slots: dict[str, dict[str, bool] | None] = {}
-    for name in ("stable", "pending", "default"):
-        slot = value[name]
-        if slot is None and name == "pending":
-            slots[name] = None
-            continue
-        if not isinstance(slot, dict) or type(slot.get("server_port")) is not int:
-            raise ValueError("invalid owned HTTP config slot")
-        port = slot["server_port"]
-        if not 1 <= port <= 65535:
-            raise ValueError("invalid owned HTTP port")
-        slots[name] = {"port_is_fixture10020": port == 10020, "port_is_builtin8123": port == 8123}
-    error = value["pending"].get("error") if value["pending"] is not None else None
-    if error is not None and (not isinstance(error, str) or error not in {"apply_failed", "not_promoted"}):
-        raise ValueError("invalid owned HTTP pending error")
-    return {
-        "active_slot": active,
-        "pending_present": value["pending"] is not None,
-        "pending_error": error,
-        "revert_scheduled": deadline is not None,
-        "slots": slots,
-    }
 
 
 def run() -> None:
