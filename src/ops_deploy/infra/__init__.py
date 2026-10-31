@@ -39,6 +39,7 @@ from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encr
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
 from ops_deploy.infra.mail_relay_client import MailRelayClientConfig, deploy_mail_relay_client
 from ops_deploy.infra.netplan import NetplanConfig, deploy_netplan
+from ops_deploy.infra.otbr import OtbrConfig, deploy_otbr
 from ops_deploy.infra.postgres_install import (
     DatabaseSpec,
     ExtensionSpec,
@@ -94,6 +95,7 @@ __all__ = [
     "MailReplicationConfig",
     "MinioArchiveConfig",
     "NetplanConfig",
+    "OtbrConfig",
     "PgHbaRule",
     "PostgresInstallConfig",
     "ProbeBaseline",
@@ -139,6 +141,7 @@ __all__ = [
     "deploy_mail_replication",
     "deploy_minio_archive",
     "deploy_netplan",
+    "deploy_otbr",
     "deploy_postgres_install",
     "deploy_redis_install",
     "deploy_smartd",

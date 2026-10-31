@@ -1,0 +1,28 @@
+---
+- name: "Default infra interface when unset"
+  ansible.builtin.set_fact:
+    otbr_infra_interface: "{{ ansible_default_ipv4.interface }}"
+  when:
+    - (otbr_infra_interface | default('')) | length == 0
+    - ansible_default_ipv4.interface is defined
+
+- name: "Validate OTBR settings"
+  ansible.builtin.assert:
+    that:
+      - otbr_repo_url | length > 0
+      - otbr_install_dir | length > 0
+      - otbr_rcp_device is defined
+      - otbr_rcp_device | length > 0
+      - otbr_rcp_device != "CHANGEME"
+      - otbr_infra_interface | length > 0
+      - otbr_wpan_interface | length > 0
+      - otbr_rest_listen_port | int > 0
+    fail_msg: >-
+      Set otbr_rcp_device (not CHANGEME) and otbr_infra_interface before running otbr_deploy.
+
+- name: "Validate REST API configuration"
+  ansible.builtin.assert:
+    that:
+      - otbr_rest_listen_address | length > 0
+    fail_msg: "otbr_rest_listen_address must be set when REST API is enabled"
+  when: otbr_rest_api_enabled | bool

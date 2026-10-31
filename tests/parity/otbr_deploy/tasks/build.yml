@@ -1,0 +1,68 @@
+---
+- name: "Check otbr-agent binary"
+  ansible.builtin.stat:
+    path: "{{ otbr_agent_bin }}"
+  register: otbr_agent_bin_stat
+
+- name: "Record OTBR build settings"
+  ansible.builtin.copy:
+    dest: "{{ otbr_build_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      REST_API={{ otbr_rest_api_enabled | ternary('1', '0') }}
+      WEB_GUI={{ otbr_web_enabled | ternary('1', '0') }}
+      OTBR_MDNS={{ otbr_mdns }}
+      OTBR_DHCP6_PD_CLIENT={{ otbr_dhcp6_pd_client }}
+      BACKBONE_ROUTER={{ otbr_backbone_router | ternary('1', '0') }}
+      BORDER_ROUTING={{ otbr_border_routing | ternary('1', '0') }}
+      NAT64={{ otbr_nat64 | ternary('1', '0') }}
+      DISCOVERY_PROXY={{ otbr_discovery_proxy | ternary('1', '0') }}
+      FIREWALL={{ otbr_firewall | ternary('1', '0') }}
+      INFRA_IF_NAME={{ otbr_infra_interface }}
+      OTBR_OPTIONS={{ otbr_build_options }}
+  register: otbr_build_config
+
+- name: "Check bootstrap marker"
+  ansible.builtin.stat:
+    path: "{{ otbr_bootstrap_marker }}"
+  register: otbr_bootstrap_marker
+
+- name: "Run OTBR bootstrap script"
+  ansible.builtin.command: ./script/bootstrap
+  args:
+    chdir: "{{ otbr_install_dir }}"
+  environment: "{{ otbr_build_env }}"
+  when: >-
+    otbr_force_bootstrap | bool or
+    otbr_git_checkout.changed or
+    not otbr_bootstrap_marker.stat.exists
+  changed_when: true
+
+- name: "Mark OTBR bootstrap complete"
+  ansible.builtin.file:
+    path: "{{ otbr_bootstrap_marker }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+  when: >-
+    otbr_force_bootstrap | bool or
+    otbr_git_checkout.changed or
+    not otbr_bootstrap_marker.stat.exists
+
+- name: "Build and install OTBR"
+  ansible.builtin.command: ./script/setup
+  args:
+    chdir: "{{ otbr_install_dir }}"
+  environment: "{{ otbr_build_env }}"
+  when: >-
+    otbr_force_rebuild | bool or
+    otbr_git_checkout.changed or
+    otbr_build_config.changed or
+    not otbr_agent_bin_stat.stat.exists
+  changed_when: true
+  notify:
+    - restart otbr-agent
+    - restart otbr-web

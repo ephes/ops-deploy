@@ -1,0 +1,26 @@
+---
+- name: "Run OTBR validation tasks"
+  ansible.builtin.import_tasks: validate.yml
+
+- name: "Install required packages"
+  ansible.builtin.import_tasks: packages.yml
+
+- name: "Checkout OTBR sources"
+  ansible.builtin.import_tasks: source.yml
+
+- name: "Build and install OTBR"
+  ansible.builtin.import_tasks: build.yml
+
+- name: "Remove bind9 if requested"
+  ansible.builtin.import_tasks: remove_bind.yml
+  when: otbr_remove_bind | bool
+
+- name: "Manage configuration"
+  ansible.builtin.import_tasks: configuration.yml
+
+- name: "Configure udev rules"
+  ansible.builtin.import_tasks: udev.yml
+  when: otbr_manage_udev | bool
+
+- name: "Ensure OTBR service state"
+  ansible.builtin.import_tasks: service.yml

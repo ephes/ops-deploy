@@ -1,0 +1,18 @@
+---
+- name: "Ensure OTBR install directory exists"
+  ansible.builtin.file:
+    path: "{{ otbr_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "Checkout OTBR sources"
+  ansible.builtin.git:
+    repo: "{{ otbr_repo_url }}"
+    dest: "{{ otbr_install_dir }}"
+    version: "{{ otbr_repo_version }}"
+    update: true
+    force: true
+    recursive: true
+  register: otbr_git_checkout

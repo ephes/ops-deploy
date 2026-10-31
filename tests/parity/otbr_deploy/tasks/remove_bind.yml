@@ -1,0 +1,18 @@
+---
+- name: "Collect service facts"
+  ansible.builtin.service_facts:
+
+- name: "Stop and disable bind9 services"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ otbr_bind_services }}"
+  when: item in ansible_facts.services
+
+- name: "Remove bind9 packages"
+  ansible.builtin.apt:
+    name: "{{ otbr_bind_packages }}"
+    state: absent
+    purge: true
+  when: otbr_manage_packages | bool

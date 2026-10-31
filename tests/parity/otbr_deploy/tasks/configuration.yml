@@ -1,0 +1,9 @@
+---
+- name: "Render otbr-agent defaults"
+  ansible.builtin.template:
+    src: otbr-agent.defaults.j2
+    dest: "{{ otbr_agent_defaults_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart otbr-agent
