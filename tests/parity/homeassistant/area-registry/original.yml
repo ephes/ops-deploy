@@ -1,0 +1,277 @@
+---
+- name: "Initialize Home Assistant area registry state"
+  ansible.builtin.set_fact:
+    _ha_area_registry_api_url: "{{ homeassistant_api_url }}"
+    _ha_area_registry_result_path: "/tmp/homeassistant-area-registry-{{ ansible_date_time.epoch }}.json"
+
+- name: "Choose WebSocket API URL for Home Assistant area registry updates"
+  ansible.builtin.set_fact:
+    _ha_area_registry_api_url: >-
+      {{
+        (
+          'http://' + ansible_default_ipv4.address + ':' + (homeassistant_app_port | string)
+        )
+        if (
+          'localhost' in (homeassistant_api_url | lower)
+          or '127.0.0.1' in homeassistant_api_url
+        )
+        else homeassistant_api_url
+      }}
+  when: ansible_default_ipv4.address is defined
+
+- name: "Ensure Home Assistant API is ready"
+  ansible.builtin.include_tasks: integration_api_ready.yml
+  when: not ansible_check_mode
+
+- name: "Verify aiohttp is available in the Home Assistant virtualenv"
+  ansible.builtin.command:
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -c
+      - "import aiohttp"
+  register: _ha_area_registry_aiohttp
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: "Fail when aiohttp is missing from the Home Assistant virtualenv"
+  ansible.builtin.fail:
+    msg: >-
+      aiohttp is missing from {{ homeassistant_virtualenv_path }}; the area registry helper
+      cannot use Home Assistant's admin WebSocket API.
+  when:
+    - not ansible_check_mode
+    - (_ha_area_registry_aiohttp.rc | default(1)) != 0
+
+- name: "Update Home Assistant area registry via WebSocket API"
+  ansible.builtin.command:
+    stdin: "{{ {'HA_TOKEN': homeassistant_api_token} | to_json }}"
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -c
+      - |
+        import asyncio
+        import json
+        import os
+        import sys
+        from urllib.parse import urlparse, urlunparse
+
+        import aiohttp
+
+        # Secrets arrive on stdin, never in the task environment: under become,
+        # Ansible puts task environment values into the command it hands to sudo,
+        # and sudo logs that command.
+        STDIN_SECRETS = json.loads(sys.stdin.read())
+
+        RESULT_PATH = os.environ["HA_RESULT_PATH"]
+
+
+        def websocket_url(api_url: str) -> str:
+            parsed = urlparse(api_url)
+            if parsed.scheme not in {"http", "https"}:
+                raise RuntimeError(f"Unsupported Home Assistant API scheme: {parsed.scheme}")
+            ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+            ws_path = (parsed.path.rstrip("/") if parsed.path else "") + "/api/websocket"
+            return urlunparse((ws_scheme, parsed.netloc, ws_path, "", "", ""))
+
+
+        async def recv_json(ws: aiohttp.ClientWebSocketResponse) -> dict:
+            message = await ws.receive()
+            if message.type != aiohttp.WSMsgType.TEXT:
+                raise RuntimeError(f"Unexpected WebSocket message type: {message.type}")
+            return json.loads(message.data)
+
+
+        def write_result(status: str, payload: dict) -> None:
+            with open(RESULT_PATH, "w", encoding="utf-8") as result_file:
+                json.dump({"status": status, **payload}, result_file)
+
+
+        async def send_command(
+            ws: aiohttp.ClientWebSocketResponse,
+            counter: dict[str, int],
+            payload: dict,
+        ) -> dict:
+            counter["value"] += 1
+            payload["id"] = counter["value"]
+            await ws.send_json(payload)
+            while True:
+                response = await recv_json(ws)
+                if response.get("id") == payload["id"]:
+                    return response
+
+
+        def normalize_aliases(raw_aliases: object) -> list[str]:
+            if not isinstance(raw_aliases, list):
+                return []
+            aliases: list[str] = []
+            seen: set[str] = set()
+            for item in raw_aliases:
+                if not isinstance(item, str):
+                    continue
+                alias = item.strip()
+                if not alias:
+                    continue
+                key = alias.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                aliases.append(alias)
+            return aliases
+
+
+        async def main() -> None:
+            api_url = os.environ["HA_API_URL"]
+            access_token = STDIN_SECRETS["HA_TOKEN"]
+            timeout = float(os.environ.get("HA_TIMEOUT", "30"))
+            desired_updates = json.loads(os.environ["HA_AREA_UPDATES"])
+            counter = {"value": 0}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.ws_connect(websocket_url(api_url), timeout=timeout) as ws:
+                    hello = await recv_json(ws)
+                    if hello.get("type") == "auth_required":
+                        await ws.send_json({"type": "auth", "access_token": access_token})
+                        auth_result = await recv_json(ws)
+                    else:
+                        auth_result = hello
+
+                    if auth_result.get("type") != "auth_ok":
+                        raise RuntimeError(
+                            f"Home Assistant WebSocket authentication failed: {json.dumps(auth_result)}"
+                        )
+
+                    areas_result = await send_command(ws, counter, {"type": "config/area_registry/list"})
+                    if not areas_result.get("success"):
+                        raise RuntimeError(json.dumps(areas_result))
+                    areas = areas_result.get("result", [])
+                    areas_by_id = {item["area_id"]: item for item in areas if "area_id" in item}
+                    areas_by_name = {item["name"]: item for item in areas if "name" in item}
+
+                    changed = False
+                    updates_applied: list[dict] = []
+
+                    for desired in desired_updates:
+                        area = None
+                        desired_area_id = str(desired.get("area_id", "")).strip()
+                        desired_name = str(desired.get("name", "")).strip()
+                        if desired_area_id:
+                            area = areas_by_id.get(desired_area_id)
+                        elif desired_name:
+                            area = areas_by_name.get(desired_name)
+
+                        if area is None:
+                            raise RuntimeError(
+                                f"Unable to resolve Home Assistant area for update: {json.dumps(desired)}"
+                            )
+
+                        payload = {
+                            "type": "config/area_registry/update",
+                            "area_id": area["area_id"],
+                        }
+                        delta: dict[str, object] = {
+                            "area_id": area["area_id"],
+                            "name": area.get("name"),
+                        }
+
+                        if "aliases" in desired:
+                            desired_aliases = normalize_aliases(desired.get("aliases"))
+                            current_aliases = normalize_aliases(area.get("aliases"))
+                            if desired_aliases != current_aliases:
+                                payload["aliases"] = desired_aliases
+                                delta["aliases"] = desired_aliases
+
+                        for field in ("temperature_entity_id", "humidity_entity_id"):
+                            if field not in desired:
+                                continue
+                            desired_value = str(desired.get(field, "") or "").strip() or None
+                            current_value = area.get(field) or None
+                            if desired_value != current_value:
+                                payload[field] = desired_value
+                                delta[field] = desired_value
+
+                        if len(payload) == 2:
+                            continue
+
+                        update_result = await send_command(ws, counter, payload)
+                        if not update_result.get("success"):
+                            raise RuntimeError(json.dumps(update_result))
+
+                        changed = True
+                        updates_applied.append(delta)
+
+                    write_result(
+                        "success",
+                        {
+                            "changed": changed,
+                            "updates": updates_applied,
+                        },
+                    )
+
+
+        try:
+            asyncio.run(main())
+        except Exception as exc:
+            write_result("error", {"message": str(exc)})
+            raise
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  environment:
+    HA_API_URL: "{{ _ha_area_registry_api_url }}"
+    HA_TIMEOUT: "{{ homeassistant_api_timeout | string }}"
+    HA_AREA_UPDATES: "{{ homeassistant_area_registry_updates | to_json }}"
+    HA_RESULT_PATH: "{{ _ha_area_registry_result_path }}"
+  register: _ha_area_registry_update
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: "Read Home Assistant area registry update result"
+  ansible.builtin.stat:
+    path: "{{ _ha_area_registry_result_path }}"
+  register: _ha_area_registry_result_stat
+  when: not ansible_check_mode
+
+- name: "Read Home Assistant area registry update result file"
+  ansible.builtin.slurp:
+    path: "{{ _ha_area_registry_result_path }}"
+  register: _ha_area_registry_result_raw
+  when:
+    - not ansible_check_mode
+    - _ha_area_registry_result_stat.stat.exists
+
+- name: "Parse Home Assistant area registry update result"
+  ansible.builtin.set_fact:
+    _ha_area_registry_result: "{{ (_ha_area_registry_result_raw.content | b64decode | from_json) }}"
+  when:
+    - not ansible_check_mode
+    - _ha_area_registry_result_stat.stat.exists
+
+- name: "Fail when Home Assistant area registry update helper reported an error"
+  ansible.builtin.fail:
+    msg: >-
+      Home Assistant area registry update failed:
+      {{ _ha_area_registry_result.message | default('Unknown error') }}
+  when:
+    - not ansible_check_mode
+    - _ha_area_registry_result.status | default('error') != 'success'
+
+- name: "Clean up Home Assistant area registry update result file"
+  ansible.builtin.file:
+    path: "{{ _ha_area_registry_result_path }}"
+    state: absent
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: "Report Home Assistant area registry update result"
+  ansible.builtin.debug:
+    msg: >-
+      Updated Home Assistant area registry entries:
+      {{ _ha_area_registry_result.updates | default([], true) | to_json }}
+  when:
+    - not ansible_check_mode
+    - _ha_area_registry_result.status | default('error') == 'success'
+    - _ha_area_registry_result.changed | default(false)

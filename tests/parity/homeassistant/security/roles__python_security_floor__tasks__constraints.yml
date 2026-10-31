@@ -1,0 +1,13 @@
+---
+# Constraint file passed to the calling role's package installs. Constraints
+# only limit versions a resolution picks; they never add a package, and a
+# dependency that caps a package below its floor makes the resolver fail
+# before anything is installed.
+- name: constraints | Write the constraint file {{ python_security_floor_constraints_path }}
+  ansible.builtin.copy:
+    dest: "{{ python_security_floor_constraints_path }}"
+    content: "{{ python_security_floor_packages | local.ops_library.python_security_constraints }}"
+    owner: "{{ python_security_floor_owner }}"
+    group: "{{ python_security_floor_group }}"
+    mode: "0644"
+  become: "{{ python_security_floor_become | bool }}"

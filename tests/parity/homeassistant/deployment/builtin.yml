@@ -1,0 +1,59 @@
+---
+- name: llama_cpp_integration | Restart upgraded Home Assistant before built-in conversation provisioning
+  ansible.builtin.meta: flush_handlers
+
+- name: llama_cpp_integration | Reset readiness after upgrade restart
+  ansible.builtin.set_fact:
+    _ha_api_ready_once: false
+    _ha_llama_cpp_entity_id: ""
+
+- name: llama_cpp_integration | Manage built-in conversation through the live API
+  when: not ansible_check_mode
+  block:
+    - name: llama_cpp_integration | Ensure API is ready for core conversation provisioning
+      ansible.builtin.include_tasks: integration_api_ready.yml
+
+    - name: llama_cpp_integration | Install helper for built-in conversation management
+      ansible.builtin.copy:
+        src: llama_cpp_provision.py
+        dest: "{{ homeassistant_llama_cpp_helper_path }}"
+        owner: "{{ homeassistant_user }}"
+        group: "{{ homeassistant_group }}"
+        mode: "0755"
+
+    - name: llama_cpp_integration | Configure built-in conversation and verify its response
+      ansible.builtin.command:
+        argv:
+          - "{{ homeassistant_virtualenv_path }}/bin/python"
+          - "{{ homeassistant_llama_cpp_helper_path }}"
+        stdin: "{{ {'action': ('ensure' if homeassistant_llama_cpp_enabled | bool else 'disable'), 'api_url': homeassistant_api_url, 'api_token': homeassistant_api_token, 'forwarded_for': homeassistant_api_forwarded_for, 'forwarded_proto': homeassistant_api_forwarded_proto, 'validate_certs': homeassistant_api_validate_certs, 'storage_path': homeassistant_config_path + '/.storage/core.config_entries', 'base_url': homeassistant_llama_cpp_base_url, 'api_key': homeassistant_llama_cpp_api_key, 'model': homeassistant_llama_cpp_model, 'instructions': homeassistant_llama_cpp_instructions, 'canary_text': homeassistant_llama_cpp_canary_text} | to_json }}"  # pragma: allowlist secret
+      become: true
+      become_user: "{{ homeassistant_user }}"
+      register: _ha_llama_cpp_result
+      changed_when: _ha_llama_cpp_result.rc == 0 and (_ha_llama_cpp_result.stdout | from_json).changed | bool
+      failed_when: false
+      no_log: true
+
+    - name: llama_cpp_integration | Report sanitized built-in conversation helper failure
+      ansible.builtin.fail:
+        msg: >-
+          Built-in conversation provisioning failed:
+          {{ (_ha_llama_cpp_result.stdout | from_json).error | default('unknown error')
+              if _ha_llama_cpp_result.stdout | trim is match('^\{')
+              else 'helper could not start; inspect service logs' }}
+      when: _ha_llama_cpp_result.rc != 0
+
+    - name: llama_cpp_integration | Record resolved built-in conversation entity
+      ansible.builtin.set_fact:
+        _ha_llama_cpp_entity_id: "{{ (_ha_llama_cpp_result.stdout | from_json).entity_id }}"
+
+    - name: llama_cpp_integration | Verify LiteLLM is absent from the Home Assistant environment
+      ansible.builtin.command:
+        argv:
+          - "{{ homeassistant_virtualenv_path }}/bin/python"
+          - -c
+          - "import importlib.metadata as m; assert not any(d.metadata['Name'].lower().replace('_', '-').startswith('litellm') for d in m.distributions()), 'LiteLLM remains installed'"
+      become: true
+      become_user: "{{ homeassistant_user }}"
+      changed_when: false
+      when: homeassistant_llama_cpp_enabled | bool

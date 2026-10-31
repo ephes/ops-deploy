@@ -1,0 +1,34 @@
+---
+# Safety switch – must be true to perform removal
+homeassistant_confirm_removal: false
+
+# Identifiers
+homeassistant_user: homeassistant
+homeassistant_group: homeassistant
+homeassistant_service_name: homeassistant
+
+# Paths (mirror deploy role)
+homeassistant_home: "/home/{{ homeassistant_user }}"
+homeassistant_site_path: "{{ homeassistant_home }}/site"
+homeassistant_config_path: "{{ homeassistant_site_path }}/config"
+homeassistant_data_path: "{{ homeassistant_site_path }}/data"
+homeassistant_logs_path: "{{ homeassistant_site_path }}/logs"
+homeassistant_bin_path: "{{ homeassistant_site_path }}/bin"
+homeassistant_virtualenv_path: "{{ homeassistant_site_path }}/.venv"
+homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
+homeassistant_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service"
+homeassistant_traefik_config_path: /etc/traefik/dynamic/homeassistant.yml
+homeassistant_udev_rule_path: /etc/udev/rules.d/99-homeassistant-zbt1.rules
+
+# Removal toggles
+homeassistant_remove_service: true
+homeassistant_remove_traefik: true
+homeassistant_remove_udev_rule: true
+homeassistant_remove_virtualenv: true
+homeassistant_remove_site_dir: true
+homeassistant_remove_config_dir: true
+homeassistant_remove_data_dir: true
+homeassistant_remove_logs_dir: true
+homeassistant_remove_bin_dir: true
+homeassistant_remove_user: true
+homeassistant_remove_group: true

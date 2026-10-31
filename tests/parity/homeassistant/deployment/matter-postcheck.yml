@@ -1,0 +1,14 @@
+---
+- name: "Check Home Assistant Matter integration imports"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_virtualenv_path }}/bin/python -c 'import homeassistant.components.matter.config_flow'"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  changed_when: false
+
+- name: "Check Matter server imports"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -c 'from matter_server.server.__main__ import main; from matter_server.common.custom_clusters import check_polled_attributes'"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  changed_when: false

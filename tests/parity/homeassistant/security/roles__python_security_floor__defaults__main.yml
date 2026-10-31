@@ -1,0 +1,54 @@
+---
+# Minimum versions of packages an environment already has. Nothing here is
+# ever added to an environment that lacks it.
+python_security_floor_packages:
+  certifi: "2026.10.19"
+  pip: "26.2.2"
+
+# Requires-Python of exactly the floor releases above, from their wheel
+# METADATA. An environment outside it cannot be updated in place; the check
+# reports that instead of guessing a cut-off.
+python_security_floor_requires_python:
+  certifi: ">=3.7"
+  pip: ">=3.10"
+
+# Roots no effective bundle may contain, matched by SHA-256 fingerprint
+# (names are labels only). emSign ECC Root CA - G3 was removed from certifi
+# 2026.10.18; AAA Certificate Services is distrusted by the patched OS stores.
+python_security_floor_distrusted_roots:
+  - name: emSign ECC Root CA - G3
+    # Public certificate fingerprint.
+    sha256: "86A1ECBA089C4A8D3BBE2734C612BA341D813E043CF9E8A862CD5C57A36BBE6B"  # pragma: allowlist secret
+  - name: AAA Certificate Services
+    # Public certificate fingerprint.
+    sha256: "D7A7A0FB5D7E2731D771E9484EBCDEF71D5F0C3E0A2948782BC83EE0EA699EF4"  # pragma: allowlist secret
+
+# verify.yml: packages the caller's following constrained install raises
+# itself (preflight only; verify again afterwards without deferrals).
+python_security_floor_deferred: []
+
+# verify.yml: opt in only for a managed BASE interpreter, never an app venv.
+# Bind its canonical base and all import/bundle origins to this expected prefix
+# and require the exact patch, pip and pip's bundled certifi floors.
+python_security_floor_managed_base_prefix: ""
+python_security_floor_expected_python_version: ""
+
+# system_store.yml: the CA file and certificate directories to check (on
+# Debian/Ubuntu, openssl-probe-based loaders such as uv's find
+# /usr/lib/ssl/cert.pem and /usr/lib/ssl/certs, which point here) and the
+# system interpreter reading them. Missing directories are skipped.
+python_security_floor_system_store: /etc/ssl/certs/ca-certificates.crt
+python_security_floor_system_store_dirs:
+  - /etc/ssl/certs
+  - /usr/lib/ssl/certs
+python_security_floor_system_python: /usr/bin/python3
+
+# Run the remote steps with become (as python_security_floor_user).
+python_security_floor_become: true
+
+# Inputs set by the calling role (see README):
+# lock.yml:        python_security_floor_lock_text, python_security_floor_label
+# constraints.yml: python_security_floor_constraints_path,
+#                  python_security_floor_owner, python_security_floor_group
+# verify.yml:      python_security_floor_python, python_security_floor_user,
+#                  python_security_floor_label

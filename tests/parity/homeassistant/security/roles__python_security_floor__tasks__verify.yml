@@ -1,0 +1,50 @@
+---
+# Read-only check of one environment: installed certifi/pip meet their floor
+# and no effective bundle contains a distrusted root. Fails closed.
+# python_security_floor_deferred (default []) skips packages that the calling
+# role's next, constrained install step raises itself; that role must run
+# verify.yml again, without deferrals, after the step.
+- name: verify | Require explicit managed base qualification inputs
+  ansible.builtin.assert:
+    that:
+      - python_security_floor_managed_base_prefix is match('^/[^/].*')
+      - python_security_floor_expected_python_version is match('^[0-9]+[.][0-9]+[.][0-9]+$')
+      - python_security_floor_deferred | length == 0
+    fail_msg: "Managed base verification requires an absolute prefix, exact Python patch and no deferrals."
+  when: python_security_floor_managed_base_prefix | length > 0
+
+- name: verify | Inspect the trust bundles of {{ python_security_floor_label }}
+  ansible.builtin.command:
+    argv:
+      - "{{ python_security_floor_python }}"
+      - -I
+      - -c
+      - "{{ lookup('ansible.builtin.file', 'inspect_python_security.py') }}"
+      - --managed-base-prefix
+      - "{{ python_security_floor_managed_base_prefix }}"
+  register: _python_security_floor_inspect
+  changed_when: false
+  check_mode: false
+  become: "{{ python_security_floor_become | bool }}"
+  become_user: "{{ python_security_floor_user }}"
+
+- name: verify | Check the trust floors of {{ python_security_floor_label }}
+  ansible.builtin.assert:
+    that:
+      - _python_security_floor_problems | length == 0
+    fail_msg: >-
+      {{ python_security_floor_label }} ({{ python_security_floor_python }}):
+      {{ _python_security_floor_problems | join('; ') }}. Bring the environment's
+      existing certifi/pip to the floor through the supported remediation for
+      this host before deploying; explicit trust overrides are not changed.
+    quiet: true
+  vars:
+    _python_security_floor_problems: >-
+      {{ _python_security_floor_inspect.stdout | from_json
+         | local.ops_library.python_security_report_violations(
+             python_security_floor_packages,
+             python_security_floor_distrusted_roots,
+             python_security_floor_requires_python,
+             python_security_floor_deferred,
+             {'python_version': python_security_floor_expected_python_version}
+             if python_security_floor_managed_base_prefix | length > 0 else none) }}

@@ -1,0 +1,6 @@
+---
+- name: "Install Home Assistant system packages"
+  ansible.builtin.apt:
+    name: "{{ homeassistant_additional_packages }}"
+    state: present
+    update_cache: true

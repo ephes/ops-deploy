@@ -1,0 +1,5 @@
+# Managed by local.ops_library.homeassistant_deploy (homeassistant_uv_system_certs).
+# Home Assistant installs integration requirements with its bundled uv; make
+# that uv trust the operating system's CA store instead of its built-in roots.
+[Service]
+Environment=UV_SYSTEM_CERTS=1

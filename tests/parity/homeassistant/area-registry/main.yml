@@ -1,0 +1,175 @@
+---
+- name: "Run Home Assistant validation tasks"
+  ansible.builtin.import_tasks: validate.yml
+
+- name: "Check existing environments' certifi/pip floors"
+  ansible.builtin.include_tasks: security_preflight.yml
+  when: homeassistant_python_security_floor_enabled | bool
+
+- name: "Check the unit's trust settings before the UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.include_tasks: uv_system_certs_check.yml
+  vars:
+    _ha_uv_certs_mode: preflight
+    _ha_uv_certs_allow_missing: true
+  when: homeassistant_uv_system_certs | bool
+
+- name: "Check the system CA store for the UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: system_store.yml
+  when: homeassistant_uv_system_certs | bool
+
+- name: "Install required packages"
+  ansible.builtin.import_tasks: packages.yml
+
+- name: "Ensure Home Assistant user exists"
+  ansible.builtin.import_tasks: user.yml
+
+- name: "Create directory structure"
+  ansible.builtin.import_tasks: directories.yml
+
+- name: "Configure udev rules"
+  ansible.builtin.import_tasks: udev.yml
+  when: homeassistant_enable_udev_rule
+
+- name: "Ensure uv runtime prerequisites"
+  ansible.builtin.import_tasks: uv.yml
+
+- name: "Write the certifi/pip install constraints"
+  ansible.builtin.include_tasks: security_constraints.yml
+  when: homeassistant_python_security_floor_enabled | bool
+
+- name: "Prepare migration to core llama_cpp"
+  ansible.builtin.import_tasks: llama_cpp_prepare.yml
+  when: homeassistant_llama_cpp_enabled | bool
+
+- name: "Provision Python environment"
+  ansible.builtin.import_tasks: python.yml
+
+- name: "Manage Matter server"
+  ansible.builtin.import_tasks: matter_server.yml
+  when: homeassistant_manage_matter_server
+
+- name: "Verify the environments' certifi/pip floors"
+  ansible.builtin.include_tasks: security_verify.yml
+  when: homeassistant_python_security_floor_enabled | bool
+
+- name: "Resolve UniFi integration secrets"
+  ansible.builtin.import_tasks: unifi.yml
+
+- name: "Manage configuration files"
+  ansible.builtin.import_tasks: configuration.yml
+
+- name: Validate upgraded Home Assistant configuration before restart
+  ansible.builtin.command:
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/hass"
+      - --script
+      - check_config
+      - --config
+      - "{{ homeassistant_config_path }}"
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  environment:
+    UV_SYSTEM_CERTS: "1"
+  changed_when: false
+  when:
+    - homeassistant_llama_cpp_enabled | bool
+    - not ansible_check_mode
+
+- name: "Install systemd service"
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: "Install the managed UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.include_tasks: uv_system_certs_dropin.yml
+  when: homeassistant_uv_system_certs | bool
+
+- name: "Reload and restart for a changed UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.debug:
+    msg: The managed UV_SYSTEM_CERTS drop-in changed.
+  changed_when: true
+  notify:
+    - reload systemd
+    - restart homeassistant
+  when:
+    - homeassistant_uv_system_certs | bool
+    - _ha_uv_certs_dropin is changed
+
+- name: "Configure Traefik"
+  ansible.builtin.import_tasks: traefik.yml
+  when: homeassistant_traefik_enabled
+
+- name: "Ensure Home Assistant service state"
+  ansible.builtin.import_tasks: service.yml
+
+- name: "Manage Home Assistant area registry"
+  ansible.builtin.import_tasks: area_registry.yml
+  when: homeassistant_area_registry_updates | length > 0
+
+- name: "Provision Matter integration"
+  ansible.builtin.import_tasks: matter_integration.yml
+  when: homeassistant_manage_matter_integration
+
+- name: "Provision OTBR integration"
+  ansible.builtin.import_tasks: otbr_integration.yml
+  when: homeassistant_manage_otbr_integration
+
+- name: "Provision Wyoming integration"
+  ansible.builtin.import_tasks: wyoming_integration.yml
+  when: homeassistant_manage_wyoming_integration
+
+- name: "Install Custom Conversation custom component"
+  ansible.builtin.import_tasks: custom_conversation_component.yml
+  when: homeassistant_custom_conversation_enabled | bool
+
+- name: "Restart Home Assistant before the Custom Conversation config flow"
+  ansible.builtin.meta: flush_handlers
+  when: homeassistant_custom_conversation_enabled | bool
+
+- name: "Force Home Assistant API re-check after Custom Conversation restart"
+  ansible.builtin.set_fact:
+    _ha_api_ready_once: false
+  when: homeassistant_custom_conversation_enabled | bool
+
+- name: "Provision Custom Conversation integration"
+  ansible.builtin.import_tasks: custom_conversation_integration.yml
+  when: not (homeassistant_llama_cpp_enabled | bool)
+
+- name: "Provision built-in llama_cpp conversation agent"
+  ansible.builtin.import_tasks: llama_cpp_integration.yml
+  when: >-
+    homeassistant_llama_cpp_enabled | bool
+    or (homeassistant_assist_pipelines | selectattr('conversation_engine', 'defined')
+        | selectattr('conversation_engine', 'equalto', 'auto:llama_cpp') | list | length > 0)
+
+- name: "Manage Assist pipelines"
+  ansible.builtin.import_tasks: assist_pipelines.yml
+  when: homeassistant_assist_pipelines | length > 0
+
+- name: "Select Assist pipeline voice engines"
+  ansible.builtin.import_tasks: assist_pipeline_stt.yml
+  when:
+    - homeassistant_assist_pipelines | length == 0
+    - >-
+        homeassistant_manage_assist_pipeline_stt_engine
+        or homeassistant_manage_assist_pipeline_tts_engine
+
+- name: "Apply pending handlers before final Matter server validation"
+  ansible.builtin.meta: flush_handlers
+  when: homeassistant_manage_matter_server | bool
+
+- name: "Validate Matter server after Home Assistant requirements"
+  ansible.builtin.import_tasks: matter_server_postcheck.yml
+  when: homeassistant_manage_matter_server | bool
+
+- name: "Apply pending handlers before verifying UV_SYSTEM_CERTS"
+  ansible.builtin.meta: flush_handlers
+
+- name: "Verify the running service has the managed UV_SYSTEM_CERTS"
+  ansible.builtin.include_tasks: uv_system_certs_check.yml
+  vars:
+    _ha_uv_certs_mode: verify
+  when:
+    - homeassistant_uv_system_certs | bool
+    - homeassistant_service_state == 'started'
+    - not ansible_check_mode

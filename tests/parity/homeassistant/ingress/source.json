@@ -1,0 +1,21 @@
+{
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "tasks/traefik.yml": {
+      "fixture": "tasks.yml",
+      "sha256": "4161974e90b31319b4339d6761b40443dc86a6fb6b59a6a9f1a554beff2a5ebb"
+    },
+    "handlers/main.yml": {
+      "fixture": "handlers.yml",
+      "sha256": "1f68bb69d2062a94a2c31e62a5613a534c853e30bbc2e03bc912e14e8290c0ca"
+    },
+    "templates/homeassistant.traefik.yml.j2": {
+      "fixture": "route.j2",
+      "sha256": "50f9170a665a98c0a54b4ceec0b0ede744210fd794232f07938c32b3c514ea1a"
+    },
+    "defaults/main.yml": {
+      "fixture": "defaults.yml",
+      "sha256": "9abb91998726048b438e0660ac2f00b6a7fdd8dd58b9e35d2345cbc84163e42c"
+    }
+  }
+}

@@ -1,0 +1,248 @@
+---
+- name: "Check uv binary"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_uv_path }}"
+  register: _ha_uv
+
+- name: "Fail if uv is missing"
+  ansible.builtin.fail:
+    msg: "uv binary not found at {{ homeassistant_uv_path }}. Install uv before running this role."
+  when: not _ha_uv.stat.exists
+
+- name: "Ensure base directories are defined"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_site_path | length > 0
+      - homeassistant_config_path | length > 0
+    quiet: true
+
+- name: "Resolve inventory IP for defaults"
+  ansible.builtin.set_fact:
+    homeassistant_internal_url: "{{ homeassistant_internal_url | default('http://' + ansible_default_ipv4.address + ':' + (homeassistant_app_port | string), true) }}"
+  when:
+    - (homeassistant_internal_url | default('')) | length == 0
+    - ansible_default_ipv4.address is defined
+
+- name: "Validate Matter server configuration"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_matter_server_storage_path | length > 0
+      - homeassistant_matter_server_virtualenv_path | length > 0
+      - homeassistant_matter_server_chip_factory_dir | length > 0
+      - homeassistant_matter_server_port | int > 0
+      - homeassistant_python_version is version('3.12', '>=')
+      - "'python-matter-server' in homeassistant_matter_server_package_spec"
+      - "'[server]' in homeassistant_matter_server_package_spec"
+    quiet: true
+  when: homeassistant_manage_matter_server | bool
+
+- name: "Validate Matter integration provisioning"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_matter_integration_url | length > 0
+    quiet: true
+    msg: >-
+      homeassistant_api_token must be a real Home Assistant long-lived access token
+      (not CHANGE_ME) and at least 32 characters long.
+  when: homeassistant_manage_matter_integration | bool
+
+- name: "Validate OTBR integration provisioning"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_otbr_integration_url | length > 0
+    quiet: true
+    msg: >-
+      homeassistant_api_token must be a real Home Assistant long-lived access token
+      (not CHANGE_ME) and at least 32 characters long.
+  when: homeassistant_manage_otbr_integration | bool
+
+- name: "Validate Wyoming integration provisioning"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_wyoming_host | length > 0
+      - homeassistant_wyoming_port | int > 0
+    quiet: true
+    msg: >-
+      homeassistant_api_token must be a real Home Assistant long-lived access token
+      and homeassistant_wyoming_host/homeassistant_wyoming_port must point at the
+      target Wyoming server.
+  when: homeassistant_manage_wyoming_integration | bool
+
+- name: "Validate Assist pipeline STT selection"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_virtualenv_path | length > 0
+      - >-
+          (homeassistant_assist_pipeline_stt_engine_id | default('', true) | length > 0)
+          or (
+            homeassistant_wyoming_host | length > 0
+            and homeassistant_wyoming_port | int > 0
+          )
+    quiet: true
+    msg: >-
+      Assist pipeline STT selection requires a real Home Assistant long-lived access token,
+      a valid homeassistant_virtualenv_path, and either an explicit
+      homeassistant_assist_pipeline_stt_engine_id or a Wyoming host/port that can be
+      auto-discovered.
+  when:
+    - homeassistant_manage_assist_pipeline_stt_engine | bool
+    - homeassistant_assist_pipelines | length == 0
+
+- name: "Validate Assist pipeline TTS selection"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_virtualenv_path | length > 0
+      - >-
+          (homeassistant_assist_pipeline_tts_engine_id | default('', true) | length > 0)
+          or (
+            homeassistant_wyoming_host | length > 0
+            and homeassistant_wyoming_port | int > 0
+          )
+    quiet: true
+    msg: >-
+      Assist pipeline TTS selection requires a real Home Assistant long-lived access token,
+      a valid homeassistant_virtualenv_path, and either an explicit
+      homeassistant_assist_pipeline_tts_engine_id or a Wyoming host/port that can be
+      auto-discovered.
+  when:
+    - homeassistant_manage_assist_pipeline_tts_engine | bool
+    - homeassistant_assist_pipelines | length == 0
+
+- name: "Validate declarative Assist pipelines"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_virtualenv_path | length > 0
+      - homeassistant_assist_pipelines is sequence
+      - >-
+          (
+            homeassistant_assist_pipelines
+            | selectattr('name', 'defined')
+            | list
+            | length
+          ) == (homeassistant_assist_pipelines | length)
+      - >-
+          (
+            homeassistant_assist_pipelines
+            | selectattr('language', 'defined')
+            | list
+            | length
+          ) == (homeassistant_assist_pipelines | length)
+      - >-
+          (
+            homeassistant_assist_pipelines
+            | selectattr('preferred', 'defined')
+            | selectattr('preferred')
+            | list
+            | length
+          ) <= 1
+      - >-
+          (
+            homeassistant_assist_pipelines
+            | selectattr('stt_engine_id', 'defined')
+            | list
+            | length
+          ) == (homeassistant_assist_pipelines | length)
+          or (
+            homeassistant_wyoming_host | length > 0
+            and homeassistant_wyoming_port | int > 0
+          )
+      - >-
+          (
+            homeassistant_assist_pipelines
+            | selectattr('tts_engine_id', 'defined')
+            | list
+            | length
+          ) == (homeassistant_assist_pipelines | length)
+          or (
+            homeassistant_wyoming_host | length > 0
+            and homeassistant_wyoming_port | int > 0
+          )
+    quiet: true
+    msg: >-
+      homeassistant_assist_pipelines requires a real Home Assistant long-lived access token,
+      a valid homeassistant_virtualenv_path, and each item must define name and language.
+      If STT/TTS engine ids are omitted, homeassistant_wyoming_host/homeassistant_wyoming_port
+      must point at a Wyoming integration that can be auto-discovered. At most one pipeline
+      may be marked preferred.
+  when: homeassistant_assist_pipelines | length > 0
+
+- name: "Validate Home Assistant area registry updates"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_virtualenv_path | length > 0
+      - homeassistant_area_registry_updates is sequence
+      - >-
+          (
+            homeassistant_area_registry_updates
+            | selectattr('area_id', 'defined')
+            | list
+            | length
+          )
+          +
+          (
+            homeassistant_area_registry_updates
+            | selectattr('name', 'defined')
+            | list
+            | length
+          )
+          >= (homeassistant_area_registry_updates | length)
+      - >-
+          (
+            homeassistant_area_registry_updates
+            | selectattr('aliases', 'defined')
+            | map(attribute='aliases')
+            | map('type_debug')
+            | reject('equalto', 'list')
+            | list
+            | length
+          ) == 0
+    quiet: true
+    msg: >-
+      homeassistant_area_registry_updates requires a real Home Assistant long-lived access token,
+      a valid homeassistant_virtualenv_path, and each item must define either area_id or name.
+      If aliases are provided, they must be a list of strings.
+  when: homeassistant_area_registry_updates | length > 0
+
+- name: "Validate built-in conversation configuration"
+  ansible.builtin.assert:
+    that:
+      - not (homeassistant_custom_conversation_enabled | bool)
+      - homeassistant_package_spec is match('^homeassistant==[0-9]+\.[0-9]+\.[0-9]+$')
+      - homeassistant_package_spec.split('==')[-1] is version('2026.10.2', '>=')
+      - homeassistant_api_token | length >= 32
+      - homeassistant_llama_cpp_base_url | length > 0
+      - homeassistant_llama_cpp_api_key | length > 0
+      - homeassistant_llama_cpp_model | length > 0
+      - homeassistant_llama_cpp_instructions | trim | length > 0
+    quiet: true
+    fail_msg: "Core llama_cpp requires a pinned Core >=2026.10.2, connection details, instructions and exclusive ownership of the voice bridge."
+  no_log: true
+  when: homeassistant_llama_cpp_enabled | bool

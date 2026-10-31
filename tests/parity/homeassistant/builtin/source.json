@@ -1,0 +1,21 @@
+{
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "sources": {
+    "prepare.yml": {
+      "path": "roles/homeassistant_deploy/tasks/llama_cpp_prepare.yml",
+      "sha256": "593ff46012ae14ae349e53571cc892ed38ea5742ccc643f33ce2aaa81ca677df"
+    },
+    "integration.yml": {
+      "path": "roles/homeassistant_deploy/tasks/llama_cpp_integration.yml",
+      "sha256": "5ccf67514b2f7a89c25066be541474f38f99ddbe482c118f32f165a6536aa196"
+    },
+    "original-tests.py.txt": {
+      "path": "tests/test_homeassistant_llama_cpp.py",
+      "sha256": "395f2a3b0f90edf1ca2c47e3ff306d274d8f6611b50039836c637b3e7f9804c1"
+    }
+  },
+  "program": {
+    "path": "roles/homeassistant_deploy/files/llama_cpp_provision.py",
+    "sha256": "2b24f44e8a1839eedf1fc8a3f0e8c39c5645a74079cd94a815f9fd955a9521d2"
+  }
+}

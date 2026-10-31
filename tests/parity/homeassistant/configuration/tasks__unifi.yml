@@ -1,0 +1,40 @@
+---
+- name: "Initialize UniFi password fact"
+  no_log: true
+  ansible.builtin.set_fact:
+    homeassistant_unifi_password_effective: "{{ homeassistant_unifi_password | default('', true) }}"
+
+- name: "Read UniFi password from file"
+  no_log: true
+  ansible.builtin.slurp:
+    src: "{{ homeassistant_unifi_password_file }}"
+  register: _ha_unifi_password_file
+  when:
+    - homeassistant_unifi_password_effective | length == 0
+    - homeassistant_unifi_password_source == 'file'
+  failed_when: false
+
+- name: "Use UniFi password from file content"
+  no_log: true
+  ansible.builtin.set_fact:
+    homeassistant_unifi_password_effective: "{{ _ha_unifi_password_file.content | b64decode | trim }}"
+  when:
+    - _ha_unifi_password_file is defined
+    - _ha_unifi_password_file.content is defined
+    - _ha_unifi_password_file.content | length > 0
+
+- name: "Use variable-supplied UniFi password"
+  no_log: true
+  ansible.builtin.set_fact:
+    homeassistant_unifi_password_effective: "{{ homeassistant_unifi_password_variable }}"
+  when:
+    - homeassistant_unifi_password_effective | length == 0
+    - homeassistant_unifi_password_source == 'variable'
+    - homeassistant_unifi_password_variable | length > 0
+
+- name: "Fail if UniFi password is still undefined"
+  ansible.builtin.fail:
+    msg: "UniFi password not provided. Set homeassistant_unifi_password or configure homeassistant_unifi_password_source (file|variable); supply the existing password through inventory/SOPS or the UniFi password file with the matching vars."
+  when:
+    - homeassistant_unifi_password_effective | default('', true) | length == 0
+    - homeassistant_manage_secrets | bool

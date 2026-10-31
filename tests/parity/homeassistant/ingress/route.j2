@@ -1,0 +1,54 @@
+http:
+  routers:
+    homeassistant:
+      rule: "Host(`homeassistant.{{ homeassistant_traefik_domain }}`)"
+      service: homeassistant
+{% if homeassistant_traefik_certresolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ homeassistant_traefik_certresolver }}
+{% else %}
+      tls: {}
+{% endif %}
+      middlewares:
+{% for middleware in homeassistant_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      entryPoints:
+{% for entry in homeassistant_traefik_entrypoints %}
+        - {{ entry }}
+{% endfor %}
+
+    # Local access without HTTPS
+    homeassistant-local:
+      rule: "Host(`{{ homeassistant_traefik_local_hostname }}`) || Host(`{{ ansible_default_ipv4.address | default('192.168.178.50') }}`)"
+      service: homeassistant
+      middlewares:
+{% for middleware in homeassistant_traefik_local_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      entryPoints:
+        - web
+
+  services:
+    homeassistant:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ homeassistant_app_port }}"
+
+  middlewares:
+    homeassistant-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "homeassistant.{{ homeassistant_traefik_domain }}"
+    homeassistant-websocket:
+      headers:
+        customRequestHeaders:
+          Connection: Upgrade
+          Upgrade: websocket

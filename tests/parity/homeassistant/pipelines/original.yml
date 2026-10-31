@@ -1,0 +1,628 @@
+---
+- name: "Initialize Assist pipelines state"
+  ansible.builtin.set_fact:
+    _ha_assist_pipeline_entry_id: "{{ _ha_wyoming_entry_id | default('', true) }}"
+    _ha_assist_pipelines_api_url: "{{ homeassistant_api_url }}"
+    _ha_assist_pipelines_result_path: "/tmp/homeassistant-assist-pipelines-{{ ansible_date_time.epoch }}.json"
+    _ha_assist_pipelines_desired: []
+    _ha_assist_default_stt_engine_id: ""
+    _ha_assist_default_tts_engine_id: ""
+
+- name: "Check Home Assistant entity registry storage"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
+  register: _ha_entity_registry_stat
+
+- name: "Read Home Assistant entity registry storage"
+  ansible.builtin.slurp:
+    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
+  register: _ha_entity_registry_raw
+  when: _ha_entity_registry_stat.stat.exists
+
+- name: "Check Home Assistant config entries storage"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
+  register: _ha_assist_pipeline_config_entries_stat
+  when:
+    - >-
+        (
+          homeassistant_assist_pipelines
+          | selectattr('stt_engine_id', 'undefined')
+          | list
+          | length
+        ) > 0
+        or (
+          homeassistant_assist_pipelines
+          | selectattr('tts_engine_id', 'undefined')
+          | list
+          | length
+        ) > 0
+    - _ha_assist_pipeline_entry_id | length == 0
+
+- name: "Read Home Assistant config entries storage"
+  ansible.builtin.slurp:
+    path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
+  register: _ha_assist_pipeline_config_entries_raw
+  when:
+    - _ha_assist_pipeline_config_entries_stat is defined
+    - _ha_assist_pipeline_config_entries_stat.stat is defined
+    - _ha_assist_pipeline_config_entries_stat.stat.exists
+
+- name: "Resolve Wyoming config entry for Assist pipeline auto-detection"
+  ansible.builtin.set_fact:
+    _ha_assist_pipeline_entry_id: >-
+      {{
+        (
+          (
+            ((_ha_assist_pipeline_config_entries_raw.content | b64decode | from_json).data | default({}, true)).entries
+            | default([], true)
+          )
+          | selectattr('domain', 'equalto', 'wyoming')
+          | selectattr('data.host', 'defined')
+          | selectattr('data.port', 'defined')
+          | selectattr('data.host', 'equalto', homeassistant_wyoming_host)
+          | selectattr('data.port', 'equalto', homeassistant_wyoming_port | int)
+          | map(attribute='entry_id')
+          | list
+          | first
+        ) | default('', true)
+      }}
+  when:
+    - _ha_assist_pipeline_config_entries_stat is defined
+    - _ha_assist_pipeline_config_entries_stat.stat is defined
+    - _ha_assist_pipeline_config_entries_stat.stat.exists
+    - _ha_assist_pipeline_entry_id | length == 0
+
+- name: "Resolve default Assist pipeline STT engine entity"
+  ansible.builtin.set_fact:
+    _ha_assist_default_stt_engine_id: >-
+      {{
+        (
+          (
+            ((_ha_entity_registry_raw.content | b64decode | from_json).data | default({}, true)).entities
+            | default([], true)
+          )
+          | selectattr('platform', 'equalto', 'wyoming')
+          | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
+          | selectattr('entity_id', 'defined')
+          | map(attribute='entity_id')
+          | select('match', '^stt\\.')
+          | list
+          | first
+        ) | default('', true)
+      }}
+  when:
+    - _ha_entity_registry_stat.stat.exists
+    - >-
+        (
+          homeassistant_assist_pipelines
+          | selectattr('stt_engine_id', 'undefined')
+          | list
+          | length
+        ) > 0
+
+- name: "Resolve default Assist pipeline TTS engine entity"
+  ansible.builtin.set_fact:
+    _ha_assist_default_tts_engine_id: >-
+      {{
+        (
+          (
+            ((_ha_entity_registry_raw.content | b64decode | from_json).data | default({}, true)).entities
+            | default([], true)
+          )
+          | selectattr('platform', 'equalto', 'wyoming')
+          | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
+          | selectattr('entity_id', 'defined')
+          | map(attribute='entity_id')
+          | select('match', '^tts\\.')
+          | list
+          | first
+        ) | default('', true)
+      }}
+  when:
+    - _ha_entity_registry_stat.stat.exists
+    - >-
+        (
+          homeassistant_assist_pipelines
+          | selectattr('tts_engine_id', 'undefined')
+          | list
+          | length
+        ) > 0
+
+- name: "Warn when auto:custom_conversation falls back to the default agent"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: an Assist pipeline requests conversation_engine
+      'auto:custom_conversation' but the Custom Conversation bridge is not
+      enabled or did not resolve to a live conversation entity. Falling back to
+      conversation.home_assistant for those pipelines.
+  when:
+    - >-
+        (
+          homeassistant_assist_pipelines
+          | selectattr('conversation_engine', 'defined')
+          | selectattr('conversation_engine', 'equalto', 'auto:custom_conversation')
+          | list
+          | length
+        ) > 0
+    - (_ha_custom_conversation_entity_id | default('', true)) | length == 0
+
+- name: "Require a resolved built-in conversation agent for auto:llama_cpp"
+  ansible.builtin.assert:
+    that:
+      - (_ha_llama_cpp_entity_id | default('')) | length > 0
+    fail_msg: "auto:llama_cpp requires the enabled built-in bridge and its successful conversation canary."
+  when:
+    - not ansible_check_mode
+    - homeassistant_llama_cpp_enabled | bool
+    - homeassistant_assist_pipelines | selectattr('conversation_engine', 'defined') | selectattr('conversation_engine', 'equalto', 'auto:llama_cpp') | list | length > 0
+
+- name: "Build desired Assist pipeline definitions"
+  ansible.builtin.set_fact:
+    _ha_assist_pipelines_desired: "{{ _ha_assist_pipelines_desired + [_ha_assist_pipeline_definition] }}"
+  loop: "{{ homeassistant_assist_pipelines }}"
+  vars:
+    _ha_assist_pipeline_definition: >-
+      {{
+        {
+          'id': item.id | default('', true),
+          'name': item.name,
+          'language': item.language,
+          'conversation_engine': (
+            (_ha_custom_conversation_entity_id | default('', true))
+            if (
+              (item.conversation_engine | default('')) == 'auto:custom_conversation'
+              and (_ha_custom_conversation_entity_id | default('', true)) | length > 0
+            )
+            else (
+              'conversation.home_assistant'
+              if (item.conversation_engine | default('')) == 'auto:custom_conversation'
+              else (
+                (_ha_llama_cpp_entity_id | default('conversation.home_assistant', true))
+                if (item.conversation_engine | default('')) == 'auto:llama_cpp'
+                else (item.conversation_engine | default('conversation.home_assistant', true))
+              )
+            )
+          ),
+          'conversation_language': item.conversation_language | default(item.language, true),
+          'stt_engine': item.stt_engine_id | default(_ha_assist_default_stt_engine_id, true),
+          'stt_language': item.stt_language | default(item.language, true),
+          'tts_engine': item.tts_engine_id | default(_ha_assist_default_tts_engine_id, true),
+          'tts_language': item.tts_language | default(item.language, true),
+          'tts_voice': item.tts_voice | default('', true),
+          'preferred': item.preferred | default(false) | bool
+        }
+        | combine(
+            {'wake_word_entity': item.wake_word_entity}
+            if item.wake_word_entity is defined else {},
+            recursive=true
+          )
+        | combine(
+            {'wake_word_id': item.wake_word_id}
+            if item.wake_word_id is defined else {},
+            recursive=true
+          )
+        | combine(
+            {'prefer_local_intents': item.prefer_local_intents | bool}
+            if item.prefer_local_intents is defined else {},
+            recursive=true
+          )
+      }}
+
+- name: "Validate desired Assist pipelines state"
+  ansible.builtin.assert:
+    that:
+      - >-
+          (
+            _ha_assist_pipelines_desired
+            | selectattr('name', 'defined')
+            | map(attribute='name')
+            | reject('equalto', '')
+            | list
+            | length
+          ) == (_ha_assist_pipelines_desired | length)
+      - >-
+          (
+            _ha_assist_pipelines_desired
+            | selectattr('language', 'defined')
+            | map(attribute='language')
+            | reject('equalto', '')
+            | list
+            | length
+          ) == (_ha_assist_pipelines_desired | length)
+      - >-
+          (
+            _ha_assist_pipelines_desired
+            | selectattr('stt_engine', 'defined')
+            | map(attribute='stt_engine')
+            | reject('equalto', '')
+            | list
+            | length
+          ) == (_ha_assist_pipelines_desired | length)
+      - >-
+          (
+            _ha_assist_pipelines_desired
+            | selectattr('tts_engine', 'defined')
+            | map(attribute='tts_engine')
+            | reject('equalto', '')
+            | list
+            | length
+          ) == (_ha_assist_pipelines_desired | length)
+    quiet: true
+    msg: >-
+      Unable to resolve the desired Assist pipelines. Ensure each pipeline defines name/language
+      and that STT/TTS engines are either explicit or auto-discoverable from the Wyoming
+      integration at {{ homeassistant_wyoming_host }}:{{ homeassistant_wyoming_port }}.
+
+- name: "Choose WebSocket API URL for Assist pipelines"
+  ansible.builtin.set_fact:
+    _ha_assist_pipelines_api_url: >-
+      {{
+        (
+          'http://' + ansible_default_ipv4.address + ':' + (homeassistant_app_port | string)
+        )
+        if (
+          'localhost' in (homeassistant_api_url | lower)
+          or '127.0.0.1' in homeassistant_api_url
+        )
+        else homeassistant_api_url
+      }}
+  when: ansible_default_ipv4.address is defined
+
+- name: "Ensure Home Assistant API is ready"
+  ansible.builtin.include_tasks: integration_api_ready.yml
+  when: not ansible_check_mode
+
+- name: "Verify aiohttp is available in the Home Assistant virtualenv"
+  ansible.builtin.command:
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -c
+      - "import aiohttp"
+  register: _ha_assist_pipelines_aiohttp
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: "Fail when aiohttp is missing from the Home Assistant virtualenv"
+  ansible.builtin.fail:
+    msg: >-
+      aiohttp is missing from {{ homeassistant_virtualenv_path }}; the Assist pipeline helper
+      cannot use Home Assistant's admin WebSocket API.
+  when:
+    - not ansible_check_mode
+    - (_ha_assist_pipelines_aiohttp.rc | default(1)) != 0
+
+- name: "Create or update Assist pipelines via Home Assistant WebSocket API"
+  ansible.builtin.command:
+    stdin: "{{ {'HA_TOKEN': homeassistant_api_token} | to_json }}"
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -c
+      - |
+        import asyncio
+        import json
+        import os
+        import sys
+        from urllib.parse import urlparse, urlunparse
+
+        import aiohttp
+
+        # Secrets arrive on stdin, never in the task environment: under become,
+        # Ansible puts task environment values into the command it hands to sudo,
+        # and sudo logs that command.
+        STDIN_SECRETS = json.loads(sys.stdin.read())
+
+        RESULT_PATH = os.environ["HA_RESULT_PATH"]
+
+
+        def websocket_url(api_url: str) -> str:
+            parsed = urlparse(api_url)
+            if parsed.scheme not in {"http", "https"}:
+                raise RuntimeError(f"Unsupported Home Assistant API scheme: {parsed.scheme}")
+            ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+            ws_path = (parsed.path.rstrip("/") if parsed.path else "") + "/api/websocket"
+            return urlunparse((ws_scheme, parsed.netloc, ws_path, "", "", ""))
+
+
+        async def recv_json(ws: aiohttp.ClientWebSocketResponse) -> dict:
+            message = await ws.receive()
+            if message.type != aiohttp.WSMsgType.TEXT:
+                raise RuntimeError(f"Unexpected WebSocket message type: {message.type}")
+            return json.loads(message.data)
+
+
+        async def send_command(
+            ws: aiohttp.ClientWebSocketResponse,
+            counter: dict[str, int],
+            payload: dict,
+        ) -> dict:
+            counter["value"] += 1
+            payload["id"] = counter["value"]
+            await ws.send_json(payload)
+            while True:
+                response = await recv_json(ws)
+                if response.get("id") == payload["id"]:
+                    return response
+
+
+        def normalize_pipeline(pipeline: dict) -> dict:
+            return {
+                "id": pipeline.get("id", ""),
+                "name": pipeline["name"],
+                "language": pipeline["language"],
+                "conversation_engine": pipeline["conversation_engine"],
+                "conversation_language": pipeline["conversation_language"],
+                "stt_engine": pipeline.get("stt_engine") or "",
+                "stt_language": pipeline.get("stt_language") or "",
+                "tts_engine": pipeline.get("tts_engine") or "",
+                "tts_language": pipeline.get("tts_language") or "",
+                "tts_voice": pipeline.get("tts_voice") or "",
+                "wake_word_entity": pipeline.get("wake_word_entity"),
+                "wake_word_id": pipeline.get("wake_word_id"),
+                "prefer_local_intents": pipeline.get("prefer_local_intents", False),
+            }
+
+
+        async def main() -> None:
+            api_url = os.environ["HA_API_URL"]
+            access_token = STDIN_SECRETS["HA_TOKEN"]
+            desired_pipelines = json.loads(os.environ["HA_ASSIST_PIPELINES_JSON"])
+            timeout = float(os.environ.get("HA_TIMEOUT", "30"))
+            counter = {"value": 0}
+            result = {
+                "status": "success",
+                "changed": False,
+                "created": [],
+                "updated": [],
+                "unchanged": [],
+                "preferred_pipeline_id": "",
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.ws_connect(websocket_url(api_url), timeout=timeout) as ws:
+                    hello = await recv_json(ws)
+                    if hello.get("type") == "auth_required":
+                        await ws.send_json({"type": "auth", "access_token": access_token})
+                        auth_result = await recv_json(ws)
+                    else:
+                        auth_result = hello
+
+                    if auth_result.get("type") != "auth_ok":
+                        raise RuntimeError(
+                            f"Home Assistant WebSocket authentication failed: {json.dumps(auth_result)}"
+                        )
+
+                    list_result = await send_command(
+                        ws,
+                        counter,
+                        {"type": "assist_pipeline/pipeline/list"},
+                    )
+                    if not list_result.get("success"):
+                        raise RuntimeError(json.dumps(list_result))
+
+                    existing_pipelines = list_result["result"]["pipelines"]
+                    current_preferred = list_result["result"].get("preferred_pipeline", "")
+
+                    def find_existing(desired: dict) -> dict | None:
+                        desired_id = desired.get("id") or ""
+                        if desired_id:
+                            for existing in existing_pipelines:
+                                if existing.get("id") == desired_id:
+                                    return existing
+                        for existing in existing_pipelines:
+                            if existing.get("name") == desired["name"]:
+                                return existing
+                        return None
+
+                    resolved_ids: dict[str, str] = {}
+
+                    for desired in desired_pipelines:
+                        existing = find_existing(desired)
+                        desired_payload = {
+                            "name": desired["name"],
+                            "language": desired["language"],
+                            "conversation_engine": desired.get(
+                                "conversation_engine", "conversation.home_assistant"
+                            ),
+                            "conversation_language": desired.get(
+                                "conversation_language", desired["language"]
+                            ),
+                            "stt_engine": desired["stt_engine"],
+                            "stt_language": desired["stt_language"],
+                            "tts_engine": desired["tts_engine"],
+                            "tts_language": desired["tts_language"],
+                            "tts_voice": desired.get("tts_voice") or None,
+                            "wake_word_entity": desired.get("wake_word_entity"),
+                            "wake_word_id": desired.get("wake_word_id"),
+                            "prefer_local_intents": desired.get("prefer_local_intents", False),
+                        }
+
+                        if existing is None:
+                            create_result = await send_command(
+                                ws,
+                                counter,
+                                {"type": "assist_pipeline/pipeline/create", **desired_payload},
+                            )
+                            if not create_result.get("success"):
+                                raise RuntimeError(json.dumps(create_result))
+                            created = create_result["result"]
+                            existing_pipelines.append(created)
+                            resolved_ids[desired["name"]] = created["id"]
+                            result["created"].append(
+                                {
+                                    "id": created["id"],
+                                    "name": created["name"],
+                                    "language": created["language"],
+                                }
+                            )
+                            result["changed"] = True
+                            continue
+
+                        normalized_existing = normalize_pipeline(existing)
+                        desired_for_compare = {
+                            **normalize_pipeline(existing),
+                            **{
+                                "name": desired_payload["name"],
+                                "language": desired_payload["language"],
+                                "conversation_engine": desired_payload["conversation_engine"],
+                                "conversation_language": desired_payload["conversation_language"],
+                                "stt_engine": desired_payload["stt_engine"],
+                                "stt_language": desired_payload["stt_language"],
+                                "tts_engine": desired_payload["tts_engine"],
+                                "tts_language": desired_payload["tts_language"],
+                                "tts_voice": desired.get("tts_voice") or "",
+                            },
+                        }
+                        if "wake_word_entity" in desired:
+                            desired_for_compare["wake_word_entity"] = desired["wake_word_entity"]
+                        if "wake_word_id" in desired:
+                            desired_for_compare["wake_word_id"] = desired["wake_word_id"]
+                        if "prefer_local_intents" in desired:
+                            desired_for_compare["prefer_local_intents"] = desired[
+                                "prefer_local_intents"
+                            ]
+
+                        if desired_for_compare == normalized_existing:
+                            resolved_ids[desired["name"]] = existing["id"]
+                            result["unchanged"].append(
+                                {"id": existing["id"], "name": existing["name"]}
+                            )
+                            continue
+
+                        update_payload = {
+                            "type": "assist_pipeline/pipeline/update",
+                            "pipeline_id": existing["id"],
+                            "name": desired_payload["name"],
+                            "language": desired_payload["language"],
+                            "conversation_engine": desired_payload["conversation_engine"],
+                            "conversation_language": desired_payload["conversation_language"],
+                            "stt_engine": desired_payload["stt_engine"],
+                            "stt_language": desired_payload["stt_language"],
+                            "tts_engine": desired_payload["tts_engine"],
+                            "tts_language": desired_payload["tts_language"],
+                            "tts_voice": desired_payload["tts_voice"],
+                            "wake_word_entity": desired.get(
+                                "wake_word_entity", existing.get("wake_word_entity")
+                            ),
+                            "wake_word_id": desired.get(
+                                "wake_word_id", existing.get("wake_word_id")
+                            ),
+                            "prefer_local_intents": desired.get(
+                                "prefer_local_intents",
+                                existing.get("prefer_local_intents", False),
+                            ),
+                        }
+                        if "acknowledge_media_id" in existing:
+                            update_payload["acknowledge_media_id"] = existing[
+                                "acknowledge_media_id"
+                            ]
+
+                        update_result = await send_command(ws, counter, update_payload)
+                        if not update_result.get("success"):
+                            raise RuntimeError(json.dumps(update_result))
+                        resolved_ids[desired["name"]] = existing["id"]
+                        result["updated"].append(
+                            {
+                                "id": existing["id"],
+                                "name": desired["name"],
+                                "language": desired["language"],
+                            }
+                        )
+                        result["changed"] = True
+
+                    preferred = next(
+                        (pipeline for pipeline in desired_pipelines if pipeline.get("preferred")),
+                        None,
+                    )
+                    if preferred is not None:
+                        preferred_id = resolved_ids[preferred["name"]]
+                        if current_preferred != preferred_id:
+                            preferred_result = await send_command(
+                                ws,
+                                counter,
+                                {
+                                    "type": "assist_pipeline/pipeline/set_preferred",
+                                    "pipeline_id": preferred_id,
+                                },
+                            )
+                            if not preferred_result.get("success"):
+                                raise RuntimeError(json.dumps(preferred_result))
+                            result["changed"] = True
+                        result["preferred_pipeline_id"] = preferred_id
+                    else:
+                        result["preferred_pipeline_id"] = current_preferred
+
+            with open(RESULT_PATH, "w", encoding="utf-8") as result_file:
+                json.dump(result, result_file)
+
+
+        try:
+            asyncio.run(main())
+        except Exception as exc:
+            with open(RESULT_PATH, "w", encoding="utf-8") as result_file:
+                json.dump({"status": "error", "message": str(exc)}, result_file)
+            raise
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  environment:
+    HA_API_URL: "{{ _ha_assist_pipelines_api_url }}"
+    HA_TIMEOUT: "{{ homeassistant_api_timeout | string }}"
+    HA_ASSIST_PIPELINES_JSON: "{{ _ha_assist_pipelines_desired | to_json }}"
+    HA_RESULT_PATH: "{{ _ha_assist_pipelines_result_path }}"
+  register: _ha_assist_pipelines_update
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: "Check Assist pipelines helper result file"
+  ansible.builtin.stat:
+    path: "{{ _ha_assist_pipelines_result_path }}"
+  register: _ha_assist_pipelines_result_stat
+  when: not ansible_check_mode
+
+- name: "Read Assist pipelines helper result"
+  ansible.builtin.slurp:
+    path: "{{ _ha_assist_pipelines_result_path }}"
+  register: _ha_assist_pipelines_result_raw
+  when:
+    - not ansible_check_mode
+    - _ha_assist_pipelines_result_stat.stat.exists
+
+- name: "Parse Assist pipelines helper result"
+  ansible.builtin.set_fact:
+    _ha_assist_pipelines_result: "{{ (_ha_assist_pipelines_result_raw.content | b64decode | from_json) }}"
+  when:
+    - not ansible_check_mode
+    - _ha_assist_pipelines_result_stat.stat.exists
+
+- name: "Fail when Assist pipelines helper reports an error"
+  ansible.builtin.fail:
+    msg: >-
+      Home Assistant Assist pipeline automation failed:
+      {{ _ha_assist_pipelines_result.message | default('Unknown error') }}
+  when:
+    - not ansible_check_mode
+    - _ha_assist_pipelines_result.status | default('error') != 'success'
+
+- name: "Clean up Assist pipelines helper result file"
+  ansible.builtin.file:
+    path: "{{ _ha_assist_pipelines_result_path }}"
+    state: absent
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - _ha_assist_pipelines_result_stat.stat.exists
+
+- name: "Report Assist pipeline automation result"
+  ansible.builtin.debug:
+    msg: >-
+      Assist pipelines applied. Created={{ _ha_assist_pipelines_result.created | length }},
+      updated={{ _ha_assist_pipelines_result.updated | length }},
+      unchanged={{ _ha_assist_pipelines_result.unchanged | length }},
+      preferred={{ _ha_assist_pipelines_result.preferred_pipeline_id | default('unchanged') }}.
+  when:
+    - not ansible_check_mode
+    - _ha_assist_pipelines_result.status | default('error') == 'success'

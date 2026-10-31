@@ -1,0 +1,7 @@
+{
+  "library_ref": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "files/uv_system_certs_check.py": "15a866d5b40e95fd9fd6dc265fb9da64d480c4f44eb379ee342b0c45bbc50582",
+    "templates/uv-system-certs.conf.j2": "731983a25feeecefc689dc78ed9b9564691ec9e001cdac845dff886ca10fe1dd"
+  }
+}

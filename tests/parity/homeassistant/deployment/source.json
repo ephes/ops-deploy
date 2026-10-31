@@ -1,0 +1,34 @@
+{
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "files": {
+    "main.yml": {
+      "source": "roles/homeassistant_deploy/tasks/main.yml",
+      "sha256": "51faabad92ef0d357aefbac31967277f17f680056c57062d5828b69d8242c312"
+    },
+    "validate.yml": {
+      "source": "roles/homeassistant_deploy/tasks/validate.yml",
+      "sha256": "bb0b59146dec2baa4dcff3b69bc283896cfc69e334b723eeddc2340a69950498"
+    },
+    "handlers.yml": {
+      "source": "roles/homeassistant_deploy/handlers/main.yml",
+      "sha256": "1f68bb69d2062a94a2c31e62a5613a534c853e30bbc2e03bc912e14e8290c0ca"
+    },
+    "packages.yml": {
+      "source": "roles/homeassistant_deploy/tasks/packages.yml",
+      "sha256": "9d9311b3d4ab611c2a562154f2fa674c127bcf121d4e1030bd203cdc1153f5d6"
+    },
+    "builtin.yml": {
+      "source": "roles/homeassistant_deploy/tasks/llama_cpp_integration.yml",
+      "sha256": "5ccf67514b2f7a89c25066be541474f38f99ddbe482c118f32f165a6536aa196"
+    },
+    "defaults.yml": {
+      "source": "roles/homeassistant_deploy/defaults/main.yml",
+      "sha256": "9abb91998726048b438e0660ac2f00b6a7fdd8dd58b9e35d2345cbc84163e42c"
+    },
+    "matter-postcheck.yml": {
+      "source": "roles/homeassistant_deploy/tasks/matter_server_postcheck.yml",
+      "sha256": "f0771025e233ca28897c1e8734ed1622248ede912ea11a124c8eade97c6a1ace"
+    }
+  },
+  "scope": "public original normal composition/validation/default/handler source; no private inputs"
+}

@@ -17,6 +17,12 @@
   disabled, foreign and drifted identity refusals; retain genuine managed
   verification on repeat and never provision during dry planning.
 
+- Compose reviewed Home Assistant context/lifecycle helpers with the owned-native
+  interpreter cwd/retry repair while preserving current peer resources. Prepare
+  the full application matrix against the immutable original-role voice-regex
+  correction; interpreter-only qualification does not qualify application or
+  inventory deployment.
+
 - Preserve existing disabled Attention production or synthetic configuration
   bytes and metadata instead of overwriting them with the fresh-install seed.
   Validate private configuration on the target, seed missing files without
@@ -126,6 +132,43 @@
   separates pre- and post-deployment migrations, updates service and maintenance
   runtime paths, and checks application, streaming and migration health.
 
+- Prepared Home Assistant protected inspections now inherit pyinfra operation,
+  deploy, host and config connector settings, including sudo/su and explicit
+  disable overrides, while keeping stdin/stdout hidden even in verbose mode.
+
+- Prepared Home Assistant deployments can attach protected lazy original-template
+  callbacks. Existing skipped includes and disabled ingress never invoke them;
+  callback context is excluded from config repr and serialization.
+
+- Prepare Home Assistant removal with the original confirmation, eleven selection
+  flags, dependent paths, disable-before-stop order and account home-removal
+  policy. Owned filesystem and fake service/account checks cover the source;
+  private registration and native removal qualification remain outstanding.
+
+- Home Assistant include template lookup now follows the original existing-file
+  guard. Prepared deployments can supply protected rendered include bodies;
+  skipped existing files no longer require an available controller template.
+
+- Home Assistant prepared deployment honors the original Traefik handler selector,
+  including role-qualified names, changed-template failure timing, original
+  restart/udev conditions and one execution per handler-flush boundary.
+
+- Home Assistant normal readiness now retries malformed HTTP responses within
+  the original URI retry policy, while its total deadline still exits immediately.
+
+- Prepare Home Assistant's separate UV trust-maintenance sequence, preserving
+  existing-unit admission, changed-drop-in restart, HTTP health and final running
+  trust verification. Private/native qualification remains separate.
+
+- Home Assistant full prepared deployment now forwards the original include-file
+  selection, retaining explicit empty/subset/order overrides and the stock six-file
+  default. Arbitrary controller-template resolution remains separate work.
+
+- Home Assistant prepared runtime preserves independent original constraint
+  argv and command-string overrides, including explicit empty inputs and the
+  dependency between their defaults. Security-file writes and checks remain
+  independent; this source change does not claim native qualification.
+
 - `mail_relay`: postsrsd 2.x support (Ubuntu 26.04 ships 2.0.11). With
   `srs_enabled` the deploy picks the layout by postsrsd's installed major (else
   apt's candidate; a read-only check after the install refuses a different
@@ -174,6 +217,182 @@
   `None`: every existing configuration plans byte-identical operations and
   commands (differential over 3,072 fake-host scenarios against the previous
   code).
+
+- Prepared Home Assistant inventory network input now follows the original
+  metadata-only default-route lookup, preserving explicit addresses and absent
+  route semantics without selecting the SSH transport address.
+
+- Correct prepared Home Assistant interpreter discovery to run from the selected
+  service home, avoiding an unrelated inaccessible controller virtualenv. Preserve
+  the reviewed connector context and account for post-install lookup failure
+  through a yielded SDK callback. Retain successful install change history across
+  SDK retries for the original HA/Matter restart notifications. Retain the frozen negative source and prepare
+  bounded original-command/UV/SDK repair controls; native repair and full Home
+  Assistant application/private workflow qualification remain pending.
+
+- Preserve partial Home Assistant native failure evidence and prepare a bounded
+  interpreter-only UV/Python/actual-SDK diagnostic before another application
+  replay. Compare the unchanged lookup with the reviewed protected transport,
+  retain failure accounting and public command context, and correct the matrix
+  summary's duplicate module identity. All971 production resources are unchanged;
+  this source preparation does not qualify application or inventory behavior.
+  This revision requires explicit `fixture_cases='["current"]'`, not the
+  published workflow's current+upgrade default. The install probe only reaches
+  post-install lookup when its initial lookup fails.
+
+- Correct the owned existing-host Matter fixture OS baseline with Ubuntu
+  `libnl-route-3-200`, following the captured original CHIP native-loader failure
+  in run41134898722. Add bounded installed-wheel/native-load provenance before
+  unchanged readiness, then restore the original current/upgrade matrix entry
+  with that gate before selected/typed phases. This is fixture source, with corrected native execution
+  pending separate authorization; original role and all 971 production resources
+  remain unchanged and pristine installation is outside this baseline.
+
+- Add bounded owned Matter startup diagnostics and stable unit/port readiness
+  after the original Home Assistant bootstrap. This frozen guest entry runs only
+  the current prerequisite diagnostic, not the application matrix. Preserve both
+  failed run41017001167 cases and strict no-mutation comparisons; production
+  resources are unchanged. The later single diagnostic identified the missing
+  native-library prerequisite documented above.
+
+- Correct the declared existing-host Home Assistant native fixture baseline by
+  pre-provisioning Python, the pip-seeded venv and selected HA package, then
+  initializing its original Matter dependency closure before
+  the unchanged original role. Retain failed bootstrap evidence; no successful
+  native qualification or automatic replay is claimed. Original phase00 creation/
+  install paths are not covered by this existing-host baseline.
+
+- The owned Home Assistant native guest now exports its exact original-library
+  checkout and verifies that revision before the harness, with `OPS_DEPLOY_PATH`
+  explicitly unset. Runtime and matrix scope are unchanged.
+
+- Prepare an owned Home Assistant current/upgrade application matrix with exact
+  installed-artifact proof, real onboarding/canaries and synthetic loopback peers.
+  This is fixture source only; no native, inventory or physical-device success
+  is claimed before actual execution and complete receipts.
+
+
+- Prepare full Home Assistant normal-role composition with original selected
+  integrations, legacy retirement, trust checks, active canaries and consumed
+  handler notifications. Full owned application/native qualification is pending;
+  managed refresh/resolution/reload work is retained, not labelled a zero repeat.
+
+- Compose prepared Home Assistant pipeline selection, conditional readiness,
+  service-user STT wait and protected protocol operations with API-free planning
+  and drift-only writes; retain original voice/list differences and partial errors.
+  Bind result state to one host and account for inspect transport loss per host.
+
+- Wire prepared Home Assistant area readiness and protocol into execution-time
+  pyinfra operations, retaining API-free planning, drift-only updates, strict
+  counter privacy and honest failed-response uncertainty.
+
+- Prepare Home Assistant's optional Custom Conversation installer with original
+  pinned archive/stamp and selected GNU tar semantics. Verify downloads before
+  replacement, retain original metadata-only behavior and partial extraction
+  failures, and defer handler notifications to full deployment composition.
+
+- Prepare Home Assistant's optional Custom Conversation protocol with original
+  config-flow/options/canary semantics, protected stdin/RAM-only result handling,
+  bounded execution and honest partial-failure reporting. Owned synthetic
+  HTTP/WebSocket and pyinfra controls cover this component; full deployment and
+  native qualification remain pending.
+
+- Prepare Home Assistant legacy conversation metadata discovery and exact-path
+  removal, preserving original rebuild selection and exposing only fixed flags.
+  Owned original-task comparisons retain scoped-search and partial-observation
+  limits; full retirement/upgrade composition remains pending.
+
+- Prepare standalone Home Assistant API readiness with the original retry/cache
+  semantics and an execution-time cache reset after handler boundaries. No API
+  calls occur during registration; no registry or configuration POST is added.
+
+- Prepare the unchanged original Home Assistant built-in conversation helper
+  with protected, execution-only canary calls and honest partial-failure state.
+
+- Prepare Home Assistant named-storage pipeline selection with protected
+  controller input/output, original discovery/default rules and no registry writes.
+
+- Prepare Home Assistant standalone STT/TTS protocol updates while preserving
+  conversation/wake/preferred fields and retaining partial-error effects.
+
+- Prepare the Home Assistant pipeline protocol with original creation, update,
+  field preservation and preferred selection; actual owned protocol controls
+  retain partial effects without claiming complete role/native qualification.
+
+- Prepare the Home Assistant area-registry protocol component with original
+  field ownership/selection, protected input and explicit partial-effect counts.
+  Owned WebSocket/original-script controls do not yet qualify native deployment.
+
+- Prepare protected host-local Matter, OTBR and Wyoming integration flows with
+  original entry selectors, API readiness/auth/flow semantics and honest partial
+  request effects; full HA/native application qualification remains pending.
+
+- Prepare Home Assistant's original Traefik route rendering and file writes,
+  preserving the informational default handler and file-only notification.
+  Native routing and complete deployment integration remain pending.
+
+- Prepare Home Assistant managed trust drop-in writes and execution-only
+  post-handler verification with original file-only notifications and no repair
+  fallback; native systemd and full deployment integration remain pending.
+
+- Compose prepared Home Assistant configuration tasks with original initial-file
+  guards, protected secret handling, execution-time rechecks and replacement-only
+  restart notifications; retain actual dry-plan and partial-failure evidence.
+
+- Prepare host-local UniFi credential resolution and protected secrets-template
+  insertion with original explicit/file/variable precedence; no credential export
+  or fallback, and no full deployment/native qualification claim.
+
+- Prepare the Home Assistant host-local configuration file primitive with original
+  template/replace symlink and backup behavior, metadata repair, protected output
+  and explicit partial-effect reporting. Full task wiring/native proof is pending.
+
+- Prepared Home Assistant protected configuration/secrets/include rendering,
+  preserving the original template bytes, defaults and path-derived SQLite URL;
+  physical configuration writes and native application qualification remain pending.
+
+- Prepare Home Assistant/Matter unit writes, original desired states and deferred
+  service-handler components. Keep unconditional daemon reloads declared managed,
+  original restart/enablement semantics and partial unit-install failures.
+
+- Compose the prepared Home Assistant/Matter Python environment, records,
+  ownership and application components with original deferred notification
+  semantics. Preserve Matter's conditional second ownership check before install;
+  native deployment and outer configuration/service wiring remain pending.
+
+- Prepare original Home Assistant extra-package resolution as explicit managed
+  execution, retaining output-bound restart notification on actual package work.
+  Avoid hidden UV check-mode writes and false zero-managed/read-only claims.
+
+- Prepare post-environment Home Assistant/Matter application installation with
+  original pinned/unpinned, force, rebuild and chip-repair semantics and exact
+  service-user/constraint arguments; no deployment API or native claim yet.
+
+- Prepare Home Assistant virtualenv replacement with execution-time interpreter
+  observation, original service stop/create ordering and explicit partial-failure
+  behavior. This component is not yet an exported or native-qualified deploy.
+
+- Begin the Home Assistant configuration ownership port with the original
+  overwrite/include/secret guards and exact generated-block cleanup ordering.
+  Preserve physical runtime path derivations and original HA/Matter units.
+  Carry over separate Python/Matter replacement and install decisions, including
+  legacy shared-environment stop ordering and no implicit unpinned upgrade.
+  Prepare service-user status probes in separate environment/application phases,
+  avoiding old application imports when its environment will be replaced.
+  Prepare the unchanged original unit-trust inspection and managed drop-in
+  source with synthetic status/privacy controls. Prepare the original account/
+  directory/udev component with change-bound deferred handlers; no deployment
+  entry point or native device qualification yet.
+  Prepare the original 0.13.5 UV dependency defaults and installation gate,
+  separate effective owner/group settings from the original inert user variable,
+  and retain final version/help checks without changing shared UV defaults.
+  Prepare original Python trust-floor preflight, constraints and fresh post-install
+  verification with exact inspector/policy source parity and bytecode suppression.
+  Prepare the original requested-Python install gate with execution-time queries
+  before later virtualenv decisions; retain failed-install outcomes.
+  Prepare descendant ownership repair with original link-target scope and
+  owned Linux filesystem repeat tests; full application qualification remains open.
+  This is a tested source foundation; no deployment API or inventory switch.
 
 - `ssh_guard`: new optional `password_authentication` (`yes`/`no`) and
   `permit_root_login` (`yes`/`prohibit-password`/`forced-commands-only`/`no`)
@@ -2120,3 +2339,8 @@
   repairing quoted/escaped policy drift with OpenSSH identity boundaries.
 - Qualification is in progress; owned file-vdev/component evidence does not attest
   production storage, physical USB/spindown or complete lifecycle parity.
+
+- Home Assistant Assist selection now reads enabled live registry entries for
+  automatic STT/TTS discovery and bounded standalone STT readiness. Saved entity
+  registries can lag live state; explicit engine settings retain precedence.
+  Read-only projections and credentials remain in protected process memory.

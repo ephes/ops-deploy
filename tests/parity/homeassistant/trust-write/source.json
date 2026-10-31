@@ -1,0 +1,12 @@
+{
+  "files": {
+    "tasks/uv_system_certs_dropin.yml": {
+      "fixture": "dropin.yml",
+      "sha256": "c2fa851311b3b84b03c6b29ed2bad51c030c380ec77fa6b354837d1c50d69852"
+    },
+    "templates/uv-system-certs.conf.j2": {
+      "fixture": "dropin.j2",
+      "sha256": "731983a25feeecefc689dc78ed9b9564691ec9e001cdac845dff886ca10fe1dd"
+    }
+  }
+}

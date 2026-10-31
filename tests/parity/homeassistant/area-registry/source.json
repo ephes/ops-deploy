@@ -1,0 +1,9 @@
+{
+  "path": "roles/homeassistant_deploy/tasks/area_registry.yml",
+  "library_head": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "sha256": "5317443789224f87c5a861fddbc7044bfc786d10074be38adfa217648d1ee18e",
+  "additional_sources": {
+    "validate.yml": "bb0b59146dec2baa4dcff3b69bc283896cfc69e334b723eeddc2340a69950498",
+    "main.yml": "51faabad92ef0d357aefbac31967277f17f680056c57062d5828b69d8242c312"
+  }
+}
