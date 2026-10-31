@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -71,3 +74,34 @@ def test_owned_container_cleanup_and_collision_refusal(tmp_path: Path, case: str
     assert all("/root/.ssh" not in value and "/etc/" not in value for value in mounts)
     assert ["container", "rm", "-f", "ownedcontainer"] in calls
     assert ["image", "rm", "daybook-notifier-123-1:fixture"] in calls
+
+
+def test_real_owned_hardlink_and_cross_device_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = importlib.util.spec_from_file_location("notifier_owned_harness", SCRIPT.with_name("harness.py"))
+    assert spec is not None
+    assert spec.loader is not None
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+    source = tmp_path / "config.json"
+    source.write_text("{}")
+    destination = tmp_path / "config-link"
+    harness.owned_hardlink(source, destination)
+    assert source.stat().st_ino == destination.stat().st_ino
+    assert source.stat().st_nlink == destination.stat().st_nlink == 2
+    destination.unlink()
+    other = tmp_path / "other-device"
+    other.mkdir()
+    actual_stat = Path.stat
+    source_device = source.stat().st_dev
+
+    def different_device(path: Path, *args: object, **kwargs: object) -> object:
+        if path == other:
+            return SimpleNamespace(st_dev=source_device + 1)
+        return actual_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    link = Mock()
+    monkeypatch.setattr(Path, "stat", different_device)
+    monkeypatch.setattr(harness.os, "link", link)
+    with pytest.raises(AssertionError):
+        harness.owned_hardlink(source, other / "config-link")
+    link.assert_not_called()

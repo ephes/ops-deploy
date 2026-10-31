@@ -28,6 +28,11 @@ CONFIG = Path("/etc/daybook-attention-notify.json")
 KEYS = Path("/root/.ssh/authorized_keys")
 
 
+def owned_hardlink(source: Path, destination: Path) -> None:
+    assert source.stat().st_dev == destination.parent.stat().st_dev
+    os.link(source, destination)
+
+
 def main() -> None:
     assert os.geteuid() == 0
     assert sys.platform == "linux"
@@ -38,7 +43,7 @@ def main() -> None:
     assert run_id.isdigit()
     assert re.fullmatch(r"[0-9a-f]{40}", sha)
     source = Path(__file__).resolve().parents[3]
-    root = Path("/var/tmp/daybook-shared-notifier-fixture-" + run_id)
+    root = Path("/tmp/daybook-shared-notifier-fixture-" + run_id)
     evidence = Path("/var/tmp/daybook-shared-notifier-evidence")
     assert not root.exists()
     # Never borrow or replace preexisting server authorization/config/script.
@@ -144,7 +149,7 @@ def main() -> None:
                 CONFIG.unlink()
                 CONFIG.symlink_to(root / "absent-config")
             elif fault == "hardlink":
-                os.link(CONFIG, root / "config-link")
+                owned_hardlink(CONFIG, root / "config-link")
             else:
                 script.write_text("if invalid syntax")
             protected_script = SCRIPT.read_bytes(), SCRIPT.stat()

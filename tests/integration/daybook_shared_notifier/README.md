@@ -29,3 +29,11 @@ validation, not zero-operation claims. Expected refusal phases occur in status
 validation before the managed operation. These native results do not establish
 production endpoint continuity or phone delivery; protected actual observations
 and normal inventory deployment remain separate qualification steps.
+
+Fixture scratch lives in the container `/tmp`, on the same filesystem as the
+fixed `/etc` configuration; only evidence lives in the `/var/tmp` host mount.
+The hardlink fault checks both devices before creating a real second link. Local
+controls prove a same-device link and refusal before linking across devices.
+The earlier isolated run completed six phases and cleaned up, then stopped at
+`EXDEV` while its scratch was under the evidence mount; that partial run is not
+a complete eight-phase qualification.
