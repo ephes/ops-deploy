@@ -28,7 +28,12 @@ def preparation_command(cfg: HomeAssistantRuntimeConfig) -> str:
 
 
 def read_pipeline_preparation(
-    target: Host, cfg: HomeAssistantRuntimeConfig, mode: Literal["list", "voice"], options: SecretStr, *, timeout: int
+    target: Host,
+    cfg: HomeAssistantRuntimeConfig,
+    mode: Literal["list", "voice", "identity"],
+    options: SecretStr,
+    *,
+    timeout: int,
 ) -> SecretStr:
     """Return only selected operational values, masked and in process RAM.
 
@@ -50,7 +55,7 @@ def read_pipeline_preparation(
             raise ValueError
         if result["success"] is not True:
             raise ValueError
-        if not isinstance(result["result"], list if mode == "list" else dict):
+        if not isinstance(result["result"], str if mode == "identity" else list if mode == "list" else dict):
             raise ValueError
     except (ValueError, TypeError):
         raise OperationError("Home Assistant pipeline preparation failed") from None

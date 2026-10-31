@@ -23,6 +23,7 @@ from ops_deploy.helpers.python import _as_user
 
 from .builtin_conversation import ConversationResult
 from .integration_flows import ApiReadiness, HomeAssistantApiConfig, ensure_api_readiness
+from .live_registry import read_live_registry, registry_command, registry_payload
 from .pipeline_state import read_pipeline_preparation
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
@@ -59,9 +60,8 @@ class PipelineResult:
         self.applied = None
 
 
-def pipeline_command(runtime: HomeAssistantRuntimeConfig, *, wait: bool = False) -> str:
-    name = "pipeline_wait.py" if wait else "pipelines.py"
-    source = files("ops_deploy.services.homeassistant").joinpath("files", name).read_bytes()
+def pipeline_command(runtime: HomeAssistantRuntimeConfig) -> str:
+    source = files("ops_deploy.services.homeassistant").joinpath("files/pipelines.py").read_bytes()
     launcher = (
         f"import base64;exec(compile(base64.b64decode({base64.b64encode(source).decode()!r}),'<ha-pipeline>','exec'))"
     )
@@ -73,12 +73,32 @@ def pipeline_command(runtime: HomeAssistantRuntimeConfig, *, wait: bool = False)
     )
 
 
+def _original_bool(value: Any) -> bool:
+    return (value.lower() if isinstance(value, str) else value) in (True, 1, "yes", "on", "1", "true")
+
+
+def _automatic_kinds(mode: Mode, value: dict[str, Any]) -> list[str]:
+    if mode == "list":
+        return [
+            kind
+            for kind in ("stt", "tts")
+            if any(kind + "_engine_id" not in item for item in value.get("pipelines", []))
+        ]
+    return [
+        kind
+        for kind in ("stt", "tts")
+        if _original_bool(value.get("manage_" + kind)) and not value.get(kind + "_engine_id")
+    ]
+
+
 def _prepare(
     state: State,
     host: Host,
     runtime: HomeAssistantRuntimeConfig,
     mode: Mode,
     options: SecretStr,
+    api: HomeAssistantApiConfig,
+    app_port: int,
     builtin: ConversationResult | None,
     custom: ConversationResult | None,
     result: PipelineResult,
@@ -88,6 +108,18 @@ def _prepare(
     result.reset_outcome()
     value = json.loads(options.get_secret_value())
     value["config_path"] = runtime.config_path
+    kinds = _automatic_kinds(mode, value)
+    if kinds:
+        if not value.get("wyoming_entry_id"):
+            identity = read_pipeline_preparation(host, runtime, "identity", SecretStr(json.dumps(value)), timeout=90)
+            value["wyoming_entry_id"] = json.loads(identity.get_secret_value())
+        selection = SecretStr(json.dumps({"entry_id": value["wyoming_entry_id"], "kinds": kinds}))
+        value["live_entities"] = json.loads(
+            read_live_registry(host, runtime, api, app_port, selection).get_secret_value()
+        )
+    else:
+        value["live_entities"] = []
+    # An empty live result is authoritative; no saved entity-file fallback.
     value["check_mode"] = False  # This callback executes only, never during dry planning.
     value["llama_cpp_entity_id"] = builtin.entity_id.get_secret_value() if builtin and builtin.completed else ""
     value["custom_conversation_entity_id"] = custom.entity_id.get_secret_value() if custom and custom.completed else ""
@@ -112,39 +144,47 @@ def _prepare_operation(
     runtime: HomeAssistantRuntimeConfig,
     mode: Mode,
     options: SecretStr,
+    api: HomeAssistantApiConfig,
+    app_port: int,
     builtin: ConversationResult | None,
     custom: ConversationResult | None,
     result: PipelineResult,
 ) -> Generator[FunctionCommand, None, None]:
-    yield FunctionCommand(_prepare, (runtime, mode, options, builtin, custom, result), {})
+    yield FunctionCommand(_prepare, (runtime, mode, options, api, app_port, builtin, custom, result), {})
 
 
 def _wait_stt(
-    state: State, host: Host, runtime: HomeAssistantRuntimeConfig, api: HomeAssistantApiConfig, result: PipelineResult
+    state: State,
+    host: Host,
+    runtime: HomeAssistantRuntimeConfig,
+    api: HomeAssistantApiConfig,
+    result: PipelineResult,
+    app_port: int,
 ) -> None:
     value = json.loads(result.selected.get_secret_value())
     if not value["manage_stt"]:
         return
     payload = {
-        "registry": runtime.config_path + "/.storage/core.entity_registry",
+        **registry_payload(api, app_port),
         "entity_id": value["voice"]["stt_engine"],
         "retries": api.retries,
         "delay": api.retry_delay,
     }
     success, output = run_protected_command(
         host,
-        StringCommand(pipeline_command(runtime, wait=True)),
+        StringCommand(registry_command(runtime)),
         _stdin=StdinLines(json.dumps(payload)),
         _get_pty=False,
-        _timeout=max(0, api.retries) * max(0, api.retry_delay) + 90,
+        _timeout=(max(0, api.retries) + 1) * api.timeout + max(0, api.retries) * max(0, api.retry_delay) + 10,
     )
     try:
         report = json.loads(str(output.stdout))
         if (
             not success
             or not isinstance(report, dict)
-            or set(report) != {"success", "attempts"}
+            or set(report) != {"success", "ready", "attempts"}
             or report["success"] is not True
+            or report["ready"] is not True
             or type(report["attempts"]) is not int
             or not 1 <= report["attempts"] <= max(0, api.retries) + 1
         ):
@@ -155,9 +195,9 @@ def _wait_stt(
 
 @operation()
 def _wait_operation(
-    runtime: HomeAssistantRuntimeConfig, api: HomeAssistantApiConfig, result: PipelineResult
+    runtime: HomeAssistantRuntimeConfig, api: HomeAssistantApiConfig, result: PipelineResult, app_port: int
 ) -> Generator[FunctionCommand, None, None]:
-    yield FunctionCommand(_wait_stt, (runtime, api, result), {})
+    yield FunctionCommand(_wait_stt, (runtime, api, result, app_port), {})
 
 
 def pipeline_payload(
@@ -295,27 +335,35 @@ def manage_pipelines(
     Cross-host result reuse is rejected at registration, before execution.
     Plan makes no registry/API call. Root-context selection and service-user
     protocol stay distinct; selected fields remain only in protected process RAM.
-    Current standalone voice skips all API calls. Original list still checks
-    readiness and current API state. No full deployment/native claim here.
+    Explicit current standalone voice skips API calls; automatic selection reads
+    the live registry. Original list still checks readiness and current API state. No full deployment/native claim here.
     """
     if mode not in {"list", "voice"}:
         raise ValueError("Unknown Home Assistant pipeline mode")
     api.validate_selected()
     result.bind(host.name)
-    ops = [
-        mark_read_only(
-            _prepare_operation(
-                name="Prepare Home Assistant pipeline selection",
-                runtime=runtime,
-                mode=mode,
-                options=options,
-                builtin=builtin,
-                custom=custom,
-                result=result,
-            )
-        ),
-        ensure_api_readiness(runtime, api, readiness, required=result.required),
-    ]
+    ops = []
+    if _automatic_kinds(mode, json.loads(options.get_secret_value())):
+        # Reuse the existing readiness cache/retry policy before the new live query.
+        ops.append(ensure_api_readiness(runtime, api, readiness))
+    ops.extend(
+        [
+            mark_read_only(
+                _prepare_operation(
+                    name="Prepare Home Assistant pipeline selection",
+                    runtime=runtime,
+                    mode=mode,
+                    options=options,
+                    api=api,
+                    app_port=app_port,
+                    builtin=builtin,
+                    custom=custom,
+                    result=result,
+                )
+            ),
+            ensure_api_readiness(runtime, api, readiness, required=result.required),
+        ]
+    )
     if mode == "voice":
         ops.append(
             mark_read_only(
@@ -324,6 +372,7 @@ def manage_pipelines(
                     runtime=runtime,
                     api=api,
                     result=result,
+                    app_port=app_port,
                     _if=result.required,
                 )
             )

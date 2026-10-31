@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import ssl
 import sys
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -64,7 +65,13 @@ def initial() -> dict[str, Any]:
 
 
 @asynccontextmanager
-async def endpoint(state: dict[str, Any], fault: str = "normal", persist: Callable[[], None] | None = None) -> Any:
+async def endpoint(
+    state: dict[str, Any],
+    fault: str = "normal",
+    persist: Callable[[], None] | None = None,
+    *,
+    ssl_context: ssl.SSLContext | None = None,
+) -> Any:
     calls: list[dict[str, Any]] = []
 
     async def websocket(request: web.Request) -> web.WebSocketResponse:
@@ -87,7 +94,19 @@ async def endpoint(state: dict[str, Any], fault: str = "normal", persist: Callab
                 await ws.close()
                 break
             result: Any = {}
-            if kind == "list":
+            if body["type"] == "config/entity_registry/list":
+                result = state.get(
+                    "entities",
+                    [
+                        {
+                            "entity_id": "stt.owned",
+                            "platform": "wyoming",
+                            "config_entry_id": "owned-entry",
+                            "disabled_by": None,
+                        }
+                    ],
+                )
+            elif kind == "list":
                 result = state
             elif kind == "get":
                 result = next(item for item in state["pipelines"] if item["id"] == body["pipeline_id"])
@@ -120,10 +139,10 @@ async def endpoint(state: dict[str, Any], fault: str = "normal", persist: Callab
     app.router.add_get("/api/websocket", websocket)
     runner = web.AppRunner(app, shutdown_timeout=0.1)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
+    site = web.TCPSite(runner, "127.0.0.1", 0, ssl_context=ssl_context)
     await site.start()
     try:
-        yield f"http://127.0.0.1:{runner.addresses[0][1]}", calls
+        yield f"{'https' if ssl_context else 'http'}://127.0.0.1:{runner.addresses[0][1]}", calls
     finally:
         await runner.cleanup()
 

@@ -1017,3 +1017,27 @@ Its original role source is immutable73928436a5e6fcee81fc16835087f599366fa46a,
 with four STT/TTS prefix-regex corrections qualified against original task and
 typed selection controls. Full44 current/upgrade application qualification,
 remaining faults/lifecycles and ordinary private binding remain open.
+
+### Live Assist registry selection
+
+Automatic Wyoming STT/TTS selection now reads enabled entities through the
+authenticated live registry, retaining entry, platform and domain matching.
+Home Assistant delays persistence, so saved entity files are not readiness
+evidence. The original role and typed path use the same read-only protocol
+helper; selected identifiers and credentials remain in protected process memory.
+Explicit current standalone settings still require no API call. Automatic
+settings perform a read-only lookup even when the selected pipeline is current.
+STT readiness keeps the configured retry/delay limits and excludes disabled
+entities. Planning performs no application query. This source repair does not
+qualify the remaining native matrix phases or the separate observed HA restart.
+
+Entry identity retains the original precedence: the preceding Wyoming flow ID,
+then the saved config-entry host/port/domain match. The supported live entry API
+does not expose endpoint data. Missing both identity sources remains the original
+unresolved-selection failure; no title or unrelated-entry guess is introduced.
+Live entity readiness fixes the demonstrated stale entity-store failure, without
+claiming that every saved identity is authoritative for an external concurrent edit.
+
+Automatic discovery reuses the existing cached API readiness before its live
+query and the configured retry/delay budget for matching enabled entities. The
+WebSocket connection honors the existing certificate-validation setting.

@@ -36,8 +36,11 @@ v=json.loads(sys.stdin.readline())
 runtime=HomeAssistantRuntimeConfig(config_path=v['root'])
 runtime=runtime.model_copy(update={'security':runtime.security.model_copy(update={'system_python':sys.executable})})
 api=HomeAssistantApiConfig(url=SecretStr(v['url']),token=SecretStr(v['token']),timeout=3,retries=0,retry_delay=0)
-def command(runtime,wait=False):
-    return shlex.join([sys.executable,'-I','-B',v['wait_program'] if wait else v['program']])
+def command(runtime):
+    return shlex.join([sys.executable,'-I','-B',v['program']])
+from ops_deploy.services.homeassistant import live_registry
+registry_command=lambda runtime: shlex.join([sys.executable,'-I','-B',v['registry_program']])
+module.registry_command=live_registry.registry_command=registry_command
 module.pipeline_command=command  # Owned child interpreter/user transport for every execution phase.
 result=module.PipelineResult()
 reports=[]
@@ -77,14 +80,35 @@ def snapshot(root: Path) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "case", ["list", "voice", "stt-voice", "current-voice", "create", "auth", "partial", "missing-stt", "canary"]
+    "case",
+    [
+        "list",
+        "voice",
+        "auto-list",
+        "auto-voice",
+        "auto-list-saved",
+        "auto-voice-saved",
+        "auto-list-missing",
+        "auto-voice-missing",
+        "stt-voice",
+        "current-voice",
+        "create",
+        "auth",
+        "partial",
+        "missing-stt",
+        "canary",
+    ],
 )
 @pytest.mark.parametrize("diff", [False, True])
 def test_actual_sdk_pipeline_selection_readiness_and_repeat(tmp_path: Path, case: str, diff: bool) -> None:
     async def scenario() -> None:
         state = initial()
         original_other = copy.deepcopy(state["pipelines"][1])
-        mode = "voice" if case in {"voice", "stt-voice", "current-voice", "missing-stt"} else "list"
+        mode = (
+            "voice"
+            if case.startswith("auto-voice") or case in {"voice", "stt-voice", "current-voice", "missing-stt"}
+            else "list"
+        )
         options: dict[str, Any] = {"wyoming_host": "owned", "wyoming_port": 10300}
         storage(tmp_path, "core.entity_registry", {"entities": [{"entity_id": "stt.owned"}]})
         if mode == "list":
@@ -111,6 +135,45 @@ def test_actual_sdk_pipeline_selection_readiness_and_repeat(tmp_path: Path, case
                 tts_language="en" if case == "current-voice" else "de",
             )
 
+        if case.startswith("auto-"):
+            if not case.endswith(("saved", "missing")):
+                options["wyoming_entry_id"] = "owned-entry"
+            storage(
+                tmp_path,
+                "core.config_entries",
+                {
+                    "entries": [
+                        {"domain": "wyoming", "entry_id": "owned-entry", "data": {"host": "owned", "port": 10300}}
+                    ]
+                    if case.endswith("saved")
+                    else []
+                },
+            )
+            state["entities"] = [
+                {
+                    "entity_id": kind + ".disabled",
+                    "platform": "wyoming",
+                    "config_entry_id": "owned-entry",
+                    "disabled_by": "user",
+                }
+                for kind in ("stt", "tts")
+            ] + [
+                {
+                    "entity_id": kind + ".owned",
+                    "platform": "wyoming",
+                    "config_entry_id": "owned-entry",
+                    "disabled_by": None,
+                    "options": {"private": "unexported-fault"},
+                }
+                for kind in ("stt", "tts")
+            ]
+            storage(tmp_path, "core.entity_registry", {"entities": []})
+            if mode == "list":
+                options["pipelines"][0].pop("stt_engine_id")
+                options["pipelines"][0].pop("tts_engine_id")
+            else:
+                options.update(manage_stt=True, stt_engine_id="", tts_engine_id="")
+
         def persist() -> None:
             storage(
                 tmp_path,
@@ -127,10 +190,13 @@ def test_actual_sdk_pipeline_selection_readiness_and_repeat(tmp_path: Path, case
                 "mode": mode,
                 "options": options,
                 "root": str(tmp_path),
-                "runs": 2 if case in {"list", "voice", "stt-voice", "create"} else 1,
+                "runs": 2
+                if (case.startswith("auto-") and not case.endswith("missing"))
+                or case in {"list", "voice", "stt-voice", "create"}
+                else 1,
                 "diff": diff,
                 "program": str(files("ops_deploy.services.homeassistant").joinpath("files/pipelines.py")),
-                "wait_program": str(files("ops_deploy.services.homeassistant").joinpath("files/pipeline_wait.py")),
+                "registry_program": str(files("ops_deploy.services.homeassistant").joinpath("files/live_registry.py")),
             }
             proc = await asyncio.create_subprocess_exec(
                 sys.executable,
@@ -164,10 +230,11 @@ def test_actual_sdk_pipeline_selection_readiness_and_repeat(tmp_path: Path, case
                     if case == "current-voice":
                         assert calls == []
                     if case == "missing-stt":
-                        assert [c["type"] for c in calls] == ["readiness"]
+                        assert [c["type"] for c in calls] == ["readiness", "config/entity_registry/list"]
                     if case == "stt-voice" and not number:
                         assert [c["type"] for c in calls] == [
                             "readiness",
+                            "config/entity_registry/list",
                             "assist_pipeline/pipeline/get",
                             "assist_pipeline/pipeline/get",
                             "assist_pipeline/pipeline/update",
@@ -188,7 +255,7 @@ def test_actual_sdk_pipeline_selection_readiness_and_repeat(tmp_path: Path, case
             assert TOKEN.encode() not in out + err
             assert b"unexported-fault" not in out + err
             report = json.loads(out.decode().strip().removeprefix("RESULT "))
-            if case in {"auth", "partial", "missing-stt", "canary"}:
+            if case.endswith("missing") or case in {"auth", "partial", "missing-stt", "canary"}:
                 assert not report[0]["succeeded"]
                 assert report[0]["failed_hosts"] == ["@local"]
                 assert report[0]["result"]["completed"] is False
@@ -204,30 +271,32 @@ def test_actual_sdk_pipeline_selection_readiness_and_repeat(tmp_path: Path, case
     asyncio.run(scenario())
 
 
-def test_stt_wait_exact_named_registry_retry_and_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    source = files("ops_deploy.services.homeassistant").joinpath("files/pipeline_wait.py")
+def test_stt_live_retry_and_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = files("ops_deploy.services.homeassistant").joinpath("files/live_registry.py")
     spec = importlib.util.spec_from_file_location("owned_stt_wait", str(source))
     assert spec is not None
     assert spec.loader is not None
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
-    path = tmp_path / "registry"
-    payload = {"registry": str(path), "entity_id": "stt.synthetic", "retries": 2, "delay": 5}
-    sleeps = []
+    calls: list[str] = []
+    sleeps: list[int] = []
 
-    def sleep(delay: int) -> None:
+    async def registry(payload: dict[str, Any]) -> list[dict[str, str]]:
+        calls.append("read")
+        return [{"entity_id": "stt.synthetic"}] if sleeps else []
+
+    async def sleep(delay: int) -> None:
         sleeps.append(delay)
-        path.write_text(json.dumps({"data": {"entities": [{"entity_id": "stt.synthetic"}]}}))
 
-    monkeypatch.setattr(helper.time, "sleep", sleep)
-    assert helper.wait(payload) == {"success": True, "attempts": 2}
+    monkeypatch.setattr(helper, "registry", registry)
+    monkeypatch.setattr(helper.asyncio, "sleep", sleep)
+    payload = {"entity_id": "stt.synthetic", "retries": 2, "delay": 5}
+    assert asyncio.run(helper.query(payload)) == {"success": True, "ready": True, "attempts": 2}
     assert sleeps == [5]
-    before = path.stat()
-    assert helper.wait(payload) == {"success": True, "attempts": 1}
-    assert path.stat().st_mtime_ns == before.st_mtime_ns
-    path.write_text("not-json")
-    monkeypatch.setattr(helper.time, "sleep", lambda _: None)
-    assert helper.wait(payload) == {"success": False, "attempts": 3}
+    assert len(calls) == 2
+    assert asyncio.run(helper.query(payload)) == {"success": True, "ready": True, "attempts": 1}
+    payload["entity_id"] = "stt.absent"
+    assert asyncio.run(helper.query(payload)) == {"success": True, "ready": False, "attempts": 3}
 
 
 @pytest.mark.parametrize("shared", [False, True])

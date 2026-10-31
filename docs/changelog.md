@@ -2324,3 +2324,8 @@
   repairing quoted/escaped policy drift with OpenSSH identity boundaries.
 - Qualification is in progress; owned file-vdev/component evidence does not attest
   production storage, physical USB/spindown or complete lifecycle parity.
+
+- Home Assistant Assist selection now reads enabled live registry entries for
+  automatic STT/TTS discovery and bounded standalone STT readiness. Saved entity
+  registries can lag live state; explicit engine settings retain precedence.
+  Read-only projections and credentials remain in protected process memory.

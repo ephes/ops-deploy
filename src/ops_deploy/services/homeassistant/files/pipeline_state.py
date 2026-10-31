@@ -50,11 +50,19 @@ def engine(raw, selected, kind):
     return (matches[0] if matches else '') or ''
 
 
+def entity_source(options):
+    # Pure selection keeps the captured original/check-mode disk oracle; normal
+    # execution always supplies a live projection, including an empty one.
+    if 'live_entities' in options:
+        return json.dumps({'data': {'entities': options['live_entities']}}).encode()
+    return read_store(options['config_path'], 'core.entity_registry')
+
+
 def prepare_list(options):
     desired = options['pipelines']
     # Original slurps the entity file whenever it exists, but parses only for
     # requested automatic discovery. Explicit-empty keys do NOT trigger it.
-    entities = read_store(options['config_path'], 'core.entity_registry')
+    entities = entity_source(options)
     auto_stt = any('stt_engine_id' not in item for item in desired)
     auto_tts = any('tts_engine_id' not in item for item in desired)
     selected = options.get('wyoming_entry_id') or ''
@@ -96,7 +104,7 @@ def prepare_list(options):
 
 def prepare_voice(options):
     config = options['config_path']
-    entities = read_store(config, 'core.entity_registry')
+    entities = entity_source(options)
     storage = read_store(config, 'assist_pipeline.pipelines')
     manage_stt, manage_tts = original_bool(options['manage_stt']), original_bool(options['manage_tts'])
     stt = (options.get('stt_engine_id') if manage_stt else '') or ''
@@ -135,7 +143,10 @@ def main():
     # it and retain it only in protected process RAM. No registry body is returned.
     try:
         payload = json.load(sys.stdin)
-        if payload['mode'] == 'list':
+        if payload['mode'] == 'identity':
+            options = payload['options']
+            result = entry_id(options, read_store(options['config_path'], 'core.config_entries'))
+        elif payload['mode'] == 'list':
             result = prepare_list(payload['options'])
         elif payload['mode'] == 'voice':
             result = prepare_voice(payload['options'])
