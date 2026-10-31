@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `services.minio.user_retirement`, an explicit maintenance operation that
+  removes listed MinIO users, proves them absent and changes nothing else. It
+  refuses empty or invalid lists, protected names, an unhealthy admin alias and
+  users in groups or with service accounts; a repeat run makes no managed change.
+  It is not part of the normal MinIO deployment. New real-server container harness
+  in `tests/integration/minio/user_retirement/`.
+
 - `infra.redis_install` with `add_official_repo` (via `apt_repository(...,
   dearmor=True)`): the keyring check no longer reads the keyring's first bytes
   back as a fact. A dearmored keyring starts with byte 0x99, which pyinfra

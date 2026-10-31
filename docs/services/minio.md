@@ -207,3 +207,53 @@ projections stayed exact. Failed operations can already detach or remove server
 state even when pyinfra's managed list is empty; those raw effects remain explicit.
 Private maintenance routing is still pending. No production policy revocation
 was performed or is needed merely to qualify this implementation.
+
+### Listed-user retirement component
+
+`ops_deploy.services.minio.user_retirement` removes the MinIO users a caller lists,
+proves them absent and changes nothing else. It is a separate typed operation for
+an explicit maintenance command: normal deployment never imports it, and it never
+runs full IAM reconciliation. `MinioUserRetirementConfig.users` is the list;
+`retire_minio_users(cfg=, credentials=)` is the deploy.
+
+Before anything is removed, it refuses:
+
+- an empty list, duplicates, and names outside
+  `^[A-Za-z0-9][A-Za-z0-9_.-]{2,62}$` (typed config, and again on the host);
+- a protected name: the alias's root user, the config's `protected` names and the
+  access keys in `MinioUserRetirementCredentials.protected_access`. This check
+  comes first because the server answers "no such user" for its root user, which
+  would otherwise look like an already retired one;
+- an alias whose `mc admin info` does not return one success row in mode `online`:
+  wrong credentials, a stopped server, or safe mode;
+- a listed user in a group or with service accounts, for the whole list. The server
+  would edit that group or delete those credentials along with the user. Resolve
+  them first, deliberately;
+- any answer it cannot read. Only the precise `XMinioAdminNoSuchUser` response
+  counts as absent.
+
+A refusal reaches the plan as `MinIO user retirement refused: <reason>`, so `--dry`
+shows it without a change.
+
+A listed user that is already absent is not touched, and a repeat run makes no
+managed change. The final read-back still runs on every call: each listed user must
+answer `XMinioAdminNoSuchUser` and be missing from the user list. Within one removal,
+users, attached policy names, policy documents, groups and bucket names outside the
+list are read before and after, and any difference fails the run after the removal
+with the removal already done. Service accounts of other users are not part of
+that comparison, since listing them would put each access key on a command line.
+Policy documents stay in place, including one only the retired user held.
+
+The admin credentials travel on protected stdin into a disposable client alias;
+root's shared alias config is not read or written. Listed names and the alias are on
+the `mc` command line. Credentials and the secret-protected access keys are not, and
+only fixed reasons and counts leave the helper. The server cannot undo a removal; a
+later metadata restore from an older archive brings the user back, and running the
+operation again removes it.
+
+`tests/integration/minio/user_retirement/` runs real pyinfra against a real server
+and client in a throwaway container: a plan, the refusals above, removal of two
+users, two repeats, a partly retired list, and a check that no credential reached a
+client command line. It is proof of this component on those binaries, not of a
+production host. See `tests/integration/minio/README.md`
+for what ran.
