@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Correct prepared Home Assistant interpreter discovery to run from the selected
+  service home, avoiding an unrelated inaccessible controller virtualenv. Preserve
+  the reviewed connector context and account for post-install lookup failure
+  through a yielded SDK callback. Retain successful install change history across
+  SDK retries for the original HA/Matter restart notifications. Retain the frozen negative source and prepare
+  bounded original-command/UV/SDK repair controls; native repair and full Home
+  Assistant application/private workflow qualification remain pending.
+
 - Preserve partial Home Assistant native failure evidence and prepare a bounded
   interpreter-only UV/Python/actual-SDK diagnostic before another application
   replay. Compare the unchanged lookup with the reviewed protected transport,

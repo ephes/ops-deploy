@@ -188,7 +188,7 @@ harness runs, it verifies that checkout at
 public deployment API; private CLI binding remains a separate qualification.
 
 
-## Interpreter diagnostic source after c701
+## Frozen cafbe interpreter diagnostic after c701
 
 Run41139171439 proved the corrected Matter native load and stable readiness in
 both guests. Upgrade planning passed; the first typed mutation then failed in the
@@ -233,3 +233,52 @@ recorded by the matrix's imported typed caller appear in its summary even when a
 later phase fails. Strict per-phase comparisons remain unchanged. Full current
 and upgrade execution, remaining faults/lifecycles, original STT diagnosis and
 ordinary private controller binding remain open.
+
+
+## Interpreter repair controls after cafbe
+
+The current guest entry retains the same single-current, interpreter-only scope.
+No application matrix is dispatched by this source. Native execution of the
+repair requires a separately frozen source/provenance packet and Root GO.
+
+The cafbe native result established the failure: service-user UV discovery
+inspected the unrelated controller `.venv/bin/python`, whose interpreter target
+was inaccessible. Clearing candidate environment keys and using the protected
+transport did not change that result. Installation succeeded, its post-find
+failed, and the generator error left SDK metadata incomplete with no failed host.
+
+The prepared production correction enters the configured service home inside
+`runuser` for find/install and yields a fixed failure callback after a failed
+post-find. This is intentionally different cwd behavior. Actual original
+Ansible.command/become stays in a readable controller, falls back to distinct
+module temporary directories for an inaccessible playbook directory, and stays
+in an accessible service home; the original role does not specify `chdir`.
+
+The repaired fixture records original core2.21.5/full801 identity and command
+results in those three contexts, then compares the hash-guarded exact cafbe
+interpreter with the repaired implementation. Direct UV and actual SDK controls
+cover readable and private controller directories, neutral home, existing-Python
+no-op, cold owned-Python uninstall/install, repeat no-op, an owned inaccessible
+home `.venv` post-find fault with one SDK retry, and a clean follow-up after fault
+removal. The private-controller mode and synthetic symlink are restored in
+`finally`; owned guest cleanup remains unchanged. No real account or application
+interpreter is removed. Deferred planning can report a possible install while
+execution discovers the existing interpreter and reports no change. Failed
+operations complete and enter `failed_hosts`; `executed=True` does not mean they
+succeeded. SDK change results remain the restart-notification input.
+
+Original command processes are limited to 120 seconds each; each direct UV repair
+command is limited to 120 seconds; the SDK child has a 900-second outer bound,
+command/query timeouts, and bounded public output. Original and typed native
+repair results remain pending until the exact authorized run completes. This is
+not full Home Assistant, private workflow, inventory or hardware qualification.
+
+
+The normal wrapper accepts `PYINFRA_FLAGS` including pyinfra `--retry`; default
+retry count is zero. SDK 3.10 otherwise drops earlier-attempt commands from its
+final change result. The interpreter operation therefore carries a per-invocation
+set of actual hosts whose install command succeeded during execution. A retry
+that freshly finds Python yields a fixed bookkeeping callback for that earlier
+change, preserving HA and selected Matter notifications without another install.
+Planning, a failed install, an initially present interpreter and a separate
+invocation do not set or inherit that progress. This does not alter SDK internals.

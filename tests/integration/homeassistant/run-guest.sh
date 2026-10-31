@@ -24,7 +24,7 @@ uv sync --locked --no-dev --python 3.13
 uv pip install --python .venv/bin/python --no-deps --reinstall "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
 .venv/bin/python tests/integration/homeassistant/verify-installed.py
 uv venv --python 3.13 /opt/homeassistant-ansible
-uv pip install --python /opt/homeassistant-ansible/bin/python ansible==14.5.0
+uv pip install --python /opt/homeassistant-ansible/bin/python ansible==14.5.0 ansible-core==2.21.5
 install -d -m 0700 /opt/homeassistant-fixture
 install -d /opt/homeassistant-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/homeassistant-fixture/collections/ansible_collections/local/ops_library

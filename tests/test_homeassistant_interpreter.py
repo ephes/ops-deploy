@@ -77,7 +77,7 @@ def test_successful_install_without_available_interpreter_fails() -> None:
     assert any("python install" in text for text in run.executed_commands)
 
 
-def test_exact_original_service_user_find_and_install_argv() -> None:
+def test_service_user_find_and_install_explicit_home_cwd() -> None:
     cfg = HomeAssistantRuntimeConfig(user="ownedha", home="/srv/owned", uv_path="/opt/uv", python_version="3.14.8")
     for action in ("find", "install"):
         assert shlex.split(interpreter.interpreter_command(cfg, action)) == [
@@ -87,8 +87,7 @@ def test_exact_original_service_user_find_and_install_argv() -> None:
             "--",
             "env",
             "HOME=/srv/owned",
-            "/opt/uv",
-            "python",
-            action,
-            "3.14.8",
+            "/bin/sh",
+            "-c",
+            "cd /srv/owned && exec /opt/uv python " + action + " 3.14.8",
         ]

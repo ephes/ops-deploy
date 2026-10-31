@@ -10,6 +10,7 @@ from typing import Any
 
 from .fixture import write
 from .harness import admit
+from .interpreter_original import verify_original_contexts
 from .interpreter_probe import environment_keys
 from .matter_ready import bounded_command
 from .prerequisites import seed_uv_account
@@ -72,6 +73,7 @@ def run() -> None:
             ],
             15,
         )
+        verify_original_contexts()
         # Separate bounded child retains the actual inherited context, SDK
         # stderr/greenlet failure and per-operation completion. It never starts HA.
         result = capture(
@@ -87,7 +89,8 @@ def run() -> None:
             "summary.json",
             {
                 "completed": completed,
-                "purpose": "interpreter diagnostic only; completion is not application qualification",
+                "purpose": "original command cwd/interpreter diagnostic; no application qualification",
+                "original_command_contexts_requested": 3,
                 "case": os.environ["HOMEASSISTANT_FIXTURE_CASE"],
                 "typed_application_phases_executed": 0,
                 "selected_original_phases_executed": 0,

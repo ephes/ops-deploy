@@ -150,6 +150,28 @@ existing virtualenv current without rebuilding it. Cold-plan deferral is limited
 to declared earlier user/UV creation prerequisites. Synthetic SDK tests establish
 operation ordering and failure behavior, not real UV download or symlink changes.
 
+The interpreter correction explicitly enters the configured service home inside
+`runuser` before both UV lookup and installation. This intentionally prevents an
+unrelated controller project's `.venv` from affecting discovery. It is a behavior
+correction, not literal original working-directory parity: actual original
+Ansible command/become probes kept a readable controller directory, used distinct
+module temporary directories when the playbook directory was inaccessible, and
+kept an accessible service home. The original role declares no `chdir`.
+
+Lookup uses the reviewed protected connector/context transport. A successful UV
+install followed by an unavailable interpreter yields a fixed failure callback,
+so pyinfra completes the operation and marks the host failed. Failed operations
+can have `executed=True`; this is not a zero-execution claim. Operation-local
+progress preserves an earlier successful installation across an inherited SDK
+retry, so HA and selected Matter still receive its restart notification. The
+retry bookkeeping callback represents that earlier change, not another install;
+planning and independent invocations do not share progress. Native repair proof
+is still pending. The bounded current-only interpreter fixture retains the exact
+cafbe negative implementation, original core801 identity, real UV and SDK
+present/cold/repeat/failure/retry controls, without application phases. Final
+Home Assistant qualification still requires both full application cases, remaining
+fault/lifecycle contracts, and ordinary private source-context binding.
+
 
 The prepared recursive environment-ownership component checks descendant
 metadata, because the SDK directory operation only recurses when the root's

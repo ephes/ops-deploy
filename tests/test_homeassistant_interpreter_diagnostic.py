@@ -9,7 +9,14 @@ from typing import Any
 import pytest
 
 from ops_deploy.services.homeassistant import HomeAssistantDeployConfig, interpreter
-from tests.integration.homeassistant import diagnose_interpreter, fixture, harness, interpreter_probe, matrix
+from tests.integration.homeassistant import (
+    diagnose_interpreter,
+    fixture,
+    frozen_interpreter,
+    harness,
+    interpreter_probe,
+    matrix,
+)
 
 
 @pytest.mark.parametrize("failure", [None, "admit", "matrix"])
@@ -72,13 +79,13 @@ def test_actual_local_connector_records_frozen_find_and_operation_completion(
         return "printf '/owned/python\\n'" if available else "printf 'owned find failure\\n' >&2; exit 7"
 
     monkeypatch.setattr(interpreter, "interpreter_command", command)
-    monkeypatch.setattr(interpreter_probe, "interpreter_command", command)
+    monkeypatch.setattr(frozen_interpreter.load(), "interpreter_command", command)
     monkeypatch.setenv("UV_OWNED_TEST", "value must never be exported")
     monkeypatch.setenv("XDG_OWNED_TEST", "private value")
     report = interpreter_probe.probe(install=False)
     assert report["error"] is None
-    assert report["frozen_find"] == ("/owned/python" if available else None)
-    assert report["reviewed_find"] == report["frozen_find"]
+    assert report["find"] == ("/owned/python" if available else None)
+    assert report["reviewed_find"] == report["find"]
     assert report["operations"] == [{"complete": True, "executed": True, "success": True}]
     assert "UV_OWNED_TEST" in report["environment_keys"]
     assert "XDG_OWNED_TEST" in report["environment_keys"]
@@ -144,7 +151,6 @@ def test_reviewed_transport_oracle_is_exact() -> None:
 
 def test_direct_probe_admission_precedes_all_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("tests.integration.homeassistant.interpreter_probe.os.getuid", lambda: 1000)
-    monkeypatch.setattr(interpreter_probe, "write", lambda *args: pytest.fail("must not write"))
     monkeypatch.setattr(interpreter_probe, "probe", lambda **kwargs: pytest.fail("must not probe"))
     with pytest.raises(AssertionError):
         interpreter_probe.main()
@@ -184,6 +190,7 @@ def test_diagnostic_sequence_and_failure_receipts(
             assert argv[-1] == "tests.integration.homeassistant.interpreter_probe"
         return {"exit": 7 if name == failure else 0}
 
+    monkeypatch.setattr(diagnose_interpreter, "verify_original_contexts", lambda: calls.append("original"))
     monkeypatch.setattr(diagnose_interpreter, "seed_uv_account", seed)
     monkeypatch.setattr(diagnose_interpreter, "capture", capture)
     if failure:
@@ -203,4 +210,141 @@ def test_diagnostic_sequence_and_failure_receipts(
         assert calls == ["admit", "seed", "interpreter-seed"]
     else:
         assert calls[-1] == "interpreter-sdk-process"
-        assert len(calls) == 7
+        assert len(calls) == 8
+
+
+@pytest.mark.parametrize("mode", ["present", "cold", "failed-install", "failed-postfind"])
+def test_fixed_actual_sdk_local_commands_complete_and_repeat(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str
+) -> None:
+    import shlex
+
+    marker = tmp_path / "installed"
+    if mode == "present":
+        marker.touch()
+
+    def command(cfg: Any, action: str) -> str:
+        if action == "install":
+            return "exit 9" if mode == "failed-install" else "touch " + shlex.quote(str(marker))
+        if mode == "failed-postfind":
+            return "exit 7"
+        return "test -f " + shlex.quote(str(marker)) + " && printf '/owned/python\\n'"
+
+    monkeypatch.setattr(interpreter, "interpreter_command", command)
+    result = interpreter_probe.probe(install=True, frozen=False, retries=1)
+    assert result["operations"][0]["complete"] is True
+    assert result["planned_changes"] == [True]
+    assert result["planning_progress"] == []
+    assert result["actual_host_keys"] is True
+    assert result["installed_hosts"] == (["@local"] if mode in ("cold", "failed-postfind") else [])
+    assert result["changes"] == [mode == "cold"]
+    if mode.startswith("failed"):
+        assert result["operations"] == [{"complete": True, "executed": True, "success": False}]
+        assert result["failed_hosts"] == ["@local"]
+    else:
+        assert result["error"] is None
+        assert result["failed_hosts"] == []
+        assert result["operations"] == [{"complete": True, "executed": mode == "cold", "success": True}]
+        repeat = interpreter_probe.probe(install=True, frozen=False)
+        assert repeat["operations"] == [{"complete": True, "executed": False, "success": True}]
+        assert repeat["error"] is None
+
+
+def test_frozen_negative_is_exact_committed_source() -> None:
+    import hashlib
+
+    from tests.integration.homeassistant import frozen_interpreter
+
+    source = Path(frozen_interpreter.__file__).with_name("interpreter_cafbe.py.txt").read_bytes()
+    assert hashlib.sha256(source).hexdigest() == frozen_interpreter.SOURCE_SHA
+
+
+def test_original_command_probe_preserves_actual_task_cwd_semantics(tmp_path: Path) -> None:
+    from tests.integration.homeassistant.interpreter_original import play
+
+    value = play(tmp_path / "owned.json")[0]
+    assert value["become_user"] == "homeassistant"
+    first, find, retain = value["tasks"]
+    assert first["ansible.builtin.command"] == {"argv": ["pwd"]}
+    assert find["ansible.builtin.command"] == {"cmd": "/usr/local/bin/uv python find 3.14.8"}
+    assert find["failed_when"] is False
+    assert retain["become"] is False
+
+
+def test_original_identity_failure_precedes_playbook_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.integration.homeassistant import interpreter_original
+
+    receipts = {}
+    monkeypatch.setattr(interpreter_original, "write", lambda name, data: receipts.update({name: data}))
+    monkeypatch.setattr(
+        interpreter_original,
+        "bounded_command",
+        lambda *a, **k: {"exit": 1, "truncated": False, "timed_out": False, "output": "owned identity mismatch"},
+    )
+    monkeypatch.setattr(
+        "tests.integration.homeassistant.interpreter_original.os.open",
+        lambda *a: pytest.fail("must not create playbook"),
+    )
+    with pytest.raises(RuntimeError, match="identity"):
+        interpreter_original.verify_original_contexts()
+    assert receipts["interpreter-original-identity.json"]["exit"] == 1
+
+
+@pytest.mark.parametrize("bad", [None, "cwd", "find"])
+def test_original_context_loop_cwd_outcomes_and_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, bad: str | None
+) -> None:
+    import json
+    import os
+
+    from tests.integration.homeassistant import interpreter_original as original
+
+    contexts = {name: tmp_path / name for name in ("controller", "private-playbook", "user-home")}
+    for directory in contexts.values():
+        directory.mkdir()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    before = Path.cwd()
+    calls = []
+    monkeypatch.setattr(original, "CONTEXTS", contexts)
+    monkeypatch.setattr(original, "EVIDENCE", evidence)
+    monkeypatch.setattr(original, "write", lambda *args: None)
+
+    def command(argv: list[str], *, timeout: float) -> dict[str, Any]:
+        if "-c" in argv and argv[-1] == original.IDENTITY:
+            return {
+                "exit": 0,
+                "truncated": False,
+                "timed_out": False,
+                "output": json.dumps({"count": 801, "identity": original.CORE_HASH}),
+            }
+        directory = Path.cwd()
+        name = directory.name
+        calls.append(name)
+        assert directory == contexts[name]
+        value = {
+            "effective_cwd": "/home/homeassistant/.ansible/tmp/ansible-moduletmp-owned"
+            if name == "private-playbook"
+            else str(directory),
+            "cwd_rc": 0,
+            "find_rc": 2 if name == "controller" else 0,
+            "find_stdout": "" if name == "controller" else "/owned/python",
+            "find_stderr": "Permission denied" if name == "controller" else "",
+        }
+        if bad == "cwd":
+            value["effective_cwd"] = "/wrong"
+        elif bad == "find":
+            value["find_rc"] = 0 if name == "controller" else 2
+        (evidence / ("interpreter-original-" + name + ".json")).write_text(json.dumps(value))
+        return {"exit": 0, "truncated": False, "timed_out": False, "output": ""}
+
+    monkeypatch.setattr(original, "bounded_command", command)
+    if bad:
+        with pytest.raises(AssertionError):
+            original.verify_original_contexts()
+        assert calls == ["controller"]
+    else:
+        original.verify_original_contexts()
+        assert calls == list(contexts)
+    assert Path(os.getcwd()) == before
+    assert all(not (directory / "owned-interpreter-original.yml").exists() for directory in contexts.values())
