@@ -1,0 +1,7 @@
+{{ {
+  'schema': 1, 'database': daybook_operations_api_database, 'user': daybook_operations_api_database_user,
+  'password': daybook_operations_api_database_password, 'host': '127.0.0.1', 'port': 5432,
+  'environment': daybook_operations_api_config_dir + '/environment',
+  'profiles': daybook_operations_api_config_dir + '/profiles.json',
+  'backup_root': daybook_operations_api_backup_root
+} | to_nice_json }}

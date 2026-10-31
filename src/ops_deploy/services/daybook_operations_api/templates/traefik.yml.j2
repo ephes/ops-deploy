@@ -1,0 +1,24 @@
+http:
+  routers:
+    daybook-operations:
+      rule: "Host(`{{ daybook_operations_api_domain }}`)"
+      entryPoints: [web-secure]
+      tls: {}
+      middlewares: [daybook-operations-networks, daybook-operations-headers, daybook-operations-limit]
+      service: daybook-operations
+  middlewares:
+    daybook-operations-networks:
+      ipAllowList:
+        sourceRange: {{ daybook_operations_api_allowed_networks | to_json }}
+    daybook-operations-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+    daybook-operations-limit:
+      buffering:
+        maxRequestBodyBytes: 16384
+  services:
+    daybook-operations:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ daybook_operations_api_port }}"
