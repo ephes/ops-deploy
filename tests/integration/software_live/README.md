@@ -15,9 +15,10 @@ before snapshots. Original-role coexistence always collects and rewrites state; 
 is explicitly not a physical no-op.
 
 Phases cover bootstrap, authenticated/anonymous health, strict repeats with shell/fish,
-actual cf3 Ansible coexistence, stale/missing-state collection, policy-only changes,
-fixture credential rotation, real Python/Rust switching, shadow comparison and removal,
-rollback before invalid shadow input, owned SQLite creation/current/re-enabled/disabled
+actual Ansible coexistence with the S12 role, stale/missing-state collection, policy-only changes,
+fixture credential rotation, shadow comparison and removal, refusal of an invalid
+release before any change, the S12 upgrade of a pre-retirement host (Python base units
+with Rust drop-ins, Python program and bytecode cache removed, a foreign drop-in kept), owned SQLite creation/current/re-enabled/disabled
 checks, and removal with retained/default or explicitly removed production data.
 All failures retain raw phase operations, logs and before/after state. Managed zero and
 upload zero are required alongside strict filesystem/unit/PID/package/policy equality for

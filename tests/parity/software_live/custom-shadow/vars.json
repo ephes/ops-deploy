@@ -27,7 +27,6 @@
   "software_live_install_dir": "/usr/local/lib/fixture-software-live",
   "software_live_packages": [
     "python3",
-    "python3-apt",
     "apache2-utils"
   ],
   "software_live_on_calendar": "*:2/20",

@@ -68,7 +68,7 @@ def deploy_software_live(
     # after this complete deployment succeeds (check mode verifies no URL).
     if on_endpoint is not None:
         on_endpoint(f"http://{bind}:9110/.well-known/software-live")
-    rust_inputs = switch.release_inputs(cfg) if cfg.impl == "rust" else None
+    rust_inputs = switch.release_inputs(cfg)
     before = state.observation(cfg)
     live = switch.live_state(cfg)
     apt.packages(name="Install software observation dependencies", packages=list(cfg.packages))
@@ -87,28 +87,14 @@ def deploy_software_live(
         group="root",
         mode="0755",
     )
-    programs = [
-        put(str(cfg.install_dir / name), RESOURCE.joinpath("files", name).read_text(), mode="0755")
-        for name in ("software_live.py", "nyxmon_checks.py")
-    ]
+    # The Nyxmon helper stays Python; collector and endpoint are the Rust release
+    # (S12). It is not a collection or endpoint trigger: neither runs it.
+    put(
+        str(cfg.install_dir / "nyxmon_checks.py"),
+        RESOURCE.joinpath("files", "nyxmon_checks.py").read_text(),
+        mode="0755",
+    )
     policy = put(str(cfg.config_dir / "policy.json"), nice_json(cfg.policy), group=cfg.group, mode="0640")
-    if cfg.impl == "python":
-        mark_read_only(
-            server.shell(
-                name="Validate software observation policy",
-                commands=[
-                    shlex.join(
-                        [
-                            "/usr/bin/python3",
-                            str(cfg.install_dir / "software_live.py"),
-                            "validate",
-                            "--config",
-                            str(cfg.config_dir / "policy.json"),
-                        ]
-                    )
-                ],
-            )
-        )
     auth = credentials(endpoint, secret)
     endpoint_config = put(str(cfg.config_dir / "endpoint.json"), endpoint_json(cfg, bind), group=cfg.group, mode="0640")
     if cfg.inventory_export:
@@ -127,8 +113,6 @@ def deploy_software_live(
             mode="0750",
         )
     selected = switch.select(cfg, live, rust_inputs)
-    if selected.refused:
-        return
     units = [
         unit(cfg, name, template)
         for name, template in zip(
@@ -139,9 +123,9 @@ def deploy_software_live(
     systemd.daemon_reload(
         name="Reload software-live production units", _if=lambda: any(op.did_change() for op in changed_units)
     )
-    restart("software-live-endpoint.service", [*programs, *auth, endpoint_config, *changed_units])
+    restart("software-live-endpoint.service", [*auth, endpoint_config, *changed_units])
     restart("software-live-collector.timer", changed_units)
-    triggers = [*programs, policy, *auth, endpoint_config, *units, *selected.triggers]
+    triggers = [policy, *auth, endpoint_config, *units, *selected.triggers]
     if selected.install is not None and not selected.install.validated:
         triggers.append(selected.install.op)
     state.collect(cfg, before, triggers)

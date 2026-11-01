@@ -1,4 +1,4 @@
-"""Role-equivalent Python rollback, Rust candidate, shadow units and release pins."""
+"""Role-equivalent Rust candidate, retired drop-ins, shadow units and release pins."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from pyinfra.operations import files, server, systemd
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe, stdin_arguments
 from ops_deploy.helpers.rust_release import Install, install_release, pin_release, prune_releases
-from ops_deploy.services.software_live.common import RESOURCE, SHADOW, endpoint_json, put, render, restart, unit
+from ops_deploy.services.software_live.common import RESOURCE, SHADOW, endpoint_json, put, restart, unit
 from ops_deploy.services.software_live.config import SoftwareLiveConfig
 from ops_deploy.services.software_live.files.software_live_impl import VERSION_RE, software_live_variant
 
@@ -27,7 +27,6 @@ class Selection:
     triggers: list[OperationMeta]
     install: Install | None
     live: dict[str, Any]
-    refused: bool = False
     production: list[OperationMeta] = field(default_factory=list)
 
 
@@ -83,6 +82,8 @@ def release_inputs(cfg: SoftwareLiveConfig) -> tuple[str, str, str]:
         raise DeployError("Rust software-live requires a released OS variant and valid release version")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", checksum) and cfg.rust_local_archive is None:
         raise DeployError("Rust software-live requires the variant archive checksum or local archive")
+    if cfg.rust_local_archive is not None and not cfg.rust_local_archive.is_file():
+        raise DeployError("software-live controller archive unavailable")
     url = cfg.rust_release_url or (
         f"https://github.com/ephes/ops-library/releases/download/software-live-v{cfg.rust_version}/"
         f"software-live-{cfg.rust_version}-x86_64-unknown-linux-gnu-{variant}.tar.gz"
@@ -140,64 +141,27 @@ def _shadow(cfg: SoftwareLiveConfig) -> list[OperationMeta]:
     return changed
 
 
-def select(cfg: SoftwareLiveConfig, live: dict[str, Any], rust_inputs: tuple[str, str, str] | None) -> Selection:
-    changed = []
-    if cfg.impl == "python":
-        rollback = [files.file(name=f"Remove Rust drop-in {p}", path=p, present=False) for p in paths(cfg)["dropins"]]
-        changed += rollback
-        systemd.daemon_reload(
-            name="Reload Python software-live rollback", _if=lambda: any(x.did_change() for x in rollback)
-        )
-        restart("software-live-endpoint.service", rollback)
-        restart("software-live-collector.timer", rollback)
-    install = None
-    if cfg.impl == "rust" or cfg.rust_shadow:
-        if rust_inputs is None:
-            try:
-                rust_inputs = release_inputs(cfg)
-            except DeployError:
-                # Fail at execution after queued Python rollback, as the role does.
-                mark_read_only(
-                    server.shell(
-                        name="Reject invalid shadow release after Python rollback",
-                        commands=["printf '%s\\n' 'Invalid software-live shadow release inputs' >&2; exit 1"],
-                    )
-                )
-                return Selection(changed, None, live, refused=True)
-        _, checksum, url = rust_inputs
-        # A missing controller archive must also fail after Python rollback.
-        if cfg.rust_local_archive is not None and not cfg.rust_local_archive.is_file():
-            mark_read_only(
-                server.shell(
-                    name="Reject unavailable software-live archive",
-                    commands=["printf '%s\\n' 'Software-live controller archive unavailable' >&2; exit 1"],
-                )
-            )
-            return Selection(changed, None, live, refused=True)
-        try:
-            install = install_release(
-                "software-live",
-                cfg.rust_version,
-                sha256=checksum,
-                install_root=str(cfg.release_root),
-                release_url=url,
-                local_archive=cfg.rust_local_archive,
-                members=("software-live", "software-live-apt", "LICENSE", "LICENSE.GPL-3.0"),
-                executables=("software-live", "software-live-apt"),
-                validate_user=cfg.user if cfg.rust_version_check_user is None else cfg.rust_version_check_user,
-            )
-        except ValueError as error:
-            if cfg.impl != "python" or not isinstance(error.__cause__, OSError):
-                raise
-            # Controller read errors must not cancel the already queued rollback.
-            mark_read_only(
-                server.shell(
-                    name="Reject unreadable shadow archive after Python rollback",
-                    commands=["printf '%s\\n' 'Software-live controller archive unreadable' >&2; exit 1"],
-                )
-            )
-            return Selection(changed, None, live, refused=True)
-        candidate = """import json,subprocess,sys,time
+def select(cfg: SoftwareLiveConfig, live: dict[str, Any], rust_inputs: tuple[str, str, str]) -> Selection:
+    """Install and validate the pinned release, then retire the S12 drop-ins.
+
+    The base units name the versioned binary themselves (S12). The impl.conf
+    drop-ins earlier deploys wrote are removed only after the candidate
+    validated, and before the base units are written, so the caller's single
+    daemon reload and restart switch the units over.
+    """
+    _, checksum, url = rust_inputs
+    install = install_release(
+        "software-live",
+        cfg.rust_version,
+        sha256=checksum,
+        install_root=str(cfg.release_root),
+        release_url=url,
+        local_archive=cfg.rust_local_archive,
+        members=("software-live", "software-live-apt", "LICENSE", "LICENSE.GPL-3.0"),
+        executables=("software-live", "software-live-apt"),
+        validate_user=cfg.user if cfg.rust_version_check_user is None else cfg.rust_version_check_user,
+    )
+    candidate = """import json,subprocess,sys,time
 binary,policy,max_age=sys.argv[1:]
 subprocess.run([binary,'validate','--config',policy],check=True)
 r=subprocess.run([binary+'-apt','observe','--max-age',max_age,'--now',str(int(time.time()))],capture_output=True,text=True,timeout=120)
@@ -205,36 +169,38 @@ try:status=json.loads(r.stdout).get('status')
 except (ValueError,AttributeError):status=None
 if r.returncode or status!='ok':sys.exit('software-live candidate APT observation rejected')
 """
-        mark_read_only(
-            server.shell(
-                name="Validate software-live policy and APT candidate",
-                commands=[
-                    shlex.join(
-                        [
-                            "/usr/bin/python3",
-                            "-I",
-                            "-",
-                            str(cfg.binary),
-                            str(cfg.config_dir / "policy.json"),
-                            str(cfg.policy.get("apt_max_age_seconds", 172800)),
-                        ]
-                    )
-                ],
-                **stdin_arguments(candidate),
-            )
+    mark_read_only(
+        server.shell(
+            name="Validate software-live policy and APT candidate",
+            commands=[
+                shlex.join(
+                    [
+                        "/usr/bin/python3",
+                        "-I",
+                        "-",
+                        str(cfg.binary),
+                        str(cfg.config_dir / "policy.json"),
+                        str(cfg.policy.get("apt_max_age_seconds", 172800)),
+                    ]
+                )
+            ],
+            **stdin_arguments(candidate),
         )
-    changed += _shadow(cfg)
+    )
+    # A copy: _shadow's reload condition closes over its own list.
+    changed = list(_shadow(cfg))
     production = []
-    if cfg.impl == "rust":
-        for path, template in zip(
-            paths(cfg)["dropins"], ("impl-endpoint.conf.j2", "impl-collector.conf.j2"), strict=True
-        ):
-            files.directory(
-                name=f"Ensure {path} parent", path=path.rsplit("/", 1)[0], user="root", group="root", mode="0755"
-            )
-            operation = put(path, render(template, cfg))
-            changed.append(operation)
-            production.append(operation)
+    for path in paths(cfg)["dropins"]:
+        removal = files.file(name=f"Remove retired drop-in {path}", path=path, present=False)
+        parent = path.rsplit("/", 1)[0]
+        # Only an empty directory goes: another drop-in there is not ours.
+        server.shell(
+            name=f"Remove empty {parent}",
+            commands=[shlex.join(["rmdir", "--", parent]) + " 2>/dev/null || true"],
+            _if=removal.did_change,
+        )
+        changed.append(removal)
+        production.append(removal)
     return Selection(changed, install, live, production=production)
 
 
@@ -245,8 +211,8 @@ def verify_and_pin(cfg: SoftwareLiveConfig, selected: Selection) -> None:
         + RESOURCE.joinpath("files/verify_host.py").read_text()
     )
     expect = {
-        "impl": cfg.impl,
-        "binary": str(cfg.binary) if cfg.impl == "rust" or cfg.rust_shadow else "",
+        "impl": "rust",
+        "binary": str(cfg.binary),
         "script": str(cfg.install_dir / "software_live.py"),
         "shadow": cfg.rust_shadow,
     }
@@ -273,7 +239,17 @@ def verify_and_pin(cfg: SoftwareLiveConfig, selected: Selection) -> None:
             **stdin_arguments(script),
         )
     )
-    version = cfg.rust_version if cfg.impl == "rust" else None
+    # S12: the retired Python program and its bytecode cache leave the host only
+    # once the Rust units are verified (the Nyxmon helper stays).
+    files.file(
+        name="Remove the retired Python software observation program",
+        path=str(cfg.install_dir / "software_live.py"),
+        present=False,
+    )
+    files.directory(
+        name="Remove the retired Python bytecode cache", path=str(cfg.install_dir / "__pycache__"), present=False
+    )
+    version = cfg.rust_version
     last = selected.live["last_live"]
     pin_release(
         "software-live",

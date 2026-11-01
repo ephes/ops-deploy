@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `services.software_live`: retire the Python collector (port of the ops-library
+  `rust/software-live/PLAN.md` S12 change, after the 7-day soak of the Rust port on all
+  four hosts). The base units run the pinned release `releases/<version>/software-live`
+  directly; `impl` accepts only `"rust"` and `rust_version` is required, both checked
+  before any operation, as are invalid release inputs (the Python rollback path and its
+  "fail after rollback" refusals are gone). A deploy removes the `impl.conf` drop-ins of
+  earlier deploys (their directories only when empty) after the candidate validated and
+  before the base units are rewritten, in one reload and restart, and removes the
+  deployed `software_live.py` and `__pycache__` once the release is verified, before the
+  pins. Only `nyxmon_checks.py` is installed and it no longer triggers an endpoint
+  restart or a collection. `python3-apt` is dropped from the default `packages` (not
+  uninstalled). The Python program moves to `tests/parity/software_live/` as the test
+  oracle; templates and parity renders follow the ops-library S12 role, and the native
+  harness gains an S12 upgrade phase.
+
 - New base deploy `ssh_authorized_key_entries`
   (`SshAuthorizedKeyEntriesConfig`, `deploy_ssh_authorized_key_entries`): adds
   or updates `present` keys and removes `absent` keys in a user's
