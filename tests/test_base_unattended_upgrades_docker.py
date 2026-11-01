@@ -141,7 +141,7 @@ def test_security_only_policy_converges_and_leaves_packaged_files_alone(containe
     )
     first = container.deploy(cfg)
     assert first.succeeded, first.error
-    assert mutating(first) == [WRITE_APT, WRITE_NR]
+    assert mutating(first) == [WRITE_NR, WRITE_APT]
     assert container.out(f"cat {APT_DROPIN}") + "\n" == render_apt_dropin(cfg, container.distro)
     assert container.out(f"stat -c '%U:%G %a' {APT_DROPIN} {NEEDRESTART_DROPIN}") == "root:root 644\nroot:root 644"
     assert container.snapshot(*PACKAGED) == packaged
