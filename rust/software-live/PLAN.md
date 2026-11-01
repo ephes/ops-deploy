@@ -1649,6 +1649,24 @@ Parallelism:
 - After S8: S9 and S11 concurrently; S9b during S9; S10 after S9 and S9b.
 - S12 waits for the soak.
 
+As implemented (S12, 2026-11-01; soak 2026-10-23 13:33Z to 2026-10-30 13:33Z
+on all four hosts without a rollback, verified read-only before the change):
+`software_live_impl` defaults to `rust` and accepts nothing else (the
+variable stays so inventories that set it remain valid); the base unit
+templates run `releases/<version>/software-live`, the `impl-*.conf.j2`
+templates and `tasks/flush_handlers.yml` are gone, and `tasks/impl.yml`
+removes the `impl.conf` drop-ins (and their directories when empty) after
+the candidate validated, before the handlers, so the units switch in one
+reload and restart. Only `nyxmon_checks.py` is installed; the deployed
+`software_live.py` and `__pycache__` are removed after the verification
+(step 6), before the pins. Step 0 still reads the drop-ins, so a drop-in an
+earlier play left keeps protecting its release. The filter plugin is
+unchanged (its Python branch is no longer used by the role). The pyinfra
+port in ops-deploy (`services/software_live`, the deploy engine ops-control
+uses since 2026-10-28) gets the same change; the deploy runs through it, so
+no collection release is needed for S12 (coordinator decision 2026-11-01).
+Release 0.1.0 is left to the prune (`keep_versions` 3).
+
 Critical path: F1 → S2 → S3d (or the slowest S3*) → S3f → S5 → S7 (needs
 F2) → S8 → collection release → S9 (24 h; S9b's release in the shadow) → S10 → 7 days → S12.
 
