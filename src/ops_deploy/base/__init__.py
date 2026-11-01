@@ -1,7 +1,7 @@
 """Host-level base deploys ported from the ops-library base/bootstrap roles.
 
 Each module holds one role: a typed config and a ``@deploy`` function, used on
-their own (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
+their own (hostname, unit masks, headless mode, journald, shell basics, authorized keys (whole file or single entries),
 SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades) or as a
 step of a service deploy (uv, Node.js). They are deploys, not shared helpers, so they sit outside the
 size-capped helpers/ops/core layer.
@@ -14,6 +14,10 @@ from ops_deploy.base.hostname import HostnameConfig, deploy_hostname
 from ops_deploy.base.journald_config import JournaldConfig, deploy_journald_config
 from ops_deploy.base.nodejs_install import NodejsInstallConfig, deploy_nodejs_install
 from ops_deploy.base.shell_basics import ShellBasicsConfig, deploy_shell_basics
+from ops_deploy.base.ssh_authorized_key_entries import (
+    SshAuthorizedKeyEntriesConfig,
+    deploy_ssh_authorized_key_entries,
+)
 from ops_deploy.base.ssh_authorized_keys import AuthorizedKey, SshAuthorizedKeysConfig, deploy_ssh_authorized_keys
 from ops_deploy.base.ssh_guard import SshGuardConfig, deploy_ssh_guard
 from ops_deploy.base.stale_exe_restart import (
@@ -35,6 +39,7 @@ __all__ = [
     "NodejsInstallConfig",
     "RoleConfig",
     "ShellBasicsConfig",
+    "SshAuthorizedKeyEntriesConfig",
     "SshAuthorizedKeysConfig",
     "SshGuardConfig",
     "StaleExeHttpProbe",
@@ -50,6 +55,7 @@ __all__ = [
     "deploy_journald_config",
     "deploy_nodejs_install",
     "deploy_shell_basics",
+    "deploy_ssh_authorized_key_entries",
     "deploy_ssh_authorized_keys",
     "deploy_ssh_guard",
     "deploy_stale_exe_restart",

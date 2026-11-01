@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- New base deploy `ssh_authorized_key_entries`
+  (`SshAuthorizedKeyEntriesConfig`, `deploy_ssh_authorized_key_entries`): adds
+  or updates `present` keys and removes `absent` keys in a user's
+  `authorized_keys`, matched by key material, and keeps every other line byte
+  for byte (forced-command keys, comments, header, CRLF). `user`, `group` and
+  `home` are explicit, so macOS accounts (`/Users/<user>` with `staff`,
+  `/var/root` with `wheel`) work. Atomic write through `secret_file`, 0600 and
+  `.ssh` 0700; an empty `present` set is refused. Lock-out proof and the deploy
+  lock are the caller's job. `ssh_authorized_keys` (whole file) is unchanged.
+
 - `services.minio.user_retirement`: the before/after comparison ignores the order
   of values inside a policy's `Condition`, which the server varies between reads. A
   production run removed its user and then failed with "state outside the listed

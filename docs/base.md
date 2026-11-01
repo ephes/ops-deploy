@@ -27,6 +27,7 @@ change.
 | `systemd_unit_masks` | `systemd_unit_masks` | `SystemdUnitMasksConfig`, `UnitMask` | `deploy_systemd_unit_masks` |
 | `journald_config` | `journald_config` | `JournaldConfig` | `deploy_journald_config` |
 | `ssh_authorized_keys` | `ssh_authorized_keys_manage` | `SshAuthorizedKeysConfig`, `AuthorizedKey` | `deploy_ssh_authorized_keys` |
+| `ssh_authorized_key_entries` | none (pyinfra only) | `SshAuthorizedKeyEntriesConfig`, `AuthorizedKey` | `deploy_ssh_authorized_key_entries` |
 | `uv_install` | `uv_install` | `UvInstallConfig` | `deploy_uv_install` |
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
@@ -152,6 +153,45 @@ rename) although keys are public: the rename means an interrupted run never
 leaves a truncated file that locks the operator out. The role's
 `ssh_authorized_keys_manage_enabled` switch is not ported: do not call the
 deploy instead.
+
+## ssh_authorized_key_entries
+
+| Field | Default | |
+|---|---|---|
+| `user` | required | owner of `.ssh` and the file |
+| `group` | required | `staff` or `wheel` on macOS, not derived |
+| `home` | required | `/root`, `/var/root`, `/Users/<user>`, ... |
+| `present` | required, at least one | `AuthorizedKey(key, comment="", key_options="")` |
+| `absent` | `()` | key lines; options and comment are ignored |
+
+Changes only the given keys in `<home>/.ssh/authorized_keys` and keeps every
+other line, unlike `ssh_authorized_keys`, which owns the whole file. Lines are
+matched by key material (key type and base64 blob), never by comment or
+options. A `present` key is appended when missing and rewritten in place when
+its options or comment differ; further lines with the same key are dropped. Every
+line with an `absent` key is removed. All other lines (forced-command keys
+other deploys install, comments, the `# Managed by Ansible` header, blank and
+unparsable lines, CRLF line ends, a missing final newline) stay byte for byte.
+Fields are split on spaces and tabs only and lines on LF only, as sshd reads
+them. Removal fails closed: a non-comment line that is not attributed to an
+`absent` key but still contains its base64 blob (ignoring non-base64 bytes,
+which sshd's decoder skips) refuses the run before anything is written.
+A key both present and absent, the same key twice in `present` and an empty
+`present` are refused when the config is built.
+
+The file is read once while planning (base64, so every byte survives), merged
+on the controller and installed with [`secret_file`](concepts/operations.md):
+atomic, 0600, `user`:`group`, and no change when content, owner and mode
+already match. `.ssh` is ensured 0700 with the same owner. A symlink, a
+non-regular or an unreadable file is refused. Linux and macOS; nothing
+assumes `/root`.
+
+Not done here: proving that the host stays reachable before keys are removed
+(log in with a surviving `present` key over a fresh connection first, and never
+remove the key of the connection in use) and serialising concurrent runs
+(take the shared deploy lock before the file is read). Callers own both; in
+ops-control that is the `controller_keys` service (deploy-controllers plan,
+slice 4).
 
 ## uv_install
 

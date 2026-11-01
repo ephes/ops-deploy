@@ -11,7 +11,7 @@ Status: foundation. It contains the configuration base class, secret
 references, the `sync_tree` and `secret_file` operations, deploy helpers
 (users, systemd, uv/Django, Traefik, health checks), an in-process test
 harness, two toy services, the nyxmon, fastdeploy, delve and thermal monitoring services and host-level
-base deploys (hostname, unit masks, headless mode, journald, authorized keys, uv,
+base deploys (hostname, unit masks, headless mode, journald, authorized keys (whole file or single entries), uv,
 Node.js, shell basics, SSH guard, dpkg foreign architectures) and the shared host services PostgreSQL, Redis,
 Traefik (deploy, backup, restore, remove), certbot DNS-01 certificates and
 authoritative BIND, and pre-deploy backup steps (a synchronous, verified
