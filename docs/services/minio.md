@@ -240,8 +240,12 @@ managed change. The final read-back still runs on every call: each listed user m
 answer `XMinioAdminNoSuchUser` and be missing from the user list. Within one removal,
 users, attached policy names, policy documents, groups and bucket names outside the
 list are read before and after, and any difference fails the run after the removal
-with the removal already done. Service accounts of other users are not part of
-that comparison, since listing them would put each access key on a command line.
+with the removal already done. The server returns some lists in a varying order
+between reads with no write in between: action, resource and statement lists, and the
+values inside a statement's `Condition`. The comparison ignores that order, in this
+component only. A changed, added or removed value still fails. Service accounts of
+other users are not part of that comparison, since listing them would put each access
+key on a command line.
 Policy documents stay in place, including one only the retired user held.
 
 The admin credentials travel on protected stdin into a disposable client alias;
@@ -253,7 +257,7 @@ operation again removes it.
 
 `tests/integration/minio/user_retirement/` runs real pyinfra against a real server
 and client in a throwaway container: a plan, the refusals above, removal of two
-users, two repeats, a partly retired list, and a check that no credential reached a
-client command line. It is proof of this component on those binaries, not of a
+users, two repeats, a partly retired list, a real `Condition` change during a removal,
+and a check that no credential reached a client command line. It is proof of this component on those binaries, not of a
 production host. See `tests/integration/minio/README.md`
 for what ran.

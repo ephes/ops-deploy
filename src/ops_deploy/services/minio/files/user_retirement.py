@@ -80,6 +80,40 @@ def present_users(client, payload):
     return present
 
 
+def comparable_policy(policy):
+    """A policy document with every list the server reorders between reads in a fixed order.
+
+    normalized() covers actions, resources and statements. The server also varies the order of
+    Condition values, and statements are sorted on their text, so they are sorted again here.
+    The values themselves stay: a changed, added or removed value still compares as different.
+    """
+    policy = normalized(policy)
+    if not isinstance(policy, dict) or not isinstance(policy.get("Statement"), list):
+        return policy
+    statements = []
+    for statement in policy["Statement"]:
+        condition = statement.get("Condition") if isinstance(statement, dict) else None
+        if isinstance(condition, dict):
+            statement = {**statement, "Condition": comparable_condition(condition)}
+        statements.append(statement)
+    statements.sort(key=lambda value: json.dumps(value, sort_keys=True))
+    return {**policy, "Statement": statements}
+
+
+def comparable_condition(condition):
+    result = {}
+    for operator, keys in condition.items():
+        if isinstance(keys, dict):
+            keys = {
+                key: sorted(values, key=lambda value: json.dumps(value, sort_keys=True))
+                if isinstance(values, list)
+                else values
+                for key, values in keys.items()
+            }
+        result[operator] = keys
+    return result
+
+
 def snapshot(client, payload):
     """In-memory state outside the listed users. Compared here, never printed."""
     alias = payload["alias"]
@@ -98,8 +132,7 @@ def snapshot(client, payload):
         info = client.call("admin", "policy", "info", alias, name).one().get("policyInfo")
         if not isinstance(info, dict):
             raise Refused("policy inspection is malformed")
-        # The server returns action lists in a varying order.
-        policies[name] = {**info, "Policy": normalized(info.get("Policy"))}
+        policies[name] = {**info, "Policy": comparable_policy(info.get("Policy"))}
     groups = {}
     names = client.call("admin", "group", "list", alias).one().get("groups") or []
     for name in string_list(names, "group listing is malformed"):

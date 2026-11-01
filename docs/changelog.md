@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `services.minio.user_retirement`: the before/after comparison ignores the order
+  of values inside a policy's `Condition`, which the server varies between reads. A
+  production run removed its user and then failed with "state outside the listed
+  users changed" on such a read. A real `Condition` change still fails. The normal
+  deployment's shared `normalized()` is unchanged.
+
 - Add `services.minio.user_retirement`, an explicit maintenance operation that
   removes listed MinIO users, proves them absent and changes nothing else. It
   refuses empty or invalid lists, protected names, an unhealthy admin alias and

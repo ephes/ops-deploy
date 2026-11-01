@@ -54,13 +54,14 @@ is not execution evidence. The normal component remains unchanged.
 filesystem and everything except the evidence directory on tmpfs. It uses actual
 pyinfra with the local connector and a real server and client, on synthetic
 identities only: plan, eleven refusals (five typed, six reaching the host with
-whole-state equality), removal of two users, two zero-change repeats, a partly retired list, and a recorded client argv with no
-credential on it. The evidence directory receives `summary.json` and one log per phase.
+whole-state equality), removal of two users, two zero-change repeats, a partly retired list, a real `Condition`
+change during a removal that must fail, and a recorded client argv with no credential on it.
+The summary records how many raw `Condition` orders the server returned in 40 reads. The evidence directory receives `summary.json` and one log per phase.
 
 It ran with the release client `RELEASE.2025-08-13T08-35-41Z` (linux-arm64) against
 servers `RELEASE.2025-01-20T14-49-07Z` and `RELEASE.2026-09-22T19-25-18Z` in the
 container. It also ran natively on macOS against `RELEASE.2025-10-15T17-29-55Z`,
 with the Linux gate and two fixture paths replaced by a local wrapper. That is the
 base release of the pinned server, whose `.hotfix` x86 executable did not run here,
-and the offline KVM route was not used. Each of the three runs passed all 17 phases.
+and the offline KVM route was not used. Each of the three runs passed all 19 phases.
 

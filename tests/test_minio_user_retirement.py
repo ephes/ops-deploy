@@ -281,13 +281,86 @@ def test_policy_action_order_is_not_a_change(tmp_path: Path) -> None:
     before = host.client.read_text()
     source = before.replace(
         '{**ok, "policyInfo": state["policies"][command[4]]}',
-        '{**ok, "policyInfo": {"Policy": {"Statement": [{"Action": sorted("ab", reverse=len(state["calls"]) % 2)}]}}}',
+        '{**ok, "policyInfo": {"Policy": {"Statement": [{"Action": '
+        'sorted("ab", reverse="legacy-one" in state["users"])}]}}}',
     )
     assert source != before
     host.client.write_text(source)
     code, applied = host.run("apply")
     assert code == 0, applied
     assert applied["changed"] is True
+
+
+def conditioned(host: Host, policy_info: str) -> None:
+    before = host.client.read_text()
+    source = before.replace('{**ok, "policyInfo": state["policies"][command[4]]}', policy_info)
+    assert source != before
+    host.client.write_text(source)
+
+
+def test_condition_value_order_is_not_a_change(tmp_path: Path) -> None:
+    # The real server returned one policy's Condition values in a different order between reads.
+    host = Host(tmp_path)
+    conditioned(
+        host,
+        """{**ok, "policyInfo": {"Policy": {"Statement": [{"Action": ["s3:ListBucket"], "Condition": {
+            "StringLike": {"s3:prefix": sorted(["a/*", "b/*", "c/*"], reverse="legacy-one" in state["users"])}
+        }}]}}}""",
+    )
+    code, applied = host.run("apply")
+    assert code == 0, applied
+    assert applied["changed"] is True
+
+
+def test_condition_order_does_not_reorder_statements(tmp_path: Path) -> None:
+    # Statements are sorted on their text, so a Condition's order alone could swap two of them.
+    host = Host(tmp_path)
+    conditioned(
+        host,
+        """{**ok, "policyInfo": {"Policy": {"Statement": [
+            {"Action": ["s3:ListBucket"], "Condition": {"StringLike": {
+                "s3:prefix": sorted(["a/*", "z/*"], reverse="legacy-one" in state["users"])}}},
+            {"Action": ["s3:ListBucket"], "Condition": {"StringLike": {"s3:prefix": ["m/*", "n/*"]}}}
+        ]}}}""",
+    )
+    code, applied = host.run("apply")
+    assert code == 0, applied
+    assert applied["changed"] is True
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        '["a/*", "b/*"] if state["users"].get("legacy-one") else ["a/*", "c/*"]',
+        '["a/*", "b/*"] if state["users"].get("legacy-one") else ["a/*"]',
+        '["a/*", "a/*"] if state["users"].get("legacy-one") else ["a/*", "b/*"]',
+        '"a/*" if state["users"].get("legacy-one") else "b/*"',
+    ],
+)
+def test_real_condition_value_change_still_fails(tmp_path: Path, changed: str) -> None:
+    host = Host(tmp_path)
+    conditioned(
+        host,
+        '{**ok, "policyInfo": {"Policy": {"Statement": [{"Action": ["s3:ListBucket"], '
+        f'"Condition": {{"StringLike": {{"s3:prefix": {changed}}}}}}}]}}}}}}',
+    )
+    code, applied = host.run("apply")
+    assert code == 1, applied
+    assert applied["reason"] == "state outside the listed users changed during the removal"
+    assert applied["removed"] == 1
+
+
+def test_real_condition_key_change_still_fails(tmp_path: Path) -> None:
+    host = Host(tmp_path)
+    conditioned(
+        host,
+        """{**ok, "policyInfo": {"Policy": {"Statement": [{"Action": ["s3:ListBucket"], "Condition": {
+            "StringLike" if state["users"].get("legacy-one") else "StringEquals": {"s3:prefix": ["a/*"]}
+        }}]}}}""",
+    )
+    code, applied = host.run("apply")
+    assert code == 1, applied
+    assert applied["reason"] == "state outside the listed users changed during the removal"
 
 
 def test_unknown_action_fails() -> None:

@@ -64,6 +64,19 @@ def same(actual: dict[str, Any], expected: dict[str, Any], label: str) -> None:
     assert not differing, f"{label}: state changed: {differing}: {actual} != {expected}"
 
 
+CONDITIONED: dict[str, Any] = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket"],
+            "Resource": [f"arn:aws:s3:::{BUCKET}"],
+            "Condition": {"StringLike": {"s3:prefix": [f"owned-{index}/*" for index in range(12)]}},
+        }
+    ],
+}
+
+
 class Fixture:
     def __init__(self, minio: Path, mc: Path, evidence: Path) -> None:
         self.minio, self.mc_binary, self.evidence = minio, mc, evidence
@@ -73,6 +86,7 @@ class Fixture:
         self.phases: list[dict[str, Any]] = []
         self.shim = ROOT / "mc-shim"
         self.argv_log = ROOT / "argv.log"
+        self.fault = ROOT / "fault-condition"
         self.shared_alias = Path("/root/.mc/config.json")
 
     def private_values(self) -> list[str]:
@@ -128,9 +142,22 @@ class Fixture:
     def seed(self) -> None:
         for path in (ROOT / "admin", ROOT / "data", self.shared_alias.parent):
             path.mkdir(parents=True, mode=0o700, exist_ok=True)
+        # With the fault file present, a removal also changes one policy's Condition value:
+        # a real change the comparison has to report, with the removal itself already done.
+        changed: dict[str, Any] = {**CONDITIONED, "Statement": [dict(CONDITIONED["Statement"][0])]}
+        changed["Statement"][0]["Condition"] = {"StringLike": {"s3:prefix": ["owned-changed/*"]}}
+        (ROOT / "changed-policy.json").write_text(json.dumps(changed))
+        real, fault, changed_path = (
+            shlex.quote(str(path)) for path in (self.mc_binary, self.fault, ROOT / "changed-policy.json")
+        )
         self.shim.write_text(
-            f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {shlex.quote(str(self.argv_log))}\nexec "
-            f'{shlex.quote(str(self.mc_binary))} "$@"\n'
+            f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {shlex.quote(str(self.argv_log))}\n"
+            f'{real} "$@"\ncode=$?\n'
+            f'case "$*" in *" admin user remove "*)\n'
+            f"  if [ -f {fault} ]; then\n"
+            f'    {real} --json --config-dir "$3" admin policy create {ALIAS} owned-conditioned '
+            f"{changed_path} >/dev/null\n"
+            f"  fi;;\nesac\nexit $code\n"
         )
         self.shim.chmod(0o755)
         self.start()
@@ -145,6 +172,8 @@ class Fixture:
         document = ROOT / "keeper-policy.json"
         document.write_text(json.dumps(POLICY))
         self.mc("admin", "policy", "create", ALIAS, "owned-keeper", str(document))
+        document.write_text(json.dumps(CONDITIONED))
+        self.mc("admin", "policy", "create", ALIAS, "owned-conditioned", str(document))
         self.mc("admin", "policy", "attach", ALIAS, "readwrite", "--user", LEGACY)
         self.mc("admin", "policy", "attach", ALIAS, "owned-keeper", "--user", SECOND)
         self.mc("admin", "policy", "attach", ALIAS, "owned-keeper", "--user", KEEPER)
@@ -341,12 +370,32 @@ class Fixture:
         same(self.state(), after, "partial-list")
         self.phases.append({**partial, "state_unchanged": True})
 
+        # This server's raw Condition order over repeated reads: evidence for the comparison above.
+        forms = {
+            json.dumps(self.rows("admin", "policy", "info", ALIAS, "owned-conditioned")[0]["policyInfo"]["Policy"])
+            for _ in range(40)
+        }
+        self.phases.append({"label": "condition-order", "raw_forms_in_40_reads": len(forms)})
+
+        # A real Condition change during a removal fails, with the removal done.
+        self.mc("admin", "user", "add", ALIAS, SECOND, self.user_secrets[SECOND])
+        self.fault.touch()
+        drift = self.deploy("real-condition-change", self.config((LEGACY, SECOND)), self.credentials())
+        self.fault.unlink()
+        assert drift["failed"], drift
+        assert drift["managed"] == [], drift
+        log = (self.evidence / "real-condition-change.log").read_text()
+        assert "state outside the listed users changed" in log, "the failure did not name the comparison"
+        reply = self.mc("admin", "user", "info", ALIAS, SECOND, check=False)
+        assert b"XMinioAdminNoSuchUser" in reply.stdout, "the removal did not happen"
+        self.phases.append({**drift, "failed_after_removal": True})
+
         # Nothing secret on any client command line, the listed names only in their own removal.
         argv = self.argv_log.read_text()
         assert not any(value in argv for value in self.private_values()), "a secret reached a client command line"
         assert ROOT_USER not in argv, "the root user reached a client command line"
         removals = [line.split()[-1] for line in argv.splitlines() if " admin user remove " in line]
-        assert removals == [LEGACY, SECOND, SECOND], removals
+        assert removals == [LEGACY, SECOND, SECOND, SECOND], removals
         for other in (KEEPER, GROUPED):
             assert f" admin user remove {ALIAS} {other}" not in argv
         self.phases.append({"label": "command-lines", "removals": removals, "secrets_on_argv": False})
