@@ -52,7 +52,11 @@ PY
 # Fixture bootstrap only. No apt/package commands run on inventory.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends fish apache2-utils python3 sudo util-linux ca-certificates git
+# python3-apt is not a software-live dependency since S12; Ansible's package/apt
+# module installs it on first use, which would break the coexistence phase's
+# strict package equality, so the fixture provides it up front (the real hosts
+# keep it installed).
+apt-get install -y --no-install-recommends fish apache2-utils python3 python3-apt sudo util-linux ca-certificates git
 "$UV_BIN" pip install --python "$CONTROLLER_PYTHON" ansible==14.5.0
 install -d -m 0755 /opt/software-live-fixture
 # Actual immutable role and dependencies for Ansible coexistence.
