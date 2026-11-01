@@ -58,5 +58,5 @@ install -d -m 0755 /opt/software-live-fixture
 # Actual immutable role and dependencies for Ansible coexistence.
 install -d /opt/software-live-fixture/collections/ansible_collections/local
 git clone https://github.com/ephes/ops-library.git /opt/software-live-fixture/collections/ansible_collections/local/ops_library
-git -C /opt/software-live-fixture/collections/ansible_collections/local/ops_library checkout --detach PENDING-OPS-LIBRARY-S12-SHA
+git -C /opt/software-live-fixture/collections/ansible_collections/local/ops_library checkout --detach c177bfe8e82ef65a1e67e6728d8c10e593d5230e
 "$CONTROLLER_PYTHON" "$HERE/harness.py" "$EVIDENCE"

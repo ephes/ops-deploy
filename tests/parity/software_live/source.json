@@ -1,5 +1,5 @@
 {
-  "library": "PENDING-OPS-LIBRARY-S12-SHA",
+  "library": "c177bfe8e82ef65a1e67e6728d8c10e593d5230e",
   "ansible": "ansible-playbook [core 2.21.5]",
   "templates": {
     "collector.service.j2": "fde4978459cb8a3769ef7cf569522937d6cddd1688dcd91ca5c1190ddad75d83",

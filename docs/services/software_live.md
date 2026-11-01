@@ -76,8 +76,11 @@ ownership remains root; the Ansible role's unprivileged owner/group fixture knob
 not exposed as production configuration.
 
 Invalid release inputs (variant, version, checksum, a missing controller archive) are
-refused before any operation. Rollback is Rust to Rust: deploy the version named in
-`releases/.pins/software-live.previous`, which pruning always keeps.
+refused before any operation. Rollback is Rust to Rust. After a deploy whose
+verification failed no pin moved, so redeploy the version in `releases/.pins/software-live`
+(the version last verified live). After a successful deploy of a release that later
+misbehaves, deploy the version in `releases/.pins/software-live.previous`, which pruning
+always keeps (absent on a host whose production version never changed).
 No pin moves and no release is pruned before implementation verification. Current and
 previous production pins, shadow pins, loaded unit commands, process executables and
 cgroup children protect live releases. An unknown live state skips pruning.

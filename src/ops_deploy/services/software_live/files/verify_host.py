@@ -69,7 +69,7 @@ def _main() -> int:
         "The production units do not run the selected implementation: "
         + "; ".join(problems)
         + ". No pin moved and nothing was pruned. To roll back, deploy the release named in"
-        + " releases/.pins/software-live.previous.",
+        + " releases/.pins/software-live (the version last verified live; this failed run did not move it).",
         file=_sys.stderr,
     )
     return 1
