@@ -168,12 +168,14 @@ def test_first_run_installs_writes_and_checks(os: str) -> None:
     assert run.succeeded, run.error
     assert run.upload(APT_DROPIN) == render_apt_dropin(DEFAULT, OS[os]).encode()
     assert run.upload(NEEDRESTART_DROPIN) == render_needrestart_dropin(DEFAULT).encode()
+    # needrestart's mode is on the host before needrestart: without it, the
+    # next apt run on Ubuntu would restart services automatically.
     assert run.mutating_changed_ops == [
+        f"unattended-upgrades | Ensure {NEEDRESTART_DIR}",
+        WRITE_NR,
         REFRESH,
         INSTALL,
         WRITE_APT,
-        f"unattended-upgrades | Ensure {NEEDRESTART_DIR}",
-        WRITE_NR,
     ]
     install = next(command for command in run.executed_commands if " install " in command)
     assert install.endswith("install unattended-upgrades needrestart")

@@ -768,7 +768,8 @@ upgrade never meets a modified conffile:
   service. needrestart runs from apt's `DPkg::Post-Invoke` hook, so also after
   an unattended upgrade, and the mode applies to every apt run on the host
   (manual or scheduled upgrades too). With `needrestart="unmanaged"` the
-  drop-in is removed (needrestart itself stays installed).
+  drop-in is removed (needrestart itself stays installed), and the package's
+  default applies: on Ubuntu its apt hook restarts services automatically.
 
 Both are `root:root 0644`. A drop-in path that holds anything other than a
 regular file (a symlink included) is refused before any change.
@@ -791,6 +792,11 @@ pending third-party updates.
 Missing `unattended-upgrades` (and `needrestart`, unless unmanaged) are
 installed after an `apt-get update` (cache older than an hour). Installed
 packages are not refreshed or upgraded, so a converged host plans no change.
+The needrestart drop-in is written before that install: needrestart's apt hook
+does not run in the apt run that installs it, but it runs in every later one,
+and without a configured mode Ubuntu's hook (`-m u`) restarts services
+automatically; Debian's only lists them. A run that stops after the install,
+or an apt run right after it, still finds the mode.
 After the drop-ins a read-only check (reported separately, see
 [read-only checks](concepts/helpers.md)) compares the managed keys of
 `apt-config dump` (origins, any leftover `Allowed-Origins`, blacklist,

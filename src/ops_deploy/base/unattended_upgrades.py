@@ -267,6 +267,23 @@ def deploy_unattended_upgrades(cfg: UnattendedUpgradesConfig) -> None:
     apt_dropin = render_apt_dropin(cfg, distro)
     _refuse_non_files(APT_DROPIN, NEEDRESTART_DROPIN)
 
+    # The mode is on the host before needrestart is: its apt hook does not run in
+    # the apt run that installs it, but every later one does, and without a
+    # configured mode Ubuntu's hook restarts services automatically. A run that
+    # stops after the install, or an apt run right after it, must find the mode.
+    if cfg.needrestart == "unmanaged":
+        files.file(name=f"Remove {NEEDRESTART_DROPIN}", path=NEEDRESTART_DROPIN, present=False)
+    else:
+        files.directory(name=f"Ensure {NEEDRESTART_DIR}", path=NEEDRESTART_DIR, user="root", group="root", mode="0755")
+        files.put(
+            name=f"Write {NEEDRESTART_DROPIN}",
+            src=StringIO(render_needrestart_dropin(cfg)),
+            dest=NEEDRESTART_DROPIN,
+            user="root",
+            group="root",
+            mode="0644",
+        )
+
     installed = host.get_fact(DebPackages) or {}
     if any(package not in installed for package in cfg.packages):
         apt.update(name="Refresh apt cache", cache_time=3600)
@@ -280,18 +297,6 @@ def deploy_unattended_upgrades(cfg: UnattendedUpgradesConfig) -> None:
         group="root",
         mode="0644",
     )
-    if cfg.needrestart == "unmanaged":
-        files.file(name=f"Remove {NEEDRESTART_DROPIN}", path=NEEDRESTART_DROPIN, present=False)
-    else:
-        files.directory(name=f"Ensure {NEEDRESTART_DIR}", path=NEEDRESTART_DIR, user="root", group="root", mode="0755")
-        files.put(
-            name=f"Write {NEEDRESTART_DROPIN}",
-            src=StringIO(render_needrestart_dropin(cfg)),
-            dest=NEEDRESTART_DROPIN,
-            user="root",
-            group="root",
-            mode="0644",
-        )
 
     mark_read_only(
         server.shell(
