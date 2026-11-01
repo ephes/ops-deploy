@@ -102,8 +102,9 @@ class UnattendedUpgradesConfig(RoleConfig):
     # only list them (``list``), or leave needrestart alone (``unmanaged``:
     # not installed by this deploy and the managed drop-in is removed).
     needrestart: Literal["automatic", "list", "unmanaged"] = "automatic"
-    # Services needrestart never restarts on its own (it already skips
-    # docker, dbus, networking, getty and the apt units by default).
+    # Services needrestart never restarts on its own, on top of the package's
+    # defaults: docker*, dbus*, network*, getty and the apt units (the names
+    # match from their start, so not containerd or systemd-networkd).
     needrestart_skip_services: tuple[ServiceName, ...] = ()
 
     @field_validator("package_blacklist")

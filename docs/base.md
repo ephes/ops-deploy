@@ -751,7 +751,7 @@ to port: hosts ran the package defaults, and one bootstrap playbook wrote
 | `automatic_reboot_time` | `"04:30"` | `Automatic-Reboot-Time`, `HH:MM` (the reboot waits for this time after the run) |
 | `autoclean_interval_days` | `7` | `APT::Periodic::AutocleanInterval` (0 to 365; 0: never) |
 | `needrestart` | `automatic` | needrestart after an upgrade: `automatic` restarts affected services, `list` only lists them, `unmanaged` leaves needrestart alone |
-| `needrestart_skip_services` | `()` | `*.service` names needrestart never restarts (it already skips docker, dbus, networking, getty and the apt units) |
+| `needrestart_skip_services` | `()` | `*.service` names needrestart never restarts, on top of the package's own `override_rc` defaults, which match the start of the unit name (`docker*`, `dbus*`, `network*`, getty, the apt units; not `containerd` or `systemd-networkd`) |
 
 The policy lives in two drop-ins; no packaged file is touched, so a package
 upgrade never meets a modified conffile:
