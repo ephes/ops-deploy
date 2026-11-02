@@ -270,6 +270,40 @@ def test_the_monitor_unit_starts_the_rust_agent(cfg: NyxmonConfig, secrets: Secr
     assert "start-agent" not in check
 
 
+def test_digest_delivery_installs_the_timer(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    digest = cfg.model_copy(update={"notify_warning_delivery": "digest"})
+
+    commands = deploy(digest, secrets).executed_commands
+
+    assert "systemctl start nyxmon-warning-digest.timer" in commands
+    assert "systemctl enable nyxmon-warning-digest.timer" in commands
+    assert "nyxmon-warning-digest.service" not in " ".join(c for c in commands if c.startswith("systemctl"))
+    env = render_env(digest, secrets, shell=False).reveal().decode()
+    assert "NYXMON_NOTIFY_WARNING_DELIVERY=digest" in env.splitlines()
+
+
+def test_individual_delivery_installs_no_timer(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets)
+
+    assert not any("systemctl" in c and "nyxmon-warning-digest" in c for c in run.executed_commands)
+    assert not any("nyxmon-warning-digest" in path for path in run.uploaded_paths)
+
+
+def test_leaving_digest_delivery_retires_the_timer(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    responses = {
+        **converged(cfg, secrets),
+        **fakehost.file("/etc/systemd/system/nyxmon-warning-digest.timer", "[Timer]\n"),
+        **fakehost.file("/etc/systemd/system/nyxmon-warning-digest.service", "[Service]\n"),
+        **fakehost.service("nyxmon-warning-digest.timer"),
+    }
+
+    commands = deploy(cfg, secrets, responses).executed_commands
+
+    assert "rm -f /etc/systemd/system/nyxmon-warning-digest.timer" in commands
+    assert "rm -f /etc/systemd/system/nyxmon-warning-digest.service" in commands
+    assert "systemctl daemon-reload" in commands
+
+
 def test_a_deploy_without_an_agent_pin_is_refused(tmp_path: Path, secrets: SecretValues) -> None:
     cfg = NyxmonConfig(source_path=make_source(tmp_path), secrets=SecretRef("secrets/prod/nyxmon.yml"))
 

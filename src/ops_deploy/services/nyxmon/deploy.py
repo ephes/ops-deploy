@@ -13,12 +13,15 @@ import re
 import shlex
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
+from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
-from pyinfra.operations import files, server
+from pyinfra.facts.files import File
+from pyinfra.operations import files, server, systemd
+from pyinfra.operations.util import any_changed
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
@@ -53,6 +56,7 @@ Url = Annotated[str, Field(pattern=r"^(https?://[^\s'\"$`\\]+)?$")]
 EXTRA_DIRS = ("src/nyxmon", "src/nyxboard")
 SOURCE_FILES = ("pyproject.toml", "uv.lock", "README.md")
 SQLITE_PRIVACY = "[Service]\nUMask=0077\n"
+WARNING_DIGEST = "nyxmon-warning-digest"
 # The role's nyxmon_agent_rust_release_url, with {version} for the version.
 RELEASE_URL = (
     "https://github.com/ephes/nyxmon/releases/download/agent-rs-v{version}/"
@@ -118,6 +122,9 @@ class NyxmonConfig(BaseServiceConfig):
     notify_consecutive_failures: Count = 2
     notify_repeat_interval_seconds: Interval = 21600
     notify_warning_repeat_interval_seconds: Interval = 86400
+    # digest (needs Rust agent 0.1.2): warnings send nothing, a timer reports them together.
+    notify_warning_delivery: Literal["individual", "digest"] = "individual"
+    warning_digest_on_calendar: str = "Mon *-*-* 09:00:00"
     processing_lease_seconds: int = Field(default=900, ge=30)
     check_batch_size: Count = 5
     # The role's nyxmon_agent_rust_*: the pinned Rust release installed below
@@ -143,6 +150,13 @@ class NyxmonConfig(BaseServiceConfig):
     traefik_middlewares: tuple[Annotated[str, Field(pattern=_MIDDLEWARE)], ...] = ()
     internal_ip_ranges: tuple[str, ...] = DEFAULT_INTERNAL_IP_RANGES
     basic_auth_user: Annotated[str, Field(pattern=r"^[A-Za-z0-9._@-]{1,64}$")] = "admin"
+
+    @field_validator("warning_digest_on_calendar")
+    @classmethod
+    def _calendar_is_one_line(cls, value: str) -> str:
+        if not value.strip() or re.search(r"[\x00-\x1f\x7f]", value):
+            raise ValueError("warning_digest_on_calendar must be nonblank without controls")
+        return value
 
     @field_validator("source_path")
     @classmethod
@@ -302,6 +316,29 @@ def _opsgate_check(cfg: NyxmonConfig) -> OperationMeta:
     )
 
 
+def _warning_digest(cfg: NyxmonConfig) -> None:
+    """The digest timer (the role's monitoring.yml); other delivery modes retire it."""
+
+    if cfg.notify_warning_delivery == "digest":
+        units = [
+            systemd_unit(f"{WARNING_DIGEST}.{kind}", render(TEMPLATE_PACKAGE, f"{WARNING_DIGEST}.{kind}.j2", cfg=cfg))
+            for kind in ("service", "timer")
+        ]
+        service_rollout(f"{WARNING_DIGEST}.timer", units=units)
+        return
+    if host.get_fact(File, path=f"/etc/systemd/system/{WARNING_DIGEST}.timer"):
+        systemd.service(
+            name="Stop warning digest timer", service=f"{WARNING_DIGEST}.timer", running=False, enabled=False
+        )
+    removed = [
+        files.file(
+            name=f"Remove {WARNING_DIGEST}.{kind}", path=f"/etc/systemd/system/{WARNING_DIGEST}.{kind}", present=False
+        )
+        for kind in ("timer", "service")
+    ]
+    systemd.daemon_reload(name="Reload removed warning digest units", _if=any_changed(*removed))
+
+
 @deploy("Deploy nyxmon")
 def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner = subprocess_rsync_runner) -> None:
     secrets.require(cfg.required_secret_keys)
@@ -410,6 +447,7 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
             retired = retire_dropin(cfg, f"/etc/systemd/system/{name}.service", dropin_dir)
             units.append(retired)
         service_rollout(name, units=units, restart_when=[deps, env, *code])
+    _warning_digest(cfg)
     _sqlite_private(cfg)
 
     wait_port(cfg.app_port, host=cfg.app_host)

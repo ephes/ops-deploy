@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `nyxmon`: `notify_warning_delivery` and `warning_digest_on_calendar` (port of
+  ops-library 2.75.4). With `digest` (Rust agent 0.1.2), warnings send nothing
+  and `nyxmon-warning-digest.timer` reports all open warnings in one silent
+  message, Mondays at 09:00; `individual` (default) stops the timer and removes
+  its units. Removal takes the timer as well. The new `.env` line restarts both
+  units once on the next deploy.
+
 - `services.software_live`: retire the Python collector (port of the ops-library
   `rust/software-live/PLAN.md` S12 change, after the 7-day soak of the Rust port on all
   four hosts). The base units run the pinned release `releases/<version>/software-live`

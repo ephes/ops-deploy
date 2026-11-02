@@ -325,8 +325,10 @@ def deploy_nyxmon_remove(cfg: NyxmonRemoveConfig) -> None:
             "monitoring data (SQLite database included). Set confirm to proceed."
         )
     names = (cfg.service_name, cfg.monitor_service_name)
-    stop_disable([f"{name}.service" for name in names])
+    stop_disable([*(f"{name}.service" for name in names), "nyxmon-warning-digest.timer"])
     reload = False
+    for kind in ("timer", "service"):
+        reload = remove_path(f"/etc/systemd/system/nyxmon-warning-digest.{kind}") or reload
     for name in names:
         reload = remove_path(f"/etc/systemd/system/{name}.service") or reload
         directory = f"/etc/systemd/system/{name}.service.d"
