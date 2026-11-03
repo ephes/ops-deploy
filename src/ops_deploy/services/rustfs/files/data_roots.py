@@ -32,6 +32,9 @@ def admit(root, mount, user, group):
     while not os.path.lexists(probe):
         probe = os.path.dirname(probe)
     info = os.lstat(probe)
+    # A symlinked ancestor would let mountinfo (resolved paths) miss a mount below the root.
+    if os.path.realpath(probe) != probe or os.path.realpath(mount) != mount:
+        raise ValueError("data root or required mount path contains a symlink")
     if not stat.S_ISDIR(info.st_mode) or info.st_dev != device:
         raise ValueError("data root is not a directory on the required mount")
     if probe != root:

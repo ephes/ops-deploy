@@ -259,12 +259,26 @@ def main() -> None:
     inner = Path("/mnt/cryptdata/rustfs/data/bound")
     inner.mkdir()
     sh("chown", "rustfs:rustfs", str(inner))
-    sh("mount", "--bind", "/var/lib/rustfs", str(inner))
+    source = Path("/mnt/cryptdata/bind-source")
+    source.mkdir()
+    expect("bind source on the same device", source.stat().st_dev, inner.stat().st_dev)
+    sh("mount", "--bind", str(source), str(inner))
     deploy("bind-mount-refused", config(), rotated, expect="refused")
     sh("umount", str(inner))
     inner.rmdir()
+    source.rmdir()
 
-    # 8. A foreign-owned file below the data root stops the deploy.
+    # 8. A symlinked ancestor of the data root is refused.
+    # The data root itself exists through the alias, so only the symlink check can refuse it.
+    Path("/mnt/cryptdata/real/data").mkdir(parents=True)
+    sh("chown", "rustfs:rustfs", "/mnt/cryptdata/real/data")
+    Path("/mnt/cryptdata/alias").symlink_to("/mnt/cryptdata/real")
+    deploy("symlink-ancestor-refused", config(data_dir="/mnt/cryptdata/alias/data"), rotated, expect="refused")
+    Path("/mnt/cryptdata/alias").unlink()
+    Path("/mnt/cryptdata/real/data").rmdir()
+    Path("/mnt/cryptdata/real").rmdir()
+
+    # 9. A foreign-owned file below the data root stops the deploy.
     foreign = Path("/mnt/cryptdata/rustfs/data/foreign-owned")
     foreign.write_text("x")
     deploy("foreign-data-refused", config(), rotated, expect="refused")

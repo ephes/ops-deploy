@@ -33,7 +33,7 @@ so a running server never has its executable overwritten.
   probe refuses unless `required_mount` is a mount point and the data root (or
   its nearest existing ancestor) is on it; any mount at or below an existing
   data root refuses (from `/proc/self/mountinfo`, so same-device bind mounts
-  count), and the data root is walked for the first foreign-owned descendant,
+  count), a symlink in the data root's existing path refuses, and the data root is walked for the first foreign-owned descendant,
   without following symlinks, reading objects or repairing anything. The unit adds `AssertPathIsMountPoint` and
   `RequiresMountsFor`, so a missing volume also stops a restart.
 - `/etc/default/rustfs` (root 0600) and `rustfs.service` with
@@ -82,7 +82,7 @@ real pyinfra deploys in a throwaway Ubuntu 24.04 systemd container with an
 owned volume at `/mnt/cryptdata`: absent-mount refusal, first deploy, strict
 zero-change repeats, listener and IAM checks, identity and root rotation,
 attachment drift repair, stopped-service recovery, and disabled-user,
-same-device bind mount and foreign-data refusals. It ran on
+same-device bind mount, symlinked-ancestor and foreign-data refusals. It ran on
 arm64 Docker (aarch64 artifact); the x86_64 artifact is pinned by digest but
 was not executed there.
 
