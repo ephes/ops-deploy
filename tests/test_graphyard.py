@@ -340,6 +340,31 @@ def test_env_change_rewrites_it_migrates_and_restarts_web_and_agent(source: Path
     ]
 
 
+def test_bound_ingest_tokens_switch_appends_the_line_and_restarts_web_and_agent(source: Path) -> None:
+    cfg = macmini_core_config(source)
+    bound = macmini_core_config(source, require_bound_ingest_tokens=True)
+
+    assert "REQUIRE_BOUND" not in core_module.render("graphyard.env.j2", cfg, secrets_values())
+    assert core_module.render("graphyard.env.j2", bound, secrets_values()).endswith(
+        "\n\nGRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true\n"
+    )
+    assert mutating(deploy(cfg, converged(cfg))) == []
+    assert mutating(deploy(bound, converged(cfg))) == [
+        "Render Graphyard environment file",
+        "Run Django migrations",
+        "Collect static files",
+        "Apply declarative metric collection specs",
+        "Restart graphyard-web.service",
+        "Restart graphyard-agent.service",
+    ]
+
+
+@pytest.mark.parametrize("value", ["true", 1, "yes"])
+def test_bound_ingest_tokens_switch_takes_only_a_boolean(source: Path, value: object) -> None:
+    with pytest.raises(ConfigValidationError):
+        macmini_core_config(source, require_bound_ingest_tokens=value)
+
+
 def test_missing_static_files_are_collected(cfg: GraphyardConfig) -> None:
     responses = converged(cfg)
     responses["collectstatic --noinput --dry-run"] = ["pending"]

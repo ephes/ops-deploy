@@ -11,10 +11,10 @@
     "fastdeploy_restore": "16e3f4a52acc22222632f283d49c6f3553248e76b3f734948f065d795b6a6f5f",
     "gotosocial_deploy": "c6e0a3e5d74259f172d2e3810619c26ca83c033f1885f95a032cd333937984e1",
     "graphyard_auth_bootstrap_deploy": "0d0dee3640465600daf1fc2ac33eade07e9a9b85fcd231ee5857af21ae840c92",
-    "graphyard_deploy": "bcc45e9b45e256272bfd1cce48cdf7b7da84b9fd987a58060d0ad64eaf3865a4",
+    "graphyard_deploy": "dfb6f58107e1c6d92f6843b54ed8f5348a6b108d46dce5ddecdbd1e5045fb46e",
     "graphyard_ingress_deploy": "d854e5654cd625189f01a214a4056eb371283af29c04b8593a403eed4e4db47b",
     "graphyard_vector_deploy": "654594f49168eec8990dd987979f0328a8e07cbb6264045dfd89f5a66b0132d1",
-    "hdparm_tune": "0498f7d8069a8eaefb90045ff60108c8e09713fa4d9dddfe483dcba19fd1e106",
+    "hdparm_tune": "c7a9ecd701b52b0f012ec32bad797644b4fcb2fcef647347b10b25c4930f00a1",
     "homelab_deploy": "b110f03282424900d4006dc8e1d3a9250b615672b51b2c5f11e340fb05dbbb9e",
     "homelab_shared": "5c7b726538f1f0d9bc2f3e65f5a6c78e26adfacbfa58afb6f46155b0a34929dd",
     "jellyfin_deploy": "1f76f6c0c1a29a2241f52c530f2f71c03df4db08b6f13115ec926ad18ffd0eb4",
@@ -27,7 +27,7 @@
     "mastodon_deploy": "d4d0beaaddbefa9e296397c0740086f20c1384481b27b450a0f92d91631b87b2",
     "mastodon_shared": "1f2485fc4fc008e062ff61e301aa3775446f1eeede5d790bb428cd123dbdd4bd",
     "metrics_httpd_switch": "3347dd5537b4b36ee4f4cfdce0e49ac0184bb7610029465c0c41363315e79c05",
-    "minio_deploy": "56e04cfce397a8fe59a253b022830d8611dde5f86d5c42f66b16efad831f4232",
+    "minio_deploy": "a160eb92a80b2821c2d362e3ef8ccf4e1ab607cd6f981ce333fb5ad5fb736435",
     "nyxmon_backup": "1f19e9214b8217a5b5b258cf1e866702ab8c84e77ba4faac99a0609f310272bf",
     "nyxmon_deploy": "d64df9f9170e917a6cfaf9586962c6ce4d7f2bd7c7040ee72b1460f5bb039610",
     "nyxmon_remove": "5610fa51a2b400a45d85afb62c7db346a3f0f2befb910a59e75bd27fbf75bb95",
@@ -51,13 +51,13 @@
     "zellij_ingress_deploy": "40c6bc5c3da9a1f616632af14b8e43ebc4e2147383ef954c17356c637109b250"
   },
   "role_commits": {
-    "hdparm_tune": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
+    "hdparm_tune": "29b353c4947b318180ae6fafd01e587dcab886f5",
     "sanoid": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
     "samba_timemachine": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
     "samba_share": "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641",
     "fastdeploy_backup": "2adca51d57713f60c5743c1e41316c22e264914b",
     "graphyard_auth_bootstrap_deploy": "2adca51d57713f60c5743c1e41316c22e264914b",
-    "minio_deploy": "2adca51d57713f60c5743c1e41316c22e264914b",
+    "minio_deploy": "99e99fc0e950efdf77c67b92ba1a7e2816c85807",
     "nyxmon_backup": "2adca51d57713f60c5743c1e41316c22e264914b",
     "nyxmon_deploy": "aca67068451a4002d4a29031ddb903f380280acd",
     "nyxmon_remove": "aca67068451a4002d4a29031ddb903f380280acd",
@@ -65,6 +65,7 @@
     "traefik_deploy": "2adca51d57713f60c5743c1e41316c22e264914b",
     "uv_install": "2adca51d57713f60c5743c1e41316c22e264914b",
     "work_app_backup": "2adca51d57713f60c5743c1e41316c22e264914b",
-    "vibe_coding_deploy": "6777cbb1e1324c16485e045b8d5faf0e279c7422"
+    "vibe_coding_deploy": "6777cbb1e1324c16485e045b8d5faf0e279c7422",
+    "graphyard_deploy": "d7e0ac44c05fc59c586e29b44f219ffca0c4f30f"
   }
 }

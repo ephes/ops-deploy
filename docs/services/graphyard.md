@@ -80,6 +80,7 @@ connection.
 | `grafana` | `Grafana()` | image `grafana/grafana-oss`, container, ports, data dir (`472:472`), provisioning and dashboards paths, admin user, InfluxDB login name, `base_url` |
 | `runtime` | `Runtime()` | unit `graphyard-runtime`, Compose project, compose path, Docker network, `migrate_unmanaged_containers`, `docker`; `None` = no runtime |
 | interval, heartbeat and SQLite fields | the role's | the env file's `GRAPHYARD_*` values |
+| `require_bound_ingest_tokens` | `False` | the role's `graphyard_require_bound_ingest_tokens`: `True` appends `GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true` to the env file, and Graphyard answers every ingest token without a subject binding with `403`; `False` writes no line, so the env file stays byte-identical and nothing restarts. Switching restarts `graphyard-web` and `graphyard-agent` once |
 | `web_*`, `agent_*` | the role's | unit names, bind address, workers, restart delays |
 | `agent_impl` | `python` | the role's `graphyard_agent_impl`: `python` (the venv's `manage.py start_agent`) or `rust`; see [Agent](#agent-python-or-rust) |
 | `agent_rust_version` | `""` | Rust release to install, e.g. `0.1.0`; empty installs, validates and prunes nothing. Required for `rust` |

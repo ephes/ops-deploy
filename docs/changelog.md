@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- ops-library parity drift (checked against ops-library `44a532b`):
+  - `services.graphyard`: new `GraphyardConfig.require_bound_ingest_tokens`
+    (default `False`), the port of ops-library `d7e0ac4`
+    (`graphyard_require_bound_ingest_tokens`, 2.75.5). `True` appends
+    `GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true` to `graphyard.env`; `False`
+    writes no line, so existing env files stay byte-identical. The packaged
+    and vendored `graphyard.env.j2` follow the role; a parity variant renders
+    the switch on.
+  - The recorded role digests of `graphyard_deploy`, `hdparm_tune` (`29b353c`,
+    the boot oneshot already ported) and `minio_deploy` (`99e99fc`,
+    `s3:GetObjectVersion`, already in Echoport's backup-account policy) follow
+    those commits.
+  - The Home Assistant Custom Conversation task capture follows `19b3fd8`,
+    which runs the role's patch helper as the service user. The port already
+    runs that helper with the system Python, never the service virtualenv, and
+    keeps the extracted file's owner, so its behaviour is unchanged.
+
 - `services.homeassistant`: the system-package list installs
   `libfreetype-dev` instead of `libfreetype6-dev` (as ops-library's
   `homeassistant_deploy` default does since `44a532b`). On Ubuntu 24.04 `libfreetype6-dev`

@@ -86,6 +86,7 @@ CORE_DEFAULTS: dict[str, Any] = {
     "graphyard_sqlite_busy_timeout_ms": 30000,
     "graphyard_sqlite_journal_mode": "WAL",
     "graphyard_sqlite_synchronous": "NORMAL",
+    "graphyard_require_bound_ingest_tokens": False,
     "graphyard_runtime_enabled": True,
     "graphyard_runtime_service_name": "graphyard-runtime",
     "graphyard_compose_project_name": "graphyard-runtime",
@@ -228,6 +229,10 @@ CORE_VARIANTS: dict[str, tuple[dict[str, Any] | None, dict[str, Any]]] = {
     "macmini": (None, MACMINI),
     "everything": EVERYTHING,
     "runtime": RUNTIME_CHANGES,
+    "bound-ingest-tokens": (
+        {"require_bound_ingest_tokens": True},
+        {"graphyard_require_bound_ingest_tokens": True},
+    ),
 }
 CORE_TEMPLATES = (
     "graphyard.env.j2",

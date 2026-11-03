@@ -30,7 +30,7 @@ from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, StrictBool, field_validator, model_validator
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import apt, files, server, systemd
@@ -378,6 +378,11 @@ class GraphyardConfig(BaseServiceConfig):
     sqlite_busy_timeout_ms: int = Field(default=30000, ge=1)
     sqlite_journal_mode: Word = "WAL"
     sqlite_synchronous: Word = "NORMAL"
+    # The role's graphyard_require_bound_ingest_tokens (Graphyard migration
+    # 0012): True appends GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true to the env
+    # file, so Graphyard answers every unbound ingest token with 403. False
+    # writes no line at all (the env file stays byte-identical, nothing restarts).
+    require_bound_ingest_tokens: StrictBool = False
 
     web_service_name: ServiceName = "graphyard-web"
     agent_service_name: ServiceName = "graphyard-agent"
@@ -636,6 +641,7 @@ def role_vars(cfg: GraphyardConfig, secrets: SecretValues) -> dict[str, Any]:
         "graphyard_sqlite_busy_timeout_ms": cfg.sqlite_busy_timeout_ms,
         "graphyard_sqlite_journal_mode": cfg.sqlite_journal_mode,
         "graphyard_sqlite_synchronous": cfg.sqlite_synchronous,
+        "graphyard_require_bound_ingest_tokens": cfg.require_bound_ingest_tokens,
         "graphyard_runtime_enabled": cfg.runtime is not None,
         "graphyard_runtime_service_name": runtime.service_name,
         "graphyard_compose_project_name": runtime.compose_project_name,

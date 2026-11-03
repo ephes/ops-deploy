@@ -1,11 +1,12 @@
 {
-  "library_head": "0cb32a609d07e342502fce115cd2943b1a412ba7",
-  "task_sha256": "d42460c38dc0b4e82f687a6109b0c6997a15d59f6fa0a03fa60202c0254126f2",
+  "library_head": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "task_sha256": "b1da2e0eee78153b2e6ce3113125e5b9d1e08623d7cbb22d74fac06838678001",
   "source": "roles/homeassistant_deploy/tasks/custom_conversation_component.yml",
   "get_url_oracle": "Ansible14.5 actual original single task owned current/metadata/mismatch/badSHA cases; source and outcomes retained in private campaign evidence",
   "extraction_oracle": "Actual owned Ubuntu24 GNU tar exact TgzArchive.unarchive argv; no full-role/native-HA claim",
   "patch_source": "roles/homeassistant_deploy/files/custom_conversation_patch.py",
   "patch_file": "patch.py.txt",
   "patch_sha256": "c53d29e173cb4fbbf1e58f8b7ae04229d6992d2253c663fdc3bdc69e1da5700b",
+  "task_refresh": "19b3fd89 only adds become_user homeassistant_user to the three patch-helper tasks; the port already runs the helper with the system Python (-I -B), never the service venv, and keeps the extracted file's owner (fchown), so the task capture was refreshed without an oracle rerun",
   "patch_oracle": "Actual official1.7 archive, actual HA2026.10.2 sparse form schema and original Ansible2.21.5 selected tasks; first/repeat/drift/candidate-refusal controls; full native separate"
 }

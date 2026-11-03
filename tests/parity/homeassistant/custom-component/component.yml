@@ -70,6 +70,8 @@
       - "{{ homeassistant_custom_conversation_version }}"
       - --checksum
       - "{{ homeassistant_custom_conversation_sha256 }}"
+  become: true
+  become_user: "{{ homeassistant_user }}"
   register: _ha_cc_patch_check
   changed_when: false
   check_mode: false
@@ -119,6 +121,8 @@
           - "{{ homeassistant_custom_conversation_version }}"
           - --checksum
           - "{{ homeassistant_custom_conversation_sha256 }}"
+      become: true
+      become_user: "{{ homeassistant_user }}"
       changed_when: false
       when: _ha_cc_patch_check.stdout is defined
 
@@ -156,6 +160,8 @@
           - "{{ homeassistant_custom_conversation_version }}"
           - --checksum
           - "{{ homeassistant_custom_conversation_sha256 }}"
+      become: true
+      become_user: "{{ homeassistant_user }}"
       register: _ha_cc_patch_apply
       changed_when: (_ha_cc_patch_apply.stdout | from_json).changed
       when: _ha_cc_patch_check.stdout is defined
