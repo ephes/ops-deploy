@@ -110,3 +110,70 @@ Transferred files get the service identity and a metadata-only inspection finds
 remaining descendant ownership mismatches. Only mismatches are chowned, so a
 converged repeat does not change unrelated inode timestamps. This is source
 metadata enumeration, not a promise of globally zero read I/O.
+
+## Backup, restore and removal
+
+`services.daybook_operations_api.lifecycle` ports the
+`daybook_operations_api_backup`, `_restore` and `_remove` roles. The archive
+format belongs to Daybook: the installed `services/operations_api/lifecycle.py`
+writes and reads it, and these deploys only call it as the service account
+(`runuser -u daybook-operations`), exactly as the roles do (`become_user`). Either
+tool therefore restores the other's archives.
+
+```python
+from ops_deploy.services.daybook_operations_api import (
+    OperationsApiBackupConfig,
+    OperationsApiRemoveConfig,
+    OperationsApiRestoreConfig,
+    deploy_daybook_operations_api_backup,
+    deploy_daybook_operations_api_remove,
+    deploy_daybook_operations_api_restore,
+)
+
+deploy_daybook_operations_api_backup(OperationsApiBackupConfig(required_mount="/opt/backups"))
+deploy_daybook_operations_api_restore(
+    OperationsApiRestoreConfig(
+        archive="/opt/backups/daybook_operations/20261103T101500123456Z.tar",
+        confirmed=True,
+        clients_quiesced=True,
+    )
+)
+deploy_daybook_operations_api_remove(OperationsApiRemoveConfig(confirmed=True, clients_quiesced=True))
+```
+
+| Role step | pyinfra |
+|---|---|
+| backup: `0700` backup root owned by the service account | same (`files.directory`) |
+| backup: archive `<root>/<UTC %Y%m%dT%H%M%S%fZ>.tar`, or `daybook_operations_api_backup_archive` | same (`archive`); the name is taken on the controller, as `now(utc=true)` is |
+| backup: `lifecycle.py backup --config … --archive …` as the service account | same |
+| backup: report the archive path | printed by the run |
+| backup: no fetch, no pruning | same |
+| — | `required_mount`: the backup root must lie on that mount (ops-control: macmini's `/opt/backups`), checked before the first write |
+| restore: assert confirmed, clients quiesced, absolute archive | same; `confirmed`/`clients_quiesced` are strict booleans |
+| restore: `lifecycle.py validate` before any unit change | same |
+| restore: stop and disable both units | disable, then stop, read from `ActiveState` (a unit waiting in `auto-restart` is stopped too); a unit already stopped and disabled is left alone |
+| restore: `lifecycle.py restore --clients-quiesced`; units stay stopped | same |
+| — | `validate_only`: guards and validation only, no unit change (`just pyinfra-restore … DRY_RUN=true`) |
+| remove: assert confirmed and clients quiesced | same |
+| remove: stop and disable the units that exist | same |
+| remove: delete both unit files and the Traefik route | same; the route only while no Traefik transaction holds its lock |
+| remove: `daemon-reload` on every run | only after a unit file was removed, so a repeat changes nothing |
+| remove: keep database, account, site, configuration and backups | same |
+| backup `tasks_from: register_echoport` (Echoport target, root bridge, FastDeploy token) | not ported; ops-control keeps `register-daybook-operations-backup.yml` on Ansible |
+
+`tests/test_daybook_operations_api_lifecycle.py` checks the commands and the
+guards on the fake connector. `tests/test_daybook_operations_api_lifecycle_docker.py`
+runs all three against a Debian 12 container with systemd as PID 1, with a
+synthetic stand-in for Daybook's private lifecycle tool (same command line, same
+owner and unit checks): two backups, a refused restore, a validate-only
+restore, a restore and its repeat, a removal and its repeat (no change). Build
+the image and run it with:
+
+```bash
+docker build -t ops-deploy-daybook-ops-lifecycle:local tests/integration/daybook_operations_api_lifecycle
+DAYBOOK_OPERATIONS_API_LIFECYCLE_DOCKER_IMAGE=ops-deploy-daybook-ops-lifecycle:local \
+  uv run --locked pytest -q tests/test_daybook_operations_api_lifecycle_docker.py
+```
+
+The real dump/restore of the database is Daybook's own and is covered by its
+suite, not here.

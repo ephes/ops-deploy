@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `services.daybook_operations_api`: the Operations API deploy (typed config,
+  original templates, `migrate`/`provision_operations` management, exact Git or
+  rsync source, explicit enabled state), now on current main, and the new
+  `lifecycle` module porting the `daybook_operations_api_backup`, `_restore` and
+  `_remove` roles: the deploys call Daybook's installed `lifecycle.py` as the
+  service account. Differences: an optional `required_mount` guard for backups,
+  a `validate_only` restore, and a removal that reloads systemd only when it
+  removed a unit. The four roles are recorded in the ops-library drift manifest
+  (ops-library `44a532b`). New fake-connector tests and a systemd Docker test
+  (`DAYBOOK_OPERATIONS_API_LIFECYCLE_DOCKER_IMAGE`). Echoport registration is not
+  ported.
+
 - ops-library parity drift (checked against ops-library `44a532b`):
   - `services.graphyard`: new `GraphyardConfig.require_bound_ingest_tokens`
     (default `False`), the port of ops-library `d7e0ac4`

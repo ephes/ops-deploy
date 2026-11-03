@@ -3,6 +3,10 @@
   "roles": {
     "bind_authoritative_deploy": "c7ca96babe09b5d7894eb58b6ca2af1cb3cf11a4848b9b0fa4134ba179f28963",
     "certbot_dns_deploy": "1328fb6afc757246f8b3c492ab5a93bd65d88ccbcecf435da97da08fec81135c",
+    "daybook_operations_api_backup": "4f65ea9e89da89237ef31937ba9e458660d6a754bb6230c254bb077c7aea1636",
+    "daybook_operations_api_deploy": "4bb7051087b573053bb04d2c0f77dc99fdcea808a827d17641a100a3cf083006",
+    "daybook_operations_api_remove": "79151b98fdf5aa9da95da41d38373a97e75b6d1a68d19863406664630f1230b8",
+    "daybook_operations_api_restore": "8840973665955394c95d8b9038d2e29d6b227891a7bf93a31280bcc263cc85f8",
     "dns_deploy": "8598d0732b568d2a0b1dbacf857c939465b263a619e3164da5c96793302426fc",
     "encrypted_volume_prepare": "775afde941a276c88202dc91502e00ac4edc08758ddf404fc71ab843af71ff7d",
     "fastdeploy_backup": "45132a474942319bda78884f1e6ef3c8616440ca7fd5cbedb9a84881dd849b0e",
@@ -66,6 +70,10 @@
     "uv_install": "2adca51d57713f60c5743c1e41316c22e264914b",
     "work_app_backup": "2adca51d57713f60c5743c1e41316c22e264914b",
     "vibe_coding_deploy": "6777cbb1e1324c16485e045b8d5faf0e279c7422",
-    "graphyard_deploy": "d7e0ac44c05fc59c586e29b44f219ffca0c4f30f"
+    "graphyard_deploy": "d7e0ac44c05fc59c586e29b44f219ffca0c4f30f",
+    "daybook_operations_api_backup": "887aa913275e7d9d7fb9dff947461439afd16e43",
+    "daybook_operations_api_deploy": "f5ec64b812989bfb463b15b9866e5927ff4df57a",
+    "daybook_operations_api_remove": "e0a009859d4a045c9c722fde786ba3bd9a0008b7",
+    "daybook_operations_api_restore": "e0a009859d4a045c9c722fde786ba3bd9a0008b7"
   }
 }
