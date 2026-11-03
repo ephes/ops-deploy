@@ -1,5 +1,5 @@
 {
-  "library_head": "0cb32a609d07e342502fce115cd2943b1a412ba7",
+  "library_head": "ef0bc5814917546c5d868311be8b0c7f651286b5",
   "files": {
     "templates/configuration.yaml.j2": {
       "fixture": "configuration.yaml.j2",
@@ -35,7 +35,7 @@
     },
     "defaults/main.yml": {
       "fixture": "defaults__main.yml",
-      "sha256": "83db819513a3c4d366eb1d33626fc5c128b7be6f2056d3a0125c596ce436e5e2"
+      "sha256": "96a75881050ac604f01a3efb1f738f6db053462e7ac77e9e3855a21e6b0a7be5"
     },
     "tasks/configuration.yml": {
       "fixture": "tasks__configuration.yml",

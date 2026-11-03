@@ -15,23 +15,35 @@ done
 
 # `.timeout` waits for a committing writer instead of failing with "database
 # is locked"; like the role, three attempts five seconds apart.
-if [ "$SQLITE_BACKUP" = 1 ] && [ -e "$DB" ]; then
+sqlite_snapshot() {
+    local src=$1 dest=$2 attempt
     for attempt in 1 2 3; do
-        if sqlite3 "$DB" ".timeout 30000" ".backup '$DIR/config/$(basename "$DB")'"; then break; fi
+        if sqlite3 "$src" ".timeout 30000" ".backup '$dest'"; then return 0; fi
         if [ "$attempt" = 3 ]; then
-            echo "homeassistant_backup: SQLite backup of $DB failed" >&2
+            echo "homeassistant_backup: SQLite backup of $src failed" >&2
             exit 1
         fi
         sleep 5
     done
-fi
+}
 
 delete=()
 [ "$DELETE" = 1 ] && delete=(--delete)
 exclude=()
-# The live database and its sidecars stay out: the .backup copy is the database.
+# The live databases and their sidecars stay out: the .backup copies are the
+# databases (rsync does not delete excluded files, so the copies stay).
 if [ "$SQLITE_BACKUP" = 1 ]; then
+    if [ -e "$DB" ]; then sqlite_snapshot "$DB" "$DIR/config/$(basename "$DB")"; fi
     for suffix in "" -wal -shm -journal; do exclude+=(--exclude "$(basename "$DB")$suffix"); done
+    # Further databases below the config directory (GPS Timeline's history),
+    # anchored to their path.
+    for rel in "${CONFIG_DBS[@]}"; do
+        if [ -f "$CONFIG/$rel" ]; then
+            mkdir -p "$DIR/config/$(dirname "$rel")"
+            sqlite_snapshot "$CONFIG/$rel" "$DIR/config/$rel"
+        fi
+        for suffix in "" -wal -shm -journal; do exclude+=(--exclude "/$rel$suffix"); done
+    done
 fi
 if [ -e "$CONFIG" ]; then rsync -a "${delete[@]}" "${exclude[@]}" "$CONFIG/" "$DIR/config/"; fi
 if [ -e "$DATA" ]; then rsync -a "${delete[@]}" "$DATA/" "$DIR/data/"; fi

@@ -37,6 +37,7 @@ from .host_layout import configure_layout, run_udev_handlers
 from .ingress import write_ingress
 from .integration_flows import ApiReadiness, ensure_api_readiness, integrate, reset_api_readiness
 from .legacy_conversation import inspect_legacy_conversation, remove_legacy_component
+from .pinned_assets import install_pinned_assets
 from .pipelines import PipelineResult, manage_pipelines
 from .python_runtime import configure_python_runtime
 from .runtime_config import HomeAssistantRuntimeConfig
@@ -297,6 +298,8 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         runtime,
     )
     ensure_service_states(runtime)
+    for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card):
+        pending.homeassistant.append(asset.did_change)
     if cfg.areas():
         manage_area_registry(runtime, cfg.api, readiness, cfg.areas(), AreaResult(), app_port=values.app_port)
     for selection in cfg.integrations():

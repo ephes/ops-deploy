@@ -118,6 +118,14 @@
   ansible.builtin.import_tasks: wyoming_integration.yml
   when: homeassistant_manage_wyoming_integration
 
+- name: "Install pinned GPS Timeline integration"
+  ansible.builtin.import_tasks: gps_timeline.yml
+  when: homeassistant_gps_timeline_enabled | bool
+
+- name: "Install pinned Location Timeline Card"
+  ansible.builtin.import_tasks: timeline_card.yml
+  when: homeassistant_timeline_card_enabled | bool
+
 - name: "Install Custom Conversation custom component"
   ansible.builtin.import_tasks: custom_conversation_component.yml
   when: homeassistant_custom_conversation_enabled | bool

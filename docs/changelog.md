@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `services.homeassistant`: optional pinned GPS Timeline integration
+  (`gps_timeline`, 0.1.0-beta.3) and Location Timeline Card (`timeline_card`,
+  1.9.3), both off by default. Each download is checked against its sha256
+  before anything is replaced; the integration installs only
+  `custom_components/gps_timeline` (owner `homeassistant`), the card is
+  `config/www/timeline_card.js` (`www/` 0755). Home Assistant restarts only
+  when one of them changed; a repeat run changes nothing. The deploy never
+  touches the integration's data directory `config/gps_timeline` or
+  `configuration.yaml`/`automations.yaml`/`scripts.yaml`. The backup
+  (`HomeAssistantBackupConfig.config_sqlite_databases`, default
+  `gps_timeline/gps_timeline.db`) copies that database with `sqlite3 .backup`
+  and leaves its live file and `-wal`/`-shm`/`-journal` out of the rsync, like
+  the recorder database; a restore puts it back with the config directory.
+  The Home Assistant parity fixtures follow ops-library ef0bc58 (the same
+  options in `homeassistant_deploy`).
+
 - docs: `os_lifecycle`'s `uu.last_success_*` is described correctly. The
   `unattended-upgrades-stamp` it reads is written by `unattended-upgrade`
   itself, not `apt.systemd.daily`, and also after a run whose install failed

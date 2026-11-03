@@ -943,6 +943,82 @@ qualification remain outstanding; this source does not authorize inventory
 removal.
 
 
+## GPS Timeline and Location Timeline Card
+
+Home Assistant's recorder keeps every entity for the same, global
+`purge_keep_days` (10 days on macmini), so it cannot keep years of location
+history without keeping years of everything else (on macmini the 613 MB
+recorder database is dominated by plug sensors and Fritz!Box device trackers,
+while location is about 0.35 MB per 10 days). The custom integration
+[GPS Timeline](https://github.com/iamyacin/gps-timeline) records chosen
+`person`/`device_tracker` entities into its own SQLite database, and the
+[Location Timeline Card](https://github.com/iamyacin/timeline_card) (a fork of
+`konewka17/timeline_card` that adds `history_source: gps_timeline`) shows it.
+
+Both are optional and off by default (`HomeAssistantDeployConfig.gps_timeline`
+and `.timeline_card`, `enabled: true` to install; the Ansible role's
+`homeassistant_gps_timeline_enabled` and `homeassistant_timeline_card_enabled`):
+
+| | Pin | sha256 | Installed as |
+|---|---|---|---|
+| GPS Timeline | tag `0.1.0-beta.3` (commit `688f1b094c58c652bc9a49702486cd9d86b05376`), `https://github.com/iamyacin/gps-timeline/archive/refs/tags/0.1.0-beta.3.tar.gz` | `feb29bc1705181aab9146cacf2c7552a70d969042825734af0435000db1ee34e` | `config/custom_components/gps_timeline/` (only that subtree of the archive), archive kept in `site/downloads/` |
+| Location Timeline Card | release `v1.9.3`, `https://github.com/iamyacin/timeline_card/releases/download/v1.9.3/timeline_card.js` (1,732,646 bytes) | `d81404bc66ef2affcbd701af08a04fcfee199dadfb6b82674576291db50987a5` | `config/www/timeline_card.js` |
+
+A small helper (`files/pinned_assets.py`, run with the system Python) does the
+work on the host:
+
+- Every download goes to a temporary file next to its destination and replaces
+  it only after the sha256 matches; a mismatch fails the deploy and leaves the
+  installed version alone. An already matching file is not downloaded again.
+- The integration is extracted from the archive's
+  `gps-timeline-<version>/custom_components/gps_timeline/` (regular files and
+  directories only; links or paths outside it refuse the archive) into a
+  staging directory below `custom_components`, gets the stamp
+  `.ops-pinned-version` (`<version> <sha256>`), owner `homeassistant`, 0755/0644,
+  and then replaces the old component directory as a whole; when that swap
+  fails the old directory is put back (should even that fail, it stays as
+  `custom_components/.ops-ha-old-*`, which Home Assistant ignores). A matching
+  stamp makes a repeat a no-op. The Ansible role writes the same stamp, so either
+  tool sees the other's install as current.
+- The card is `timeline_card.js` (owner `homeassistant`, 0644) in `www/`
+  (owner `homeassistant`, 0755). The file name stays the same across upgrades;
+  the dashboard resource carries the version (`/local/timeline_card.js?v=1.9.3`).
+- Home Assistant restarts (through the normal pending restart) only when the
+  integration or the card changed. It serves `/local` only when `www/` existed
+  at startup; the first install's restart covers that.
+
+The integration is configured in the UI (config flow, no YAML and no pip
+requirements; it needs Home Assistant 2026.9.0 or newer). Nothing here writes
+`configuration.yaml`, `automations.yaml` or `scripts.yaml`, `overwrite_config`
+stays off, and the recorder keeps its 10 days. The integration's data, the
+SQLite (WAL) database `config/gps_timeline/gps_timeline.db`, is never deleted
+or written by the deploy; the [backup](#backup-and-restore) copies it with
+`sqlite3 .backup`.
+
+After the first deploy the owner sets it up once in the UI:
+
+1. Settings → Devices & services → Add integration → GPS Timeline, entity
+   `person.jochen_wersdorfer`, maximum accuracy left at the default 100 m.
+2. Developer tools → Actions: `gps_timeline.backfill` with
+   `entity_id: person.jochen_wersdorfer`. This imports what the recorder still
+   holds (10 days), so it has to run before the oldest days are purged.
+3. Settings → Dashboards → Resources → add `/local/timeline_card.js?v=1.9.3`
+   as a JavaScript module.
+4. A card `type: custom:location-timeline-card` with
+   `entity: [person.jochen_wersdorfer]` and `history_source: gps_timeline`.
+
+Upgrade: change version and sha256 together (a version without its sha256 is
+refused); for the card also bump `?v=` in the dashboard resource. GitHub tag
+archives are usually but not guaranteed byte-stable: if the archive's hash
+drifts for the same tag, compare its contents with the tag's commit instead of
+loosening the pin.
+
+Tests run the helper on synthetic archives (install, repeat, upgrade, checksum
+mismatch, unsafe members, metadata drift, a missing account) and the real
+pyinfra operations twice on the local connector: the first run installs and
+asks for a restart, the second changes nothing and asks for none. Neither
+upstream artifact nor a real Home Assistant was used.
+
 ## Backup and restore
 
 `services.homeassistant.deploy_homeassistant_backup` (`HomeAssistantBackupConfig`)
@@ -954,7 +1030,10 @@ so the roles' block/always/rescue structure keeps its meaning.
 A backup is `<root>/<prefix>-<timestamp>` (default `/opt/backups/homeassistant`,
 `root:root 0700`) with `config/` (the recorder database as a `sqlite3 .backup`
 copy, three attempts with `.timeout 30000`; the live file and its `-wal`, `-shm`
-and `-journal` sidecars are excluded from the rsync), `data/`, `logs/`, the Thread state (`/var/lib/thread`) and the Matter
+and `-journal` sidecars are excluded from the rsync; the same for each database
+in `config_sqlite_databases`, paths below the config directory, by default GPS
+Timeline's `gps_timeline/gps_timeline.db`, excluded anchored to its path and
+skipped while it does not exist), `data/`, `logs/`, the Thread state (`/var/lib/thread`) and the Matter
 storage and chip factory directories when they lie outside the data directory,
 the unit as `homeassistant.service`, the route as `homeassistant.traefik.yml`,
 `metadata.yml` and `manifest.sha256`. It is packed as `<dir>.tar.gz` (`0600`)
@@ -981,6 +1060,9 @@ optionally restores the unit and route (`restore_system_files`, default off), fi
 the site's ownership, starts the services in the role's order and waits for each
 to become active, with an optional HTTP health check (`verify_http`, default off).
 The staging directory always goes; the safety snapshot goes after success.
+Because `config` is restored with `--delete`, a database's stale `-wal`/`-shm`
+files go with it, and restoring an archive taken before GPS Timeline was
+installed removes `config/gps_timeline`.
 
 Deliberate differences from the roles:
 

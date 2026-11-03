@@ -1,8 +1,8 @@
 {
   "repository": "https://github.com/ephes/ops-library",
-  "revision": "0cb32a609d07e342502fce115cd2943b1a412ba7",
+  "revision": "ef0bc5814917546c5d868311be8b0c7f651286b5",
   "files": {
-    "roles/homeassistant_deploy/defaults/main.yml": "83db819513a3c4d366eb1d33626fc5c128b7be6f2056d3a0125c596ce436e5e2",
+    "roles/homeassistant_deploy/defaults/main.yml": "96a75881050ac604f01a3efb1f738f6db053462e7ac77e9e3855a21e6b0a7be5",
     "roles/homeassistant_deploy/templates/homeassistant.service.j2": "a41a8caed6cda7bed6c62e45b99d03a87dc368eb43906ac290a864d9b4dfeb03",
     "roles/homeassistant_deploy/templates/matter-server.service.j2": "8718514535d0ca273b11ebc97c4d7f696b632595910e1c20dc4c7ac9763ef749"
   }

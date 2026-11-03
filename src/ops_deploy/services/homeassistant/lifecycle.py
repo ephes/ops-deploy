@@ -1,7 +1,8 @@
 """Home Assistant backup and restore (the ``homeassistant_backup`` and ``homeassistant_restore`` roles).
 
 A backup is ``<root>/<prefix>-<timestamp>`` with ``config/`` (the recorder
-database as a ``sqlite3 .backup`` copy), ``data/``, ``logs/``, the included
+database and GPS Timeline's ``gps_timeline/gps_timeline.db`` as
+``sqlite3 .backup`` copies), ``data/``, ``logs/``, the included
 Thread/Matter state directories, ``homeassistant.service``,
 ``homeassistant.traefik.yml``, ``metadata.yml`` and ``manifest.sha256``,
 packed as ``<dir>.tar.gz`` with the directory as the archive's only
@@ -62,6 +63,8 @@ Hostname = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]+$")]
 Url = Annotated[str, Field(pattern=r"^https?://[A-Za-z0-9.:/_-]+$")]
 HeaderName = Annotated[str, Field(pattern=r"^[A-Za-z0-9-]+$")]
 FileMode = Annotated[str, Field(pattern=r"^0?[0-7]{3}$")]
+# A path below the config directory; no part starts with "." (so no "..").
+ConfigRelativePath = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")]
 REQUIRED_FIELDS = ("timestamp", "host", "config_path", "data_path")
 
 
@@ -116,6 +119,10 @@ class HomeAssistantBackupConfig(_Paths, SnapshotRetention):
     # None: ``<config_path>/home-assistant_v2.db``.
     sqlite_path: AbsolutePath | None = None
     use_sqlite_backup: StrictBool = True
+    # Further live SQLite databases below ``config_path``, copied with
+    # ``sqlite3 .backup`` like the recorder database (their -wal/-shm/-journal
+    # stay out). GPS Timeline's long-term location history by default.
+    config_sqlite_databases: tuple[ConfigRelativePath, ...] = ("gps_timeline/gps_timeline.db",)
     include_thread: StrictBool = True
     include_logs: StrictBool = True
     use_delete: StrictBool = True
@@ -263,6 +270,7 @@ def deploy_homeassistant_backup(cfg: HomeAssistantBackupConfig) -> None:
                     "INCLUDE_LOGS": flag(cfg.include_logs),
                     "DB": cfg.database,
                     "SQLITE_BACKUP": flag(cfg.use_sqlite_backup),
+                    "CONFIG_DBS": cfg.config_sqlite_databases,
                     "DELETE": flag(cfg.use_delete),
                     "EXTRAS": [f"{extra}:{src}" for extra, src in cfg.extra_dirs()],
                     "COPIES": [

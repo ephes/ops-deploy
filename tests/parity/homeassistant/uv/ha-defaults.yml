@@ -118,6 +118,29 @@ homeassistant_llama_cpp_instructions: ""
 homeassistant_llama_cpp_canary_text: "Reply with the single word OK."
 homeassistant_llama_cpp_helper_path: "{{ homeassistant_bin_path }}/llama_cpp_provision.py"
 
+# Long-term location history outside the recorder (its retention is global).
+# GPS Timeline (custom integration, config flow only, no pip requirements,
+# Home Assistant >= 2026.9.0) keeps its data in
+# <config>/gps_timeline/gps_timeline.db; the role never
+# deletes that directory. Change a version and its sha256 together. GitHub tag
+# archives are usually but not guaranteed byte-stable: if the hash drifts,
+# compare against the tag commit instead of loosening the pin
+# (0.1.0-beta.3: 688f1b094c58c652bc9a49702486cd9d86b05376).
+homeassistant_gps_timeline_enabled: false
+homeassistant_gps_timeline_version: "0.1.0-beta.3"
+# sha256 of the public tag archive (not a secret)
+homeassistant_gps_timeline_sha256: "feb29bc1705181aab9146cacf2c7552a70d969042825734af0435000db1ee34e"  # pragma: allowlist secret
+homeassistant_gps_timeline_download_url: >-
+  https://github.com/iamyacin/gps-timeline/archive/refs/tags/{{ homeassistant_gps_timeline_version }}.tar.gz
+# Location Timeline Card (fork of konewka17/timeline_card with
+# history_source: gps_timeline), installed as www/timeline_card.js.
+homeassistant_timeline_card_enabled: false
+homeassistant_timeline_card_version: "1.9.3"
+# sha256 of the public release file (not a secret)
+homeassistant_timeline_card_sha256: "d81404bc66ef2affcbd701af08a04fcfee199dadfb6b82674576291db50987a5"  # pragma: allowlist secret
+homeassistant_timeline_card_download_url: >-
+  https://github.com/iamyacin/timeline_card/releases/download/v{{ homeassistant_timeline_card_version }}/timeline_card.js
+
 # Custom Conversation integration (HA config entry + pinned custom component)
 # Bridges Home Assistant Assist to an OpenAI-compatible Chat Completions endpoint
 # (e.g. the OpenClaw gateway) via the michelle-avery/custom-conversation component.

@@ -19,6 +19,7 @@ from .custom_component import CustomComponentConfig
 from .custom_conversation import CustomConversationConfig
 from .ingress import HomeAssistantIngressConfig
 from .integration_flows import HomeAssistantApiConfig, IntegrationSelection
+from .pinned_assets import GpsTimelineConfig, TimelineCardConfig
 from .runtime_config import HomeAssistantRuntimeConfig
 
 
@@ -137,6 +138,8 @@ class HomeAssistantDeployConfig(RoleConfig):
     builtin: BuiltinConversationConfig = Field(default_factory=BuiltinConversationConfig)
     custom: CustomConversationConfig = Field(default_factory=CustomConversationConfig)
     custom_component: CustomComponentConfig = Field(default_factory=CustomComponentConfig)
+    gps_timeline: GpsTimelineConfig = Field(default_factory=GpsTimelineConfig)
+    timeline_card: TimelineCardConfig = Field(default_factory=TimelineCardConfig)
     assist: AssistSelection = Field(default_factory=AssistSelection)
 
     @model_validator(mode="before")

@@ -373,6 +373,60 @@ def test_restore_script_puts_the_snapshot_back_and_starts_the_services(tmp_path:
     assert "completed" in done.stdout
 
 
+def gps_database(site: Path, marker: str) -> sqlite3.Connection:
+    """GPS Timeline's WAL database with an uncheckpointed row; the caller closes it."""
+
+    (site / "config" / "gps_timeline").mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(site / "config" / "gps_timeline" / "gps_timeline.db")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.executescript(f"CREATE TABLE IF NOT EXISTS p(v TEXT); DELETE FROM p; INSERT INTO p VALUES ('{marker}');")
+    conn.commit()
+    return conn
+
+
+def test_backup_covers_the_gps_timeline_database_by_default() -> None:
+    cfg = HomeAssistantBackupConfig(host_name="macmini", fetch_local=False)
+    assert cfg.config_sqlite_databases == ("gps_timeline/gps_timeline.db",)
+    script, _, _ = split(backup(cfg))
+    assert assignments(script)["CONFIG_DBS"] == "(gps_timeline/gps_timeline.db)"
+    for bad in ("../x.db", "/abs.db", "a/../b.db", ".hidden/x.db", "a//b.db", "a/b.db/"):
+        with pytest.raises(ValidationError):
+            HomeAssistantBackupConfig(host_name="macmini", config_sqlite_databases=(bad,))
+
+
+@needs_gnu
+def test_backup_and_restore_handle_the_gps_timeline_wal_database(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    live = gps_database(p["site"], "original")
+    gps = p["site"] / "config" / "gps_timeline"
+    assert (gps / "gps_timeline.db-wal").stat().st_size > 0  # the row lives only in the WAL
+
+    directory = take_backup(p, tmp_path)
+    live.close()
+
+    snapshot = directory / "config" / "gps_timeline"
+    assert sorted(path.name for path in snapshot.iterdir()) == ["gps_timeline.db"]
+    copy = sqlite3.connect(snapshot / "gps_timeline.db")
+    assert copy.execute("SELECT v FROM p").fetchall() == [("original",)]
+    copy.close()
+
+    changed = gps_database(p["site"], "changed")
+    changed.close()
+    os.utime(gps / "gps_timeline.db", (1_000_000_000, 1_000_000_000))
+    (gps / "gps_timeline.db-wal").write_bytes(b"stale wal")
+    (gps / "gps_timeline.db-shm").write_bytes(b"stale shm")
+
+    done = run_script(restore_command(p), "restore.sh", tmp_path, LOAD_STATE="loaded")
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    # The restore's rsync --delete drops the stale sidecars with the database.
+    assert sorted(path.name for path in gps.iterdir()) == ["gps_timeline.db"]
+    db = sqlite3.connect(gps / "gps_timeline.db")
+    assert db.execute("SELECT v FROM p").fetchall() == [("original",)]
+    db.close()
+
+
 @needs_gnu
 def test_restore_script_reads_an_archive_whose_metadata_the_role_wrote(tmp_path: Path) -> None:
     p = tree(tmp_path)
