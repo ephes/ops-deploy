@@ -86,9 +86,11 @@ class _Paths(MountGuard):
         # The scripts create, chown and remove below these paths: no "/./",
         # "/../", "//" or trailing "/" spellings that resolve elsewhere.
         for name, value in self.model_dump().items():
-            if isinstance(value, str) and value.startswith("/"):
-                path = PurePosixPath(value)
-                if value != str(path) or ".." in path.parts or path == PurePosixPath("/"):
+            text = str(value) if isinstance(value, Path) else value
+            if isinstance(text, str) and text.startswith("/"):
+                path = PurePosixPath(text)
+                # PurePosixPath keeps a leading "//", which must not pass either.
+                if text != str(path) or text.startswith("//") or ".." in path.parts or len(path.parts) < 2:
                     raise ValueError(f"{name} must be a canonical absolute path other than /")
         return self
 

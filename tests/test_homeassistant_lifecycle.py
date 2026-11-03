@@ -182,10 +182,18 @@ def test_restore_archive_must_be_a_name_below_the_root(archive: str) -> None:
         HomeAssistantRestoreConfig(host_name="m", archive=archive)
 
 
-@pytest.mark.parametrize("staging", ["/tmp/x/", "/tmp/./x", "/tmp//x", "/tmp/../etc", "/"])
-def test_restore_paths_must_be_canonical(staging: str) -> None:
+@pytest.mark.parametrize("path", ["/tmp/x/", "/tmp/./x", "/tmp//x", "/tmp/../etc", "/", "//", "//tmp/x"])
+@pytest.mark.parametrize("field", ["staging_dir", "data_path", "site_root"])
+def test_restore_paths_must_be_canonical(field: str, path: str) -> None:
     with pytest.raises(ValidationError):
-        HomeAssistantRestoreConfig(host_name="m", staging_dir=staging)
+        HomeAssistantRestoreConfig.model_validate({"host_name": "m", field: path})
+
+
+@pytest.mark.parametrize("path", ["/", "//", "//x", "/x/../y"])
+def test_backup_local_dir_and_root_must_be_canonical(path: str) -> None:
+    for field in ("local_dir", "root"):
+        with pytest.raises(ValidationError):
+            HomeAssistantBackupConfig.model_validate({"host_name": "m", field: path})
 
 
 def test_restore_staging_must_lie_below_the_required_mount() -> None:
