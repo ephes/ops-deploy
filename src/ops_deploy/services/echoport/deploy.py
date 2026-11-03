@@ -15,8 +15,8 @@ migration is pending), and the admin account, the scoped MinIO account, the
 cleanup user's ``mc`` alias, the crontab and the Nyxmon check are probed first
 (read-only) and written only when they differ from what this deploy would set.
 ``db.sqlite3*`` is never touched. Credentials reach the host on stdin only; the
-MinIO root credentials never do (the account is managed through root's MinIO
-admin alias on the host).
+store's root credentials never do (the account is managed through root's MinIO
+admin alias, or RustFS's environment file, on the host).
 """
 
 from __future__ import annotations
@@ -56,6 +56,7 @@ from ops_deploy.helpers.probes import migrations_state, probe, verify_probe, whe
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services.rustfs.deploy import iam_client_command
 
 FILES = Path(__file__).parent / "files"
 ADMIN_PROBE = (FILES / "admin_probe.py").read_text()
@@ -63,6 +64,7 @@ MC_ALIAS_PROBE = (FILES / "mc_alias_probe.py").read_text()
 CRON_EDIT = (FILES / "cron_edit.py").read_text()
 NYXMON_CHECK = (FILES / "nyxmon_check.py").read_text()
 MINIO_ACCOUNT = (FILES / "minio_account.py").read_text()
+RUSTFS_ACCOUNT = (FILES / "rustfs_account.py").read_bytes()
 
 # Never transferred, and protected from --delete (the role's rsync options).
 SOURCE_EXCLUDES = (
@@ -129,8 +131,9 @@ class MinioAccount(_Part):
     Port of ``minio_deploy``'s ``tasks_from: backup_account`` as
     ``deploy-echoport.yml`` includes it: a user that may list, read and delete
     in the whole bucket, never write or use the admin API, with the policy
-    ``backup-<name>``. It is created or updated through root's MinIO admin
-    alias on the host; the MinIO root credentials are never needed. The secret
+    ``backup-<name>``. It is created or updated on the host through root's
+    MinIO admin alias or, with ``provisioner="rustfs_admin"``, RustFS's native
+    admin API; the root credentials never reach the controller. The secret
     is ``minio_secret_key``; the user name is derived from ``name`` (MinIO
     allows 20 characters), as the playbook's ``backup_minio_account_user``.
     """
@@ -143,10 +146,13 @@ class MinioAccount(_Part):
     admin_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "local"
     policy_dir: PurePosixPath = PurePosixPath("/etc/minio/policies")
     # How the account is created and checked (:class:`AccountProvisioner`).
-    # ``mc_admin``: MinIO's admin API through ``mc admin``. Another store
-    # (RustFS) adds its own value and implementation; the policy document, the
-    # alias and the cleanup job stay the same.
-    provisioner: Literal["mc_admin"] = "mc_admin"
+    # ``mc_admin``: MinIO's admin API through ``mc admin`` and ``admin_alias``.
+    # ``rustfs_admin``: RustFS's native admin API with the root credentials of
+    # ``rustfs_env_file`` on the host (``admin_alias`` is not used). The policy
+    # document, the alias and the cleanup job stay the same.
+    provisioner: Literal["mc_admin", "rustfs_admin"] = "mc_admin"
+    # The environment file ops-deploy's RustFS deploy writes (root-only).
+    rustfs_env_file: PurePosixPath = PurePosixPath("/etc/default/rustfs")
 
     @property
     def user(self) -> str:
@@ -643,6 +649,11 @@ class AccountProvisioner(Protocol):
     user name and the secret on stdin.
     """
 
+    @property
+    def admin(self) -> str:
+        """What :meth:`require_admin` checks, for the step's name."""
+        ...
+
     def require_admin(self) -> str:
         """Fails (with a message on stderr) unless admin access to the store works."""
         ...
@@ -670,32 +681,74 @@ class McAdminProvisioner:
     """MinIO's admin API through ``mc admin`` and root's admin alias (``minio_deploy``'s ``backup_account``)."""
 
     def __init__(self, mc: PurePosixPath, admin_alias: str) -> None:
-        self.mc, self.admin = str(mc), admin_alias
+        self.mc, self.alias = str(mc), admin_alias
+
+    @property
+    def admin(self) -> str:
+        return f"the MinIO admin alias {self.alias} of root"
 
     def require_admin(self) -> str:
         missing = shlex.quote(
-            f"mc admin info {self.admin} failed: the admin alias is not configured for root on this host "
+            f"mc admin info {self.alias} failed: the admin alias is not configured for root on this host "
             "or MinIO is unreachable. Deploy MinIO with minio_bootstrap_with_mc first."
         )
-        return f"{shlex.join([self.mc, 'admin', 'info', self.admin])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"
+        return f"{shlex.join([self.mc, 'admin', 'info', self.alias])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"
 
     def state(self, mode: Literal["probe", "verify"], account: MinioAccount, document: str) -> str:
-        args = [mode, self.mc, self.admin, account.policy, account.user, document]
+        args = [mode, self.mc, self.alias, account.policy, account.user, document]
         return shlex.join(["python3", "-I", "-c", MINIO_ACCOUNT, *args])
 
     def create_policy(self, account: MinioAccount) -> str:
-        return shlex.join([self.mc, "admin", "policy", "create", self.admin, account.policy, str(account.policy_path)])
+        return shlex.join([self.mc, "admin", "policy", "create", self.alias, account.policy, str(account.policy_path)])
 
     def add_user(self, account: MinioAccount) -> str:
         failed = shlex.quote(
             f"mc admin user add for {account.user} failed; mc output is withheld (it can quote the secret)"
         )
         # ``mc admin user add`` is an upsert; it reads the user and the secret from stdin.
-        add = shlex.join([self.mc, "admin", "user", "add", self.admin])
+        add = shlex.join([self.mc, "admin", "user", "add", self.alias])
         return f"{add} >/dev/null 2>&1 || {{ echo {failed} >&2; exit 1; }}"
 
     def attach_policy(self, account: MinioAccount) -> str:
-        return shlex.join([self.mc, "admin", "policy", "attach", self.admin, account.policy, "--user", account.user])
+        return shlex.join([self.mc, "admin", "policy", "attach", self.alias, account.policy, "--user", account.user])
+
+
+class RustfsAdminProvisioner:
+    """RustFS's native admin API (``/rustfs/admin/v3``), as ops-deploy's RustFS deploy speaks it.
+
+    Every command runs ``files/rustfs_account.py`` with the RustFS deploy's
+    ``files/iam_host.py`` as its library (one SigV4 client). The root
+    credentials, the loopback address and the region come from RustFS's
+    root-only environment file on the host, so, as with MinIO, they never reach
+    the controller. Differences to ``mc admin``: ``add_user`` refuses to touch a
+    disabled user (like the RustFS deploy), and the policy is compared after
+    normalization (statement order, one-element sets).
+    """
+
+    def __init__(self, env_file: PurePosixPath) -> None:
+        self.env_file = str(env_file)
+
+    @property
+    def admin(self) -> str:
+        return f"RustFS admin access through {self.env_file}"
+
+    def _command(self, action: str, *args: str) -> str:
+        return iam_client_command(RUSTFS_ACCOUNT, action, self.env_file, *args)
+
+    def require_admin(self) -> str:
+        return self._command("require")
+
+    def state(self, mode: Literal["probe", "verify"], account: MinioAccount, document: str) -> str:
+        return self._command(mode, account.policy, account.user, document)
+
+    def create_policy(self, account: MinioAccount) -> str:
+        return self._command("create-policy", account.policy, str(account.policy_path))
+
+    def add_user(self, account: MinioAccount) -> str:
+        return self._command("add-user")
+
+    def attach_policy(self, account: MinioAccount) -> str:
+        return self._command("attach", account.policy, account.user)
 
 
 def account_provisioner(cfg: EchoportConfig) -> AccountProvisioner:
@@ -705,6 +758,8 @@ def account_provisioner(cfg: EchoportConfig) -> AccountProvisioner:
     assert account is not None
     if account.provisioner == "mc_admin":
         return McAdminProvisioner(cfg.minio_mc_path, account.admin_alias)
+    if account.provisioner == "rustfs_admin":
+        return RustfsAdminProvisioner(account.rustfs_env_file)
     raise ValueError(f"unknown account provisioner {account.provisioner!r}")  # pragma: no cover
 
 
@@ -732,11 +787,7 @@ def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
     current = found.get("user") in ("attached", "unattached") and stored == _alias_digest(_alias_wanted(cfg, secrets))
     current = current and login == "ok"
 
-    mark_read_only(
-        server.shell(
-            name=f"Require the MinIO admin alias {account.admin_alias} of root", commands=[store.require_admin()]
-        )
-    )
+    mark_read_only(server.shell(name=f"Require {store.admin}", commands=[store.require_admin()]))
     files.directory(
         name="Create MinIO policy directory", path=str(account.policy_dir), user="root", group="root", mode="0750"
     )

@@ -33,6 +33,10 @@ docs:
 docs-serve:
     uv run --locked mkdocs serve
 
+# Echoport's RustFS account provisioner against a RustFS 1.0.4 container (needs Docker)
+test-echoport-rustfs:
+    ECHOPORT_RUSTFS_DOCKER=1 uv run --locked pytest -q tests/test_echoport_rustfs_account_docker.py
+
 # Check the code-line cap on helpers + ops + core (docs/development.md)
 size-cap:
     uv run --locked python scripts/size_cap.py

@@ -3,7 +3,7 @@
 import hashlib
 import json
 import shlex
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import bcrypt
@@ -822,6 +822,89 @@ def test_account_provisioning_goes_through_the_provisioner_interface(tmp_path: P
         ["/usr/local/bin/mc", "admin", "policy", "attach", "local", ACCOUNT.policy, "--user", ACCOUNT.user]
     )
     assert store.add_user(ACCOUNT).startswith("/usr/local/bin/mc admin user add local >/dev/null 2>&1 || ")
-    # Until another store has its implementation, the config refuses to name one.
+    # Only stores with an implementation can be named.
     with pytest.raises(ValueError, match="provisioner"):
         MinioAccount(provisioner="rustfs")
+
+
+RUSTFS_ACCOUNT = MinioAccount(provisioner="rustfs_admin")
+RUSTFS_REQUIRE = "Deploy echoport | Require RustFS admin access through /etc/default/rustfs"
+
+
+def rustfs_args(command: str) -> list[str]:
+    """The arguments after the loader of a ``RustfsAdminProvisioner`` command."""
+
+    argv = shlex.split(command)
+    assert argv[:4] == ["python3", "-I", "-B", "-c"]
+    return argv[5:]
+
+
+def test_rustfs_provisioner_speaks_the_native_admin_api_through_the_rustfs_helper(tmp_path: Path) -> None:
+    import base64
+
+    from ops_deploy.services.echoport.deploy import RustfsAdminProvisioner, account_provisioner
+
+    store = account_provisioner(make_cfg(tmp_path, minio_account=RUSTFS_ACCOUNT))
+    assert isinstance(store, RustfsAdminProvisioner)
+    env = "/etc/default/rustfs"
+    document = render_policy(RUSTFS_ACCOUNT)
+    assert rustfs_args(store.require_admin()) == ["require", env]
+    assert rustfs_args(store.state("probe", RUSTFS_ACCOUNT, document)) == [
+        "probe", env, RUSTFS_ACCOUNT.policy, RUSTFS_ACCOUNT.user, document
+    ]  # fmt: skip
+    assert rustfs_args(store.create_policy(RUSTFS_ACCOUNT)) == [
+        "create-policy",
+        env,
+        RUSTFS_ACCOUNT.policy,
+        POLICY_FILE,
+    ]
+    # The user name and secret arrive on stdin.
+    assert rustfs_args(store.add_user(RUSTFS_ACCOUNT)) == ["add-user", env]
+    assert rustfs_args(store.attach_policy(RUSTFS_ACCOUNT)) == ["attach", env, RUSTFS_ACCOUNT.policy, ACCOUNT_USER]
+    # One SigV4 client: the loader runs the RustFS deploy's iam_host.py as the library.
+    loader = shlex.split(store.require_admin())[4]
+    sources = [base64.b64decode(part.split("'")[0]) for part in loader.split("base64.b64decode('")[1:]]
+    helper = Path("src/ops_deploy/services/rustfs/files/iam_host.py").read_bytes()
+    program = Path("src/ops_deploy/services/echoport/files/rustfs_account.py").read_bytes()
+    assert sources == [helper, program]
+    assert "Api(" not in program.decode()
+    assert "hmac" not in program.decode()
+    custom = MinioAccount(provisioner="rustfs_admin", rustfs_env_file=PurePosixPath("/etc/rustfs/env"))
+    assert rustfs_args(account_provisioner(make_cfg(tmp_path / "x", minio_account=custom)).require_admin()) == [
+        "require", "/etc/rustfs/env"
+    ]  # fmt: skip
+
+
+def test_rustfs_account_runs_the_same_steps_without_credentials_on_a_command_line(tmp_path: Path) -> None:
+    cfg = make_cfg(tmp_path, minio_account=RUSTFS_ACCOUNT)
+    secrets = values(cfg)
+    responses = converged(cfg, secrets)
+    del responses[ACCOUNT_PROBE]
+    responses[f" probe /etc/default/rustfs {RUSTFS_ACCOUNT.policy} "] = ["policy=missing user=missing"]
+    run = deploy(cfg, secrets, responses)
+
+    assert changed_names(run) == set(ACCOUNT_STEPS.values())
+    assert run.op(RUSTFS_REQUIRE).read_only
+    assert run.op("Deploy echoport | Verify MinIO account echoport-retention").read_only
+    account = [c for c in run.executed_commands if c.startswith("python3 -I -B -c ")]
+    assert [rustfs_args(c)[0] for c in account] == ["require", "create-policy", "add-user", "attach", "verify"]
+    assert not any("mc admin" in c for c in run.executed_commands)
+    [(command, stdin)] = [(c, text) for c, text in stdin_writes(run) if c in account]
+    assert rustfs_args(command) == ["add-user", "/etc/default/rustfs"]
+    assert stdin == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
+    assert all(SECRET_VALUES["minio_secret_key"] not in c for c in run.executed_commands)
+
+
+def test_rustfs_account_without_admin_access_changes_nothing(tmp_path: Path) -> None:
+    from ops_deploy.services.echoport.deploy import RustfsAdminProvisioner
+
+    cfg = make_cfg(tmp_path, minio_account=RUSTFS_ACCOUNT)
+    secrets = values(cfg)
+    require = RustfsAdminProvisioner(PurePosixPath("/etc/default/rustfs")).require_admin()
+    responses = {**converged(cfg, secrets), require: {"success": False}}
+    del responses[ACCOUNT_PROBE]
+    run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert next(op.name for op in run.ops if not op.succeeded) == RUSTFS_REQUIRE
+    assert stdin_writes(run) == []

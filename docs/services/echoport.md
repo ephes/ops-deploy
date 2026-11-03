@@ -66,7 +66,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `scheduler_enabled`, `scheduler_interval` | `true`, `*/5` | crontab minute field |
 | `cleanup_enabled`, `cleanup_hour` | `true`, `3` | needs `minio_url` |
 | `minio_mc_path`, `minio_alias`, `minio_url`, `minio_verify_bucket` | `/usr/local/bin/mc`, `minio`, none, `backups` | the cleanup user's alias and the bucket it must reach |
-| `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, admin_alias, policy_dir, provisioner)`, defaults `echoport-retention`, `backups`, `false`, `true`, `local`, `/etc/minio/policies`, `mc_admin`: the alias's own MinIO account (see below); needs `cleanup_enabled` |
+| `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, admin_alias, policy_dir, provisioner, rustfs_env_file)`, defaults `echoport-retention`, `backups`, `false`, `true`, `local`, `/etc/minio/policies`, `mc_admin`, `/etc/default/rustfs`: the alias's own account (see below); needs `cleanup_enabled` |
 | `staging_db_refresh_*` | off | `enabled`, `hour` (`2`), `minute` (`20`), `targets`, `triggered_by` |
 | `nyxmon` | `None` | `NyxmonCheck(...)`: the playbook's Nyxmon check (see below) |
 
@@ -178,13 +178,36 @@ Echoport reads), so `minio_url` may name either store. Only creating the
 account is store-specific. `_minio_account` runs it through an
 `AccountProvisioner` (`deploy.py`): `require_admin`, `state` (probe/verify),
 `create_policy`, `add_user` (stdin) and `attach_policy`, each a shell command.
-`MinioAccount.provisioner` picks the implementation; `mc_admin`
-(`McAdminProvisioner`, MinIO's admin API through root's alias) is the only one.
-It does not work against RustFS 1.0.3 as it is: `mc admin info` fails there,
-and `mc admin policy info --json` wraps the document as
-`{"policy_name", "policy", ...}`, so `files/minio_account.py` would report the
-policy as differing on every run. A RustFS implementation adds its own value
-and class.
+`MinioAccount.provisioner` picks the implementation:
+
+- `mc_admin` (default, `McAdminProvisioner`): MinIO's admin API through root's
+  mc alias `admin_alias`. It does not work against RustFS: `mc admin info`
+  fails there, and `mc admin policy info --json` wraps the document as
+  `{"policy_name", "policy", ...}`, so `files/minio_account.py` would report
+  the policy as differing on every run.
+- `rustfs_admin` (`RustfsAdminProvisioner`): RustFS's native admin API
+  (`/rustfs/admin/v3`). Every command runs `files/rustfs_account.py` with the
+  RustFS deploy's `files/iam_host.py` loaded as its library
+  (`ops_deploy.services.rustfs.deploy.iam_client_command`), so there is one
+  SigV4 client. It reads the root credentials, the loopback address and the
+  region from RustFS's root-only environment file on the host
+  (`rustfs_env_file`, what `services/rustfs` writes); they never reach the
+  controller or a command line, and `admin_alias` is not used. The steps,
+  their order and the stdin-only secret are the same as with `mc_admin`. Two
+  differences: the policy is compared after normalization (statement order,
+  one-element sets; the server stores its own spelling), and a disabled user
+  refuses instead of being upserted (like the RustFS deploy, which never
+  enables a user). `attach` adds the policy and keeps others, as `mc admin
+  policy attach` does, so verify then refuses the extra ones.
+
+With `rustfs_admin`, point `minio_url` at RustFS (macmini:
+`http://127.0.0.1:9020`); the alias keeps its name, so Echoport's
+`MINIO_ALIAS` does not change. Echoport has one alias for every target: its
+retention job and `mc stat` checks reach only the store that alias names.
+`tests/test_echoport_rustfs_account_docker.py` runs every provisioner command
+against a real RustFS 1.0.4 container (`just test-echoport-rustfs`, needs
+Docker): probe states, policy round trip, upsert and rotation, attach, what
+the account may and may not do, the refusals, and no credential in any output.
 
 Differences, all on the "change only what differs" side:
 

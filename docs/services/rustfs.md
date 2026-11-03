@@ -71,6 +71,12 @@ used), and prints only a pending count or a constant refusal.
   refuses.
 - Undeclared users, policies and buckets are left alone.
 
+Other deploys that manage RustFS accounts reuse this helper's SigV4 client and
+admin calls instead of carrying their own: `iam_client_command(program, *args)`
+(`deploy.py`) runs `program` on the host with `files/iam_host.py` loaded first
+(its `main` does not run). Echoport's `rustfs_admin` account provisioner uses
+it ([Echoport](echoport.md#other-s3-stores)).
+
 While planning, the helper inspects the running server; if this run installs,
 rewrites the environment (root rotation) or the unit, or starts or restarts a
 stopped service, the inspection waits until execution, after the restart. A healthy repeat changes nothing.

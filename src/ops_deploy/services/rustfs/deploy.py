@@ -68,6 +68,25 @@ def host_command(script: str, action: str | None = None) -> str:
     return shlex.join(["python3", "-I", "-B", "-c", loader, *([action] if action else [])])
 
 
+def iam_client_command(program: bytes, *args: str) -> str:
+    """Runs ``program`` on the host with ``files/iam_host.py`` loaded as its library.
+
+    The program finds the helper's names (``Api``, ``Server``, ``Refused``,
+    ``ADMIN``, ...) in its globals, so other deploys that talk to RustFS's
+    admin API reuse its SigV4 client instead of carrying their own. The
+    helper's own ``main`` does not run.
+    """
+    library = base64.b64encode(RESOURCE.joinpath("files/iam_host.py").read_bytes()).decode()
+    source = base64.b64encode(program).decode()
+    loader = (
+        "import base64;g={'__name__':'rustfs_iam_host'};"
+        f"exec(compile(base64.b64decode('{library}'),'<rustfs-host>','exec'),g);"
+        "g['__name__']='__main__';"
+        f"exec(compile(base64.b64decode('{source}'),'<rustfs-client>','exec'),g)"
+    )
+    return shlex.join(["python3", "-I", "-B", "-c", loader, *args])
+
+
 def validate_inputs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
     if {identity.name for identity in cfg.identities} != credentials.identities.keys():
         raise ValueError("provide credentials for exactly the declared RustFS identities")

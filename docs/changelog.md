@@ -11,6 +11,20 @@
   parity fixtures, their source digests and recorded ops-library heads follow
   `44a532b`.
 
+- `echoport`: `MinioAccount.provisioner="rustfs_admin"` (new
+  `RustfsAdminProvisioner`) creates and checks Echoport's scoped account on
+  RustFS through its native admin API. It reuses the RustFS deploy's
+  `files/iam_host.py` as its library (new
+  `services.rustfs.deploy.iam_client_command`, no second SigV4 client) and
+  reads the root credentials from RustFS's environment file on the host
+  (`MinioAccount.rustfs_env_file`, default `/etc/default/rustfs`); the
+  controller never sees them. Same steps and stdin-only secret as `mc_admin`;
+  a disabled user refuses. `mc_admin` stays the default and its commands are
+  unchanged (the require step is now named from the provisioner, unchanged
+  text for MinIO). New Docker test against RustFS 1.0.4
+  (`just test-echoport-rustfs`). See
+  [Other S3 stores](services/echoport.md#other-s3-stores).
+
 - `services.vibe_coding`: commands that run as the user start in `/`. sudo
   kept root's working directory `/root`, which the user cannot read, so the
   first live run failed at the chezmoi step with `chezmoi: stat .: permission
