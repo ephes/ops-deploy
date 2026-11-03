@@ -1,11 +1,13 @@
 """Nyxmon json-metrics rules for OS lifecycle reports.
 
 Nyxmon only compares a value at a JSON path with a constant (``< <= > >= ==
-!=``, ``warning`` or ``critical``); a missing or ``null`` value fails the
-rule. The report therefore carries every age and remaining time as a number,
-and each rule below states what must hold. Critical is reserved for a broken
-mechanism (no fresh report, unattended-upgrades off or failing for a week)
-and hard deadlines; everything that can be planned is a warning.
+!=``, ``warning`` or ``critical``) with Python's operators: a missing path
+fails every rule, and a JSON ``null`` fails every ordering and ``==`` rule
+but passes ``!=`` (``None != "error"``). The report therefore carries every
+age and remaining time as a number, and each rule below states what must
+hold. Critical is reserved for a broken mechanism (no fresh report,
+unattended-upgrades off or not getting through a run for a week) and hard
+deadlines; everything that can be planned or fixed by hand is a warning.
 
 Two shapes:
 
@@ -101,7 +103,8 @@ def report_rules(
     """The rules on one report under ``prefix``.
 
     ``unattended_upgrades``: the host is expected to run unattended-upgrades
-    (off until the policy is rolled out there). ``security_index``: also
+    (off until the policy is rolled out there): it is enabled, got through a
+    run recently, and its last run logged no ``ERROR`` (a warning). ``security_index``: also
     watch the age of the security index (left out where ``software_live``
     already does). ``reboot_window``: the host reboots itself in a window.
 
@@ -124,6 +127,10 @@ def report_rules(
             _rule(f"{p}.uu.enabled", "==", True, "critical"),
             _rule(f"{p}.uu.last_success_age_hours", "<=", t.uu_success_warning_hours, "warning"),
             _rule(f"{p}.uu.last_success_age_hours", "<=", t.uu_success_critical_hours, "critical"),
+            # The last run logged an ERROR (a failed install still refreshes
+            # the stamp behind last_success). null (no run logged yet) passes;
+            # the next run without an ERROR clears it.
+            _rule(f"{p}.uu.last_result", "!=", "error", "warning"),
         ]
     if security_index:
         rules += [

@@ -368,6 +368,19 @@ def test_the_last_uu_run_and_its_result() -> None:
     assert status.last_uu_run("") == (None, None)
 
 
+def test_a_run_with_nothing_to_do_is_ok() -> None:
+    log = (
+        "2026-10-21 06:12:01,200 INFO Starting unattended upgrades script\n"
+        "2026-10-21 06:12:01,300 INFO Allowed origins are: origin=Debian,codename=trixie,label=Debian-Security\n"
+        "2026-10-21 06:12:01,300 INFO Initial blacklist: \n"
+        "2026-10-21 06:12:03,200 INFO No packages found that can be upgraded unattended and no pending auto-removals\n"
+    )
+
+    assert status.last_uu_run(log)[1] == "ok"
+    # A log without a run (fresh install, or just rotated) has no result.
+    assert status.last_uu_run("2026-10-21 06:12:01,300 INFO Initial blacklist: \n") == (None, None)
+
+
 def test_apt_config_values() -> None:
     dump = 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n'
 
@@ -559,6 +572,17 @@ def test_no_dpkg_kernels_is_no_signal_and_says_so(root: Path, monkeypatch: pytes
 
     assert report["reboot"]["required"] is False
     assert report["reboot"]["kernel_check"] == "no-dpkg-kernels"
+
+
+def test_uu_before_the_first_run_has_no_result(root: Path) -> None:
+    report, _ = status.build_report(POLICY, {}, root=root, run=fake_run, now=NOW)
+
+    assert (report["uu"]["last_result"], report["uu"]["last_run_epoch"]) == (None, None)
+    log = root / "var/log/unattended-upgrades/unattended-upgrades.log"
+    touch(log, NOW, "2026-10-21 06:12:01,200 INFO Starting unattended upgrades script\n")
+    assert status.build_report(POLICY, {}, root=root, run=fake_run, now=NOW)[0]["uu"]["last_result"] == "ok"
+    touch(log, NOW, log.read_text() + "2026-10-21 06:12:09,100 ERROR Installing the upgrades failed!\n")
+    assert status.build_report(POLICY, {}, root=root, run=fake_run, now=NOW)[0]["uu"]["last_result"] == "error"
 
 
 def test_uu_without_the_package_is_disabled(root: Path) -> None:

@@ -251,9 +251,10 @@ host leaves `ssh`.
   leaves it alone. Its age therefore catches an unattended-upgrades that no
   longer runs or keeps aborting early, not a failed install. `last_result` is
   the last run's block in `unattended-upgrades.log`: `error` if it logged an
-  `ERROR`, which a failed install does ("Installing the upgrades failed!");
-  no Nyxmon rule reads it. `service_result` is the `Result` of
-  `apt-daily-upgrade.service`.
+  `ERROR`, which a failed install does ("Installing the upgrades failed!"),
+  else `ok` (also a run with nothing to do); `null` while the log holds no
+  run (a fresh host, or right after log rotation). `service_result` is the
+  `Result` of `apt-daily-upgrade.service`.
 - **Reboot:** `/var/run/reboot-required` or a newer installed `linux-image-*`
   than the running kernel (the same comparison as `os_apt_maintenance`; a
   deliberately pinned older kernel therefore reports `stale_kernel`). Kernel
@@ -271,7 +272,9 @@ it then fails, so "unknown" is visible.
 ## Nyxmon rules (`checks.py`)
 
 `Thresholds()` holds the defaults below; `endpoint_rules` prefixes `$`,
-`remote_rules` `$.hosts.<name>.report` and adds the pull rules.
+`remote_rules` `$.hosts.<name>.report` and adds the pull rules. Nyxmon
+compares with Python's operators: a missing path fails every rule, and a
+`null` fails every ordering and `==` rule but passes `!=`.
 
 | Rule | Warning | Critical |
 |---|---|---|
@@ -280,6 +283,7 @@ it then fails, so "unknown" is visible.
 | `$.hosts.<name>.last_pull_success_age_hours`, `.report_age_hours` | | `> 3` |
 | `uu.enabled` (with `unattended_upgrades`) | | `false` |
 | `uu.last_success_age_hours` (with `unattended_upgrades`; last run that got through, see above) | `> 48` | `> 168` |
+| `uu.last_result` (with `unattended_upgrades`) | `error` | |
 | `apt.security_index_age_hours` (with `security_index`) | `> 48` | `> 168` |
 | `apt.pending_security_max_age_hours` | `> 72` | `> 168` |
 | `reboot.required_age_hours` | `> 168` | `> 504` |
@@ -292,6 +296,13 @@ it then fails, so "unknown" is visible.
 | `os.eol_days_remaining` | `< 180` | `< 60` |
 | `os.lifecycle_sources_agree` | `false` | |
 | `os.lifecycle_data_age_days` (snapshot age) | `> 120` | |
+
+`uu.last_result` warns while the last unattended-upgrades run logged an
+`ERROR` (a failed install refreshes the stamp behind `last_success_*`, so the
+age rules do not see it) and clears with the next run that logs none. A host
+without a logged run (`null`) does not warn; a run with nothing to do is `ok`.
+There is no critical level: a run that keeps failing for a week without
+getting through also trips the age rules.
 
 `track_latest_stable` is for hosts that always run the newest stable release:
 the warning starts on the day a newer stable cycle is released, with no grace

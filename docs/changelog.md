@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `os_lifecycle`: with `unattended_upgrades`, a new warning rule
+  `uu.last_result != "error"` flags a last unattended-upgrades run that
+  logged an `ERROR` (a failed install, which still refreshes the stamp behind
+  `uu.last_success_*`). It clears with the next run that logs none; a host
+  without a logged run (`null`) and a run with nothing to do do not warn. The
+  report is unchanged. The status script's `uu` docstring no longer claims
+  the stamp marks a successful run, and the rule tests evaluate `null` as
+  Nyxmon does (a missing path fails, `null` passes `!=`).
+
 - `infra.hdparm_tune` applies the policy at every boot, a port of ops-library
   `29b353c4`. Ubuntu's udev hook skips `-B` and `-S` from `/etc/hdparm.conf`
   for disks without `ID_ATA_FEATURE_SET_APM=1`, so fractal's WD120EFGX disks

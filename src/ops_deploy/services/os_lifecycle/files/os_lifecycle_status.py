@@ -426,7 +426,15 @@ def last_uu_run(log: str) -> tuple[float | None, str | None]:
 
 
 def uu_status(root: Path, run: Run, now: float) -> dict[str, Any]:
-    """The ``uu`` section. The stamp is only touched after a successful run (``apt.systemd.daily``)."""
+    """The ``uu`` section.
+
+    ``last_success_*`` is the mtime of ``unattended-upgrades-stamp``, which
+    ``unattended-upgrade`` writes itself whenever a run gets through its
+    upgrade pass, also after a failed install (``apt.systemd.daily`` touches
+    ``upgrade-stamp`` instead): the last completed run, not the last
+    successful one. ``last_result`` is ``error`` when the last run in the log
+    logged an ``ERROR``, ``ok`` otherwise, ``None`` without a logged run.
+    """
 
     installed = (root / "usr/bin/unattended-upgrade").exists()
     code, dump = run(["apt-config", "dump"])

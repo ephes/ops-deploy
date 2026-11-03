@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import operator
 import os
 import subprocess
 from collections.abc import Sequence
@@ -153,6 +154,7 @@ def test_endpoint_rules_have_the_design_defaults() -> None:
         ("$.uu.enabled", "==", True, "critical"),
         ("$.uu.last_success_age_hours", "<=", 48, "warning"),
         ("$.uu.last_success_age_hours", "<=", 168, "critical"),
+        ("$.uu.last_result", "!=", "error", "warning"),
         ("$.apt.security_index_age_hours", "<=", 48, "warning"),
         ("$.apt.security_index_age_hours", "<=", 168, "critical"),
         ("$.apt.pending_security_max_age_hours", "<=", 72, "warning"),
@@ -191,23 +193,37 @@ def test_remote_rules_watch_the_pull_and_the_window_thresholds() -> None:
     assert all(r[0].startswith(("$.meta.", "$.hosts.marina.")) for r in rules)
 
 
+_MISSING: Any = object()
+
+
 def failing(rules: list[dict[str, Any]], report: dict[str, Any]) -> list[tuple[str, str]]:
-    """The rules a report fails, as Nyxmon's json-metrics evaluates them (a missing or null value fails)."""
+    """The rules a report fails, as Nyxmon's json-metrics evaluates them.
+
+    A missing path fails; a present value (``null`` too) is compared with
+    Python's operator, and a comparison that raises fails: ``None <= 48``
+    fails, ``None != "error"`` passes.
+    """
 
     compare = {
-        "<": lambda a, b: a < b,
-        "<=": lambda a, b: a <= b,
-        ">": lambda a, b: a > b,
-        ">=": lambda a, b: a >= b,
-        "==": lambda a, b: a == b,
-        "!=": lambda a, b: a != b,
+        "<": operator.lt,
+        "<=": operator.le,
+        ">": operator.gt,
+        ">=": operator.ge,
+        "==": operator.eq,
+        "!=": operator.ne,
     }
     failed = []
     for rule in rules:
         value: Any = report
         for part in rule["path"].removeprefix("$.").split("."):
-            value = value.get(part) if isinstance(value, dict) else None
-        if value is None or not compare[rule["op"]](value, rule["value"]):
+            value = value[part] if isinstance(value, dict) and part in value else _MISSING
+            if value is _MISSING:
+                break
+        try:
+            ok = value is not _MISSING and bool(compare[rule["op"]](value, rule["value"]))
+        except TypeError:
+            ok = False
+        if not ok:
             failed.append((rule["path"], rule["severity"]))
     return failed
 
@@ -286,6 +302,61 @@ def test_third_party_updates_warn_after_30_days_only_when_watched() -> None:
     assert failing(third, {"apt": None}) == [("$.apt.pending_third_party_max_age_hours", "warning")]
     remote = paths(remote_rules(Thresholds(), "marina", third_party_updates=True))
     assert ("$.hosts.marina.report.apt.pending_third_party_max_age_hours", "<=", 720, "warning") in remote
+
+
+def uu_section(**values: Any) -> dict[str, Any]:
+    return {
+        "uu": {
+            "installed": True,
+            "enabled": True,
+            "last_success_age_hours": 9.0,
+            "last_result": "ok",
+            **values,
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("values", "failed"),
+    [
+        # A run that installed upgrades, or had nothing to do.
+        ({}, []),
+        # A fresh host: no run logged yet, so no result.
+        ({"last_result": None, "last_success_age_hours": 0.5}, []),
+        # The install failed: the stamp is fresh anyway, the result warns.
+        ({"last_result": "error"}, [("$.uu.last_result", "warning")]),
+        # Failing and stuck: the age escalates on its own.
+        (
+            {"last_result": "error", "last_success_age_hours": 200.0},
+            [
+                ("$.uu.last_success_age_hours", "warning"),
+                ("$.uu.last_success_age_hours", "critical"),
+                ("$.uu.last_result", "warning"),
+            ],
+        ),
+    ],
+)
+def test_the_uu_rules_on_reports(values: dict[str, Any], failed: list[tuple[str, str]]) -> None:
+    uu_rules = [r for r in report_rules(Thresholds()) if r["path"].startswith("$.uu.")]
+
+    assert failing(uu_rules, uu_section(**values)) == failed
+
+
+def test_a_failed_uu_probe_fails_every_uu_rule() -> None:
+    uu_rules = [r for r in report_rules(Thresholds()) if r["path"].startswith("$.uu.")]
+
+    assert failing(uu_rules, {"uu": None}) == [(r["path"], r["severity"]) for r in uu_rules]
+
+
+def test_the_uu_error_rule_follows_the_uu_switch() -> None:
+    rule = ("$.uu.last_result", "!=", "error", "warning")
+
+    assert rule not in paths(report_rules(Thresholds(), unattended_upgrades=False))
+    remote = paths(remote_rules(Thresholds(), "web"))
+    assert ("$.hosts.web.report.uu.last_result", "!=", "error", "warning") in remote
+    assert ("$.hosts.web.report.uu.last_result", "!=", "error", "warning") not in paths(
+        remote_rules(Thresholds(), "web", unattended_upgrades=False)
+    )
 
 
 def test_a_check_keeps_its_json_types() -> None:
