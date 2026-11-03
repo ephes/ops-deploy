@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `echoport`: the scoped account's policy also allows `s3:GetObjectVersion`
+  (ops-library `minio_deploy` template, kept byte-identical): `mc cp` downloads
+  a pinned version, which RustFS checks against `GetObjectVersion`. The
+  account's policy reads as `differs` once and is rewritten on the next
+  deploy. Account provisioning goes through the new `AccountProvisioner`
+  interface; `MinioAccount.provisioner` (`mc_admin`, the only implementation)
+  selects it, so a RustFS implementation can follow without touching the
+  deploy flow. Commands and their order are unchanged. See
+  [Other S3 stores](services/echoport.md#other-s3-stores).
+
 - `nyxmon`: `notify_warning_delivery` and `warning_digest_on_calendar` (port of
   ops-library 2.75.4). With `digest` (Rust agent 0.1.2), warnings send nothing
   and `nyxmon-warning-digest.timer` reports all open warnings in one silent

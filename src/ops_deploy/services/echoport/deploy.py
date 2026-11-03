@@ -29,7 +29,7 @@ import shlex
 from functools import cache
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any, ClassVar, Literal, Protocol
 
 import jinja2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -142,6 +142,11 @@ class MinioAccount(_Part):
     # ``minio_host_alias`` of the MinIO deploy (root's mc configuration).
     admin_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "local"
     policy_dir: PurePosixPath = PurePosixPath("/etc/minio/policies")
+    # How the account is created and checked (:class:`AccountProvisioner`).
+    # ``mc_admin``: MinIO's admin API through ``mc admin``. Another store
+    # (RustFS) adds its own value and implementation; the policy document, the
+    # alias and the cleanup job stay the same.
+    provisioner: Literal["mc_admin"] = "mc_admin"
 
     @property
     def user(self) -> str:
@@ -630,26 +635,96 @@ def _alias_check(cfg: EchoportConfig) -> str:
     return when_present([cfg.home], listing, otherwise="none")
 
 
-def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
-    """The playbook's ``backup_account`` include: the cleanup alias's own MinIO account.
+class AccountProvisioner(Protocol):
+    """Creates and checks a scoped object-store account on the host, as root.
 
-    Like the role, everything goes through root's admin alias and the secret
-    reaches ``mc`` on stdin. Unlike it, the policy is created and the user
-    upserted only when the probe finds them missing or different: the secret
-    counts as current when the cleanup user's alias already holds it and lists
-    the bucket with it.
+    Each method returns one shell command; :func:`_minio_account` decides which
+    of them run. Credentials never appear in them: :meth:`add_user` reads the
+    user name and the secret on stdin.
+    """
+
+    def require_admin(self) -> str:
+        """Fails (with a message on stderr) unless admin access to the store works."""
+        ...
+
+    def state(self, mode: Literal["probe", "verify"], account: MinioAccount, document: str) -> str:
+        """``probe`` prints ``policy=<ok|differs|missing> user=<attached|unattached|missing>``;
+        ``verify`` exits non-zero unless the user is enabled and holds exactly the
+        policy with ``document``."""
+        ...
+
+    def create_policy(self, account: MinioAccount) -> str:
+        """Creates or replaces the policy from ``account.policy_path``."""
+        ...
+
+    def add_user(self, account: MinioAccount) -> str:
+        """Creates or updates the user; reads ``<user>\\n<secret>\\n`` on stdin."""
+        ...
+
+    def attach_policy(self, account: MinioAccount) -> str:
+        """Attaches the policy to the user."""
+        ...
+
+
+class McAdminProvisioner:
+    """MinIO's admin API through ``mc admin`` and root's admin alias (``minio_deploy``'s ``backup_account``)."""
+
+    def __init__(self, mc: PurePosixPath, admin_alias: str) -> None:
+        self.mc, self.admin = str(mc), admin_alias
+
+    def require_admin(self) -> str:
+        missing = shlex.quote(
+            f"mc admin info {self.admin} failed: the admin alias is not configured for root on this host "
+            "or MinIO is unreachable. Deploy MinIO with minio_bootstrap_with_mc first."
+        )
+        return f"{shlex.join([self.mc, 'admin', 'info', self.admin])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"
+
+    def state(self, mode: Literal["probe", "verify"], account: MinioAccount, document: str) -> str:
+        args = [mode, self.mc, self.admin, account.policy, account.user, document]
+        return shlex.join(["python3", "-I", "-c", MINIO_ACCOUNT, *args])
+
+    def create_policy(self, account: MinioAccount) -> str:
+        return shlex.join([self.mc, "admin", "policy", "create", self.admin, account.policy, str(account.policy_path)])
+
+    def add_user(self, account: MinioAccount) -> str:
+        failed = shlex.quote(
+            f"mc admin user add for {account.user} failed; mc output is withheld (it can quote the secret)"
+        )
+        # ``mc admin user add`` is an upsert; it reads the user and the secret from stdin.
+        add = shlex.join([self.mc, "admin", "user", "add", self.admin])
+        return f"{add} >/dev/null 2>&1 || {{ echo {failed} >&2; exit 1; }}"
+
+    def attach_policy(self, account: MinioAccount) -> str:
+        return shlex.join([self.mc, "admin", "policy", "attach", self.admin, account.policy, "--user", account.user])
+
+
+def account_provisioner(cfg: EchoportConfig) -> AccountProvisioner:
+    """The :class:`AccountProvisioner` that ``cfg.minio_account.provisioner`` names."""
+
+    account = cfg.minio_account
+    assert account is not None
+    if account.provisioner == "mc_admin":
+        return McAdminProvisioner(cfg.minio_mc_path, account.admin_alias)
+    raise ValueError(f"unknown account provisioner {account.provisioner!r}")  # pragma: no cover
+
+
+def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
+    """The playbook's ``backup_account`` include: the cleanup alias's own account.
+
+    Like the role, everything goes through the store's admin access on the host
+    (:func:`account_provisioner`; for MinIO root's admin alias) and the secret
+    reaches it on stdin. Unlike it, the policy is created and the user upserted
+    only when the probe finds them missing or different: the secret counts as
+    current when the cleanup user's alias already holds it and lists the bucket
+    with it.
     """
 
     account = cfg.minio_account
     assert account is not None
-    mc, admin = str(cfg.minio_mc_path), account.admin_alias
+    store = account_provisioner(cfg)
     document = render_policy(account)
 
-    def script(mode: str) -> str:
-        args = [mode, mc, admin, account.policy, account.user, document]
-        return shlex.join(["python3", "-I", "-c", MINIO_ACCOUNT, *args])
-
-    state = probe(script("probe"), name=f"MinIO account {account.name}")
+    state = probe(store.state("probe", account, document), name=f"MinIO account {account.name}")
     found = dict(part.partition("=")[::2] for part in (state or "").split())
     stored = (probe(_alias_check(cfg), name="mc alias of the cleanup user") or "").strip()
     listing = f"{_mc(cfg, 'ls', f'{cfg.minio_alias}/{account.bucket}')} >/dev/null && echo ok"
@@ -657,14 +732,9 @@ def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
     current = found.get("user") in ("attached", "unattached") and stored == _alias_digest(_alias_wanted(cfg, secrets))
     current = current and login == "ok"
 
-    missing = shlex.quote(
-        f"mc admin info {admin} failed: the admin alias is not configured for root on this host "
-        "or MinIO is unreachable. Deploy MinIO with minio_bootstrap_with_mc first."
-    )
     mark_read_only(
         server.shell(
-            name=f"Require the MinIO admin alias {admin} of root",
-            commands=[f"{shlex.join([mc, 'admin', 'info', admin])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"],
+            name=f"Require the MinIO admin alias {account.admin_alias} of root", commands=[store.require_admin()]
         )
     )
     files.directory(
@@ -680,26 +750,23 @@ def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
     )
     server.shell(
         name=f"Create or update MinIO policy {account.policy}",
-        commands=[shlex.join([mc, "admin", "policy", "create", admin, account.policy, str(account.policy_path)])],
+        commands=[store.create_policy(account)],
         _if=lambda: policy_file.did_change() or found.get("policy") != "ok",
     )
-    failed = shlex.quote(
-        f"mc admin user add for {account.user} failed; mc output is withheld (it can quote the secret)"
-    )
-    add = shlex.join([mc, "admin", "user", "add", admin])
     secret_stdin(
         name=f"Create or update MinIO user of {account.name}",
-        # ``mc admin user add`` is an upsert; it reads the user and the secret from stdin.
-        command=f"{add} >/dev/null 2>&1 || {{ echo {failed} >&2; exit 1; }}",
+        command=store.add_user(account),
         content=SecretContent(f"{account.user}\n{secrets['minio_secret_key']}\n"),
         _if=lambda: not current,
     )
     server.shell(
         name=f"Attach MinIO policy {account.policy}",
-        commands=[shlex.join([mc, "admin", "policy", "attach", admin, account.policy, "--user", account.user])],
+        commands=[store.attach_policy(account)],
         _if=lambda: found.get("user") != "attached",
     )
-    mark_read_only(server.shell(name=f"Verify MinIO account {account.name}", commands=[script("verify")]))
+    mark_read_only(
+        server.shell(name=f"Verify MinIO account {account.name}", commands=[store.state("verify", account, document)])
+    )
 
 
 def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:

@@ -66,7 +66,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `scheduler_enabled`, `scheduler_interval` | `true`, `*/5` | crontab minute field |
 | `cleanup_enabled`, `cleanup_hour` | `true`, `3` | needs `minio_url` |
 | `minio_mc_path`, `minio_alias`, `minio_url`, `minio_verify_bucket` | `/usr/local/bin/mc`, `minio`, none, `backups` | the cleanup user's alias and the bucket it must reach |
-| `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, admin_alias, policy_dir)`, defaults `echoport-retention`, `backups`, `false`, `true`, `local`, `/etc/minio/policies`: the alias's own MinIO account (see below); needs `cleanup_enabled` |
+| `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, admin_alias, policy_dir, provisioner)`, defaults `echoport-retention`, `backups`, `false`, `true`, `local`, `/etc/minio/policies`, `mc_admin`: the alias's own MinIO account (see below); needs `cleanup_enabled` |
 | `staging_db_refresh_*` | off | `enabled`, `hour` (`2`), `minute` (`20`), `targets`, `triggered_by` |
 | `nyxmon` | `None` | `NyxmonCheck(...)`: the playbook's Nyxmon check (see below) |
 
@@ -88,7 +88,8 @@ credentials never leave the controller) and its ops-library version assert.
    `mc admin info local` succeeds (no MinIO change without root's admin
    alias); `/etc/minio/policies` (`0750`) and the policy
    `backup-echoport-retention.json` (`0640`, the role's template: list, read
-   and delete in the whole bucket, no `PutObject`); `mc admin policy create`
+   (`GetObject`, `GetObjectVersion`) and delete in the whole bucket, no
+   `PutObject`); `mc admin policy create`
    when the file changed or the server's policy is missing or differs;
    `mc admin user add` (an upsert; user and secret on stdin, output withheld)
    for the user `bk-` + the first 17 hex digits of SHA-256 of the name, when
@@ -167,6 +168,23 @@ against the vendored copies in `tests/parity/ansible/echoport_deploy__*`). The
 MinIO account's policy file is `minio_deploy`'s
 `backup-account-policy.json.j2`, shipped unchanged and byte-identical too
 (`tests/parity/ansible/minio_deploy__backup-account-policy.json.j2`).
+
+### Other S3 stores
+
+Echoport's cleanup job and the alias are store-neutral: `mc rm`, `mc ls` and
+`mc stat` behave the same against MinIO and RustFS 1.0.3 (checked with mc
+RELEASE.2025-08-13, including the `--json` "Object does not exist" error
+Echoport reads), so `minio_url` may name either store. Only creating the
+account is store-specific. `_minio_account` runs it through an
+`AccountProvisioner` (`deploy.py`): `require_admin`, `state` (probe/verify),
+`create_policy`, `add_user` (stdin) and `attach_policy`, each a shell command.
+`MinioAccount.provisioner` picks the implementation; `mc_admin`
+(`McAdminProvisioner`, MinIO's admin API through root's alias) is the only one.
+It does not work against RustFS 1.0.3 as it is: `mc admin info` fails there,
+and `mc admin policy info --json` wraps the document as
+`{"policy_name", "policy", ...}`, so `files/minio_account.py` would report the
+policy as differing on every run. A RustFS implementation adds its own value
+and class.
 
 Differences, all on the "change only what differs" side:
 
