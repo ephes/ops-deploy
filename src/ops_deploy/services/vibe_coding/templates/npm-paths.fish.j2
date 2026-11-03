@@ -1,0 +1,7 @@
+# Managed by Ansible — vibe_coding_deploy role
+# Per-user npm global prefix and PATH
+set -gx npm_config_prefix "{{ vibe_coding_npm_prefix }}"
+
+if not contains "{{ vibe_coding_npm_prefix }}/bin" $PATH
+    set -gx PATH "{{ vibe_coding_npm_prefix }}/bin" $PATH
+end

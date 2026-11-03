@@ -112,9 +112,14 @@ def chezmoi_version(binary: str) -> str:
 
 
 @deploy("Shell basics")
-def deploy_shell_basics(cfg: ShellBasicsConfig) -> None:
+def deploy_shell_basics(cfg: ShellBasicsConfig, user_planned: bool = False) -> None:
+    """``user_planned``: an earlier operation of the same deploy creates ``cfg.user``
+    (with ``cfg.user_home`` set); its shell is then switched unconditionally."""
+
     require_linux("shell_basics")
     account = host.get_fact(Users).get(cfg.user)
+    if account is None and user_planned and cfg.user_home:
+        account = {}
     if account is None:
         raise DeployError(f"shell_basics: user {cfg.user} must exist")
     home = cfg.user_home or account.get("home") or ""

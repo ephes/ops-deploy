@@ -69,6 +69,7 @@ nav:
       - software_live: services/software_live.md
       - work_app: services/work_app.md
       - zellij_ingress: services/zellij_ingress.md
+      - vibe_coding: services/vibe_coding.md
       - homelab: services/homelab.md
       - gotosocial: services/gotosocial.md
       - thermal_monitoring: services/thermal_monitoring.md

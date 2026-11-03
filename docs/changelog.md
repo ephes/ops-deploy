@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add `services.vibe_coding`, a port of the `vibe_coding_deploy` role: the
+  locked coding user, `~/.ssh`, shell_basics, chezmoi from a controller-side
+  `git bundle` of the dotfiles (no forwarded agent on the host), the GitHub
+  CLI login through `secret_file`, Node.js, Neovim, lazygit, rustup, per-user
+  npm tools, zellij and the sshd `Match User` block, installed only after
+  `sshd -t` and an unchanged effective configuration for root, rolled back
+  when the check or the reload fails. A host the role converged sees no
+  change; docs/services/vibe_coding.md has the task-by-task parity table and
+  the differences. `deploy_shell_basics` takes `user_planned` for a user an
+  earlier operation of the same deploy creates.
+
 - Add `services.homeassistant` backup and restore (`deploy_homeassistant_backup`,
   `deploy_homeassistant_restore`), ports of the `homeassistant_backup` and
   `homeassistant_restore` roles with valid metadata YAML, rollback after a failed

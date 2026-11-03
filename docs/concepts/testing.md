@@ -138,12 +138,12 @@ branch:
   `gotosocial_deploy`, `mastodon_deploy`/`mastodon_shared`, `homelab_deploy`/`homelab_shared`, `jellyfin_deploy`/`jellyfin_shared`,
   `journald_config`, `livekit_deploy`,
   `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`,
-  `vaultwarden_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far.
+  `vaultwarden_deploy`, `vibe_coding_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far.
   Entries added later than the recorded commit name the commit they were
   checked against in their service page (homelab, jellyfin, `uv_install`,
   gotosocial and vaultwarden: `540ede2b`, 2.56.0; Mastodon existing-install convergence:
   `3110a0f1`, 2.68.0; `bind_authoritative_deploy`:
-  `06394c81`, 2.64.5).
+  `06394c81`, 2.64.5; `vibe_coding_deploy`: `19b3fd89`, 2.75.5).
 
 Policy carried over from ops-library is checked without a checkout:
 `tests/test_traefik_hsts.py` fails when any template under `src/` or

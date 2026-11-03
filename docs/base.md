@@ -280,6 +280,11 @@ last owns the file.
   user, as the role's `file` module does for the parents it creates.
 - **editor**: `update-alternatives --set editor <path>`; the path must be a
   registered alternative (vim registers `vim.basic`).
+- **nested in a deploy that creates the user**: `deploy_shell_basics(cfg,
+  user_planned=True)` (the `vibe_coding` deploy) plans for a `user` that an
+  earlier operation of the same run creates, when `user_home` is set; the
+  login shell is then switched unconditionally. Otherwise a missing user
+  still fails planning.
 
 ## ssh_guard
 

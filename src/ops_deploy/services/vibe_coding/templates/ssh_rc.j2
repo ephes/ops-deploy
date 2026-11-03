@@ -1,0 +1,6 @@
+#!/bin/bash
+# Managed by Ansible — vibe_coding_deploy role
+# Create a stable symlink so tmux sessions can find the current SSH agent socket
+if [ -S "$SSH_AUTH_SOCK" ]; then
+    ln -sf "$SSH_AUTH_SOCK" "{{ vibe_coding_user_home }}/.ssh/auth_sock"
+fi

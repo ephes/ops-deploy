@@ -1,0 +1,5 @@
+# Managed by Ansible — vibe_coding_deploy role
+# Use stable symlink for SSH agent forwarding (survives tmux reattach)
+if test -S "$HOME/.ssh/auth_sock"
+    set -gx SSH_AUTH_SOCK "$HOME/.ssh/auth_sock"
+end
