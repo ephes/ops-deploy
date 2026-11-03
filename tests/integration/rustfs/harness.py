@@ -177,6 +177,14 @@ def sh(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
+def admission(cfg: RustfsConfig) -> str:
+    """The data-root helper's own answer, for refusal reasons the deploy error does not carry."""
+    payload = json.dumps({"root": cfg.data_dir, "mount": cfg.required_mount, "user": cfg.user, "group": cfg.group})
+    helper = HELPER.with_name("data_roots.py")
+    result = subprocess.run(["python3", "-I", str(helper)], input=payload, capture_output=True, text=True, timeout=600)
+    return result.stdout.strip()
+
+
 def expect(label: str, actual: Any, wanted: Any) -> None:
     PHASES.append({"check": label, "actual": actual, "wanted": wanted, "ok": actual == wanted})
     assert actual == wanted, f"{label}: {actual} != {wanted}"
@@ -261,8 +269,15 @@ def main() -> None:
     sh("chown", "rustfs:rustfs", str(inner))
     source = Path("/mnt/cryptdata/bind-source")
     source.mkdir()
+    # Owned like the data, so only the mount detection can refuse it.
+    sh("chown", "rustfs:rustfs", str(source))
     expect("bind source on the same device", source.stat().st_dev, inner.stat().st_dev)
     sh("mount", "--bind", str(source), str(inner))
+    expect(
+        "bind mount refusal reason",
+        admission(config()),
+        "refused: a mount at or below the data root is outside deployment ownership",
+    )
     deploy("bind-mount-refused", config(), rotated, expect="refused")
     sh("umount", str(inner))
     inner.rmdir()
@@ -273,6 +288,11 @@ def main() -> None:
     Path("/mnt/cryptdata/real/data").mkdir(parents=True)
     sh("chown", "rustfs:rustfs", "/mnt/cryptdata/real/data")
     Path("/mnt/cryptdata/alias").symlink_to("/mnt/cryptdata/real")
+    expect(
+        "symlink refusal reason",
+        admission(config(data_dir="/mnt/cryptdata/alias/data")),
+        "refused: data root or required mount path contains a symlink",
+    )
     deploy("symlink-ancestor-refused", config(data_dir="/mnt/cryptdata/alias/data"), rotated, expect="refused")
     Path("/mnt/cryptdata/alias").unlink()
     Path("/mnt/cryptdata/real/data").rmdir()
