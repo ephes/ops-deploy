@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `infra.hdparm_tune` applies the policy at every boot, a port of ops-library
+  `29b353c4`. Ubuntu's udev hook skips `-B` and `-S` from `/etc/hdparm.conf`
+  for disks without `ID_ATA_FEATURE_SET_APM=1`, so fractal's WD120EFGX disks
+  came back from each reboot with APM 128 and no standby timer. The deploy now
+  installs `/usr/local/sbin/hdparm-tune-apply` and `hdparm-tune.service`
+  (oneshot) and enables the unit without starting it, so it wakes no disk.
+  New `HdparmTuneConfig` fields `apply_on_boot` (default true; false or no
+  devices disables and removes unit and script), `boot_service_name`,
+  `boot_script_path` and `boot_device_wait_sec`.
+
 - docs: `os_lifecycle`'s `uu.last_success_*` is described correctly. The
   `unattended-upgrades-stamp` it reads is written by `unattended-upgrade`
   itself, not `apt.systemd.daily`, and also after a run whose install failed

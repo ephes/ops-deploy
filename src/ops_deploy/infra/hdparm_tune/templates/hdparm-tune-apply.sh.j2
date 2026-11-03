@@ -1,0 +1,37 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Applies hdparm_tune settings at boot. Ubuntu's udev hook
+# (/lib/udev/hdparm -> 95hdparm-apm) skips -B and -S for disks whose udev
+# properties lack ID_ATA_FEATURE_SET_APM=1, so /etc/hdparm.conf alone does not
+# survive a reboot on those disks.
+set -u
+
+wait_sec={{ hdparm_tune_boot_device_wait_sec | int }}
+rc=0
+
+apply() {
+  local dev="$1"
+  shift
+  local waited=0
+  while [[ ! -b "${dev}" && "${waited}" -lt "${wait_sec}" ]]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if [[ ! -b "${dev}" ]]; then
+    echo "hdparm-tune: ${dev} not found after ${wait_sec}s" >&2
+    rc=1
+    return
+  fi
+  if hdparm "$@" "${dev}" >/dev/null; then
+    echo "hdparm-tune: applied $* to ${dev}"
+  else
+    echo "hdparm-tune: hdparm $* failed for ${dev}" >&2
+    rc=1
+  fi
+}
+
+{% for device in hdparm_tune_devices %}
+apply {{ device.device | quote }}{% if device.apm is defined %} -B {{ device.apm | int }}{% endif %}{% if device.acoustic_management is defined %} -M {{ device.acoustic_management | int }}{% endif %}{% if device.spindown_time is defined %} -S {{ device.spindown_time | int }}{% endif %}
+
+{% endfor %}
+exit "${rc}"

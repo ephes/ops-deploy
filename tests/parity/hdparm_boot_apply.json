@@ -1,0 +1,46 @@
+{
+  "provenance": "Actual ansible-playbook local template rendering of roles/hdparm_tune/templates; ops-library 29b353c4, ansible-core 2.21.5, default ansible_managed",
+  "cases": [
+    {
+      "inputs": {
+        "devices": [
+          {
+            "device": "/dev/disk/by-id/owned-a",
+            "apm": 127,
+            "spindown_time": 241
+          },
+          {
+            "device": "/dev/disk/by-id/owned-b",
+            "apm": 127,
+            "acoustic_management": 128,
+            "spindown_time": 241
+          },
+          {
+            "device": "/dev/disk/by-id/owned-c",
+            "spindown_time": 0
+          }
+        ]
+      },
+      "outputs": {
+        "script": "#!/bin/bash\n# Ansible managed\n# Applies hdparm_tune settings at boot. Ubuntu's udev hook\n# (/lib/udev/hdparm -> 95hdparm-apm) skips -B and -S for disks whose udev\n# properties lack ID_ATA_FEATURE_SET_APM=1, so /etc/hdparm.conf alone does not\n# survive a reboot on those disks.\nset -u\n\nwait_sec=60\nrc=0\n\napply() {\n  local dev=\"$1\"\n  shift\n  local waited=0\n  while [[ ! -b \"${dev}\" && \"${waited}\" -lt \"${wait_sec}\" ]]; do\n    sleep 1\n    waited=$((waited + 1))\n  done\n  if [[ ! -b \"${dev}\" ]]; then\n    echo \"hdparm-tune: ${dev} not found after ${wait_sec}s\" >&2\n    rc=1\n    return\n  fi\n  if hdparm \"$@\" \"${dev}\" >/dev/null; then\n    echo \"hdparm-tune: applied $* to ${dev}\"\n  else\n    echo \"hdparm-tune: hdparm $* failed for ${dev}\" >&2\n    rc=1\n  fi\n}\n\napply /dev/disk/by-id/owned-a -B 127 -S 241\napply /dev/disk/by-id/owned-b -B 127 -M 128 -S 241\napply /dev/disk/by-id/owned-c -S 0\nexit \"${rc}\"\n",
+        "unit": "# Ansible managed\n[Unit]\nDescription=Apply hdparm_tune disk settings (APM, acoustic management, spindown)\nAfter=local-fs.target\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/local/sbin/hdparm-tune-apply\n\n[Install]\nWantedBy=multi-user.target\n"
+      }
+    },
+    {
+      "inputs": {
+        "devices": [
+          {
+            "device": "/dev/disk/by-id/owned+x",
+            "acoustic_management": 254
+          }
+        ],
+        "boot_device_wait_sec": 5,
+        "boot_script_path": "/opt/owned/apply"
+      },
+      "outputs": {
+        "script": "#!/bin/bash\n# Ansible managed\n# Applies hdparm_tune settings at boot. Ubuntu's udev hook\n# (/lib/udev/hdparm -> 95hdparm-apm) skips -B and -S for disks whose udev\n# properties lack ID_ATA_FEATURE_SET_APM=1, so /etc/hdparm.conf alone does not\n# survive a reboot on those disks.\nset -u\n\nwait_sec=5\nrc=0\n\napply() {\n  local dev=\"$1\"\n  shift\n  local waited=0\n  while [[ ! -b \"${dev}\" && \"${waited}\" -lt \"${wait_sec}\" ]]; do\n    sleep 1\n    waited=$((waited + 1))\n  done\n  if [[ ! -b \"${dev}\" ]]; then\n    echo \"hdparm-tune: ${dev} not found after ${wait_sec}s\" >&2\n    rc=1\n    return\n  fi\n  if hdparm \"$@\" \"${dev}\" >/dev/null; then\n    echo \"hdparm-tune: applied $* to ${dev}\"\n  else\n    echo \"hdparm-tune: hdparm $* failed for ${dev}\" >&2\n    rc=1\n  fi\n}\n\napply /dev/disk/by-id/owned+x -M 254\nexit \"${rc}\"\n",
+        "unit": "# Ansible managed\n[Unit]\nDescription=Apply hdparm_tune disk settings (APM, acoustic management, spindown)\nAfter=local-fs.target\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/opt/owned/apply\n\n[Install]\nWantedBy=multi-user.target\n"
+      }
+    }
+  ]
+}
