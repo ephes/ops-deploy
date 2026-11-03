@@ -249,7 +249,22 @@ def main() -> None:
     expect("re-enable user", s3("fixture-root", root, "PUT", admin + "set-user-status", query=status)[0], 200)
     deploy("after-reenable", config(), rotated, expect="zero")
 
-    # 6. A foreign-owned file below the data root stops the deploy.
+    # 6. A stopped service is started before IAM is inspected.
+    sh("systemctl", "stop", "rustfs.service")
+    phase = deploy("stopped-service", config(), rotated, expect="change")
+    expect("only the start changes", phase["changed"], ["Deploy RustFS | Start rustfs.service"])
+    deploy("stopped-service-repeat", config(), rotated, expect="zero")
+
+    # 7. A bind mount below the data root (same device) stops the deploy.
+    inner = Path("/mnt/cryptdata/rustfs/data/bound")
+    inner.mkdir()
+    sh("chown", "rustfs:rustfs", str(inner))
+    sh("mount", "--bind", "/var/lib/rustfs", str(inner))
+    deploy("bind-mount-refused", config(), rotated, expect="refused")
+    sh("umount", str(inner))
+    inner.rmdir()
+
+    # 8. A foreign-owned file below the data root stops the deploy.
     foreign = Path("/mnt/cryptdata/rustfs/data/foreign-owned")
     foreign.write_text("x")
     deploy("foreign-data-refused", config(), rotated, expect="refused")

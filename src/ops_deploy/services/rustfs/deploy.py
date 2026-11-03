@@ -164,13 +164,19 @@ def binary(cfg: RustfsConfig, artifact: RustfsArtifact) -> OperationMeta:
     if cfg.local_binary is not None:
         if hashlib.sha256(cfg.local_binary.read_bytes()).hexdigest() != artifact.binary_sha256:
             raise DeployError("local RustFS executable is not the pinned binary for this host's architecture")
-        return files.put(
-            name="Install verified RustFS executable",
+        # Stage beside the destination and rename: overwriting a running executable fails (ETXTBSY).
+        staged = cfg.bin_path + ".ops-deploy-new"
+        files.put(
+            name="Stage verified RustFS executable",
             src=str(cfg.local_binary),
-            dest=cfg.bin_path,
+            dest=staged,
             user="root",
             group="root",
             mode="0755",
+        )
+        return server.shell(
+            name="Install verified RustFS executable",
+            commands=[shlex.join(["mv", "-f", staged, cfg.bin_path])],
         )
     ensure_curl("rustfs")
     return server.shell(name="Download pinned RustFS", commands=[binary_install_command(cfg.bin_path, artifact)])
@@ -249,7 +255,7 @@ def deploy_rustfs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
         group="root",
         mode="0644",
     )
-    service_rollout("rustfs", units=[unit], restart_when=triggers)
+    rollout = service_rollout("rustfs", units=[unit], restart_when=triggers)
     wait_port(cfg.api_port, host=cfg.bind_host, retries=cfg.healthcheck_timeout, delay=1, name="Wait for RustFS API")
     http_check(
         f"{cfg.endpoint}/health/ready",
@@ -271,7 +277,8 @@ def deploy_rustfs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
 
     if cfg.buckets or cfg.policies or cfg.identities:
         payload = iam_payload(cfg, credentials)
-        deferred = fresh or any(op.will_change for op in (*triggers, unit))
+        # Inspect after execution starts whenever this run changes or starts the server.
+        deferred = fresh or any(op.will_change for op in (*triggers, unit, rollout.start))
         converge_iam(
             name="Converge declared RustFS buckets and IAM",
             payload=SecretStr(payload),

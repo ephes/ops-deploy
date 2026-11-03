@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -139,6 +141,38 @@ def test_environment_change_restarts_and_defers_iam_to_execution() -> None:
     run = execute(IAM_CFG, response, IAM_CREDS)
     assert PREFIX + "Write RustFS environment" in run.mutating_changed_ops
     assert any("restart" in command for command in run.executed_commands)
+
+
+def test_stopped_service_is_started_before_deferred_iam_inspection() -> None:
+    response = facts(IAM_CFG, IAM_CREDS)
+    response.update(fakehost.service("rustfs.service", running=False))
+    # The stopped server cannot answer while planning; execution inspects after the start.
+    response[host_command("iam_host", "check")] = [json.dumps({"pending": 0, "changed": False})]
+    run = execute(IAM_CFG, response, IAM_CREDS)
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == [PREFIX + "Start rustfs.service"]
+
+
+def test_local_binary_is_staged_and_renamed_over_a_drifted_executable(tmp_path: Path) -> None:
+    from ops_deploy.services.rustfs import deploy as module
+
+    local = tmp_path / "rustfs"
+    local.write_bytes(b"fixture executable")
+    digest = hashlib.sha256(b"fixture executable").hexdigest()
+    pinned = module.RUSTFS_ARTIFACTS["x86_64"]
+    replaced = {"x86_64": module.RustfsArtifact(pinned.archive, pinned.archive_sha256, digest)}
+    cfg = RustfsConfig(local_binary=local)
+    response = facts(cfg)
+    response[f"sha256sum {cfg.bin_path} "] = [f"{'0' * 64}  {cfg.bin_path}"]
+    with (
+        mock.patch.object(module, "RUSTFS_ARTIFACTS", replaced),
+        mock.patch.object(module, "BINARY_SHA256", frozenset({digest})),
+    ):
+        run = execute(cfg, response)
+    assert run.succeeded, run.error
+    assert PREFIX + "Stage verified RustFS executable" in run.mutating_changed_ops
+    assert f"mv -f {cfg.bin_path}.ops-deploy-new {cfg.bin_path}" in run.executed_commands
+    assert any("restart rustfs.service" in command for command in run.executed_commands)
 
 
 def test_wrong_local_binary_fails_before_operations(tmp_path: Path) -> None:

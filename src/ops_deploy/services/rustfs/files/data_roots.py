@@ -9,8 +9,19 @@ import grp
 import json
 import os
 import pwd
+import re
 import stat
 import sys
+
+
+def mount_points():
+    """Mount points from /proc/self/mountinfo (bind mounts keep the device number)."""
+    points = []
+    with open("/proc/self/mountinfo", encoding="utf-8") as source:
+        for line in source:
+            fields = line.split()
+            points.append(re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), fields[4]))
+    return points
 
 
 def admit(root, mount, user, group):
@@ -25,6 +36,8 @@ def admit(root, mount, user, group):
         raise ValueError("data root is not a directory on the required mount")
     if probe != root:
         return False
+    if any(point == root or point.startswith(root + "/") for point in mount_points()):
+        raise ValueError("a mount at or below the data root is outside deployment ownership")
     try:
         uid, gid = pwd.getpwnam(user).pw_uid, grp.getgrnam(group).gr_gid
     except KeyError:
