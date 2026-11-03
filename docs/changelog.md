@@ -6,8 +6,10 @@
   `deploy_homeassistant_restore`), ports of the `homeassistant_backup` and
   `homeassistant_restore` roles with valid metadata YAML, rollback after a failed
   file copy as well as after a failed start, no reset of an existing account's
-  shell, and the Traefik transaction guard. Export the removal API from the
-  package; its route removal now waits for no Traefik transaction.
+  shell, a rollback of everything the restore overwrote, no SQLite sidecars next
+  to the `.backup` copy, and the Traefik transaction guard. Export the removal
+  API from the package. Route removal and a changed route write of the deploy now
+  wait for no Traefik transaction.
 
 - Update Home Assistant's Custom Conversation default to 1.7.0 for current HA
   options compatibility; preserve old explicit pins, verified default instructions

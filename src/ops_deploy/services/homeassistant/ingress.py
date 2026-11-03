@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from functools import partial
 from io import StringIO
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field, SecretStr, StrictBool, StrictInt
+from pyinfra.api import operation
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig
+from ops_deploy.helpers.traefik import guarded
 
 from .configuration_deploy import TaskRenderer, protected_template, render_task
 from .render import templates
@@ -73,13 +75,19 @@ def write_ingress(
             label="Write Home Assistant Traefik route",
             path=cfg.dynamic_dir.rstrip("/") + "/homeassistant.yml",
             content=partial(render_task, task_renderer, "ingress"),
+            route_guard=True,
         )
     body = render_ingress(cfg) if rendered is None else rendered() if callable(rendered) else rendered
-    return files.put(
+    return _route_file(
         name="Write Home Assistant Traefik route",
-        src=StringIO(body.get_secret_value()),
+        body=body,
         dest=cfg.dynamic_dir.rstrip("/") + "/homeassistant.yml",
-        user="root",
-        group="root",
-        mode="0644",
+    )
+
+
+@operation()
+def _route_file(body: SecretStr, dest: str) -> Generator[Any, None, None]:
+    # A changed route waits for no Traefik transaction, like every route writer.
+    yield from guarded(
+        files.put._inner(src=StringIO(body.get_secret_value()), dest=dest, user="root", group="root", mode="0644")
     )

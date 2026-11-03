@@ -5,6 +5,9 @@
 if [ -n "$REQUIRED_MOUNT" ]; then require_mount "$REQUIRED_MOUNT" "$STAGING_BASE"; fi
 staging=""
 safety=""
+# The state outside the site a restore overwrites: included Thread/Matter
+# directories and, with SYSTEM_FILES, the unit and the route.
+safety_extra=""
 successful=0
 rolled_back=0
 
@@ -14,9 +17,9 @@ cleanup() {
     if [ -n "$safety" ]; then
         if { [ "$successful" = 1 ] && [ "$rolled_back" = 0 ] && [ "$CLEANUP_SAFETY" = 1 ]; } ||
             { [ "$rolled_back" = 1 ] && [ "$CLEANUP_AFTER_ROLLBACK" = 1 ]; }; then
-            rm -rf -- "$safety"
-        elif [ -e "$safety" ]; then
-            echo "Safety snapshot kept at $safety"
+            rm -rf -- "$safety" "$safety_extra"
+        else
+            echo "Safety snapshot kept at $safety (and $safety_extra)"
         fi
     fi
     if [ "$DRY_RUN" = 1 ]; then
@@ -62,9 +65,15 @@ if [ ! -f "$archive" ]; then
     echo "Backup archive $archive does not exist on the target host (an archive from $LOCAL_CACHE is not uploaded by this run)." >&2
     exit 1
 fi
+# Never follow a planted link: the base must be a real directory (or absent),
+# and the extraction directory is new.
+if [ -L "$STAGING_BASE" ] || { [ -e "$STAGING_BASE" ] && [ ! -d "$STAGING_BASE" ]; }; then
+    echo "Staging directory $STAGING_BASE is not a plain directory; refusing to use it" >&2
+    exit 1
+fi
 ensure_dir root root "$STAGING_MODE" "$STAGING_BASE"
+mkdir -m 0700 -- "$STAGING_BASE/$(basename "$archive")-$STAMP"
 staging="$STAGING_BASE/$(basename "$archive")-$STAMP"
-ensure_dir root root "$STAGING_MODE" "$staging"
 tar -xzf "$archive" -C "$staging"
 mapfile -t candidates < <(find "$staging" -mindepth 1 -maxdepth 1 -type d)
 if [ "${#candidates[@]}" != 1 ]; then
@@ -136,15 +145,35 @@ if ! getent passwd "$OWNER" >/dev/null; then
     useradd --system --gid "$GROUP" --home-dir "$(dirname "$SITE")" --create-home --shell /usr/sbin/nologin "$OWNER"
 fi
 if [ "$SAFETY" = 1 ]; then
+    safety="$SITE.$SAFETY_PREFIX-$STAMP"
+    safety_extra="$safety.extra"
+    for path in "$safety" "$safety_extra"; do
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            echo "$path already exists; refusing to overwrite a safety snapshot" >&2
+            safety=""
+            safety_extra=""
+            exit 1
+        fi
+    done
+    ensure_dir root root 0700 "$safety_extra"
+    mkdir -p "$safety_extra/dirs" "$safety_extra/absent" "$safety_extra/system"
+    for spec in "${EXTRAS[@]}"; do
+        IFS=: read -r name dest _ <<<"$spec"
+        if [ -e "$dest" ]; then rsync -a "$dest/" "$safety_extra/dirs/$name/"; else : >"$safety_extra/absent/$name"; fi
+    done
+    if [ "$SYSTEM_FILES" = 1 ]; then
+        for path in "$UNIT_PATH" "$TRAEFIK_PATH"; do
+            if [ -e "$path" ]; then cp -p -- "$path" "$safety_extra/system/$(basename "$path")"; fi
+        done
+    fi
     if [ -e "$SITE" ]; then
-        safety="$SITE.$SAFETY_PREFIX-$STAMP"
         ensure_dir "$OWNER" "$GROUP" 0750 "$safety"
         delete=()
         [ "$SAFETY_DELETE" = 1 ] && delete=(--delete)
         rsync -a "${delete[@]}" "$SITE/" "$safety/"
         echo "Created safety snapshot at $safety"
     else
-        echo "Skipping safety backup; $SITE does not exist."
+        echo "Skipping the site's safety snapshot; $SITE does not exist."
     fi
 fi
 
@@ -158,18 +187,55 @@ if [ "$MANAGE_MATTER" = 1 ] && known "$MATTER_SERVICE.service"; then matter_avai
 
 rollback() {
     if [ "$ROLLBACK" != 1 ]; then return 0; fi
-    if [ -z "$safety" ] || [ ! -e "$safety" ]; then
+    if [ -z "$safety_extra" ] || [ ! -d "$safety_extra" ]; then
         echo "Rollback requested but no safety snapshot is available; skipping automatic rollback." >&2
         return 0
     fi
-    systemctl stop "$SERVICE"
-    ensure_dir "$OWNER" "$GROUP" 0750 "$SITE"
-    rsync -a --delete "$safety/" "$SITE/"
-    if [ "$FIX_OWNERSHIP" = 1 ]; then chown_tree "$OWNER" "$GROUP" "$SITE"; fi
-    systemctl start "$SERVICE"
-    # Not in the role: a failure before verification left these stopped.
+    # Stop what may run on restored state; an absent unit must not stop the recovery.
+    systemctl stop "$SERVICE" 2>/dev/null || true
+    if [ "$matter_available" = 1 ]; then systemctl stop "$MATTER_SERVICE" || true; fi
+    if [ "$otbr_available" = 1 ]; then systemctl stop "$OTBR_SERVICE" || true; fi
+    if [ -d "$safety" ]; then
+        ensure_dir "$OWNER" "$GROUP" 0750 "$SITE"
+        rsync -a --delete "$safety/" "$SITE/"
+        if [ "$FIX_OWNERSHIP" = 1 ]; then chown_tree "$OWNER" "$GROUP" "$SITE"; fi
+    fi
+    local spec name dest
+    for spec in "${EXTRAS[@]}"; do
+        IFS=: read -r name dest _ <<<"$spec"
+        if [ -d "$safety_extra/dirs/$name" ]; then
+            rsync -a --delete "$safety_extra/dirs/$name/" "$dest/"
+        elif [ -e "$safety_extra/absent/$name" ]; then
+            rm -rf -- "$dest"
+        fi
+    done
+    if [ "$SYSTEM_FILES" = 1 ]; then
+        local path saved reload=0
+        for path in "$UNIT_PATH" "$TRAEFIK_PATH"; do
+            saved="$safety_extra/system/$(basename "$path")"
+            if [ -e "$saved" ]; then
+                cmp -s "$saved" "$path" && continue
+                if [ "$path" = "$TRAEFIK_PATH" ] && ! "${ROUTE_GUARD[@]}"; then
+                    echo "$path not rolled back: a Traefik transaction is active" >&2
+                    continue
+                fi
+                cp -p -- "$saved" "$path"
+            elif [ -e "$path" ]; then
+                if [ "$path" = "$TRAEFIK_PATH" ] && ! "${ROUTE_GUARD[@]}"; then
+                    echo "$path not rolled back: a Traefik transaction is active" >&2
+                    continue
+                fi
+                rm -f -- "$path"
+            else
+                continue
+            fi
+            [ "$path" = "$UNIT_PATH" ] && reload=1
+        done
+        if [ "$reload" = 1 ]; then systemctl daemon-reload; fi
+    fi
     if [ "$otbr_available" = 1 ]; then systemctl start "$OTBR_SERVICE" || true; fi
     if [ "$matter_available" = 1 ]; then systemctl start "$MATTER_SERVICE" || true; fi
+    if [ -e "$UNIT_PATH" ]; then systemctl start "$SERVICE"; fi
     rolled_back=1
     echo "Rollback completed using snapshot $safety"
 }

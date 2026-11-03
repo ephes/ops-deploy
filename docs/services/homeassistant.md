@@ -953,8 +953,8 @@ so the roles' block/always/rescue structure keeps its meaning.
 
 A backup is `<root>/<prefix>-<timestamp>` (default `/opt/backups/homeassistant`,
 `root:root 0700`) with `config/` (the recorder database as a `sqlite3 .backup`
-copy, three attempts with `.timeout 30000`; the live file is excluded from the
-rsync), `data/`, `logs/`, the Thread state (`/var/lib/thread`) and the Matter
+copy, three attempts with `.timeout 30000`; the live file and its `-wal`, `-shm`
+and `-journal` sidecars are excluded from the rsync), `data/`, `logs/`, the Thread state (`/var/lib/thread`) and the Matter
 storage and chip factory directories when they lie outside the data directory,
 the unit as `homeassistant.service`, the route as `homeassistant.traefik.yml`,
 `metadata.yml` and `manifest.sha256`. It is packed as `<dir>.tar.gz` (`0600`)
@@ -969,8 +969,11 @@ archive, extracts it into `<staging_dir>/<archive>-<timestamp>`, requires exactl
 one snapshot directory, the fields `timestamp`, `host`, `config_path` and
 `data_path`, the backup host to match (`enforce_host_match`) and a valid checksum
 manifest, and checks the free space (twice the archive's content by default).
-A dry run stops there. Otherwise it takes the safety snapshot
-`<site>.pre-restore-<timestamp>`, stops Home Assistant, the Matter server (with
+A dry run stops there. The staging directory must be a plain directory (never a
+link) and each run extracts into a new subdirectory. Otherwise it takes the safety
+snapshot `<site>.pre-restore-<timestamp>` and, next to it, `<...>.extra` with the
+included Thread/Matter directories and (with `restore_system_files`) the unit and
+route as they are now, then stops Home Assistant, the Matter server (with
 `manage_matter_server`, the inventory's `homeassistant_manage_matter_server`) and
 `otbr-agent` where systemd knows them, rsyncs `config`, `data` (both required)
 and `logs` and the included Thread/Matter directories back with `--delete`,
@@ -985,16 +988,23 @@ Deliberate differences from the roles:
   key's line (`extra_paths:  - name: "thread"`), which no YAML parser reads, so the
   role's own restore cannot parse its archives. The restore here checks the fields
   and the host line by line and restores archives of either tool.
-- The role rolls back only after a failed verification. Here a failure while the
-  files are copied rolls back too, and the rollback starts the Thread and Matter
-  services the restore stopped as well as Home Assistant.
+- The role rolls back only after a failed verification and only the site. Here a
+  failure while the files are copied rolls back too, the rollback also puts back
+  the Thread/Matter directories, unit and route the restore overwrote (removing
+  what did not exist before), works without the unit, and starts the Thread and
+  Matter services the restore stopped as well as Home Assistant.
+- The backup leaves the live database's `-wal`/`-shm`/`-journal` files out next
+  to the `.backup` copy (the role copies them, which can pair the copy with a
+  newer write-ahead log).
 - The role resets an existing `homeassistant` account's shell to
   `/usr/sbin/nologin` (the deploy sets `/bin/bash` again). Here the restore only
   creates a missing account, and a dry run changes no account.
 - A missing archive is not uploaded from the controller cache; copy it to the
   search root first. Only archive names below the search root are accepted, not
   absolute paths.
-- A restored route waits for no Traefik transaction, like every route writer.
+- A restored route waits for no Traefik transaction, like every route writer. So
+  does the deploy's route write (stock or selected template), when it changes the
+  route.
 
 Tests check the planned settings with the fake connector and run both scripts end
 to end in a temporary tree (GNU tools, as on the Linux targets): backup contents

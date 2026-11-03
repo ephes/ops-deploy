@@ -24,6 +24,7 @@ from pyinfra.api.operation import OperationMeta
 from ops_deploy.base._common import AbsolutePath
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import StdinLines
+from ops_deploy.helpers.traefik import route_guard_command
 
 from .configuration import LEGACY_MET, OBSOLETE, ConfigurationPolicy
 from .configuration_render import (
@@ -157,7 +158,10 @@ def _configuration_file(
     predecessors: tuple[OperationMeta, ...],
     content: Callable[[], SecretStr] | None = None,
     protected_failure: bool = False,
+    route_guard: bool = False,
 ) -> Generator[StringCommand | FunctionCommand, None, None]:
+    # A Traefik route write first waits for no Traefik transaction (shared guard).
+    guard = [StringCommand(route_guard_command())] if route_guard else []
     if initial is not None:
         exists = initial.exists.get(filename)
         if exists is None:
@@ -179,9 +183,11 @@ def _configuration_file(
     if not state.is_executing and (deferred or any(item.will_change for item in predecessors)):
         # Actual execution regenerates this operation and inspects after the
         # preceding declared writes. No credential or current body is guessed.
+        yield from guard
         yield StringCommand(file_command(cfg), _stdin=StdinLines(protected.get_secret_value()), _get_pty=False)
         return
     if _pending(cfg, protected):
+        yield from guard
         yield StringCommand(file_command(cfg), _stdin=StdinLines(protected.get_secret_value()), _get_pty=False)
 
 
@@ -224,6 +230,7 @@ def protected_template(
     group: str = "root",
     mode: str = "0644",
     backup: bool = False,
+    route_guard: bool = False,
 ) -> OperationMeta:
     """Selected original template through the existing protected file operation."""
     return _configuration_file(
@@ -250,6 +257,7 @@ def protected_template(
         predecessors=(),
         content=content,
         protected_failure=True,
+        route_guard=route_guard,
     )
 
 

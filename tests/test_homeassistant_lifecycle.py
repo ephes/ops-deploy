@@ -197,6 +197,7 @@ systemctl() {
     printf 'systemctl %s\n' "$*" >>"$LOG"
     case $1 in
         is-active) printf '%s\n' "$ACTIVE"; [ "$ACTIVE" = active ] ;;
+        stop) [ -z "${SYSTEMCTL_STOP_FAILS:-}" ] ;;
         show) printf '%s\n' "${LOAD_STATE:-not-found}" ;;
         *) return 0 ;;
     esac
@@ -302,10 +303,14 @@ def restore_command(p: dict[str, Path], **extra: Any) -> str:
 @needs_gnu
 def test_backup_script_snapshots_state_and_excludes_the_live_database(tmp_path: Path) -> None:
     p = tree(tmp_path)
+    (p["site"] / "config" / "home-assistant_v2.db-wal").write_text("live wal\n")
+    (p["site"] / "config" / "home-assistant_v2.db-shm").write_text("live shm\n")
 
     directory = take_backup(p, tmp_path)
 
     assert (directory / "config" / "configuration.yaml").read_text() == "name: original\n"
+    assert not (directory / "config" / "home-assistant_v2.db-wal").exists()
+    assert not (directory / "config" / "home-assistant_v2.db-shm").exists()
     copy = sqlite3.connect(directory / "config" / "home-assistant_v2.db")
     assert copy.execute("SELECT v FROM t").fetchall() == [("original",)]
     copy.close()
@@ -374,21 +379,68 @@ def test_restore_script_reads_an_archive_whose_metadata_the_role_wrote(tmp_path:
 
 
 @needs_gnu
-def test_restore_script_rolls_back_when_home_assistant_does_not_start(tmp_path: Path) -> None:
+def test_restore_script_rolls_back_everything_it_overwrote(tmp_path: Path) -> None:
     p = tree(tmp_path)
     take_backup(p, tmp_path)
     make_site(p["site"], "current")
+    (p["thread"] / "settings").write_text("thread-current\n")
+    (p["etc"] / "homeassistant.service").write_text("[Service]\n# current\n")
+    (p["etc"] / "homeassistant.yml").unlink()
     (tmp_path / "calls.log").unlink(missing_ok=True)
 
-    done = run_script(restore_command(p, manage_otbr_state=False), "restore.sh", tmp_path, ACTIVE="failed")
+    # Home Assistant never becomes active: verification fails after the copy.
+    done = run_script(
+        restore_command(p, restore_system_files=True), "restore.sh", tmp_path, ACTIVE="failed", LOAD_STATE="loaded"
+    )
 
     assert done.returncode == 1
     assert "Rollback completed" in done.stdout
     assert (p["site"] / "config" / "configuration.yaml").read_text() == "name: current\n"
-    assert calls(tmp_path)[-1] == "systemctl start homeassistant"
+    assert (p["thread"] / "settings").read_text() == "thread-current\n"
+    assert (p["etc"] / "homeassistant.service").read_text() == "[Service]\n# current\n"
+    # The route did not exist before the restore, so the rollback removes it again.
+    assert not (p["etc"] / "homeassistant.yml").exists()
+    log = calls(tmp_path)
+    assert log[-3:] == ["systemctl start otbr-agent", "systemctl start matter-server", "systemctl start homeassistant"]
     # The role keeps the safety snapshot after a rollback (cleanup_after_rollback false).
-    assert len(list(tmp_path.glob("site.pre-restore-*"))) == 1
+    assert sorted(path.name.endswith(".extra") for path in tmp_path.glob("site.pre-restore-*")) == [False, True]
     assert list(p["staging"].iterdir()) == []
+
+
+@needs_gnu
+def test_rollback_recovers_files_when_the_unit_is_absent(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    directory = take_backup(p, tmp_path)
+    # A snapshot without its required data directory fails after config was copied.
+    shutil.rmtree(directory / "data")
+    (p["backups"] / f"manual-{STAMP}.tar.gz").unlink()
+    subprocess.run(["tar", "-C", str(p["backups"]), "-czf", f"{directory}.tar.gz", directory.name], check=True)
+    make_site(p["site"], "current")
+    (p["etc"] / "homeassistant.service").unlink()
+
+    stubs = {"SYSTEMCTL_STOP_FAILS": "1"}
+    done = run_script(restore_command(p, validate_checksums=False), "restore.sh", tmp_path, **stubs)
+
+    assert done.returncode == 1
+    assert "Required directory 'data' is missing" in done.stderr
+    assert "Rollback completed" in done.stdout
+    assert (p["site"] / "config" / "configuration.yaml").read_text() == "name: current\n"
+    assert "systemctl start homeassistant" not in calls(tmp_path)
+
+
+@needs_gnu
+def test_restore_refuses_a_linked_staging_directory(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    take_backup(p, tmp_path)
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    p["staging"].symlink_to(target)
+
+    done = run_script(restore_command(p, dry_run=True), "restore.sh", tmp_path)
+
+    assert done.returncode == 1
+    assert "not a plain directory" in done.stderr
+    assert list(target.iterdir()) == []
 
 
 @needs_gnu

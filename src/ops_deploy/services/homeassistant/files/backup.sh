@@ -29,7 +29,10 @@ fi
 delete=()
 [ "$DELETE" = 1 ] && delete=(--delete)
 exclude=()
-[ "$SQLITE_BACKUP" = 1 ] && exclude=(--exclude "$(basename "$DB")")
+# The live database and its sidecars stay out: the .backup copy is the database.
+if [ "$SQLITE_BACKUP" = 1 ]; then
+    for suffix in "" -wal -shm -journal; do exclude+=(--exclude "$(basename "$DB")$suffix"); done
+fi
 if [ -e "$CONFIG" ]; then rsync -a "${delete[@]}" "${exclude[@]}" "$CONFIG/" "$DIR/config/"; fi
 if [ -e "$DATA" ]; then rsync -a "${delete[@]}" "$DATA/" "$DIR/data/"; fi
 if [ "$INCLUDE_LOGS" = 1 ] && [ -e "$LOGS" ]; then rsync -a "${delete[@]}" "$LOGS/" "$DIR/logs/"; fi

@@ -12,6 +12,7 @@ import pytest
 import yaml
 from pydantic import SecretStr
 
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.homeassistant.ingress import HomeAssistantIngressConfig, render_ingress, write_ingress
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
@@ -82,6 +83,8 @@ def test_current_route_and_changed_route_never_restart_traefik(current: bool) ->
     assert result[0].did_change() is (not current)
     assert len(run.uploads) == int(not current)
     assert not any("systemctl" in command for command in run.executed_commands)
+    # Only a changed route waits for no Traefik transaction.
+    assert (route_guard_command() in run.executed_commands) is (not current)
 
 
 def test_directory_metadata_only_does_not_notify_template_handler() -> None:
@@ -134,3 +137,18 @@ def test_selected_ingress_calls_original_renderer_once() -> None:
     result = run_deploy_fake(write_ingress, HomeAssistantIngressConfig(), rendered=render)
     assert result.succeeded
     assert calls == [True]
+
+
+def test_selected_task_route_write_waits_for_no_traefik_transaction() -> None:
+    from unittest import mock
+
+    from ops_deploy.services.homeassistant import configuration_deploy
+    from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+
+    cfg = HomeAssistantIngressConfig()
+    with mock.patch.object(configuration_deploy, "_configuration_file") as write:
+        run_deploy_fake(
+            lambda: write_ingress(cfg, task_renderer=lambda *_: SecretStr("x"), runtime=HomeAssistantRuntimeConfig()),
+            responses={**fakehost.LINUX, **fakehost.directory(cfg.dynamic_dir)},
+        )
+    assert write.call_args.kwargs["route_guard"] is True
