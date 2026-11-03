@@ -9,7 +9,6 @@ import grp
 import json
 import os
 import pwd
-import re
 import stat
 import sys
 
@@ -20,7 +19,8 @@ def mount_points():
     with open("/proc/self/mountinfo", encoding="utf-8") as source:
         for line in source:
             fields = line.split()
-            points.append(re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), fields[4]))
+            # Octal escapes (space as 040) decoded without changing UTF-8 bytes.
+            points.append(fields[4].encode().decode("unicode_escape").encode("latin-1").decode())
     return points
 
 

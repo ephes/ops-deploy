@@ -154,13 +154,14 @@ def test_stopped_service_is_started_before_deferred_iam_inspection() -> None:
 
 
 def test_local_binary_is_staged_and_renamed_over_a_drifted_executable(tmp_path: Path) -> None:
+    from ops_deploy.services.rustfs import config as pins
     from ops_deploy.services.rustfs import deploy as module
 
     local = tmp_path / "rustfs"
     local.write_bytes(b"fixture executable")
     digest = hashlib.sha256(b"fixture executable").hexdigest()
-    pinned = module.RUSTFS_ARTIFACTS["x86_64"]
-    replaced = {"x86_64": module.RustfsArtifact(pinned.archive, pinned.archive_sha256, digest)}
+    pinned = pins.RUSTFS_ARTIFACTS["x86_64"]
+    replaced = {"x86_64": pins.RustfsArtifact(pinned.archive, pinned.archive_sha256, digest)}
     cfg = RustfsConfig(local_binary=local)
     response = facts(cfg)
     response[f"sha256sum {cfg.bin_path} "] = [f"{'0' * 64}  {cfg.bin_path}"]
