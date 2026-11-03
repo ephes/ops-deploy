@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `services.homeassistant`: the system-package list installs
+  `libfreetype-dev` instead of `libfreetype6-dev` (as ops-library's
+  `homeassistant_deploy` default does since `44a532b`). On Ubuntu 24.04 `libfreetype6-dev`
+  is only a virtual package provided by `libfreetype-dev`; pyinfra's apt check
+  does not resolve virtual packages, so a converged host planned
+  "Install Home Assistant system packages" as a change on every dry run. The
+  parity fixtures, their source digests and recorded ops-library heads follow
+  `44a532b`.
+
 - `services.vibe_coding`: commands that run as the user start in `/`. sudo
   kept root's working directory `/root`, which the user cannot read, so the
   first live run failed at the chezmoi step with `chezmoi: stat .: permission

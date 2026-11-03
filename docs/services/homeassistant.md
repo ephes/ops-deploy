@@ -835,7 +835,11 @@ host plans no change. Execution is unchanged, including the always-run work abov
 - **Package-list refresh and daemon reload.** The system-package step plans
   only missing packages and the desired-state step only start/enable changes;
   execution still runs `apt-get update` and the desired-state
-  `systemctl daemon-reload` first.
+  `systemctl daemon-reload` first. pyinfra's apt check does not resolve virtual
+  packages (Ansible's apt module does), so the system-package list names real
+  packages only: `libfreetype-dev` instead of `libfreetype6-dev`, which on
+  Ubuntu 24.04 is only provided by `libfreetype-dev` and would otherwise plan an
+  install on every run.
 - **Read-only checks** (UV verification, environment trust floors, the
   `check_config`/import/LiteLLM validations, API readiness waits and resets,
   pipeline selection and STT waits, running-trust verification, the Traefik

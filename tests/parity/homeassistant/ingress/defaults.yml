@@ -228,7 +228,7 @@ homeassistant_additional_packages:
   - libopenjp2-7
   - libtiff-dev
   - libtiff6
-  - libfreetype6-dev
+  - libfreetype-dev
   - libwebp-dev
   - tzdata
   - ffmpeg

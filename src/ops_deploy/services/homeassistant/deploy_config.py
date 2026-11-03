@@ -120,7 +120,7 @@ class HomeAssistantDeployConfig(RoleConfig):
         "libopenjp2-7",
         "libtiff-dev",
         "libtiff6",
-        "libfreetype6-dev",
+        "libfreetype-dev",
         "libwebp-dev",
         "tzdata",
         "ffmpeg",

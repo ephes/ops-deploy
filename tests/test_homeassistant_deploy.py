@@ -25,6 +25,15 @@ module = importlib.import_module("ops_deploy.services.homeassistant.deploy")
 TOKEN = "owned-deploy-token-with-at-least-32-characters"
 
 
+def test_system_packages_are_real_packages() -> None:
+    # pyinfra's apt check does not resolve virtual packages (Ansible's apt
+    # module does). On Ubuntu 24.04 libfreetype6-dev is only provided by
+    # libfreetype-dev, so naming it planned an install on every run.
+    packages = HomeAssistantDeployConfig().additional_packages
+    assert "libfreetype-dev" in packages
+    assert "libfreetype6-dev" not in packages
+
+
 def test_original_defaults_and_dependent_inputs() -> None:
     fixture = Path(__file__).parent / "parity/homeassistant/deployment/defaults.yml"
     original = yaml.safe_load(fixture.read_text())

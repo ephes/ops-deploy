@@ -1,5 +1,5 @@
 {
-  "library_head": "ef0bc5814917546c5d868311be8b0c7f651286b5",
+  "library_head": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
   "files": {
     "tasks/matter_integration.yml": {
       "fixture": "matter.yml",
@@ -19,7 +19,7 @@
     },
     "defaults/main.yml": {
       "fixture": "defaults.yml",
-      "sha256": "96a75881050ac604f01a3efb1f738f6db053462e7ac77e9e3855a21e6b0a7be5"
+      "sha256": "fc156be05dae85b6d74f4ff7cd46923bb7735fd3cc30154eb1127673411cf25e"
     }
   }
 }
