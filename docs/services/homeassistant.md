@@ -1108,3 +1108,30 @@ that are not registered yet. Candidate archive/source hashes are checked before
 replacing an installed tree. Patch identity and desired file hash join the stamp;
 installed patch drift selects normal reinstall, while a correct repeat performs
 no extraction, patch or restart. Explicit old/custom archive pairs are unchanged.
+
+
+### Prepared selected original task callbacks
+
+The separate normal-context source preparation extends protected rendering to
+configuration, secrets, includes, HA/Matter units, udev, the UV trust drop-in and
+Traefik. Direct stock callers retain their existing branches. Selected custom
+templates use the protected file operation and its actual changed result, so
+reload/restart notifications continue to depend on completed writes. Existing
+include/configuration guards still precede template evaluation.
+
+The normal controller receives the actual SDK planning/execution stage. Original
+UniFi/stat/include task inputs are captured at their declared prewrite boundaries;
+a later execution or early udev render cannot reuse planning facts. Custom
+includes are rendered afresh in execution rather than cached across those stages.
+Original stat checksums and body-derived values remain in protected RAM only.
+
+Custom UV trust templates use the original command task's template lookup and
+mode-specific expected digest. Attaching task callbacks with managed UV trust
+requires the paired digest callback before operations are registered. Task
+callbacks supersede legacy include/ingress callbacks and cannot be combined with
+explicit rendered bodies. Both trust checks force non-PTY transport, and original
+preflight lookup failures expose a fixed error. Only the protected digest travels over stdin;
+the original host check program remains byte-identical, with its existing
+missing/mismatched-drop-in refusals. Stock callers continue using the stock digest.
+This callback preparation is not part of the frozen compatibility native
+full-matrix run and is not yet independently reviewed or qualified for adoption.

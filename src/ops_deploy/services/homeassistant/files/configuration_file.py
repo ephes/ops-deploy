@@ -88,7 +88,8 @@ def process(payload: dict[str, Any], effects: dict[str, bool]) -> None:
         )
         destination = path
     else:
-        assert current is not None and previous is not None
+        assert current is not None
+        assert previous is not None
         content = current.decode("utf-8", errors="surrogateescape")
         desired = re.sub(payload["pattern"], "", content, flags=re.MULTILINE).encode("utf-8", errors="surrogateescape")
         body_change = desired != current
@@ -103,7 +104,7 @@ def process(payload: dict[str, Any], effects: dict[str, bool]) -> None:
     # merely because its completion flags are still false.
     effects["effects_started"] = True
     if body_change:
-        if previous is not None:
+        if previous is not None and payload.get("backup", True):
             _backup(path)
             effects["backup_created"] = True
         descriptor, temporary = tempfile.mkstemp(prefix=".ops-ha-config-", dir=destination.parent)

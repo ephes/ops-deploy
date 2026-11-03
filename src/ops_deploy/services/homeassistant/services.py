@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from io import StringIO
 
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files, systemd
 
+from .configuration_deploy import TaskRenderer, protected_template, render_task
 from .render import render_unit
 from .runtime_config import HomeAssistantRuntimeConfig, ServiceState
 
@@ -33,8 +35,24 @@ class UnitChanges:
         return self.homeassistant_changed() or self.matter_changed()
 
 
-def write_units(cfg: HomeAssistantRuntimeConfig) -> UnitChanges:
+def write_units(cfg: HomeAssistantRuntimeConfig, *, task_renderer: TaskRenderer | None = None) -> UnitChanges:
     """Render original bytes; leave reload and restart until the caller's flush."""
+    if task_renderer is not None:
+        homeassistant = protected_template(
+            cfg,
+            label="Write Home Assistant service unit",
+            path=cfg.systemd_unit_path,
+            content=partial(render_task, task_renderer, "homeassistant_unit"),
+        )
+        matter = None
+        if cfg.manage_matter_server:
+            matter = protected_template(
+                cfg,
+                label="Write Matter server service unit",
+                path=cfg.matter_server_systemd_unit_path,
+                content=partial(render_task, task_renderer, "matter_unit"),
+            )
+        return UnitChanges(homeassistant, matter)
     homeassistant = files.put(
         name="Write Home Assistant service unit",
         src=StringIO(render_unit(cfg, "homeassistant")),
