@@ -145,7 +145,7 @@ branch:
   checked against in their service page (homelab, jellyfin, `uv_install`,
   gotosocial and vaultwarden: `540ede2b`, 2.56.0; Mastodon existing-install convergence:
   `3110a0f1`, 2.68.0; `bind_authoritative_deploy`:
-  `06394c81`, 2.64.5; `vibe_coding_deploy`: `19b3fd89`, 2.75.5).
+  `06394c81`, 2.64.5; `vibe_coding_deploy`: `6777cbb1`, 2.75.5).
 
 Policy carried over from ops-library is checked without a checkout:
 `tests/test_traefik_hsts.py` fails when any template under `src/` or

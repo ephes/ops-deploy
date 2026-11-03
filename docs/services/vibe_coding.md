@@ -1,7 +1,7 @@
 # vibe_coding
 
-Port of the `vibe_coding_deploy` Ansible role (ops-library `19b3fd89`,
-2.75.5; the role's last change is `8c5060e2`): a dedicated interactive
+Port of the `vibe_coding_deploy` Ansible role (ops-library `6777cbb1`,
+2.75.5; the role's last change is `6777cbb1`): a dedicated interactive
 coding user on a Linux host with a locked password, SSH key login, fish,
 chezmoi dotfiles, the GitHub CLI login, Node.js, Neovim, lazygit, rustup,
 per-user npm coding tools, zellij and an sshd `Match User` block.
@@ -72,7 +72,7 @@ same resulting bytes, owner and mode.
 | chezmoi: `git` clone/update (via the forwarded agent) | controller fetch + `git bundle`; clone, or fetch, `checkout --force <branch>`, `reset --hard origin/<branch>` | see differences |
 | chezmoi: recursive ownership | `files/own_tree.py` when anything is not the user's, before the update | see differences |
 | chezmoi: rsync legacy flow | not ported | the playbook uses the git flow |
-| chezmoi: `init --force`, `status`, `apply --force` (as the user) | the same three commands in one step | runs when planning finds a change (see differences) |
+| chezmoi: `init --force`, `status`, `apply --force` (as the user; status and apply with `--exclude=externals`) | the same three commands in one step | runs when planning finds a change (see differences) |
 | chezmoi: remove legacy `z.fish` | `files.file(present=False)` | same |
 | secrets: `conf.d/secrets.fish` from `fish_env` | not ported | the playbook sets no `fish_env` |
 | github_cli: `~/.config/gh` 0700, `hosts.yml` 0600 (no_log) / remove | `secret_file` / `files.file(present=False)` | byte-identical; never logged |
@@ -161,6 +161,12 @@ with its own group, which decides the modes chezmoi and npm give new files).
 - **Missing home parent.** For a new user whose home's parent is missing
   the module copies `/etc/skel` itself; here the parent is created and
   `useradd -m` does it.
+- **chezmoi externals.** Both tools run `chezmoi status` and `chezmoi apply
+  --force` with `--exclude=externals`, so the probe's `status` leaves them out
+  too: entries from the dotfiles' `.chezmoiexternal.*` (the `projects/agent-stuff`
+  git-repo external, cloned over SSH) are not fetched by a deploy. The user has
+  no GitHub key and no forwarded agent then; the next interactive `chezmoi
+  update` as the user, with the owner's forwarded agent, fetches them.
 - **Not ported.** The rsync flow (`chezmoi_source_dir`) and `fish_env`
   (`secrets.fish`): the playbook uses neither, and the config has no field
   for them.
@@ -180,11 +186,15 @@ step run every time with both tools.
   rules, the user module's commands, the controller bundle with real git,
   a converged host (no command, no upload, the token in no log), the plan of
   a fresh arm64 host in the role's order, drift, refusals. With
-  `OPS_LIBRARY_PATH`, the shipped templates must equal the role's.
+  `OPS_LIBRARY_PATH`, the shipped templates must equal the role's. With
+  `chezmoi` and `bash` on PATH (skipped otherwise), the real chezmoi runs the
+  probe and the apply step against a temporary home with a git-repo external
+  nobody can fetch: the apply succeeds and the probe then reports `current`.
 - `tests/test_vibe_coding_docker.py` (skipped unless
   `VIBE_CODING_DOCKER_IMAGE` names an image built from
   `tests/integration/vibe_coding/Dockerfile`): real Ubuntu 24.04 containers
-  with systemd and sshd, network access and a synthetic dotfiles repository.
+  with systemd and sshd, network access and a synthetic dotfiles repository
+  (with a git-repo external nobody can fetch, which the deploys skip).
   A fresh host converges (user, files, chezmoi, gh, Node.js 22, Neovim,
   lazygit, rustup with rust-analyzer, an npm tool, zellij, the sshd block)
   and the repeat changes nothing; SSH logins as the user and as root work

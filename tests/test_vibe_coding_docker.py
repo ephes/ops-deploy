@@ -58,6 +58,7 @@ GH_USER = "octo-synthetic"
 GH_TOKEN = "gho_" + "SyntheticVibeCodingFixtureToken00000"  # pragma: allowlist secret
 NPM_TOOL = "is-number"
 CONFIG_TEMPLATE = '[data]\n  host = {{ .chezmoi.hostname | quote }}\n  user = {{ env "LOGNAME" | quote }}\n'
+EXTERNAL = '["projects/agent-stuff"]\n    type = "git-repo"\n    url = "git@github.invalid:ephes/agent-stuff.git"\n'
 
 
 class Box:
@@ -161,6 +162,8 @@ class Dotfiles:
         (self.work / "dot_vibe-hello").write_text("hello from the synthetic dotfiles\n")
         (self.work / "private_dot_config").mkdir()
         (self.work / "private_dot_config" / "vibe-note.txt").write_text("note\n")
+        # A git-repo external the user cannot fetch (no key, no agent): deploys skip externals.
+        (self.work / ".chezmoiexternal.toml").write_text(EXTERNAL)
         git("add", "-A", cwd=self.work)
         git("commit", "-qm", "init", cwd=self.work)
         git("clone", "-q", "--bare", str(self.work), str(self.bare), cwd=root)
@@ -285,6 +288,7 @@ def test_fresh_host_converges_and_repeats_without_changes(box: Box, dotfiles: Do
     assert box.out(f"git -c safe.directory={SOURCE} -C {SOURCE} branch --show-current") == "main"
     assert box.out(f"find {SOURCE} ! -user vibe -print -quit; find {SOURCE} ! -group vibe -print -quit") == ""
     assert box.read(f"{HOME}/.vibe-hello") == "hello from the synthetic dotfiles\n"
+    assert box.out(f"test -e {HOME}/projects/agent-stuff && echo present || echo absent") == "absent"
     assert 'user = "vibe"' in box.read(f"{HOME}/.config/chezmoi/chezmoi.toml")
     assert SOURCE in box.out("git config --global --get-all safe.directory")
     assert box.out("ls /var/lib/ops-deploy/vibe-coding") == ""

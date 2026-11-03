@@ -281,6 +281,11 @@ def foreign_owner_probe(path: PurePosixPath, user: str, group: str) -> str:
 CHEZMOI = "/usr/local/bin/chezmoi"
 # chezmoi's config template formats (``.chezmoi.<format>.tmpl``).
 CONFIG_FORMATS = ("json", "jsonc", "toml", "yaml")
+# Status and apply skip chezmoi externals (``.chezmoiexternal.*``), as the
+# role does: the dotfiles pull agent-stuff as a git-repo external over SSH and
+# the user has no GitHub key and no forwarded agent during a deploy. The next
+# interactive ``chezmoi update`` as the user fetches them.
+EXCLUDE_EXTERNALS = "--exclude=externals"
 
 
 def chezmoi_probe(source: PurePosixPath) -> str:
@@ -290,6 +295,7 @@ def chezmoi_probe(source: PurePosixPath) -> str:
     template: unchanged when ``execute-template --init`` of that template is
     byte-identical to the config file. ``chezmoi apply`` does nothing when
     ``chezmoi status`` prints nothing (always-run scripts are listed there).
+    Both leave chezmoi externals out (:data:`EXCLUDE_EXTERNALS`).
     """
 
     formats = " ".join(CONFIG_FORMATS)
@@ -302,7 +308,7 @@ def chezmoi_probe(source: PurePosixPath) -> str:
         'f="$HOME/.config/chezmoi/chezmoi.$fmt"; [ -f "$f" ] || { echo pending; exit 0; }; '
         '"$C" execute-template --init --source "$S" --file "$t" </dev/null | cmp -s - "$f" '
         "|| { echo pending; exit 0; }; done; "
-        'st=$("$C" status --source "$S" </dev/null) || exit 1; '
+        f'st=$("$C" status {EXCLUDE_EXTERNALS} --source "$S" </dev/null) || exit 1; '
         '[ -z "$st" ] || { echo pending; exit 0; }; echo current'
     )
 
@@ -313,8 +319,8 @@ def chezmoi_apply(source: PurePosixPath) -> str:
     return (
         f"set -e; C={CHEZMOI}; S={q(source)}; "
         '"$C" init --force --source "$S" </dev/null; '
-        '"$C" status --source "$S" </dev/null; '
-        '"$C" apply --force --source "$S" </dev/null'
+        f'"$C" status {EXCLUDE_EXTERNALS} --source "$S" </dev/null; '
+        f'"$C" apply --force {EXCLUDE_EXTERNALS} --source "$S" </dev/null'
     )
 
 

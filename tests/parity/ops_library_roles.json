@@ -42,7 +42,7 @@
     "traefik_deploy": "5d5ba0efdaa74529a1b67aea9853d93597916b718c2cfeb77e01af0c6e87e2f5",
     "uv_install": "5b2b3ae65b4aee522e82e419ea2ea02f8b5ee5bfb4200730e04897fe4a98d2c4",
     "vaultwarden_deploy": "070a0a0ae035da15a85c0c8a174e7d1b200afcffc8681bccbace07de92fc43ee",
-    "vibe_coding_deploy": "a166b6cb701ec9c6f1e8809e5f7014cfacdc89aaf965ca5b283e08ecf41342f7",
+    "vibe_coding_deploy": "00cf1d55a91d0f313f468de064bed362834b1736cafc122c72485d8388000f43",
     "work_app_backup": "c4e42c8ff25ce873a3d8bbf41347f05fee87a75869c9b9d710af36d72b662f71",
     "work_app_deploy": "95188cbfad2eca4e0f36f9193e7499ba83ff912bcf7f719e6d5806b1c426f94e",
     "work_app_remove": "ece2d5b7f6e76e891cde94de494e47990a9970596e356764450550e9e94f12cd",
@@ -65,6 +65,6 @@
     "traefik_deploy": "2adca51d57713f60c5743c1e41316c22e264914b",
     "uv_install": "2adca51d57713f60c5743c1e41316c22e264914b",
     "work_app_backup": "2adca51d57713f60c5743c1e41316c22e264914b",
-    "vibe_coding_deploy": "19b3fd895ee7b5a6a5dee205e3b868c9f43e5803"
+    "vibe_coding_deploy": "6777cbb1e1324c16485e045b8d5faf0e279c7422"
   }
 }

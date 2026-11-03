@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import os
+import shutil
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -564,3 +565,37 @@ def test_unreadable_checkout_is_decided_after_the_ownership_repair(tmp_path: Pat
     ]
     with pytest.raises(ValueError, match="mode must be"):
         scripts.checkout_command(config, PurePosixPath(SOURCE), "/b", dotfiles(tmp_path), mode="other")
+
+
+def test_chezmoi_step_and_probe_leave_externals_out() -> None:
+    source = PurePosixPath(SOURCE)
+    assert '"$C" status --exclude=externals --source' in scripts.chezmoi_probe(source)
+    apply = scripts.chezmoi_apply(source)
+    assert '"$C" status --exclude=externals --source' in apply
+    assert '"$C" apply --force --exclude=externals --source' in apply
+
+
+@pytest.mark.skipif(not shutil.which("chezmoi") or not shutil.which("bash"), reason="needs chezmoi and bash")
+def test_chezmoi_step_converges_with_an_unreachable_external(tmp_path: Path) -> None:
+    # A git-repo external the user cannot fetch (no key, no agent during a deploy).
+    home, src = tmp_path / "home", tmp_path / "src"
+    home.mkdir()
+    src.mkdir()
+    (src / "dot_foo").write_text("hi\n")
+    (src / ".chezmoiexternal.toml").write_text(
+        '["projects/agent-stuff"]\n    type = "git-repo"\n    url = "git@github.invalid:ephes/nope.git"\n'
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("XDG_", "CHEZMOI_"))}
+    env.update(HOME=str(home), GIT_SSH_COMMAND="false")
+    chezmoi = shutil.which("chezmoi") or "chezmoi"
+
+    def run(script: str) -> subprocess.CompletedProcess[str]:
+        script = script.replace(scripts.CHEZMOI, chezmoi)
+        return subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, check=False)
+
+    assert run(scripts.chezmoi_probe(PurePosixPath(src))).stdout.strip() == "pending"
+    applied = run(scripts.chezmoi_apply(PurePosixPath(src)))
+    assert applied.returncode == 0, applied.stderr
+    assert (home / ".foo").read_text() == "hi\n"
+    assert not (home / "projects").exists()
+    assert run(scripts.chezmoi_probe(PurePosixPath(src))).stdout.strip() == "current"

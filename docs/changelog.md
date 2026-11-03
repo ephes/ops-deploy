@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `services.vibe_coding`: the chezmoi step and its planning probe run
+  `chezmoi status` and `chezmoi apply --force` with `--exclude=externals`, as
+  ops-library's `vibe_coding_deploy` now does. The dotfiles pull
+  `projects/agent-stuff` as a git-repo external over SSH and the user has no
+  GitHub key and no forwarded agent during a deploy, so the apply failed with
+  `Permission denied (publickey)`; with the externals in the probe's status, a
+  host would also never converge. The next interactive `chezmoi update` as the
+  user fetches them.
+
 - `base.ip_options_drop` (new, pyinfra only): a temporary kernel-bug
   mitigation that drops IPv4 TCP packets carrying IP options (IHL > 5) before
   conntrack, for flaws such as CVE-2026-98432 (a use-after-free on the IPv4
