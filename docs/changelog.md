@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- docs: `os_lifecycle`'s `uu.last_success_*` is described correctly. The
+  `unattended-upgrades-stamp` it reads is written by `unattended-upgrade`
+  itself, not `apt.systemd.daily`, and also after a run whose install failed
+  (and after a `--dry-run`); only an early abort leaves it alone. A failed
+  install shows as `last_result: error`. No code change.
+
 - Add `services.vibe_coding`, a port of the `vibe_coding_deploy` role: the
   locked coding user, `~/.ssh`, shell_basics, chezmoi from a controller-side
   `git bundle` of the dotfiles (no forwarded agent on the host), the GitHub

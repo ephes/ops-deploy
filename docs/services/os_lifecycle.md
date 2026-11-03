@@ -8,8 +8,8 @@ Ansible role behind it). The report answers:
   life), whether a newer stable release exists and whether an upgrade is due;
 - how many security updates are pending and how old the oldest one is, how
   old the security package index is, which packages are held;
-- whether unattended-upgrades is installed and enabled, and when it last ran
-  successfully;
+- whether unattended-upgrades is installed and enabled, when it last got
+  through a run, and whether that run logged an error;
 - whether a reboot is required (marker file or a newer installed kernel than
   the running one), since when, and the uptime.
 
@@ -239,10 +239,21 @@ host leaves `ssh`.
   the same first-seen file as the security updates.
 - **unattended-upgrades:** `enabled` is `APT::Periodic::Unattended-Upgrade`
   (from `apt-config dump`) set and not `0`, with the package installed.
-  `last_success_*` is the mtime of `unattended-upgrades-stamp`, which
-  `apt.systemd.daily` only touches after a successful run. `last_result` is
-  the last run's block in `unattended-upgrades.log` (`error` if it logged an
-  `ERROR`).
+  `last_success_*` is the mtime of
+  `/var/lib/apt/periodic/unattended-upgrades-stamp`. Despite the field name,
+  that is the last run that got through its upgrade pass, not the last
+  successful one: `unattended-upgrade` writes the file itself (not
+  `apt.systemd.daily`, whose own stamp is `upgrade-stamp`) when a run ends
+  with nothing to do, with all upgrades installed, or with an install that
+  failed part-way, and a `--dry-run` writes it as well (upstream 2.9.1, in
+  Debian 12 and Ubuntu 24.04, and 2.12, in Debian 13). Only a run that stops
+  earlier (lock held, apt or cache error, failed download, interrupted)
+  leaves it alone. Its age therefore catches an unattended-upgrades that no
+  longer runs or keeps aborting early, not a failed install. `last_result` is
+  the last run's block in `unattended-upgrades.log`: `error` if it logged an
+  `ERROR`, which a failed install does ("Installing the upgrades failed!");
+  no Nyxmon rule reads it. `service_result` is the `Result` of
+  `apt-daily-upgrade.service`.
 - **Reboot:** `/var/run/reboot-required` or a newer installed `linux-image-*`
   than the running kernel (the same comparison as `os_apt_maintenance`; a
   deliberately pinned older kernel therefore reports `stale_kernel`). Kernel
@@ -268,7 +279,7 @@ it then fails, so "unknown" is visible.
 | `$.hosts.<name>.pull_ok` | `false` | |
 | `$.hosts.<name>.last_pull_success_age_hours`, `.report_age_hours` | | `> 3` |
 | `uu.enabled` (with `unattended_upgrades`) | | `false` |
-| `uu.last_success_age_hours` (with `unattended_upgrades`) | `> 48` | `> 168` |
+| `uu.last_success_age_hours` (with `unattended_upgrades`; last run that got through, see above) | `> 48` | `> 168` |
 | `apt.security_index_age_hours` (with `security_index`) | `> 48` | `> 168` |
 | `apt.pending_security_max_age_hours` | `> 72` | `> 168` |
 | `reboot.required_age_hours` | `> 168` | `> 504` |
