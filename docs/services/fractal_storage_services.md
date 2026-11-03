@@ -94,11 +94,10 @@ option and no symlink-policy option):
 
 - `apt` installs `hd-idle` if missing (no upgrade).
 - `/etc/default/hd-idle` (root, 0644) sets
-  `HD_IDLE_OPTS="-i <default_idle_time> -a <disk> -i <idle_time> ..."`. The
-  package's own default is `-h` (print usage and exit), so nothing spins down
-  until this file is written. The leading `-i` applies to every other `sd*`
-  disk; `default_idle_time` defaults to 0 (never), so only the listed disks are
-  spun down.
+  `HD_IDLE_OPTS="-i 0 -a <disk> -i <idle_time> ..."`. The package's own
+  default is `-h` (print usage and exit), so nothing spins down until this
+  file is written. The leading `-i 0` applies to every other `sd*` disk and is
+  fixed: only the listed disks are ever spun down.
 - `/etc/systemd/system/hd-idle.service.d/10-ops-deploy.conf` resets the
   unit's `EnvironmentFile=` to exactly `/etc/default/hd-idle` and adds
   `Wants=`/`After=` on each disk's `.device` unit (the `systemd-escape --path`
@@ -119,7 +118,7 @@ therefore re-resolved on every service start, including every boot, so
 `sdX` renames between boots are harmless. A rename while the daemon runs
 (hot-unplug and replug) is not followed; restart `hd-idle.service`. If a link
 is missing at start (its device job timed out), the name stays unresolved,
-matches no disk, and that disk falls back to the default idle time 0: it is
+matches no disk, and that disk falls back to the global `-i 0`: it is
 never spun down rather than a wrong disk.
 
 **What hd-idle does to the disks** (source of 1.05+ds-2, `hd-idle.c`):

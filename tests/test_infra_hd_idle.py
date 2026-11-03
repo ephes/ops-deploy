@@ -116,9 +116,9 @@ def test_invalid_disks_refuse(disks: tuple[dict[str, Any], ...]) -> None:
         HdIdleConfig.model_validate({"disks": disks})
 
 
-def test_negative_default_refuses() -> None:
+def test_other_disks_cannot_get_an_idle_time() -> None:
     with pytest.raises(ValidationError):
-        policy(default_idle_time=-1)
+        policy(default_idle_time=60)
 
 
 def test_fresh_host_installs_configures_and_starts() -> None:

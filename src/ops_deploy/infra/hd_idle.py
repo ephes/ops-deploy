@@ -51,9 +51,8 @@ class HdIdleDisk(RoleConfig):
 
 
 class HdIdleConfig(RoleConfig):
+    # Every other sd* disk gets hd-idle's global -i 0 and is never spun down.
     disks: tuple[HdIdleDisk, ...] = Field(min_length=1)
-    # Idle time for every other sd* disk; 0 never spins one down.
-    default_idle_time: Annotated[StrictInt, Field(ge=0)] = 0
 
     @model_validator(mode="after")
     def _unique(self) -> HdIdleConfig:
@@ -63,9 +62,9 @@ class HdIdleConfig(RoleConfig):
 
 
 def options(cfg: HdIdleConfig) -> str:
-    """``HD_IDLE_OPTS``: the global ``-i`` first, then ``-a <disk> -i <seconds>`` per disk."""
+    """``HD_IDLE_OPTS``: the global ``-i 0`` first, then ``-a <disk> -i <seconds>`` per disk."""
 
-    parts = ["-i", str(cfg.default_idle_time)]
+    parts = ["-i", "0"]
     for disk in cfg.disks:
         parts += ["-a", disk.device, "-i", str(disk.idle_time)]
     return " ".join(parts)
