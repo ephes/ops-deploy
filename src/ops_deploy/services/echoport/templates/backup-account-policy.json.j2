@@ -1,4 +1,7 @@
-{% set object_actions = ['s3:GetObject']
+{# s3:GetObjectVersion: mc cp/cat download with the versionId the HEAD returned;
+   AWS-strict stores (RustFS) check that GET against GetObjectVersion, MinIO
+   accepts GetObject. Reading versions stays limited to the same resources. #}
+{% set object_actions = ['s3:GetObject', 's3:GetObjectVersion']
    + (['s3:PutObject'] if minio_backup_account_allow_put | bool else [])
    + (['s3:DeleteObject'] if minio_backup_account_allow_delete | bool else []) %}
 {

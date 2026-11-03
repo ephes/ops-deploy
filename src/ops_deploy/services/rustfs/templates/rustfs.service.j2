@@ -1,0 +1,51 @@
+[Unit]
+Description=RustFS object storage
+Documentation=https://github.com/rustfs/rustfs
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor={{ cfg.data_dir }}
+AssertPathIsMountPoint={{ cfg.required_mount }}
+AssertFileIsExecutable={{ cfg.bin_path }}
+
+[Service]
+Type=simple
+User={{ cfg.user }}
+Group={{ cfg.group }}
+WorkingDirectory={{ cfg.home }}
+EnvironmentFile={{ cfg.env_file }}
+ExecStart={{ cfg.bin_path }} server
+
+Restart=always
+RestartSec=10
+
+LimitNOFILE={{ cfg.systemd_limit_nofile }}
+TasksMax={{ cfg.systemd_tasks_max }}
+{% if cfg.systemd_memory_max %}
+MemoryMax={{ cfg.systemd_memory_max }}
+{% endif %}
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ReadWritePaths={{ cfg.data_dir }} {{ cfg.home }}
+ProtectHome=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

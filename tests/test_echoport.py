@@ -808,3 +808,20 @@ def test_account_secrets_follow_the_roles_input_check(cfg: EchoportConfig) -> No
 
 def test_route_sends_hsts_without_preload(cfg: EchoportConfig) -> None:
     assert len(hsts_headers(route_text(cfg, values(cfg)))) == 1
+
+
+def test_account_provisioning_goes_through_the_provisioner_interface(tmp_path: Path) -> None:
+    from ops_deploy.services.echoport.deploy import McAdminProvisioner, account_provisioner
+
+    cfg = make_cfg(tmp_path)
+    store = account_provisioner(cfg)
+    assert isinstance(store, McAdminProvisioner)
+    assert ACCOUNT.provisioner == "mc_admin"
+    # The MinIO implementation speaks mc admin through root's admin alias; no credential is an argument.
+    assert store.attach_policy(ACCOUNT) == shlex.join(
+        ["/usr/local/bin/mc", "admin", "policy", "attach", "local", ACCOUNT.policy, "--user", ACCOUNT.user]
+    )
+    assert store.add_user(ACCOUNT).startswith("/usr/local/bin/mc admin user add local >/dev/null 2>&1 || ")
+    # Until another store has its implementation, the config refuses to name one.
+    with pytest.raises(ValueError, match="provisioner"):
+        MinioAccount(provisioner="rustfs")

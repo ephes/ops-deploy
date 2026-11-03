@@ -215,7 +215,12 @@ def test_account_policy_is_byte_identical(allow_put: bool, allow_delete: bool) -
     assert render_policy(account) == expected
     statements = json.loads(expected)["Statement"]
     assert statements[1] == {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": ["arn:aws:s3:::backups"]}
-    actions = ["s3:GetObject", *(["s3:PutObject"] if allow_put else []), *(["s3:DeleteObject"] if allow_delete else [])]
+    actions = [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        *(["s3:PutObject"] if allow_put else []),
+        *(["s3:DeleteObject"] if allow_delete else []),
+    ]
     assert statements[2] == {"Effect": "Allow", "Action": actions, "Resource": ["arn:aws:s3:::backups/*"]}
 
 
