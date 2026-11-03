@@ -178,19 +178,24 @@ class Checkout:
 
 
 def _git(source: PurePosixPath) -> str:
-    # root runs git on the user's checkout: safe.directory for this command only.
+    # Runs as the user (see checkout_probe/checkout_command): root never runs
+    # git in the user's checkout, whose config (core.fsmonitor, hooks) the
+    # user controls. safe.directory only for a top the user does not own.
     return f'g() {{ git -c safe.directory={q(source)} -C {q(source)} "$@"; }}; '
 
 
-def checkout_probe(source: PurePosixPath) -> str:
-    return (
+def checkout_probe(cfg: VibeCodingConfig, source: PurePosixPath) -> str:
+    """As the user: whether ``source`` is a checkout, its origin, HEAD and tracked changes."""
+
+    script = (
         f"[ -e {q(source)}/.git ] || {{ echo git=no; exit 0; }}; echo git=yes; {_git(source)}"
         'echo "origin=$(g remote get-url origin 2>/dev/null)"; '
         'echo "head=$(g rev-parse --verify -q HEAD 2>/dev/null)"; '
-        # --no-optional-locks: no index refresh, which would leave a root-owned index.
+        # --no-optional-locks: a read, no index refresh.
         "if g --no-optional-locks status --porcelain 2>/dev/null | grep -v '^??' | grep -q .; "
         "then echo mods=yes; else echo mods=no; fi"
     )
+    return as_user(cfg, script)
 
 
 def parse_checkout(answer: str) -> Checkout:
@@ -200,37 +205,49 @@ def parse_checkout(answer: str) -> Checkout:
     return Checkout(True, values.get("origin", ""), values.get("head", ""), values.get("mods") == "yes")
 
 
-def checkout_command(source: PurePosixPath, bundle: str, dotfiles: Dotfiles, *, reclone: bool) -> str:
+def checkout_command(
+    cfg: VibeCodingConfig, source: PurePosixPath, bundle: str, dotfiles: Dotfiles, *, reclone: bool
+) -> str:
     """Bring the checkout to ``dotfiles.commit`` from the bundle, as Ansible's ``git`` module does from the remote.
 
     ``reclone``: the role's "remove chezmoi source without correct origin"
     and a fresh clone; else fetch, ``checkout --force`` and ``reset --hard``
     on the default branch (refused with local modifications, ``force=no``).
     Either way the planned state is checked again first, and ``origin`` ends
-    up as the repository URL. The bundle is removed whatever happens.
+    up as the repository URL. Root only reads the bundle (removed whatever
+    happens) into the stdin of the user's part; every git command, the
+    removal and the clone run as the user.
     """
 
-    head = (
-        f"set -e; S={q(source)}; B={q(bundle)}; R={q(dotfiles.repo)}; BR={q(dotfiles.branch)}; "
-        f"C={q(dotfiles.commit)}; trap 'rm -f \"$B\"' EXIT; {_git(source)}"
+    script = (
+        f"set -e; S={q(source)}; R={q(dotfiles.repo)}; BR={q(dotfiles.branch)}; C={q(dotfiles.commit)}; "
+        'd=$(mktemp -d); trap \'rm -rf "$d"\' EXIT; B="$d/dotfiles.bundle"; cat > "$B"; '
+        f"{_git(source)}"
         'origin=""; if [ -e "$S/.git" ]; then origin=$(g remote get-url origin 2>/dev/null || true); fi; '
     )
     if reclone:
-        body = (
+        script += (
             'if [ -e "$S/.git" ] && [ "$origin" = "$R" ]; then '
             'echo "$S is a checkout of $R now; planned a fresh clone; nothing changed" >&2; exit 1; fi; '
-            'rm -rf -- "$S"; git clone --quiet --branch "$BR" -- "$B" "$S"; g remote set-url origin "$R"; '
+            'rm -rf -- "$S"; mkdir -p -- "$(dirname -- "$S")"; '
+            'git clone --quiet --branch "$BR" -- "$B" "$S"; g remote set-url origin "$R"; '
         )
     else:
-        body = (
+        script += (
             '[ "$origin" = "$R" ] || { echo "$S is no longer a checkout of $R; nothing changed" >&2; exit 1; }; '
             "if g status --porcelain | grep -v '^??' | grep -q .; then "
             'echo "Local modifications exist in the destination: $S (force=no)." >&2; exit 1; fi; '
             'g fetch --quiet --force --tags "$B" "+refs/heads/*:refs/remotes/origin/*"; '
             'g checkout --quiet --force "$BR"; g reset --quiet --hard "origin/$BR" --; '
         )
-    tail = '[ "$(g rev-parse HEAD)" = "$C" ] || { echo "$S is not at $C after the update" >&2; exit 1; }'
-    return head + body + tail
+    script += '[ "$(g rev-parse HEAD)" = "$C" ] || { echo "$S is not at $C after the update" >&2; exit 1; }'
+    return f"trap 'rm -f {q(bundle)}' EXIT; {as_user(cfg, script)} < {q(bundle)}"
+
+
+def own_tree_command(path: PurePosixPath, user: str, group: str, source: str) -> str:
+    """``files/own_tree.py``: the owner of the tree, as root, following no symlink (not even a parent)."""
+
+    return shlex.join(["python3", "-I", "-c", source, str(path), user, group])
 
 
 def foreign_owner_probe(path: PurePosixPath, user: str, group: str) -> str:

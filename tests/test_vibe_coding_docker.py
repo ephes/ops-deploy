@@ -333,7 +333,6 @@ def test_drift_dotfiles_github_and_sshd_failures(box: Box, dotfiles: Dotfiles, t
     assert run.mutating_changed_ops == [
         "Vibe coding | Upload the dotfiles bundle",
         f"Vibe coding | Update {SOURCE} to {updated.commit[:12]}",
-        f"Vibe coding | Set ownership of {SOURCE}",
         "Vibe coding | Initialize chezmoi and apply the dotfiles",
     ]
     assert box.read(f"{HOME}/.vibe-second") == "second\n"
@@ -359,6 +358,24 @@ def test_drift_dotfiles_github_and_sshd_failures(box: Box, dotfiles: Dotfiles, t
 
     # Ownership drift alone: chown only.
     box.sh(f"chown root {SOURCE}/dot_vibe-hello")
+    assert box.deploy(cfg, github()).mutating_changed_ops == [f"Vibe coding | Set ownership of {SOURCE}"]
+
+    # git never runs as root in the user's checkout: a hostile core.fsmonitor
+    # runs (if at all) with the user's rights, through probes and an update.
+    box.sh(f"runuser -u vibe -- git -C {SOURCE} config core.fsmonitor 'touch /tmp/fsmonitor-ran; false'")
+    dotfiles.commit("dot_vibe-third", "third\n")
+    cfg = cfg.model_copy(update={"dotfiles": dotfiles.prepare()})
+    assert box.deploy(cfg, github()).succeeded
+    assert box.out("stat -c %U /tmp/fsmonitor-ran 2>/dev/null || echo none") in ("vibe", "none")
+    box.sh(f"runuser -u vibe -- git -C {SOURCE} config --unset core.fsmonitor; rm -f /tmp/fsmonitor-ran")
+    # A symlinked parent stops the ownership repair instead of following it.
+    box.sh(
+        f"chown root {SOURCE}/dot_vibe-hello && mv {HOME}/.local/share {HOME}/.local/share-real "
+        f"&& ln -s {HOME}/.local/share-real {HOME}/.local/share"
+    )
+    assert not box.deploy(cfg, github()).succeeded
+    box.sh(f"rm {HOME}/.local/share && mv {HOME}/.local/share-real {HOME}/.local/share")
+    assert box.out(f"stat -c %U {SOURCE}/dot_vibe-hello") == "root"
     assert box.deploy(cfg, github()).mutating_changed_ops == [f"Vibe coding | Set ownership of {SOURCE}"]
 
     # GitHub login off (empty token, the playbook's switch): hosts.yml goes.

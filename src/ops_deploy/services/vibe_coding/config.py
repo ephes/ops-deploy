@@ -134,6 +134,10 @@ class VibeCodingConfig(BaseServiceConfig):
                 "ssh_authorized_keys must not be empty: the user has a locked password "
                 "and needs at least one SSH key to be reachable"
             )
+        if self.group != self.user:
+            # shell_basics gives the user's files to the group named like the
+            # user (as its role does), which would not exist.
+            raise ValueError("group must be named like user: shell_basics uses the user's own group")
         if self.npm_tools and not self.install_node:
             raise ValueError("npm_tools requires install_node: the tools are installed with npm")
         return self
@@ -164,5 +168,8 @@ class VibeCodingConfig(BaseServiceConfig):
             extra_packages=self.shell_basics_extra_packages,
             manage_fish_config=False,
             switch_shell=True,
+            # Not set by the role's include (shell_basics' default is fish):
+            # one login shell for both steps, so they never undo each other.
+            shell_path=self.shell,
         )
         return ShellBasicsConfig(**data)

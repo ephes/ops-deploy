@@ -186,6 +186,7 @@ def test_defaults_are_the_roles() -> None:
         ({"ssh_authorized_keys": ("ssh-ed25519 AAAA\nssh-rsa BBBB",)}, "string_pattern_mismatch"),
         ({"npm_tools": ("left-pad@1.0.0",)}, "string_pattern_mismatch"),
         ({"projects_dir": "relative"}, "absolute"),
+        ({"group": "coders"}, "group must be named like user"),
     ],
 )
 def test_role_asserts_and_strict_inputs(overrides: dict[str, Any], message: str) -> None:
@@ -203,6 +204,8 @@ def test_shell_basics_include_overrides_five_fields() -> None:
     effective = VibeCodingConfig(ssh_authorized_keys=(KEY,), shell_basics=base).effective_shell_basics()
     assert (effective.user, effective.user_home, effective.extra_packages) == ("vibe", HOME, ("gh", "zoxide"))
     assert (effective.manage_fish_config, effective.switch_shell, effective.fix_resolv_conf) == (False, True, False)
+    bash = VibeCodingConfig(ssh_authorized_keys=(KEY,), shell="/bin/bash").effective_shell_basics()
+    assert bash.shell_path == "/bin/bash"
 
 
 # -- rendering --------------------------------------------------------------------
@@ -410,7 +413,6 @@ def test_fresh_host_plan(tmp_path: Path) -> None:
         "Vibe coding | Shell basics | Switch login shell of vibe to /usr/bin/fish",
         "Vibe coding | Trust GitHub's SSH host key in /root/.ssh/known_hosts",
         f"Vibe coding | Clone {REPO} into {SOURCE}",
-        f"Vibe coding | Set ownership of {SOURCE}",
         "Vibe coding | Initialize chezmoi and apply the dotfiles",
         f"Vibe coding | Write {HOME}/.config/gh/hosts.yml",
         "Vibe coding | Install Node.js",
@@ -463,7 +465,6 @@ def test_drift_is_repaired_step_by_step(tmp_path: Path) -> None:
         "Vibe coding | Ensure /var/lib/ops-deploy/vibe-coding",
         "Vibe coding | Upload the dotfiles bundle",
         f"Vibe coding | Update {SOURCE} to 111111111111",
-        f"Vibe coding | Set ownership of {SOURCE}",
         "Vibe coding | Initialize chezmoi and apply the dotfiles",
         "Vibe coding | Stage the sshd_config with the vibe Match block",
         "Vibe coding | Install /etc/ssh/sshd_config after sshd -t and reload ssh",

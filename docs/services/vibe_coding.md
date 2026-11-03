@@ -27,9 +27,9 @@ The role's variables without the `vibe_coding_` prefix, with its defaults.
 
 | Field | Default | Notes |
 |---|---|---|
-| `user`, `group` | `vibe` | |
+| `user`, `group` | `vibe` | the group must be named like the user (shell_basics uses the user's own group, as its role does) |
 | `site_path` | `/mnt/cryptdata/vibe` | the home (`user_home`); letters, digits and `. _ / + -` only |
-| `shell` | `/usr/bin/fish` | |
+| `shell` | `/usr/bin/fish` | also shell_basics' `shell_path` |
 | `projects_dir` | `<home>/projects` | |
 | `ssh_authorized_keys` | required | one line each; empty is refused (the role's assert) |
 | `dotfiles` | `None` | `prepare_dotfiles(repo, workdir)`; `None` skips the chezmoi tasks (empty `dotfiles_repo`) |
@@ -70,7 +70,7 @@ same resulting bytes, owner and mode.
 | chezmoi: remove source without correct origin | fresh clone into a removed directory | same |
 | chezmoi: `safe.directory` for root | `git config --global --add` when missing | same |
 | chezmoi: `git` clone/update (via the forwarded agent) | controller fetch + `git bundle`; clone, or fetch, `checkout --force <branch>`, `reset --hard origin/<branch>` | see differences |
-| chezmoi: recursive ownership | `chown -R -h` when anything is not the user's or after an update | see differences |
+| chezmoi: recursive ownership | `files/own_tree.py` when anything is not the user's, before the update | see differences |
 | chezmoi: rsync legacy flow | not ported | the playbook uses the git flow |
 | chezmoi: `init --force`, `status`, `apply --force` (as the user) | the same three commands in one step | runs when planning finds a change (see differences) |
 | chezmoi: remove legacy `z.fish` | `files.file(present=False)` | same |
@@ -106,6 +106,13 @@ with its own group, which decides the modes chezmoi and npm give new files).
   module does with the remote; `origin` keeps the repository URL, so the
   user's own `git pull` through an agent works as before. Repositories with
   submodules are refused (the module would fetch them on the host).
+- **git runs as the user.** The role runs every git command as root in the
+  user's checkout, whose `.git/config` the user controls (`core.fsmonitor`,
+  hooks): root would run the user's commands. Here the probe, the removal of
+  a checkout with another origin, the clone and the update run as the user
+  (`sudo -H -n -u`), reading the bundle from root on stdin; root only stages
+  the bundle. The root `safe.directory` entry is still added, as the role
+  does.
 - **No accidental re-clone.** The role reads `origin` before it adds the
   `safe.directory` entry, so on a host without that entry it removes and
   re-clones the checkout. Here every read passes `-c safe.directory` for
@@ -114,7 +121,14 @@ with its own group, which decides the modes chezmoi and npm give new files).
   `--no-optional-locks`, so the read leaves no root-owned index behind.
 - **Ownership.** The `file` module's recursive ownership follows symlinks
   (`follow: true`) and would change the owner of their targets, also outside
-  the checkout. Here `chown -R -h` changes the links themselves only.
+  the checkout. Here `files/own_tree.py` opens the path from `/` without
+  following any symlink (a symlinked parent fails the step) and changes the
+  owner through directory descriptors, links themselves only. It runs when
+  something below the checkout is not the user's, before the update (whose
+  git, running as the user, then writes only the user's files).
+- **Shell.** The role's include leaves shell_basics' `shell_path` at its
+  default (fish) whatever `vibe_coding_shell` is, so another shell would be
+  switched back and forth on every run; here shell_basics gets `shell`.
 - **Always-run steps.** The role runs `chezmoi init --force`, `chezmoi
   apply --force`, `npm config set prefix` and `rustup component add
   rust-analyzer` on every run (reported unchanged or changed by output).

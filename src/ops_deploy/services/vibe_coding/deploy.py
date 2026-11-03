@@ -53,6 +53,7 @@ from ops_deploy.services.vibe_coding.render import (
 
 FILES = Path(__file__).parent / "files"
 NPM_TOOLS_SOURCE = (FILES / "npm_tools.py").read_text()
+OWN_TREE_SOURCE = (FILES / "own_tree.py").read_text()
 SSHD_CONFIG = "/etc/ssh/sshd_config"
 SSHD_SERVICE = "ssh"
 CHEZMOI = "/usr/local/bin/chezmoi"
@@ -184,7 +185,7 @@ def _chezmoi(cfg: VibeCodingConfig) -> None:
     _known_hosts("/root/.ssh/known_hosts", "root", "root")
     _known_hosts(str(cfg.home / ".ssh/known_hosts"), cfg.user, cfg.group)
 
-    checkout = scripts.parse_checkout(output(scripts.checkout_probe(source)))
+    checkout = scripts.parse_checkout(output(scripts.checkout_probe(cfg, source)))
     on_origin = checkout.is_git and checkout.origin == dotfiles.repo
     if on_origin and checkout.modified:
         raise DeployError(f"Local modifications exist in the destination: {source} (force=no).")
@@ -196,6 +197,13 @@ def _chezmoi(cfg: VibeCodingConfig) -> None:
             commands=[f"git config --global --add safe.directory {shlex.quote(str(source))}"],
         )
 
+    # The role's recursive ownership, before the update: the user's git needs
+    # its own tree. A checkout the user's git wrote needs nothing afterwards.
+    if output(scripts.foreign_owner_probe(source, cfg.user, cfg.group)):
+        server.shell(
+            name=f"Set ownership of {source}",
+            commands=[scripts.own_tree_command(source, cfg.user, cfg.group, OWN_TREE_SOURCE)],
+        )
     update = not on_origin or checkout.head != dotfiles.commit
     if update:
         files.directory(name=f"Ensure {STAGING_DIR}", path=STAGING_DIR, user="root", group="root", mode="0700")
@@ -212,12 +220,7 @@ def _chezmoi(cfg: VibeCodingConfig) -> None:
             name=(
                 f"Update {source} to {dotfiles.commit[:12]}" if on_origin else f"Clone {dotfiles.repo} into {source}"
             ),
-            commands=[scripts.checkout_command(source, bundle, dotfiles, reclone=not on_origin)],
-        )
-    if update or output(scripts.foreign_owner_probe(source, cfg.user, cfg.group)):
-        server.shell(
-            name=f"Set ownership of {source}",
-            commands=[f"chown -R -h {shlex.quote(f'{cfg.user}:{cfg.group}')} {shlex.quote(str(source))}"],
+            commands=[scripts.checkout_command(cfg, source, bundle, dotfiles, reclone=not on_origin)],
         )
 
     basics = cfg.effective_shell_basics()
