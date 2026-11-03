@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `base.ip_options_drop` (new, pyinfra only): a temporary kernel-bug
+  mitigation that drops IPv4 TCP packets carrying IP options (IHL > 5) before
+  conntrack, for flaws such as CVE-2026-98432 (a use-after-free on the IPv4
+  TCP handshake path triggered by SYNs with options). It installs
+  `/etc/ops-deploy/ip-options-drop.nft` (its own table `ip ip_options_drop`,
+  prerouting priority -300, `meta l4proto tcp ip hdrlength gt 5 counter
+  drop`, replaced atomically without touching other tables) and the enabled
+  oneshot `ip-options-drop.service`, which loads it at boot after
+  `nftables.service` and again when that unit restarts or reloads. A deploy
+  starts or reloads the unit only when something changed or the loaded table
+  is missing or differs; the plan logs the table's state and drop counter,
+  and `nft -c` checks the ruleset against the running kernel before any
+  change. `state="absent"` disables and stops the unit, removes both files
+  and deletes the table. Fake-connector tests plus a real systemd/nftables
+  Docker test (skipped without its fixture; `docs/base.md`).
+
 - `base.ssh_authorized_key_entries`: `allow_empty_present` (default `False`)
   allows an empty `present` set, for an account that is meant to keep no
   managed key (ops-control `user_keys` removes retired login keys without a

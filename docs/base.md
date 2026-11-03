@@ -3,8 +3,8 @@
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
-SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades), the
-others are steps a service deploy calls (uv, Node.js):
+SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4
+options drop), the others are steps a service deploy calls (uv, Node.js):
 
 ```python
 from ops_deploy.base import HostnameConfig, deploy_hostname
@@ -35,6 +35,7 @@ change.
 | `dpkg_arch_remove` | `dpkg_arch_remove` | `DpkgArchRemoveConfig` | `deploy_dpkg_arch_remove` |
 | `stale_exe_restart` | none (pyinfra only) | `StaleExeRestartConfig`, `StaleExeUnit`, `StaleExeHttpProbe` | `deploy_stale_exe_restart` |
 | `unattended_upgrades` | none (new) | `UnattendedUpgradesConfig` | `deploy_unattended_upgrades` |
+| `ip_options_drop` | none (pyinfra only) | `IpOptionsDropConfig` | `deploy_ip_options_drop` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -829,6 +830,83 @@ What it does not do: no unattended upgrades outside the daily
 `dpkg-reconfigure`. To hand a host back to the package defaults, delete both
 drop-ins.
 
+## ip_options_drop
+
+No ops-library role: a pyinfra-only base deploy and a temporary kernel-bug
+mitigation. It drops IPv4 TCP packets that carry IP options (an IHL above 5)
+before conntrack sees them. Some IPv4 TCP flaws are only reachable with such
+packets: CVE-2026-98432, a use-after-free on the handshake path triggered by
+SYNs with IPv4 options, is the reason it exists. Ordinary TCP traffic carries
+no IPv4 options, so the rule costs nothing in practice; turn it on until the
+host runs a fixed kernel, then turn it off.
+
+```python
+from ops_deploy.base import IpOptionsDropConfig, deploy_ip_options_drop
+
+deploy_ip_options_drop(IpOptionsDropConfig())  # install and load
+deploy_ip_options_drop(IpOptionsDropConfig(state="absent"))  # remove every trace
+```
+
+| Field | Default | |
+|---|---|---|
+| `state` | `present` | `present` installs and loads the rule; `absent` removes it |
+
+`present` installs:
+
+| Path | |
+|---|---|
+| `/etc/ops-deploy/ip-options-drop.nft` (0644) | the table `ip ip_options_drop`: chain `prerouting`, `type filter hook prerouting priority -300` (`raw`: after defragmentation, before conntrack), one rule `meta l4proto tcp ip hdrlength gt 5 counter drop` |
+| `/etc/systemd/system/ip-options-drop.service` (0644) | oneshot, `RemainAfterExit`, enabled (`WantedBy=sysinit.target`): `nft -f` the file on start and reload, `nft delete table ip ip_options_drop` on stop |
+
+The file declares the table, deletes it and defines it again, so `nft -f`
+replaces exactly this table in one transaction (the counter starts at zero)
+and never flushes or touches any other table: iptables-nft tables (Tailscale,
+Docker, ufw), fail2ban's and `/etc/nftables.conf`'s stay as they are. The unit
+runs before `network-pre.target`, like `nftables.service`, and after it,
+because the stock `/etc/nftables.conf` of Debian and Ubuntu begins with
+`flush ruleset`. `PartOf=` and `ReloadPropagatedFrom=nftables.service`
+re-apply the table when `nftables.service` restarts or reloads. A plain
+`systemctl start nftables.service`, or an `nft -f` of a file with `flush
+ruleset` run by hand, still removes it until the next deploy (see below).
+
+While planning, the deploy reads the loaded table (never changes it) and logs
+one line, which also shows in `--dry`:
+
+```text
+[host] ip_options_drop: table ip ip_options_drop loaded; dropped 7 packet(s), 448 byte(s) since it was last loaded
+```
+
+or `... not loaded` / `... loaded but differs from the managed rule`. For
+`present` it also runs `nft -c -f -` with the ruleset, so a kernel or nft that
+refuses it fails the deploy before any change; a host without `/usr/sbin/nft`
+is refused (install the `nftables` package first; the deploy does not install
+it). Then it writes the file and the unit (daemon-reload only when the unit
+changed), enables the unit, and:
+
+- starts it when it is not active;
+- reloads it when the table is missing or differs from the managed rule
+  (something flushed the ruleset or edited the table), or when the file or the
+  unit changed;
+- changes nothing on a converged host, so the counter keeps counting.
+
+A read-only check closes the run: the unit is active and the chain holds the
+drop rule.
+
+`absent` disables and stops the unit (stop deletes the table), removes both
+files (daemon-reload if one was there), deletes the table if it is still
+loaded without the unit, and checks that unit, file and table are gone. On a
+host that never had it, `absent` changes nothing. `/etc/ops-deploy` stays (other
+deploys use it).
+
+To read the counter on the host:
+
+```bash
+nft list table ip ip_options_drop
+```
+
+What it does not do: IPv6 (IPv6 has no IHL; extension headers are a different
+matter), protocols other than TCP, or a periodic re-assertion between deploys.
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
@@ -839,6 +917,26 @@ templates.
 table against an in-memory host (every refusal, test failure, deferral, one
 restart per binary, post checks, the report), and
 `tests/test_base_stale_exe_restart.py` the deploy against the fake connector.
+
+`tests/test_base_ip_options_drop_docker.py` runs `ip_options_drop` against
+real systemd and nftables. It is skipped unless
+`IP_OPTIONS_DROP_DOCKER_CONTAINER` holds the full ID of a running container
+named `ops-deploy-ip-options-drop-*`, labelled
+`ops-deploy.fixture=ip-options-drop`, with `--network none` (its own network
+namespace: the rules never reach the Docker host), not privileged, no mounts,
+`NET_ADMIN` and systemd as PID 1. Build it from `ubuntu:24.04` with `systemd
+systemd-sysv dbus nftables python3` and run it with `--cgroupns private
+--cap-add SYS_ADMIN --cap-add NET_ADMIN --security-opt apparmor=unconfined
+--tmpfs /run --tmpfs /run/lock`, as entry point `/sbin/init` after remounting
+`/sys/fs/cgroup` read-write. pyinfra's Docker CLI is wrapped so it can only
+inspect, exec and copy; the test restarts the container itself to boot it
+again. It checks: a first run installs, enables and starts, a SYN with IPv4
+options to a loopback listener is dropped and counted while a plain
+connection works; a second run changes nothing and keeps the counter; a
+flushed ruleset converges with one reload; `nftables.service` reloads and
+restarts keep the table; a boot with `nftables.service` enabled loads it
+after that unit's flush; `absent` removes unit, file and table and leaves
+other tables alone, and a second `absent` run changes nothing.
 
 `tests/test_base_journald_docker.py` runs `journald_config` against a real
 systemd and journald in an owned Docker container and is skipped unless
