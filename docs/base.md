@@ -161,8 +161,9 @@ deploy instead.
 | `user` | required | owner of `.ssh` and the file |
 | `group` | required | `staff` or `wheel` on macOS, not derived |
 | `home` | required | `/root`, `/var/root`, `/Users/<user>`, ... |
-| `present` | required, at least one | `AuthorizedKey(key, comment="", key_options="")` |
+| `present` | at least one | `AuthorizedKey(key, comment="", key_options="")` |
 | `absent` | `()` | key lines; options and comment are ignored |
+| `allow_empty_present` | `False` | `True` allows an empty `present` |
 
 Changes only the given keys in `<home>/.ssh/authorized_keys` and keeps every
 other line, unlike `ssh_authorized_keys`, which owns the whole file. Lines are
@@ -177,7 +178,11 @@ them. Removal fails closed: a non-comment line that is not attributed to an
 `absent` key but still contains its base64 blob (ignoring non-base64 bytes,
 which sshd's decoder skips) refuses the run before anything is written.
 A key both present and absent, the same key twice in `present` and an empty
-`present` are refused when the config is built.
+`present` are refused when the config is built. `allow_empty_present=True`
+is for an account that is meant to keep no managed key (ops-control
+`user_keys`: retired keys removed without a replacement): only the `absent`
+keys are removed, other lines stay, the file may end up empty, and a missing
+file stays missing (no `.ssh` is created).
 
 The file is read once while planning (base64, so every byte survives), merged
 on the controller and installed with [`secret_file`](concepts/operations.md):

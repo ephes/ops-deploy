@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `base.ssh_authorized_key_entries`: `allow_empty_present` (default `False`)
+  allows an empty `present` set, for an account that is meant to keep no
+  managed key (ops-control `user_keys` removes retired login keys without a
+  replacement). Only the `absent` keys are removed and every other line stays;
+  a missing file stays missing and no `.ssh` is created. Without the flag an
+  empty `present` is refused as before.
+
 - `services.homeassistant`: a dry run lists only real changes. The normal
   deploy deferred its Python, virtualenv, application, extras and configuration
   inspections unconditionally, so `--dry` reported every one of them (and a

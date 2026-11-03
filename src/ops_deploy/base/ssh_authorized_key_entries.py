@@ -29,8 +29,11 @@ Lock-out protection is the caller's job (ops-control ``controller_keys``,
 deploy-controllers plan slice 4): before calling this with ``absent`` keys,
 prove with a fresh, non-multiplexed login that a surviving ``present`` key
 authenticates, and never remove the key of the connection in use. This deploy
-only refuses an empty ``present`` set. Concurrent writers are the caller's job
-too: take the shared deploy lock before this deploy reads the file.
+only refuses an empty ``present`` set, unless ``allow_empty_present`` says the
+account is meant to keep no managed key (ops-control ``user_keys``: an account
+whose retired keys are removed without replacement); a missing file is then
+left missing. Concurrent writers are the caller's job too: take the shared
+deploy lock before this deploy reads the file.
 """
 
 from __future__ import annotations
@@ -176,13 +179,19 @@ class SshAuthorizedKeyEntriesConfig(RoleConfig):
     user: UnixUser
     group: UnixUser
     home: AbsolutePath
-    # Added or updated; at least one, so a run can never leave no controller key.
-    present: tuple[AuthorizedKey, ...] = Field(min_length=1)
+    # Added or updated; at least one, so a run can never leave no controller
+    # key, unless allow_empty_present is set.
+    present: tuple[AuthorizedKey, ...] = ()
     # Key lines (options and comment ignored) whose every occurrence is removed.
     absent: tuple[OneLine, ...] = ()
+    # True: an empty present set is allowed (the account keeps no managed key;
+    # only absent keys are removed, a missing file stays missing).
+    allow_empty_present: bool = False
 
     @model_validator(mode="after")
     def _keys(self) -> SshAuthorizedKeyEntriesConfig:
+        if not self.present and not self.allow_empty_present:
+            raise ValueError("present needs at least one key (or allow_empty_present)")
         present: set[KeyMaterial] = set()
         for entry in self.present:
             material = key_material(entry.line())
@@ -246,6 +255,9 @@ def deploy_ssh_authorized_key_entries(cfg: SshAuthorizedKeyEntriesConfig) -> Non
     kind, existing = host.get_fact(AuthorizedKeysFile, path=str(cfg.path))
     if kind not in ("file", "missing"):
         raise DeployError(f"{cfg.path} is not a readable regular file ({kind}); refusing to change it")
+    if kind == "missing" and not cfg.present:
+        # Nothing to add and nothing to remove: no file, no .ssh created.
+        return
     try:
         content = merge_authorized_keys(existing, cfg.present_lines(), cfg.absent)
     except ValueError as exc:

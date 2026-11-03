@@ -136,6 +136,11 @@ def test_empty_present_set_is_refused() -> None:
         config(present=())
 
 
+def test_empty_present_set_needs_the_explicit_flag() -> None:
+    cfg = config(present=(), absent=(C,), allow_empty_present=True)
+    assert cfg.present_lines() == []
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -233,6 +238,50 @@ def test_macos_root_home() -> None:
     assert run.succeeded, run.error
     assert "chown root:wheel /var/root/.ssh" in run.executed_commands
     assert written(run, "/var/root/.ssh/authorized_keys") == f"{A} studio\n".encode()
+
+
+def test_empty_present_removes_absent_keys_and_keeps_other_lines() -> None:
+    path = "/Users/vibe/.ssh/authorized_keys"
+    existing = f"{C} jochen@meos\nmoshi-pair: keep\n{B} other\n".encode()
+    responses = {
+        "uname -s": ["Darwin"],
+        **fakehost.stat("/Users/vibe/.ssh", user="vibe", group="vibe", mode="drwx------"),
+        **host_file(path, existing, user="vibe", group="vibe"),
+    }
+    cfg = config(user="vibe", group="vibe", home="/Users/vibe", present=(), absent=(C,), allow_empty_present=True)
+
+    run = run_deploy_fake(deploy_ssh_authorized_key_entries, cfg, responses=responses)
+
+    assert run.succeeded, run.error
+    assert written(run, path) == f"moshi-pair: keep\n{B} other\n".encode()
+
+
+def test_empty_present_can_leave_an_empty_file() -> None:
+    existing = f"{C} jochen@meos\n".encode()
+    responses = {**LINUX, **fakehost.directory("/root/.ssh", mode="drwx------"), **host_file(ROOT_FILE, existing)}
+
+    run = run_deploy_fake(
+        deploy_ssh_authorized_key_entries,
+        config(present=(), absent=(C,), allow_empty_present=True),
+        responses=responses,
+    )
+
+    assert run.succeeded, run.error
+    assert written(run) == b""
+
+
+def test_empty_present_leaves_a_missing_file_missing() -> None:
+    responses = {**LINUX, "if [ -L /root/.ssh/authorized_keys ]": ["missing"]}
+
+    run = run_deploy_fake(
+        deploy_ssh_authorized_key_entries,
+        config(present=(), absent=(C,), allow_empty_present=True),
+        responses=responses,
+    )
+
+    assert run.succeeded, run.error
+    assert run.written_paths == []
+    assert not any("mkdir" in command for command in run.executed_commands)
 
 
 @pytest.mark.parametrize("kind", ["symlink", "other", "unreadable"])
