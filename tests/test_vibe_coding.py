@@ -329,7 +329,7 @@ def test_unreadable_file_fails_instead_of_counting_as_absent() -> None:
 
 def test_user_commands_switch_like_become() -> None:
     config = VibeCodingConfig(ssh_authorized_keys=(KEY,))
-    assert scripts.as_user(config, "true") == "sudo -H -n -u vibe -- bash -c true"
+    assert scripts.as_user(config, "true") == "cd / && sudo -H -n -u vibe -- bash -c true"
 
 
 # -- controller dotfiles ----------------------------------------------------------------

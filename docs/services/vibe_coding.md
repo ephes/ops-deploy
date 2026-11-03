@@ -92,6 +92,9 @@ Commands the role runs as `become_user` run through `sudo -H -n -u <user>`,
 so they get sudo's environment and PAM session exactly as Ansible's become
 does (HOME, `secure_path`, the locale, and pam_umask's `0002` for a user
 with its own group, which decides the modes chezmoi and npm give new files).
+They start in `/`: sudo keeps root's working directory (`/root`, which the
+user cannot read, so chezmoi failed with `stat .: permission denied`), while
+Ansible runs its modules from a temporary directory the user can read.
 
 ## Differences from the role
 

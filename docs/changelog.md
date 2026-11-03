@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `services.vibe_coding`: commands that run as the user start in `/`. sudo
+  kept root's working directory `/root`, which the user cannot read, so the
+  first live run failed at the chezmoi step with `chezmoi: stat .: permission
+  denied`; Ansible's become runs its modules from a directory the user can
+  read.
+
 - `infra.hd_idle` (new): idle spindown with the distribution's `hd-idle`
   daemon for drives that ignore the ATA standby timer (fractal's WD120EFGX).
   Installs the package, writes `HD_IDLE_OPTS` to `/etc/default/hd-idle`

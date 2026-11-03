@@ -54,9 +54,14 @@ def as_user(cfg: VibeCodingConfig, script: str) -> str:
     passwd entry (also the role's ``environment: HOME``), secure_path, the
     locale from /etc/default/locale and pam_umask's 0002 for a user with its
     own group, which decides the modes chezmoi and npm give new files.
+
+    The command starts in ``/``: sudo keeps root's working directory (usually
+    ``/root``, which the user cannot read) and chezmoi stats ``.`` first
+    (``chezmoi: stat .: permission denied``). Ansible's become runs its
+    modules from a temporary directory the user can read.
     """
 
-    return shlex.join(["sudo", "-H", "-n", "-u", cfg.user, "--", "bash", "-c", script])
+    return "cd / && " + shlex.join(["sudo", "-H", "-n", "-u", cfg.user, "--", "bash", "-c", script])
 
 
 def read_probe(path: str, *, follow: bool = False) -> str:
