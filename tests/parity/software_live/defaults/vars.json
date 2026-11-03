@@ -27,7 +27,6 @@
   "software_live_install_dir": "/usr/local/lib/software-live",
   "software_live_packages": [
     "python3",
-    "python3-apt",
     "apache2-utils"
   ],
   "software_live_on_calendar": "*:0/15",
@@ -37,7 +36,7 @@
   "software_live_nyxmon_disable_names": [],
   "software_live_inventory_export": false,
   "software_live_inventory_group": "software-estate-publisher",
-  "software_live_impl": "python",
+  "software_live_impl": "rust",
   "software_live_rust_version": "0.1.1",
   "software_live_rust_sha256": {},
   "software_live_rust_release_url": "https://github.com/ephes/ops-library/releases/download/software-live-v{{ software_live_rust_version }}/software-live-{{ software_live_rust_version }}-x86_64-unknown-linux-gnu-{{ _software_live_variant }}.tar.gz",

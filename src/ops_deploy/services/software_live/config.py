@@ -1,4 +1,8 @@
-"""Inputs of the software_live role, including its rollback and shadow contract."""
+"""Inputs of the software_live role: the pinned Rust release, its shadow and pins.
+
+The Python collector was retired (ops-library rust/software-live/PLAN.md S12):
+``impl`` accepts only ``rust`` and is kept so existing inventories stay valid.
+"""
 
 from __future__ import annotations
 
@@ -33,11 +37,13 @@ class SoftwareLiveConfig(BaseServiceConfig):
     config_dir: Dedicated = PurePosixPath("/etc/software-live")
     data_dir: Dedicated = PurePosixPath("/var/lib/software-live")
     install_dir: Dedicated = PurePosixPath("/usr/local/lib/software-live")
-    packages: tuple[Package, ...] = ("python3", "python3-apt", "apache2-utils")
+    # python3 runs nyxmon_checks.py and the deploy probes; python3-apt is no longer
+    # needed since S12 and is not uninstalled.
+    packages: tuple[Package, ...] = ("python3", "apache2-utils")
     on_calendar: Calendar = "*:0/15"
     inventory_export: StrictBool = False
     inventory_group: UnixUser = "software-estate-publisher"
-    impl: Literal["python", "rust"] = "python"
+    impl: str = "rust"
     rust_version: str = ""
     rust_sha256: dict[str, str] = Field(default_factory=dict)
     rust_release_url: str = ""
@@ -57,6 +63,13 @@ class SoftwareLiveConfig(BaseServiceConfig):
 
     @model_validator(mode="after")
     def role_inputs(self) -> Self:
+        if self.impl != "rust":
+            raise ValueError(
+                "impl must be rust: the Python software-live program was retired in S12;"
+                " revert that change to deploy it again"
+            )
+        if not self.rust_version:
+            raise ValueError("rust_version is required: the production units run the pinned Rust release")
         if any(key not in self.policy for key in ("host", "os", "postgresql", "traefik")):
             raise ValueError("policy requires host, os, postgresql and traefik")
         if self.auth_user == "CHANGE_ME":
@@ -97,7 +110,7 @@ class SoftwareLiveConfig(BaseServiceConfig):
             port=self.port,
             path="/.well-known/software-live",
             auth_user=self.auth_user,
-            server_path=self.install_dir / "software_live.py",
+            server_path=self.binary,
             htpasswd_dir=self.config_dir,
             packages=self.packages,
         )

@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/bin/python3 /usr/local/lib/software-live/software_live.py collect --config /etc/software-live/policy.json --output /var/lib/software-live/state.json --cache /var/lib/software-live/upstream.json --group metrics
+ExecStart=/usr/local/lib/software-live/releases/0.1.1/software-live collect --config /etc/software-live/policy.json --output /var/lib/software-live/state.json --cache /var/lib/software-live/upstream.json --group metrics
 TimeoutStartSec=90
 Nice=10
 UMask=0027

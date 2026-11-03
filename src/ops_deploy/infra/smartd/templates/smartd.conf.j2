@@ -4,10 +4,16 @@
 #
 # Device type handling: If type is set (e.g., ata, nvme, scsi, sat, auto),
 # "-d <type>" is rendered. If type is omitted or "auto", smartd auto-detects.
+#
+# Temperature thresholds: a device's smartd_temp_diff/_info/_crit override the
+# role-wide smartd_temp_* values for that device only.
 
 {% for dev in smartd_devices %}
 {% set dev_type = dev.type | default('auto') %}
 {% set short_schedule = dev.smartd_short_test_schedule | default(smartd_short_test_schedule) %}
 {% set long_schedule = dev.smartd_long_test_schedule | default(smartd_long_test_schedule) %}
-{{ dev.device }}{% if dev_type != 'auto' %} -d {{ dev_type }}{% endif %}{% if dev.smartd_no_spinup | default(false) | bool %} -n standby{% endif %} -a -o on -S on -s ({{ short_schedule }}|{{ long_schedule }}) -W {{ smartd_temp_diff }},{{ smartd_temp_info }},{{ smartd_temp_crit }} -m {{ smartd_mail_to }}
+{% set temp_diff = dev.smartd_temp_diff | default(smartd_temp_diff) %}
+{% set temp_info = dev.smartd_temp_info | default(smartd_temp_info) %}
+{% set temp_crit = dev.smartd_temp_crit | default(smartd_temp_crit) %}
+{{ dev.device }}{% if dev_type != 'auto' %} -d {{ dev_type }}{% endif %}{% if dev.smartd_no_spinup | default(false) | bool %} -n standby{% endif %} -a -o on -S on -s ({{ short_schedule }}|{{ long_schedule }}) -W {{ temp_diff }},{{ temp_info }},{{ temp_crit }} -m {{ smartd_mail_to }}
 {% endfor %}

@@ -1,8 +1,8 @@
 {
-  "role_source": "ops-library cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641, unchanged at d88 docs head",
+  "role_source": "ops-library cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641; smartd per-device temperature overrides from 5e86af83ed6fe4f4df02892447f52451c47e1bed",
   "inline_source": "original orchestration lag program and systemd templates, no collector policy modifications",
   "sha256": {
-    "infra/smartd/templates/smartd.conf.j2": "7b000e4d0539a84dd7e38b586d78c7c1b9a3b45a39d34faed9f5294d5809782b",
+    "infra/smartd/templates/smartd.conf.j2": "ceb80dba1bd2e350848c4c74461782cb190d2f450c87af33da1dc59f33d5fcb9",
     "infra/zed/templates/zpool-scrub@.timer.j2": "531d7bfd5ccdee2124f4060d4f1453745e4b875e6b83d6d95d02018ff9b49d21",
     "infra/zed/templates/zpool-scrub@.service.j2": "2d243e4654acc7d053d56bdd9d9e16168f71edc4bf4591f3fbaf26a0636a5828",
     "services/fractal_monitoring/templates/nyxmon-storage-metrics.py.j2": "1cb4c8bc4d17c30507db66508ff2f929618cd06bac4618dd34300cf4bed8dbae",
@@ -22,7 +22,7 @@
   },
   "role_behavior_sha256": {
     "mail_relay_client": "67cc87f83942b7949c4fa9de5c2ee90c782b43ae49a96b361830a89d2a2754b4",
-    "smartd": "f26344e045cccf98c709e846eb6630439bd91561fa8632eafffc140062949464",
+    "smartd": "13121028f4f30c33670c5fb7984619e85d393b1d70a94cd4105efcefd6aceb1a",
     "zed": "b4a33ed07a8a2a5ab40191d3f48bb64e012afc8b910c4cf2b1988b9f06d86f78",
     "nyxmon_storage_exporter": "2204f25cf9792ce590127e58352f58529e1c41b75343fbc3b270e46c2e5fdd0c",
     "storage_metrics_endpoint": "44ba0e19c8c8133ff5ab62a42860972dbef7d0eb678eb3be9fefd8b5bae0e70c",

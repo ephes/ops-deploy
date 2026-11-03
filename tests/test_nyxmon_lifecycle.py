@@ -173,6 +173,7 @@ def installed() -> dict[str, Any]:
         "for unit in nyxmon.service": [
             *("Id=nyxmon.service", "LoadState=loaded", "ActiveState=active", "UnitFileState=enabled", "---"),
             *("Id=nyxmon-monitor.service", "LoadState=loaded", "ActiveState=failed", "UnitFileState=enabled", "---"),
+            *("Id=nyxmon-warning-digest.timer", "LoadState=not-found", "ActiveState=inactive", "---"),
         ],
         **{
             f"test -e {path} &&": ["yes"]
@@ -215,11 +216,40 @@ def test_remove_takes_units_route_data_user_and_temp_files() -> None:
     ]
 
 
+def test_remove_takes_the_warning_digest_timer() -> None:
+    responses = {
+        **installed(),
+        "for unit in nyxmon.service": [
+            *("Id=nyxmon.service", "LoadState=not-found", "ActiveState=inactive", "---"),
+            *("Id=nyxmon-monitor.service", "LoadState=not-found", "ActiveState=inactive", "---"),
+            *(
+                "Id=nyxmon-warning-digest.timer",
+                "LoadState=loaded",
+                "ActiveState=active",
+                "UnitFileState=enabled",
+                "---",
+            ),
+        ],
+        "test -e /etc/systemd/system/nyxmon-warning-digest.timer &&": ["yes"],
+        "test -e /etc/systemd/system/nyxmon-warning-digest.service &&": ["yes"],
+    }
+    result = run_deploy_fake(deploy_nyxmon_remove, NyxmonRemoveConfig(confirm=True), responses=responses)
+    assert result.succeeded, result.error
+    for command in (
+        "systemctl stop nyxmon-warning-digest.timer || true",
+        "systemctl disable nyxmon-warning-digest.timer || true",
+        "rm -rf /etc/systemd/system/nyxmon-warning-digest.timer",
+        "rm -rf /etc/systemd/system/nyxmon-warning-digest.service",
+    ):
+        assert command in result.executed_commands
+
+
 def test_second_removal_changes_nothing() -> None:
     gone = {
         "for unit in nyxmon.service": [
             *("Id=nyxmon.service", "LoadState=not-found", "ActiveState=inactive", "---"),
             *("Id=nyxmon-monitor.service", "LoadState=not-found", "ActiveState=inactive", "---"),
+            *("Id=nyxmon-warning-digest.timer", "LoadState=not-found", "ActiveState=inactive", "---"),
         ]
     }
 

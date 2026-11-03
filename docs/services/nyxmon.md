@@ -48,6 +48,8 @@ Defaults follow the role's `defaults/main.yml`.
 | `django_allowed_hosts`, `django_admin_url`, `django_debug` | `127.0.0.1`, `admin/`, `false` | |
 | `require_login` | `false` | `NYXBOARD_REQUIRE_LOGIN` |
 | `notify_*`, `processing_lease_seconds`, `check_batch_size` | `2`, `21600`, `86400`, `900`, `5` | ranges as in the role, lease ≥ (batch + 5) min |
+| `notify_warning_delivery` | `individual` | `digest` (needs Rust agent 0.1.2): warnings send nothing, and `nyxmon-warning-digest.timer` reports all open warnings in one silent message; other values stop the timer and remove its units |
+| `warning_digest_on_calendar` | `Mon *-*-* 09:00:00` | systemd `OnCalendar` of that timer |
 | `opsgate_submit_base_url` | `""` | empty disables the OpsGate producer and its check |
 | `opsgate_approval_base_url` | `""` | empty: the submit URL |
 | `opsgate_ticket_expires_seconds`, `opsgate_submit_timeout_seconds`, `opsgate_submit_include_warnings` | `14400`, `10`, `false` | |

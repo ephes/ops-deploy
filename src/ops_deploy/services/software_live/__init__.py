@@ -1,4 +1,4 @@
-"""Read-only software observations, implementation switching and Nyxmon checks."""
+"""Read-only software observations from the pinned Rust release, and Nyxmon checks."""
 
 from ops_deploy.services.software_live.config import SoftwareLiveConfig, SoftwareLiveRemoveConfig
 from ops_deploy.services.software_live.deploy import compare_software_live_shadow, deploy_software_live

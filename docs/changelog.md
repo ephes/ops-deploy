@@ -23,6 +23,68 @@
 - Add an owned current00–34 Home Assistant voice-fault diagnostic with bounded
   systemd/cgroup exit evidence and unchanged production, limits and comparisons.
 
+- `nyxmon`: `notify_warning_delivery` and `warning_digest_on_calendar` (port of
+  ops-library 2.75.4). With `digest` (Rust agent 0.1.2), warnings send nothing
+  and `nyxmon-warning-digest.timer` reports all open warnings in one silent
+  message, Mondays at 09:00; `individual` (default) stops the timer and removes
+  its units. Removal takes the timer as well. The new `.env` line restarts both
+  units once on the next deploy.
+
+- `services.software_live`: retire the Python collector (port of the ops-library
+  `rust/software-live/PLAN.md` S12 change, after the 7-day soak of the Rust port on all
+  four hosts). The base units run the pinned release `releases/<version>/software-live`
+  directly; `impl` accepts only `"rust"` and `rust_version` is required, both checked
+  before any operation, as are invalid release inputs (the Python rollback path and its
+  "fail after rollback" refusals are gone). A deploy removes the `impl.conf` drop-ins of
+  earlier deploys (their directories only when empty) after the candidate validated and
+  before the base units are rewritten, in one reload and restart, and removes the
+  deployed `software_live.py` and `__pycache__` once the release is verified, before the
+  pins. Only `nyxmon_checks.py` is installed and it no longer triggers an endpoint
+  restart or a collection. `python3-apt` is dropped from the default `packages` (not
+  uninstalled). The Python program moves to `tests/parity/software_live/` as the test
+  oracle; templates and parity renders follow the ops-library S12 role, and the native
+  harness gains an S12 upgrade phase.
+
+- New base deploy `ssh_authorized_key_entries`
+  (`SshAuthorizedKeyEntriesConfig`, `deploy_ssh_authorized_key_entries`): adds
+  or updates `present` keys and removes `absent` keys in a user's
+  `authorized_keys`, matched by key material, and keeps every other line byte
+  for byte (forced-command keys, comments, header, CRLF). `user`, `group` and
+  `home` are explicit, so macOS accounts (`/Users/<user>` with `staff`,
+  `/var/root` with `wheel`) work. Atomic write through `secret_file`, 0600 and
+  `.ssh` 0700; an empty `present` set is refused. Lock-out proof and the deploy
+  lock are the caller's job. `ssh_authorized_keys` (whole file) is unchanged.
+
+- `services.minio.user_retirement`: the before/after comparison ignores the order
+  of values inside a policy's `Condition`, which the server varies between reads. A
+  production run removed its user and then failed with "state outside the listed
+  users changed" on such a read. A real `Condition` change still fails. The normal
+  deployment's shared `normalized()` is unchanged.
+
+- Add `services.minio.user_retirement`, an explicit maintenance operation that
+  removes listed MinIO users, proves them absent and changes nothing else. It
+  refuses empty or invalid lists, protected names, an unhealthy admin alias and
+  users in groups or with service accounts; a repeat run makes no managed change.
+  It is not part of the normal MinIO deployment. New real-server container harness
+  in `tests/integration/minio/user_retirement/`.
+
+- `infra.redis_install` with `add_official_repo` (via `apt_repository(...,
+  dearmor=True)`): the keyring check no longer reads the keyring's first bytes
+  back as a fact. A dearmored keyring starts with byte 0x99, which pyinfra
+  cannot decode as text, so each run with the keyring in place logged a
+  `UnicodeDecodeError` traceback and the check decided on empty output. The
+  host now prints one word (`missing`, `armored`, `binary`, `other`) and the
+  key is replaced unless it is `binary`; empty files and files that are no
+  OpenPGP key are now repaired too. A converged host with a valid keyring
+  still changes nothing. Other apt keys (Docker, PostgreSQL, Vector, Jellyfin,
+  Tailscale) never read key bytes back and are unchanged.
+
+- `infra.smartd`: per-device `temp_diff`/`temp_info`/`temp_crit` on
+  `SmartdDevice` override the role-wide smartd `-W` thresholds for that device
+  (port of the ops-library smartd role's per-device `smartd_temp_*` keys; the
+  vendored template and parity digests follow it). Devices without overrides
+  render the same `-W` line; the rendered file gains a two-line header comment.
+
 - Add the original shared Daybook notifier endpoint installer with bounded private
   stdin, fixed forced-command authorization, compile-only source validation and
   additive administrator-key preservation. Existing semantically exact config
@@ -112,6 +174,27 @@
   convergence, pinned user Python and managed console smoke. Preserve all 35
   defaults/two dormant templates, disabled-first label state and data paths.
   Source/owned mechanism proof remains separate from inventory/activation.
+
+- `os_lifecycle` and `unattended_upgrades` (refresh on current main, with the
+  two entries further down): `UnattendedUpgradesConfig.debian_stable_updates`
+  (Debian only, needs `debian_point_releases`) adds the
+  `origin=Debian,codename=${distro_codename}-updates,label=Debian` origin,
+  derived from the codename. The report's `os.releases_behind` now also takes
+  the Debian archive's own suite (`os.archive_suite`: the Release file of the
+  host's codename says `oldstable` from the next release's day on), with
+  `os.releases_behind_data` for the lifecycle data alone; `apt` gains
+  `pending_third_party_count`, `pending_third_party_max_age_hours` and
+  `pending_third_party` (updates from origins outside the distribution, such
+  as Vector's repository, which unattended-upgrades never takes; aged in the
+  existing first-seen file). Rules: `track_latest_stable` warns from the day a
+  newer stable cycle is released (`os.releases_behind` above 0, or unknown)
+  instead of the `upgrade_due` and `support_days_remaining` planning rules (the
+  EOL rules stay); `third_party_updates` warns when a pending third-party
+  update is older than `pending_third_party_warning_hours` (720, 30 days).
+  Both are off by default, so existing rule lists are unchanged. The
+  stale-kernel signal now reads Debian 13 kernel names (`6.12.113+deb13-amd64`;
+  before, they gave `kernel_check: no-version` and never a reboot warning), and
+  `releases_behind` is `null` when no source knows any released cycle.
 
 - Add the original Photos offload component: protected root checkout and trust
   attestation, lifetime-bound canonical Main bundle, existing-identity SFTP with
@@ -1274,6 +1357,43 @@
   opt-in Docker test against real named (`BIND_DOCKER_CONTAINER`, including
   an `nsupdate` followed by deploys that leave the dynamic zone and its
   journal untouched) and the role's digest to the drift manifest.
+
+- New base deploy `unattended_upgrades` (`UnattendedUpgradesConfig`,
+  `deploy_unattended_upgrades`): daily security updates with the
+  distribution's `unattended-upgrades` and needrestart, on Debian 12 and 13
+  and Ubuntu 24.04 under systemd (other releases are refused). It writes two
+  drop-ins and no packaged file: `/etc/apt/apt.conf.d/52ops-deploy-unattended-upgrades`
+  (daily run on, the packaged origin lists replaced with `#clear`:
+  Debian `-security` only, optionally the point-release archive; Ubuntu
+  release, `-security` and ESM security pockets, never `-updates`; blacklist,
+  kernel cleanup, automatic reboot off by default) and
+  `/etc/needrestart/conf.d/60-ops-deploy-unattended-upgrades.conf`
+  (`automatic` restarts by default, `list`, or `unmanaged`). Missing packages
+  are installed; nothing else is updated, so a converged host plans no
+  change. A read-only check compares `apt-config dump` with the policy and
+  requires the `apt-daily` timers to be enabled. There is no ops-library role
+  to port. Fake-connector tests and an opt-in Docker test against real
+  Debian 12, Debian 13 and Ubuntu 24.04 containers. See
+  [base deploys](base.md#unattended_upgrades).
+
+- New service `os_lifecycle`: a read-only OS lifecycle report per Debian or
+  Ubuntu host (support and EOL horizon from `distro-info-data` with an
+  embedded endoflife.date snapshot as the second source, upgrade due, pending
+  security updates and the age of the oldest, security index age, held
+  packages, unattended-upgrades enabled and last success, reboot required and
+  since when, uptime), written hourly by a sandboxed collector timer. Hosts on
+  the monitoring network serve it on an authenticated endpoint (port 9113,
+  metrics-httpd `json-file` through the shared switch, reused unchanged, or a
+  Python fallback); hosts that must not join that network get no listener,
+  only a root-owned `authorized_keys` line `restrict,command="... show"` for
+  a dedicated collector key, and an endpoint host pulls their reports over
+  SSH with pinned host keys and serves the combined file (port 9114).
+  Unit names and `/etc/os-lifecycle` are fixed; a deploy refuses a host that
+  keeps units or secrets of a mode its configuration leaves (`ssh` after
+  `endpoint`, an endpoint without `remote` after one with it).
+  `deploy_os_lifecycle_checks` upserts one Nyxmon json-metrics check per
+  host with the design's thresholds (`Thresholds`, `endpoint_rules`,
+  `remote_rules`). See `docs/services/os_lifecycle.md`.
 
 - `graphyard` core: `graphyard-web.service` and `graphyard-agent.service`
   declare `Wants=` + `After=` on `graphyard-runtime.service` instead of

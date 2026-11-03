@@ -1,11 +1,24 @@
 # software_live
 
-`SoftwareLiveConfig` and `deploy_software_live` deploy the existing read-only software
-observation program, its authenticated HTTP endpoint and collection timer. Python and
-released Rust implementations use the original operational policy, state format,
-units and implementation drop-ins. The Python program, shared `nyxmon_checks.py`,
-filter and eight templates are copied from ops-library `cf3a0c74` without modification.
-No software upgrade, package refresh or reboot job is introduced.
+`SoftwareLiveConfig` and `deploy_software_live` deploy the released Rust software
+observation program `software-live`, its authenticated HTTP endpoint and collection timer,
+with the original operational policy, state format and units. The shared
+`nyxmon_checks.py`, filter and six templates are copied from the ops-library S12 change
+without modification. No software upgrade, package refresh or reboot job is introduced.
+
+The Python program was retired (ops-library `rust/software-live/PLAN.md` S12, after the
+7-day soak of the Rust port on all four hosts): the base units run
+`releases/<version>/software-live` directly, `impl` accepts only `"rust"` (kept so
+existing inventories stay valid; anything else is refused before any operation) and
+`rust_version` is required. `python3-apt` is no longer in the default `packages`; it is
+not uninstalled. A deploy on a host that still has the earlier layout removes the two
+`impl.conf` drop-ins (and their directories only when empty, so a foreign drop-in stays)
+after the candidate validated and before the base units are rewritten, so the units
+switch over in one daemon reload and restart. The deployed `software_live.py` and its
+`__pycache__` are removed only after the running release is verified, before the pins
+move. Going back to Python means reverting the S12 change. The Python program stays in
+`tests/parity/software_live/software_live.py` as the policy-validation oracle of the
+tests, byte-identical with ops-library's copy.
 
 ```python
 from ops_deploy.services.software_live import SoftwareLiveConfig, deploy_software_live
@@ -49,23 +62,25 @@ window and distinguish naturally changing state from deployment actions.
 
 Defaults retain `/etc/software-live`, `/var/lib/software-live`,
 `/usr/local/lib/software-live`, user/group `metrics`, port 9110, collection schedule
-`*:0/15`, and Python implementation. Directory paths must name dedicated software-live
+`*:0/15`. Directory paths must name dedicated software-live
 directories. Existing private orchestration forces its host policy, Tailscale bind,
 credentials and optional publisher export. The endpoint health contract retains the original
 private playbook's literal port 9110 even if the role endpoint port is overridden.
 
-## Rust selection, rollback and shadow
+## Rust release, rollback and shadow
 
-Set `impl="rust"`, `rust_version` and `rust_sha256` keyed by `ubuntu24.04` and/or
-`debian13`. The released archive contains `software-live`, `software-live-apt`, `LICENSE`
+Set `rust_version` and `rust_sha256` keyed by `ubuntu24.04` and/or `debian13`. The released archive contains `software-live`, `software-live-apt`, `LICENSE`
 and `LICENSE.GPL-3.0`. A controller-local archive is also supported. Release installation,
 validation, pinning and pruning reuse the existing Rust release helper. Production
 ownership remains root; the Ansible role's unprivileged owner/group fixture knobs are
 not exposed as production configuration.
 
-Selecting Python removes both Rust production drop-ins and reloads/restarts the original
-units before attempting an optional Rust shadow installation. Invalid or unreadable shadow
-release input therefore fails after rollback, rather than canceling rollback during planning.
+Invalid release inputs (variant, version, checksum, a missing controller archive) are
+refused before any operation. Rollback is Rust to Rust. After a deploy whose
+verification failed no pin moved, so redeploy the version in `releases/.pins/software-live`
+(the version last verified live). After a successful deploy of a release that later
+misbehaves, deploy the version in `releases/.pins/software-live.previous`, which pruning
+always keeps (absent on a host whose production version never changed).
 No pin moves and no release is pruned before implementation verification. Current and
 previous production pins, shadow pins, loaded unit commands, process executables and
 cgroup children protect live releases. An unknown live state skips pruning.
@@ -88,13 +103,18 @@ SQLite readers can still affect WAL/SHM bookkeeping; read-only SQL is not a glob
 claim. Actual inventory evidence must stay limited to declared operational rows and database
 metadata rather than reading unrelated rows or hashing a real database body.
 
-`remove_software_live(SoftwareLiveRemoveConfig())` stops/removes the six units, production
-drop-ins, configuration, programs/releases and shadow state. It retains production state
+`remove_software_live(SoftwareLiveRemoveConfig())` stops/removes the six units, any
+production drop-ins of earlier deploys, configuration, programs/releases and shadow state. It retains production state
 unless `remove_data=True`. Orchestration disables the corresponding Nyxmon check on its
 monitoring host before stopping the endpoint. Removal uses the same dedicated path validation.
 Daemon reload is conditional on actual unit/resource removal.
 
 ## Qualification status
+
+The S12 change replaces the native phases for Python/Rust switching and the Python
+rollback with an S12 upgrade phase and a refused invalid release; its native run and the
+Ansible coexistence phase against the S12 role are pending. The record below is the
+qualification of the pre-S12 implementation.
 
 Inventory engine selection has not changed. Tests include actual operations, owned SQLite
 semantics, source hashes and independently rendered Ansible files from exact `cf3a0c74`.

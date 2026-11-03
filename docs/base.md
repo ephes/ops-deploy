@@ -3,8 +3,8 @@
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
-SSH guard, dpkg foreign architectures, stale binary restart), the others are
-steps a service deploy calls (uv, Node.js):
+SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades), the
+others are steps a service deploy calls (uv, Node.js):
 
 ```python
 from ops_deploy.base import HostnameConfig, deploy_hostname
@@ -27,12 +27,14 @@ change.
 | `systemd_unit_masks` | `systemd_unit_masks` | `SystemdUnitMasksConfig`, `UnitMask` | `deploy_systemd_unit_masks` |
 | `journald_config` | `journald_config` | `JournaldConfig` | `deploy_journald_config` |
 | `ssh_authorized_keys` | `ssh_authorized_keys_manage` | `SshAuthorizedKeysConfig`, `AuthorizedKey` | `deploy_ssh_authorized_keys` |
+| `ssh_authorized_key_entries` | none (pyinfra only) | `SshAuthorizedKeyEntriesConfig`, `AuthorizedKey` | `deploy_ssh_authorized_key_entries` |
 | `uv_install` | `uv_install` | `UvInstallConfig` | `deploy_uv_install` |
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
 | `ssh_guard` | `ssh_guard_deploy` | `SshGuardConfig` | `deploy_ssh_guard` |
 | `dpkg_arch_remove` | `dpkg_arch_remove` | `DpkgArchRemoveConfig` | `deploy_dpkg_arch_remove` |
 | `stale_exe_restart` | none (pyinfra only) | `StaleExeRestartConfig`, `StaleExeUnit`, `StaleExeHttpProbe` | `deploy_stale_exe_restart` |
+| `unattended_upgrades` | none (new) | `UnattendedUpgradesConfig` | `deploy_unattended_upgrades` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -151,6 +153,45 @@ rename) although keys are public: the rename means an interrupted run never
 leaves a truncated file that locks the operator out. The role's
 `ssh_authorized_keys_manage_enabled` switch is not ported: do not call the
 deploy instead.
+
+## ssh_authorized_key_entries
+
+| Field | Default | |
+|---|---|---|
+| `user` | required | owner of `.ssh` and the file |
+| `group` | required | `staff` or `wheel` on macOS, not derived |
+| `home` | required | `/root`, `/var/root`, `/Users/<user>`, ... |
+| `present` | required, at least one | `AuthorizedKey(key, comment="", key_options="")` |
+| `absent` | `()` | key lines; options and comment are ignored |
+
+Changes only the given keys in `<home>/.ssh/authorized_keys` and keeps every
+other line, unlike `ssh_authorized_keys`, which owns the whole file. Lines are
+matched by key material (key type and base64 blob), never by comment or
+options. A `present` key is appended when missing and rewritten in place when
+its options or comment differ; further lines with the same key are dropped. Every
+line with an `absent` key is removed. All other lines (forced-command keys
+other deploys install, comments, the `# Managed by Ansible` header, blank and
+unparsable lines, CRLF line ends, a missing final newline) stay byte for byte.
+Fields are split on spaces and tabs only and lines on LF only, as sshd reads
+them. Removal fails closed: a non-comment line that is not attributed to an
+`absent` key but still contains its base64 blob (ignoring non-base64 bytes,
+which sshd's decoder skips) refuses the run before anything is written.
+A key both present and absent, the same key twice in `present` and an empty
+`present` are refused when the config is built.
+
+The file is read once while planning (base64, so every byte survives), merged
+on the controller and installed with [`secret_file`](concepts/operations.md):
+atomic, 0600, `user`:`group`, and no change when content, owner and mode
+already match. `.ssh` is ensured 0700 with the same owner. A symlink, a
+non-regular or an unreadable file is refused. Linux and macOS; nothing
+assumes `/root`.
+
+Not done here: proving that the host stays reachable before keys are removed
+(log in with a surviving `present` key over a fresh connection first, and never
+remove the key of the connection in use) and serialising concurrent runs
+(take the shared deploy lock before the file is read). Callers own both; in
+ops-control that is the `controller_keys` service (deploy-controllers plan,
+slice 4).
 
 ## uv_install
 
@@ -692,6 +733,92 @@ Taking a unit off the allowlist and deploying again stops its restarts, except
 for a run that already loaded the old allowlist (stop the service as in step 4
 if that matters).
 
+## unattended_upgrades
+
+Daily security updates with the distribution's `unattended-upgrades`, plus
+needrestart for the service restarts afterwards. There is no ops-library role
+to port: hosts ran the package defaults, and one bootstrap playbook wrote
+`20auto-upgrades` once. Defaults are security updates only, no reboots.
+
+| Field | Default | |
+|---|---|---|
+| `debian_point_releases` | `False` | Debian only: also take the main archive's point-release updates (Debian's packaged default); refused on Ubuntu |
+| `debian_stable_updates` | `False` | Debian only, needs `debian_point_releases`: also take the `<codename>-updates` suite (`stable-updates`: tzdata, ca-certificates and other updates that cannot wait for the next point release; not in Debian's packaged default) |
+| `package_blacklist` | `()` | package name regexes never upgraded (`Package-Blacklist`; letters, digits and `.+*^$_:-`) |
+| `remove_unused_kernel_packages` | `True` | `Remove-Unused-Kernel-Packages` |
+| `remove_unused_dependencies` | `False` | `Remove-Unused-Dependencies` |
+| `automatic_reboot` | `False` | `Automatic-Reboot`: reboot when a run left `/var/run/reboot-required` |
+| `automatic_reboot_time` | `"04:30"` | `Automatic-Reboot-Time`, `HH:MM` (the reboot waits for this time after the run) |
+| `autoclean_interval_days` | `7` | `APT::Periodic::AutocleanInterval` (0 to 365; 0: never) |
+| `needrestart` | `automatic` | needrestart after an upgrade: `automatic` restarts affected services, `list` only lists them, `unmanaged` leaves needrestart alone |
+| `needrestart_skip_services` | `()` | `*.service` names needrestart never restarts, on top of the package's own `override_rc` defaults, which match the start of the unit name (`docker*`, `dbus*`, `network*`, getty, the apt units; not `containerd` or `systemd-networkd`) |
+
+The policy lives in two drop-ins; no packaged file is touched, so a package
+upgrade never meets a modified conffile:
+
+- `/etc/apt/apt.conf.d/52ops-deploy-unattended-upgrades` sets
+  `APT::Periodic::Update-Package-Lists "1"`, `Unattended-Upgrade "1"` and
+  `AutocleanInterval`, then clears the packaged `Allowed-Origins`,
+  `Origins-Pattern` and `Package-Blacklist` (`#clear`) and writes its own,
+  followed by the cleanup, reboot and `SyslogEnable` settings. apt reads it
+  after `20auto-upgrades` and `50unattended-upgrades`, so its values win. A
+  host whose `20auto-upgrades` disables the daily run is enabled by it.
+- `/etc/needrestart/conf.d/60-ops-deploy-unattended-upgrades.conf` sets
+  `$nrconf{restart}` (`a` or `l`) and one `override_rc` entry per skipped
+  service. needrestart runs from apt's `DPkg::Post-Invoke` hook, so also after
+  an unattended upgrade, and the mode applies to every apt run on the host
+  (manual or scheduled upgrades too). With `needrestart="unmanaged"` the
+  drop-in is removed (needrestart itself stays installed), and the package's
+  default applies: on Ubuntu its apt hook restarts services automatically.
+
+Both are `root:root 0644`. A drop-in path that holds anything other than a
+regular file (a symlink included) is refused before any change.
+
+Origins, as `Unattended-Upgrade::Origins-Pattern` entries
+(unattended-upgrade substitutes `${distro_codename}`):
+
+| Release | Origins |
+|---|---|
+| Debian 12, 13 | `origin=Debian,codename=${distro_codename}-security,label=Debian-Security`; with `debian_point_releases` also `origin=Debian,codename=${distro_codename},label=Debian`; with `debian_stable_updates` also `origin=Debian,codename=${distro_codename}-updates,label=Debian` (derived from the codename, so a release upgrade needs no change) |
+| Ubuntu 24.04 | `origin=Ubuntu,archive=${distro_codename}` (the release pocket, frozen at release: only new dependencies of security updates), `-security`, and the ESM pockets `UbuntuESMApps` `-apps-security` and `UbuntuESM` `-infra-security` (used only with Ubuntu Pro). `-updates` is never taken, as in Ubuntu's own default |
+
+Compared with the package defaults this drops Debian's point-release origin
+(unless asked for) and the Debian pre-bullseye security origin; Ubuntu's
+origins are unchanged. Packages from other repositories (PGDG, Docker,
+Tailscale, vendor kernels, Vector) are never upgraded by it: a vendor
+release can need a configuration change. `os_lifecycle` reports them as
+pending third-party updates.
+
+Missing `unattended-upgrades` (and `needrestart`, unless unmanaged) are
+installed after an `apt-get update` (cache older than an hour). Installed
+packages are not refreshed or upgraded, so a converged host plans no change.
+The needrestart drop-in is written before that install: needrestart's apt hook
+does not run in the apt run that installs it, but it runs in every later one,
+and without a configured mode Ubuntu's hook (`-m u`) restarts services
+automatically; Debian's only lists them. A run that stops after the install,
+or an apt run right after it, still finds the mode.
+After the drop-ins a read-only check (reported separately, see
+[read-only checks](concepts/helpers.md)) compares the managed keys of
+`apt-config dump` (origins, any leftover `Allowed-Origins`, blacklist,
+periodic, cleanup and reboot values) with the policy as sorted lists, so
+another drop-in that adds an origin (also as a named entry such as
+`Origins-Pattern::extra`, which unattended-upgrade reads too) or overrides a
+value fails the deploy. It
+also fails when `APT::Periodic::Enable` is `0`, when `unattended-upgrade` is
+missing, or when `apt-daily.timer` or `apt-daily-upgrade.timer` is not
+enabled; the deploy never enables or unmasks them itself.
+
+Supported: Debian 12 and 13 and Ubuntu 24.04 (`ID` and `VERSION_ID` of
+`/etc/os-release`), with systemd as PID 1. Any other release is refused
+before any change; a new release needs its packaged defaults checked and the
+Docker test below run against it first.
+
+What it does not do: no unattended upgrades outside the daily
+`apt-daily-upgrade.timer` run, no timer changes, no reboot window by weekday
+(`Automatic-Reboot-Time` only picks the time of day), and no
+`dpkg-reconfigure`. To hand a host back to the package defaults, delete both
+drop-ins.
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
@@ -807,3 +934,23 @@ test and restarts nothing; a pending unit edit is refused; a held dpkg lock
 makes the run wait; and a real `apt-get install --reinstall` of the cached
 package queues the oneshot through the hook, which restarts the unit after apt
 has finished.
+
+`tests/test_base_unattended_upgrades_docker.py` runs
+`deploy_unattended_upgrades` against real apt, unattended-upgrades and
+needrestart, once per container in `UNATTENDED_UPGRADES_DOCKER_CONTAINERS`
+(full IDs, space separated; skipped when unset). Each container is named
+`ops-deploy-uu-*`, labelled `ops-deploy.fixture=unattended-upgrades`, runs
+systemd as PID 1 with `--network none`, not privileged and without mounts,
+and is built from `debian:12`, `debian:13` or `ubuntu:24.04` with
+`systemd systemd-sysv unattended-upgrades needrestart` installed and the
+image's `docker-clean` and `docker-disable-periodic-update` apt files removed
+(started like the ssh_guard fixture: `--cgroupns private --cap-add SYS_ADMIN
+--security-opt apparmor=unconfined --tmpfs /run --tmpfs /run/lock`, an entry
+point that remounts `/sys/fs/cgroup` writable and execs `/sbin/init`). The
+test checks that `unattended-upgrade --dry-run --debug` resolves exactly the
+security origins for the release's codename and the blacklist, needrestart
+evaluates the drop-in (`restart` `a`, the skipped service), the packaged
+`20auto-upgrades` and `50unattended-upgrades` keep owner, mode, inode, mtime
+and content, a converged run changes nothing, an origin added by another
+drop-in fails the check without a change, and `needrestart="unmanaged"`
+removes only its drop-in.

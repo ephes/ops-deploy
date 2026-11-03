@@ -47,6 +47,27 @@ def test_smartd_overrides_keep_original_command_policy() -> None:
     assert "smartctl" not in text
 
 
+def test_smartd_per_device_temperature_overrides_only_change_that_device() -> None:
+    cfg = SmartdConfig(
+        mail_to="root",
+        devices=(
+            SmartdDevice(name="ssd", device="/dev/ssd", type="nvme", temp_info=70, temp_crit=80),
+            SmartdDevice(name="hdd", device="/dev/hdd", type="sat", no_spinup=True, temp_diff=0),
+            SmartdDevice(name="plain", device="/dev/plain", type="sat"),
+        ),
+    )
+    text = smartd_render(cfg)
+    assert "/dev/ssd -d nvme -a -o on -S on -s (S/../.././02|L/../../6/03) -W 4,70,80 -m root\n" in text
+    assert "/dev/hdd -d sat -n standby -a -o on -S on -s (S/../.././02|L/../../6/03) -W 0,40,45 -m root\n" in text
+    assert "/dev/plain -d sat -a -o on -S on -s (S/../.././02|L/../../6/03) -W 4,40,45 -m root\n" in text
+
+
+@pytest.mark.parametrize("value", [-1, True, "45", 45.0])
+def test_smartd_per_device_temperature_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(ValidationError):
+        SmartdDevice.model_validate(dict(name="hdd", device="/dev/hdd", type="sat", temp_crit=value))
+
+
 @pytest.mark.parametrize(
     "override",
     [

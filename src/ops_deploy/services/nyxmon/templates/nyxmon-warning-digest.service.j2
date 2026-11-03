@@ -1,0 +1,28 @@
+[Unit]
+Description=Nyxmon warning digest
+After=network-online.target nyxmon.service
+Wants=network-online.target
+StartLimitIntervalSec=86400
+StartLimitBurst=8
+
+[Service]
+Type=oneshot
+User={{ cfg.user }}
+Group={{ cfg.user }}
+WorkingDirectory={{ cfg.site_path }}
+EnvironmentFile={{ cfg.env_path }}
+UMask=0077
+
+ExecStart={{ cfg.venv_path }}/bin/python manage.py send_warning_digest
+
+# A failed delivery retries; the digest has no other way to reach the owner.
+Restart=on-failure
+RestartSec=900
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Need access to /home/nyxmon
+ProtectHome=false
+ReadWritePaths={{ cfg.home }} {{ cfg.cache_dir }}

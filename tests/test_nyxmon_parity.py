@@ -60,6 +60,8 @@ def role_vars(cfg: NyxmonConfig, secrets: SecretValues, **extra: Any) -> dict[st
         "nyxmon_notify_consecutive_failures": cfg.notify_consecutive_failures,
         "nyxmon_notify_repeat_interval_seconds": cfg.notify_repeat_interval_seconds,
         "nyxmon_notify_warning_repeat_interval_seconds": cfg.notify_warning_repeat_interval_seconds,
+        "nyxmon_notify_warning_delivery": cfg.notify_warning_delivery,
+        "nyxmon_warning_digest_on_calendar": cfg.warning_digest_on_calendar,
         "nyxmon_processing_lease_seconds": cfg.processing_lease_seconds,
         "nyxmon_check_batch_size": cfg.check_batch_size,
         "nyxmon_opsgate_submit_base_url": cfg.opsgate_submit_base_url,
@@ -100,6 +102,7 @@ CONFIGS: list[dict[str, Any]] = [
     },
     {"opsgate_submit_base_url": "http://studio.example:8711", "opsgate_submit_include_warnings": True},
     {"django_debug": True, "workers": 2, "app_port": 10100, "site_path": "/srv/nyx/site", "user": "nyx"},
+    {"notify_warning_delivery": "digest", "warning_digest_on_calendar": "Fri *-*-* 07:30:00"},
 ]
 
 
@@ -121,7 +124,15 @@ def agent_vars(cfg: NyxmonConfig) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("overrides", CONFIGS)
-@pytest.mark.parametrize("template", ["nyxmon.service.j2", "nyxmon-monitor.service.j2"])
+@pytest.mark.parametrize(
+    "template",
+    [
+        "nyxmon.service.j2",
+        "nyxmon-monitor.service.j2",
+        "nyxmon-warning-digest.service.j2",
+        "nyxmon-warning-digest.timer.j2",
+    ],
+)
 def test_units_match_role(source: Path, overrides: dict[str, Any], template: str) -> None:
     cfg, secrets = make(source, agent_rust_version="0.1.0", agent_rust_sha256="0" * 64, **overrides)
 

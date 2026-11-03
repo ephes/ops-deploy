@@ -59,6 +59,11 @@ bootstrap can therefore require explicit recovery rather than regeneration.
 
 SMART defaults retain the original `-a -o on -S on`, temperature thresholds
 4/40/45, short/long schedules and per-device no-spinup/schedule overrides.
+`SmartdDevice.temp_diff`, `temp_info` and `temp_crit` (non-negative integers,
+`None` by default) override the role-wide `-W DIFF,INFO,CRIT` for one device,
+mirroring the ops-library role's per-device `smartd_temp_*` keys. smartd logs at
+INFO and mails once at CRIT, so give spinning disks and NVMe SSDs thresholds that
+fit their specification; devices without overrides render unchanged.
 `manage_service=False` skips unconditional enable/start; the original config
 handler still restarts on an actual configuration change. ZED preserves unowned
 RC lines and settings, scrub calendar/jitter/Persistent semantics and optional

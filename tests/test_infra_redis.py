@@ -1,11 +1,15 @@
 """``deploy_redis_install`` against the fake connector."""
 
+import shutil
+import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
 
 from ops_deploy.infra import RedisInstallConfig, deploy_redis_install
+from ops_deploy.infra._common import keyring_state_command
 from ops_deploy.infra.redis_install import needs_restart, render_config, render_preferences, runs_replaced_binary
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
@@ -219,7 +223,7 @@ def test_armored_official_key_is_converted_binary_left_alone() -> None:
     key = "/usr/share/keyrings/redis-official-archive-keyring.gpg"
     base = {**LINUX, "command -v apt-get": ["/usr/bin/apt-get"], **fakehost.file(key, "x")}
 
-    armored = run({f"head -c 10 {key}": ["-----BEGIN"], **base}, cfg, None)
+    armored = run({f"[ ! -s {key} ]": ["armored"], **base}, cfg, None)
     assert any("gpg --dearmor" in c for c in armored.executed_commands)
     commands = armored.executed_commands
     assert any("gnupg" in c and "install" in c for c in commands)
@@ -238,8 +242,49 @@ def test_armored_official_key_is_converted_binary_left_alone() -> None:
     first = next(i for i, c in enumerate(commands) if "gpg --dearmor" in c)
     assert all("apt-get update" not in c for c in commands[:first])
 
-    binary = run({f"head -c 10 {key}": ["\x99\x01"], **base}, cfg, None)
+    binary = run({f"[ ! -s {key} ]": ["binary"], **base}, cfg, None)
     assert not any("gpg --dearmor" in c for c in binary.executed_commands)
+
+    # An empty file or one that is no key (an error page) is replaced too.
+    for state in ("missing", "other"):
+        broken = run({f"[ ! -s {key} ]": [state], **base}, cfg, None)
+        assert any("gpg --dearmor" in c for c in broken.executed_commands)
+
+
+def test_keyring_bytes_never_come_back_as_a_fact() -> None:
+    # A dearmored keyring starts with byte 0x99, which pyinfra cannot decode as
+    # a fact's text output (it logged a UnicodeDecodeError and the check saw
+    # nothing). Only the state word may cross the command channel.
+    cfg = RedisInstallConfig(add_official_repo=True, apt_suite="noble")
+    key = "/usr/share/keyrings/redis-official-archive-keyring.gpg"
+
+    result = run({f"[ ! -s {key} ]": ["binary"], **LINUX, "command -v apt-get": ["/usr/bin/apt-get"]}, cfg, None)
+
+    reads = [c for c in result.fact_commands if key in c]
+    assert reads
+    assert all("[ ! -s " in c for c in reads), reads
+
+
+@pytest.mark.skipif(shutil.which("od") is None, reason="needs od")
+@pytest.mark.parametrize(
+    ("content", "state"),
+    [
+        (None, "missing"),
+        (b"", "missing"),
+        (b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n", "armored"),
+        (b"\x99\x01\x8d\x04\x5e", "binary"),  # old-format public-key packet, as gpg --dearmor writes it
+        (b"\xc6\x01\x0d", "binary"),  # new-format public-key packet
+        (b"<html>", "other"),
+    ],
+)
+def test_keyring_state_command_prints_only_a_word(tmp_path: Path, content: bytes | None, state: str) -> None:
+    keyring = tmp_path / "keyring.gpg"
+    if content is not None:
+        keyring.write_bytes(content)
+
+    done = subprocess.run(["sh", "-c", keyring_state_command(str(keyring))], capture_output=True, check=True)
+
+    assert done.stdout == f"{state}\n".encode()
 
 
 OLD = "6:7.4.1-1rl1~bullseye1"
@@ -270,7 +315,7 @@ def pinned_host(version: str, *, repo: bool = True, prefs: bool = True, binary: 
             f"Signed-By: {KEY}\nSuites: noble\nTypes: deb\nURIs: https://packages.redis.io/deb\n"
         )
         responses = {
-            f"head -c 10 {KEY}": ["\x99\x01"],
+            f"[ ! -s {KEY} ]": ["binary"],
             **fakehost.file(KEY, "x"),
             **fakehost.file(SOURCES, sources),
             **responses,

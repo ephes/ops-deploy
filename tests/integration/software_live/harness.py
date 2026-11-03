@@ -87,7 +87,6 @@ def cfg(*, os_release: Path = Path("/etc/os-release"), **changes: Any) -> Softwa
                     "desired_version": None,
                 },
             },
-            "impl": os.environ["FIXTURE_IMPL"],
             "rust_version": "0.1.1",
             "rust_sha256": SHA,
             # Real fixed unit names in a disposable guest; only calendar is moved
@@ -395,6 +394,51 @@ def nyxmon() -> None:
     deploy("nyxmon-disabled-repeat", disable, mode="nyxmon", zero=True)
 
 
+def s12_upgrade(config: SoftwareLiveConfig) -> None:
+    """A host as deploys left it before the Python retirement (S12): base units
+    with the Python commands, impl.conf drop-ins running the release, the Python
+    program and its bytecode cache installed. The deploy removes all of it and
+    the base units run the release in one reload and restart."""
+
+    system = Path("/etc/systemd/system")
+    binary = str(config.binary)
+    script = "/usr/local/lib/software-live/software_live.py"
+    for unit in ("software-live-endpoint.service", "software-live-collector.service"):
+        path = system / unit
+        text = path.read_text()
+        path.write_text(text.replace(binary, "/usr/bin/python3 " + script))
+        dropin = system / (unit + ".d")
+        dropin.mkdir(mode=0o755)
+        lines = [line for line in text.splitlines() if line.startswith(("ExecStart=", "ExecStartPost="))]
+        resets = sorted({line.split("=", 1)[0] + "=" for line in lines})
+        (dropin / "impl.conf").write_text("[Service]\n" + "\n".join([*resets, *lines]) + "\n")
+    foreign = system / "software-live-endpoint.service.d/override.conf"
+    foreign.write_text("[Service]\nNice=5\n")
+    Path(script).write_text("# retired fixture copy\n")
+    cache = Path("/usr/local/lib/software-live/__pycache__")
+    cache.mkdir()
+    (cache / "software_live.cpython-312.pyc").write_bytes(b"\0")
+    sh("systemctl", "daemon-reload")
+    sh("systemctl", "restart", "software-live-endpoint.service")
+    deploy("s12-upgrade", config)
+    for unit in ("software-live-endpoint.service", "software-live-collector.service"):
+        assert not (system / (unit + ".d/impl.conf")).exists()
+        assert binary in (system / unit).read_text()
+        assert "software_live.py" not in (system / unit).read_text()
+    assert foreign.exists()
+    assert not (system / "software-live-collector.service.d").exists()
+    assert not Path(script).exists()
+    assert not cache.exists()
+    assert Path("/usr/local/lib/software-live/nyxmon_checks.py").exists()
+    pid = sh("systemctl", "show", "software-live-endpoint.service", "-p", "MainPID", "--value")
+    assert os.readlink(Path("/proc", pid, "exe")) == os.path.realpath(binary)
+    health()
+    foreign.unlink()
+    (system / "software-live-endpoint.service.d").rmdir()
+    sh("systemctl", "daemon-reload")
+    deploy("s12-upgrade-repeat", config, zero=True)
+
+
 def main() -> None:
     write(
         "platform.json",
@@ -440,23 +484,17 @@ def main() -> None:
     deploy("credential-rotation-repeat", config, secret=rotated, zero=True)
     deploy("credential-recover", config)
     # Both matrix legs execute the released Rust implementation and real shadow endpoint.
-    rust = cfg(impl="rust")
-    deploy("rust-switch", rust)
-    deploy("rust-repeat", rust, zero=True)
-    shadow = cfg(impl="python", rust_shadow=True)
-    deploy("python-with-shadow", shadow)
+    shadow = cfg(rust_shadow=True)
+    deploy("rust-with-shadow", shadow)
     deploy("shadow-compare", shadow, mode="shadow", zero=True)
     deploy("shadow-repeat", shadow, zero=True)
-    deploy("rust-with-shadow", cfg(impl="rust", rust_shadow=True))
-    bad = cfg(impl="python", rust_shadow=True, rust_version="invalid")
-    pins = {str(p): fs(p) for p in (RELEASE / ".pins").rglob("*")}
-    deploy("invalid-shadow-rollback", bad, failure=True)
-    assert not Path("/etc/systemd/system/software-live-endpoint.service.d/impl.conf").exists()
-    pid = sh("systemctl", "show", "software-live-endpoint.service", "-p", "MainPID", "--value")
-    assert b"software_live.py" in Path("/proc", pid, "cmdline").read_bytes()
-    assert pins == {str(p): fs(p) for p in (RELEASE / ".pins").rglob("*")}
-    deploy("rollback-recover", cfg(impl="python"))
-    deploy("rollback-repeat", cfg(impl="python"), zero=True)
+    bad = cfg(rust_shadow=True, rust_version="invalid")
+    before = snapshot()
+    deploy("invalid-release-refused", bad, failure=True)
+    assert before == snapshot()
+    deploy("shadow-off", config)
+    deploy("shadow-off-repeat", config, zero=True)
+    s12_upgrade(config)
     nyxmon()
     remove = SoftwareLiveRemoveConfig()
     deploy("remove-keep-data", remove, mode="remove")
