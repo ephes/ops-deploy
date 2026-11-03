@@ -44,7 +44,7 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated
 
 import yaml
-from pydantic import Field, StrictBool
+from pydantic import Field, StrictBool, model_validator
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, python, server
 
@@ -80,6 +80,17 @@ class _Paths(MountGuard):
     otbr_state_path: AbsolutePath = "/var/lib/thread"
     service_unit_path: AbsolutePath = "/etc/systemd/system/homeassistant.service"
     traefik_config_path: AbsolutePath = "/etc/traefik/dynamic/homeassistant.yml"
+
+    @model_validator(mode="after")
+    def _canonical_paths(self) -> _Paths:
+        # The scripts create, chown and remove below these paths: no "/./",
+        # "/../", "//" or trailing "/" spellings that resolve elsewhere.
+        for name, value in self.model_dump().items():
+            if isinstance(value, str) and value.startswith("/"):
+                path = PurePosixPath(value)
+                if value != str(path) or ".." in path.parts or path == PurePosixPath("/"):
+                    raise ValueError(f"{name} must be a canonical absolute path other than /")
+        return self
 
     @property
     def matter_storage(self) -> str:

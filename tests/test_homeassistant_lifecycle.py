@@ -182,6 +182,12 @@ def test_restore_archive_must_be_a_name_below_the_root(archive: str) -> None:
         HomeAssistantRestoreConfig(host_name="m", archive=archive)
 
 
+@pytest.mark.parametrize("staging", ["/tmp/x/", "/tmp/./x", "/tmp//x", "/tmp/../etc", "/"])
+def test_restore_paths_must_be_canonical(staging: str) -> None:
+    with pytest.raises(ValidationError):
+        HomeAssistantRestoreConfig(host_name="m", staging_dir=staging)
+
+
 def test_restore_staging_must_lie_below_the_required_mount() -> None:
     with pytest.raises(ValidationError):
         HomeAssistantRestoreConfig(host_name="m", required_mount="/opt/backups")
@@ -191,7 +197,7 @@ def test_restore_staging_must_lie_below_the_required_mount() -> None:
 
 STUBS = r"""
 ensure_dir() { mkdir -p "$4"; }
-copy_file() { local dest=$5; [ -d "$dest" ] && dest="$dest/$(basename "$4")"; cp "$4" "$dest"; }
+copy_file() { local dest=$5; [ -d "$dest" ] && dest="$dest/$(basename "$4")"; cp "$4" "$dest"; chmod "$3" "$dest"; }
 chown_tree() { printf 'chown_tree %s\n' "$*" >>"$LOG"; }
 systemctl() {
     printf 'systemctl %s\n' "$*" >>"$LOG"
@@ -384,8 +390,9 @@ def test_restore_script_rolls_back_everything_it_overwrote(tmp_path: Path) -> No
     take_backup(p, tmp_path)
     make_site(p["site"], "current")
     (p["thread"] / "settings").write_text("thread-current\n")
-    (p["etc"] / "homeassistant.service").write_text("[Service]\n# current\n")
     (p["etc"] / "homeassistant.yml").unlink()
+    # Same bytes as the archived unit, but a mode the restore's copy changes.
+    (p["etc"] / "homeassistant.service").chmod(0o600)
     (tmp_path / "calls.log").unlink(missing_ok=True)
 
     # Home Assistant never becomes active: verification fails after the copy.
@@ -397,7 +404,7 @@ def test_restore_script_rolls_back_everything_it_overwrote(tmp_path: Path) -> No
     assert "Rollback completed" in done.stdout
     assert (p["site"] / "config" / "configuration.yaml").read_text() == "name: current\n"
     assert (p["thread"] / "settings").read_text() == "thread-current\n"
-    assert (p["etc"] / "homeassistant.service").read_text() == "[Service]\n# current\n"
+    assert (p["etc"] / "homeassistant.service").stat().st_mode & 0o777 == 0o600
     # The route did not exist before the restore, so the rollback removes it again.
     assert not (p["etc"] / "homeassistant.yml").exists()
     log = calls(tmp_path)

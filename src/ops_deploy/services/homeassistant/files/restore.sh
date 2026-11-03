@@ -67,6 +67,12 @@ if [ ! -f "$archive" ]; then
 fi
 # Never follow a planted link: the base must be a real directory (or absent),
 # and the extraction directory is new.
+case $STAGING_BASE/ in
+    *//* | */./* | */../*)
+        echo "Staging directory $STAGING_BASE is not a canonical path; refusing to use it" >&2
+        exit 1
+        ;;
+esac
 if [ -L "$STAGING_BASE" ] || { [ -e "$STAGING_BASE" ] && [ ! -d "$STAGING_BASE" ]; }; then
     echo "Staging directory $STAGING_BASE is not a plain directory; refusing to use it" >&2
     exit 1
@@ -155,7 +161,9 @@ if [ "$SAFETY" = 1 ]; then
             exit 1
         fi
     done
-    ensure_dir root root 0700 "$safety_extra"
+    # The site's parent (the account's home) keeps the account's ownership.
+    if [ ! -d "$(dirname "$SITE")" ]; then ensure_dir "$OWNER" "$GROUP" 0750 "$(dirname "$SITE")"; fi
+    mkdir -m 0700 -- "$safety_extra"
     mkdir -p "$safety_extra/dirs" "$safety_extra/absent" "$safety_extra/system"
     for spec in "${EXTRAS[@]}"; do
         IFS=: read -r name dest _ <<<"$spec"
@@ -214,7 +222,12 @@ rollback() {
         for path in "$UNIT_PATH" "$TRAEFIK_PATH"; do
             saved="$safety_extra/system/$(basename "$path")"
             if [ -e "$saved" ]; then
-                cmp -s "$saved" "$path" && continue
+                if cmp -s "$saved" "$path"; then
+                    # Same bytes: the restore may still have changed owner or mode.
+                    chown --reference="$saved" -- "$path"
+                    chmod --reference="$saved" -- "$path"
+                    continue
+                fi
                 if [ "$path" = "$TRAEFIK_PATH" ] && ! "${ROUTE_GUARD[@]}"; then
                     echo "$path not rolled back: a Traefik transaction is active" >&2
                     continue
