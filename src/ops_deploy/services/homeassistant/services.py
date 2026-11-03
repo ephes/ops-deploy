@@ -7,15 +7,19 @@ or silently convert an explicitly restarted/reloaded state to started.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from functools import partial
 from io import StringIO
+from typing import Any
 
+from pyinfra import state
+from pyinfra.api import operation
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files, systemd
 
 from .configuration_deploy import TaskRenderer, protected_template, render_task
+from .planning import changed, handler
 from .render import render_unit
 from .runtime_config import HomeAssistantRuntimeConfig, ServiceState
 
@@ -26,10 +30,10 @@ class UnitChanges:
     matter: OperationMeta | None
 
     def homeassistant_changed(self) -> bool:
-        return self.homeassistant.did_change()
+        return changed(self.homeassistant)
 
     def matter_changed(self) -> bool:
-        return self.matter is not None and self.matter.did_change()
+        return changed(self.matter)
 
     def reload_required(self) -> bool:
         return self.homeassistant_changed() or self.matter_changed()
@@ -74,18 +78,24 @@ def write_units(cfg: HomeAssistantRuntimeConfig, *, task_renderer: TaskRenderer 
     return UnitChanges(homeassistant, matter)
 
 
-def _desired_state(name: str, service: str, desired: ServiceState, enabled: bool) -> OperationMeta:
-    return systemd.service(
-        name=name,
+@operation()
+def _service_state(service: str, desired: ServiceState, enabled: bool) -> Generator[Any, None, None]:
+    yield from systemd.service._inner(
         service=service,
         running=desired != "stopped",
         restarted=desired == "restarted",
         reloaded=desired == "reloaded",
         enabled=enabled,
         # Original service.yml always requests daemon_reload, even when the
-        # unit and desired state are current. This is declared managed work.
-        daemon_reload=True,
+        # unit and desired state are current: execution keeps that managed
+        # work. A dry run plans only the state change; a changed unit plans
+        # the separate (conditional) reload handler instead.
+        daemon_reload=bool(state.is_executing),
     )
+
+
+def _desired_state(name: str, service: str, desired: ServiceState, enabled: bool) -> OperationMeta:
+    return _service_state(name=name, service=service, desired=desired, enabled=enabled)
 
 
 def ensure_service_states(cfg: HomeAssistantRuntimeConfig) -> tuple[OperationMeta, ...]:
@@ -117,22 +127,31 @@ def flush_service_handlers(
 
     Caller supplies pending notifications at this one flush only. Reusing old
     true callbacks at another boundary would repeat a restart and is not valid
-    composition. No notification is evaluated while registering operations.
+    composition. While planning, a notification reads only planned results
+    (``planning.changed``); completed results decide while executing.
     """
-    systemd.daemon_reload(name="Reload Home Assistant systemd units", _if=reload_required)
+    # Callbacks follow planning.changed: a dry run plans each handler only when
+    # one of its triggers is planned to change (listed as conditional).
+    handler(
+        name="Reload Home Assistant systemd units",
+        required=reload_required,
+        operation=systemd.daemon_reload,
+        arguments={},
+        _if=reload_required,
+    )
     if cfg.restart_on_change:
-        systemd.service(
+        handler(
             name="Restart Home Assistant after changes",
-            service=cfg.service_name,
-            restarted=True,
-            enabled=True,
+            required=homeassistant_required,
+            operation=systemd.service,
+            arguments={"service": cfg.service_name, "restarted": True, "enabled": True},
             _if=homeassistant_required,
         )
     if (cfg.manage_matter_server or matter_selected) and cfg.matter_server_restart_on_change:
-        systemd.service(
+        handler(
             name="Restart Matter server after changes",
-            service=cfg.matter_server_service_name,
-            restarted=True,
-            enabled=True,
+            required=matter_required,
+            operation=systemd.service,
+            arguments={"service": cfg.matter_server_service_name, "restarted": True, "enabled": True},
             _if=matter_required,
         )

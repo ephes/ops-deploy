@@ -19,6 +19,7 @@ from .environment import prepare_environment
 from .extra_packages import extra_packages_changed, install_extra_packages
 from .interpreter import install_python
 from .ownership import environment_ownership
+from .planning import changed
 from .runtime_config import HomeAssistantRuntimeConfig
 
 
@@ -36,7 +37,7 @@ class PythonRuntimeChanges:
     def homeassistant_changed(self) -> bool:
         """Original notifications only; record/link changes do not notify."""
         return any(
-            result.did_change()
+            changed(result)
             for result in (self.interpreter, self.homeassistant_ownership, self.homeassistant_application)
         ) or extra_packages_changed(self.extras)
 
@@ -45,7 +46,7 @@ class PythonRuntimeChanges:
         if self.matter_application is None:
             return False
         assert self.matter_ownership is not None
-        return any(result.did_change() for result in (self.interpreter, self.matter_ownership, self.matter_application))
+        return any(changed(result) for result in (self.interpreter, self.matter_ownership, self.matter_application))
 
 
 def _version_record(cfg: HomeAssistantRuntimeConfig, path: str, name: str) -> OperationMeta:
@@ -60,14 +61,20 @@ def _version_record(cfg: HomeAssistantRuntimeConfig, path: str, name: str) -> Op
 
 
 def configure_python_runtime(
-    cfg: HomeAssistantRuntimeConfig, *, llama_cpp_rebuild: bool = False, deferred: bool = False
+    cfg: HomeAssistantRuntimeConfig,
+    *,
+    llama_cpp_rebuild: bool = False,
+    deferred: bool = False,
+    constraints: OperationMeta | None = None,
 ) -> PythonRuntimeChanges:
     """Compose after account/UV/constraints; defer only known pending prerequisites.
 
     Returned callbacks are for the later original service-handler boundary.
-    They inspect actual completed operation results, never planning guesses.
+    While executing they inspect actual completed operation results; while
+    planning they report the planned results (``planning.changed``).
     Current extras remain declared managed resolution but notify only on the
-    original successful changed-output predicate.
+    original successful changed-output predicate. ``constraints`` is the
+    constraint-file write, a planning predecessor of the extras.
     """
     interpreter = install_python(cfg, deferred=deferred)
     ha_environment = prepare_environment(
@@ -85,7 +92,11 @@ def configure_python_runtime(
     ha_application = install_application(
         cfg, llama_cpp_rebuild=llama_cpp_rebuild, environment=ha_environment, deferred=deferred
     )
-    extras = install_extra_packages(cfg)
+    extras = install_extra_packages(
+        cfg,
+        deferred=deferred,
+        predecessors=(interpreter, ha_environment, ha_ownership, ha_application, constraints),
+    )
     matter_environment = matter_ownership = matter_application = None
     if cfg.manage_matter_server:
         paths = [cfg.matter_server_storage_path]

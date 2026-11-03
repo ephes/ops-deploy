@@ -803,6 +803,57 @@ apt refresh, extra-package resolution, desired-state daemon reload and selected
 conversation canary remain actual operations. Read-only status marking describes
 managed configuration ownership, not global I/O or background service effects.
 
+### Dry run (`--dry`)
+
+A dry run (`just pyinfra-check homeassistant macmini` in ops-control) lists an
+operation as a change only when execution would change something; a converged
+host plans no change. Execution is unchanged, including the always-run work above.
+
+- **Deferral only while a prerequisite is planned.** The Python, virtualenv,
+  ownership, application, extras, configuration and Custom Conversation
+  inspections run while planning, the same read-only host checks execution runs.
+  They are deferred (listed as unresolved changes) only while the account or a
+  layout directory is planned to change; the Python steps also while a UV
+  installation is planned. `pyinfra -y` (no planning) keeps the unconditional
+  deferral, so an apply registers exactly as before.
+- **Configuration.** The `configuration.yaml` replacements and the
+  `secrets.yaml`/`configuration.yaml` templates are checked on the host. While
+  planning a template sends only the SHA-256 of the rendered body
+  (`content_sha256`, on protected stdin); the host compares it with the file
+  and answers only `changed`. No body, credential or digest is printed or
+  logged, and a digest payload cannot be written. The stock `secrets.yaml`
+  route (no task renderer) composes the body on the host from its protected
+  parts, so its planning check sends the same protected payload execution does.
+- **Extra packages.** A read-only metadata probe
+  (`files/extra_packages_observe.py`, as the service user with the HA
+  virtualenv's Python) reports whether the installed packages satisfy every
+  spec, its dependencies (markers and extras) and the `--constraint` files. Only
+  then is the install planned as no change; anything it cannot decide (an
+  option among the specs or constraint arguments, a failed probe) is a change.
+  It is also a change while the interpreter, environment, ownership, HA
+  application or constraint file is planned to change.
+- **Package-list refresh and daemon reload.** The system-package step plans
+  only missing packages and the desired-state step only start/enable changes;
+  execution still runs `apt-get update` and the desired-state
+  `systemctl daemon-reload` first.
+- **Read-only checks** (UV verification, environment trust floors, the
+  `check_config`/import/LiteLLM validations, API readiness waits and resets,
+  pipeline selection and STT waits, running-trust verification, the Traefik
+  notice) are listed without a change; they still run while executing.
+- **Conditional.** The area registry, the built-in and Custom Conversation
+  provisioning and the pipeline reconciliation need the live API (and, for
+  conversations, the model canary), which planning never calls: they are
+  listed under "Conditional Change". Handlers (systemd reload, Home Assistant
+  and Matter restarts, udev reload/trigger) are listed as conditional only when
+  one of their triggers is planned to change; an unchanged Matter unit,
+  runtime and configuration plan no Matter restart at all.
+
+Notification callbacks (`PythonRuntimeChanges`, `ConfigurationChanges`,
+`UnitChanges`, `CustomComponentChanges`, `extra_packages_changed`) report the
+planned result before an operation has executed and the completed result after.
+A rebuilt virtualenv rewrites its version record although the plan, which sees
+the current record, lists the record as unchanged; the rebuild itself is listed.
+
 ## Prepared owned application matrix
 
 The [owned native fixture](https://github.com/ephes/ops-deploy/tree/pyinfra-homeassistant-20261028/tests/integration/homeassistant)

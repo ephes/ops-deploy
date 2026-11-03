@@ -8,6 +8,7 @@ writes are explicitly deferred, not mistaken for current target contents.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import shlex
 from collections.abc import Callable, Generator, Mapping
@@ -34,6 +35,7 @@ from .configuration_render import (
     render_include,
     render_secret_parts,
 )
+from .planning import planned
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import _present
 from .transport import run_protected_command
@@ -86,7 +88,12 @@ class ConfigurationChanges:
     replacements: tuple[OperationMeta, ...]
 
     def homeassistant_changed(self) -> bool:
-        """Original only-replacement notifications from actual helper output."""
+        """Original only-replacement notifications from actual helper output.
+
+        While planning, the planned replacements (no helper output exists yet).
+        """
+        if any(planned(result) for result in self.replacements):
+            return any(result.will_change for result in self.replacements)
         for result in self.replacements:
             if result.did_succeed() and result.stdout.strip():
                 try:
@@ -111,6 +118,12 @@ def file_command(cfg: HomeAssistantRuntimeConfig) -> str:
 def _pending(cfg: HomeAssistantRuntimeConfig, protected: SecretStr) -> bool:
     payload = json.loads(protected.get_secret_value())
     payload["action"] = "check"
+    if not state.is_executing and "content" in payload:
+        # A dry run compares only the desired body's digest on the host; the
+        # rendered body (secrets.yaml included) is not sent while planning.
+        payload["content_sha256"] = hashlib.sha256(
+            payload.pop("content").encode("utf-8", errors="surrogateescape")
+        ).hexdigest()
     success, output = run_protected_command(
         host,
         StringCommand(file_command(cfg)),

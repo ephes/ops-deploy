@@ -69,9 +69,11 @@ def test_empty_specs_do_not_register_any_execution() -> None:
     assert run.executed_commands == []
 
 
-def test_premature_change_classification_is_not_assumed_false() -> None:
-    with pytest.raises(RuntimeError, match="before execution"):
-        extra_packages_changed(OperationMeta("owned", True))
+@pytest.mark.parametrize("planned", [False, True])
+def test_planning_classification_is_the_planned_result(planned: bool) -> None:
+    seen: list[bool] = []
+    run_deploy_fake(lambda: seen.append(extra_packages_changed(OperationMeta("owned", planned))))
+    assert seen == [planned]
 
 
 @pytest.mark.parametrize("constraints", [False, True])

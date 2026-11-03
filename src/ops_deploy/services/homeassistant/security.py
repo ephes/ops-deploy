@@ -24,6 +24,7 @@ from pyinfra.operations import files as file_ops
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.python import _as_user
 
+from .planning import executing
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security_policy import python_security_constraints, python_security_report_violations
 from .transport import run_protected_command
@@ -161,6 +162,8 @@ def _after_install(state: State, host: Host, cfg: HomeAssistantRuntimeConfig) ->
 
 @operation()
 def _verify_after_install(cfg: HomeAssistantRuntimeConfig) -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_after_install, (cfg,), {})
 
 

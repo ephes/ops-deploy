@@ -25,6 +25,7 @@ from ops_deploy.base._common import RoleConfig
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import StdinLines
 
+from .planning import executing
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
 
@@ -198,6 +199,8 @@ def _reset_readiness(state: State, host: Host, readiness: ApiReadiness) -> None:
 @operation()
 def _reset_readiness_at_boundary(readiness: ApiReadiness) -> Generator[FunctionCommand, None, None]:
     # Registration must not clear the cache before preceding operations execute.
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_reset_readiness, (readiness,), {})
 
 
@@ -216,6 +219,8 @@ def reset_api_readiness(readiness: ApiReadiness) -> OperationMeta:
 def _check_readiness(
     command: str, payload: SecretStr, readiness: ApiReadiness, timeout: int
 ) -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_apply, (command, payload, readiness, timeout), {})
 
 

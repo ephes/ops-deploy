@@ -21,6 +21,7 @@ from ops_deploy.base._common import RoleConfig, Sha256
 from ops_deploy.helpers.probes import StdinLines
 
 from .custom_conversation_patch import expected_stamp
+from .planning import changed
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
 
@@ -54,7 +55,7 @@ class CustomComponentChanges:
 
     def homeassistant_changed(self) -> bool:
         # Original get_url and parent metadata do not notify the handler.
-        return self.extraction.did_change() or self.stamp.did_change()
+        return changed(self.extraction) or changed(self.stamp)
 
 
 def component_payload(cfg: HomeAssistantRuntimeConfig, component: CustomComponentConfig, action: str) -> SecretStr:

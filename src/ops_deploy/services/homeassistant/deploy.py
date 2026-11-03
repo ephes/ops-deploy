@@ -11,6 +11,7 @@ import json
 import shlex
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
+from functools import partial
 from importlib.resources import files as resources
 from pathlib import PurePosixPath
 from typing import Any, Literal
@@ -39,6 +40,7 @@ from .integration_flows import ApiReadiness, ensure_api_readiness, integrate, re
 from .legacy_conversation import inspect_legacy_conversation, remove_legacy_component
 from .pinned_assets import install_pinned_assets
 from .pipelines import PipelineResult, manage_pipelines
+from .planning import changed, executing, plan_probes, resolved_at_execution
 from .python_runtime import configure_python_runtime
 from .runtime_config import HomeAssistantRuntimeConfig
 from .security import security_preflight, verify_security, write_constraints
@@ -95,6 +97,8 @@ def _checked_command(state: State, host: Host, command: str, label: str) -> None
 
 @operation()
 def _application_check(command: str, label: str) -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_checked_command, (command, label), {})
 
 
@@ -110,12 +114,22 @@ def application_check(
     )
 
 
+@operation()
+def _system_packages(packages: list[str]) -> Generator[Any, None, None]:
+    # Execution always refreshes the package lists first (original
+    # update_cache), then installs. That refresh is not a managed change, so a
+    # dry run plans only missing packages.
+    yield from apt.packages._inner(packages=packages, update=executing())
+
+
 def _notice(state: State, host: Host) -> None:
     logger.info("Traefik watches Home Assistant dynamic configs automatically")
 
 
 @operation()
 def _traefik_notice() -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_notice, (), {})
 
 
@@ -156,16 +170,16 @@ class _PendingHandlers:
                 break
         match selector:
             case "reload systemd":
-                self.reload.append(meta.did_change)
+                self.reload.append(partial(changed, meta))
             case "restart homeassistant":
-                self.homeassistant.append(meta.did_change)
+                self.homeassistant.append(partial(changed, meta))
             case "restart matter server":
-                self.matter.append(meta.did_change)
+                self.matter.append(partial(changed, meta))
                 self.matter_selected = True
             case "reload udev rules" | "trigger udev":
                 if cfg.enable_udev_rule:
                     pending = self.udev_reload if selector == "reload udev rules" else self.udev_trigger
-                    pending.append(meta.did_change)
+                    pending.append(partial(changed, meta))
             case "reload traefik config":
                 self.ingress = meta
             case _:
@@ -230,10 +244,16 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
             expected_digest=expected_digest,
         )
         security_preflight(runtime.model_copy(update={"python_security_floor_enabled": False}))
-    apt.packages(name="Install Home Assistant system packages", packages=list(cfg.additional_packages), update=True)
-    pending = _PendingHandlers(udev=configure_layout(runtime, task_renderer=cfg._task_renderer))
-    install_uv(runtime.uv, manage=runtime.manage_uv)
-    write_constraints(runtime)
+    _system_packages(name="Install Home Assistant system packages", packages=list(cfg.additional_packages))
+    layout: list[OperationMeta] = []
+    pending = _PendingHandlers(udev=configure_layout(runtime, task_renderer=cfg._task_renderer, prerequisites=layout))
+    uv_pending = install_uv(runtime.uv, manage=runtime.manage_uv)
+    constraints = write_constraints(runtime)
+    # A dry run inspects the host like execution does, unless the account,
+    # directories or UV that the inspections need are still planned. ``-y``
+    # registers without planning; it keeps the unconditional deferral there.
+    layout_deferred = not plan_probes() or any(item.will_change for item in layout)
+    runtime_deferred = layout_deferred or uv_pending
     readiness = ApiReadiness()
     rebuild = False
     if cfg.builtin_enabled:
@@ -251,7 +271,9 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
                 result=ConversationResult(),
             )
         remove_legacy_component(runtime)
-    python = configure_python_runtime(runtime, llama_cpp_rebuild=rebuild, deferred=True)
+    python = configure_python_runtime(
+        runtime, llama_cpp_rebuild=rebuild, deferred=runtime_deferred, constraints=constraints
+    )
     pending.homeassistant.append(python.homeassistant_changed)
     pending.matter.append(python.matter_changed)
     verify_security(runtime)
@@ -269,7 +291,7 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         include_renderer=cfg._include_renderer,
         task_renderer=cfg._task_renderer,
         task_capture=cfg._task_capture,
-        deferred=True,
+        deferred=layout_deferred,
     )
     pending.homeassistant.append(configuration.homeassistant_changed)
     if cfg.builtin_enabled:
@@ -285,8 +307,8 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     pending.matter.append(units.matter_changed)
     dropin = write_managed_dropin(runtime, task_renderer=cfg._task_renderer)
     if dropin is not None:
-        pending.reload.append(dropin.did_change)
-        pending.homeassistant.append(dropin.did_change)
+        pending.reload.append(partial(changed, dropin))
+        pending.homeassistant.append(partial(changed, dropin))
     pending.notify_ingress(
         write_ingress(
             cfg.ingress,
@@ -299,7 +321,7 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     )
     ensure_service_states(runtime)
     for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card):
-        pending.homeassistant.append(asset.did_change)
+        pending.homeassistant.append(partial(changed, asset))
     if cfg.areas():
         manage_area_registry(runtime, cfg.api, readiness, cfg.areas(), AreaResult(), app_port=values.app_port)
     for selection in cfg.integrations():
@@ -307,7 +329,7 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     custom_result = CustomConversationResult()
     builtin_result = ConversationResult()
     if cfg.custom.enabled:
-        component = install_custom_component(runtime, cfg.custom_component, deferred=True)
+        component = install_custom_component(runtime, cfg.custom_component, deferred=layout_deferred)
         pending.homeassistant.append(component.homeassistant_changed)
         pending.flush(runtime)
         reset_api_readiness(readiness)
@@ -331,6 +353,8 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
                 api=cfg.api,
                 config=cfg.custom,
                 result=custom_result,
+                # API state and the model canary: only execution can decide.
+                _if=resolved_at_execution,
             )
     if cfg.builtin_enabled or cfg.assist.builtin_selected():
         # This nested original task group has its OWN flush even when custom ran.
@@ -345,6 +369,8 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
             config=cfg.builtin,
             action="ensure" if cfg.builtin_enabled else "disable",
             result=builtin_result,
+            # API state and the model canary: only execution can decide.
+            _if=resolved_at_execution,
         )
         if cfg.builtin_enabled:
             application_check(

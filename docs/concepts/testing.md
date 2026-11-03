@@ -68,6 +68,8 @@ The fish cases are skipped where fish is not installed.
 `fact` events appear in both phases.
 
 Helpers: `executed_commands` (non-fact shell commands while executing),
+`planned_changes` / `planned_conditional` (what a `--dry` run lists under
+"Change" and "Conditional Change", from each op's `planned` field),
 `mutating_changed_ops` (changed ops minus read-only checks such as
 `wait_port`/`http_check`; empty on a converged second run),
 `fact_commands`, `function_calls`, `uploads` (every `(path, content)` in order,

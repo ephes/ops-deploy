@@ -114,15 +114,22 @@ def test_package_change_notification_is_deferred_after_both_environments(
     assert len(run.mutating_changed_ops) == 3
 
 
-def test_premature_notifications_fail_instead_of_guessing(current: list[tuple[str, str]]) -> None:
-    cfg = HomeAssistantRuntimeConfig()
+def test_registration_time_notifications_report_the_plan(current: list[tuple[str, str]]) -> None:
+    cfg = HomeAssistantRuntimeConfig(
+        manage_matter_server=True,
+        package_spec="homeassistant==2026.10.2",
+        matter_server_package_spec="python-matter-server[server]==8.1.2",
+    )
+    seen: list[tuple[bool, bool]] = []
 
     def deploy() -> None:
         changes = configure_python_runtime(cfg)
-        changes.homeassistant_changed()
+        seen.append((changes.homeassistant_changed(), changes.matter_changed()))
 
-    with pytest.raises(RuntimeError, match="before execution"):
-        run_deploy_fake(deploy, responses=responses(cfg))
+    run = run_deploy_fake(deploy, responses=responses(cfg))
+    assert run.succeeded, run.error
+    # A current runtime plans no change, so neither restart is planned.
+    assert seen == [(False, False)]
 
 
 @pytest.mark.parametrize("matter", [False, True])

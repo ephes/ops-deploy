@@ -24,6 +24,7 @@ from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import StdinLines, probe
 
 from .configuration_deploy import TaskRenderer, protected_template, render_task
+from .planning import executing
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
 
@@ -191,6 +192,8 @@ def _verify_running_trust(
     cfg: HomeAssistantRuntimeConfig,
     expected_digest: Callable[[str, bool], SecretStr] | None = None,
 ) -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_verify_after_handlers, (cfg, expected_digest), {})
 
 

@@ -45,6 +45,7 @@ from ops_deploy.ops.secret_file import INSTALLER_SOURCE
 
 EventKind = Literal["fact", "shell", "put", "function"]
 Phase = Literal["plan", "execute"]
+PlannedChange = Literal["change", "conditional"] | None
 
 FAKE_HOST = "@fake/target"
 
@@ -76,6 +77,9 @@ class OpResult:
     args: tuple[str, ...] = ()
     # Tagged with ``ops_deploy.helpers.mark_read_only`` (health checks).
     read_only: bool = False
+    # What the dry run (``--dry``) listed: "change", "conditional" (an ``_if``
+    # operation, pyinfra's "Conditional Change" column) or None (no change).
+    planned: PlannedChange = field(default=None, compare=False)
 
 
 @dataclass
@@ -98,6 +102,18 @@ class DeployRun:
         """Changed ops minus read-only checks; empty on a converged second run."""
 
         return [op.name for op in self.ops if op.changed and not op.read_only]
+
+    @property
+    def planned_changes(self) -> list[str]:
+        """Ops the dry run listed as a change; empty for a converged host."""
+
+        return [op.name for op in self.ops if op.planned == "change"]
+
+    @property
+    def planned_conditional(self) -> list[str]:
+        """Ops the dry run listed under "Conditional Change"."""
+
+        return [op.name for op in self.ops if op.planned == "conditional"]
 
     def op(self, name: str) -> OpResult:
         matches = [op for op in self.ops if op.name == name]
@@ -430,6 +446,10 @@ def collect_ops(state: State, host_name: str) -> list[OpResult]:
         op_meta = state.get_op_meta(op_hash)
         name = ", ".join(sorted(op_meta.names))
         complete = meta.is_complete()
+        # The planned flag pyinfra's dry-run summary reads (prints.print_meta).
+        planned: PlannedChange = None
+        if meta._maybe_is_change:
+            planned = "conditional" if op_data.global_arguments.get("_if") else "change"
         results.append(
             OpResult(
                 name=name,
@@ -437,6 +457,7 @@ def collect_ops(state: State, host_name: str) -> list[OpResult]:
                 succeeded=complete and meta.did_succeed(),
                 args=tuple(op_meta.args),
                 read_only=is_read_only(state, op_hash),
+                planned=planned,
             )
         )
     return results

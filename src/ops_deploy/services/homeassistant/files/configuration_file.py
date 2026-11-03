@@ -1,6 +1,8 @@
 """Host-local original template/replace filesystem behavior over protected stdin.
 
 No current/rendered body, body digest, backup name or exception text is emitted.
+A dry-run check may send only the desired body's SHA-256 (``content_sha256``)
+instead of the body; the comparison stays host-local and nothing is echoed.
 A failed write can already have created a backup or replaced bytes; fixed effect
 flags preserve that distinction. This helper is not a complete HA deployment.
 """
@@ -9,6 +11,7 @@ from __future__ import annotations
 
 import errno
 import grp
+import hashlib
 import json
 import os
 import pwd
@@ -76,11 +79,19 @@ def process(payload: dict[str, Any], effects: dict[str, bool]) -> None:
             raise
         current, previous = None, None
     if kind == "template":
-        desired = payload["content"].encode("utf-8", errors="surrogateescape")
         uid = pwd.getpwnam(payload["user"]).pw_uid
         gid = grp.getgrnam(payload["group"]).gr_gid
         mode = int(payload["mode"], 8)
-        body_change = current != desired or link
+        if "content_sha256" in payload:
+            # Digest-only check: never written, so no body is needed here.
+            if action != "check" or "content" in payload:
+                raise ValueError("digest-only payload is for checks")
+            digest = payload["content_sha256"]
+            body_change = current is None or hashlib.sha256(current).hexdigest() != digest or link
+            desired = b""
+        else:
+            desired = payload["content"].encode("utf-8", errors="surrogateescape")
+            body_change = current != desired or link
         metadata_change = previous is None or (previous.st_uid, previous.st_gid, stat.S_IMODE(previous.st_mode)) != (
             uid,
             gid,

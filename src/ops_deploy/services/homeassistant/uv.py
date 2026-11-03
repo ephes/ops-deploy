@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Generator
 from typing import Self
 
 from pydantic import Field, model_validator
 from pyinfra import host
+from pyinfra.api import operation
 from pyinfra.facts.files import File, Link
 from pyinfra.operations import files, server
 
 from ops_deploy.base._common import Sha256, Version
 from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install, installed_version
 from ops_deploy.helpers.checks import mark_read_only
+
+from .planning import executing
 
 
 class HomeAssistantUvConfig(UvInstallConfig):
@@ -40,10 +44,21 @@ class HomeAssistantUvConfig(UvInstallConfig):
         return self
 
 
-def install_uv(cfg: HomeAssistantUvConfig, *, manage: bool) -> None:
-    """Call at the original UV include boundary, after account/layout tasks."""
+@operation()
+def _verify_uv(binary: str) -> Generator[str, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
+    yield from server.shell._inner(commands=[f"{binary} --version && {binary} --help >/dev/null"])
+
+
+def install_uv(cfg: HomeAssistantUvConfig, *, manage: bool) -> bool:
+    """Call at the original UV include boundary, after account/layout tasks.
+
+    Return whether a UV installation is registered: later steps that run UV
+    cannot be inspected while planning before it has run.
+    """
     if not manage:
-        return
+        return False
     binary_path = cfg.install_dir + "/uv"
     is_link = bool(host.get_fact(Link, path=binary_path))
     exists = is_link or bool(host.get_fact(File, path=binary_path))
@@ -57,9 +72,5 @@ def install_uv(cfg: HomeAssistantUvConfig, *, manage: bool) -> None:
     else:
         files.directory(name=f"Ensure {cfg.install_dir}", path=cfg.install_dir, mode="0755")
     binary = shlex.quote(cfg.install_dir + "/uv")
-    mark_read_only(
-        server.shell(
-            name="Verify Home Assistant UV version and functionality",
-            commands=[f"{binary} --version && {binary} --help >/dev/null"],
-        )
-    )
+    mark_read_only(_verify_uv(name="Verify Home Assistant UV version and functionality", binary=binary))
+    return needed

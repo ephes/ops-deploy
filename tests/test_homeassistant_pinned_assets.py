@@ -297,7 +297,7 @@ def test_deploy_restarts_home_assistant_only_through_the_pending_handlers() -> N
     source = Path(str(files("ops_deploy.services.homeassistant").joinpath("deploy.py"))).read_text()
     assert (
         "for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card):\n"
-        "        pending.homeassistant.append(asset.did_change)"
+        "        pending.homeassistant.append(partial(changed, asset))"
     ) in source
     helper_source = Path(str(files("ops_deploy.services.homeassistant").joinpath("files/pinned_assets.py"))).read_text()
     for untouched in ("configuration.yaml", "automations.yaml", "scripts.yaml"):

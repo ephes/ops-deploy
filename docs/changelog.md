@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `services.homeassistant`: a dry run lists only real changes. The normal
+  deploy deferred its Python, virtualenv, application, extras and configuration
+  inspections unconditionally, so `--dry` reported every one of them (and a
+  conditional Matter restart) as a change on a converged host. It now runs the
+  same read-only host checks while planning and defers only while the account,
+  a layout directory or (for the Python steps) UV is planned to change;
+  `pyinfra -y` keeps the old deferral, and execution is unchanged. Templates
+  are compared on the host by SHA-256 while planning, so no `secrets.yaml`
+  body is sent; extra packages are checked by a read-only metadata probe;
+  the package-list refresh and desired-state daemon reload are left out of
+  the plan; read-only checks plan no change; the API-dependent area,
+  conversation and pipeline steps are listed as conditional; handlers are
+  listed only when a trigger is planned to change. The notification callbacks
+  report planned results before execution instead of raising. The test
+  harness's `OpResult.planned` and `DeployRun.planned_changes` /
+  `planned_conditional` show what a dry run lists.
+
 - `os_lifecycle`: with `unattended_upgrades`, a new warning rule
   `uu.last_result != "error"` flags a last unattended-upgrades run that
   logged an `ERROR` (a failed install, which still refreshes the stamp behind

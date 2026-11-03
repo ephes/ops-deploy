@@ -20,6 +20,7 @@ from ops_deploy.helpers.probes import StdinLines
 from ops_deploy.helpers.python import _as_user
 
 from .integration_flows import ApiReadiness, HomeAssistantApiConfig, ensure_api_readiness
+from .planning import resolved_at_execution
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
 
@@ -214,5 +215,7 @@ def manage_area_registry(
         apply_payload=apply_payload,
         timeout=api.timeout,
         result=result,
+        # Planning makes no API call: listed as a conditional change.
+        _if=resolved_at_execution,
     )
     return ready, change

@@ -104,7 +104,8 @@ def stub_composition(monkeypatch: pytest.MonkeyPatch, *, count: int = 0, uv: boo
         lambda cfg: trace.append("environment-floor" if cfg.python_security_floor_enabled else "store-floor"),
     )
     monkeypatch.setattr(module, "inspect_trust", call("unit-preflight"))
-    monkeypatch.setattr(module.apt, "packages", call("packages"))
+    monkeypatch.setattr(module, "_system_packages", call("packages"))
+    monkeypatch.setattr(module, "plan_probes", lambda: True)
     monkeypatch.setattr(module, "configure_layout", call("layout", meta))
     monkeypatch.setattr(module, "install_uv", call("uv"))
     monkeypatch.setattr(module, "write_constraints", call("constraints"))

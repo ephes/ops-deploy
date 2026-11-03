@@ -25,6 +25,7 @@ from .builtin_conversation import ConversationResult
 from .integration_flows import ApiReadiness, HomeAssistantApiConfig, ensure_api_readiness
 from .live_registry import read_live_registry, registry_command, registry_payload
 from .pipeline_state import read_pipeline_preparation
+from .planning import executing
 from .runtime_config import HomeAssistantRuntimeConfig
 from .transport import run_protected_command
 
@@ -150,6 +151,8 @@ def _prepare_operation(
     custom: ConversationResult | None,
     result: PipelineResult,
 ) -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_prepare, (runtime, mode, options, api, app_port, builtin, custom, result), {})
 
 
@@ -197,6 +200,8 @@ def _wait_stt(
 def _wait_operation(
     runtime: HomeAssistantRuntimeConfig, api: HomeAssistantApiConfig, result: PipelineResult, app_port: int
 ) -> Generator[FunctionCommand, None, None]:
+    if not executing():
+        return  # Read-only check: listed without a change in a dry run.
     yield FunctionCommand(_wait_stt, (runtime, api, result, app_port), {})
 
 
