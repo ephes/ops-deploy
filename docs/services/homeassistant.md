@@ -930,6 +930,9 @@ individual child flag is false. User removal invokes `userdel -r` when
 `remove_site_dir` is true, otherwise `userdel`; failures are fatal and stop group
 removal. The group is last. Matter and OTBR are outside this removal role.
 
+The route file below `/etc/traefik/dynamic` is removed only while no Traefik
+transaction holds its host lock, like every other route writer there.
+
 Tests execute only owned temporary filesystem paths and fake service/account
 commands, with separate confirmation, each-flag, ordering, ignored-failure and
 repeat checks. An additional controller oracle exercised the actual installed
@@ -939,6 +942,65 @@ run. Private registration, installed CLI binding and disposable native lifecycle
 qualification remain outstanding; this source does not authorize inventory
 removal.
 
+
+## Backup and restore
+
+`services.homeassistant.deploy_homeassistant_backup` (`HomeAssistantBackupConfig`)
+and `deploy_homeassistant_restore` (`HomeAssistantRestoreConfig`) port the
+`homeassistant_backup` and `homeassistant_restore` roles with their defaults.
+Each runs as one bash script on the host (`files/backup.sh`, `files/restore.sh`),
+so the roles' block/always/rescue structure keeps its meaning.
+
+A backup is `<root>/<prefix>-<timestamp>` (default `/opt/backups/homeassistant`,
+`root:root 0700`) with `config/` (the recorder database as a `sqlite3 .backup`
+copy, three attempts with `.timeout 30000`; the live file is excluded from the
+rsync), `data/`, `logs/`, the Thread state (`/var/lib/thread`) and the Matter
+storage and chip factory directories when they lie outside the data directory,
+the unit as `homeassistant.service`, the route as `homeassistant.traefik.yml`,
+`metadata.yml` and `manifest.sha256`. It is packed as `<dir>.tar.gz` (`0600`)
+with the directory as its only top-level entry and fetched to
+`~/backups/homeassistant` (`0700`). Existing archives in the root are tightened
+to `0600`. Home Assistant keeps running, as with the role. `required_mount`,
+`retain_count` and `retain_days` work as for the other lifecycle ports
+([local backups](../concepts/local-backups.md)).
+
+A restore picks `latest` (the newest `*.tar.gz` in the search root) or a named
+archive, extracts it into `<staging_dir>/<archive>-<timestamp>`, requires exactly
+one snapshot directory, the fields `timestamp`, `host`, `config_path` and
+`data_path`, the backup host to match (`enforce_host_match`) and a valid checksum
+manifest, and checks the free space (twice the archive's content by default).
+A dry run stops there. Otherwise it takes the safety snapshot
+`<site>.pre-restore-<timestamp>`, stops Home Assistant, the Matter server (with
+`manage_matter_server`, the inventory's `homeassistant_manage_matter_server`) and
+`otbr-agent` where systemd knows them, rsyncs `config`, `data` (both required)
+and `logs` and the included Thread/Matter directories back with `--delete`,
+optionally restores the unit and route (`restore_system_files`, default off), fixes
+the site's ownership, starts the services in the role's order and waits for each
+to become active, with an optional HTTP health check (`verify_http`, default off).
+The staging directory always goes; the safety snapshot goes after success.
+
+Deliberate differences from the roles:
+
+- `metadata.yml` is valid YAML. The role renders its `extra_paths` list onto the
+  key's line (`extra_paths:  - name: "thread"`), which no YAML parser reads, so the
+  role's own restore cannot parse its archives. The restore here checks the fields
+  and the host line by line and restores archives of either tool.
+- The role rolls back only after a failed verification. Here a failure while the
+  files are copied rolls back too, and the rollback starts the Thread and Matter
+  services the restore stopped as well as Home Assistant.
+- The role resets an existing `homeassistant` account's shell to
+  `/usr/sbin/nologin` (the deploy sets `/bin/bash` again). Here the restore only
+  creates a missing account, and a dry run changes no account.
+- A missing archive is not uploaded from the controller cache; copy it to the
+  search root first. Only archive names below the search root are accepted, not
+  absolute paths.
+- A restored route waits for no Traefik transaction, like every route writer.
+
+Tests check the planned settings with the fake connector and run both scripts end
+to end in a temporary tree (GNU tools, as on the Linux targets): backup contents
+and archive layout, restore and service order, a role-written archive, rollback
+after a failed start, dry run, host mismatch and a bad checksum. No real Home
+Assistant backup or restore has run with this code.
 
 ## Protected lazy controller-template callbacks
 

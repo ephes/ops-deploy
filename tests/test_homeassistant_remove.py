@@ -19,6 +19,7 @@ from pyinfra.api.connect import connect_all, disconnect_all
 from pyinfra.api.deploy import add_deploy
 from pyinfra.api.operations import run_ops
 
+from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.homeassistant.remove import SERVICE_PROBE, HomeAssistantRemoveConfig, remove_homeassistant
 from ops_deploy.testing import run_deploy_fake
 from ops_deploy.testing.harness import collect_ops
@@ -207,7 +208,8 @@ def test_each_original_flag_selects_only_its_declared_resources(flag: str) -> No
     cfg = selected(**{flag: True})
     expected = {
         "remove_service": ["rm -rf " + cfg.systemd_unit_path, "systemctl daemon-reload"],
-        "remove_traefik": ["rm -rf " + cfg.traefik_config_path],
+        # The route is removed only while no Traefik transaction holds its lock.
+        "remove_traefik": [route_guard_command(), "rm -rf " + cfg.traefik_config_path],
         "remove_udev_rule": ["rm -rf " + cfg.udev_rule_path],
         "remove_virtualenv": ["rm -rf " + cfg.virtualenv_path, "rm -rf " + cfg.virtualenv_link],
         "remove_site_dir": ["rm -rf " + cfg.site_path],
@@ -244,7 +246,11 @@ def test_absent_unit_error_is_retained_but_later_path_removal_continues() -> Non
     )
     assert run.error is None
     assert not run.succeeded
-    assert run.executed_commands == ["systemctl daemon-reload", "rm -rf " + cfg.traefik_config_path]
+    assert run.executed_commands == [
+        "systemctl daemon-reload",
+        route_guard_command(),
+        "rm -rf " + cfg.traefik_config_path,
+    ]
 
 
 def test_no_selected_removal_flag_has_no_operations() -> None:

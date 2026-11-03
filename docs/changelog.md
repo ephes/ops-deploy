@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `services.homeassistant` backup and restore (`deploy_homeassistant_backup`,
+  `deploy_homeassistant_restore`), ports of the `homeassistant_backup` and
+  `homeassistant_restore` roles with valid metadata YAML, rollback after a failed
+  file copy as well as after a failed start, no reset of an existing account's
+  shell, and the Traefik transaction guard. Export the removal API from the
+  package; its route removal now waits for no Traefik transaction.
+
 - Update Home Assistant's Custom Conversation default to 1.7.0 for current HA
   options compatibility; preserve old explicit pins, verified default instructions
   and real schema defaults versus explicit empty ignored-intent lists. Apply the

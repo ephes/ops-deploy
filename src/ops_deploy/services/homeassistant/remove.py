@@ -15,6 +15,7 @@ from pyinfra.facts.server import Command, Users
 from pyinfra.operations import files, server, systemd
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig, require_linux
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, guarded
 
 
 class HomeAssistantRemoveConfig(RoleConfig):
@@ -140,6 +141,12 @@ def _absent(path: str) -> None:
     files.directory(name="Remove Home Assistant path " + path, path=path, present=False, force=True, force_backup=False)
 
 
+@operation()
+def _absent_route(path: str) -> Generator[Any, None, None]:
+    # Like every route writer on the host: wait for no Traefik transaction.
+    yield from guarded(files.directory._inner(path=path, present=False, force=True, force_backup=False))
+
+
 @deploy("Remove Home Assistant")
 def remove_homeassistant(cfg: HomeAssistantRemoveConfig) -> None:
     if not cfg.confirm_removal:
@@ -154,7 +161,10 @@ def remove_homeassistant(cfg: HomeAssistantRemoveConfig) -> None:
         _absent(cfg.systemd_unit_path)
         systemd.daemon_reload(name="Reload systemd after Home Assistant removal")
     if cfg.remove_traefik:
-        _absent(cfg.traefik_config_path)
+        if PurePosixPath(cfg.traefik_config_path).is_relative_to(DYNAMIC_DIR):
+            _absent_route(name="Remove Home Assistant path " + cfg.traefik_config_path, path=cfg.traefik_config_path)
+        else:
+            _absent(cfg.traefik_config_path)
     if cfg.remove_udev_rule:
         _absent(cfg.udev_rule_path)
     if cfg.remove_virtualenv:
