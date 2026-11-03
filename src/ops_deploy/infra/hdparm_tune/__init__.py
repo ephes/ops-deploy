@@ -1,4 +1,4 @@
-"""Persistent hdparm policy; immediate application only after an owned block change."""
+"""Persistent hdparm policy, a boot apply unit, immediate application only after a block change."""
 
 from .config import HdparmDevice, HdparmTuneConfig
 from .deploy import deploy_hdparm_tune

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Apply hdparm_tune disk settings (APM, acoustic management, spindown)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={{ hdparm_tune_boot_script_path }}
+
+[Install]
+WantedBy=multi-user.target

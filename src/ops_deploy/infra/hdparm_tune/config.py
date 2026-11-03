@@ -33,6 +33,23 @@ class HdparmDevice(RoleConfig):
 class HdparmTuneConfig(RoleConfig):
     devices: tuple[HdparmDevice, ...] = ()
     apply_now: StrictBool = False
+    # Ubuntu's udev hook skips -B/-S for disks without ID_ATA_FEATURE_SET_APM=1,
+    # so the role also applies the policy from a boot oneshot. False (or no
+    # devices) removes the unit and script.
+    apply_on_boot: StrictBool = True
+    boot_service_name: Annotated[str, Field(pattern=r"^[A-Za-z0-9@_-][A-Za-z0-9@_.-]*\.service$")] = (
+        "hdparm-tune.service"
+    )
+    boot_script_path: AbsolutePath = "/usr/local/sbin/hdparm-tune-apply"
+    boot_device_wait_sec: Annotated[StrictInt, Field(ge=0)] = 60
+
+    @field_validator("boot_script_path")
+    @classmethod
+    def _script(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if str(path) != value or ".." in path.parts or len(path.parts) < 2 or value.startswith("//"):
+            raise ValueError("hdparm boot script path must be an absolute file path without dot segments")
+        return value
 
     @model_validator(mode="after")
     def _unique(self) -> HdparmTuneConfig:

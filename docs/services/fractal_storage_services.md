@@ -26,13 +26,44 @@ Paths must be below `/dev` without parent segments. The named Ansible block in
 **Convergence change:** `apply_now=True` applies settings only after an actual
 owned block change. An unchanged block issues no physical setting command and
 never queries or attests hardware state. The original command order remains all
-APM, then all acoustic settings, then all spindown settings. Existing package
-boot/udev/resume hooks remain responsible for their native lifecycle reassertion.
-No marker, timer or hardware-state cache is added. A write followed by failed or
-interrupted physical application is nontransactional: a later unchanged deploy
-cannot establish that the drive accepted the policy. Retain the explicit legacy
-Ansible play for deliberate physical reassertion/recovery. Such a reassertion
-can wake drives and is separate from a no-change deployment.
+APM, then all acoustic settings, then all spindown settings. A write followed by
+failed or interrupted physical application is nontransactional: a later
+unchanged deploy cannot establish that the drive accepted the policy. Retain the
+explicit legacy Ansible play for deliberate physical reassertion/recovery. Such
+a reassertion can wake drives and is separate from a no-change deployment.
+
+### Boot apply unit
+
+`/etc/hdparm.conf` alone does not survive a reboot on every disk. Ubuntu's udev
+hook (`/lib/udev/hdparm`) hands APM (`-B`) and spindown (`-S`) to
+`/usr/lib/pm-utils/power.d/95hdparm-apm`, which applies them only when udev sets
+`ID_ATA_FEATURE_SET_APM=1`. Fractal's WD120EFGX disks get only `ID_ATA=1`, so
+after every reboot they ran at factory APM 128 with no standby timer and never
+spun down. Like ops-library `29b353c4`, the deploy therefore installs:
+
+- `/usr/local/sbin/hdparm-tune-apply` (root, 0755): waits up to
+  `boot_device_wait_sec` seconds for each device node, then runs
+  `hdparm -B -M -S` (only the configured settings) per device. A missing device
+  or a failing call is logged and makes the unit fail; the other devices are
+  still applied.
+- `/etc/systemd/system/hdparm-tune.service` (root, 0644): `Type=oneshot`,
+  `RemainAfterExit=yes`, `After=local-fs.target`, `WantedBy=multi-user.target`.
+
+The deploy reloads systemd when the unit changed and **enables** the unit. It
+never starts or restarts it, so a deploy wakes no disk; immediate application
+stays with `apply_now`. Both files are byte-equal to the role's templates.
+
+| Setting | Default |
+| --- | --- |
+| `apply_on_boot` | true; `False`, or an empty `devices`, disables the unit if present and removes unit and script |
+| `boot_service_name` | `hdparm-tune.service` |
+| `boot_script_path` | `/usr/local/sbin/hdparm-tune-apply` |
+| `boot_device_wait_sec` | 60 |
+
+The unit requires a systemd host. To apply the settings by hand without a
+reboot, run `systemctl restart hdparm-tune.service` (`restart`, because the unit
+stays active after boot) and check the result with
+`journalctl -b -u hdparm-tune.service`; this can wake standby disks.
 
 ## Sanoid policy and timer
 
@@ -197,3 +228,5 @@ real loaded ZFS2.2.2 with a file-vdev pool. Tests cover configuration, native pa
 accounts, synthetic loopback SMB access/masks and interrupted rollouts. ARM fixture
 results do not attest physical SATA/APM behavior or production AMD64/share state.
 Inventory deployment and protection receipts are separate operator gates.
+The hdparm boot unit is covered by an Ansible template oracle, fake-host
+rollouts and a local run of its script with a stub `hdparm`; no fixture boots it.
