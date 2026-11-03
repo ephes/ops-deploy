@@ -348,13 +348,25 @@ def test_drift_dotfiles_github_and_sshd_failures(box: Box, dotfiles: Dotfiles, t
     refused = box.deploy(cfg, github())
     assert not refused.succeeded
     assert "Local modifications exist in the destination" in str(refused.error)
-    box.sh(f"git -c safe.directory={SOURCE} -C {SOURCE} checkout -- dot_vibe-hello")
+    box.sh(f"runuser -u vibe -- git -C {SOURCE} checkout -- dot_vibe-hello")
 
-    # A checkout of another origin is replaced by a fresh clone (the role's removal).
-    box.sh(f"git -c safe.directory={SOURCE} -C {SOURCE} remote set-url origin file:///nowhere.git")
+    # A checkout of another origin is replaced by a fresh clone (the role's removal),
+    # also below a parent the role's root clone left root's.
+    box.sh(f"runuser -u vibe -- git -C {SOURCE} remote set-url origin file:///nowhere.git")
+    box.sh(f"chown root:root {HOME}/.local/share")
     run = box.deploy(cfg, github())
     assert f"Vibe coding | Clone {dotfiles.url} into {SOURCE}" in run.mutating_changed_ops
     assert box.out(f"git -c safe.directory={SOURCE} -C {SOURCE} remote get-url origin") == dotfiles.url
+
+    # A checkout the role cloned as root (root's, 0700, below a root parent):
+    # repaired, then updated by the user in the same run, quiet afterwards.
+    box.sh(f"chown -R root:root {SOURCE} {HOME}/.local/share && chmod 0700 {SOURCE}")
+    run = box.deploy(cfg, github())
+    assert run.succeeded, run.error
+    assert cfg.dotfiles is not None
+    assert f"Vibe coding | Clone or update {SOURCE} to {cfg.dotfiles.commit[:12]}" in run.mutating_changed_ops
+    assert box.out(f"stat -c %U {HOME}/.local/share {SOURCE}") == "vibe\nvibe"
+    assert box.deploy(cfg, github()).mutating_changed_ops == []
 
     # Ownership drift alone: chown only.
     box.sh(f"chown root {SOURCE}/dot_vibe-hello")

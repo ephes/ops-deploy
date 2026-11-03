@@ -537,3 +537,30 @@ def test_unsupported_architecture_fails_planning(tmp_path: Path) -> None:
     )
     assert "Unsupported architecture for Neovim release tarball: riscv64" in str(run.error)
     assert run.executed_commands == []
+
+
+def test_unreadable_checkout_is_decided_after_the_ownership_repair(tmp_path: Path) -> None:
+    config = cfg(tmp_path)
+    run = run_deploy_fake(
+        deploy_vibe_coding,
+        config,
+        secrets(),
+        responses=converged(
+            config,
+            **{
+                "[ -e /mnt/cryptdata/vibe/.local/share/chezmoi/.git ]": ["git=no"],
+                "! -user vibe -print -quit": [SOURCE],
+                **fakehost.directory(f"{HOME}/.local/share"),
+            },
+        ),
+    )
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops[:5] == [
+        f"Vibe coding | Set ownership of {SOURCE}",
+        f"Vibe coding | Give {HOME}/.local/share to vibe",
+        "Vibe coding | Ensure /var/lib/ops-deploy/vibe-coding",
+        "Vibe coding | Upload the dotfiles bundle",
+        f"Vibe coding | Clone or update {SOURCE} to 111111111111",
+    ]
+    with pytest.raises(ValueError, match="mode must be"):
+        scripts.checkout_command(config, PurePosixPath(SOURCE), "/b", dotfiles(tmp_path), mode="other")

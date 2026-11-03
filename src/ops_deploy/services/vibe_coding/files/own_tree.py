@@ -1,6 +1,6 @@
 """Give a directory tree to a user, as root, without following any symlink.
 
-argv: ``PATH USER GROUP``. Opens PATH one component at a time from ``/`` with
+argv: ``PATH USER GROUP [--top]`` (``--top``: PATH itself, not the entries below it). Opens PATH one component at a time from ``/`` with
 ``O_NOFOLLOW`` (a symlinked component anywhere fails the run), then changes
 the owner of the directory and of every entry below it through directory
 descriptors; symlinks themselves get the owner, their targets are never
@@ -32,6 +32,7 @@ def walk(dir_fd, uid, gid):
 
 def main():
     path, user, group = sys.argv[1:4]
+    top_only = sys.argv[4:] == ["--top"]
     uid, gid = pwd.getpwnam(user).pw_uid, grp.getgrnam(group).gr_gid
     fd = os.open("/", FLAGS)
     for part in path.strip("/").split("/"):
@@ -41,7 +42,10 @@ def main():
         os.close(fd)
         fd = child
     try:
-        walk(fd, uid, gid)
+        if top_only:
+            os.chown(fd, uid, gid)
+        else:
+            walk(fd, uid, gid)
     finally:
         os.close(fd)
 

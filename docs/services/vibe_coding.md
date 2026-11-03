@@ -112,7 +112,10 @@ with its own group, which decides the modes chezmoi and npm give new files).
   a checkout with another origin, the clone and the update run as the user
   (`sudo -H -n -u`), reading the bundle from root on stdin; root only stages
   the bundle. The root `safe.directory` entry is still added, as the role
-  does.
+  does. Before a clone, the checkout's parent (`~/.local/share`, which the
+  role's root clone leaves root's) is given to the user, that directory
+  only. A checkout the user cannot read while planning (its owner is being
+  repaired) is cloned or updated as the state after the repair says.
 - **No accidental re-clone.** The role reads `origin` before it adds the
   `safe.directory` entry, so on a host without that entry it removes and
   re-clones the checkout. Here every read passes `-c safe.directory` for

@@ -199,13 +199,26 @@ def _chezmoi(cfg: VibeCodingConfig) -> None:
 
     # The role's recursive ownership, before the update: the user's git needs
     # its own tree. A checkout the user's git wrote needs nothing afterwards.
-    if output(scripts.foreign_owner_probe(source, cfg.user, cfg.group)):
+    repair = bool(output(scripts.foreign_owner_probe(source, cfg.user, cfg.group)))
+    if repair:
         server.shell(
             name=f"Set ownership of {source}",
             commands=[scripts.own_tree_command(source, cfg.user, cfg.group, OWN_TREE_SOURCE)],
         )
-    update = not on_origin or checkout.head != dotfiles.commit
+    # A checkout the user could not read while planning (not on origin, but
+    # its owner is being repaired) is decided after the repair.
+    mode = "update" if on_origin else ("auto" if repair else "clone")
+    update = mode == "auto" or not on_origin or checkout.head != dotfiles.commit
     if update:
+        if mode != "update":
+            # The user removes and clones the checkout: its parent must be theirs
+            # (a clone the role made as root left it root's).
+            parent = host.get_fact(Directory, path=str(source.parent))
+            if parent and (parent.get("user"), parent.get("group")) != (cfg.user, cfg.group):
+                server.shell(
+                    name=f"Give {source.parent} to {cfg.user}",
+                    commands=[scripts.own_dir_command(source.parent, cfg.user, cfg.group, OWN_TREE_SOURCE)],
+                )
         files.directory(name=f"Ensure {STAGING_DIR}", path=STAGING_DIR, user="root", group="root", mode="0700")
         bundle = f"{STAGING_DIR}/dotfiles.bundle"
         files.put(
@@ -216,12 +229,12 @@ def _chezmoi(cfg: VibeCodingConfig) -> None:
             group="root",
             mode="0600",
         )
-        server.shell(
-            name=(
-                f"Update {source} to {dotfiles.commit[:12]}" if on_origin else f"Clone {dotfiles.repo} into {source}"
-            ),
-            commands=[scripts.checkout_command(cfg, source, bundle, dotfiles, reclone=not on_origin)],
-        )
+        label = {
+            "update": f"Update {source} to {dotfiles.commit[:12]}",
+            "clone": f"Clone {dotfiles.repo} into {source}",
+            "auto": f"Clone or update {source} to {dotfiles.commit[:12]}",
+        }[mode]
+        server.shell(name=label, commands=[scripts.checkout_command(cfg, source, bundle, dotfiles, mode=mode)])
 
     basics = cfg.effective_shell_basics()
     chezmoi_changes = (
