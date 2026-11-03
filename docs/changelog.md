@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `infra.hd_idle` (new): idle spindown with the distribution's `hd-idle`
+  daemon for drives that ignore the ATA standby timer (fractal's WD120EFGX).
+  Installs the package, writes `HD_IDLE_OPTS` to `/etc/default/hd-idle`
+  (global `-i 0`, then `-a <by-id link> -i <seconds>` per disk) and a unit
+  drop-in that pins that `EnvironmentFile=` and orders the daemon after the
+  disks' by-id device units, then enables and starts `hd-idle.service`
+  (restart only on a config change). Disks must be whole-disk
+  `/dev/disk/by-id/` links. hd-idle reads only `/proc/diskstats` and sends one
+  STOP UNIT (libata: STANDBY IMMEDIATE) per idle period; starting it touches no
+  disk (`docs/services/fractal_storage_services.md`).
+
 - `services.vibe_coding`: the chezmoi step and its planning probe run
   `chezmoi status` and `chezmoi apply --force` with `--exclude=externals`, as
   ops-library's `vibe_coding_deploy` now does. The dotfiles pull

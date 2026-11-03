@@ -2,6 +2,7 @@
 
 These four Linux/apt/systemd APIs port `hdparm_tune`, `sanoid`,
 `samba_timemachine` and `samba_share` from ops-library `cf3a0c74`.
+`infra.hd_idle` (idle spindown) is new, with no ops-library counterpart.
 They configure existing storage. They do not create pools, datasets or backups,
 prune data, recursively change permissions, remove accounts or prune snippets.
 
@@ -65,13 +66,89 @@ ignored the standby timer. With APM 127 and `-S 120` and no I/O they were
 still active/idle after 11.5 minutes; only an explicit `hdparm -y` spins them
 down (fractal's quiet-hours hook and post-replication scripts). So
 `spindown_time` has no effect on these drives. The boot unit still restores APM
-127 and the configured state after a reboot. An idle-based spindown (in the
-style of hd-idle) is not part of this deploy.
+127 and the configured state after a reboot. The idle-based spindown is the
+separate `infra.hd_idle` deploy ([below](#idle-spindown-with-hd-idle)).
 
 The unit requires a systemd host. To apply the settings by hand without a
 reboot, run `systemctl restart hdparm-tune.service` (`restart`, because the unit
 stays active after boot) and check the result with
 `journalctl -b -u hdparm-tune.service`; this can wake standby disks.
+
+## Idle spindown with hd-idle
+
+```python
+from ops_deploy.infra.hd_idle import HdIdleConfig, HdIdleDisk, deploy_hd_idle
+
+deploy_hd_idle(
+    cfg=HdIdleConfig(
+        disks=(HdIdleDisk(device="/dev/disk/by-id/ata-owned-disk", idle_time=1800),),
+    )
+)
+```
+
+For drives that ignore the ATA standby timer (above), `infra.hd_idle` spins a
+disk down after `idle_time` seconds without reads or writes in
+`/proc/diskstats`. It configures the distribution's `hd-idle` package
+(Ubuntu 24.04: 1.05+ds-2, the original C daemon; it has no `-c`/command
+option and no symlink-policy option):
+
+- `apt` installs `hd-idle` if missing (no upgrade).
+- `/etc/default/hd-idle` (root, 0644) sets
+  `HD_IDLE_OPTS="-i <default_idle_time> -a <disk> -i <idle_time> ..."`. The
+  package's own default is `-h` (print usage and exit), so nothing spins down
+  until this file is written. The leading `-i` applies to every other `sd*`
+  disk; `default_idle_time` defaults to 0 (never), so only the listed disks are
+  spun down.
+- `/etc/systemd/system/hd-idle.service.d/10-ops-deploy.conf` resets the
+  unit's `EnvironmentFile=` to exactly `/etc/default/hd-idle` and adds
+  `Wants=`/`After=` on each disk's `.device` unit (the `systemd-escape --path`
+  name of its by-id link), so the daemon starts after the links exist.
+- `hd-idle.service` is enabled and started; a config change restarts it, a
+  drop-in change reloads systemd first. An unchanged deploy runs no command.
+
+`disks` is required and nonempty; each `device` must be a whole-disk
+`/dev/disk/by-id/` link (no `-partN`, no kernel name like `/dev/sda`), unique,
+with `idle_time` of at least 60 s. There is no `absent` mode and no `-l`
+logfile option (hd-idle calls `sync()` after logging a spin-up, which can wake
+another disk).
+
+**Kernel names.** hd-idle matches disks by their `/proc/diskstats` name. For
+`-a`, 1.05 calls `readlink()` on the by-id link once at startup, strips
+trailing digits and keeps the basename (`../../sda` → `sda`). The mapping is
+therefore re-resolved on every service start, including every boot, so
+`sdX` renames between boots are harmless. A rename while the daemon runs
+(hot-unplug and replug) is not followed; restart `hd-idle.service`. If a link
+is missing at start (its device job timed out), the name stays unresolved,
+matches no disk, and that disk falls back to the default idle time 0: it is
+never spun down rather than a wrong disk.
+
+**What hd-idle does to the disks** (source of 1.05+ds-2, `hd-idle.c`):
+
+- Every `min(idle_time)/10` seconds (180 s for 1800) it reads
+  `/proc/diskstats` and compares each `sd*` disk's completed reads and writes
+  with its last sample. Startup only parses options, resolves the links and
+  daemonizes; it opens no disk and queries no power state. A start or restart
+  therefore wakes nothing; it only resets the idle clocks, so the first
+  possible spindown is `idle_time` after the start.
+- After `idle_time` with unchanged counters it calls `spindown_disk()` once and
+  marks the disk spun down; it sends nothing more until the counters change
+  again. `spindown_disk()` opens `/dev/<name>` read-only and issues SCSI
+  START STOP UNIT with start=0 (`1b 00 00 00 00 00`) via `SG_IO`. Linux
+  libata (6.8, `ata_scsi_start_stop_xlat` → `ata_dev_power_init_tf`)
+  translates that into ATA STANDBY IMMEDIATE (`ATA_CMD_STANDBYNOW1`), the
+  command `hdparm -y` sends. hd-idle never checks the power state first, so a
+  disk that another tool already put into standby (and that saw no I/O since)
+  gets one STANDBY IMMEDIATE. ATA defines that command for a drive in Standby
+  as a transition to Standby without spin-up; this is the same command the
+  quiet-hours hook would send without its `smartctl -n standby` precheck. It
+  has not been tested on the WD120EFGX drives.
+- `SG_IO` pass-through commands are not counted in `/proc/diskstats`
+  (`blk_do_io_stat()` excludes pass-through requests). So `smartctl -n standby`,
+  `hdparm -C` and hd-idle's own spindown neither reset hd-idle's idle clock nor
+  look like I/O to it; only real reads and writes (ZFS) do.
+
+Check it with `systemctl is-active hd-idle`, `ps -o args= -C hd-idle` and
+`hdparm -C <by-id link>` (CHECK POWER MODE does not spin a disk up).
 
 ## Sanoid policy and timer
 

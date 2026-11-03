@@ -36,6 +36,7 @@ from ops_deploy.infra.certbot_lifecycle import (
 )
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
+from ops_deploy.infra.hd_idle import HdIdleConfig, HdIdleDisk, deploy_hd_idle
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
 from ops_deploy.infra.mail_relay_client import MailRelayClientConfig, deploy_mail_relay_client
 from ops_deploy.infra.netplan import NetplanConfig, deploy_netplan
@@ -89,6 +90,8 @@ __all__ = [
     "EncryptedVolumeConfig",
     "ExtensionSpec",
     "FileCertificate",
+    "HdIdleConfig",
+    "HdIdleDisk",
     "HdparmDevice",
     "HdparmTuneConfig",
     "MailRelayClientConfig",
@@ -136,6 +139,7 @@ __all__ = [
     "deploy_certbot_dns_restore",
     "deploy_docker_install",
     "deploy_encrypted_volume",
+    "deploy_hd_idle",
     "deploy_hdparm_tune",
     "deploy_mail_relay_client",
     "deploy_mail_replication",
