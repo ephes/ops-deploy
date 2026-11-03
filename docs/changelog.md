@@ -10,7 +10,8 @@
   (oneshot) and enables the unit without starting it, so it wakes no disk.
   New `HdparmTuneConfig` fields `apply_on_boot` (default true; false or no
   devices disables and removes unit and script), `boot_service_name`,
-  `boot_script_path` and `boot_device_wait_sec`.
+  `boot_script_path` and `boot_device_wait_sec`. The docs note that these drives
+  ignore the standby timer; only `hdparm -y` spins them down.
 
 - `services.homeassistant`: optional pinned GPS Timeline integration
   (`gps_timeline`, 0.1.0-beta.3) and Location Timeline Card (`timeline_card`,

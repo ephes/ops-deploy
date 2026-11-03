@@ -60,6 +60,14 @@ stays with `apply_now`. Both files are byte-equal to the role's templates.
 | `boot_script_path` | `/usr/local/sbin/hdparm-tune-apply` |
 | `boot_device_wait_sec` | 60 |
 
+**Standby timer on fractal's disks:** on 2026-11-03 the WD120EFGX drives
+ignored the standby timer. With APM 127 and `-S 120` and no I/O they were
+still active/idle after 11.5 minutes; only an explicit `hdparm -y` spins them
+down (fractal's quiet-hours hook and post-replication scripts). So
+`spindown_time` has no effect on these drives. The boot unit still restores APM
+127 and the configured state after a reboot. An idle-based spindown (in the
+style of hd-idle) is not part of this deploy.
+
 The unit requires a systemd host. To apply the settings by hand without a
 reboot, run `systemctl restart hdparm-tune.service` (`restart`, because the unit
 stays active after boot) and check the result with
