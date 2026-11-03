@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- New service `services.rustfs` (`RustfsConfig`, `RustfsCredentials`,
+  `deploy_rustfs`): pinned RustFS 1.0.4 (x86_64 and aarch64 musl release
+  archives and binaries verified by sha256), own `rustfs` user, data root on a
+  required mount (refused before any change when the mount is absent or the
+  data holds foreign-owned files), S3 API on loopback port 9020 only with the
+  console, alternate protocols and update check off, readiness check, optional
+  internal-only Traefik route, and declarative buckets (versioning), named
+  policies and exact identities through a standard-library SigV4 helper on the
+  native admin API. Repeats change nothing. New container fixture in
+  `tests/integration/rustfs/`. The MinIO service is unchanged.
+
 - `echoport`: the scoped account's policy also allows `s3:GetObjectVersion`
   (ops-library `minio_deploy` template, kept byte-identical): `mc cp` downloads
   a pinned version, which RustFS checks against `GetObjectVersion`. The

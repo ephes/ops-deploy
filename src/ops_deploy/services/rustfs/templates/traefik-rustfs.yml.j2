@@ -1,0 +1,54 @@
+# Traefik configuration for the RustFS S3 API
+# Managed by ops-deploy - do not edit manually
+# Internal only (LAN + Tailscale): no router answers anyone else. S3 requests
+# carry their own signatures, so there is no basic auth, and no compression
+# middleware that could alter signed or ranged responses.
+{% set internal_rule -%}
+Host(`{{ cfg.traefik_api_host }}`) && ({% for range in cfg.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})
+{%- endset %}
+
+http:
+  routers:
+    rustfs-api-int:
+      rule: "{{ internal_rule }}"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - rustfs-api-headers
+      service: rustfs-api
+{% if cfg.traefik_cert_resolver %}
+      tls:
+        certResolver: {{ cfg.traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    rustfs-api-http:
+      rule: "{{ internal_rule }}"
+      entryPoints:
+        - web
+      middlewares:
+        - rustfs-https-redirect
+      service: rustfs-api
+
+  middlewares:
+    rustfs-https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    rustfs-api-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+  services:
+    rustfs-api:
+      loadBalancer:
+        servers:
+          - url: "http://{{ cfg.bind_host }}:{{ cfg.api_port }}"
