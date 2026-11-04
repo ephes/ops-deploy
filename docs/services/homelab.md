@@ -3,9 +3,9 @@
 Port of the `homelab_deploy` Ansible role (with the `homelab_shared` defaults
 it reads) as a playbook runs it with the rsync method: the home dashboard, a
 Django app on one SQLite database served by gunicorn (`uv run gunicorn`),
-behind Traefik with basic auth outside the internal networks. Backup and
-restore stay with the Ansible roles; the removal is ported
-([Removal](#removal)).
+behind Traefik with basic auth outside the internal networks. Backup,
+restore ([below](#backup-and-restore)) and removal ([Removal](#removal)) are
+ported too.
 
 ```python
 from ops_deploy.services.homelab import HomelabConfig, deploy_homelab
@@ -217,3 +217,80 @@ In the role's order:
 The role's plan, warning and summary messages are not printed; the role's
 informational re-check of the route is not run. No secrets are read; Echoport
 archives stay.
+
+## Backup and restore
+
+`ops_deploy.services.homelab` also ports `homelab_backup` and
+`homelab_restore` (with the `homelab_shared` defaults). Neither needs
+secrets. Archives written by either tool restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_homelab_backup` | `HomelabBackupConfig(host_name=...)` | `homelab_backup` |
+| `deploy_homelab_restore` | `HomelabRestoreConfig(host_name=...)` | `homelab_restore` |
+
+The fields are the roles' variables without the `homelab_`,
+`homelab_backup_` or `homelab_restore_` prefix (in the backup config `owner`
+and `group` are the archive's, `homelab_backup_owner`/`_group`;
+`homelab_restore_root` is `search_root` and
+`homelab_restore_metadata_required_fields` is `required_fields`) (`site_path`, `root`,
+`include_*`, `force_stop`, `archive`, `dry_run`, `create_safe_snapshot`,
+`safe_snapshot_delete`, `healthcheck_url`, ...). `host_name` is the
+inventory name written into `metadata.yml`; `ops_library_version` is the
+controller's ops-library version, written by the backup and compared by the
+restore (a mismatch stops it unless `allow_version_mismatch`), as the roles
+read it from `galaxy.yml`. Pass the same value as the roles' `galaxy.yml`
+for archives of the other tool to restore without
+`allow_version_mismatch`. `required_mount` and `retain_count`/`retain_days`
+work as for the other ports ([Local backups](../concepts/local-backups.md)).
+
+**Backup.** It refuses to start without the site directory. It records the
+site's git commit (`unknown` without a repository), then one host script
+creates `/opt/backups/homelab/<prefix>-<timestamp>/` with `database`,
+`static`, `media`, `cache`, `configs` and `env` (`root:root 0700`),
+restricts older archives in the root to `0600`, and copies the database with
+`sqlite3 .backup` (4 attempts, 2 s apart). When every attempt fails, or with
+`force_stop`, it stops `homelab`, copies the file and starts `homelab` again
+whatever the copy did. It then copies static and media (cache only with
+`include_cache`) with `rsync -a --delete`, `.env`, the unit and the Traefik
+route (`0600`), writes the role's `metadata.yml` (`sqlite_mode` `hot`,
+`offline` or `missing`) and `manifest.sha256`, packs `<dir>.tar.gz`
+(`0600`) and fetches it into `~/backups/homelab` (`0700`, the copy `0600`).
+
+**Restore.** One host script, in the role's order:
+
+1. Reset the staging directory, pick `latest` (the newest `*.tar.gz` by
+   mtime directly in the search root) or a name below it, unpack it, check
+   `slug: homelab`, the required fields (`slug`, `timestamp`, `host`), the
+   ops-library version and `manifest.sha256`, and print the plan.
+2. With `dry_run`, stop here.
+3. When the archived route differs from the live one and a Traefik
+   transaction holds its lock, stop here too (nothing changed yet). A lock
+   taken later, during the copy, leaves the route as it is; the restore
+   finishes, starts `homelab` and then fails, keeping the pre-restore copy.
+4. Stop `homelab` (a failure stops the restore), copy the site to
+   `<site>.pre-restore-<timestamp>`, put back static, media and cache
+   (`rsync -a --delete`), the database (stale `-wal`/`-shm`/`-journal`
+   removed first), `.env`, the unit and the route, fix ownership, reload systemd and
+   Traefik when their files changed, run `manage.py check --deploy` and
+   `showmigrations` as `homelab`, check the database's integrity, restart
+   `homelab` and probe the health URL (6 tries, 3 s apart).
+
+The staging directory always goes; it must not contain the search root, the
+site or any restored path, nor lie inside the site or a restored path. As in
+the role, an archived directory that is empty (the cache by default, static or
+media when not included) empties the live one (`rsync --delete`); the
+pre-restore copy still has it. As with the role, a failed restore does not roll
+back: the pre-restore copy stays and is reported; it is removed only after a
+successful restore with `safe_snapshot_delete`. `archive` is a name below the
+search root, never an absolute path, and `static`, `media` and `cache` get
+their modes back after the copy (`rsync -a` would leave the archived
+directory's mode, `0700` for one that was empty at backup time; that pass also
+gives the three directories back to `homelab`). The systemd and Traefik
+reloads follow content changes only. `sqlite3`, the controller directory's
+`0700` and the `*.tar.gz` pattern of `latest` are fixed, not configurable.
+
+Tests: `tests/test_homelab_backup_restore.py` (planned settings, and both
+scripts end to end in a temporary tree with stubbed `systemctl`, `runuser`
+and `curl`).
+

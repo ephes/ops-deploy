@@ -1,10 +1,10 @@
 # Local backups and restore work directories
 
-The backup ports (`nyxmon`, `fastdeploy`, `work_app`, `traefik`) write a
+The backup ports (`nyxmon`, `fastdeploy`, `work_app`, `traefik`, `homelab`) write a
 directory and an archive on the host, and their restores unpack an archive
 into a work directory. Where an off-host backup (Echoport) already holds the
 same data, those local archives are only rollback snapshots. Two settings,
-shared by all four ports (`ops_deploy.services._lifecycle.local_backup`),
+shared by these ports (`ops_deploy.services._lifecycle.local_backup`),
 keep them off the root filesystem and bound how many stay.
 
 ## `required_mount`
@@ -14,8 +14,8 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 
 | Config | Guarded fields |
 |---|---|
-| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig` | `root` |
-| `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig` | `staging_dir` |
+| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig` | `root` |
+| `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig` | `staging_dir` |
 | `FastdeployRestoreConfig` | `temp_dir`, `safety_backup_root` |
 
 The config refuses a guarded path that is not strictly below the mount
@@ -60,8 +60,9 @@ removed), the
 Traefik restore's shell command traps `EXIT`, and the work_app restore
 removes the staging directory as soon as the last file has been taken from
 it, and on a failure of any step before that (with `cleanup`, the default).
-An interrupted connection can still leave one behind; the next restore
-resets it.
+The homelab restore is one bash script with an `EXIT` trap set after the
+mount check (with `cleanup`, the default). An interrupted connection can
+still leave one behind; the next restore resets it.
 
 ## Example
 

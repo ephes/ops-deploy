@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `services.homelab`: `HomelabBackupConfig`/`deploy_homelab_backup` and
+  `HomelabRestoreConfig`/`deploy_homelab_restore`, the ports of the
+  `homelab_backup` and `homelab_restore` roles (ops-library `44a532ba`,
+  recorded in the drift manifest): the role's archive layout and
+  `metadata.yml`, hot SQLite backup with the offline fallback, slug, field,
+  ops-library version and checksum checks, the pre-restore copy of the site
+  (kept unless `safe_snapshot_delete` and success; no automatic rollback, as in
+  the role), Django checks, integrity check and health probe. `required_mount`
+  and snapshot retention as for the other backup ports. Archive names only
+  (no absolute paths); a changed Traefik route is written only while no
+  transaction holds its lock (checked before homelab is stopped; a lock taken
+  later leaves the route and fails the restore after homelab started again).
+  The restore refuses a `staging_dir` (removed first) that contains the search
+  root, the site or a restored path, or lies inside the site or a restored
+  path. New `services._lifecycle.canonical`: canonical path and name types
+  for the backup and restore ports.
+
 - Ports of four removal roles (ops-library `44a532ba`, recorded in the drift
   manifest and under `tests/parity/<service>/remove`), each refused without
   its confirmation before any host probe and in the role's order with its
