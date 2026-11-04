@@ -185,12 +185,20 @@ class HomelabRestoreConfig(_Site):
         # or the site (a work directory below the search root is fine, the
         # archive search does not descend), and never inside the site.
         staging = PurePosixPath(self.staging_dir)
-        site = PurePosixPath(self.site_path)
-        for name, other in (("search_root", PurePosixPath(self.search_root)), ("site_path", site)):
-            if other.is_relative_to(staging):
-                raise ValueError(f"staging_dir ({staging}) must not contain {name} ({other})")
-        if staging.is_relative_to(site):
-            raise ValueError(f"staging_dir ({staging}) must lie outside site_path ({site})")
+        live = {
+            "site_path": self.site_path,
+            "database_path": self.database,
+            "static_root": self.static,
+            "media_root": self.media,
+            "cache_dir": self.cache,
+            "env_file": self.env,
+        }
+        for name, path in {"search_root": self.search_root, **live}.items():
+            if PurePosixPath(path).is_relative_to(staging):
+                raise ValueError(f"staging_dir ({staging}) must not contain {name} ({path})")
+        for name, path in live.items():
+            if staging.is_relative_to(path):
+                raise ValueError(f"staging_dir ({staging}) must lie outside {name} ({path})")
         return self
 
 

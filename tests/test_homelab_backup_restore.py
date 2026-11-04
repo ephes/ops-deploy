@@ -507,3 +507,10 @@ def test_backup_script_a_failed_offline_copy_still_starts_homelab(tmp_path: Path
 def test_restore_staging_must_lie_apart_from_the_archives_and_the_site(staging: str) -> None:
     with pytest.raises(ValidationError):
         HomelabRestoreConfig(host_name="m", staging_dir=staging)
+
+
+def test_restore_staging_must_lie_apart_from_relocated_data() -> None:
+    with pytest.raises(ValidationError):
+        HomelabRestoreConfig(host_name="m", media_root="/srv/m/media", staging_dir="/srv/m")
+    with pytest.raises(ValidationError):
+        HomelabRestoreConfig(host_name="m", media_root="/srv/m/media", staging_dir="/srv/m/media/w")

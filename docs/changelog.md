@@ -14,8 +14,10 @@
   (no absolute paths); a changed Traefik route is written only while no
   transaction holds its lock (checked before homelab is stopped; a lock taken
   later leaves the route and fails the restore after homelab started again).
-  New `services._lifecycle.canonical`: canonical path and name types for the
-  backup and restore ports.
+  The restore refuses a `staging_dir` (removed first) that contains the search
+  root, the site or a restored path, or lies inside the site or a restored
+  path. New `services._lifecycle.canonical`: canonical path and name types
+  for the backup and restore ports.
 
 - `services.daybook_operations_api`: the rsync deploy ensures the site
   directory `0700` instead of `0750`, the mode the `daybook_operations_api_deploy`

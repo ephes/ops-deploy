@@ -239,19 +239,19 @@ route (`0600`), writes the role's `metadata.yml` (`sqlite_mode` `hot`,
    `showmigrations` as `homelab`, check the database's integrity, restart
    `homelab` and probe the health URL (6 tries, 3 s apart).
 
-The staging directory always goes; it must not contain the search root or
-the site, nor lie inside the site. As in the role, an archived directory that is empty (the cache
-by default, static or media when not included) empties the live one
-(`rsync --delete`); the pre-restore copy still has it. As with the role, a failed restore does not
-roll back: the pre-restore copy stays and is reported; it is removed only
-after a successful restore with `safe_snapshot_delete`. `archive` is a name
-below the search root, never an absolute path, and `static`, `media` and
-`cache` get their modes back after the copy (`rsync -a` would leave the
-archived directory's mode, `0700` for one that was empty at backup time;
-that pass also gives the three directories back to `homelab`). The systemd
-and Traefik reloads follow content changes only.
-`sqlite3`, the controller directory's `0700` and the `*.tar.gz` pattern of
-`latest` are fixed, not configurable.
+The staging directory always goes; it must not contain the search root, the
+site or any restored path, nor lie inside the site or a restored path. As in
+the role, an archived directory that is empty (the cache by default, static or
+media when not included) empties the live one (`rsync --delete`); the
+pre-restore copy still has it. As with the role, a failed restore does not roll
+back: the pre-restore copy stays and is reported; it is removed only after a
+successful restore with `safe_snapshot_delete`. `archive` is a name below the
+search root, never an absolute path, and `static`, `media` and `cache` get
+their modes back after the copy (`rsync -a` would leave the archived
+directory's mode, `0700` for one that was empty at backup time; that pass also
+gives the three directories back to `homelab`). The systemd and Traefik
+reloads follow content changes only. `sqlite3`, the controller directory's
+`0700` and the `*.tar.gz` pattern of `latest` are fixed, not configurable.
 
 Tests: `tests/test_homelab_backup_restore.py` (planned settings, and both
 scripts end to end in a temporary tree with stubbed `systemctl`, `runuser`
