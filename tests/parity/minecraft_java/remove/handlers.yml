@@ -1,0 +1,6 @@
+---
+# minecraft_java_remove handlers
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true

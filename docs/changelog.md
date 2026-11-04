@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services.minecraft_java`: `MinecraftJavaRemoveConfig` and
+  `remove_minecraft_java`, the port of the `minecraft_java_remove` role
+  (ops-library `55a23d33`, recorded in the drift manifest and under
+  `tests/parity/minecraft_java/remove`): stop and disable the unit, remove it,
+  the `Minecraft world backup` cron job, the user's processes, `/home/minecraft`,
+  the account and group and the game/RCON UFW rules, in the role's order and
+  with its ignored failures. Requires `confirm_removal=True` before any probe.
+  `services._lifecycle.ansible_remove` holds the `systemd`/`user`/`file`
+  module semantics the Home Assistant removal had privately; Home Assistant's
+  removal uses it unchanged.
+
 - `services.daybook_operations_api`: the Operations API deploy (typed config,
   original templates, `migrate`/`provision_operations` management, exact Git or
   rsync source, explicit enabled state), now on current main, and the new

@@ -1,0 +1,17 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/minecraft_java_remove/tasks/main.yml",
+      "sha256": "227e5c15056edbf8aa081bbb8ecbe5e1047e270e2389df0f446a11051f35e441"
+    },
+    "defaults.yml": {
+      "source": "roles/minecraft_java_remove/defaults/main.yml",
+      "sha256": "f3c5acc154e6219b8311c464ba4a1f1fa26bd15fae91f47f98a4a0ac9495327f"
+    },
+    "handlers.yml": {
+      "source": "roles/minecraft_java_remove/handlers/main.yml",
+      "sha256": "785b9c4b01d73f28ec9e23b358051a7a70857a769b00ba9780672425ddf52980"
+    }
+  }
+}

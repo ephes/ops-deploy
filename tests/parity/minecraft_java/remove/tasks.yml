@@ -1,0 +1,119 @@
+---
+# minecraft_java_remove - Remove Minecraft Java server
+
+- name: Validate removal confirmation
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_confirm_removal | bool
+    fail_msg: |
+      ================================================
+      REMOVAL NOT CONFIRMED!
+      ================================================
+
+      This will PERMANENTLY DELETE:
+      - Minecraft Java service
+      - Server directory: {{ minecraft_java_server_dir }}
+      - Backup directory: {{ minecraft_java_backup_dir }}
+      - User home: {{ minecraft_java_home }}
+      - User account: {{ minecraft_java_user }}
+      - Firewall rules for ports {{ minecraft_java_port }}, {{ minecraft_java_rcon_port }}
+
+      To proceed, set: minecraft_java_confirm_removal=true
+
+      ================================================
+
+- name: Display removal plan
+  ansible.builtin.debug:
+    msg: |
+      Removing Minecraft Java server...
+      - Service: {{ minecraft_java_service_name }}
+      - User: {{ minecraft_java_user }}
+      - Home: {{ minecraft_java_home }}
+
+- name: Stop minecraft service
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    state: stopped
+  ignore_errors: true
+
+- name: Disable minecraft service
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    enabled: false
+  ignore_errors: true
+
+- name: Remove systemd service file
+  ansible.builtin.file:
+    path: /etc/systemd/system/{{ minecraft_java_service_name }}.service
+    state: absent
+  notify: reload systemd
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove cron job
+  ansible.builtin.cron:
+    name: "Minecraft world backup"
+    user: "{{ minecraft_java_user }}"
+    state: absent
+  ignore_errors: true
+
+- name: Kill any remaining minecraft processes
+  ansible.builtin.shell: |
+    pkill -u {{ minecraft_java_user }} || true
+  changed_when: false
+  ignore_errors: true
+
+- name: Remove user home directory
+  ansible.builtin.file:
+    path: "{{ minecraft_java_home }}"
+    state: absent
+
+- name: Remove minecraft user
+  ansible.builtin.user:
+    name: "{{ minecraft_java_user }}"
+    state: absent
+    remove: true
+
+- name: Remove minecraft group
+  ansible.builtin.group:
+    name: "{{ minecraft_java_group }}"
+    state: absent
+  ignore_errors: true
+
+- name: Remove firewall rules for game port (per-network)
+  community.general.ufw:
+    rule: allow
+    port: "{{ minecraft_java_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+    delete: true
+  loop: "{{ minecraft_java_firewall_allowed_networks }}"
+  ignore_errors: true
+
+- name: Remove firewall rules for RCON port
+  community.general.ufw:
+    rule: deny
+    port: "{{ minecraft_java_rcon_port }}"
+    proto: tcp
+    delete: true
+  ignore_errors: true
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      ================================================
+      Minecraft Java Server Removed
+      ================================================
+
+      The following have been removed:
+      - Service: {{ minecraft_java_service_name }}
+      - User: {{ minecraft_java_user }}
+      - Home directory: {{ minecraft_java_home }}
+      - Firewall rules
+
+      Note: /opt/backups/minecraft-java/ was NOT removed.
+      Delete manually if no longer needed.
+
+      ================================================

@@ -2,9 +2,10 @@
 
 Deploy-only port of the public `minecraft_java_deploy` role at ops-library
 `3110a0f1` (2.68.0): Debian/Ubuntu, OpenJDK, mcrcon 0.7.2, vanilla or Forge,
-mod JARs, server properties, whitelist/operators, UFW and a systemd service.
-Backup, restore and removal are outside this package. Existing backup jobs,
-scripts, directories and archives are neither created nor changed nor removed.
+mod JARs, server properties, whitelist/operators, UFW and a systemd service,
+and the port of the `minecraft_java_remove` role (see [Removal](#removal)).
+Backup and restore are outside this package. The deploy neither creates nor
+changes nor removes existing backup jobs, scripts, directories or archives.
 
 ```python
 from ops_deploy.core import SecretRef
@@ -134,6 +135,37 @@ JSON compares names and managed fields while retaining server-added UUIDs. All
 managed text writes reuse the descriptor-pinned installer; comparison requests
 carry their contents on redacted stdin and run as the service user. Run twice to prove real
 convergence before switching an engine.
+
+## Removal
+
+`remove_minecraft_java(MinecraftJavaRemoveConfig(confirm_removal=True))` ports
+the `minecraft_java_remove` role at ops-library `55a23d33` (the role files are
+recorded under `tests/parity/minecraft_java/remove`). Without `confirm_removal`
+it fails before any host probe. The defaults are the role's, not the deploy's:
+`user`/`group` `minecraft`, `home` `/home/minecraft`, `service_name`
+`minecraft-java`, `port` 25565, `rcon_port` 25575 and
+`firewall_allowed_networks` `192.168.0.0/16`, `10.0.0.0/8`, `100.64.0.0/10`.
+A root account, `/`, a top-level directory or a traversal as `home` is refused.
+
+The role's order, with its ignored failures (marked *ignored*):
+
+1. stop the service (*ignored*), then disable it (*ignored*), with the
+   `systemd` module's semantics (an absent unit is a failure, ignored);
+2. remove `/etc/systemd/system/<service_name>.service` and reload systemd;
+3. remove the user crontab job named `Minecraft world backup` the way the
+   `cron` module does (every `#Ansible: Minecraft world backup` line with the
+   line after it; the crontab is rewritten only on a change) (*ignored*);
+4. `pkill -u <user>` when the user runs a process (`|| true`, as the role);
+5. remove `home` (file, directory or leaf link, not followed), then
+   `userdel -r <user>` when the account exists (a failure stops the removal),
+   then the group when it still exists (*ignored*);
+6. with `ufw` installed: `ufw delete allow from <network> to any port <port>
+   proto tcp` per network and `ufw delete deny from any to any port
+   <rcon_port> proto tcp` (*ignored*; ufw reports a rule that is not there
+   and changes nothing, so these run on every removal);
+7. the role's `reload systemd` handler, when the unit file was removed.
+
+`/opt/backups/minecraft-java`, the Echoport archives and UFW's own state stay.
 
 ## Parity and limits
 

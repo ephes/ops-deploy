@@ -1,0 +1,21 @@
+---
+# minecraft_java_remove defaults
+
+# Safety confirmation (MUST be true to proceed)
+minecraft_java_confirm_removal: false
+
+# Server settings (should match deploy role)
+minecraft_java_user: minecraft
+minecraft_java_group: minecraft
+minecraft_java_home: /home/minecraft
+minecraft_java_server_dir: "{{ minecraft_java_home }}/server"
+minecraft_java_backup_dir: "{{ minecraft_java_home }}/backups"
+minecraft_java_service_name: minecraft-java
+minecraft_java_port: 25565
+minecraft_java_rcon_port: 25575
+
+# Firewall networks (must match deploy role to clean up rules)
+minecraft_java_firewall_allowed_networks:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "100.64.0.0/10"
