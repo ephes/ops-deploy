@@ -59,6 +59,18 @@ def operations_api_port_preflight(cfg: OperationsApiConfig) -> OperationMeta:
     )
 
 
+def site_mode(cfg: OperationsApiConfig) -> str:
+    """The site mode the original role leaves behind, so neither tool undoes the other.
+
+    The role creates the site ``0750``, but its rsync copy (``synchronize``,
+    archive mode) then gives the site the mode of the export's ``0700`` source
+    directory. ``sync_tree`` keeps an existing directory's mode, so the port
+    sets the role's final mode itself. A Git checkout leaves ``0750`` alone.
+    """
+
+    return "0700" if cfg.deploy_method == "rsync" else "0750"
+
+
 def source_ownership_command(cfg: OperationsApiConfig, *, check: bool) -> str:
     path = shlex.quote(str(cfg.site_path))
     owner = shlex.quote(cfg.user)
@@ -133,7 +145,7 @@ def deploy_daybook_operations_api(
         create_home=True,
     )
     site = files.directory(
-        name="Ensure Operations API site", path=str(cfg.site_path), user=cfg.user, group=cfg.user, mode="0750"
+        name="Ensure Operations API site", path=str(cfg.site_path), user=cfg.user, group=cfg.user, mode=site_mode(cfg)
     )
     files.directory(
         name="Ensure Operations API configuration", path=cfg.config_dir, user=cfg.user, group=cfg.user, mode="0750"

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `services.daybook_operations_api`: the rsync deploy ensures the site
+  directory `0700` instead of `0750`, the mode the `daybook_operations_api_deploy`
+  role leaves behind (its archive-mode copy of the playbook's `0700` export
+  overrides the `0750` it creates). The port's first run against the
+  Ansible-deployed macmini no longer plans `Ensure Operations API site`, and the
+  two tools no longer flip the mode back and forth. Git deploys keep `0750`.
+
 - `services.echoport`: `EchoportConfig.store_aliases` (`StoreAlias(alias, url,
   verify_bucket, account)`) gives the cleanup user one more `mc` alias per
   object store next to `minio_alias`, each with its own account created

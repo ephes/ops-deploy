@@ -13,7 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from ops_deploy.services.daybook_operations_api import OperationsApiConfig, OperationsApiPins, OperationsProfile
-from ops_deploy.services.daybook_operations_api.deploy import dependency_command, management_payload
+from ops_deploy.services.daybook_operations_api.deploy import dependency_command, management_payload, site_mode
 from ops_deploy.services.daybook_operations_api.render import render_config, render_route, render_unit
 
 
@@ -167,7 +167,7 @@ def test_management_failure_never_exports_private_output() -> None:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-@pytest.mark.parametrize("drift", ["none", "source", "dependencies", "ownership", "configuration"])
+@pytest.mark.parametrize("drift", ["none", "source", "dependencies", "ownership", "configuration", "site mode"])
 def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool, drift: str
 ) -> None:
@@ -187,7 +187,8 @@ def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
     responses = {**fakehost.LINUX, **fakehost.system_account(cfg.user, cfg.home, shell="/usr/sbin/nologin")}
     for path, mode in (
         (cfg.home, "drwxr-x---"),
-        (str(cfg.site_path), "drwxr-x---"),
+        # The role's rsync leaves the site at its export's 0700 (see site_mode).
+        (str(cfg.site_path), "drwxr-x---" if drift == "site mode" else "drwx------"),
         (cfg.config_dir, "drwxr-x---"),
         (cfg.backup_root, "drwx------"),
     ):
@@ -239,6 +240,14 @@ def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
     if drift == "ownership":
         assert "Set original source ownership" in changed
         assert not any(row == "Sync Operations API frozen dependencies" for row in changed)
+    if drift == "site mode":
+        assert changed == ["Ensure Operations API site", "Operations API migrate", "Operations API provision"], changed
+        assert any("chmod 700 /home/daybook-operations/site" in command for command in run.executed_commands)
+
+
+def test_site_mode_is_what_the_original_role_leaves() -> None:
+    assert site_mode(config()) == "0700"
+    assert site_mode(OperationsApiConfig(deploy_method="git", git_revision="a" * 40)) == "0750"
 
 
 def test_source_ownership_checks_descendants_without_exporting_paths(tmp_path: Path) -> None:

@@ -49,6 +49,11 @@ caches, nested site/cache and experiments. The private caller resolves current
 Daybook Main and owns the exported tree for the complete operation lifetime.
 An existing exported tree must remain explicitly rsync in desired inventory;
 changing it to Git is not an automatic migration strategy.
+The site directory gets the mode the original role leaves behind: `0700` for
+rsync (the role creates it `0750`, but its archive-mode `synchronize` then copies
+the mode of the playbook's `0700` export directory onto it on every run) and
+`0750` for Git. `sync_tree` keeps an existing directory's mode, so the port sets
+the final mode itself, and a deploy after the role changes nothing there.
 
 The original defaults include user/home `daybook-operations` and
 `/home/daybook-operations`, site and separate `venv` underneath that home,
