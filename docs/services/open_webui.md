@@ -2,8 +2,8 @@
 
 Port of the `open_webui_venv_deploy` Ansible role: Open WebUI in a
 uv-managed virtualenv, run by its own systemd unit, behind Traefik with basic
-auth outside the internal networks. Deploy only: removal stays with the
-`open_webui_venv_remove` role.
+auth outside the internal networks. `deploy_open_webui_remove` ports the
+`open_webui_venv_remove` role ([Removal](#removal)).
 
 ```python
 from pydantic import SecretStr
@@ -143,6 +143,37 @@ Not ported: `package_spec` (the version pin replaces it), `manage_user`,
    directory; the role's handler reloads it).
 8. Health checks (read-only).
 
+## Removal
+
+`deploy_open_webui_remove(OpenWebUIRemoveConfig(...))` is the
+`open_webui_venv_remove` role. Nothing happens without `confirm=True`
+(checked before any host query). Like the role, it always stops and disables
+`open-webui.service` (failures tolerated) and removes
+`/etc/systemd/system/open-webui.service`; every other target is opt-in, each
+flag `False` by default:
+
+| Flag | Removes (role default path) |
+|---|---|
+| `remove_traefik_config` | `traefik_config_path` `/etc/traefik/dynamic/open-webui.yml`, behind the Traefik transaction guard |
+| `remove_env_file` | `env_path`, default `<site_dir>/open-webui.env` |
+| `remove_venv` | `venv_path`, default `<site_dir>/.venv` |
+| `remove_site_dir` | `site_dir` `/opt/open-webui` (with the virtualenv, env file, constraints and `.webui_secret_key`) |
+| `remove_data` | `data_dir` `/var/lib/open-webui` |
+| `remove_log_dir` | `log_dir` `/var/log/open-webui` |
+| `remove_user` | the `openwebui` user with `userdel --remove` (and its home, `/home/openwebui`, with whatever uv keeps there) |
+| `remove_group` | the `openwebui` group (rechecked after `userdel`, which may already have removed it) |
+
+`data_dir` is the role's default, not the deploy's: a caller that wants the
+deploy's data directory removed passes it. uv, the shared Traefik and any
+other path stay. Paths, the unit and the account are inspected first through
+the shared removal helper (`_lifecycle.media_remove`, see
+[Media removal](media-removal.md)): system roots such as `/opt`, `/var/lib`
+or `/mnt/cryptdata` are refused, and a host where everything is already gone
+plans nothing. Differences from the role: systemd is reloaded (at the end, as
+the role's handler) only when the unit file was removed, and the role's
+`systemctl reload traefik` (it fails on a unit without `ExecReload` and is
+ignored) is not run; Traefik's file provider drops the route.
+
 ## Tests
 
 `tests/test_open_webui.py` (plans against the fake connector: fresh,
@@ -150,4 +181,6 @@ converged, version change, unusable virtualenvs, environment, unit and route
 changes, refusals), `tests/test_open_webui_parity.py` and the owned native
 fixture [`tests/integration/linux_apps`](https://github.com/ephes/ops-deploy/tree/main/tests/integration/linux_apps)
 (a real install of 0.7.2 with the constraints, sessions across restarts and
-recreations, faults and zero-write repeats).
+recreations, faults and zero-write repeats). `tests/test_open_webui_remove.py`
+plans the removal against the fake connector (order, each flag, the absent
+repeat, refused roots).

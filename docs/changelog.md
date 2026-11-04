@@ -30,6 +30,23 @@
   `just test-rustfs-replication <binary>`, which runs both servers from the
   pinned release binary without Docker.
 
+- `services.native_app`: `remove_native_app(NativeAppRemoveConfig(app, confirm))`
+  removes a route-only app: its Traefik route (behind the transaction guard)
+  and its `/var/lib/ops-deploy/<service>` state; Traefik is not restarted and
+  no secret is read. Apps with a unit, release or account are refused. For
+  ops-control's `ollama_proxy` this ports the `ollama_proxy_remove` role (route
+  file only), whose handler restarts Traefik after the failing reload; see
+  [native_app](services/native_app.md#removal-of-a-route-only-app).
+- `services.open_webui`: `deploy_open_webui_remove(OpenWebUIRemoveConfig)`
+  ports the `open_webui_venv_remove` role on the shared removal helper: unit
+  always, then route, env file, virtualenv, site directory, data directory
+  (role default `/var/lib/open-webui`), log directory, user (`userdel
+  --remove`) and group, each only with its flag (all default false). systemd is
+  reloaded only after a removed unit; the role's ignored failing Traefik
+  reload is not run. See [open_webui](services/open_webui.md#removal).
+- Both roles are recorded in the ops-library drift manifest (ops-library
+  `44a532b`).
+
 - `services.daybook_operations_api`: the Operations API deploy (typed config,
   original templates, `migrate`/`provision_operations` management, exact Git or
   rsync source, explicit enabled state), now on current main, and the new

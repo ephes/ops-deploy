@@ -126,7 +126,22 @@ and rollout, resumed restart, route-only convergence, missing-mount refusal
 and stable Traefik PID. The private repo additionally rehearses conversion
 from the actual origin role with fixture credentials.
 
-Removal and backup/restore are deliberately separate lifecycle ports. Apt/deb,
+## Removal of a route-only app
+
+`remove_native_app(NativeAppRemoveConfig(app=cfg, confirm=True))` removes a
+route-only app: its route `/etc/traefik/dynamic/<route name>.yml` (behind the
+Traefik transaction guard, as every route writer) and its state directory
+`/var/lib/ops-deploy/<service>/`. Traefik is not restarted (its file provider
+drops the route), no secret is read, and a second run finds nothing to do.
+Without `confirm` it refuses before any host query; an app with runtime parts
+(unit, release, account) is refused before any change, since removing those
+is a per-app port (navidrome's is `services.navidrome`). For ops-control's
+`ollama_proxy` it is the `ollama_proxy_remove` role, which deletes only the
+route file, plus the pyinfra state; that role's handler reloads Traefik and
+restarts it when the reload fails, which this removal does not do.
+
+Backup/restore and the removal of apps with runtime parts are deliberately
+separate lifecycle ports. Apt/deb,
 policy-rc.d claims and descriptor preservation, PyPI, Git/Node builds, vendor
 units, multi-unit rollout and typed provisioning steps are absent. The first
 apt consumer must implement and prove the reviewed descriptor/crash contract;
