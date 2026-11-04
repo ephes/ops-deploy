@@ -222,11 +222,12 @@ route (`0600`), writes the role's `metadata.yml` (`sqlite_mode` `hot`,
    `slug: homelab`, the required fields (`slug`, `timestamp`, `host`), the
    ops-library version and `manifest.sha256`, and print the plan.
 2. With `dry_run`, stop here.
-3. Stop `homelab` (a failure stops the restore), copy the site to
+3. When the archived route differs from the live one and a Traefik
+   transaction holds its lock, stop here too (nothing changed yet).
+4. Stop `homelab` (a failure stops the restore), copy the site to
    `<site>.pre-restore-<timestamp>`, put back static, media and cache
    (`rsync -a --delete`), the database (stale `-wal`/`-shm`/`-journal`
-   removed first), `.env`, the unit and the route (under the Traefik
-   transaction guard when it changes), fix ownership, reload systemd and
+   removed first), `.env`, the unit and the route, fix ownership, reload systemd and
    Traefik when their files changed, run `manage.py check --deploy` and
    `showmigrations` as `homelab`, check the database's integrity, restart
    `homelab` and probe the health URL (6 tries, 3 s apart).
@@ -236,7 +237,9 @@ roll back: the pre-restore copy stays and is reported; it is removed only
 after a successful restore with `safe_snapshot_delete`. `archive` is a name
 below the search root, never an absolute path, and `static`, `media` and
 `cache` get their modes back after the copy (`rsync -a` would leave the
-backup's `0700`).
+archived directory's mode, `0700` for one that was empty at backup time).
+`sqlite3`, the controller directory's `0700` and the `*.tar.gz` pattern of
+`latest` are fixed, not configurable.
 
 Tests: `tests/test_homelab_backup_restore.py` (planned settings, and both
 scripts end to end in a temporary tree with stubbed `systemctl`, `runuser`

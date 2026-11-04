@@ -33,7 +33,7 @@ def backup(cfg: HomelabBackupConfig, *, site: bool = True, git: str | None = Non
         responses[f"test -e {cfg.site_path} &&"] = ["yes"]
     if git is not None:
         responses[f"test -e {cfg.site_path}/.git &&"] = ["yes"]
-        responses["rev-parse HEAD"] = [git]
+        responses["rev-parse --verify --quiet HEAD"] = [git]
     return run_deploy_fake(deploy_homelab_backup, cfg, responses=responses)
 
 
@@ -184,7 +184,7 @@ def site_settings(p: dict[str, Path]) -> dict[str, Any]:
     }
 
 
-def take_backup(p: dict[str, Path], tmp_path: Path, **extra: Any) -> Path:
+def take_backup(p: dict[str, Path], tmp_path: Path, *, stubs: str = "", stamp: str = STAMP, **extra: Any) -> Path:
     cfg = HomelabBackupConfig(
         host_name="macmini",
         root=str(p["backups"]),
@@ -193,11 +193,15 @@ def take_backup(p: dict[str, Path], tmp_path: Path, **extra: Any) -> Path:
         **site_settings(p),
         **extra,
     )
-    result = backup(cfg)
+    result = run_deploy_fake(
+        deploy_homelab_backup,
+        cfg,
+        responses={"date +%Y%m%dT%H%M%S": [stamp], f"test -e {cfg.site_path} &&": ["yes"]},
+    )
     assert result.succeeded, result.error
-    done = run_script(result.executed_commands[0], FILES / "backup.sh", tmp_path)
+    done = run_script(result.executed_commands[0], FILES / "backup.sh", tmp_path, stubs=stubs)
     assert done.returncode == 0, done.stderr
-    return p["backups"] / f"manual-{STAMP}"
+    return p["backups"] / f"manual-{stamp}"
 
 
 def restore_command(p: dict[str, Path], **extra: Any) -> str:
@@ -387,4 +391,63 @@ def test_restore_script_reloads_after_a_changed_unit_and_route_and_deletes_the_c
     log = calls(tmp_path)
     assert "systemctl daemon-reload" in log
     assert "systemctl reload traefik" in log
+    assert not list(tmp_path.glob("site.pre-restore-*"))
+
+
+@needs_gnu
+def test_backup_script_falls_back_to_the_offline_copy_when_every_hot_attempt_fails(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    failing = r"""
+sqlite3() { case "$*" in *.backup*) printf 'sqlite3 backup\n' >>"$LOG"; return 1 ;; esac; command sqlite3 "$@"; }
+sleep() { :; }
+"""
+
+    directory = take_backup(p, tmp_path, stubs=failing)
+
+    assert yaml.safe_load((directory / "metadata.yml").read_text())["sqlite_mode"] == "offline"
+    log = calls(tmp_path)
+    assert log == ["sqlite3 backup"] * 4 + ["systemctl stop homelab", "systemctl start homelab"]
+    copy = sqlite3.connect(directory / "database" / "db.sqlite3")
+    assert copy.execute("SELECT v FROM t").fetchall() == [("original",)]
+    copy.close()
+
+
+@needs_gnu
+def test_restore_script_latest_is_the_newest_archive(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    old = take_backup(p, tmp_path)
+    os.utime(p["backups"] / f"{old.name}.tar.gz", (1_000_000_000, 1_000_000_000))
+    make_site(p["site"], "newer")
+    take_backup(p, tmp_path, stamp=LATER)
+
+    done = run_script(restore_command(p, dry_run=True), FILES / "restore.sh", tmp_path)
+
+    assert done.returncode == 0, done.stderr
+    assert f"Archive: manual-{LATER}.tar.gz" in done.stdout
+
+
+@needs_gnu
+def test_restore_script_without_the_search_root_names_it(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+
+    done = run_script(restore_command(p), FILES / "restore.sh", tmp_path)
+
+    assert done.returncode == 1
+    assert f"No homelab backup archives found under {p['backups']}" in done.stderr
+
+
+@needs_gnu
+def test_restore_script_a_held_route_lock_changes_nothing(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    take_backup(p, tmp_path)
+    (p["etc"] / "homelab.yml").write_text("changed: 1\n")
+    make_site(p["site"], "changed")
+    (tmp_path / "calls.log").unlink(missing_ok=True)
+
+    done = run_script(restore_command(p), FILES / "restore.sh", tmp_path, stubs="ROUTE_GUARD=(false)\n")
+
+    assert done.returncode == 1
+    assert "holds its lock" in done.stderr
+    assert calls(tmp_path) == []
+    assert (p["site"] / ".env").read_text() == "MARKER=changed\n"
     assert not list(tmp_path.glob("site.pre-restore-*"))

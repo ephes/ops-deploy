@@ -11,8 +11,8 @@
   (kept unless `safe_snapshot_delete` and success; no automatic rollback, as in
   the role), Django checks, integrity check and health probe. `required_mount`
   and snapshot retention as for the other backup ports. Archive names only
-  (no absolute paths); the Traefik route is restored under the transaction
-  guard. `services._lifecycle.canonical` holds the canonical path and name
+  (no absolute paths); a changed Traefik route is written only while no
+  transaction holds its lock, checked before homelab is stopped. `services._lifecycle.canonical` holds the canonical path and name
   types these ports share.
 
 - `services.daybook_operations_api`: the rsync deploy ensures the site

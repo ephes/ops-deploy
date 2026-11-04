@@ -36,6 +36,10 @@ rm -rf "$STAGING"
 ensure_dir root root "$STAGING_MODE" "$STAGING"
 if [ "$ARCHIVE" = latest ]; then
     # The role's find: non-hidden regular *.tar.gz directly in the root, newest by mtime.
+    if [ ! -d "$SEARCH_ROOT" ]; then
+        echo "No homelab backup archives found under $SEARCH_ROOT" >&2
+        exit 1
+    fi
     archive=$(find "$SEARCH_ROOT" -mindepth 1 -maxdepth 1 -type f -name '*.tar.gz' ! -name '.*' -printf '%T@ %p\n' |
         sort -n | tail -n 1 | cut -d' ' -f2-)
     if [ -z "$archive" ]; then
@@ -104,6 +108,16 @@ if has "$database" && ! command -v sqlite3 >/dev/null; then
     echo "sqlite3 is required on the target to verify the restored database" >&2
     exit 1
 fi
+# A changed route is written only while no Traefik transaction holds its lock;
+# check that before anything changes, so a held lock never stops homelab.
+traefik_changed=0
+if has configs/traefik.yml && ! cmp -s "$payload/configs/traefik.yml" "$TRAEFIK"; then
+    traefik_changed=1
+    if ! "${ROUTE_GUARD[@]}"; then
+        echo "A Traefik transaction holds its lock; the restore changes nothing. Retry when it is done." >&2
+        exit 1
+    fi
+fi
 # Stop first (and fail if that fails): neither the safety snapshot nor the
 # database replacement may run against a live SQLite database.
 systemctl stop "$SERVICE"
@@ -142,12 +156,8 @@ if has configs/homelab.service; then
     cmp -s "$payload/configs/homelab.service" "$UNIT" || unit_changed=1
     copy_file root root 0644 "$payload/configs/homelab.service" "$UNIT"
 fi
-traefik_changed=0
 if has configs/traefik.yml; then
-    if ! cmp -s "$payload/configs/traefik.yml" "$TRAEFIK"; then
-        traefik_changed=1
-        "${ROUTE_GUARD[@]}"
-    fi
+    if [ "$traefik_changed" = 1 ]; then "${ROUTE_GUARD[@]}"; fi
     copy_file root root 0644 "$payload/configs/traefik.yml" "$TRAEFIK"
 fi
 if [ "$REBUILD_STATIC" = 1 ] && [ "$env_present" = 1 ]; then in_site collectstatic --noinput; fi

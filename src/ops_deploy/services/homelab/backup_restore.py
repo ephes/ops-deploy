@@ -20,9 +20,15 @@ Deliberate differences from the roles:
   an absolute path (ops-control's restore prelude uploads archives there).
 - After the restored directories are copied, ``static``, ``media`` and
   ``cache`` get the modes the restore created them with again: ``rsync -a``
-  copies the backup's ``0700`` directory mode onto them.
-- Restoring the Traefik route waits for no Traefik transaction, like every
-  route writer on the host.
+  copies the archived directory's mode onto them (``0700`` for a directory
+  that was empty or missing at backup time, such as the cache).
+- A route that differs from the live one is written only while no Traefik
+  transaction holds its lock, like every route writer on the host; a held
+  lock stops the restore before homelab is stopped.
+- Not configurable: ``sqlite3`` (``homelab_backup_sqlite_command``), the
+  controller directory's ``0700`` (``homelab_backup_local_dir_mode``) and the
+  ``*.tar.gz`` pattern of ``latest`` (``homelab_restore_archive_pattern``);
+  ``host_name`` of the restore only names the host in messages.
 - The controller copy of the archive is ``0600``, as the role leaves it.
 
 ``required_mount`` keeps the backup root and the restore's staging directory
@@ -217,7 +223,10 @@ def deploy_homelab_backup(cfg: HomelabBackupConfig) -> None:
         raise DeployError(f"homelab_backup: homelab_site_path ({cfg.site_path}) must exist on the target host")
     commit = "unknown"
     if cfg.git_check_enabled and exists(f"{cfg.site_path}/.git"):
-        found = output(f"git -C {shlex.quote(cfg.site_path)} rev-parse HEAD 2>/dev/null || true").strip()
+        # The role's ``rc == 0`` check: an empty repository prints ``HEAD`` and fails.
+        found = output(
+            f"git -C {shlex.quote(cfg.site_path)} rev-parse --verify --quiet HEAD 2>/dev/null || true"
+        ).strip()
         commit = found or "unknown"
     stamp = _stamp("homelab_backup")
     name = f"{cfg.prefix}-{stamp}"
