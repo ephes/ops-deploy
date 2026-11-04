@@ -47,9 +47,9 @@ src/ops_deploy/
   services/gotosocial/ GoToSocial from a pinned release (port of the gotosocial_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
   services/unifi/      UniFi configuration convergence on an existing installation (no bootstrap or upgrades)
-  services/metube/    Native Git + staged Angular + uv MeTube
-  services/navidrome/ Confirmed original Navidrome removal
-  services/jellyfin/   Jellyfin deploy and confirmed removal
+  services/metube/    Native Git + staged Angular + uv MeTube; backup, restore and confirmed removal
+  services/navidrome/ Confirmed original Navidrome removal, backup and guarded recovery restore
+  services/jellyfin/   Jellyfin deploy, backup, restore and confirmed removal
   services/vaultwarden/ vaultwarden from the vendor's .deb packages (ports of vaultwarden_deploy, _backup, _restore)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share
   services/_metrics_httpd/ the Python/Rust metrics-httpd switch of the endpoint deploys (thermal, logyard, static_site)

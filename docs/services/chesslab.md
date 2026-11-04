@@ -118,6 +118,21 @@ Differences:
 - Not ported (production uses none of them): switching off Traefik or basic
   auth, other deploy methods.
 
+## Backup (`ChesslabBackupConfig`)
+
+`deploy_chesslab_backup(ChesslabBackupConfig(prefix=...))` is the port of
+`playbooks/chesslab/backup.yml` (the play has no role). It refuses with the
+play's message ("echoport-backup must be registered before Chesslab backups
+can run.") unless `/usr/local/libexec/fastdeploy/echoport-backup/backup.py`
+exists, then runs the play's shell task unchanged: a private `mktemp
+/tmp/chesslab-backup-XXXXXX.json` (removed by an `EXIT` trap) with the target's
+Echoport environment (`ECHOPORT_DB_PATH=/home/chesslab/data/chess.db`, `ECHOPORT_SERVICE_NAME=chesslab.service`, `ECHOPORT_RESTORE_OWNER=chesslab:chesslab`),
+handed to the runner with `--config`. The runner uploads the backup to the
+object store; nothing is kept on the host or fetched. The run id is
+`<prefix>-<UTC %Y-%m-%dT%H-%M-%S>`, the key prefix `<target>/<run id>`. Shared with the Chesslab and Archive
+backups: `ops_deploy.services._lifecycle.echoport_runner`
+(`tests/test_echoport_runner_backup.py` runs the script through bash).
+
 ## Tests
 
 - `tests/test_chesslab.py` (fake connector): first run, converged second run

@@ -150,8 +150,8 @@ Differences:
   PostgreSQL must be installed, see `deploy_postgres_install`).
 - Not ported (the playbook uses none of them): the `git` deploy method,
   `traefik_enabled`, `basic_auth_enabled`, a precomputed password hash,
-  `service_restart_on_change`. The backup and restore playbooks
-  (`wagtail_backup`) stay on Ansible.
+  `service_restart_on_change`. The backup and restore playbooks are ported
+  separately ([Backup and restore](#backup-and-restore-wagtail_backup-wagtail_restore)).
 
 ## Tests
 
@@ -180,3 +180,83 @@ Differences:
   unusable token is replaced and a legacy target adopted, no secret on disk.
 - Ansible coexistence (deploys taking turns, data kept) runs from
   ops-control: `just smoke-weeknotes-home-coexistence`.
+
+## Backup and restore (`wagtail_backup`, `wagtail_restore`)
+
+`ops_deploy.services._lifecycle.wagtail` ports the two generic Wagtail roles;
+ops-control composes them with the values of
+`playbooks/weeknotes_home/{backup,restore}.yml`. For the restore it also
+passes the deployed site (`user` `weeknotes-home`, `site_path`
+`/home/weeknotes-home/site`): the playbook leaves them at the role defaults
+derived from the service name (`/home/weeknotes_home/site`), which does not
+exist, so its restore stops the unit and then fails before the database. Archives written by either
+tool restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_wagtail_backup(cfg, secrets)` | `WagtailBackupConfig(service_name=...)` | `wagtail_backup` |
+| `deploy_wagtail_restore(cfg, secrets)` | `WagtailRestoreConfig(service_name=...)` | `wagtail_restore` |
+
+The fields are the role variables without their `wagtail_backup_`,
+`wagtail_restore_` or `wagtail_` prefix, with the role defaults; the ones that
+default to the service name (`root`, `systemd_unit_name`,
+`postgres_database`, `postgres_user`, the restore's `staging_dir`, `user`,
+`home`, `site_path` and what follows from it, `postgres_admin_user`) follow
+`service_name`. `postgres_port` takes `""` (omitted, the libpq default) as the
+playbooks pass it. `secrets` holds `postgres_password` (required, not
+`CHANGEME`; for the restore, whose passfile holds it, no line break) and optionally `postgres_admin_password`
+(default: `postgres_password`). Both reach the host only on the program's
+stdin. `required_mount` (backup only) keeps the backup root on an external
+disk ([Local backups](../concepts/local-backups.md)).
+
+**Backup.** One host program (`_lifecycle/files/wagtail_host.py`) creates the
+root, the backup directory and `database/` with the configured owner, group
+and mode, restricts every archive directly in the root to `0600`, stops the
+unit only with `stop_service` (and starts it again only if it ran or the
+stop failed), dumps the database as `postgresql_db: state=dump` does
+(`pg_dump <db> --host --port --username <target_opts>` as the become user,
+piped through `pigz` or `gzip`, the password as `PGPASSWORD`), writes the
+role's `manifest.yml` and packs `<dir>.tar.gz` as `archive: format=gz` packs
+a directory (its contents below its name, `0600`). The archive is fetched to
+`~/backups/<service_name>` (`local_dir_mode`, a private `0600` file), then the
+role's retention removes all but the newest `retain` archives and directories
+of the prefix by mtime. `wagtail_backup_metadata_extra`, which the playbook
+sets, is not read by the role and has no field.
+
+**Restore.** The same program selects the archive (`latest`: the newest
+`*.tar.gz` directly in the root; a name below the root; an absolute path; an
+archive or a backup directory), refuses overlapping site, staging and source
+paths with ops-library's `preserve.py` (shipped unchanged as
+`_lifecycle/files/preserve.py`), unpacks an archive into
+`staging_dir`, checks the dump (`gzip -t` and the
+`-- PostgreSQL database dump complete` trailer) and, with `dry_run`, stops
+there and removes the staging directory. Otherwise it checks the site copy's
+space, writes a private passfile, stops the auxiliary units and the unit,
+keeps the site directory as a verified `site.pre-restore-*` copy, takes and
+verifies the safety dump into it, drops (`WITH (FORCE)` from PostgreSQL 13)
+and recreates the database, restores the dump in one transaction, grants
+`ALL` on the database, runs the enabled `manage.py` steps as the site user and
+starts the units again. A failure after the database was touched leaves the
+units stopped; before the SQL replacement committed it brings back the
+safety dump with `pg_restore --single-transaction --exit-on-error`. The run
+fails with the role's message, removes the passfile directory and reports the
+retained copy in every case. As with the role, a failed run leaves the
+staging directory; copies are pruned by hand.
+
+Deviations: the archive is written under a hidden name and renamed, so a
+failed backup never leaves a partial `latest`; `latest` with no archive fails
+with "No Wagtail backup archives found" (the role's expression falls through
+to "archive not found: <root>/latest"); the password checks run on the
+controller before the first step; a missing `site_path` is refused before
+any unit stops (the role stops them and only then fails "Require existing
+Wagtail site for safety dump"); more than one payload directory in staging is
+refused; an unknown or unreadable unit with `stop_service` fails as the systemd module
+does.
+`archive_format` is `gz` only. Like the
+role's `no_log`, the dump, the SQL restore and the recovery `pg_restore` keep
+their output to themselves: a failure reports the step and exit status, not
+the rows PostgreSQL would print.
+
+Tests: `tests/test_wagtail_lifecycle.py` (plans against the fake connector;
+the host program against temporary directories with stubbed `systemctl`,
+`runuser`, PostgreSQL clients, `findmnt`, `df`, `du` and `rsync`).

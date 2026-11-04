@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- `services.metube`, `services.jellyfin`, `services.navidrome`: backup and
+  restore, the ports of `metube_backup`/`metube_restore`,
+  `jellyfin_backup`/`jellyfin_restore` and `navidrome_backup`/`navidrome_restore`
+  (ops-library `44a532ba`, recorded in the drift manifest with `metube_shared`
+  and `navidrome_shared`): one host program each
+  (`_lifecycle/files/media_lifecycle_host.py`, sharing the vendored
+  `preserve.py`) with the roles' order, checks, stop/start rule,
+  manifests, archive layout, fetch and mtime retention; restores keep the
+  roles' pre-restore copies and stop where a step fails. Added: `required_mount`
+  on the backup root, a refusal of more than one payload directory in staging,
+  the Traefik route guard before a restore and again before it writes a route
+  (Traefik is reloaded, or started when stopped, never restarted, as the roles
+  effectively do). The Navidrome
+  restore is ops-control's guarded Native recovery: `confirm` required,
+  canonical paths only, its quarantine refusals and the capture of the current
+  config, unit and route under `/var/lib/ops-deploy/navidrome/restored/`, with
+  the archived ones kept there instead of their live paths
+  ([Media backup and restore](services/media-backup-restore.md)).
+
+- `services.archive`, `services.chesslab`: `ArchiveBackupConfig`/
+  `deploy_archive_backup` and `ChesslabBackupConfig`/`deploy_chesslab_backup`,
+  the ports of `playbooks/{archive,chesslab}/backup.yml`: the runner check and
+  the play's shell task that runs the registered `echoport-backup` runner once
+  (`services._lifecycle.echoport_runner`).
+
+- `services._lifecycle.wagtail`: `WagtailBackupConfig`/`deploy_wagtail_backup`
+  and `WagtailRestoreConfig`/`deploy_wagtail_restore`, the ports of the
+  `wagtail_backup` and `wagtail_restore` roles (ops-library `44a532ba`, both
+  recorded in the drift manifest with `restore_preserve_internal`) for the
+  weeknotes.home lifecycle: the dump, manifest, archive, fetch and mtime
+  retention of the backup; the restore's validation, dry run, pre-restore
+  copy, verified safety dump, transactional replacement and safety-dump
+  recovery, in one host program with the passwords on stdin. ops-library's
+  `preserve.py` is the shared copy in `_lifecycle/files/preserve.py`.
+  Added: a missing site directory is refused before any unit stops (the
+  role stops the units first), more than one payload directory is refused,
+  and the dump and restore commands keep their output like the role's `no_log`.
+
 - `services.vaultwarden`: `VaultwardenBackupConfig`/`deploy_vaultwarden_backup`
   and `VaultwardenRestoreConfig`/`deploy_vaultwarden_restore`, the ports of the
   `vaultwarden_backup` and `vaultwarden_restore` roles (ops-library

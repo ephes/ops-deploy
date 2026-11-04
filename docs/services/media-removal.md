@@ -49,4 +49,4 @@ removal; package maintainer-script effects remain part of a genuine apt purge.
 MeTube retains both original change-triggered handlers. A pyinfra `--dry` plan
 may contain destructive proposals; planned changes are not executed or labelled
 as successful removals. No live inventory destructive demonstration or deployment
-count follows from owned fixtures. Backup/restore remain separate lifecycle work.
+count follows from owned fixtures. Backup and restore are separate APIs ([Media backup and restore](media-backup-restore.md)).

@@ -6,7 +6,8 @@ directory and an archive on the host, and their restores unpack an archive
 into a work directory. Where an off-host backup (Echoport) already holds the
 same data, those local archives are only rollback snapshots. Two settings,
 shared by these ports (`ops_deploy.services._lifecycle.local_backup`),
-keep them off the root filesystem and bound how many stay.
+keep them off the root filesystem and bound how many stay. The MeTube, Jellyfin,
+Navidrome and Wagtail backups use `required_mount` only.
 
 ## `required_mount`
 
@@ -17,6 +18,7 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 |---|---|
 | `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig` | `root` |
 | `SnappyMailRestoreConfig` | `data_dir` (the restore stages next to it) |
+| `MetubeBackupConfig`, `JellyfinBackupConfig`, `NavidromeBackupConfig`, `WagtailBackupConfig` | `root` (mount check only: these keep their roles' own `retain` pruning instead of `retain_count`/`retain_days`) |
 | `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig`, `VaultwardenRestoreConfig` | `staging_dir` |
 | `FastdeployRestoreConfig` | `temp_dir`, `safety_backup_root` |
 

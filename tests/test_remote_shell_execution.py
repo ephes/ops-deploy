@@ -202,6 +202,15 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         "infra/files/certbot_preserve.py",
         "infra/files/certbot_lifecycle_host.py",
     }
+    # Wagtail concatenates the original preserver and its host driver, then
+    # base64-encodes the whole program; its encoded command runs through bash
+    # with the payload on stdin in tests/test_wagtail_lifecycle.py.
+    encoded_wagtail = {
+        "services/_lifecycle/files/preserve.py",
+        "services/_lifecycle/files/wagtail_host.py",
+        # The media backups and restores ship the same preserver the same way.
+        "services/_lifecycle/files/media_lifecycle_host.py",
+    }
     offenders = [
         str(path.relative_to(SRC))
         for path in sorted(shipped)
@@ -214,6 +223,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_minio
         | uploaded_backup
         | encoded_certbot
+        | encoded_wagtail
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")
     ]
     assert len(shipped) > 20

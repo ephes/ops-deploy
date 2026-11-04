@@ -3,8 +3,9 @@
 Port of the `jellyfin_deploy` Ansible role (with the `jellyfin_shared`
 defaults it reads): the Jellyfin media server from the upstream apt
 repository, run by the package's systemd unit, behind Traefik with basic auth
-outside the internal networks. Deploy only: backup, restore and remove stay
-with the Ansible roles.
+outside the internal networks. Backup and restore
+([Media backup and restore](media-backup-restore.md)) and confirmed removal
+([Media removal](media-removal.md)) are separate APIs of the package.
 
 ```python
 from pydantic import SecretStr
