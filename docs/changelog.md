@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `services.echoport`: `EchoportConfig.store_aliases` (`StoreAlias(alias, url,
+  verify_bucket, account)`) gives the cleanup user one more `mc` alias per
+  object store next to `minio_alias`, each with its own account created
+  through its provisioner (for example `rustfs` on RustFS with
+  `rustfs_admin`), so callers can choose the store per backup target. Same
+  secret for every account; step names of `minio_alias` unchanged. Refuses
+  two aliases with one name or URL, conflicting grants in one policy file and
+  aliases without `minio_account`. The default (`()`) plans exactly as before.
+
 - `services.unifi`: `UnifiRemoveConfig` and `remove_unifi`, the port of the
   `unifi_remove` role (ops-library `d4039a71`, recorded in the drift manifest
   and under `tests/parity/unifi/remove`): its defaults (destructive flags

@@ -29,7 +29,7 @@ import shlex
 from functools import cache
 from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, ClassVar, Literal, Protocol
+from typing import Annotated, Any, ClassVar, Literal, NamedTuple, Protocol
 
 import jinja2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -167,6 +167,26 @@ class MinioAccount(_Part):
         return self.policy_dir / f"{self.policy}.json"
 
 
+_ALIAS = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")]
+_URL = Annotated[str, Field(pattern=r"^https?://[^\s'\"$`\\]+$")]
+
+
+class StoreAlias(_Part):
+    """One more ``mc`` alias of the cleanup user, on a second object store.
+
+    Echoport's retention picks an alias per backup target (MinIO and RustFS
+    side by side while targets move one at a time), so each store gets its
+    own alias with ``account`` created there. Every account takes the secret
+    ``minio_secret_key``; with the same ``name`` it is the same user and
+    policy on each store.
+    """
+
+    alias: _ALIAS
+    url: _URL
+    verify_bucket: Annotated[str, Field(pattern=r"^[a-z0-9.-]*$")] = "backups"
+    account: MinioAccount
+
+
 class EchoportConfig(BaseServiceConfig):
     """The role's variables without the ``echoport_`` prefix (defaults from its defaults/main.yml)."""
 
@@ -238,6 +258,9 @@ class EchoportConfig(BaseServiceConfig):
     minio_url: Annotated[str, Field(pattern=r"^(https?://[^\s'\"$`\\]+)?$")] = ""
     minio_verify_bucket: Annotated[str, Field(pattern=r"^[a-z0-9.-]*$")] = "backups"
     minio_account: MinioAccount | None = None
+    # Further aliases of the cleanup user, one per other object store (each
+    # with its own URL and account); they need ``minio_account``.
+    store_aliases: tuple[StoreAlias, ...] = ()
 
     staging_db_refresh_enabled: bool = False
     staging_db_refresh_hour: Annotated[str, Field(pattern=r"^[0-9*/,-]+$")] = "2"
@@ -264,10 +287,35 @@ class EchoportConfig(BaseServiceConfig):
             raise ValueError("cleanup_enabled requires minio_url")
         if self.minio_account is not None and not self.cleanup_enabled:
             raise ValueError("minio_account is the cleanup alias's account; it requires cleanup_enabled")
+        if self.store_aliases and self.minio_account is None:
+            raise ValueError("store_aliases require minio_account (no root credentials on another store)")
+        names = [store.alias for store in self.stores]
+        urls = [store.url for store in self.stores]
+        if len(set(names)) != len(names) or len(set(urls)) != len(urls):
+            # Two aliases on one store would let a target's retention look at
+            # the wrong store, where every object counts as already deleted.
+            raise ValueError("store_aliases need their own alias names and URLs")
+        policies: dict[PurePosixPath, MinioAccount] = {}
+        for store in self.stores:
+            if store.account is None:
+                continue
+            seen = policies.setdefault(store.account.policy_path, store.account)
+            if seen.model_dump(include={"name", "bucket", "allow_put", "allow_delete"}) != store.account.model_dump(
+                include={"name", "bucket", "allow_put", "allow_delete"}
+            ):
+                raise ValueError("accounts that share a policy file must grant the same policy")
         for extra in self.rsync_additional_paths:
             if not (self.source_path / extra).is_dir():
                 raise ValueError(f"missing path for rsync deployment: {extra}")
         return self
+
+    @property
+    def stores(self) -> tuple[_Store, ...]:
+        """The cleanup user's aliases: ``minio_alias`` first, then ``store_aliases``."""
+
+        primary = _Store(self.minio_alias, self.minio_url, self.minio_verify_bucket, self.minio_account, primary=True)
+        extra = (_Store(s.alias, s.url, s.verify_bucket, s.account) for s in self.store_aliases)
+        return (primary, *extra)
 
     @property
     def venv_path(self) -> PurePosixPath:
@@ -292,6 +340,22 @@ class EchoportConfig(BaseServiceConfig):
     @property
     def staging_refresh_active(self) -> bool:
         return self.staging_db_refresh_enabled and bool(self.staging_db_refresh_targets)
+
+
+class _Store(NamedTuple):
+    """One alias of the cleanup user with its store's URL and account."""
+
+    alias: str
+    url: str
+    verify_bucket: str
+    account: MinioAccount | None
+    primary: bool = False
+
+    @property
+    def label(self) -> str:
+        """Appended to step names; empty for ``minio_alias``, whose names stay as they were."""
+
+        return "" if self.primary else f" ({self.alias})"
 
 
 def check_secrets(cfg: EchoportConfig, secrets: SecretValues) -> None:
@@ -612,12 +676,13 @@ def _mc(cfg: EchoportConfig, *args: str) -> str:
     return _as_user(cfg.user, cfg.home, {}, [str(cfg.minio_mc_path), *args])
 
 
-def _alias_wanted(cfg: EchoportConfig, secrets: SecretValues) -> dict[str, str]:
+def _alias_wanted(cfg: EchoportConfig, secrets: SecretValues, store: _Store | None = None) -> dict[str, str]:
     """The cleanup user's alias as ``mc alias import`` reads it."""
 
-    access = cfg.minio_account.user if cfg.minio_account is not None else secrets["minio_access_key"]
+    store = store or cfg.stores[0]
+    access = store.account.user if store.account is not None else secrets["minio_access_key"]
     return {
-        "url": cfg.minio_url,
+        "url": store.url,
         "accessKey": access,
         "secretKey": secrets["minio_secret_key"],
         "api": "s3v4",
@@ -629,13 +694,14 @@ def _alias_digest(wanted: dict[str, str]) -> str:
     return hashlib.sha256("\n".join((wanted["url"], wanted["accessKey"], wanted["secretKey"])).encode()).hexdigest()
 
 
-def _alias_check(cfg: EchoportConfig) -> str:
+def _alias_check(cfg: EchoportConfig, store: _Store | None = None) -> str:
     """Strict probe: a digest of the cleanup user's stored alias, or ``none``."""
 
+    alias = (store or cfg.stores[0]).alias
     # mc reports a missing alias as JSON, which the probe reads as "none"; any
     # other failure of mc fails the probe.
     listing = (
-        f"out=$( {_mc(cfg, '--json', 'alias', 'list', cfg.minio_alias)} ); rc=$?; "
+        f"out=$( {_mc(cfg, '--json', 'alias', 'list', alias)} ); rc=$?; "
         f'printf \'%s\\n\' "$out" | python3 -I -c {shlex.quote(MC_ALIAS_PROBE)} "$rc"'
     )
     return when_present([cfg.home], listing, otherwise="none")
@@ -751,10 +817,10 @@ class RustfsAdminProvisioner:
         return self._command("attach", account.policy, account.user)
 
 
-def account_provisioner(cfg: EchoportConfig) -> AccountProvisioner:
-    """The :class:`AccountProvisioner` that ``cfg.minio_account.provisioner`` names."""
+def account_provisioner(cfg: EchoportConfig, account: MinioAccount | None = None) -> AccountProvisioner:
+    """The :class:`AccountProvisioner` that ``account.provisioner`` names (default ``cfg.minio_account``)."""
 
-    account = cfg.minio_account
+    account = account or cfg.minio_account
     assert account is not None
     if account.provisioner == "mc_admin":
         return McAdminProvisioner(cfg.minio_mc_path, account.admin_alias)
@@ -763,7 +829,7 @@ def account_provisioner(cfg: EchoportConfig) -> AccountProvisioner:
     raise ValueError(f"unknown account provisioner {account.provisioner!r}")  # pragma: no cover
 
 
-def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
+def _minio_account(cfg: EchoportConfig, secrets: SecretValues, store: _Store) -> None:
     """The playbook's ``backup_account`` include: the cleanup alias's own account.
 
     Like the role, everything goes through the store's admin access on the host
@@ -774,25 +840,30 @@ def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
     with it.
     """
 
-    account = cfg.minio_account
+    account = store.account
     assert account is not None
-    store = account_provisioner(cfg)
+    label = store.label
+    admin = account_provisioner(cfg, account)
     document = render_policy(account)
 
-    state = probe(store.state("probe", account, document), name=f"MinIO account {account.name}")
+    state = probe(admin.state("probe", account, document), name=f"MinIO account {account.name}{label}")
     found = dict(part.partition("=")[::2] for part in (state or "").split())
-    stored = (probe(_alias_check(cfg), name="mc alias of the cleanup user") or "").strip()
-    listing = f"{_mc(cfg, 'ls', f'{cfg.minio_alias}/{account.bucket}')} >/dev/null && echo ok"
+    stored = (probe(_alias_check(cfg, store), name=f"mc alias of the cleanup user{label}") or "").strip()
+    listing = f"{_mc(cfg, 'ls', f'{store.alias}/{account.bucket}')} >/dev/null && echo ok"
     login = _probe(when_present([cfg.home], listing, otherwise="no")).strip()
-    current = found.get("user") in ("attached", "unattached") and stored == _alias_digest(_alias_wanted(cfg, secrets))
-    current = current and login == "ok"
+    wanted = _alias_digest(_alias_wanted(cfg, secrets, store))
+    current = found.get("user") in ("attached", "unattached") and stored == wanted and login == "ok"
 
-    mark_read_only(server.shell(name=f"Require {store.admin}", commands=[store.require_admin()]))
+    mark_read_only(server.shell(name=f"Require {admin.admin}{label}", commands=[admin.require_admin()]))
     files.directory(
-        name="Create MinIO policy directory", path=str(account.policy_dir), user="root", group="root", mode="0750"
+        name=f"Create MinIO policy directory{label}",
+        path=str(account.policy_dir),
+        user="root",
+        group="root",
+        mode="0750",
     )
     policy_file = files.put(
-        name=f"Install MinIO policy {account.policy}",
+        name=f"Install MinIO policy {account.policy}{label}",
         src=StringIO(document),
         dest=str(account.policy_path),
         user="root",
@@ -800,32 +871,36 @@ def _minio_account(cfg: EchoportConfig, secrets: SecretValues) -> None:
         mode="0640",
     )
     server.shell(
-        name=f"Create or update MinIO policy {account.policy}",
-        commands=[store.create_policy(account)],
+        name=f"Create or update MinIO policy {account.policy}{label}",
+        commands=[admin.create_policy(account)],
         _if=lambda: policy_file.did_change() or found.get("policy") != "ok",
     )
     secret_stdin(
-        name=f"Create or update MinIO user of {account.name}",
-        command=store.add_user(account),
+        name=f"Create or update MinIO user of {account.name}{label}",
+        command=admin.add_user(account),
         content=SecretContent(f"{account.user}\n{secrets['minio_secret_key']}\n"),
         _if=lambda: not current,
     )
     server.shell(
-        name=f"Attach MinIO policy {account.policy}",
-        commands=[store.attach_policy(account)],
+        name=f"Attach MinIO policy {account.policy}{label}",
+        commands=[admin.attach_policy(account)],
         _if=lambda: found.get("user") != "attached",
     )
     mark_read_only(
-        server.shell(name=f"Verify MinIO account {account.name}", commands=[store.state("verify", account, document)])
+        server.shell(
+            name=f"Verify MinIO account {account.name}{label}",
+            commands=[admin.state("verify", account, document)],
+        )
     )
 
 
-def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
-    """The cleanup user's ``mc`` alias: set when it differs, then prove the bucket is reachable."""
+def _mc_alias(cfg: EchoportConfig, secrets: SecretValues, store: _Store) -> None:
+    """One ``mc`` alias of the cleanup user: set when it differs, then prove the bucket is reachable."""
 
-    wanted = _alias_wanted(cfg, secrets)
-    check = _alias_check(cfg)
-    found = probe(check, name="mc alias of the cleanup user")
+    label = store.label
+    wanted = _alias_wanted(cfg, secrets, store)
+    check = _alias_check(cfg, store)
+    found = probe(check, name=f"mc alias of the cleanup user{label}")
     stored = (found or "").strip()
     # ``alias import`` opens its file itself; the user cannot reopen the
     # root-owned pipe on stdin, so the JSON goes through a private file, removed
@@ -836,22 +911,22 @@ def _mc_alias(cfg: EchoportConfig, secrets: SecretValues) -> None:
         # nothing in it can be swapped for a link before root writes the file.
         'chmod 0711 "$d"; umask 077; '
         f'cat > "$d/alias.json"; chown {cfg.user} "$d/alias.json"; '
-        + f'{_mc(cfg, "alias", "import", cfg.minio_alias)} "$d/alias.json"'
+        + f'{_mc(cfg, "alias", "import", store.alias)} "$d/alias.json"'
     )
     secret_stdin(
-        name="Configure mc alias for the cleanup user",
+        name=f"Configure mc alias for the cleanup user{label}",
         # Not ``alias set``, which would put the credentials in the host's process list.
         command=script,
         content=SecretContent(json.dumps(wanted)),
         _if=lambda: stored != _alias_digest(wanted),
     )
     if found is None:
-        verify_probe(check, name="mc alias of the cleanup user")
-    if cfg.minio_verify_bucket:
+        verify_probe(check, name=f"mc alias of the cleanup user{label}")
+    if store.verify_bucket:
         mark_read_only(
             server.shell(
-                name="Verify the cleanup user can reach the MinIO bucket",
-                commands=[f"{_mc(cfg, 'ls', f'{cfg.minio_alias}/{cfg.minio_verify_bucket}')} >/dev/null"],
+                name=f"Verify the cleanup user can reach the MinIO bucket{label}",
+                commands=[f"{_mc(cfg, 'ls', f'{store.alias}/{store.verify_bucket}')} >/dev/null"],
             )
         )
 
@@ -869,7 +944,8 @@ def _scheduler(cfg: EchoportConfig, secrets: SecretValues) -> None:
     if cfg.scheduler_enabled:
         _log_file(cfg, "scheduler.log")
     if cfg.cleanup_enabled:
-        _mc_alias(cfg, secrets)
+        for store in cfg.stores:
+            _mc_alias(cfg, secrets, store)
     cron_job(
         cfg,
         "Echoport cleanup old backups",
@@ -993,8 +1069,9 @@ def deploy_echoport(cfg: EchoportConfig, secrets: SecretValues, rsync: RsyncRunn
     check_secrets(cfg, secrets)
     env_content = render_env(cfg, secrets)
     route = traefik_config(cfg, secrets) if cfg.traefik_enabled else None
-    if cfg.minio_account is not None:
-        _minio_account(cfg, secrets)
+    for store in cfg.stores:
+        if store.account is not None:
+            _minio_account(cfg, secrets, store)
 
     system_user(cfg.user, group=cfg.group, home=cfg.home, directories=[cfg.site_path, cfg.cache_dir, cfg.logs_dir])
 

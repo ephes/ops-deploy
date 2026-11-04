@@ -13,7 +13,7 @@ from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.secrets import MissingSecretKeysError
 from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
-from ops_deploy.services.echoport import EchoportConfig, MinioAccount, NyxmonCheck, deploy_echoport
+from ops_deploy.services.echoport import EchoportConfig, MinioAccount, NyxmonCheck, StoreAlias, deploy_echoport
 from ops_deploy.services.echoport.deploy import (
     _django_hash,
     admin_current,
@@ -908,3 +908,116 @@ def test_rustfs_account_without_admin_access_changes_nothing(tmp_path: Path) -> 
     assert not run.succeeded
     assert next(op.name for op in run.ops if not op.succeeded) == RUSTFS_REQUIRE
     assert stdin_writes(run) == []
+
+
+# -- one alias per object store (MinIO and RustFS side by side) -----------------
+
+
+RUSTFS_URL = "http://127.0.0.1:9020"
+RUSTFS_STORE = StoreAlias(alias="rustfs", url=RUSTFS_URL, account=RUSTFS_ACCOUNT)
+RUSTFS_PROBE = f" probe /etc/default/rustfs {RUSTFS_ACCOUNT.policy} "
+RUSTFS_ALIAS_PROBE = "alias list rustfs"
+RUSTFS_LOGIN = "/usr/local/bin/mc ls rustfs/backups >/dev/null && echo ok"
+
+
+def both_stores(tmp_path: Path) -> EchoportConfig:
+    return make_cfg(tmp_path, store_aliases=(RUSTFS_STORE,))
+
+
+def converged_both(cfg: EchoportConfig, secrets: SecretValues) -> dict[str, Any]:
+    responses = converged(cfg, secrets)
+    responses[RUSTFS_ALIAS_PROBE] = [digest("\n".join((RUSTFS_URL, ACCOUNT_USER, secrets["minio_secret_key"])))]
+    responses[RUSTFS_PROBE] = ["policy=ok user=attached"]
+    responses[RUSTFS_LOGIN] = ["ok"]
+    return responses
+
+
+def test_each_store_gets_its_account_and_alias(tmp_path: Path) -> None:
+    cfg = both_stores(tmp_path)
+    secrets = values(cfg)
+    run = deploy(cfg, secrets)
+
+    commands = run.executed_commands
+    stdin = dict(stdin_writes(run))
+    # MinIO through root's admin alias, RustFS through its native admin API.
+    assert any(c.startswith("/usr/local/bin/mc admin user add local") for c in commands)
+    rustfs = [rustfs_args(c)[0] for c in commands if c.startswith("python3 -I -B -c ")]
+    assert rustfs == ["require", "create-policy", "add-user", "attach", "verify"]
+    # The same user and secret on both stores; never on a command line.
+    users = [text for c, text in stdin.items() if "admin user add" in c or "add-user" in c]
+    assert users == [f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"] * 2
+    assert all(SECRET_VALUES["minio_secret_key"] not in c for c in commands)
+    imports = {
+        c.rsplit("alias import ", 1)[1].split()[0]: json.loads(text) for c, text in stdin.items() if "alias import" in c
+    }
+    assert {name: alias["url"] for name, alias in imports.items()} == {
+        "minio": "http://127.0.0.1:9001",
+        "rustfs": RUSTFS_URL,
+    }
+    assert {alias["accessKey"] for alias in imports.values()} == {ACCOUNT_USER}
+    # The primary alias keeps its step names; the second one is named after its alias.
+    assert [op.name for op in run.ops if op.read_only] == [
+        READ_ONLY[0],
+        READ_ONLY[1],
+        "Deploy echoport | Require RustFS admin access through /etc/default/rustfs (rustfs)",
+        "Deploy echoport | Verify MinIO account echoport-retention (rustfs)",
+        READ_ONLY[2],
+        "Deploy echoport | Verify the cleanup user can reach the MinIO bucket (rustfs)",
+        READ_ONLY[3],
+    ]
+    assert any(c.endswith("/usr/local/bin/mc ls rustfs/backups >/dev/null") for c in commands)
+
+
+def test_both_stores_converged_change_nothing(tmp_path: Path) -> None:
+    cfg = both_stores(tmp_path)
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, converged_both(cfg, secrets))
+
+    assert run.mutating_changed_ops == []
+    assert stdin_writes(run) == []
+
+
+def test_a_differing_second_alias_changes_only_that_alias(tmp_path: Path) -> None:
+    cfg = both_stores(tmp_path)
+    secrets = values(cfg)
+    responses = {**converged_both(cfg, secrets), RUSTFS_ALIAS_PROBE: ["none"]}
+    run = deploy(cfg, secrets, responses)
+
+    assert changed_names(run) == {
+        "Configure mc alias for the cleanup user (rustfs)",
+        "Create or update MinIO user of echoport-retention (rustfs)",
+    }
+    [(command, text)] = [(c, t) for c, t in stdin_writes(run) if "alias import" in c]
+    assert command.endswith('/usr/local/bin/mc alias import rustfs "$d/alias.json"')
+    assert json.loads(text)["url"] == RUSTFS_URL
+
+
+def test_an_unreachable_second_store_fails_the_deploy(tmp_path: Path) -> None:
+    cfg = both_stores(tmp_path)
+    secrets = values(cfg)
+    responses = {**converged_both(cfg, secrets), "mc ls rustfs/backups >/dev/null": {"success": False}}
+    run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    failed = next(op.name for op in run.ops if not op.succeeded)
+    assert failed == "Deploy echoport | Verify the cleanup user can reach the MinIO bucket (rustfs)"
+
+
+def test_store_aliases_are_refused_when_ambiguous(tmp_path: Path) -> None:
+    with pytest.raises(ConfigValidationError, match="require minio_account"):
+        make_cfg(tmp_path, minio_account=None, store_aliases=(RUSTFS_STORE,))
+    for bad in (
+        # The primary alias's name or URL: retention would read the wrong store.
+        RUSTFS_STORE.model_copy(update={"alias": "minio"}),
+        RUSTFS_STORE.model_copy(update={"url": "http://127.0.0.1:9001"}),
+    ):
+        with pytest.raises(ConfigValidationError, match="own alias names and URLs"):
+            make_cfg(tmp_path / "x", store_aliases=(bad,))
+    with pytest.raises(ConfigValidationError, match="own alias names and URLs"):
+        make_cfg(tmp_path / "y", store_aliases=(RUSTFS_STORE, RUSTFS_STORE))
+    # One policy file, two documents.
+    writer = RUSTFS_ACCOUNT.model_copy(update={"allow_put": True})
+    with pytest.raises(ConfigValidationError, match="share a policy file"):
+        make_cfg(tmp_path / "z", store_aliases=(RUSTFS_STORE.model_copy(update={"account": writer}),))
+    with pytest.raises(ValueError, match="pattern"):
+        StoreAlias(alias="rustfs", url="file:///x", account=RUSTFS_ACCOUNT)

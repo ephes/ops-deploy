@@ -67,6 +67,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `cleanup_enabled`, `cleanup_hour` | `true`, `3` | needs `minio_url` |
 | `minio_mc_path`, `minio_alias`, `minio_url`, `minio_verify_bucket` | `/usr/local/bin/mc`, `minio`, none, `backups` | the cleanup user's alias and the bucket it must reach |
 | `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, admin_alias, policy_dir, provisioner, rustfs_env_file)`, defaults `echoport-retention`, `backups`, `false`, `true`, `local`, `/etc/minio/policies`, `mc_admin`, `/etc/default/rustfs`: the alias's own account (see below); needs `cleanup_enabled` |
+| `store_aliases` | `()` | `StoreAlias(alias, url, verify_bucket, account)`: one more alias of the cleanup user per other object store, each with its own account there (see "One alias per store"); needs `minio_account` |
 | `staging_db_refresh_*` | off | `enabled`, `hour` (`2`), `minute` (`20`), `targets`, `triggered_by` |
 | `nyxmon` | `None` | `NyxmonCheck(...)`: the playbook's Nyxmon check (see below) |
 
@@ -147,7 +148,8 @@ credentials never leave the controller) and its ops-library version assert.
     prints a digest of the stored URL and credentials; if it differs from the
     configured ones, `mc alias import` is run with the credentials on stdin
     (the role's `mc alias set` puts them in the host's process list). Then a
-    read-only `mc ls <alias>/<bucket>` proves the bucket is reachable.
+    read-only `mc ls <alias>/<bucket>` proves the bucket is reachable. The
+    same for each of `store_aliases`, after `minio_alias`.
 13. Read-only checks: Echoport listens on the app port and only on
     `127.0.0.1` (15 tries, 2 s apart).
 14. With `nyxmon`: if `/home/nyxmon/site/db.sqlite3` exists, a dry run of the
@@ -202,8 +204,25 @@ account is store-specific. `_minio_account` runs it through an
 
 With `rustfs_admin`, point `minio_url` at RustFS (macmini:
 `http://127.0.0.1:9020`); the alias keeps its name, so Echoport's
-`MINIO_ALIAS` does not change. Echoport has one alias for every target: its
-retention job and `mc stat` checks reach only the store that alias names.
+`MINIO_ALIAS` does not change. With that one alias, the retention job and
+`mc stat` checks reach only the store it names.
+
+### One alias per store
+
+While targets move from MinIO to RustFS one at a time, the cleanup user
+needs an alias for each store, and the caller picks one per target (the
+upload check through `EchoportSite.minio_alias`, Echoport's retention per
+target). `store_aliases` adds them next to `minio_alias`: for example
+`StoreAlias(alias="rustfs", url="http://127.0.0.1:9020",
+account=MinioAccount(provisioner="rustfs_admin"))`. For each, before anything
+else, step 2 runs with that alias's account and provisioner, and step 12
+imports and proves that alias; step names carry ` (<alias>)`, the steps of
+`minio_alias` keep theirs. Every account takes `minio_secret_key`; with the
+same `name` it is the same user and policy on each store. Refused: two
+aliases with one name or one URL (retention would read the wrong store, where
+every object counts as already deleted), accounts sharing a policy file with
+different grants, and `store_aliases` without `minio_account`. Removing an
+entry later does not remove its alias or account from the host.
 `tests/test_echoport_rustfs_account_docker.py` runs every provisioner command
 against a real RustFS 1.0.4 container (`just test-echoport-rustfs`, needs
 Docker): probe states, policy round trip, upsert and rotation, attach, what
