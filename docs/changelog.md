@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `services.homelab`: `HomelabBackupConfig`/`deploy_homelab_backup` and
+  `HomelabRestoreConfig`/`deploy_homelab_restore`, the ports of the
+  `homelab_backup` and `homelab_restore` roles (ops-library `44a532ba`,
+  recorded in the drift manifest): the role's archive layout and
+  `metadata.yml`, hot SQLite backup with the offline fallback, slug, field,
+  ops-library version and checksum checks, the pre-restore copy of the site
+  (kept unless `safe_snapshot_delete` and success; no automatic rollback, as in
+  the role), Django checks, integrity check and health probe. `required_mount`
+  and snapshot retention as for the other backup ports. Archive names only
+  (no absolute paths); the Traefik route is restored under the transaction
+  guard. `services._lifecycle.canonical` holds the canonical path and name
+  types these ports share.
+
 - `services.daybook_operations_api`: the rsync deploy ensures the site
   directory `0700` instead of `0750`, the mode the `daybook_operations_api_deploy`
   role leaves behind (its archive-mode copy of the playbook's `0700` export

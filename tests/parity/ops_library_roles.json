@@ -19,7 +19,9 @@
     "graphyard_ingress_deploy": "d854e5654cd625189f01a214a4056eb371283af29c04b8593a403eed4e4db47b",
     "graphyard_vector_deploy": "654594f49168eec8990dd987979f0328a8e07cbb6264045dfd89f5a66b0132d1",
     "hdparm_tune": "c7a9ecd701b52b0f012ec32bad797644b4fcb2fcef647347b10b25c4930f00a1",
+    "homelab_backup": "6aca6c2d7f3ad9373b2fbf2d7249dc2e95eab4333945b5f3b20db5c6fe4a9a89",
     "homelab_deploy": "b110f03282424900d4006dc8e1d3a9250b615672b51b2c5f11e340fb05dbbb9e",
+    "homelab_restore": "9daa56d2d3ef35bce480e99d0e603b29d80143afeb8200e0a7e46a0be03cd746",
     "homelab_shared": "5c7b726538f1f0d9bc2f3e65f5a6c78e26adfacbfa58afb6f46155b0a34929dd",
     "jellyfin_deploy": "1f76f6c0c1a29a2241f52c530f2f71c03df4db08b6f13115ec926ad18ffd0eb4",
     "jellyfin_shared": "2af6e1d4d3367bc109957d3fb722a4f15f89271b2f7aed44f03b3ec4f46b0631",
@@ -86,6 +88,8 @@
     "open_webui_venv_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "openclaw_deploy": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "openclaw_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "unifi_remove": "d4039a71565977b0292a4c9daf5d06f93851eb77"
+    "unifi_remove": "d4039a71565977b0292a4c9daf5d06f93851eb77",
+    "homelab_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "homelab_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }
