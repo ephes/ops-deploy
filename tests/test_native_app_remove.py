@@ -39,7 +39,10 @@ def _run(cfg: NativeAppRemoveConfig, present: tuple[str, ...] = (ROUTE, STATE)) 
     return run_deploy_fake(
         remove_native_app,
         cfg,
-        responses={**fakehost.LINUX, **{f"test -e {path} && echo yes": ["yes"] for path in present}},
+        responses={
+            **fakehost.LINUX,
+            **{f"{{ test -e {path} || test -L {path}; }} && echo yes": ["yes"] for path in present},
+        },
     )
 
 
@@ -57,6 +60,17 @@ def test_remove_takes_the_route_behind_the_guard_and_the_state() -> None:
     assert run.succeeded, run.error
     assert run.executed_commands == [route_guard_command(), f"rm -rf {ROUTE}", f"rm -rf {STATE}"]
     assert not any("traefik" in command and "systemctl" in command for command in run.executed_commands)
+
+
+def test_a_dangling_symlink_counts_as_present() -> None:
+    # `test -e` is false for a symlink whose target is gone; Ansible's
+    # `state: absent` removes one, so the probe also asks `test -L`.
+    run = _run(NativeAppRemoveConfig(app=_route_only(), confirm=True), present=(ROUTE,))
+
+    assert run.succeeded, run.error
+    assert run.executed_commands == [route_guard_command(), f"rm -rf {ROUTE}"]
+    for path in (ROUTE, STATE):
+        assert any(f"test -e {path} || test -L {path}" in command for command in run.fact_commands)
 
 
 def test_the_route_name_defaults_to_the_service_name() -> None:
