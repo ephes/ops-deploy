@@ -1,0 +1,13 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/mail_remove/tasks/main.yml",
+      "sha256": "366c563e5f73c3b9b3f81a71227febdbbfc8084dcac389f37afba25446eb6db6"
+    },
+    "defaults.yml": {
+      "source": "roles/mail_remove/defaults/main.yml",
+      "sha256": "b831309fc57608235990cd2373cd865d5099a3e869c1ab3ae205b8d75859503d"
+    }
+  }
+}

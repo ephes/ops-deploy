@@ -1,0 +1,20 @@
+---
+# homelab_remove role - Default variables
+#
+# WARNING: This role is DESTRUCTIVE by default
+# All removal flags default to true for complete service removal.
+# The database and media live inside the home directory: to keep them, also set
+# homelab_remove_home and homelab_remove_user to false (the role refuses the
+# inconsistent combination). All flags are parsed with `| bool`.
+
+# Removal behavior (default: complete removal)
+# WARNING: These defaults are DESTRUCTIVE - override to preserve data
+homelab_remove_user: true              # Remove user account (and home, if homelab_remove_home) by default
+homelab_remove_home: true              # Remove home directory by default
+homelab_remove_database: true          # Remove SQLite database by default (IRREVERSIBLE!)
+homelab_remove_media: true             # Remove media files by default (IRREVERSIBLE!)
+homelab_remove_traefik_config: true    # Remove Traefik config
+
+# Safety options
+homelab_remove_confirm: false          # REQUIRED: Must be true for any removal
+homelab_remove_auto_confirm: false     # Skip pause when deleting DB/media (non-interactive mode)

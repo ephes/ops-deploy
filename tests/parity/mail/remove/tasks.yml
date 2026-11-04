@@ -1,0 +1,148 @@
+---
+- name: Confirm removal intent
+  ansible.builtin.assert:
+    that:
+      - mail_remove_confirm | bool
+      - (mail_remove_backend | bool) or (mail_remove_relay | bool) or (mail_remove_spam | bool)
+    fail_msg: |
+      Mail removal not confirmed or no components selected.
+      Set mail_remove_confirm: true and enable one of:
+        - mail_remove_backend
+        - mail_remove_relay
+        - mail_remove_spam
+
+- name: Build removal target lists
+  ansible.builtin.set_fact:
+    mail_remove_target_services: "{{ []
+      | union(mail_remove_backend_services if (mail_remove_backend | bool) else [])
+      | union(mail_remove_relay_services if (mail_remove_relay | bool) else [])
+      | union(mail_remove_spam_services if (mail_remove_spam | bool) else []) }}"
+    mail_remove_target_packages: "{{ []
+      | union(mail_remove_packages_backend if (mail_remove_backend | bool) else [])
+      | union(mail_remove_packages_relay if (mail_remove_relay | bool) else [])
+      | union(mail_remove_packages_spam if (mail_remove_spam | bool) else []) }}"
+    mail_remove_target_config_paths: "{{ []
+      | union(mail_remove_config_paths_backend if (mail_remove_backend | bool) else [])
+      | union(mail_remove_config_paths_relay if (mail_remove_relay | bool) else [])
+      | union(mail_remove_config_paths_spam if (mail_remove_spam | bool) else []) }}"
+    mail_remove_target_state_paths: "{{ []
+      | union(mail_remove_state_paths_backend if (mail_remove_backend | bool) else [])
+      | union(mail_remove_state_paths_relay if (mail_remove_relay | bool) else [])
+      | union(mail_remove_state_paths_spam if (mail_remove_spam | bool) else []) }}"
+
+- name: Warn if mail queue is not empty
+  ansible.builtin.command: postqueue -p
+  register: mail_queue
+  changed_when: false
+  failed_when: false
+  when:
+    - mail_remove_backend | bool or mail_remove_relay | bool
+  tags: ['warn']
+
+- name: Display mail queue warning
+  ansible.builtin.debug:
+    msg: "WARNING: Mail queue is not empty. Consider flushing before removal."
+  when:
+    - mail_queue is defined
+    - mail_queue.rc is defined
+    - mail_queue.rc == 0
+    - "'Mail queue is empty' not in mail_queue.stdout"
+    - mail_remove_backend | bool or mail_remove_relay | bool
+  tags: ['warn']
+
+- name: Collect service facts for targeted services
+  ansible.builtin.service_facts:
+  when: (mail_remove_target_services | length > 0)
+
+- name: Filter to existing services only
+  ansible.builtin.set_fact:
+    mail_remove_present_services: "{{ mail_remove_target_services
+      | select('in', (ansible_facts.services.keys() | map('regex_replace', '\\.service$', '') | list))
+      | list }}"
+  when: (mail_remove_target_services | length > 0)
+
+- name: Stop mail services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ mail_remove_present_services | default([]) | unique }}"
+  failed_when: false
+  when: (mail_remove_present_services | default([]) | length > 0)
+
+- name: Purge mail packages
+  ansible.builtin.apt:
+    name: "{{ mail_remove_target_packages | unique }}"
+    state: absent
+    purge: true
+  when:
+    - mail_remove_purge_packages | bool
+    - (mail_remove_target_packages | length > 0)
+
+- name: Remove mail config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ mail_remove_target_config_paths | unique }}"
+  when:
+    - mail_remove_remove_configs | bool
+    - (mail_remove_target_config_paths | length > 0)
+
+- name: Remove mail state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ mail_remove_target_state_paths | unique }}"
+  when:
+    - mail_remove_remove_state | bool
+    - (mail_remove_target_state_paths | length > 0)
+
+- name: Remove mail data (Maildir, backups)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ mail_remove_data_paths }}"
+  when: mail_remove_remove_data | bool
+
+- name: Remove vmail user
+  ansible.builtin.user:
+    name: "{{ mail_vmail_user }}"
+    state: absent
+    remove: "{{ mail_remove_remove_data | bool }}"
+  when: mail_remove_remove_vmail_user | bool
+
+- name: Remove vmail group
+  ansible.builtin.group:
+    name: "{{ mail_vmail_group }}"
+    state: absent
+  when: mail_remove_remove_vmail_user | bool
+
+- name: Drop mail PostgreSQL database
+  community.postgresql.postgresql_db:
+    name: "{{ mail_remove_postgres_database }}"
+    state: absent
+    force: "{{ mail_remove_db_force_disconnect | bool }}"
+  become: true
+  become_user: "{{ mail_remove_postgres_become_user }}"
+  when: mail_remove_drop_database | bool
+
+- name: Drop mail PostgreSQL user
+  community.postgresql.postgresql_user:
+    name: "{{ mail_remove_postgres_user }}"
+    state: absent
+  become: true
+  become_user: "{{ mail_remove_postgres_become_user }}"
+  when: mail_remove_drop_db_user | bool
+
+- name: Mail removal summary
+  ansible.builtin.debug:
+    msg: |
+      Mail removal complete.
+      Components: backend={{ mail_remove_backend }}, relay={{ mail_remove_relay }}, spam={{ mail_remove_spam }}
+      Packages purged: {{ mail_remove_purge_packages }}
+      Configs removed: {{ mail_remove_remove_configs }}
+      State removed: {{ mail_remove_remove_state }}
+      Data removed: {{ mail_remove_remove_data }}
+      vmail user removed: {{ mail_remove_remove_vmail_user }}
+      Database dropped: {{ mail_remove_drop_database }}
+      DB user dropped: {{ mail_remove_drop_db_user }}

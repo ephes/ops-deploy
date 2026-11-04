@@ -1,0 +1,40 @@
+---
+# homelab_remove role - Main task orchestration
+
+- name: Display role information
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════════
+      🗑️  Homelab Service Removal
+      ═══════════════════════════════════════════════════════════════
+
+- name: Validate removal request and check safety
+  ansible.builtin.include_tasks: validation.yml
+  tags:
+    - homelab_remove
+    - homelab_remove_validation
+
+- name: Stop and remove systemd service
+  ansible.builtin.include_tasks: service.yml
+  tags:
+    - homelab_remove
+    - homelab_remove_service
+
+- name: Remove Traefik configuration
+  ansible.builtin.include_tasks: traefik.yml
+  tags:
+    - homelab_remove
+    - homelab_remove_traefik
+
+- name: Remove user and data
+  ansible.builtin.include_tasks: user.yml
+  tags:
+    - homelab_remove
+    - homelab_remove_user
+
+- name: Removal complete
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════════
+      ✅ Homelab service removal complete
+      ═══════════════════════════════════════════════════════════════

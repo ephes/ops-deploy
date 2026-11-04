@@ -1,0 +1,328 @@
+---
+# Shared defaults for Mastodon roles
+
+# Identity / paths
+mastodon_user: mastodon
+mastodon_group: mastodon
+mastodon_shell: /bin/bash
+mastodon_home_path: "/home/{{ mastodon_user }}"
+mastodon_site_path: "{{ mastodon_home_path }}/live"
+mastodon_env_file: "{{ mastodon_site_path }}/.env.production"
+mastodon_public_path: "{{ mastodon_site_path }}/public"
+mastodon_media_path: "{{ mastodon_site_path }}/public/system"
+mastodon_tmp_path: "{{ mastodon_site_path }}/tmp"
+mastodon_log_path: "{{ mastodon_site_path }}/log"
+
+# Source
+mastodon_source_mode: rsync
+mastodon_source_path: ""
+mastodon_git_repo: ""
+mastodon_git_ref: main
+mastodon_git_dest: "{{ mastodon_site_path }}"
+mastodon_rsync_excludes:
+  - ".git"
+  - ".bundle"
+  - "node_modules"
+  - "log"
+  - "tmp"
+  - "public/system"
+
+# Ruby / Node
+mastodon_rbenv_root: "{{ mastodon_home_path }}/.rbenv"
+mastodon_rbenv_repo: "https://github.com/rbenv/rbenv.git"
+mastodon_ruby_build_repo: "https://github.com/rbenv/ruby-build.git"
+mastodon_ruby_build_update: true
+mastodon_ruby_version: ""  # use repo .ruby-version when empty
+mastodon_ruby_configure_opts: "-with-jemalloc"
+
+mastodon_nvm_dir: "{{ mastodon_home_path }}/.nvm"
+mastodon_nvm_repo: "https://github.com/nvm-sh/nvm.git"
+mastodon_nvm_version: "v0.40.8"
+mastodon_node_version: ""  # use repo .nvmrc when empty
+mastodon_node_env: production
+mastodon_rails_env: production
+
+mastodon_bundle_path: "{{ mastodon_site_path }}/vendor/bundle"
+mastodon_bundle_without: "development test"
+mastodon_bundle_jobs: 4
+mastodon_bundle_retry: 3
+mastodon_yarn_flags: "--immutable"
+
+# Domain / runtime
+mastodon_domain: ""
+mastodon_local_domain: "{{ mastodon_domain }}"
+mastodon_web_domain: "{{ mastodon_domain }}"
+mastodon_bind_host: 127.0.0.1
+mastodon_web_port: 10040
+mastodon_streaming_port: 10041
+mastodon_streaming_cluster_num: 1
+mastodon_web_concurrency: 2
+mastodon_max_threads: 5
+mastodon_sidekiq_concurrency: 25
+mastodon_db_pool: 25
+mastodon_sidekiq_queues: []
+mastodon_sidekiq_extra_args: ""
+
+# Secrets
+mastodon_secret_key_base: "CHANGEME"
+mastodon_otp_secret: "CHANGEME"
+mastodon_vapid_public_key: "CHANGEME"
+mastodon_vapid_private_key: "CHANGEME"
+mastodon_active_record_encryption_primary_key: "CHANGEME"
+mastodon_active_record_encryption_deterministic_key: "CHANGEME"
+mastodon_active_record_encryption_key_derivation_salt: "CHANGEME"
+
+# SMTP (optional)
+mastodon_smtp_server: ""
+mastodon_smtp_port: 587
+mastodon_smtp_login: ""
+mastodon_smtp_password: ""
+mastodon_smtp_from_address: ""
+mastodon_smtp_domain: ""
+mastodon_smtp_auth_method: "plain"
+mastodon_smtp_openssl_verify_mode: "peer"
+mastodon_smtp_starttls: true
+
+# Postgres (postgres_install)
+mastodon_postgres_version: "17"
+mastodon_postgres_host: localhost
+mastodon_postgres_port: 5432
+mastodon_postgres_database: mastodon
+mastodon_postgres_user: mastodon
+mastodon_postgres_password: "CHANGEME"
+mastodon_postgres_become_user: postgres
+mastodon_postgres_packages:
+  - "postgresql-{{ mastodon_postgres_version }}"
+  - "postgresql-client-{{ mastodon_postgres_version }}"
+  - "postgresql-contrib-{{ mastodon_postgres_version }}"
+  - libpq-dev
+mastodon_postgres_repo_enabled: true
+mastodon_postgres_repo_url: https://apt.postgresql.org/pub/repos/apt
+mastodon_postgres_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+mastodon_postgres_repo_components:
+  - main
+mastodon_postgres_repo_keyring: /etc/apt/keyrings/postgresql.asc
+mastodon_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+mastodon_postgres_extensions:
+  - name: pg_trgm
+    database: "{{ mastodon_postgres_database }}"
+  - name: citext
+    database: "{{ mastodon_postgres_database }}"
+
+# Redis
+mastodon_redis_manage: false
+mastodon_redis_host: 127.0.0.1
+mastodon_redis_port: 6379
+mastodon_redis_db: 0
+mastodon_redis_password: ""
+mastodon_redis_bind_addresses:
+  - 127.0.0.1
+  - ::1
+mastodon_redis_requirepass_enabled: "{{ mastodon_redis_password | length > 0 }}"
+mastodon_redis_url: >-
+  {{
+    (mastodon_redis_password | default('') | length > 0)
+    | ternary(
+        'redis://:' ~ mastodon_redis_password ~ '@' ~ mastodon_redis_host ~ ':' ~ mastodon_redis_port ~ '/' ~ mastodon_redis_db,
+        'redis://' ~ mastodon_redis_host ~ ':' ~ mastodon_redis_port ~ '/' ~ mastodon_redis_db
+      )
+  }}
+
+# Storage
+mastodon_storage_driver: local
+mastodon_s3_bucket: ""
+mastodon_s3_region: ""
+mastodon_s3_endpoint: ""
+mastodon_s3_hostname: ""
+mastodon_s3_alias_host: ""
+mastodon_s3_protocol: https
+mastodon_s3_port: ""
+mastodon_s3_signature_version: ""
+mastodon_s3_force_path_style: false
+mastodon_s3_access_key: ""
+mastodon_s3_secret_key: ""
+
+# Systemd
+mastodon_systemd_unit_dir: /etc/systemd/system
+mastodon_web_service_name: mastodon-web
+mastodon_sidekiq_service_name: mastodon-sidekiq
+mastodon_streaming_service_name: mastodon-streaming
+mastodon_disable_legacy_services: true
+mastodon_legacy_service_names:
+  - mastodon_web
+  - mastodon_sidekiq
+  - mastodon_streaming
+mastodon_web_unit_path: "{{ mastodon_systemd_unit_dir }}/{{ mastodon_web_service_name }}.service"
+mastodon_sidekiq_unit_path: "{{ mastodon_systemd_unit_dir }}/{{ mastodon_sidekiq_service_name }}.service"
+mastodon_streaming_unit_path: "{{ mastodon_systemd_unit_dir }}/{{ mastodon_streaming_service_name }}.service"
+mastodon_nginx_enabled: true
+mastodon_nginx_service_name: mastodon-nginx
+mastodon_nginx_unit_path: "{{ mastodon_systemd_unit_dir }}/{{ mastodon_nginx_service_name }}.service"
+mastodon_nginx_user: "{{ mastodon_user }}"
+mastodon_nginx_group: "{{ mastodon_group }}"
+mastodon_nginx_port: 10044
+mastodon_nginx_conf_dir: /etc/mastodon
+mastodon_nginx_config_path: "{{ mastodon_nginx_conf_dir }}/nginx.conf"
+mastodon_nginx_log_dir: /var/log/mastodon-nginx
+mastodon_nginx_cache_enabled: false
+mastodon_nginx_cache_path: /var/cache/mastodon/nginx
+mastodon_nginx_cache_zone: mastodon
+mastodon_nginx_cache_zone_size: "20m"
+mastodon_nginx_cache_inactive: "14d"
+mastodon_nginx_cache_size: "1g"
+mastodon_nginx_temp_path: "{{ mastodon_nginx_cache_path }}/temp"
+# Cache for the public federation documents in
+# mastodon_nginx_federation_cache_locations (instance actor, WebFinger,
+# NodeInfo, host-meta). nginx follows Mastodon's own Cache-Control and Vary
+# headers, sends one request per expired entry to Puma (proxy_cache_lock) and
+# keeps serving the stale copy while it refreshes, so a burst of remote servers
+# fetching /actor does not need one Puma thread per request.
+mastodon_nginx_federation_cache_enabled: false
+mastodon_nginx_federation_cache_path: /var/cache/mastodon/nginx-federation
+mastodon_nginx_federation_cache_zone: mastodon_federation
+mastodon_nginx_federation_cache_zone_size: "10m"
+mastodon_nginx_federation_cache_size: "100m"
+# Entries unused for this long are removed; until then an expired entry is
+# still served (stale) while nginx refreshes it in the background.
+mastodon_nginx_federation_cache_inactive: "7d"
+mastodon_nginx_federation_cache_locations:
+  - /actor
+  - /.well-known/webfinger
+  - /.well-known/host-meta
+  - /.well-known/nodeinfo
+  - /nodeinfo/2.0
+# How long other requests for a missing entry wait for the one filling it
+# (proxy_cache_lock_timeout and proxy_cache_lock_age) before going to Puma.
+mastodon_nginx_federation_cache_lock_timeout: "10s"
+# After the health check the role fills the cache for these hosts and
+# documents and fails unless a second request is served from the cache. A
+# missing /actor entry is what lets a federation burst deadlock Puma; a cold
+# entry can still happen later (purge, eviction after _inactive). An entry
+# with its own `host` is filled for that host only. With
+# mastodon_traefik_local_domain_wellknown the /.well-known/ entries are also
+# filled for mastodon_local_domain.
+mastodon_nginx_federation_cache_prime_hosts:
+  - "{{ mastodon_traefik_host }}"
+mastodon_nginx_federation_cache_prime:
+  - path: /actor
+    accept: application/activity+json
+  - path: /.well-known/host-meta
+    accept: application/xrd+xml
+  - path: /.well-known/nodeinfo
+    accept: application/json
+  - path: /nodeinfo/2.0
+    accept: application/json
+# Additional entries, e.g. a WebFinger query for the local account.
+mastodon_nginx_federation_cache_prime_extra: []
+mastodon_nginx_body_temp_path: /var/lib/mastodon-nginx/body
+mastodon_nginx_run_dir: /run/mastodon-nginx
+mastodon_nginx_pid_file: "{{ mastodon_nginx_run_dir }}/nginx.pid"
+mastodon_nginx_access_log: "{{ mastodon_nginx_log_dir }}/access.log"
+mastodon_nginx_error_log: "{{ mastodon_nginx_log_dir }}/error.log"
+# Append request time, upstream response time and cache status to the
+# combined access log format (existing fields keep their positions).
+mastodon_nginx_access_log_timing: false
+mastodon_nginx_client_max_body_size: "100M"
+mastodon_nginx_worker_connections: 4096
+# Open-file limit of the nginx unit; must exceed worker_connections (the
+# systemd default soft limit of 1024 does not).
+mastodon_nginx_limit_nofile: 65536
+mastodon_nginx_server_name: "_"
+mastodon_nginx_logrotate_enabled: true
+mastodon_nginx_logrotate_path: /etc/logrotate.d/mastodon-nginx
+mastodon_nginx_logrotate_days: 7
+mastodon_systemd_services: "{{ [mastodon_web_service_name, mastodon_sidekiq_service_name, mastodon_streaming_service_name] + ([mastodon_nginx_service_name] if mastodon_nginx_enabled | bool else []) }}"
+mastodon_systemd_units: "{{ [mastodon_web_unit_path, mastodon_sidekiq_unit_path, mastodon_streaming_unit_path] + ([mastodon_nginx_unit_path] if mastodon_nginx_enabled | bool else []) }}"
+
+mastodon_ld_preload: "libjemalloc.so"
+
+# Traefik
+mastodon_traefik_enabled: true
+mastodon_traefik_host: "{{ (mastodon_web_domain | length > 0) | ternary(mastodon_web_domain, mastodon_local_domain) }}"
+mastodon_traefik_entrypoints:
+  - web-secure
+mastodon_traefik_cert_resolver: ""
+mastodon_traefik_middlewares: []
+mastodon_traefik_config_path: /etc/traefik/dynamic/mastodon.yml
+mastodon_traefik_service_web: mastodon-web
+mastodon_traefik_service_streaming: mastodon-streaming
+# Split-domain setups (LOCAL_DOMAIN != WEB_DOMAIN): also route WebFinger,
+# host-meta and NodeInfo discovery on LOCAL_DOMAIN straight to Mastodon
+# (router mastodon-local-wellknown), instead of leaving them to whatever
+# serves LOCAL_DOMAIN. Exact paths only; the priority must beat that site's
+# router (Traefik's default priority is the rule length).
+mastodon_traefik_local_domain_wellknown: false
+mastodon_traefik_local_domain_cert_resolver: ""
+mastodon_traefik_local_domain_priority: 1000
+mastodon_traefik_legacy_config_path: /etc/traefik/dynamic/mastodon.traefik.yml
+mastodon_remove_legacy_traefik_config: true
+
+# Backup defaults
+mastodon_backup_root: /opt/backups/mastodon
+mastodon_backup_prefix: manual
+mastodon_backup_archive_format: gz
+mastodon_backup_archive_extension: tar.gz
+mastodon_backup_create_archive: true
+mastodon_backup_fetch_local: true
+# Disable when the SSH user can read the archive directly. Ansible fetch uses
+# an in-memory slurp fallback when privilege escalation is active.
+mastodon_backup_fetch_become: true
+mastodon_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/mastodon"
+mastodon_backup_dir_mode: "0700"
+mastodon_backup_file_mode: "0600"
+mastodon_backup_owner: root
+mastodon_backup_group: root
+mastodon_backup_stop_services: true
+mastodon_backup_include_media: true
+mastodon_backup_include_env: true
+mastodon_backup_include_systemd: true
+mastodon_backup_include_traefik: true
+mastodon_backup_include_nginx: true
+mastodon_backup_generate_manifest: true
+mastodon_backup_use_delete: true
+mastodon_backup_media_rsync_excludes:
+  - /cache/***
+mastodon_backup_retain: 7
+# Count every backup in mastodon_backup_root against mastodon_backup_retain,
+# not only those with the current mastodon_backup_prefix. Only enable this when
+# mastodon_backup_root holds nothing but Mastodon backups.
+mastodon_backup_retain_all_prefixes: false
+mastodon_backup_postgres_dump_binary: pg_dump
+mastodon_backup_postgres_format: custom
+mastodon_backup_postgres_compress: 9
+mastodon_backup_postgres_become_user: "{{ mastodon_backup_owner }}"
+mastodon_backup_postgres_host: "{{ mastodon_postgres_host }}"
+mastodon_backup_postgres_port: "{{ mastodon_postgres_port }}"
+mastodon_backup_postgres_database: "{{ mastodon_postgres_database }}"
+mastodon_backup_postgres_user: "{{ mastodon_postgres_user }}"
+mastodon_backup_postgres_password: "{{ mastodon_postgres_password }}"
+
+# Restore defaults
+mastodon_restore_root: "{{ mastodon_backup_root }}"
+mastodon_restore_archive: latest
+mastodon_restore_cleanup: true
+mastodon_restore_restart: true
+mastodon_restore_stop_services: true
+mastodon_restore_run_migrations: true
+mastodon_restore_staging_dir: /var/tmp/mastodon-restore
+mastodon_restore_postgres_restore_binary: pg_restore
+mastodon_restore_postgres_dropdb_binary: dropdb
+mastodon_restore_postgres_createdb_binary: createdb
+mastodon_restore_postgres_become_user: "{{ mastodon_postgres_become_user }}"
+mastodon_restore_postgres_host: "{{ mastodon_postgres_host }}"
+mastodon_restore_postgres_port: "{{ mastodon_postgres_port }}"
+mastodon_restore_postgres_database: "{{ mastodon_postgres_database }}"
+mastodon_restore_postgres_user: "{{ mastodon_postgres_user }}"
+mastodon_restore_postgres_password: "{{ mastodon_postgres_password }}"
+
+# Removal defaults
+mastodon_confirm_removal: false
+mastodon_remove_site: true
+mastodon_remove_media: false
+mastodon_remove_env_file: true
+mastodon_remove_traefik_config: true
+mastodon_remove_systemd_units: true
+mastodon_remove_nginx_config: true
+mastodon_remove_logs: false
+mastodon_remove_logrotate: true
+mastodon_remove_user: true

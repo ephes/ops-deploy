@@ -5,7 +5,8 @@ Git installation. It resolves a selected release, installs its Ruby/Node and
 locked dependencies when needed, converges the secret environment, applies
 pending migration identities, builds assets, and performs an ordered application
 rollout. It does not provision the OS, service account, PostgreSQL/Redis instance
-or storage, and does not implement backup/restore/remove. Existing local media
+or storage, and does not implement backup/restore; the role's removal is
+[`remove_mastodon`](#removal). Existing local media
 and the `<home>/live` layout are retained.
 
 The compatibility `MastodonConfig` API still performs immutable configuration-only
@@ -128,3 +129,24 @@ extension path stops the inspection instead of guessing. The rebuild needs the
 build tools and the new `-dev` headers (such as `libicu-dev`), which a release
 upgrade carries forward when they were installed. The planning log names the
 gems before the rebuild.
+
+## Removal
+
+`remove_mastodon(MastodonRemoveConfig(confirm=True))` ports the
+`mastodon_remove` role at ops-library `44a532ba` with `mastodon_shared`'s
+paths and removal flags (both recorded under `tests/parity/mastodon/remove`).
+Without `confirm` it fails before any host probe; a root account, `/`, a
+top-level directory or a traversal as a path is refused.
+
+In the role's order: stop and disable `mastodon-web`, `mastodon-sidekiq`,
+`mastodon-streaming` and `mastodon-nginx` (one `systemd` task per unit,
+disable before stop, failures ignored); remove their unit files
+(`remove_systemd_units`); reload systemd (always, as the role); then, per
+flag, `.env.production` (`remove_env_file`), the Traefik route (behind the
+Traefik transaction guard), `/etc/mastodon/nginx.conf`, the logrotate entry,
+the site directory `/home/mastodon/live`, the media directory (`remove_media`,
+off by default) and the nginx log directory (`remove_logs`, off by default);
+last `userdel -r mastodon` (so the home and the media under it go with the
+default `remove_user=True`; a failure stops the removal) and `groupdel` when
+the group still exists. PostgreSQL, Redis, the S3 bucket and backups are not
+touched, as by the role. No secrets are read.

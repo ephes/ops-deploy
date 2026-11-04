@@ -3,8 +3,9 @@
 Port of the `homelab_deploy` Ansible role (with the `homelab_shared` defaults
 it reads) as a playbook runs it with the rsync method: the home dashboard, a
 Django app on one SQLite database served by gunicorn (`uv run gunicorn`),
-behind Traefik with basic auth outside the internal networks. Deploy only:
-backup, restore and remove stay with the Ansible roles.
+behind Traefik with basic auth outside the internal networks. Backup and
+restore stay with the Ansible roles; the removal is ported
+([Removal](#removal)).
 
 ```python
 from ops_deploy.services.homelab import HomelabConfig, deploy_homelab
@@ -179,3 +180,38 @@ Differences:
   role has no such probes: it runs `migrate`, `collectstatic` and
   `add_default_services` on every deploy, after its owner fix, so its runs
   leave new bytecode caches with the user's primary group behind.
+
+## Removal
+
+`remove_homelab(HomelabRemoveConfig(confirm=True))` ports the
+`homelab_remove` role at ops-library `44a532ba` (the role files and
+`homelab_shared`'s defaults are recorded under
+`tests/parity/homelab/remove`). The defaults are the role's and destructive:
+`remove_user`, `remove_home`, `remove_database`, `remove_media` and
+`remove_traefik_config` are all `True`; the paths are `homelab_shared`'s
+(`/home/homelab`, `/home/homelab/site/db.sqlite3`, `/home/homelab/site/media`,
+`/etc/systemd/system/homelab.service`, `/etc/traefik/dynamic/homelab.yml`).
+
+Before any host probe it refuses without `confirm`, and it refuses keeping the
+database or media (`remove_database=False` / `remove_media=False`) while the
+home or the user goes, because both live inside the home directory, as the
+role does. A root account, `/`, a top-level directory or a traversal as a path
+is refused.
+
+In the role's order:
+
+1. when the database or the media directory exists and goes, the role's
+   pause: this port asks on the controller's terminal (type `yes`) before the
+   first change, and refuses without a terminal unless `auto_confirm=True`
+   (the role's `homelab_remove_auto_confirm`);
+2. only when the unit file exists (a dangling link counts, as for `stat`):
+   stop, then disable the unit (failures ignored, as `failed_when: false`),
+   remove the unit file and reload systemd;
+3. remove the Traefik route (behind the Traefik transaction guard);
+4. remove the database with `-wal` and `-shm`, the media directory, the home
+   directory (only when it exists and the user stays) and the account
+   (`userdel`, with `-r` when the home goes; a failure stops the removal).
+
+The role's plan, warning and summary messages are not printed; the role's
+informational re-check of the route is not run. No secrets are read; Echoport
+archives stay.

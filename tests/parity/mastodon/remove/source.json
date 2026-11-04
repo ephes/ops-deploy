@@ -1,0 +1,17 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/mastodon_remove/tasks/main.yml",
+      "sha256": "f7d829dde23c504a7819e4f110db231bfec61fce55c850e483d0398f0d8bc505"
+    },
+    "defaults.yml": {
+      "source": "roles/mastodon_remove/defaults/main.yml",
+      "sha256": "db959a237552525f5d5f18a2b3402f0e9f4ea411046c8a36ab09539fe324dd9d"
+    },
+    "shared-defaults.yml": {
+      "source": "roles/mastodon_shared/defaults/main.yml",
+      "sha256": "75b81da70c6478801fcfedd865f1007b96c747b501d7925191062080f59e6550"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+---
+# Remove Traefik configuration
+
+- name: Remove Traefik dynamic configuration
+  ansible.builtin.file:
+    path: "{{ homelab_traefik_config_path }}"
+    state: absent
+  when: homelab_remove_traefik_config | bool
+
+- name: Verify Traefik config removal
+  ansible.builtin.stat:
+    path: "{{ homelab_traefik_config_path }}"
+  register: homelab_traefik_check
+  when: homelab_remove_traefik_config | bool
+
+- name: Confirm Traefik config removed
+  ansible.builtin.debug:
+    msg: "✓ Traefik configuration removed (auto-reload will pick up changes)"
+  when:
+    - homelab_remove_traefik_config | bool
+    - not homelab_traefik_check.stat.exists

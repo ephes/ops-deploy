@@ -54,6 +54,7 @@ nav:
       - mail edge relay: services/mail_relay.md
       - mail spam filtering: services/mail_spam.md
       - mail monitoring: services/mail_monitoring.md
+      - mail removal: services/mail_remove.md
       - mailgun relay: services/mailgun_relay.md
       - django_site: services/django_site.md
       - compose_app: services/compose_app.md

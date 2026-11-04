@@ -1,0 +1,33 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "main.yml": {
+      "source": "roles/homelab_remove/tasks/main.yml",
+      "sha256": "7657862a9392f28198c76ccfc66d37ca438ee380a283aa093388d3efa3a8ab07"
+    },
+    "validation.yml": {
+      "source": "roles/homelab_remove/tasks/validation.yml",
+      "sha256": "68d36ffbe50afffaf78a141e5b614b5287388b3050f24531c1a9331df4e42a32"
+    },
+    "service.yml": {
+      "source": "roles/homelab_remove/tasks/service.yml",
+      "sha256": "15cedb522d491849d7a9d0f73918b147655bb8eb06ce7828d8eef27f89cdaf58"
+    },
+    "traefik.yml": {
+      "source": "roles/homelab_remove/tasks/traefik.yml",
+      "sha256": "ebed3f120060148b611174a24a7908c9e101a11050adad7e17168baa27575219"
+    },
+    "user.yml": {
+      "source": "roles/homelab_remove/tasks/user.yml",
+      "sha256": "1d75dbfa4d97902ee596eafa0e9f6a647a023b3a3e5dd4d50f3589f0439745f2"
+    },
+    "defaults.yml": {
+      "source": "roles/homelab_remove/defaults/main.yml",
+      "sha256": "cde2f174baaa9856c2f2f003687f9ed586dd662ec70e613a395c0bf8624a87c1"
+    },
+    "shared-defaults.yml": {
+      "source": "roles/homelab_shared/defaults/main.yml",
+      "sha256": "10171a9ee2ca953c128505b77636f1323f812eec32b3215d847db22992a62cac"
+    }
+  }
+}

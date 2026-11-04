@@ -1,0 +1,92 @@
+---
+# Validation and safety checks
+
+- name: Fail if confirmation flag is not set
+  ansible.builtin.fail:
+    msg: |
+      ❌ REMOVAL BLOCKED: homelab_remove_confirm must be set to true
+
+      This role will remove the homelab service and potentially delete data.
+      Set homelab_remove_confirm: true to proceed.
+  when: not (homelab_remove_confirm | bool)
+
+- name: Refuse to delete the home directory while keeping the database or media
+  ansible.builtin.fail:
+    msg: >-
+      homelab_remove_database=false / homelab_remove_media=false keeps
+      {{ homelab_database_path }} / {{ homelab_media_root }}, which live inside
+      {{ homelab_home }}. Also set homelab_remove_home=false and homelab_remove_user=false
+      (or take a backup first) to preserve them.
+  when:
+    - (not (homelab_remove_database | bool)) or (not (homelab_remove_media | bool))
+    - (homelab_remove_home | bool) or (homelab_remove_user | bool)
+
+- name: Check if systemd service exists
+  ansible.builtin.stat:
+    path: "{{ homelab_systemd_unit_path }}"
+  register: homelab_service_file
+
+- name: Check if user exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ homelab_user }}"
+  failed_when: false
+  register: homelab_user_check
+
+- name: Check if database exists
+  ansible.builtin.stat:
+    path: "{{ homelab_database_path }}"
+  register: homelab_db_check
+
+- name: Check if media directory exists
+  ansible.builtin.stat:
+    path: "{{ homelab_media_root }}"
+  register: homelab_media_check
+
+- name: Determine whether irreversible data will be deleted
+  ansible.builtin.set_fact:
+    homelab_remove_deletes_data: >-
+      {{ ((homelab_remove_database | bool) and homelab_db_check.stat.exists)
+         or ((homelab_remove_media | bool) and homelab_media_check.stat.exists) }}
+
+- name: Display removal plan
+  ansible.builtin.debug:
+    msg: |
+
+      ═══════════════════════════════════════════════════════════════
+      🗑️  HOMELAB REMOVAL PLAN
+      ═══════════════════════════════════════════════════════════════
+
+      Systemd service: {{ homelab_systemd_unit_path if homelab_service_file.stat.exists else 'not found (already removed)' }}
+      Traefik config: {{ homelab_traefik_config_path ~ ' (remove)' if homelab_remove_traefik_config | bool else 'preserved' }}
+      Database: {{ (homelab_database_path ~ ' ⚠️  IRREVERSIBLE!') if ((homelab_remove_database | bool) and homelab_db_check.stat.exists) else ('preserved' if homelab_db_check.stat.exists else 'not found') }}
+      Media files: {{ (homelab_media_root ~ '/ ⚠️  IRREVERSIBLE!') if ((homelab_remove_media | bool) and homelab_media_check.stat.exists) else ('preserved' if homelab_media_check.stat.exists else 'not found') }}
+      Home directory: {{ homelab_home ~ ' (remove)' if homelab_remove_home | bool else 'preserved' }}
+      User account: {{ homelab_user ~ ' (remove)' if ((homelab_remove_user | bool) and homelab_user_check.ansible_facts.getent_passwd is defined) else 'preserved / not found' }}
+
+      ═══════════════════════════════════════════════════════════════
+
+- name: Warn about irreversible data deletion
+  ansible.builtin.debug:
+    msg: |
+
+      ⚠️  WARNING: DATABASE AND/OR MEDIA WILL BE PERMANENTLY DELETED ⚠️
+
+      This operation is IRREVERSIBLE. Run `just backup homelab` (or trigger the
+      Echoport `homelab` target) before continuing if you have not already captured a snapshot.
+
+      To preserve data, set:
+        homelab_remove_database: false
+        homelab_remove_media: false
+        homelab_remove_home: false
+        homelab_remove_user: false
+  when: homelab_remove_deletes_data | bool
+
+- name: Pause for confirmation (if data will be deleted)
+  ansible.builtin.pause:
+    prompt: |
+
+      Press ENTER to continue with removal, or Ctrl+C to abort.
+  when:
+    - not (homelab_remove_auto_confirm | bool)
+    - homelab_remove_deletes_data | bool

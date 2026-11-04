@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Ports of four removal roles (ops-library `44a532ba`, recorded in the drift
+  manifest and under `tests/parity/<service>/remove`), each refused without
+  its confirmation before any host probe and in the role's order with its
+  ignored failures:
+  - `services.homelab`: `HomelabRemoveConfig`/`remove_homelab`
+    (`homelab_remove`: unit, Traefik route, SQLite database, media, home and
+    account; the role's pause before deleting data asks on the controller's
+    terminal unless `auto_confirm`; keeping data while the home or user goes
+    is refused);
+  - `services.mastodon`: `MastodonRemoveConfig`/`remove_mastodon`
+    (`mastodon_remove` with `mastodon_shared`'s paths: the four units, env
+    file, Traefik route, nginx config, logrotate entry, site, account and
+    group; media and nginx logs only by flag);
+  - `services.mail_remove`: `MailRemoveConfig`/`remove_mail` (`mail_remove`:
+    backend, relay and spam components; services, packages, config and state
+    directories; Maildir/backups, vmail account and the PostgreSQL database
+    and role only by flag);
+  - `services.ollama`: `OllamaRemoveConfig`/`remove_ollama` (macOS
+    `ollama_remove`: LaunchDaemon and plist; models, logs, user/group and the
+    Homebrew package only by flag).
+  `services._lifecycle.apt_purge` holds the apt module's `state: absent,
+  purge: true` package selection, and `service_absent(skip_missing=True)`
+  skips units systemd does not know (for loops over `service_facts`).
+
 - `services.daybook_operations_api`: the rsync deploy ensures the site
   directory `0700` instead of `0750`, the mode the `daybook_operations_api_deploy`
   role leaves behind (its archive-mode copy of the playbook's `0700` export

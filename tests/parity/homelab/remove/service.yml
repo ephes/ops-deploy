@@ -1,0 +1,33 @@
+---
+# Stop and remove systemd service
+
+- name: Check if systemd service exists
+  ansible.builtin.stat:
+    path: "{{ homelab_systemd_unit_path }}"
+  register: homelab_service_file
+
+- name: Stop homelab service
+  ansible.builtin.systemd:
+    name: "{{ homelab_service_name }}"
+    state: stopped
+  when: homelab_service_file.stat.exists
+  failed_when: false
+  register: homelab_service_stop
+
+- name: Disable homelab service
+  ansible.builtin.systemd:
+    name: "{{ homelab_service_name }}"
+    enabled: false
+  when: homelab_service_file.stat.exists
+  failed_when: false
+
+- name: Remove systemd unit file
+  ansible.builtin.file:
+    path: "{{ homelab_systemd_unit_path }}"
+    state: absent
+  when: homelab_service_file.stat.exists
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: homelab_service_file.stat.exists

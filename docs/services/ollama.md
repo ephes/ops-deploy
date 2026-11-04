@@ -104,3 +104,34 @@ formula upgrade or a second Ollama runtime version. It does not download models
 or exercise inference. Inventory hosts are never used as fixtures. Inspect the
 workflow result artifact for the actual executed implementation SHA, package,
 binary hash and operation outcomes; source code alone is not execution evidence.
+
+## Removal
+
+`remove_ollama(OllamaRemoveConfig(confirm=True, ...))` ports the macOS
+`ollama_remove` role at ops-library `44a532ba` (recorded under
+`tests/parity/ollama/remove`). The role has no confirmation flag; this port
+requires `confirm` before any host probe. The defaults are the role's:
+`com.ollama.ollama` and its plist under `/Library/LaunchDaemons`, user and
+group `ollama`, `/usr/local/var/ollama/{models,logs}`, Homebrew package
+`ollama`, and every removal flag (`remove_data`, `remove_logs`, `remove_user`,
+`remove_brew_package`) off.
+
+Checks first, before any change: the host is Darwin; with
+`remove_brew_package`, `brew_user` is set and the Homebrew binary resolves
+(`brew_bin`, else `/opt/homebrew/bin/brew`, else `/usr/local/bin/brew`). Then
+in the role's order:
+
+1. `launchctl bootout system <plist>` (failures ignored, never a change; run
+   only while the plist exists, which bootout reads the job from);
+2. remove the plist, then, per flag, the models directory and the log
+   directory;
+3. with `remove_user`: `dscl . -delete /Users/<user>` when the record has a
+   `UniqueID` (the home stays, as with `remove: false`) and `dseditgroup -o
+   delete -L <group>` when the group exists;
+4. with `remove_brew_package`: `brew uninstall --force <package>` as
+   `brew_user` when `brew list --versions` lists it.
+
+Differences: Homebrew runs as the deploy runs it (`sudo -H -u <brew_user>`
+without a login shell, `HOMEBREW_NO_AUTO_UPDATE=1`), not through `sudo -i`;
+`brew_user` is required for the uninstall on any connection (the role
+requires it only as root, which is how the controller connects).

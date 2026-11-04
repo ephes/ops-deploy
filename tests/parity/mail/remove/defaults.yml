@@ -1,0 +1,95 @@
+---
+# mail_remove - Remove mail infrastructure (backend, relay, spam filter)
+#
+# This role is intentionally destructive. All removals require
+# mail_remove_confirm=true and at least one component enabled.
+
+mail_remove_confirm: false
+
+# Select which components to remove on the current host
+mail_remove_backend: false      # Postfix + Dovecot + OpenDKIM + mail data paths
+mail_remove_relay: false        # Edge Postfix relay + postgrey
+mail_remove_spam: false         # rspamd spam filter
+
+# Removal options
+mail_remove_purge_packages: true
+mail_remove_remove_configs: true
+mail_remove_remove_state: true
+mail_remove_remove_data: false           # Maildir + backups (very destructive)
+mail_remove_remove_vmail_user: false     # Remove vmail user/group (usually keep)
+
+# PostgreSQL cleanup (backend only)
+mail_remove_drop_database: false
+mail_remove_drop_db_user: false
+mail_remove_db_force_disconnect: false
+mail_remove_postgres_database: "mail"
+mail_remove_postgres_user: "mail"
+mail_remove_postgres_become_user: "postgres"
+
+# Paths (align with mail_shared defaults)
+mail_vmail_path: "/mnt/cryptdata/vmail"
+mail_backup_path: "/mnt/cryptdata/backups/mail"
+mail_vmail_user: "vmail"
+mail_vmail_group: "vmail"
+
+# Component-specific service lists
+mail_remove_backend_services:
+  - postfix
+  - dovecot
+  - opendkim
+mail_remove_relay_services:
+  - postfix
+  - postgrey
+mail_remove_spam_services:
+  - rspamd
+
+# Component-specific package lists (omit generic packages like ca-certificates)
+mail_remove_packages_backend:
+  - postfix
+  - postfix-pgsql
+  - dovecot-core
+  - dovecot-imapd
+  - dovecot-lmtpd
+  - dovecot-pgsql
+  - dovecot-sieve
+  - dovecot-managesieved
+  - opendkim
+  - opendkim-tools
+  - libsasl2-modules
+mail_remove_packages_relay:
+  - postfix
+  - postgrey
+  - libsasl2-modules
+  - sasl2-bin
+mail_remove_packages_spam:
+  - rspamd
+
+# Config/state paths to delete (per component)
+mail_remove_config_paths_backend:
+  - /etc/postfix
+  - /etc/dovecot
+  - /etc/opendkim
+mail_remove_state_paths_backend:
+  - /var/spool/postfix
+  - /var/lib/postfix
+  - /var/lib/dovecot
+  - /var/lib/opendkim
+
+mail_remove_config_paths_relay:
+  - /etc/postfix
+  - /etc/postgrey
+mail_remove_state_paths_relay:
+  - /var/spool/postfix
+  - /var/lib/postfix
+  - /var/lib/postgrey
+
+mail_remove_config_paths_spam:
+  - /etc/rspamd
+mail_remove_state_paths_spam:
+  - /var/lib/rspamd
+  - /var/log/rspamd
+
+# Mail data paths (only when mail_remove_remove_data=true)
+mail_remove_data_paths:
+  - "{{ mail_vmail_path }}"
+  - "{{ mail_backup_path }}"

@@ -54,18 +54,23 @@ def _unavailable(label: str) -> Callable[[], None]:
 
 @operation()
 def service_absent(
-    service: str, label: str, stop: bool = True, disable: bool = True
+    service: str, label: str, stop: bool = True, disable: bool = True, skip_missing: bool = False
 ) -> Generator[StringCommand | FunctionCommand, None, None]:
     """``systemd`` with ``state: stopped`` (``stop``) and/or ``enabled: false`` (``disable``).
 
     The module disables BEFORE stopping and fails, without stopping, on a unit
     it cannot inspect or that is not loaded; the roles ignore that failure
     (``_ignore_errors=True`` at the call), and the removal goes on.
+    ``skip_missing``: a unit systemd does not know (``not-found``) changes
+    nothing, for roles that loop only over the units ``service_facts`` lists.
     """
 
     raw = host.get_fact(Command, command=shlex.join(["/usr/bin/python3", "-I", "-B", "-c", SERVICE_PROBE, service]))
     try:
         observed = json.loads(raw or "")
+        # systemctl show reports an unknown unit as not-found with a LoadError.
+        if skip_missing and isinstance(observed, dict) and observed.get("load") == "not-found":
+            return
         if (
             set(observed) != {"success", "load", "active", "enabled"}
             or observed["success"] is not True

@@ -1,0 +1,102 @@
+---
+# Homelab shared defaults (used by all lifecycle roles)
+
+# Service identity
+homelab_slug: homelab
+homelab_user: homelab
+homelab_group: "{{ homelab_user }}"
+
+# Paths
+homelab_home: /home/{{ homelab_user }}
+homelab_site_path: "{{ homelab_home }}/site"
+homelab_venv_path: "{{ homelab_site_path }}/.venv"
+homelab_venv_bin: "{{ homelab_venv_path }}/bin"
+homelab_cache_dir: "{{ homelab_site_path }}/cache"
+homelab_database_path: "{{ homelab_site_path }}/db.sqlite3"
+homelab_env_file: "{{ homelab_site_path }}/.env"
+homelab_static_root: "{{ homelab_site_path }}/staticfiles"
+homelab_media_root: "{{ homelab_site_path }}/media"
+homelab_media_subdirs:
+  - services
+  - services/logos
+
+# Application settings (used by env template + restore checks)
+homelab_app_port: 10010
+homelab_app_host: "127.0.0.1"
+homelab_workers: 4
+homelab_django_settings_module: "config.settings.production"
+homelab_django_allowed_hosts: "127.0.0.1"
+homelab_django_admin_url: "admin/"
+homelab_django_debug: false
+homelab_secret_key: ""
+
+# Python / uv
+homelab_use_uv: true
+homelab_uv_path: "/usr/local/bin/uv"
+homelab_python_version: "3.14"
+
+# Systemd / Traefik
+homelab_service_name: homelab
+homelab_systemd_unit_path: "/etc/systemd/system/{{ homelab_service_name }}.service"
+homelab_service_restart_on_change: true
+homelab_traefik_enabled: true
+homelab_traefik_host: "home.example.com"
+homelab_traefik_cert_resolver: ""  # empty -> use file-provider certs
+homelab_traefik_config_path: "/etc/traefik/dynamic/homelab.yml"
+homelab_traefik_service_name: traefik
+homelab_basic_auth_enabled: true
+homelab_basic_auth_user: "admin"
+homelab_basic_auth_password: ""
+homelab_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+  - "fd50:3e45:c454:0::/64"
+
+# Backup defaults shared across roles
+homelab_backup_prefix: manual
+homelab_backup_include_static: true
+homelab_backup_include_media: true
+homelab_backup_include_cache: false
+homelab_backup_include_env: true
+homelab_backup_manifest_enabled: true
+homelab_backup_archive_format: tar.gz
+homelab_backup_create_archive: true
+homelab_backup_fetch_local: true
+homelab_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/{{ homelab_slug }}"
+homelab_backup_local_dir_mode: "0700"
+homelab_backup_force_stop: false
+homelab_backup_sqlite_retries: 3
+homelab_backup_owner: root
+homelab_backup_group: root
+homelab_backup_dir_mode: "0700"
+homelab_backup_file_mode: "0600"
+homelab_backup_root: "{{ backup_root_prefix | default('/opt/backups') }}/{{ homelab_slug }}"
+
+# Restore defaults
+homelab_restore_archive: latest
+homelab_restore_root: "{{ homelab_backup_root }}"
+homelab_restore_dry_run: false
+homelab_restore_validate_checksums: true
+homelab_restore_cleanup: true
+homelab_restore_allow_version_mismatch: false
+homelab_restore_restore_env: true
+homelab_restore_rebuild_static: false
+homelab_restore_staging_dir: /tmp/homelab-restore
+homelab_restore_staging_mode: "0700"
+homelab_restore_safe_snapshot_prefix: "pre-restore"
+homelab_restore_safe_snapshot_delete: false  # keep the pre-restore copy; true deletes it after a successful restore
+homelab_restore_create_safe_snapshot: true
+homelab_restore_restart_service: true
+homelab_restore_reload_traefik: true
+homelab_restore_reload_systemd: true
+homelab_restore_verify_http: true
+homelab_restore_healthcheck_url: "http://127.0.0.1:{{ homelab_app_port }}/{{ homelab_django_admin_url }}"
+homelab_restore_healthcheck_retries: 5
+homelab_restore_healthcheck_delay: 3
+homelab_restore_expected_content: ""
+homelab_restore_fix_permissions: true
+homelab_restore_env_mode: "0600"
+homelab_restore_media_mode: "0755"

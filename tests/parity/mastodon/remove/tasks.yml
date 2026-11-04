@@ -1,0 +1,94 @@
+---
+- name: Validate removal confirmation
+  ansible.builtin.assert:
+    that:
+      - mastodon_confirm_removal | bool
+    fail_msg: |
+      Mastodon removal not confirmed.
+      Set mastodon_confirm_removal: true to proceed.
+
+- name: Stop and disable Mastodon services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ mastodon_systemd_services }}"
+  failed_when: false
+
+- name: Remove systemd units
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ mastodon_systemd_units }}"
+  when: mastodon_remove_systemd_units | bool
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove Mastodon environment file
+  ansible.builtin.file:
+    path: "{{ mastodon_env_file }}"
+    state: absent
+  when: mastodon_remove_env_file | bool
+
+- name: Remove Traefik configuration
+  ansible.builtin.file:
+    path: "{{ mastodon_traefik_config_path }}"
+    state: absent
+  when: mastodon_remove_traefik_config | bool
+
+- name: Remove nginx configuration
+  ansible.builtin.file:
+    path: "{{ mastodon_nginx_config_path }}"
+    state: absent
+  when: mastodon_remove_nginx_config | bool
+
+- name: Remove nginx logrotate configuration
+  ansible.builtin.file:
+    path: "{{ mastodon_nginx_logrotate_path }}"
+    state: absent
+  when: mastodon_remove_logrotate | bool
+
+- name: Remove Mastodon site directory
+  ansible.builtin.file:
+    path: "{{ mastodon_site_path }}"
+    state: absent
+  when: mastodon_remove_site | bool
+
+- name: Remove Mastodon media directory
+  ansible.builtin.file:
+    path: "{{ mastodon_media_path }}"
+    state: absent
+  when: mastodon_remove_media | bool
+
+- name: Remove nginx log directory
+  ansible.builtin.file:
+    path: "{{ mastodon_nginx_log_dir }}"
+    state: absent
+  when: mastodon_remove_logs | bool
+
+- name: Remove Mastodon user
+  ansible.builtin.user:
+    name: "{{ mastodon_user }}"
+    state: absent
+    remove: true
+  when: mastodon_remove_user | bool
+
+- name: Remove Mastodon group
+  ansible.builtin.group:
+    name: "{{ mastodon_group }}"
+    state: absent
+  when: mastodon_remove_user | bool
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      Mastodon removal completed.
+      Site: {{ 'removed' if mastodon_remove_site else 'preserved' }}
+      Media: {{ 'removed' if mastodon_remove_media else 'preserved' }}
+      Traefik config: {{ 'removed' if mastodon_remove_traefik_config else 'preserved' }}
+      nginx config: {{ 'removed' if mastodon_remove_nginx_config else 'preserved' }}
+      Logs: {{ 'removed' if mastodon_remove_logs else 'preserved' }}
+      Logrotate: {{ 'removed' if mastodon_remove_logrotate else 'preserved' }}
+      User: {{ 'removed' if mastodon_remove_user else 'preserved' }}

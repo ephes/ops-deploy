@@ -20,6 +20,7 @@
     "graphyard_vector_deploy": "654594f49168eec8990dd987979f0328a8e07cbb6264045dfd89f5a66b0132d1",
     "hdparm_tune": "c7a9ecd701b52b0f012ec32bad797644b4fcb2fcef647347b10b25c4930f00a1",
     "homelab_deploy": "b110f03282424900d4006dc8e1d3a9250b615672b51b2c5f11e340fb05dbbb9e",
+    "homelab_remove": "c48917e41d3ea085ed908f6edc1c7290f1ca08788be6f800c9105f8290446811",
     "homelab_shared": "5c7b726538f1f0d9bc2f3e65f5a6c78e26adfacbfa58afb6f46155b0a34929dd",
     "jellyfin_deploy": "1f76f6c0c1a29a2241f52c530f2f71c03df4db08b6f13115ec926ad18ffd0eb4",
     "jellyfin_shared": "2af6e1d4d3367bc109957d3fb722a4f15f89271b2f7aed44f03b3ec4f46b0631",
@@ -27,8 +28,10 @@
     "livekit_deploy": "227523932438fe6b95bda885c416bb04526b58eebd39152097d6f403b2c11f84",
     "mail_backend_deploy": "aa4ec85198eefb21ae03a312c06869f223232cbaf449d5fac92675ddd160c0a8",
     "mail_relay_deploy": "2b2c2e73519fd5e4af74a70885ed86cf4a1045bbe4820399d3e6d46527f2583d",
+    "mail_remove": "b1b4b2de89437248538936cd24a1010d337edf75d34c961e444ac51b87f203d4",
     "mail_spam_deploy": "5517da91b39f7766eeff6992573cd9aba10ec2333f82414667081a949bf2cf47",
     "mastodon_deploy": "d4d0beaaddbefa9e296397c0740086f20c1384481b27b450a0f92d91631b87b2",
+    "mastodon_remove": "2ca98937d13cf013185fc02d0326ff143712f57d9271e97899c74671266fc077",
     "mastodon_shared": "1f2485fc4fc008e062ff61e301aa3775446f1eeede5d790bb428cd123dbdd4bd",
     "metrics_httpd_switch": "3347dd5537b4b36ee4f4cfdce0e49ac0184bb7610029465c0c41363315e79c05",
     "minecraft_java_remove": "2cdb0707c4882708f4c216cc82ddac4d655a080922fda49348240bd00d0a1602",
@@ -38,6 +41,7 @@
     "nyxmon_remove": "5610fa51a2b400a45d85afb62c7db346a3f0f2befb910a59e75bd27fbf75bb95",
     "nyxmon_restore": "9adf89e4793f4785c22d123ee5367d023c4dc5daeb5fe10d2faedd3d39c8bb7b",
     "ollama_proxy_remove": "b7b36042f5b8d40b17a9aaa24142f7491771253848e5ced77946a502e085f47b",
+    "ollama_remove": "80e8ac2f77181310ac62f8d13bdaf7599680a3e36819d67fe7bddf8a18af2149",
     "open_webui_venv_deploy": "7b1f105c712ddc37682c90f18f5823fe5a59e9a698fe58b4e192f5368446d587",
     "open_webui_venv_remove": "b0beebe7d3c1b7fa57d6374c1edc254de57be024a0c3db357d02bb0e6e840dc8",
     "openclaw_deploy": "6eea4edc790bd49fd939c3f47678abaca31a60f164cd40d0d97521241e745398",
@@ -86,6 +90,10 @@
     "open_webui_venv_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "openclaw_deploy": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "openclaw_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "unifi_remove": "d4039a71565977b0292a4c9daf5d06f93851eb77"
+    "unifi_remove": "d4039a71565977b0292a4c9daf5d06f93851eb77",
+    "homelab_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "mastodon_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "ollama_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "mail_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

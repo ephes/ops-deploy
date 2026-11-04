@@ -1,0 +1,131 @@
+---
+# Remove Ollama on macOS (launchd + optional cleanup)
+
+- name: Validate macOS target
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Darwin'
+    fail_msg: "ollama_remove only supports macOS targets."
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - ollama_service_user | length > 0
+      - ollama_service_group | length > 0
+      - ollama_service_home | length > 0
+      - ollama_models_dir | length > 0
+      - ollama_log_dir | length > 0
+      - ollama_launchd_label | length > 0
+      - ollama_launchd_plist_path | length > 0
+    fail_msg: "ollama_remove variables are invalid; check defaults/main.yml overrides."
+
+- name: Validate Homebrew user when running as root
+  ansible.builtin.assert:
+    that:
+      - ollama_brew_user | length > 0
+    fail_msg: "ollama_brew_user must be set when Ansible connects as root (Homebrew refuses to run as root)."
+  when:
+    - ollama_remove_brew_package | bool
+    - ansible_user_id == 'root'
+
+- name: Resolve Homebrew path when not provided
+  when:
+    - ollama_remove_brew_package | bool
+    - ollama_brew_bin | length == 0
+  block:
+    - name: Check Homebrew at /opt/homebrew/bin/brew
+      ansible.builtin.stat:
+        path: /opt/homebrew/bin/brew
+      register: ollama_brew_opt
+
+    - name: Check Homebrew at /usr/local/bin/brew
+      ansible.builtin.stat:
+        path: /usr/local/bin/brew
+      register: ollama_brew_usr
+
+    - name: Set resolved Homebrew binary
+      ansible.builtin.set_fact:
+        ollama_brew_bin_resolved: >-
+          {{
+            (ollama_brew_opt.stat.exists | default(false))
+            | ternary('/opt/homebrew/bin/brew',
+              (ollama_brew_usr.stat.exists | default(false))
+              | ternary('/usr/local/bin/brew', '')
+            )
+          }}
+
+- name: Use provided Homebrew binary path
+  ansible.builtin.set_fact:
+    ollama_brew_bin_resolved: "{{ ollama_brew_bin }}"
+  when:
+    - ollama_remove_brew_package | bool
+    - ollama_brew_bin | length > 0
+
+- name: Validate Homebrew binary path
+  ansible.builtin.assert:
+    that:
+      - ollama_brew_bin_resolved is defined
+      - ollama_brew_bin_resolved | length > 0
+    fail_msg: "Homebrew binary not found. Set ollama_brew_bin to the brew path."
+  when: ollama_remove_brew_package | bool
+
+- name: Stop and unload launchd service
+  ansible.builtin.command: "launchctl bootout system {{ ollama_launchd_plist_path }}"
+  failed_when: false
+  changed_when: false
+  become: true
+
+- name: Remove launchd plist
+  ansible.builtin.file:
+    path: "{{ ollama_launchd_plist_path }}"
+    state: absent
+  become: true
+
+- name: Remove Ollama model data directory
+  ansible.builtin.file:
+    path: "{{ ollama_models_dir }}"
+    state: absent
+  become: true
+  when: ollama_remove_data | bool
+
+- name: Remove Ollama log directory
+  ansible.builtin.file:
+    path: "{{ ollama_log_dir }}"
+    state: absent
+  become: true
+  when: ollama_remove_logs | bool
+
+- name: Remove Ollama service user
+  ansible.builtin.user:
+    name: "{{ ollama_service_user }}"
+    state: absent
+    remove: false
+  become: true
+  when: ollama_remove_user | bool
+
+- name: Remove Ollama service group
+  ansible.builtin.group:
+    name: "{{ ollama_service_group }}"
+    state: absent
+  become: true
+  when: ollama_remove_user | bool
+
+- name: Uninstall Ollama Homebrew package
+  community.general.homebrew:
+    name: "{{ ollama_brew_package }}"
+    state: absent
+    # homebrew module expects a PATH-style entry, not the full brew binary path
+    path: "{{ ollama_brew_bin_resolved | dirname }}"
+  become: "{{ ollama_brew_user | length > 0 }}"
+  become_user: "{{ ollama_brew_user | default(omit) }}"
+  become_flags: "-i"
+  when: ollama_remove_brew_package | bool
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      Ollama removal completed.
+      Data dir: {{ 'removed' if ollama_remove_data else 'preserved' }} ({{ ollama_models_dir }})
+      Logs dir: {{ 'removed' if ollama_remove_logs else 'preserved' }} ({{ ollama_log_dir }})
+      User/group: {{ 'removed' if ollama_remove_user else 'preserved' }}
+      Homebrew package: {{ 'removed' if ollama_remove_brew_package else 'preserved' }}

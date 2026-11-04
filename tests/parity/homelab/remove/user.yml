@@ -1,0 +1,50 @@
+---
+# Remove user and data (conditional)
+
+- name: Check if home directory exists
+  ansible.builtin.stat:
+    path: "{{ homelab_home }}"
+  register: homelab_home_check
+
+- name: Remove database file
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ homelab_database_path }}"
+    - "{{ homelab_database_path }}-wal"
+    - "{{ homelab_database_path }}-shm"
+  # no home-existence gate: the paths may live outside homelab_home
+  when: homelab_remove_database | bool
+
+- name: Remove media directory
+  ansible.builtin.file:
+    path: "{{ homelab_media_root }}"
+    state: absent
+  when: homelab_remove_media | bool
+
+- name: Remove home directory
+  ansible.builtin.file:
+    path: "{{ homelab_home }}"
+    state: absent
+  when:
+    - homelab_remove_home | bool
+    - homelab_home_check.stat.exists
+    - not (homelab_remove_user | bool)  # If removing user, the user module removes the home
+
+- name: Remove user account
+  ansible.builtin.user:
+    name: "{{ homelab_user }}"
+    state: absent
+    remove: "{{ homelab_remove_home | bool }}"  # only delete the home directory when asked to
+  when: homelab_remove_user | bool
+
+- name: Verify removal
+  ansible.builtin.debug:
+    msg: |
+      ✓ Removal complete
+
+      Database: {{ 'DELETED' if homelab_remove_database | bool else 'Preserved (if existed)' }}
+      Media: {{ 'DELETED' if homelab_remove_media | bool else 'Preserved (if existed)' }}
+      Home directory: {{ 'DELETED' if homelab_remove_home | bool else 'Preserved (if existed)' }}
+      User account: {{ 'DELETED' if homelab_remove_user | bool else 'Preserved (if existed)' }}

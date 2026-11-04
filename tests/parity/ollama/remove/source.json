@@ -1,0 +1,13 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/ollama_remove/tasks/main.yml",
+      "sha256": "55c93eef031a409924cda059683f091287d64c1cb5a01c6d17f4e426e7c43665"
+    },
+    "defaults.yml": {
+      "source": "roles/ollama_remove/defaults/main.yml",
+      "sha256": "5fdb320e6b34b8454a4d9863c93049bd18aabc4d653581e9715a4c7d00d28a3c"
+    }
+  }
+}

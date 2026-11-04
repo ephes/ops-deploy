@@ -1,0 +1,24 @@
+---
+# Default values for ollama_remove role (macOS)
+
+# Launchd service configuration (matches ollama_install)
+ollama_launchd_label: "com.ollama.ollama"
+ollama_launchd_plist_path: "/Library/LaunchDaemons/{{ ollama_launchd_label }}.plist"
+
+# Service user/group + paths (matches ollama_install defaults)
+ollama_service_user: "ollama"
+ollama_service_group: "ollama"
+ollama_service_home: "/usr/local/var/ollama"
+ollama_models_dir: "/usr/local/var/ollama/models"
+ollama_log_dir: "/usr/local/var/ollama/logs"
+
+# Homebrew settings (used when ollama_remove_brew_package is true)
+ollama_brew_package: "ollama"
+ollama_brew_user: ""   # Required when Ansible connects as root
+ollama_brew_bin: ""    # Auto-detect if empty
+
+# Removal options (safe defaults)
+ollama_remove_data: false
+ollama_remove_logs: false
+ollama_remove_user: false
+ollama_remove_brew_package: false
