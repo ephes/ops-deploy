@@ -83,10 +83,48 @@ records; matching records get empty permissions. The password is persisted as
 role: complete the controller setup wizard and rerun. No other users, sites,
 device adoption records or controller data are changed.
 
-Fresh MongoDB/bootstrap and lifecycle backup/restore/remove are outside this
-initialized-install deployment contract. The Linux fixture bootstraps its own
+Fresh MongoDB/bootstrap and lifecycle backup/restore are outside this
+initialized-install deployment contract; removal is the separate
+[port of `unifi_remove`](#removal). The Linux fixture bootstraps its own
 isolated database with authorization enabled; that fixture setup is not a
 production bootstrap implementation.
+
+## Removal
+
+`remove_unifi(UnifiRemoveConfig(confirm=True, ...), secrets)` ports the
+`unifi_remove` role at ops-library `d4039a71` (role files under
+`tests/parity/unifi/remove`, digest in the drift manifest). Without `confirm`
+it fails before any host probe. Every field is the role's `unifi_*` /
+`unifi_remove_*` variable with its default, including the derived paths
+(`home_dir` `/home/<user>`, `cache_dir`, `data_dir`, `logs_dir`,
+`backup_dir`, unit and JVM argument file). The destructive choices stay
+opt-in exactly as in the role: `delete_cache` defaults true;
+`delete_logs`, `delete_data`, `delete_home`, `delete_backup_dir`,
+`remove_user`, `remove_group`, `drop_mongodb_database` and
+`drop_mongodb_user` default false. `trigger_backup` (the role's pre-removal
+`unifi_backup`) is not ported and must stay false. Root, top-level or
+traversing paths and a root account are refused.
+
+`secrets` may hold `mongodb_password`. Without one (or empty) the database
+and user drops are skipped, as the role skips them. With one, the role's
+authenticated mongosh script (`mongodb_user`, default `unifi`, against
+`mongodb_auth_db`, default `admin`) drops the `mongodb_database` (default
+`unifi`) or the user; the payload travels on redacted stdin to a host helper
+that runs mongosh with a private temporary HOME and prints only a status. A
+failing drop is ignored (the role's `failed_when: false`).
+
+The role's order: stop and disable `services` (ignored failures, the
+`systemd` module's semantics); remove the unit, the JVM argument file and
+the default `/etc/<service>-secrets` directory and reload systemd; remove
+the Traefik route (behind the Traefik transaction guard); on a Debian-family
+host with ufw, `ufw delete allow from any to any port <port> proto <proto>`
+per `firewall_rules` (ignored failures); the drops; stop and disable
+`mongod` (ignored); purge the UniFi, MongoDB and Java package lists (each
+`apt-get --purge remove` of the listed packages dpkg knows in any state but
+not-installed, so residual config-files packages are purged too, like the
+apt module); remove the selected directories (cache, logs, backup, data,
+install, home); `userdel` (`-r` with `delete_home`) and `groupdel`, both
+fatal on failure.
 
 ## Shared configuration
 

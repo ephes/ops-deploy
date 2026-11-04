@@ -1,0 +1,255 @@
+---
+
+- name: Display UniFi removal banner
+  ansible.builtin.debug:
+    msg: |
+      ═════════════════════════════════════
+      🗑️  UniFi Removal
+      ═════════════════════════════════════
+
+- name: Require explicit confirmation
+  ansible.builtin.assert:
+    that:
+      - unifi_remove_confirm | bool
+    fail_msg: |
+      Destructive removal not confirmed.
+      Set unifi_remove_confirm: true to continue.
+
+- name: Run UniFi backup before removal
+  ansible.builtin.include_role:
+    name: local.ops_library.unifi_backup
+  when: unifi_remove_trigger_backup | bool
+
+- name: Stop UniFi related services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ unifi_remove_services }}"
+  failed_when: false
+  ignore_errors: true
+  when: unifi_remove_stop_services | bool
+
+- name: Remove systemd unit file
+  ansible.builtin.file:
+    path: "{{ unifi_systemd_unit_path }}"
+    state: absent
+  when: unifi_remove_service_units | bool
+
+- name: Remove MongoDB JVM argument file
+  ansible.builtin.file:
+    path: "{{ unifi_mongodb_jvm_args_path }}"
+    state: absent
+  when: unifi_remove_service_units | bool
+
+- name: Remove default MongoDB credentials directory
+  ansible.builtin.file:
+    path: "/etc/{{ unifi_service_name }}-secrets"
+    state: absent
+  when:
+    - unifi_remove_service_units | bool
+    - (unifi_mongodb_jvm_args_path | dirname) == ('/etc/' ~ unifi_service_name ~ '-secrets')
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: unifi_remove_service_units | bool
+
+- name: Remove Traefik config
+  ansible.builtin.file:
+    path: "{{ unifi_traefik_config_path }}"
+    state: absent
+  when: unifi_remove_manage_traefik | bool
+
+- name: Remove UniFi firewall rules
+  when:
+    - unifi_remove_manage_firewall | bool
+    - (ansible_facts.os_family | default(ansible_facts['os_family'] | default(''))) == "Debian"
+  block:
+    - name: Check for ufw binary
+      ansible.builtin.command: which ufw
+      register: unifi_remove_ufw_check
+      changed_when: false
+      failed_when: false
+
+    - name: Delete UniFi firewall rules
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+        delete: true
+      loop: "{{ unifi_firewall_rules }}"
+      when: unifi_remove_ufw_check.rc == 0
+      ignore_errors: true
+
+- name: main | Run mongosh with a private credential script
+  block:
+    - name: main | Allocate private MongoDB directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: unifi_remove-mongo-
+      register: unifi_remove_task_mongo_1
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_remove_drop_mongodb_database | bool
+        - unifi_mongodb_password | length > 0
+
+    - name: main | Render authenticated MongoDB script
+      ansible.builtin.template:
+        src: task-mongosh.js.j2
+        dest: "{{ unifi_remove_task_mongo_1.path }}/command.js"
+        mode: "0600"
+      vars:
+        task_mongo_auth_db: "{{ unifi_mongodb_auth_db }}"
+        task_mongo_database: "{{ unifi_mongodb_auth_db }}"
+        task_mongo_script: |
+          printjson(db.getSiblingDB('{{ unifi_mongodb_database }}').dropDatabase());
+      no_log: true
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_remove_task_mongo_1.path is defined
+        - unifi_remove_drop_mongodb_database | bool
+        - unifi_mongodb_password | length > 0
+
+    - name: Drop UniFi MongoDB database
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          --file {{ (unifi_remove_task_mongo_1.path ~ '/command.js' if unifi_remove_task_mongo_1.path is defined else '/dev/null') | quote }}
+      when:
+        - unifi_remove_drop_mongodb_database | bool
+        - unifi_mongodb_password | length > 0
+      register: unifi_remove_drop_db
+      changed_when: true
+      failed_when: false
+      no_log: true
+
+  always:
+    - name: main | Remove private MongoDB directory
+      ansible.builtin.file:
+        path: "{{ unifi_remove_task_mongo_1.path }}"
+        state: absent
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_remove_task_mongo_1.path is defined
+
+- name: main | Run mongosh with a private credential script
+  block:
+    - name: main | Allocate private MongoDB directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: unifi_remove-mongo-
+      register: unifi_remove_task_mongo_2
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_remove_drop_mongodb_user | bool
+        - unifi_mongodb_password | length > 0
+
+    - name: main | Render authenticated MongoDB script
+      ansible.builtin.template:
+        src: task-mongosh.js.j2
+        dest: "{{ unifi_remove_task_mongo_2.path }}/command.js"
+        mode: "0600"
+      vars:
+        task_mongo_auth_db: "{{ unifi_mongodb_auth_db }}"
+        task_mongo_database: "{{ unifi_mongodb_auth_db }}"
+        task_mongo_script: |
+          printjson(db.getSiblingDB('{{ unifi_mongodb_auth_db }}').dropUser('{{ unifi_mongodb_user }}'));
+      no_log: true
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_remove_task_mongo_2.path is defined
+        - unifi_remove_drop_mongodb_user | bool
+        - unifi_mongodb_password | length > 0
+
+    - name: Drop UniFi MongoDB user
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          --file {{ (unifi_remove_task_mongo_2.path ~ '/command.js' if unifi_remove_task_mongo_2.path is defined else '/dev/null') | quote }}
+      when:
+        - unifi_remove_drop_mongodb_user | bool
+        - unifi_mongodb_password | length > 0
+      register: unifi_remove_drop_user
+      changed_when: true
+      failed_when: false
+      no_log: true
+
+  always:
+    - name: main | Remove private MongoDB directory
+      ansible.builtin.file:
+        path: "{{ unifi_remove_task_mongo_2.path }}"
+        state: absent
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_remove_task_mongo_2.path is defined
+
+- name: Stop MongoDB service post-cleanup
+  ansible.builtin.systemd:
+    name: mongod
+    state: stopped
+    enabled: false
+  when: unifi_remove_stop_mongod | bool
+  failed_when: false
+  ignore_errors: true
+
+- name: Purge UniFi packages
+  ansible.builtin.apt:
+    name: "{{ unifi_remove_unifi_packages }}"
+    state: absent
+    purge: true
+  when: unifi_remove_packages | bool
+
+- name: Purge MongoDB packages
+  ansible.builtin.apt:
+    name: "{{ unifi_remove_mongodb_packages }}"
+    state: absent
+    purge: true
+  when: unifi_remove_packages | bool
+
+- name: Purge Java runtime packages
+  ansible.builtin.apt:
+    name: "{{ unifi_remove_java_packages }}"
+    state: absent
+    purge: true
+  when: unifi_remove_packages | bool
+
+- name: Remove UniFi directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop:
+    - { path: "{{ unifi_cache_dir }}", enabled: "{{ unifi_remove_delete_cache }}" }
+    - { path: "{{ unifi_logs_dir }}", enabled: "{{ unifi_remove_delete_logs }}" }
+    - { path: "{{ unifi_backup_dir }}", enabled: "{{ unifi_remove_delete_backup_dir }}" }
+    - { path: "{{ unifi_data_dir }}", enabled: "{{ unifi_remove_delete_data }}" }
+    - { path: "{{ unifi_install_dir }}", enabled: "{{ unifi_remove_delete_data }}" }
+    - { path: "{{ unifi_home_dir }}", enabled: "{{ unifi_remove_delete_home }}" }
+  when: item.enabled | bool
+
+- name: Remove UniFi user
+  ansible.builtin.user:
+    name: "{{ unifi_user }}"
+    state: absent
+    remove: "{{ unifi_remove_delete_home | bool }}"
+  when: unifi_remove_user | bool
+
+- name: Remove UniFi group
+  ansible.builtin.group:
+    name: "{{ unifi_group }}"
+    state: absent
+  when: unifi_remove_group | bool
+
+- name: UniFi removal summary
+  ansible.builtin.debug:
+    msg:
+      - "✅ UniFi removal complete."
+      - "Packages purged: {{ unifi_remove_packages }}"
+      - "Traefik config removed: {{ unifi_remove_manage_traefik }}"
+      - "Directories removed -> cache={{ unifi_remove_delete_cache }}, data={{ unifi_remove_delete_data }}, home={{ unifi_remove_delete_home }}"
+      - "Mongo cleanup -> db={{ unifi_remove_drop_mongodb_database }}, user={{ unifi_remove_drop_mongodb_user }}"
+  when: unifi_remove_cleanup_summary | bool

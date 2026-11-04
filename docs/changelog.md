@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `services.unifi`: `UnifiRemoveConfig` and `remove_unifi`, the port of the
+  `unifi_remove` role (ops-library `d4039a71`, recorded in the drift manifest
+  and under `tests/parity/unifi/remove`): its defaults (destructive flags
+  opt-in as in the role), order and ignored failures; MongoDB database/user
+  drops only with a `mongodb_password`, sent on stdin; package purges of the
+  listed packages in any dpkg state but not-installed. Requires `confirm=True`
+  before any probe. The pre-removal backup (`trigger_backup`) is not ported.
+
 - `services.openclaw`: port of the `openclaw_deploy` and `openclaw_remove` roles
   and the private playbook's Nyxmon json-metrics checks. The role's defaults
   and `validate.yml` ship unchanged and are evaluated as Ansible does; every

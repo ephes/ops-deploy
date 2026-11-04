@@ -1,0 +1,4 @@
+const authDb = db.getSiblingDB({{ task_mongo_auth_db | to_json }});
+if (!authDb.auth({{ unifi_mongodb_user | to_json }}, {{ unifi_mongodb_password | to_json }})) { quit(1); }
+db = db.getSiblingDB({{ task_mongo_database | to_json }});
+{{ task_mongo_script }}

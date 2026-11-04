@@ -1,0 +1,17 @@
+{
+  "revision": "d4039a71565977b0292a4c9daf5d06f93851eb77",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/unifi_remove/tasks/main.yml",
+      "sha256": "2ed33eb7feb4f397abc32d1323d936800a1c2a97305daa2f35f88a1d347db019"
+    },
+    "defaults.yml": {
+      "source": "roles/unifi_remove/defaults/main.yml",
+      "sha256": "764a65ef192985a1123893babf0bf5335fa0acc900e907047507ea183cb2bf45"
+    },
+    "task-mongosh.js.j2": {
+      "source": "roles/unifi_remove/templates/task-mongosh.js.j2",
+      "sha256": "e92f1bacd23e11ba1dc1a07580287be73cb6bb6339440051a970589cb1dcff7d"
+    }
+  }
+}

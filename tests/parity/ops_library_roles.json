@@ -49,6 +49,7 @@
     "thermal_metrics_endpoint": "78ceba6a7b41dc18aa60522f8dd1ead157fa53763c857eb0220132066480ab28",
     "thermal_metrics_exporter": "8a7a282a4049495e6b68488a8c3d55b6d2349caa229dd45a0b0368b8dcdf68cd",
     "traefik_deploy": "5d5ba0efdaa74529a1b67aea9853d93597916b718c2cfeb77e01af0c6e87e2f5",
+    "unifi_remove": "3ab254c274d4f3145015320fa3d53a86b9572f2d2d07803584999b50d18d73b2",
     "uv_install": "5b2b3ae65b4aee522e82e419ea2ea02f8b5ee5bfb4200730e04897fe4a98d2c4",
     "vaultwarden_deploy": "070a0a0ae035da15a85c0c8a174e7d1b200afcffc8681bccbace07de92fc43ee",
     "vibe_coding_deploy": "00cf1d55a91d0f313f468de064bed362834b1736cafc122c72485d8388000f43",
@@ -84,6 +85,7 @@
     "ollama_proxy_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "open_webui_venv_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "openclaw_deploy": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "openclaw_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
+    "openclaw_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "unifi_remove": "d4039a71565977b0292a4c9daf5d06f93851eb77"
   }
 }

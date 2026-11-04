@@ -1,0 +1,57 @@
+---
+unifi_service_name: "unifi"
+unifi_user: "unifi"
+unifi_group: "unifi"
+unifi_home_dir: "/home/{{ unifi_user }}"
+unifi_install_dir: "/usr/lib/unifi"
+unifi_cache_dir: "{{ unifi_home_dir }}/cache"
+unifi_data_dir: "{{ unifi_install_dir }}/data"
+unifi_logs_dir: "{{ unifi_install_dir }}/logs"
+unifi_backup_dir: "{{ unifi_data_dir }}/backup"
+unifi_systemd_unit_path: "/etc/systemd/system/{{ unifi_service_name }}.service"
+unifi_mongodb_jvm_args_path: "/etc/{{ unifi_service_name }}-secrets/mongodb.jvmargs"
+unifi_traefik_config_path: "/etc/traefik/dynamic/unifi.yml"
+unifi_firewall_rules:
+  - { port: 8080, proto: "tcp", comment: "UniFi device communication" }
+  - { port: 8443, proto: "tcp", comment: "UniFi web admin" }
+  - { port: 3478, proto: "udp", comment: "UniFi STUN" }
+  - { port: 10001, proto: "udp", comment: "UniFi discovery" }
+  - { port: 6789, proto: "tcp", comment: "UniFi speed test" }
+
+# Removal controls
+unifi_remove_confirm: false
+unifi_remove_stop_services: true
+unifi_remove_services:
+  - "{{ unifi_service_name }}"
+unifi_remove_stop_mongod: true
+unifi_remove_service_units: true
+unifi_remove_packages: true
+unifi_remove_unifi_packages:
+  - unifi
+unifi_remove_mongodb_packages:
+  - mongodb-org
+  - mongodb-org-server
+  - mongodb-org-shell
+  - mongodb-org-mongos
+  - mongodb-org-tools
+unifi_remove_java_packages:
+  - openjdk-17-jre-headless
+unifi_remove_manage_firewall: true
+unifi_remove_manage_traefik: true
+unifi_remove_delete_cache: true
+unifi_remove_delete_logs: false
+unifi_remove_delete_data: false
+unifi_remove_delete_home: false
+unifi_remove_delete_backup_dir: false
+unifi_remove_user: false
+unifi_remove_group: false
+unifi_remove_drop_mongodb_database: false
+unifi_remove_drop_mongodb_user: false
+unifi_mongodb_database: "unifi"
+unifi_mongodb_user: "unifi"
+unifi_mongodb_password: ""
+unifi_mongodb_host: "127.0.0.1"
+unifi_mongodb_port: 27017
+unifi_mongodb_auth_db: "admin"
+unifi_remove_trigger_backup: false
+unifi_remove_cleanup_summary: true
