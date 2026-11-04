@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services.snappymail`: `SnappyMailBackupConfig`/`deploy_snappymail_backup`
+  and `SnappyMailRestoreConfig`/`deploy_snappymail_restore`, the ports of the
+  `snappymail_backup` and `snappymail_restore` roles (ops-library `44a532ba`,
+  recorded in the drift manifest): the role's archive and `<archive>.yml`,
+  optional stop/start of nginx and PHP-FPM, retention by archive count (the
+  manifests no longer count), validation in staging before nginx and PHP-FPM
+  stop, the pre-restore copy via ops-library's `preserve.py` (vendored as
+  `services/_lifecycle/files/preserve.py`, `services._lifecycle.preserve`),
+  and the role's rescue rule for restarting units. Archive names only; a dry
+  run runs the checks and changes nothing.
+
 - `services.homelab`: `HomelabBackupConfig`/`deploy_homelab_backup` and
   `HomelabRestoreConfig`/`deploy_homelab_restore`, the ports of the
   `homelab_backup` and `homelab_restore` roles (ops-library `44a532ba`,

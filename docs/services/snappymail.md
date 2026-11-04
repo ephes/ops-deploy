@@ -57,3 +57,62 @@ and recovery, and nine zero-change repeats. Actual PHP CLI/FPM 8.3.6, PostgreSQL
 16.15 and nginx 1.24.0 were recorded. Synthetic mail stayed local with verified
 TLS. Inventory deployment qualification is separate. The original failed run
 `40553538688` is retained; its failure was a fixture TOTP-seeding assumption.
+
+## Backup and restore
+
+`ops_deploy.services.snappymail` also ports `snappymail_backup` and
+`snappymail_restore`. Neither needs secrets; archives written by either tool
+restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_snappymail_backup` | `SnappyMailBackupConfig(host_name=...)` | `snappymail_backup` |
+| `deploy_snappymail_restore` | `SnappyMailRestoreConfig(host_name=...)` | `snappymail_restore` |
+
+The fields are the roles' variables without the `snappymail_backup_` or
+`snappymail_restore_` prefix (`root`, `prefix`, `archive_format`,
+`stop_services`, `retain`, `fetch_local`, `fetch_dir`; `archive` for the
+restore source, `clean`, `owner`, `group`, `mode`, `restart_services`; the
+backup's `owner`, `group`, `mode`, `dir_mode`, `manifest`), plus `host_name`
+(the manifest's `host`), `data_dir`, `dry_run` and `required_mount`. The
+backup's `prefix` and `fetch_local` default to the playbook's `manual` and
+`true`; its root must lie outside the data directory.
+
+**Backup.** One host script: optionally stop nginx and the SnappyMail PHP-FPM
+service (from `/etc/php/<version>/fpm/.../snappymail.conf`), fail without the
+data directory, ensure the backup root (`root:root 0700`), restrict older
+archives to `0600`, pack `<root>/<prefix>-<timestamp>.tar.gz` (or `.tar.zst`)
+with the data directory as its only top-level entry (`0600`), start the units
+it stopped again whatever happened, write `<archive>.yml`, and with `retain`
+keep only the newest N archives (with their manifests). The archive is fetched
+into `~/backups/snappymail` (`0700`, the copy `0600`).
+
+**Restore.** One host script:
+
+1. Pick `latest` (the newest `*.tar.gz`/`*.tar.zst` by mtime directly in the
+   root) or a name below the root; run `preserve.py --validate-layout`.
+2. Unpack into `<data parent>/.snappymail-restore-XXXXXXXXXX`, require the
+   data directory's name at the top, find the PHP-FPM pool (required when
+   `restart_services`, so nginx is never stopped without it), run the
+   preservation preflight (mounts, free space).
+3. With `dry_run`, stop here (the staging directory goes; without the data
+   parent the dry run stops before unpacking).
+4. Stop nginx and PHP-FPM (`rsync` is installed with apt before the
+   script runs, for a real restore only), keep the live data as
+   `<data>.pre-restore-<utc>-<random>` (`preserve.py`; with `clean`, the
+   default, the live directory is left empty), copy the payload in
+   (`rsync -a`), set `snappymail:snappymail 0750` on every entry, then enable
+   and restart both units.
+
+The staging directory always goes; no path removes a pre-restore copy. A
+failure before the live data was touched starts the units the restore stopped
+again; after that they stay stopped and the message points to the copy, as in
+the role. A failed stop ends the restore at once (units it stopped start again;
+the one whose stop failed is left alone). `archive` is never an absolute path, an extracted directory or a
+symlink; an existing data parent keeps its mode.
+`required_mount` (ops-control: `/mnt/cryptdata`) guards the backup root and
+the data directory, next to which the restore stages.
+
+Tests: `tests/test_snappymail_backup_restore.py` (planned settings, and both
+scripts end to end with stubbed `systemctl` and the real `preserve.py`).
+

@@ -48,10 +48,14 @@
     "open_webui_venv_remove": "b0beebe7d3c1b7fa57d6374c1edc254de57be024a0c3db357d02bb0e6e840dc8",
     "openclaw_deploy": "6eea4edc790bd49fd939c3f47678abaca31a60f164cd40d0d97521241e745398",
     "openclaw_remove": "13a27027a9ca88b99775c06edd77ff34e7bca7aed75e65329b38d5c0491e60bf",
+    "restore_preserve_internal": "5da23e04e7de19287968350104f0a35aa672933e51bc2ff1b47f118367494ca3",
     "rust_release_binary": "2ffb81bff977bf3bf10a650de9723dd47943d36071511b9adfc299cf6dd0f542",
     "samba_share": "5d572568069783fbed03c599475610b9e8c67b2bafd2c3623f12c33f797ae431",
     "samba_timemachine": "06b9cb0764bce89496687a480ebac9551c91c3129bf2d66e72e3252eda30a276",
     "sanoid": "861798c083d941c7275bb812d7b1e9ea8e96e394ea9dd98dc124e66a931e4b9a",
+    "snappymail_backup": "aef88c934e2fdc14e9bb3ad0fd1adfb0b84a8bffec7397e5cb074f1b846f0950",
+    "snappymail_restore": "7909263d16baab49ca9129fa58bd52a7dd7378bfa8b1772d8e9ec7cf22960612",
+    "snappymail_shared": "ddca94953c91919532c5012e7f451d80472857fb65fbbbacc026fde4e93b6c48",
     "thermal_metrics_endpoint": "78ceba6a7b41dc18aa60522f8dd1ead157fa53763c857eb0220132066480ab28",
     "thermal_metrics_exporter": "8a7a282a4049495e6b68488a8c3d55b6d2349caa229dd45a0b0368b8dcdf68cd",
     "traefik_deploy": "5d5ba0efdaa74529a1b67aea9853d93597916b718c2cfeb77e01af0c6e87e2f5",
@@ -98,6 +102,10 @@
     "ollama_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "mail_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "homelab_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "homelab_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
+    "homelab_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "snappymail_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "snappymail_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "restore_preserve_internal": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "snappymail_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

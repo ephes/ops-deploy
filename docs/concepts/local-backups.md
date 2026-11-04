@@ -1,6 +1,7 @@
 # Local backups and restore work directories
 
-The backup ports (`nyxmon`, `fastdeploy`, `work_app`, `traefik`, `homelab`) write a
+The backup ports (`nyxmon`, `fastdeploy`, `work_app`, `traefik`, `homelab`;
+`snappymail` writes an archive only) write a
 directory and an archive on the host, and their restores unpack an archive
 into a work directory. Where an off-host backup (Echoport) already holds the
 same data, those local archives are only rollback snapshots. Two settings,
@@ -14,7 +15,8 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 
 | Config | Guarded fields |
 |---|---|
-| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig` | `root` |
+| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig` | `root` |
+| `SnappyMailRestoreConfig` | `data_dir` (the restore stages next to it) |
 | `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig` | `staging_dir` |
 | `FastdeployRestoreConfig` | `temp_dir`, `safety_backup_root` |
 
@@ -44,6 +46,11 @@ Ansible, by hand, or before retention was set) are never removed, nor is
 anything else in the root. `0` turns a limit off; both `0` (the default)
 records and prunes nothing.
 
+The SnappyMail backup does not use these records. Its own `retain` (the
+role's, `0` by default and in ops-control) keeps the newest N
+`<prefix>-*.tar.*` archives by mtime and deletes the older ones with their
+`.yml` manifests, whoever wrote them.
+
 A restore never prunes. `FastdeployRestoreConfig.safety_backup_retention`
 records its safety backup, so the next backup into the same root prunes it
 by that backup's limits.
@@ -61,8 +68,12 @@ Traefik restore's shell command traps `EXIT`, and the work_app restore
 removes the staging directory as soon as the last file has been taken from
 it, and on a failure of any step before that (with `cleanup`, the default).
 The homelab restore is one bash script with an `EXIT` trap set after the
-mount check (with `cleanup`, the default). An interrupted connection can
-still leave one behind; the next restore resets it.
+mount check (with `cleanup`, the default). The SnappyMail restore stages in a
+fresh `mktemp` directory `.snappymail-restore-*` next to the data directory
+and removes it in its `EXIT` trap; one left by an interrupted run (a copy of
+the SnappyMail data) is not reused and must be removed by hand. For the
+other restores, an interrupted connection can still leave one behind; the
+next restore resets it.
 
 ## Example
 

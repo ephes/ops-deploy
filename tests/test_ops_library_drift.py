@@ -42,6 +42,7 @@ VENDORED_FILES = {
     "services/delve/files/apple-storekit-root-certs.pem": "delve_deploy",
     "services/fastdeploy/files/ensure_token_user.py": "fastdeploy_deploy",
     "services/fastdeploy/files/sudoers_blanket_check.py": "fastdeploy_restore",
+    "services/_lifecycle/files/preserve.py": "restore_preserve_internal",
 }
 # ``<package path>``: a file of ops-library outside the roles, byte for byte.
 VENDORED_LIBRARY_FILES = {
