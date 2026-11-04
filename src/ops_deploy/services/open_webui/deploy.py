@@ -1,6 +1,6 @@
 """open_webui: Open WebUI in a uv-managed virtualenv behind Traefik (the ``open_webui_venv_deploy`` role).
 
-Deploy only (removal stays with the Ansible role). The role's three templates
+The removal is ``remove.py`` (``open_webui_venv_remove``). The role's three templates
 (environment file, systemd unit, Traefik route) are shipped unchanged and
 rendered the way Ansible's ``template`` module renders them, so the files are
 byte-identical to the role's and the two tools can take turns without
