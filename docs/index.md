@@ -50,7 +50,7 @@ src/ops_deploy/
   services/metube/    Native Git + staged Angular + uv MeTube
   services/navidrome/ Confirmed original Navidrome removal
   services/jellyfin/   Jellyfin deploy and confirmed removal
-  services/vaultwarden/ vaultwarden from the vendor's .deb packages (port of the vaultwarden_deploy role)
+  services/vaultwarden/ vaultwarden from the vendor's .deb packages (ports of vaultwarden_deploy, _backup, _restore)
   services/_nyxmon_json_metrics/ the Nyxmon json-metrics check upsert host monitoring deploys share
   services/_metrics_httpd/ the Python/Rust metrics-httpd switch of the endpoint deploys (thermal, logyard, static_site)
   services/_traefik_routes/ Traefik dynamic-file writes and removals that wait for Traefik transactions

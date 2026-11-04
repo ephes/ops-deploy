@@ -140,7 +140,8 @@ branch:
   `gotosocial_deploy`, `mastodon_deploy`/`mastodon_shared`, `homelab_deploy`/`homelab_shared`, `jellyfin_deploy`/`jellyfin_shared`,
   `journald_config`, `livekit_deploy`,
   `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`,
-  `vaultwarden_deploy`, `vibe_coding_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far.
+  `vaultwarden_*`, `vibe_coding_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far
+  (and the backup, restore and removal roles named in the changelog).
   Entries added later than the recorded commit name the commit they were
   checked against in their service page (homelab, jellyfin, `uv_install`,
   gotosocial and vaultwarden: `540ede2b`, 2.56.0; Mastodon existing-install convergence:

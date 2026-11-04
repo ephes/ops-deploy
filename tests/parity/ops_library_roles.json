@@ -61,7 +61,10 @@
     "traefik_deploy": "5d5ba0efdaa74529a1b67aea9853d93597916b718c2cfeb77e01af0c6e87e2f5",
     "unifi_remove": "3ab254c274d4f3145015320fa3d53a86b9572f2d2d07803584999b50d18d73b2",
     "uv_install": "5b2b3ae65b4aee522e82e419ea2ea02f8b5ee5bfb4200730e04897fe4a98d2c4",
+    "vaultwarden_backup": "576e07806fcb7194f6c99b7ce368d2fda68bd1fd8a6e647308c15c5983e3a5e5",
     "vaultwarden_deploy": "070a0a0ae035da15a85c0c8a174e7d1b200afcffc8681bccbace07de92fc43ee",
+    "vaultwarden_restore": "ead8de34245d1fd1708e695413a02531d73259c1770c7a7146780c5315dce033",
+    "vaultwarden_shared": "5ee25c4a452935581157bb1c65f0e0627827b825369fa0214931521567bab2fc",
     "vibe_coding_deploy": "00cf1d55a91d0f313f468de064bed362834b1736cafc122c72485d8388000f43",
     "work_app_backup": "c4e42c8ff25ce873a3d8bbf41347f05fee87a75869c9b9d710af36d72b662f71",
     "work_app_deploy": "95188cbfad2eca4e0f36f9193e7499ba83ff912bcf7f719e6d5806b1c426f94e",
@@ -106,6 +109,9 @@
     "snappymail_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "snappymail_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "restore_preserve_internal": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "snappymail_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
+    "snappymail_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "vaultwarden_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "vaultwarden_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "vaultwarden_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

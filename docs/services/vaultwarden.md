@@ -4,7 +4,8 @@ Port of the `vaultwarden_deploy` Ansible role: [Vaultwarden](https://github.com/
 the Bitwarden-compatible password manager, installed from the vendor's `.deb`
 packages ([vaultwarden-deb](https://vaultwarden-deb.pages.dev/)) as a systemd
 service behind Traefik, plus the port preflight of the playbook that runs the
-role. Deploy only: backup, restore and remove stay with the Ansible roles.
+role. Backup and restore are ported too ([below](#backup-and-restore));
+removal stays with the Ansible role.
 
 ```python
 from ops_deploy.services.vaultwarden import VaultwardenConfig, deploy_vaultwarden
@@ -146,3 +147,77 @@ Differences:
   only when it creates the file.
 - No pins and no hold (above). A missing `python3` on the host fails the
   config.json step (the role's Ansible needs it anyway).
+
+## Backup and restore
+
+`ops_deploy.services.vaultwarden` also ports `vaultwarden_backup` and
+`vaultwarden_restore` (with `vaultwarden_shared`'s paths). Archives written by
+either tool restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_vaultwarden_backup` | `VaultwardenBackupConfig(...)` | `vaultwarden_backup` |
+| `deploy_vaultwarden_restore` | `VaultwardenRestoreConfig(legacy_restore_confirmed=True, ...)` | `vaultwarden_restore` |
+
+The fields are the roles' variables without the `vaultwarden_`,
+`vaultwarden_backup_` or `vaultwarden_restore_` prefix (the backup's
+`group_owner` is `vaultwarden_backup_group`). `retain` defaults to the
+playbook's 7; `encrypt` with `age_recipient` (an `age1...` public key, the
+playbook's `backup_age_recipient` secret) encrypts the archive.
+
+**Backup.** Installs `sqlite3` and `rsync` (and `age` to encrypt), reads
+`vaultwarden --version`, then one host script: create the backup root and
+directory (`root:root 0700`), restrict older archives to `0600`, require the
+data directory and the config file, stop Vaultwarden, copy the database with
+`sqlite3 .backup`, `attachments/` and `sends/` (`rsync -a`), the RSA keys,
+the config, the systemd override and the Traefik route, start Vaultwarden
+again only if this run stopped it (whatever the copy did), write
+`manifest.yml`, pack `<root>/<prefix>-<timestamp>.tar.gz` (`0600`), remove the
+directory, optionally encrypt to `.tar.gz.age` and remove the plain archive,
+and keep the newest `retain` archives of the prefix (plain and encrypted, by
+mtime). The final archive is fetched into `~/backups/vaultwarden` (`0700`,
+the copy `0600`).
+
+**Restore** (the legacy path; Echoport is the documented restore runner). It
+refuses before anything else unless `legacy_restore_confirmed`. On the
+controller it picks `latest` (the newest `*.tar.gz`/`*.tar.gz.age` in
+`local_dir`, default `~/backups/vaultwarden`) or a name there, and decrypts an
+`.age` archive with `age_identity` (default `~/.config/sops/age/keys.txt`)
+into memory; no plaintext file is written on the controller. The archive goes
+to the host on the restore script's stdin. The script:
+
+1. resets the staging directory, unpacks the archive there, requires
+   `data/` and `data/db.sqlite3`, and requires the staged database's
+   `PRAGMA integrity_check` to print `ok`;
+2. ensures the data, attachments, sends and log directories and the override
+   and Traefik directories, refuses symlinked `attachments`, `sends`,
+   `db.sqlite3` or RSA keys, and refuses while a Traefik transaction holds its
+   lock when the archived route differs from the live one;
+3. stops Vaultwarden (if its unit is installed) and requires `systemctl
+   is-active` to report `inactive` or `failed`, then takes the safety copy
+   `<safety_root>/<UTC timestamp>` (data directory, config, override, route);
+   a failure here aborts with the live data untouched;
+4. removes the database's `-wal`/`-shm`/`-journal`, puts back the database
+   (`0640`), attachments and sends (`rsync -a`), keys (`0600`), config
+   (`root:vaultwarden 0640`), override and route (`0644`), reloads systemd,
+   gives the data directory to `vaultwarden`, enables and restarts
+   Vaultwarden. Any failure here stops Vaultwarden, puts the safety copy back
+   once the unit is confirmed down, and leaves it stopped.
+
+The staging directory always goes (created fresh, never reused); the safety
+copy stays for the operator. `dry_run` selects the archive (no decryption, no
+upload), checks the mount, resets the empty staging directory and runs the
+symlink check; it changes no live file. `archive` is never an absolute path.
+`required_mount` guards the backup root and the staging directory. The role's
+staging default is `/tmp/vaultwarden-restore` (an existing parent such as
+`/tmp` keeps its mode); ops-control's pyinfra restore binding is meant to pass
+`/opt/backups/vaultwarden/.restore-work` on the external disk instead. The
+rollback puts the old Traefik route back without the transaction check, as
+the role does.
+Other differences: the backup prunes before the controller fetches,
+`age_recipient` must be an X25519 `age1...` key, and a unit that is not
+installed must not be running either.
+
+Tests: `tests/test_vaultwarden_backup_restore.py` (fixture vault and a
+throwaway age key; both scripts end to end with stubbed `systemctl`).
+

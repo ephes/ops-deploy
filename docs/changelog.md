@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services.vaultwarden`: `VaultwardenBackupConfig`/`deploy_vaultwarden_backup`
+  and `VaultwardenRestoreConfig`/`deploy_vaultwarden_restore`, the ports of the
+  `vaultwarden_backup` and `vaultwarden_restore` roles (ops-library
+  `44a532ba`, recorded in the drift manifest): the role's archive, optional
+  age encryption, retention and fetch; the legacy restore refuses without
+  `legacy_restore_confirmed`, decrypts `.age` archives in memory on the
+  controller, streams the archive on stdin and keeps the role's safety
+  contract (integrity check before any stop, fail-closed stop, timestamped
+  safety copy, rollback that leaves Vaultwarden stopped, staging always
+  removed). Archive names only; a dry run uploads nothing.
+
 - `services.snappymail`: `SnappyMailBackupConfig`/`deploy_snappymail_backup`
   and `SnappyMailRestoreConfig`/`deploy_snappymail_restore`, the ports of the
   `snappymail_backup` and `snappymail_restore` roles (ops-library `44a532ba`,
