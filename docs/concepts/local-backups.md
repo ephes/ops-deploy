@@ -60,8 +60,9 @@ removed), the
 Traefik restore's shell command traps `EXIT`, and the work_app restore
 removes the staging directory as soon as the last file has been taken from
 it, and on a failure of any step before that (with `cleanup`, the default).
-An interrupted connection can still leave one behind; the next restore
-resets it.
+The homelab restore is one bash script with an `EXIT` trap set after the
+mount check (with `cleanup`, the default). An interrupted connection can
+still leave one behind; the next restore resets it.
 
 ## Example
 

@@ -46,10 +46,10 @@ from __future__ import annotations
 
 import os
 import shlex
-from pathlib import Path
-from typing import Literal
+from pathlib import Path, PurePosixPath
+from typing import Literal, Self
 
-from pydantic import Field, StrictBool
+from pydantic import Field, StrictBool, model_validator
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import files, python, server
 
@@ -178,6 +178,20 @@ class HomelabRestoreConfig(_Site):
 
     def guarded_paths(self) -> dict[str, str]:
         return {"staging_dir": self.staging_dir}
+
+    @model_validator(mode="after")
+    def _staging_apart(self) -> Self:
+        # The restore starts with ``rm -rf <staging_dir>``: never the archives
+        # or the site (a work directory below the search root is fine, the
+        # archive search does not descend), and never inside the site.
+        staging = PurePosixPath(self.staging_dir)
+        site = PurePosixPath(self.site_path)
+        for name, other in (("search_root", PurePosixPath(self.search_root)), ("site_path", site)):
+            if other.is_relative_to(staging):
+                raise ValueError(f"staging_dir ({staging}) must not contain {name} ({other})")
+        if staging.is_relative_to(site):
+            raise ValueError(f"staging_dir ({staging}) must lie outside site_path ({site})")
+        return self
 
 
 def backup_metadata(cfg: HomelabBackupConfig, *, stamp: str, commit: str, sqlite_mode: str) -> str:

@@ -499,3 +499,11 @@ def test_backup_script_a_failed_offline_copy_still_starts_homelab(tmp_path: Path
 
     assert done.returncode != 0
     assert calls(tmp_path) == ["systemctl stop homelab", "systemctl start homelab"]
+
+
+@pytest.mark.parametrize(
+    "staging", ["/opt/backups/homelab", "/opt/backups", "/home/homelab/site/tmp", "/home/homelab/site", "/home"]
+)
+def test_restore_staging_must_lie_apart_from_the_archives_and_the_site(staging: str) -> None:
+    with pytest.raises(ValidationError):
+        HomelabRestoreConfig(host_name="m", staging_dir=staging)

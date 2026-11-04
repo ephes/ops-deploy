@@ -194,13 +194,17 @@ secrets. Archives written by either tool restore with the other.
 
 The fields are the roles' variables without the `homelab_`,
 `homelab_backup_` or `homelab_restore_` prefix (in the backup config `owner`
-and `group` are the archive's, `homelab_backup_owner`/`_group`) (`site_path`, `root`,
+and `group` are the archive's, `homelab_backup_owner`/`_group`;
+`homelab_restore_root` is `search_root` and
+`homelab_restore_metadata_required_fields` is `required_fields`) (`site_path`, `root`,
 `include_*`, `force_stop`, `archive`, `dry_run`, `create_safe_snapshot`,
 `safe_snapshot_delete`, `healthcheck_url`, ...). `host_name` is the
 inventory name written into `metadata.yml`; `ops_library_version` is the
 controller's ops-library version, written by the backup and compared by the
 restore (a mismatch stops it unless `allow_version_mismatch`), as the roles
-read it from `galaxy.yml`. `required_mount` and `retain_count`/`retain_days`
+read it from `galaxy.yml`. Pass the same value as the roles' `galaxy.yml`
+for archives of the other tool to restore without
+`allow_version_mismatch`. `required_mount` and `retain_count`/`retain_days`
 work as for the other ports ([Local backups](../concepts/local-backups.md)).
 
 **Backup.** It refuses to start without the site directory. It records the
@@ -235,7 +239,10 @@ route (`0600`), writes the role's `metadata.yml` (`sqlite_mode` `hot`,
    `showmigrations` as `homelab`, check the database's integrity, restart
    `homelab` and probe the health URL (6 tries, 3 s apart).
 
-The staging directory always goes. As with the role, a failed restore does not
+The staging directory always goes; it must not contain the search root or
+the site, nor lie inside the site. As in the role, an archived directory that is empty (the cache
+by default, static or media when not included) empties the live one
+(`rsync --delete`); the pre-restore copy still has it. As with the role, a failed restore does not
 roll back: the pre-restore copy stays and is reported; it is removed only
 after a successful restore with `safe_snapshot_delete`. `archive` is a name
 below the search root, never an absolute path, and `static`, `media` and
