@@ -234,8 +234,11 @@ def test_unreadable_database_or_package_state_fails() -> None:
 
 
 def test_service_failures_are_ignored() -> None:
-    run = run_deploy_fake(remove_mail, confirmed(), responses={"systemctl stop": {"success": False}, **host()})
+    responses = {"systemctl stop": {"success": False}, **host("/etc/rspamd", installed=("rspamd",))}
+    run = run_deploy_fake(remove_mail, confirmed(), responses=responses)
     assert run.error is None
+    # The removal goes on after the failed stops: purge, then the directories.
+    assert commands(run)[-2:] == [f"{APT} rspamd", "rm -rf /etc/rspamd"]
 
 
 def test_a_non_empty_queue_warns(caplog: pytest.LogCaptureFixture) -> None:
