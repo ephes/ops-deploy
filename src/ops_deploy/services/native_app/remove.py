@@ -11,14 +11,15 @@ a separate port (navidrome's is ``services.navidrome``).
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Callable
 from typing import cast
 
 from pyinfra.api import DeployError, deploy
+from pyinfra.operations import server
 
-from ops_deploy.base._common import RoleConfig
-from ops_deploy.helpers.traefik import DYNAMIC_DIR
-from ops_deploy.services._lifecycle import remove_path
+from ops_deploy.base._common import RoleConfig, output
+from ops_deploy.helpers.traefik import DYNAMIC_DIR, route_guard_command
 from ops_deploy.services.native_app.config import NativeAppConfig
 
 
@@ -44,5 +45,9 @@ def _remove(cfg: NativeAppConfig, confirm: bool) -> None:
         )
     if cfg.unit is not None or cfg.route is None:
         raise DeployError(f"{cfg.service_name}: only route-only native apps have this removal")
-    remove_path(str(DYNAMIC_DIR / f"{cfg.route.name or cfg.service_name.replace('_', '-')}.yml"))
-    remove_path(str(cfg.state_dir))
+    route = str(DYNAMIC_DIR / f"{cfg.route.name or cfg.service_name.replace('_', '-')}.yml")
+    for path, guard in ((route, [route_guard_command()]), (str(cfg.state_dir), [])):
+        quoted = shlex.quote(path)
+        # Like the role's ``state: absent``, a dangling symlink counts as present.
+        if output(f"{{ test -e {quoted} || test -L {quoted}; }} && echo yes").strip() == "yes":
+            server.shell(name=f"Remove {path}", commands=[*guard, f"rm -rf {quoted}"])
