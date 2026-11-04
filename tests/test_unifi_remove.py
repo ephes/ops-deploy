@@ -359,6 +359,16 @@ def test_package_states_select_installed_and_residual_packages(tmp_path: Path, m
     fake_dpkg(tmp_path, "other\tinstalled\n", "", 0)
     with pytest.raises(RuntimeError):
         host_module.packages(["unifi"])
+    # An empty list never queries dpkg (dpkg-query -W alone lists every package).
+    assert host_module.packages([]) == []
+
+
+def test_an_empty_package_list_is_a_noop() -> None:
+    cfg = UnifiRemoveConfig(confirm=True, mongodb_packages=(), java_packages=())
+    run = run_deploy_fake(remove_unifi, cfg, responses=responses())
+    assert run.succeeded, run.error
+    assert purge("unifi") in run.executed_commands
+    assert sum("apt-get" in command for command in run.executed_commands) == 1
 
 
 @pytest.mark.parametrize("code", [0, 1])

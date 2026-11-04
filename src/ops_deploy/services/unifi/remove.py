@@ -129,6 +129,9 @@ def _host(*args: str) -> str:
 def _purge(packages: tuple[str, ...]) -> Generator[Any, None, None]:
     # The apt module (state: absent, purge: true) at execution time: only names
     # dpkg knows; its apt-get command line.
+    if not packages:
+        # The apt module with an empty name list changes nothing.
+        return
     raw = probe(_host("packages", *packages), name="UniFi removal package state")
     try:
         selected = json.loads(raw) if raw is not None else None

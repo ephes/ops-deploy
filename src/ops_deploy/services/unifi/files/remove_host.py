@@ -20,6 +20,9 @@ STATES = {"installed", "config-files", "half-installed", "unpacked", "half-confi
 
 
 def packages(names):
+    if not names:
+        # dpkg-query -W without patterns lists every package; the apt module does nothing.
+        return []
     result = subprocess.run(["dpkg-query", "-W", "-f=${Package}\t${db:Status-Status}\n", "--", *names],
         capture_output=True, text=True, check=False, env={**os.environ, "LC_ALL": "C"}, timeout=60)
     if result.returncode not in (0, 1):
