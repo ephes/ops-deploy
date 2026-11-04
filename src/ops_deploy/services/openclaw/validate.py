@@ -8,6 +8,10 @@ results (the ``mc`` client binary, the prepared CA bundle) need the host:
 :func:`host_checks` returns them as shell tests, which the deploy runs as
 read-only operations before any change.
 
+The two asserts of ``tasks/metrics.yml`` (credentials and bind/port, the
+synthetic canary bounds) are kept here as the role writes them
+(:data:`METRICS_ASSERTS`) and run with the others, before any change.
+
 A failure names the task and the first failing expression, never a value:
 several of the asserts read credentials (the role marks them ``no_log``).
 """
@@ -24,6 +28,44 @@ from ops_deploy.services.openclaw.variables import FILES, ansible_bool, evaluate
 
 HOST_REGISTERED = ("openclaw_weeknotes_s3_mc_stat", "openclaw_ca_bundle")
 
+# tasks/metrics.yml's asserts; the block's ``when`` is folded into each task's.
+METRICS_ASSERTS = """
+- name: metrics | Validate required variables
+  ansible.builtin.assert:
+    that:
+      - openclaw_metrics_endpoint_auth_user is defined
+      - openclaw_metrics_endpoint_auth_user != "CHANGEME"
+      - openclaw_metrics_endpoint_auth_user | length > 0
+      - openclaw_metrics_endpoint_auth_password is defined
+      - openclaw_metrics_endpoint_auth_password != "CHANGEME"
+      - openclaw_metrics_endpoint_auth_password | length > 0
+      - openclaw_metrics_endpoint_bind | length > 0
+      - openclaw_metrics_endpoint_port | int > 0
+      - openclaw_metrics_endpoint_port | int <= 65535
+  when: openclaw_metrics_endpoint_enabled | bool
+
+- name: metrics | Validate synthetic canary settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_metrics_endpoint_synthetic_canary_session_id | trim | length > 0
+      - openclaw_metrics_endpoint_synthetic_canary_message | trim | length > 0
+      - openclaw_metrics_endpoint_synthetic_canary_expected_text | trim | length > 0
+      - openclaw_metrics_endpoint_synthetic_canary_state_path | length > 0
+      - openclaw_metrics_endpoint_synthetic_canary_sessions_dir | length > 0
+      - openclaw_metrics_endpoint_synthetic_canary_interval | int >= 300
+      - openclaw_metrics_endpoint_synthetic_canary_timeout | int > 0
+      - openclaw_metrics_endpoint_synthetic_canary_timeout | int <= 120
+      - openclaw_metrics_endpoint_synthetic_canary_max_attempts | int >= 1
+      - openclaw_metrics_endpoint_synthetic_canary_max_attempts | int <= 3
+      - openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds | int >= 0
+      - openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds | int <= 60
+      - openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds | int >= 0
+      - openclaw_metrics_endpoint_synthetic_canary_output_max_chars | int >= 32
+  when:
+    - openclaw_metrics_endpoint_enabled | bool
+    - openclaw_metrics_endpoint_synthetic_canary_enabled | bool
+"""
+
 
 class ValidationError(ValueError):
     """An assert of the role's validate.yml failed (message without values)."""
@@ -32,7 +74,8 @@ class ValidationError(ValueError):
 @cache
 def tasks() -> list[dict[str, Any]]:
     loaded: list[dict[str, Any]] = yaml.safe_load((FILES / "validate.yml").read_text())
-    return loaded
+    metrics: list[dict[str, Any]] = yaml.safe_load(METRICS_ASSERTS)
+    return loaded + metrics
 
 
 def _conditions(value: Any) -> list[str]:
@@ -91,7 +134,7 @@ def run_asserts(
 
 
 def validate(variables: dict[str, Any]) -> None:
-    """Run every assert of validate.yml that needs no host; raise :class:`ValidationError`."""
+    """Run every assert of validate.yml (and metrics.yml) that needs no host; raise :class:`ValidationError`."""
 
     run_asserts(tasks(), variables)
 

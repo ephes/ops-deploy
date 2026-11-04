@@ -29,7 +29,9 @@ checked by its `tasks/validate.yml`. Both files ship unchanged
 as Ansible does (`variables.py`, `validate.py`): a default that refers to
 another variable (`{{ openclaw_data_dir }}/credentials/...`) follows a
 playbook value, and every `ansible.builtin.assert` of `validate.yml` runs with
-its `when`, `loop` and `vars`. A failure names the task, never a value.
+its `when`, `loop` and `vars`, together with the two asserts of
+`tasks/metrics.yml` (credentials and bind/port, synthetic canary bounds), all
+before any change. A failure names the task, never a value.
 
 | Input | Content |
 |---|---|
@@ -58,6 +60,11 @@ calendar, Paperless, Home Assistant and OpsGate skills; the workspace skills;
 the metrics endpoint (with the metrics-httpd switch); the managed-skills
 manifest and the session reset.
 
+The release checkout follows `openclaw_repo_url`: an existing checkout with
+another `origin` is repointed and fetched, as the `git` module does. The route
+file is written only while no Traefik transaction holds its lock (like its
+removal).
+
 Every file is the role's bytes, owner and mode (`layout.py`); the templates are
 the role's, rendered as the `template` module renders them. The bind-mounted
 data tree belongs to the container's uid/gid 1000, which may have another name
@@ -66,7 +73,8 @@ on the host, so those files and directories are compared and set by number.
 The steps that depend on what the host holds at run time run the role's logic
 in `files/openclaw_host.py` (`STEP check|apply`, the request on stdin):
 `config` (the v2026.9.1 key migration, the runtime patch merged into the
-existing `openclaw.json`, the Telegram streaming alias normalization),
+existing `openclaw.json`, the Telegram streaming alias normalization, which
+also runs on a freshly seeded file),
 `doctor`, `plugins`, `migrations`, `audio`, `cron`, `health` and `session`.
 The `check` mode decides while planning, so a converged host gets no mutating
 operation; a failed check runs the step.

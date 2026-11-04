@@ -10,7 +10,9 @@
   upgrade migrations, audio SecretRef plan, reminder cron, health, session
   reset) run the role's logic on the host with a check mode for planning.
   Parity cases computed by ansible-core 2.21 from ops-library `44a532b`; both
-  roles recorded in the drift manifest. Not ported: the retired
+  roles recorded in the drift manifest. The plan-time plugin check verifies
+  the plugin identity, the route is written under the Traefik transaction
+  guard, and a changed `openclaw_repo_url` repoints the checkout. Not ported: the retired
   heartbeat-recovery extension and Codex v2026.9.1 backport, and the Traefik
   restart handler.
 

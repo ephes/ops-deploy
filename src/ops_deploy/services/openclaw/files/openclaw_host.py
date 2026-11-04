@@ -270,8 +270,9 @@ def config(request, apply):
     path = Path(request["path"])
     mode = int(request["mode"], 8)
     if not path.exists():
-        # The deploy seeds the file from the controller; the seed needs no normalization.
+        # The deploy seeds the file from the controller first.
         return False
+    # ``force`` marks a fresh seed: only the Telegram alias normalization applies.
     patching = not request["force"]
     changed = False
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -388,17 +389,28 @@ def doctor(request, apply):
 def plugin_inspect(request, argv):
     result = run(argv + ["plugins", "inspect", request["plugin_id"], "--json"])
     if result.returncode == 0 and result.stdout.strip():
-        return json.loads(result.stdout).get("install", {}).get("version", "")
-    return ""
+        return json.loads(result.stdout)
+    return {}
+
+
+def plugin_identity(request, inspected):
+    install = inspected.get("install", {})
+    return (
+        inspected.get("plugin", {}).get("id", "") == request["plugin_id"]
+        and install.get("resolvedName", "") == request["plugin_package"]
+        and install.get("version", "") == request["plugin_version"].strip()
+    )
 
 
 def plugins(request, apply):
     if not apply and not cli_ready(request):
         return True
     argv = cli_argv(request)
-    if plugin_inspect(request, argv).strip() == request["plugin_version"].strip():
+    inspected = plugin_inspect(request, argv)
+    if inspected.get("install", {}).get("version", "").strip() == request["plugin_version"].strip():
         if not apply:
-            return False
+            # The role verifies the identity on every run; a mismatch runs the step (and fails there).
+            return not plugin_identity(request, inspected)
         changed = False
     else:
         if not apply:
@@ -412,13 +424,7 @@ def plugins(request, apply):
         raise StepError(f"Codex plugin inspection failed: {verify.stderr.strip()[-400:]}")
     if not verify.stdout.strip() or not re.search(r"^\{", verify.stdout.strip()):
         raise StepError("Codex plugin inspection did not return a JSON object on stdout.")
-    verified = json.loads(verify.stdout)
-    install = verified.get("install", {})
-    if (
-        verified.get("plugin", {}).get("id", "") != request["plugin_id"]
-        or install.get("resolvedName", "") != request["plugin_package"]
-        or install.get("version", "") != request["plugin_version"].strip()
-    ):
+    if not plugin_identity(request, json.loads(verify.stdout)):
         raise StepError(
             f"Installed {request['plugin_package']} identity or version does not "
             "match the configured Codex plugin settings."

@@ -206,3 +206,16 @@ def test_vendored_role_files_match_ops_library(vendored: str, role_file: str) ->
     assert OPS_LIBRARY is not None
 
     assert (PACKAGE / "files" / vendored).read_bytes() == Path(OPS_LIBRARY, "roles", role_file).read_bytes()
+
+
+def test_a_seeded_override_is_only_normalized(tmp_path: Path) -> None:
+    script = host_script()
+    path = tmp_path / "openclaw.json"
+    path.write_text(json.dumps({"channels": {"telegram": {"enabled": True, "streamMode": "partial"}}}))
+    request = {**config_request(role_variables("seed")), "path": str(path), "force": True}
+
+    assert script.config(request, True) is True
+    assert json.loads(path.read_text()) == {
+        "channels": {"telegram": {"enabled": True, "streaming": {"mode": "partial"}}}
+    }
+    assert script.config(request, False) is False

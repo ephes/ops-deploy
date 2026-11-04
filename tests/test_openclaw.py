@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from ops_deploy.helpers.traefik import hash_password
+from ops_deploy.helpers.traefik import hash_password, route_guard_command
 from ops_deploy.services.openclaw import (
     OpenClawConfig,
     OpenClawNyxmonChecks,
@@ -26,7 +26,7 @@ from ops_deploy.services.openclaw import (
     deploy_openclaw_remove,
     layout,
 )
-from ops_deploy.services.openclaw.deploy import source_state, stat_answer
+from ops_deploy.services.openclaw.deploy import source_command, source_state, stat_answer
 from ops_deploy.services.openclaw.validate import ValidationError
 from ops_deploy.services.openclaw.variables import resolve, version_at_least
 from ops_deploy.testing.harness import FakeRun, run_deploy_fake
@@ -145,6 +145,7 @@ def test_fresh_host_deploys_in_the_role_order() -> None:
         f"{P}Build OpenClaw Docker image",
         f"{P}Write /home/openclaw/site/.env",
         f"{P}Write {DATA}/openclaw.json",
+        f"{P}Normalize the seeded OpenClaw gateway config",
         f"{P}Activate the new image through Doctor",
         f"{P}Install the official Codex runtime plugin",
         f"{P}Run guarded upstream upgrade migrations",
@@ -159,8 +160,36 @@ def test_fresh_host_deploys_in_the_role_order() -> None:
         f"{P}Reset session bindings when managed skills changed",
     ]
     assert [name for name in names if name in order] == order
-    # A seeded config is neither migrated nor patched by the host step.
+    # A seeded config is neither migrated nor patched by the host step, only normalized.
     assert f"{P}Reconcile the existing OpenClaw gateway config" not in names
+
+
+@pytest.mark.parametrize("answer", ["current", "pending"])
+def test_forced_config_normalizes_an_unchanged_seed_when_needed(answer: str) -> None:
+    cfg = with_variables(openclaw_force_config=True)
+    v = cfg.role_variables(SECRETS)
+    responses = {**converged(v), **written(layout.seed_file(v)), " config check )": [answer]}
+    names = run(responses, cfg).mutating_changed_ops
+
+    assert f"{P}Write {DATA}/openclaw.json" not in names
+    assert (f"{P}Normalize the seeded OpenClaw gateway config" in names) is (answer == "pending")
+
+
+def test_route_is_written_under_the_traefik_guard() -> None:
+    assert route_guard_command() not in run(converged()).executed_commands
+    assert route_guard_command() in run({**fakehost.UBUNTU}).executed_commands
+
+
+def test_metrics_without_credentials_are_refused() -> None:
+    secrets = OpenClawSecrets(
+        variables={k: v for k, v in SECRETS.variables.items() if k != "openclaw_metrics_endpoint_auth_password"}
+    )
+    with pytest.raises(ValidationError, match="metrics \\| Validate required variables"):
+        CFG.role_variables(secrets)
+    with pytest.raises(ValidationError, match="metrics \\| Validate synthetic canary settings"):
+        with_variables(openclaw_metrics_endpoint_synthetic_canary_interval=60).role_variables(SECRETS)
+    disabled = {"openclaw_metrics_endpoint_enabled": False, "openclaw_metrics_endpoint_synthetic_canary_interval": 60}
+    with_variables(**disabled).role_variables(secrets)
 
 
 def test_secrets_never_reach_a_command_line_or_upload() -> None:
@@ -307,7 +336,13 @@ def test_source_probe_reads_the_tag_commit(tmp_path: Path, annotated: bool) -> N
     tag = ["-a", "-m", "release"] if annotated else []
     git("-c", "user.email=t@example.invalid", "-c", "user.name=t", "tag", *tag, "v1.0.0", cwd=remote)
     build = tmp_path / "build"
-    variables = {"openclaw_build_dir": str(build), "openclaw_version": "v1.0.0"}
+    variables = {
+        "openclaw_build_dir": str(build),
+        "openclaw_version": "v1.0.0",
+        "openclaw_repo_url": f"file://{remote}",
+        "openclaw_git_depth": 1,
+        "openclaw_git_single_branch": True,
+    }
 
     def state() -> str:
         return subprocess.run(["sh", "-c", source_state(variables)], capture_output=True, text=True).stdout.strip()
@@ -320,6 +355,36 @@ def test_source_probe_reads_the_tag_commit(tmp_path: Path, annotated: bool) -> N
     git("checkout", "-q", "--", "file", cwd=build)
     git("-c", "user.email=t@example.invalid", "-c", "user.name=t", "tag", "-f", *tag, "v1.0.0", "HEAD~1", cwd=remote)
     assert state() == "pending"
+
+
+def test_source_follows_a_changed_repository_url(tmp_path: Path) -> None:
+    remotes = []
+    for name in ("old", "new"):
+        remote = tmp_path / name
+        remote.mkdir()
+        git("init", "-q", cwd=remote)
+        (remote / "file").write_text(f"{name}\n")
+        git("add", "file", cwd=remote)
+        git("-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-qm", name, cwd=remote)
+        git("tag", "v1.0.0", cwd=remote)
+        remotes.append(remote)
+    build = tmp_path / "build"
+    git("clone", "-q", "--depth", "1", "--branch", "v1.0.0", f"file://{remotes[0]}", str(build), cwd=tmp_path)
+    variables = {
+        "openclaw_build_dir": str(build),
+        "openclaw_version": "v1.0.0",
+        "openclaw_repo_url": f"file://{remotes[1]}",
+        "openclaw_git_depth": 1,
+        "openclaw_git_single_branch": True,
+    }
+
+    def sh(command: str) -> str:
+        return subprocess.run(["sh", "-c", command], capture_output=True, text=True, check=True).stdout.strip()
+
+    assert sh(source_state(variables)) == "pending"
+    sh(source_command(variables))
+    assert sh(source_state(variables)) == "current"
+    assert (build / "file").read_text() == "new\n"
 
 
 # -- the host script -------------------------------------------------------------------------
@@ -386,6 +451,18 @@ def test_plugin_is_reinstalled_only_for_another_version(monkeypatch: pytest.Monk
 
     assert script.plugins(request, True) is False
     assert not any("install" in call for call in commands.calls)
+
+
+def test_plugin_check_verifies_the_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    script = host_script()
+    request = {**REQUEST, "plugin_id": "codex", "plugin_package": "@openclaw/codex", "plugin_version": "2026.10.2"}
+    other = {"plugin": {"id": "other"}, "install": {"resolvedName": "@other/codex", "version": "2026.10.2"}}
+    monkeypatch.setattr(script, "cli_ready", lambda _request: True)
+    monkeypatch.setattr(script, "run", Commands({STATE: (1, ""), ("docker", "run"): (0, json.dumps(other))}))
+
+    assert script.plugins(request, False) is True
+    with pytest.raises(script.StepError, match="identity or version"):
+        script.plugins(request, True)
 
 
 def cron_list(*jobs: dict[str, Any]) -> tuple[int, str]:

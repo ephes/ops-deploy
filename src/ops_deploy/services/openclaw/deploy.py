@@ -46,6 +46,7 @@ from ops_deploy.infra import docker_steps
 from ops_deploy.ops import secret_file, secret_stdin
 from ops_deploy.ops.secret_file import encode_payload, install_command
 from ops_deploy.services import _metrics_httpd as metrics_httpd
+from ops_deploy.services._traefik_routes import route_put
 from ops_deploy.services.logyard.core import NYXMON_CHECKS, nyxmon_checks_current
 from ops_deploy.services.openclaw import layout
 from ops_deploy.services.openclaw import render as r
@@ -250,9 +251,14 @@ def _account(v: Vars) -> None:
 
 
 def source_state(v: Vars) -> str:
-    """Probe of the build checkout: ``absent``, ``dirty``, or whether HEAD is the remote tag's commit."""
+    """Probe of the build checkout: ``absent``, ``dirty``, or whether HEAD is the remote tag's commit.
+
+    A checkout whose ``origin`` is not ``openclaw_repo_url`` is pending (the
+    ``git`` module repoints the remote).
+    """
 
     build = shlex.quote(v["openclaw_build_dir"])
+    repo = shlex.quote(v["openclaw_repo_url"])
     tag = "refs/tags/" + v["openclaw_version"]
     patterns = shlex.join([tag, tag + "^{}"])
     git = "git -C " + build
@@ -261,6 +267,7 @@ def source_state(v: Vars) -> str:
     return (
         f"if ! test -d {build}/.git; then echo absent; exit 0; fi; "
         f"if ! {git} diff --quiet HEAD; then echo dirty; exit 0; fi; "
+        f'if [ "$({git} remote get-url origin)" != {repo} ]; then echo pending; exit 0; fi; '
         f"head=$({git} rev-parse HEAD) || exit 1; "
         f"remote=$({git} ls-remote origin {patterns}) || exit 1; "
         f'want=$(printf "%s\\n" "$remote" | {pick}); '
@@ -269,7 +276,10 @@ def source_state(v: Vars) -> str:
 
 
 def source_command(v: Vars) -> str:
-    """source.yml's ``git`` task: the release tag, shallow, local changes discarded (``force``)."""
+    """source.yml's ``git`` task: the release tag, shallow, local changes discarded (``force``).
+
+    An existing checkout's ``origin`` is first set to ``openclaw_repo_url``, as the module does.
+    """
 
     build = shlex.quote(v["openclaw_build_dir"])
     repo, version = shlex.quote(v["openclaw_repo_url"]), shlex.quote(v["openclaw_version"])
@@ -277,7 +287,8 @@ def source_command(v: Vars) -> str:
     single = "--single-branch" if bool_(v["openclaw_git_single_branch"]) else "--no-single-branch"
     tag = shlex.quote(f"+refs/tags/{v['openclaw_version']}:refs/tags/{v['openclaw_version']}")
     return (
-        f"if test -d {build}/.git; then git -C {build} fetch --depth {depth} --force origin {tag} "
+        f"if test -d {build}/.git; then git -C {build} remote set-url origin {repo} "
+        f"&& git -C {build} fetch --depth {depth} --force origin {tag} "
         f"&& git -C {build} checkout --force {version}; "
         f"else git clone --depth {depth} {single} --branch {version} {repo} {build}; fi"
     )
@@ -313,12 +324,20 @@ def _config(v: Vars) -> list[Meta]:
     seed = layout.seed_file(v)
     written = write(seed) if force or not present(seed.path) else None
     metas: list[Meta] = [written]
-    # A seeded file is neither migrated nor patched (the role's stat came first); with
-    # ``force`` the host step only normalizes the Telegram aliases of the new seed.
-    if written is None or force:
+    if written is None:
         request = config_request(v)
-        state = force or pending("config", request)
+        state = pending("config", request)
         metas.append(host_step("Reconcile the existing OpenClaw gateway config", "config", request, lambda: state))
+    else:
+        # A seed is neither migrated nor patched (the role's stat came first), but its
+        # Telegram aliases are normalized: a full openclaw_gateway_config may carry legacy ones.
+        request = {**config_request(v), "force": True}
+        seeded, state = written, pending("config", request)
+        metas.append(
+            host_step(
+                "Normalize the seeded OpenClaw gateway config", "config", request, lambda: state or seeded.did_change()
+            )
+        )
     metas += [write(spec) for spec in layout.workspace_prompts(v)]
     return metas
 
@@ -363,7 +382,8 @@ def _route(v: Vars) -> Meta:
     files.directory(
         name="Ensure Traefik dynamic config directory exists", path=parent, user="root", group="root", mode="0755"
     )
-    return write(route)
+    # Refused while a Traefik transaction holds its lock, like the removal.
+    return route_put(name=f"Write {route.path}", src=route.content.decode(), dest=route.path, mode=route.mode)
 
 
 def _cron(v: Vars) -> OperationMeta:
