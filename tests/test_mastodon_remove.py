@@ -137,7 +137,7 @@ def test_confirmation_precedes_every_probe() -> None:
     "values", [{"site_path": "/"}, {"site_path": "/home"}, {"env_file": "/home/../etc/x"}, {"user": "root"}]
 )
 def test_unsafe_targets_are_refused(values: dict[str, Any]) -> None:
-    with pytest.raises(ValueError, match=r"removal paths|root cannot"):
+    with pytest.raises(ValueError, match=r"removal paths|root cannot|canonical absolute path"):
         confirmed(**values)
 
 

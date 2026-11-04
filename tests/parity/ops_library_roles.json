@@ -34,8 +34,10 @@
     "mail_relay_deploy": "2b2c2e73519fd5e4af74a70885ed86cf4a1045bbe4820399d3e6d46527f2583d",
     "mail_remove": "b1b4b2de89437248538936cd24a1010d337edf75d34c961e444ac51b87f203d4",
     "mail_spam_deploy": "5517da91b39f7766eeff6992573cd9aba10ec2333f82414667081a949bf2cf47",
+    "mastodon_backup": "ffb88b961bd5994a9c4c15a339509c83a961934b99df4e10fe426f801baa8d5a",
     "mastodon_deploy": "d4d0beaaddbefa9e296397c0740086f20c1384481b27b450a0f92d91631b87b2",
     "mastodon_remove": "2ca98937d13cf013185fc02d0326ff143712f57d9271e97899c74671266fc077",
+    "mastodon_restore": "699183e5adb050a060b7df2a33960527172737d9824d1db2bf9d2285e8446196",
     "mastodon_shared": "1f2485fc4fc008e062ff61e301aa3775446f1eeede5d790bb428cd123dbdd4bd",
     "metrics_httpd_switch": "3347dd5537b4b36ee4f4cfdce0e49ac0184bb7610029465c0c41363315e79c05",
     "metube_backup": "62e9bc6234a8129073546a45294812264958bf5cbedbf463c537415294e721d3",
@@ -132,6 +134,8 @@
     "jellyfin_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "navidrome_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "navidrome_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "navidrome_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
+    "navidrome_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "mastodon_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "mastodon_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

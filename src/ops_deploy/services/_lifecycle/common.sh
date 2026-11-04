@@ -123,3 +123,14 @@ prune_snapshots() {
         fi
     done < <(printf '%s\n' "${names[@]}" | LC_ALL=C sort -r)
 }
+
+# The pgpass(5) line for password $1, "\" and ":" escaped. The backslash comes
+# from printf, not from this source: the script reaches the host inline, and a
+# fish login shell halves backslash pairs inside single quotes.
+pgpass_line() {
+    local bs escaped
+    bs=$(printf '\134')
+    escaped=${1//"$bs"/"$bs$bs"}
+    escaped=${escaped//:/"$bs":}
+    printf '*:*:*:*:%s\n' "$escaped"
+}

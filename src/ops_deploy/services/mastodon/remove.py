@@ -18,29 +18,15 @@ from pydantic import StrictBool, model_validator
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import server, systemd
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, require_linux
-from ops_deploy.core.config import ServiceName, UnixUser
+from ops_deploy.base._common import AbsolutePath, require_linux
 from ops_deploy.services._lifecycle.ansible_remove import absent, service_absent, user_absent
+from ops_deploy.services.mastodon.shared import MastodonSite
 
 
-class MastodonRemoveConfig(RoleConfig):
+class MastodonRemoveConfig(MastodonSite):
     """``mastodon_shared``'s defaults for what ``mastodon_remove`` reads."""
 
     confirm: StrictBool = False
-    user: UnixUser = "mastodon"
-    group: UnixUser = "mastodon"
-    site_path: AbsolutePath = "/home/mastodon/live"
-    env_file: AbsolutePath = "/home/mastodon/live/.env.production"
-    media_path: AbsolutePath = "/home/mastodon/live/public/system"
-    services: tuple[ServiceName, ...] = ("mastodon-web", "mastodon-sidekiq", "mastodon-streaming", "mastodon-nginx")
-    systemd_units: tuple[AbsolutePath, ...] = (
-        "/etc/systemd/system/mastodon-web.service",
-        "/etc/systemd/system/mastodon-sidekiq.service",
-        "/etc/systemd/system/mastodon-streaming.service",
-        "/etc/systemd/system/mastodon-nginx.service",
-    )
-    traefik_config_path: AbsolutePath = "/etc/traefik/dynamic/mastodon.yml"
-    nginx_config_path: AbsolutePath = "/etc/mastodon/nginx.conf"
     nginx_logrotate_path: AbsolutePath = "/etc/logrotate.d/mastodon-nginx"
     nginx_log_dir: AbsolutePath = "/var/log/mastodon-nginx"
     remove_site: StrictBool = True

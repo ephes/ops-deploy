@@ -385,7 +385,10 @@ transaction lock `/run/lock/traefik-transaction.lock`:
 - `_lifecycle.remove_path` for paths below `/etc/traefik/dynamic` (the
   removals of compose_app, fastdeploy, nyxmon);
 - the work_app restore, just before it writes the route, and the fastdeploy
-  restore, once before it changes anything (not on a dry run).
+  restore, once before it changes anything (not on a dry run);
+- the Mastodon restore, for a route that differs from the live one: before
+  anything stops, before it writes the route and before a rollback puts it
+  back.
 
 The guard (`helpers/templates/traefik_route_guard.sh.txt`) only reads: it looks
 up the lock file's device and inode in `/proc/locks` and never takes the lock,

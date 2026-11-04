@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `services.mastodon`: `MastodonBackupConfig`/`deploy_mastodon_backup` and
+  `MastodonRestoreConfig`/`deploy_mastodon_restore`, the ports of the
+  `mastodon_backup` (with `prune.yml`) and `mastodon_restore` roles
+  (ops-library `44a532ba`, recorded in the drift manifest): the role's
+  archive layout and `manifest.yml`, `pg_dump` with the units stopped and
+  always started again, mtime retention (`retain`, `retain_all_prefixes`);
+  the restore validates the dump in staging before anything stops, stops the
+  units fail-closed, takes the safety dump, media snapshot and config copies,
+  restores with `--single-transaction`, runs the migrations and rolls back to
+  the safety copies on any later failure, leaving the services stopped. The
+  password reaches the host on stdin and the tools through a private
+  passfile. Archive names only; `dry_run` validates without changing
+  anything; a changed Traefik route is written only while no transaction
+  holds its lock. New `services.mastodon.shared.MastodonSite`, which
+  `MastodonRemoveConfig` now also uses (its paths must be canonical, of
+  `A-Za-z0-9._/+-` only);
+  `pgpass_line` moved from the FastDeploy lifecycle script to
+  `services/_lifecycle/common.sh`.
+
 - `services.metube`, `services.jellyfin`, `services.navidrome`: backup and
   restore, the ports of `metube_backup`/`metube_restore`,
   `jellyfin_backup`/`jellyfin_restore` and `navidrome_backup`/`navidrome_restore`

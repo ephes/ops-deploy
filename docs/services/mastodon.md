@@ -5,8 +5,9 @@ Git installation. It resolves a selected release, installs its Ruby/Node and
 locked dependencies when needed, converges the secret environment, applies
 pending migration identities, builds assets, and performs an ordered application
 rollout. It does not provision the OS, service account, PostgreSQL/Redis instance
-or storage, and does not implement backup/restore; the role's removal is
-[`remove_mastodon`](#removal). Existing local media
+or storage. The roles' backup and restore are
+[`deploy_mastodon_backup` and `deploy_mastodon_restore`](#backup-and-restore), the
+role's removal is [`remove_mastodon`](#removal). Existing local media
 and the `<home>/live` layout are retained.
 
 The compatibility `MastodonConfig` API still performs immutable configuration-only
@@ -151,3 +152,94 @@ log directory (`remove_logs`, off by default); last `userdel -r mastodon` (the
 whole home, with the default `remove_user=True`; a failure stops the removal)
 and `groupdel` when the group still exists. PostgreSQL, Redis, the S3 bucket and backups are not
 touched, as by the role. No secrets are read.
+
+The removal, backup and restore configs share `mastodon_shared`'s account,
+paths and units through `services.mastodon.shared.MastodonSite` (canonical
+absolute paths only).
+
+## Backup and restore
+
+`ops_deploy.services.mastodon` ports `mastodon_backup` and `mastodon_restore`
+(ops-library `44a532ba`, with the `mastodon_shared` defaults; recorded in the
+drift manifest). Both take the database password as `postgres_password` in
+their secrets (ops-control passes `mastodon_postgres_password`); it reaches the
+host script on stdin and the PostgreSQL tools through a private `0600`
+passfile in a fresh `0700` directory, removed after each command, as in the
+roles. A password with a line break is refused before anything runs.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_mastodon_backup(cfg, secrets)` | `MastodonBackupConfig` | `mastodon_backup` (with `prune.yml`) |
+| `deploy_mastodon_restore(cfg, secrets)` | `MastodonRestoreConfig` | `mastodon_restore` |
+
+The fields are the roles' variables without `mastodon_`, `mastodon_backup_` or
+`mastodon_restore_` (the backup's owner and group are `backup_owner`/`backup_group`,
+`mastodon_restore_root` is `root`). Archives written by either tool restore
+with the other.
+
+**Backup.** One host script: it reads `<site>/VERSION` as the Mastodon user
+(empty without the file, as the role's ignored `cat`), creates
+`/opt/backups/mastodon/<prefix>-<timestamp>/` with `database`, `media`,
+`config`, `systemd`, `traefik` and `nginx` (`root:root 0700`) and restricts
+older archives in the root to `0600`. With `stop_services` it stops the four
+units, then dumps the database (`pg_dump --format=custom --compress=9` as
+`backup_owner`, connecting as `mastodon` on `localhost:5432`), copies the
+local media with `rsync -a --delete --exclude=/cache/***`, the env file (a
+missing one fails the backup), the unit files, the Traefik route and the
+nginx config that exist (`0600`), and starts the units again with a daemon
+reload whatever the capture did. It writes the role's `manifest.yml`, packs
+`<dir>.tar.gz` (`0600`), fetches it into `~/backups/mastodon` (`0700`, the copy
+`0600`) and then keeps the newest `retain` (`7`) archives and payload
+directories by mtime: those with the prefix, or every non-hidden one with
+`retain_all_prefixes`. It does not use the snapshot records of the other
+backup ports ([Local backups](../concepts/local-backups.md)).
+
+**Restore.** One host script, in the role's order:
+
+1. Pick `latest` (the newest `*.tar.gz` by mtime directly in the root) or a
+   name below it, reset and unpack into `/var/tmp/mastodon-restore` (`0700`),
+   find the payload directory, require `database/<db>.dump`, hand the staging
+   path and the dump to the Postgres OS user (`postgres`) and validate the
+   dump: `pg_restore --list` must list `TABLE DATA`, then a full
+   `pg_restore --file=/dev/null`. With `dry_run` it stops here (the staging
+   directory still goes, with `cleanup`).
+2. A Traefik route in the archive that differs from the live one needs a free
+   Traefik transaction lock, checked before anything changes.
+3. Ensure the media and site directories (`mastodon:mastodon 0750`) and ask
+   PostgreSQL whether the live database exists (only "does not exist" counts
+   as no database; any other error stops the restore).
+4. Stop the installed units and require each to be `inactive` or `failed`;
+   take the safety copies below a UTC timestamp: `pg_dump -Fc` of the live
+   database into `/var/backups/mastodon-pre-restore/<ts>/database/` (checked
+   with `pg_restore --list`), a hard-link snapshot (`cp -al`, a full copy across
+   filesystems) of the media into `/home/mastodon/media-pre-restore/<ts>` and
+   copies of the env file, the route, the nginx config and the units the archive
+   replaces under `<ts>/files/`. A failure here drops nothing and reports that
+   the services may be stopped.
+5. Drop and recreate the database (as `postgres`; the host only when
+   remote), `pg_restore --single-transaction --clean --if-exists --no-owner`,
+   `rsync -a --delete --ignore-times` the media (local storage), copy the env
+   file (`0600`), the units, the route and the nginx config (`0644`), reload
+   systemd, run `bundle exec rails db:migrate` as `mastodon` and enable and
+   restart all four units.
+6. Any failure in step 5 stops the units again and, only when every unit is
+   confirmed down, restores the safety dump, the media snapshot and the
+   copies, then fails naming the step, both rollbacks' results and the safety
+   paths, with the services left stopped.
+
+The staging directory goes in every case (`cleanup`); the safety copies are
+never pruned. The config refuses a staging directory that holds or lies inside
+the archives, a live path or a safety root, one that is `/tmp`, `/var/tmp` or a
+top-level directory, and archives or safety copies inside the media directory
+(which the restore syncs with `--delete`).
+
+Deliberate differences: archive names only (no absolute paths), a symlinked
+archive is refused, `dry_run` is an addition, the route lock as above (a lock
+taken during the restore leaves the route, the restore finishes and then
+fails; the rollback puts the route back only when the restore wrote it and
+only while no transaction holds the lock), "installed" units are those whose
+`LoadState` is not `not-found` or that still run (an unreadable state counts
+as installed, so the unit must stop and be confirmed stopped), the payload directory is the one
+named after the archive (else the first by name), and
+the `tar.gz` format, `mastodon_backup_fetch_become` and `mastodon_nginx_enabled`
+are not settings (pass `services`/`systemd_units` without nginx instead).

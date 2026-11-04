@@ -48,7 +48,11 @@ Ansible, by hand, or before retention was set) are never removed, nor is
 anything else in the root. `0` turns a limit off; both `0` (the default)
 records and prunes nothing.
 
-The SnappyMail backup does not use these records. Its own `retain` (the
+The SnappyMail and Mastodon backups do not use these records (nor
+`required_mount`). Mastodon's `retain` (the role's, `7`) keeps the newest N
+archives and payload directories by mtime, of its prefix or, with
+`retain_all_prefixes`, every non-hidden one in the root, whoever wrote them.
+SnappyMail's own `retain` (the
 role's, `0` by default and in ops-control) keeps the newest N
 `<prefix>-*.tar.*` archives by mtime and deletes the older ones with their
 `.yml` manifests, whoever wrote them.
@@ -78,7 +82,9 @@ mount check (with `cleanup`, the default); so is the Vaultwarden restore,
 which creates its staging directory fresh. The SnappyMail restore stages in a
 fresh `mktemp` directory `.snappymail-restore-*` next to the data directory
 and removes it in its `EXIT` trap; one left by an interrupted run (a copy of
-the SnappyMail data) is not reused and must be removed by hand. For the
+the SnappyMail data) is not reused and must be removed by hand. The Mastodon
+restore is one bash script whose `EXIT` trap removes `staging_dir` (with
+`cleanup`) after its rollback ran. For the
 other restores, an interrupted connection can still leave one behind; the
 next restore resets it.
 

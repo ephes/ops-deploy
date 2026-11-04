@@ -68,9 +68,12 @@ def assignments(command: str) -> dict[str, str]:
 
 
 def run_script(
-    command: str, body: Path, tmp_path: Path, *, stubs: str = "", **env: str
+    command: str, body: Path, tmp_path: Path, *, stubs: str = "", stdin: str | None = None, **env: str
 ) -> subprocess.CompletedProcess[str]:
-    """``command`` (as planned) with :data:`STUBS` and ``stubs`` between the shared helpers and ``body``."""
+    """``command`` (as planned) with :data:`STUBS` and ``stubs`` between the shared helpers and ``body``.
+
+    ``stdin``: what the script reads on its standard input (a ``secret_stdin`` password line).
+    """
 
     text = body.read_text().rstrip()
     head, sep, tail = command.rpartition(text)
@@ -79,6 +82,7 @@ def run_script(
         ["bash", "-c", head + STUBS + stubs + sep + tail],
         capture_output=True,
         text=True,
+        input=stdin,
         # COPYFILE_DISABLE: macOS tar would add AppleDouble ``._`` entries.
         env={"PATH": os.environ["PATH"], "LOG": str(tmp_path / "calls.log"), "COPYFILE_DISABLE": "1", **env},
     )

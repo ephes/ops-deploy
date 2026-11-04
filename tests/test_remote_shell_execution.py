@@ -135,9 +135,9 @@ def test_fish_halves_backslash_pairs_in_single_quotes(login_shell: str) -> None:
 
 
 def test_fastdeploy_restore_escapes_the_pgpass_password(tmp_path: Path) -> None:
-    """lifecycle.sh's pgpass line, sent through the login shell, escapes ``\\`` and ``:``."""
+    """common.sh's pgpass line, sent through the login shell, escapes ``\\`` and ``:``."""
 
-    script = (SRC / "services" / "fastdeploy" / "files" / "lifecycle.sh").read_text()
+    script = (SRC / "services" / "_lifecycle" / "common.sh").read_text()
     start = script.index("pgpass_line() {")
     function = script[start : script.index("\n}\n", start) + 3]
     command = shlex.join(["bash", "-c", function + 'pgpass_line "$PGPW"'])
