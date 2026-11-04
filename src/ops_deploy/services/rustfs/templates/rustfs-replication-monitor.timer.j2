@@ -1,0 +1,11 @@
+[Unit]
+Description=Run {{ cfg.monitor.unit }} every {{ cfg.monitor.timer_interval_sec }} seconds
+
+[Timer]
+OnBootSec={{ cfg.monitor.timer_on_boot_sec }}
+OnUnitActiveSec={{ cfg.monitor.timer_interval_sec }}
+AccuracySec=10
+RandomizedDelaySec={{ cfg.monitor.timer_randomized_delay_sec }}
+
+[Install]
+WantedBy=timers.target

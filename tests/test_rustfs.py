@@ -286,10 +286,17 @@ def test_policy_comparison_ignores_order_and_single_value_condition_spelling() -
     assert normalized(declared) != normalized(stored)
 
 
-def test_helper_quotes_keys_and_refuses_non_loopback_endpoints() -> None:
+def test_helper_quotes_keys_and_refuses_names_and_tls_for_its_own_server() -> None:
     # Signatures are checked end to end against a real server in tests/integration/rustfs.
     namespace = helper()
     assert namespace["quote"]("Arbeit/Quotes Benutzt.md", safe="/-_.~") == "Arbeit/Quotes%20Benutzt.md"
     assert namespace["quote"]("ä") == "%C3%A4"
+    # The server's own listen address (loopback or a configured peer address) only.
+    namespace["Api"]("http://10.0.0.1:9020", "us-east-1")
+    for endpoint in ("http://rustfs.example:9020", "https://127.0.0.1:9020", "http://0.0.0.0:9020", "http://127.0.0.1"):
+        with pytest.raises(namespace["Refused"]):
+            namespace["Api"](endpoint, "us-east-1")
+    # A replica peer's name is admitted only for the monitor's remote counts.
+    namespace["Api"]("http://rustfs.example:9020", "us-east-1", remote=True)
     with pytest.raises(namespace["Refused"]):
-        namespace["Api"]("http://10.0.0.1:9020", "us-east-1")
+        namespace["Api"]("https://rustfs.example:9020", "us-east-1", remote=True)

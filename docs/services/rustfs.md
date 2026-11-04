@@ -3,7 +3,9 @@
 `ops_deploy.services.rustfs` installs one pinned RustFS server (single node,
 single disk) as a successor candidate for MinIO. It is a fresh service with its
 own user, data root and port; it never reads, converts or shares MinIO's data
-directory, and it adds no migration, replication or lifecycle rules.
+directory and adds no migration. Bucket replication to a second RustFS, its
+noncurrent-version expiry and a replication monitor are optional declarations
+([Replication](#replication)).
 
 ## Pinned release
 
@@ -38,8 +40,9 @@ so a running server never has its executable overwritten.
   `RequiresMountsFor`, so a missing volume also stops a restart.
 - `/etc/default/rustfs` (root 0600) and `rustfs.service` with
   `ProtectSystem=strict` and write access only to the data root and home.
-- The S3 API listens on `127.0.0.1:9020` only (MinIO's 9001/9002 are refused
-  as values). The console, FTP/FTPS/SFTP/WebDAV listeners, the update check and
+- The S3 API listens on `127.0.0.1:9020` only by default (MinIO's 9001/9002
+  are refused as values). `bind_host` may instead name one IPv4 address of the
+  host, for a replica that its source reaches over a private network. The console, FTP/FTPS/SFTP/WebDAV listeners, the update check and
   the OTLP exporter are switched off explicitly; RustFS enables the console and
   the update check by default.
 - A port preflight refuses when anything but `rustfs.service` holds the port.
@@ -81,6 +84,68 @@ While planning, the helper inspects the running server; if this run installs,
 rewrites the environment (root rotation) or the unit, or starts or restarts a
 stopped service, the inspection waits until execution, after the restart. A healthy repeat changes nothing.
 
+## Replication
+
+A source server replicates declared buckets to a replica server, both
+deployed by this module; the replica's deploy runs first, because the source's
+target write checks the remote bucket.
+
+- **Replica:** `bind_host` on the private address the source reaches, the
+  replicated buckets (versioned, `noncurrent_expiry_days`), a replicator
+  identity whose policy allows the replication actions on those buckets
+  (`s3:ReplicateObject`, `s3:ReplicateDelete`, `s3:ReplicateTags`, `s3:PutObject`,
+  `s3:DeleteObject`, the bucket reads `s3:GetBucketVersioning`,
+  `s3:GetReplicationConfiguration`, `s3:ListBucket`, ...) and a monitor identity
+  that may only list those buckets and read the heartbeat objects.
+- **Source:** the same buckets and one `RustfsReplication` per bucket
+  (`endpoint` is the replica's `host:port`). The helper creates one remote
+  target per bucket (`set-remote-target`, which RustFS validates against the
+  remote bucket with `RustfsCredentials.replication`) and one rule
+  `rule_id` with priority 1, an empty prefix and delete, delete-marker,
+  existing-object and replica-modification replication. A target whose
+  stored access key differs is updated in place (`update=true&creds=true`);
+  RustFS never returns a target's secret, so rotate the replicator by
+  changing its access key too. Another rule or role in the bucket's
+  replication document, or a lifecycle rule other than
+  `replicated-noncurrent-expiry`, refuses; nothing is replaced silently.
+- RustFS accepts private and Tailnet (100.64.0.0/10) target addresses and host
+  names; loopback targets need `RUSTFS_REPLICATION_ALLOW_LOOPBACK_TARGET`,
+  which only the local test sets.
+- `noncurrent_expiry_days` writes the one-rule lifecycle document
+  `replicated-noncurrent-expiry` (noncurrent versions expire after that many
+  days, delete markers without versions are removed), on source and replica.
+
+### Monitor
+
+`monitor=RustfsReplicationMonitor(role=..., jobs=...)` installs
+`/usr/local/bin/rustfs-replication-monitor` (with this module's SigV4 helper
+as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
+`/etc/rustfs-replication-monitor.json`, the monitor identity in
+`/etc/default/rustfs-replication-monitor` (root 0600) and a timer (every
+300 s by default). The deploy enables the timer and never runs the job.
+
+- `source` (`rustfs-replication-heartbeat.timer`): per job the replication
+  queue (`/rustfs/admin/v3/replicationmetrics`), the current object count and
+  size of the bucket on both sides (paginated `ListObjectsV2`; the replica
+  with the monitor identity at `replica_endpoint`), and the heartbeat object
+  `heartbeat_key` written into the bucket. A job with `heartbeat=False`
+  writes it into `heartbeat_status_bucket`, another job's bucket, so an
+  application bucket that is synced verbatim stays free of foreign objects.
+  It reads root from `/etc/default/rustfs`.
+- `replica` (`rustfs-replication-lag-check.timer`): per job it reads the
+  replicated heartbeat object with the monitor identity and writes
+  `<state_root>/<job>/status.json` (same fields as the MinIO replica probe),
+  sets `lag.marker` to the object's modification time and touches
+  `parity.marker` whenever parity holds (created on the first run, so a new
+  job starts its parity grace). Levels and reasons follow the MinIO probe:
+  warning/critical by lag hours, critical when parity breaks (queue, object
+  delta or size delta beyond the job's tolerances). The service exits 2 when
+  a required job is critical. File-age checks on the markers are the
+  operator's alerting hook.
+
+Errors in the status file and journal carry only the helper's constant
+diagnostics, never a credential or a server response body.
+
 ## Proof
 
 `tests/integration/rustfs/run-container.sh RUSTFS_BINARY EVIDENCE_DIR` runs
@@ -91,6 +156,15 @@ attachment drift repair, stopped-service recovery, and disabled-user,
 same-device bind mount, symlinked-ancestor and foreign-data refusals. It ran on
 arm64 Docker (aarch64 artifact); the x86_64 artifact is pinned by digest but
 was not executed there.
+
+`just test-rustfs-replication RUSTFS_BINARY` starts a source and a replica
+from the pinned release executable as the current user on free loopback
+ports (no Docker), runs the helper on both, then the heartbeat writer and the
+probe: existing, overwritten and deleted objects reach the replica, more than
+one listing page is counted, both jobs report `ok`, the monitor identity
+cannot write, a replicator rotation updates the targets, a foreign lifecycle
+rule refuses, and no credential appears in any output. It ran with the
+x86_64 artifact on Linux.
 
 ## Example
 

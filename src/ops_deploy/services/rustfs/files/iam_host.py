@@ -1,7 +1,7 @@
 """Host-local RustFS bucket/IAM convergence; standard library only.
 
 Reads the payload (endpoint, root and identity credentials, declarations) from
-stdin and talks SigV4 to the loopback S3 API and the native admin API
+stdin and talks SigV4 to the server's own S3 API and the native admin API
 (``/rustfs/admin/v3``, plain JSON bodies). Credentials and server responses
 never leave this process: it prints only a pending count or a constant refusal.
 Only exact, recognized server answers decide that something is absent.
@@ -9,21 +9,26 @@ Only exact, recognized server answers decide that something is absent.
 
 from __future__ import annotations
 
+import base64
 import datetime
 import hashlib
 import hmac
 import http.client
+import ipaddress
 import json
 import re
 import sys
 import urllib.parse
+import xml.etree.ElementTree as ElementTree
 
 ADMIN = "/rustfs/admin/v3/"
 LIMIT = 1 << 20
+S3_NS = "http://s3.amazonaws.com/doc/2006-03-01/"
 VERSIONING_ON = (
     b'<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
     b"<Status>Enabled</Status></VersioningConfiguration>"
 )
+LIFECYCLE_RULE = "replicated-noncurrent-expiry"
 
 
 class Refused(RuntimeError):
@@ -35,10 +40,16 @@ def quote(value, safe="-_.~"):
 
 
 class Api:
-    def __init__(self, endpoint, region):
+    """SigV4 client; by default only for the server's own address literal.
+
+    ``remote=True`` admits a peer's host name (the replica monitor's counts).
+    """
+
+    def __init__(self, endpoint, region, remote=False):
         parsed = urllib.parse.urlsplit(endpoint)
-        if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port:
-            raise Refused("endpoint must be loopback HTTP")
+        if parsed.scheme != "http" or not parsed.hostname or not parsed.port or not local_address(parsed.hostname):
+            if not (remote and parsed.scheme == "http" and parsed.hostname and parsed.port):
+                raise Refused("endpoint must be the server's own HTTP address")
         self.host, self.port, self.region = parsed.hostname, parsed.port, region
 
     def request(self, method, path, access, secret, query=(), body=b"", headers=None):
@@ -77,6 +88,15 @@ class Api:
             connection.close()
 
 
+def local_address(hostname):
+    """Loopback or an IPv4 literal: the configured listen address of this host."""
+    try:
+        address = ipaddress.IPv4Address(hostname)
+    except ValueError:
+        return False
+    return not (address.is_unspecified or address.is_multicast) and str(address) == hostname
+
+
 def error_code(data):
     match = re.search(rb"<Code>([A-Za-z]+)</Code>", data)
     return match.group(1).decode() if match else None
@@ -90,6 +110,86 @@ def parse_json(data, description):
     if not isinstance(value, dict):
         raise Refused(description)
     return value
+
+
+def parse_xml(data, description):
+    """The document with namespaces dropped; the server's own XML only."""
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError:
+        raise Refused(description) from None
+    for element in root.iter():
+        element.tag = element.tag.rpartition("}")[2]
+    return root
+
+
+def text(element, path):
+    found = element.find(path)
+    return None if found is None else (found.text or "")
+
+
+def everything(rule):
+    """No filter, or one that selects every key (an empty prefix)."""
+    found = rule.find("Filter")
+    if found is None:
+        return rule.find("Prefix") is None or not text(rule, "Prefix")
+    return [child.tag for child in found] in ([], ["Prefix"]) and not text(found, "Prefix")
+
+
+def lifecycle_rule(days):
+    return (
+        f"<Rule><ID>{LIFECYCLE_RULE}</ID><Status>Enabled</Status><Filter><Prefix></Prefix></Filter>"
+        "<Expiration><ExpiredObjectDeleteMarker>true</ExpiredObjectDeleteMarker></Expiration>"
+        f"<NoncurrentVersionExpiration><NoncurrentDays>{int(days)}</NoncurrentDays></NoncurrentVersionExpiration>"
+        "</Rule>"
+    )
+
+
+def lifecycle_current(rules, days):
+    """Exactly the managed rule; anything else is outside this deployment."""
+    if len(rules) != 1:
+        return False
+    rule = rules[0]
+    return (
+        text(rule, "ID") == LIFECYCLE_RULE
+        and text(rule, "Status") == "Enabled"
+        and everything(rule)
+        and text(rule, "Expiration/ExpiredObjectDeleteMarker") == "true"
+        and text(rule, "NoncurrentVersionExpiration/NoncurrentDays") == str(int(days))
+        and {child.tag for child in rule} <= {"ID", "Status", "Filter", "Expiration", "NoncurrentVersionExpiration"}
+    )
+
+
+REPLICATED = ("DeleteMarkerReplication", "DeleteReplication", "ExistingObjectReplication",
+              "SourceSelectionCriteria/ReplicaModifications")  # fmt: skip
+
+
+def replication_document(rule_id, arn):
+    flags = "".join(
+        f"<{name}><Status>Enabled</Status></{name}>"
+        for name in ("DeleteMarkerReplication", "DeleteReplication", "ExistingObjectReplication")
+    )
+    return (
+        f'<ReplicationConfiguration xmlns="{S3_NS}"><Role></Role><Rule><ID>{rule_id}</ID><Status>Enabled</Status>'
+        f"<Priority>1</Priority>{flags}<SourceSelectionCriteria><ReplicaModifications><Status>Enabled</Status>"
+        "</ReplicaModifications></SourceSelectionCriteria><Filter><Prefix></Prefix></Filter>"
+        f"<Destination><Bucket>{arn}</Bucket></Destination></Rule></ReplicationConfiguration>"
+    ).encode()
+
+
+def replication_current(root, rule_id, arn):
+    """One enabled rule replicating everything, deletes included, to ``arn``."""
+    rules = root.findall("Rule")
+    if len(rules) != 1 or (text(root, "Role") or "").strip():
+        return False
+    rule = rules[0]
+    return (
+        text(rule, "ID") == rule_id
+        and text(rule, "Status") == "Enabled"
+        and (text(rule, "Destination/Bucket") or "").strip() == arn
+        and everything(rule)
+        and all(text(rule, name + "/Status") == "Enabled" for name in REPLICATED)
+    )
 
 
 def string_set(value):
@@ -141,6 +241,46 @@ class Server:
 
     def missing(self, status, data, code):
         return status == 404 and error_code(data) == code
+
+    def lifecycle_rules(self, bucket):
+        status, data = self.call("GET", "/" + bucket, [("lifecycle", "")])
+        if self.missing(status, data, "NoSuchLifecycleConfiguration"):
+            return []
+        if status != 200:
+            raise Refused("lifecycle inspection failed")
+        return parse_xml(data, "lifecycle inspection is malformed").findall("Rule")
+
+    def targets(self, bucket):
+        data = self.ok("GET", ADMIN + "list-remote-targets", [("bucket", bucket)],
+                       description="remote target inspection failed")
+        try:
+            value = json.loads(data)
+        except ValueError:
+            raise Refused("remote target inspection is malformed") from None
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise Refused("remote target inspection is malformed")
+        return value
+
+    def target(self, replication):
+        """The bucket's replication target for the declared endpoint and bucket, or None."""
+        matches = [
+            item for item in self.targets(replication["bucket"])
+            if item.get("type") == "replication"
+            and item.get("endpoint") == replication["endpoint"]
+            and item.get("targetbucket") == replication["target_bucket"]
+            and item.get("secure") is replication["secure"]
+        ]  # fmt: skip
+        if len(matches) > 1 or (matches and not isinstance(matches[0].get("arn"), str)):
+            raise Refused("remote target inspection is ambiguous")
+        return matches[0] if matches else None
+
+    def replication(self, bucket):
+        status, data = self.call("GET", "/" + bucket, [("replication", "")])
+        if self.missing(status, data, "ReplicationConfigurationNotFoundError"):
+            return None
+        if status != 200:
+            raise Refused("replication inspection failed")
+        return parse_xml(data, "replication inspection is malformed")
 
     def versioning(self, bucket):
         data = self.ok("GET", "/" + bucket, [("versioning", "")], description="versioning inspection failed")
@@ -222,6 +362,30 @@ def inspect(server, payload):
             raise Refused("bucket inspection failed")
         if bucket["versioning"] and server.versioning(bucket["name"]) != "Enabled":
             pending.append(("versioning", bucket))
+    for bucket in payload["buckets"]:
+        days = bucket.get("noncurrent_expiry_days")
+        if days is None:
+            continue
+        rules = [] if ("bucket", bucket) in pending else server.lifecycle_rules(bucket["name"])
+        if any(text(rule, "ID") != LIFECYCLE_RULE for rule in rules):
+            raise Refused("bucket has lifecycle rules outside this deployment; refusing to replace them")
+        if not lifecycle_current(rules, days):
+            pending.append(("lifecycle", bucket))
+    access = (payload.get("replication") or {}).get("access")
+    for replication in payload.get("replications", ()):
+        fresh = any(action == "bucket" and item["name"] == replication["bucket"] for action, item in pending)
+        target = None if fresh else server.target(replication)
+        if target is None:
+            pending.append(("target", replication))
+        elif (target.get("credentials") or {}).get("accessKey") != access:
+            pending.append(("target_credentials", replication))
+        document = None if fresh else server.replication(replication["bucket"])
+        if document is not None:
+            ids = [text(rule, "ID") for rule in document.findall("Rule")]
+            if ids != [replication["rule_id"]]:
+                raise Refused("bucket has replication rules outside this deployment; refusing to replace them")
+        if target is None or document is None or not replication_current(document, replication["rule_id"], target["arn"]):
+            pending.append(("replication", replication))
     for policy in payload["policies"]:
         current = server.policy(policy["name"])
         if current is None or normalized(current) != normalized(policy["document"]):
@@ -243,7 +407,7 @@ def inspect(server, payload):
     return pending
 
 
-def apply(server, pending):
+def apply(server, pending, replication=None):
     for action, item in pending:
         if action == "bucket":
             server.ok("PUT", "/" + item["name"], description="bucket creation failed")
@@ -261,6 +425,37 @@ def apply(server, pending):
             query = [("policyName", ",".join(sorted(item["policies"]))), ("userOrGroup", item["access"]),
                      ("isGroup", "false")]
             server.ok("PUT", ADMIN + "set-user-or-group-policy", query, description="policy attachment failed")
+        elif action == "lifecycle":
+            body = f'<LifecycleConfiguration xmlns="{S3_NS}">{lifecycle_rule(item["noncurrent_expiry_days"])}'
+            body = (body + "</LifecycleConfiguration>").encode()
+            md5 = base64.b64encode(hashlib.md5(body).digest()).decode()
+            status, _ = server.api.request("PUT", "/" + item["name"], *server.root, query=[("lifecycle", "")],
+                                           body=body, headers={"content-md5": md5})
+            if status != 200:
+                raise Refused("lifecycle write failed")
+        elif action in ("target", "target_credentials"):
+            # The server checks the remote bucket (reachable, versioned) with
+            # these credentials before it stores the target.
+            target = {
+                "sourcebucket": item["bucket"], "endpoint": item["endpoint"], "targetbucket": item["target_bucket"],
+                "secure": item["secure"], "type": "replication", "region": server.api.region,
+                "credentials": {"accessKey": replication["access"], "secretKey": replication["secret"]},
+            }  # fmt: skip
+            query = [("bucket", item["bucket"])]
+            if action == "target_credentials":
+                current = server.target(item)
+                if current is None:
+                    raise Refused("remote target disappeared during apply")
+                target["arn"] = current["arn"]
+                query += [("update", "true"), ("creds", "true")]
+            server.ok("PUT", ADMIN + "set-remote-target", query, json.dumps(target).encode(),
+                      "remote target write failed (remote bucket absent, unversioned or credentials rejected)")
+        elif action == "replication":
+            target = server.target(item)
+            if target is None:
+                raise Refused("remote target missing before the replication rule")
+            server.ok("PUT", "/" + item["bucket"], [("replication", "")],
+                      replication_document(item["rule_id"], target["arn"]), "replication rule write failed")
         else:
             raise Refused("unknown planned action")
 
@@ -274,7 +469,7 @@ def main():
         server = Server(payload)
         pending = inspect(server, payload)
         if action == "apply" and pending:
-            apply(server, pending)
+            apply(server, pending, payload.get("replication"))
             if inspect(server, payload):
                 raise Refused("declared configuration did not converge")
         print(json.dumps({"pending": len(pending), "changed": action == "apply" and bool(pending)}))

@@ -37,6 +37,10 @@ docs-serve:
 test-echoport-rustfs:
     ECHOPORT_RUSTFS_DOCKER=1 uv run --locked pytest -q tests/test_echoport_rustfs_account_docker.py
 
+# RustFS replication and its monitor between two local RustFS 1.0.4 servers (no Docker)
+test-rustfs-replication binary:
+    RUSTFS_BINARY={{binary}} uv run --locked pytest -q tests/test_rustfs_replication_local.py
+
 # Check the code-line cap on helpers + ops + core (docs/development.md)
 size-cap:
     uv run --locked python scripts/size_cap.py

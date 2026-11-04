@@ -26,7 +26,7 @@ from ops_deploy.base._common import ensure_curl, require_linux, require_systemd
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers import TraefikRoute, http_check, mark_read_only, traefik_route, wait_port
 from ops_deploy.helpers.probes import StdinLines, probe, stdin_arguments
-from ops_deploy.helpers.systemd import service_rollout
+from ops_deploy.helpers.systemd import service_rollout, systemd_unit
 from ops_deploy.ops.secret_file import secret_file
 from ops_deploy.services.rustfs.config import (
     BINARY_SHA256,
@@ -57,6 +57,11 @@ def render(template: str, cfg: RustfsConfig, credentials: RustfsCredentials | No
             root_access=credentials.root.access.get_secret_value(),
             root_secret=credentials.root.secret.get_secret_value(),
         )
+        if credentials.monitor is not None:
+            values.update(
+                monitor_access=credentials.monitor.access.get_secret_value(),
+                monitor_secret=credentials.monitor.secret.get_secret_value(),
+            )
     return environment().get_template(template).render(**values)
 
 
@@ -97,6 +102,10 @@ def validate_inputs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
         raise ValueError("Traefik exposure requires a configured API hostname")
     if cfg.local_binary is not None and hashlib.sha256(cfg.local_binary.read_bytes()).hexdigest() not in BINARY_SHA256:
         raise ValueError("local RustFS executable differs from every pinned binary checksum")
+    if bool(cfg.replications) != (credentials.replication is not None):
+        raise ValueError("provide replication credentials exactly when replications are declared")
+    if (cfg.monitor is not None) != (credentials.monitor is not None):
+        raise ValueError("provide monitor credentials exactly when the replication monitor is declared")
 
 
 def iam_payload(cfg: RustfsConfig, credentials: RustfsCredentials) -> str:
@@ -110,6 +119,12 @@ def iam_payload(cfg: RustfsConfig, credentials: RustfsCredentials) -> str:
                 "secret": material.secret.get_secret_value(),
             }
         )
+    replication = None
+    if credentials.replication is not None:
+        replication = {
+            "access": credentials.replication.access.get_secret_value(),
+            "secret": credentials.replication.secret.get_secret_value(),
+        }
     return json.dumps(
         {
             "endpoint": cfg.endpoint,
@@ -119,6 +134,8 @@ def iam_payload(cfg: RustfsConfig, credentials: RustfsCredentials) -> str:
             "buckets": [bucket.model_dump(mode="json") for bucket in cfg.buckets],
             "policies": [policy.model_dump(mode="json") for policy in cfg.policies],
             "identities": identities,
+            "replications": [item.model_dump(mode="json") for item in cfg.replications],
+            "replication": replication,
         }
     )
 
@@ -146,6 +163,60 @@ def converge_iam(payload: SecretStr, deferred: bool) -> Generator[StringCommand,
     raw = payload.get_secret_value()
     if (deferred and not state.is_executing) or iam_pending(raw):
         yield StringCommand(host_command("iam_host", "apply"), _stdin=StdinLines(raw), _get_pty=False)
+
+
+def monitor_jobs(cfg: RustfsConfig) -> str:
+    """The jobs file the monitor script reads; no credentials."""
+    assert cfg.monitor is not None
+    rows = [{**job.model_dump(mode="json"), "heartbeat_bucket": job.heartbeat_bucket} for job in cfg.monitor.jobs]
+    return json.dumps(rows, indent=2, sort_keys=True) + "\n"
+
+
+def deploy_monitor(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
+    """Install the heartbeat writer or lag probe and its timer; it never runs here."""
+    monitor = cfg.monitor
+    assert monitor is not None
+    files.directory(
+        name="Ensure RustFS replication monitor library", path=monitor.library_dir, user="root", group="root",
+        mode="0755",
+    )  # fmt: skip
+    sources = (
+        ("files/iam_host.py", f"{monitor.library_dir}/rustfs_iam_host.py", "0644"),
+        ("files/replication_monitor.py", monitor.script_path, "0755"),
+    )
+    for source, dest, mode in sources:
+        files.put(
+            name=f"Install {dest}",
+            src=StringIO(RESOURCE.joinpath(source).read_text()),
+            dest=dest,
+            user="root",
+            group="root",
+            mode=mode,
+        )
+    files.put(
+        name="Write RustFS replication monitor jobs",
+        src=StringIO(monitor_jobs(cfg)),
+        dest=monitor.jobs_path,
+        user="root",
+        group="root",
+        mode="0644",
+    )
+    secret_file(
+        name="Write RustFS replication monitor environment",
+        path=PurePosixPath(monitor.env_file),
+        content=SecretContent(render("rustfs-replication-monitor.env.j2", cfg, credentials)),
+        user="root",
+        group="root",
+        mode="0600",
+    )
+    if monitor.role == "replica":
+        files.directory(
+            name="Ensure RustFS replication monitor state", path=monitor.state_root, user="root", group="root",
+            mode="0755",
+        )  # fmt: skip
+    unit = systemd_unit(monitor.unit, render("rustfs-replication-monitor.service.j2", cfg))
+    timer = systemd_unit(f"{monitor.unit}.timer", render("rustfs-replication-monitor.timer.j2", cfg))
+    service_rollout(f"{monitor.unit}.timer", units=[unit, timer])
 
 
 def artifact_for_host() -> RustfsArtifact:
@@ -294,7 +365,7 @@ def deploy_rustfs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
         )
         traefik_route(route, renderer=lambda route, auth_hash: render("traefik-rustfs.yml.j2", cfg), restart="none")
 
-    if cfg.buckets or cfg.policies or cfg.identities:
+    if cfg.buckets or cfg.policies or cfg.identities or cfg.replications:
         payload = iam_payload(cfg, credentials)
         # Inspect after execution starts whenever this run changes or starts the server.
         deferred = fresh or any(op.will_change for op in (*triggers, unit, rollout.start))
@@ -313,3 +384,6 @@ def deploy_rustfs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
                 **stdin_arguments(payload),
             )
         )
+
+    if cfg.monitor is not None:
+        deploy_monitor(cfg, credentials)

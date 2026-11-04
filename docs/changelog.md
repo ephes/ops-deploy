@@ -13,6 +13,23 @@
   module semantics the Home Assistant removal had privately; Home Assistant's
   removal uses it unchanged.
 
+- `services.rustfs`: bucket replication to a second RustFS, the successor of
+  the MinIO replica path. New declarations, all off by default:
+  `RustfsReplication` (one remote target plus one replication rule per
+  versioned bucket: objects, overwrites, deletes, delete markers and existing
+  objects; the target signs with `RustfsCredentials.replication`),
+  `RustfsBucket.noncurrent_expiry_days` (the `replicated-noncurrent-expiry`
+  lifecycle rule, as `configure-minio-replication.yml` sets it for MinIO), and
+  `RustfsReplicationMonitor` (a heartbeat writer on the source or a lag/parity
+  probe on the replica, on a timer, with the MinIO replica monitor's
+  heartbeat objects, `status.json`, `lag.marker` and `parity.marker`
+  contract). `bind_host` admits one IPv4 address of the host besides loopback
+  (a Tailnet replica). The IAM helper refuses lifecycle or replication rules
+  it does not own instead of replacing them; it now accepts the server's own
+  IPv4 listen address instead of only `127.0.0.1`. Fake tests plus
+  `just test-rustfs-replication <binary>`, which runs both servers from the
+  pinned release binary without Docker.
+
 - `services.daybook_operations_api`: the Operations API deploy (typed config,
   original templates, `migrate`/`provision_operations` management, exact Git or
   rsync source, explicit enabled state), now on current main, and the new

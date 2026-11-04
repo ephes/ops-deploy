@@ -1,0 +1,39 @@
+{% set monitor = cfg.monitor %}
+[Unit]
+{% if monitor.role == "source" %}
+Description=Write RustFS replication heartbeat objects
+{% else %}
+Description=Check RustFS replication lag and parity
+{% endif %}
+Wants=network-online.target
+After=network-online.target rustfs.service
+
+[Service]
+Type=oneshot
+{% if monitor.role == "source" %}
+# Root on the local server (queue metrics, source counts, heartbeat writes).
+EnvironmentFile={{ cfg.env_file }}
+{% endif %}
+EnvironmentFile={{ monitor.env_file }}
+{% if monitor.role == "source" %}
+ExecStart=/usr/bin/python3 -I -B {{ monitor.script_path }} heartbeat {{ cfg.endpoint }} {{ monitor.replica_endpoint }} {{ monitor.jobs_path }}
+{% else %}
+ExecStart=/usr/bin/python3 -I -B {{ monitor.script_path }} probe {{ cfg.endpoint }} {{ monitor.state_root }} {{ monitor.jobs_path }}
+{% endif %}
+TimeoutStartSec=900
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+{% if monitor.role == "replica" %}
+ReadWritePaths={{ monitor.state_root }}
+{% endif %}
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes

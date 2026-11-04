@@ -14,6 +14,12 @@ from ops_deploy.helpers.traefik import DEFAULT_INTERNAL_IP_RANGES, Hostname
 
 Name = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")]
 Port = Annotated[StrictInt, Field(ge=1, le=65535)]
+BucketName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]
+# An object key below its bucket: no control characters, no empty or dot segments.
+ObjectKey = Annotated[str, Field(min_length=1, max_length=512, pattern=r"^[^\x00-\x1f\x7f?#]+$")]
+# host:port of a remote S3 endpoint, as RustFS remote targets store it.
+HostPort = Annotated[str, Field(pattern=r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[0-9]{1,5}$")]
+Hours = Annotated[float, Field(gt=0, le=8760)]
 
 # Official GitHub release 1.0.4 (2026-10-25, commit 46337942d55f), no open
 # advisory at pin time. The archive digests are the release's SHA256SUMS and
@@ -51,9 +57,124 @@ BINARY_SHA256 = frozenset(artifact.binary_sha256 for artifact in RUSTFS_ARTIFACT
 
 
 class RustfsBucket(RoleConfig):
-    name: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]
+    name: BucketName
     # True enables versioning; False leaves the server's state alone (never suspends).
     versioning: StrictBool = True
+    # Days after which noncurrent versions expire; the same lifecycle rule
+    # removes delete markers without versions. None leaves lifecycle alone.
+    noncurrent_expiry_days: Annotated[StrictInt, Field(ge=1, le=3650)] | None = None
+
+
+class RustfsReplication(RoleConfig):
+    """Bucket replication of one declared versioned bucket to a remote RustFS bucket.
+
+    Objects, overwrites, deletes, delete markers and existing objects replicate;
+    the remote target signs with ``RustfsCredentials.replication``.
+    """
+
+    bucket: BucketName
+    rule_id: Name
+    endpoint: HostPort
+    target_bucket: BucketName
+    secure: StrictBool = False
+
+
+def _object_key(value: str) -> str:
+    if value.startswith("/") or any(part in ("", ".", "..") for part in value.split("/")):
+        raise ValueError("keys must be relative paths without empty or dot segments")
+    return value
+
+
+class RustfsMonitorJob(RoleConfig):
+    """One replicated bucket watched by heartbeat objects (MinIO replica semantics).
+
+    The source writes ``heartbeat_key`` into ``bucket``, or with
+    ``heartbeat=False`` into ``heartbeat_status_bucket`` (another job's bucket
+    with its own heartbeat), so buckets an application syncs verbatim stay free
+    of foreign objects. The replica judges lag by that object's age.
+    """
+
+    name: Name
+    bucket: BucketName
+    heartbeat: StrictBool = True
+    heartbeat_status_bucket: BucketName | None = None
+    heartbeat_key: ObjectKey = "_replication-health/heartbeat.json"
+    warning_hours: Hours = 2
+    critical_hours: Hours = 6
+    # A parity breach longer than this turns the replica's parity marker stale.
+    parity_critical_hours: Hours = 1
+    parity_tolerance_percent: Annotated[float, Field(ge=0, le=100)] = 0.1
+    parity_size_delta_tolerance_bytes: Annotated[StrictInt, Field(ge=0)] = 0
+    parity_object_delta_tolerance: Annotated[StrictInt, Field(ge=0)] = 200
+    required: StrictBool = True
+
+    @field_validator("heartbeat_key")
+    @classmethod
+    def relative_key(cls, value: str) -> str:
+        return _object_key(value)
+
+    @model_validator(mode="after")
+    def coherent(self) -> Self:
+        if self.critical_hours < self.warning_hours:
+            raise ValueError("critical_hours must not be below warning_hours")
+        if self.heartbeat and self.heartbeat_status_bucket is not None:
+            raise ValueError("heartbeat_status_bucket is only for heartbeat-free jobs")
+        if not self.heartbeat and self.heartbeat_status_bucket in (None, self.bucket):
+            raise ValueError("a heartbeat-free job needs another heartbeat_status_bucket")
+        if not self.heartbeat and self.heartbeat_key == "_replication-health/heartbeat.json":
+            raise ValueError("a heartbeat-free job needs its own heartbeat_key")
+        return self
+
+    @property
+    def heartbeat_bucket(self) -> str:
+        return self.bucket if self.heartbeat else str(self.heartbeat_status_bucket)
+
+
+class RustfsReplicationMonitor(RoleConfig):
+    """Heartbeat writer (``source``) or lag/parity probe (``replica``) on a timer.
+
+    The source measures each job's replication queue and its object count and
+    size on both sides, then writes the heartbeat object; the replica reads the
+    replicated object and keeps ``<state_root>/<job>/{status.json,lag.marker,
+    parity.marker}`` like the MinIO replica monitor, for file-age checks.
+    """
+
+    role: Literal["source", "replica"]
+    jobs: tuple[RustfsMonitorJob, ...]
+    # Source only: the replica's S3 API (http(s)://host:port) for its counts.
+    replica_endpoint: Annotated[str, Field(pattern=r"^https?://[A-Za-z0-9.-]+:[0-9]{1,5}$")] | None = None
+    state_root: AbsolutePath = "/var/lib/rustfs-replication-monitor"
+    script_path: AbsolutePath = "/usr/local/bin/rustfs-replication-monitor"
+    library_dir: AbsolutePath = "/usr/local/lib/rustfs-replication-monitor"
+    jobs_path: AbsolutePath = "/etc/rustfs-replication-monitor.json"
+    env_file: AbsolutePath = "/etc/default/rustfs-replication-monitor"
+    timer_interval_sec: Annotated[StrictInt, Field(ge=60)] = 300
+    timer_on_boot_sec: Annotated[StrictInt, Field(ge=0)] = 120
+    timer_randomized_delay_sec: Annotated[StrictInt, Field(ge=0)] = 20
+
+    @model_validator(mode="after")
+    def coherent(self) -> Self:
+        if not self.jobs:
+            raise ValueError("the replication monitor needs at least one job")
+        names = [job.name for job in self.jobs]
+        buckets = [job.bucket for job in self.jobs]
+        if len(set(names)) != len(names) or len(set(buckets)) != len(buckets):
+            raise ValueError("monitor jobs need unique names and buckets")
+        own = {job.bucket for job in self.jobs if job.heartbeat}
+        status_keys = [(job.heartbeat_bucket, job.heartbeat_key) for job in self.jobs]
+        if any(not job.heartbeat and job.heartbeat_status_bucket not in own for job in self.jobs):
+            raise ValueError("heartbeat_status_bucket must be another job's bucket with its own heartbeat")
+        if len(set(status_keys)) != len(status_keys):
+            raise ValueError("every job needs its own heartbeat object")
+        if (self.role == "source") != (self.replica_endpoint is not None):
+            raise ValueError("replica_endpoint is required for, and only for, the source role")
+        if any(job.parity_critical_hours * 3600 < 2 * self.timer_interval_sec for job in self.jobs):
+            raise ValueError("parity_critical_hours must cover at least two monitor intervals")
+        return self
+
+    @property
+    def unit(self) -> str:
+        return "rustfs-replication-heartbeat" if self.role == "source" else "rustfs-replication-lag-check"
 
 
 class RustfsPolicy(RoleConfig):
@@ -86,10 +207,11 @@ class RustfsIdentity(RoleConfig):
 
 
 class RustfsConfig(RoleConfig):
-    """One single-node single-disk RustFS server on loopback.
+    """One single-node single-disk RustFS server on loopback or one local address.
 
-    Out of scope: replication, lifecycle rules, bucket policies, groups,
-    service accounts, KMS and removal.
+    Out of scope: lifecycle rules other than noncurrent expiry, replication
+    other than declared bucket rules, bucket policies, groups, service
+    accounts, KMS and removal.
     """
 
     user: UnixUser = "rustfs"
@@ -102,7 +224,8 @@ class RustfsConfig(RoleConfig):
     # lies on it, so an absent encrypted volume never receives objects.
     required_mount: AbsolutePath = "/mnt/cryptdata"
     data_dir: AbsolutePath = "/mnt/cryptdata/rustfs/data"
-    bind_host: Literal["127.0.0.1"] = "127.0.0.1"
+    # Loopback, or one IPv4 address of the host (a private replica peer).
+    bind_host: str = "127.0.0.1"
     api_port: Port = 9020
     region: Annotated[str, Field(pattern=r"^[a-z0-9-]{1,32}$")] = "us-east-1"
     expose_via_traefik: StrictBool = False
@@ -112,6 +235,8 @@ class RustfsConfig(RoleConfig):
     buckets: tuple[RustfsBucket, ...] = ()
     policies: tuple[RustfsPolicy, ...] = ()
     identities: tuple[RustfsIdentity, ...] = ()
+    replications: tuple[RustfsReplication, ...] = ()
+    monitor: RustfsReplicationMonitor | None = None
     systemd_memory_max: Annotated[str, Field(pattern=r"^([0-9]+[KMGT]?|infinity)?$")] = ""
     systemd_limit_nofile: Annotated[StrictInt, Field(ge=1)] = 65536
     systemd_tasks_max: Annotated[str, Field(pattern=r"^([0-9]+|infinity)$")] = "infinity"
@@ -119,6 +244,16 @@ class RustfsConfig(RoleConfig):
     # A controller copy of the extracted executable (owned fixtures, offline
     # installs); it must match the pinned binary digest of the host's arch.
     local_binary: Path | None = None
+
+    @field_validator("bind_host")
+    @classmethod
+    def single_address(cls, value: str) -> str:
+        import ipaddress
+
+        address = ipaddress.IPv4Address(value)
+        if address.is_unspecified or address.is_multicast or str(address) != value:
+            raise ValueError("bind_host must be one canonical unicast IPv4 address")
+        return value
 
     @field_validator("internal_ip_ranges")
     @classmethod
@@ -148,6 +283,16 @@ class RustfsConfig(RoleConfig):
         policies = {item.name for item in self.policies}
         if any(not set(item.policies) <= policies for item in self.identities):
             raise ValueError("identities may attach only declared policies")
+        versioned = {bucket.name for bucket in self.buckets if bucket.versioning}
+        replicated = [item.bucket for item in self.replications]
+        if not set(replicated) <= versioned or len(replicated) != len(set(replicated)):
+            raise ValueError("each replication needs its own declared versioned bucket")
+        if self.monitor is not None:
+            declared = {bucket.name for bucket in self.buckets}
+            if not {job.bucket for job in self.monitor.jobs} <= declared:
+                raise ValueError("monitor jobs may watch only declared buckets")
+            if self.monitor.role == "source" and {job.bucket for job in self.monitor.jobs} - set(replicated):
+                raise ValueError("a source monitor watches only replicated buckets")
         return self
 
     @property
@@ -174,6 +319,10 @@ class RustfsCredentials(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
     root: RustfsUserCredentials
     identities: dict[str, RustfsUserCredentials] = Field(default_factory=dict)
+    # The remote identity every declared replication target signs with.
+    replication: RustfsUserCredentials | None = None
+    # The read-only identity the monitor uses on the replica (both roles).
+    monitor: RustfsUserCredentials | None = None
 
     @field_validator("root")
     @classmethod
@@ -181,4 +330,12 @@ class RustfsCredentials(BaseModel):
         # The environment file quotes values literally.
         if any(char in value.secret.get_secret_value() for char in '\\"$`'):
             raise ValueError("root secret must not contain quotes, backslashes, '$' or '`'")
+        return value
+
+    @field_validator("monitor")
+    @classmethod
+    def monitor_environment_value(cls, value: RustfsUserCredentials | None) -> RustfsUserCredentials | None:
+        # The monitor's environment file quotes values literally, like root's.
+        if value is not None and any(char in value.secret.get_secret_value() for char in '\\"$`'):
+            raise ValueError("monitor secret must not contain quotes, backslashes, '$' or '`'")
         return value
