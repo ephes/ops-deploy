@@ -1,0 +1,21 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/snappymail_remove/tasks/main.yml",
+      "sha256": "7ba213472e305efb3cf7f2e04553c9ce34eac43de68f117f25fdadadfef67e82"
+    },
+    "defaults.yml": {
+      "source": "roles/snappymail_remove/defaults/main.yml",
+      "sha256": "09820ca3302f1f70c9cd76586dad786bd4d63e315d42908ccfb9ef0c6cf49640"
+    },
+    "handlers.yml": {
+      "source": "roles/snappymail_remove/handlers/main.yml",
+      "sha256": "72969445ba1e9c237f76f374a218e349154a79b6ca42d991a8928a51637de8b9"
+    },
+    "shared_defaults.yml": {
+      "source": "roles/snappymail_shared/defaults/main.yml",
+      "sha256": "9dd5295eff66c4cf9168b5ff1dd4aa089a6cb1eb38fafe8a0735ab69b1977293"
+    }
+  }
+}

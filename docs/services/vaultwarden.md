@@ -4,8 +4,8 @@ Port of the `vaultwarden_deploy` Ansible role: [Vaultwarden](https://github.com/
 the Bitwarden-compatible password manager, installed from the vendor's `.deb`
 packages ([vaultwarden-deb](https://vaultwarden-deb.pages.dev/)) as a systemd
 service behind Traefik, plus the port preflight of the playbook that runs the
-role. Backup and restore are ported too ([below](#backup-and-restore));
-removal stays with the Ansible role.
+role. Backup and restore are ported too ([below](#backup-and-restore)),
+and so is the `vaultwarden_remove` role (see [Removal](#removal)).
 
 ```python
 from ops_deploy.services.vaultwarden import VaultwardenConfig, deploy_vaultwarden
@@ -221,3 +221,28 @@ installed must not be running either.
 Tests: `tests/test_vaultwarden_backup_restore.py` (fixture vault and a
 throwaway age key; both scripts end to end with stubbed `systemctl`).
 
+
+## Removal
+
+`remove_vaultwarden(VaultwardenRemoveConfig(confirm=True))` ports the
+`vaultwarden_remove` role as `playbooks/remove-vaultwarden.yml` runs it
+(ops-library `44a532b`, role files under `tests/parity/vaultwarden/remove`).
+Without `confirm` it fails before any host probe. In the role's order: stop
+and disable `vaultwarden` (failures ignored) when one of its unit files
+exists; purge both packages (any dpkg state but not-installed;
+`remove_config=False` removes installed ones without purging); remove
+`/etc/systemd/system/vaultwarden.service.d` and reload systemd; remove the
+Traefik route (behind the transaction guard); remove every enabled copy of
+the vendor repository line from `/etc/apt/sources.list` and every
+`sources.list.d/*.list` (suite `bookworm` on Ubuntu, the release codename
+elsewhere; commented-out copies stay, as with the module; a file left empty
+is deleted, other lines stay as they are, a symlinked `.list` file becomes a
+regular file) and refresh the apt cache once when one was there (unlike the
+module, which retries and puts the line back when the refresh fails, a
+failed refresh fails the removal with the line gone; a rerun goes on); remove the signing key
+and `/etc/vaultwarden.env`.
+
+The data (`/var/lib/vaultwarden`) and `/var/log/vaultwarden` always stay:
+the playbook removes them only with `-e remove_data=true` (or
+`-e vaultwarden_remove_data=true`), which the removal recipe never passes; that path and its archive under `/root` are not ported.
+Unlike the role, Traefik is not restarted after the route went.

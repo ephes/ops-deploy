@@ -1,0 +1,13 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/paperless_remove/tasks/main.yml",
+      "sha256": "ec65a1a18ca3561fe3cea65387f1677fa4dfa181ec9f9f721785c27216fbf521"
+    },
+    "defaults.yml": {
+      "source": "roles/paperless_remove/defaults/main.yml",
+      "sha256": "a9851e138bcfa79b93f66e5e3687c9920641ced1a73f415eabeb0d6e0d2e0730"
+    }
+  }
+}

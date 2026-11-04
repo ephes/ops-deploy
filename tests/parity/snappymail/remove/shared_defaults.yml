@@ -1,0 +1,83 @@
+---
+# Shared defaults for SnappyMail roles
+
+snappymail_user: snappymail
+snappymail_group: snappymail
+snappymail_shell: /usr/sbin/nologin
+snappymail_home: /opt/snappymail
+
+snappymail_install_dir: /opt/snappymail
+snappymail_data_dir: /mnt/cryptdata/snappymail
+snappymail_private_data_dir: "{{ snappymail_data_dir }}/_data_/_default_"
+snappymail_configs_dir: "{{ snappymail_private_data_dir }}/configs"
+snappymail_domains_dir: "{{ snappymail_private_data_dir }}/domains"
+snappymail_logs_dir: "{{ snappymail_data_dir }}/logs"
+
+snappymail_listen_address: 127.0.0.1
+snappymail_listen_port: 8088
+snappymail_nginx_server_name: "{{ snappymail_traefik_host | default('_') }}"
+snappymail_nginx_client_max_body_size: 25m
+snappymail_web_user: www-data
+snappymail_web_group: www-data
+
+snappymail_version: "2.38.2"
+snappymail_download_url: "https://github.com/the-djmaze/snappymail/releases/download/v{{ snappymail_version }}/snappymail-{{ snappymail_version }}.tar.gz"
+snappymail_download_checksum: "sha256:71f1d8a9065cc9cf7ddd064f5c47cc7b255cb70e6a56713647fc73d4b79e33ec"
+snappymail_download_timeout: 120
+
+snappymail_php_version: ""  # auto-detected from installed PHP CLI when empty
+snappymail_php_upload_limit: 25M
+snappymail_php_memory_limit: 256M
+snappymail_php_max_execution_time: 120
+snappymail_php_pm: ondemand
+snappymail_php_pm_max_children: 8
+snappymail_php_pm_max_requests: 500
+snappymail_php_pm_process_idle_timeout: 10s
+
+snappymail_admin_user: admin
+snappymail_admin_password: "CHANGEME"
+snappymail_admin_password_hash: ""  # Optional precomputed hash (PASSWORD_DEFAULT)
+
+snappymail_imap_host: "imap.home.xn--wersdrfer-47a.de"
+snappymail_imap_port: 993
+snappymail_imap_security: SSL   # SSL | TLS | NONE
+snappymail_imap_short_login: false
+snappymail_imap_timeout: 300
+
+snappymail_smtp_host: "smtp.home.xn--wersdrfer-47a.de"
+snappymail_smtp_port: 587
+snappymail_smtp_security: TLS   # TLS == STARTTLS | SSL | NONE
+snappymail_smtp_auth: true
+snappymail_smtp_short_login: false
+snappymail_smtp_set_sender: false
+
+snappymail_sieve_enabled: false
+snappymail_sieve_host: "{{ snappymail_imap_host }}"
+snappymail_sieve_port: 4190
+snappymail_sieve_security: TLS
+snappymail_sieve_short_login: false
+
+snappymail_force_https: true
+snappymail_login_default_domain: ""
+snappymail_domains: []
+
+snappymail_logging_enabled: false
+snappymail_logging_level: 4
+snappymail_logging_path: "{{ snappymail_logs_dir }}"
+
+snappymail_traefik_enabled: true
+snappymail_traefik_host: "webmail.home.xn--wersdrfer-47a.de"
+snappymail_external_url: "https://{{ snappymail_traefik_host }}"
+snappymail_traefik_entrypoints:
+  - web-secure
+snappymail_traefik_cert_resolver: ""  # empty -> use file provider / wildcard cert
+snappymail_traefik_middlewares: []
+snappymail_traefik_config_path: /etc/traefik/dynamic/snappymail.yml
+
+snappymail_healthcheck_enabled: true
+snappymail_healthcheck_url: "http://127.0.0.1:{{ snappymail_listen_port }}/"
+snappymail_healthcheck_timeout: 10
+snappymail_healthcheck_retries: 3
+
+# Preserve an explicitly selected HSTS preload policy.
+snappymail_traefik_sts_preload: false

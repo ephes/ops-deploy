@@ -1,4 +1,4 @@
-"""SnappyMail ordinary deployment API, backup and restore (ports of snappymail_deploy, _backup and _restore)."""
+"""SnappyMail deployment, backup, restore and removal (snappymail_deploy, _backup, _restore, _remove)."""
 
 from pyinfra.api import deploy
 
@@ -10,6 +10,7 @@ from ops_deploy.services.snappymail.backup_restore import (
     deploy_snappymail_restore,
 )
 from ops_deploy.services.snappymail.config import SnappyMailConfig
+from ops_deploy.services.snappymail.remove import SnappyMailRemoveConfig, remove_snappymail
 
 
 @deploy("SnappyMail")
@@ -22,8 +23,10 @@ def deploy_snappymail(cfg: SnappyMailConfig, secrets: SecretValues) -> None:
 __all__ = [
     "SnappyMailBackupConfig",
     "SnappyMailConfig",
+    "SnappyMailRemoveConfig",
     "SnappyMailRestoreConfig",
     "deploy_snappymail",
     "deploy_snappymail_backup",
     "deploy_snappymail_restore",
+    "remove_snappymail",
 ]

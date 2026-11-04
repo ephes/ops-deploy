@@ -1,0 +1,21 @@
+---
+# postfixadmin_remove - Role-specific defaults
+#
+# Most defaults are inherited from postfixadmin_shared
+
+# Safety: require explicit confirmation
+postfixadmin_remove_confirm: false
+
+# What to remove
+postfixadmin_remove_application: true      # Remove /opt/postfixadmin
+postfixadmin_remove_nginx_config: true     # Remove nginx site config
+postfixadmin_remove_traefik_config: true   # Remove Traefik router config
+postfixadmin_remove_php_pool: true         # Remove PHP-FPM pool
+
+# Database options (careful - only removes PostfixAdmin-specific tables, not mail data)
+postfixadmin_remove_admin_tables: false    # Remove admin, domain_admins, log tables
+# WARNING: Do NOT set this to true unless you're switching away from PostfixAdmin schema
+postfixadmin_remove_mail_tables: false     # Remove domain, mailbox, alias, alias_domain tables
+
+# Backup options
+postfixadmin_remove_backups: false         # Remove backup directory

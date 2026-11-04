@@ -39,7 +39,8 @@ is bounded exception recovery, not recovery from power loss or a killed helper.
 A no-op does not stage files, upload helpers, rotate hashes or restart services.
 
 `traefik_sts_preload` defaults to false and can preserve an explicitly selected
-existing route policy. Backup/restore/remove remain separate workflows.
+existing route policy. Backup/restore remain separate workflows; the removal
+(`remove_snappymail`) is documented in `docs/services/snappymail.md`.
 
 Existing admin hashes must have the canonical bcrypt encoding used by the selected
 release and PHP. Malformed, unsupported or unavailable verification refuses

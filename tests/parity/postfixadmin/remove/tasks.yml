@@ -1,0 +1,192 @@
+---
+# postfixadmin_remove - Remove PostfixAdmin web UI
+#
+# WARNING: This role removes PostfixAdmin files and optionally database tables.
+# By default, it keeps the mail tables (domain, mailbox, alias, alias_domain)
+# which are now used by Postfix/Dovecot.
+
+- name: Require confirmation for removal
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_remove_confirm | bool
+    fail_msg: |
+      PostfixAdmin removal requires explicit confirmation.
+      Set postfixadmin_remove_confirm: true to proceed.
+    quiet: true
+
+- name: Warn about mail table removal
+  ansible.builtin.debug:
+    msg: |
+      WARNING: You have set postfixadmin_remove_mail_tables: true
+      This will DELETE all mail data (domains, mailboxes, aliases)!
+      Make sure you have a backup and understand the consequences.
+  when: postfixadmin_remove_mail_tables | bool
+
+- name: Remove nginx configuration
+  when: postfixadmin_remove_nginx_config | bool
+  block:
+    - name: Disable nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/postfixadmin
+        state: absent
+      notify: reload nginx
+
+    - name: Remove nginx site configuration
+      ansible.builtin.file:
+        path: /etc/nginx/sites-available/postfixadmin
+        state: absent
+
+- name: Remove Traefik configuration
+  ansible.builtin.file:
+    path: "{{ postfixadmin_traefik_config_path }}"
+    state: absent
+  when: postfixadmin_remove_traefik_config | bool
+  notify: reload traefik
+
+- name: Detect PHP version for pool removal
+  ansible.builtin.command: php -r 'printf("%s.%s", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'
+  register: php_version_detect
+  changed_when: false
+  failed_when: false
+  when: postfixadmin_remove_php_pool | bool
+
+- name: Remove PHP-FPM pool
+  ansible.builtin.file:
+    path: "/etc/php/{{ php_version_detect.stdout | default('8.3') }}/fpm/pool.d/postfixadmin.conf"
+    state: absent
+  when:
+    - postfixadmin_remove_php_pool | bool
+    - php_version_detect.rc == 0
+  notify: restart php-fpm
+
+- name: Remove PostfixAdmin application directory
+  ansible.builtin.file:
+    path: "{{ postfixadmin_install_path }}"
+    state: absent
+  when: postfixadmin_remove_application | bool
+
+- name: Remove PostfixAdmin admin tables
+  when: postfixadmin_remove_admin_tables | bool
+  block:
+    - name: Drop log table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS log CASCADE"
+      failed_when: false
+
+    - name: Drop domain_admins table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS domain_admins CASCADE"
+      failed_when: false
+
+    - name: Drop admin table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS admin CASCADE"
+      failed_when: false
+
+    - name: Drop vacation tables
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS vacation_notification, vacation CASCADE"
+      failed_when: false
+
+    - name: Drop quota tables
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS quota2, quota CASCADE"
+      failed_when: false
+
+    - name: Drop config table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS config CASCADE"
+      failed_when: false
+
+    - name: Drop fetchmail table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS fetchmail CASCADE"
+      failed_when: false
+
+- name: Remove PostfixAdmin mail tables (DESTRUCTIVE)
+  when: postfixadmin_remove_mail_tables | bool
+  block:
+    - name: Drop alias_domain table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS alias_domain CASCADE"
+      failed_when: false
+
+    - name: Drop alias table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS alias CASCADE"
+      failed_when: false
+
+    - name: Drop mailbox table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS mailbox CASCADE"
+      failed_when: false
+
+    - name: Drop domain table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS domain CASCADE"
+      failed_when: false
+
+- name: Remove backup directory
+  ansible.builtin.file:
+    path: "{{ postfixadmin_backup_path }}"
+    state: absent
+  when: postfixadmin_remove_backups | bool
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Report removal completion
+  ansible.builtin.debug:
+    msg: >-
+      PostfixAdmin removal completed.
+      Application={{ postfixadmin_remove_application }},
+      nginx={{ postfixadmin_remove_nginx_config }},
+      Traefik={{ postfixadmin_remove_traefik_config }},
+      PHP-FPM={{ postfixadmin_remove_php_pool }},
+      AdminTables={{ postfixadmin_remove_admin_tables }},
+      MailTables={{ postfixadmin_remove_mail_tables }},
+      Backups={{ postfixadmin_remove_backups }}

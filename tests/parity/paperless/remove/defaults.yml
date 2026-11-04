@@ -1,0 +1,73 @@
+---
+# Safety toggle
+paperless_remove_confirm: false
+
+# Service/systemd configuration
+paperless_service_units:
+  - paperless
+  - paperless-worker
+  - paperless-scheduler
+  - paperless-consumer
+paperless_systemd_unit_dir: /etc/systemd/system
+paperless_systemd_units:
+  - "{{ paperless_systemd_unit_dir }}/paperless.service"
+  - "{{ paperless_systemd_unit_dir }}/paperless-worker.service"
+  - "{{ paperless_systemd_unit_dir }}/paperless-scheduler.service"
+  - "{{ paperless_systemd_unit_dir }}/paperless-consumer.service"
+paperless_remove_service_units: true
+
+# Traefik / scanner configuration
+paperless_traefik_config_path: /etc/traefik/dynamic/paperless.yml
+paperless_remove_traefik_config: true
+paperless_scanner_sshd_config_path: /etc/ssh/sshd_config.d/sftp-scanner.conf
+paperless_remove_scanner_config: true
+
+# Paths / directories
+paperless_username: paperless
+paperless_group: paperless
+paperless_home_path: "/home/{{ paperless_username }}"
+paperless_site_root: "{{ paperless_home_path }}/site"
+paperless_virtualenv_path: "{{ paperless_site_root }}/.venv"
+paperless_current_symlink: "{{ paperless_site_root }}/paperless-ngx"
+paperless_env_file: "{{ paperless_site_root }}/.env"
+paperless_temp_dir: /tmp/paperless
+paperless_external_storage_root: /mnt/cryptdata/paperless
+paperless_media_path: "{{ paperless_external_storage_root }}/media"
+paperless_data_path: "{{ paperless_external_storage_root }}/data"
+paperless_consume_path: "{{ paperless_external_storage_root }}/consume"
+paperless_export_path: "{{ paperless_external_storage_root }}/export"
+paperless_backup_path: "{{ paperless_external_storage_root }}/backup"
+paperless_tmp_path: "{{ paperless_external_storage_root }}/tmp"
+paperless_sftp_chroot_dir: /srv/sftp-scanner
+
+paperless_remove_site_root: true
+paperless_remove_virtualenv: "{{ paperless_remove_site_root }}"
+paperless_remove_current_symlink: "{{ paperless_remove_site_root }}"
+paperless_remove_temp_dir: true
+paperless_remove_media_dir: false
+paperless_remove_data_dir: false
+paperless_remove_consume_dir: false
+paperless_remove_export_dir: false
+paperless_remove_backup_dir: false
+paperless_remove_tmp_dir: false
+paperless_remove_sftp_chroot: false
+
+# Accounts / ownership
+paperless_remove_user: false
+paperless_remove_group: false
+paperless_remove_scanner_user: false
+paperless_scanner_username: scanner
+paperless_scanner_group: scanner
+paperless_scanner_inbox_path: "{{ paperless_sftp_chroot_dir }}/inbox"
+
+# PostgreSQL cleanup
+paperless_remove_postgres_database: false
+paperless_remove_postgres_user: false
+paperless_postgres_database: paperless
+paperless_postgres_user: paperless
+paperless_postgres_host: localhost
+paperless_postgres_port: 5432
+paperless_postgres_become_user: postgres
+
+# Summary output toggle
+paperless_remove_print_summary: true

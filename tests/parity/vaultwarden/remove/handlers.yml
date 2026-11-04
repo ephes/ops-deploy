@@ -1,0 +1,10 @@
+---
+# Vaultwarden remove handlers
+
+# Traefik auto-reloads when config files change (inotify),
+# but we trigger a restart to ensure the removed config is picked up
+- name: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: restarted
+  failed_when: false

@@ -1,0 +1,19 @@
+---
+- name: reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  ignore_errors: true
+
+- name: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: reloaded
+  ignore_errors: true
+
+- name: reload php-fpm
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: reloaded
+  loop: "{{ snappymail_remove_php_services | default([]) }}"
+  ignore_errors: true

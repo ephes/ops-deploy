@@ -1,0 +1,197 @@
+---
+# postfixadmin_shared - Shared variables for PostfixAdmin roles
+#
+# This role provides common variables used by:
+# - postfixadmin_deploy
+# - postfixadmin_backup
+# - postfixadmin_restore
+# - postfixadmin_remove
+
+# =============================================================================
+# Application Settings
+# =============================================================================
+
+postfixadmin_version: "4.0.5"
+postfixadmin_install_path: /opt/postfixadmin
+postfixadmin_public_path: "{{ postfixadmin_install_path }}/public"
+postfixadmin_templates_c_path: "{{ postfixadmin_install_path }}/templates_c"
+
+# Download settings
+#
+# 4.0 changed both the tag scheme and what has to be downloaded. Tags went from
+# `postfixadmin-3.3.13` to `v4.0.5`, and 4.0 requires composer dependencies that
+# the GitHub source archive does not contain — it aborts on a missing
+# vendor/autoload.php. Upstream now publishes self-contained release assets with
+# vendor/ bundled, so the download points at the release asset rather than the
+# source archive.
+#
+# Two builds are published per release. The php84 build carries the updated
+# spomky-labs/otphp with the two CVEs fixed in 4.0.4; php74 is the legacy build
+# and does not. Nothing in the php84 vendor tree requires more than PHP 8.1, so
+# it runs on 8.2/8.3 as well and is the right default.
+postfixadmin_release_build: php84
+postfixadmin_download_url: >-
+  https://github.com/postfixadmin/postfixadmin/releases/download/v{{ postfixadmin_version }}/postfixadmin-v{{ postfixadmin_version }}-{{ postfixadmin_release_build }}.tar.gz
+# Keyed by "<version>-<build>"; add the new entry in the same change as
+# postfixadmin_version.
+postfixadmin_download_checksums:
+  "4.0.5-php84": "sha256:88a55e04dad4f5a2b7729c696cb997ad3a5afb39e31cae1627fa024e7649d70b"
+postfixadmin_download_checksum: >-
+  {{ postfixadmin_download_checksums[postfixadmin_version ~ '-' ~ postfixadmin_release_build] | default('') }}
+postfixadmin_download_timeout: 120
+
+# =============================================================================
+# Web Server Configuration
+# =============================================================================
+
+postfixadmin_listen_address: 127.0.0.1
+postfixadmin_listen_port: 8082
+postfixadmin_nginx_server_names:
+  - "mailadmin.home.xn--wersdrfer-47a.de"
+postfixadmin_nginx_client_max_body_size: 10m
+postfixadmin_web_user: www-data
+postfixadmin_web_group: www-data
+
+# =============================================================================
+# PHP Configuration
+# =============================================================================
+
+# Leave empty to auto-detect from installed PHP CLI
+postfixadmin_php_version: ""
+
+# PHP-FPM pool settings
+postfixadmin_php_pm: ondemand
+postfixadmin_php_pm_max_children: 5
+postfixadmin_php_pm_max_requests: 500
+postfixadmin_php_pm_process_idle_timeout: 10s
+postfixadmin_php_memory_limit: 128M
+postfixadmin_php_max_execution_time: 30
+
+# Required PHP extensions
+postfixadmin_php_extensions:
+  - pgsql
+  - mbstring
+  - intl
+  - gd  # For TOTP QR codes
+
+# =============================================================================
+# Database Configuration
+# =============================================================================
+
+# PostgreSQL connection (uses existing mail database)
+postfixadmin_db_type: pgsql
+postfixadmin_db_host: localhost
+postfixadmin_db_port: 5432
+postfixadmin_db_name: mail
+postfixadmin_db_user: mail
+postfixadmin_db_password: "CHANGEME"  # Must be set via secrets
+
+# =============================================================================
+# PostfixAdmin Configuration
+# =============================================================================
+
+# Setup password hash (generate with: php -r "echo password_hash('...', PASSWORD_DEFAULT);")
+# Used only during initial setup - disable after
+postfixadmin_setup_password_hash: "CHANGEME"
+
+# Admin account for web UI
+# Password hash must be generated with: doveadm pw -s SHA512-CRYPT
+postfixadmin_admin_email: "admin@xn--wersdrfer-47a.de"
+postfixadmin_admin_password_hash: "CHANGEME"
+
+# Password encryption (must match Dovecot)
+postfixadmin_encrypt_method: "dovecot:SHA512-CRYPT"
+postfixadmin_dovecotpw_path: "/usr/bin/doveadm pw"
+
+# Maildir settings
+postfixadmin_domain_path: "YES"           # Include domain in maildir path
+postfixadmin_domain_in_mailbox: "NO"      # Don't duplicate domain in mailbox name
+
+# Feature toggles
+postfixadmin_quota_enabled: false
+postfixadmin_vacation_enabled: false
+postfixadmin_fetchmail_enabled: false
+postfixadmin_totp_enabled: true
+
+# Default limits (0 = unlimited)
+postfixadmin_default_aliases: 0
+postfixadmin_default_mailboxes: 0
+
+# User self-service permissions
+postfixadmin_user_can_edit_alias: false
+postfixadmin_user_can_edit_forward: false
+
+# Default aliases to create for new domains
+postfixadmin_default_domain_aliases:
+  abuse: postmaster
+  hostmaster: postmaster
+  webmaster: postmaster
+
+# TOTP 2FA exceptions (IP ranges that don't require 2FA)
+postfixadmin_totp_exceptions:
+  - "100.64.0.0/10"     # Tailscale CGNAT range
+  - "fd7a:115c:a1e0::/48"  # Tailscale IPv6
+
+# IDN support - don't DNS-check IDN domains
+postfixadmin_emailcheck_resolve_domain: false
+
+# =============================================================================
+# Traefik Configuration
+# =============================================================================
+
+postfixadmin_traefik_enabled: true
+postfixadmin_traefik_host: "mailadmin.home.xn--wersdrfer-47a.de"
+postfixadmin_traefik_host_aliases: []
+postfixadmin_traefik_entrypoints:
+  - web-secure
+postfixadmin_traefik_cert_resolver: ""  # empty -> use file provider / wildcard cert
+postfixadmin_traefik_middlewares: []
+postfixadmin_traefik_config_path: /etc/traefik/dynamic/postfixadmin.yml
+
+# IP whitelist for Traefik (Tailscale only by default)
+postfixadmin_traefik_ip_whitelist_enabled: true
+postfixadmin_traefik_ip_whitelist:
+  - "100.64.0.0/10"        # Tailscale CGNAT range
+  - "fd7a:115c:a1e0::/48"  # Tailscale IPv6
+
+# =============================================================================
+# nginx Rate Limiting
+# =============================================================================
+
+# Login rate limiting (requests per minute per IP)
+postfixadmin_login_rate_limit: "5r/m"
+postfixadmin_login_rate_burst: 3
+
+# =============================================================================
+# Backup Configuration
+# =============================================================================
+
+postfixadmin_backup_path: /mnt/cryptdata/backups/postfixadmin
+# Completed backups older than this are pruned after a successful run ...
+postfixadmin_backup_retention_days: 14
+# ... except the newest postfixadmin_backup_keep_min, which are always kept.
+postfixadmin_backup_keep_min: 5
+
+# Parts of a backup directory (postfixadmin_backup / postfixadmin_restore).
+# A backup without every required part fails and is never published; a restore
+# refuses a backup that lacks one. Optional parts are left out of the manifest
+# with a warning when they cannot be written.
+postfixadmin_backup_required_parts:
+  - config.local.php
+  - admin.json
+  - domain_admins.json
+postfixadmin_backup_optional_parts:
+  - log.json
+  - templates_c.tar.gz
+
+# =============================================================================
+# Health Check
+# =============================================================================
+
+postfixadmin_healthcheck_enabled: true
+postfixadmin_healthcheck_url: "http://{{ postfixadmin_listen_address }}:{{ postfixadmin_listen_port }}/"
+postfixadmin_healthcheck_timeout: 10
+postfixadmin_healthcheck_retries: 3
+
+# Preserve an explicitly selected HSTS preload policy.
+postfixadmin_traefik_sts_preload: false

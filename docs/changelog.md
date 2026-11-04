@@ -142,6 +142,23 @@
   purge: true` package selection (with its 60-second dpkg lock wait), and `service_absent(skip_missing=True)`
   skips units systemd does not know (for loops over `service_facts`).
 
+- `services.paperless`, `services.postfixadmin`, `services.snappymail`,
+  `services.vaultwarden`: ports of the `paperless_remove`,
+  `postfixadmin_remove`, `snappymail_remove` and `vaultwarden_remove` roles
+  (ops-library `44a532b`, recorded in the drift manifest with
+  `postfixadmin_shared` and `snappymail_shared`, role files under
+  `tests/parity/<service>/remove`): `PaperlessRemoveConfig`/`remove_paperless`,
+  `PostfixAdminRemoveConfig`/`remove_postfixadmin`,
+  `SnappyMailRemoveConfig`/`remove_snappymail` and
+  `VaultwardenRemoveConfig`/`remove_vaultwarden`, each refused without
+  `confirm` before any probe, with the roles' defaults, order and ignored
+  failures; routes are removed behind the Traefik transaction guard. Not
+  ported: PostfixAdmin's opt-in table drops, Vaultwarden's data removal (the
+  playbook's `-e remove_data=true` or `-e vaultwarden_remove_data=true`) and the Traefik reload/restart handlers.
+  SnappyMail never stops nginx, Traefik or PHP-FPM (the role's stops can leave
+  Traefik down); nginx and PHP-FPM are reloaded after their files went.
+  Vaultwarden's package purge uses `services._lifecycle.apt_purge.purge`.
+
 - `services.daybook_operations_api`: the rsync deploy ensures the site
   directory `0700` instead of `0750`, the mode the `daybook_operations_api_deploy`
   role leaves behind (its archive-mode copy of the playbook's `0700` export

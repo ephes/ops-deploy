@@ -40,7 +40,8 @@ A no-op bypasses staging, helper uploads, SQL mutations and service restarts.
 
 `traefik_sts_preload` defaults to false. Set it explicitly only when preserving or
 selecting that route policy. It does not alter the shared HSTS defaults.
-Backup/restore/remove and old-mail schema conversion are separate workflows.
+Backup/restore and old-mail schema conversion are separate workflows; the
+removal is below ([Removal](#removal)).
 
 The database/role foundation (including any requested role-password change) must
 converge in a prior pyinfra run. Web admission is intentionally read-only during
@@ -119,3 +120,21 @@ host program end to end against a fake `psql` with fixture rows, and a backup
 and restore round trip against a throwaway local PostgreSQL 16/17 when
 `initdb` is installed).
 
+## Removal
+
+`remove_postfixadmin(PostfixAdminRemoveConfig(confirm=True))` ports the
+`postfixadmin_remove` role at ops-library `44a532b` with its defaults (role
+and `postfixadmin_shared` files under `tests/parity/postfixadmin/remove`).
+Without `confirm` it fails before any host probe. It removes the enabled and
+available nginx site, the Traefik route (behind the transaction guard), the
+PHP-FPM pool of the version `php -r` reports (skipped when php is missing or
+fails) and `install_path`; `remove_backups=True` also removes `backup_path`.
+The mail tables, the admin tables and the mail data stay: the role's opt-in
+table drops are not ported, and the removal never connects to PostgreSQL.
+
+As the role's handlers: nginx is reloaded after its enabled site went and the
+PHP-FPM service restarted after its pool went (each started when down, as the
+`service` module's `reloaded`/`restarted` do; failures fail, as in the role).
+Traefik is not reloaded: its unit has no `ExecReload`, so the role's handler
+fails there and skips the PHP-FPM restart after it; the file provider drops
+the route.

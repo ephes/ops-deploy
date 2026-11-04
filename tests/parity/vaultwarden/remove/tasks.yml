@@ -1,0 +1,105 @@
+---
+# Vaultwarden removal tasks
+
+- name: Confirm removal is intentional
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_confirm_removal | bool
+    fail_msg: >-
+      Removal not confirmed. Set vaultwarden_confirm_removal=true to proceed.
+      WARNING: This will remove Vaultwarden and optionally all password data!
+
+- name: Check for Vaultwarden systemd unit
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/systemd/system/vaultwarden.service
+    - /lib/systemd/system/vaultwarden.service
+    - /usr/lib/systemd/system/vaultwarden.service
+  register: vaultwarden_unit_stats
+
+- name: Stop and disable Vaultwarden service
+  ansible.builtin.systemd:
+    name: vaultwarden
+    state: stopped
+    enabled: false
+  ignore_errors: true
+  when: (vaultwarden_unit_stats.results | selectattr('stat.exists') | list | length) > 0
+
+- name: Remove Vaultwarden packages
+  ansible.builtin.apt:
+    name:
+      - vaultwarden
+      - vaultwarden-web-vault
+    state: absent
+    purge: "{{ vaultwarden_remove_config }}"
+
+- name: Remove systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/vaultwarden.service.d
+    state: absent
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove Traefik configuration
+  ansible.builtin.file:
+    path: /etc/traefik/dynamic/vaultwarden.yml
+    state: absent
+  notify: reload traefik
+  when: vaultwarden_remove_traefik | bool
+
+- name: Determine apt repo codename (Ubuntu uses bookworm)
+  ansible.builtin.set_fact:
+    _vaultwarden_repo_codename: >-
+      {{ 'bookworm' if ansible_distribution == 'Ubuntu' else ansible_distribution_release }}
+
+- name: Remove apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/vaultwarden-deb-repo-keyring.gpg] https://vaultwarden-deb.pages.dev {{ _vaultwarden_repo_codename }} main"
+    filename: vaultwarden
+    state: absent
+  when: vaultwarden_remove_repository | bool
+
+- name: Remove apt repository GPG key
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/vaultwarden-deb-repo-keyring.gpg
+    state: absent
+  when: vaultwarden_remove_repository | bool
+
+- name: Remove configuration file
+  ansible.builtin.file:
+    path: /etc/vaultwarden.env
+    state: absent
+  when: vaultwarden_remove_config | bool
+
+- name: Backup data before removal (if removing data)
+  ansible.builtin.archive:
+    path: /var/lib/vaultwarden
+    dest: "/root/vaultwarden-backup-{{ ansible_date_time.iso8601_basic_short }}.tar.gz"
+    format: gz
+  when: vaultwarden_remove_data | bool
+  ignore_errors: true
+
+- name: Remove Vaultwarden data directory
+  ansible.builtin.file:
+    path: /var/lib/vaultwarden
+    state: absent
+  when: vaultwarden_remove_data | bool
+
+- name: Remove Vaultwarden log directory
+  ansible.builtin.file:
+    path: /var/log/vaultwarden
+    state: absent
+  when: vaultwarden_remove_data | bool
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      Vaultwarden has been removed.
+      {% if vaultwarden_remove_data %}
+      Data backup saved to: /root/vaultwarden-backup-{{ ansible_date_time.iso8601_basic_short }}.tar.gz
+      {% else %}
+      Data preserved at: /var/lib/vaultwarden
+      {% endif %}

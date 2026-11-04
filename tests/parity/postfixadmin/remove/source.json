@@ -1,0 +1,21 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/postfixadmin_remove/tasks/main.yml",
+      "sha256": "5bcc77ecc0d2dd45b61eb2fa1c6006acfa56e6a214022e98f48ca911f4f692cd"
+    },
+    "defaults.yml": {
+      "source": "roles/postfixadmin_remove/defaults/main.yml",
+      "sha256": "8a3dc11c42de8ea7f546266f20c4b5a2fd5fd2d0e6b6e92576aff1fd9d10848d"
+    },
+    "handlers.yml": {
+      "source": "roles/postfixadmin_remove/handlers/main.yml",
+      "sha256": "91d6a6e49672231983f120f16d81a6679aa97eaf7788721a581d203281f7eee9"
+    },
+    "shared_defaults.yml": {
+      "source": "roles/postfixadmin_shared/defaults/main.yml",
+      "sha256": "c3ed29c448154f196d19a1cae586d8425949ffbfabd61e2a124c0a558f0fc44e"
+    }
+  }
+}

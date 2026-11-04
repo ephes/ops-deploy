@@ -216,9 +216,10 @@ Raw private bodies remained remote; ephemeral comparison keys/values stayed in
 process RAM. Separate first/repeat keys do not prove cross-process private-body
 equality, though all persisted operational fields matched and the desired route/
 constraints were rebound. Loopback HTTPS status is certificate-unverified and
-there is no global zero-I/O claim. Backup, restore, removal and direct legacy
-entrypoint retirement remain tracked separately; deployment does not qualify
-those paths.
+there is no global zero-I/O claim. Direct legacy entrypoint retirement
+remains tracked separately; deployment does not qualify backup, restore or
+removal, which are ported below ([Backup and restore](#backup-and-restore),
+[Removal](#removal)).
 
 ## Backup and restore
 
@@ -293,3 +294,37 @@ Tests: `tests/test_paperless_backup_restore.py` (planned settings, and both
 scripts end to end with a fake `manage.py`, `pg_dump`/`psql` and stubbed
 `systemctl`).
 
+## Removal
+
+`remove_paperless(PaperlessRemoveConfig(confirm=True, ...))` ports the
+`paperless_remove` role at ops-library `44a532b` (role files under
+`tests/parity/paperless/remove`, digest in the drift manifest). Without
+`confirm` it fails before any host probe. Every field has the role's default
+(`paperless_` dropped); destructive flags are opt-in as in the role, and
+`home_path`, `site_root`, `remove_virtualenv` and `remove_current_symlink`
+derive from `username` and `remove_site_root` as the role's templated defaults
+do. System roots, traversals and a root account are refused.
+
+The role's order:
+
+1. stop and disable each of the four units (`systemd` semantics, failures
+   ignored), remove their unit files and reload systemd (`remove_service_units`);
+2. the Traefik route (behind the transaction guard) and the scanner's sshd
+   drop-in;
+3. `site_root`, its `.venv`, `paperless-ngx` link and `.env`, the temp
+   directory, then the selected storage subdirectories (`media`, `data`,
+   `consume`, `export`, `backup`, `tmp`) of `external_storage_root`;
+4. with `remove_sftp_chroot`: unmount the scanner inbox when it is a mount
+   point, then remove the chroot;
+5. `userdel` of the Paperless user (`-r` when `remove_site_root`), its group,
+   `userdel` of the scanner user (`-r` when `remove_sftp_chroot`); a failing
+   `userdel` stops the removal;
+6. `DROP DATABASE`/`DROP ROLE` as `postgres_become_user` on the local socket
+   (the role's modules get no host or port), only for what exists; an
+   unreadable state fails.
+
+Like the role, the storage root itself, every Echoport archive and the
+scanner inbox's `/etc/fstab` bind line stay (and the scanner group, unless
+`userdel` of the scanner user removes it as its private group, as on Ubuntu), and neither sshd
+nor Traefik is reloaded. That fstab line has no `nofail`: once its source
+(`<storage>/consume`) is gone, remove the line before the next boot.

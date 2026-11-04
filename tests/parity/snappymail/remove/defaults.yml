@@ -1,0 +1,14 @@
+---
+# Safety guard
+snappymail_confirm_removal: false
+
+# Paths to clean
+snappymail_remove_install_dir: "{{ snappymail_install_dir }}"
+snappymail_remove_data_dir: "{{ snappymail_data_dir }}"
+snappymail_remove_nginx_site_path: "/etc/nginx/sites-available/snappymail"
+snappymail_remove_nginx_enabled_path: "/etc/nginx/sites-enabled/snappymail"
+snappymail_remove_traefik_config: "/etc/traefik/dynamic/snappymail.yml"
+
+# Removal options
+snappymail_remove_php_pools_glob: "/etc/php/*/fpm/pool.d/snappymail.conf"
+snappymail_remove_php_socket_glob: "/run/php/*snappymail*.sock"

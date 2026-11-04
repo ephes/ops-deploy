@@ -1,0 +1,146 @@
+---
+- name: Display Paperless removal banner
+  ansible.builtin.debug:
+    msg: |
+      ════════════════════════════════════════════════════════
+      🗑️  Paperless-ngx Removal
+      ════════════════════════════════════════════════════════
+
+- name: Require explicit confirmation
+  ansible.builtin.assert:
+    that:
+      - paperless_remove_confirm | bool
+    fail_msg: |
+      Removal not confirmed.
+
+      Set paperless_remove_confirm: true (or use the Just helper)
+      before running this destructive role.
+
+- name: Stop and disable Paperless services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ paperless_service_units }}"
+  failed_when: false
+  ignore_errors: true
+  when: paperless_remove_service_units | bool
+
+- name: Remove Paperless systemd unit files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ paperless_systemd_units }}"
+  when: paperless_remove_service_units | bool
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: paperless_remove_service_units | bool
+
+- name: Remove Traefik dynamic config
+  ansible.builtin.file:
+    path: "{{ paperless_traefik_config_path }}"
+    state: absent
+  when: paperless_remove_traefik_config | bool
+
+- name: Remove scanner SSH drop-in
+  ansible.builtin.file:
+    path: "{{ paperless_scanner_sshd_config_path }}"
+    state: absent
+  when: paperless_remove_scanner_config | bool
+
+- name: Remove Paperless application paths
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop:
+    - { path: "{{ paperless_site_root }}", enabled: "{{ paperless_remove_site_root }}" }
+    - { path: "{{ paperless_virtualenv_path }}", enabled: "{{ paperless_remove_virtualenv }}" }
+    - { path: "{{ paperless_current_symlink }}", enabled: "{{ paperless_remove_current_symlink }}" }
+    - { path: "{{ paperless_env_file }}", enabled: "{{ paperless_remove_site_root }}" }
+    - { path: "{{ paperless_temp_dir }}", enabled: "{{ paperless_remove_temp_dir }}" }
+  when: item.enabled | bool
+
+- name: Remove Paperless external storage
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop:
+    - { path: "{{ paperless_media_path }}", enabled: "{{ paperless_remove_media_dir }}" }
+    - { path: "{{ paperless_data_path }}", enabled: "{{ paperless_remove_data_dir }}" }
+    - { path: "{{ paperless_consume_path }}", enabled: "{{ paperless_remove_consume_dir }}" }
+    - { path: "{{ paperless_export_path }}", enabled: "{{ paperless_remove_export_dir }}" }
+    - { path: "{{ paperless_backup_path }}", enabled: "{{ paperless_remove_backup_dir }}" }
+    - { path: "{{ paperless_tmp_path }}", enabled: "{{ paperless_remove_tmp_dir }}" }
+  when: item.enabled | bool
+
+- name: Check if scanner inbox is mounted
+  ansible.builtin.command: "mountpoint -q {{ paperless_scanner_inbox_path }}"
+  register: paperless_scanner_mount_check
+  changed_when: false
+  failed_when: false
+  when:
+    - paperless_remove_sftp_chroot | bool
+    - paperless_scanner_inbox_path | length > 0
+
+- name: Unmount scanner inbox bind mount
+  ansible.builtin.command: "umount {{ paperless_scanner_inbox_path }}"
+  when:
+    - paperless_remove_sftp_chroot | bool
+    - paperless_scanner_inbox_path | length > 0
+    - paperless_scanner_mount_check.rc == 0
+
+- name: Remove scanner chroot directory
+  ansible.builtin.file:
+    path: "{{ paperless_sftp_chroot_dir }}"
+    state: absent
+  when: paperless_remove_sftp_chroot | bool
+
+- name: Remove Paperless user
+  ansible.builtin.user:
+    name: "{{ paperless_username }}"
+    state: absent
+    remove: "{{ paperless_remove_site_root | bool }}"
+  when: paperless_remove_user | bool
+
+- name: Remove Paperless group
+  ansible.builtin.group:
+    name: "{{ paperless_group }}"
+    state: absent
+  when: paperless_remove_group | bool
+
+- name: Remove scanner user
+  ansible.builtin.user:
+    name: "{{ paperless_scanner_username }}"
+    state: absent
+    remove: "{{ paperless_remove_sftp_chroot | bool }}"
+  when: paperless_remove_scanner_user | bool
+
+- name: Drop Paperless PostgreSQL database
+  community.postgresql.postgresql_db:
+    name: "{{ paperless_postgres_database }}"
+    state: absent
+  become: true
+  become_user: "{{ paperless_postgres_become_user }}"
+  when: paperless_remove_postgres_database | bool
+
+- name: Drop Paperless PostgreSQL role
+  community.postgresql.postgresql_user:
+    name: "{{ paperless_postgres_user }}"
+    state: absent
+  become: true
+  become_user: "{{ paperless_postgres_become_user }}"
+  when: paperless_remove_postgres_user | bool
+
+- name: Paperless removal summary
+  ansible.builtin.debug:
+    msg: |
+      ✅ Paperless removal complete.
+      - Services removed: {{ paperless_remove_service_units }}
+      - Traefik config removed: {{ paperless_remove_traefik_config }}
+      - Site directory removed: {{ paperless_remove_site_root }}
+      - Media/data removed: media={{ paperless_remove_media_dir }}, data={{ paperless_remove_data_dir }}
+      - PostgreSQL dropped: db={{ paperless_remove_postgres_database }}, user={{ paperless_remove_postgres_user }}
+      - User removed: {{ paperless_remove_user }}
+  when: paperless_remove_print_summary | bool

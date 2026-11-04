@@ -1,4 +1,4 @@
-"""PostfixAdmin ordinary deployment API, backup and restore (postfixadmin_deploy, _backup, _restore)."""
+"""PostfixAdmin deployment, backup, restore and removal (postfixadmin_deploy, _backup, _restore, _remove)."""
 
 from pyinfra.api import deploy
 
@@ -10,6 +10,7 @@ from ops_deploy.services.postfixadmin.backup_restore import (
     deploy_postfixadmin_restore,
 )
 from ops_deploy.services.postfixadmin.config import PostfixAdminConfig
+from ops_deploy.services.postfixadmin.remove import PostfixAdminRemoveConfig, remove_postfixadmin
 
 
 @deploy("PostfixAdmin")
@@ -22,8 +23,10 @@ def deploy_postfixadmin(cfg: PostfixAdminConfig, secrets: SecretValues) -> None:
 __all__ = [
     "PostfixAdminBackupConfig",
     "PostfixAdminConfig",
+    "PostfixAdminRemoveConfig",
     "PostfixAdminRestoreConfig",
     "deploy_postfixadmin",
     "deploy_postfixadmin_backup",
     "deploy_postfixadmin_restore",
+    "remove_postfixadmin",
 ]

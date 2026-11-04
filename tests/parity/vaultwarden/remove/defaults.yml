@@ -1,0 +1,17 @@
+---
+# Vaultwarden removal defaults
+
+# Safety flag - must be explicitly set to true
+vaultwarden_confirm_removal: false
+
+# Remove all data (database, attachments, etc.)
+vaultwarden_remove_data: false
+
+# Remove configuration files
+vaultwarden_remove_config: true
+
+# Remove apt repository
+vaultwarden_remove_repository: true
+
+# Remove Traefik configuration
+vaultwarden_remove_traefik: true

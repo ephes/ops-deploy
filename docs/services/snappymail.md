@@ -39,7 +39,8 @@ is bounded exception recovery, not recovery from power loss or a killed helper.
 A no-op does not stage files, upload helpers, rotate hashes or restart services.
 
 `traefik_sts_preload` defaults to false and can preserve an explicitly selected
-existing route policy. Backup/restore/remove remain separate workflows.
+existing route policy. Backup/restore remain separate workflows; the removal is
+below ([Removal](#removal)).
 
 Existing admin hashes must have the canonical bcrypt encoding used by the selected
 release and PHP. Malformed, unsupported or unavailable verification refuses
@@ -116,3 +117,27 @@ the data directory, next to which the restore stages.
 Tests: `tests/test_snappymail_backup_restore.py` (planned settings, and both
 scripts end to end with stubbed `systemctl` and the real `preserve.py`).
 
+
+## Removal
+
+`remove_snappymail(SnappyMailRemoveConfig(confirm=True))` ports the
+`snappymail_remove` role at ops-library `44a532b` (role and
+`snappymail_shared` files under `tests/parity/snappymail/remove`). Without
+`confirm` it fails before any host probe. In the role's order it removes the
+nginx site files, the Traefik route (behind the transaction guard), every
+regular file named `snappymail.conf` below `/etc/php` (the role's `find`), the
+`*snappymail*.sock` entries below `/run/php`, `/opt/snappymail`,
+`/mnt/cryptdata/snappymail`, the `snappymail` user (`userdel -r`) and group;
+failures from the socket step on are ignored, as in the role.
+
+Unlike the role, nginx, Traefik and PHP-FPM are never stopped. The role stops
+all three and relies on its `reloaded` handlers to start them again, which run
+only when their files were removed; on a host without the SnappyMail route
+Traefik (and every route on the host) stays down. Here nginx and the PHP-FPM
+services of the removed pools (`php<version>-fpm` for pools under
+`/etc/php/<version>/fpm/`) are reloaded, or started when down, right after
+their files went (before the sockets, directories and account), failures
+ignored; then whatever still runs as `snappymail` is ended (SIGTERM, SIGKILL
+after 5 s), as the role's PHP-FPM stop did, so `userdel` does not fail on a
+worker still finishing a request. Traefik is not reloaded; its file provider
+drops the route.

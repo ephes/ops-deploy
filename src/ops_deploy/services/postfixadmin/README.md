@@ -40,7 +40,8 @@ A no-op bypasses staging, helper uploads, SQL mutations and service restarts.
 
 `traefik_sts_preload` defaults to false. Set it explicitly only when preserving or
 selecting that route policy. It does not alter the shared HSTS defaults.
-Backup/restore/remove and old-mail schema conversion are separate workflows.
+Backup/restore and old-mail schema conversion are separate workflows; the
+removal (`remove_postfixadmin`) is documented in `docs/services/postfixadmin.md`.
 
 The database/role foundation (including any requested role-password change) must
 converge in a prior pyinfra run. Web admission is intentionally read-only during

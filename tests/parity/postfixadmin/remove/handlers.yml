@@ -1,0 +1,18 @@
+---
+- name: reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  when: not ansible_check_mode
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  when: not ansible_check_mode
+
+- name: restart php-fpm
+  ansible.builtin.service:
+    name: "php{{ php_version_detect.stdout | default('8.3') }}-fpm"
+    state: restarted
+  when: not ansible_check_mode

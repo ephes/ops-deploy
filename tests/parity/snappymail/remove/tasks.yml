@@ -1,0 +1,127 @@
+---
+- name: Fail unless removal is confirmed
+  ansible.builtin.fail:
+    msg: |
+      SAFETY CHECK: snappymail_confirm_removal must be true to proceed.
+
+      This role will remove:
+      - SnappyMail install dir: {{ snappymail_remove_install_dir }}
+      - SnappyMail data dir: {{ snappymail_remove_data_dir }}
+      - nginx site at {{ snappymail_remove_nginx_site_path }} and enabled link
+      - Traefik config: {{ snappymail_remove_traefik_config }}
+      - PHP-FPM pool config(s) matching {{ snappymail_remove_php_pools_glob }}
+      - SnappyMail system user/group: {{ snappymail_user }} / {{ snappymail_group }}
+  when: not snappymail_confirm_removal | bool
+
+- name: Find SnappyMail PHP-FPM pool configs
+  ansible.builtin.find:
+    paths: "/etc/php"
+    patterns: "{{ snappymail_remove_php_pools_glob | basename }}"
+    recurse: true
+    file_type: file
+  register: snappymail_remove_php_pools
+
+- name: Derive PHP-FPM services from pool paths
+  ansible.builtin.set_fact:
+    snappymail_remove_php_services: >-
+      {{
+        snappymail_remove_php_pools.files
+        | map(attribute='path')
+        | select('match', '.*/etc/php/[^/]+/fpm/.*')
+        | map('regex_replace', '^/etc/php/([^/]+)/fpm/.*$', 'php\g<1>-fpm')
+        | list
+      }}
+
+- name: Stop nginx (best effort)
+  ansible.builtin.systemd:
+    name: nginx
+    state: stopped
+  ignore_errors: true
+
+- name: Stop Traefik (best effort)
+  ansible.builtin.systemd:
+    name: traefik
+    state: stopped
+  when: snappymail_remove_traefik_config | length > 0
+  ignore_errors: true
+
+- name: Stop PHP-FPM services (best effort)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ snappymail_remove_php_services }}"
+  ignore_errors: true
+
+- name: Remove nginx site (available)
+  ansible.builtin.file:
+    path: "{{ snappymail_remove_nginx_site_path }}"
+    state: absent
+  notify: reload nginx
+
+- name: Remove nginx site (enabled)
+  ansible.builtin.file:
+    path: "{{ snappymail_remove_nginx_enabled_path }}"
+    state: absent
+  notify: reload nginx
+
+- name: Remove Traefik config
+  ansible.builtin.file:
+    path: "{{ snappymail_remove_traefik_config }}"
+    state: absent
+  when: snappymail_remove_traefik_config | length > 0
+  notify: reload traefik
+
+- name: Remove PHP-FPM pool configs
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ snappymail_remove_php_pools.files }}"
+  notify: reload php-fpm
+
+- name: Remove PHP-FPM sockets
+  ansible.builtin.find:
+    paths: "/run/php"
+    patterns: "{{ snappymail_remove_php_socket_glob | basename }}"
+    recurse: true
+    file_type: any
+  register: snappymail_remove_php_sockets
+  ignore_errors: true
+
+- name: Delete PHP-FPM sockets
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ snappymail_remove_php_sockets.files | default([]) }}"
+  ignore_errors: true
+
+- name: Remove SnappyMail install directory
+  ansible.builtin.file:
+    path: "{{ snappymail_remove_install_dir }}"
+    state: absent
+  ignore_errors: true
+
+- name: Remove SnappyMail data directory
+  ansible.builtin.file:
+    path: "{{ snappymail_remove_data_dir }}"
+    state: absent
+  ignore_errors: true
+
+- name: Remove SnappyMail system user
+  ansible.builtin.user:
+    name: "{{ snappymail_user }}"
+    state: absent
+    remove: true
+  ignore_errors: true
+
+- name: Remove SnappyMail system group
+  ansible.builtin.group:
+    name: "{{ snappymail_group }}"
+    state: absent
+  ignore_errors: true
+
+- name: Report SnappyMail removal completion
+  ansible.builtin.debug:
+    msg: |
+      SnappyMail removal completed.
+      Removed install dir: {{ snappymail_remove_install_dir }}
+      Removed data dir: {{ snappymail_remove_data_dir }}

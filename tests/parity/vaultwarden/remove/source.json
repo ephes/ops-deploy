@@ -1,0 +1,17 @@
+{
+  "revision": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "files": {
+    "tasks.yml": {
+      "source": "roles/vaultwarden_remove/tasks/main.yml",
+      "sha256": "f2d31b5f9e6f8f41865f98321ebbad6bd420571ad04a07d5be9e5fccedd75087"
+    },
+    "defaults.yml": {
+      "source": "roles/vaultwarden_remove/defaults/main.yml",
+      "sha256": "4fcaf7049ed5f4f41c922c7c102038f0c2a3277a49a5753f0f493ab5d73b25dc"
+    },
+    "handlers.yml": {
+      "source": "roles/vaultwarden_remove/handlers/main.yml",
+      "sha256": "7450c077f11105f1c801b062945a4fd26682f7fedc96a820ee442e89a48f701a"
+    }
+  }
+}
