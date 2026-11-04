@@ -22,7 +22,7 @@ from pyinfra.api import DeployError, FunctionCommand, OperationError, StringComm
 from pyinfra.facts.server import Command
 from pyinfra.operations import server
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, output, require_linux
+from ops_deploy.base._common import AbsolutePath, RoleConfig, require_linux
 from ops_deploy.core.config import ServiceName, UnixUser
 from ops_deploy.services._lifecycle.ansible_remove import absent, service_absent, user_absent
 from ops_deploy.services._lifecycle.apt_purge import Package, purge
@@ -164,7 +164,8 @@ def _postgres_absent(cfg: MailRemoveConfig, kind: str) -> Generator[StringComman
 
 
 def _warn_on_queue() -> None:
-    queue = output("postqueue -p")
+    # The role warns only when ``postqueue -p`` succeeded (rc 0).
+    queue = host.get_fact(Command, command="if out=$(postqueue -p 2>/dev/null); then printf '%s' \"$out\"; fi")
     if queue and "Mail queue is empty" not in queue:
         logger.warning(f"{host.print_prefix}WARNING: Mail queue is not empty. Consider flushing before removal.")
 

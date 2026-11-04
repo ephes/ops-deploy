@@ -3,7 +3,8 @@
 At execution time: only the names dpkg knows in a state other than
 not-installed (installed or with config files left) are purged, in one
 ``apt-get --purge remove`` with the module's dpkg options; nothing else runs.
-An unreadable package state fails the operation.
+An unreadable package state fails the operation. Like the module, apt
+waits up to 60 seconds for the dpkg lock.
 """
 
 from __future__ import annotations
@@ -73,6 +74,9 @@ def purge(packages: tuple[str, ...], label: str) -> Generator[Any, None, None]:
                     "apt-get",
                     "-q",
                     "-y",
+                    # The module waits up to its lock_timeout (60 s) for the dpkg lock.
+                    "-o",
+                    "DPkg::Lock::Timeout=60",
                     "-o",
                     "Dpkg::Options::=--force-confdef",
                     "-o",

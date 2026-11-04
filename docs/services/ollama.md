@@ -121,15 +121,19 @@ Checks first, before any change: the host is Darwin; with
 (`brew_bin`, else `/opt/homebrew/bin/brew`, else `/usr/local/bin/brew`). Then
 in the role's order:
 
-1. `launchctl bootout system <plist>` (failures ignored, never a change; run
-   only while the plist exists, which bootout reads the job from);
+1. `launchctl bootout system <plist>` (failures ignored, as the role's
+   `failed_when: false`; run only while the plist exists, which bootout reads
+   the job from);
 2. remove the plist, then, per flag, the models directory and the log
    directory;
 3. with `remove_user`: `dscl . -delete /Users/<user>` when the record has a
    `UniqueID` (the home stays, as with `remove: false`) and `dseditgroup -o
-   delete -L <group>` when the group exists;
+   delete -L <group>` when Python's `grp` knows the group (an unreadable
+   group state fails the removal);
 4. with `remove_brew_package`: `brew uninstall --force <package>` as
-   `brew_user` when `brew list --versions` lists it.
+   `brew_user` when `brew list --formula -1` or `brew list --cask -1` lists
+   it (both must succeed: a failing sudo or brew fails the removal instead of
+   passing as "not installed").
 
 Differences: Homebrew runs as the deploy runs it (`sudo -H -u <brew_user>`
 without a login shell, `HOMEBREW_NO_AUTO_UPDATE=1`), not through `sudo -i`;

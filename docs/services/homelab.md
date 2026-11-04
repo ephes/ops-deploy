@@ -202,8 +202,10 @@ In the role's order:
 
 1. when the database or the media directory exists and goes, the role's
    pause: this port asks on the controller's terminal (type `yes`) before the
-   first change, and refuses without a terminal unless `auto_confirm=True`
-   (the role's `homelab_remove_auto_confirm`);
+   first change and refuses without a terminal unless `auto_confirm=True`
+   (the role's `homelab_remove_auto_confirm`). This is stricter than the
+   role: Ansible's `pause` goes on without waiting when stdin is not a
+   terminal;
 2. only when the unit file exists (a dangling link counts, as for `stat`):
    stop, then disable the unit (failures ignored, as `failed_when: false`),
    remove the unit file and reload systemd;

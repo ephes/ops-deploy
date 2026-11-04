@@ -14,13 +14,14 @@ joined in the role's order, each name once.
 
 In the role's order:
 
-1. with `backend` or `relay`: a warning when `postqueue -p` reports a
-   non-empty queue (nothing is flushed);
+1. with `backend` or `relay`: a warning when `postqueue -p` succeeds and
+   reports a non-empty queue (nothing is flushed);
 2. stop and disable each selected service systemd knows (disable before stop,
    failures ignored; an unknown unit is skipped, as `service_facts` does);
 3. `apt-get --purge remove` of the selected packages dpkg knows (installed or
-   with config files left), in one call with the apt module's dpkg options;
-   nothing when none is left (`purge_packages`);
+   with config files left), in one call with the apt module's dpkg options
+   and its 60-second wait for the dpkg lock; nothing when none is left
+   (`purge_packages`);
 4. remove the config directories (`remove_configs`), the state directories
    (`remove_state`) and, with `remove_data`, `/mnt/cryptdata/vmail` and
    `/mnt/cryptdata/backups/mail`;

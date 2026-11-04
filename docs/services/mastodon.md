@@ -144,9 +144,10 @@ disable before stop, failures ignored); remove their unit files
 (`remove_systemd_units`); reload systemd (always, as the role); then, per
 flag, `.env.production` (`remove_env_file`), the Traefik route (behind the
 Traefik transaction guard), `/etc/mastodon/nginx.conf`, the logrotate entry,
-the site directory `/home/mastodon/live`, the media directory (`remove_media`,
-off by default) and the nginx log directory (`remove_logs`, off by default);
-last `userdel -r mastodon` (so the home and the media under it go with the
-default `remove_user=True`; a failure stops the removal) and `groupdel` when
-the group still exists. PostgreSQL, Redis, the S3 bucket and backups are not
+the site directory `/home/mastodon/live` (the local media lives under it, in
+`live/public/system`, so it goes with the site; `remove_media`, off by
+default, matters only for a media directory outside the site) and the nginx
+log directory (`remove_logs`, off by default); last `userdel -r mastodon` (the
+whole home, with the default `remove_user=True`; a failure stops the removal)
+and `groupdel` when the group still exists. PostgreSQL, Redis, the S3 bucket and backups are not
 touched, as by the role. No secrets are read.

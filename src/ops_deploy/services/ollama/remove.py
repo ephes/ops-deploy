@@ -120,30 +120,50 @@ def _user_absent(user: str) -> Generator[StringCommand, None, None]:
         yield StringCommand(f"/usr/bin/dscl . -delete {quoted}")
 
 
+GROUP_PROBE = """import grp, sys
+try:
+    grp.getgrnam(sys.argv[1])
+except KeyError:
+    print('absent')
+else:
+    print('present')
+"""
+
+
 @operation()
 def _group_absent(group: str) -> Generator[StringCommand, None, None]:
     """``group: state=absent`` on Darwin: ``dseditgroup -o delete`` when ``grp`` knows the group."""
 
-    probe = shlex.join(["/usr/bin/python3", "-I", "-B", "-c", "import grp, sys; grp.getgrnam(sys.argv[1])", group])
-    state = host.get_fact(Command, command=f"{probe} >/dev/null 2>&1 && echo present || echo absent")
+    probe = shlex.join(["/usr/bin/python3", "-I", "-B", "-c", GROUP_PROBE, group])
+    state = host.get_fact(Command, command=f"{probe} 2>/dev/null || echo error")
+    if state not in ("present", "absent"):
+        raise DeployError(f"Cannot inspect the group {group}")
     if state == "present":
         yield StringCommand(shlex.join(["/usr/sbin/dseditgroup", "-o", "delete", "-L", group]))
 
 
 @operation()
 def _brew_absent(cfg: OllamaRemoveConfig, brew: str) -> Generator[StringCommand, None, None]:
-    """``community.general.homebrew`` ``state: absent``: ``uninstall --force`` only when installed."""
+    """``community.general.homebrew`` ``state: absent``: ``uninstall --force`` only when installed.
 
-    listed = host.get_fact(
-        Command,
-        command=(
-            f"if out=$({_as_brew_user(cfg, brew, 'list', '--versions', cfg.brew_package)}); "
-            'then echo "installed=$out"; elif [ $? -eq 1 ]; then echo installed=; else echo error; fi'
-        ),
-    )
-    if listed is None or not listed.startswith("installed="):
-        raise DeployError("Cannot inspect the Ollama Homebrew package")
-    if listed != "installed=":
+    The module asks ``brew info`` for formulae and casks; here both listings
+    must succeed (a failing sudo or brew is an error, never "not installed").
+    """
+
+    listings: list[str] = []
+    for kind in ("--formula", "--cask"):
+        listed = host.get_fact(
+            Command,
+            command=(
+                f"if out=$({_as_brew_user(cfg, brew, 'list', kind, '-1')}); "
+                "then printf 'listed\\n%s\\n' \"$out\"; else echo error; fi"
+            ),
+        )
+        lines = (listed or "").splitlines()
+        if not lines or lines[0] != "listed":
+            raise DeployError("Cannot inspect the Ollama Homebrew package")
+        listings.extend(line.strip() for line in lines[1:])
+    if cfg.brew_package in listings:
         yield StringCommand(_as_brew_user(cfg, brew, "uninstall", "--force", cfg.brew_package))
 
 

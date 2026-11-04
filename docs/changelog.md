@@ -9,12 +9,12 @@
   - `services.homelab`: `HomelabRemoveConfig`/`remove_homelab`
     (`homelab_remove`: unit, Traefik route, SQLite database, media, home and
     account; the role's pause before deleting data asks on the controller's
-    terminal unless `auto_confirm`; keeping data while the home or user goes
-    is refused);
+    terminal unless `auto_confirm` and, unlike the role's pause, refuses
+    without a terminal; keeping data while the home or user goes is refused);
   - `services.mastodon`: `MastodonRemoveConfig`/`remove_mastodon`
     (`mastodon_remove` with `mastodon_shared`'s paths: the four units, env
-    file, Traefik route, nginx config, logrotate entry, site, account and
-    group; media and nginx logs only by flag);
+    file, Traefik route, nginx config, logrotate entry, site directory with
+    the local media under it, account and group; the nginx logs only by flag);
   - `services.mail_remove`: `MailRemoveConfig`/`remove_mail` (`mail_remove`:
     backend, relay and spam components; services, packages, config and state
     directories; Maildir/backups, vmail account and the PostgreSQL database
@@ -23,7 +23,7 @@
     `ollama_remove`: LaunchDaemon and plist; models, logs, user/group and the
     Homebrew package only by flag).
   `services._lifecycle.apt_purge` holds the apt module's `state: absent,
-  purge: true` package selection, and `service_absent(skip_missing=True)`
+  purge: true` package selection (with its 60-second dpkg lock wait), and `service_absent(skip_missing=True)`
   skips units systemd does not know (for loops over `service_facts`).
 
 - `services.daybook_operations_api`: the rsync deploy ensures the site

@@ -20,7 +20,7 @@ from tests import fakehost
 
 PARITY = Path(__file__).parent / "parity/mail/remove"
 APT = (
-    "env DEBIAN_FRONTEND=noninteractive apt-get -q -y -o Dpkg::Options::=--force-confdef"
+    "env DEBIAN_FRONTEND=noninteractive apt-get -q -y -o DPkg::Lock::Timeout=60 -o Dpkg::Options::=--force-confdef"
     " -o Dpkg::Options::=--force-confold --purge remove --"
 )
 PSQL = "cd / && runuser -u postgres -- psql -X -q -t -A -v ON_ERROR_STOP=1 -d postgres -c "

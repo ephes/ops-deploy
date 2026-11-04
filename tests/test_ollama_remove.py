@@ -54,7 +54,7 @@ def host(
     *paths: str,
     os_name: str = "Darwin",
     account: bool = True,
-    installed: str = "installed=ollama 0.12.0",
+    formulae: str = "listed\nffmpeg\nollama",
     brews: tuple[str, ...] = ("/opt/homebrew/bin/brew",),
 ) -> dict[str, Any]:
     responses: dict[str, Any] = {
@@ -62,7 +62,8 @@ def host(
         "id -un": ["root"],
         "/usr/bin/dscl . -read": ["present" if account else "absent"],
         "grp.getgrnam": ["present" if account else "absent"],
-        "list --versions": [installed],
+        "list --formula -1": formulae.splitlines(),
+        "list --cask -1": ["listed"],
     }
     for path in (*paths, *brews):
         responses.update(directory(path))
@@ -168,7 +169,7 @@ def test_role_defaults_only_unload_and_delete_the_plist() -> None:
 
 
 def test_a_removed_host_changes_nothing() -> None:
-    run = run_deploy_fake(remove_ollama, confirmed(), responses=host(account=False, installed="installed="))
+    run = run_deploy_fake(remove_ollama, confirmed(), responses=host(account=False, formulae="listed\nollama-tools"))
     assert run.succeeded, run.error
     assert run.executed_commands == []
 
@@ -205,6 +206,21 @@ def test_without_the_brew_flag_neither_brew_user_nor_homebrew_is_needed() -> Non
 
 
 def test_an_unreadable_homebrew_state_fails() -> None:
-    run = run_deploy_fake(remove_ollama, confirmed(), responses=host(account=False, installed="error"))
+    # A failing sudo or brew is an error, never "not installed".
+    run = run_deploy_fake(remove_ollama, confirmed(), responses=host(account=False, formulae="error"))
     assert not run.succeeded
     assert "uninstall" not in "\n".join(run.executed_commands)
+
+
+def test_a_cask_is_uninstalled_too() -> None:
+    responses = {**host(account=False, formulae="listed"), "list --cask -1": ["listed", "ollama"]}
+    run = run_deploy_fake(remove_ollama, confirmed(), responses=responses)
+    assert run.succeeded, run.error
+    assert run.executed_commands == [f"{BREW} /opt/homebrew/bin/brew uninstall --force ollama"]
+
+
+def test_an_unreadable_group_state_fails() -> None:
+    responses = {**host(), "grp.getgrnam": ["error"]}
+    run = run_deploy_fake(remove_ollama, confirmed(), responses=responses)
+    assert not run.succeeded
+    assert "dseditgroup" not in "\n".join(run.executed_commands)

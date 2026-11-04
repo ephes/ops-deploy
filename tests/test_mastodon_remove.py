@@ -153,7 +153,8 @@ def test_full_removal_follows_the_role_order() -> None:
     assert executed[12] == "systemctl daemon-reload"
     assert executed[13] == f"rm -rf {cfg.env_file}"
     assert "traefik-route-guard" in executed[14]
-    # The media and the nginx logs stay (role defaults); the home goes with userdel -r.
+    # The media lives under the site directory, so it goes with it (remove_site);
+    # the nginx logs stay (role default); the home goes with userdel -r.
     assert executed[15:] == [
         f"rm -rf {ROUTE}",
         f"rm -rf {cfg.nginx_config_path}",

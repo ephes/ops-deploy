@@ -2,9 +2,10 @@
 
 ``mastodon_shared``'s paths and removal flags. Never dispatched without
 ``confirm``. With the defaults the units, the environment file, the Traefik
-route, the nginx config and logrotate entry, the site directory and the
-account (``userdel -r``, so the home with the media under it) go; the role
-keeps the nginx log directory and, unless the home goes, the media.
+route, the nginx config and logrotate entry, the site directory (and with it
+the local media under ``live/public/system``) and the account (``userdel -r``,
+the whole home) go; the role keeps the nginx log directory. ``remove_media``
+matters only for a media directory outside the site.
 PostgreSQL, Redis and the S3 bucket are not touched, as by the role.
 """
 
