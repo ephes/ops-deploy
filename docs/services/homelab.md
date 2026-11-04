@@ -193,7 +193,8 @@ secrets. Archives written by either tool restore with the other.
 | `deploy_homelab_restore` | `HomelabRestoreConfig(host_name=...)` | `homelab_restore` |
 
 The fields are the roles' variables without the `homelab_`,
-`homelab_backup_` or `homelab_restore_` prefix (`site_path`, `root`,
+`homelab_backup_` or `homelab_restore_` prefix (in the backup config `owner`
+and `group` are the archive's, `homelab_backup_owner`/`_group`) (`site_path`, `root`,
 `include_*`, `force_stop`, `archive`, `dry_run`, `create_safe_snapshot`,
 `safe_snapshot_delete`, `healthcheck_url`, ...). `host_name` is the
 inventory name written into `metadata.yml`; `ops_library_version` is the
@@ -223,7 +224,9 @@ route (`0600`), writes the role's `metadata.yml` (`sqlite_mode` `hot`,
    ops-library version and `manifest.sha256`, and print the plan.
 2. With `dry_run`, stop here.
 3. When the archived route differs from the live one and a Traefik
-   transaction holds its lock, stop here too (nothing changed yet).
+   transaction holds its lock, stop here too (nothing changed yet). A lock
+   taken later, during the copy, leaves the route as it is; the restore
+   finishes, starts `homelab` and then fails, keeping the pre-restore copy.
 4. Stop `homelab` (a failure stops the restore), copy the site to
    `<site>.pre-restore-<timestamp>`, put back static, media and cache
    (`rsync -a --delete`), the database (stale `-wal`/`-shm`/`-journal`
@@ -237,7 +240,9 @@ roll back: the pre-restore copy stays and is reported; it is removed only
 after a successful restore with `safe_snapshot_delete`. `archive` is a name
 below the search root, never an absolute path, and `static`, `media` and
 `cache` get their modes back after the copy (`rsync -a` would leave the
-archived directory's mode, `0700` for one that was empty at backup time).
+archived directory's mode, `0700` for one that was empty at backup time;
+that pass also gives the three directories back to `homelab`). The systemd
+and Traefik reloads follow content changes only.
 `sqlite3`, the controller directory's `0700` and the `*.tar.gz` pattern of
 `latest` are fixed, not configurable.
 

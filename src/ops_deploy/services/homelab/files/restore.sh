@@ -156,9 +156,17 @@ if has configs/homelab.service; then
     cmp -s "$payload/configs/homelab.service" "$UNIT" || unit_changed=1
     copy_file root root 0644 "$payload/configs/homelab.service" "$UNIT"
 fi
+route_skipped=0
 if has configs/traefik.yml; then
-    if [ "$traefik_changed" = 1 ]; then "${ROUTE_GUARD[@]}"; fi
-    copy_file root root 0644 "$payload/configs/traefik.yml" "$TRAEFIK"
+    if [ "$traefik_changed" = 1 ] && ! "${ROUTE_GUARD[@]}"; then
+        # A transaction took the lock after the first check: leave the route
+        # alone, finish the restore (homelab starts again) and fail at the end.
+        echo "A Traefik transaction took its lock during the restore; the route $TRAEFIK was not restored." >&2
+        route_skipped=1
+        traefik_changed=0
+    else
+        copy_file root root 0644 "$payload/configs/traefik.yml" "$TRAEFIK"
+    fi
 fi
 if [ "$REBUILD_STATIC" = 1 ] && [ "$env_present" = 1 ]; then in_site collectstatic --noinput; fi
 if [ "$FIX_PERMISSIONS" = 1 ]; then chown_tree "$USER_NAME" "$GROUP_NAME" "$STATIC" "$MEDIA" "$CACHE"; fi
@@ -190,5 +198,9 @@ if [ "$VERIFY_HTTP" = 1 ]; then
         fi
         sleep "$HEALTH_DELAY"
     done
+fi
+if [ "$route_skipped" = 1 ]; then
+    echo "homelab restored without its Traefik route; restore $TRAEFIK from $base when the transaction is done." >&2
+    exit 1
 fi
 success=1

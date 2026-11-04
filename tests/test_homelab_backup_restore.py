@@ -451,3 +451,51 @@ def test_restore_script_a_held_route_lock_changes_nothing(tmp_path: Path) -> Non
     assert calls(tmp_path) == []
     assert (p["site"] / ".env").read_text() == "MARKER=changed\n"
     assert not list(tmp_path.glob("site.pre-restore-*"))
+
+
+@needs_gnu
+def test_restore_script_a_route_lock_taken_later_restores_the_rest_and_fails(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    take_backup(p, tmp_path)
+    (p["etc"] / "homelab.yml").write_text("changed: 1\n")
+    make_site(p["site"], "changed")
+    later = 'guard() { [ -e "$LOG.guard" ] && return 1; : >"$LOG.guard"; }\nROUTE_GUARD=(guard)\n'
+
+    done = run_script(restore_command(p), FILES / "restore.sh", tmp_path, stubs=later)
+
+    assert done.returncode == 1
+    assert "was not restored" in done.stderr
+    assert (p["etc"] / "homelab.yml").read_text() == "changed: 1\n"
+    assert (p["site"] / ".env").read_text() == "MARKER=original\n"
+    log = calls(tmp_path)
+    assert "systemctl restart homelab" in log
+    assert not any(line.startswith("systemctl reload") for line in log)
+    assert len(list(tmp_path.glob("site.pre-restore-*"))) == 1
+
+
+@needs_gnu
+def test_restore_script_a_failed_stop_changes_nothing(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    take_backup(p, tmp_path)
+    make_site(p["site"], "changed")
+
+    done = run_script(restore_command(p), FILES / "restore.sh", tmp_path, SYSTEMCTL_STOP_FAILS="1")
+
+    assert done.returncode == 1
+    assert (p["site"] / ".env").read_text() == "MARKER=changed\n"
+    assert not list(tmp_path.glob("site.pre-restore-*"))
+
+
+@needs_gnu
+def test_backup_script_a_failed_offline_copy_still_starts_homelab(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    cfg = HomelabBackupConfig(
+        host_name="macmini", root=str(p["backups"]), fetch_local=False, force_stop=True, **site_settings(p)
+    )
+    result = backup(cfg)
+    assert result.succeeded, result.error
+
+    done = run_script(result.executed_commands[0], FILES / "backup.sh", tmp_path, stubs="cp() { return 1; }\n")
+
+    assert done.returncode != 0
+    assert calls(tmp_path) == ["systemctl stop homelab", "systemctl start homelab"]

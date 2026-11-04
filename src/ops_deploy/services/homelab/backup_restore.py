@@ -21,14 +21,20 @@ Deliberate differences from the roles:
 - After the restored directories are copied, ``static``, ``media`` and
   ``cache`` get the modes the restore created them with again: ``rsync -a``
   copies the archived directory's mode onto them (``0700`` for a directory
-  that was empty or missing at backup time, such as the cache).
+  that was empty or missing at backup time, such as the cache). That pass
+  also owns the three top-level directories by homelab again, also without
+  ``fix_permissions``.
 - A route that differs from the live one is written only while no Traefik
-  transaction holds its lock, like every route writer on the host; a held
-  lock stops the restore before homelab is stopped.
+  transaction holds its lock, like every route writer on the host. A lock
+  held at the start stops the restore before homelab is stopped; a lock
+  taken later leaves the route as it is, the restore finishes (homelab starts
+  again) and then fails, keeping the pre-restore copy.
+- "Changed" for the systemd and Traefik reloads means different content; an
+  owner or mode difference alone reloads nothing.
 - Not configurable: ``sqlite3`` (``homelab_backup_sqlite_command``), the
   controller directory's ``0700`` (``homelab_backup_local_dir_mode``) and the
-  ``*.tar.gz`` pattern of ``latest`` (``homelab_restore_archive_pattern``);
-  ``host_name`` of the restore only names the host in messages.
+  ``*.tar.gz`` pattern of ``latest`` (``homelab_restore_archive_pattern``).
+  The restore's ``host_name`` is not used on the host (the role reads none).
 - The controller copy of the archive is ``0600``, as the role leaves it.
 
 ``required_mount`` keeps the backup root and the restore's staging directory
