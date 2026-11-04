@@ -40,6 +40,8 @@
     "ollama_proxy_remove": "b7b36042f5b8d40b17a9aaa24142f7491771253848e5ced77946a502e085f47b",
     "open_webui_venv_deploy": "7b1f105c712ddc37682c90f18f5823fe5a59e9a698fe58b4e192f5368446d587",
     "open_webui_venv_remove": "b0beebe7d3c1b7fa57d6374c1edc254de57be024a0c3db357d02bb0e6e840dc8",
+    "openclaw_deploy": "6eea4edc790bd49fd939c3f47678abaca31a60f164cd40d0d97521241e745398",
+    "openclaw_remove": "13a27027a9ca88b99775c06edd77ff34e7bca7aed75e65329b38d5c0491e60bf",
     "rust_release_binary": "2ffb81bff977bf3bf10a650de9723dd47943d36071511b9adfc299cf6dd0f542",
     "samba_share": "5d572568069783fbed03c599475610b9e8c67b2bafd2c3623f12c33f797ae431",
     "samba_timemachine": "06b9cb0764bce89496687a480ebac9551c91c3129bf2d66e72e3252eda30a276",
@@ -80,6 +82,8 @@
     "daybook_operations_api_restore": "e0a009859d4a045c9c722fde786ba3bd9a0008b7",
     "minecraft_java_remove": "55a23d33d144717f4e4bc4405296539c5b81adad",
     "ollama_proxy_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "open_webui_venv_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
+    "open_webui_venv_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "openclaw_deploy": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "openclaw_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

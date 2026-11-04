@@ -1,0 +1,38 @@
+---
+name: todo
+description: "Manage live weeknotes todos in Obsidian/MinIO (/todo add|list)."
+metadata: { "openclaw": { "emoji": "✅", "requires": { "bins": ["bash"] } } }
+---
+
+# Todo Skill
+
+Use the managed weeknotes handler for todo operations.
+
+## Input Contract
+
+User input is everything after `/todo`.
+
+- `add <text...>`: add a todo entry.
+- `list`: list open todos.
+- `reminder`: internal reminder output used by scheduler.
+
+## Execution Rules
+
+Execute exactly one command. For `reminder` (including the scheduled
+`/todo reminder` system event), run:
+
+```bash
+/home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh reminder
+```
+
+For `add` and `list`, run:
+
+```bash
+/home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh todo <raw-user-input>
+```
+
+When no input is provided, return:
+
+`Usage: /todo add <text> | /todo list`
+
+Return the handler output as-is.

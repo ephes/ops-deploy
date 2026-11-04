@@ -1,0 +1,149 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+const HANDLER_PATH = {{ (openclaw_opsgate_container_skills_dir ~ "/" ~ openclaw_opsgate_skill_name ~ "/handler.py") | to_json }};
+const COMMAND_NAME = {{ openclaw_opsgate_command_skill_name | to_json }};
+const TOOL_NAME = {{ openclaw_opsgate_tool_name | to_json }};
+const EXEC_TIMEOUT_MS = {{ (((openclaw_opsgate_submit_timeout_seconds | int) + 2) * 1000) | to_json }};
+const EXEC_MAX_BUFFER_BYTES = 1024 * 1024;
+
+const ToolSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    command: {
+      type: "string",
+      description: "Raw arguments after /" + COMMAND_NAME,
+    },
+    commandName: {
+      type: "string",
+      description: "Slash command name",
+    },
+    skillName: {
+      type: "string",
+      description: "Skill name",
+    },
+  },
+  required: ["command"],
+};
+
+function buildTextResult(text) {
+  return {
+    content: [
+      {
+        type: "text",
+        text,
+      },
+    ],
+  };
+}
+
+function normalizeOutput(stdout, stderr, fallback) {
+  const parts = [];
+  if (typeof stdout === "string" && stdout.trim().length > 0) {
+    parts.push(stdout.trim());
+  }
+  if (typeof stderr === "string" && stderr.trim().length > 0) {
+    parts.push(stderr.trim());
+  }
+  if (parts.length > 0) {
+    return parts.join("\n");
+  }
+  return fallback;
+}
+
+function normalizeCommandText(rawCommand, commandName, skillName) {
+  let text = typeof rawCommand === "string" ? rawCommand.trim() : "";
+  const normalizedCommandName =
+    typeof commandName === "string" ? commandName.trim().replace(/^\/+/, "") : "";
+  const normalizedSkillName =
+    typeof skillName === "string" ? skillName.trim().replace(/^\/+/, "") : COMMAND_NAME;
+  const rawCandidates = [commandName, skillName]
+    .filter((value) => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const candidates = [];
+  for (const candidate of rawCandidates) {
+    if (!candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
+    if (candidate.startsWith("/")) {
+      const withoutSlash = candidate.slice(1);
+      if (withoutSlash && !candidates.includes(withoutSlash)) {
+        candidates.push(withoutSlash);
+      }
+    } else {
+      const withSlash = "/" + candidate;
+      if (!candidates.includes(withSlash)) {
+        candidates.push(withSlash);
+      }
+    }
+  }
+  for (const candidate of candidates) {
+    if (text === candidate) {
+      text = "";
+      break;
+    }
+    const prefix = candidate + " ";
+    if (text.startsWith(prefix)) {
+      text = text.slice(prefix.length).trim();
+      break;
+    }
+  }
+  let commandPrefix = "";
+  const commandNameCandidates = [normalizedCommandName, COMMAND_NAME]
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+  for (const candidate of commandNameCandidates) {
+    if (candidate === normalizedSkillName) {
+      continue;
+    }
+    const prefix = normalizedSkillName + " ";
+    if (candidate.startsWith(prefix)) {
+      commandPrefix = candidate.slice(prefix.length).trim();
+      break;
+    }
+  }
+  if (commandPrefix.length > 0) {
+    const commandPrefixLower = commandPrefix.toLowerCase();
+    const textLower = text.toLowerCase();
+    if (!(textLower === commandPrefixLower || textLower.startsWith(commandPrefixLower + " "))) {
+      text = (commandPrefix + (text ? " " + text : "")).trim();
+    }
+  }
+  return text;
+}
+
+export default function register(api) {
+  api.registerTool({
+    name: TOOL_NAME,
+    label: "OpsGate submit",
+    description:
+      "Create a fixed OpsGate investigator ticket by invoking the managed handler directly.",
+    parameters: ToolSchema,
+    async execute(_toolCallId, params) {
+      const normalizedCommand = normalizeCommandText(
+        params?.command,
+        params?.commandName,
+        params?.skillName,
+      );
+      const argv = normalizedCommand.length > 0 ? [normalizedCommand] : [];
+      const usageText =
+        "Usage: /" +
+        COMMAND_NAME +
+        " create [--title <text>] [--task-ref <text>] <issue description>";
+
+      try {
+        const result = await execFileAsync(HANDLER_PATH, argv, {
+          timeout: EXEC_TIMEOUT_MS,
+          maxBuffer: EXEC_MAX_BUFFER_BYTES,
+        });
+        return buildTextResult(normalizeOutput(result.stdout, result.stderr, "✅ Done."));
+      } catch (error) {
+        const text = normalizeOutput(error?.stdout, error?.stderr, error instanceof Error ? error.message : usageText);
+        return buildTextResult(text || usageText);
+      }
+    },
+  });
+}

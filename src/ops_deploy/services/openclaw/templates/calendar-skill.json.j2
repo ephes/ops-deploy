@@ -1,0 +1,40 @@
+{
+  "name": "{{ openclaw_calendar_skill_name }}",
+  "version": "1.0.0",
+  "description": "CalDAV calendar read/free-time checks with guarded create/edit/delete",
+  "commands": {
+    "{{ openclaw_calendar_command_skill_name }}": {
+      "description": "Calendar commands",
+      "subcommands": {
+        "today": {
+          "description": "List events today: /{{ openclaw_calendar_command_skill_name }} today"
+        },
+        "tomorrow": {
+          "description": "List events tomorrow: /{{ openclaw_calendar_command_skill_name }} tomorrow"
+        },
+        "on": {
+          "description": "List events on a date: /{{ openclaw_calendar_command_skill_name }} on <YYYY-MM-DD>"
+        },
+        "week": {
+          "description": "List events for a week: /{{ openclaw_calendar_command_skill_name }} week [--start <YYYY-MM-DD>]"
+        },
+        "free": {
+          "description": "Check if time is free: /{{ openclaw_calendar_command_skill_name }} free --at <datetime> [--duration <minutes>]"
+        },
+        "create": {
+          "description": "Create an event on an allowlisted writable calendar: /{{ openclaw_calendar_command_skill_name }} create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]"
+        },
+        "edit": {
+          "description": "Edit an event on an allowlisted writable calendar: /{{ openclaw_calendar_command_skill_name }} edit <event_id> [--title <text>] [--start <datetime>] [--duration <minutes>]"
+        },
+        "delete": {
+          "description": "Delete an event on an allowlisted writable calendar (requires explicit confirmation): /{{ openclaw_calendar_command_skill_name }} delete <event_id> --confirm"
+        }
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

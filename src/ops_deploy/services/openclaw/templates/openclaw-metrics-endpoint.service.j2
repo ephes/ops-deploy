@@ -1,0 +1,40 @@
+[Unit]
+Description=OpenClaw metrics HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ openclaw_metrics_endpoint_user }}
+Group={{ openclaw_metrics_endpoint_group }}
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_server_path }} \
+  --bind {{ openclaw_metrics_endpoint_bind }} \
+  --port {{ openclaw_metrics_endpoint_port }} \
+  --path {{ openclaw_metrics_endpoint_path }} \
+  --json-path {{ openclaw_metrics_endpoint_json_path }} \
+  --htpasswd-file {{ openclaw_metrics_endpoint_htpasswd_path }}
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+# Read access to the metrics JSON file
+ReadOnlyPaths={{ openclaw_metrics_endpoint_data_dir }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+---
+name: {{ openclaw_imap_command_skill_name }}
+{% if openclaw_smtp_enabled | bool %}
+description: "Mailbox access via IMAP read + SMTP send (/mail unread|list|read|search|send)."
+{% else %}
+description: "Read-only IMAP mailbox access (/mail unread|list|read|search)."
+{% endif %}
+metadata: { "openclaw": { "emoji": "📬", "requires": { "bins": ["python3"] } } }
+---
+
+# Mail Skill
+
+Use the managed IMAP read-only handler for mailbox access.
+
+## Input Contract
+
+User input is everything after `/mail`.
+
+- `unread [--account <name>]`
+- `list [--account <name>] [--limit N]`
+- `read <uid> [--account <name>]`
+- `search <query> [--account <name>] [--limit N]`
+{% if openclaw_smtp_enabled | bool %}
+- `send --to <email[,email...]> --subject <text> --body <text> [--account <name>] [--cc <email[,email...]>] [--bcc <email[,email...]>]`
+{% endif %}
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+{{ openclaw_imap_container_skills_dir }}/{{ openclaw_imap_skill_name }}/handler.py <raw-user-input>
+```
+
+When no input is provided, return:
+
+{% if openclaw_smtp_enabled | bool %}
+`Usage: /mail unread [--account <name>] | /mail list [--account <name>] [--limit N] | /mail read <uid> [--account <name>] | /mail search <query> [--account <name>] [--limit N] | /mail send --to <email[,email...]> --subject <text> --body <text> [--account <name>] [--cc <email[,email...]>] [--bcc <email[,email...]>]`
+{% else %}
+`Usage: /mail unread [--account <name>] | /mail list [--account <name>] [--limit N] | /mail read <uid> [--account <name>] | /mail search <query> [--account <name>] [--limit N]`
+{% endif %}
+
+Return the handler output as-is.

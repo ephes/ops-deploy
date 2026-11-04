@@ -1,0 +1,19 @@
+{
+  "name": "{{ openclaw_opsgate_skill_name }}",
+  "version": "1.0.0",
+  "description": "Create explicit OpsGate investigator tickets with preserved approval flow",
+  "commands": {
+    "{{ openclaw_opsgate_command_skill_name }}": {
+      "description": "OpsGate ticket commands",
+      "subcommands": {
+        "create": {
+          "description": "Create a single-step investigator ticket: /{{ openclaw_opsgate_command_skill_name }} create [--title <text>] [--task-ref <text>] <issue description>"
+        }
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

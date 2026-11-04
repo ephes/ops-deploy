@@ -1,0 +1,25 @@
+{
+  "name": "{{ openclaw_paperless_skill_name }}",
+  "version": "1.0.0",
+  "description": "Paperless-ngx read-only search/get/latest with Telegram delivery fallback",
+  "commands": {
+    "{{ openclaw_paperless_command_skill_name }}": {
+      "description": "Paperless commands",
+      "subcommands": {
+        "search": {
+          "description": "Search documents: /{{ openclaw_paperless_command_skill_name }} search <query> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]"
+        },
+        "get": {
+          "description": "Fetch a document by id (original by default): /{{ openclaw_paperless_command_skill_name }} get <document_id> [--original|--archived]"
+        },
+        "latest": {
+          "description": "Find recent documents: /{{ openclaw_paperless_command_skill_name }} latest [--query <text>] [--days N] [--limit N]"
+        }
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

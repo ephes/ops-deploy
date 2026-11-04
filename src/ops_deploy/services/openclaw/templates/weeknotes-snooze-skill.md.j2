@@ -1,0 +1,19 @@
+---
+name: snooze
+description: "Suppress today's weeknotes reminder (/snooze)."
+metadata: { "openclaw": { "emoji": "🔕", "requires": { "bins": ["bash"] } } }
+---
+
+# Snooze Skill
+
+Use the managed weeknotes handler to snooze today's reminder.
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+/home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh snooze
+```
+
+Ignore extra user input and return the handler output as-is.

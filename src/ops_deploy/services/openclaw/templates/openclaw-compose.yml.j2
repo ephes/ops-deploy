@@ -1,0 +1,60 @@
+# Managed by Ansible (openclaw_deploy). Do not edit on the host.
+services:
+  {{ openclaw_container_name }}:
+    image: {{ openclaw_image_name }}:{{ openclaw_image_tag }}
+    container_name: {{ openclaw_container_name }}
+    restart: {{ openclaw_restart_policy }}
+    mem_limit: {{ openclaw_mem_limit }}
+    cpus: {{ openclaw_cpus }}
+    pids_limit: {{ openclaw_pids_limit }}
+    user: "1000:1000"
+{% if openclaw_network_mode == 'host' %}
+    network_mode: host
+{% else %}
+    ports:
+      - "{{ openclaw_bind_host }}:{{ openclaw_host_port }}:{{ openclaw_container_port }}"
+{% endif %}
+{% if openclaw_ca_store_path | length > 0 %}
+    environment:
+      SSL_CERT_FILE: /run/managed-ca/bundle.pem
+      SSL_CERT_DIR: /run/managed-ca/empty
+{% endif %}
+    env_file:
+      - .env
+    volumes:
+{% if openclaw_ca_store_path | length > 0 %}
+      - "{{ openclaw_ca_store_path }}:/run/managed-ca:ro"
+{% endif %}
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - "{{ openclaw_log_dir }}:/tmp/openclaw"
+{% if openclaw_weeknotes_enabled | bool and openclaw_weeknotes_backend == 's3' %}
+      - "{{ openclaw_weeknotes_s3_mc_host_path }}:{{ openclaw_weeknotes_s3_mc_container_path }}:ro"
+{% endif %}
+
+  openclaw-cli:
+    image: {{ openclaw_image_name }}:{{ openclaw_image_tag }}
+    container_name: openclaw-cli
+    user: "1000:1000"
+    entrypoint: ["node", "dist/index.js"]
+{% if openclaw_network_mode == 'host' %}
+    network_mode: host
+{% else %}
+    network_mode: "service:{{ openclaw_container_name }}"
+{% endif %}
+{% if openclaw_ca_store_path | length > 0 %}
+    environment:
+      SSL_CERT_FILE: /run/managed-ca/bundle.pem
+      SSL_CERT_DIR: /run/managed-ca/empty
+{% endif %}
+    env_file:
+      - .env
+    volumes:
+{% if openclaw_ca_store_path | length > 0 %}
+      - "{{ openclaw_ca_store_path }}:/run/managed-ca:ro"
+{% endif %}
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+{% if openclaw_weeknotes_enabled | bool and openclaw_weeknotes_backend == 's3' %}
+      - "{{ openclaw_weeknotes_s3_mc_host_path }}:{{ openclaw_weeknotes_s3_mc_container_path }}:ro"
+{% endif %}
+    profiles:
+      - cli

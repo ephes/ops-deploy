@@ -1,0 +1,35 @@
+{
+  "name": "{{ openclaw_imap_skill_name }}",
+  "version": "1.0.0",
+{% if openclaw_smtp_enabled | bool %}
+  "description": "IMAP read + SMTP send mailbox access with per-account credentials",
+{% else %}
+  "description": "Read-only IMAP mailbox access with per-account credentials",
+{% endif %}
+  "commands": {
+    "mail": {
+      "description": "Mailbox commands",
+      "subcommands": {
+        "unread": {
+          "description": "List unread messages: /mail unread [--account <name>]"
+        },
+        "list": {
+          "description": "List recent messages: /mail list [--account <name>] [--limit N]"
+        },
+        "read": {
+          "description": "Read message snippet by UID: /mail read <uid> [--account <name>]"
+        },
+        "search": {
+          "description": "Search messages: /mail search <query> [--account <name>] [--limit N]"
+        }{% if openclaw_smtp_enabled | bool %},
+        "send": {
+          "description": "Send plain-text mail: /mail send --to <email[,email...]> --subject <text> --body <text> [--account <name>] [--cc <email[,email...]>] [--bcc <email[,email...]>]"
+        }{% endif %}
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

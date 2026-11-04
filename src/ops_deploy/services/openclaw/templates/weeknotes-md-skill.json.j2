@@ -1,0 +1,36 @@
+{
+  "name": "{{ openclaw_weeknotes_skill_name }}",
+  "version": "1.0.0",
+  "description": "Weeknotes and todo management via markdown files",
+  "commands": {
+    "todo": {
+      "description": "Manage todo items (add, list)",
+      "subcommands": {
+        "add": {
+          "description": "Add a new todo: /todo add <text> [--p1|--p2|--p3] [--due YYYY-MM-DD] [#tags]"
+        },
+        "list": {
+          "description": "List open (unchecked) todos from the current note context"
+        }
+      }
+    },
+    "note": {
+      "description": "Manage journal entries",
+      "subcommands": {
+        "add": {
+          "description": "Add a timestamped journal entry: /note add <text>"
+        },
+        "find": {
+          "description": "Search current note context: /note find <text>"
+        }
+      }
+    },
+    "snooze": {
+      "description": "Suppress today's daily reminder (one-day snooze): /snooze"
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.sh"
+  }
+}

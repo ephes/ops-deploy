@@ -1,0 +1,46 @@
+[Unit]
+Description=Collect OpenClaw metrics and write JSON
+After=network.target docker.service openclaw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Keep this explicit to avoid host-level DefaultTimeoutStartSec overrides killing
+# long synthetic-canary runs.
+TimeoutStartSec=600
+ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_collector_path }} \
+  --container {{ openclaw_metrics_endpoint_container_name }} \
+  --output {{ openclaw_metrics_endpoint_json_path }} \
+  --command-timeout {{ openclaw_metrics_endpoint_command_timeout }} \
+  --calendar-auth-enabled {{ 1 if (openclaw_calendar_enabled | bool) else 0 }} \
+  --calendar-health-state-path {{ openclaw_calendar_health_state_path | quote }} \
+  --calendar-auth-window-seconds {{ openclaw_calendar_auth_failure_window_seconds }} \
+  --calendar-auth-failure-threshold {{ openclaw_calendar_auth_failure_threshold }} \
+  --paperless-auth-enabled {{ 1 if (openclaw_paperless_enabled | bool) else 0 }} \
+  --paperless-health-state-path {{ openclaw_paperless_health_state_path | quote }} \
+  --paperless-auth-window-seconds {{ openclaw_paperless_auth_failure_window_seconds }} \
+  --paperless-auth-failure-threshold {{ openclaw_paperless_auth_failure_threshold }} \
+  --synthetic-canary-enabled {{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }} \
+  --synthetic-canary-agent {{ openclaw_metrics_endpoint_synthetic_canary_agent | quote }} \
+  --synthetic-canary-session-id {{ openclaw_metrics_endpoint_synthetic_canary_session_id | quote }} \
+  --synthetic-canary-message {{ openclaw_metrics_endpoint_synthetic_canary_message | quote }} \
+  --synthetic-canary-expected-text {{ openclaw_metrics_endpoint_synthetic_canary_expected_text | quote }} \
+  --synthetic-canary-interval {{ openclaw_metrics_endpoint_synthetic_canary_interval }} \
+  --synthetic-canary-timeout {{ openclaw_metrics_endpoint_synthetic_canary_timeout }} \
+  --synthetic-canary-max-attempts {{ openclaw_metrics_endpoint_synthetic_canary_max_attempts }} \
+  --synthetic-canary-retry-delay {{ openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds }} \
+  --synthetic-canary-state-path {{ openclaw_metrics_endpoint_synthetic_canary_state_path | quote }} \
+  --synthetic-canary-sessions-dir {{ openclaw_metrics_endpoint_synthetic_canary_sessions_dir | quote }} \
+  --synthetic-canary-session-retention-seconds {{ openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds }} \
+  --synthetic-canary-output-max-chars {{ openclaw_metrics_endpoint_synthetic_canary_output_max_chars }}
+
+# Root is required for docker exec.
+User=root
+Group=root
+
+# Ensure data directory exists and has readable group permissions for endpoint service.
+ExecStartPre=/bin/mkdir -p {{ openclaw_metrics_endpoint_data_dir }}
+ExecStartPre=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_data_dir }}
+ExecStartPre=/bin/chmod 0750 {{ openclaw_metrics_endpoint_data_dir }}
+ExecStartPost=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_json_path }}
+ExecStartPost=/bin/sh -c 'if [ -e "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}" ]; then chown root:root "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}" && chmod 0640 "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}"; fi'

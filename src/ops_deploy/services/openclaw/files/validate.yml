@@ -1,0 +1,869 @@
+---
+- name: validate | OpenClaw version is set
+  ansible.builtin.assert:
+    that:
+      - openclaw_version | length > 0
+    fail_msg: >-
+      openclaw_version is required (e.g. "v2026.7.1"). Set it in the playbook or inventory.
+
+- name: validate | Gateway network mode
+  ansible.builtin.assert:
+    that:
+      - openclaw_network_mode in ['bridge', 'host']
+      - openclaw_startup_timeout | int > 0
+      - openclaw_network_mode != 'host' or openclaw_bind_host in ['127.0.0.1', 'localhost']
+    fail_msg: >-
+      openclaw_network_mode must be bridge or host. Host mode requires a
+      loopback openclaw_bind_host and always binds the Gateway to loopback.
+      openclaw_startup_timeout must be a positive number of seconds.
+
+- name: validate | Core OpenClaw settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_site_dir | length > 0
+      - openclaw_data_dir | length > 0
+      - openclaw_build_dir | length > 0
+    fail_msg: >-
+      Missing required OpenClaw settings (site_dir/data_dir/build_dir).
+
+- name: validate | Extra env settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_extra_env is mapping
+      - openclaw_extra_env is not string
+    fail_msg: "openclaw_extra_env must be a mapping of environment variables."
+
+- name: validate | Managed workspace skills collection
+  ansible.builtin.assert:
+    that:
+      - openclaw_workspace_skills is sequence
+      - openclaw_workspace_skills is not string
+    fail_msg: "openclaw_workspace_skills must be a list."
+
+- name: validate | Managed workspace skill entries
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.name | string is regex('^[a-z0-9][a-z0-9-]{0,63}$')
+      - item.files is defined
+      - item.files is sequence
+      - item.files is not string
+      - item.files | length > 0
+    fail_msg: >-
+      Each openclaw_workspace_skills entry requires a lowercase name containing
+      only letters, digits, and hyphens plus a non-empty files list.
+  loop: "{{ openclaw_workspace_skills }}"
+  loop_control:
+    label: "{{ item.name | default('invalid') }}"
+
+- name: validate | Managed workspace skill files
+  ansible.builtin.assert:
+    that:
+      - item.1 is mapping
+      - item.1.src is defined
+      - item.1.src | string | trim | length > 0
+      - item.1.dest is defined
+      - item.1.dest | string | trim | length > 0
+      - not (item.1.dest | string).startswith('/')
+      - "'..' not in (item.1.dest | string).split('/')"
+      - item.1.mode | default('0640') | string is regex('^0[0-7]{3}$')
+    fail_msg: >-
+      Each managed workspace skill file requires a controller-local src, a
+      relative traversal-free dest, and an optional four-digit octal mode.
+  loop: "{{ openclaw_workspace_skills | subelements('files') }}"
+  loop_control:
+    label: >-
+      {{ item.0.name | default('invalid') }}/{{ item.1.dest | default('invalid') }}
+
+- name: validate | Gateway token is set
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_token | length > 0
+      - openclaw_gateway_token != 'CHANGEME'
+    fail_msg: >-
+      openclaw_gateway_token is required for gateway mode.
+      Set it in the playbook or via SOPS secrets.
+
+- name: validate | Anthropic API key is set
+  ansible.builtin.assert:
+    that:
+      - openclaw_anthropic_api_key | length > 0
+      - openclaw_anthropic_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_anthropic_api_key is required. Set it in the playbook or via SOPS secrets.
+
+- name: validate | Optional default reasoning level
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_thinking_default is string
+      - openclaw_agent_thinking_default | trim in ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive', 'max', 'ultra']
+    fail_msg: "openclaw_agent_thinking_default must be empty or a supported OpenClaw thinking level."
+
+- name: validate | Optional OpenAI API key is not placeholder
+  ansible.builtin.assert:
+    that:
+      - openclaw_openai_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_openai_api_key is optional, but when set it must not be CHANGEME.
+  when: openclaw_openai_api_key | length > 0
+
+- name: validate | Optional OpenRouter API key is not placeholder
+  ansible.builtin.assert:
+    that:
+      - openclaw_openrouter_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_openrouter_api_key is optional, but when set it must not be CHANGEME.
+  when: openclaw_openrouter_api_key | length > 0
+
+- name: validate | Optional Ollama API key is not placeholder
+  ansible.builtin.assert:
+    that:
+      - openclaw_ollama_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_ollama_api_key is optional, but when set it must not be CHANGEME.
+  when: openclaw_ollama_api_key | length > 0
+
+- name: validate | Optional Ollama base URL format
+  ansible.builtin.assert:
+    that:
+      - openclaw_ollama_base_url is regex('^https?://')
+    fail_msg: >-
+      openclaw_ollama_base_url is optional, but when set it must start with http:// or https://.
+  when: openclaw_ollama_base_url | length > 0
+
+- name: validate | Optional model fallback policy shape
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_model_fallbacks is sequence
+      - openclaw_agent_model_fallbacks is not string
+      - >-
+        (
+          openclaw_agent_model_fallbacks
+          | map('trim')
+          | reject('equalto', '')
+          | list
+          | length
+        ) == (openclaw_agent_model_fallbacks | length)
+    fail_msg: >-
+      openclaw_agent_model_fallbacks must be a list of non-empty model IDs.
+
+- name: validate | Optional model fallback entry format
+  ansible.builtin.assert:
+    that:
+      - item is regex('^[^\\s]+/[^\\s]+$')
+    fail_msg: >-
+      Each entry in openclaw_agent_model_fallbacks must be in provider/model format.
+      Invalid entry: {{ item }}
+  loop: "{{ openclaw_agent_model_fallbacks }}"
+  when: openclaw_agent_model_fallbacks | length > 0
+
+- name: validate | Optional model fallback policy semantics
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_model_primary | trim | length > 0
+      - openclaw_agent_model_primary is regex('^[^\\s]+/[^\\s]+$')
+      - >-
+        (openclaw_agent_model_primary | trim)
+        not in (openclaw_agent_model_fallbacks | map('trim') | list)
+      - >-
+        (
+          openclaw_agent_model_fallbacks
+          | map('trim')
+          | unique
+          | list
+          | length
+        ) == (openclaw_agent_model_fallbacks | length)
+    fail_msg: >-
+      openclaw_agent_model_primary must be set as provider/model when model fallbacks are configured.
+      Fallbacks must be unique and must not contain the primary model.
+  when: openclaw_agent_model_fallbacks | length > 0
+
+- name: validate | Optional model primary format
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_model_primary is regex('^[^\\s]+/[^\\s]+$')
+    fail_msg: >-
+      openclaw_agent_model_primary must be in provider/model format.
+  when: openclaw_agent_model_primary | trim | length > 0
+
+- name: validate | Optional OpenAI auth order shape
+  ansible.builtin.assert:
+    that:
+      - openclaw_openai_auth_order is sequence
+      - openclaw_openai_auth_order is not string
+      - >-
+        (
+          openclaw_openai_auth_order
+          | map('trim')
+          | reject('equalto', '')
+          | unique
+          | list
+          | length
+        ) == (openclaw_openai_auth_order | length)
+    fail_msg: >-
+      openclaw_openai_auth_order must be a unique list of non-empty canonical OpenAI profile IDs.
+
+- name: validate | Optional OpenAI auth order entries
+  ansible.builtin.assert:
+    that:
+      - (item | trim) is regex('^openai:[^\s]+$')
+    fail_msg: >-
+      Each openclaw_openai_auth_order entry must use the canonical openai:<profile> format.
+      Invalid entry: {{ item }}
+  loop: "{{ openclaw_openai_auth_order }}"
+  when: openclaw_openai_auth_order | length > 0
+
+- name: validate | Audio transcription settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_config | length == 0
+      - >-
+        (openclaw_version | regex_replace('^v', ''))
+        is version('2026.9.1', '>=', version_type='semver')
+      - openclaw_audio_transcription_provider is regex('^[a-z0-9][a-z0-9._-]*$')
+      - openclaw_audio_transcription_profile_id is regex('^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$')
+      - >-
+        (openclaw_audio_transcription_profile_id | trim).startswith(
+          (openclaw_audio_transcription_provider | trim) ~ ':'
+        )
+      - openclaw_openai_auth_order | length > 0
+      - >-
+        (openclaw_audio_transcription_profile_id | trim)
+        not in (openclaw_openai_auth_order | map('trim') | list)
+    fail_msg: >-
+      Managed audio transcription requires OpenClaw v2026.9.1 or newer, the
+      role-managed gateway config, a provider-scoped profile id, and an
+      explicit OpenAI auth order that excludes the audio profile.
+  when: openclaw_audio_transcription_managed | bool
+
+- name: validate | Enabled audio transcription settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_audio_transcription_managed | bool
+      - openclaw_audio_transcription_base_url is regex('^https?://')
+      - not openclaw_audio_transcription_base_url.endswith('/')
+      - openclaw_audio_transcription_model | trim | length > 0
+      - openclaw_audio_transcription_api_key is regex('^[A-Za-z0-9._~+/=-]{20,512}\Z')
+      - openclaw_audio_transcription_api_key not in ['CHANGEME', 'CHANGE_ME']
+      - openclaw_audio_transcription_api_key_env is regex('^[A-Z][A-Z0-9_]{0,127}$')
+      - openclaw_audio_transcription_api_key_env not in openclaw_extra_env
+      - openclaw_audio_transcription_api_key_env not in _openclaw_reserved_env_names
+      - openclaw_audio_transcription_timeout_seconds | int > 0
+      - openclaw_audio_transcription_timeout_seconds | int <= 3600
+    fail_msg: >-
+      Enabled audio transcription requires management, an HTTP(S) base URL
+      without a trailing slash, a model, a delimiter-safe API key, a dedicated
+      non-reserved environment name, and a timeout from 1 to 3600 seconds.
+  vars:
+    _openclaw_reserved_env_names:
+      - ANTHROPIC_API_KEY
+      - NODE_OPTIONS
+      - OLLAMA_API_KEY
+      - OLLAMA_BASE_URL
+      - OPENAI_API_KEY
+      - OPENCLAW_GATEWAY_TOKEN
+      - OPENCLAW_WEEKNOTES_S3_ACCESS_KEY
+      - OPENCLAW_WEEKNOTES_S3_BUCKET
+      - OPENCLAW_WEEKNOTES_S3_ENDPOINT
+      - OPENCLAW_WEEKNOTES_S3_MC_ALIAS
+      - OPENCLAW_WEEKNOTES_S3_MC_BIN
+      - OPENCLAW_WEEKNOTES_S3_NOTE_KEY_FORMAT
+      - OPENCLAW_WEEKNOTES_S3_PREFIX
+      - OPENCLAW_WEEKNOTES_S3_REGION
+      - OPENCLAW_WEEKNOTES_S3_SECRET_KEY
+      - OPENCLAW_WEEKNOTES_S3_TODO_CACHE_REFRESH_SECS
+      - OPENCLAW_WEEKNOTES_S3_TODO_LIST_KEY_REGEX
+      - OPENCLAW_WEEKNOTES_S3_TODO_LIST_MODE
+      - OPENROUTER_API_KEY
+      - TELEGRAM_BOT_TOKEN
+      - TZ
+  when: openclaw_audio_transcription_enabled | bool
+
+- name: validate | Codex plugin settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_codex_plugin_id is regex('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - openclaw_codex_plugin_package | trim | length > 0
+      - openclaw_codex_plugin_version is regex('^[0-9A-Za-z][0-9A-Za-z._+-]*$')
+    fail_msg: >-
+      Codex plugin id, package, and version must be non-empty npm-compatible values.
+  when: openclaw_codex_plugin_enabled | bool
+
+- name: validate | Codex v2026.9.1 process-registration backport settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_codex_plugin_enabled | bool
+      - openclaw_version == 'v2026.9.1'
+      - openclaw_codex_plugin_package == '@openclaw/codex'
+      - openclaw_codex_plugin_version == '2026.9.1'
+    fail_msg: >-
+      The Codex process-registration backport is scoped only to the official
+      @openclaw/codex 2026.9.1 package. Disable the backport when upgrading to
+      a release that contains upstream commit 26e5c2858a.
+  when: openclaw_codex_v2026_9_1_registration_backport_managed | bool
+
+- name: validate | Telegram bot token when Telegram is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_telegram_bot_token | length > 0
+      - openclaw_telegram_bot_token != 'CHANGEME'
+    fail_msg: >-
+      openclaw_telegram_bot_token is required when Telegram is enabled.
+  when: openclaw_telegram_enabled | bool
+
+- name: validate | Networking settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_bind_host | length > 0
+      - openclaw_host_port | int > 0
+      - openclaw_host_port | int <= 65535
+      - openclaw_container_port | int > 0
+      - openclaw_container_port | int <= 65535
+    fail_msg: >-
+      Invalid networking settings. openclaw_bind_host must be non-empty,
+      ports must be between 1 and 65535.
+
+- name: validate | Resource limits
+  ansible.builtin.assert:
+    that:
+      - openclaw_mem_limit | string is regex('^[0-9]+[bkmgBKMG]$')
+      - openclaw_cpus | float > 0
+      - openclaw_pids_limit | int > 0
+    fail_msg: >-
+      Invalid resource limits. openclaw_mem_limit must match [0-9]+[bkmg] (e.g. "2g", "512m"),
+      openclaw_cpus must be > 0, openclaw_pids_limit must be > 0.
+
+- name: validate | Gateway config file mode format
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_config_mode | string is regex('^0?[0-7]{3,4}$')
+    fail_msg: >-
+      openclaw_gateway_config_mode must be a valid octal file mode string (for example "0600").
+
+- name: validate | Telegram streaming settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_telegram_streaming_mode in ['off', 'partial', 'block', 'progress']
+      - openclaw_telegram_streaming_preview_command_text in ['raw', 'status']
+    fail_msg: >-
+      openclaw_telegram_streaming_mode must be off, partial, block, or progress,
+      and openclaw_telegram_streaming_preview_command_text must be raw or status.
+
+- name: validate | Direct-message session scope
+  ansible.builtin.assert:
+    that:
+      - >-
+        openclaw_session_dm_scope in
+        ['main', 'per-peer', 'per-channel-peer', 'per-account-channel-peer']
+    fail_msg: >-
+      openclaw_session_dm_scope must be main, per-peer, per-channel-peer, or
+      per-account-channel-peer.
+
+- name: validate | Gateway trusted proxies list
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_trusted_proxies is sequence
+      - openclaw_gateway_trusted_proxies is not string
+      - >-
+        (
+          openclaw_gateway_trusted_proxies
+          | map('trim')
+          | reject('equalto', '')
+          | list
+          | length
+        ) == (openclaw_gateway_trusted_proxies | length)
+    fail_msg: >-
+      openclaw_gateway_trusted_proxies must be a list of non-empty proxy IP/CIDR strings.
+
+- name: validate | Gateway auth rate limiting settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_auth_rate_limit_max_attempts | int > 0
+      - openclaw_gateway_auth_rate_limit_window_ms | int > 0
+      - openclaw_gateway_auth_rate_limit_lockout_ms | int >= 0
+    fail_msg: >-
+      Gateway auth rate limit values must be positive (lockout_ms can be 0).
+  when: openclaw_gateway_auth_rate_limit_enabled | bool
+
+- name: validate | Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_traefik_host | length > 0
+      - openclaw_traefik_config_path | length > 0
+      - openclaw_bind_host == '127.0.0.1' or openclaw_bind_host == 'localhost'
+      - openclaw_gateway_trusted_proxies | length > 0
+    fail_msg: >-
+      openclaw_traefik_host and openclaw_traefik_config_path are required when Traefik is enabled.
+      openclaw_bind_host must be 127.0.0.1 (loopback) and openclaw_gateway_trusted_proxies must be non-empty
+      when Traefik is the external entry point.
+  when: openclaw_traefik_enabled | bool
+
+- name: validate | IMAP base settings when IMAP is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_imap_host | string | trim | length > 0
+      - openclaw_imap_port | int > 0
+      - openclaw_imap_port | int <= 65535
+      - openclaw_imap_tls_mode in ['imaps', 'starttls']
+      - openclaw_imap_default_mailbox | string | trim | length > 0
+      - openclaw_imap_account_map is mapping
+      - openclaw_imap_account_map is not string
+      - openclaw_imap_account_map | length > 0
+      - openclaw_imap_default_account | string | trim | length > 0
+      - openclaw_imap_default_account in (openclaw_imap_account_map.keys() | list)
+      - openclaw_imap_connect_timeout_seconds | int > 0
+      - openclaw_imap_command_timeout_seconds | int > 0
+      - openclaw_imap_default_limit | int > 0
+      - (openclaw_imap_max_limit | int) >= (openclaw_imap_default_limit | int)
+      - openclaw_imap_header_max_chars | int > 0
+      - openclaw_imap_subject_max_chars | int > 0
+      - openclaw_imap_search_query_max_chars | int > 0
+      - openclaw_imap_read_fetch_bytes | int > 0
+      - openclaw_imap_read_snippet_chars | int > 0
+      - openclaw_imap_skills_dir | string | trim | length > 0
+      - openclaw_imap_container_skills_dir | string | trim | length > 0
+      - openclaw_imap_skill_name | string | trim | length > 0
+      - openclaw_imap_command_skill_name | string | trim | length > 0
+      - openclaw_imap_credentials_path | string | trim | length > 0
+      - openclaw_imap_container_credentials_path | string | trim | length > 0
+    fail_msg: >-
+      Invalid IMAP settings. Configure host/port/tls/default account plus limits and paths when
+      openclaw_imap_enabled is true.
+  when: openclaw_imap_enabled | bool
+
+- name: validate | IMAP account entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.value is mapping
+      - item.value is not string
+      - (item.value.mailbox | default(openclaw_imap_default_mailbox)) | string | trim | length > 0
+      - item.value.username is defined
+      - item.value.username | string | trim | length > 0
+      - item.value.password is defined
+      - item.value.password | string | trim | length > 0
+    fail_msg: >-
+      IMAP account {{ item.key }} must define mailbox (optional), username, and password.
+  loop: "{{ openclaw_imap_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_imap_enabled | bool
+
+- name: validate | SMTP send requires IMAP command skill deployment
+  ansible.builtin.assert:
+    that:
+      - openclaw_imap_enabled | bool
+    fail_msg: >-
+      openclaw_smtp_enabled requires openclaw_imap_enabled so the /mail command skill is deployed.
+  when: openclaw_smtp_enabled | bool
+
+- name: validate | SMTP base settings when SMTP send is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_smtp_host | string | trim | length > 0
+      - openclaw_smtp_port | int > 0
+      - openclaw_smtp_port | int <= 65535
+      - openclaw_smtp_tls_mode in ['starttls', 'smtps']
+      - openclaw_smtp_account_map is mapping
+      - openclaw_smtp_account_map is not string
+      - openclaw_smtp_account_map | length > 0
+      - openclaw_smtp_default_account | string | trim | length > 0
+      - openclaw_smtp_default_account in (openclaw_smtp_account_map.keys() | list)
+      - openclaw_smtp_connect_timeout_seconds | int > 0
+      - openclaw_smtp_command_timeout_seconds | int > 0
+      - openclaw_smtp_max_recipients | int > 0
+      - openclaw_smtp_address_max_chars | int >= 6
+      - openclaw_smtp_from_name_max_chars | int > 0
+      - openclaw_smtp_subject_max_chars | int > 0
+      - openclaw_smtp_body_max_chars | int > 0
+      - openclaw_smtp_credentials_path | string | trim | length > 0
+      - openclaw_smtp_container_credentials_path | string | trim | length > 0
+    fail_msg: >-
+      Invalid SMTP send settings. Configure host/port/tls/default account, limits, and credential
+      paths when openclaw_smtp_enabled is true.
+  when: openclaw_smtp_enabled | bool
+
+- name: validate | SMTP account entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.value is mapping
+      - item.value is not string
+      - item.value.username is defined
+      - item.value.username | string | trim | length > 0
+      - item.value.password is defined
+      - item.value.password | string | trim | length > 0
+      - item.value.from_address is defined
+      - item.value.from_address | string | trim | length > 0
+      - item.value.from_address | string | trim | length <= (openclaw_smtp_address_max_chars | int)
+      - not (item.value.from_address | string is regex('[\\r\\n]'))
+      - item.value.from_address | string | trim is regex('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
+      - item.value.from_name | default('') | string | trim | length <= (openclaw_smtp_from_name_max_chars | int)
+      - not (item.value.from_name | default('') | string is regex('[\\r\\n]'))
+      - not (item.value.from_name | default('') | string is regex('[\\x00-\\x1f\\x7f]'))
+      - (
+          item.value.reply_to | default('') | string | trim | length == 0
+        ) or (
+          item.value.reply_to | default('') | string | trim | length <= (openclaw_smtp_address_max_chars | int)
+          and not (item.value.reply_to | default('') | string is regex('[\\r\\n]'))
+          and (item.value.reply_to | default('') | string | trim is regex('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'))
+        )
+    fail_msg: >-
+      SMTP account {{ item.key }} must define username/password/from_address with a valid sender
+      address and no newline/control characters. Optional from_name/reply_to values must be valid.
+  loop: "{{ openclaw_smtp_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_smtp_enabled | bool
+
+- name: validate | Calendar base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_calendar_timezone | string | trim | length > 0
+      - openclaw_calendar_skill_name | string | trim | length > 0
+      - openclaw_calendar_command_skill_name | string | trim | length > 0
+      - openclaw_calendar_skills_dir | string | trim | length > 0
+      - openclaw_calendar_container_skills_dir | string | trim | length > 0
+      - openclaw_calendar_credentials_path | string | trim | length > 0
+      - openclaw_calendar_container_credentials_path | string | trim | length > 0
+      - openclaw_calendar_account_map is mapping
+      - openclaw_calendar_account_map is not string
+      - openclaw_calendar_default_account | string | trim | length >= 0
+      - >-
+        (openclaw_calendar_default_account | string | trim | length == 0)
+        or
+        ((openclaw_calendar_default_account | string | trim | lower)
+          in (openclaw_calendar_account_map.keys() | map('lower') | list))
+      - openclaw_calendar_default_duration_minutes | int > 0
+      - openclaw_calendar_request_timeout_seconds | int > 0
+      - openclaw_calendar_read_parallelism | int > 0
+      - openclaw_calendar_read_parallelism | int <= 16
+      - openclaw_calendar_read_aggregate_timeout_seconds | int >= (openclaw_calendar_request_timeout_seconds | int)
+      - openclaw_calendar_health_state_path | string | trim | length > 0
+      - openclaw_calendar_container_health_state_path | string | trim | length > 0
+      - openclaw_calendar_auth_failure_window_seconds | int > 0
+      - openclaw_calendar_auth_failure_threshold | int > 0
+      - openclaw_calendar_default_limit | int > 0
+      - openclaw_calendar_max_limit | int >= (openclaw_calendar_default_limit | int)
+      - openclaw_calendar_title_max_chars | int > 0
+      - openclaw_calendar_location_max_chars | int > 0
+      - openclaw_calendar_map is mapping
+      - openclaw_calendar_map is not string
+      - openclaw_calendar_map | length > 0
+    fail_msg: >-
+      Invalid calendar settings. Configure timezone, skill/credential paths, limits/timeouts,
+      and a non-empty openclaw_calendar_map when openclaw_calendar_enabled is true.
+  no_log: true
+  when: openclaw_calendar_enabled | bool
+
+- name: validate | Calendar account-map entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.key | string | trim is regex('^[a-z0-9_-]+$')
+      - item.value is mapping
+      - item.value is not string
+      - item.value.username is defined
+      - item.value.username | string | trim | length > 0
+      - item.value.password is defined
+      - item.value.password | string | trim | length > 0
+      - item.value.password != 'CHANGEME'
+      - item.value.password != 'CHANGE_ME'
+    fail_msg: >-
+      Calendar account entry {{ item.key }} is invalid. Required fields:
+      username, password. Account id keys must match ^[a-z0-9_-]+$.
+  loop: "{{ openclaw_calendar_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_calendar_enabled | bool
+
+- name: validate | Calendar map entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.key | string | trim is regex('^[a-z0-9_-]+$')
+      - item.value is mapping
+      - item.value is not string
+      - item.value.url is defined
+      - item.value.url | string | trim | length > 0
+      - item.value.url | string | trim is regex('^https?://')
+      - not (item.value.url | string is regex('[?#]'))
+      - item.value.display_name | default(item.key) | string | trim | length > 0
+      - item.value.read | default(true) is boolean
+      - item.value.write | default(false) is boolean
+      - (item.value.read | default(true) | bool) or (item.value.write | default(false) | bool)
+      - >-
+        (
+          (
+            (item.value.account | default(openclaw_calendar_default_account) | string | trim | lower | length) > 0
+          )
+          and
+          (
+            (item.value.account | default(openclaw_calendar_default_account) | string | trim | lower)
+            in (openclaw_calendar_account_map.keys() | map('lower') | list)
+          )
+        )
+        or
+        (
+          (item.value.username | default('') | string | trim | length) > 0
+          and
+          (item.value.password | default('') | string | trim | length) > 0
+          and
+          (item.value.password | default('') != 'CHANGEME')
+          and
+          (item.value.password | default('') != 'CHANGE_ME')
+        )
+    fail_msg: >-
+      Calendar entry {{ item.key }} is invalid. Required fields:
+      url and credentials via either account/default_account or inline username/password.
+      Optional fields: display_name, read, write, account.
+      Calendar id keys must match ^[a-z0-9_-]+$ and URL must be http(s) without query/fragment.
+  loop: "{{ openclaw_calendar_map | dict2items }}"
+  no_log: true
+  when: openclaw_calendar_enabled | bool
+
+- name: validate | Paperless base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_paperless_base_url | string | trim | length > 0
+      - openclaw_paperless_base_url is regex('^https?://')
+      - not (openclaw_paperless_base_url | string is regex('[?#]'))
+      - openclaw_paperless_token | string | trim | length > 0
+      - openclaw_paperless_token != 'CHANGEME'
+      - openclaw_paperless_token != 'CHANGE_ME'
+      - openclaw_paperless_skill_name | string | trim | length > 0
+      - openclaw_paperless_command_skill_name | string | trim | length > 0
+      - openclaw_paperless_skills_dir | string | trim | length > 0
+      - openclaw_paperless_container_skills_dir | string | trim | length > 0
+      - openclaw_paperless_credentials_path | string | trim | length > 0
+      - openclaw_paperless_container_credentials_path | string | trim | length > 0
+      - openclaw_paperless_health_state_path | string | trim | length > 0
+      - openclaw_paperless_container_health_state_path | string | trim | length > 0
+      - openclaw_paperless_downloads_dir | string | trim | length > 0
+      - openclaw_paperless_container_downloads_dir | string | trim | length > 0
+      - openclaw_paperless_session_state_path | string | trim | length > 0
+      - openclaw_paperless_container_session_state_path | string | trim | length > 0
+      - openclaw_paperless_session_target_max_age_seconds | int > 0
+      - openclaw_paperless_search_timeout_seconds | int > 0
+      - openclaw_paperless_download_timeout_seconds | int > 0
+      - openclaw_paperless_delivery_timeout_seconds | int > 0
+      - openclaw_paperless_default_limit | int > 0
+      - openclaw_paperless_default_limit | int <= 10
+      - openclaw_paperless_max_limit | int >= (openclaw_paperless_default_limit | int)
+      - openclaw_paperless_max_limit | int <= 10
+      - openclaw_paperless_latest_default_days | int > 0
+      - openclaw_paperless_latest_max_days | int >= (openclaw_paperless_latest_default_days | int)
+      - openclaw_paperless_title_max_chars | int > 0
+      - openclaw_paperless_correspondent_max_chars | int > 0
+      - openclaw_paperless_max_download_bytes | int > 0
+      - openclaw_paperless_max_download_bytes | int <= 52428800
+      - openclaw_paperless_download_chunk_bytes | int > 0
+      - openclaw_paperless_delivery_channel | string | trim == 'telegram'
+      - openclaw_telegram_enabled | bool
+      - openclaw_paperless_auth_failure_window_seconds | int > 0
+      - openclaw_paperless_auth_failure_threshold | int > 0
+    fail_msg: >-
+      Invalid Paperless settings. Configure base_url/token, paths, limits/timeouts, and ensure
+      delivery channel is telegram (with Telegram channel enabled) and max download cap <= 50 MB
+      when openclaw_paperless_enabled is true.
+  no_log: true
+  when: openclaw_paperless_enabled | bool
+
+- name: validate | Home Assistant base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_homeassistant_base_url | string | trim | length > 0
+      - openclaw_homeassistant_base_url is regex('^https?://')
+      - not (openclaw_homeassistant_base_url | string is regex('[?#]'))
+      - openclaw_homeassistant_token | string | trim | length > 0
+      - openclaw_homeassistant_token != 'CHANGEME'
+      - openclaw_homeassistant_skill_name | string | trim | length > 0
+      - openclaw_homeassistant_command_skill_name | string | trim | length > 0
+      - openclaw_homeassistant_skills_dir | string | trim | length > 0
+      - openclaw_homeassistant_container_skills_dir | string | trim | length > 0
+      - openclaw_homeassistant_credentials_path | string | trim | length > 0
+      - openclaw_homeassistant_container_credentials_path | string | trim | length > 0
+      - openclaw_homeassistant_request_timeout_seconds | int > 0
+      - openclaw_homeassistant_default_limit | int > 0
+      - openclaw_homeassistant_max_limit | int >= (openclaw_homeassistant_default_limit | int)
+      - openclaw_homeassistant_state_max_chars | int > 0
+      - openclaw_homeassistant_friendly_name_max_chars | int > 0
+      - openclaw_homeassistant_attribute_max_items | int > 0
+      - openclaw_homeassistant_attribute_value_max_chars | int > 0
+      - openclaw_homeassistant_allow_domains is sequence
+      - openclaw_homeassistant_allow_domains is not string
+      - openclaw_homeassistant_allow_entities is sequence
+      - openclaw_homeassistant_allow_entities is not string
+      - openclaw_homeassistant_allow_write_domains is sequence
+      - openclaw_homeassistant_allow_write_domains is not string
+      - openclaw_homeassistant_allow_write_entities is sequence
+      - openclaw_homeassistant_allow_write_entities is not string
+      - >-
+        (openclaw_homeassistant_allow_domains | length) > 0
+        or (openclaw_homeassistant_allow_entities | length) > 0
+    fail_msg: >-
+      Invalid Home Assistant settings. Set base_url/token (without query/fragment),
+      skill paths, limits/timeouts, and at least one
+      allowlist (domain and/or entity) when openclaw_homeassistant_enabled is true.
+  no_log: true
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | Home Assistant allowed domains format
+  ansible.builtin.assert:
+    that:
+      - item | string | trim | length > 0
+      - item | string | trim is regex('^[a-z0-9_]+$')
+    fail_msg: >-
+      Invalid Home Assistant domain allowlist entry: {{ item }}.
+      Domains must match ^[a-z0-9_]+$.
+  loop: "{{ openclaw_homeassistant_allow_domains }}"
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | Home Assistant allowed entities format
+  ansible.builtin.assert:
+    that:
+      - item | string | trim | length > 0
+      - item | string | trim is regex('^[a-z0-9_]+\\.[a-z0-9_]+$')
+    fail_msg: >-
+      Invalid Home Assistant entity allowlist entry: {{ item }}.
+      Entity IDs must match domain.object_id (^[a-z0-9_]+\\.[a-z0-9_]+$).
+  loop: "{{ openclaw_homeassistant_allow_entities }}"
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | Home Assistant allowed write domains format
+  ansible.builtin.assert:
+    that:
+      - item | string | trim | length > 0
+      - item | string | trim is regex('^[a-z0-9_]+$')
+    fail_msg: >-
+      Invalid Home Assistant write-domain allowlist entry: {{ item }}.
+      Domains must match ^[a-z0-9_]+$.
+  loop: "{{ openclaw_homeassistant_allow_write_domains }}"
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | Home Assistant allowed write entities format
+  ansible.builtin.assert:
+    that:
+      - item | string | trim | length > 0
+      - item | string | trim is regex('^[a-z0-9_]+\\.[a-z0-9_]+$')
+    fail_msg: >-
+      Invalid Home Assistant write-entity allowlist entry: {{ item }}.
+      Entity IDs must match domain.object_id (^[a-z0-9_]+\\.[a-z0-9_]+$).
+  loop: "{{ openclaw_homeassistant_allow_write_entities }}"
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | OpsGate base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_opsgate_submit_base_url | string | trim | length > 0
+      - openclaw_opsgate_submit_base_url is regex('^https?://')
+      - not (openclaw_opsgate_submit_base_url | string is regex('[?#]'))
+      - >-
+        (
+          openclaw_opsgate_approval_base_url | string | trim | length == 0
+        )
+        or
+        (
+          openclaw_opsgate_approval_base_url is regex('^https?://')
+          and not (openclaw_opsgate_approval_base_url | string is regex('[?#]'))
+        )
+      - openclaw_opsgate_submit_token | string | trim | length >= 20
+      - openclaw_opsgate_submit_token != 'CHANGEME'
+      - openclaw_opsgate_submit_token != 'CHANGE_ME'
+      - openclaw_opsgate_extension_id | string | trim | length > 0
+      - openclaw_opsgate_tool_name | string | trim | length > 0
+      - openclaw_opsgate_extensions_dir | string | trim | length > 0
+      - openclaw_opsgate_extension_dir | string | trim | length > 0
+      - openclaw_opsgate_container_extension_dir | string | trim | length > 0
+      - openclaw_opsgate_skill_name | string | trim | length > 0
+      - openclaw_opsgate_command_skill_name | string | trim | length > 0
+      - openclaw_opsgate_skills_dir | string | trim | length > 0
+      - openclaw_opsgate_container_skills_dir | string | trim | length > 0
+      - openclaw_opsgate_credentials_path | string | trim | length > 0
+      - openclaw_opsgate_container_credentials_path | string | trim | length > 0
+      - openclaw_opsgate_submit_timeout_seconds | int > 0
+      - openclaw_opsgate_ticket_expires_seconds | int >= 0
+      - openclaw_opsgate_title_max_chars | int > 0
+      - openclaw_opsgate_summary_max_chars | int >= (openclaw_opsgate_title_max_chars | int)
+      - openclaw_opsgate_request_max_chars | int >= (openclaw_opsgate_summary_max_chars | int)
+      - openclaw_opsgate_task_ref_max_chars | int > 0
+    fail_msg: >-
+      Invalid OpsGate settings. Configure submit_base_url, submit_token, paths, and
+      positive limits/timeouts when openclaw_opsgate_enabled is true.
+  no_log: true
+  when: openclaw_opsgate_enabled | bool
+
+- name: validate | Weeknotes backend when weeknotes is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_weeknotes_backend in ['local', 's3']
+      - openclaw_weeknotes_reminder_command | length > 0
+      - openclaw_weeknotes_max_payload_length | int > 0
+    fail_msg: >-
+      openclaw_weeknotes_backend must be either 'local' or 's3',
+      openclaw_weeknotes_reminder_command must not be empty, and
+      openclaw_weeknotes_max_payload_length must be positive.
+  when: openclaw_weeknotes_enabled | bool
+
+- name: validate | Weeknotes S3 settings when backend is s3
+  ansible.builtin.assert:
+    that:
+      - openclaw_weeknotes_s3_endpoint | length > 0
+      - openclaw_weeknotes_s3_bucket | length > 0
+      - openclaw_weeknotes_s3_access_key | length > 0
+      - openclaw_weeknotes_s3_secret_key | length > 0
+      - openclaw_weeknotes_s3_note_key_format | length > 0
+      - openclaw_weeknotes_s3_todo_list_mode in ['current_note', 'daily_notes']
+      - openclaw_weeknotes_s3_todo_list_key_regex | length > 0
+      - openclaw_weeknotes_s3_todo_cache_refresh_secs | int > 0
+      - openclaw_weeknotes_s3_mc_host_path | length > 0
+      - openclaw_weeknotes_s3_mc_container_path | length > 0
+    fail_msg: >-
+      openclaw_weeknotes_s3_endpoint, openclaw_weeknotes_s3_bucket,
+      openclaw_weeknotes_s3_access_key, openclaw_weeknotes_s3_secret_key,
+      openclaw_weeknotes_s3_note_key_format, openclaw_weeknotes_s3_todo_cache_refresh_secs,
+      openclaw_weeknotes_s3_mc_host_path, and openclaw_weeknotes_s3_mc_container_path are required when
+      openclaw_weeknotes_backend is s3.
+  when:
+    - openclaw_weeknotes_enabled | bool
+    - openclaw_weeknotes_backend == 's3'
+
+- name: validate | Weeknotes S3 client binary exists on host
+  ansible.builtin.stat:
+    path: "{{ openclaw_weeknotes_s3_mc_host_path }}"
+  register: openclaw_weeknotes_s3_mc_stat
+  when:
+    - openclaw_weeknotes_enabled | bool
+    - openclaw_weeknotes_backend == 's3'
+
+- name: validate | Weeknotes S3 client binary is executable
+  ansible.builtin.assert:
+    that:
+      - openclaw_weeknotes_s3_mc_stat.stat.exists
+      - openclaw_weeknotes_s3_mc_stat.stat.executable
+    fail_msg: >-
+      openclaw_weeknotes_s3_mc_host_path must point to an executable MinIO client binary.
+  when:
+    - openclaw_weeknotes_enabled | bool
+    - openclaw_weeknotes_backend == 's3'
+
+- name: validate | Validate supported upstream version
+  ansible.builtin.assert:
+    that:
+      - (openclaw_version | regex_replace('^v', '')) == '2026.9.1'
+    fail_msg: >-
+      Heartbeat recovery matches v2026.9.1 internal retry prompts. Disable this
+      extension and its management before upgrading; revalidate against upstream.
+  when: openclaw_heartbeat_recovery_managed | bool
+
+- name: validate | Validate optional replacement CA store path
+  ansible.builtin.assert:
+    that:
+      - openclaw_ca_store_path is match('^/[^\r\n]+$')
+  when: openclaw_ca_store_path | length > 0
+
+- name: validate | Check prepared replacement CA bundle
+  ansible.builtin.stat:
+    path: "{{ openclaw_ca_store_path }}/bundle.pem"
+  register: openclaw_ca_bundle
+  when: openclaw_ca_store_path | length > 0
+
+- name: validate | Require prepared replacement CA bundle before activation
+  ansible.builtin.assert:
+    that:
+      - openclaw_ca_bundle.stat.isreg | default(false)
+  when: openclaw_ca_store_path | length > 0

@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect OpenClaw metrics every {{ openclaw_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+OnActiveSec={{ openclaw_metrics_endpoint_timer_on_boot_sec }}
+OnUnitInactiveSec={{ openclaw_metrics_endpoint_timer_interval }}
+AccuracySec={{ openclaw_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ openclaw_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

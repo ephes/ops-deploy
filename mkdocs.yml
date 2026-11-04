@@ -58,6 +58,7 @@ nav:
       - django_site: services/django_site.md
       - compose_app: services/compose_app.md
       - livekit: services/livekit.md
+      - openclaw: services/openclaw.md
       - mastodon (existing install): services/mastodon.md
       - native_app: services/native_app.md
       - shared_tree: services/shared_tree.md

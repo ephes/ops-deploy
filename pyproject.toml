@@ -63,6 +63,11 @@ module = ["pyinfra", "pyinfra.*"]
 implicit_reexport = true
 
 [[tool.mypy.overrides]]
+# ansible-core runs only tests/parity/openclaw_deploy/generate.py (with its own interpreter).
+module = ["ansible", "ansible.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # django-environ (a test-only parser of django_site's .env) ships no type hints.
 module = ["environ", "environ.*"]
 ignore_missing_imports = true

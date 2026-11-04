@@ -1,0 +1,99 @@
+{
+  "meta": {
+    "lastTouchedAt": "2026-10-01T00:00:00Z",
+    "lastTouchedVersion": "2026.9.4"
+  },
+  "agents": {
+    "defaults": {
+      "memorySearch": {
+        "enabled": true
+      },
+      "models": {
+        "anthropic/claude-opus-5-5": {}
+      },
+      "model": {
+        "primary": "anthropic/claude-opus-5-5",
+        "fallbacks": [
+          "openai/gpt-5"
+        ]
+      },
+      "workspace": "/home/node/.openclaw/workspace"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "allowlist",
+      "allowFrom": [
+        304012876
+      ],
+      "streamMode": "block",
+      "chunkMode": "newline",
+      "draftChunk": {
+        "minChars": 10
+      },
+      "accounts": {
+        "secondary": {
+          "streaming": true,
+          "blockStreaming": true
+        }
+      }
+    }
+  },
+  "plugins": "not-a-mapping",
+  "tools": {
+    "media": {
+      "models": [
+        {
+          "provider": "openai",
+          "model": "gpt-image",
+          "capabilities": [
+            "image"
+          ]
+        },
+        {
+          "provider": "senseaudio",
+          "model": "old-model",
+          "profile": "senseaudio:voxhelm",
+          "capabilities": [
+            "audio"
+          ]
+        },
+        {
+          "provider": "legacy",
+          "model": "nocaps"
+        },
+        "not-a-mapping",
+        {
+          "provider": "senseaudio",
+          "model": "x",
+          "profile": "senseaudio:other"
+        }
+      ]
+    }
+  },
+  "models": {
+    "providers": {
+      "senseaudio": {
+        "baseUrl": "http://old.example/v1",
+        "models": [
+          {
+            "id": "old",
+            "name": "old"
+          }
+        ]
+      }
+    }
+  },
+  "gateway": {
+    "auth": {
+      "mode": "token"
+    },
+    "port": 1,
+    "bind": "lan"
+  },
+  "wizard": {
+    "lastRunAt": "2026-02-01",
+    "note": "Grüße"
+  }
+}

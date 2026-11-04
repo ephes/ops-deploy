@@ -1,0 +1,37 @@
+---
+name: note
+description: "Append and query timestamped journal notes in live weeknotes (/note add|find)."
+metadata: { "openclaw": { "emoji": "📝", "requires": { "bins": ["bash"] } } }
+---
+
+# Note Skill
+
+Use the managed weeknotes handler for journal entries.
+
+## Input Contract
+
+User input is everything after `/note`.
+
+- `add <text...>`: append a timestamped note to the Journal section.
+- `find <text...>`: search current note context for matching text.
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+/home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh note <raw-user-input>
+```
+
+If the user asks natural-language memory questions about today/recent activity
+(for example "Did I ... today?" / "Habe ich heute ...?"), run:
+
+`note find <concise search phrase>`
+
+before answering. Use handler output as source of truth.
+
+When no input is provided, return:
+
+`Usage: /note add <text> | /note find <text>`
+
+Return the handler output as-is.

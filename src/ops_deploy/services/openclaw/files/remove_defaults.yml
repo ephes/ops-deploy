@@ -1,0 +1,33 @@
+---
+# Identity and paths (match openclaw_deploy defaults/playbook wiring)
+openclaw_service_name: openclaw
+openclaw_container_name: openclaw-gateway
+openclaw_cli_container_name: openclaw-cli
+
+openclaw_user: openclaw
+openclaw_group: openclaw
+openclaw_home: "/home/{{ openclaw_user }}"
+openclaw_site_dir: "{{ openclaw_home }}/site"
+openclaw_build_dir: "{{ openclaw_home }}/build/openclaw"
+# Match openclaw_deploy default; production override is set in ops-control playbook.
+openclaw_data_dir: "{{ openclaw_home }}/data"
+openclaw_log_dir: "{{ openclaw_home }}/logs"
+
+openclaw_compose_path: "{{ openclaw_site_dir }}/docker-compose.yml"
+openclaw_systemd_unit_path: "/etc/systemd/system/{{ openclaw_service_name }}.service"
+openclaw_traefik_config_path: "/etc/traefik/dynamic/openclaw.yml"
+openclaw_logrotate_path: "/etc/logrotate.d/openclaw"
+
+openclaw_image_name: openclaw
+
+# Safety and removal toggles
+openclaw_remove_confirm: false
+openclaw_remove_data: false
+openclaw_remove_image: false
+openclaw_remove_user: false
+openclaw_remove_traefik_config: true
+
+# Non-persistent cleanup toggles
+openclaw_remove_site_dir: true
+openclaw_remove_build_dir: true
+openclaw_remove_log_dir: true

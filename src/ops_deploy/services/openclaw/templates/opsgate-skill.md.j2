@@ -1,0 +1,51 @@
+---
+name: {{ openclaw_opsgate_command_skill_name }}
+description: "Create explicit OpsGate investigator tickets (/{{ openclaw_opsgate_command_skill_name }} create ...)."
+user-invocable: true
+command-dispatch: tool
+command-tool: {{ openclaw_opsgate_tool_name }}
+command-arg-mode: raw
+metadata: { "openclaw": { "emoji": "🎫", "requires": { "bins": ["python3"] } } }
+---
+
+# OpsGate Skill
+
+Use the managed OpsGate submit handler.
+
+## Scope
+
+This v1 integration can do exactly one thing:
+
+- create a new OpsGate ticket
+- with exactly one `investigator` step
+- using agent `codex`
+- still requiring normal OpsGate approval before execution
+
+Do not use this skill for arbitrary multi-step workflows or implementer/reviewer plans. If the user explicitly wants a richer workflow, explain that they must create or edit that workflow in OpsGate directly.
+
+## Input Contract
+
+User input is everything after `/{{ openclaw_opsgate_command_skill_name }}`.
+
+- `create [--title <text>] [--task-ref <text>] <issue description>`
+
+Natural-language mapping:
+
+- If the user asks to "create/file/submit an OpsGate ticket", convert the current issue into one concise issue description and run `create <issue description>`.
+- If the user already gave a good short title, pass it via `--title`.
+- If the user provided a stable external reference (incident/check/task id), pass it via `--task-ref`.
+
+## Safety Rules
+
+- Only use facts already present in the conversation or current tool results.
+- Do not include secrets, tokens, passwords, or raw credential values.
+- Do not claim the ticket is approved or already running.
+- Keep the ticket framed as investigation only; do not encode implementation/deploy instructions as the requested action.
+
+## Execution Rules
+
+- `/{{ openclaw_opsgate_command_skill_name }} ...` is wired to a deterministic managed tool.
+- The managed tool invokes the audited submit handler directly and returns its output as-is.
+- When no input is provided, return:
+
+`Usage: /{{ openclaw_opsgate_command_skill_name }} create [--title <text>] [--task-ref <text>] <issue description>`

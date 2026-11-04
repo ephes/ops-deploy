@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `services.openclaw`: port of the `openclaw_deploy` and `openclaw_remove` roles
+  and the private playbook's Nyxmon json-metrics checks. The role's defaults
+  and `validate.yml` ship unchanged and are evaluated as Ansible does; every
+  file is the role's bytes, owner and mode (numeric uid/gid 1000 for the data
+  tree); the run-time steps (config patch, Doctor activation, Codex plugin,
+  upgrade migrations, audio SecretRef plan, reminder cron, health, session
+  reset) run the role's logic on the host with a check mode for planning.
+  Parity cases computed by ansible-core 2.21 from ops-library `44a532b`; both
+  roles recorded in the drift manifest. Not ported: the retired
+  heartbeat-recovery extension and Codex v2026.9.1 backport, and the Traefik
+  restart handler.
+
 - `services.minecraft_java`: `MinecraftJavaRemoveConfig` and
   `remove_minecraft_java`, the port of the `minecraft_java_remove` role
   (ops-library `55a23d33`, recorded in the drift manifest and under

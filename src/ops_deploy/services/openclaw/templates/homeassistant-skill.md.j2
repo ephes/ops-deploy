@@ -1,0 +1,78 @@
+---
+name: {{ openclaw_homeassistant_command_skill_name }}
+description: "Home Assistant state access and allowlisted on/off control."
+metadata: { "openclaw": { "emoji": "🏠", "requires": { "bins": ["python3"] } } }
+---
+
+# Home Assistant Skill
+
+Use the managed Home Assistant read-only handler.
+
+## Input Contract
+
+User input is everything after `/{{ openclaw_homeassistant_command_skill_name }}`.
+
+- `state <entity_id>`
+- `list [--domain <domain>] [--limit N]`
+- `turn_on <entity_id>`
+- `turn_off <entity_id>`
+
+## Execution Rules
+
+Execute via the Home Assistant handler:
+
+```bash
+{{ openclaw_homeassistant_container_skills_dir }}/{{ openclaw_homeassistant_skill_name }}/handler.py <raw-user-input>
+```
+
+You may execute multiple handler calls when needed (for example: discover candidates, then execute actions).
+
+When the user gives a natural-language request (for example "alle Lampen im Wintergarten ausmachen"):
+
+1. Discover candidates first. Do not assume the target is a light:
+   - `list --limit 200` for an unqualified request
+   - `list --domain <domain> --limit 200` once the domain is known
+2. Match using both:
+   - `entity_id`
+   - friendly name shown in list output
+3. Prefer room-group light entities when present (for example `light.wintergarten`).
+4. Execute `turn_on`/`turn_off` for the matched target(s).
+5. Do not claim "no matching lights" unless step 1 was run in the same turn.
+
+When the user already provides exact entity IDs, act directly without discovery.
+
+## Truthfulness Rules
+
+These override any instinct to be helpful. Acting on the wrong device is worse than
+doing nothing.
+
+- **Never substitute.** Only act on an entity whose `entity_id` or friendly name
+  actually matches what the user named. If the named device is absent from the list
+  output, say so and stop — do not pick the nearest-sounding alternative, and do not
+  fall back to a different domain because that domain happens to be writable.
+- **Never report an action you did not perform.** State the entity you actually acted
+  on, by name. If you acted on something other than what the user said, that is a
+  failure to report, not a success to narrate.
+- **A refusal is a result.** When the handler returns `access denied: Write action for
+  entity '<id>' is not allowlisted`, report exactly that, naming the entity. Do not
+  retry the request against a different entity.
+- **`Changed states reported: 0` is not a confirmation.** It means the device was
+  already in the requested state or nothing responded. Say so rather than claiming the
+  device was just switched.
+- **Never conclude "does not exist" from a filtered list.** A `--domain` filter only
+  proves absence from that domain. Words in the request are not reliable domain hints:
+  a device the user calls a *Licht* is very often a `switch` (a smart plug powering a
+  lamp). Before reporting that something is absent, run `list --limit 200` with no
+  `--domain` filter in the same turn. If it turns up there, the correct report is what
+  it actually is - present, and either switchable or not allowlisted for writing.
+- **Check the list header before trusting an empty result.** `list` prints
+  `Allowed entities: showing X of Y`. When `X < Y` the view is truncated alphabetically
+  and you are looking at part of the house - entities late in the alphabet are simply
+  missing. Raise `--limit` or narrow with `--domain` until `X == Y`. Never report a
+  device as absent based on a truncated listing.
+
+When no input is provided, return:
+
+`Usage: /{{ openclaw_homeassistant_command_skill_name }} state <entity_id> | /{{ openclaw_homeassistant_command_skill_name }} list [--domain <domain>] [--limit N] | /{{ openclaw_homeassistant_command_skill_name }} turn_on <entity_id> | /{{ openclaw_homeassistant_command_skill_name }} turn_off <entity_id>`
+
+Return the handler output as-is.

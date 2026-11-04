@@ -1,0 +1,5 @@
+{% if openclaw_gateway_config | length > 0 %}
+{{ openclaw_gateway_config | to_nice_json }}
+{% else %}
+{{ _openclaw_built_config | to_nice_json }}
+{% endif %}

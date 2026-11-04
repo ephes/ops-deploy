@@ -1,0 +1,28 @@
+{
+  "name": "{{ openclaw_homeassistant_skill_name }}",
+  "version": "1.0.0",
+  "description": "Home Assistant state access plus allowlisted turn_on/turn_off actions",
+  "commands": {
+    "{{ openclaw_homeassistant_command_skill_name }}": {
+      "description": "Home Assistant read commands and guarded on/off actions",
+      "subcommands": {
+        "state": {
+          "description": "Get one entity state: /{{ openclaw_homeassistant_command_skill_name }} state <entity_id>"
+        },
+        "list": {
+          "description": "List allowed entities: /{{ openclaw_homeassistant_command_skill_name }} list [--domain <domain>] [--limit N]"
+        },
+        "turn_on": {
+          "description": "Turn on one allowed entity: /{{ openclaw_homeassistant_command_skill_name }} turn_on <entity_id>"
+        },
+        "turn_off": {
+          "description": "Turn off one allowed entity: /{{ openclaw_homeassistant_command_skill_name }} turn_off <entity_id>"
+        }
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

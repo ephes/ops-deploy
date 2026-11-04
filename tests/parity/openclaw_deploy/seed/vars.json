@@ -1,0 +1,18 @@
+{
+  "openclaw_version": "v2026.10.2",
+  "openclaw_gateway_token": "fixture-gateway-token",
+  "openclaw_anthropic_api_key": "sk-ant-fixture",
+  "openclaw_extra_env": {
+    "EXTRA_FLAG": "1",
+    "EMPTY": "",
+    "COUNT": 3
+  },
+  "openclaw_agent_model_primary": "anthropic/claude-opus-5-5",
+  "openclaw_agent_model_fallbacks": [
+    "openai/gpt-6.1-sol"
+  ],
+  "openclaw_gateway_trusted_proxies": [
+    "127.0.0.1"
+  ],
+  "metrics_httpd_impl": "python"
+}

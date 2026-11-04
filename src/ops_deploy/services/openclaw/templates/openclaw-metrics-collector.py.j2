@@ -1,0 +1,815 @@
+#!/usr/bin/env python3
+"""Collect OpenClaw health signals and write JSON for Nyxmon json-metrics."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+NO_SUCCESS_AGE_SECONDS = 2147483647
+
+
+def parse_json_output(raw_stdout: str, command: list[str]) -> dict[str, Any]:
+    text = (raw_stdout or "").strip()
+    if not text:
+        raise RuntimeError(f"empty JSON output from {' '.join(command)}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError as err:
+                raise RuntimeError(
+                    f"invalid JSON from {' '.join(command)}: {err}"
+                ) from err
+        raise RuntimeError(f"invalid JSON from {' '.join(command)}")
+
+
+def run_json_command(
+    command: list[str],
+    timeout: int,
+    allow_nonzero_json: bool = False,
+) -> dict[str, Any]:
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if completed.returncode != 0:
+        if allow_nonzero_json:
+            try:
+                return parse_json_output(completed.stdout, command)
+            except RuntimeError as err:
+                stderr = (completed.stderr or "").strip()
+                raise RuntimeError(
+                    f"command failed rc={completed.returncode} and JSON was unusable: "
+                    f"{' '.join(command)}: {err}: {stderr}"
+                ) from err
+        stderr = (completed.stderr or "").strip()
+        raise RuntimeError(
+            f"command failed rc={completed.returncode}: {' '.join(command)}: {stderr}"
+        )
+    return parse_json_output(completed.stdout, command)
+
+
+def build_payload() -> dict[str, Any]:
+    return {
+        "hostname": socket.gethostname(),
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "openclaw": {
+            "collector_ok": True,
+            "collector_errors": [],
+            "health": {
+                "ok": False,
+                "telegram_probe_ok": False,
+            },
+            "channels": {
+                "telegram": {
+                    "running": False,
+                    "configured": False,
+                    "last_error": None,
+                }
+            },
+            "calendar": {
+                "auth": {
+                    "enabled": False,
+                    "window_seconds": 0,
+                    "threshold": 0,
+                    "total_recent_failures": 0,
+                    "calendars_with_recent_failures": 0,
+                    "has_recent_failures": False,
+                    "has_repeated_failures": False,
+                    "last_failure_at": None,
+                    "recent_failures": [],
+                }
+            },
+            "paperless": {
+                "auth": {
+                    "enabled": False,
+                    "window_seconds": 0,
+                    "threshold": 0,
+                    "total_recent_failures": 0,
+                    "has_recent_failures": False,
+                    "has_repeated_failures": False,
+                    "last_failure_at": None,
+                }
+            },
+            "synthetic": {
+                "canary": {
+                    "enabled": False,
+                    "cached": True,
+                    "due": False,
+                    "interval_seconds": 0,
+                    "agent": None,
+                    "timeout_seconds": 0,
+                    "session_id": "",
+                    "last_run": {
+                        "at": None,
+                        "epoch": 0,
+                        "ok": False,
+                        "expected_match": False,
+                        "attempts": 0,
+                        "duration_ms": None,
+                        "status": "never",
+                        "session_id": None,
+                        "provider": None,
+                        "model": None,
+                        "output_text": "",
+                        "error": None,
+                    },
+                    "last_success_at": None,
+                    "last_success_epoch": 0,
+                    "last_success_age_seconds": NO_SUCCESS_AGE_SECONDS,
+                    "next_due_epoch": 0,
+                    "next_due_in_seconds": 0,
+                }
+            },
+        },
+    }
+
+
+def clip_text(value: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(value) <= max_chars:
+        return value
+    return value[: max_chars - 3] + "..."
+
+
+def canary_expected_match(observed_text: str, expected_text: str) -> bool:
+    expected = (expected_text or "").strip()
+    observed = (observed_text or "").strip()
+    if not expected or not observed:
+        return False
+    if observed == expected:
+        return True
+    return any(line.strip() == expected for line in observed.splitlines())
+
+
+def resolve_telegram_probe_ok(health_json: dict[str, Any]) -> bool:
+    telegram = (health_json.get("channels") or {}).get("telegram", {})
+    if not isinstance(telegram, dict):
+        return False
+
+    if bool(telegram.get("running")) and bool(telegram.get("connected")):
+        return True
+
+    accounts = telegram.get("accounts")
+    if isinstance(accounts, dict) and any(
+        isinstance(account, dict)
+        and bool(account.get("running"))
+        and bool(account.get("connected"))
+        for account in accounts.values()
+    ):
+        return True
+
+    probe = telegram.get("probe")
+    if isinstance(probe, dict) and "ok" in probe:
+        return bool(probe.get("ok"))
+
+    return False
+
+
+def default_canary_state() -> dict[str, Any]:
+    return {
+        "last_run": {
+            "at": None,
+            "epoch": 0,
+            "ok": False,
+            "expected_match": False,
+            "attempts": 0,
+            "duration_ms": None,
+            "status": "never",
+            "session_id": None,
+            "provider": None,
+            "model": None,
+            "output_text": "",
+            "error": None,
+        },
+        "last_success_at": None,
+        "last_success_epoch": 0,
+    }
+
+
+def load_canary_state(path: str) -> dict[str, Any]:
+    state = default_canary_state()
+    if not path or not os.path.exists(path):
+        return state
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
+        return state
+    if not isinstance(raw, dict):
+        return state
+
+    raw_last_run = raw.get("last_run")
+    if isinstance(raw_last_run, dict):
+        for key in state["last_run"]:
+            if key in raw_last_run:
+                state["last_run"][key] = raw_last_run[key]
+
+    if "last_success_at" in raw:
+        state["last_success_at"] = raw.get("last_success_at")
+    if "last_success_epoch" in raw:
+        try:
+            state["last_success_epoch"] = int(raw.get("last_success_epoch") or 0)
+        except (TypeError, ValueError):
+            state["last_success_epoch"] = 0
+    return state
+
+
+def save_json_atomic(path: str, payload: dict[str, Any], mode: int | None = None) -> None:
+    output_dir = os.path.dirname(path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
+    os.replace(tmp_path, path)
+    if mode is not None:
+        os.chmod(path, mode)
+
+
+def build_canary_attempt_session_id(base_session_id: str, epoch: int, attempt: int) -> str:
+    base = (base_session_id or "").strip() or "probe-openclaw-canary"
+    return f"{base}-{int(epoch)}-a{max(1, int(attempt))}"
+
+
+def canary_session_file_matches(name: str, base_session_id: str) -> bool:
+    base = (base_session_id or "").strip()
+    if not base:
+        return False
+    return name == base or name.startswith(f"{base}.") or name.startswith(f"{base}-")
+
+
+def cleanup_synthetic_canary_sessions(
+    sessions_dir: str,
+    base_session_id: str,
+    retention_seconds: int,
+    now_epoch: int | None = None,
+) -> int:
+    if not sessions_dir or retention_seconds <= 0:
+        return 0
+
+    root = Path(sessions_dir)
+    if not root.is_dir():
+        return 0
+
+    now = int(time.time()) if now_epoch is None else int(now_epoch)
+    removed = 0
+    for item in root.iterdir():
+        if not item.is_file():
+            continue
+        if not canary_session_file_matches(item.name, base_session_id):
+            continue
+        try:
+            age_seconds = now - int(item.stat().st_mtime)
+        except OSError:
+            continue
+        if age_seconds < retention_seconds:
+            continue
+        try:
+            item.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
+
+
+def apply_calendar_auth_health(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+    auth = payload["openclaw"]["calendar"]["auth"]
+    auth["enabled"] = bool(args.calendar_auth_enabled)
+    auth["window_seconds"] = int(args.calendar_auth_window_seconds)
+    auth["threshold"] = int(args.calendar_auth_failure_threshold)
+    if not auth["enabled"]:
+        return
+
+    now_epoch = int(time.time())
+    threshold_epoch = now_epoch - int(args.calendar_auth_window_seconds)
+
+    try:
+        with open(args.calendar_health_state_path, "r", encoding="utf-8") as handle:
+            state = json.load(handle)
+    except FileNotFoundError:
+        state = {}
+    except (OSError, json.JSONDecodeError):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "calendar auth health state is unreadable"
+        )
+        return
+
+    calendars = state.get("calendars", {}) if isinstance(state, dict) else {}
+    if not isinstance(calendars, dict):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "calendar auth health state has invalid shape"
+        )
+        return
+
+    recent_failures: list[dict[str, Any]] = []
+    latest_epoch = 0
+    latest_iso: str | None = None
+
+    for calendar_id in sorted(calendars.keys()):
+        raw_item = calendars.get(calendar_id)
+        if not isinstance(raw_item, dict):
+            continue
+        raw_epochs = raw_item.get("auth_failure_epochs", [])
+        if not isinstance(raw_epochs, list):
+            continue
+
+        valid_epochs: list[int] = []
+        for raw_epoch in raw_epochs:
+            try:
+                epoch = int(raw_epoch)
+            except (TypeError, ValueError):
+                continue
+            if epoch >= threshold_epoch:
+                valid_epochs.append(epoch)
+
+        if not valid_epochs:
+            continue
+
+        last_failure_epoch = max(valid_epochs)
+        last_failure_iso = datetime.fromtimestamp(
+            last_failure_epoch, tz=timezone.utc
+        ).isoformat()
+        if last_failure_epoch > latest_epoch:
+            latest_epoch = last_failure_epoch
+            latest_iso = last_failure_iso
+
+        recent_failures.append(
+            {
+                "calendar_id": calendar_id,
+                "display_name": str(raw_item.get("display_name") or calendar_id),
+                "recent_auth_failures": len(valid_epochs),
+                "last_failure_at": last_failure_iso,
+                "last_status_code": int(raw_item.get("last_status_code") or 0),
+            }
+        )
+
+    auth["recent_failures"] = recent_failures
+    auth["total_recent_failures"] = sum(
+        int(item.get("recent_auth_failures") or 0) for item in recent_failures
+    )
+    auth["calendars_with_recent_failures"] = len(recent_failures)
+    auth["has_recent_failures"] = bool(recent_failures)
+    auth["has_repeated_failures"] = any(
+        int(item.get("recent_auth_failures") or 0)
+        >= int(args.calendar_auth_failure_threshold)
+        for item in recent_failures
+    )
+    auth["last_failure_at"] = latest_iso
+
+
+def apply_paperless_auth_health(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+    auth = payload["openclaw"]["paperless"]["auth"]
+    auth["enabled"] = bool(args.paperless_auth_enabled)
+    auth["window_seconds"] = int(args.paperless_auth_window_seconds)
+    auth["threshold"] = int(args.paperless_auth_failure_threshold)
+    if not auth["enabled"]:
+        return
+
+    now_epoch = int(time.time())
+    threshold_epoch = now_epoch - int(args.paperless_auth_window_seconds)
+
+    try:
+        with open(args.paperless_health_state_path, "r", encoding="utf-8") as handle:
+            state = json.load(handle)
+    except FileNotFoundError:
+        state = {}
+    except (OSError, json.JSONDecodeError):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "paperless auth health state is unreadable"
+        )
+        return
+
+    if not isinstance(state, dict):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "paperless auth health state has invalid shape"
+        )
+        return
+
+    raw_epochs = state.get("auth_failure_epochs", [])
+    if not isinstance(raw_epochs, list):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "paperless auth health state has invalid auth_failure_epochs"
+        )
+        return
+
+    valid_epochs: list[int] = []
+    for raw_epoch in raw_epochs:
+        try:
+            epoch = int(raw_epoch)
+        except (TypeError, ValueError):
+            continue
+        if epoch >= threshold_epoch:
+            valid_epochs.append(epoch)
+
+    latest_epoch = max(valid_epochs) if valid_epochs else 0
+    auth["total_recent_failures"] = len(valid_epochs)
+    auth["has_recent_failures"] = bool(valid_epochs)
+    auth["has_repeated_failures"] = len(valid_epochs) >= int(
+        args.paperless_auth_failure_threshold
+    )
+    auth["last_failure_at"] = (
+        datetime.fromtimestamp(latest_epoch, tz=timezone.utc).isoformat()
+        if latest_epoch > 0
+        else None
+    )
+
+
+def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+    canary = payload["openclaw"]["synthetic"]["canary"]
+    canary["enabled"] = bool(args.synthetic_canary_enabled)
+    canary["interval_seconds"] = int(args.synthetic_canary_interval)
+    canary_timeout = max(1, int(args.synthetic_canary_timeout))
+    canary_agent_id = (args.synthetic_canary_agent or "").strip()
+    canary_session_id = (args.synthetic_canary_session_id or "").strip()
+    if not canary_session_id:
+        canary_session_id = "probe-openclaw-canary"
+    canary["agent"] = canary_agent_id or None
+    canary["timeout_seconds"] = canary_timeout
+    canary["session_id"] = canary_session_id
+
+    if not canary["enabled"]:
+        return
+
+    now_epoch = int(time.time())
+    expected_text = (args.synthetic_canary_expected_text or "").strip()
+    state = load_canary_state(args.synthetic_canary_state_path)
+    last_run_epoch = int((state.get("last_run") or {}).get("epoch") or 0)
+    canary_due = (
+        bool(args.synthetic_canary_force_run)
+        or last_run_epoch == 0
+        or now_epoch - last_run_epoch >= int(args.synthetic_canary_interval)
+    )
+    canary["due"] = canary_due
+
+    if canary_due:
+        run_result: dict[str, Any] = {}
+        max_attempts = max(1, int(args.synthetic_canary_max_attempts))
+        for attempt in range(1, max_attempts + 1):
+            started_epoch = int(time.time())
+            started_monotonic = time.monotonic()
+            attempt_session_id = build_canary_attempt_session_id(
+                canary_session_id,
+                started_epoch,
+                attempt,
+            )
+            cmd = [
+                "docker",
+                "exec",
+                args.container,
+                "node",
+                "dist/index.js",
+                "agent",
+            ]
+            if canary_agent_id:
+                cmd.extend(["--agent", canary_agent_id])
+            cmd.extend(
+                [
+                    "--session-id",
+                    attempt_session_id,
+                    "--message",
+                    args.synthetic_canary_message,
+                    "--timeout",
+                    str(canary_timeout),
+                    "--json",
+                ]
+            )
+            try:
+                canary_json = run_json_command(cmd, timeout=canary_timeout + 10)
+                status = str(canary_json.get("status") or "").lower()
+                payloads = ((canary_json.get("result") or {}).get("payloads") or [])
+                first_payload = payloads[0] if payloads and isinstance(payloads[0], dict) else {}
+                observed_text = str(first_payload.get("text") or "").strip()
+                expected_match = canary_expected_match(observed_text, expected_text)
+                meta = (canary_json.get("result") or {}).get("meta") or {}
+                agent_meta = meta.get("agentMeta") or {}
+
+                duration_ms_raw = meta.get("durationMs")
+                try:
+                    duration_ms = int(duration_ms_raw)
+                except (TypeError, ValueError):
+                    duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+
+                ok = status == "ok" and expected_match
+                error = None
+                if not ok:
+                    error = (
+                        f"unexpected canary response status={status!r}, "
+                        f"expected={expected_text!r}, got={observed_text!r}"
+                    )
+                run_result = {
+                    "at": datetime.now(tz=timezone.utc).isoformat(),
+                    "epoch": started_epoch,
+                    "ok": ok,
+                    "expected_match": expected_match,
+                    "attempts": attempt,
+                    "duration_ms": duration_ms,
+                    "status": status or "unknown",
+                    "session_id": attempt_session_id,
+                    "provider": agent_meta.get("provider"),
+                    "model": agent_meta.get("model"),
+                    "output_text": clip_text(
+                        observed_text, int(args.synthetic_canary_output_max_chars)
+                    ),
+                    "error": error,
+                }
+            except Exception as err:  # noqa: BLE001
+                run_result = {
+                    "at": datetime.now(tz=timezone.utc).isoformat(),
+                    "epoch": started_epoch,
+                    "ok": False,
+                    "expected_match": False,
+                    "attempts": attempt,
+                    "duration_ms": int((time.monotonic() - started_monotonic) * 1000),
+                    "status": "error",
+                    "session_id": attempt_session_id,
+                    "provider": None,
+                    "model": None,
+                    "output_text": "",
+                    "error": str(err),
+                }
+
+            if run_result["ok"]:
+                break
+            if attempt < max_attempts and int(args.synthetic_canary_retry_delay) > 0:
+                time.sleep(int(args.synthetic_canary_retry_delay))
+
+        state["last_run"] = run_result
+        if run_result["ok"]:
+            state["last_success_at"] = run_result["at"]
+            state["last_success_epoch"] = run_result["epoch"]
+
+        save_json_atomic(args.synthetic_canary_state_path, state, mode=0o640)
+        cleanup_synthetic_canary_sessions(
+            args.synthetic_canary_sessions_dir,
+            canary_session_id,
+            int(args.synthetic_canary_session_retention_seconds),
+        )
+        canary["cached"] = False
+    else:
+        run_result = state.get("last_run") or default_canary_state()["last_run"]
+        canary["cached"] = True
+
+    last_success_epoch = int(state.get("last_success_epoch") or 0)
+    next_due_epoch = int((state.get("last_run") or {}).get("epoch") or now_epoch) + int(
+        args.synthetic_canary_interval
+    )
+    canary["last_run"] = run_result
+    canary["last_success_at"] = state.get("last_success_at")
+    canary["last_success_epoch"] = last_success_epoch
+    canary["last_success_age_seconds"] = (
+        now_epoch - last_success_epoch
+        if last_success_epoch > 0
+        else NO_SUCCESS_AGE_SECONDS
+    )
+    canary["next_due_epoch"] = next_due_epoch
+    canary["next_due_in_seconds"] = max(0, next_due_epoch - now_epoch)
+    canary["due"] = canary["next_due_in_seconds"] == 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Collect OpenClaw health and channel status JSON"
+    )
+    parser.add_argument("--container", required=True, help="OpenClaw container name")
+    parser.add_argument("--output", required=True, help="Output JSON path")
+    parser.add_argument(
+        "--command-timeout",
+        type=int,
+        default={{ openclaw_metrics_endpoint_command_timeout }},
+        help="Timeout in seconds for each OpenClaw command",
+    )
+    parser.add_argument(
+        "--calendar-auth-enabled",
+        type=int,
+        default={{ 1 if (openclaw_calendar_enabled | bool) else 0 }},
+        help="Enable calendar auth-failure health signals",
+    )
+    parser.add_argument(
+        "--calendar-health-state-path",
+        default={{ openclaw_calendar_health_state_path | to_json }},
+        help="Path to calendar auth health-state cache",
+    )
+    parser.add_argument(
+        "--calendar-auth-window-seconds",
+        type=int,
+        default={{ openclaw_calendar_auth_failure_window_seconds }},
+        help="Window in seconds for recent calendar auth-failure counts",
+    )
+    parser.add_argument(
+        "--calendar-auth-failure-threshold",
+        type=int,
+        default={{ openclaw_calendar_auth_failure_threshold }},
+        help="Threshold for repeated calendar auth failures",
+    )
+    parser.add_argument(
+        "--paperless-auth-enabled",
+        type=int,
+        default={{ 1 if (openclaw_paperless_enabled | bool) else 0 }},
+        help="Enable paperless auth-failure health signals",
+    )
+    parser.add_argument(
+        "--paperless-health-state-path",
+        default={{ openclaw_paperless_health_state_path | to_json }},
+        help="Path to paperless auth health-state cache",
+    )
+    parser.add_argument(
+        "--paperless-auth-window-seconds",
+        type=int,
+        default={{ openclaw_paperless_auth_failure_window_seconds }},
+        help="Window in seconds for recent paperless auth-failure counts",
+    )
+    parser.add_argument(
+        "--paperless-auth-failure-threshold",
+        type=int,
+        default={{ openclaw_paperless_auth_failure_threshold }},
+        help="Threshold for repeated paperless auth failures",
+    )
+    parser.add_argument(
+        "--synthetic-canary-enabled",
+        type=int,
+        default={{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }},
+        help="Enable synthetic canary execution",
+    )
+    parser.add_argument(
+        "--synthetic-canary-agent",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_agent | to_json }},
+        help="Optional OpenClaw agent id for synthetic canary command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-session-id",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_session_id | to_json }},
+        help="OpenClaw session id used for synthetic canary command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-message",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_message | to_json }},
+        help="Prompt used for synthetic canary command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-expected-text",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_expected_text | to_json }},
+        help="Expected marker text for deterministic canary success",
+    )
+    parser.add_argument(
+        "--synthetic-canary-interval",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_interval }},
+        help="Minimum interval in seconds between canary executions",
+    )
+    parser.add_argument(
+        "--synthetic-canary-timeout",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_timeout }},
+        help="Timeout in seconds per canary command attempt",
+    )
+    parser.add_argument(
+        "--synthetic-canary-max-attempts",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_max_attempts }},
+        help="Maximum canary command attempts per due run",
+    )
+    parser.add_argument(
+        "--synthetic-canary-retry-delay",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds }},
+        help="Delay in seconds between failed canary attempts",
+    )
+    parser.add_argument(
+        "--synthetic-canary-state-path",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_state_path | to_json }},
+        help="Path to synthetic canary state cache",
+    )
+    parser.add_argument(
+        "--synthetic-canary-sessions-dir",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_sessions_dir | to_json }},
+        help="Host path to OpenClaw session files for canary cleanup",
+    )
+    parser.add_argument(
+        "--synthetic-canary-session-retention-seconds",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds }},
+        help="Seconds to retain generated canary session files; <=0 disables cleanup",
+    )
+    parser.add_argument(
+        "--synthetic-canary-output-max-chars",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_output_max_chars }},
+        help="Maximum stored response chars from canary result text",
+    )
+    parser.add_argument(
+        "--synthetic-canary-force-run",
+        action="store_true",
+        help="Force canary execution even when interval has not elapsed",
+    )
+    args = parser.parse_args()
+
+    payload = build_payload()
+    openclaw = payload["openclaw"]
+
+    health_cmd = [
+        "docker",
+        "exec",
+        args.container,
+        "node",
+        "dist/index.js",
+        "health",
+        "--json",
+    ]
+    channels_cmd = [
+        "docker",
+        "exec",
+        args.container,
+        "node",
+        "dist/index.js",
+        "channels",
+        "status",
+        "--json",
+    ]
+
+    try:
+        health_json = run_json_command(
+            health_cmd,
+            args.command_timeout,
+            allow_nonzero_json=True,
+        )
+        openclaw["health"]["ok"] = bool(health_json.get("ok"))
+        openclaw["health"]["telegram_probe_ok"] = resolve_telegram_probe_ok(health_json)
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(str(err))
+
+    try:
+        channels_json = run_json_command(channels_cmd, args.command_timeout)
+        telegram = (channels_json.get("channels") or {}).get("telegram", {})
+        openclaw["channels"]["telegram"]["running"] = bool(telegram.get("running"))
+        openclaw["channels"]["telegram"]["configured"] = bool(
+            telegram.get("configured")
+        )
+        openclaw["channels"]["telegram"]["last_error"] = telegram.get("lastError")
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(str(err))
+
+    try:
+        apply_calendar_auth_health(args, payload)
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(f"calendar auth collector error: {err}")
+
+    try:
+        apply_paperless_auth_health(args, payload)
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(f"paperless auth collector error: {err}")
+
+    try:
+        run_synthetic_canary(args, payload)
+    except Exception as err:  # noqa: BLE001
+        canary = openclaw["synthetic"]["canary"]
+        canary["enabled"] = bool(args.synthetic_canary_enabled)
+        canary["cached"] = False
+        canary["last_run"] = {
+            "at": datetime.now(tz=timezone.utc).isoformat(),
+            "epoch": int(time.time()),
+            "ok": False,
+            "expected_match": False,
+            "attempts": 0,
+            "duration_ms": None,
+            "status": "error",
+            "session_id": None,
+            "provider": None,
+            "model": None,
+            "output_text": "",
+            "error": f"collector synthetic canary error: {err}",
+        }
+
+    save_json_atomic(args.output, payload, mode=0o640)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

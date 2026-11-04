@@ -1,0 +1,43 @@
+---
+name: {{ openclaw_paperless_command_skill_name }}
+description: "Paperless read access (/paperless search|get|latest)."
+metadata: { "openclaw": { "emoji": "📄", "requires": { "bins": ["python3", "node"] } } }
+---
+
+# Paperless Skill
+
+Use the managed Paperless handler with deterministic read-only commands.
+
+## Input Contract
+
+User input is everything after `/{{ openclaw_paperless_command_skill_name }}`.
+
+- `search <query> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]`
+- `get <document_id> [--original|--archived]`
+- `latest [--query <text>] [--days N] [--limit N]`
+
+Natural-language mapping:
+
+- "letter from AOK last month" -> `search aok letter --from <start_of_last_month> --to <end_of_last_month> --limit 5`
+- If exactly one result is a clear match, run `get <document_id>` (defaults to original file).
+- For requests like "zeig mir das", "öffne", or "schick das Dokument", prefer `get <document_id>` (original default) for best readability.
+- Use `--archived` only when explicitly requested or when troubleshooting a problematic original file.
+- If multiple plausible results remain, return the shortlist and ask for an explicit id.
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+{{ openclaw_paperless_container_skills_dir }}/{{ openclaw_paperless_skill_name }}/handler.py <raw-user-input>
+```
+
+Execution safety assumption: OpenClaw must pass this invocation as argv arguments (no shell string interpolation).
+
+When no input is provided, return:
+
+`Usage: /{{ openclaw_paperless_command_skill_name }} search <query> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N] | /{{ openclaw_paperless_command_skill_name }} get <document_id> [--original|--archived] | /{{ openclaw_paperless_command_skill_name }} latest [--query <text>] [--days N] [--limit N]`
+
+Return the handler output as-is.
+
+When you summarize success to the user, mention that the original file was used by default and that `--archived` is available if needed.

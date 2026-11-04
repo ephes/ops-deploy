@@ -1,0 +1,983 @@
+#!/usr/bin/env python3
+# Managed by Ansible (openclaw_deploy Paperless skill). Do not edit on the host.
+
+import argparse
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import urllib.parse
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+CREDENTIALS_PATH = {{ openclaw_paperless_container_credentials_path | to_json }}
+COMMAND_NAME = {{ openclaw_paperless_command_skill_name | to_json }}
+USAGE_TEXT = (
+    f"Usage: /{COMMAND_NAME} search <query> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N] | "
+    f"/{COMMAND_NAME} get <document_id> [--original|--archived] | "
+    f"/{COMMAND_NAME} latest [--query <text>] [--days N] [--limit N]"
+)
+
+NUMERIC_ID_RE = re.compile(r"^-?\d+$")
+FILENAME_DISPOSITION_RE = re.compile(r"filename\*?\s*=\s*(\"[^\"]+\"|[^;]+)", re.IGNORECASE)
+SAFE_EXTENSION_RE = re.compile(r"^\.[A-Za-z0-9]{1,10}$")
+TELEGRAM_SLASH_SESSION_KEY_RE = re.compile(r"^telegram:slash:(-?\d+)$", re.IGNORECASE)
+TELEGRAM_AGENT_SESSION_KEY_RE = re.compile(r":telegram:(?:direct|group):(-?\d+)(?::|$)", re.IGNORECASE)
+MIME_EXTENSION_MAP = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/tiff": ".tiff",
+    "image/webp": ".webp",
+    "text/plain": ".txt",
+    "application/zip": ".zip",
+}
+
+
+class PaperlessSkillError(Exception):
+    pass
+
+
+class DocumentTooLargeError(PaperlessSkillError):
+    def __init__(self, *, limit_bytes: int, content_length: Optional[int], streamed: bool):
+        super().__init__("Document exceeds Telegram upload limit.")
+        self.limit_bytes = int(limit_bytes)
+        self.content_length = content_length
+        self.streamed = streamed
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    # Reject redirects to avoid leaking auth headers to unintended targets.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
+
+
+def _normalize_argv(raw_argv: List[str]) -> List[str]:
+    if len(raw_argv) == 1 and " " in raw_argv[0]:
+        try:
+            parsed = shlex.split(raw_argv[0])
+            if parsed:
+                return parsed
+        except ValueError:
+            pass
+    return raw_argv
+
+
+def _sanitize_text(value: Any, max_chars: int) -> str:
+    normalized = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 3:
+        return normalized[:max_chars]
+    return normalized[: max_chars - 3] + "..."
+
+
+def _bounded_limit(raw_limit: Optional[int], default_limit: int, max_limit: int) -> int:
+    limit = default_limit if raw_limit is None else int(raw_limit)
+    return max(1, min(limit, max_limit))
+
+
+def _parse_iso_date(raw_value: Optional[str]) -> Optional[date]:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise PaperlessSkillError("Date must be in YYYY-MM-DD format.")
+
+
+def _extract_created_date(raw_value: Any) -> str:
+    text = str(raw_value or "").strip()
+    if not text:
+        return "-"
+    if "T" in text:
+        return text.split("T", 1)[0]
+    return text[:10]
+
+
+def _document_url(base_url: str, document_id: int) -> str:
+    return f"{base_url.rstrip('/')}/documents/{document_id}/details"
+
+
+def _safe_extension(raw_name: str) -> Optional[str]:
+    suffix = Path(str(raw_name or "").strip()).suffix.lower()
+    if SAFE_EXTENSION_RE.match(suffix):
+        return suffix
+    return None
+
+
+def _extract_extension_from_content_disposition(raw_header: str) -> Optional[str]:
+    text = str(raw_header or "").strip()
+    if not text:
+        return None
+
+    matches = FILENAME_DISPOSITION_RE.findall(text)
+    for raw_value in matches:
+        value = raw_value.strip().strip('"').strip("'")
+        if "''" in value:
+            _encoding, _sep, encoded_name = value.partition("''")
+            value = urllib.parse.unquote(encoded_name)
+        ext = _safe_extension(value)
+        if ext:
+            return ext
+    return None
+
+
+def _download_extension_from_headers(headers: Dict[str, Any]) -> str:
+    disposition_header = str(headers.get("Content-Disposition") or "")
+    from_disposition = _extract_extension_from_content_disposition(disposition_header)
+    if from_disposition:
+        return from_disposition
+
+    content_type = str(headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    return MIME_EXTENSION_MAP.get(content_type, ".bin")
+
+
+def _load_config(path: str) -> Dict[str, Any]:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise PaperlessSkillError("Paperless integration is not configured.")
+    except json.JSONDecodeError:
+        raise PaperlessSkillError("Paperless integration configuration is invalid JSON.")
+    except OSError:
+        raise PaperlessSkillError("Paperless integration configuration could not be read.")
+
+    base_url = str(payload.get("base_url", "")).strip().rstrip("/")
+    token = str(payload.get("token", "")).strip()
+    delivery_channel = str(payload.get("delivery_channel", "telegram")).strip().lower()
+
+    parsed_base_url = urlsplit(base_url)
+    if (
+        not base_url
+        or parsed_base_url.scheme not in ("http", "https")
+        or not parsed_base_url.netloc
+        or parsed_base_url.query
+        or parsed_base_url.fragment
+    ):
+        raise PaperlessSkillError("Paperless base URL is invalid.")
+    if not token:
+        raise PaperlessSkillError("Paperless token is missing.")
+    if delivery_channel != "telegram":
+        raise PaperlessSkillError("Paperless delivery channel is invalid.")
+
+    try:
+        search_timeout_seconds = int(payload.get("search_timeout_seconds", 10))
+        download_timeout_seconds = int(payload.get("download_timeout_seconds", 60))
+        delivery_timeout_seconds = int(payload.get("delivery_timeout_seconds", 30))
+        default_limit = int(payload.get("default_limit", 5))
+        max_limit = int(payload.get("max_limit", 10))
+        latest_default_days = int(payload.get("latest_default_days", 7))
+        latest_max_days = int(payload.get("latest_max_days", 365))
+        title_max_chars = int(payload.get("title_max_chars", 120))
+        correspondent_max_chars = int(payload.get("correspondent_max_chars", 80))
+        max_download_bytes = int(payload.get("max_download_bytes", 52428800))
+        download_chunk_bytes = int(payload.get("download_chunk_bytes", 65536))
+        auth_failure_window_seconds = int(payload.get("auth_failure_window_seconds", 3600))
+        auth_failure_threshold = int(payload.get("auth_failure_threshold", 3))
+    except (TypeError, ValueError):
+        raise PaperlessSkillError("Paperless integration limits are invalid.")
+
+    downloads_dir = str(payload.get("downloads_dir", "")).strip()
+    session_state_path = str(payload.get("session_state_path", "")).strip()
+    health_state_path = str(payload.get("health_state_path", "")).strip()
+
+    if (
+        search_timeout_seconds <= 0
+        or download_timeout_seconds <= 0
+        or delivery_timeout_seconds <= 0
+        or default_limit <= 0
+        or max_limit < default_limit
+        or max_limit > 10
+        or latest_default_days <= 0
+        or latest_max_days < latest_default_days
+        or title_max_chars <= 0
+        or correspondent_max_chars <= 0
+        or max_download_bytes <= 0
+        or max_download_bytes > 52428800
+        or download_chunk_bytes <= 0
+        or auth_failure_window_seconds <= 0
+        or auth_failure_threshold <= 0
+        or not downloads_dir
+        or not session_state_path
+        or not health_state_path
+    ):
+        raise PaperlessSkillError("Paperless integration limits are invalid.")
+
+    try:
+        session_target_max_age_seconds = int(payload.get("session_target_max_age_seconds", 180))
+    except (TypeError, ValueError):
+        raise PaperlessSkillError("Paperless integration limits are invalid.")
+    if session_target_max_age_seconds <= 0:
+        raise PaperlessSkillError("Paperless integration limits are invalid.")
+
+    return {
+        "base_url": base_url,
+        "token": token,
+        "delivery_channel": delivery_channel,
+        "search_timeout_seconds": search_timeout_seconds,
+        "download_timeout_seconds": download_timeout_seconds,
+        "delivery_timeout_seconds": delivery_timeout_seconds,
+        "default_limit": default_limit,
+        "max_limit": max_limit,
+        "latest_default_days": latest_default_days,
+        "latest_max_days": latest_max_days,
+        "title_max_chars": title_max_chars,
+        "correspondent_max_chars": correspondent_max_chars,
+        "max_download_bytes": max_download_bytes,
+        "download_chunk_bytes": download_chunk_bytes,
+        "downloads_dir": downloads_dir,
+        "session_state_path": session_state_path,
+        "session_target_max_age_seconds": session_target_max_age_seconds,
+        "health_state_path": health_state_path,
+        "auth_failure_window_seconds": auth_failure_window_seconds,
+        "auth_failure_threshold": auth_failure_threshold,
+    }
+
+
+def _read_health_state(path: str) -> Dict[str, Any]:
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return raw
+
+
+def _write_health_state(path: str, payload: Dict[str, Any]) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target.with_suffix(target.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp_path, target)
+    os.chmod(target, 0o600)
+
+
+def _record_auth_result(config: Dict[str, Any], status_code: Optional[int]) -> None:
+    now_epoch = int(datetime.now(tz=timezone.utc).timestamp())
+    window_seconds = int(config["auth_failure_window_seconds"])
+    threshold_epoch = now_epoch - window_seconds
+
+    state = _read_health_state(config["health_state_path"])
+    epochs_raw = state.get("auth_failure_epochs", [])
+    epochs: List[int] = []
+    if isinstance(epochs_raw, list):
+        for item in epochs_raw:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value >= threshold_epoch:
+                epochs.append(value)
+
+    if status_code in (401, 403):
+        epochs.append(now_epoch)
+        state["last_failure_at"] = datetime.now(tz=timezone.utc).isoformat()
+        state["last_status_code"] = int(status_code)
+    elif status_code is None:
+        state["last_success_at"] = datetime.now(tz=timezone.utc).isoformat()
+
+    state["auth_failure_epochs"] = sorted(epochs)
+    state["window_seconds"] = window_seconds
+    state["threshold"] = int(config["auth_failure_threshold"])
+
+    try:
+        _write_health_state(config["health_state_path"], state)
+    except OSError:
+        # Metrics state write failures should not block command execution.
+        return
+
+
+def _parse_json_from_mixed_output(raw_text: str) -> Dict[str, Any]:
+    text = (raw_text or "").strip()
+    if not text:
+        raise PaperlessSkillError("Telegram delivery failed.")
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise PaperlessSkillError("Telegram delivery failed.")
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        raise PaperlessSkillError("Telegram delivery failed.")
+    if not isinstance(parsed, dict):
+        raise PaperlessSkillError("Telegram delivery failed.")
+    return parsed
+
+
+def _extract_numeric_id_from_telegram_route(raw_value: Any) -> Optional[str]:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    if NUMERIC_ID_RE.fullmatch(value):
+        return value
+    parts = [part.strip() for part in value.split(":") if part.strip()]
+    if not parts or parts[0].lower() != "telegram":
+        return None
+    for part in parts[1:]:
+        if NUMERIC_ID_RE.fullmatch(part):
+            return part
+    return None
+
+
+def _extract_numeric_id_from_session_key(raw_key: Any) -> Optional[str]:
+    key = str(raw_key or "").strip()
+    if not key:
+        return None
+    slash_match = TELEGRAM_SLASH_SESSION_KEY_RE.fullmatch(key)
+    if slash_match:
+        return slash_match.group(1)
+    agent_match = TELEGRAM_AGENT_SESSION_KEY_RE.search(key)
+    if agent_match:
+        return agent_match.group(1)
+    return None
+
+
+def _session_entry_is_telegram(session_key: str, entry: Dict[str, Any]) -> bool:
+    key_text = str(session_key or "").strip().lower()
+    if "telegram" in key_text:
+        return True
+
+    origin = entry.get("origin", {})
+    if isinstance(origin, dict):
+        provider = str(origin.get("provider", "")).strip().lower()
+        surface = str(origin.get("surface", "")).strip().lower()
+        if provider == "telegram" or surface == "telegram":
+            return True
+        if _extract_numeric_id_from_telegram_route(origin.get("from")):
+            return True
+        if _extract_numeric_id_from_telegram_route(origin.get("to")):
+            return True
+
+    delivery = entry.get("deliveryContext", {})
+    if isinstance(delivery, dict):
+        channel = str(delivery.get("channel", "")).strip().lower()
+        if channel == "telegram":
+            return True
+        if _extract_numeric_id_from_telegram_route(delivery.get("to")):
+            return True
+
+    if str(entry.get("lastChannel", "")).strip().lower() == "telegram":
+        return True
+    if _extract_numeric_id_from_telegram_route(entry.get("lastTo")):
+        return True
+    return False
+
+
+def _resolve_telegram_target_from_session_state(config: Dict[str, Any]) -> Optional[str]:
+    session_state_path = str(config.get("session_state_path", "")).strip()
+    if not session_state_path:
+        return None
+    try:
+        max_age_seconds = int(config.get("session_target_max_age_seconds", 180))
+    except (TypeError, ValueError):
+        return None
+    if max_age_seconds <= 0:
+        return None
+
+    try:
+        raw = json.loads(Path(session_state_path).read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+
+    now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    threshold_ms = now_ms - (max_age_seconds * 1000)
+
+    slash_ids: Set[str] = set()
+    route_ids: Set[str] = set()
+    saw_ambiguous_route_entry = False
+
+    for session_key, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        try:
+            updated_at = int(entry.get("updatedAt", 0))
+        except (TypeError, ValueError):
+            continue
+        if updated_at < threshold_ms:
+            continue
+
+        key_text = str(session_key or "").strip()
+        slash_match = TELEGRAM_SLASH_SESSION_KEY_RE.fullmatch(key_text)
+        if slash_match:
+            slash_ids.add(slash_match.group(1))
+            continue
+        if not _session_entry_is_telegram(key_text, entry):
+            continue
+
+        entry_ids: Set[str] = set()
+        key_id = _extract_numeric_id_from_session_key(key_text)
+        if key_id:
+            entry_ids.add(key_id)
+
+        origin = entry.get("origin", {})
+        if isinstance(origin, dict):
+            origin_id_from = _extract_numeric_id_from_telegram_route(origin.get("from"))
+            if origin_id_from:
+                entry_ids.add(origin_id_from)
+            origin_id_to = _extract_numeric_id_from_telegram_route(origin.get("to"))
+            if origin_id_to:
+                entry_ids.add(origin_id_to)
+
+        delivery = entry.get("deliveryContext", {})
+        if isinstance(delivery, dict):
+            delivery_id = _extract_numeric_id_from_telegram_route(delivery.get("to"))
+            if delivery_id:
+                entry_ids.add(delivery_id)
+
+        last_to_id = _extract_numeric_id_from_telegram_route(entry.get("lastTo"))
+        if last_to_id:
+            entry_ids.add(last_to_id)
+
+        if len(entry_ids) > 1:
+            # Keep the resolver fail-safe for route-derived targets without
+            # discarding potentially authoritative slash-session keys.
+            saw_ambiguous_route_entry = True
+            continue
+        if len(entry_ids) == 1:
+            route_ids.update(entry_ids)
+
+    if len(slash_ids) == 1:
+        return next(iter(slash_ids))
+    if len(slash_ids) > 1:
+        return None
+    if saw_ambiguous_route_entry:
+        return None
+    if len(route_ids) == 1:
+        return next(iter(route_ids))
+    return None
+
+
+def _resolve_active_telegram_target(config: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    context_keys = [
+        "OPENCLAW_TOOL_CONTEXT",
+        "OPENCLAW_CONTEXT",
+        "TOOL_CONTEXT_JSON",
+    ]
+    saw_non_telegram_context = False
+    for key in context_keys:
+        raw = os.environ.get(key, "").strip()
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        channel = str(
+            payload.get("channel", "")
+            or payload.get("channelId", "")
+            or payload.get("channelType", "")
+        ).strip().lower()
+        if channel and channel != "telegram":
+            saw_non_telegram_context = True
+            continue
+
+        for candidate in (
+            payload.get("chatId"),
+            payload.get("senderId"),
+            payload.get("requesterSenderId"),
+            payload.get("SenderId"),
+        ):
+            value = str(candidate or "").strip()
+            if value and NUMERIC_ID_RE.fullmatch(value):
+                return value
+
+    channel_keys = [
+        "OPENCLAW_CHANNEL",
+        "OPENCLAW_REQUEST_CHANNEL",
+        "OPENCLAW_MESSAGE_CHANNEL",
+    ]
+    for key in channel_keys:
+        channel_value = os.environ.get(key, "").strip().lower()
+        if channel_value and channel_value != "telegram":
+            return None
+    if saw_non_telegram_context:
+        return None
+
+    direct_keys = [
+        "OPENCLAW_CHAT_ID",
+        "TELEGRAM_CHAT_ID",
+        "CHAT_ID",
+        "ChatId",
+        "OPENCLAW_REQUESTER_SENDER_ID",
+        "OPENCLAW_SENDER_ID",
+        "REQUESTER_SENDER_ID",
+        "SENDER_ID",
+        "SenderId",
+    ]
+    for key in direct_keys:
+        value = os.environ.get(key, "").strip()
+        if value and NUMERIC_ID_RE.fullmatch(value):
+            return value
+
+    if config:
+        session_target = _resolve_telegram_target_from_session_state(config)
+        if session_target and NUMERIC_ID_RE.fullmatch(session_target):
+            return session_target
+    return None
+
+
+def _paperless_request(
+    *,
+    config: Dict[str, Any],
+    method: str,
+    path: str,
+    timeout_seconds: int,
+    query: Optional[Dict[str, Any]] = None,
+    expect_json: bool = True,
+) -> Tuple[Any, Dict[str, str]]:
+    query_string = urllib.parse.urlencode(
+        {str(key): str(value) for key, value in (query or {}).items() if str(value).strip()},
+        doseq=True,
+    )
+    url = config["base_url"] + path
+    if query_string:
+        url += "?" + query_string
+
+    headers = {
+        "Authorization": f"Token {config['token']}",
+        "Accept": "application/json" if expect_json else "*/*",
+    }
+    request = Request(url=url, method=method, headers=headers)
+    opener = build_opener(_NoRedirectHandler())
+
+    try:
+        with opener.open(request, timeout=timeout_seconds) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            if status in (301, 302, 303, 307, 308):
+                raise PaperlessSkillError("Paperless API redirects are not allowed.")
+            body = response.read()
+            headers_lower = {str(k).lower(): str(v) for k, v in response.headers.items()}
+    except HTTPError as err:
+        status = int(getattr(err, "code", 0))
+        if status in (401, 403):
+            _record_auth_result(config, status)
+            raise PaperlessSkillError("Paperless authentication failed.")
+        if status == 404:
+            raise PaperlessSkillError("Paperless resource was not found.")
+        if status in (301, 302, 303, 307, 308):
+            raise PaperlessSkillError("Paperless API redirects are not allowed.")
+        raise PaperlessSkillError(f"Paperless request failed (HTTP {status}).")
+    except (URLError, TimeoutError, OSError):
+        raise PaperlessSkillError("Paperless request failed (connection or timeout).")
+
+    _record_auth_result(config, None)
+
+    if expect_json:
+        if not body:
+            return {}, headers_lower
+        try:
+            return json.loads(body.decode("utf-8")), headers_lower
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise PaperlessSkillError("Paperless API returned invalid JSON.")
+    return body, headers_lower
+
+
+def _format_document_row(config: Dict[str, Any], document: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    try:
+        doc_id = int(document.get("id"))
+    except (TypeError, ValueError):
+        raise PaperlessSkillError("Paperless API returned invalid document metadata.")
+
+    title = _sanitize_text(document.get("title", ""), config["title_max_chars"]) or "(untitled)"
+    correspondent_raw = document.get("correspondent_name")
+    if correspondent_raw in (None, "", 0):
+        correspondent_raw = document.get("correspondent")
+    correspondent = _sanitize_text(correspondent_raw, config["correspondent_max_chars"]) or "-"
+    created_date = _extract_created_date(document.get("created"))
+
+    row = f"#{doc_id} | {title} | {correspondent} | {created_date}"
+    meta = {
+        "id": doc_id,
+        "title": title,
+        "correspondent": correspondent,
+        "created_date": created_date,
+    }
+    return row, meta
+
+
+def _search_documents(
+    *,
+    config: Dict[str, Any],
+    query_text: str,
+    from_date: Optional[date],
+    to_date: Optional[date],
+    limit: int,
+) -> Tuple[List[str], List[Dict[str, Any]]]:
+    params: Dict[str, Any] = {
+        "query": query_text,
+        "ordering": "-created",
+        "page_size": str(limit),
+    }
+    if from_date:
+        params["created__date__gte"] = from_date.isoformat()
+    if to_date:
+        params["created__date__lte"] = to_date.isoformat()
+
+    payload, _headers = _paperless_request(
+        config=config,
+        method="GET",
+        path="/api/documents/",
+        query=params,
+        timeout_seconds=config["search_timeout_seconds"],
+        expect_json=True,
+    )
+
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+    if not isinstance(results, list):
+        raise PaperlessSkillError("Paperless API returned invalid search results.")
+
+    rows: List[str] = []
+    metas: List[Dict[str, Any]] = []
+    for item in results[:limit]:
+        if not isinstance(item, dict):
+            continue
+        row, meta = _format_document_row(config, item)
+        rows.append(row)
+        metas.append(meta)
+    return rows, metas
+
+
+def _download_document_with_cap(
+    *,
+    config: Dict[str, Any],
+    document_id: int,
+    original: bool,
+) -> Tuple[Path, int]:
+    query = {"original": "true"} if original else None
+    query_string = urllib.parse.urlencode(query) if query else ""
+    url = config["base_url"] + f"/api/documents/{document_id}/download/"
+    if query_string:
+        url += "?" + query_string
+
+    headers = {
+        "Authorization": f"Token {config['token']}",
+        "Accept": "*/*",
+    }
+    request = Request(url=url, method="GET", headers=headers)
+    opener = build_opener(_NoRedirectHandler())
+
+    downloads_dir = Path(config["downloads_dir"])
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    file_path: Optional[Path] = None
+    bytes_written = 0
+    max_bytes = int(config["max_download_bytes"])
+
+    try:
+        with opener.open(request, timeout=config["download_timeout_seconds"]) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            if status in (301, 302, 303, 307, 308):
+                raise PaperlessSkillError("Paperless API redirects are not allowed.")
+
+            content_length_raw = str(response.headers.get("Content-Length") or "").strip()
+            content_length = None
+            if content_length_raw:
+                try:
+                    content_length = int(content_length_raw)
+                except ValueError:
+                    content_length = None
+            if content_length is not None and content_length > max_bytes:
+                raise DocumentTooLargeError(
+                    limit_bytes=max_bytes,
+                    content_length=content_length,
+                    streamed=False,
+                )
+
+            file_extension = _download_extension_from_headers(response.headers)
+            file_path = downloads_dir / f"paperless-{document_id}-{uuid.uuid4().hex}{file_extension}"
+            with file_path.open("wb") as handle:
+                while True:
+                    chunk = response.read(config["download_chunk_bytes"])
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    bytes_written += len(chunk)
+                    if bytes_written > max_bytes:
+                        raise DocumentTooLargeError(
+                            limit_bytes=max_bytes,
+                            content_length=content_length,
+                            streamed=True,
+                        )
+    except HTTPError as err:
+        if file_path and file_path.exists():
+            file_path.unlink(missing_ok=True)
+        status = int(getattr(err, "code", 0))
+        if status in (401, 403):
+            _record_auth_result(config, status)
+            raise PaperlessSkillError("Paperless authentication failed.")
+        if status == 404:
+            raise PaperlessSkillError(f"Document #{document_id} was not found.")
+        raise PaperlessSkillError(f"Paperless download failed (HTTP {status}).")
+    except DocumentTooLargeError:
+        if file_path and file_path.exists():
+            file_path.unlink(missing_ok=True)
+        raise
+    except (URLError, TimeoutError, OSError):
+        if file_path and file_path.exists():
+            file_path.unlink(missing_ok=True)
+        raise PaperlessSkillError("Paperless download failed (connection or timeout).")
+
+    if not file_path:
+        raise PaperlessSkillError("Paperless download failed (empty response body).")
+
+    _record_auth_result(config, None)
+    return file_path, bytes_written
+
+
+def _send_telegram_media(
+    *,
+    config: Dict[str, Any],
+    target: str,
+    message_text: str,
+    media_path: Path,
+) -> str:
+    command = [
+        "node",
+        "dist/index.js",
+        "message",
+        "send",
+        "--channel",
+        config["delivery_channel"],
+        "--target",
+        target,
+        "--message",
+        message_text,
+        "--media",
+        str(media_path),
+        "--json",
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=config["delivery_timeout_seconds"],
+            cwd="/app",
+        )
+    except (subprocess.SubprocessError, OSError, TimeoutError):
+        raise PaperlessSkillError("Telegram delivery failed.")
+
+    if completed.returncode != 0:
+        raise PaperlessSkillError("Telegram delivery failed.")
+
+    payload = _parse_json_from_mixed_output(completed.stdout)
+    nested = payload.get("payload", {}) if isinstance(payload, dict) else {}
+    message_id = str(nested.get("messageId", "")).strip()
+    if not message_id:
+        message_id = "unknown"
+    return message_id
+
+
+def _render_large_file_fallback(document_meta: Dict[str, Any], doc_url: str, limit_bytes: int) -> str:
+    limit_mb = int(limit_bytes // (1024 * 1024))
+    return "\n".join(
+        [
+            f"Document: #{document_meta['id']} | {document_meta['title']} | {document_meta['correspondent']} | {document_meta['created_date']}",
+            f"Delivery: skipped (file exceeds Telegram upload limit of {limit_mb} MB).",
+            f"Paperless URL: {doc_url}",
+        ]
+    )
+
+
+def _render_delivery_fallback(document_meta: Dict[str, Any], doc_url: str, reason: str) -> str:
+    return "\n".join(
+        [
+            f"Document: #{document_meta['id']} | {document_meta['title']} | {document_meta['correspondent']} | {document_meta['created_date']}",
+            f"Delivery: unavailable ({reason}).",
+            f"Paperless URL: {doc_url}",
+        ]
+    )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    subparsers = parser.add_subparsers(dest="command")
+
+    search_parser = subparsers.add_parser("search", add_help=False)
+    search_parser.add_argument("query", nargs="+")
+    search_parser.add_argument("--from", dest="from_date")
+    search_parser.add_argument("--to", dest="to_date")
+    search_parser.add_argument("--limit", dest="limit", type=int, default=None)
+
+    get_parser = subparsers.add_parser("get", add_help=False)
+    get_parser.add_argument("document_id")
+    get_parser.add_argument("--original", dest="original", action="store_true", default=True)
+    get_parser.add_argument("--archived", dest="original", action="store_false")
+
+    latest_parser = subparsers.add_parser("latest", add_help=False)
+    latest_parser.add_argument("--query", dest="query", default="")
+    latest_parser.add_argument("--days", dest="days", type=int, default=None)
+    latest_parser.add_argument("--limit", dest="limit", type=int, default=None)
+
+    return parser
+
+
+def _handle_search(args: argparse.Namespace, config: Dict[str, Any]) -> str:
+    query_text = _sanitize_text(" ".join(args.query), 2000)
+    if not query_text:
+        raise PaperlessSkillError("Search query cannot be empty.")
+
+    from_date = _parse_iso_date(args.from_date)
+    to_date = _parse_iso_date(args.to_date)
+    if from_date and to_date and from_date > to_date:
+        raise PaperlessSkillError("Date range is invalid: --from is after --to.")
+
+    limit = _bounded_limit(args.limit, config["default_limit"], config["max_limit"])
+    rows, _metas = _search_documents(
+        config=config,
+        query_text=query_text,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+    )
+
+    if not rows:
+        return "No documents found."
+    return "\n".join(rows)
+
+
+def _handle_latest(args: argparse.Namespace, config: Dict[str, Any]) -> str:
+    limit = _bounded_limit(args.limit, config["default_limit"], config["max_limit"])
+    days = config["latest_default_days"] if args.days is None else int(args.days)
+    days = max(1, min(days, config["latest_max_days"]))
+
+    today = datetime.now(tz=timezone.utc).date()
+    from_date = today - timedelta(days=days)
+    query_text = _sanitize_text(str(args.query or "").strip(), 2000)
+
+    rows, _metas = _search_documents(
+        config=config,
+        query_text=query_text,
+        from_date=from_date,
+        to_date=today,
+        limit=limit,
+    )
+
+    if not rows:
+        return "No documents found."
+    return "\n".join(rows)
+
+
+def _handle_get(args: argparse.Namespace, config: Dict[str, Any]) -> str:
+    raw_id = str(args.document_id or "").strip()
+    if not raw_id.isdigit():
+        raise PaperlessSkillError("Document ID must be a positive integer.")
+    document_id = int(raw_id)
+    if document_id <= 0:
+        raise PaperlessSkillError("Document ID must be a positive integer.")
+
+    details, _headers = _paperless_request(
+        config=config,
+        method="GET",
+        path=f"/api/documents/{document_id}/",
+        timeout_seconds=config["search_timeout_seconds"],
+        expect_json=True,
+    )
+    if not isinstance(details, dict):
+        raise PaperlessSkillError("Paperless API returned invalid document metadata.")
+
+    row, document_meta = _format_document_row(config, details)
+    doc_url = _document_url(config["base_url"], document_meta["id"])
+
+    try:
+        file_path, _bytes_written = _download_document_with_cap(
+            config=config,
+            document_id=document_id,
+            original=bool(args.original),
+        )
+    except DocumentTooLargeError:
+        return _render_large_file_fallback(document_meta, doc_url, config["max_download_bytes"])
+
+    try:
+        target = _resolve_active_telegram_target(config=config)
+        if not target:
+            return _render_delivery_fallback(document_meta, doc_url, "active Telegram chat context missing")
+
+        caption = f"Paperless document #{document_meta['id']}: {document_meta['title']}"
+        message_id = _send_telegram_media(
+            config=config,
+            target=target,
+            message_text=caption,
+            media_path=file_path,
+        )
+        return "\n".join(
+            [
+                f"Document: {row}",
+                f"Delivery: sent to Telegram chat {target} (message_id={message_id}).",
+                f"Paperless URL: {doc_url}",
+            ]
+        )
+    except PaperlessSkillError:
+        return _render_delivery_fallback(document_meta, doc_url, "Telegram send failed")
+    finally:
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def main() -> int:
+    argv = _normalize_argv(sys.argv[1:])
+    if not argv:
+        print(USAGE_TEXT)
+        return 2
+
+    parser = _build_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        print(USAGE_TEXT)
+        return 2
+
+    if args.command not in {"search", "get", "latest"}:
+        print(USAGE_TEXT)
+        return 2
+
+    try:
+        config = _load_config(CREDENTIALS_PATH)
+        if args.command == "search":
+            print(_handle_search(args, config))
+            return 0
+        if args.command == "latest":
+            print(_handle_latest(args, config))
+            return 0
+        print(_handle_get(args, config))
+        return 0
+    except PaperlessSkillError as err:
+        print(str(err))
+        return 2
+    except Exception:
+        print("Paperless handler failed.")
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

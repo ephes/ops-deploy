@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+# Managed by Ansible (openclaw_deploy OpsGate skill). Do not edit on the host.
+
+import argparse
+import json
+import re
+import shlex
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlsplit
+from urllib.request import Request, urlopen
+
+
+CREDENTIALS_PATH = {{ openclaw_opsgate_container_credentials_path | to_json }}
+COMMAND_NAME = {{ openclaw_opsgate_command_skill_name | to_json }}
+USAGE_TEXT = (
+    f"Usage: /{COMMAND_NAME} create [--title <text>] [--task-ref <text>] <issue description>"
+)
+TASK_REF_RE = re.compile(r"^[A-Za-z0-9._:/-]+$")
+
+
+class OpsGateSkillError(Exception):
+    pass
+
+
+def _normalize_argv(raw_argv: list[str]) -> list[str]:
+    if len(raw_argv) == 1 and " " in raw_argv[0]:
+        try:
+            parsed = shlex.split(raw_argv[0])
+            if parsed:
+                return parsed
+        except ValueError:
+            pass
+    return raw_argv
+
+
+def _normalize_url(raw_value: Any) -> str:
+    url = str(raw_value or "").strip().rstrip("/")
+    parsed = urlsplit(url)
+    if (
+        not url
+        or parsed.scheme not in ("http", "https")
+        or not parsed.netloc
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise OpsGateSkillError("OpsGate URL is invalid.")
+    return url
+
+
+def _load_config() -> dict[str, Any]:
+    config_path = Path(CREDENTIALS_PATH)
+    if not config_path.exists():
+        raise OpsGateSkillError("OpsGate integration is not configured.")
+
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OpsGateSkillError("OpsGate config could not be read.") from exc
+
+    if not isinstance(payload, dict):
+        raise OpsGateSkillError("OpsGate config is invalid.")
+
+    submit_base_url = _normalize_url(payload.get("submit_base_url", ""))
+    approval_base_url = _normalize_url(payload.get("approval_base_url", "") or submit_base_url)
+    submit_token = str(payload.get("submit_token", "")).strip()
+    if len(submit_token) < 20:
+        raise OpsGateSkillError("OpsGate submit token is missing.")
+
+    submit_timeout_seconds = int(payload.get("submit_timeout_seconds", 10))
+    ticket_expires_seconds = int(payload.get("ticket_expires_seconds", 14400))
+    title_max_chars = int(payload.get("title_max_chars", 120))
+    summary_max_chars = int(payload.get("summary_max_chars", 240))
+    request_max_chars = int(payload.get("request_max_chars", 4000))
+    task_ref_max_chars = int(payload.get("task_ref_max_chars", 120))
+    if submit_timeout_seconds <= 0 or ticket_expires_seconds < 0:
+        raise OpsGateSkillError("OpsGate timeout settings are invalid.")
+    if min(title_max_chars, summary_max_chars, request_max_chars, task_ref_max_chars) <= 0:
+        raise OpsGateSkillError("OpsGate text limits are invalid.")
+
+    return {
+        "submit_base_url": submit_base_url,
+        "approval_base_url": approval_base_url,
+        "submit_token": submit_token,
+        "submit_timeout_seconds": submit_timeout_seconds,
+        "ticket_expires_seconds": ticket_expires_seconds,
+        "title_max_chars": title_max_chars,
+        "summary_max_chars": summary_max_chars,
+        "request_max_chars": request_max_chars,
+        "task_ref_max_chars": task_ref_max_chars,
+    }
+
+
+def _sanitize_text(raw_value: Any, max_chars: int) -> str:
+    normalized = re.sub(r"\s+", " ", str(raw_value or "").strip())
+    if not normalized:
+        return ""
+    if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 3:
+        return normalized[:max_chars]
+    return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _sanitize_multiline_text(raw_value: Any, max_chars: int) -> str:
+    normalized = str(raw_value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return ""
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 3:
+        return normalized[:max_chars]
+    return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _derive_title(issue_text: str, title_max_chars: int) -> str:
+    first_line = next((line.strip() for line in issue_text.splitlines() if line.strip()), "")
+    if not first_line:
+        raise OpsGateSkillError("Issue description cannot be empty.")
+    return _sanitize_text(first_line, title_max_chars)
+
+
+def _validate_task_ref(raw_value: str, max_chars: int) -> str:
+    task_ref = str(raw_value or "").strip()
+    if not task_ref:
+        return ""
+    if len(task_ref) > max_chars:
+        raise OpsGateSkillError(f"task_ref must be at most {max_chars} characters.")
+    if not TASK_REF_RE.fullmatch(task_ref):
+        raise OpsGateSkillError("task_ref may contain only letters, numbers, '.', '_', ':', '/', and '-'.")
+    return task_ref
+
+
+def _isoformat_z(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _build_prompt(issue_text: str) -> str:
+    return "\n".join(
+        [
+            "# Objective",
+            "Investigate the user-reported issue described below.",
+            "",
+            "## Issue Description",
+            issue_text,
+            "",
+            "## Constraints",
+            "- This ticket was submitted from OpenClaw and still requires explicit OpsGate approval before execution.",
+            "- Treat this as an investigator-only ticket.",
+            "- Do not edit source files, deploy code, restart services, or patch live systems in this ticket.",
+            "- Identify the owning repo, workspace, service, or host component.",
+            "- Gather concrete evidence, explain likely root cause, and end with recommended next steps.",
+        ]
+    )
+
+
+def _post_ticket(config: dict[str, Any], payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    body = json.dumps(payload, sort_keys=True).encode("utf-8")
+    endpoint = urljoin(config["submit_base_url"] + "/", "api/v1/tickets")
+    request_obj = Request(
+        endpoint,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {config['submit_token']}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request_obj, timeout=config["submit_timeout_seconds"]) as response:
+            response_body = response.read().decode("utf-8", "replace")
+            parsed = json.loads(response_body) if response_body.strip() else {}
+            if not isinstance(parsed, dict):
+                parsed = {}
+            return int(response.status), parsed
+    except HTTPError as exc:
+        try:
+            response_body = exc.read().decode("utf-8", "replace")
+            parsed = json.loads(response_body) if response_body.strip() else {}
+            if not isinstance(parsed, dict):
+                parsed = {}
+        except Exception:
+            parsed = {}
+        return int(exc.code), parsed
+    except URLError as exc:
+        raise OpsGateSkillError(f"OpsGate request failed: {exc.reason}") from exc
+    except OSError as exc:
+        raise OpsGateSkillError(f"OpsGate request failed: {exc}") from exc
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False, prog=COMMAND_NAME)
+    subparsers = parser.add_subparsers(dest="command")
+
+    create_parser = subparsers.add_parser("create", add_help=False)
+    create_parser.add_argument("--title", default="")
+    create_parser.add_argument("--task-ref", default="")
+    create_parser.add_argument("issue", nargs=argparse.REMAINDER)
+    return parser
+
+
+def main() -> int:
+    argv = _normalize_argv(sys.argv[1:])
+    if not argv:
+        print(USAGE_TEXT)
+        return 1
+    if argv[0] in {"-h", "--help", "help"}:
+        print(USAGE_TEXT)
+        return 0
+
+    parser = _build_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        print(USAGE_TEXT)
+        return 1
+
+    if args.command != "create":
+        print(USAGE_TEXT)
+        return 1
+
+    config = _load_config()
+    issue_text = _sanitize_multiline_text(" ".join(args.issue).strip(), config["request_max_chars"])
+    if not issue_text:
+        raise OpsGateSkillError("Issue description is required.")
+
+    title = _sanitize_text(args.title, config["title_max_chars"]) or _derive_title(
+        issue_text, config["title_max_chars"]
+    )
+    summary = _sanitize_text(
+        f"OpenClaw requested an OpsGate investigation for this issue: {issue_text}",
+        config["summary_max_chars"],
+    )
+    task_ref = _validate_task_ref(args.task_ref, config["task_ref_max_chars"])
+
+    payload: dict[str, Any] = {
+        "title": title,
+        "summary": summary,
+        "execution_plan": [
+            {
+                "role": "investigator",
+                "agent": "codex",
+                "prompt_markdown": _build_prompt(issue_text),
+            }
+        ],
+        "context": {
+            "producer": "openclaw",
+            "integration": "opsgate-submit-v1",
+            "workflow": "single-step-investigator",
+            "request": issue_text,
+        },
+    }
+    if task_ref:
+        payload["task_ref"] = task_ref
+    if config["ticket_expires_seconds"] > 0:
+        payload["expires_at"] = _isoformat_z(
+            datetime.now(tz=UTC) + timedelta(seconds=config["ticket_expires_seconds"])
+        )
+
+    status_code, response = _post_ticket(config, payload)
+    if status_code == 201:
+        ticket_id = str(response.get("id", "")).strip()
+        if not ticket_id:
+            raise OpsGateSkillError("OpsGate created a ticket without returning an id.")
+        approval_url = f"{config['approval_base_url']}/tickets/{ticket_id}"
+        print("OpsGate ticket created.")
+        print(f"Ticket ID: {ticket_id}")
+        print("State: pending_approval")
+        print("Workflow: single-step investigator via codex")
+        print(f"Approval URL: {approval_url}")
+        print("Approval is still required before any execution happens.")
+        return 0
+
+    if status_code == 409 and response.get("error") == "duplicate_open_ticket":
+        task_ref_display = task_ref or "provided task_ref"
+        raise OpsGateSkillError(f"OpsGate already has an open ticket for {task_ref_display}.")
+
+    message = _sanitize_text(response.get("message", "OpsGate ticket creation failed."), 240)
+    error_code = _sanitize_text(response.get("error", ""), 80)
+    if error_code:
+        raise OpsGateSkillError(f"OpsGate ticket creation failed ({error_code}): {message}")
+    raise OpsGateSkillError(message or "OpsGate ticket creation failed.")
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except OpsGateSkillError as exc:
+        print(str(exc))
+        raise SystemExit(1)

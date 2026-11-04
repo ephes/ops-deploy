@@ -1,0 +1,534 @@
+#!/usr/bin/env python3
+# Managed by Ansible (openclaw_deploy Home Assistant skill). Do not edit on the host.
+
+import argparse
+import json
+import re
+import shlex
+import socket
+import sys
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+CREDENTIALS_PATH = {{ openclaw_homeassistant_container_credentials_path | to_json }}
+COMMAND_NAME = {{ openclaw_homeassistant_command_skill_name | to_json }}
+USAGE_TEXT = (
+    f"Usage: /{COMMAND_NAME} state <entity_id> | "
+    f"/{COMMAND_NAME} list [--domain <domain>] [--limit N] | "
+    f"/{COMMAND_NAME} turn_on <entity_id> | "
+    f"/{COMMAND_NAME} turn_off <entity_id>"
+)
+
+ENTITY_ID_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+DOMAIN_RE = re.compile(r"^[a-z0-9_]+$")
+
+ACTION_SERVICE_PATHS: Dict[str, str] = {
+    "turn_on": "/api/services/homeassistant/turn_on",
+    "turn_off": "/api/services/homeassistant/turn_off",
+}
+
+
+class HASkillError(Exception):
+    pass
+
+
+class HAAccessDenied(HASkillError):
+    pass
+
+
+class HANotFound(HASkillError):
+    pass
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    # Reject redirects to avoid leaking bearer auth headers to unintended targets.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
+
+
+def _sanitize_text(value: Any, max_chars: int) -> str:
+    normalized = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1] + "..."
+
+
+def _normalize_argv(raw_argv: List[str]) -> List[str]:
+    if len(raw_argv) == 1 and " " in raw_argv[0]:
+        try:
+            parsed = shlex.split(raw_argv[0])
+            if parsed:
+                return parsed
+        except ValueError:
+            pass
+    return raw_argv
+
+
+def _load_config(path: str) -> Dict[str, Any]:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise HASkillError("Home Assistant integration is not configured.")
+    except json.JSONDecodeError:
+        raise HASkillError("Home Assistant integration configuration is invalid JSON.")
+    except OSError:
+        raise HASkillError("Home Assistant integration configuration could not be read.")
+
+    base_url = str(payload.get("base_url", "")).strip().rstrip("/")
+    token = str(payload.get("token", "")).strip()
+    allow_domains = [
+        str(item).strip().lower()
+        for item in (payload.get("allow_domains", []) or [])
+        if str(item).strip()
+    ]
+    allow_entities = [
+        str(item).strip().lower()
+        for item in (payload.get("allow_entities", []) or [])
+        if str(item).strip()
+    ]
+    allow_write_domains = [
+        str(item).strip().lower()
+        for item in (payload.get("allow_write_domains", []) or [])
+        if str(item).strip()
+    ]
+    allow_write_entities = [
+        str(item).strip().lower()
+        for item in (payload.get("allow_write_entities", []) or [])
+        if str(item).strip()
+    ]
+
+    parsed_base_url = urlsplit(base_url)
+    if (
+        not base_url
+        or parsed_base_url.scheme not in ("http", "https")
+        or not parsed_base_url.netloc
+        or parsed_base_url.query
+        or parsed_base_url.fragment
+    ):
+        raise HASkillError("Home Assistant base URL is invalid.")
+    if not token:
+        raise HASkillError("Home Assistant token is missing.")
+    if not allow_domains and not allow_entities:
+        raise HASkillError("Home Assistant allowlist is empty.")
+
+    for domain in allow_domains:
+        if not DOMAIN_RE.fullmatch(domain):
+            raise HASkillError("Home Assistant allow_domains contains invalid entries.")
+    for entity_id in allow_entities:
+        if not ENTITY_ID_RE.fullmatch(entity_id):
+            raise HASkillError("Home Assistant allow_entities contains invalid entries.")
+    for domain in allow_write_domains:
+        if not DOMAIN_RE.fullmatch(domain):
+            raise HASkillError("Home Assistant allow_write_domains contains invalid entries.")
+    for entity_id in allow_write_entities:
+        if not ENTITY_ID_RE.fullmatch(entity_id):
+            raise HASkillError("Home Assistant allow_write_entities contains invalid entries.")
+
+    try:
+        request_timeout_seconds = int(payload.get("request_timeout_seconds", 8))
+        default_limit = int(payload.get("default_limit", 10))
+        max_limit = int(payload.get("max_limit", 25))
+        state_max_chars = int(payload.get("state_max_chars", 200))
+        friendly_name_max_chars = int(payload.get("friendly_name_max_chars", 120))
+        attribute_max_items = int(payload.get("attribute_max_items", 8))
+        attribute_value_max_chars = int(payload.get("attribute_value_max_chars", 120))
+    except (TypeError, ValueError):
+        raise HASkillError("Home Assistant integration limits are invalid.")
+
+    if (
+        request_timeout_seconds <= 0
+        or default_limit <= 0
+        or max_limit < default_limit
+        or state_max_chars <= 0
+        or friendly_name_max_chars <= 0
+        or attribute_max_items <= 0
+        or attribute_value_max_chars <= 0
+    ):
+        raise HASkillError("Home Assistant integration limits are out of range.")
+
+    return {
+        "base_url": base_url,
+        "token": token,
+        "allow_domains": sorted(set(allow_domains)),
+        "allow_entities": sorted(set(allow_entities)),
+        "allow_write_domains": sorted(set(allow_write_domains)),
+        "allow_write_entities": sorted(set(allow_write_entities)),
+        "request_timeout_seconds": request_timeout_seconds,
+        "default_limit": default_limit,
+        "max_limit": max_limit,
+        "state_max_chars": state_max_chars,
+        "friendly_name_max_chars": friendly_name_max_chars,
+        "attribute_max_items": attribute_max_items,
+        "attribute_value_max_chars": attribute_value_max_chars,
+    }
+
+
+def _normalize_entity_id(raw_entity_id: str) -> str:
+    entity_id = str(raw_entity_id or "").strip().lower()
+    if not ENTITY_ID_RE.fullmatch(entity_id):
+        raise HASkillError("Entity ID must match domain.object_id (lowercase letters, digits, underscore).")
+    return entity_id
+
+
+def _normalize_domain(raw_domain: str) -> str:
+    domain = str(raw_domain or "").strip().lower()
+    if not domain:
+        raise HASkillError("Domain cannot be empty.")
+    if not DOMAIN_RE.fullmatch(domain):
+        raise HASkillError("Domain must contain only lowercase letters, digits, and underscore.")
+    return domain
+
+
+def _bounded_limit(raw_limit: Optional[int], default_limit: int, max_limit: int) -> int:
+    limit = default_limit if raw_limit is None else int(raw_limit)
+    return max(1, min(limit, max_limit))
+
+
+def _entity_allowed(entity_id: str, allow_domains: Iterable[str], allow_entities: Iterable[str]) -> bool:
+    domain = entity_id.split(".", 1)[0]
+    if entity_id in allow_entities:
+        return True
+    return domain in allow_domains
+
+
+def _domain_explicitly_allowlisted(domain: str, allow_domains: Iterable[str], allow_entities: Iterable[str]) -> bool:
+    if domain in allow_domains:
+        return True
+    prefix = domain + "."
+    return any(entity_id.startswith(prefix) for entity_id in allow_entities)
+
+
+def _ha_request_json(
+    *,
+    base_url: str,
+    token: str,
+    method: str,
+    path: str,
+    timeout_seconds: int,
+    payload: Optional[Dict[str, Any]] = None,
+    operation: str,
+) -> Any:
+    url = base_url + path
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    request = Request(url=url, method=method, headers=headers, data=data)
+    opener = build_opener(_NoRedirectHandler())
+
+    try:
+        with opener.open(request, timeout=timeout_seconds) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            body = response.read()
+    except HTTPError as err:
+        status = int(getattr(err, "code", 0))
+        if status in (301, 302, 303, 307, 308):
+            raise HASkillError("Home Assistant API redirects are not allowed.")
+        if status in (401, 403):
+            raise HASkillError("Home Assistant authentication failed.")
+        if status == 404 and operation == "state":
+            raise HANotFound("Requested Home Assistant entity was not found.")
+        if status == 404 and operation == "action":
+            raise HANotFound("Requested Home Assistant action target was not found.")
+        if status == 400 and operation == "action":
+            raise HASkillError("Home Assistant action request was rejected.")
+        raise HASkillError(f"Home Assistant API request failed (HTTP {status}).")
+    except (URLError, socket.timeout, TimeoutError, OSError):
+        raise HASkillError("Home Assistant API request failed (connection or timeout).")
+
+    if status < 200 or status >= 300:
+        raise HASkillError(f"Home Assistant API request failed (HTTP {status}).")
+
+    if not body:
+        return {}
+
+    try:
+        return json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HASkillError("Home Assistant API returned invalid JSON.")
+
+
+def _ha_get_json(base_url: str, token: str, path: str, timeout_seconds: int, operation: str) -> Any:
+    return _ha_request_json(
+        base_url=base_url,
+        token=token,
+        method="GET",
+        path=path,
+        timeout_seconds=timeout_seconds,
+        operation=operation,
+    )
+
+
+def _ha_post_json(
+    base_url: str,
+    token: str,
+    path: str,
+    timeout_seconds: int,
+    payload: Dict[str, Any],
+    operation: str,
+) -> Any:
+    return _ha_request_json(
+        base_url=base_url,
+        token=token,
+        method="POST",
+        path=path,
+        timeout_seconds=timeout_seconds,
+        payload=payload,
+        operation=operation,
+    )
+
+
+def _format_attributes(
+    attributes: Dict[str, Any], max_items: int, value_max_chars: int
+) -> str:
+    if not isinstance(attributes, dict):
+        return "-"
+
+    pairs: List[str] = []
+    for key in sorted(attributes.keys()):
+        if key == "friendly_name":
+            continue
+        value = attributes.get(key)
+        if isinstance(value, (dict, list, tuple, set)):
+            continue
+        pairs.append(f"{key}={_sanitize_text(value, value_max_chars)}")
+        if len(pairs) >= max_items:
+            break
+
+    return ", ".join(pairs) if pairs else "-"
+
+
+def _format_state_output(entity: Dict[str, Any], config: Dict[str, Any]) -> str:
+    entity_id = str(entity.get("entity_id", "-"))
+    state = _sanitize_text(entity.get("state", "unknown"), config["state_max_chars"])
+    attributes = entity.get("attributes", {}) or {}
+    friendly_name = _sanitize_text(
+        attributes.get("friendly_name", "-"), config["friendly_name_max_chars"]
+    )
+    attributes_summary = _format_attributes(
+        attributes=attributes,
+        max_items=config["attribute_max_items"],
+        value_max_chars=config["attribute_value_max_chars"],
+    )
+    last_changed = _sanitize_text(entity.get("last_changed", "-"), 64)
+    last_updated = _sanitize_text(entity.get("last_updated", "-"), 64)
+
+    lines = [
+        f"Entity: {entity_id}",
+        f"State: {state}",
+        f"Friendly name: {friendly_name}",
+        f"Last changed: {last_changed}",
+        f"Last updated: {last_updated}",
+        f"Attributes: {attributes_summary}",
+    ]
+    return "\n".join(lines)
+
+
+def _format_list_output(
+    rows: List[Tuple[str, str, str]],
+    total_matching: int,
+    domain_filter: Optional[str],
+) -> str:
+    heading = f"Allowed entities: showing {len(rows)} of {total_matching}"
+    if domain_filter:
+        heading += f" (domain={domain_filter})"
+
+    lines = [heading]
+    if not rows:
+        lines.append("No allowed entities found.")
+        return "\n".join(lines)
+
+    for entity_id, state, friendly_name in rows:
+        lines.append(f"- {entity_id} | {state} | {friendly_name}")
+    return "\n".join(lines)
+
+
+def _format_action_output(action: str, entity_id: str, response: Any) -> str:
+    changed_states_count = 0
+    if isinstance(response, list):
+        changed_states_count = len(response)
+    elif isinstance(response, dict):
+        changed_states_count = 1
+
+    lines = [
+        f"Action: {action}",
+        f"Entity: {entity_id}",
+        "Status: accepted",
+        f"Changed states reported: {changed_states_count}",
+    ]
+    return "\n".join(lines)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    subparsers = parser.add_subparsers(dest="command")
+
+    state_parser = subparsers.add_parser("state", add_help=False)
+    state_parser.add_argument("entity_id")
+
+    list_parser = subparsers.add_parser("list", add_help=False)
+    list_parser.add_argument("--domain", dest="domain", default="")
+    list_parser.add_argument("--limit", dest="limit", type=int, default=None)
+
+    turn_on_parser = subparsers.add_parser("turn_on", add_help=False)
+    turn_on_parser.add_argument("entity_id")
+
+    turn_off_parser = subparsers.add_parser("turn_off", add_help=False)
+    turn_off_parser.add_argument("entity_id")
+
+    return parser
+
+
+def main() -> int:
+    argv = _normalize_argv(sys.argv[1:])
+    if not argv:
+        print(USAGE_TEXT)
+        return 0
+
+    try:
+        config = _load_config(CREDENTIALS_PATH)
+        parser = _build_parser()
+        try:
+            args = parser.parse_args(argv)
+        except SystemExit:
+            print(USAGE_TEXT)
+            return 1
+
+        if not getattr(args, "command", None):
+            print(USAGE_TEXT)
+            return 1
+
+        if args.command == "state":
+            entity_id = _normalize_entity_id(args.entity_id)
+            if not _entity_allowed(
+                entity_id,
+                config["allow_domains"],
+                config["allow_entities"],
+            ):
+                raise HAAccessDenied(f"Entity '{entity_id}' is not allowlisted.")
+
+            entity = _ha_get_json(
+                base_url=config["base_url"],
+                token=config["token"],
+                path=f"/api/states/{entity_id}",
+                timeout_seconds=config["request_timeout_seconds"],
+                operation="state",
+            )
+            if not isinstance(entity, dict):
+                raise HASkillError("Home Assistant API returned an unexpected state payload.")
+
+            print(_format_state_output(entity, config))
+            return 0
+
+        if args.command == "list":
+            domain_filter = ""
+            if args.domain:
+                domain_filter = _normalize_domain(args.domain)
+                if not _domain_explicitly_allowlisted(
+                    domain_filter,
+                    config["allow_domains"],
+                    config["allow_entities"],
+                ):
+                    raise HAAccessDenied(f"Domain '{domain_filter}' is not allowlisted.")
+
+            limit = _bounded_limit(args.limit, config["default_limit"], config["max_limit"])
+            # Domain-scoped listing is usually used for discovery in natural-language room/device
+            # requests, so default to max_limit unless user explicitly sets --limit.
+            if domain_filter and args.limit is None:
+                limit = config["max_limit"]
+            states = _ha_get_json(
+                base_url=config["base_url"],
+                token=config["token"],
+                path="/api/states",
+                timeout_seconds=config["request_timeout_seconds"],
+                operation="list",
+            )
+            if not isinstance(states, list):
+                raise HASkillError("Home Assistant API returned an unexpected states payload.")
+
+            filtered_rows: List[Tuple[str, str, str]] = []
+            for item in states:
+                if not isinstance(item, dict):
+                    continue
+                raw_entity_id = item.get("entity_id")
+                if not isinstance(raw_entity_id, str):
+                    continue
+                entity_id = raw_entity_id.strip().lower()
+                if not ENTITY_ID_RE.fullmatch(entity_id):
+                    continue
+                if domain_filter and not entity_id.startswith(domain_filter + "."):
+                    continue
+                if not _entity_allowed(entity_id, config["allow_domains"], config["allow_entities"]):
+                    continue
+
+                attributes = item.get("attributes", {}) or {}
+                friendly_name = "-"
+                if isinstance(attributes, dict):
+                    friendly_name = _sanitize_text(
+                        attributes.get("friendly_name", "-"),
+                        config["friendly_name_max_chars"],
+                    )
+                state = _sanitize_text(item.get("state", "unknown"), config["state_max_chars"])
+                filtered_rows.append((entity_id, state, friendly_name))
+
+            filtered_rows.sort(key=lambda row: row[0])
+            selected_rows = filtered_rows[:limit]
+            print(
+                _format_list_output(
+                    rows=selected_rows,
+                    total_matching=len(filtered_rows),
+                    domain_filter=domain_filter if domain_filter else None,
+                )
+            )
+            return 0
+
+        if args.command in ACTION_SERVICE_PATHS:
+            entity_id = _normalize_entity_id(args.entity_id)
+            if not _entity_allowed(
+                entity_id,
+                config["allow_write_domains"],
+                config["allow_write_entities"],
+            ):
+                raise HAAccessDenied(
+                    f"Write action for entity '{entity_id}' is not allowlisted."
+                )
+
+            response = _ha_post_json(
+                base_url=config["base_url"],
+                token=config["token"],
+                path=ACTION_SERVICE_PATHS[args.command],
+                timeout_seconds=config["request_timeout_seconds"],
+                payload={"entity_id": entity_id},
+                operation="action",
+            )
+            print(_format_action_output(args.command, entity_id, response))
+            return 0
+
+        print(USAGE_TEXT)
+        return 1
+
+    except HAAccessDenied as err:
+        print(f"Home Assistant access denied: {err}")
+        return 2
+    except HANotFound as err:
+        print(f"Home Assistant not found: {err}")
+        return 3
+    except HASkillError as err:
+        print(f"Home Assistant skill error: {err}")
+        return 1
+    except Exception as err:
+        print(f"Home Assistant skill internal error: {err.__class__.__name__}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
