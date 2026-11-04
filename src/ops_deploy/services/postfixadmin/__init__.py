@@ -1,8 +1,14 @@
-"""PostfixAdmin ordinary deployment API."""
+"""PostfixAdmin ordinary deployment API, backup and restore (postfixadmin_deploy, _backup, _restore)."""
 
 from pyinfra.api import deploy
 
 from ops_deploy.core.secrets import SecretValues
+from ops_deploy.services.postfixadmin.backup_restore import (
+    PostfixAdminBackupConfig,
+    PostfixAdminRestoreConfig,
+    deploy_postfixadmin_backup,
+    deploy_postfixadmin_restore,
+)
 from ops_deploy.services.postfixadmin.config import PostfixAdminConfig
 
 
@@ -13,4 +19,11 @@ def deploy_postfixadmin(cfg: PostfixAdminConfig, secrets: SecretValues) -> None:
     run(cfg, secrets)
 
 
-__all__ = ["PostfixAdminConfig", "deploy_postfixadmin"]
+__all__ = [
+    "PostfixAdminBackupConfig",
+    "PostfixAdminConfig",
+    "PostfixAdminRestoreConfig",
+    "deploy_postfixadmin",
+    "deploy_postfixadmin_backup",
+    "deploy_postfixadmin_restore",
+]

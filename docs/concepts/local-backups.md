@@ -16,7 +16,7 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 
 | Config | Guarded fields |
 |---|---|
-| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig` | `root` |
+| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig` | `root` |
 | `SnappyMailRestoreConfig` | `data_dir` (the restore stages next to it) |
 | `MetubeBackupConfig`, `JellyfinBackupConfig`, `NavidromeBackupConfig`, `WagtailBackupConfig` | `root` (mount check only: these keep their roles' own `retain` pruning instead of `retain_count`/`retain_days`) |
 | `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig`, `VaultwardenRestoreConfig` | `staging_dir` |

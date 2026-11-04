@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `services.postfixadmin`: `PostfixAdminBackupConfig`/`deploy_postfixadmin_backup`
+  and `PostfixAdminRestoreConfig`/`deploy_postfixadmin_restore`, the ports of
+  the `postfixadmin_backup` and `postfixadmin_restore` roles and the restore
+  playbook's pre tasks (ops-library `44a532ba`, recorded in the drift
+  manifest): one standard-library Python program on the host
+  (`files/postfixadmin_lifecycle.py`), settings and the database password on
+  stdin, `psql` as the mail user over localhost with PGPASSWORD only. The
+  role's fail-closed `.tmp` directory, manifest, retention, validation before
+  any change and the admin upsert, here in one transaction.
+
 - `services.mastodon`: `MastodonBackupConfig`/`deploy_mastodon_backup` and
   `MastodonRestoreConfig`/`deploy_mastodon_restore`, the ports of the
   `mastodon_backup` (with `prune.yml`) and `mastodon_restore` roles

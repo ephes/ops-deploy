@@ -65,3 +65,57 @@ and recovery, and nine zero-change repeats. Actual PHP CLI/FPM 8.3.6, PostgreSQL
 16.15 and nginx 1.24.0 were recorded. Synthetic mail stayed local with verified
 TLS. Inventory deployment qualification is separate. The original failed run
 `40553538688` is retained; its failure was a fixture TOTP-seeding assumption.
+
+## Backup and restore
+
+`ops_deploy.services.postfixadmin` also ports `postfixadmin_backup` and
+`postfixadmin_restore` (with the restore playbook's pre tasks: `latest` and
+the dry run). Backups written by either tool restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_postfixadmin_backup` | `PostfixAdminBackupConfig(host_name=..., db_password=...)` | `postfixadmin_backup` |
+| `deploy_postfixadmin_restore` | `PostfixAdminRestoreConfig(db_password=...)` | `postfixadmin_restore` |
+
+`db_password` is the mail database password (`postfixadmin_db_password`);
+it reaches the host only on stdin and `psql` only as PGPASSWORD. The other
+fields are the roles' variables without their prefix (`root` is
+`postfixadmin_backup_path`, default `/mnt/cryptdata/backups/postfixadmin`;
+`archive` is the playbook's `restore_archive`, `latest` or a timestamp).
+
+**Backup.** The role's fail-closed layout: `<root>/<timestamp>.tmp` with
+`config.local.php`, `admin.json` (every column of every admin, at least one
+required), `domain_admins.json`, the numeric schema version from `config`,
+the optional `log.json` (newest 10000 rows; a failure is a warning) and, with
+`include_templates_c`, `templates_c.tar.gz`; `manifest.yml` lists exactly the
+parts on disk; then the directory is renamed to `<root>/<timestamp>`. Any
+failure removes the `.tmp` directory and publishes nothing. An existing
+directory of the same name is refused. Retention then keeps the newest
+`keep_min` (5) completed backups and removes the others older than
+`retention_days` (14), by modification time; other names in the root stay.
+
+**Restore.** `latest` is the newest completed backup directory; the dry run
+checks only that the directory exists. Otherwise it validates before any
+change: the manifest (`backup_type`, every required part, only known parts),
+each listed part on disk, `templates_c.tar.gz` when asked for, the target's
+schema version not older than the backup's, and `admin.json`/`domain_admins.json`
+(at least one admin with username and password, only columns the target's
+`admin` table has). Then it puts back `config.local.php`
+(`root:www-data 0640`, restarting `php<version>-fpm` only when it changed),
+optionally `templates_c`, and upserts the admin rows (`ON CONFLICT (username)
+DO UPDATE`) and the missing domain_admins rows in one transaction.
+
+Deliberate differences: the JSON files are PostgreSQL's own row encoding
+(`json_agg`), formatted like `to_nice_json`; `manifest.yml` is written as JSON
+(valid YAML); the admin tables are restored in one transaction, the row data
+in the SQL on psql's stdin (never its command line); PHP-FPM restarts only for
+a content change of config.local.php; a non-numeric schema version is refused
+(the role reads it as 0); the
+controller reads the manifest before the run and the host refuses it when a
+newer backup landed in between; `required_mount` guards the backup root.
+
+Tests: `tests/test_postfixadmin_backup_restore.py` (planned settings, the
+host program end to end against a fake `psql` with fixture rows, and a backup
+and restore round trip against a throwaway local PostgreSQL 16/17 when
+`initdb` is installed).
+
