@@ -184,6 +184,7 @@ class HomelabRestoreConfig(_Site):
         # The restore starts with ``rm -rf <staging_dir>``: never the archives
         # or the site (a work directory below the search root is fine, the
         # archive search does not descend), and never inside the site.
+        # Paths are compared as spelled; symlinks are not resolved.
         staging = PurePosixPath(self.staging_dir)
         live = {
             "site_path": self.site_path,
@@ -192,6 +193,8 @@ class HomelabRestoreConfig(_Site):
             "media_root": self.media,
             "cache_dir": self.cache,
             "env_file": self.env,
+            "systemd_unit_path": self.systemd_unit_path,
+            "traefik_config_path": self.traefik_config_path,
         }
         for name, path in {"search_root": self.search_root, **live}.items():
             if PurePosixPath(path).is_relative_to(staging):
