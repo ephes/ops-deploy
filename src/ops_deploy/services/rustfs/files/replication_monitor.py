@@ -52,14 +52,14 @@ class Bucket:
         status, data = self.api.request("GET", f"/{self.name}/{key}" if key else "/" + self.name, *self.creds,
                                         query=list(query))  # fmt: skip
         if status != 200:
-            raise self.iam.Refused(f"GET {self.name} answered {status} {self.iam.error_code(data) or ''}".strip())
+            raise self.iam.Refused(f"GET {self.name} answered {status}")
         return data
 
     def put(self, key, body):
-        status, data = self.api.request("PUT", f"/{self.name}/{key}", *self.creds, body=body,
+        status, _ = self.api.request("PUT", f"/{self.name}/{key}", *self.creds, body=body,
                                         headers={"content-type": "application/json"})  # fmt: skip
         if status != 200:
-            raise self.iam.Refused(f"PUT {self.name} answered {status} {self.iam.error_code(data) or ''}".strip())
+            raise self.iam.Refused(f"PUT {self.name} answered {status}")
 
     def listing(self, prefix=None):
         """(key, size, last modified) of every current object, all pages."""
@@ -92,7 +92,7 @@ class Bucket:
 def queue(iam, api, creds, bucket):
     status, data = api.request("GET", iam.ADMIN + "replicationmetrics", *creds, query=[("bucket", bucket)])
     if status != 200:
-        raise iam.Refused(f"replication metrics answered {status} {iam.error_code(data) or ''}".strip())
+        raise iam.Refused(f"replication metrics answered {status}")
     current = ((iam.parse_json(data, "replication metrics are malformed").get("queued") or {}).get("curr")) or {}
     return int(current.get("count", 0)), int(current.get("bytes", 0))
 
@@ -110,7 +110,8 @@ def heartbeat(iam, local_endpoint, replica_endpoint, jobs):
             src_objects, src_size = Bucket(iam, local, root, bucket).usage()
             dst_objects, dst_size = Bucket(iam, replica, monitor, bucket).usage()
             size_diff_bytes = abs(dst_size - src_size)
-            size_diff_percent = size_diff_bytes * 100.0 / src_size if src_size > 0 else 0.0
+            # An empty source with a nonempty replica is a full size mismatch.
+            size_diff_percent = size_diff_bytes * 100.0 / src_size if src_size > 0 else 100.0 if dst_size else 0.0
             object_delta = abs(dst_objects - src_objects)
             size_ok = size_diff_percent <= job["parity_tolerance_percent"]
             if job["parity_size_delta_tolerance_bytes"] > 0:

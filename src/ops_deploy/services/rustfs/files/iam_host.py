@@ -382,7 +382,7 @@ def inspect(server, payload):
         document = None if fresh else server.replication(replication["bucket"])
         if document is not None:
             ids = [text(rule, "ID") for rule in document.findall("Rule")]
-            if ids != [replication["rule_id"]]:
+            if ids != [replication["rule_id"]] or (text(document, "Role") or "").strip():
                 raise Refused("bucket has replication rules outside this deployment; refusing to replace them")
         if target is None or document is None or not replication_current(document, replication["rule_id"], target["arn"]):
             pending.append(("replication", replication))

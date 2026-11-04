@@ -127,11 +127,14 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
 - `source` (`rustfs-replication-heartbeat.timer`): per job the replication
   queue (`/rustfs/admin/v3/replicationmetrics`), the current object count and
   size of the bucket on both sides (paginated `ListObjectsV2`; the replica
-  with the monitor identity at `replica_endpoint`), and the heartbeat object
+  with the monitor identity at `replica_endpoint`, plain `http://host:port`),
+  and the heartbeat object
   `heartbeat_key` written into the bucket. A job with `heartbeat=False`
   writes it into `heartbeat_status_bucket`, another job's bucket, so an
   application bucket that is synced verbatim stays free of foreign objects.
-  It reads root from `/etc/default/rustfs`.
+  It reads root from `/etc/default/rustfs`. A source job watches only a bucket
+  replicated under its own name (`target_bucket` equal to `bucket`). An empty
+  source with a nonempty replica counts as a 100 % size mismatch.
 - `replica` (`rustfs-replication-lag-check.timer`): per job it reads the
   replicated heartbeat object with the monitor identity and writes
   `<state_root>/<job>/status.json` (same fields as the MinIO replica probe),
@@ -144,7 +147,8 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
   operator's alerting hook.
 
 Errors in the status file and journal carry only the helper's constant
-diagnostics, never a credential or a server response body.
+diagnostics and HTTP status codes, never a credential, a server error code or
+a response body.
 
 ## Proof
 

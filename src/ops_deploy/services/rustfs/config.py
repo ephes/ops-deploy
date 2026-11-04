@@ -141,8 +141,8 @@ class RustfsReplicationMonitor(RoleConfig):
 
     role: Literal["source", "replica"]
     jobs: tuple[RustfsMonitorJob, ...]
-    # Source only: the replica's S3 API (http(s)://host:port) for its counts.
-    replica_endpoint: Annotated[str, Field(pattern=r"^https?://[A-Za-z0-9.-]+:[0-9]{1,5}$")] | None = None
+    # Source only: the replica's S3 API (http://host:port) for its counts.
+    replica_endpoint: Annotated[str, Field(pattern=r"^http://[A-Za-z0-9.-]+:[0-9]{1,5}$")] | None = None
     state_root: AbsolutePath = "/var/lib/rustfs-replication-monitor"
     script_path: AbsolutePath = "/usr/local/bin/rustfs-replication-monitor"
     library_dir: AbsolutePath = "/usr/local/lib/rustfs-replication-monitor"
@@ -291,8 +291,9 @@ class RustfsConfig(RoleConfig):
             declared = {bucket.name for bucket in self.buckets}
             if not {job.bucket for job in self.monitor.jobs} <= declared:
                 raise ValueError("monitor jobs may watch only declared buckets")
-            if self.monitor.role == "source" and {job.bucket for job in self.monitor.jobs} - set(replicated):
-                raise ValueError("a source monitor watches only replicated buckets")
+            same_name = {item.bucket for item in self.replications if item.target_bucket == item.bucket}
+            if self.monitor.role == "source" and {job.bucket for job in self.monitor.jobs} - same_name:
+                raise ValueError("a source monitor watches only buckets replicated under the same name")
         return self
 
     @property

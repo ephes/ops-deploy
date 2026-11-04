@@ -160,6 +160,7 @@ def test_units_bind_the_right_credentials_and_arguments() -> None:
         "http://127.0.0.1:9020 http://replica.example:9020 /etc/rustfs-replication-monitor.json"
     ) in source
     assert "ReadWritePaths" not in source
+    assert "Environment=RUSTFS_MONITOR_LIBRARY=/usr/local/lib/rustfs-replication-monitor\n" in source
     replica = render("rustfs-replication-monitor.service.j2", REPLICA)
     # The probe reads with the monitor identity only, never with root.
     assert "EnvironmentFile=/etc/default/rustfs\n" not in replica
@@ -215,8 +216,12 @@ def test_credentials_must_match_declarations(cfg: RustfsConfig, creds: RustfsCre
         {"monitor": {"role": "source", "jobs": [job.model_dump() for job in JOBS]}},
         {"monitor": {"role": "replica", "jobs": [{"name": "x", "bucket": "other"}]}},
         {"replications": SOURCE.replications[:1]},
+        {"replications": (SOURCE.replications[0].model_copy(update={"target_bucket": "elsewhere"}),
+                          SOURCE.replications[1])},
+        {"monitor": {"role": "source", "jobs": [job.model_dump() for job in JOBS],
+                     "replica_endpoint": "https://replica.example:9020"}},
     ],
-)
+)  # fmt: skip
 def test_incoherent_replication_configuration_refused(change: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         RustfsConfig(**{**SOURCE.model_dump(), **change})
@@ -357,6 +362,8 @@ def test_drift_is_planned(change: dict[Any, Any], pending: list[str]) -> None:
     [
         {("GET", "/backups", "lifecycle="): (200, LIFECYCLE.replace("replicated-noncurrent-expiry", "other").encode())},
         {("GET", "/backups", "replication="): (200, replication_xml(rule_id="foreign").encode())},
+        {("GET", "/backups", "replication="): (200, replication_xml().replace("<Role></Role>", "<Role>arn:x</Role>")
+                                               .encode())},
         {("GET", "/backups", "replication="): (500, b"<Error><Code>InternalError</Code></Error>")},
         {("GET", "/rustfs/admin/v3/list-remote-targets", "bucket=backups"): (200, json.dumps([target(), target()])
                                                                              .encode())},
@@ -466,6 +473,39 @@ def test_heartbeat_failure_names_the_bucket_but_no_secret(
     assert "server request failed" in err
     assert "fixture" not in err
     assert FakeApi.puts == []
+
+
+def test_heartbeat_counts_an_empty_source_against_a_nonempty_replica(monitor: types.ModuleType) -> None:
+    class Sides(FakeApi):
+        def request(self, method: str, path: str, *args: Any, **kwargs: Any) -> tuple[int, bytes]:
+            if method == "GET" and path == "/backups" and self.endpoint.startswith("http://replica"):
+                FakeApi.objects[("backups", "left-behind")] = (b"x" * 10, stamp(timedelta()))
+                try:
+                    return super().request(method, path, *args, **kwargs)
+                finally:
+                    del FakeApi.objects[("backups", "left-behind")]
+            return super().request(method, path, *args, **kwargs)
+
+    monitor.library().Api = Sides
+    assert monitor.heartbeat(monitor.library(), "http://127.0.0.1:9020", "http://replica.example:9020", rows()) == 0
+    backups = json.loads(dict(FakeApi.puts)["/backups/_replication-health/heartbeat.json"])
+    assert backups["source_size_bytes"] == 0
+    assert backups["size_diff_percent"] == 100.0
+    assert backups["parity_ok"] is False
+
+
+def test_server_error_codes_stay_out_of_diagnostics(
+    monitor: types.ModuleType, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Denied(FakeApi):
+        def request(self, *args: Any, **kwargs: Any) -> tuple[int, bytes]:
+            return 403, b"<Error><Code>LeakedValue</Code></Error>"
+
+    monitor.library().Api = Denied
+    assert monitor.heartbeat(monitor.library(), "http://127.0.0.1:9020", "http://replica.example:9020", rows()) == 2
+    err = capsys.readouterr().err
+    assert "answered 403" in err
+    assert "LeakedValue" not in err
 
 
 def heartbeat_object(bucket: str, **values: Any) -> bytes:

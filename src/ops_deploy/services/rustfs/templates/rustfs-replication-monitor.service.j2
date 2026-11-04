@@ -15,6 +15,7 @@ Type=oneshot
 EnvironmentFile={{ cfg.env_file }}
 {% endif %}
 EnvironmentFile={{ monitor.env_file }}
+Environment=RUSTFS_MONITOR_LIBRARY={{ monitor.library_dir }}
 {% if monitor.role == "source" %}
 ExecStart=/usr/bin/python3 -I -B {{ monitor.script_path }} heartbeat {{ cfg.endpoint }} {{ monitor.replica_endpoint }} {{ monitor.jobs_path }}
 {% else %}
