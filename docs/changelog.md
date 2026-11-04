@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `services.paperless`: `PaperlessBackupConfig`/`deploy_paperless_backup` and
+  `PaperlessRestoreConfig`/`deploy_paperless_restore`, the ports of the
+  `paperless_backup` and `paperless_restore` roles (ops-library `44a532ba`,
+  recorded in the drift manifest): the role's snapshot layout, exporter,
+  `pg_dump` with a private passfile and private-temp archive; the restore's
+  validate/prepare/restore/verify phases with the pre-restore safety snapshot,
+  importer fallback to the raw snapshot, database recreation and ownership
+  reconciliation, and the rollback after a failed verification. Secrets on
+  stdin only; root never writes through names another account controls.
+
 - `services.postfixadmin`: `PostfixAdminBackupConfig`/`deploy_postfixadmin_backup`
   and `PostfixAdminRestoreConfig`/`deploy_postfixadmin_restore`, the ports of
   the `postfixadmin_backup` and `postfixadmin_restore` roles and the restore

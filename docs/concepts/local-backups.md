@@ -16,10 +16,10 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 
 | Config | Guarded fields |
 |---|---|
-| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig` | `root` |
+| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig`, `PaperlessBackupConfig` | `root` |
 | `SnappyMailRestoreConfig` | `data_dir` (the restore stages next to it) |
 | `MetubeBackupConfig`, `JellyfinBackupConfig`, `NavidromeBackupConfig`, `WagtailBackupConfig` | `root` (mount check only: these keep their roles' own `retain` pruning instead of `retain_count`/`retain_days`) |
-| `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig`, `VaultwardenRestoreConfig` | `staging_dir` |
+| `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig`, `VaultwardenRestoreConfig`, `PaperlessRestoreConfig` | `staging_dir` |
 | `FastdeployRestoreConfig` | `temp_dir`, `safety_backup_root` |
 
 The config refuses a guarded path that is not strictly below the mount

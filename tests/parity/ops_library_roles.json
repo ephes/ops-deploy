@@ -58,6 +58,8 @@
     "open_webui_venv_remove": "b0beebe7d3c1b7fa57d6374c1edc254de57be024a0c3db357d02bb0e6e840dc8",
     "openclaw_deploy": "6eea4edc790bd49fd939c3f47678abaca31a60f164cd40d0d97521241e745398",
     "openclaw_remove": "13a27027a9ca88b99775c06edd77ff34e7bca7aed75e65329b38d5c0491e60bf",
+    "paperless_backup": "79743a12a3808c502acc5527adec7c44687c459301c15f049a82457631b1f210",
+    "paperless_restore": "4d35d5c6c082dac5219abbee5b10a38654c30c47682d35f88c5b983430d81901",
     "postfixadmin_backup": "435cd48d8682fcfaee0b15534b10b455bfdf8dbd09926e84d3c22902c70ba8f3",
     "postfixadmin_restore": "f0a524034dee4379d4a2ced1cf28ad46d9bf0f2df30f08e71a53f155a9658bd4",
     "postfixadmin_shared": "79ad58267896ee40e907164d10fbb87fdf9eb7875a878521bc6cda5881c08de1",
@@ -142,6 +144,8 @@
     "mastodon_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "postfixadmin_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "postfixadmin_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "postfixadmin_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
+    "postfixadmin_shared": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "paperless_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "paperless_restore": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

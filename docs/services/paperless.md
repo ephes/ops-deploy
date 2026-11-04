@@ -219,3 +219,77 @@ constraints were rebound. Loopback HTTPS status is certificate-unverified and
 there is no global zero-I/O claim. Backup, restore, removal and direct legacy
 entrypoint retirement remain tracked separately; deployment does not qualify
 those paths.
+
+## Backup and restore
+
+`ops_deploy.services.paperless` also ports `paperless_backup` and
+`paperless_restore`. Archives written by either tool restore with the other.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_paperless_backup` | `PaperlessBackupConfig(host_name=...)` | `paperless_backup` |
+| `deploy_paperless_restore` | `PaperlessRestoreConfig(host_name=...)` | `paperless_restore` |
+
+The fields are the roles' variables without the `paperless_backup_` or
+`paperless_restore_` prefix (the restore's shared paths without `paperless_`:
+`site_root`, `site_owner`, `media_path`, ...). The exporter/importer
+passphrase and the PostgreSQL passwords are `SecretStr` fields; they reach the
+host on the script's stdin only and the database tools as a passfile the
+PostgreSQL account writes itself, below one private directory per run that
+is always removed. `PaperlessRestoreConfig.safety_backup`
+holds the backup settings the role's safety snapshot starts from (the
+inventory's `paperless_backup_*` values); `safety_config` applies the role's
+overrides.
+
+**Backup.** One host script: required paths (manage.py directory,
+virtualenv, `.env`, media, data, and logs/consume/export when included), the
+backup root (parent `0755`, root `root_mode`), older archives restricted,
+`<root>/<prefix>-<timestamp>/` with its subdirectories (`database/` owned by
+the dump account; the snapshot stays root's while root writes into it and
+gets the role's owners and modes at the end), the disk check (15 % headroom), `manage.py --version`,
+`document_exporter` into `exporter/` (passphrase on its stdin), `pg_dump` as
+the PostgreSQL account, the directories (`rsync -a`), config, unit, Traefik
+and SSH files, `metadata.yml`, `manifest.sha256` and the archive, written to a
+private temp file and renamed into place. The archive is fetched into
+`~/backups/paperless` (`0700`, the copy `0600`).
+
+**Restore.** One host script in the role's phases:
+
+1. Validate: pick `latest` (the newest `*.tar.*` in the search root) or a
+   name below it, unpack it under a fresh `<staging>/<archive>-<timestamp>`
+   (a staging root that is not root's directory is refused), require
+   exactly one directory, `metadata.yml` with the required fields, the host
+   match, `manifest.sha256`, the storage plan (media and data always,
+   consume/export/logs by their metadata flags), the external root, the
+   database dump and, with `use_importer`, the exporter artefact; warn when
+   the backup's Paperless version differs from the installed one.
+2. Prepare: the disk check (snapshot size × 1.5 on the site root); with
+   `dry_run`, stop here. Then the safety snapshot
+   `<backup root>/pre-restore-<timestamp>` (`files/backup.sh` with the role's
+   overrides: no exporter, no archive, checksums, peer authentication; it
+   stays root's, since a rollback installs its unit files).
+3. Restore: stop the services, drop and create the database, then
+   `document_importer` (a failure falls back to the raw snapshot) or the SQL
+   dump with the role's ownership and privilege reconciliation plus the
+   directories (`rsync -a --delete`); config files, units, the Traefik route
+   and the SSH snippet; `daemon-reload`. A route that differs is written only
+   while no Traefik transaction holds its lock: a lock held before the
+   services stop refuses the restore, one taken later leaves the route and
+   fails the restore after it finished.
+4. Verify: start the services, wait until each is active, the PostgreSQL
+   connection test and the HTTP health check. A failure restores the safety
+   snapshot raw (no importer, no checks) and fails.
+
+The staging directory goes after a success, a dry run or a completed
+rollback; the safety snapshot goes after a success (`safety_backup_cleanup`)
+and stays after a rollback unless `cleanup_after_rollback`. A failure before
+verification leaves the services stopped and the safety snapshot in place, as
+with the role. Deliberate differences are listed in the module docstring:
+archive names only (no absolute paths, directories or controller upload),
+`metadata.yml` read line by line, the Traefik lock check, `files.get` for the
+fetch.
+
+Tests: `tests/test_paperless_backup_restore.py` (planned settings, and both
+scripts end to end with a fake `manage.py`, `pg_dump`/`psql` and stubbed
+`systemctl`).
+
