@@ -257,10 +257,14 @@ archive's ownership/group access separately.
   then reload, enable and start. Like the role since ops-library 2.35.0, what
   the FastDeploy privilege reduction retired stays out even when the archive
   has it: the top-level entries `retired_entries` (`fastdeploy-self`,
-  `fastdeploy-self-playbook.yml`, `apt_upgrade_local`, `apt_upgrade_staging`)
-  are excluded from the services and runner syncs, the sudoers files
-  `retired_sudoers` (`fastdeploy`, `fastdeploy_fastdeploy-self`,
-  `fastdeploy_self_deploy_users`) are not copied back, and any other sudoers
+  `fastdeploy-self-playbook.yml`, `apt_upgrade_local`, `apt_upgrade_staging`,
+  and, as the role does since ops-library `f0acf2c5`, the retired
+  `fastdeploy_register_service` deployment runners `fastdeploy`, `nyxmon`,
+  `test_dummy`) are excluded from the services and
+  runner syncs, the sudoers files `retired_sudoers` (`fastdeploy`,
+  `fastdeploy_fastdeploy-self`, `fastdeploy_self_deploy_users`,
+  and since `f0acf2c5` `fastdeploy_fastdeploy`, `fastdeploy_nyxmon`,
+  `fastdeploy_test_dummy`) are not copied back, and any other sudoers
   file is restored only when the role's `files/sudoers_blanket_check.py`
   (vendored) passes it: nothing but blank lines, comments and narrow
   `<user> ALL=(<runas>) NOPASSWD:[NOSETENV:] <script>[ *| --config *]` rules
