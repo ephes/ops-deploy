@@ -53,10 +53,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 from pyinfra.api import DeployError, deploy
-from pyinfra.operations import apt, files
+from pyinfra.operations import apt, files, server
 
 from ops_deploy.base._common import RoleConfig
 from ops_deploy.core.secrets import SecretContent
+from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe
 from ops_deploy.ops import secret_file
 from ops_deploy.services._echoport_runner import RunnerConfig, _plain_path, install_runner
@@ -291,8 +292,12 @@ register_runner = deploy("Echoport backup runner registration")(install_registra
 # "known_hosts": the deploy_known_host_ed25519.yml includes, then "Ensure known_hosts ownership";
 # "mc": "Ensure mc is installed"; "packages": ``ansible.builtin.package``;
 # "access": backup_minio_account.yml; "work_dir": backup_work_dir.yml;
-# "credentials": the media runner's credentials directory and file; "runner": fastdeploy_runner.
-Task = Literal["ssh_key", "known_hosts", "mc", "packages", "access", "work_dir", "credentials", "runner"]
+# "credentials": the media runner's credentials directory and file; "runner": fastdeploy_runner;
+# class B: "pg_restore": the mastodon playbook's pg_restore version check (after the packages);
+# "target": the token include and the playbook's own Echoport target script.
+Task = Literal[
+    "ssh_key", "known_hosts", "mc", "packages", "pg_restore", "access", "work_dir", "credentials", "runner", "target"
+]
 # Template variables named ``<prefix><suffix>`` must say what the registration provisions.
 _BOUND_SUFFIXES = ("_work_dir", "_work_mount", "_credentials_file", "_minio_url", "_default_bucket")
 # S3 bucket names; the media templates put the source bucket into a Python string literal unquoted.
@@ -320,10 +325,13 @@ class CredentialsFile(RoleConfig):
 
 
 class DeployKey(RoleConfig):
-    """The deploy user's SSH key pair (``deploy_ssh_keys.yml`` ``ssh_private_key``, ``ssh_public_key``)."""
+    """The deploy user's SSH key pair (``deploy_ssh_keys.yml`` ``ssh_private_key``, ``ssh_public_key``).
+
+    ``public`` is ``None`` for the class B playbooks, which install the private key only.
+    """
 
     private: str = Field(repr=False, min_length=1)
-    public: str = Field(repr=False, min_length=1)
+    public: Annotated[str, Field(min_length=1)] | None = Field(default=None, repr=False)
 
 
 class MediaSource(RoleConfig):
@@ -361,6 +369,14 @@ class DeployRunnerRegistration(RoleConfig):
     the store credentials from that file instead; ``source_bucket_variable``
     is the template variable that gets the source bucket, which comes from
     the service's secrets with the source credentials.
+
+    Class B (the remote runners whose playbook writes their Echoport target):
+    ``ssh_key_public`` false installs the private key only, as those
+    playbooks do; ``template_markers`` as for :class:`RunnerRegistration`;
+    ``min_pg_restore_major``: the mastodon playbook's "Require a pg_restore
+    that reads production's dumps" (task ``pg_restore``); ``target``: the
+    playbook's own target script (task ``target``, with the token step when
+    it has a :class:`~.target.ServiceToken`).
     """
 
     runner: RunnerConfig
@@ -373,6 +389,10 @@ class DeployRunnerRegistration(RoleConfig):
     ssh_key: bool = False
     credentials: CredentialsFile | None = None
     source_bucket_variable: str | None = None
+    ssh_key_public: bool = True
+    template_markers: tuple[str, ...] = ()
+    min_pg_restore_major: Annotated[int, Field(ge=1)] | None = None
+    target: RunnerTarget | None = None
 
     @property
     def home(self) -> str:
@@ -393,6 +413,16 @@ class DeployRunnerRegistration(RoleConfig):
             if "_work_dir.py.j2" not in source:
                 # The playbooks' "Require a runner that works on the external disk only".
                 problems.append(f"{self.runner.template} does not include _work_dir.py.j2")
+            # The class B playbooks' "Require the <runner> in the ops-library checkout".
+            missing = [marker for marker in self.template_markers if marker not in source]
+            problems += [f"{self.runner.template} lacks {marker!r}" for marker in missing]
+        if self.target is not None:
+            # In the playbooks the target's bucket and the runner's are one variable.
+            for key in ("default_bucket", "echoport_backup_default_bucket"):
+                if key in self.target.values and self.target.values[key] != self.access.bucket:
+                    problems.append(f"the target's {key} must be the access's bucket")
+        if not self.ssh_key_public and not self.ssh_key:
+            problems.append("ssh_key_public is about the SSH key the playbook installs (ssh_key)")
         deploy_user = self.runner.deploy_user
         if self.runner.run_as:
             problems.append("a deploy-user runner has no run_as rule (only fastdeploy -> deploy)")
@@ -436,6 +466,8 @@ class DeployRunnerRegistration(RoleConfig):
             "known_hosts": bool(self.known_hosts),
             "packages": bool(self.packages),
             "credentials": self.credentials is not None,
+            "pg_restore": self.min_pg_restore_major is not None,
+            "target": self.target is not None,
         }
         required = {"access", "work_dir", "runner"} | {task for task, present in wanted.items() if present}
         if len(set(self.tasks)) != len(self.tasks) or not required <= set(self.tasks) <= required | {"mc"}:
@@ -446,13 +478,19 @@ class DeployRunnerRegistration(RoleConfig):
 
 
 def _ssh_key(cfg: DeployRunnerRegistration, key: DeployKey) -> None:
-    """The production-db playbooks' deploy SSH directory and key pair (``copy`` of the secrets as they are)."""
+    """The production-db playbooks' deploy SSH directory and key pair (``copy`` of the secrets as they are).
+
+    The class B playbooks install the private key only (``ssh_key_public`` false).
+    """
 
     user = cfg.runner.deploy_user
     files.directory(
         name=f"Ensure the SSH directory of {user}", path=f"{cfg.home}/.ssh", user=user, group=user, mode="0700"
     )
-    for name, value, mode in (("id_ed25519", key.private, "0600"), ("id_ed25519.pub", key.public, "0644")):
+    keys = [("id_ed25519", key.private, "0600")]
+    if key.public is not None:
+        keys.append(("id_ed25519.pub", key.public, "0644"))
+    for name, value, mode in keys:
         secret_file(
             name=f"Install the SSH key {name} of {user}",
             path=f"{cfg.home}/.ssh/{name}",
@@ -496,6 +534,28 @@ def _credentials(cfg: DeployRunnerRegistration, source: MediaSource, secret_key:
     )
 
 
+def _pg_restore(cfg: DeployRunnerRegistration) -> None:
+    """The mastodon playbook's pg_restore check: refuse a pg_restore older than production's PostgreSQL.
+
+    A read-only step after the packages, as the playbook reads the version
+    after installing ``postgresql-client``.
+    """
+
+    major = cfg.min_pg_restore_major
+    assert major is not None
+    found = "grep -o '(PostgreSQL) [0-9][0-9]*' | head -n 1 | cut -d ' ' -f 2"
+    message = f"pg_restore on this host cannot read a PostgreSQL {major} dump; install postgresql-client-{major}"
+    mark_read_only(
+        server.shell(
+            name=f"Require a pg_restore that reads PostgreSQL {major} dumps",
+            commands=[
+                f'v=$(pg_restore --version | {found}); [ "${{v:-0}}" -ge {major} ] '
+                f"|| {{ echo {shlex.quote(message)} >&2; exit 1; }}"
+            ],
+        )
+    )
+
+
 def install_deploy_registration(
     cfg: DeployRunnerRegistration,
     *,
@@ -503,18 +563,28 @@ def install_deploy_registration(
     ssh_key: DeployKey | None = None,
     source: MediaSource | None = None,
     keyscan: Callable[[str], str] | None = None,
+    token_user: str | None = None,
 ) -> None:
     """The playbook's tasks for ``cfg`` in its order (call inside a deploy).
 
     ``secret_key``: the target's scoped account secret; ``ssh_key``: the
     deploy key pair, exactly when the playbook installs it; ``source``: the
     media runner's source bucket and credentials, exactly for a media runner.
-    ``keyscan`` replaces the controller's ``ssh-keyscan`` (tests). Every
-    refusal happens while planning, before any write.
+    ``keyscan`` replaces the controller's ``ssh-keyscan`` (tests);
+    ``token_user``: the FastDeploy user that issues the target's service
+    token (a target with a token needs it). Every refusal happens while
+    planning, before any write, except the pg_restore version check, which
+    runs after the packages as in the playbook.
     """
 
     if cfg.ssh_key != (ssh_key is not None):
         raise DeployError(f"{cfg.runner.service}: the deploy SSH key is needed exactly when the playbook installs it")
+    if ssh_key is not None and (ssh_key.public is not None) != cfg.ssh_key_public:
+        raise DeployError(
+            f"{cfg.runner.service}: the public deploy key is needed exactly when the playbook installs it"
+        )
+    if cfg.target is not None and cfg.target.token is not None and token_user is None:
+        raise DeployError(f"{cfg.runner.service} issues a FastDeploy token and needs the token user")
     if (cfg.credentials is None) != (source is None):
         raise DeployError(f"{cfg.runner.service}: the media source credentials are needed exactly for a media runner")
     variables = dict(cfg.variables)
@@ -540,6 +610,15 @@ def install_deploy_registration(
         elif task == "credentials":
             assert source is not None
             _credentials(cfg, source, secret_key)
+        elif task == "pg_restore":
+            _pg_restore(cfg)
+        elif task == "target":
+            assert cfg.target is not None
+            if cfg.target.token is None:
+                upsert_runner_target(cfg.target)
+            else:
+                assert token_user is not None
+                token_and_target(cfg.target, token_user)
         else:
             install_runner(cfg.runner, variables)
 
