@@ -14,6 +14,13 @@
   restore would refuse it. Archives without `media/` and non-local storage are
   unchanged.
 
+- `services.fastdeploy`: the restore's `retired_entries` and
+  `retired_sudoers` also name the `fastdeploy_register_service` deployment
+  runners that ops-control retired (`fastdeploy`, `nyxmon`, `test_dummy` and
+  their `fastdeploy_<service>` sudoers files), as the `fastdeploy_restore`
+  role does since ops-library `89107b6c` (recorded in the drift manifest).
+  A restore of an older archive no longer brings them back.
+
 - `services.paperless`: `PaperlessBackupConfig`/`deploy_paperless_backup` and
   `PaperlessRestoreConfig`/`deploy_paperless_restore`, the ports of the
   `paperless_backup` and `paperless_restore` roles (ops-library `44a532ba`,

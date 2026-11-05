@@ -149,16 +149,27 @@ class FastdeployRestoreConfig(MountGuard):
     http_check_delay: int = Field(default=2, ge=0)
     service_count_check: bool = True
     psql_binary: Annotated[str, Field(pattern=r"^[A-Za-z0-9._/-]+$")] = "psql"
-    # Retired by the FastDeploy privilege reduction (ops-library 2.35.0): never
-    # restored from an older snapshot. Top-level entries of the services and
-    # runner directories, and sudoers file names.
+    # Retired by the FastDeploy privilege reduction (ops-library 2.35.0) and
+    # with the fastdeploy_register_service deployment runners (fastdeploy,
+    # nyxmon, test_dummy; ops-library 89107b6c): never restored from an older snapshot. Top-level
+    # entries of the services and runner directories, and sudoers file names.
     retired_entries: tuple[Entry, ...] = (
         "fastdeploy-self",
         "fastdeploy-self-playbook.yml",
         "apt_upgrade_local",
         "apt_upgrade_staging",
+        "fastdeploy",
+        "nyxmon",
+        "test_dummy",
     )
-    retired_sudoers: tuple[Entry, ...] = ("fastdeploy", "fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users")
+    retired_sudoers: tuple[Entry, ...] = (
+        "fastdeploy",
+        "fastdeploy_fastdeploy-self",
+        "fastdeploy_self_deploy_users",
+        "fastdeploy_fastdeploy",
+        "fastdeploy_nyxmon",
+        "fastdeploy_test_dummy",
+    )
 
     @field_validator("archive")
     @classmethod

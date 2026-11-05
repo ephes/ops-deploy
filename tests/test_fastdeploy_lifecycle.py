@@ -122,18 +122,31 @@ def _bash_44() -> bool:
     return (major, minor) >= (4, 4)
 
 
-NARROW = "deploy ALL=(root) NOPASSWD: /usr/local/libexec/fastdeploy/nyxmon/deploy.sh --config *\n"
+NARROW = "deploy ALL=(root) NOPASSWD: /usr/local/libexec/fastdeploy/delve-backup/backup.py --config *\n"
+RUNNER_RULE = "fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/nyxmon/deploy.py\n"
+RETIRED_SUDOERS = (
+    "fastdeploy",
+    "fastdeploy_fastdeploy-self",
+    "fastdeploy_self_deploy_users",
+    "fastdeploy_fastdeploy",
+    "fastdeploy_nyxmon",
+    "fastdeploy_test_dummy",
+)
 SNAPSHOT_SUDOERS = {
     # Retired by name, whatever they hold.
     "fastdeploy": "fastdeploy ALL=(deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *\n",
     "fastdeploy_fastdeploy-self": NARROW,
     "fastdeploy_self_deploy_users": NARROW,
+    # The retired fastdeploy_register_service runners, narrow rules included.
+    "fastdeploy_fastdeploy": RUNNER_RULE.replace("nyxmon", "fastdeploy"),
+    "fastdeploy_nyxmon": RUNNER_RULE,
+    "fastdeploy_test_dummy": RUNNER_RULE.replace("nyxmon", "test_dummy"),
     # Older fastdeploy_register_service files: blanket ALL, also behind a continuation.
     "fastdeploy_old": "# Managed by Ansible\ndeploy ALL=(root) NOPASSWD: ALL\n",
     "fastdeploy_split": "deploy ALL=(root) \\\n    NOPASSWD: ALL\n",
-    "fastdeploy_nyxmon": f"# Managed by Ansible\n\n{NARROW}",
+    "fastdeploy_delve-backup": f"# Managed by Ansible\n\n{NARROW}",
     # A script inside the fastdeploy-owned site (before ops-library 2.49.0).
-    "fastdeploy_legacysite": "deploy ALL=(root) NOPASSWD: /home/fastdeploy/site/services/nyxmon/backup.py *\n",
+    "fastdeploy_legacysite": "deploy ALL=(root) NOPASSWD: /home/fastdeploy/site/services/delve-backup/backup.py *\n",
 }
 
 
@@ -145,11 +158,17 @@ def test_restore_skips_retired_entries_and_blanket_sudoers(tmp_path: Path) -> No
     script, _ = body(result)
     snapshot, host = tmp_path / "snapshot", tmp_path / "host"
     for directory in (
-        "services/nyxmon",
+        "services/delve-backup",
         "services/fastdeploy-self",
         "services/apt_upgrade_local",
-        "deploy_runners/nyxmon",
+        "services/fastdeploy",
+        "services/nyxmon",
+        "services/test_dummy",
+        "deploy_runners/delve-backup",
         "deploy_runners/apt_upgrade_staging",
+        "deploy_runners/fastdeploy",
+        "deploy_runners/nyxmon",
+        "deploy_runners/test_dummy",
         "sudoers",
         "config",
         "systemd",
@@ -182,10 +201,10 @@ def test_restore_skips_retired_entries_and_blanket_sudoers(tmp_path: Path) -> No
     done = subprocess.run(["bash", "-c", run], input="\n", capture_output=True, text=True)
 
     assert done.returncode == 0, done.stderr
-    assert sorted(p.name for p in (host / "services").iterdir()) == ["fastdeploy-self", "nyxmon"]
-    assert sorted(p.name for p in (host / "runners").iterdir()) == ["nyxmon"]
-    assert copied.read_text().splitlines() == [str(host / ".env"), "/etc/sudoers.d/fastdeploy_nyxmon"]
-    for name in ("fastdeploy", "fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users"):
+    assert sorted(p.name for p in (host / "services").iterdir()) == ["delve-backup", "fastdeploy-self"]
+    assert sorted(p.name for p in (host / "runners").iterdir()) == ["delve-backup"]
+    assert copied.read_text().splitlines() == [str(host / ".env"), "/etc/sudoers.d/fastdeploy_delve-backup"]
+    for name in RETIRED_SUDOERS:
         assert f"Not restoring {name}: retired" in done.stdout
     for name in ("fastdeploy_old", "fastdeploy_split"):
         assert f"Not restoring {name}: it grants unrestricted sudo (ALL)" in done.stdout
@@ -201,9 +220,10 @@ def test_restore_ships_the_retired_lists_and_the_roles_check() -> None:
 
     values = settings(body(result)[0])
     assert values["R_RETIRED_ENTRIES"] == (
-        "(fastdeploy-self fastdeploy-self-playbook.yml apt_upgrade_local apt_upgrade_staging)"
+        "(fastdeploy-self fastdeploy-self-playbook.yml apt_upgrade_local apt_upgrade_staging"
+        " fastdeploy nyxmon test_dummy)"
     )
-    assert values["R_RETIRED_SUDOERS"] == "(fastdeploy fastdeploy_fastdeploy-self fastdeploy_self_deploy_users)"
+    assert values["R_RETIRED_SUDOERS"] == f"({' '.join(RETIRED_SUDOERS)})"
     assert "def restorable(text: str) -> bool:" in body(result)[0]
 
 
