@@ -614,7 +614,7 @@ def test_a_media_template_without_no_check_dest_is_refused(monkeypatch: pytest.M
 
 
 def test_a_credentials_file_needs_a_directory_of_its_own() -> None:
-    for path in ("/x.json", "/etc/x.json", "/etc/echoport-media/../x.json"):
+    for path in ("/x.json", "/etc/x.json", "//x.json", "//etc/x.json", "/etc/echoport-media/../x.json"):
         with pytest.raises(ValueError, match="directory of its own"):
             CredentialsFile(path=path)
 
