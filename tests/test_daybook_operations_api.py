@@ -274,7 +274,7 @@ def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
         (dry,) = recorded
         assert "--delete" in dry
         assert "--exclude=*.egg-info" in dry
-        # The role's excludes alone would delete it (and so re-sync and restart).
+        # Without that exclude the same rsync deletes it (as the role's does).
         role = subprocess_rsync_runner([arg for arg in local(dry) if arg != "--exclude=*.egg-info"])
         assert "*deleting   src/daybook.egg-info/" in role.itemized_lines
         assert (site / "src" / "daybook.egg-info" / "PKG-INFO").is_file()
