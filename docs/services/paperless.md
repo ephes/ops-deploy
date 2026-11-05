@@ -315,7 +315,8 @@ The role's order:
    directory, then the selected storage subdirectories (`media`, `data`,
    `consume`, `export`, `backup`, `tmp`) of `external_storage_root`;
 4. with `remove_sftp_chroot`: unmount the scanner inbox when it is a mount
-   point, then remove the chroot;
+   point, delete its `/etc/fstab` bind line (not in the role, see below), then
+   remove the chroot;
 5. `userdel` of the Paperless user (`-r` when `remove_site_root`), its group,
    `userdel` of the scanner user (`-r` when `remove_sftp_chroot`); a failing
    `userdel` stops the removal;
@@ -323,8 +324,23 @@ The role's order:
    (the role's modules get no host or port), only for what exists; an
    unreadable state fails.
 
-Like the role, the storage root itself, every Echoport archive and the
-scanner inbox's `/etc/fstab` bind line stay (and the scanner group, unless
-`userdel` of the scanner user removes it as its private group, as on Ubuntu), and neither sshd
-nor Traefik is reloaded. That fstab line has no `nofail`: once its source
-(`<storage>/consume`) is gone, remove the line before the next boot.
+Like the role, the storage root itself and every Echoport archive stay (and
+the scanner group, unless `userdel` of the scanner user removes it as its
+private group, as on Ubuntu), and neither sshd nor Traefik is reloaded.
+
+Unlike the role, the removal deletes the scanner inbox's own `/etc/fstab` bind
+line, the one the deploy writes: `<external_storage_root>/consume
+<sftp_chroot_dir>/inbox none bind 0 0` (on macmini
+`/mnt/cryptdata/paperless/consume /srv/sftp-scanner/inbox none bind 0 0`). It
+has no `nofail`, so left behind after its directories are gone it would fail
+the next boot. The step runs with `remove_sftp_chroot` (the recipe sets it),
+right after the unmount; the plan lists it as `Remove the /etc/fstab line
+'<line>'` only while the line is there, so a repeat plans nothing. A helper
+matches the line by its fields (comment and spacing ignored): a line that
+differs in any field (`nofail`, another source or target, other dump/pass
+numbers) and commented-out lines stay, and every other line is kept byte for
+byte. `/etc/fstab` is rewritten atomically with its owner and mode; a symlinked,
+oversized or undecodable fstab fails the plan before any change. Without
+`remove_sftp_chroot` neither the mount nor the line is touched. The
+`paperless_remove` role itself leaves the line; ops-control's rollback play
+documents how that path handles it.

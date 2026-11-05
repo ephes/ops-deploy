@@ -18,6 +18,7 @@ def host_command(script: str, *, interpreter: str = "python3") -> str:
         "scanner_password",
         "scanner_acl",
         "scanner_mount",
+        "scanner_fstab_absent",
         "scanner_ssh",
         "runtime_state",
         "python_assets",

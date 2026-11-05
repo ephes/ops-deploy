@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `services.paperless`: the removal (`remove_paperless`) deletes the scanner
+  inbox's own `/etc/fstab` bind line (`/mnt/cryptdata/paperless/consume
+  /srv/sftp-scanner/inbox none bind 0 0` on macmini, derived from
+  `external_storage_root` and `sftp_chroot_dir`) right after unmounting the
+  inbox, with `remove_sftp_chroot`. The role left it, and without `nofail` it
+  failed the next boot once its directories were gone. Only a line with
+  exactly these fields goes; every other line stays byte for byte, the rewrite
+  is atomic and keeps owner and mode, and the plan lists the step only while
+  the line is there. New host helper `files/scanner_fstab_absent.py`.
+
 - `services.daybook_operations_api`: the rsync source sync excludes
   `*.egg-info`. The frozen `uv sync` (the role's and the port's) installs the
   project editable and writes `src/daybook.egg-info` into the site; the sync's

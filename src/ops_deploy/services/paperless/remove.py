@@ -6,9 +6,14 @@ flags of ``just remove-one paperless``). The role's paths derive from
 ``username``, ``site_root`` and ``external_storage_root`` as its defaults do.
 
 Like the role: the external storage root itself, the scanner group (unless
-``userdel`` of the scanner user takes it as its private group, as on Ubuntu),
-the ``/etc/fstab`` bind line of the scanner inbox and every Echoport archive stay,
-and sshd is not reloaded after its drop-in is removed. The route is removed
+``userdel`` of the scanner user takes it as its private group, as on Ubuntu)
+and every Echoport archive stay, and sshd is not reloaded after its drop-in is
+removed. Unlike the role: with ``remove_sftp_chroot`` the scanner inbox's
+``/etc/fstab`` bind line (``<external_storage_root>/consume <sftp_chroot_dir>/inbox
+none bind 0 0``, the line the deploy writes) is deleted right after the inbox
+is unmounted; the role leaves it, and without ``nofail`` it fails the next
+boot once its directories are gone. Only a line with exactly these fields
+goes; every other line stays byte for byte. The route is removed
 behind the Traefik transaction guard; nothing reloads Traefik (the role does
 not either). The databases are dropped as ``postgres_become_user`` over the
 local socket on the default port, as the role's PostgreSQL modules do.
@@ -16,6 +21,7 @@ local socket on the default port, as the role's PostgreSQL modules do.
 
 from __future__ import annotations
 
+import json
 import shlex
 from collections.abc import Callable, Generator
 from typing import Any, Literal
@@ -27,9 +33,11 @@ from pyinfra.facts.server import Command
 from pyinfra.operations import server, systemd
 
 from ops_deploy.base._common import AbsolutePath, RoleConfig
-from ops_deploy.helpers.probes import probe_command, probe_output
+from ops_deploy.helpers.probes import StdinLines, probe, probe_command, probe_output
 from ops_deploy.services._lifecycle.ansible_remove import absent, service_absent, user_absent
 from ops_deploy.services._lifecycle.media_remove import Identity, ResourcePath, ServiceName
+
+from .commands import host_command
 
 # PostgreSQL identifiers the role's modules quote; plain names only here.
 PgName = Identity
@@ -98,6 +106,11 @@ class PaperlessRemoveConfig(RoleConfig):
     def scanner_inbox_path(self) -> str:
         return f"{self.sftp_chroot_dir}/inbox"
 
+    @property
+    def scanner_fstab_line(self) -> str:
+        """The bind line the deploy writes (``operations.scanner_mount``)."""
+        return f"{self.external_storage_root}/consume {self.scanner_inbox_path} none bind 0 0"
+
 
 def _psql(cfg: PaperlessRemoveConfig, sql: str) -> str:
     # community.postgresql without login_host/port: the local socket, port 5432,
@@ -152,6 +165,31 @@ def _unmounted(path: str) -> Generator[StringCommand, None, None]:
         yield StringCommand("umount", quoted)
 
 
+@operation()
+def _fstab_line_absent(cfg: PaperlessRemoveConfig) -> Generator[StringCommand, None, None]:
+    """Delete the scanner inbox's own ``/etc/fstab`` bind line (exact fields), if it is there."""
+
+    settings = {
+        "source": f"{cfg.external_storage_root}/consume",
+        "target": cfg.scanner_inbox_path,
+        "apply": False,
+    }
+    answer = probe(
+        host_command("scanner_fstab_absent"), name="Paperless scanner fstab line", stdin=json.dumps(settings)
+    )
+    try:
+        value = json.loads(answer or "")
+        if not isinstance(value, dict) or set(value) != {"change"} or type(value["change"]) is not bool:
+            raise ValueError
+    except ValueError:
+        raise DeployError("Paperless scanner fstab line inspection failed") from None
+    if value["change"]:
+        settings["apply"] = True
+        yield StringCommand(
+            host_command("scanner_fstab_absent"), _stdin=StdinLines(json.dumps(settings)), _get_pty=False
+        )
+
+
 @deploy("Remove Paperless-ngx")
 def remove_paperless(cfg: PaperlessRemoveConfig) -> None:
     if not cfg.confirm:
@@ -192,6 +230,7 @@ def remove_paperless(cfg: PaperlessRemoveConfig) -> None:
             absent(f"Remove {path}", path)
     if cfg.remove_sftp_chroot:
         _unmounted(name=f"Unmount the scanner inbox {cfg.scanner_inbox_path}", path=cfg.scanner_inbox_path)
+        _fstab_line_absent(name=f"Remove the /etc/fstab line '{cfg.scanner_fstab_line}'", cfg=cfg)
         absent(f"Remove {cfg.sftp_chroot_dir}", cfg.sftp_chroot_dir)
     if cfg.remove_user:
         user_absent(name=f"Remove user {cfg.username}", user=cfg.username, remove_home=cfg.remove_site_root)

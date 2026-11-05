@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.paperless import PaperlessRemoveConfig, remove_paperless
+from ops_deploy.services.paperless.commands import host_command
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
@@ -23,6 +24,8 @@ ROUTE = "/etc/traefik/dynamic/paperless.yml"
 SSHD = "/etc/ssh/sshd_config.d/sftp-scanner.conf"
 SITE = "/home/paperless/site"
 STORAGE = "/mnt/cryptdata/paperless"
+FSTAB_HELPER = host_command("scanner_fstab_absent")
+FSTAB_LINE = "/mnt/cryptdata/paperless/consume /srv/sftp-scanner/inbox none bind 0 0"
 # What `just remove-one paperless` passes besides the confirmation and the
 # three names the role never reads (ops-control justfiles/remove.just).
 RECIPE = (
@@ -202,7 +205,9 @@ def psql(sql: str) -> str:
     return f"runuser -u postgres -- psql -XAtq -v ON_ERROR_STOP=1 -d postgres -c '{sql}'"
 
 
-def host(*, present: bool = True, mounted: bool = True, database: str = "present") -> dict[str, Any]:
+def host(
+    *, present: bool = True, mounted: bool = True, database: str = "present", fstab_line: bool | None = None
+) -> dict[str, Any]:
     paths: dict[str, Any] = {}
     if present:
         for unit in UNITS:
@@ -225,6 +230,7 @@ def host(*, present: bool = True, mounted: bool = True, database: str = "present
         **fakehost.LINUX,
         "import json, subprocess, sys": [json.dumps(probe)],
         "mountpoint -q /srv/sftp-scanner/inbox": ["mounted"] if mounted and present else [],
+        FSTAB_HELPER: [json.dumps({"change": present if fstab_line is None else fstab_line})],
         "from pg_database where": [database] if present and database else [],
         "from pg_roles where": [database] if present and database else [],
         **paths,
@@ -253,9 +259,10 @@ def test_the_recipes_removal_follows_the_role_order() -> None:
         *(f"{STORAGE}/{name}" for name in ("media", "data", "consume", "export", "backup", "tmp")),
         "/srv/sftp-scanner",
     ]
-    tail = rest[rest.index("rm -rf /srv/sftp-scanner") - 1 :]
+    tail = rest[rest.index("rm -rf /srv/sftp-scanner") - 2 :]
     assert tail == [
         "umount /srv/sftp-scanner/inbox",
+        FSTAB_HELPER,
         "rm -rf /srv/sftp-scanner",
         "userdel -r paperless",
         "groupdel paperless",
@@ -263,11 +270,20 @@ def test_the_recipes_removal_follows_the_role_order() -> None:
         psql('DROP DATABASE "paperless"'),
         psql('DROP ROLE "paperless"'),
     ]
-    # The storage root, sshd, Traefik and the fstab line are not touched.
+    # The storage root, sshd and Traefik are not touched.
     assert f"rm -rf {STORAGE}" not in commands
     assert not any("sshd" in command and "systemctl" in command for command in commands)
     assert not any("traefik" in command and "systemctl" in command for command in commands)
-    assert not any("fstab" in command for command in commands)
+    # The fstab line goes after the unmount, as one helper run with the exact fields on stdin.
+    # (pyinfra evaluates the operation while planning and again while executing.)
+    payloads = [json.loads(data) for text, data in run.stdin if FSTAB_HELPER in text]
+    source, target = f"{STORAGE}/consume", "/srv/sftp-scanner/inbox"
+    assert {p["source"] for p in payloads} == {source}
+    assert {p["target"] for p in payloads} == {target}
+    applied = [json.loads(data) for text, data in run.stdin if text == FSTAB_HELPER]
+    assert [p["apply"] for p in applied] == [True]
+    # The plan (--dry) lists it by its line.
+    assert f"Remove Paperless-ngx | Remove the /etc/fstab line '{FSTAB_LINE}'" in run.planned_changes
 
 
 def test_role_defaults_keep_data_accounts_and_databases() -> None:
@@ -285,8 +301,10 @@ def test_role_defaults_keep_data_accounts_and_databases() -> None:
         "/tmp/paperless",
     ]
     commands = "\n".join(run.executed_commands)
-    for kept in ("userdel", "groupdel", "umount", "psql", STORAGE):
+    for kept in ("userdel", "groupdel", "umount", "psql", STORAGE, FSTAB_HELPER):
         assert kept not in commands
+    # Without remove_sftp_chroot the fstab line is not even inspected.
+    assert not any(FSTAB_HELPER in event.value for event in run.events)
 
 
 def test_kept_site_root_keeps_the_home_on_userdel() -> None:
@@ -326,3 +344,30 @@ def test_a_failed_userdel_stops_the_removal() -> None:
     commands = "\n".join(run.executed_commands)
     assert "groupdel" not in commands
     assert "psql" not in commands
+
+
+def test_an_absent_fstab_line_plans_no_change() -> None:
+    run = run_deploy_fake(remove_paperless, full(), responses=host(fstab_line=False))
+    assert run.succeeded, run.error
+    assert FSTAB_HELPER not in run.executed_commands
+    assert not any("fstab" in name for name in run.planned_changes)
+    assert {json.loads(data)["apply"] for text, data in run.stdin if FSTAB_HELPER in text} == {False}
+    assert "rm -rf /srv/sftp-scanner" in run.executed_commands
+
+
+def test_the_fstab_line_follows_the_storage_and_chroot_names() -> None:
+    cfg = full(external_storage_root="/mnt/vault/ppl", sftp_chroot_dir="/srv/scan")
+    assert cfg.scanner_fstab_line == "/mnt/vault/ppl/consume /srv/scan/inbox none bind 0 0"
+    run = run_deploy_fake(remove_paperless, cfg, responses=host())
+    assert run.succeeded, run.error
+    payloads = [json.loads(data) for text, data in run.stdin if FSTAB_HELPER in text]
+    assert {(p["source"], p["target"]) for p in payloads} == {("/mnt/vault/ppl/consume", "/srv/scan/inbox")}
+
+
+@pytest.mark.parametrize("answer", [["", "ops-deploy-probe-failed"], ["not json"], ['{"change": "yes"}']])
+def test_an_unreadable_fstab_answer_stops_before_any_change(answer: list[str]) -> None:
+    run = run_deploy_fake(remove_paperless, full(), responses={**host(), FSTAB_HELPER: answer})
+    assert not run.succeeded
+    assert "fstab line inspection failed" in str(run.error)
+    # Refused while planning: nothing ran.
+    assert not run.executed_commands
