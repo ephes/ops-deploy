@@ -200,8 +200,9 @@ def libexec_ancestors(libexec_root: str) -> list[str]:
 
 def _ancestor_probe(paths: list[str]) -> str:
     # One line per path: uid, gid, octal mode and type, or "missing"; never follows a link.
+    # The C locale: GNU stat translates %F ("Verzeichnis" under a German locale).
     checks = [
-        f"if [ -e {p} ] || [ -L {p} ]; then stat -c '%u %g %a %F' {p}; else echo missing; fi"
+        f"if [ -e {p} ] || [ -L {p} ]; then LC_ALL=C LANG=C stat -c '%u %g %a %F' {p}; else echo missing; fi"
         for p in map(shlex.quote, paths)
     ]
     return "; ".join(checks)

@@ -33,7 +33,7 @@ from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
 SCRIPT = "#!/usr/bin/env python3\nprint('runner')\n"
-ANCESTORS = {"stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
+ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
 STORED = "select data::text from service where name"
 
 
@@ -251,13 +251,15 @@ def test_the_installed_script_is_never_removed_as_legacy() -> None:
     ],
 )
 def test_an_unsafe_directory_above_the_libexec_root_refuses_before_any_write(lines: list[str]) -> None:
-    refused(run_deploy_fake(deploy_runner, runner(), responses={"stat -c '%u %g %a %F'": lines}))
+    refused(run_deploy_fake(deploy_runner, runner(), responses={"LC_ALL=C LANG=C stat -c '%u %g %a %F'": lines}))
 
 
 def test_group_writable_by_root_group_is_accepted() -> None:
     cfg = runner()
     lines = ["0 0 755 directory", "0 0 775 directory", "0 0 755 directory"]
-    run = run_deploy_fake(deploy_runner, cfg, responses=converged(cfg, **{"stat -c '%u %g %a %F'": lines}))
+    run = run_deploy_fake(
+        deploy_runner, cfg, responses=converged(cfg, **{"LC_ALL=C LANG=C stat -c '%u %g %a %F'": lines})
+    )
 
     assert run.succeeded, run.error
 
