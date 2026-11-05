@@ -79,7 +79,7 @@ def _file(path: str, content: str, *, group: str, mode: str) -> dict[str, Any]:
     }
 
 
-def converged(cfg: RunnerRegistration, *, address: str = HOMEASSISTANT_ADDRESS, **changes: Any) -> dict[Any, Any]:
+def converged(cfg: RunnerRegistration, *, address: str = HOMEASSISTANT_ADDRESS) -> dict[Any, Any]:
     """A host the playbook left: packages, account, alias and runner as it writes them."""
 
     access, runner = cfg.access, cfg.runner
@@ -109,7 +109,6 @@ def converged(cfg: RunnerRegistration, *, address: str = HOMEASSISTANT_ADDRESS, 
     responses.update(_file(f"{runner.service_dir}/config.json", config, group="root", mode="-rw-r--r--"))
     responses.update(_file(runner.sudoers, sudoers_rule(runner), group="root", mode="-r--r-----"))
     responses[STORED] = [json.dumps(json.loads(config))]
-    responses.update(changes)
     return responses
 
 
@@ -195,7 +194,7 @@ def test_a_missing_mc_refuses_before_any_write() -> None:
 def test_an_unsafe_directory_above_the_libexec_root_refuses_before_any_write() -> None:
     cfg = registration()
     unsafe = ["0 0 755 directory", "1000 0 755 directory", "0 0 755 directory"]
-    responses = converged(cfg, **{"LC_ALL=C LANG=C stat -c '%u %g %a %F'": unsafe})
+    responses = {**converged(cfg), "LC_ALL=C LANG=C stat -c '%u %g %a %F'": unsafe}
 
     assert "must be a root-owned directory" in refused(run_deploy_fake(deploy(cfg), responses=responses))
 
@@ -205,12 +204,20 @@ def test_homeassistant_without_a_default_route_uses_ansibles_fallback() -> None:
     run = run_deploy_fake(deploy(cfg), responses={**converged(cfg), ROUTE: [""]})
 
     assert run.succeeded, run.error
-    variables = template_variables_for(cfg, None)
-    assert variables["homeassistant_backup_health_forwarded_for"] == DEFAULT_IPV4_FALLBACK
-    script = runner_script(cfg.runner, variables)
+    # The runner the deploy uploads, not a copy of its logic.
+    script = run.upload(cfg.runner.script).decode()
     assert f'HEALTH_CHECK_FORWARDED_FOR = "{DEFAULT_IPV4_FALLBACK}"' in script
-    # The runner rendered with the fallback differs from the converged one, so it is rewritten.
-    assert any("Install the homeassistant-backup runner script" in name for name in run.changed_ops)
+    assert script == runner_script(cfg.runner, template_variables_for(cfg, None))
+
+
+def test_homeassistant_renders_the_hosts_address() -> None:
+    cfg = registration("homeassistant-backup")
+    responses = {**converged(cfg), ROUTE: ["8.8.8.8 via 192.0.2.1 dev eth0 src 198.51.100.7 uid 0"]}
+    run = run_deploy_fake(deploy(cfg), responses=responses)
+
+    assert run.succeeded, run.error
+    script = run.upload(cfg.runner.script).decode()
+    assert 'HEALTH_CHECK_FORWARDED_FOR = "198.51.100.7"' in script
 
 
 def test_a_malformed_route_source_refuses() -> None:
@@ -235,6 +242,7 @@ def test_other_runners_do_not_read_the_route() -> None:
     [
         {"variables": {"echoport_backup_minio_alias": "backup-other"}},
         {"variables": {"echoport_backup_mc_install_path": "/opt/mc"}},
+        {"variables": {"echoport_backup_default_bucket": "other-bucket"}},
         {"default_ipv4_variables": ("echoport_backup_default_bucket",)},
     ],
 )
@@ -250,9 +258,26 @@ def test_a_runner_as_deploy_or_from_content_or_unscoped_is_refused() -> None:
     base = registration()
     with pytest.raises(ValueError, match="runs as root"):
         registration(runner=base.runner.model_copy(update={"run_as": ""}))
-    with pytest.raises(ValueError, match="vendored template"):
+    with pytest.raises(ValueError, match="vendored runner template"):
         registration(
             runner=RunnerConfig(service="snappymail-backup", steps=("init",), content="#!/bin/sh\n", run_as="root")
         )
     with pytest.raises(ValueError, match="scoped account"):
         registration(access=base.access.model_copy(update={"scoped": False}))
+
+
+def test_a_template_that_is_not_a_vendored_runner_is_refused() -> None:
+    base = registration()
+    for template in ("heis_production_backup.py.j2", "_work_dir.py.j2"):
+        with pytest.raises(ValueError, match="vendored runner template"):
+            registration(runner=base.runner.model_copy(update={"template": template}))
+
+
+def test_a_template_without_the_work_dir_include_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The playbooks' "Require a runner that works on the external disk only";
+    # every vendored runner includes _work_dir.py.j2 today.
+    from ops_deploy.services._echoport_runner import registration as module
+
+    monkeypatch.setattr(module, "_template_source", lambda _template: "WORK_DIR = '/tmp'\n")
+    with pytest.raises(ValueError, match=r"does not include _work_dir\.py\.j2"):
+        registration()
