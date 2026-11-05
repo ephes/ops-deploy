@@ -1,0 +1,95 @@
+# ── SQLite online backup (shared: templates/_sqlite_backup.py.j2) ───────────
+# Included by every Echoport runner that copies a live SQLite database.
+# `.timeout` installs a busy handler before `.backup`: a writer that is
+# committing holds an exclusive lock for a moment, and without a handler
+# sqlite3 fails at once with "database is locked". A failed attempt is retried,
+# and the integrity check must print exactly `ok`.
+import os
+import subprocess
+import sys
+import time
+from typing import Optional
+
+SQLITE_BUSY_TIMEOUT_MS = 30000
+SQLITE_BACKUP_ATTEMPTS = 3
+SQLITE_BACKUP_RETRY_DELAY_SECONDS = 5
+
+
+def sqlite_backup_argv(db_path, backup_path) -> list:
+    """The sqlite3 call for one online backup of db_path into backup_path."""
+    return ["sqlite3", str(db_path), f".timeout {SQLITE_BUSY_TIMEOUT_MS}", f".backup '{backup_path}'"]
+
+
+def sqlite_process_error(result: subprocess.CompletedProcess) -> str:
+    """What sqlite3 said about a failed call (stderr first)."""
+    return ((result.stderr or "").strip() or (result.stdout or "").strip()
+            or f"exit code {result.returncode}")[:500]
+
+
+def sqlite_integrity_result_error(result: subprocess.CompletedProcess) -> Optional[str]:
+    """None when `PRAGMA integrity_check` printed exactly `ok`, else the reason."""
+    if result.returncode == 0 and (result.stdout or "").strip() == "ok":
+        return None
+    detail = (result.stdout or "").strip() or (result.stderr or "").strip() or f"exit code {result.returncode}"
+    return f"integrity check failed: {detail[:200]}"
+
+
+def sqlite_integrity_error(db_path) -> Optional[str]:
+    """Run `PRAGMA integrity_check` on db_path; None when it is `ok`."""
+    result = subprocess.run(["sqlite3", str(db_path), "PRAGMA integrity_check;"], capture_output=True, text=True)
+    return sqlite_integrity_result_error(result)
+
+
+def sqlite_retry(attempt_fn) -> Optional[str]:
+    """Call attempt_fn(attempt) until it returns None; return the last error."""
+    error = None
+    for attempt in range(1, SQLITE_BACKUP_ATTEMPTS + 1):
+        try:
+            error = attempt_fn(attempt)
+        except Exception as e:
+            error = f"SQLite backup error: {e}"
+        if error is None:
+            return None
+        print(f"SQLite backup attempt {attempt}/{SQLITE_BACKUP_ATTEMPTS} failed: {error}", file=sys.stderr)
+        if attempt < SQLITE_BACKUP_ATTEMPTS:
+            time.sleep(SQLITE_BACKUP_RETRY_DELAY_SECONDS)
+    return error
+
+
+def _sqlite_backup_attempt(db_path: str, backup_path) -> Optional[str]:
+    """One `sqlite3 .backup` plus integrity check; returns an error or None."""
+    if backup_path.exists():
+        backup_path.unlink()
+    result = subprocess.run(sqlite_backup_argv(db_path, backup_path), capture_output=True, text=True, shell=False)
+    if result.returncode != 0:
+        return f"sqlite3 backup failed: {sqlite_process_error(result)}"
+    if not backup_path.exists():
+        return "backup file not created"
+    error = sqlite_integrity_error(backup_path)
+    return f"backup {error}" if error else None
+
+
+def backup_sqlite(db_path: str, backup_path) -> Optional[str]:
+    """
+    Consistent online backup of db_path into backup_path (a pathlib.Path).
+    Waits up to SQLITE_BUSY_TIMEOUT_MS for locks and retries a failed attempt
+    SQLITE_BACKUP_ATTEMPTS times. Returns None on success, else the last error;
+    a partial copy is removed.
+    """
+    print(f"Backing up SQLite database: {db_path}", file=sys.stderr)
+
+    # Validate the database file exists (prevents sqlite3 from creating empty DB)
+    if not os.path.isfile(db_path):
+        print(f"Database file not found: {db_path}", file=sys.stderr)
+        return "database file not found"
+
+    error = sqlite_retry(lambda _attempt: _sqlite_backup_attempt(db_path, backup_path))
+    if error is None:
+        print(f"SQLite backup successful: {backup_path}", file=sys.stderr)
+        return None
+    try:
+        if backup_path.exists():
+            backup_path.unlink()
+    except OSError:
+        pass
+    return error

@@ -1,0 +1,804 @@
+#!/usr/bin/env python3
+"""
+Vaultwarden backup/restore runner for Echoport.
+
+Service-owned same-host script for Vaultwarden:
+- Backup: SQLite snapshot + data/config/system files, manifest + checksum manifest,
+  tarball upload to MinIO.
+- Restore: download + checksum verify, safe extract, stop service, restore files,
+  ownership + health verification, restart service.
+"""
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+from urllib.error import URLError
+from urllib.request import Request, urlopen
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Shared configuration
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ vaultwarden_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/vaultwarden-backup') }}"
+WORK_MOUNT = "{{ vaultwarden_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ vaultwarden_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("vaultwarden_backup_", "vaultwarden_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
+
+# Vaultwarden-specific configuration
+SERVICE_NAME = "{{ vaultwarden_echoport_backup_service_name }}"
+HEALTH_URL = "{{ vaultwarden_echoport_backup_health_url }}"
+HEALTH_EXPECTED_STATUS_RAW = "{{ vaultwarden_echoport_backup_health_expected_status }}"
+HEALTH_RETRIES_RAW = "{{ vaultwarden_echoport_backup_health_retries }}"
+HEALTH_DELAY_RAW = "{{ vaultwarden_echoport_backup_health_delay }}"
+CREATE_SAFETY_SNAPSHOT_RAW = "{{ vaultwarden_echoport_backup_create_safety_snapshot | default(true) }}"
+ROLLBACK_ON_FAILURE_RAW = "{{ vaultwarden_echoport_backup_rollback_on_failure | default(true) }}"
+
+DATA_DIR = "{{ vaultwarden_echoport_backup_data_dir }}"
+DB_PATH = "{{ vaultwarden_echoport_backup_db_path }}"
+ATTACHMENTS_DIR = "{{ vaultwarden_echoport_backup_attachments_dir }}"
+SENDS_DIR = "{{ vaultwarden_echoport_backup_sends_dir }}"
+RSA_KEY_PATH = "{{ vaultwarden_echoport_backup_rsa_key_path }}"
+RSA_PUB_PATH = "{{ vaultwarden_echoport_backup_rsa_pub_path }}"
+CONFIG_FILE = "{{ vaultwarden_echoport_backup_config_file }}"
+SYSTEMD_OVERRIDE = "{{ vaultwarden_echoport_backup_systemd_override }}"
+TRAEFIK_CONFIG = "{{ vaultwarden_echoport_backup_traefik_config }}"
+
+DATA_OWNER = "{{ vaultwarden_echoport_backup_data_owner }}"
+CONFIG_OWNER = "{{ vaultwarden_echoport_backup_config_owner }}"
+SYSTEM_OWNER = "{{ vaultwarden_echoport_backup_system_owner }}"
+
+ALLOWED_ROOTS_RAW = "{{ vaultwarden_echoport_backup_allowed_roots | join(',') }}"
+
+
+def parse_int(value: str, default: int) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def parse_bool(value: str, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+HEALTH_EXPECTED_STATUS = parse_int(HEALTH_EXPECTED_STATUS_RAW, 200)
+HEALTH_RETRIES = max(1, parse_int(HEALTH_RETRIES_RAW, 20))
+HEALTH_DELAY = max(1, parse_int(HEALTH_DELAY_RAW, 3))
+CREATE_SAFETY_SNAPSHOT = parse_bool(CREATE_SAFETY_SNAPSHOT_RAW, True)
+ROLLBACK_ON_FAILURE = parse_bool(ROLLBACK_ON_FAILURE_RAW, True)
+ALLOWED_ROOTS = [item.strip() for item in ALLOWED_ROOTS_RAW.split(",") if item.strip()]
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, "r") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        print(f"Failed to read config file: {exc}", file=sys.stderr)
+        return None
+
+
+# NDJSON protocol helpers for FastDeploy
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    payload = {"name": name, "state": state}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str | None = None,
+) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{json.dumps(result)}")
+
+
+def finish_stdout(status: str, message: str = "") -> None:
+    payload = {"event": "finish", "status": status}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+# Core helpers
+
+def run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(args, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
+    return result
+
+
+def calculate_sha256(filepath: Path) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def normalize_root(root: str) -> str:
+    normalized = os.path.realpath(root)
+    if not normalized.endswith(os.sep):
+        normalized += os.sep
+    return normalized
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def path_in_allowed_roots(path: str) -> bool:
+    if not path:
+        return False
+    resolved = os.path.realpath(path)
+    for root in ALLOWED_ROOTS:
+        normalized_root = normalize_root(root)
+        if resolved.startswith(normalized_root) or resolved == normalized_root.rstrip(os.sep):
+            return True
+    return False
+
+
+def validate_config_paths(action: str) -> None:
+    configured_paths = [
+        DATA_DIR,
+        DB_PATH,
+        ATTACHMENTS_DIR,
+        SENDS_DIR,
+        RSA_KEY_PATH,
+        RSA_PUB_PATH,
+        CONFIG_FILE,
+        SYSTEMD_OVERRIDE,
+        TRAEFIK_CONFIG,
+    ]
+
+    for cfg_path in configured_paths:
+        if cfg_path and not path_in_allowed_roots(cfg_path):
+            raise ValueError(f"Configured path outside allowed roots: {cfg_path}")
+
+    if action == "backup":
+        required_paths = [DATA_DIR, DB_PATH, CONFIG_FILE]
+        for req in required_paths:
+            if not Path(req).exists():
+                raise ValueError(f"Required path does not exist: {req}")
+
+        if not Path(DB_PATH).is_file():
+            raise ValueError(f"Database path is not a file: {DB_PATH}")
+    elif action == "restore":
+        # Restore can target a system where data files are not present yet.
+        # Parent paths are created lazily right before writing.
+        return
+    else:
+        raise ValueError(f"Unknown action for path validation: {action}")
+
+
+def ensure_binaries() -> None:
+    needed = [MC_PATH, "sqlite3", "rsync", "tar", "systemctl", "chown", "chmod"]
+    for binary in needed:
+        if binary.startswith("/"):
+            if not Path(binary).exists():
+                raise FileNotFoundError(f"Required binary not found: {binary}")
+        else:
+            result = run_cmd(["which", binary], check=False)
+            if result.returncode != 0:
+                raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
+
+
+{% include '_sqlite_backup.py.j2' %}
+
+
+def sqlite_backup(source_db: str, backup_path: Path) -> None:
+    # Never let sqlite3 create an empty database for a missing source.
+    if not Path(source_db).is_file():
+        raise RuntimeError(f"Source database not found: {source_db}")
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    error = backup_sqlite(source_db, backup_path)
+    if error:
+        raise RuntimeError(f"SQLite backup of {source_db} failed: {error}")
+
+
+def sqlite_integrity_check(path: str) -> None:
+    error = sqlite_integrity_error(path)
+    if error:
+        raise RuntimeError(f"SQLite {error} ({path})")
+
+
+def remove_sqlite_wal_shm(db_path: str) -> None:
+    for suffix in ("-wal", "-shm"):
+        candidate = Path(f"{db_path}{suffix}")
+        if candidate.exists():
+            candidate.unlink()
+
+
+def rsync_dir(src: Path, dst: Path, delete: bool = True) -> None:
+    if not src.exists() or not src.is_dir():
+        return
+    dst.mkdir(parents=True, exist_ok=True)
+    args = ["rsync", "-a"]
+    if delete:
+        args.append("--delete")
+    args.extend([f"{src}/", f"{dst}/"])
+    run_cmd(args)
+
+
+def copy_file_optional(src: Path, dst: Path) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
+
+
+def set_owner_and_mode(path: Path, owner: str, mode: str | None = None, recursive: bool = False) -> None:
+    if not path.exists():
+        return
+    chown_args = ["chown"]
+    if recursive and path.is_dir():
+        chown_args.append("-R")
+    chown_args.extend([owner, str(path)])
+    run_cmd(chown_args)
+    if mode:
+        chmod_args = ["chmod"]
+        if recursive and path.is_dir():
+            chmod_args.append("-R")
+        chmod_args.extend([mode, str(path)])
+        run_cmd(chmod_args)
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> None:
+    with tarfile.open(tarball_path, "w:gz") as tar:
+        for item in sorted(source_dir.iterdir(), key=lambda p: p.name):
+            tar.add(item, arcname=item.name)
+
+
+def get_tree_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+
+    total = 0
+    for entry in path.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except Exception:
+            continue
+    return total
+
+
+def get_free_bytes_for_path(path: Path) -> int:
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    stat = os.statvfs(candidate)
+    return stat.f_bavail * stat.f_frsize
+
+
+def disk_space_precheck(tarball_path: Path, temp_root: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        extracted_payload_size = sum(member.size for member in tar.getmembers())
+
+    current_data_size = get_tree_size(Path(DATA_DIR)) if CREATE_SAFETY_SNAPSHOT else 0
+    required_temp = int(extracted_payload_size * 1.2 + current_data_size)
+    required_data = int(extracted_payload_size * 1.1)
+
+    free_temp = get_free_bytes_for_path(temp_root)
+    free_data = get_free_bytes_for_path(Path(DATA_DIR))
+
+    if free_temp < required_temp:
+        raise RuntimeError(
+            f"Insufficient temp disk space for restore: required={required_temp} free={free_temp}"
+        )
+    if free_data < required_data:
+        raise RuntimeError(
+            f"Insufficient data disk space for restore: required={required_data} free={free_data}"
+        )
+
+
+def _is_safe_tar_member(member: tarfile.TarInfo, extract_dir: Path) -> tuple[bool, str]:
+    if member.isdev() or member.ischr() or member.isblk():
+        return False, f"Tarball contains device node: {member.name}"
+    if member.isfifo():
+        return False, f"Tarball contains FIFO: {member.name}"
+    if member.name.startswith("/"):
+        return False, f"Tarball contains absolute path: {member.name}"
+    if ".." in member.name:
+        return False, f"Tarball contains path traversal: {member.name}"
+
+    target_path = (extract_dir / member.name).resolve()
+    try:
+        target_path.relative_to(extract_dir.resolve())
+    except ValueError:
+        return False, f"Tarball member escapes extraction root: {member.name}"
+
+    if member.issym():
+        link_target = Path(member.linkname)
+        if link_target.is_absolute():
+            return False, f"Tarball symlink with absolute target: {member.name} -> {member.linkname}"
+        link_resolved = (target_path.parent / link_target).resolve()
+        try:
+            link_resolved.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball symlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    if member.islnk():
+        link_target = (extract_dir / member.linkname).resolve()
+        try:
+            link_target.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball hardlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    return True, ""
+
+
+def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        safe_members = []
+        for member in tar.getmembers():
+            is_safe, err = _is_safe_tar_member(member, extract_dir)
+            if not is_safe:
+                raise ValueError(err)
+            safe_members.append(member)
+        tar.extractall(extract_dir, members=safe_members)
+
+
+def make_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    entries: list[Path] = []
+    for path in root_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.resolve() == manifest_path.resolve():
+            continue
+        entries.append(path)
+
+    entries.sort(key=lambda p: p.relative_to(root_dir).as_posix())
+    lines: list[str] = []
+    for item in entries:
+        rel = item.relative_to(root_dir).as_posix()
+        lines.append(f"{calculate_sha256(item)}  ./{rel}")
+
+    manifest_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+
+def verify_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    if not manifest_path.exists():
+        raise FileNotFoundError("manifest.sha256 missing from backup archive")
+
+    lines = [line.strip() for line in manifest_path.read_text().splitlines() if line.strip()]
+    for line in lines:
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid checksum manifest line: {line}")
+        expected, rel_path = parts
+        clean_rel = rel_path[2:] if rel_path.startswith("./") else rel_path
+        target = root_dir / clean_rel
+        if not target.exists() or not target.is_file():
+            raise FileNotFoundError(f"Checksum target missing: {clean_rel}")
+        actual = calculate_sha256(target)
+        if actual != expected:
+            raise ValueError(f"Checksum mismatch for {clean_rel}: expected {expected}, got {actual}")
+
+
+def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> None:
+    run_cmd([MC_PATH, "cp", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{key}"])
+
+
+def download_from_minio(bucket: str, key: str, dest_path: Path) -> None:
+    run_cmd([MC_PATH, "cp", f"{MINIO_ALIAS}/{bucket}/{key}", str(dest_path)])
+    if not dest_path.exists():
+        raise RuntimeError(f"Download failed, file missing at {dest_path}")
+
+
+def stop_service() -> None:
+    run_cmd(["systemctl", "stop", SERVICE_NAME])
+
+
+def start_service() -> None:
+    run_cmd(["systemctl", "start", SERVICE_NAME])
+
+
+def wait_service_active(timeout_seconds: int = 90) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        result = run_cmd(["systemctl", "is-active", SERVICE_NAME], check=False)
+        if result.stdout.strip() == "active":
+            return
+        time.sleep(2)
+    raise RuntimeError(f"Service did not become active in {timeout_seconds}s: {SERVICE_NAME}")
+
+
+def run_health_check() -> None:
+    for attempt in range(1, HEALTH_RETRIES + 1):
+        try:
+            req = Request(HEALTH_URL, method="GET")
+            with urlopen(req, timeout=8) as resp:
+                if resp.status == HEALTH_EXPECTED_STATUS:
+                    return
+        except URLError:
+            pass
+        except Exception:
+            pass
+
+        if attempt < HEALTH_RETRIES:
+            time.sleep(HEALTH_DELAY)
+
+    raise RuntimeError(
+        f"Health check failed after {HEALTH_RETRIES} attempts: "
+        f"{HEALTH_URL} expected {HEALTH_EXPECTED_STATUS}"
+    )
+
+
+def create_safety_snapshot(snapshot_dir: Path) -> None:
+    data_out = snapshot_dir / "data"
+    config_out = snapshot_dir / "config"
+    system_out = snapshot_dir / "system"
+    data_out.mkdir(parents=True, exist_ok=True)
+    config_out.mkdir(parents=True, exist_ok=True)
+    system_out.mkdir(parents=True, exist_ok=True)
+
+    sqlite_backup(DB_PATH, data_out / "db.sqlite3")
+    rsync_dir(Path(ATTACHMENTS_DIR), data_out / "attachments", delete=True)
+    rsync_dir(Path(SENDS_DIR), data_out / "sends", delete=True)
+    copy_file_optional(Path(RSA_KEY_PATH), data_out / "rsa_key.pem")
+    copy_file_optional(Path(RSA_PUB_PATH), data_out / "rsa_key.pub.pem")
+    copy_file_optional(Path(CONFIG_FILE), config_out / Path(CONFIG_FILE).name)
+    copy_file_optional(Path(SYSTEMD_OVERRIDE), system_out / "override.conf")
+    copy_file_optional(Path(TRAEFIK_CONFIG), system_out / Path(TRAEFIK_CONFIG).name)
+
+
+def restore_from_safety_snapshot(snapshot_dir: Path) -> None:
+    db_backup = snapshot_dir / "data" / "db.sqlite3"
+    if not db_backup.exists():
+        raise RuntimeError("Safety snapshot missing database")
+
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    remove_sqlite_wal_shm(DB_PATH)
+    shutil.copy2(db_backup, DB_PATH)
+    remove_sqlite_wal_shm(DB_PATH)
+    sqlite_integrity_check(DB_PATH)
+
+    rsync_dir(snapshot_dir / "data" / "attachments", Path(ATTACHMENTS_DIR), delete=True)
+    rsync_dir(snapshot_dir / "data" / "sends", Path(SENDS_DIR), delete=True)
+    copy_file_optional(snapshot_dir / "data" / "rsa_key.pem", Path(RSA_KEY_PATH))
+    copy_file_optional(snapshot_dir / "data" / "rsa_key.pub.pem", Path(RSA_PUB_PATH))
+
+    if copy_file_optional(snapshot_dir / "config" / Path(CONFIG_FILE).name, Path(CONFIG_FILE)):
+        set_owner_and_mode(Path(CONFIG_FILE), CONFIG_OWNER, "0640")
+
+    if copy_file_optional(snapshot_dir / "system" / "override.conf", Path(SYSTEMD_OVERRIDE)):
+        set_owner_and_mode(Path(SYSTEMD_OVERRIDE), SYSTEM_OWNER, "0644")
+
+    if copy_file_optional(snapshot_dir / "system" / Path(TRAEFIK_CONFIG).name, Path(TRAEFIK_CONFIG)):
+        set_owner_and_mode(Path(TRAEFIK_CONFIG), SYSTEM_OWNER, "0644")
+
+    set_owner_and_mode(Path(DATA_DIR), DATA_OWNER, recursive=True)
+    set_owner_and_mode(Path(RSA_KEY_PATH), DATA_OWNER, "0600")
+    run_cmd(["systemctl", "daemon-reload"])
+
+
+def backup_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating backup configuration")
+
+    target_name = cenv.get("ECHOPORT_TARGET", "vaultwarden")
+    run_id = cenv.get("ECHOPORT_RUN_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{target_name}/{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}")
+
+    validate_config_paths("backup")
+    ensure_binaries()
+
+    emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
+
+    work_dir = create_run_dir("vaultwarden_backup_")
+
+    try:
+        payload = work_dir / "payload"
+        data_out = payload / "data"
+        config_out = payload / "config"
+        system_out = payload / "system"
+        data_out.mkdir(parents=True, exist_ok=True)
+        config_out.mkdir(parents=True, exist_ok=True)
+        system_out.mkdir(parents=True, exist_ok=True)
+
+        emit_step("backup_db", "running", "Creating SQLite backup")
+        sqlite_backup(DB_PATH, data_out / "db.sqlite3")
+        emit_step("backup_db", "success", "SQLite backup created")
+
+        emit_step("copy_data", "running", "Copying Vaultwarden data directories")
+        rsync_dir(Path(ATTACHMENTS_DIR), data_out / "attachments")
+        rsync_dir(Path(SENDS_DIR), data_out / "sends")
+        copy_file_optional(Path(RSA_KEY_PATH), data_out / "rsa_key.pem")
+        copy_file_optional(Path(RSA_PUB_PATH), data_out / "rsa_key.pub.pem")
+        emit_step("copy_data", "success", "Data directories copied")
+
+        emit_step("copy_config", "running", "Copying config and system files")
+        copy_file_optional(Path(CONFIG_FILE), config_out / Path(CONFIG_FILE).name)
+        copy_file_optional(Path(SYSTEMD_OVERRIDE), system_out / "override.conf")
+        copy_file_optional(Path(TRAEFIK_CONFIG), system_out / Path(TRAEFIK_CONFIG).name)
+        emit_step("copy_config", "success", "Config and system files copied")
+
+        manifest = {
+            "target": target_name,
+            "run_id": run_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "service": SERVICE_NAME,
+            "paths": {
+                "data_dir": DATA_DIR,
+                "db_path": DB_PATH,
+                "config_file": CONFIG_FILE,
+                "systemd_override": SYSTEMD_OVERRIDE,
+                "traefik_config": TRAEFIK_CONFIG,
+            },
+        }
+        (payload / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        make_checksum_manifest(payload, payload / "manifest.sha256")
+
+        emit_step("upload", "running", "Creating archive and uploading")
+        tarball_path = work_dir / "backup.tar.gz"
+        create_tarball(payload, tarball_path)
+        checksum = calculate_sha256(tarball_path)
+        storage_key = f"{key_prefix}.tar.gz"
+        upload_to_minio(tarball_path, bucket, storage_key)
+        emit_step("upload", "success", f"Uploaded {storage_key}")
+
+        emit_step("verify", "running", "Verifying object in MinIO")
+        run_cmd([MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{storage_key}"])
+        emit_step("verify", "success", "MinIO object verified")
+
+        file_count = sum(1 for p in payload.rglob("*") if p.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", f"Backup completed: {storage_key}")
+        return 0
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def restore_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating restore configuration")
+
+    target_name = cenv.get("ECHOPORT_TARGET", "vaultwarden")
+    restore_id = cenv.get("ECHOPORT_RESTORE_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    storage_key = cenv.get("ECHOPORT_KEY", "")
+    expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+
+    if not storage_key:
+        raise RuntimeError("ECHOPORT_KEY missing for restore")
+    if not expected_checksum:
+        raise RuntimeError("ECHOPORT_CHECKSUM missing for restore")
+
+    validate_config_paths("restore")
+    ensure_binaries()
+
+    emit_step("init", "success", f"Configuration loaded for {target_name} restore {restore_id}")
+
+    work_dir = create_run_dir("vaultwarden_restore_")
+    service_stopped = False
+    destructive_started = False
+    rollback_executed = False
+    safety_snapshot_dir = work_dir / "safety"
+
+    try:
+        tarball_path = work_dir / "backup.tar.gz"
+        extract_dir = work_dir / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
+        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+
+        emit_step("download", "running", "Downloading archive from MinIO")
+        download_from_minio(bucket, storage_key, tarball_path)
+        emit_step("download", "success", f"Downloaded {storage_key}")
+
+        emit_step("verify_checksum", "running", "Verifying archive checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            raise RuntimeError(
+                f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
+            )
+        emit_step("verify_checksum", "success", "Archive checksum verified")
+
+        emit_step("precheck", "running", "Validating available disk space")
+        disk_space_precheck(tarball_path, work_dir)
+        emit_step("precheck", "success", "Disk space precheck passed")
+
+        emit_step("extract", "running", "Extracting archive")
+        safe_extract_tarball(tarball_path, extract_dir)
+        verify_checksum_manifest(extract_dir, extract_dir / "manifest.sha256")
+        emit_step("extract", "success", "Archive extracted and validated")
+
+        emit_step("safety_snapshot", "running", "Creating pre-restore safety snapshot")
+        if CREATE_SAFETY_SNAPSHOT and Path(DATA_DIR).exists():
+            create_safety_snapshot(safety_snapshot_dir)
+            emit_step("safety_snapshot", "success", "Safety snapshot created")
+        else:
+            emit_step("safety_snapshot", "success", "Safety snapshot skipped")
+
+        emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
+        stop_service()
+        service_stopped = True
+        destructive_started = True
+        emit_step("stop_service", "success", f"Stopped {SERVICE_NAME}")
+
+        emit_step("restore_db", "running", "Restoring SQLite database")
+        remove_sqlite_wal_shm(DB_PATH)
+        restored_db = extract_dir / "data" / "db.sqlite3"
+        if not restored_db.exists():
+            raise RuntimeError("Backup archive missing data/db.sqlite3")
+        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(restored_db, DB_PATH)
+        remove_sqlite_wal_shm(DB_PATH)
+        sqlite_integrity_check(DB_PATH)
+        emit_step("restore_db", "success", "SQLite database restored")
+
+        emit_step("restore_data", "running", "Restoring attachments/sends and key files")
+        rsync_dir(extract_dir / "data" / "attachments", Path(ATTACHMENTS_DIR), delete=True)
+        rsync_dir(extract_dir / "data" / "sends", Path(SENDS_DIR), delete=True)
+        copy_file_optional(extract_dir / "data" / "rsa_key.pem", Path(RSA_KEY_PATH))
+        copy_file_optional(extract_dir / "data" / "rsa_key.pub.pem", Path(RSA_PUB_PATH))
+        set_owner_and_mode(Path(RSA_KEY_PATH), DATA_OWNER, "0600")
+        emit_step("restore_data", "success", "Data files restored")
+
+        emit_step("restore_config", "running", "Restoring config and system files")
+        if copy_file_optional(extract_dir / "config" / Path(CONFIG_FILE).name, Path(CONFIG_FILE)):
+            set_owner_and_mode(Path(CONFIG_FILE), CONFIG_OWNER, "0640")
+
+        if copy_file_optional(extract_dir / "system" / "override.conf", Path(SYSTEMD_OVERRIDE)):
+            set_owner_and_mode(Path(SYSTEMD_OVERRIDE), SYSTEM_OWNER, "0644")
+
+        if copy_file_optional(extract_dir / "system" / Path(TRAEFIK_CONFIG).name, Path(TRAEFIK_CONFIG)):
+            set_owner_and_mode(Path(TRAEFIK_CONFIG), SYSTEM_OWNER, "0644")
+
+        set_owner_and_mode(Path(DATA_DIR), DATA_OWNER, recursive=True)
+        run_cmd(["systemctl", "daemon-reload"])
+        emit_step("restore_config", "success", "Config/system files restored")
+
+        emit_step("start_service", "running", f"Starting {SERVICE_NAME}")
+        start_service()
+        wait_service_active(90)
+        service_stopped = False
+        emit_step("start_service", "success", f"Started {SERVICE_NAME}")
+
+        emit_step("health_check", "running", "Running HTTP health check")
+        run_health_check()
+        emit_step("health_check", "success", "Service health check passed")
+
+        file_count = sum(1 for p in extract_dir.rglob("*") if p.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=actual_checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", "Restore completed")
+        return 0
+    except Exception as exc:
+        rollback_error = None
+        if destructive_started and ROLLBACK_ON_FAILURE and CREATE_SAFETY_SNAPSHOT and safety_snapshot_dir.exists():
+            emit_step("rollback", "running", "Attempting rollback from safety snapshot")
+            try:
+                run_cmd(["systemctl", "stop", SERVICE_NAME], check=False)
+                restore_from_safety_snapshot(safety_snapshot_dir)
+                start_service()
+                wait_service_active(90)
+                run_health_check()
+                service_stopped = False
+                rollback_executed = True
+                emit_step("rollback", "success", "Rollback completed")
+            except Exception as rollback_exc:
+                rollback_error = str(rollback_exc)
+                emit_step("rollback", "failure", f"Rollback failed: {rollback_error}")
+        else:
+            emit_step("rollback", "success", "Rollback skipped")
+
+        if service_stopped and not rollback_executed:
+            try:
+                start_service()
+            except Exception:
+                pass
+
+        message = str(exc)
+        if rollback_executed:
+            message = f"{message} (rollback executed)"
+        elif rollback_error:
+            message = f"{message}; rollback failed: {rollback_error}"
+
+        emit_step("error", "failure", message)
+        emit_result(False, error=message)
+        finish_stdout("failure", f"Restore failed: {message}")
+        return 1
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def main() -> int:
+    config = read_config_file()
+
+    if config:
+        context = config.get("context", {})
+    else:
+        if os.getuid() == 0:
+            raise RuntimeError("No config file found while running as root")
+        context_raw = os.environ.get("CONTEXT", "{}")
+        context = json.loads(context_raw)
+
+    cenv = context.get("env", {})
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+
+    if action == "restore":
+        return restore_flow(cenv)
+    return backup_flow(cenv)
+
+
+if __name__ == "__main__":
+    if os.getuid() != 0:
+        script_path = os.path.abspath(__file__)
+        result = subprocess.run(["sudo", "-n", script_path] + sys.argv[1:], stdout=sys.stdout, stderr=sys.stderr)
+        sys.exit(result.returncode)
+
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        emit_step("error", "failure", str(exc))
+        emit_result(False, error=str(exc))
+        finish_stdout("failure", f"Unexpected error: {exc}")
+        sys.exit(1)

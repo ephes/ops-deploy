@@ -1,0 +1,906 @@
+#!/usr/bin/env python3
+"""
+Homepage production DB backup + staging DB restore runner for FastDeploy.
+
+This script runs ON MACMINI and uses SSH/SCP to access:
+- production host for backups
+- staging host for restores
+
+Architecture:
+- Backup: SSH pg_dump on production, SCP dump to macmini, verify with
+          pg_restore --list, upload to MinIO (no service stop needed)
+- Restore: Download from MinIO, verify checksum, SCP dump to staging,
+           stop service, drop/recreate DB, pg_restore, start service
+
+Deployed by Ansible from ops-control.
+"""
+import hashlib
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+
+# Ensure unbuffered output
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Configuration from Ansible
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs (dumps, archives) live on the external encrypted disk only
+# (fail closed, see _work_dir.py.j2). echoport_backup_temp_dir is not used.
+WORK_DIR = "{{ homepage_prod_db_backup_work_dir | default('/mnt/cryptdata/backups/tmp/homepage-production-db-backup') }}"
+WORK_MOUNT = "{{ homepage_prod_db_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS_RAW = "{{ homepage_prod_db_backup_work_retention_hours | default(24) }}"
+RUN_DIR_PREFIXES = ("homepage-backup-", "homepage-restore-")
+# The runner runs as the deploy user (no sudo to root; its SSH key and mc
+# config are the deploy user's): WORK_DIR must belong to that user.
+# ops-control provisions it (register-homepage-production-db-backup.yml).
+WORK_OWNER_UID = os.geteuid()
+WORK_OWNER_LABEL = "the runner user"
+
+# SSH configuration
+SSH_OPTS = "-o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
+# scp runs with -O (classic scp protocol) so the remote side sees
+# `scp -f <path>` / `scp -t <path>`. The deploy key is pinned to the
+# echoport_remote_command_guard allowlist on production/staging, and that
+# can check a path; the SFTP mode (`scp` default) cannot be path-restricted.
+
+# Locked defaults (Ansible-templated, not overridable from Echoport context)
+BACKUP_HOST = "{{ homepage_prod_db_backup_source_host | default('wersdoerfer.de') }}"
+RESTORE_HOST = "{{ homepage_prod_db_backup_restore_host | default('staging.wersdoerfer.de') }}"
+REMOTE_USER = "{{ homepage_prod_db_backup_remote_user | default('root') }}"
+DB_NAME = "{{ homepage_prod_db_backup_db_name | default('homepage') }}"
+DB_USER = "{{ homepage_prod_db_backup_db_user | default('homepage') }}"
+SERVICE_NAME = "{{ homepage_prod_db_backup_service_name | default('homepage') }}"
+
+# Auxiliary units stopped for the duration of a restore, alongside SERVICE_NAME.
+# The Django Tasks db_worker polls its task table every few seconds, so leaving
+# it running while the database is dropped and recreated makes it crash with
+# "relation ... does not exist" and take a systemd restart to recover.
+# SERVICE_NAME may be given with or without a .service suffix, so strip it
+# before deriving the worker unit name.
+# Units that do not exist on the restore host are skipped.
+AUX_SERVICE_NAMES = {{ homepage_prod_db_backup_aux_service_names | default([((homepage_prod_db_backup_service_name | default('homepage')) | regex_replace('\\.service$', '')) ~ '-db-worker']) | to_json }}
+
+
+def parse_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+WORK_RETENTION_HOURS = max(1, parse_int(WORK_RETENTION_HOURS_RAW, 24))
+
+
+def read_config_file() -> Optional[Dict]:
+    """Read deployment configuration from secure file if available."""
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Failed to read config file: {e}", file=sys.stderr)
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    """Emit JSON object to stdout for FastDeploy to parse."""
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    """Output step as NDJSON to stdout."""
+    step = {"name": name, "state": state}
+    if message:
+        step["message"] = message
+    _emit(step)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str = None,
+) -> None:
+    """
+    Output ECHOPORT_RESULT as a step message for Echoport to parse.
+
+    The result is embedded in a step's message field as ECHOPORT_RESULT:{json}
+    because FastDeploy only parses valid JSON lines from stdout.
+    """
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+
+    result_json = json.dumps(result)
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
+
+
+def finish_stdout(status: str, message: str = None) -> None:
+    """Output finish event to stdout."""
+    finish = {"event": "finish", "status": status}
+    if message:
+        finish["message"] = message
+    _emit(finish)
+
+# Strict regex for SSH identifiers (hostname, username)
+# Allows alphanumeric, dots, hyphens, underscores - no shell metacharacters
+_SSH_IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def open_run_dir(prefix: str, label: str) -> Optional[Path]:
+    """Return a fresh run dir, or report the refusal and return None."""
+    try:
+        return create_run_dir(prefix)
+    except Exception as exc:
+        error_msg = f"Work directory check failed: {exc}"
+        emit_step("init", "failure", error_msg)
+        emit_result(success=False, error=error_msg)
+        finish_stdout("failure", f"{label} refused: {error_msg}")
+        return None
+
+
+def _validate_ssh_identifier(value: str, name: str) -> None:
+    """
+    Validate that a value is safe for use in SSH commands.
+    Prevents shell injection via remote_host or remote_user.
+    """
+    if not value:
+        raise ValueError(f"{name} cannot be empty")
+    if not _SSH_IDENTIFIER_RE.match(value):
+        raise ValueError(
+            f"{name} contains invalid characters (must match [a-zA-Z0-9._-]+): {value}"
+        )
+
+
+def public_schema_owner_sql(role: str) -> str:
+    """The statement that gives the public schema to ``role`` (a quoted identifier)."""
+    return f'ALTER SCHEMA public OWNER TO "{role}"'
+
+
+def ssh(
+    remote_host: str, remote_user: str, cmd: str, check: bool = True
+) -> subprocess.CompletedProcess:
+    """Execute command on remote host via SSH."""
+    _validate_ssh_identifier(remote_host, "remote_host")
+    _validate_ssh_identifier(remote_user, "remote_user")
+    full_cmd = f"ssh {SSH_OPTS} {remote_user}@{remote_host} {shlex.quote(cmd)}"
+    print(f"[SSH] {cmd}", file=sys.stderr)
+    result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, full_cmd, result.stdout, result.stderr
+        )
+    return result
+
+
+def remote_unit_exists(remote_host: str, remote_user: str, unit: str) -> bool:
+    """
+    Return True when systemd knows the given unit on the remote host.
+
+    Only an explicit LoadState of "not-found" counts as absent. A failed probe
+    raises instead of reporting absence: reading a transient SSH or systemctl
+    error as "no such unit" would silently skip stopping a worker and let the
+    drop run while it still holds a connection - exactly the failure this
+    guard exists to prevent.
+    """
+    result = ssh(
+        remote_host,
+        remote_user,
+        f"systemctl show --property=LoadState --value {shlex.quote(unit)}",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Could not determine systemd state of {unit}: "
+            f"{result.stderr.strip() or f'exit {result.returncode}'}"
+        )
+    return result.stdout.strip() != "not-found"
+
+
+def resolve_restore_units(remote_host: str, remote_user: str) -> list:
+    """
+    Units to stop before, and start after, the destructive restore steps.
+
+    SERVICE_NAME is always included. Auxiliary units are included only when they
+    exist on the restore host, so a site without a db_worker restores unchanged.
+    """
+    units = [SERVICE_NAME]
+    for unit in AUX_SERVICE_NAMES:
+        if unit == SERVICE_NAME or unit in units:
+            continue
+        if remote_unit_exists(remote_host, remote_user, unit):
+            units.append(unit)
+        else:
+            print(f"[INFO] Skipping unknown unit: {unit}", file=sys.stderr)
+    return units
+
+
+def scp_from_remote(
+    remote_host: str, remote_user: str, remote_path: str, local_path: str
+) -> None:
+    """Copy file from remote host to local path."""
+    _validate_ssh_identifier(remote_host, "remote_host")
+    _validate_ssh_identifier(remote_user, "remote_user")
+    full_cmd = f"scp -O {SSH_OPTS} {remote_user}@{remote_host}:{shlex.quote(remote_path)} {shlex.quote(local_path)}"
+    print(f"[SCP] {remote_path} -> {local_path}", file=sys.stderr)
+    result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, full_cmd, result.stdout, result.stderr
+        )
+
+
+def scp_to_remote(
+    remote_host: str, remote_user: str, local_path: str, remote_path: str
+) -> None:
+    """Copy file from local to remote host."""
+    _validate_ssh_identifier(remote_host, "remote_host")
+    _validate_ssh_identifier(remote_user, "remote_user")
+    full_cmd = f"scp -O {SSH_OPTS} {shlex.quote(local_path)} {remote_user}@{remote_host}:{shlex.quote(remote_path)}"
+    print(f"[SCP] {local_path} -> {remote_path}", file=sys.stderr)
+    result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, full_cmd, result.stdout, result.stderr
+        )
+
+
+def calculate_sha256(filepath: Path) -> str:
+    """Calculate SHA256 checksum of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def _is_safe_tar_member(member: tarfile.TarInfo, dest_dir: Path) -> tuple[bool, str]:
+    """
+    Check if a tar member is safe to extract.
+
+    Prevents path traversal attacks by ensuring:
+    1. No special file types (device nodes, FIFOs)
+    2. No absolute paths
+    3. No paths escaping dest_dir via ..
+    4. No symlinks/hardlinks pointing outside dest_dir
+
+    Returns (is_safe, error_message).
+    """
+    # Reject special file types
+    if member.isdev() or member.ischr() or member.isblk():
+        return False, f"Tarball contains device node: {member.name}"
+    if member.isfifo():
+        return False, f"Tarball contains FIFO: {member.name}"
+
+    # Check for absolute paths
+    if member.name.startswith("/"):
+        return False, f"Tarball contains absolute path: {member.name}"
+
+    # Check for path traversal
+    if ".." in member.name:
+        return False, f"Tarball contains path traversal: {member.name}"
+
+    # Resolve the target path and ensure it's within dest_dir
+    target_path = (dest_dir / member.name).resolve()
+    try:
+        target_path.relative_to(dest_dir.resolve())
+    except ValueError:
+        return False, f"Tarball member escapes dest_dir: {member.name}"
+
+    # Check symlinks point within dest_dir
+    if member.issym():
+        link_target = Path(member.linkname)
+        if link_target.is_absolute():
+            return False, f"Tarball contains symlink with absolute target: {member.name} -> {member.linkname}"
+        # Resolve relative to the symlink's directory
+        link_resolved = (target_path.parent / link_target).resolve()
+        try:
+            link_resolved.relative_to(dest_dir.resolve())
+        except ValueError:
+            return False, f"Tarball contains symlink escaping dest_dir: {member.name} -> {member.linkname}"
+
+    # Check hardlinks point within dest_dir
+    if member.islnk():
+        link_target = (dest_dir / member.linkname).resolve()
+        try:
+            link_target.relative_to(dest_dir.resolve())
+        except ValueError:
+            return False, f"Tarball contains hardlink escaping dest_dir: {member.name} -> {member.linkname}"
+
+    return True, ""
+
+
+def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    """
+    Extract tarball with security validation.
+    Rejects absolute paths, path traversal, and unsafe symlinks/hardlinks.
+    """
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        safe_members = []
+        for member in tar.getmembers():
+            is_safe, error_msg = _is_safe_tar_member(member, extract_dir)
+            if not is_safe:
+                raise ValueError(error_msg)
+            safe_members.append(member)
+
+        # Extract only validated members
+        tar.extractall(extract_dir, members=safe_members)
+
+
+def backup(
+    bucket: str,
+    key_prefix: str,
+    timestamp: str,
+) -> int:
+    """
+    Perform PostgreSQL backup from remote production server.
+
+    Steps:
+    1. Validate config
+    2. SSH pg_dump on production
+    3. SCP dump to macmini
+    4. Verify dump with pg_restore --list
+    5. Create manifest and tarball, upload to MinIO
+    6. Verify upload
+    7. Cleanup production temp dump
+
+    No service stop needed - pg_dump provides consistent snapshots.
+
+    Returns 0 on success, 1 on failure.
+    """
+    dump_filename = f"homepage.dump"
+    remote_dump_path = f"/tmp/echoport_homepage_dump_{timestamp}.dump"
+
+    # Runner-created files (dump, manifest, archive) are 0600 in 0700 dirs.
+    # Only the backup sets this umask; see restore() for the staging dump.
+    os.umask(0o077)
+    # Fail closed before any other work (before pg_dump on production): the
+    # isolated run dir must be on WORK_MOUNT.
+    work_dir = open_run_dir("homepage-backup-", "Backup")
+    if work_dir is None:
+        return 1
+    backup_success = False
+    result_data = {}
+
+    try:
+        emit_step("init", "running", "Starting PostgreSQL backup")
+
+        # Validate SSH identifiers
+        _validate_ssh_identifier(BACKUP_HOST, "backup_host")
+        _validate_ssh_identifier(REMOTE_USER, "remote_user")
+
+        emit_step("init", "success", f"Configuration validated (db: {DB_NAME})")
+
+        # pg_dump on production (no service stop needed)
+        emit_step("dump_database", "running", f"Running pg_dump on {BACKUP_HOST}")
+        try:
+            ssh(
+                BACKUP_HOST,
+                REMOTE_USER,
+                f"sudo -u postgres pg_dump --format=custom --file={shlex.quote(remote_dump_path)} --dbname={shlex.quote(DB_NAME)}",
+            )
+            emit_step("dump_database", "success", "pg_dump completed")
+        except subprocess.CalledProcessError as e:
+            emit_step("dump_database", "failure", f"pg_dump failed: {e.stderr}")
+            emit_result(success=False, error=f"pg_dump failed: {e.stderr}")
+            finish_stdout("failure", "pg_dump failed")
+            return 1
+
+        # SCP dump from production to local temp dir
+        emit_step("copy_dump", "running", "Copying dump from production")
+        local_dump_path = work_dir / dump_filename
+        try:
+            scp_from_remote(BACKUP_HOST, REMOTE_USER, remote_dump_path, str(local_dump_path))
+            emit_step("copy_dump", "success", f"Dump copied ({local_dump_path.stat().st_size:,} bytes)")
+        except subprocess.CalledProcessError as e:
+            emit_step("copy_dump", "failure", f"Failed to copy dump: {e.stderr}")
+            emit_result(success=False, error=f"Failed to copy dump: {e.stderr}")
+            finish_stdout("failure", "Dump copy failed")
+            return 1
+
+        # Verify dump readability with pg_restore --list
+        emit_step("verify_dump", "running", "Verifying dump readability")
+        result = subprocess.run(
+            ["pg_restore", "--list", str(local_dump_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            emit_step("verify_dump", "failure", f"pg_restore --list failed: {result.stderr}")
+            emit_result(success=False, error=f"Dump verification failed: {result.stderr}")
+            finish_stdout("failure", "Dump verification failed")
+            return 1
+
+        emit_step("verify_dump", "success", "Dump verified readable")
+
+        # Create manifest
+        dump_size = local_dump_path.stat().st_size
+        dump_checksum = calculate_sha256(local_dump_path)
+        manifest = {
+            "target": "homepage-production-db",
+            "timestamp": timestamp,
+            "database": {
+                "type": "postgresql",
+                "dbname": DB_NAME,
+                "format": "custom",
+                "filename": f"database/{dump_filename}",
+                "size": dump_size,
+                "checksum_sha256": dump_checksum,
+            },
+        }
+        manifest_path = work_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        # Create tarball and upload
+        emit_step("upload", "running", "Creating archive and uploading")
+        tarball_path = work_dir / f"{timestamp}.tar.gz"
+        with tarfile.open(tarball_path, "w:gz") as tar:
+            tar.add(local_dump_path, arcname=f"database/{dump_filename}")
+            tar.add(manifest_path, arcname="manifest.json")
+
+        # Calculate checksum
+        checksum = calculate_sha256(tarball_path)
+        size_bytes = tarball_path.stat().st_size
+
+        # Upload to MinIO
+        key = f"{key_prefix}.tar.gz"
+        result = subprocess.run(
+            [MC_PATH, "cp", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{key}"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            emit_step("upload", "failure", f"MinIO upload failed: {result.stderr}")
+            emit_result(success=False, error=f"MinIO upload failed: {result.stderr}")
+            finish_stdout("failure", "Upload failed")
+            return 1
+
+        emit_step("upload", "success", f"Uploaded {size_bytes:,} bytes")
+
+        # Verify upload
+        emit_step("verify", "running", "Verifying upload")
+        result = subprocess.run(
+            [MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{key}"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            emit_step("verify", "failure", "Upload verification failed")
+            emit_result(success=False, error="Upload verification failed")
+            finish_stdout("failure", "Verification failed")
+            return 1
+
+        emit_step("verify", "success", "Backup verified in MinIO")
+
+        backup_success = True
+        result_data = {
+            "bucket": bucket,
+            "key": key,
+            "size_bytes": size_bytes,
+            "checksum_sha256": checksum,
+            "file_count": 1,
+        }
+
+    except Exception as e:
+        print(f"Backup failed with error: {e}", file=sys.stderr)
+        emit_step("error", "failure", str(e))
+        emit_result(success=False, error=str(e))
+        finish_stdout("failure", f"Unexpected error: {e}")
+        return 1
+    finally:
+        # Always clean up remote dump
+        emit_step("cleanup", "running", "Cleaning up temporary files")
+        cleanup_ok = True
+        try:
+            result = ssh(BACKUP_HOST, REMOTE_USER, f"rm -f {shlex.quote(remote_dump_path)}", check=False)
+            if result.returncode != 0:
+                print(f"[WARN] Remote cleanup returned non-zero: {result.stderr}", file=sys.stderr)
+                cleanup_ok = False
+        except Exception as e:
+            print(f"[WARN] Remote cleanup failed: {e}", file=sys.stderr)
+            cleanup_ok = False
+
+        # Clean up local temp directory
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+        if cleanup_ok:
+            emit_step("cleanup", "success", "Temporary files cleaned")
+        else:
+            emit_step("cleanup", "success", "Temporary files cleaned (remote cleanup warning)")
+
+        # Emit final result
+        if backup_success:
+            emit_result(success=True, **result_data)
+            finish_stdout("success", f"Backup completed: {result_data.get('bucket')}/{result_data.get('key')}")
+            return 0
+
+    return 1  # Should not reach here, but return failure as safety
+
+
+def restore(
+    bucket: str,
+    key: str,
+    expected_checksum: str,
+) -> int:
+    """
+    Perform PostgreSQL restore to remote staging server.
+
+    Steps:
+    1. Download backup from MinIO
+    2. Verify checksum (hard-fail on mismatch)
+    3. Extract with safety validation
+    4. SCP dump to staging
+    5. Stop service and auxiliary units (db_worker)
+    6. Drop/recreate database
+    7. pg_restore
+    8. Start service and auxiliary units
+    9. Post-check SQL connectivity
+    10. Cleanup
+
+    Returns 0 on success, 1 on failure.
+    """
+    dump_filename = "homepage.dump"
+    remote_dump_path = f"/tmp/echoport_homepage_restore_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.dump"
+
+    # Fail closed before any other work (before the download and before
+    # staging is touched): the isolated run dir must be on WORK_MOUNT.
+    work_dir = open_run_dir("homepage-restore-", "Restore")
+    if work_dir is None:
+        return 1
+    stopped_services = []
+    restore_success = False
+    result_data = {}
+
+    try:
+        emit_step("init", "running", "Starting PostgreSQL restore")
+
+        # Validate SSH identifiers
+        _validate_ssh_identifier(RESTORE_HOST, "restore_host")
+        _validate_ssh_identifier(REMOTE_USER, "remote_user")
+
+        emit_step("init", "success", f"Configuration validated (db: {DB_NAME})")
+
+        # Download backup from MinIO
+        emit_step("download", "running", "Downloading backup from MinIO")
+        tarball_path = work_dir / "backup.tar.gz"
+        result = subprocess.run(
+            [MC_PATH, "cp", f"{MINIO_ALIAS}/{bucket}/{key}", str(tarball_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            emit_step("download", "failure", f"Download failed: {result.stderr}")
+            emit_result(success=False, error=f"Download failed: {result.stderr}")
+            finish_stdout("failure", "Download failed")
+            return 1
+
+        os.chmod(tarball_path, 0o600)
+        emit_step("download", "success", f"Downloaded backup ({tarball_path.stat().st_size:,} bytes)")
+
+        # Verify checksum (hard-fail on mismatch)
+        emit_step("verify_checksum", "running", "Verifying checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            error_msg = f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
+            emit_step("verify_checksum", "failure", error_msg)
+            emit_result(success=False, error=error_msg)
+            finish_stdout("failure", "Checksum verification failed")
+            return 1
+
+        emit_step("verify_checksum", "success", "Backup integrity verified")
+
+        # Extract with safety validation
+        emit_step("extract", "running", "Extracting backup")
+        extract_dir = work_dir / "extracted"
+        extract_dir.mkdir()
+        try:
+            safe_extract_tarball(tarball_path, extract_dir)
+        except ValueError as e:
+            emit_step("extract", "failure", str(e))
+            emit_result(success=False, error=str(e))
+            finish_stdout("failure", "Extraction failed")
+            return 1
+
+        # Validate dump file exists in archive (under database/ subdir)
+        dump_path = extract_dir / "database" / dump_filename
+        if not dump_path.exists():
+            # Fallback: check manifest for filename, try both database/ and root
+            manifest_path = extract_dir / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text())
+                alt_filename = manifest.get("database", {}).get("filename", "")
+                if alt_filename:
+                    for candidate in [extract_dir / "database" / alt_filename, extract_dir / alt_filename]:
+                        if candidate.exists():
+                            dump_path = candidate
+                            break
+
+        if not dump_path.exists():
+            emit_step("extract", "failure", f"Missing dump file: database/{dump_filename}")
+            emit_result(success=False, error=f"Missing dump file: {dump_filename}")
+            finish_stdout("failure", "Invalid backup archive")
+            return 1
+
+        emit_step("extract", "success", "Backup extracted")
+
+        # SCP dump to staging. Classic scp creates the remote file with the
+        # local mode, and pg_restore reads it there as postgres, so the dump
+        # must be world-readable (archives made under umask 077 carry 0600).
+        # Locally it stays private: the run dir is 0700.
+        os.chmod(dump_path, 0o644)
+        emit_step("upload_dump", "running", "Uploading dump to staging")
+        try:
+            scp_to_remote(RESTORE_HOST, REMOTE_USER, str(dump_path), remote_dump_path)
+            emit_step("upload_dump", "success", "Dump uploaded to staging")
+        except subprocess.CalledProcessError as e:
+            emit_step("upload_dump", "failure", f"Failed to upload dump: {e.stderr}")
+            emit_result(success=False, error=f"Failed to upload dump: {e.stderr}")
+            finish_stdout("failure", "Dump upload failed")
+            return 1
+
+        # Stop service and auxiliary units. Everything that talks to the database
+        # must be down before the drop, otherwise it crashes mid-restore.
+        restore_units = resolve_restore_units(RESTORE_HOST, REMOTE_USER)
+        emit_step("stop_service", "running", f"Stopping {', '.join(restore_units)}")
+        try:
+            for unit in restore_units:
+                ssh(RESTORE_HOST, REMOTE_USER, f"systemctl stop {shlex.quote(unit)}")
+                stopped_services.append(unit)
+            emit_step("stop_service", "success", f"Stopped {', '.join(restore_units)}")
+        except subprocess.CalledProcessError as e:
+            emit_step("stop_service", "failure", f"Failed to stop service: {e.stderr}")
+            emit_result(success=False, error=f"Failed to stop service: {e.stderr}")
+            finish_stdout("failure", "Failed to stop service")
+            return 1
+
+        # Drop and recreate database
+        emit_step("drop_recreate_db", "running", f"Dropping and recreating database {DB_NAME}")
+        try:
+            ssh(
+                RESTORE_HOST,
+                REMOTE_USER,
+                f"sudo -u postgres dropdb --if-exists --force {shlex.quote(DB_NAME)}",
+            )
+            ssh(
+                RESTORE_HOST,
+                REMOTE_USER,
+                f"sudo -u postgres createdb --owner={shlex.quote(DB_USER)} {shlex.quote(DB_NAME)}",
+            )
+            # createdb copies template1, whose public schema can still belong
+            # to postgres (clusters upgraded from PostgreSQL < 15), and
+            # pg_restore --no-owner skips the dump's ALTER SCHEMA ... OWNER.
+            # Hand the schema to the app role before restoring into it.
+            ssh(
+                RESTORE_HOST,
+                REMOTE_USER,
+                "sudo -u postgres psql -X -v ON_ERROR_STOP=1 "
+                f"-d {shlex.quote(DB_NAME)} "
+                f"-c {shlex.quote(public_schema_owner_sql(DB_USER))}",
+            )
+            emit_step("drop_recreate_db", "success", "Database recreated")
+        except subprocess.CalledProcessError as e:
+            emit_step("drop_recreate_db", "failure", f"Failed to drop/recreate database: {e.stderr}")
+            emit_result(success=False, error=f"Failed to drop/recreate database: {e.stderr}")
+            finish_stdout("failure", "Database drop/recreate failed")
+            return 1
+
+        # pg_restore (--exit-on-error: fail immediately on any error, safe since
+        # we're restoring into a freshly created database with no conflicts)
+        emit_step("restore_database", "running", "Restoring database from dump")
+        try:
+            ssh(
+                RESTORE_HOST,
+                REMOTE_USER,
+                f"sudo -u postgres pg_restore --exit-on-error --dbname={shlex.quote(DB_NAME)} --no-owner --role={shlex.quote(DB_USER)} {shlex.quote(remote_dump_path)}",
+            )
+            emit_step("restore_database", "success", "Database restored")
+        except subprocess.CalledProcessError as e:
+            emit_step("restore_database", "failure", f"pg_restore failed: {e.stderr}")
+            emit_result(success=False, error=f"pg_restore failed: {e.stderr}")
+            finish_stdout("failure", "Database restore failed")
+            return 1
+
+        # Start service and auxiliary units again, in the order they were stopped.
+        # Units are only dropped from stopped_services once actually started, so
+        # the finally block retries whatever is left behind.
+        emit_step("start_service", "running", f"Starting {', '.join(stopped_services)}")
+        try:
+            while stopped_services:
+                ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(stopped_services[0])}")
+                stopped_services.pop(0)
+            emit_step("start_service", "success", f"Started {', '.join(restore_units)}")
+        except subprocess.CalledProcessError as e:
+            emit_step("start_service", "failure", f"Failed to start service: {e.stderr}")
+            emit_result(success=False, error=f"Restore succeeded but service start failed: {e.stderr}")
+            finish_stdout("failure", "Service start failed")
+            return 1
+
+        # Post-check: SQL connectivity
+        emit_step("post_check", "running", "Verifying database connectivity")
+        try:
+            ssh(
+                RESTORE_HOST,
+                REMOTE_USER,
+                f"sudo -u postgres psql -d {shlex.quote(DB_NAME)} -c 'SELECT 1'",
+            )
+            emit_step("post_check", "success", "Database connectivity verified")
+        except subprocess.CalledProcessError as e:
+            emit_step("post_check", "failure", f"Post-check failed: {e.stderr}")
+            emit_result(success=False, error=f"Post-check failed: {e.stderr}")
+            finish_stdout("failure", "Post-check failed")
+            return 1
+
+        restore_success = True
+        result_data = {
+            "bucket": bucket,
+            "key": key,
+            "size_bytes": tarball_path.stat().st_size,
+            "checksum_sha256": actual_checksum,
+            "file_count": 1,
+        }
+
+    except Exception as e:
+        print(f"Restore failed with error: {e}", file=sys.stderr)
+        emit_step("error", "failure", str(e))
+        emit_result(success=False, error=str(e))
+        finish_stdout("failure", f"Unexpected error: {e}")
+        return 1
+    finally:
+        # Best-effort restart of anything still stopped
+        if stopped_services:
+            emit_step("start_service", "running", f"Best-effort restart of {', '.join(stopped_services)}")
+            for unit in list(stopped_services):
+                try:
+                    ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(unit)}")
+                    stopped_services.remove(unit)
+                    emit_step("start_service", "success", f"Started {unit}")
+                except subprocess.CalledProcessError as e:
+                    emit_step("start_service", "failure", f"Failed to restart {unit}: {e.stderr}")
+
+        # Clean up remote dump
+        emit_step("cleanup", "running", "Cleaning up temporary files")
+        cleanup_ok = True
+        try:
+            result = ssh(RESTORE_HOST, REMOTE_USER, f"rm -f {shlex.quote(remote_dump_path)}", check=False)
+            if result.returncode != 0:
+                print(f"[WARN] Remote cleanup returned non-zero: {result.stderr}", file=sys.stderr)
+                cleanup_ok = False
+        except Exception as e:
+            print(f"[WARN] Remote cleanup failed: {e}", file=sys.stderr)
+            cleanup_ok = False
+
+        # Clean up local temp directory
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+        if cleanup_ok:
+            emit_step("cleanup", "success", "Temporary files cleaned")
+        else:
+            emit_step("cleanup", "success", "Temporary files cleaned (remote cleanup warning)")
+
+        # Emit final result
+        if restore_success:
+            emit_result(success=True, **result_data)
+            finish_stdout("success", "Restore completed successfully")
+            return 0
+
+    return 1  # Should not reach here, but return failure as safety
+
+
+def main() -> int:
+    """Main entry point - dispatch to backup or restore."""
+    # Read configuration to determine action
+    config = read_config_file()
+
+    if config:
+        context = config.get("context", {})
+    else:
+        # Fallback for manual testing (non-production)
+        print("Warning: No config file found, using environment (testing mode)", file=sys.stderr)
+        context_raw = os.environ.get("CONTEXT", "{}")
+        try:
+            context = json.loads(context_raw)
+        except json.JSONDecodeError:
+            context = {}
+
+    cenv = context.get("env", {})
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    # Note: ECHOPORT_DB_PATH is ignored for PostgreSQL targets. Database name,
+    # user, and service are locked to Ansible-templated defaults above.
+
+    print(f"Configuration:", file=sys.stderr)
+    print(f"  Action: {action}", file=sys.stderr)
+    print(f"  Backup Host: {BACKUP_HOST}", file=sys.stderr)
+    print(f"  Restore Host: {RESTORE_HOST}", file=sys.stderr)
+    print(f"  Remote User: {REMOTE_USER}", file=sys.stderr)
+    print(f"  Database: {DB_NAME}", file=sys.stderr)
+    print(f"  DB User: {DB_USER}", file=sys.stderr)
+    print(f"  Service: {SERVICE_NAME}", file=sys.stderr)
+    print(f"  Bucket: {bucket}", file=sys.stderr)
+
+    if action == "restore":
+        key = cenv.get("ECHOPORT_KEY", "")
+        expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+
+        if not key:
+            error_msg = "No storage key provided for restore"
+            emit_step("init", "failure", error_msg)
+            emit_result(success=False, error=error_msg)
+            finish_stdout("failure", error_msg)
+            return 1
+
+        if not expected_checksum:
+            error_msg = "No checksum provided for restore - cannot verify backup integrity"
+            emit_step("init", "failure", error_msg)
+            emit_result(success=False, error=error_msg)
+            finish_stdout("failure", error_msg)
+            return 1
+
+        print(f"  Key: {key}", file=sys.stderr)
+        print(f"  Checksum: {expected_checksum}", file=sys.stderr)
+
+        return restore(
+            bucket=bucket,
+            key=key,
+            expected_checksum=expected_checksum,
+        )
+    else:
+        timestamp = cenv.get("ECHOPORT_TIMESTAMP", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S"))
+        key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", "")
+
+        if not key_prefix:
+            key_prefix = f"homepage-production-db/{timestamp}"
+
+        print(f"  Key Prefix: {key_prefix}", file=sys.stderr)
+        print(f"  Timestamp: {timestamp}", file=sys.stderr)
+
+        return backup(
+            bucket=bucket,
+            key_prefix=key_prefix,
+            timestamp=timestamp,
+        )
+
+
+if __name__ == "__main__":
+    # Script runs as deploy user (has SSH access to production/staging via deploy key)
+
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"Backup/restore failed with error: {e}", file=sys.stderr)
+        emit_step("error", "failure", str(e))
+        emit_result(success=False, error=str(e))
+        finish_stdout("failure", f"Unexpected error: {e}")
+        sys.exit(1)

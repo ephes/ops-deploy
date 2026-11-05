@@ -1,0 +1,550 @@
+#!/usr/bin/env python3
+"""
+Django Chat staging database runner for Echoport (target `django-chat-staging-db`).
+
+Runs on macmini as the deploy user and reaches the staging host as root over
+SSH with the deploy key:
+- Backup: `pg_dump --format=custom` of the Django Chat database on the staging
+  host, streamed to macmini, checked with `pg_restore --list` for the tables
+  the site needs, plus a manifest with row counts (read from the dump) and a
+  checksum manifest, uploaded to MinIO as one tarball.
+- Restore: download, verify both checksums and the dump, copy it to the
+  staging host and restore it into a NEW scratch database
+  `<prefix>_<restore id>` there. The live database is never touched; the row
+  counts of the scratch database are compared with the manifest. Putting the
+  data back into the live database is a documented, attended step (ops-control
+  docs/DJANGO_CHAT_STAGING_DB_BACKUP.md).
+
+Media is not in this archive: Django Chat keeps its media, including the
+private voice references, in S3.
+
+Fail-closed: a failed dump, an empty dump, a dump without one of the required
+tables or a failed upload check fails the run, and nothing is reported as a
+success.
+"""
+
+import hashlib
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ django_chat_staging_db_backup_work_dir | default('/mnt/cryptdata/backups/tmp/django-chat-staging-db-backup') }}"
+WORK_MOUNT = "{{ django_chat_staging_db_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ django_chat_staging_db_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("django_chat_db_backup_", "django_chat_db_restore_")
+# The runner runs as the deploy user (no sudo to root): WORK_DIR must belong
+# to that user. ops-control provisions it (register-django-chat-staging-db-backup.yml).
+WORK_OWNER_UID = os.geteuid()
+WORK_OWNER_LABEL = "the runner user"
+
+DB_HOST = "{{ django_chat_staging_db_backup_host }}"
+REMOTE_USER = "{{ django_chat_staging_db_backup_remote_user }}"
+DB_NAME = "{{ django_chat_staging_db_backup_db_name }}"
+POSTGRES_OS_USER = "{{ django_chat_staging_db_backup_postgres_os_user }}"
+RESTORE_DB_PREFIX = "{{ django_chat_staging_db_backup_restore_db_prefix }}"
+REQUIRED_TABLES = [item for item in "{{ django_chat_staging_db_backup_required_tables | join(',') }}".split(",") if item]
+COUNTED_TABLES = [item for item in "{{ django_chat_staging_db_backup_counted_tables | join(',') }}".split(",") if item]
+
+SSH_OPTS = ["-o", "StrictHostKeyChecking=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=30"]
+MANIFEST_FORMAT_VERSION = 1
+# Database names may carry a hyphen (`django-chat`); table and scratch
+# database names may not.
+DB_NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]*$")
+IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+SSH_IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+REMOTE_TEMP_PREFIX = "/var/tmp/django-chat-db-restore."
+REMOTE_TEMP_RE = re.compile(r"^/var/tmp/django-chat-db-restore\.[A-Za-z0-9]+$")
+DUMP_NAME = "django-chat.dump"
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+    if not config_file or not Path(config_file).exists():
+        return None
+    try:
+        with open(config_file, "r") as handle:
+            return json.load(handle)
+    except Exception:
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    payload = {"name": name, "state": state}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str | None = None,
+) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{json.dumps(result)}")
+
+
+def finish_stdout(status: str, message: str = "") -> None:
+    payload = {"event": "finish", "status": status}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def safe_error(exc: Exception) -> str:
+    if isinstance(exc, subprocess.CalledProcessError):
+        stderr = (exc.stderr or "").strip() if isinstance(exc.stderr, str) else ""
+        stdout = (exc.stdout or "").strip() if isinstance(exc.stdout, str) else ""
+        if stderr:
+            return stderr
+        if stdout:
+            return stdout
+        return f"Command failed with exit code {exc.returncode}"
+    return str(exc)
+
+
+def run_cmd(args: list[str], check: bool = True, stdin_path: Path | None = None,
+            stdout_path: Path | None = None) -> subprocess.CompletedProcess:
+    """Run a command (no shell); stdin/stdout can be local files."""
+    stdin = open(stdin_path, "rb") if stdin_path else subprocess.DEVNULL
+    stdout = open(stdout_path, "wb") if stdout_path else subprocess.PIPE
+    try:
+        result = subprocess.run(args, stdin=stdin, stdout=stdout, stderr=subprocess.PIPE)
+    finally:
+        if stdin_path:
+            stdin.close()
+        if stdout_path:
+            stdout.close()
+    out = result.stdout.decode("utf-8", "replace") if result.stdout is not None else ""
+    err = result.stderr.decode("utf-8", "replace") if result.stderr is not None else ""
+    completed = subprocess.CompletedProcess(args, result.returncode, out, err)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, args, out, err)
+    return completed
+
+
+def ssh_args(remote_cmd: str) -> list[str]:
+    """The ssh argv that runs one shell command line on the database host."""
+    return ["ssh", *SSH_OPTS, f"{REMOTE_USER}@{DB_HOST}", remote_cmd]
+
+
+def remote(args: list[str], check: bool = True, stdin_path: Path | None = None,
+           stdout_path: Path | None = None, stdin_to: str | None = None) -> subprocess.CompletedProcess:
+    """Run argv on the database host; every argument is shell-quoted there.
+
+    `stdin_to` names a remote file the command reads as its stdin.
+    """
+    remote_cmd = shlex.join(args)
+    if stdin_to is not None:
+        remote_cmd += f" < {shlex.quote(stdin_to)}"
+    return run_cmd(ssh_args(remote_cmd), check=check, stdin_path=stdin_path, stdout_path=stdout_path)
+
+
+def as_postgres(args: list[str]) -> list[str]:
+    """Run a PostgreSQL client as the database host's superuser (peer authentication)."""
+    return ["runuser", "-u", POSTGRES_OS_USER, "--"] + args
+
+
+def psql_value(sql: str, database: str) -> str:
+    result = remote(as_postgres(["psql", "-X", "-v", "ON_ERROR_STOP=1", "-qAt", "-d", database, "-c", sql]))
+    return result.stdout.strip()
+
+
+def calculate_sha256(filepath: Path) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def validate_settings() -> None:
+    if not DB_NAME_RE.fullmatch(DB_NAME):
+        raise ValueError(f"Invalid db name: {DB_NAME!r}")
+    if not IDENTIFIER_RE.fullmatch(RESTORE_DB_PREFIX):
+        raise ValueError(f"Invalid restore db prefix: {RESTORE_DB_PREFIX!r}")
+    for name, value in (("db host", DB_HOST), ("remote user", REMOTE_USER), ("postgres os user", POSTGRES_OS_USER)):
+        if not SSH_IDENTIFIER_RE.fullmatch(value):
+            raise ValueError(f"Invalid {name}: {value!r}")
+    if not REQUIRED_TABLES:
+        raise ValueError("No required tables configured")
+    for table in REQUIRED_TABLES + COUNTED_TABLES:
+        if not IDENTIFIER_RE.fullmatch(table):
+            raise ValueError(f"Invalid table name: {table!r}")
+
+
+def ensure_binaries() -> None:
+    for binary in ["ssh", "pg_restore"]:
+        if shutil.which(binary) is None:
+            raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
+    if not Path(MC_PATH).exists():
+        raise FileNotFoundError(f"Required binary not found: {MC_PATH}")
+
+
+def dump_tables(dump_path: Path) -> set[str]:
+    """Tables with data in the dump, from `pg_restore --list` (no connection)."""
+    listing = run_cmd(["pg_restore", "--list", str(dump_path)]).stdout
+    tables = set()
+    for line in listing.splitlines():
+        match = re.search(r"\bTABLE DATA (\S+) (\S+) ", line)
+        if match and match.group(1) == "public":
+            tables.add(match.group(2))
+    return tables
+
+
+def check_dump(dump_path: Path) -> list[str]:
+    if not dump_path.is_file() or dump_path.stat().st_size == 0:
+        raise RuntimeError("pg_dump produced no output")
+    tables = dump_tables(dump_path)
+    missing = [t for t in REQUIRED_TABLES if t not in tables]
+    if missing:
+        raise RuntimeError(f"Dump lacks required tables: {', '.join(missing)}")
+    return sorted(tables)
+
+
+def dump_row_counts(dump_path: Path) -> Dict[str, int]:
+    """Row counts of the counted tables as they are in the dump.
+
+    Read from the dump itself (one COPY line per row), so they match the
+    snapshot pg_dump took even when the site writes while it runs.
+    """
+    counts = {}
+    for table in COUNTED_TABLES:
+        output = run_cmd(
+            ["pg_restore", "--data-only", "--schema=public", f"--table={table}", "--file=-", str(dump_path)]
+        ).stdout
+        rows = None
+        # COPY ends rows with \n only; splitlines() would also split on
+        # U+2028, U+0085 and the like inside a value.
+        for line in output.split("\n"):
+            if rows is None:
+                if line.startswith(f"COPY public.{table} ") and line.endswith("FROM stdin;"):
+                    rows = 0
+            elif line == "\\.":
+                break
+            else:
+                rows += 1
+        if rows is None:
+            raise RuntimeError(f"No data section for table {table} in the dump")
+        counts[table] = rows
+    return counts
+
+
+def row_counts(database: str) -> Dict[str, int]:
+    counts = {}
+    for table in COUNTED_TABLES:
+        value = psql_value(f"SELECT count(*) FROM public.{table};", database)
+        counts[table] = int(value)
+    return counts
+
+
+def make_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    lines = []
+    for path in sorted(p for p in root_dir.rglob("*") if p.is_file() and p != manifest_path):
+        lines.append(f"{calculate_sha256(path)}  ./{path.relative_to(root_dir).as_posix()}")
+    manifest_path.write_text("\n".join(lines) + "\n")
+
+
+def verify_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    if not manifest_path.is_file():
+        raise FileNotFoundError("manifest.sha256 missing from backup archive")
+    for line in (line.strip() for line in manifest_path.read_text().splitlines()):
+        if not line:
+            continue
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid checksum manifest line: {line}")
+        expected, rel_path = parts
+        target = root_dir / (rel_path[2:] if rel_path.startswith("./") else rel_path)
+        if not target.is_file():
+            raise FileNotFoundError(f"Checksum target missing: {rel_path}")
+        if calculate_sha256(target) != expected:
+            raise ValueError(f"Checksum mismatch for {rel_path}")
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> None:
+    with tarfile.open(tarball_path, "w:gz") as tar:
+        for item in sorted(source_dir.iterdir(), key=lambda p: p.name):
+            tar.add(item, arcname=item.name)
+
+
+def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    """Extract regular files and directories only, never outside extract_dir."""
+    root = extract_dir.resolve()
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        members = tar.getmembers()
+        for member in members:
+            if not (member.isfile() or member.isdir()):
+                raise ValueError(f"Tarball member is not a regular file or directory: {member.name}")
+            target = (extract_dir / member.name).resolve()
+            if member.name.startswith("/") or ".." in Path(member.name).parts or not (
+                target == root or root in target.parents
+            ):
+                raise ValueError(f"Tarball member escapes extraction root: {member.name}")
+        tar.extractall(extract_dir, members=members)
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def work_directory(prefix: str) -> Path:
+    # Fail closed: the run dir is created 0700 below WORK_DIR on WORK_MOUNT.
+    # A refusal is reported by the flow's error handler, before any dump,
+    # download or remote command.
+    try:
+        return create_run_dir(prefix)
+    except Exception as exc:
+        raise RuntimeError(f"Work directory check failed: {exc}") from exc
+
+
+def backup_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating backup configuration")
+    target_name = cenv.get("ECHOPORT_TARGET", "django-chat-staging-db")
+    run_id = cenv.get("ECHOPORT_RUN_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key_prefix = cenv.get(
+        "ECHOPORT_KEY_PREFIX",
+        f"{target_name}/{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}",
+    )
+    work_dir: Path | None = None
+    try:
+        validate_settings()
+        ensure_binaries()
+        emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
+        work_dir = work_directory("django_chat_db_backup_")
+        payload = work_dir / "payload"
+        payload.mkdir()
+
+        emit_step("dump_database", "running", f"Dumping database {DB_NAME} on {DB_HOST}")
+        dump_path = payload / DUMP_NAME
+        remote(as_postgres(["pg_dump", "--format=custom", f"--dbname={DB_NAME}"]), stdout_path=dump_path)
+        tables = check_dump(dump_path)
+        counts = dump_row_counts(dump_path)
+        server_version = psql_value("SHOW server_version;", DB_NAME)
+        emit_step("dump_database", "success", f"Dumped {len(tables)} tables, {dump_path.stat().st_size} bytes")
+
+        manifest = {
+            "format_version": MANIFEST_FORMAT_VERSION,
+            "target": target_name,
+            "run_id": run_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "host": DB_HOST,
+            "database": DB_NAME,
+            "dump": {"file": DUMP_NAME, "format": "custom", "sha256": calculate_sha256(dump_path)},
+            "server_version": server_version,
+            "tables": tables,
+            "row_counts": counts,
+        }
+        (payload / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        make_checksum_manifest(payload, payload / "manifest.sha256")
+
+        emit_step("upload", "running", "Creating archive and uploading")
+        tarball_path = work_dir / "backup.tar.gz"
+        create_tarball(payload, tarball_path)
+        checksum = calculate_sha256(tarball_path)
+        storage_key = f"{key_prefix}.tar.gz"
+        run_cmd([MC_PATH, "cp", "--quiet", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{storage_key}"])
+        emit_step("upload", "success", f"Uploaded {storage_key}")
+
+        emit_step("verify", "running", "Verifying object in MinIO")
+        stat = json.loads(run_cmd([MC_PATH, "stat", "--json", f"{MINIO_ALIAS}/{bucket}/{storage_key}"]).stdout)
+        if int(stat.get("size", -1)) != tarball_path.stat().st_size:
+            raise RuntimeError(
+                f"Uploaded size {stat.get('size')} differs from local size {tarball_path.stat().st_size}"
+            )
+        emit_step("verify", "success", "MinIO object verified")
+
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=checksum,
+            file_count=sum(1 for p in payload.rglob("*") if p.is_file()),
+        )
+        finish_stdout("success", f"Backup completed: {storage_key}")
+        return 0
+    except Exception as exc:
+        msg = safe_error(exc)
+        emit_step("error", "failure", msg)
+        emit_result(False, error=msg)
+        finish_stdout("failure", f"Backup failed: {msg}")
+        return 1
+    finally:
+        if work_dir is not None:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def make_remote_temp_dir() -> str:
+    path = remote(["mktemp", "-d", f"{REMOTE_TEMP_PREFIX}XXXXXXXX"]).stdout.strip()
+    if not REMOTE_TEMP_RE.fullmatch(path):
+        raise RuntimeError(f"Unexpected remote temp directory: {path!r}")
+    return path
+
+
+def remove_remote_temp_dir(path: str) -> None:
+    if REMOTE_TEMP_RE.fullmatch(path):
+        remote(["rm", "-rf", "--", path], check=False)
+
+
+def restore_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating restore configuration")
+    restore_id = str(cenv.get("ECHOPORT_RESTORE_ID", ""))
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    storage_key = cenv.get("ECHOPORT_KEY", "")
+    expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+    work_dir: Path | None = None
+    remote_dir = ""
+    try:
+        validate_settings()
+        if not storage_key or not expected_checksum:
+            raise RuntimeError("ECHOPORT_KEY and ECHOPORT_CHECKSUM are required for a restore")
+        if not re.fullmatch(r"[0-9]+", restore_id):
+            raise RuntimeError(f"ECHOPORT_RESTORE_ID must be numeric, got {restore_id!r}")
+        scratch_db = f"{RESTORE_DB_PREFIX}_{restore_id}"
+        if scratch_db == DB_NAME or not IDENTIFIER_RE.fullmatch(scratch_db):
+            raise RuntimeError(f"Refusing scratch database name {scratch_db!r}")
+        ensure_binaries()
+        emit_step("init", "success", f"Restoring into scratch database {scratch_db} on {DB_HOST}; {DB_NAME} is not touched")
+        work_dir = work_directory("django_chat_db_restore_")
+
+        emit_step("download", "running", "Downloading archive from MinIO")
+        tarball_path = work_dir / "backup.tar.gz"
+        run_cmd([MC_PATH, "cp", "--quiet", f"{MINIO_ALIAS}/{bucket}/{storage_key}", str(tarball_path)])
+        emit_step("download", "success", f"Downloaded {storage_key}")
+
+        emit_step("verify_checksum", "running", "Verifying archive checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            raise RuntimeError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
+        emit_step("verify_checksum", "success", "Archive checksum verified")
+
+        emit_step("extract", "running", "Extracting and validating archive")
+        extract_dir = work_dir / "extract"
+        extract_dir.mkdir()
+        safe_extract_tarball(tarball_path, extract_dir)
+        verify_checksum_manifest(extract_dir, extract_dir / "manifest.sha256")
+        manifest = json.loads((extract_dir / "manifest.json").read_text())
+        dump_path = extract_dir / DUMP_NAME
+        if manifest.get("dump", {}).get("file") != DUMP_NAME:
+            raise RuntimeError("manifest.json does not name the dump")
+        check_dump(dump_path)
+        emit_step("extract", "success", "Archive and dump validated")
+
+        emit_step("restore_database", "running", f"Restoring into {scratch_db} on {DB_HOST}")
+        exists = psql_value(f"SELECT 1 FROM pg_database WHERE datname = '{scratch_db}';", "postgres")
+        if exists:
+            raise RuntimeError(f"Scratch database {scratch_db} already exists; drop it or use a new restore")
+        remote_dir = make_remote_temp_dir()
+        remote_dump = f"{remote_dir}/{DUMP_NAME}"
+        # mktemp -d creates the directory 0700 for root; the dump (password
+        # hashes, sessions) stays unreadable to everyone else there.
+        run_cmd(ssh_args(f"umask 077 && cat > {shlex.quote(remote_dump)}"), stdin_path=dump_path)
+        if remote(["sha256sum", remote_dump]).stdout.split()[:1] != [calculate_sha256(dump_path)]:
+            raise RuntimeError("The dump copied to the database host differs from the archive")
+        remote(as_postgres(["createdb", scratch_db]))
+        remote(
+            as_postgres(["pg_restore", "--no-owner", "--no-privileges", "--exit-on-error", f"--dbname={scratch_db}"]),
+            stdin_to=remote_dump,
+        )
+        emit_step("restore_database", "success", f"Restored into {scratch_db}")
+
+        emit_step("verify_restore", "running", "Comparing row counts with the manifest")
+        expected_counts = manifest.get("row_counts", {})
+        # Every counted table needs an expected count: an archive without one
+        # (older, or with a shorter table list) cannot prove the restore.
+        unrecorded = [table for table in COUNTED_TABLES if not isinstance(expected_counts.get(table), int)]
+        if unrecorded:
+            raise RuntimeError(f"manifest.json has no row count for: {', '.join(unrecorded)}")
+        actual_counts = row_counts(scratch_db)
+        mismatched = {
+            table: (expected_counts[table], actual)
+            for table, actual in actual_counts.items()
+            if expected_counts[table] != actual
+        }
+        if mismatched:
+            raise RuntimeError(f"Row counts differ from the manifest: {mismatched}")
+        emit_step("verify_restore", "success", f"Row counts match: {actual_counts}")
+
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=actual_checksum,
+            file_count=sum(1 for p in extract_dir.rglob("*") if p.is_file()),
+        )
+        finish_stdout("success", f"Restored into scratch database {scratch_db} on {DB_HOST}; {DB_NAME} unchanged")
+        return 0
+    except Exception as exc:
+        msg = safe_error(exc)
+        emit_step("error", "failure", msg)
+        emit_result(False, error=msg)
+        finish_stdout("failure", f"Restore failed: {msg}")
+        return 1
+    finally:
+        if remote_dir:
+            remove_remote_temp_dir(remote_dir)
+        if work_dir is not None:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def main() -> int:
+    config = read_config_file()
+    if config:
+        context = config.get("context", {})
+    else:
+        context = json.loads(os.environ.get("CONTEXT", "{}"))
+    cenv = context.get("env", {})
+    if cenv.get("ECHOPORT_ACTION", "backup") == "restore":
+        return restore_flow(cenv)
+    return backup_flow(cenv)
+
+
+if __name__ == "__main__":
+    # Runs as the deploy user: its SSH key reaches the staging host as root,
+    # and its mc configuration holds this target's MinIO alias.
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        msg = safe_error(exc)
+        emit_step("error", "failure", msg)
+        emit_result(False, error=msg)
+        finish_stdout("failure", f"Unexpected error: {msg}")
+        sys.exit(1)

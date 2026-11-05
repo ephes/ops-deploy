@@ -1,0 +1,814 @@
+{
+  "provenance": "Template variables of the ops-control register playbooks (ops-control c0ce95ce), resolved by ansible-core 2.21.5 on localhost; public synthetic values for hosts, buckets and stubs of the MinIO account registry; echoport-backup-switched-fixture is synthetic (per-target aliases, string flags)",
+  "runners": {
+    "delve-backup": {
+      "inputs": {
+        "delve_echoport_backup_allowed_roots": [
+          "/var/lib/delve/",
+          "/etc/delve/",
+          "/etc/systemd/system/delve.service",
+          "/etc/traefik/dynamic/delve.yml"
+        ],
+        "delve_echoport_backup_config_file": "/etc/delve/delve.env",
+        "delve_echoport_backup_config_owner": "root:delve",
+        "delve_echoport_backup_create_safety_snapshot": true,
+        "delve_echoport_backup_data_dir": "/var/lib/delve",
+        "delve_echoport_backup_data_owner": "delve:delve",
+        "delve_echoport_backup_db_path": "/var/lib/delve/delve.db",
+        "delve_echoport_backup_health_delay": 3,
+        "delve_echoport_backup_health_expected_status": 200,
+        "delve_echoport_backup_health_retries": 24,
+        "delve_echoport_backup_health_url": "http://127.0.0.1:10026/health",
+        "delve_echoport_backup_rollback_on_failure": true,
+        "delve_echoport_backup_service_name": "delve",
+        "delve_echoport_backup_system_owner": "root:root",
+        "delve_echoport_backup_systemd_unit": "/etc/systemd/system/delve.service",
+        "delve_echoport_backup_traefik_config": "/etc/traefik/dynamic/delve.yml",
+        "delve_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/delve-backup",
+        "delve_echoport_backup_work_mount": "/mnt/cryptdata",
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-delve"
+      },
+      "template": "delve_backup.py.j2"
+    },
+    "django-chat-staging-db-backup": {
+      "inputs": {
+        "django_chat_staging_db_backup_counted_tables": [
+          "wagtailcore_page",
+          "cast_episode",
+          "cast_audio",
+          "cast_transcript",
+          "cast_contributor",
+          "cast_episodecontributor",
+          "auth_user",
+          "django_migrations"
+        ],
+        "django_chat_staging_db_backup_db_name": "django-chat",
+        "django_chat_staging_db_backup_host": "staging.example.invalid",
+        "django_chat_staging_db_backup_postgres_os_user": "postgres",
+        "django_chat_staging_db_backup_remote_user": "root",
+        "django_chat_staging_db_backup_required_tables": [
+          "wagtailcore_page",
+          "wagtailcore_site",
+          "cast_post",
+          "cast_episode",
+          "cast_audio",
+          "cast_transcript",
+          "cast_contributor",
+          "auth_user",
+          "django_migrations"
+        ],
+        "django_chat_staging_db_backup_restore_db_prefix": "django_chat_restore",
+        "django_chat_staging_db_backup_work_dir": "/mnt/cryptdata/backups/tmp/django-chat-staging-db-backup",
+        "django_chat_staging_db_backup_work_mount": "/mnt/cryptdata",
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-django-chat-staging-db"
+      },
+      "template": "django_chat_staging_db_backup.py.j2"
+    },
+    "echoport-backup": {
+      "inputs": {
+        "echoport_backup_allowed_roots": [
+          "/home/",
+          "/opt/",
+          "/var/lib/",
+          "/mnt/cryptdata/"
+        ],
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "minio",
+        "echoport_backup_minio_prefix_aliases": {},
+        "echoport_backup_minio_require_prefix_alias": true,
+        "echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/echoport-backup",
+        "echoport_backup_work_mount": "/mnt/cryptdata",
+        "echoport_backup_work_retention_hours": 24
+      },
+      "template": "backup.py.j2"
+    },
+    "echoport-backup-switched-fixture": {
+      "inputs": {
+        "echoport_backup_allowed_roots": [
+          "/home/",
+          "/opt/",
+          "/var/lib/",
+          "/mnt/cryptdata/"
+        ],
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "minio",
+        "echoport_backup_minio_prefix_aliases": {
+          "archive": "backup-archive",
+          "nyxmon": "rustfs-backup-nyxmon"
+        },
+        "echoport_backup_minio_require_prefix_alias": "yes",
+        "echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/echoport-backup",
+        "echoport_backup_work_mount": "/mnt/cryptdata",
+        "echoport_backup_work_retention_hours": "36"
+      },
+      "template": "backup.py.j2"
+    },
+    "echoport-self-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-echoport",
+        "echoport_self_backup_allowed_roots": [
+          "/home/echoport/",
+          "/etc/systemd/system/",
+          "/etc/traefik/"
+        ],
+        "echoport_self_backup_check_disk_space": true,
+        "echoport_self_backup_cleanup_safety_snapshot": true,
+        "echoport_self_backup_create_safety_snapshot": true,
+        "echoport_self_backup_cron_user": "echoport",
+        "echoport_self_backup_db_path": "/home/echoport/site/src/django/db.sqlite3",
+        "echoport_self_backup_disk_space_multiplier": 2.0,
+        "echoport_self_backup_enforce_host_match": true,
+        "echoport_self_backup_env_file": "/home/echoport/site/.env",
+        "echoport_self_backup_health_delay": 5,
+        "echoport_self_backup_health_expected_status": 200,
+        "echoport_self_backup_health_retries": 12,
+        "echoport_self_backup_health_url": "http://127.0.0.1:10018/admin/login/",
+        "echoport_self_backup_include_logs": false,
+        "echoport_self_backup_logs_path": "/home/echoport/logs",
+        "echoport_self_backup_restore_crontab": false,
+        "echoport_self_backup_restore_owner": "echoport:echoport",
+        "echoport_self_backup_restore_system_files": false,
+        "echoport_self_backup_rollback_on_failure": true,
+        "echoport_self_backup_service_name": "echoport",
+        "echoport_self_backup_site_root": "/home/echoport/site",
+        "echoport_self_backup_start_timeout": 60,
+        "echoport_self_backup_systemd_unit_path": "/etc/systemd/system/echoport.service",
+        "echoport_self_backup_traefik_config_path": "/etc/traefik/dynamic/echoport.yml",
+        "echoport_self_backup_work_dir": "/mnt/cryptdata/backups/tmp/echoport-self-backup",
+        "echoport_self_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "echoport_backup.py.j2"
+    },
+    "fastdeploy-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-fastdeploy",
+        "fastdeploy_echoport_backup_allowed_roots": [
+          "/home/fastdeploy/",
+          "/home/deploy/",
+          "/etc/systemd/system/",
+          "/etc/traefik/",
+          "/etc/sudoers.d/"
+        ],
+        "fastdeploy_echoport_backup_check_disk_space": true,
+        "fastdeploy_echoport_backup_cleanup_safety_snapshot": true,
+        "fastdeploy_echoport_backup_create_safety_snapshot": true,
+        "fastdeploy_echoport_backup_db_name": "fastdeploy",
+        "fastdeploy_echoport_backup_db_user": "fastdeploy",
+        "fastdeploy_echoport_backup_disk_space_multiplier": 2.0,
+        "fastdeploy_echoport_backup_enforce_host_match": true,
+        "fastdeploy_echoport_backup_env_file": "/home/fastdeploy/site/.env",
+        "fastdeploy_echoport_backup_health_delay": 5,
+        "fastdeploy_echoport_backup_health_expected_status": 200,
+        "fastdeploy_echoport_backup_health_forwarded_for": "",
+        "fastdeploy_echoport_backup_health_forwarded_proto": "",
+        "fastdeploy_echoport_backup_health_headers": {},
+        "fastdeploy_echoport_backup_health_retries": 20,
+        "fastdeploy_echoport_backup_health_url": "http://127.0.0.1:9999/docs",
+        "fastdeploy_echoport_backup_include_logs": false,
+        "fastdeploy_echoport_backup_include_workspace": false,
+        "fastdeploy_echoport_backup_postgres_become_user": "postgres",
+        "fastdeploy_echoport_backup_restore_owner_deploy": "deploy:deploy",
+        "fastdeploy_echoport_backup_restore_owner_fastdeploy": "fastdeploy:fastdeploy",
+        "fastdeploy_echoport_backup_rollback_on_failure": true,
+        "fastdeploy_echoport_backup_runner_root": "/home/deploy/runners",
+        "fastdeploy_echoport_backup_service_name": "fastdeploy",
+        "fastdeploy_echoport_backup_services_path": "/home/fastdeploy/site/services",
+        "fastdeploy_echoport_backup_site_root": "/home/fastdeploy/site",
+        "fastdeploy_echoport_backup_sudoers_glob": "/etc/sudoers.d/fastdeploy_*",
+        "fastdeploy_echoport_backup_systemd_unit_path": "/etc/systemd/system/fastdeploy.service",
+        "fastdeploy_echoport_backup_traefik_config_path": "/etc/traefik/dynamic/fastdeploy.yml",
+        "fastdeploy_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/fastdeploy-backup",
+        "fastdeploy_echoport_backup_work_mount": "/mnt/cryptdata",
+        "fastdeploy_echoport_backup_workspace_path": "/home/deploy/_workspace",
+        "fastdeploy_echoport_backup_writer_services": [
+          "fastdeploy"
+        ]
+      },
+      "template": "fastdeploy_backup.py.j2"
+    },
+    "ggs-lennestrasse-staging-db-backup": {
+      "inputs": {
+        "django_chat_staging_db_backup_counted_tables": [
+          "wagtailcore_page",
+          "pages_standardpage",
+          "cast_post",
+          "wagtailimages_image",
+          "wagtaildocs_document",
+          "wagtailredirects_redirect",
+          "wordpress_import_sourceitem",
+          "wordpress_import_targetlink",
+          "auth_user",
+          "django_migrations"
+        ],
+        "django_chat_staging_db_backup_db_name": "ggs-lennestrasse",
+        "django_chat_staging_db_backup_host": "staging.example.invalid",
+        "django_chat_staging_db_backup_postgres_os_user": "postgres",
+        "django_chat_staging_db_backup_remote_user": "root",
+        "django_chat_staging_db_backup_required_tables": [
+          "wagtailcore_page",
+          "wagtailcore_site",
+          "wagtailcore_revision",
+          "pages_homepage",
+          "pages_standardpage",
+          "cast_post",
+          "wagtailimages_image",
+          "wagtaildocs_document",
+          "wagtailredirects_redirect",
+          "wordpress_import_sourceitem",
+          "wordpress_import_targetlink",
+          "auth_user",
+          "django_migrations"
+        ],
+        "django_chat_staging_db_backup_restore_db_prefix": "ggs_lennestrasse_restore",
+        "django_chat_staging_db_backup_work_dir": "/mnt/cryptdata/backups/tmp/ggs-lennestrasse-staging-db-backup",
+        "django_chat_staging_db_backup_work_mount": "/mnt/cryptdata",
+        "django_chat_staging_db_backup_work_retention_hours": 24,
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-ggs-lennestrasse-staging-db"
+      },
+      "template": "django_chat_staging_db_backup.py.j2"
+    },
+    "gotosocial-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-gotosocial",
+        "gotosocial_backup_ready_url": "http://127.0.0.1:10070/readyz",
+        "gotosocial_backup_remote_host": "gotosocial.example.invalid",
+        "gotosocial_backup_target_name": "gotosocial",
+        "gotosocial_backup_work_dir": "/mnt/cryptdata/backups/tmp/gotosocial-backup",
+        "gotosocial_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "gotosocial_backup.py.j2"
+    },
+    "graphyard-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-graphyard",
+        "graphyard_echoport_backup_agent_service": "graphyard-agent",
+        "graphyard_echoport_backup_agent_unit": "/etc/systemd/system/graphyard-agent.service",
+        "graphyard_echoport_backup_allowed_roots": [
+          "/opt/apps/graphyard/",
+          "/etc/graphyard/",
+          "/etc/systemd/system/",
+          "/var/lib/graphyard/"
+        ],
+        "graphyard_echoport_backup_check_disk_space": true,
+        "graphyard_echoport_backup_cleanup_safety_snapshot": true,
+        "graphyard_echoport_backup_create_safety_snapshot": true,
+        "graphyard_echoport_backup_db_path": "/opt/apps/graphyard/site/src/django/db.sqlite3",
+        "graphyard_echoport_backup_disk_space_multiplier": 2.0,
+        "graphyard_echoport_backup_django_dir": "/opt/apps/graphyard/site/src/django",
+        "graphyard_echoport_backup_enforce_host_match": true,
+        "graphyard_echoport_backup_env_file": "/etc/graphyard/graphyard.env",
+        "graphyard_echoport_backup_health_delay": 5,
+        "graphyard_echoport_backup_health_expected_status": 200,
+        "graphyard_echoport_backup_health_forwarded_proto": "https",
+        "graphyard_echoport_backup_health_retries": 24,
+        "graphyard_echoport_backup_health_url": "http://127.0.0.1:8051/v1/health",
+        "graphyard_echoport_backup_include_influx_config": true,
+        "graphyard_echoport_backup_influx_config_dir": "/var/lib/graphyard/influxdb2-config",
+        "graphyard_echoport_backup_influx_container": "graphyard-influxdb",
+        "graphyard_echoport_backup_influx_data_dir": "/var/lib/graphyard/influxdb2",
+        "graphyard_echoport_backup_manage_py": "/opt/apps/graphyard/site/src/django/manage.py",
+        "graphyard_echoport_backup_restore_failpoint": "",
+        "graphyard_echoport_backup_rollback_on_failure": true,
+        "graphyard_echoport_backup_site_root": "/opt/apps/graphyard/site",
+        "graphyard_echoport_backup_system_user": "graphyard",
+        "graphyard_echoport_backup_venv_python": "/opt/apps/graphyard/site/.venv/bin/python",
+        "graphyard_echoport_backup_web_service": "graphyard-web",
+        "graphyard_echoport_backup_web_unit": "/etc/systemd/system/graphyard-web.service",
+        "graphyard_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/graphyard-backup",
+        "graphyard_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "graphyard_backup.py.j2"
+    },
+    "homeassistant-backup": {
+      "inputs": {
+        "ansible_default_ipv4": {
+          "address": "192.0.2.10"
+        },
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-homeassistant",
+        "homeassistant_backup_allowed_roots": [
+          "/home/homeassistant/",
+          "/var/lib/thread/",
+          "/etc/systemd/system/",
+          "/etc/traefik/",
+          "/data/"
+        ],
+        "homeassistant_backup_check_disk_space": true,
+        "homeassistant_backup_cleanup_safety_snapshot": true,
+        "homeassistant_backup_config_path": "/home/homeassistant/site/config",
+        "homeassistant_backup_create_safety_snapshot": true,
+        "homeassistant_backup_data_path": "/home/homeassistant/site/data",
+        "homeassistant_backup_disk_space_multiplier": 2.0,
+        "homeassistant_backup_enforce_host_match": true,
+        "homeassistant_backup_health_delay": 5,
+        "homeassistant_backup_health_expected_status": 200,
+        "homeassistant_backup_health_forwarded_for": "192.0.2.10",
+        "homeassistant_backup_health_forwarded_proto": "http",
+        "homeassistant_backup_health_retries": 24,
+        "homeassistant_backup_health_url": "http://localhost:10020/auth/providers",
+        "homeassistant_backup_include_logs": true,
+        "homeassistant_backup_logs_path": "/home/homeassistant/site/logs",
+        "homeassistant_backup_main_db_path": "/home/homeassistant/site/config/home-assistant_v2.db",
+        "homeassistant_backup_manage_matter_server": true,
+        "homeassistant_backup_manage_otbr_state": true,
+        "homeassistant_backup_matter_chip_factory_path": "/data",
+        "homeassistant_backup_matter_service_name": "matter-server",
+        "homeassistant_backup_otbr_service_name": "otbr-agent",
+        "homeassistant_backup_restore_owner": "homeassistant:homeassistant",
+        "homeassistant_backup_restore_system_files": false,
+        "homeassistant_backup_rollback_on_failure": true,
+        "homeassistant_backup_service_name": "homeassistant",
+        "homeassistant_backup_site_root": "/home/homeassistant/site",
+        "homeassistant_backup_start_poll_interval": 3,
+        "homeassistant_backup_start_timeout": 120,
+        "homeassistant_backup_systemd_unit_path": "/etc/systemd/system/homeassistant.service",
+        "homeassistant_backup_thread_state_path": "/var/lib/thread",
+        "homeassistant_backup_traefik_config_path": "/etc/traefik/dynamic/homeassistant.yml",
+        "homeassistant_backup_work_dir": "/mnt/cryptdata/backups/tmp/homeassistant-backup",
+        "homeassistant_backup_work_mount": "/mnt/cryptdata",
+        "homeassistant_backup_zigbee_db_path": "/home/homeassistant/site/config/zigbee.db"
+      },
+      "template": "homeassistant_backup.py.j2"
+    },
+    "homepage-media-backup": {
+      "inputs": {
+        "homepage_media_backup_credentials_file": "/etc/echoport-media/homepage-media-backup.json",
+        "homepage_media_backup_default_bucket": "backups",
+        "homepage_media_backup_minio_url": "http://127.0.0.1:9001",
+        "homepage_media_backup_prefix_root": "homepage-media",
+        "homepage_media_backup_rclone_path": "/usr/bin/rclone",
+        "homepage_media_backup_source_bucket": "homepage-media-fixture",
+        "homepage_media_backup_source_region": "eu-central-1",
+        "homepage_media_backup_work_dir": "/mnt/cryptdata/backups/tmp/homepage-media-backup",
+        "homepage_media_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "homepage_media_backup.py.j2"
+    },
+    "homepage-production-db-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-homepage-production-db",
+        "homepage_prod_db_backup_db_name": "homepage",
+        "homepage_prod_db_backup_db_user": "homepage",
+        "homepage_prod_db_backup_remote_user": "root",
+        "homepage_prod_db_backup_restore_host": "staging.example.invalid",
+        "homepage_prod_db_backup_service_name": "homepage.service",
+        "homepage_prod_db_backup_source_host": "production.example.invalid",
+        "homepage_prod_db_backup_work_dir": "/mnt/cryptdata/backups/tmp/homepage-production-db-backup",
+        "homepage_prod_db_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "homepage_production_db_backup.py.j2"
+    },
+    "homepage-staging-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-homepage-staging",
+        "homepage_staging_backup_db_name": "homepage",
+        "homepage_staging_backup_db_user": "homepage",
+        "homepage_staging_backup_default_host": "staging.example.invalid",
+        "homepage_staging_backup_remote_user": "root",
+        "homepage_staging_backup_service_name": "homepage",
+        "homepage_staging_backup_work_dir": "/mnt/cryptdata/backups/tmp/homepage-staging-backup",
+        "homepage_staging_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "homepage_staging_backup.py.j2"
+    },
+    "mail-db-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-mail-db",
+        "mail_db_echoport_backup_counted_tables": [
+          "domain",
+          "mailbox",
+          "alias",
+          "alias_domain",
+          "admin",
+          "domain_admins"
+        ],
+        "mail_db_echoport_backup_db_name": "mail",
+        "mail_db_echoport_backup_postgres_os_user": "postgres",
+        "mail_db_echoport_backup_required_tables": [
+          "domain",
+          "mailbox",
+          "alias",
+          "alias_domain",
+          "admin",
+          "domain_admins",
+          "config"
+        ],
+        "mail_db_echoport_backup_restore_db_prefix": "mail_restore",
+        "mail_db_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/mail-db-backup",
+        "mail_db_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "mail_db_backup.py.j2"
+    },
+    "marina-production-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-marina-production",
+        "marina_staging_backup_allowed_roots": [
+          "/home/marina/site/"
+        ],
+        "marina_staging_backup_default_db_path": "/home/marina/site/db.sqlite3",
+        "marina_staging_backup_default_host": "marina.example.invalid",
+        "marina_staging_backup_remote_user": "root",
+        "marina_staging_backup_restore_owner": "marina:marina",
+        "marina_staging_backup_service_name": "marina.service",
+        "marina_staging_backup_work_dir": "/mnt/cryptdata/backups/tmp/marina-production-backup",
+        "marina_staging_backup_work_mount": "/mnt/cryptdata",
+        "marina_staging_backup_work_retention_hours": 24
+      },
+      "template": "marina_staging_backup.py.j2"
+    },
+    "marina-staging-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-marina-staging",
+        "marina_staging_backup_allowed_roots": [
+          "/home/marina/site/"
+        ],
+        "marina_staging_backup_default_db_path": "/home/marina/site/db.sqlite3",
+        "marina_staging_backup_default_host": "staging.example.invalid",
+        "marina_staging_backup_remote_user": "root",
+        "marina_staging_backup_restore_owner": "marina:marina",
+        "marina_staging_backup_service_name": "marina.service",
+        "marina_staging_backup_work_dir": "/mnt/cryptdata/backups/tmp/marina-staging-backup",
+        "marina_staging_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "marina_staging_backup.py.j2"
+    },
+    "mastodon-production-db-backup": {
+      "inputs": {
+        "django_chat_staging_db_backup_counted_tables": [
+          "users",
+          "follows",
+          "schema_migrations"
+        ],
+        "django_chat_staging_db_backup_db_name": "mastodon",
+        "django_chat_staging_db_backup_host": "production.example.invalid",
+        "django_chat_staging_db_backup_postgres_os_user": "postgres",
+        "django_chat_staging_db_backup_remote_user": "root",
+        "django_chat_staging_db_backup_required_tables": [
+          "accounts",
+          "users",
+          "statuses",
+          "follows",
+          "media_attachments",
+          "schema_migrations"
+        ],
+        "django_chat_staging_db_backup_restore_db_prefix": "mastodon_restore",
+        "django_chat_staging_db_backup_work_dir": "/mnt/cryptdata/backups/tmp/mastodon-production-db-backup",
+        "django_chat_staging_db_backup_work_mount": "/mnt/cryptdata",
+        "django_chat_staging_db_backup_work_retention_hours": 24,
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-mastodon-production-db"
+      },
+      "template": "django_chat_staging_db_backup.py.j2"
+    },
+    "minecraft-java-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-minecraft_java",
+        "minecraft_java_echoport_backup_allowed_roots": [
+          "/home/minecraft/",
+          "/etc/systemd/system/minecraft-java.service"
+        ],
+        "minecraft_java_echoport_backup_create_safety_snapshot": true,
+        "minecraft_java_echoport_backup_default_rcon_port": 25575,
+        "minecraft_java_echoport_backup_default_world_name": "world",
+        "minecraft_java_echoport_backup_env_file": "/home/minecraft/.env",
+        "minecraft_java_echoport_backup_mcrcon_path": "/usr/local/bin/mcrcon",
+        "minecraft_java_echoport_backup_rollback_on_failure": true,
+        "minecraft_java_echoport_backup_save_flush_delay": 2,
+        "minecraft_java_echoport_backup_server_dir": "/home/minecraft/server",
+        "minecraft_java_echoport_backup_server_port": 25565,
+        "minecraft_java_echoport_backup_server_properties": "/home/minecraft/server/server.properties",
+        "minecraft_java_echoport_backup_service_group": "minecraft",
+        "minecraft_java_echoport_backup_service_name": "minecraft-java",
+        "minecraft_java_echoport_backup_service_owner": "minecraft",
+        "minecraft_java_echoport_backup_start_timeout": 180,
+        "minecraft_java_echoport_backup_systemd_unit": "/etc/systemd/system/minecraft-java.service",
+        "minecraft_java_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/minecraft-java-backup",
+        "minecraft_java_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "minecraft_java_backup.py.j2"
+    },
+    "paperless-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-paperless",
+        "paperless_echoport_backup_allowed_roots": [
+          "/home/paperless/",
+          "/mnt/cryptdata/paperless/",
+          "/etc/systemd/system/",
+          "/etc/traefik/",
+          "/etc/ssh/"
+        ],
+        "paperless_echoport_backup_check_disk_space": true,
+        "paperless_echoport_backup_cleanup_safety_snapshot": true,
+        "paperless_echoport_backup_consume_path": "/mnt/cryptdata/paperless/consume",
+        "paperless_echoport_backup_create_safety_snapshot": true,
+        "paperless_echoport_backup_data_path": "/mnt/cryptdata/paperless/data",
+        "paperless_echoport_backup_db_check_query": "SELECT COUNT(*) FROM paperless_applicationconfiguration;",
+        "paperless_echoport_backup_db_name": "paperless",
+        "paperless_echoport_backup_db_owner": "paperless",
+        "paperless_echoport_backup_disk_space_multiplier": 1.5,
+        "paperless_echoport_backup_enforce_host_match": true,
+        "paperless_echoport_backup_env_file": "/home/paperless/site/.env",
+        "paperless_echoport_backup_export_path": "/mnt/cryptdata/paperless/export",
+        "paperless_echoport_backup_external_root": "/mnt/cryptdata/paperless",
+        "paperless_echoport_backup_gunicorn_config_path": "/home/paperless/site/gunicorn.conf.py",
+        "paperless_echoport_backup_health_delay": 6,
+        "paperless_echoport_backup_health_expected_status": 200,
+        "paperless_echoport_backup_health_forwarded_for": "",
+        "paperless_echoport_backup_health_forwarded_proto": "",
+        "paperless_echoport_backup_health_headers": {},
+        "paperless_echoport_backup_health_retries": 20,
+        "paperless_echoport_backup_health_url": "http://127.0.0.1:10030/api/schema/view/",
+        "paperless_echoport_backup_include_consume": false,
+        "paperless_echoport_backup_include_export": false,
+        "paperless_echoport_backup_include_logs": false,
+        "paperless_echoport_backup_logs_path": "/home/paperless/site/logs",
+        "paperless_echoport_backup_media_path": "/mnt/cryptdata/paperless/media",
+        "paperless_echoport_backup_pg_dump_options": "--clean --if-exists --no-owner",
+        "paperless_echoport_backup_postgres_become_user": "postgres",
+        "paperless_echoport_backup_restore_owner": "paperless:paperless",
+        "paperless_echoport_backup_rollback_on_failure": true,
+        "paperless_echoport_backup_service_consumer": "paperless-consumer",
+        "paperless_echoport_backup_service_paperless": "paperless",
+        "paperless_echoport_backup_service_scheduler": "paperless-scheduler",
+        "paperless_echoport_backup_service_worker": "paperless-worker",
+        "paperless_echoport_backup_site_root": "/home/paperless/site",
+        "paperless_echoport_backup_ssh_config_path": "/etc/ssh/sshd_config.d/sftp-scanner.conf",
+        "paperless_echoport_backup_start_services": [
+          "paperless",
+          "paperless-worker",
+          "paperless-scheduler",
+          "paperless-consumer"
+        ],
+        "paperless_echoport_backup_stop_services": [
+          "paperless-consumer",
+          "paperless-scheduler",
+          "paperless-worker",
+          "paperless"
+        ],
+        "paperless_echoport_backup_systemd_unit_consumer": "/etc/systemd/system/paperless-consumer.service",
+        "paperless_echoport_backup_systemd_unit_paperless": "/etc/systemd/system/paperless.service",
+        "paperless_echoport_backup_systemd_unit_scheduler": "/etc/systemd/system/paperless-scheduler.service",
+        "paperless_echoport_backup_systemd_unit_worker": "/etc/systemd/system/paperless-worker.service",
+        "paperless_echoport_backup_traefik_config_path": "/etc/traefik/dynamic/paperless.yml",
+        "paperless_echoport_backup_verify_http": true,
+        "paperless_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/paperless-backup",
+        "paperless_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "paperless_backup.py.j2"
+    },
+    "postfixadmin-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-postfixadmin",
+        "postfixadmin_echoport_backup_allowed_roots": [
+          "/opt/postfixadmin/",
+          "/etc/nginx/sites-available/postfixadmin",
+          "/etc/traefik/dynamic/postfixadmin.yml",
+          "/etc/php/",
+          "/etc/echoport-backups/"
+        ],
+        "postfixadmin_echoport_backup_config_file": "/opt/postfixadmin/config.local.php",
+        "postfixadmin_echoport_backup_config_owner": "root:www-data",
+        "postfixadmin_echoport_backup_create_safety_snapshot": true,
+        "postfixadmin_echoport_backup_db_credentials_file": "/etc/echoport-backups/postfixadmin-db.json",
+        "postfixadmin_echoport_backup_health_delay": 3,
+        "postfixadmin_echoport_backup_health_retries": 24,
+        "postfixadmin_echoport_backup_health_url": "http://127.0.0.1:8082/",
+        "postfixadmin_echoport_backup_install_path": "/opt/postfixadmin",
+        "postfixadmin_echoport_backup_nginx_site": "/etc/nginx/sites-available/postfixadmin",
+        "postfixadmin_echoport_backup_php_root": "/etc/php",
+        "postfixadmin_echoport_backup_rollback_on_failure": true,
+        "postfixadmin_echoport_backup_start_timeout": 120,
+        "postfixadmin_echoport_backup_system_owner": "root:root",
+        "postfixadmin_echoport_backup_traefik_config": "/etc/traefik/dynamic/postfixadmin.yml",
+        "postfixadmin_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/postfixadmin-backup",
+        "postfixadmin_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "postfixadmin_backup.py.j2"
+    },
+    "python-podcast-media-backup": {
+      "inputs": {
+        "python_podcast_media_backup_credentials_file": "/etc/echoport-media/python-podcast-media-backup.json",
+        "python_podcast_media_backup_default_bucket": "backups",
+        "python_podcast_media_backup_minio_url": "http://127.0.0.1:9001",
+        "python_podcast_media_backup_prefix_root": "python-podcast-media",
+        "python_podcast_media_backup_rclone_path": "/usr/bin/rclone",
+        "python_podcast_media_backup_source_bucket": "python-podcast-media-fixture",
+        "python_podcast_media_backup_source_region": "eu-central-1",
+        "python_podcast_media_backup_work_dir": "/mnt/cryptdata/backups/tmp/python-podcast-media-backup",
+        "python_podcast_media_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "python_podcast_media_backup.py.j2"
+    },
+    "python-podcast-production-db-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-python-podcast-production-db",
+        "pp_prod_db_backup_db_name": "python-podcast",
+        "pp_prod_db_backup_db_user": "python-podcast",
+        "pp_prod_db_backup_remote_user": "root",
+        "pp_prod_db_backup_restore_host": "staging.example.invalid",
+        "pp_prod_db_backup_service_name": "python-podcast.service",
+        "pp_prod_db_backup_source_host": "production.example.invalid",
+        "pp_prod_db_backup_work_dir": "/mnt/cryptdata/backups/tmp/python-podcast-production-db-backup",
+        "pp_prod_db_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "python_podcast_production_db_backup.py.j2"
+    },
+    "python-podcast-staging-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-python-podcast-staging",
+        "pp_staging_backup_db_name": "python-podcast",
+        "pp_staging_backup_db_user": "python-podcast",
+        "pp_staging_backup_default_host": "staging.example.invalid",
+        "pp_staging_backup_remote_user": "root",
+        "pp_staging_backup_service_name": "python-podcast",
+        "pp_staging_backup_work_dir": "/mnt/cryptdata/backups/tmp/python-podcast-staging-backup",
+        "pp_staging_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "python_podcast_staging_backup.py.j2"
+    },
+    "snappymail-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-snappymail",
+        "snappymail_echoport_backup_allowed_roots": [
+          "/mnt/cryptdata/snappymail/",
+          "/opt/snappymail/",
+          "/etc/nginx/sites-available/snappymail",
+          "/etc/traefik/dynamic/snappymail.yml",
+          "/etc/php/"
+        ],
+        "snappymail_echoport_backup_app_dir": "/opt/snappymail",
+        "snappymail_echoport_backup_app_group": "root",
+        "snappymail_echoport_backup_app_owner": "root",
+        "snappymail_echoport_backup_data_dir": "/mnt/cryptdata/snappymail",
+        "snappymail_echoport_backup_data_group": "snappymail",
+        "snappymail_echoport_backup_data_owner": "snappymail",
+        "snappymail_echoport_backup_health_delay": 3,
+        "snappymail_echoport_backup_health_retries": 24,
+        "snappymail_echoport_backup_health_url": "http://127.0.0.1:8088/",
+        "snappymail_echoport_backup_nginx_site": "/etc/nginx/sites-available/snappymail",
+        "snappymail_echoport_backup_php_root": "/etc/php",
+        "snappymail_echoport_backup_start_timeout": 120,
+        "snappymail_echoport_backup_traefik_config": "/etc/traefik/dynamic/snappymail.yml",
+        "snappymail_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/snappymail-backup",
+        "snappymail_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "snappymail_backup.py.j2"
+    },
+    "unifi-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-unifi",
+        "unifi_echoport_backup_allowed_roots": [
+          "/var/lib/unifi/",
+          "/etc/default/unifi",
+          "/etc/systemd/system/unifi.service",
+          "/etc/traefik/dynamic/unifi.yml",
+          "/etc/echoport-backups/"
+        ],
+        "unifi_echoport_backup_credentials_file": "/etc/echoport-backups/unifi-mongodb.json",
+        "unifi_echoport_backup_data_dir": "/var/lib/unifi",
+        "unifi_echoport_backup_db_dir": "/var/lib/unifi/db",
+        "unifi_echoport_backup_env_file": "/etc/default/unifi",
+        "unifi_echoport_backup_group": "unifi",
+        "unifi_echoport_backup_health_delay": 5,
+        "unifi_echoport_backup_health_retries": 18,
+        "unifi_echoport_backup_health_url": "https://127.0.0.1:8443/",
+        "unifi_echoport_backup_keystore_path": "/var/lib/unifi/keystore",
+        "unifi_echoport_backup_owner": "unifi",
+        "unifi_echoport_backup_service_name": "unifi.service",
+        "unifi_echoport_backup_start_timeout": 240,
+        "unifi_echoport_backup_system_properties": "/var/lib/unifi/system.properties",
+        "unifi_echoport_backup_systemd_unit": "/etc/systemd/system/unifi.service",
+        "unifi_echoport_backup_traefik_config": "/etc/traefik/dynamic/unifi.yml",
+        "unifi_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/unifi-backup",
+        "unifi_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "unifi_backup.py.j2"
+    },
+    "vaultwarden-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-vaultwarden",
+        "vaultwarden_echoport_backup_allowed_roots": [
+          "/var/lib/vaultwarden/",
+          "/etc/systemd/system/vaultwarden.service.d/",
+          "/etc/traefik/dynamic/vaultwarden.yml",
+          "/etc/vaultwarden.env"
+        ],
+        "vaultwarden_echoport_backup_attachments_dir": "/var/lib/vaultwarden/data/attachments",
+        "vaultwarden_echoport_backup_config_file": "/etc/vaultwarden.env",
+        "vaultwarden_echoport_backup_config_owner": "root:vaultwarden",
+        "vaultwarden_echoport_backup_create_safety_snapshot": true,
+        "vaultwarden_echoport_backup_data_dir": "/var/lib/vaultwarden/data",
+        "vaultwarden_echoport_backup_data_owner": "vaultwarden:vaultwarden",
+        "vaultwarden_echoport_backup_db_path": "/var/lib/vaultwarden/data/db.sqlite3",
+        "vaultwarden_echoport_backup_health_delay": 3,
+        "vaultwarden_echoport_backup_health_expected_status": 200,
+        "vaultwarden_echoport_backup_health_retries": 24,
+        "vaultwarden_echoport_backup_health_url": "http://127.0.0.1:8000/alive",
+        "vaultwarden_echoport_backup_rollback_on_failure": true,
+        "vaultwarden_echoport_backup_rsa_key_path": "/var/lib/vaultwarden/data/rsa_key.pem",
+        "vaultwarden_echoport_backup_rsa_pub_path": "/var/lib/vaultwarden/data/rsa_key.pub.pem",
+        "vaultwarden_echoport_backup_sends_dir": "/var/lib/vaultwarden/data/sends",
+        "vaultwarden_echoport_backup_service_name": "vaultwarden",
+        "vaultwarden_echoport_backup_system_owner": "root:root",
+        "vaultwarden_echoport_backup_systemd_override": "/etc/systemd/system/vaultwarden.service.d/override.conf",
+        "vaultwarden_echoport_backup_traefik_config": "/etc/traefik/dynamic/vaultwarden.yml",
+        "vaultwarden_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/vaultwarden-backup",
+        "vaultwarden_echoport_backup_work_mount": "/mnt/cryptdata"
+      },
+      "template": "vaultwarden_backup.py.j2"
+    },
+    "weeknotes-home-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-weeknotes_home",
+        "fastdeploy_echoport_backup_allowed_roots": [
+          "/home/weeknotes-home/",
+          "/etc/systemd/system/",
+          "/etc/traefik/",
+          "/etc/sudoers.d/"
+        ],
+        "fastdeploy_echoport_backup_check_disk_space": true,
+        "fastdeploy_echoport_backup_cleanup_safety_snapshot": true,
+        "fastdeploy_echoport_backup_create_safety_snapshot": true,
+        "fastdeploy_echoport_backup_db_name": "weeknotes_home",
+        "fastdeploy_echoport_backup_db_user": "weeknotes_home",
+        "fastdeploy_echoport_backup_disk_space_multiplier": 1.5,
+        "fastdeploy_echoport_backup_enforce_host_match": true,
+        "fastdeploy_echoport_backup_env_file": "/home/weeknotes-home/site/.env.weeknotes-home",
+        "fastdeploy_echoport_backup_health_delay": 3,
+        "fastdeploy_echoport_backup_health_expected_status": 200,
+        "fastdeploy_echoport_backup_health_forwarded_for": "",
+        "fastdeploy_echoport_backup_health_forwarded_proto": "",
+        "fastdeploy_echoport_backup_health_headers": {},
+        "fastdeploy_echoport_backup_health_retries": 20,
+        "fastdeploy_echoport_backup_health_url": "http://127.0.0.1:10062/healthz",
+        "fastdeploy_echoport_backup_include_logs": false,
+        "fastdeploy_echoport_backup_include_workspace": false,
+        "fastdeploy_echoport_backup_postgres_become_user": "postgres",
+        "fastdeploy_echoport_backup_restore_owner_deploy": "",
+        "fastdeploy_echoport_backup_restore_owner_fastdeploy": "weeknotes-home:weeknotes-home",
+        "fastdeploy_echoport_backup_rollback_on_failure": true,
+        "fastdeploy_echoport_backup_runner_root": "/home/weeknotes-home/site/cache/weeknotes-home",
+        "fastdeploy_echoport_backup_service_name": "weeknotes-home",
+        "fastdeploy_echoport_backup_services_path": "/home/weeknotes-home/site/services/weeknotes_home",
+        "fastdeploy_echoport_backup_site_root": "/home/weeknotes-home/site",
+        "fastdeploy_echoport_backup_sudoers_glob": "/etc/sudoers.d/weeknotes_home_*",
+        "fastdeploy_echoport_backup_systemd_unit_path": "/etc/systemd/system/weeknotes-home.service",
+        "fastdeploy_echoport_backup_traefik_config_path": "/etc/traefik/dynamic/weeknotes-home.yml",
+        "fastdeploy_echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/weeknotes-home-backup",
+        "fastdeploy_echoport_backup_work_mount": "/mnt/cryptdata",
+        "fastdeploy_echoport_backup_work_retention_hours": 24,
+        "fastdeploy_echoport_backup_workspace_path": "/home/weeknotes-home/site/cache/weeknotes-home/workspace",
+        "fastdeploy_echoport_backup_writer_services": [
+          "weeknotes-home"
+        ]
+      },
+      "template": "fastdeploy_backup.py.j2"
+    }
+  }
+}

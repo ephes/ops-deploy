@@ -1,0 +1,1203 @@
+#!/usr/bin/env python3
+"""
+Echoport backup runner for FastDeploy.
+Performs SQLite backup and file archiving, uploads to MinIO.
+Deployed by Ansible from ops-control.
+"""
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
+# Ensure unbuffered output
+os.environ['PYTHONUNBUFFERED'] = '1'
+
+
+# Configuration from Ansible
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+# mc aliases of per-target MinIO accounts, by first segment of the object key.
+MINIO_PREFIX_ALIASES = {{ echoport_backup_minio_prefix_aliases | to_json }}
+# Refuse keys whose first segment has no entry instead of using MINIO_ALIAS.
+MINIO_REQUIRE_PREFIX_ALIAS = {{ 'True' if echoport_backup_minio_require_prefix_alias | bool else 'False' }}
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/echoport-backup') }}"
+WORK_MOUNT = "{{ echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("echoport_", "echoport_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
+
+# Security: Allowed backup path roots (defense-in-depth)
+# Only paths under these directories can be backed up.
+# This prevents potential file exfiltration if config is compromised.
+ALLOWED_BACKUP_ROOTS = [
+{% for root in echoport_backup_allowed_roots %}
+    "{{ root }}",
+{% endfor %}
+]
+
+
+def read_config_file() -> Optional[Dict]:
+    """Read deployment configuration from secure file if available."""
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Failed to read config file: {e}", file=sys.stderr)
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    """Emit JSON object to stdout for FastDeploy to parse."""
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def output_step(name: str, state: str, message: str = None) -> None:
+    """Output step as NDJSON to stdout."""
+    step = {"name": name, "state": state}
+    if message:
+        step["message"] = message
+    _emit(step)
+
+
+def finish_stdout(status: str, message: str = None) -> None:
+    """Output finish event to stdout."""
+    finish = {"event": "finish", "status": status}
+    if message:
+        finish["message"] = message
+    _emit(finish)
+
+
+def request_json(url: str, token: str, payload: Dict | None = None, method: str = "POST") -> bool:
+    """Send JSON data to FastDeploy API (best-effort)."""
+    try:
+        data = json.dumps(payload).encode("utf-8") if payload else None
+        req = Request(url, data=data, method=method, headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        })
+        with urlopen(req, timeout=5) as response:
+            return response.status == 200
+    except (URLError, Exception) as e:
+        print(f"[HTTP API] Failed to {method} to {url}: {e}", file=sys.stderr)
+        return False
+
+
+def update_step(name: str, state: str, message: str = "") -> None:
+    """Update step via stdout for FastDeploy to process."""
+    # Only use stdout - FastDeploy's DeployTask reads stdout and posts steps.
+    # Sending HTTP requests directly causes race conditions with DeployTask's
+    # processing and cleanup when the subprocess exits.
+    output_step(name, state, message)
+
+
+def finish_deployment(status: str = "success", message: str = None) -> None:
+    """Signal deployment completion via stdout."""
+    # Only use stdout - FastDeploy's DeployTask automatically finishes the
+    # deployment when the subprocess exits after reading all stdout.
+    finish_stdout(status, message or f"Deployment {status}")
+
+
+def emit_echoport_result(success: bool, bucket: str = "", key: str = "",
+                         size_bytes: int = 0, checksum_sha256: str = "",
+                         file_count: int = 0, error: str = None) -> None:
+    """
+    Output ECHOPORT_RESULT as a step message for Echoport to parse.
+
+    We embed the result in a step's message field because FastDeploy only
+    parses valid JSON lines from stdout. A prefixed line like
+    "ECHOPORT_RESULT:{...}" would be silently dropped.
+
+    IMPORTANT: FastDeploy truncates step messages at 4096 bytes, so we emit
+    only essential metadata. The full manifest is stored in the tarball.
+
+    The result is emitted as a 'result' step with the JSON payload in the
+    message field, prefixed with ECHOPORT_RESULT: for easy parsing.
+    """
+    # Keep payload small to avoid 4KB truncation
+    # Full manifest is in the tarball, not needed here
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+
+    # Emit as a step so FastDeploy captures it in the steps array
+    # Echoport parses ECHOPORT_RESULT: prefix from step messages
+    result_json = json.dumps(result)
+    update_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
+
+
+emit_step = update_step  # the name _work_dir.py.j2 reports through
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def open_run_dir(prefix: str) -> Optional[Path]:
+    """Return a fresh run dir, or report the refusal in init and return None."""
+    try:
+        return create_run_dir(prefix)
+    except Exception as e:
+        error_msg = f"Work directory check failed: {e}"
+        print(error_msg, file=sys.stderr)
+        update_step("init", "failure", error_msg)
+        emit_echoport_result(False, error=error_msg)
+        finish_deployment("failure", error_msg)
+        return None
+
+
+def validate_path(path: str) -> bool:
+    """
+    Validate that a path is under an allowed root directory.
+
+    This is a defense-in-depth measure to prevent file exfiltration
+    if the config file is somehow compromised.
+    """
+    if not path:
+        return True  # Empty paths are skipped anyway
+
+    try:
+        # Resolve symlinks and normalize the path
+        resolved = os.path.realpath(path)
+
+        # Check if path is under any allowed root
+        # Normalize roots to avoid footgun: "/home" matching "/homeevil"
+        for root in ALLOWED_BACKUP_ROOTS:
+            # Ensure root ends with separator for proper prefix matching
+            normalized_root = os.path.realpath(root)
+            if not normalized_root.endswith(os.sep):
+                normalized_root += os.sep
+
+            # Check if resolved path starts with normalized root,
+            # or equals the root directory itself (without trailing sep)
+            if resolved.startswith(normalized_root) or resolved == normalized_root.rstrip(os.sep):
+                return True
+
+        return False
+    except Exception:
+        return False
+
+
+def calculate_sha256(filepath: Path) -> str:
+    """Calculate SHA256 checksum of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+{% include '_sqlite_backup.py.j2' %}
+
+
+def _make_symlink_ignore_func(base_path: str):
+    """
+    Create an ignore function for shutil.copytree that skips symlinks
+    pointing outside allowed roots.
+
+    This enforces the symlink policy consistently for nested symlinks
+    within directory copies.
+    """
+    def ignore_func(directory: str, entries: list) -> list:
+        ignored = []
+        for entry in entries:
+            full_path = os.path.join(directory, entry)
+            if os.path.islink(full_path):
+                target = os.path.realpath(full_path)
+                if not validate_path(target):
+                    print(f"Skipping nested symlink outside allowed roots: {full_path} -> {target}", file=sys.stderr)
+                    ignored.append(entry)
+        return ignored
+    return ignore_func
+
+
+def copy_files(file_list: list, dest_dir: Path) -> list:
+    """
+    Copy additional files to backup directory.
+
+    Security: Symlinks are copied as symlinks (not followed) to prevent
+    exfiltration of files outside allowed roots via symlink traversal.
+    Nested symlinks pointing outside allowed roots are skipped entirely.
+    """
+    copied = []
+
+    for file_path in file_list:
+        src = Path(file_path)
+        if not src.exists():
+            print(f"Skipping non-existent file: {file_path}", file=sys.stderr)
+            continue
+
+        # Security: If it's a symlink, validate the target is in allowed roots
+        if src.is_symlink():
+            target = os.path.realpath(src)
+            if not validate_path(target):
+                print(f"Skipping symlink with target outside allowed roots: {file_path} -> {target}", file=sys.stderr)
+                continue
+
+        if src.is_file():
+            dest = dest_dir / src.name
+            # For symlinks, copy as symlink; for regular files, copy content
+            if src.is_symlink():
+                os.symlink(os.readlink(src), dest)
+                print(f"Copied symlink: {file_path}", file=sys.stderr)
+            else:
+                shutil.copy2(src, dest)
+                print(f"Copied file: {file_path}", file=sys.stderr)
+            copied.append(str(src))
+        elif src.is_dir():
+            dest = dest_dir / src.name
+            # Copy directory with symlinks as symlinks (don't follow them)
+            # Use ignore callback to skip nested symlinks pointing outside allowed roots
+            shutil.copytree(
+                src, dest,
+                symlinks=True,
+                ignore=_make_symlink_ignore_func(str(src))
+            )
+            copied.append(str(src))
+            print(f"Copied directory: {file_path}", file=sys.stderr)
+
+    return copied
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> bool:
+    """Create a compressed tarball from the backup directory."""
+    print(f"Creating tarball: {tarball_path}", file=sys.stderr)
+
+    try:
+        with tarfile.open(tarball_path, "w:gz") as tar:
+            for item in source_dir.iterdir():
+                tar.add(item, arcname=item.name)
+
+        print(f"Tarball created successfully: {tarball_path}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Failed to create tarball: {e}", file=sys.stderr)
+        return False
+
+
+MC_ALIAS_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+
+
+class MinioAliasError(Exception):
+    """The mc alias for an object key is unusable; nothing was sent to mc cp/stat."""
+
+
+def minio_alias_for(key: str) -> str:
+    """Return the mc alias whose account may access this object key."""
+    return MINIO_PREFIX_ALIASES.get(key.split("/", 1)[0], MINIO_ALIAS)
+
+
+def mc_alias_configured(alias: str) -> bool:
+    """Whether the running user's mc configuration has this alias.
+
+    `mc alias list <alias>` prints the stored secret key, so its output is
+    parsed here and never printed.
+    """
+    try:
+        result = subprocess.run(
+            [MC_PATH, "--json", "alias", "list", alias],
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return False
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(entry, dict)
+            and entry.get("status") == "success"
+            and entry.get("alias") == alias
+            and str(entry.get("URL", "")).startswith(("http://", "https://"))
+        ):
+            return True
+    return False
+
+
+def minio_object(bucket: str, key: str) -> str:
+    """Return `<alias>/<bucket>/<key>` once the alias is proven to exist.
+
+    mc treats `<alias>/...` with an unknown alias as a local path: `mc cp`
+    would write the archive below the working directory and `mc stat` would
+    find it there, so a backup that never reached MinIO would look fine.
+    Raises MinioAliasError instead.
+    """
+    prefix = key.split("/", 1)[0]
+    if MINIO_REQUIRE_PREFIX_ALIAS and prefix not in MINIO_PREFIX_ALIASES:
+        raise MinioAliasError(
+            f"No mc alias configured for key prefix '{prefix}' "
+            "(echoport_backup_minio_prefix_aliases has no entry and the shared alias is not allowed)"
+        )
+    alias = minio_alias_for(key)
+    source = "its prefix alias" if prefix in MINIO_PREFIX_ALIASES else "the shared fallback alias"
+    if not MC_ALIAS_NAME.match(alias):
+        raise MinioAliasError(f"Invalid mc alias name '{alias}' for key prefix '{prefix}'")
+    if not mc_alias_configured(alias):
+        raise MinioAliasError(
+            f"mc alias '{alias}' ({source} for key prefix '{prefix}') is not configured "
+            "for this user; refusing to run mc against a local path"
+        )
+    return f"{alias}/{bucket}/{key}"
+
+
+def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> bool:
+    """Upload tarball to MinIO using mc."""
+    try:
+        dest = minio_object(bucket, key)
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        return False
+    print(f"Uploading to MinIO: {dest}", file=sys.stderr)
+
+    try:
+        result = subprocess.run(
+            [MC_PATH, "cp", str(tarball_path), dest],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"mc upload failed: {result.stderr}", file=sys.stderr)
+            return False
+
+        print(f"Upload successful: {dest}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Upload error: {e}", file=sys.stderr)
+        return False
+
+
+def download_from_minio(bucket: str, key: str, dest_path: Path) -> bool:
+    """Download tarball from MinIO using mc."""
+    try:
+        src = minio_object(bucket, key)
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        return False
+    print(f"Downloading from MinIO: {src}", file=sys.stderr)
+
+    try:
+        result = subprocess.run(
+            [MC_PATH, "cp", src, str(dest_path)],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"mc download failed: {result.stderr}", file=sys.stderr)
+            return False
+
+        if not dest_path.exists():
+            print(f"Download failed: file not created at {dest_path}", file=sys.stderr)
+            return False
+
+        print(f"Download successful: {dest_path}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Download error: {e}", file=sys.stderr)
+        return False
+
+
+def stop_service(service_name: str) -> bool:
+    """Stop a systemd service."""
+    if not service_name:
+        return True
+
+    print(f"Stopping service: {service_name}", file=sys.stderr)
+    try:
+        result = subprocess.run(
+            ["systemctl", "stop", service_name],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print(f"Failed to stop service: {result.stderr}", file=sys.stderr)
+            return False
+        print(f"Service stopped: {service_name}", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"Error stopping service: {e}", file=sys.stderr)
+        return False
+
+
+def start_service(service_name: str) -> bool:
+    """Start a systemd service."""
+    if not service_name:
+        return True
+
+    print(f"Starting service: {service_name}", file=sys.stderr)
+    try:
+        result = subprocess.run(
+            ["systemctl", "start", service_name],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print(f"Failed to start service: {result.stderr}", file=sys.stderr)
+            return False
+        print(f"Service started: {service_name}", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"Error starting service: {e}", file=sys.stderr)
+        return False
+
+
+def cleanup_sqlite_wal(db_path: str) -> bool:
+    """
+    Remove SQLite WAL and SHM files before/after restore.
+
+    When SQLite is in WAL mode, stale -wal and -shm files can cause
+    corruption or boot failures if the service tries to use them
+    with a restored database.
+    """
+    if not db_path:
+        return True
+
+    wal_path = f"{db_path}-wal"
+    shm_path = f"{db_path}-shm"
+
+    for path in [wal_path, shm_path]:
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Removed SQLite WAL/SHM file: {path}", file=sys.stderr)
+            except Exception as e:
+                print(f"Failed to remove {path}: {e}", file=sys.stderr)
+                return False
+
+    return True
+
+
+def apply_ownership(paths: list, owner: str) -> bool:
+    """
+    Apply user:group ownership to restored files.
+
+    Args:
+        paths: List of file/directory paths to chown
+        owner: Owner string in 'user:group' format
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not owner:
+        return True
+
+    if ":" not in owner:
+        print(f"Invalid owner format (expected 'user:group'): {owner}", file=sys.stderr)
+        return False
+
+    for path in paths:
+        if not path or not os.path.exists(path):
+            continue
+
+        try:
+            # Use chown -R for directories
+            args = ["chown", "-R", owner, path] if os.path.isdir(path) else ["chown", owner, path]
+            result = subprocess.run(args, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"Failed to chown {path}: {result.stderr}", file=sys.stderr)
+                return False
+
+            print(f"Applied ownership {owner} to {path}", file=sys.stderr)
+
+        except Exception as e:
+            print(f"Error applying ownership to {path}: {e}", file=sys.stderr)
+            return False
+
+    return True
+
+
+def _is_safe_tar_member(member: tarfile.TarInfo, dest_dir: Path) -> bool:
+    """
+    High: Check if a tar member is safe to extract.
+
+    Prevents path traversal attacks by ensuring:
+    1. No special file types (device nodes, FIFOs)
+    2. No absolute paths
+    3. No paths escaping dest_dir via ..
+    4. No symlinks/hardlinks pointing outside dest_dir
+    """
+    # Medium: Reject special file types that could be dangerous if extracted as root
+    if member.isdev() or member.ischr() or member.isblk():
+        print(f"Rejecting device node in tarball: {member.name}", file=sys.stderr)
+        return False
+
+    if member.isfifo():
+        print(f"Rejecting FIFO in tarball: {member.name}", file=sys.stderr)
+        return False
+
+    # Check for absolute paths
+    if member.name.startswith('/'):
+        print(f"Rejecting absolute path in tarball: {member.name}", file=sys.stderr)
+        return False
+
+    # Resolve the target path and ensure it's within dest_dir
+    target_path = (dest_dir / member.name).resolve()
+    try:
+        target_path.relative_to(dest_dir.resolve())
+    except ValueError:
+        print(f"Rejecting path escaping dest_dir: {member.name}", file=sys.stderr)
+        return False
+
+    # Check symlinks point within dest_dir
+    if member.issym():
+        link_target = Path(member.linkname)
+        if link_target.is_absolute():
+            print(f"Rejecting symlink with absolute target: {member.name} -> {member.linkname}", file=sys.stderr)
+            return False
+        # Resolve relative to the symlink's directory
+        link_resolved = (target_path.parent / link_target).resolve()
+        try:
+            link_resolved.relative_to(dest_dir.resolve())
+        except ValueError:
+            print(f"Rejecting symlink escaping dest_dir: {member.name} -> {member.linkname}", file=sys.stderr)
+            return False
+
+    # Check hardlinks point within dest_dir
+    if member.islnk():
+        link_target = (dest_dir / member.linkname).resolve()
+        try:
+            link_target.relative_to(dest_dir.resolve())
+        except ValueError:
+            print(f"Rejecting hardlink escaping dest_dir: {member.name} -> {member.linkname}", file=sys.stderr)
+            return False
+
+    return True
+
+
+def extract_tarball(tarball_path: Path, dest_dir: Path) -> bool:
+    """
+    Extract a tarball to a destination directory safely.
+
+    High: Validates all members before extraction to prevent path traversal.
+    """
+    print(f"Extracting tarball: {tarball_path} to {dest_dir}", file=sys.stderr)
+
+    try:
+        with tarfile.open(tarball_path, "r:gz") as tar:
+            # First pass: validate all members
+            members = tar.getmembers()
+            safe_members = []
+            for member in members:
+                if _is_safe_tar_member(member, dest_dir):
+                    safe_members.append(member)
+                else:
+                    print(f"Skipping unsafe tar member: {member.name}", file=sys.stderr)
+
+            # Only extract safe members
+            tar.extractall(path=dest_dir, members=safe_members)
+
+        print(f"Tarball extracted successfully ({len(safe_members)} members)", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Failed to extract tarball: {e}", file=sys.stderr)
+        return False
+
+
+def restore_database(backup_db_path: Path, target_db_path: str) -> bool:
+    """
+    Restore a SQLite database from backup.
+    Uses safe copy and integrity verification.
+    """
+    print(f"Restoring database: {backup_db_path} -> {target_db_path}", file=sys.stderr)
+
+    target = Path(target_db_path)
+
+    # Ensure target directory exists
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Copy backup to target
+        shutil.copy2(backup_db_path, target)
+
+        # Verify integrity of restored database
+        integrity_result = subprocess.run(
+            ["sqlite3", str(target), "PRAGMA integrity_check;"],
+            capture_output=True,
+            text=True
+        )
+
+        if "ok" not in integrity_result.stdout.lower():
+            print(f"Restored database integrity check failed: {integrity_result.stdout}", file=sys.stderr)
+            return False
+
+        print(f"Database restored and verified: {target_db_path}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Database restore error: {e}", file=sys.stderr)
+        return False
+
+
+def restore_files(backup_dir: Path, manifest: Dict) -> tuple[int, str | None]:
+    """
+    Restore files from backup to their original locations.
+
+    Medium: Any restore error is treated as failure to avoid partial restores.
+
+    Returns:
+        Tuple of (files_restored_count, error_message_or_none)
+    """
+    files_restored = 0
+
+    # Restore additional files from manifest
+    for file_path in manifest.get("files", []):
+        src_name = Path(file_path).name
+        src = backup_dir / src_name
+
+        if not src.exists():
+            # Missing backup file is an error - manifest says it should exist
+            error = f"Backup file missing: {src_name}"
+            print(f"Error: {error}", file=sys.stderr)
+            return files_restored, error
+
+        # Validate target path
+        if not validate_path(file_path):
+            error = f"File outside allowed roots: {file_path}"
+            print(f"Security error: {error}", file=sys.stderr)
+            return files_restored, error
+
+        target = Path(file_path)
+
+        try:
+            # Ensure target directory exists
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            if src.is_dir():
+                # Remove existing directory if present
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(src, target, symlinks=True)
+                print(f"Restored directory: {file_path}", file=sys.stderr)
+            else:
+                shutil.copy2(src, target)
+                print(f"Restored file: {file_path}", file=sys.stderr)
+
+            files_restored += 1
+
+        except Exception as e:
+            error = f"Error restoring {file_path}: {e}"
+            print(error, file=sys.stderr)
+            return files_restored, error
+
+    return files_restored, None
+
+
+def main() -> int:
+    """Main entry point - dispatch to backup or restore."""
+    # Read configuration to determine action
+    config = read_config_file()
+
+    if config:
+        context = config.get("context", {})
+    else:
+        # Fail fast if running as root without config
+        if os.getuid() == 0:
+            error_msg = "No config file found while running as root."
+            print(f"Error: {error_msg}", file=sys.stderr)
+            update_step("init", "failure", error_msg)
+            emit_echoport_result(False, error=error_msg)
+            finish_deployment("failure", "Missing config file")
+            return 1
+
+        # Fallback for manual testing
+        print("Warning: No config file found, using environment (testing mode)", file=sys.stderr)
+        context_raw = os.environ.get("CONTEXT", "{}")
+        try:
+            context = json.loads(context_raw)
+        except json.JSONDecodeError:
+            context = {}
+
+    cenv = context.get("env", {})
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+
+    if action == "restore":
+        return main_restore(config, context, cenv)
+    else:
+        return main_backup(config, context, cenv)
+
+
+def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
+    """Main restore logic."""
+    update_step("init", "running", "Starting restore")
+
+    # Get Echoport-specific configuration
+    target_name = cenv.get("ECHOPORT_TARGET", "unknown")
+    restore_id = cenv.get("ECHOPORT_RESTORE_ID", "0")
+    db_path = cenv.get("ECHOPORT_DB_PATH", "")
+    backup_files_str = cenv.get("ECHOPORT_BACKUP_FILES", "")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    storage_key = cenv.get("ECHOPORT_KEY", "")
+    expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+    service_name = cenv.get("ECHOPORT_SERVICE_NAME", "")
+    restore_owner = cenv.get("ECHOPORT_RESTORE_OWNER", "")
+
+    backup_files = [f.strip() for f in backup_files_str.split(",") if f.strip()]
+
+    print(f"Restore configuration:", file=sys.stderr)
+    print(f"  Target: {target_name}", file=sys.stderr)
+    print(f"  Restore ID: {restore_id}", file=sys.stderr)
+    print(f"  DB Path: {db_path}", file=sys.stderr)
+    print(f"  Files: {backup_files}", file=sys.stderr)
+    print(f"  Bucket: {bucket}", file=sys.stderr)
+    print(f"  Key: {storage_key}", file=sys.stderr)
+    print(f"  Service: {service_name}", file=sys.stderr)
+    print(f"  Restore Owner: {restore_owner or '(none)'}", file=sys.stderr)
+
+    # Security: Validate all target paths are under allowed roots
+    all_paths = ([db_path] if db_path else []) + backup_files
+    for path in all_paths:
+        if not validate_path(path):
+            error_msg = f"Path not under allowed roots: {path}"
+            print(f"Security error: {error_msg}", file=sys.stderr)
+            update_step("init", "failure", error_msg)
+            emit_echoport_result(False, error=error_msg)
+            finish_deployment("failure", "Path validation failed")
+            return 1
+
+    if not storage_key:
+        error_msg = "No storage key provided for restore"
+        update_step("init", "failure", error_msg)
+        emit_echoport_result(False, error=error_msg)
+        finish_deployment("failure", error_msg)
+        return 1
+
+    # High: Require checksum for restore integrity verification
+    if not expected_checksum:
+        error_msg = "No checksum provided for restore - cannot verify backup integrity"
+        update_step("init", "failure", error_msg)
+        emit_echoport_result(False, error=error_msg)
+        finish_deployment("failure", error_msg)
+        return 1
+
+    # Fail before stopping anything if the object cannot come from MinIO.
+    try:
+        minio_object(bucket, storage_key)
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        update_step("init", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", "MinIO alias missing")
+        return 1
+
+    update_step("init", "success", f"Configuration loaded for {target_name}")
+
+    # Fail closed: the run dir must be on WORK_MOUNT (no fallback to /tmp).
+    work_dir = open_run_dir("echoport_restore_")
+    if work_dir is None:
+        return 1
+    restore_dir = work_dir / "restore"
+    restore_dir.mkdir(parents=True)
+
+    service_was_stopped = False
+
+    try:
+        # Download backup from MinIO
+        update_step("download", "running", "Downloading backup from MinIO")
+
+        tarball_path = work_dir / "backup.tar.gz"
+        if not download_from_minio(bucket, storage_key, tarball_path):
+            update_step("download", "failure", "Failed to download backup")
+            emit_echoport_result(False, error="Download failed")
+            finish_deployment("failure", "Download failed")
+            return 1
+
+        update_step("download", "success", f"Downloaded backup ({tarball_path.stat().st_size:,} bytes)")
+
+        # Verify checksum (required - we validated expected_checksum exists above)
+        update_step("verify", "running", "Verifying backup integrity")
+
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            error_msg = f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
+            update_step("verify", "failure", error_msg)
+            emit_echoport_result(False, error=error_msg)
+            finish_deployment("failure", "Checksum verification failed")
+            return 1
+
+        update_step("verify", "success", "Backup integrity verified")
+
+        # Extract tarball
+        update_step("extract", "running", "Extracting backup")
+
+        if not extract_tarball(tarball_path, restore_dir):
+            update_step("extract", "failure", "Failed to extract backup")
+            emit_echoport_result(False, error="Extraction failed")
+            finish_deployment("failure", "Extraction failed")
+            return 1
+
+        # Read manifest
+        manifest_path = restore_dir / "manifest.json"
+        if manifest_path.exists():
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+        else:
+            manifest = {"files": backup_files, "database": {"source": db_path} if db_path else None}
+
+        update_step("extract", "success", "Backup extracted")
+
+        # Stop service before restore
+        if service_name:
+            update_step("stop", "running", f"Stopping {service_name}")
+            if not stop_service(service_name):
+                update_step("stop", "failure", f"Failed to stop {service_name}")
+                emit_echoport_result(False, error=f"Failed to stop service {service_name}")
+                finish_deployment("failure", "Service stop failed")
+                return 1
+            service_was_stopped = True
+            update_step("stop", "success", f"Stopped {service_name}")
+
+        # Clean up SQLite WAL/SHM files before restore
+        if db_path:
+            if not cleanup_sqlite_wal(db_path):
+                if service_was_stopped and service_name:
+                    start_service(service_name)
+                update_step("restore", "failure", "Failed to clean up WAL/SHM files")
+                emit_echoport_result(False, error="WAL/SHM cleanup failed")
+                finish_deployment("failure", "WAL cleanup failed")
+                return 1
+
+        # Restore database
+        files_restored = 0
+        update_step("restore", "running", "Restoring files")
+
+        if db_path and manifest.get("database"):
+            db_info = manifest["database"]
+            backup_db_name = db_info.get("filename", Path(db_path).name)
+            backup_db_path = restore_dir / backup_db_name
+
+            if backup_db_path.exists():
+                if not restore_database(backup_db_path, db_path):
+                    # Try to restart service before failing
+                    if service_was_stopped and service_name:
+                        start_service(service_name)
+                    update_step("restore", "failure", "Database restore failed")
+                    emit_echoport_result(False, error="Database restore failed")
+                    finish_deployment("failure", "Database restore failed")
+                    return 1
+                files_restored += 1
+            else:
+                # Medium: Missing database backup is an error if manifest says it should exist
+                error_msg = f"Database backup file not found: {backup_db_name}"
+                if service_was_stopped and service_name:
+                    start_service(service_name)
+                update_step("restore", "failure", error_msg)
+                emit_echoport_result(False, error=error_msg)
+                finish_deployment("failure", "Database backup missing")
+                return 1
+
+        # Restore additional files
+        additional_restored, restore_error = restore_files(restore_dir, manifest)
+        files_restored += additional_restored
+
+        # Medium: Any file restore error is treated as failure
+        if restore_error:
+            if service_was_stopped and service_name:
+                start_service(service_name)
+            update_step("restore", "failure", restore_error)
+            emit_echoport_result(False, error=restore_error)
+            finish_deployment("failure", "File restore failed")
+            return 1
+
+        update_step("restore", "success", f"Restored {files_restored} file(s)")
+
+        # Clean up SQLite WAL/SHM files after restore (in case tarball contained them)
+        if db_path:
+            cleanup_sqlite_wal(db_path)
+
+        # Apply ownership to restored files
+        if restore_owner:
+            update_step("ownership", "running", f"Applying ownership {restore_owner}")
+            # Collect all restored paths, including parent directory of DB
+            # (restore_database creates parent dirs as root if they don't exist)
+            restored_paths = []
+            if db_path:
+                db_parent = str(Path(db_path).parent)
+                restored_paths.append(db_parent)
+            restored_paths.extend(backup_files)
+
+            if not apply_ownership(restored_paths, restore_owner):
+                if service_was_stopped and service_name:
+                    start_service(service_name)
+                update_step("ownership", "failure", f"Failed to apply ownership {restore_owner}")
+                emit_echoport_result(False, error=f"Failed to apply ownership {restore_owner}")
+                finish_deployment("failure", "Ownership fix failed")
+                return 1
+            update_step("ownership", "success", f"Applied ownership {restore_owner}")
+
+        # Start service after restore
+        if service_was_stopped and service_name:
+            update_step("start", "running", f"Starting {service_name}")
+            if not start_service(service_name):
+                update_step("start", "failure", f"Failed to start {service_name}")
+                emit_echoport_result(False, error=f"Failed to start service {service_name}")
+                finish_deployment("failure", "Service start failed")
+                return 1
+            update_step("start", "success", f"Started {service_name}")
+            service_was_stopped = False
+
+        # Emit success result
+        emit_echoport_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=actual_checksum,
+            file_count=files_restored,
+        )
+
+        finish_deployment("success", f"Restore completed: {files_restored} file(s) restored")
+        return 0
+
+    except Exception as e:
+        print(f"Restore failed with error: {e}", file=sys.stderr)
+        # Try to restart service if we stopped it
+        if service_was_stopped and service_name:
+            print(f"Attempting to restart {service_name} after failure", file=sys.stderr)
+            start_service(service_name)
+        update_step("error", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", f"Unexpected error: {e}")
+        return 1
+
+    finally:
+        # Cleanup temporary directory
+        try:
+            shutil.rmtree(work_dir)
+        except Exception as e:
+            print(f"Failed to cleanup temp dir: {e}", file=sys.stderr)
+
+
+def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
+    """Main backup logic."""
+    update_step("init", "running", "Starting backup")
+
+    # Get Echoport-specific configuration
+    target_name = cenv.get("ECHOPORT_TARGET", "unknown")
+    run_id = cenv.get("ECHOPORT_RUN_ID", "0")
+    db_path = cenv.get("ECHOPORT_DB_PATH", "")
+    backup_files_str = cenv.get("ECHOPORT_BACKUP_FILES", "")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{target_name}/{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}")
+    timestamp = cenv.get("ECHOPORT_TIMESTAMP", datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S'))
+
+    backup_files = [f.strip() for f in backup_files_str.split(",") if f.strip()]
+
+    print(f"Backup configuration:", file=sys.stderr)
+    print(f"  Target: {target_name}", file=sys.stderr)
+    print(f"  Run ID: {run_id}", file=sys.stderr)
+    print(f"  DB Path: {db_path}", file=sys.stderr)
+    print(f"  Files: {backup_files}", file=sys.stderr)
+    print(f"  Bucket: {bucket}", file=sys.stderr)
+    print(f"  Key Prefix: {key_prefix}", file=sys.stderr)
+
+    # Security: Validate all paths are under allowed roots
+    all_paths = ([db_path] if db_path else []) + backup_files
+    for path in all_paths:
+        if not validate_path(path):
+            error_msg = f"Path not under allowed roots: {path}"
+            print(f"Security error: {error_msg}", file=sys.stderr)
+            print(f"Allowed roots: {ALLOWED_BACKUP_ROOTS}", file=sys.stderr)
+            update_step("init", "failure", error_msg)
+            emit_echoport_result(False, error=error_msg)
+            finish_deployment("failure", "Path validation failed")
+            return 1
+
+    # Fail before archiving anything if the object cannot reach MinIO.
+    try:
+        minio_object(bucket, f"{key_prefix}.tar.gz")
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        update_step("init", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", "MinIO alias missing")
+        return 1
+
+    update_step("init", "success", f"Configuration loaded for {target_name}")
+
+    # Fail closed: the run dir must be on WORK_MOUNT (no fallback to /tmp).
+    work_dir = open_run_dir("echoport_")
+    if work_dir is None:
+        return 1
+    backup_dir = work_dir / "backup"
+    backup_dir.mkdir(parents=True)
+
+    try:
+        update_step("backup", "running", "Creating backup")
+
+        manifest = {
+            "target": target_name,
+            "run_id": run_id,
+            "timestamp": timestamp,
+            "files": [],
+            "database": None,
+        }
+
+        # Backup SQLite database if specified
+        if db_path:
+            db_backup_path = backup_dir / Path(db_path).name
+            db_error = backup_sqlite(db_path, db_backup_path)
+            if db_error is None:
+                manifest["database"] = {
+                    "source": db_path,
+                    "filename": db_backup_path.name,
+                    "size": db_backup_path.stat().st_size,
+                }
+            else:
+                update_step("backup", "failure", f"Failed to backup database: {db_path} ({db_error})")
+                emit_echoport_result(False, error=f"Database backup failed: {db_path}")
+                finish_deployment("failure", "Database backup failed")
+                return 1
+
+        # Copy additional files
+        if backup_files:
+            copied = copy_files(backup_files, backup_dir)
+            manifest["files"] = copied
+
+        # Write manifest
+        manifest_path = backup_dir / "manifest.json"
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        update_step("backup", "success", f"Backup created ({len(manifest['files'])} files)")
+
+        # Create tarball
+        update_step("upload", "running", "Creating archive and uploading")
+
+        tarball_name = f"{key_prefix.replace('/', '_')}.tar.gz"
+        tarball_path = work_dir / tarball_name
+
+        if not create_tarball(backup_dir, tarball_path):
+            update_step("upload", "failure", "Failed to create archive")
+            emit_echoport_result(False, error="Failed to create tarball")
+            finish_deployment("failure", "Archive creation failed")
+            return 1
+
+        # Calculate checksum
+        checksum = calculate_sha256(tarball_path)
+        size_bytes = tarball_path.stat().st_size
+
+        # Upload to MinIO
+        storage_key = f"{key_prefix}.tar.gz"
+
+        if not upload_to_minio(tarball_path, bucket, storage_key):
+            update_step("upload", "failure", "Failed to upload to MinIO")
+            emit_echoport_result(False, error="MinIO upload failed")
+            finish_deployment("failure", "Upload failed")
+            return 1
+
+        update_step("upload", "success", f"Uploaded {size_bytes:,} bytes")
+
+        # Verify upload
+        update_step("verify", "running", "Verifying upload")
+
+        # Use mc stat to verify the object exists
+        try:
+            verify_target = minio_object(bucket, storage_key)
+        except MinioAliasError as e:
+            update_step("verify", "failure", str(e))
+            emit_echoport_result(False, error=str(e))
+            finish_deployment("failure", "Verification failed")
+            return 1
+        verify_result = subprocess.run(
+            [MC_PATH, "stat", verify_target],
+            capture_output=True,
+            text=True
+        )
+
+        if verify_result.returncode != 0:
+            update_step("verify", "failure", "Upload verification failed")
+            emit_echoport_result(False, error="Upload verification failed")
+            finish_deployment("failure", "Verification failed")
+            return 1
+
+        update_step("verify", "success", "Backup verified in MinIO")
+
+        # Emit success result for Echoport
+        # Note: full manifest is in the tarball, we just send essential metadata
+        file_count = len(manifest.get("files", [])) + (1 if manifest.get("database") else 0)
+        emit_echoport_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=size_bytes,
+            checksum_sha256=checksum,
+            file_count=file_count,
+        )
+
+        finish_deployment("success", f"Backup completed: {bucket}/{storage_key}")
+        return 0
+
+    except Exception as e:
+        print(f"Backup failed with error: {e}", file=sys.stderr)
+        update_step("error", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", f"Unexpected error: {e}")
+        return 1
+
+    finally:
+        # Cleanup temporary directory
+        try:
+            shutil.rmtree(work_dir)
+        except Exception as e:
+            print(f"Failed to cleanup temp dir: {e}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    # Run as root if not already running as root
+    # This is needed because FastDeploy runs scripts as 'deploy' user,
+    # but we need root access to read files from different service users
+    if os.getuid() != 0:
+        # Run via sudo and relay output (subprocess keeps stdout connected)
+        script_path = os.path.abspath(__file__)
+        args = ["sudo", "-n", script_path] + sys.argv[1:]
+        result = subprocess.run(args, stdout=sys.stdout, stderr=sys.stderr)
+        sys.exit(result.returncode)
+
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"Backup failed with error: {e}", file=sys.stderr)
+        update_step("error", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", f"Unexpected error: {e}")
+        sys.exit(1)

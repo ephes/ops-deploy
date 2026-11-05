@@ -8,11 +8,13 @@
     "daybook_operations_api_remove": "79151b98fdf5aa9da95da41d38373a97e75b6d1a68d19863406664630f1230b8",
     "daybook_operations_api_restore": "8840973665955394c95d8b9038d2e29d6b227891a7bf93a31280bcc263cc85f8",
     "dns_deploy": "8598d0732b568d2a0b1dbacf857c939465b263a619e3164da5c96793302426fc",
+    "echoport_backup": "f9bed8ef1ae7f9500d417bc34b36348f02613aa23f44bbf68e3a5cf3ef7396c0",
     "encrypted_volume_prepare": "775afde941a276c88202dc91502e00ac4edc08758ddf404fc71ab843af71ff7d",
     "fastdeploy_backup": "45132a474942319bda78884f1e6ef3c8616440ca7fd5cbedb9a84881dd849b0e",
     "fastdeploy_deploy": "fc618e4e508a8d6e1f4cf0927b99fc373b807668b6c712b862e235a7d3db996e",
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
     "fastdeploy_restore": "103b4d5462e1705d45b425de3b949f362c0b930664b7f86cd2820c7efa4b78db",
+    "fastdeploy_runner": "dcbe4578335f8fabc98f691b24ecc4d410731e0d6c3ed9f6eb21f028866bb769",
     "gotosocial_deploy": "c6e0a3e5d74259f172d2e3810619c26ca83c033f1885f95a032cd333937984e1",
     "graphyard_auth_bootstrap_deploy": "0d0dee3640465600daf1fc2ac33eade07e9a9b85fcd231ee5857af21ae840c92",
     "graphyard_deploy": "dfb6f58107e1c6d92f6843b54ed8f5348a6b108d46dce5ddecdbd1e5045fb46e",
@@ -44,6 +46,7 @@
     "metube_restore": "11a76d2aaf3d6a794c6f55aba8db59618b4b668e34d185a0e79ffb661a36a825",
     "metube_shared": "5ac6115f3b9b2db841edb32e36990b5a88d72c5e67c007b5c7213632b24340aa",
     "minecraft_java_remove": "2cdb0707c4882708f4c216cc82ddac4d655a080922fda49348240bd00d0a1602",
+    "minio_backup": "e0b8d6359c3ceb34dbd48b409b48d62169582e271dede72676fc7e86353a37c3",
     "minio_deploy": "a160eb92a80b2821c2d362e3ef8ccf4e1ab607cd6f981ce333fb5ad5fb736435",
     "navidrome_backup": "94f2613c8d2765819ea95733e8e84c6f3cb74947b20c855d44069e1cfd4d9cba",
     "navidrome_restore": "9ad092ff91200e34594c515f539dc77407f75aa1448dd8ec4bd866ba0915f03d",
@@ -155,6 +158,9 @@
     "postfixadmin_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "snappymail_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "vaultwarden_remove": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "fastdeploy_restore": "89107b6ca1c24eecc67891e4703c60161f836a1c"
+    "fastdeploy_restore": "89107b6ca1c24eecc67891e4703c60161f836a1c",
+    "echoport_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "fastdeploy_runner": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+    "minio_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8"
   }
 }

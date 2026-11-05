@@ -121,6 +121,9 @@ LOADS_NO_HOST_SCRIPT: dict[str, str] = {
     "infra/traefik_tx/runner.py": "the staged copy of infra/traefik_tx/engine.py (a package module)",
     "infra/traefik_tx/retention.py": "engine.py next to it (infra/traefik_tx/engine.py, a package module)",
     "services/fastdeploy/files/ensure_token_user.py": "FastDeploy's own commands.py in the site directory",
+    "services/_echoport_runner/files/runner_target.py": (
+        "a register playbook's Echoport target script from its PARAMS (exec in manage.py shell), no host script"
+    ),
     "services/homeassistant/files/inspect_python_security.py": (
         "the selected environment's certifi, pip and pip._vendor.certifi packages; no ops-deploy host script"
     ),

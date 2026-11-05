@@ -1,0 +1,470 @@
+#!/usr/bin/env python3
+"""
+Python Podcast media backup/restore runner for FastDeploy.
+
+Runs on macmini and copies media objects directly between:
+- Source: AWS S3 bucket (python-podcast production/staging media)
+- Destination: MinIO backup bucket
+
+No large persistent local copy is created.
+
+By default, media objects are copied into a rolling prefix:
+- <prefix_root>/current/objects
+Override with ECHOPORT_MEDIA_OBJECTS_PREFIX if needed.
+"""
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Binary/tooling
+RCLONE_PATH = "{{ python_podcast_media_backup_rclone_path | default('/usr/bin/rclone') }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ python_podcast_media_backup_work_dir | default('/mnt/cryptdata/backups/tmp/python-podcast-media-backup') }}"
+WORK_MOUNT = "{{ python_podcast_media_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ python_podcast_media_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("python-podcast-media-",)
+# The runner runs as the deploy user (no sudo to root): WORK_DIR must belong
+# to that user. ops-control provisions it (register-python-podcast-media-backup.yml).
+WORK_OWNER_UID = os.geteuid()
+WORK_OWNER_LABEL = "the runner user"
+CREDENTIALS_FILE = "{{ python_podcast_media_backup_credentials_file | default('/etc/echoport-media/python-podcast-media-backup.json') }}"
+
+# Source S3
+SOURCE_BUCKET = "{{ python_podcast_media_backup_source_bucket | default('s3.python-podcast.de') }}"
+SOURCE_REGION = "{{ python_podcast_media_backup_source_region | default('eu-central-1') }}"
+
+# Destination MinIO
+DEST_ENDPOINT = "{{ python_podcast_media_backup_minio_url | default('http://127.0.0.1:9001') }}"
+DEST_BUCKET_DEFAULT = "{{ python_podcast_media_backup_default_bucket | default('backups') }}"
+DEST_PREFIX_ROOT = "{{ python_podcast_media_backup_prefix_root | default('python-podcast-media') }}"
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, "r") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        print(f"Failed to read config file: {exc}", file=sys.stderr)
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    payload = {"name": name, "state": state}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str | None = None,
+) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{json.dumps(result)}")
+
+
+def finish_stdout(status: str, message: str = "") -> None:
+    payload = {"event": "finish", "status": status}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def open_run_dir(prefix: str, label: str) -> Optional[Path]:
+    """Return a fresh run dir, or report the refusal and return None."""
+    try:
+        return create_run_dir(prefix)
+    except Exception as exc:
+        error_msg = f"Work directory check failed: {exc}"
+        emit_step("init", "failure", error_msg)
+        emit_result(success=False, error=error_msg)
+        finish_stdout("failure", f"{label} refused: {error_msg}")
+        return None
+
+def run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(args, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
+    return result
+
+
+def calculate_sha256(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def load_credentials() -> Dict[str, str]:
+    credentials_path = Path(CREDENTIALS_FILE)
+    if not credentials_path.exists():
+        raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
+
+    mode = credentials_path.stat().st_mode & 0o777
+    if mode & 0o007:
+        raise PermissionError(
+            f"Credentials file is world-accessible ({oct(mode)}), expected mode 0640 or stricter"
+        )
+
+    try:
+        payload = json.loads(credentials_path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Credentials file contains invalid JSON: {exc}") from exc
+
+    required_keys = (
+        "source_access_key",
+        "source_secret_key",
+        "dest_access_key",
+        "dest_secret_key",
+    )
+
+    credentials: Dict[str, str] = {}
+    for key in required_keys:
+        value = payload.get(key, "")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Credentials file is missing required key: {key}")
+        credentials[key] = value
+
+    return credentials
+
+
+def write_rclone_config(config_path: Path, credentials: Dict[str, str]) -> None:
+    content = "\n".join(
+        [
+            "[src]",
+            "type = s3",
+            "provider = AWS",
+            f"access_key_id = {credentials['source_access_key']}",
+            f"secret_access_key = {credentials['source_secret_key']}",
+            f"region = {SOURCE_REGION}",
+            "env_auth = false",
+            "",
+            "[dst]",
+            "type = s3",
+            "provider = Minio",
+            f"access_key_id = {credentials['dest_access_key']}",
+            f"secret_access_key = {credentials['dest_secret_key']}",
+            f"endpoint = {DEST_ENDPOINT}",
+            "force_path_style = true",
+            "env_auth = false",
+            "",
+        ]
+    )
+    # Holds the S3 and MinIO credentials: created 0600 (O_EXCL, never wider)
+    # inside the 0700 run dir on the work mount.
+    fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(content)
+
+
+def rclone_size(config_path: Path, remote: str) -> tuple[int, int]:
+    result = run_cmd(
+        [
+            RCLONE_PATH,
+            "size",
+            remote,
+            "--json",
+            "--config",
+            str(config_path),
+            "--s3-no-check-bucket",
+        ]
+    )
+    payload = json.loads(result.stdout or "{}")
+    return int(payload.get("bytes", 0)), int(payload.get("count", 0))
+
+
+def backup(bucket: str, key_prefix: str, objects_prefix: str, credentials: Dict[str, str]) -> int:
+    # Fail closed before any other work: the run dir must be on WORK_MOUNT.
+    work_dir = open_run_dir("python-podcast-media-", "Backup")
+    if work_dir is None:
+        return 1
+
+    try:
+        emit_step("init", "running", "Preparing media backup")
+
+        if not Path(RCLONE_PATH).exists():
+            raise FileNotFoundError(f"rclone binary not found: {RCLONE_PATH}")
+
+        config_path = work_dir / "rclone.conf"
+        write_rclone_config(config_path, credentials)
+        emit_step("init", "success", "Configuration prepared")
+
+        src_remote = f"src:{SOURCE_BUCKET}"
+        dst_objects_remote = f"dst:{bucket}/{objects_prefix}/objects"
+
+        emit_step("sync_media", "running", "Copying S3 media to MinIO")
+        run_cmd(
+            [
+                RCLONE_PATH,
+                "copy",
+                src_remote,
+                dst_objects_remote,
+                "--config",
+                str(config_path),
+                "--fast-list",
+                "--checkers",
+                "16",
+                "--transfers",
+                "8",
+                "--create-empty-src-dirs",
+                "--metadata",
+                "--s3-no-check-bucket",
+            ]
+        )
+        emit_step("sync_media", "success", "Media copy complete")
+
+        emit_step("snapshot_metadata", "running", "Capturing snapshot metadata")
+        size_bytes, file_count = rclone_size(config_path, dst_objects_remote)
+        manifest = {
+            "target": "python-podcast-media",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source_bucket": SOURCE_BUCKET,
+            "storage_bucket": bucket,
+            "storage_prefix": key_prefix,
+            "objects_prefix": objects_prefix,
+            "bytes": size_bytes,
+            "count": file_count,
+        }
+
+        manifest_path = work_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+        manifest_checksum = calculate_sha256(manifest_path)
+
+        run_cmd(
+            [
+                RCLONE_PATH,
+                "copyto",
+                str(manifest_path),
+                f"dst:{bucket}/{key_prefix}/manifest.json",
+                "--config",
+                str(config_path),
+                "--s3-no-check-bucket",
+                # The key is new on every run, so there is nothing to compare;
+                # skipping the HEAD probe also keeps the upload within what a
+                # prefix-scoped MinIO account may do.
+                "--no-check-dest",
+            ]
+        )
+        emit_step("snapshot_metadata", "success", f"Snapshot metadata stored ({file_count} objects)")
+
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=key_prefix,
+            size_bytes=size_bytes,
+            checksum_sha256=manifest_checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", f"Media backup completed for {SOURCE_BUCKET}")
+        return 0
+
+    except Exception as exc:
+        emit_step("error", "failure", str(exc))
+        emit_result(success=False, error=str(exc))
+        finish_stdout("failure", f"Media backup failed: {exc}")
+        return 1
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def restore(bucket: str, key_prefix: str, expected_checksum: str, credentials: Dict[str, str]) -> int:
+    # Fail closed before any other work: the run dir must be on WORK_MOUNT.
+    work_dir = open_run_dir("python-podcast-media-restore-", "Restore")
+    if work_dir is None:
+        return 1
+
+    try:
+        emit_step("init", "running", "Preparing media restore")
+
+        if not expected_checksum:
+            raise ValueError("No checksum provided for media restore - cannot verify backup integrity")
+
+        if not Path(RCLONE_PATH).exists():
+            raise FileNotFoundError(f"rclone binary not found: {RCLONE_PATH}")
+
+        config_path = work_dir / "rclone.conf"
+        write_rclone_config(config_path, credentials)
+        emit_step("init", "success", "Configuration prepared")
+
+        manifest_path = work_dir / "manifest.json"
+        emit_step("download_manifest", "running", "Downloading manifest")
+        run_cmd(
+            [
+                RCLONE_PATH,
+                "copyto",
+                f"dst:{bucket}/{key_prefix}/manifest.json",
+                str(manifest_path),
+                "--config",
+                str(config_path),
+                "--s3-no-check-bucket",
+            ]
+        )
+        emit_step("download_manifest", "success", "Manifest downloaded")
+
+        emit_step("verify_checksum", "running", "Verifying manifest checksum")
+        actual_checksum = calculate_sha256(manifest_path)
+        if actual_checksum != expected_checksum:
+            raise ValueError(
+                f"Checksum mismatch for manifest: expected {expected_checksum}, got {actual_checksum}"
+            )
+        emit_step("verify_checksum", "success", "Checksum verified")
+
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Manifest JSON is invalid: {exc}") from exc
+
+        objects_prefix = manifest.get("objects_prefix")
+        if not isinstance(objects_prefix, str) or not objects_prefix.strip():
+            # Backward compatibility: old backups stored objects under run key prefix.
+            objects_prefix = key_prefix
+
+        src_objects_remote = f"dst:{bucket}/{objects_prefix}/objects"
+        dst_remote = f"src:{SOURCE_BUCKET}"
+
+        emit_step("restore_media", "running", "Copying media from MinIO backup to S3")
+        run_cmd(
+            [
+                RCLONE_PATH,
+                "copy",
+                src_objects_remote,
+                dst_remote,
+                "--config",
+                str(config_path),
+                "--fast-list",
+                "--checkers",
+                "16",
+                "--transfers",
+                "8",
+                "--metadata",
+                "--s3-no-check-bucket",
+            ]
+        )
+        emit_step("restore_media", "success", "Media restore copy completed")
+
+        size_bytes, file_count = rclone_size(config_path, src_objects_remote)
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=key_prefix,
+            size_bytes=size_bytes,
+            checksum_sha256=actual_checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", f"Media restore completed for {SOURCE_BUCKET}")
+        return 0
+
+    except Exception as exc:
+        emit_step("error", "failure", str(exc))
+        emit_result(success=False, error=str(exc))
+        finish_stdout("failure", f"Media restore failed: {exc}")
+        return 1
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def main() -> int:
+    # Runner-created files (rclone config, manifest) are 0600 in 0700 dirs.
+    # Objects go S3 <-> MinIO directly and never touch the local disk.
+    os.umask(0o077)
+    config = read_config_file()
+    if config:
+        context = config.get("context", {})
+    else:
+        # Fallback for manual testing (non-production)
+        print("Warning: No config file found, using environment (testing mode)", file=sys.stderr)
+        context_raw = os.environ.get("CONTEXT", "{}")
+        try:
+            context = json.loads(context_raw)
+        except json.JSONDecodeError:
+            context = {}
+    cenv = context.get("env", {})
+
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEST_BUCKET_DEFAULT)
+    try:
+        credentials = load_credentials()
+    except Exception as exc:
+        error_msg = f"Failed to load media credentials: {exc}"
+        emit_step("init", "failure", error_msg)
+        emit_result(success=False, error=error_msg)
+        finish_stdout("failure", error_msg)
+        return 1
+
+    if action == "restore":
+        key = cenv.get("ECHOPORT_KEY", "")
+        checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+
+        if not key:
+            error_msg = "No storage key provided for media restore"
+            emit_step("init", "failure", error_msg)
+            emit_result(success=False, error=error_msg)
+            finish_stdout("failure", error_msg)
+            return 1
+        if not checksum:
+            error_msg = "No checksum provided for media restore - cannot verify backup integrity"
+            emit_step("init", "failure", error_msg)
+            emit_result(success=False, error=error_msg)
+            finish_stdout("failure", error_msg)
+            return 1
+
+        return restore(bucket=bucket, key_prefix=key, expected_checksum=checksum, credentials=credentials)
+
+    timestamp = cenv.get("ECHOPORT_TIMESTAMP", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S"))
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{DEST_PREFIX_ROOT}/{timestamp}").strip("/")
+    objects_prefix = cenv.get("ECHOPORT_MEDIA_OBJECTS_PREFIX", f"{DEST_PREFIX_ROOT}/current").strip("/")
+    return backup(bucket=bucket, key_prefix=key_prefix, objects_prefix=objects_prefix, credentials=credentials)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        emit_step("error", "failure", str(exc))
+        emit_result(success=False, error=str(exc))
+        finish_stdout("failure", f"Unexpected error: {exc}")
+        sys.exit(1)

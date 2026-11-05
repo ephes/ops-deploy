@@ -1,0 +1,893 @@
+#!/usr/bin/env python3
+"""
+Minecraft Java backup/restore runner for Echoport.
+
+Service-owned same-host script:
+- Backup: RCON quiesce (save-off/save-all), copy world/config/runtime files,
+  generate manifests, archive, upload to MinIO.
+- Restore: download + checksum verify, safe extract, stop service, restore files,
+  ownership fix, start service, health verification.
+"""
+
+import hashlib
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tarfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Shared configuration
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ minecraft_java_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/minecraft-java-backup') }}"
+WORK_MOUNT = "{{ minecraft_java_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ minecraft_java_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("minecraft_backup_", "minecraft_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
+
+# Minecraft-specific configuration
+SERVICE_NAME = "{{ minecraft_java_echoport_backup_service_name }}"
+SERVER_DIR = "{{ minecraft_java_echoport_backup_server_dir }}"
+SERVER_PROPERTIES = "{{ minecraft_java_echoport_backup_server_properties }}"
+SYSTEMD_UNIT = "{{ minecraft_java_echoport_backup_systemd_unit }}"
+ENV_FILE = "{{ minecraft_java_echoport_backup_env_file }}"
+MCRCON_PATH = "{{ minecraft_java_echoport_backup_mcrcon_path }}"
+
+SERVICE_OWNER = "{{ minecraft_java_echoport_backup_service_owner }}"
+SERVICE_GROUP = "{{ minecraft_java_echoport_backup_service_group }}"
+DEFAULT_WORLD_NAME = "{{ minecraft_java_echoport_backup_default_world_name }}"
+DEFAULT_RCON_PORT_RAW = "{{ minecraft_java_echoport_backup_default_rcon_port }}"
+SERVER_PORT_RAW = "{{ minecraft_java_echoport_backup_server_port }}"
+START_TIMEOUT_RAW = "{{ minecraft_java_echoport_backup_start_timeout }}"
+SAVE_FLUSH_DELAY_RAW = "{{ minecraft_java_echoport_backup_save_flush_delay }}"
+CREATE_SAFETY_SNAPSHOT_RAW = "{{ minecraft_java_echoport_backup_create_safety_snapshot | default(true) }}"
+ROLLBACK_ON_FAILURE_RAW = "{{ minecraft_java_echoport_backup_rollback_on_failure | default(true) }}"
+
+ALLOWED_ROOTS_RAW = "{{ minecraft_java_echoport_backup_allowed_roots | join(',') }}"
+
+OPTIONAL_FILES = [
+    "ops.json",
+    "whitelist.json",
+    "banned-ips.json",
+    "banned-players.json",
+    "eula.txt",
+    ".loader_mode",
+    ".forge_version",
+    ".forge_installer_checksum",
+]
+
+OPTIONAL_DIRS = [
+    "mods",
+    "config",
+    "defaultconfigs",
+]
+
+
+def parse_int(value: str, default: int) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def parse_bool(value: str, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+DEFAULT_RCON_PORT = parse_int(DEFAULT_RCON_PORT_RAW, 25575)
+SERVER_PORT = parse_int(SERVER_PORT_RAW, 25565)
+START_TIMEOUT = max(15, parse_int(START_TIMEOUT_RAW, 120))
+SAVE_FLUSH_DELAY = max(1, parse_int(SAVE_FLUSH_DELAY_RAW, 2))
+CREATE_SAFETY_SNAPSHOT = parse_bool(CREATE_SAFETY_SNAPSHOT_RAW, True)
+ROLLBACK_ON_FAILURE = parse_bool(ROLLBACK_ON_FAILURE_RAW, True)
+ALLOWED_ROOTS = [item.strip() for item in ALLOWED_ROOTS_RAW.split(",") if item.strip()]
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, "r") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        print(f"Failed to read config file: {exc}", file=sys.stderr)
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    payload = {"name": name, "state": state}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str | None = None,
+) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{json.dumps(result)}")
+
+
+def finish_stdout(status: str, message: str = "") -> None:
+    payload = {"event": "finish", "status": status}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(args, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
+    return result
+
+
+def calculate_sha256(filepath: Path) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def normalize_root(root: str) -> str:
+    normalized = os.path.realpath(root)
+    if not normalized.endswith(os.sep):
+        normalized += os.sep
+    return normalized
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def path_in_allowed_roots(path: str) -> bool:
+    if not path:
+        return False
+    resolved = os.path.realpath(path)
+    for root in ALLOWED_ROOTS:
+        normalized_root = normalize_root(root)
+        if resolved.startswith(normalized_root) or resolved == normalized_root.rstrip(os.sep):
+            return True
+    return False
+
+
+def validate_config_paths() -> None:
+    configured_paths = [
+        SERVER_DIR,
+        SERVER_PROPERTIES,
+        SYSTEMD_UNIT,
+        ENV_FILE,
+    ]
+    for cfg_path in configured_paths:
+        if cfg_path and not path_in_allowed_roots(cfg_path):
+            raise ValueError(f"Configured path outside allowed roots: {cfg_path}")
+
+    if not Path(SERVER_DIR).exists():
+        raise FileNotFoundError(f"Server directory missing: {SERVER_DIR}")
+    if not Path(SERVER_PROPERTIES).is_file():
+        raise FileNotFoundError(f"server.properties missing: {SERVER_PROPERTIES}")
+
+
+def ensure_binaries() -> None:
+    needed = [MC_PATH, MCRCON_PATH, "timeout", "rsync", "tar", "systemctl", "chown"]
+    for binary in needed:
+        if binary.startswith("/"):
+            if not Path(binary).exists():
+                raise FileNotFoundError(f"Required binary not found: {binary}")
+        else:
+            result = run_cmd(["which", binary], check=False)
+            if result.returncode != 0:
+                raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
+
+
+def read_properties(path: Path) -> Dict[str, str]:
+    props: Dict[str, str] = {}
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        props[key.strip()] = value.strip()
+    return props
+
+
+def read_rcon_password() -> str:
+    env_path = Path(ENV_FILE)
+    if not env_path.is_file():
+        raise FileNotFoundError(f"RCON env file missing: {ENV_FILE}")
+
+    for raw in env_path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == "RCON_PASSWORD":
+            password = value.strip().strip('"').strip("'")
+            if password:
+                return password
+    raise RuntimeError("RCON_PASSWORD not found in env file")
+
+
+def service_is_active() -> bool:
+    result = run_cmd(["systemctl", "is-active", SERVICE_NAME], check=False)
+    return result.stdout.strip() == "active"
+
+
+def rcon_cmd(port: int, password: str, command: str, timeout_seconds: int = 30) -> str:
+    args = [
+        "timeout",
+        str(timeout_seconds),
+        MCRCON_PATH,
+        "-H",
+        "127.0.0.1",
+        "-P",
+        str(port),
+        "-p",
+        password,
+        command,
+    ]
+    result = run_cmd(args)
+    return (result.stdout or "").strip()
+
+
+def rsync_dir(src: Path, dst: Path, delete: bool = True) -> None:
+    if not src.exists() or not src.is_dir():
+        return
+    dst.mkdir(parents=True, exist_ok=True)
+    args = ["rsync", "-a"]
+    if delete:
+        args.append("--delete")
+    args.extend([f"{src}/", f"{dst}/"])
+    run_cmd(args)
+
+
+def validate_world_name_for_archive(world_name: str) -> str:
+    if not world_name or not world_name.strip():
+        raise ValueError("world_name is empty in manifest")
+    normalized = world_name.strip()
+    if normalized == ".":
+        raise ValueError("world_name cannot be current-directory reference ('.')")
+    rel = Path(normalized)
+    if rel.is_absolute():
+        raise ValueError(f"world_name must be relative, got absolute path: {world_name}")
+    if ".." in rel.parts:
+        raise ValueError(f"world_name contains invalid parent traversal: {world_name}")
+    return normalized
+
+
+def resolve_world_target(world_name: str) -> Path:
+    world_name = validate_world_name_for_archive(world_name)
+    server_root = Path(SERVER_DIR).resolve()
+    candidate = (server_root / world_name).resolve()
+    try:
+        candidate.relative_to(server_root)
+    except ValueError:
+        raise ValueError(f"Resolved world target escapes server directory: {world_name}")
+    if not path_in_allowed_roots(str(candidate)):
+        raise ValueError(f"Resolved world target outside allowed roots: {candidate}")
+    return candidate
+
+
+def copy_file_optional(src: Path, dst: Path) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
+
+
+def apply_ownership(path: Path) -> None:
+    if path.exists():
+        run_cmd(["chown", "-R", f"{SERVICE_OWNER}:{SERVICE_GROUP}", str(path)])
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> None:
+    with tarfile.open(tarball_path, "w:gz") as tar:
+        for item in sorted(source_dir.iterdir(), key=lambda p: p.name):
+            tar.add(item, arcname=item.name)
+
+
+def read_manifest_from_tarball(tarball_path: Path) -> Dict:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        member = tar.getmember("manifest.json")
+        if not member.isfile():
+            raise RuntimeError("manifest.json missing from backup archive")
+        if member.size > 1024 * 1024:
+            raise RuntimeError("manifest.json too large in backup archive")
+        fileobj = tar.extractfile(member)
+        if fileobj is None:
+            raise RuntimeError("Unable to read manifest.json from backup archive")
+        return json.loads(fileobj.read().decode("utf-8"))
+
+
+def get_tree_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    total = 0
+    for entry in path.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except Exception:
+            continue
+    return total
+
+
+def get_free_bytes_for_path(path: Path) -> int:
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    stat = os.statvfs(candidate)
+    return stat.f_bavail * stat.f_frsize
+
+
+def disk_space_precheck(tarball_path: Path, temp_root: Path, world_dir: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        extracted_payload_size = sum(member.size for member in tar.getmembers())
+    current_world_size = get_tree_size(world_dir)
+
+    required_temp = int(extracted_payload_size * 1.15)
+    required_world = int(max(current_world_size, extracted_payload_size) * 1.10)
+
+    free_temp = get_free_bytes_for_path(temp_root)
+    free_world = get_free_bytes_for_path(world_dir)
+
+    if free_temp < required_temp:
+        raise RuntimeError(
+            f"Insufficient temp disk space for restore: required={required_temp} free={free_temp}"
+        )
+    if free_world < required_world:
+        raise RuntimeError(
+            f"Insufficient world disk space for restore: required={required_world} free={free_world}"
+        )
+
+
+def _is_safe_tar_member(member: tarfile.TarInfo, extract_dir: Path) -> tuple[bool, str]:
+    if member.isdev() or member.ischr() or member.isblk():
+        return False, f"Tarball contains device node: {member.name}"
+    if member.isfifo():
+        return False, f"Tarball contains FIFO: {member.name}"
+    if member.name.startswith("/"):
+        return False, f"Tarball contains absolute path: {member.name}"
+    if ".." in member.name:
+        return False, f"Tarball contains path traversal: {member.name}"
+
+    target_path = (extract_dir / member.name).resolve()
+    try:
+        target_path.relative_to(extract_dir.resolve())
+    except ValueError:
+        return False, f"Tarball member escapes extraction root: {member.name}"
+
+    if member.issym():
+        link_target = Path(member.linkname)
+        if link_target.is_absolute():
+            return False, f"Tarball symlink with absolute target: {member.name} -> {member.linkname}"
+        link_resolved = (target_path.parent / link_target).resolve()
+        try:
+            link_resolved.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball symlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    if member.islnk():
+        link_target = (extract_dir / member.linkname).resolve()
+        try:
+            link_target.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball hardlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    return True, ""
+
+
+def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        safe_members = []
+        for member in tar.getmembers():
+            is_safe, err = _is_safe_tar_member(member, extract_dir)
+            if not is_safe:
+                raise ValueError(err)
+            safe_members.append(member)
+        tar.extractall(extract_dir, members=safe_members)
+
+
+def make_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    entries: list[Path] = []
+    for path in root_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.resolve() == manifest_path.resolve():
+            continue
+        entries.append(path)
+
+    entries.sort(key=lambda p: p.relative_to(root_dir).as_posix())
+    lines: list[str] = []
+    for item in entries:
+        rel = item.relative_to(root_dir).as_posix()
+        lines.append(f"{calculate_sha256(item)}  ./{rel}")
+    manifest_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+
+def verify_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    if not manifest_path.exists():
+        raise FileNotFoundError("manifest.sha256 missing from backup archive")
+
+    lines = [line.strip() for line in manifest_path.read_text().splitlines() if line.strip()]
+    for line in lines:
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid checksum manifest line: {line}")
+        expected, rel_path = parts
+        clean_rel = rel_path[2:] if rel_path.startswith("./") else rel_path
+        target = root_dir / clean_rel
+        if not target.exists() or not target.is_file():
+            raise FileNotFoundError(f"Checksum target missing: {clean_rel}")
+        actual = calculate_sha256(target)
+        if actual != expected:
+            raise ValueError(f"Checksum mismatch for {clean_rel}: expected {expected}, got {actual}")
+
+
+def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> None:
+    run_cmd([MC_PATH, "cp", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{key}"])
+
+
+def download_from_minio(bucket: str, key: str, dest_path: Path) -> None:
+    run_cmd([MC_PATH, "cp", f"{MINIO_ALIAS}/{bucket}/{key}", str(dest_path)])
+    if not dest_path.exists():
+        raise RuntimeError(f"Download failed, file missing at {dest_path}")
+
+
+def wait_service_active(timeout_seconds: int = START_TIMEOUT) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        result = run_cmd(["systemctl", "is-active", SERVICE_NAME], check=False)
+        if result.stdout.strip() == "active":
+            return
+        time.sleep(2)
+    raise RuntimeError(f"Service did not become active in {timeout_seconds}s: {SERVICE_NAME}")
+
+
+def wait_tcp_port(port: int, timeout_seconds: int = START_TIMEOUT) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
+                return
+        except OSError:
+            time.sleep(2)
+    raise RuntimeError(f"Port {port} did not become reachable in {timeout_seconds}s")
+
+
+def wait_rcon_ready(port: int, password: str, timeout_seconds: int = START_TIMEOUT) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            rcon_cmd(port, password, "list", timeout_seconds=20)
+            return
+        except Exception:
+            time.sleep(3)
+    raise RuntimeError(f"RCON did not become ready on port {port} in {timeout_seconds}s")
+
+
+def create_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Path) -> None:
+    if not world_target.exists() or not world_target.is_dir():
+        raise RuntimeError(f"World target missing for safety snapshot: {world_target}")
+
+    world_out = snapshot_dir / "world"
+    config_out = snapshot_dir / "config"
+    system_out = snapshot_dir / "system"
+    world_out.mkdir(parents=True, exist_ok=True)
+    config_out.mkdir(parents=True, exist_ok=True)
+    system_out.mkdir(parents=True, exist_ok=True)
+
+    rsync_dir(world_target, world_out / world_name, delete=True)
+    for dirname in OPTIONAL_DIRS:
+        rsync_dir(Path(SERVER_DIR) / dirname, world_out / dirname, delete=True)
+
+    copy_file_optional(Path(SERVER_PROPERTIES), config_out / "server.properties")
+    copy_file_optional(Path(ENV_FILE), config_out / "minecraft.env")
+    for filename in OPTIONAL_FILES:
+        copy_file_optional(Path(SERVER_DIR) / filename, config_out / filename)
+    copy_file_optional(Path(SYSTEMD_UNIT), system_out / "minecraft-java.service")
+
+
+def restore_from_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Path) -> None:
+    world_in = snapshot_dir / "world"
+    if not (world_in / world_name).exists():
+        raise RuntimeError("Safety snapshot missing world directory")
+
+    rsync_dir(world_in / world_name, world_target, delete=True)
+    for dirname in OPTIONAL_DIRS:
+        rsync_dir(world_in / dirname, Path(SERVER_DIR) / dirname, delete=True)
+
+    if not copy_file_optional(snapshot_dir / "config" / "server.properties", Path(SERVER_PROPERTIES)):
+        raise RuntimeError("Safety snapshot missing config/server.properties")
+
+    copy_file_optional(snapshot_dir / "config" / "minecraft.env", Path(ENV_FILE))
+    for filename in OPTIONAL_FILES:
+        copy_file_optional(snapshot_dir / "config" / filename, Path(SERVER_DIR) / filename)
+    if copy_file_optional(snapshot_dir / "system" / "minecraft-java.service", Path(SYSTEMD_UNIT)):
+        run_cmd(["chmod", "0644", SYSTEMD_UNIT])
+
+    run_cmd(["chown", "-R", f"{SERVICE_OWNER}:{SERVICE_GROUP}", SERVER_DIR])
+    if Path(ENV_FILE).exists():
+        run_cmd(["chmod", "0600", ENV_FILE])
+    run_cmd(["systemctl", "daemon-reload"])
+
+
+def backup_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating backup configuration")
+    target_name = cenv.get("ECHOPORT_TARGET", "minecraft_java")
+    run_id = cenv.get("ECHOPORT_RUN_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key_prefix = cenv.get(
+        "ECHOPORT_KEY_PREFIX",
+        f"{target_name}/{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}",
+    )
+
+    validate_config_paths()
+    ensure_binaries()
+    emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
+
+    work_dir = create_run_dir("minecraft_backup_")
+    saves_disabled = False
+
+    try:
+        emit_step("detect_state", "running", "Reading server state")
+        props = read_properties(Path(SERVER_PROPERTIES))
+        world_name = props.get("level-name", DEFAULT_WORLD_NAME)
+        world_dir = resolve_world_target(world_name)
+        if not world_dir.exists() or not world_dir.is_dir():
+            raise RuntimeError(f"World directory missing: {world_dir}")
+
+        rcon_enabled = props.get("enable-rcon", "false").lower() == "true"
+        rcon_port = parse_int(props.get("rcon.port", str(DEFAULT_RCON_PORT)), DEFAULT_RCON_PORT)
+        service_active = service_is_active()
+        emit_step("detect_state", "success", f"world={world_name} active={service_active}")
+
+        if service_active:
+            if not rcon_enabled:
+                raise RuntimeError("Service is running but RCON is disabled; cannot quiesce safely")
+            rcon_password = read_rcon_password()
+            emit_step("quiesce", "running", "Running save-off/save-all via RCON")
+            rcon_cmd(rcon_port, rcon_password, "save-off", timeout_seconds=15)
+            saves_disabled = True
+            save_out = rcon_cmd(rcon_port, rcon_password, "save-all", timeout_seconds=30).lower()
+            if save_out and "save" not in save_out:
+                raise RuntimeError(f"Unexpected save-all output: {save_out}")
+            time.sleep(SAVE_FLUSH_DELAY)
+            emit_step("quiesce", "success", "World flushed to disk")
+        else:
+            emit_step("quiesce", "success", "Service not active, quiesce skipped")
+
+        emit_step("copy_data", "running", "Copying world and runtime data")
+        payload = work_dir / "payload"
+        world_out = payload / "world"
+        config_out = payload / "config"
+        system_out = payload / "system"
+        world_out.mkdir(parents=True, exist_ok=True)
+        config_out.mkdir(parents=True, exist_ok=True)
+        system_out.mkdir(parents=True, exist_ok=True)
+
+        rsync_dir(world_dir, world_out / world_name, delete=True)
+        for dirname in OPTIONAL_DIRS:
+            rsync_dir(Path(SERVER_DIR) / dirname, world_out / dirname, delete=True)
+        emit_step("copy_data", "success", "World/runtime data copied")
+
+        emit_step("copy_config", "running", "Copying server configuration")
+        copy_file_optional(Path(SERVER_PROPERTIES), config_out / "server.properties")
+        copy_file_optional(Path(ENV_FILE), config_out / "minecraft.env")
+        for filename in OPTIONAL_FILES:
+            copy_file_optional(Path(SERVER_DIR) / filename, config_out / filename)
+        copy_file_optional(Path(SYSTEMD_UNIT), system_out / "minecraft-java.service")
+        emit_step("copy_config", "success", "Configuration copied")
+
+        manifest = {
+            "target": target_name,
+            "run_id": run_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "service": SERVICE_NAME,
+            "world_name": world_name,
+            "service_active_during_backup": service_active,
+            "rcon_enabled": rcon_enabled,
+            "paths": {
+                "server_dir": SERVER_DIR,
+                "server_properties": SERVER_PROPERTIES,
+                "systemd_unit": SYSTEMD_UNIT,
+                "env_file": ENV_FILE,
+            },
+        }
+        (payload / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        make_checksum_manifest(payload, payload / "manifest.sha256")
+
+        emit_step("upload", "running", "Creating archive and uploading")
+        tarball_path = work_dir / "backup.tar.gz"
+        create_tarball(payload, tarball_path)
+        checksum = calculate_sha256(tarball_path)
+        storage_key = f"{key_prefix}.tar.gz"
+        upload_to_minio(tarball_path, bucket, storage_key)
+        emit_step("upload", "success", f"Uploaded {storage_key}")
+
+        emit_step("verify", "running", "Verifying object in MinIO")
+        run_cmd([MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{storage_key}"])
+        emit_step("verify", "success", "MinIO object verified")
+
+        file_count = sum(1 for p in payload.rglob("*") if p.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", f"Backup completed: {storage_key}")
+        return 0
+    finally:
+        try:
+            if saves_disabled:
+                props = read_properties(Path(SERVER_PROPERTIES))
+                rcon_port = parse_int(props.get("rcon.port", str(DEFAULT_RCON_PORT)), DEFAULT_RCON_PORT)
+                rcon_password = read_rcon_password()
+                rcon_cmd(rcon_port, rcon_password, "save-on", timeout_seconds=15)
+        except Exception as exc:
+            emit_step("quiesce", "failure", f"Failed to re-enable save-on: {exc}")
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def restore_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating restore configuration")
+    target_name = cenv.get("ECHOPORT_TARGET", "minecraft_java")
+    restore_id = cenv.get("ECHOPORT_RESTORE_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    storage_key = cenv.get("ECHOPORT_KEY", "")
+    expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+
+    if not storage_key:
+        raise RuntimeError("ECHOPORT_KEY missing for restore")
+    if not expected_checksum:
+        raise RuntimeError("ECHOPORT_CHECKSUM missing for restore")
+
+    validate_config_paths()
+    ensure_binaries()
+    emit_step("init", "success", f"Configuration loaded for {target_name} restore {restore_id}")
+
+    world_name = DEFAULT_WORLD_NAME
+    world_target = resolve_world_target(world_name)
+    # Created after the last check outside the try below, so a failing check
+    # cannot leave the run dir behind.
+    work_dir = create_run_dir("minecraft_restore_")
+    service_stopped = False
+    destructive_started = False
+    safety_snapshot_dir = work_dir / "safety"
+
+    try:
+        tarball_path = work_dir / "backup.tar.gz"
+        extract_dir = work_dir / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        emit_step("download", "running", "Downloading archive from MinIO")
+        download_from_minio(bucket, storage_key, tarball_path)
+        emit_step("download", "success", f"Downloaded {storage_key}")
+
+        emit_step("verify_checksum", "running", "Verifying archive checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            raise RuntimeError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
+        emit_step("verify_checksum", "success", "Archive checksum verified")
+
+        manifest_hint = read_manifest_from_tarball(tarball_path)
+        world_name = validate_world_name_for_archive(manifest_hint.get("world_name", DEFAULT_WORLD_NAME))
+        world_target = resolve_world_target(world_name)
+
+        emit_step("precheck", "running", "Validating available disk space")
+        disk_space_precheck(tarball_path, work_dir, world_target.parent)
+        emit_step("precheck", "success", "Disk space precheck passed")
+
+        emit_step("extract", "running", "Extracting archive")
+        safe_extract_tarball(tarball_path, extract_dir)
+        verify_checksum_manifest(extract_dir, extract_dir / "manifest.sha256")
+        emit_step("extract", "success", "Archive extracted and validated")
+
+        manifest = json.loads((extract_dir / "manifest.json").read_text())
+        world_name = validate_world_name_for_archive(manifest.get("world_name", DEFAULT_WORLD_NAME))
+        world_rel = Path(world_name)
+        world_backup = (extract_dir / "world" / world_rel).resolve()
+        extract_world_root = (extract_dir / "world").resolve()
+        try:
+            world_backup.relative_to(extract_world_root)
+        except ValueError:
+            raise RuntimeError(f"Manifest world_name escapes world/ root: {world_name}")
+        if not world_backup.exists():
+            raise RuntimeError(f"Backup archive missing world directory: world/{world_name}")
+        world_target = resolve_world_target(world_name)
+
+        if CREATE_SAFETY_SNAPSHOT:
+            emit_step("safety_snapshot", "running", "Creating pre-restore safety snapshot")
+            create_safety_snapshot(safety_snapshot_dir, world_name, world_target)
+            emit_step("safety_snapshot", "success", "Safety snapshot created")
+
+        emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
+        if service_is_active():
+            run_cmd(["systemctl", "stop", SERVICE_NAME])
+            service_stopped = True
+            emit_step("stop_service", "success", f"Stopped {SERVICE_NAME}")
+        else:
+            emit_step("stop_service", "success", "Service not active, stop skipped")
+        destructive_started = True
+
+        emit_step("restore_data", "running", "Restoring world and runtime directories")
+        rsync_dir(world_backup, world_target, delete=True)
+        for dirname in OPTIONAL_DIRS:
+            rsync_dir(extract_dir / "world" / dirname, Path(SERVER_DIR) / dirname, delete=True)
+        emit_step("restore_data", "success", "World/runtime directories restored")
+
+        emit_step("restore_config", "running", "Restoring server configuration")
+        if not copy_file_optional(extract_dir / "config" / "server.properties", Path(SERVER_PROPERTIES)):
+            raise RuntimeError("Backup archive missing config/server.properties")
+
+        copy_file_optional(extract_dir / "config" / "minecraft.env", Path(ENV_FILE))
+        for filename in OPTIONAL_FILES:
+            copy_file_optional(extract_dir / "config" / filename, Path(SERVER_DIR) / filename)
+        if copy_file_optional(extract_dir / "system" / "minecraft-java.service", Path(SYSTEMD_UNIT)):
+            run_cmd(["chmod", "0644", SYSTEMD_UNIT])
+
+        run_cmd(["chown", "-R", f"{SERVICE_OWNER}:{SERVICE_GROUP}", SERVER_DIR])
+        if Path(ENV_FILE).exists():
+            run_cmd(["chmod", "0600", ENV_FILE])
+        run_cmd(["systemctl", "daemon-reload"])
+        emit_step("restore_config", "success", "Server configuration restored")
+
+        emit_step("start_service", "running", f"Starting {SERVICE_NAME}")
+        run_cmd(["systemctl", "start", SERVICE_NAME])
+        wait_service_active(START_TIMEOUT)
+        wait_tcp_port(SERVER_PORT, START_TIMEOUT)
+        service_stopped = False
+        emit_step("start_service", "success", f"Started {SERVICE_NAME}")
+
+        emit_step("health_check", "running", "Checking server health")
+        props = read_properties(Path(SERVER_PROPERTIES))
+        rcon_enabled = props.get("enable-rcon", "false").lower() == "true"
+        if rcon_enabled:
+            rcon_port = parse_int(props.get("rcon.port", str(DEFAULT_RCON_PORT)), DEFAULT_RCON_PORT)
+            rcon_password = read_rcon_password()
+            wait_rcon_ready(rcon_port, rcon_password, START_TIMEOUT)
+        emit_step("health_check", "success", "Service and port checks passed")
+
+        file_count = sum(1 for p in extract_dir.rglob("*") if p.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=actual_checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", "Restore completed")
+        return 0
+    except Exception as exc:
+        rollback_error = ""
+        if (
+            destructive_started
+            and CREATE_SAFETY_SNAPSHOT
+            and ROLLBACK_ON_FAILURE
+            and safety_snapshot_dir.exists()
+        ):
+            emit_step("rollback", "running", "Restore failed; attempting rollback from safety snapshot")
+            try:
+                run_cmd(["systemctl", "stop", SERVICE_NAME], check=False)
+                restore_from_safety_snapshot(safety_snapshot_dir, world_name, world_target)
+                run_cmd(["systemctl", "start", SERVICE_NAME])
+                wait_service_active(START_TIMEOUT)
+                wait_tcp_port(SERVER_PORT, START_TIMEOUT)
+                props = read_properties(Path(SERVER_PROPERTIES))
+                rcon_enabled = props.get("enable-rcon", "false").lower() == "true"
+                if rcon_enabled:
+                    rcon_port = parse_int(props.get("rcon.port", str(DEFAULT_RCON_PORT)), DEFAULT_RCON_PORT)
+                    rcon_password = read_rcon_password()
+                    wait_rcon_ready(rcon_port, rcon_password, START_TIMEOUT)
+                emit_step("rollback", "success", "Rollback completed")
+                service_stopped = False
+                exc = RuntimeError(f"{exc} (rollback executed)")
+            except Exception as rollback_exc:
+                rollback_error = str(rollback_exc)
+                emit_step("rollback", "failure", rollback_error)
+
+        if service_stopped:
+            try:
+                run_cmd(["systemctl", "start", SERVICE_NAME], check=False)
+            except Exception:
+                pass
+        error_message = str(exc)
+        if rollback_error:
+            error_message = f"{error_message}; rollback failed: {rollback_error}"
+        emit_step("error", "failure", error_message)
+        emit_result(False, error=error_message)
+        finish_stdout("failure", f"Restore failed: {error_message}")
+        return 1
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def main() -> int:
+    config = read_config_file()
+
+    if config:
+        context = config.get("context", {})
+    else:
+        if os.getuid() == 0:
+            raise RuntimeError("No config file found while running as root")
+        context_raw = os.environ.get("CONTEXT", "{}")
+        context = json.loads(context_raw)
+
+    cenv = context.get("env", {})
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+
+    if action == "restore":
+        return restore_flow(cenv)
+    return backup_flow(cenv)
+
+
+if __name__ == "__main__":
+    if os.getuid() != 0:
+        script_path = os.path.abspath(__file__)
+        result = subprocess.run(
+            ["sudo", "-n", script_path] + sys.argv[1:],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        sys.exit(result.returncode)
+
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        emit_step("error", "failure", str(exc))
+        emit_result(False, error=str(exc))
+        finish_stdout("failure", f"Unexpected error: {exc}")
+        sys.exit(1)

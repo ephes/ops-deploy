@@ -44,6 +44,15 @@ VENDORED_FILES = {
     "services/fastdeploy/files/sudoers_blanket_check.py": "fastdeploy_restore",
     "services/_lifecycle/files/preserve.py": "restore_preserve_internal",
 }
+# ``<package dir>/templates``: ``roles/<role>/templates``, byte for byte, every
+# template but the ones named (the Echoport runners; heis and villakunterbunt
+# stay on Ansible).
+VENDORED_TEMPLATE_DIRS = {
+    "services/_echoport_runner/templates": (
+        "echoport_backup",
+        frozenset({"heis_production_backup.py.j2", "villakunterbunt_staging_backup.py.j2"}),
+    ),
+}
 # ``<package path>``: a file of ops-library outside the roles, byte for byte.
 VENDORED_LIBRARY_FILES = {
     "helpers/templates/rust_release.py.txt": "plugins/filter/rust_release.py",
@@ -90,6 +99,20 @@ def test_vendored_library_files_match_ops_library(vendored: str) -> None:
 
     assert source.is_file(), f"{source} is gone; the port still ships {vendored}"
     assert (PACKAGE / vendored).read_bytes() == source.read_bytes(), f"{source} changed; re-vendor and re-check"
+
+
+@needs_ops_library
+@pytest.mark.parametrize("vendored", sorted(VENDORED_TEMPLATE_DIRS), ids=str)
+def test_vendored_template_dirs_match_ops_library(vendored: str) -> None:
+    assert OPS_LIBRARY is not None
+    role, excluded = VENDORED_TEMPLATE_DIRS[vendored]
+    source = Path(OPS_LIBRARY, "roles", role, "templates")
+    ours = {path.name: path.read_bytes() for path in (PACKAGE / vendored).iterdir() if path.is_file()}
+    theirs = {path.name: path.read_bytes() for path in source.iterdir() if path.is_file() and path.name not in excluded}
+
+    assert sorted(ours) == sorted(theirs), f"{source} gained or lost templates; vendor or exclude them"
+    changed = sorted(name for name in ours if ours[name] != theirs[name])
+    assert not changed, f"{changed} changed in {source}; re-vendor and re-check"
 
 
 @needs_ops_library
