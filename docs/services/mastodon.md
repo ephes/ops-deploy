@@ -201,8 +201,14 @@ backup ports ([Local backups](../concepts/local-backups.md)).
    find the payload directory, require `database/<db>.dump`, hand the staging
    path and the dump to the Postgres OS user (`postgres`) and validate the
    dump: `pg_restore --list` must list `TABLE DATA`, then a full
-   `pg_restore --file=/dev/null`. With `dry_run` it stops here (the staging
-   directory still goes, with `cleanup`).
+   `pg_restore --file=/dev/null`. An archive whose `media/` holds no files
+   (only directories or nothing; a backup taken with `include_media` off still
+   has an empty `media/`) is refused here, before anything stops, unless
+   `empty_media_confirmed` (ops-control: `MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true`):
+   its `rsync --delete` would empty the live media. The components line shows
+   `media=EMPTY`. With `dry_run` it stops here (the staging directory still
+   goes, with `cleanup`); a dry run reports an empty `media/` and that a
+   restore would refuse it, and exits 0.
 2. A Traefik route in the archive that differs from the live one needs a free
    Traefik transaction lock, checked before anything changes.
 3. Ensure the media and site directories (`mastodon:mastodon 0750`) and ask
@@ -234,7 +240,10 @@ top-level directory, and archives or safety copies inside the media directory
 (which the restore syncs with `--delete`).
 
 Deliberate differences: archive names only (no absolute paths), a symlinked
-archive is refused, `dry_run` is an addition, the route lock as above (a lock
+archive is refused, `dry_run` is an addition, the empty-media refusal and
+`empty_media_confirmed` are additions (ops-library's role, which emptied the
+live media and reported success, gains the same guard with
+`mastodon_restore_empty_media_confirmed`), the route lock as above (a lock
 taken during the restore leaves the route, the restore finishes and then
 fails; the rollback puts the route back only when the restore wrote it and
 only while no transaction holds the lock), "installed" units are those whose

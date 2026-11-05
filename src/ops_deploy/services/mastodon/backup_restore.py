@@ -25,6 +25,11 @@ Deliberate differences from the roles:
 - ``dry_run`` (not in the role) unpacks the archive into the staging
   directory, validates the dump, prints what the archive holds, removes the
   staging directory (with ``cleanup``) and stops: nothing is stopped or changed.
+- An archive whose ``media/`` holds nothing but directories (a backup taken
+  with ``include_media`` off still has an empty ``media/``) is refused before
+  anything stops, unless ``empty_media_confirmed``: its ``rsync --delete``
+  would empty the live media. The role restores it (and reports success). A
+  dry run reports the condition.
 - ``staging_dir``, removed at the start and the end, must be a directory of
   its own: not ``/tmp``, ``/var/tmp`` or a top-level directory.
 - A Traefik route that differs from the live one is written only while no
@@ -163,6 +168,10 @@ class MastodonRestoreConfig(_Postgres):
     root: CanonicalPath = "/opt/backups/mastodon"
     archive: ArchiveName = "latest"
     dry_run: StrictBool = False
+    # Not in the role: allow restoring an archive whose media/ holds no files,
+    # which empties the live media (ops-control:
+    # MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true).
+    empty_media_confirmed: StrictBool = False
     cleanup: StrictBool = True
     restart: StrictBool = True
     stop_services: StrictBool = True
@@ -360,6 +369,7 @@ def deploy_mastodon_restore(cfg: MastodonRestoreConfig, secrets: SecretValues | 
             "RESTORE_ROOT": cfg.root,
             "ARCHIVE": cfg.archive,
             "DRY_RUN": flag(cfg.dry_run),
+            "EMPTY_MEDIA_CONFIRMED": flag(cfg.empty_media_confirmed),
             "CLEANUP": flag(cfg.cleanup),
             "STAGING": cfg.staging_dir,
             "STORAGE": cfg.storage_driver,

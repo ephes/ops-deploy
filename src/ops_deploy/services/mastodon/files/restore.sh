@@ -3,6 +3,8 @@
 # - the archive is unpacked into the staging directory and the database dump
 #   is validated (`pg_restore --list` with TABLE DATA, then a full read into
 #   /dev/null) before any service is stopped;
+# - an archive whose media/ holds no files is refused at that point unless
+#   EMPTY_MEDIA_CONFIRMED (not in the role, which empties the live media);
 # - the services must stop, otherwise nothing is dropped;
 # - after the stop a safety `pg_dump -Fc` of the live database, a snapshot of
 #   the media directory and copies of the env, unit, Traefik and nginx files
@@ -240,8 +242,30 @@ if [ "$has_systemd" = 1 ]; then
     )
 fi
 yes_no() { if [ "$1" = 1 ]; then printf yes; else printf no; fi; }
-echo "Components: database=yes, media=$(yes_no "$media_enabled"), env=$(yes_no "$has_env")," \
+media_text=$(yes_no "$media_enabled")
+# A backup taken without media still has an empty media/; its rsync --delete
+# would empty the live media. Only directories (or nothing) count as empty.
+media_empty=0
+if [ "$media_enabled" = 1 ] && [ -z "$(find "$payload/media/" -mindepth 1 ! -type d -print -quit 2>/dev/null)" ]; then
+    media_empty=1
+    media_text="EMPTY"
+fi
+echo "Components: database=yes, media=$media_text, env=$(yes_no "$has_env")," \
     "systemd=${#unit_files[@]} unit(s), traefik=$(yes_no "$has_traefik"), nginx=$(yes_no "$has_nginx")"
+if [ "$media_empty" = 1 ]; then
+    empty_text="The archive's media/ holds no files: restoring it deletes every file in the live media $MEDIA"
+    if [ "$EMPTY_MEDIA_CONFIRMED" = 1 ]; then
+        echo "$empty_text (confirmed with empty_media_confirmed; the pre-restore media snapshot keeps them)."
+    elif [ "$DRY_RUN" = 1 ]; then
+        echo "$empty_text. A restore refuses this archive unless empty_media_confirmed" \
+            "(ops-control: MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true)."
+    else
+        echo "Mastodon restore refused before anything was stopped or changed. $empty_text." \
+            "Restore an archive taken with media, or confirm with empty_media_confirmed" \
+            "(ops-control: MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true)." >&2
+        exit 1
+    fi
+fi
 if [ "$DRY_RUN" = 1 ]; then
     echo "Dry run: the archive and its dump are valid; nothing was stopped or changed."
     exit 0

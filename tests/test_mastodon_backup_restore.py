@@ -89,6 +89,8 @@ def test_defaults_are_the_shared_roles() -> None:
     assert r.staging_dir == shared["mastodon_restore_staging_dir"]
     for flag in ("cleanup", "restart", "stop_services", "run_migrations"):
         assert getattr(r, flag) is shared[f"mastodon_restore_{flag}"]
+    # Not in the role: the empty-media guard is on by default.
+    assert r.empty_media_confirmed is False
     assert r.postgres_become_user == shared["mastodon_postgres_become_user"] == "postgres"
     assert (r.postgres_host, r.postgres_port) == (shared["mastodon_postgres_host"], shared["mastodon_postgres_port"])
     assert r.postgres_database == shared["mastodon_postgres_database"]
@@ -244,6 +246,7 @@ def test_restore_plans_one_labelled_script() -> None:
     assert values["SAFETY_DIR"].endswith("Z")
     assert values["MEDIA_SAFETY"] == "/home/mastodon/media-pre-restore/" + values["SAFETY_DIR"].rsplit("/", 1)[1]
     assert values["PG_BECOME"] == "postgres"
+    assert values["EMPTY_MEDIA_CONFIRMED"] == "0"
     assert result.changed_ops == ["Mastodon restore | Restore Mastodon"]
     dry = restore(MastodonRestoreConfig(dry_run=True))
     assert dry.changed_ops == ["Mastodon restore | Restore Mastodon (dry run)"]
@@ -614,6 +617,83 @@ def test_restore_script_dry_run_changes_nothing(tmp_path: Path) -> None:
     assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb", "createdb")) for line in log)
     assert safety_dirs(p) == []
     assert not p["staging"].exists()
+
+
+def empty_media_backup(p: dict[str, Path], tmp_path: Path, *, skeleton: bool = False) -> Path:
+    """A backup taken without media (its media/ is empty), the live media changed afterwards."""
+
+    directory = take_backup(p, tmp_path, include_media=False)
+    if skeleton:
+        # Directories only still hold no media file.
+        (directory / "media" / "accounts" / "avatars").mkdir(parents=True)
+        repack(directory)
+    make_site(p, "changed")
+    return directory
+
+
+@needs_tools
+@pytest.mark.parametrize("skeleton", [False, True])
+def test_restore_script_refuses_an_empty_media_archive_before_anything_stops(tmp_path: Path, skeleton: bool) -> None:
+    p = tree(tmp_path)
+    empty_media_backup(p, tmp_path, skeleton=skeleton)
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode != 0
+    assert "refused before anything was stopped or changed" in done.stderr
+    assert "MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true" in done.stderr
+    assert "media=EMPTY" in done.stdout
+    assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb", "createdb")) for line in events(tmp_path))
+    assert (media(p) / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
+    assert (p["pgdata"] / "mastodon.db").read_text() == "rows changed\n"
+    assert safety_dirs(p) == []
+    assert not p["msafety"].exists()
+    assert not p["staging"].exists()
+
+
+@needs_tools
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_restore_script_dry_run_reports_an_empty_media_archive(tmp_path: Path, confirmed: bool) -> None:
+    p = tree(tmp_path)
+    empty_media_backup(p, tmp_path)
+
+    done = run_restore(p, tmp_path, dry_run=True, empty_media_confirmed=confirmed)
+
+    assert done.returncode == 0, done.stderr
+    assert "media=EMPTY" in done.stdout
+    assert f"deletes every file in the live media {media(p)}" in done.stdout
+    assert ("A restore refuses this archive" in done.stdout) is not confirmed
+    assert "Dry run" in done.stdout
+    assert not any(line.startswith("systemctl") for line in events(tmp_path))
+    assert (media(p) / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
+
+
+@needs_tools
+def test_restore_script_restores_a_confirmed_empty_media_archive(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    empty_media_backup(p, tmp_path)
+
+    done = run_restore(p, tmp_path, empty_media_confirmed=True)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    assert "confirmed with empty_media_confirmed" in done.stdout
+    # The role's behaviour: the live media is emptied, the snapshot keeps it.
+    assert list(media(p).iterdir()) == []
+    (safety,) = safety_dirs(p)
+    assert (p["msafety"] / safety.name / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
+    assert (p["pgdata"] / "mastodon.db").read_text() == "rows original\n"
+
+
+@needs_tools
+def test_restore_script_media_with_files_needs_no_confirmation(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    take_backup(p, tmp_path)
+
+    done = run_restore(p, tmp_path, dry_run=True)
+
+    assert done.returncode == 0, done.stderr
+    assert "media=yes" in done.stdout
+    assert "holds no files" not in done.stdout
 
 
 @needs_tools
