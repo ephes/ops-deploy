@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
+from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
@@ -167,17 +169,24 @@ def test_management_failure_never_exports_private_output() -> None:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-@pytest.mark.parametrize("drift", ["none", "source", "dependencies", "ownership", "configuration", "site mode"])
+@pytest.mark.parametrize(
+    "drift", ["none", "source", "build metadata", "dependencies", "ownership", "configuration", "site mode"]
+)
 def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool, drift: str
 ) -> None:
     import importlib
 
+    from ops_deploy.core.rsync import RsyncResult, subprocess_rsync_runner
     from ops_deploy.testing import RecordingRsyncRunner, run_deploy_fake
     from tests import fakehost
 
+    if drift == "build metadata" and shutil.which("rsync") is None:
+        pytest.skip("needs rsync")
     backend = importlib.import_module("ops_deploy.services.daybook_operations_api.deploy")
-    cfg = OperationsApiConfig(source_path=tmp_path, enabled=enabled)
+    export, site = tmp_path / "export", tmp_path / "site"
+    export.mkdir()
+    cfg = OperationsApiConfig(source_path=export, enabled=enabled)
     private = pins()
     dependency_calls: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(
@@ -209,6 +218,29 @@ def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
     rsync = RecordingRsyncRunner()
     if drift == "source":
         rsync = RecordingRsyncRunner({"--dry-run": [">fcs....... src/daybook/operations_protocol.py"]})
+    elif drift == "build metadata":
+        # The site after a deploy plus its frozen ``uv sync``: same source, and
+        # the editable install's ``src/daybook.egg-info`` the export never has.
+        for root in (export, site):
+            (root / "src" / "daybook").mkdir(parents=True)
+            (root / "src" / "daybook" / "__init__.py").write_text("")
+        (site / "src" / "daybook.egg-info").mkdir()
+        (site / "src" / "daybook.egg-info" / "PKG-INFO").write_text("Name: daybook\n")
+
+        def local(argv: Sequence[str]) -> list[str]:
+            # The deploy's own argv against a local site: no SSH, root chown or remote binary.
+            args = [arg for arg in argv if not arg.startswith(("--chown=", "--rsync-path="))]
+            offset = args.index("-e")
+            del args[offset : offset + 2]
+            args[-1] = f"{site}/"
+            return args
+
+        def replay(argv: Sequence[str]) -> RsyncResult:
+            recorded.append(list(argv))
+            return subprocess_rsync_runner(local(argv))
+
+        recorded: list[list[str]] = []
+        rsync = replay  # type: ignore[assignment]
     elif drift == "dependencies":
         responses["if " + dependency_command(cfg, check=True)] = ["pending"]
     elif drift == "ownership":
@@ -237,6 +269,15 @@ def test_actual_sdk_existing_repeat_keeps_explicit_state_and_genuine_management(
         assert len(rsync.calls) == 2
         assert "--dry-run" not in rsync.calls[-1]
         assert "Sync Operations API frozen dependencies" in changed
+    if drift == "build metadata":
+        assert changed == ["Operations API migrate", "Operations API provision"], changed
+        (dry,) = recorded
+        assert "--delete" in dry
+        assert "--exclude=*.egg-info" in dry
+        # The role's excludes alone would delete it (and so re-sync and restart).
+        role = subprocess_rsync_runner([arg for arg in local(dry) if arg != "--exclude=*.egg-info"])
+        assert "*deleting   src/daybook.egg-info/" in role.itemized_lines
+        assert (site / "src" / "daybook.egg-info" / "PKG-INFO").is_file()
     if drift == "ownership":
         assert "Set original source ownership" in changed
         assert not any(row == "Sync Operations API frozen dependencies" for row in changed)

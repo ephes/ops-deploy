@@ -30,6 +30,11 @@ from .git import checkout as git_checkout
 from .render import render_config, render_route, render_unit
 
 SOURCE_EXCLUDES = (".git", ".venv*", ".env*", "__pycache__", "site", ".cache", "experiments")
+# Not in the role's list: the frozen ``uv sync`` installs the setuptools project
+# editable, which writes ``src/daybook.egg-info`` into the site. It is not
+# source, so ``--delete`` would remove it on every run and re-trigger the
+# dependency sync and both restarts (the role does exactly that).
+BUILD_METADATA = ("*.egg-info",)
 
 
 def operations_api_port_preflight(cfg: OperationsApiConfig) -> OperationMeta:
@@ -160,7 +165,7 @@ def deploy_daybook_operations_api(
             name="Sync exact Operations API source",
             src=cfg.source_path,
             dest=cfg.site_path,
-            excludes=SOURCE_EXCLUDES,
+            excludes=(*SOURCE_EXCLUDES, *BUILD_METADATA),
             runner=rsync,
             user=cfg.user,
             group=cfg.user,

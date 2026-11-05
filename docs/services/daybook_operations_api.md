@@ -45,7 +45,12 @@ deploy_daybook_operations_api(cfg=cfg, pins=pins)
 For Git, select `deploy_method="git"`, an exact40-character `git_revision`,
 and optional `git_repo`. Rsync requires a prepared source directory and retains
 the original excludes for Git, virtual environments, environment files, Python
-caches, nested site/cache and experiments. The private caller resolves current
+caches, nested site/cache and experiments. It also excludes `*.egg-info`,
+which the role does not: the frozen `uv sync` installs the project editable and
+writes `src/daybook.egg-info` into the site, and the role's `--delete` removes it
+again, so every Ansible run reports a source change and restarts both units.
+Here a converged repeat (also right after an Ansible deploy) leaves it and plans
+no source sync. The private caller resolves current
 Daybook Main and owns the exported tree for the complete operation lifetime.
 An existing exported tree must remain explicitly rsync in desired inventory;
 changing it to Git is not an automatic migration strategy.

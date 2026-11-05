@@ -17,6 +17,7 @@ import ops_deploy
 from ops_deploy.ops.sync_tree import rsync_argv
 from ops_deploy.services.daybook_operations_api import OperationsApiConfig, OperationsApiPins, OperationsProfile
 from ops_deploy.services.daybook_operations_api.deploy import (
+    BUILD_METADATA,
     SOURCE_EXCLUDES,
     management_command,
     management_payload,
@@ -181,7 +182,7 @@ def paired_rsync_repeat(archive: bytes) -> None:
             "owned",
             user="daybook-operations",
             group="daybook-operations",
-            excludes=SOURCE_EXCLUDES,
+            excludes=(*SOURCE_EXCLUDES, *BUILD_METADATA),
             rsync_path="/usr/bin/rsync",
             dry_run=dry,
         )
