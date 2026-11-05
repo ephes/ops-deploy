@@ -34,8 +34,10 @@ Deliberate differences from the roles:
   ``-vvv`` or when it fails.
 - Both read the media excludes from the archive's ``manifest.yml``; the role
   parses the ``media_rsync_excludes`` line as JSON, the script accepts only
-  a JSON list of plain double-quoted strings (no quote or backslash inside,
-  as :class:`MastodonBackupConfig` allows) and stops on anything else.
+  a JSON list of plain double-quoted strings (no quote or backslash inside;
+  :class:`MastodonBackupConfig` allows only printable ASCII without them, so
+  its manifests hold no escapes) and stops on anything else, such as a
+  role-written manifest whose patterns ``to_json`` escaped.
 - ``staging_dir``, removed at the start and the end, must be a directory of
   its own: not ``/tmp``, ``/var/tmp`` or a top-level directory.
 - A Traefik route that differs from the live one is written only while no
@@ -83,6 +85,7 @@ from pyinfra.operations import files, python, server
 from ops_deploy.base._common import output, require_linux
 from ops_deploy.core.config import UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.helpers import mark_read_only
 from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.ops import secret_stdin
 from ops_deploy.services._lifecycle import flag, private_local_dir, script
@@ -94,9 +97,11 @@ SLUG = "mastodon"
 Binary = Annotated[str, Field(pattern=r"^[A-Za-z0-9_./+-]+$")]
 DatabaseName = Annotated[str, Field(pattern=r"^[A-Za-z0-9_]+$")]
 PgHost = Annotated[str, Field(pattern=r"^[A-Za-z0-9.:_/-]*$")]
-# An rsync exclude pattern (one argument; no line break, quote or backslash, so
-# it stays one YAML string in the manifest and the inline script fish-safe).
-Exclude = Annotated[str, Field(pattern=r"^[^\n\r\"\\]+$")]
+# An rsync exclude pattern (one argument): printable ASCII without a double
+# quote or backslash, so it stays one plain JSON/YAML string in the manifest
+# (json.dumps escapes nothing in it; the restore script refuses escapes) and
+# the inline script stays fish-safe.
+Exclude = Annotated[str, Field(pattern=r"^[ !#-\[\]-~]+$")]
 
 
 class _Postgres(MastodonSite):
@@ -424,7 +429,7 @@ def deploy_mastodon_restore(cfg: MastodonRestoreConfig, secrets: SecretValues | 
         },
         password,
     )
-    python.call(name="Show the restore report", function=report, op=restored)
+    mark_read_only(python.call(name="Show the restore report", function=report, op=restored))
 
 
 __all__ = [

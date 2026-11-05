@@ -253,6 +253,7 @@ def test_restore_plans_one_labelled_script() -> None:
     assert values["EMPTY_MEDIA_CONFIRMED"] == "0"
     assert result.changed_ops == ["Mastodon restore | Restore Mastodon", "Mastodon restore | Show the restore report"]
     assert result.function_calls == ["report"]
+    assert result.mutating_changed_ops == ["Mastodon restore | Restore Mastodon"]
     dry = restore(MastodonRestoreConfig(dry_run=True))
     assert dry.changed_ops == [
         "Mastodon restore | Restore Mastodon (dry run)",
@@ -1057,7 +1058,7 @@ def test_restore_script_without_a_live_database_needs_no_database_rollback(tmp_p
     assert "Safety dump: none." in done.stderr
 
 
-@pytest.mark.parametrize("exclude", ["a\\*b", "foo\\", 'a"b', "a\nb"])
+@pytest.mark.parametrize("exclude", ["a\\*b", "foo\\", 'a"b', "a\nb", "a\tb", "/caché/***", ""])
 def test_excludes_that_would_break_the_manifest_or_fish_are_refused(exclude: str) -> None:
     with pytest.raises(ValidationError):
         MastodonBackupConfig(media_rsync_excludes=(exclude,))
@@ -1309,3 +1310,76 @@ def test_restore_script_a_failing_live_media_count_changes_nothing(tmp_path: Pat
     assert f"cannot read the live media {media(p)}" in done.stderr
     assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb")) for line in events(tmp_path))
     assert not p["staging"].exists()
+
+
+@needs_tools
+def test_restore_script_refuses_a_symlinked_manifest(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    directory = cache_only_backup(p, tmp_path)
+    (directory / "elsewhere.yml").write_text("media_rsync_excludes: []\n")
+    (directory / "manifest.yml").unlink()
+    (directory / "manifest.yml").symlink_to("elsewhere.yml")
+    repack(directory)
+
+    done = run_restore(p, tmp_path, empty_media_confirmed=True)
+
+    assert done.returncode != 0
+    assert "the archive's manifest.yml is not a file" in done.stderr
+    assert not any(line.startswith("systemctl") for line in events(tmp_path))
+
+
+@needs_tools
+def test_restore_script_without_live_media_restores_an_empty_archive(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    cache_only_backup(p, tmp_path)
+    shutil.rmtree(media(p))
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    assert "media=EMPTY" in done.stdout
+    assert "the media restore deletes no file." in done.stdout
+    assert media(p).is_dir()
+
+
+@needs_tools
+def test_restore_script_keeps_excluded_files_in_a_directory_the_archive_lacks(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    take_backup(p, tmp_path, media_rsync_excludes=("/cache/***", "*.part"))
+    (media(p) / "imports").mkdir()
+    (media(p) / "imports" / "a.part").write_text("partial\n")
+    (media(p) / "imports" / "b.txt").write_text("gone\n")
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    files = live_files(p)
+    assert files["imports/a.part"] == "partial\n"
+    assert "imports/b.txt" not in files
+
+
+@needs_tools
+@pytest.mark.parametrize("status", [24, 23])
+def test_restore_script_counts_through_vanished_files_only(tmp_path: Path, status: int) -> None:
+    # rsync exit 24 (files vanished while listing a running instance) still counts; any other failure stops.
+    p = tree(tmp_path)
+    cache_only_backup(p, tmp_path)
+    broken = tmp_path / "rsync-bin"
+    broken.mkdir()
+    real = shutil.which("rsync", path=PATH)
+    wrapper = broken / "rsync"
+    wrapper.write_text(
+        "#!/usr/bin/env bash\n"
+        f'case " $* " in *" --list-only "*"{media(p)}/"*) "{real}" "$@"; exit {status} ;; esac\n'
+        f'exec "{real}" "$@"\n'
+    )
+    wrapper.chmod(0o755)
+
+    done = run_restore(p, tmp_path, dry_run=True, env_extra={"PATH": f"{broken}:{tools(tmp_path)}:{PATH}"})
+
+    if status == 24:
+        assert done.returncode == 0, done.stderr
+        assert "the media restore deletes no file." in done.stdout
+    else:
+        assert done.returncode != 0
+        assert f"cannot read the live media {media(p)}" in done.stderr

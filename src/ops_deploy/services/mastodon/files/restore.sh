@@ -260,7 +260,8 @@ stop_unchanged() {
 # deleting them, and the empty-media guard counts only files outside them.
 # They come from the manifest's one `media_rsync_excludes: [...]` line, a JSON
 # list of strings as both backups write it, without quotes or backslashes in
-# a pattern (the backup config refuses those). An archive without a
+# a pattern (the backup config refuses those, and non-ASCII that JSON would
+# escape). An archive without a
 # manifest.yml or without that line has none, so the restore behaves as
 # before the excludes (every live media file the archive lacks is deleted);
 # anything else in that line stops the restore here.
@@ -309,18 +310,23 @@ read_media_excludes() {
     fi
 }
 
-# count_media_files DIR: the non-directories (files, links, ...) below DIR
-# outside the media excludes, as the media restore's rsync sees them. A
-# failing rsync fails the count (pipefail).
+# count_media_files DIR: the non-directories (files, links, devices, ...; the
+# listing lines whose permission string starts with -, l, c, b, p or s) below
+# DIR outside the media excludes, as the media restore's rsync sees them. A
+# failing rsync fails the count (pipefail), except for exit 24 (files vanished
+# while listing a running instance's media).
 count_media_files() {
-    rsync -a --list-only "${exclude_args[@]}" "$1/" | awk 'substr($0, 1, 1) != "d" { n++ } END { print n + 0 }'
+    { rsync -a --list-only "${exclude_args[@]}" "$1/" || [ "$?" = 24 ]; } |
+        awk '/^[-lcbps][-r][-w]/ { n++ } END { print n + 0 }'
 }
 
 # A backup taken without media still has an empty media/; its rsync --delete
 # would delete the live media. Only files outside the excludes count: an
 # archive that holds none (only directories, excluded paths or nothing) is
 # EMPTY, and it is refused while the live media holds files outside the
-# excludes. A failing count stops the restore here.
+# excludes. A failing count stops the restore here. The live media is counted
+# while Mastodon still runs: a file uploaded outside the excludes between the
+# count and the stop is deleted by the restore (the media snapshot keeps it).
 media_empty=0
 live_files=0
 excludes_text=""

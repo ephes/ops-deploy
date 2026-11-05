@@ -17,7 +17,7 @@
   before anything stops. A new "Show the restore report" step logs the
   script's output, so `just restore-check` shows the components line, the
   excludes and the refusal without `-vvv`. Same as ops-library's
-  `mastodon_restore` (`a2defd0d`, recorded in the drift manifest).
+  `mastodon_restore` (`4cf0b24a`, recorded in the drift manifest).
 
 - `services.unifi` removal: beyond the role, a purge of
   `mongodb_tool_packages` (`mongodb-database-tools`, `mongodb-mongosh`,

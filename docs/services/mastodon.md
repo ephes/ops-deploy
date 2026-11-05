@@ -160,7 +160,7 @@ absolute paths only).
 ## Backup and restore
 
 `ops_deploy.services.mastodon` ports `mastodon_backup` (ops-library `44a532ba`)
-and `mastodon_restore` (ops-library `a2defd0d`, with its media excludes and empty-media guard),
+and `mastodon_restore` (ops-library `4cf0b24a`, with its media excludes and empty-media guard),
 with the `mastodon_shared` defaults; recorded in the drift manifest. Both take
 the database password as `postgres_password` in their secrets (ops-control passes `mastodon_postgres_password`); it reaches the
 host script on stdin and the PostgreSQL tools through a private `0600`
@@ -211,9 +211,11 @@ the live media holds files outside the excludes, unless `empty_media_confirmed`.
    them too, so the live paths they match are kept. No `manifest.yml`, or no
    such line: no excludes, as before the excludes (every live media file the
    archive lacks is deleted, and the guard below counts every live file). A
-   manifest that is no regular file, more than one line, or a value other than
-   a JSON list of plain double-quoted strings (no quote or backslash inside,
-   as the backup config allows) stops the restore here. An archive whose
+   manifest that is no regular file, more than one `media_rsync_excludes`
+   line, or a value other than a JSON list of plain double-quoted strings (no
+   quote or backslash inside; the backup config allows only printable ASCII
+   without them, so its manifests hold no JSON escapes) stops the restore
+   here. An archive whose
    `media/` holds no files outside the excludes (only directories, excluded
    paths or nothing; a backup taken with `include_media` off still has an
    empty `media/`) is `media=EMPTY` on the components line; it is refused
@@ -223,7 +225,11 @@ the live media holds files outside the excludes, unless `empty_media_confirmed`.
    delete them. When the live media holds only excluded paths (a staging host
    whose media is all remote cache) nothing would be deleted, and the restore
    goes on without confirmation. Both counts use `rsync --list-only` with the
-   excludes; a failing count stops the restore. With `dry_run` it stops here
+   excludes; a failing count stops the restore (files vanishing while the
+   running instance's media is listed, rsync's exit 24, do not). The live
+   media is counted before the services stop: a file uploaded outside the
+   excludes in between is deleted by the restore (the media snapshot keeps
+   it). With `dry_run` it stops here
    (the staging directory still goes, with `cleanup`); a dry run prints the
    components, the excludes and whether a restore would refuse (unless
    confirmed), and exits 0.
