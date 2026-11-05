@@ -25,7 +25,7 @@ import posixpath
 import re
 import shlex
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from io import StringIO
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
@@ -261,6 +261,14 @@ def _alias(cfg: MinioAccess, access_key: str, secret_key: str) -> None:
         )
 
 
+def require_mc(cfg: MinioAccess) -> None:
+    """The playbooks' "Ensure mc is installed" (register-echoport-backup.yml installs it): refuse while planning."""
+
+    mc = shlex.quote(cfg.mc)
+    if (probe(f"test -x {mc} && echo present || echo missing", name=f"mc at {cfg.mc}") or "").strip() != "present":
+        raise DeployError(f"mc (MinIO client) not found at {cfg.mc}; register echoport-backup first to install it")
+
+
 def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:
     """``backup_minio_account.yml`` for one target (call inside a deploy, on the store's host).
 
@@ -274,10 +282,7 @@ def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:
         raise DeployError(f"{cfg.target}: a scoped target's access key must be its account user {cfg.account.user}")
     if cfg.os_user == "none" and not (cfg.scoped and cfg.store == "minio"):
         return
-    # The playbooks' "Ensure mc is installed" (register-echoport-backup.yml installs it), before any write.
-    mc = shlex.quote(cfg.mc)
-    if (probe(f"test -x {mc} && echo present || echo missing", name=f"mc at {cfg.mc}") or "").strip() != "present":
-        raise DeployError(f"mc (MinIO client) not found at {cfg.mc}; register echoport-backup first to install it")
+    require_mc(cfg)
     if cfg.scoped and cfg.store == "minio":
         _account(cfg, secret_key)
     if cfg.os_user == "none":
@@ -380,6 +385,8 @@ def work_dir(cfg: WorkDir) -> None:
 
 # -- known host -------------------------------------------------------------------
 
+# The controller's ``ssh-keyscan`` waits 5 s per address itself; this bounds a hung resolver too.
+KEYSCAN_TIMEOUT = 60
 ED25519 = re.compile(r"^ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI[A-P][A-Za-z0-9+/]{42}$")
 _HOSTNAME = r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"
 
@@ -401,9 +408,22 @@ class KnownHost(RoleConfig):
 def controller_keyscan(name: str) -> str:
     """``ssh-keyscan -q -t ed25519 <name>`` on the controller, as the include's ``pipe`` lookup runs it."""
 
-    result = subprocess.run(
-        ["ssh-keyscan", "-q", "-t", "ed25519", name], capture_output=True, text=True, timeout=60, check=False
-    )
+    try:
+        result = subprocess.run(
+            ["ssh-keyscan", "-q", "-t", "ed25519", name],
+            capture_output=True,
+            text=True,
+            timeout=KEYSCAN_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise DeployError(
+            f"ssh-keyscan of {name} gave no answer within {KEYSCAN_TIMEOUT} s; nothing was written."
+        ) from None
+    except OSError as error:
+        raise DeployError(
+            f"ssh-keyscan could not run on the controller ({error.strerror}); nothing was written."
+        ) from None
     return result.stdout
 
 
@@ -434,12 +454,8 @@ def _read(path: str) -> str | None:
     return base64.b64decode(data.strip()).decode("utf-8", "surrogateescape")
 
 
-def known_host(cfg: KnownHost, keyscan: Callable[[str], str] = controller_keyscan) -> None:
-    """Write exactly one ed25519 key line for ``cfg.name`` (``known_hosts`` ``state: present``).
-
-    Anything other than exactly one well-formed key refuses while planning,
-    before the file is touched.
-    """
+def _resolved_key(cfg: KnownHost, keyscan: Callable[[str], str]) -> str:
+    """The include's resolution and assert for one name: exactly one well-formed key, or a refusal."""
 
     keys = host_keys(cfg, keyscan)
     source = "pinned" if cfg.pin is not None else "ssh-keyscan"
@@ -449,22 +465,98 @@ def known_host(cfg: KnownHost, keyscan: Callable[[str], str] = controller_keysca
             "(a pin must come from the inventory host whose ansible_host is that name). "
             f"Nothing was written to {cfg.path}."
         )
-    current = _read(cfg.path)
-    lookup = output(f"ssh-keygen -F {shlex.quote(cfg.name)} -f {shlex.quote(cfg.path)}") if current is not None else ""
-    content = known_hosts(current, lookup, f"{cfg.name} {keys[0]}")
-    if content is None:
+    return keys[0]
+
+
+_FOUND = re.compile(r"^# Host (?P<host>\S+) found: line (?P<line>\d+)(?P<rest>.*)$")
+
+
+def _without_line(lookup: str, number: int) -> str:
+    """``ssh-keygen -F`` output after line ``number`` of the file was removed (later lines move up)."""
+
+    kept: list[str] = []
+    skip = False
+    for line in lookup.split("\n"):
+        found = _FOUND.match(line)
+        if found:
+            at = int(found["line"])
+            skip = at == number
+            if not skip:
+                kept.append(f"# Host {found['host']} found: line {at - 1 if at > number else at}{found['rest']}")
+            continue
+        if not skip:
+            kept.append(line)
+        skip = False
+    return "\n".join(kept)
+
+
+def _replaced_line(before: str, after: str) -> int | None:
+    """The line ``known_hosts`` removed from ``before`` (it appends its line to the rest), if any."""
+
+    old, new = before.splitlines(True), after.splitlines(True)[:-1]
+    if len(new) == len(old):
+        return None
+    for number, (line, kept) in enumerate(zip(old, [*new, None], strict=True), start=1):
+        if line != kept:
+            return number
+    return None
+
+
+def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str] = controller_keyscan) -> None:
+    """The include, once per name in ``cfgs`` and in that order, on one known_hosts file.
+
+    Every name's key is resolved before the file is touched (anything other
+    than exactly one well-formed key refuses while planning). The names are
+    then applied one after the other as ``known_hosts`` ``state: present``
+    applies them, each to the file the previous one left (the host's
+    ``ssh-keygen -F`` answers are read once and moved past a replaced line),
+    and the result is written in one upload. The file keeps its owner and mode.
+    """
+
+    if not cfgs:
         return
-    found = host.get_fact(File, path=cfg.path)
+    path = cfgs[0].path
+    if any(cfg.path != path for cfg in cfgs) or len({cfg.name for cfg in cfgs}) != len(cfgs):
+        raise DeployError("the known hosts of one run must be distinct names in one known_hosts file")
+    keys = [_resolved_key(cfg, keyscan) for cfg in cfgs]
+    current = _read(path)
+    lookups = [
+        output(f"ssh-keygen -F {shlex.quote(cfg.name)} -f {shlex.quote(path)}") if current is not None else ""
+        for cfg in cfgs
+    ]
+    content = current
+    for index, (cfg, key) in enumerate(zip(cfgs, keys, strict=True)):
+        changed = known_hosts(content, lookups[index], f"{cfg.name} {key}")
+        if changed is None:
+            continue
+        removed = _replaced_line(content, changed) if content is not None else None
+        if removed is not None:
+            lookups[index + 1 :] = [_without_line(lookup, removed) for lookup in lookups[index + 1 :]]
+        content = changed
+    if content == current:
+        return
+    found = host.get_fact(File, path=path)
     info: Mapping[str, Any] = found or {}
+    names = ", ".join(cfg.name for cfg in cfgs)
     files.put(
-        name=f"Add the ed25519 host key of {cfg.name} to {cfg.path}",
-        src=StringIO(content),
-        dest=cfg.path,
+        name=f"Add the ed25519 host key{'s' if len(cfgs) > 1 else ''} of {names} to {path}",
+        src=StringIO(content or ""),
+        dest=path,
         user=str(info.get("user", "root")),
         group=str(info.get("group", "root")),
         mode=str(info.get("mode", 644)),
         create_remote_dir=False,
     )
+
+
+def known_host(cfg: KnownHost, keyscan: Callable[[str], str] = controller_keyscan) -> None:
+    """Write exactly one ed25519 key line for ``cfg.name`` (``known_hosts`` ``state: present``).
+
+    Anything other than exactly one well-formed key refuses while planning,
+    before the file is touched.
+    """
+
+    known_hosts_entries([cfg], keyscan)
 
 
 __all__ = [
@@ -477,7 +569,9 @@ __all__ = [
     "controller_keyscan",
     "host_keys",
     "known_host",
+    "known_hosts_entries",
     "minio_access",
     "render_account_policy",
+    "require_mc",
     "work_dir",
 ]
