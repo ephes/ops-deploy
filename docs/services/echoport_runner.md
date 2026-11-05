@@ -188,9 +188,12 @@ token from `SERVICE_TOKEN`; nothing else differs, and ops-control's
 
 | `files/targets/` | Playbooks |
 |---|---|
-| `service_owned.py` | register-mail-db-backup (the same text as django-chat-staging-db's and ggs-lennestrasse-staging-db's) |
+| `service_owned.py` | register-mail-db-backup, register-django-chat-staging-db-backup and register-ggs-lennestrasse-staging-db-backup (the same text) |
 | `postfixadmin.py` | register-postfixadmin-backup (converges an existing row only) |
 | `graphyard.py` | register-graphyard-backup (no reactivation guard) |
+| `mastodon_production_db.py` | register-mastodon-production-db-backup (saves only when a field differs) |
+| `marina_production.py` | register-marina-production-backup (saves only when a field differs; database path, files and owner) |
+| `gotosocial.py` | register-gotosocial-backup (refuses a schedule that is not plain daily or within 10 minutes of another active daily target, and a row wired to another FastDeploy service) |
 
 `target.target_script(name)` and `target.target_scripts()` read them.
 
@@ -263,6 +266,27 @@ planning, before any write; the playbooks fail at their task instead, after
 the earlier tasks wrote. On a converged host the plan has no mutating
 operation, apart from a media runner's MinIO user upsert. No Echoport row is
 written: the rows stay managed by hand.
+
+Class B part 2 (django-chat-staging-db, ggs-lennestrasse-staging-db,
+mastodon-production-db, marina-production, gotosocial) are deploy-user
+runners whose playbook writes its Echoport target. Their registration has
+these fields as well:
+
+- `target` (task `target`, after `runner` in each playbook's order): the
+  playbook's own target script as for the same-host class B runners, with
+  `register_deploy_runner(..., token_user=...)` for the token step;
+- `ssh_key_public` false: those playbooks install the private key only
+  (`DeployKey(private=...)`, no `id_ed25519.pub`);
+- `template_markers`: as for `RunnerRegistration`;
+- `min_pg_restore_major` (task `pg_restore`, mastodon): the playbook's
+  "Require a pg_restore that reads production's dumps", a read-only step
+  after the packages (as the playbook reads the version after installing
+  `postgresql-client`), failing when `pg_restore --version`'s PostgreSQL
+  major is lower.
+
+A target with a token but no `token_user`, or a public key given where the
+playbook installs none, refuses while planning; so does a target whose bucket
+is not the access's.
 
 ## Playbook target scripts (`target`)
 

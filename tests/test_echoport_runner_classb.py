@@ -228,7 +228,14 @@ def token_for(service: str) -> str:
 
 
 def test_the_kept_scripts() -> None:
-    assert target_scripts() == ("graphyard", "postfixadmin", "service_owned")
+    assert target_scripts() == (
+        "gotosocial",
+        "graphyard",
+        "marina_production",
+        "mastodon_production_db",
+        "postfixadmin",
+        "service_owned",
+    )
     for name in target_scripts():
         text = target_script(name)
         assert "{{" not in text
@@ -832,3 +839,296 @@ def test_postfixadmin_against_echoports_own_models(tmp_path: Path) -> None:
     assert (pending, applied, converged) == ("pending", "applied", "unchanged")
     assert (stored["schedule"], stored["schedule_required"], stored["retention_days"]) == ("45 4 * * *", True, 30)
     assert after == stored
+
+
+# -- class B part 2: the remote runners (deploy user) ---------------------------------------
+
+MASTODON = {
+    **SERVICE_OWNED,
+    "target_name": "mastodon-production-db",
+    "service_name_fd": "mastodon-production-db-backup",
+    "target_service_name": "mastodon",
+    "target_schedule": "50 5 * * *",
+}
+MARINA = {
+    "target_name": "marina-production",
+    "allow_reactivation": False,
+    "target_description": "Marina production",
+    "service_name_fd": "marina-production-backup",
+    "service_name": "marina.service",
+    "restore_owner": "marina:marina",
+    "default_db_path": "/home/marina/site/db.sqlite3",
+    "files": ["/home/marina/site/media"],
+    "target_schedule": "35 3 * * *",
+    "target_status": "active",
+    "target_retention_days": 30,
+    "target_timeout_seconds": 3600,
+    "default_bucket": "backups",
+}
+GOTOSOCIAL = {
+    "target_name": "gotosocial",
+    "allow_reactivation": False,
+    "target_description": "GoToSocial",
+    "service_name_fd": "gotosocial-backup",
+    "target_service_name": "gotosocial",
+    "target_schedule": "25 1 * * *",
+    "target_status": "active",
+    "target_retention_days": 30,
+    "target_timeout_seconds": 1800,
+    "echoport_backup_default_bucket": "backups",
+}
+REMOTE = (("mastodon_production_db", MASTODON), ("marina_production", MARINA), ("gotosocial", GOTOSOCIAL))
+
+
+@pytest.fixture
+def exclude(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``QuerySet.exclude`` and ``Manager.exclude`` (gotosocial's schedule check reads the other targets)."""
+
+    def queryset_exclude(self: QuerySet, **lookup: Any) -> QuerySet:
+        keep = [pk for pk in self.pks if not all(DB.rows[pk].get(k) == v for k, v in lookup.items())]
+        return QuerySet(self.model, keep)
+
+    def manager_exclude(self: Manager, **lookup: Any) -> QuerySet:
+        return queryset_exclude(QuerySet(self.model, sorted(DB.rows)), **lookup)
+
+    def iterate(self: QuerySet) -> Iterator[Model]:
+        return iter([self.model.load(pk) for pk in self.pks])
+
+    monkeypatch.setattr(QuerySet, "exclude", queryset_exclude, raising=False)
+    monkeypatch.setattr(QuerySet, "__iter__", iterate, raising=False)
+    monkeypatch.setattr(Manager, "exclude", manager_exclude, raising=False)
+
+
+def test_the_kept_scripts_of_part_2() -> None:
+    assert set(target_scripts()) >= {"mastodon_production_db", "marina_production", "gotosocial"}
+
+
+@pytest.mark.usefixtures("exclude")
+@pytest.mark.parametrize(("script", "values"), REMOTE)
+def test_a_remote_target_is_created_by_apply_and_then_unchanged(script: str, values: dict[str, Any]) -> None:
+    cfg = kept(script, values)
+    fresh = token_for(str(values["service_name_fd"]))
+
+    assert run(cfg, "check") == "pending"
+    assert run(cfg, "apply", f"{fresh}\n") == "applied"
+    stored = row(str(values["target_name"]))
+    assert (stored["service_token"], stored["target_mode"], stored["storage_alias"]) == (fresh, "service_owned", "")
+    before = DB.snapshot()
+    assert run(cfg, "check") == "unchanged"
+    assert run(cfg, "apply") == "applied"
+    # mastodon's and marina's scripts save only on a change; gotosocial's always, the check none.
+    if script != "gotosocial":
+        assert DB.rows == before
+    row(str(values["target_name"]))["schedule"] = "0 0 * * *"
+    assert run(cfg, "check") == "pending"
+
+
+@pytest.mark.usefixtures("exclude")
+@pytest.mark.parametrize(("script", "values"), REMOTE)
+def test_a_paused_remote_target_is_refused(script: str, values: dict[str, Any]) -> None:
+    store(name=values["target_name"], status="paused", fastdeploy_service=values["service_name_fd"])
+
+    assert run(kept(script, values), "check") == (
+        "refused: RuntimeError: Refusing implicit reactivation from status=paused"
+    )
+
+
+@pytest.mark.usefixtures("exclude")
+def test_gotosocials_schedule_and_wiring_refusals() -> None:
+    cfg = kept("gotosocial", GOTOSOCIAL)
+    store(name="vaultwarden", status="active", schedule="20 1 * * *")
+    before = DB.snapshot()
+
+    assert "is within 10 minutes of: vaultwarden (20 1 * * *)" in run(cfg, "check")
+    DB.rows[1]["status"] = "paused"
+    store(name="gotosocial", fastdeploy_service="other-backup", service_token=token_for("gotosocial-backup"))
+    assert "existing target is wired to 'other-backup'" in run(cfg, "check")
+    hourly = kept("gotosocial", {**GOTOSOCIAL, "target_schedule": "25 * * * *"})
+    assert "is not a plain daily" in run(hourly, "check")
+    assert {pk: r for pk, r in DB.rows.items() if pk == 1}[1]["name"] == before[1]["name"]
+
+
+# Their deploy-user registrations, with the class B parts on the fake host.
+REMOTE_TASKS: dict[str, tuple[str, ...]] = {
+    "django-chat-staging-db-backup": (
+        "packages",
+        "mc",
+        "ssh_key",
+        "known_hosts",
+        "access",
+        "work_dir",
+        "runner",
+        "target",
+    ),
+    "mastodon-production-db-backup": (
+        "packages",
+        "pg_restore",
+        "mc",
+        "ssh_key",
+        "known_hosts",
+        "access",
+        "work_dir",
+        "runner",
+        "target",
+    ),
+    "marina-production-backup": ("packages", "mc", "access", "work_dir", "runner", "known_hosts", "target"),
+    "gotosocial-backup": ("mc", "packages", "access", "work_dir", "runner", "known_hosts", "target"),
+}
+REMOTE_VALUES = {
+    "django-chat-staging-db-backup": (
+        "service_owned",
+        {**SERVICE_OWNED, "target_name": "django-chat-staging-db", "service_name_fd": "django-chat-staging-db-backup"},
+    ),
+    "mastodon-production-db-backup": ("mastodon_production_db", MASTODON),
+    "marina-production-backup": ("marina_production", MARINA),
+    "gotosocial-backup": ("gotosocial", GOTOSOCIAL),
+}
+REMOTE_HOSTS = {"production.example.invalid", "staging.example.invalid"}
+
+
+def remote(name: str, **changes: Any) -> Any:
+    from ops_deploy.services._echoport_runner import RunnerConfig
+    from ops_deploy.services._echoport_runner.access import KnownHost, MinioAccess, WorkDir
+    from ops_deploy.services._echoport_runner.registration import DeployRunnerRegistration
+
+    inputs = dict(json.loads((a1.PARITY / "inputs.json").read_text())["runners"][name]["inputs"])
+    work = next(v for k, v in inputs.items() if k.endswith("_work_dir"))
+    script, values = REMOTE_VALUES[name]
+    tasks = REMOTE_TASKS[name]
+    host = (
+        "production.example.invalid"
+        if "production" in name or name == "gotosocial-backup"
+        else "staging.example.invalid"
+    )
+    fields: dict[str, Any] = {
+        "runner": RunnerConfig(
+            service=name,
+            description=f"{name} runner",
+            steps=("init", "upload", "result"),
+            template=json.loads((a1.PARITY / "inputs.json").read_text())["runners"][name]["template"],
+        ),
+        "access": MinioAccess(
+            target=name.removesuffix("-backup"),
+            os_user="deploy",
+            alias=f"backup-{name.removesuffix('-backup')}",
+            url="http://127.0.0.1:9001",
+            scoped=True,
+            retired_aliases=("minio",),
+        ),
+        "packages": ("postgresql-client",),
+        "variables": {**inputs, "echoport_backup_minio_alias": f"backup-{name.removesuffix('-backup')}"},
+        "work_dir": WorkDir(path=work, owner="deploy"),
+        "tasks": tasks,
+        "known_hosts": (KnownHost(name=host),),
+        "ssh_key": "ssh_key" in tasks,
+        "ssh_key_public": "ssh_key" not in tasks,
+        "min_pg_restore_major": 17 if "pg_restore" in tasks else None,
+        "target": kept(script, values),
+        **changes,
+    }
+    return DeployRunnerRegistration(**fields)
+
+
+def remote_deploy(cfg: Any, **kwargs: Any) -> Any:
+    from ops_deploy.services._echoport_runner.registration import DeployKey, install_deploy_registration
+    from tests.test_echoport_runner_deploy_registration import PRIVATE, SECRET, scan
+
+    values: dict[str, Any] = {
+        "secret_key": SECRET,
+        "ssh_key": DeployKey(private=PRIVATE) if cfg.ssh_key else None,
+        "keyscan": scan,
+        "token_user": USER,
+        **kwargs,
+    }
+    return lambda: install_deploy_registration(cfg, **values)
+
+
+@pytest.mark.parametrize("name", REMOTE_TASKS)
+def test_a_converged_remote_class_b_host_gets_no_mutating_operation(name: str) -> None:
+    from tests.test_echoport_runner_deploy_registration import converged as remote_converged
+
+    cfg = remote(name)
+    fake = run_deploy_fake(
+        remote_deploy(cfg), responses={**remote_converged(cfg), check_key(cfg.target): ["unchanged"]}
+    )
+
+    assert fake.succeeded, fake.error
+    assert fake.mutating_changed_ops == []
+    assert USER not in fake.all_text()
+    assert "/home/deploy/.ssh/id_ed25519.pub" not in fake.all_text()
+
+
+def test_the_remote_target_step_is_last_and_the_token_user_on_stdin() -> None:
+    from tests.test_echoport_runner_deploy_registration import converged as remote_converged
+
+    cfg = remote("mastodon-production-db-backup")
+    fake = run_deploy_fake(remote_deploy(cfg), responses={**remote_converged(cfg), check_key(cfg.target): ["pending"]})
+
+    assert fake.succeeded, fake.error
+    names = [op.name.removeprefix("Echoport backup runner registration | ") for op in fake.ops]
+    token = "Issue or reuse the FastDeploy token and upsert the Echoport backup target mastodon-production-db"
+    assert names[-2:] == [token, "Probe again: Echoport backup target mastodon-production-db"]
+    pg = "Require a pg_restore that reads PostgreSQL 17 dumps"
+    assert names.index(pg) > names.index("Install the packages of mastodon-production-db-backup")
+    assert pg not in fake.mutating_changed_ops
+    check = next(command for command in fake.executed_commands if "pg_restore --version" in command)
+    assert "-ge 17 ]" in check
+    assert [stdin for command, stdin in fake.stdin if "issueservicetoken" in command] == [f"{USER}\n"]
+
+
+def test_a_remote_class_b_registration_refuses_while_planning() -> None:
+    from ops_deploy.services._echoport_runner.registration import DeployKey
+    from tests.test_echoport_runner_deploy_registration import PRIVATE, PUBLIC
+    from tests.test_echoport_runner_deploy_registration import converged as remote_converged
+
+    cfg = remote("django-chat-staging-db-backup")
+    responses = {**remote_converged(cfg), check_key(cfg.target): ["pending"]}
+    for kwargs, message in (
+        ({"token_user": None}, "needs the token user"),
+        ({"ssh_key": DeployKey(private=PRIVATE, public=PUBLIC)}, "public deploy key is needed exactly"),
+    ):
+        fake = run_deploy_fake(remote_deploy(cfg, **kwargs), responses=responses)
+        assert message in a1.refused(fake)
+    refusal = {
+        **remote_converged(cfg),
+        check_key(cfg.target): ["refused: RuntimeError: Refusing implicit reactivation"],
+    }
+    assert "Refusing implicit reactivation" in a1.refused(run_deploy_fake(remote_deploy(cfg), responses=refusal))
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"tasks": REMOTE_TASKS["django-chat-staging-db-backup"][:-1]}, "tasks must name each part exactly once"),
+        ({"template_markers": ("not in the runner",)}, "lacks 'not in the runner'"),
+        ({"ssh_key": False, "ssh_key_public": False}, "ssh_key_public is about"),
+    ],
+)
+def test_a_remote_class_b_config_the_playbook_refuses_is_refused(changes: dict[str, Any], message: str) -> None:
+    if changes.get("ssh_key") is False:
+        changes["tasks"] = tuple(t for t in REMOTE_TASKS["django-chat-staging-db-backup"] if t != "ssh_key")
+    with pytest.raises(ValueError, match=message):
+        remote("django-chat-staging-db-backup", **changes)
+    other = kept("service_owned", {**REMOTE_VALUES["django-chat-staging-db-backup"][1], "default_bucket": "x"})
+    with pytest.raises(ValueError, match="the target's default_bucket must be the access's bucket"):
+        remote("django-chat-staging-db-backup", target=other)
+
+
+@pytest.mark.skipif(not ECHOPORT, reason="ECHOPORT_PATH (an Echoport checkout with its .venv) not set")
+@pytest.mark.parametrize(("script", "values"), REMOTE)
+def test_the_remote_kept_scripts_against_echoports_own_models(
+    script: str, values: dict[str, Any], tmp_path: Path
+) -> None:
+    cfg = kept(script, values)
+    name = str(values["target_name"])
+    fresh = token_for(str(values["service_name_fd"]))
+    cases: list[dict[str, Any]] = [
+        {"row": None, "name": name, "code": target_code(cfg, "check")},
+        {"name": name, "code": target_code(cfg, "apply"), "stdin": f"{fresh}\n"},
+        {"name": name, "code": target_code(cfg, "check")},
+    ]
+    (new, _), (applied, stored), (converged, after) = oracle(cases, tmp_path)
+
+    assert (new, applied, converged) == ("pending", "applied", "unchanged")
+    assert after == stored
+    assert stored["storage_alias"] == "minio"

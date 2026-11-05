@@ -54,6 +54,21 @@
   The role's own excludes are unchanged (`SOURCE_EXCLUDES`); the addition is
   `BUILD_METADATA`, as in `services.opsgate`.
 
+- `services._echoport_runner.registration`: class B part 2, the deploy-user
+  runners whose playbook writes its Echoport target (ops-control's
+  django-chat-staging-db, ggs-lennestrasse-staging-db, mastodon-production-db,
+  marina-production and gotosocial entries). `DeployRunnerRegistration` gains
+  `target` (task `target`: the playbook's own target script, with the token
+  step and `register_deploy_runner(..., token_user=...)`), `ssh_key_public`
+  (false: the private key only; `DeployKey.public` may then be `None`),
+  `template_markers` and `min_pg_restore_major` (task `pg_restore`, a
+  read-only check after the packages). New kept target scripts
+  `files/targets/mastodon_production_db.py`, `marina_production.py` and
+  `gotosocial.py`; django-chat's and ggs-lennestrasse's equal
+  `service_owned.py`. A missing token user, a public key the playbook does
+  not install, and a target bucket other than the access's refuse while
+  planning.
+
 - `services._echoport_runner`: the class B parts of a register playbook
   (design note §3.4, decision D4), for ops-control's mail-db, postfixadmin
   and graphyard runner entries. `RunnerRegistration` gains
