@@ -159,9 +159,9 @@ absolute paths only).
 
 ## Backup and restore
 
-`ops_deploy.services.mastodon` ports `mastodon_backup` and `mastodon_restore`
-(ops-library `44a532ba`, with the `mastodon_shared` defaults; recorded in the
-drift manifest). Both take the database password as `postgres_password` in
+`ops_deploy.services.mastodon` ports `mastodon_backup` (ops-library `44a532ba`)
+and `mastodon_restore` (ops-library `d632a0e5`, with its empty-media guard),
+with the `mastodon_shared` defaults; recorded in the drift manifest. Both take the database password as `postgres_password` in
 their secrets (ops-control passes `mastodon_postgres_password`); it reaches the
 host script on stdin and the PostgreSQL tools through a private `0600`
 passfile in a fresh `0700` directory, removed after each command, as in the
@@ -192,7 +192,9 @@ reload whatever the capture did. It writes the role's `manifest.yml`, packs
 `0600`) and then keeps the newest `retain` (`7`) archives and payload
 directories by mtime: those with the prefix, or every non-hidden one with
 `retain_all_prefixes`. It does not use the snapshot records of the other
-backup ports ([Local backups](../concepts/local-backups.md)).
+backup ports ([Local backups](../concepts/local-backups.md)). With
+`include_media` off (or nothing outside the cache to copy) the archive still has
+an empty `media/`, which the restore refuses unless `empty_media_confirmed`.
 
 **Restore.** One host script, in the role's order:
 
@@ -207,8 +209,8 @@ backup ports ([Local backups](../concepts/local-backups.md)).
    `empty_media_confirmed` (ops-control: `MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true`):
    its `rsync --delete` would empty the live media. The components line shows
    `media=EMPTY`. With `dry_run` it stops here (the staging directory still
-   goes, with `cleanup`); a dry run reports an empty `media/` and that a
-   restore would refuse it, and exits 0.
+   goes, with `cleanup`); a dry run reports an empty `media/` (and that a
+   restore would refuse it, unless confirmed) and exits 0.
 2. A Traefik route in the archive that differs from the live one needs a free
    Traefik transaction lock, checked before anything changes.
 3. Ensure the media and site directories (`mastodon:mastodon 0750`) and ask

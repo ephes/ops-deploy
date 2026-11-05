@@ -249,7 +249,10 @@ media_text=$(yes_no "$media_enabled")
 media_empty=0
 if [ "$media_enabled" = 1 ]; then
     step="Look for media files in the archive"
-    media_files=$(find "$payload/media/" -mindepth 1 ! -type d -print -quit)
+    if ! media_files=$(find "$payload/media/" -mindepth 1 ! -type d -print -quit); then
+        echo "Mastodon restore stopped before anything was stopped or changed: cannot read the archive's media/." >&2
+        exit 1
+    fi
     if [ -z "$media_files" ]; then
         media_empty=1
         media_text="EMPTY"

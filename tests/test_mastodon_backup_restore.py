@@ -716,6 +716,7 @@ def test_restore_script_a_failing_media_check_changes_nothing(tmp_path: Path) ->
     done = run_restore(p, tmp_path, empty_media_confirmed=True)
 
     assert done.returncode != 0
+    assert "cannot read the archive's media/" in done.stderr
     assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb", "createdb")) for line in events(tmp_path))
     assert (media(p) / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
     assert not p["staging"].exists()
