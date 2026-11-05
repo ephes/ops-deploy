@@ -8,12 +8,14 @@ PostgreSQL tools, ``systemctl`` and ``bundle`` are recording stand-ins on
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -24,6 +26,7 @@ from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.mastodon import (
     MastodonBackupConfig,
     MastodonRestoreConfig,
+    backup_restore,
     deploy_mastodon_backup,
     deploy_mastodon_restore,
 )
@@ -248,9 +251,33 @@ def test_restore_plans_one_labelled_script() -> None:
     assert values["MEDIA_SAFETY"] == "/home/mastodon/media-pre-restore/" + values["SAFETY_DIR"].rsplit("/", 1)[1]
     assert values["PG_BECOME"] == "postgres"
     assert values["EMPTY_MEDIA_CONFIRMED"] == "0"
-    assert result.changed_ops == ["Mastodon restore | Restore Mastodon"]
+    assert result.changed_ops == ["Mastodon restore | Restore Mastodon", "Mastodon restore | Show the restore report"]
+    assert result.function_calls == ["report"]
     dry = restore(MastodonRestoreConfig(dry_run=True))
-    assert dry.changed_ops == ["Mastodon restore | Restore Mastodon (dry run)"]
+    assert dry.changed_ops == [
+        "Mastodon restore | Restore Mastodon (dry run)",
+        "Mastodon restore | Show the restore report",
+    ]
+
+
+def test_the_restore_report_is_logged_without_verbosity(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # pyinfra prints a command's output only at -vvv; the report logs it at INFO.
+    class Done:
+        stdout_lines = (
+            "Restore archive: /opt/backups/mastodon/manual-1.tar.gz",
+            "Components: database=yes, media=EMPTY",
+        )
+
+    monkeypatch.setattr(backup_restore, "host", SimpleNamespace(print_prefix="[staging] "))
+    with caplog.at_level(logging.INFO, logger="pyinfra"):
+        backup_restore.report(Done())  # type: ignore[arg-type]
+
+    assert [r.getMessage() for r in caplog.records if r.name == "pyinfra" and r.levelno == logging.INFO] == [
+        "[staging] Restore archive: /opt/backups/mastodon/manual-1.tar.gz",
+        "[staging] Components: database=yes, media=EMPTY",
+    ]
 
 
 # -- the host scripts ---------------------------------------------------------------
@@ -445,6 +472,12 @@ def media(p: dict[str, Path]) -> Path:
     return p["site"] / "public" / "system"
 
 
+def live_files(p: dict[str, Path]) -> dict[str, str]:
+    """The live media's files (relative path: content)."""
+
+    return {path.relative_to(media(p)).as_posix(): path.read_text() for path in media(p).rglob("*") if path.is_file()}
+
+
 def safety_dirs(p: dict[str, Path]) -> list[Path]:
     return sorted(p["safety"].iterdir()) if p["safety"].exists() else []
 
@@ -572,6 +605,9 @@ def test_restore_script_puts_the_backup_back_with_safety_copies(tmp_path: Path) 
     assert (p["pgdata"] / "mastodon.db").read_text() == "rows original\n"
     assert not (media(p) / "accounts" / "new.png").exists()
     assert (media(p) / "accounts" / "avatars" / "me.png").read_text() == "original\n"
+    # The backup left the cache out; the restore keeps the live one.
+    assert (media(p) / "cache" / "remote" / "x.png").read_text() == "changed\n"
+    assert "Media excludes: /cache/*** (from the archive's manifest.yml);" in done.stdout
     assert (p["site"] / ".env.production").read_text() == "MARKER=original\n"
     assert (p["units"] / "mastodon-web.service").read_text() == "[Service]\n# mastodon-web\n"
     (safety,) = safety_dirs(p)
@@ -662,7 +698,8 @@ def test_restore_script_dry_run_reports_an_empty_media_archive(tmp_path: Path, c
 
     assert done.returncode == 0, done.stderr
     assert "media=EMPTY" in done.stdout
-    assert f"deletes every file in the live media {media(p)}" in done.stdout
+    assert "Media excludes: /cache/*** (from the archive's manifest.yml)" in done.stdout
+    assert f"deletes the 1 file(s) outside them in the live media {media(p)}" in done.stdout
     assert ("A restore refuses this archive" in done.stdout) is not confirmed
     assert "Dry run" in done.stdout
     assert not any(line.startswith("systemctl") for line in events(tmp_path))
@@ -678,8 +715,9 @@ def test_restore_script_restores_a_confirmed_empty_media_archive(tmp_path: Path)
 
     assert done.returncode == 0, done.stderr + done.stdout
     assert "confirmed with empty_media_confirmed" in done.stdout
-    # The role's behaviour: the live media is emptied, the snapshot keeps it.
-    assert list(media(p).iterdir()) == []
+    # The role's behaviour: the live media outside the excludes is emptied,
+    # the snapshot keeps it; the excluded cache stays.
+    assert live_files(p) == {"cache/remote/x.png": "changed\n"}
     (safety,) = safety_dirs(p)
     assert (p["msafety"] / safety.name / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
     assert (p["pgdata"] / "mastodon.db").read_text() == "rows original\n"
@@ -1081,3 +1119,193 @@ def test_restore_script_without_cleanup_keeps_the_staging_directory(tmp_path: Pa
 
     assert done.returncode == 0, done.stderr
     assert (p["staging"] / f"manual-{STAMP}" / "database" / "mastodon.dump").exists()
+
+
+# -- media excludes (the manifest's media_rsync_excludes) -----------------------------
+
+
+def cache_only_backup(p: dict[str, Path], tmp_path: Path, **extra: Any) -> Path:
+    """A backup of a live media that holds only the remote-media cache: its media/ is empty."""
+
+    shutil.rmtree(media(p) / "accounts")
+    directory = take_backup(p, tmp_path, **extra)
+    assert [path for path in (directory / "media").rglob("*") if not path.is_dir()] == []
+    (media(p) / "cache" / "remote" / "y.png").write_text("fetched later\n")
+    return directory
+
+
+def set_manifest(directory: Path, text: str | None) -> None:
+    """Replace (or with ``None`` remove) the backup's manifest.yml and pack it again."""
+
+    manifest_file = directory / "manifest.yml"
+    if text is None:
+        manifest_file.unlink()
+    else:
+        manifest_file.write_text(text)
+    repack(directory)
+
+
+def without_excludes_line(directory: Path) -> str:
+    lines = (directory / "manifest.yml").read_text().splitlines(keepends=True)
+    return "".join(line for line in lines if not line.startswith("media_rsync_excludes:"))
+
+
+@needs_tools
+def test_restore_script_cache_only_media_needs_no_confirmation_and_keeps_the_cache(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    cache_only_backup(p, tmp_path)
+    (p["pgdata"] / "mastodon.db").write_text("rows changed\n")
+
+    dry = run_restore(p, tmp_path, dry_run=True)
+
+    assert dry.returncode == 0, dry.stderr
+    assert "media=EMPTY" in dry.stdout
+    assert f"neither does the live media {media(p)}: the media restore deletes no file." in dry.stdout
+    assert "refuses" not in dry.stdout
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    assert "refused" not in done.stderr
+    assert live_files(p) == {"cache/remote/x.png": "original\n", "cache/remote/y.png": "fetched later\n"}
+    assert (p["pgdata"] / "mastodon.db").read_text() == "rows original\n"
+
+
+@needs_tools
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_restore_script_refuses_while_live_files_outside_the_excludes_would_go(tmp_path: Path, dry_run: bool) -> None:
+    p = tree(tmp_path)
+    cache_only_backup(p, tmp_path)
+    (media(p) / "accounts" / "avatars").mkdir(parents=True)
+    (media(p) / "accounts" / "avatars" / "me.png").write_text("uploaded\n")
+    (media(p) / "media_attachments").mkdir()
+    (media(p) / "media_attachments" / "link").symlink_to("../accounts/avatars/me.png")
+    (p["pgdata"] / "mastodon.db").write_text("rows changed\n")
+
+    done = run_restore(p, tmp_path, dry_run=dry_run)
+
+    assert "media=EMPTY" in done.stdout
+    text = f"deletes the 2 file(s) outside them in the live media {media(p)}"
+    if dry_run:
+        assert done.returncode == 0, done.stderr
+        assert text in done.stdout
+        assert "A restore refuses this archive unless empty_media_confirmed" in done.stdout
+    else:
+        assert done.returncode != 0
+        assert "refused before anything was stopped or changed" in done.stderr
+        assert text in done.stderr
+    assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb", "createdb")) for line in events(tmp_path))
+    assert live_files(p)["accounts/avatars/me.png"] == "uploaded\n"
+    assert (p["pgdata"] / "mastodon.db").read_text() == "rows changed\n"
+    assert not p["staging"].exists()
+
+
+@needs_tools
+def test_restore_script_keeps_every_excluded_pattern(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    (media(p) / "imports").mkdir()
+    (media(p) / "imports" / "a.part").write_text("partial\n")
+    directory = take_backup(p, tmp_path, media_rsync_excludes=("/cache/***", "/imports/*.part"))
+    assert 'media_rsync_excludes: ["/cache/***", "/imports/*.part"]' in (directory / "manifest.yml").read_text()
+    (media(p) / "imports" / "b.part").write_text("partial\n")
+    (media(p) / "imports" / "c.txt").write_text("not excluded\n")
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    assert "Media excludes: /cache/***, /imports/*.part (from the archive's manifest.yml);" in done.stdout
+    files = live_files(p)
+    assert files["imports/a.part"] == files["imports/b.part"] == "partial\n"
+    assert "imports/c.txt" not in files
+    assert files["cache/remote/x.png"] == "original\n"
+
+
+@needs_tools
+@pytest.mark.parametrize("manifest_case", ["no-manifest", "no-line", "empty-list"])
+def test_restore_script_without_excludes_restores_as_before(tmp_path: Path, manifest_case: str) -> None:
+    p = tree(tmp_path)
+    directory = take_backup(p, tmp_path)
+    text = {
+        "no-manifest": None,
+        "no-line": without_excludes_line(directory),
+        "empty-list": without_excludes_line(directory) + "media_rsync_excludes: []\n",
+    }[manifest_case]
+    set_manifest(directory, text)
+    make_site(p, "changed")
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    reason = "the archive has no manifest.yml" if text is None else "the archive's manifest.yml lists none"
+    deletes = "the restore deletes every live media file the archive lacks."
+    assert f"Media excludes: none ({reason}); {deletes}" in done.stdout
+    # Without excludes, rsync --delete removes the live cache the archive lacks.
+    assert live_files(p) == {"accounts/avatars/me.png": "original\n"}
+
+
+@needs_tools
+def test_restore_script_without_a_manifest_counts_the_cache(tmp_path: Path) -> None:
+    # No manifest, no excludes: the live cache counts and the guard refuses (fail closed).
+    p = tree(tmp_path)
+    set_manifest(cache_only_backup(p, tmp_path), None)
+
+    done = run_restore(p, tmp_path)
+
+    assert done.returncode != 0
+    assert f"deletes the 2 file(s) outside them in the live media {media(p)}" in done.stderr
+    assert not any(line.startswith("systemctl") for line in events(tmp_path))
+    assert set(live_files(p)) == {"cache/remote/x.png", "cache/remote/y.png"}
+
+
+@needs_tools
+@pytest.mark.parametrize(
+    "line",
+    [
+        'media_rsync_excludes: "/cache/***"',
+        "media_rsync_excludes: [/cache/***]",
+        "media_rsync_excludes: ['/cache/***']",
+        'media_rsync_excludes: ["/cache/***",]',
+        'media_rsync_excludes: ["/cache/***" "/x"]',
+        'media_rsync_excludes: ["/cache/\\u002a**"]',
+        'media_rsync_excludes: [""]',
+        "media_rsync_excludes: null",
+        "media_rsync_excludes:",
+        'media_rsync_excludes: ["/cache/***"]\nmedia_rsync_excludes: []',
+        "manifest.yml is a directory",
+    ],
+)
+def test_restore_script_stops_on_unreadable_excludes(tmp_path: Path, line: str) -> None:
+    p = tree(tmp_path)
+    directory = cache_only_backup(p, tmp_path)
+    if line == "manifest.yml is a directory":
+        (directory / "manifest.yml").unlink()
+        (directory / "manifest.yml").mkdir()
+        repack(directory)
+    else:
+        set_manifest(directory, without_excludes_line(directory) + line + "\n")
+
+    for dry_run in (True, False):
+        done = run_restore(p, tmp_path, dry_run=dry_run, empty_media_confirmed=True)
+
+        assert done.returncode != 0
+        assert "Mastodon restore stopped before anything was stopped or changed:" in done.stderr
+        assert "manifest.yml" in done.stderr
+        assert "Components:" not in done.stdout
+        assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb")) for line in events(tmp_path))
+        assert set(live_files(p)) == {"cache/remote/x.png", "cache/remote/y.png"}
+        assert not p["staging"].exists()
+
+
+@needs_tools
+def test_restore_script_a_failing_live_media_count_changes_nothing(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    cache_only_backup(p, tmp_path)
+    shutil.rmtree(media(p))
+    media(p).write_text("not a directory\n")
+
+    done = run_restore(p, tmp_path, empty_media_confirmed=True)
+
+    assert done.returncode != 0
+    assert f"cannot read the live media {media(p)}" in done.stderr
+    assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb")) for line in events(tmp_path))
+    assert not p["staging"].exists()

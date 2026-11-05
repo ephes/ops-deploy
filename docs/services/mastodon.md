@@ -160,7 +160,7 @@ absolute paths only).
 ## Backup and restore
 
 `ops_deploy.services.mastodon` ports `mastodon_backup` (ops-library `44a532ba`)
-and `mastodon_restore` (ops-library `d632a0e5`, with its empty-media guard),
+and `mastodon_restore` (ops-library `a2defd0d`, with its media excludes and empty-media guard),
 with the `mastodon_shared` defaults; recorded in the drift manifest. Both take
 the database password as `postgres_password` in their secrets (ops-control passes `mastodon_postgres_password`); it reaches the
 host script on stdin and the PostgreSQL tools through a private `0600`
@@ -192,9 +192,11 @@ reload whatever the capture did. It writes the role's `manifest.yml`, packs
 `0600`) and then keeps the newest `retain` (`7`) archives and payload
 directories by mtime: those with the prefix, or every non-hidden one with
 `retain_all_prefixes`. It does not use the snapshot records of the other
-backup ports ([Local backups](../concepts/local-backups.md)). With
-`include_media` off (or nothing outside the cache to copy) the archive still has
-an empty `media/`, which the restore refuses unless `empty_media_confirmed`.
+backup ports ([Local backups](../concepts/local-backups.md)). The manifest
+records the excludes (`media_rsync_excludes: ["/cache/***"]`); the restore
+reads them back. With `include_media` off (or nothing outside the cache to
+copy) the archive still has an empty `media/`: the restore refuses it while
+the live media holds files outside the excludes, unless `empty_media_confirmed`.
 
 **Restore.** One host script, in the role's order:
 
@@ -203,14 +205,28 @@ an empty `media/`, which the restore refuses unless `empty_media_confirmed`.
    find the payload directory, require `database/<db>.dump`, hand the staging
    path and the dump to the Postgres OS user (`postgres`) and validate the
    dump: `pg_restore --list` must list `TABLE DATA`, then a full
-   `pg_restore --file=/dev/null`. An archive whose `media/` holds no files
-   (only directories or nothing; a backup taken with `include_media` off still
-   has an empty `media/`) is refused here, before anything stops, unless
-   `empty_media_confirmed` (ops-control: `MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true`):
-   its `rsync --delete` would empty the live media. The components line shows
-   `media=EMPTY`. With `dry_run` it stops here (the staging directory still
-   goes, with `cleanup`); a dry run reports an empty `media/` (and that a
-   restore would refuse it, unless confirmed) and exits 0.
+   `pg_restore --file=/dev/null`. The media excludes come from the
+   manifest's `media_rsync_excludes` line (the paths the backup left out, by
+   default the remote-media cache `/cache/***`); the media restore excludes
+   them too, so the live paths they match are kept. No `manifest.yml`, or no
+   such line: no excludes, as before the excludes (every live media file the
+   archive lacks is deleted, and the guard below counts every live file). A
+   manifest that is no regular file, more than one line, or a value other than
+   a JSON list of plain double-quoted strings (no quote or backslash inside,
+   as the backup config allows) stops the restore here. An archive whose
+   `media/` holds no files outside the excludes (only directories, excluded
+   paths or nothing; a backup taken with `include_media` off still has an
+   empty `media/`) is `media=EMPTY` on the components line; it is refused
+   here, before anything stops, while the live media holds files outside the
+   excludes, unless `empty_media_confirmed` (ops-control:
+   `MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true`): its `rsync --delete` would
+   delete them. When the live media holds only excluded paths (a staging host
+   whose media is all remote cache) nothing would be deleted, and the restore
+   goes on without confirmation. Both counts use `rsync --list-only` with the
+   excludes; a failing count stops the restore. With `dry_run` it stops here
+   (the staging directory still goes, with `cleanup`); a dry run prints the
+   components, the excludes and whether a restore would refuse (unless
+   confirmed), and exits 0.
 2. A Traefik route in the archive that differs from the live one needs a free
    Traefik transaction lock, checked before anything changes.
 3. Ensure the media and site directories (`mastodon:mastodon 0750`) and ask
@@ -226,7 +242,7 @@ an empty `media/`, which the restore refuses unless `empty_media_confirmed`.
    the services may be stopped.
 5. Drop and recreate the database (as `postgres`; the host only when
    remote), `pg_restore --single-transaction --clean --if-exists --no-owner`,
-   `rsync -a --delete --ignore-times` the media (local storage), copy the env
+   `rsync -a --delete --ignore-times` the media with its excludes (local storage), copy the env
    file (`0600`), the units, the route and the nginx config (`0644`), reload
    systemd, run `bundle exec rails db:migrate` as `mastodon` and enable and
    restart all four units.
@@ -241,13 +257,20 @@ the archives, a live path or a safety root, one that is `/tmp`, `/var/tmp` or a
 top-level directory, and archives or safety copies inside the media directory
 (which the restore syncs with `--delete`).
 
-The empty-media refusal is the role's (`mastodon_restore_empty_media_confirmed`,
-ops-library's guard against the role's former behaviour of emptying the live
-media and reporting success).
+The media excludes and the empty-media refusal are the role's
+(`mastodon_restore_empty_media_confirmed`, ops-library's guard against the
+role's former behaviour of emptying the live media and reporting success).
+
+The script's output (the archive, the components line, the media excludes,
+the refusal or confirmation and the safety paths) is logged after the restore
+by a "Show the restore report" step, so `just restore-check` (a dry run) shows
+it at the default verbosity; pyinfra itself prints a command's output only at
+`-vvv` or when the command fails.
 
 Deliberate differences: archive names only (no absolute paths), a symlinked
 archive is refused, `dry_run` is an addition (it also reports an empty
-`media/`), the route lock as above (a lock
+`media/`), the role parses the excludes line as any JSON while the script
+accepts only plain double-quoted strings, the route lock as above (a lock
 taken during the restore leaves the route, the restore finishes and then
 fails; the rollback puts the route back only when the restore wrote it and
 only while no transaction holds the lock), "installed" units are those whose

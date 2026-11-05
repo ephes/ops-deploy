@@ -25,8 +25,17 @@ Deliberate differences from the roles:
 - ``dry_run`` (not in the role) unpacks the archive into the staging
   directory, validates the dump, prints what the archive holds, removes the
   staging directory (with ``cleanup``) and stops: nothing is stopped or changed.
-- A dry run also reports an archive whose ``media/`` holds no files, which
-  the restore (like the role, see ``empty_media_confirmed``) refuses.
+- A dry run also reports an archive whose ``media/`` holds no files outside
+  the media excludes (``media=EMPTY``) and whether the restore (like the
+  role, see ``empty_media_confirmed``) refuses it.
+- The script's report (archive, components, media excludes, safety paths) is
+  logged after the restore operation, so a dry run (``just restore-check``)
+  shows it without ``-vvv``; pyinfra shows a command's output only at
+  ``-vvv`` or when it fails.
+- Both read the media excludes from the archive's ``manifest.yml``; the role
+  parses the ``media_rsync_excludes`` line as JSON, the script accepts only
+  a JSON list of plain double-quoted strings (no quote or backslash inside,
+  as :class:`MastodonBackupConfig` allows) and stops on anything else.
 - ``staging_dir``, removed at the start and the end, must be a directory of
   its own: not ``/tmp``, ``/var/tmp`` or a top-level directory.
 - A Traefik route that differs from the live one is written only while no
@@ -66,7 +75,9 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, StrictBool, model_validator
+from pyinfra import host, logger
 from pyinfra.api import DeployError, deploy
+from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files, python, server
 
 from ops_deploy.base._common import output, require_linux
@@ -165,10 +176,12 @@ class MastodonRestoreConfig(_Postgres):
     root: CanonicalPath = "/opt/backups/mastodon"
     archive: ArchiveName = "latest"
     dry_run: StrictBool = False
-    # Allow restoring an archive whose media/ holds no files (a backup taken
-    # without media still has an empty media/), which empties the live media.
-    # Without it the restore refuses such an archive before anything stops
-    # (ops-control: MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true).
+    # Allow restoring an archive whose media/ holds no files outside the
+    # manifest's media excludes (a backup taken without media still has an
+    # empty media/) while the live media holds files outside them, which
+    # deletes those. Without it the restore refuses such an archive before
+    # anything stops (ops-control: MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true).
+    # Live paths the excludes match are always kept.
     empty_media_confirmed: StrictBool = False
     cleanup: StrictBool = True
     restart: StrictBool = True
@@ -255,10 +268,17 @@ def _password(secrets: SecretValues | None) -> str:
     return password
 
 
-def _run(name: str, body: Path, values: dict[str, str | tuple[str, ...]], password: str) -> None:
+def _run(name: str, body: Path, values: dict[str, str | tuple[str, ...]], password: str) -> OperationMeta:
     # postgres.sh (it reads the password from stdin) in front of the body.
     command = script(FILES / "postgres.sh", values, call=body.read_text())
-    secret_stdin(name=name, command=f"bash -c {shlex.quote(command)}", content=SecretContent(f"{password}\n"))
+    return secret_stdin(name=name, command=f"bash -c {shlex.quote(command)}", content=SecretContent(f"{password}\n"))
+
+
+def report(op: OperationMeta) -> None:
+    """Log the restore script's output; pyinfra prints it only at ``-vvv`` (or when the script fails)."""
+
+    for line in op.stdout_lines:
+        logger.info(f"{host.print_prefix}{line}")
 
 
 def _restrict_local(path: str) -> None:
@@ -359,7 +379,7 @@ def deploy_mastodon_restore(cfg: MastodonRestoreConfig, secrets: SecretValues | 
     password = _password(secrets)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     safety_dir = f"{cfg.safety_root}/{stamp}"
-    _run(
+    restored = _run(
         "Restore Mastodon" + (" (dry run)" if cfg.dry_run else ""),
         FILES / "restore.sh",
         {
@@ -404,6 +424,7 @@ def deploy_mastodon_restore(cfg: MastodonRestoreConfig, secrets: SecretValues | 
         },
         password,
     )
+    python.call(name="Show the restore report", function=report, op=restored)
 
 
 __all__ = [

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `services.mastodon`: the restore honours the archive's media excludes. It
+  reads `media_rsync_excludes` from the archive's `manifest.yml` (the paths
+  the backup left out, by default the remote-media cache `/cache/***`) and
+  passes them to the media restore's `rsync --delete` as `--exclude`, so the
+  live paths they match are kept instead of deleted. The empty-media guard
+  counts only files outside the excludes, in the archive and in the live
+  media: an archive that is `media=EMPTY` because the live media holds nothing
+  but excluded paths (every staging archive since May; staging's media is all
+  remote cache) restores without `empty_media_confirmed`, and one that would
+  delete live files outside the excludes is still refused. An archive without
+  a manifest or without the line has no excludes (the previous behaviour;
+  the guard then counts every live file); a malformed line stops the restore
+  before anything stops. A new "Show the restore report" step logs the
+  script's output, so `just restore-check` shows the components line, the
+  excludes and the refusal without `-vvv`. Same as ops-library's
+  `mastodon_restore` (`a2defd0d`, recorded in the drift manifest).
+
 - `services.unifi` removal: beyond the role, a purge of
   `mongodb_tool_packages` (`mongodb-database-tools`, `mongodb-mongosh`,
   `mongodb-org-database-tools-extra`, dependencies of `mongodb-org` the

@@ -3,7 +3,11 @@
 # - the archive is unpacked into the staging directory and the database dump
 #   is validated (`pg_restore --list` with TABLE DATA, then a full read into
 #   /dev/null) before any service is stopped;
-# - an archive whose media/ holds no files is refused at that point unless
+# - the media paths the backup excluded (the manifest's media_rsync_excludes)
+#   are excluded from the media restore too, so the live paths they match are
+#   kept;
+# - an archive whose media/ holds no files outside those excludes is refused
+#   at that point while the live media holds files outside them, unless
 #   EMPTY_MEDIA_CONFIRMED (the role's mastodon_restore_empty_media_confirmed);
 # - the services must stop, otherwise nothing is dropped;
 # - after the stop a safety `pg_dump -Fc` of the live database, a snapshot of
@@ -243,25 +247,112 @@ if [ "$has_systemd" = 1 ]; then
 fi
 yes_no() { if [ "$1" = 1 ]; then printf yes; else printf no; fi; }
 media_text=$(yes_no "$media_enabled")
-# A backup taken without media still has an empty media/; its rsync --delete
-# would empty the live media. Only directories (or nothing) count as empty; a
-# failing find stops the restore here, as the role's task does.
-media_empty=0
-if [ "$media_enabled" = 1 ]; then
-    step="Look for media files in the archive"
-    if ! media_files=$(find "$payload/media/" -mindepth 1 ! -type d -print -quit); then
-        echo "Mastodon restore stopped before anything was stopped or changed: cannot read the archive's media/." >&2
-        exit 1
+
+# stop_unchanged REASON: stop before anything was stopped or changed.
+stop_unchanged() {
+    echo "Mastodon restore stopped before anything was stopped or changed: $1." >&2
+    exit 1
+}
+
+# The paths the backup left out of media/ (its media_rsync_excludes, by
+# default the remote-media cache /cache/***) are excluded from the media
+# restore as well: rsync --delete keeps them in the live media instead of
+# deleting them, and the empty-media guard counts only files outside them.
+# They come from the manifest's one `media_rsync_excludes: [...]` line, a JSON
+# list of strings as both backups write it, without quotes or backslashes in
+# a pattern (the backup config refuses those). An archive without a
+# manifest.yml or without that line has none, so the restore behaves as
+# before the excludes (every live media file the archive lacks is deleted);
+# anything else in that line stops the restore here.
+media_excludes=()
+exclude_args=()
+read_media_excludes() {
+    local manifest="$payload/manifest.yml" value rest rc=0
+    local item='^[[:space:]]*"([^"]+)"[[:space:]]*(,(.*))?$' backslash
+    # printf's octal escape: a backslash pair in the script would reach sh
+    # halved through root's fish login shell.
+    backslash=$(printf '\134')
+    if ! has manifest.yml; then
+        excludes_text="none (the archive has no manifest.yml)"
+        return 0
     fi
-    if [ -z "$media_files" ]; then
+    if [ ! -f "$manifest" ] || [ -L "$manifest" ]; then stop_unchanged "the archive's manifest.yml is not a file"; fi
+    value=$(grep -e '^media_rsync_excludes:' -- "$manifest") || rc=$?
+    if [ "$rc" = 1 ]; then
+        excludes_text="none (the archive's manifest.yml lists none)"
+        return 0
+    fi
+    [ "$rc" = 0 ] || stop_unchanged "cannot read the archive's manifest.yml"
+    case $value in *$'\n'*) stop_unchanged "the archive's manifest.yml has more than one media_rsync_excludes line" ;; esac
+    # A JSON escape could hide a quote; the backup config allows none.
+    case $value in *"$backslash"*) stop_unchanged "media_rsync_excludes in the archive's manifest.yml holds a backslash" ;; esac
+    if [[ ! ${value#media_rsync_excludes:} =~ ^[[:space:]]*\[(.*)\][[:space:]]*$ ]]; then
+        stop_unchanged "cannot read media_rsync_excludes in the archive's manifest.yml (expected a JSON list of strings)"
+    fi
+    rest=${BASH_REMATCH[1]}
+    if [[ ! $rest =~ ^[[:space:]]*$ ]]; then
+        while :; do
+            [[ $rest =~ $item ]] ||
+                stop_unchanged "cannot read media_rsync_excludes in the archive's manifest.yml (expected a JSON list of strings)"
+            media_excludes+=("${BASH_REMATCH[1]}")
+            [ -n "${BASH_REMATCH[2]}" ] || break
+            rest=${BASH_REMATCH[3]}
+        done
+    fi
+    local pattern
+    for pattern in "${media_excludes[@]}"; do exclude_args+=("--exclude=$pattern"); done
+    if [ "${#media_excludes[@]}" = 0 ]; then
+        excludes_text="none (the archive's manifest.yml lists none)"
+    else
+        excludes_text=$(printf '%s, ' "${media_excludes[@]}")
+        excludes_text="${excludes_text%, } (from the archive's manifest.yml)"
+    fi
+}
+
+# count_media_files DIR: the non-directories (files, links, ...) below DIR
+# outside the media excludes, as the media restore's rsync sees them. A
+# failing rsync fails the count (pipefail).
+count_media_files() {
+    rsync -a --list-only "${exclude_args[@]}" "$1/" | awk 'substr($0, 1, 1) != "d" { n++ } END { print n + 0 }'
+}
+
+# A backup taken without media still has an empty media/; its rsync --delete
+# would delete the live media. Only files outside the excludes count: an
+# archive that holds none (only directories, excluded paths or nothing) is
+# EMPTY, and it is refused while the live media holds files outside the
+# excludes. A failing count stops the restore here.
+media_empty=0
+live_files=0
+excludes_text=""
+if [ "$media_enabled" = 1 ]; then
+    step="Read the media excludes from the archive's manifest"
+    read_media_excludes
+    step="Look for media files in the archive"
+    archive_files=$(count_media_files "$payload/media") || stop_unchanged "cannot read the archive's media/"
+    if [ "$archive_files" = 0 ]; then
         media_empty=1
         media_text="EMPTY"
+        step="Look for live media files outside the excludes"
+        if [ -e "$MEDIA" ] || [ -L "$MEDIA" ]; then
+            live_files=$(count_media_files "$MEDIA") || stop_unchanged "cannot read the live media $MEDIA"
+        fi
     fi
 fi
 echo "Components: database=yes, media=$media_text, env=$(yes_no "$has_env")," \
     "systemd=${#unit_files[@]} unit(s), traefik=$(yes_no "$has_traefik"), nginx=$(yes_no "$has_nginx")"
-if [ "$media_empty" = 1 ]; then
-    empty_text="The archive's media/ holds no files: restoring it deletes every file in the live media $MEDIA"
+if [ "$media_enabled" = 1 ]; then
+    if [ "${#media_excludes[@]}" = 0 ]; then
+        echo "Media excludes: $excludes_text; the restore deletes every live media file the archive lacks."
+    else
+        echo "Media excludes: $excludes_text; the restore keeps the live media paths they match."
+    fi
+fi
+if [ "$media_empty" = 1 ] && [ "$live_files" = 0 ]; then
+    echo "The archive's media/ holds no files outside the excludes, and neither does the live media $MEDIA:" \
+        "the media restore deletes no file."
+elif [ "$media_empty" = 1 ]; then
+    empty_text="The archive's media/ holds no files outside the excludes: restoring it deletes the $live_files file(s)"
+    empty_text+=" outside them in the live media $MEDIA"
     if [ "$EMPTY_MEDIA_CONFIRMED" = 1 ]; then
         echo "$empty_text (confirmed with empty_media_confirmed; the pre-restore media snapshot keeps them)."
     elif [ "$DRY_RUN" = 1 ]; then
@@ -398,9 +489,11 @@ with_pgpass "$PG_BECOME" "$PG_RESTORE" "${CONN_ARGS[@]}" "--dbname=$PG_DATABASE"
 
 # --ignore-times makes rsync rewrite every file to a new inode (temp file +
 # rename), so the hard-linked media snapshot keeps its content and metadata.
+# The media excludes keep the live paths they match (rsync does not delete
+# excluded files on the receiving side).
 if [ "$media_enabled" = 1 ]; then
     step="Restore media directory"
-    rsync -a --delete --ignore-times "$payload/media/" "$MEDIA/"
+    rsync -a --delete --ignore-times "${exclude_args[@]}" "$payload/media/" "$MEDIA/"
 fi
 if [ "$has_env" = 1 ]; then
     step="Restore environment file"
