@@ -296,7 +296,8 @@ only when a field differs.
 
 A target with a token but no `token_user`, or a public key given where the
 playbook installs none, refuses while planning; so does a target whose bucket
-is not the access's.
+is not the access's. The config refuses a `pg_restore` task before
+`packages` and a `target` task before `runner` (the playbooks' order).
 
 ## Playbook target scripts (`target`)
 

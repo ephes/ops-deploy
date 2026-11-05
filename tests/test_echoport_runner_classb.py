@@ -1093,6 +1093,9 @@ def test_an_installed_pg_restore_that_is_too_old_refuses_while_planning() -> Non
     fake = run_deploy_fake(remote_deploy(cfg), responses=missing)
     assert fake.succeeded, fake.error
     assert "Require a pg_restore that reads PostgreSQL 17 dumps" in [op.name for op in fake.ops]
+    early = ("target", *[t for t in cfg.tasks if t != "target"])
+    with pytest.raises(ValueError, match="the target task comes after the runner task"):
+        remote("mastodon-production-db-backup", tasks=early)
     with pytest.raises(ValueError, match="the pg_restore task comes after the packages task"):
         remote("mastodon-production-db-backup", tasks=("pg_restore", *[t for t in cfg.tasks if t != "pg_restore"]))
 
