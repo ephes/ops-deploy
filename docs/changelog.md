@@ -16,8 +16,11 @@
   the guard then counts every live file); a malformed line stops the restore
   before anything stops. A new "Show the restore report" step logs the
   script's output, so `just restore-check` shows the components line, the
-  excludes and the refusal without `-vvv`. Same as ops-library's
-  `mastodon_restore` (`4cf0b24a`, recorded in the drift manifest).
+  excludes and the refusal without `-vvv`. `MastodonBackupConfig.media_rsync_excludes`
+  now accepts only printable ASCII without `"` or `\` (tabs and non-ASCII
+  were allowed; JSON would escape them in the manifest and the restore stops
+  on escapes). Same as ops-library's `mastodon_restore` (`219146f0`,
+  recorded in the drift manifest).
 
 - `services.unifi` removal: beyond the role, a purge of
   `mongodb_tool_packages` (`mongodb-database-tools`, `mongodb-mongosh`,
