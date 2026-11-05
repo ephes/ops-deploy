@@ -114,9 +114,10 @@ keeps its owner and mode. `known_hosts_entries` takes several names for one
 file (the production-db playbooks include the task twice): every key is
 resolved first, then the names are applied in order, each to the file the
 previous one left (the host's `ssh-keygen -F` answers are read once and moved
-past a replaced line), and the result is written in one upload. A file
-without a final newline refuses then (the module would append to its last
-line, so the answers read once would not describe the file).
+past a replaced line), and the result is written in one upload. With
+several names, a file without a final newline that would change refuses (the
+module would append to its last line, so the answers read once would not
+describe the file); an unchanged one is left alone.
 
 ## Same-host root runners (`registration`)
 

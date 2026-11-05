@@ -67,8 +67,9 @@
   dir (`access.work_dir`), the media runner's credentials file
   (`root:deploy 0640` in a `root:deploy 0750` directory that is not `/` or a
   top-level one, the playbooks' `copy` content byte for byte) and the runner
-  with the `fastdeploy -> deploy` rule only. The source bucket of a media runner comes with its credentials
-  (from the service's secrets) and must be an S3 bucket name. The config
+  with the `fastdeploy -> deploy` rule only. The source bucket of a media
+  runner comes with its credentials (from the service's secrets) and must be
+  an S3 bucket name. The config
   refuses a `run_as` rule, an access or work dir of another user, a target
   without its scoped account (the media playbooks' fallback to the MinIO root
   credentials stays with the playbook), template variables (`*_work_dir`,
