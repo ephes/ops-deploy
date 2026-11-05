@@ -614,6 +614,24 @@ def test_a_media_template_without_no_check_dest_is_refused(monkeypatch: pytest.M
 
 
 def test_a_credentials_file_needs_a_directory_of_its_own() -> None:
-    for path in ("/x.json", "/etc/echoport-media/../x.json"):
+    for path in ("/x.json", "/etc/x.json", "/etc/echoport-media/../x.json"):
         with pytest.raises(ValueError, match="directory of its own"):
             CredentialsFile(path=path)
+
+
+def test_two_known_hosts_refuse_a_file_without_a_final_newline() -> None:
+    # known_hosts would append to its last line; the answers read once no longer describe the file.
+    current = f"staging.example.invalid {OTHER}"
+    cfgs = [KnownHost(name="production.example.invalid"), KnownHost(name="staging.example.invalid")]
+    responses: dict[Any, Any] = {
+        "base64 -w0": ["present", base64.b64encode(current.encode()).decode()],
+        "ssh-keygen -F staging.example.invalid ": [
+            "# Host staging.example.invalid found: line 1 ",
+            f"staging.example.invalid {OTHER}",
+        ],
+    }
+
+    def plan() -> None:
+        access_module.known_hosts_entries(cfgs, scan)
+
+    assert "does not end with a newline" in refused(run_deploy_fake(plan, responses=responses))
