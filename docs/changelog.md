@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `services._echoport_runner.registration`: `RunnerRegistration` and
+  `register_runner`, a same-host runner's register playbook as one deploy
+  (design note class A1: the runner runs as root on macmini). It installs the
+  playbook's packages (no cache update), refuses while planning when `mc` is
+  missing, sets up the target's scoped MinIO account and root's `mc` alias
+  (`access.minio_access`), and installs the runner (`install_runner`). The
+  config refuses a template without `_work_dir.py.j2`, a runner not running
+  as root and a target without its scoped account (root's shared alias is
+  retired). homeassistant's `health_forwarded_for` is the host's
+  `ansible_default_ipv4.address` (the source address of
+  `ip -4 route get 8.8.8.8`), else Ansible's fallback `192.168.0.1`. The
+  first callers are ops-control's runner entries.
+
 - `services.mastodon`: the restore refuses an archive whose `media/` holds no
   files (only directories or nothing) before anything stops, unless
   `MastodonRestoreConfig.empty_media_confirmed` (default `False`; ops-control

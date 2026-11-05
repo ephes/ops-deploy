@@ -4,10 +4,11 @@
 that FastDeploy starts have in common: the port of ops-library's
 `fastdeploy_runner` role, the runner templates of its `echoport_backup` role,
 and the pieces the ops-control register playbooks share
-(`playbooks/common/*.yml`). Nothing calls it yet: each runner is ported in a
-slice of its own, which adds its config in ops-control and its own entry
-point (design note `ECHOPORT-FASTDEPLOY-REGISTRATIONS-20261105` on ops-meta's
-`pyinfra-port` branch, §3 and §3.8). heis-production and
+(`playbooks/common/*.yml`). Each runner is ported in a slice of its own,
+which adds its config in ops-control and its own entry point (design note
+`ECHOPORT-FASTDEPLOY-REGISTRATIONS-20261105` on ops-meta's `pyinfra-port`
+branch, §3 and §3.8). The same-host root runners (class A1) use
+`registration.register_runner` below. heis-production and
 villakunterbunt-staging stay on Ansible; their templates are not vendored.
 
 ## Runner installation (`RunnerConfig`, `deploy_runner`)
@@ -107,6 +108,36 @@ for the name, either the inventory host's pin (used only when that host's
 written as `known_hosts` `state: present` writes it (an entry of the same type
 replaced in place, anything else appended); the file keeps its owner and mode.
 
+## Same-host root runners (`registration`)
+
+`RunnerRegistration` is one register playbook of class A1 (snappymail,
+delve, echoport-self, fastdeploy, homeassistant, weeknotes-home, paperless):
+the runner's `RunnerConfig`, the target's `MinioAccess`, the playbook's
+packages and its template variables, resolved. `register_runner(cfg,
+secret_key=...)` runs the playbook's tasks in its order:
+
+1. the packages (`ansible.builtin.package`: `apt`, no cache update);
+2. "Ensure mc is installed": a missing `mc` refuses while planning;
+3. `backup_minio_account.yml` (`access.minio_access`) with the target's
+   scoped account (`secret_key`, never in an argument);
+4. `fastdeploy_runner` (`install_runner`) with the rendered template.
+
+The config refuses what the playbooks refuse or never do: a template without
+`_work_dir.py.j2` (their "Require a runner that works on the external disk
+only"), a runner that does not run as root with root's alias, a target
+without its scoped account (root's shared `minio` alias is retired, so the
+playbook refuses that too), and template variables that name another alias
+or `mc` than the access. Variables named in `default_ipv4_variables`
+(homeassistant's `homeassistant_backup_health_forwarded_for`) get the host's
+`ansible_default_ipv4.address`, the source address of
+`ip -4 route get 8.8.8.8` read while planning, and `192.168.0.1` without a
+route, as the playbook's `default(...)`; the template then sees
+`ansible_default_ipv4` as Ansible's facts give it.
+
+The Echoport target row is not written: the A1 rows are kept by hand
+(weeknotes-home's comes from the `weeknotes_home` deploy). On a converged
+host the deploy plans no mutating operation.
+
 ## Playbook target scripts (`target`)
 
 Several register playbooks upsert their Echoport target with a script of
@@ -176,6 +207,10 @@ them:
   role's own tasks' output for three settings. With `OPS_LIBRARY_PATH`,
   `ansible-playbook` and `community.general`, the oracle test renders all of
   it again.
+- `tests/test_echoport_runner_registration.py`: the seven A1 runners render
+  through `RunnerRegistration` to the same sha256 (homeassistant with its
+  address from the host's route), and a host the playbook left plans no
+  mutating operation.
 - `tests/test_ops_library_drift.py` records `fastdeploy_runner`,
   `echoport_backup` and `minio_backup` and fails when a vendored template
   differs from ops-library's or ops-library gains or loses one.
