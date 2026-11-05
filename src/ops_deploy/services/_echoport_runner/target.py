@@ -128,8 +128,12 @@ def target_shell(target: RunnerTarget, mode: Literal["check", "apply"]) -> str:
     return f"(cd {shlex.quote(str(target.site))} && {run} {shlex.quote(target_code(target, mode))})"
 
 
+def _check_command(target: RunnerTarget) -> str:
+    return when_present([target.site / "manage.py"], last_line(target_shell(target, "check")), otherwise="missing")
+
+
 def _check(target: RunnerTarget) -> tuple[str, str | None]:
-    check = when_present([target.site / "manage.py"], last_line(target_shell(target, "check")), otherwise="missing")
+    check = _check_command(target)
     state = probe(check, name=f"Echoport backup target {target.name}")
     answer = (state or "").strip()
     if answer.startswith("refused:"):
@@ -171,7 +175,7 @@ def token_and_target(target: RunnerTarget, token_user: str) -> None:
         raise ValueError("token_and_target needs a ServiceToken")
     if not token_user.strip() or "\n" in token_user:
         raise DeployError("the FastDeploy token user is required (one line; value withheld)")
-    check, state = _check(target)
+    _, state = _check(target)
     if (state or "").strip() == "unchanged":
         return
     # FastDeploy's own CLI in-process with the user read from stdin, so the
@@ -197,7 +201,7 @@ def token_and_target(target: RunnerTarget, token_user: str) -> None:
             f"  token=$(cd {shlex.quote(str(token.fastdeploy_root))} && "
             f"printf '%s\\n' \"$fd_user\" | {issue} 2>/dev/null) "
             "|| { echo 'issueservicetoken failed (output withheld)' >&2; exit 1; }",
-            f"  printf '%s\\n' \"$token\" | grep -Eq '{jwt}' "
+            f"  [ \"$(printf '%s\\n' \"$token\" | wc -l)\" -eq 1 ] && printf '%s\\n' \"$token\" | grep -Eq '{jwt}' "
             "|| { echo 'issueservicetoken did not print exactly one JWT (output withheld)' >&2; exit 1; }",
             f"  out=$(printf '%s\\n' \"$token\" | {target_shell(target, 'apply')}) || exit 1",
             "fi",
@@ -209,7 +213,9 @@ def token_and_target(target: RunnerTarget, token_user: str) -> None:
         command=f"sh -c {shlex.quote(script)}",
         content=SecretContent(f"{token_user}\n"),
     )
-    verify_probe(check, name=f"Echoport backup target {target.name}", expect="unchanged")
+    # A forced rotation is done once the new token is stored: probe again without forcing.
+    settled = target.model_copy(update={"token": token.model_copy(update={"force_rotate": False})})
+    verify_probe(_check_command(settled), name=f"Echoport backup target {target.name}", expect="unchanged")
 
 
 __all__ = [

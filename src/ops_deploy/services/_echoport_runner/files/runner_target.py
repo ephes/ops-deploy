@@ -6,7 +6,8 @@
 # The playbook's script (P["script"]) stays as it is, with two changes: it
 # reads its values from VALUES (P["values"], in place of the playbook's Jinja)
 # and a newly issued FastDeploy token from SERVICE_TOKEN (empty: keep the
-# stored one), in place of ``fd_service_token_value``. It must not exit.
+# stored one), in place of ``fd_service_token_value``. It must not exit: in
+# check mode an exit counts as a refusal.
 #
 # Modes (P["mode"]):
 #   check  runs the script without writing: every model save is recorded
@@ -153,7 +154,7 @@ def check():
             with recorder.installed():
                 # A token that is due counts as issued: the script sees one to store.
                 run_script("<new token>" if due else "")
-        except Exception as exc:  # noqa: BLE001 - any refusal stops the deploy
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - any refusal (or an exit) stops the deploy
             transaction.set_rollback(True)
             reason = " ".join(f"{type(exc).__name__}: {exc}".split())[:500]
             print(f"refused: {reason}")
