@@ -52,7 +52,9 @@ from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
+from pyinfra import host
 from pyinfra.api import DeployError, deploy
+from pyinfra.facts.deb import DebPackages
 from pyinfra.operations import apt, files, server
 
 from ops_deploy.base._common import RoleConfig
@@ -470,6 +472,10 @@ class DeployRunnerRegistration(RoleConfig):
             "target": self.target is not None,
         }
         required = {"access", "work_dir", "runner"} | {task for task, present in wanted.items() if present}
+        # The playbooks read pg_restore after its package, and write the target after the runner.
+        for before, after in (("packages", "pg_restore"), ("runner", "target")):
+            if before in self.tasks and after in self.tasks and self.tasks.index(after) < self.tasks.index(before):
+                problems.append(f"the {after} task comes after the {before} task")
         if len(set(self.tasks)) != len(self.tasks) or not required <= set(self.tasks) <= required | {"mc"}:
             problems.append(f"tasks must name each part exactly once: {', '.join(sorted(required))} (and mc)")
         if problems:
@@ -542,18 +548,23 @@ def _pg_restore(cfg: DeployRunnerRegistration) -> None:
     """The mastodon playbook's pg_restore check: refuse a pg_restore older than production's PostgreSQL.
 
     While planning, a pg_restore that is already installed and too old
-    refuses (a dry run shows it, as the playbook's check mode does). The
-    check itself is a read-only step after the packages, as the playbook
-    reads the version after installing ``postgresql-client``.
+    refuses when the packages are installed already, so the package step
+    cannot bring a newer one (a dry run then shows it, as the playbook's
+    check mode does). The check itself is a read-only step after the
+    packages, as the playbook reads the version after installing
+    ``postgresql-client``.
     """
 
     major = cfg.min_pg_restore_major
     assert major is not None
     found = _PG_RESTORE_MAJOR
     message = f"pg_restore on this host cannot read a PostgreSQL {major} dump; install postgresql-client-{major}"
-    planned = (probe(f"(pg_restore --version 2>/dev/null || true) | {found}", name="pg_restore version") or "").strip()
-    if planned.isdigit() and int(planned) < major:
-        raise DeployError(message)
+    installed = host.get_fact(DebPackages) or {}
+    if all(package in installed for package in cfg.packages):
+        command = f"(pg_restore --version 2>/dev/null || true) | {found}"
+        planned = (probe(command, name="pg_restore version") or "").strip()
+        if planned.isdigit() and int(planned) < major:
+            raise DeployError(message)
     mark_read_only(
         server.shell(
             name=f"Require a pg_restore that reads PostgreSQL {major} dumps",

@@ -281,7 +281,8 @@ these fields as well:
   after the packages (as the playbook reads the version after installing
   `postgresql-client`), failing when `pg_restore --version`'s PostgreSQL
   major is lower; a pg_restore that is already installed and too old
-  refuses while planning, so a dry run shows it.
+  refuses while planning when the packages are already installed (the
+  package step cannot change it then), so a dry run shows it.
 
 These two steps are the exceptions to "every refusal comes while planning"
 and "no Echoport row is written" above: the pg_restore check runs after the
