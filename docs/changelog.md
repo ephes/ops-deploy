@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `services.unifi` removal: beyond the role, a purge of
+  `mongodb_tool_packages` (`mongodb-database-tools`, `mongodb-mongosh`,
+  `mongodb-org-database-tools-extra`, dependencies of `mongodb-org` the
+  role's list misses; with `remove_packages`, only the ones dpkg knows) after
+  the MongoDB purge, and with `delete_data` too the removal of
+  `mongodb_state_dirs` (`/var/lib/mongodb`, `/var/log/mongodb`), which the
+  purge leaves, once the packages are gone. The removal on macmini on
+  2026-11-05 left exactly these behind.
+
+- `services.minecraft_java` removal: beyond the role, the user's crontab file
+  (`/var/spool/cron/crontabs/<user>`) goes after `userdel`; the cron job
+  removal leaves it empty and `userdel` keeps it.
+
 - `services.paperless`: the removal (`remove_paperless`) deletes the scanner
   inbox's own `/etc/fstab` bind line (`/mnt/cryptdata/paperless/consume
   /srv/sftp-scanner/inbox none bind 0 0` on macmini, derived from

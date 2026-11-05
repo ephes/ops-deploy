@@ -21,6 +21,7 @@ from tests import fakehost
 
 PARITY = Path(__file__).parent / "parity/minecraft_java/remove"
 UNIT = "/etc/systemd/system/minecraft-java.service"
+CRONTAB = "/var/spool/cron/crontabs/minecraft"
 
 
 def confirmed(**values: Any) -> MinecraftJavaRemoveConfig:
@@ -121,6 +122,7 @@ def host(*, cron: str = "present", processes: bool = True, ufw: bool = True, **u
         **fakehost.LINUX,
         **fakehost.file(UNIT, "owned unit"),
         **fakehost.directory(cfg.home, user=cfg.user),
+        **fakehost.file(CRONTAB, "", mode="-rw-------"),
         **fakehost.system_account(cfg.user, cfg.home),
     }
 
@@ -139,6 +141,7 @@ def test_full_removal_follows_the_role_order() -> None:
         "pkill -u minecraft || true",
         "rm -rf /home/minecraft",
         "userdel -r minecraft",
+        "rm -rf " + CRONTAB,
         "groupdel minecraft",
         "ufw delete allow from 192.168.0.0/16 to any port 25565 proto tcp",
         "ufw delete allow from 10.0.0.0/8 to any port 25565 proto tcp",
@@ -156,6 +159,10 @@ def test_a_removed_host_changes_only_the_unconditional_reload() -> None:
     assert run.error is None
     # The systemd tasks fail on an absent unit; the role ignores that.
     assert run.executed_commands == ["systemctl daemon-reload"]
+    # A crontab file left by an earlier removal (the cron module empties it, userdel keeps it).
+    run = run_deploy_fake(remove_minecraft_java, cfg, responses={**responses, **fakehost.file(CRONTAB, "")})
+    assert run.error is None
+    assert run.executed_commands == ["systemctl daemon-reload", "rm -rf " + CRONTAB]
 
 
 @pytest.mark.parametrize("active", ["active", "activating", "deactivating", "inactive", "failed"])

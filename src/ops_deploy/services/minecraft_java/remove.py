@@ -1,7 +1,9 @@
 """Port of the ``minecraft_java_remove`` role: its defaults, order and ignored failures.
 
 Never dispatched without ``confirm_removal``. ``/opt/backups/minecraft-java``
-and every Echoport archive stay, as with the role.
+and every Echoport archive stay, as with the role. Beyond the role, the
+user's crontab file goes after ``userdel`` (the cron module leaves it, empty,
+and userdel does not remove it).
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ from ops_deploy.services._lifecycle.ansible_remove import absent, service_absent
 Port = Annotated[int, Field(ge=1, le=65535)]
 # The role's ``cron`` task: ``name: "Minecraft world backup"`` in the user's crontab.
 CRON_NAME = "Minecraft world backup"
+# Debian's cron spool, where ``crontab -u <user>`` keeps the user's file.
+CRONTABS = "/var/spool/cron/crontabs"
 # ansible.builtin.cron for a named job in a user crontab: drop every
 # ``#Ansible: <name>`` line with the line after it; skip the three header
 # lines some crontab implementations print; write only on a change.
@@ -140,6 +144,7 @@ def remove_minecraft_java(cfg: MinecraftJavaRemoveConfig) -> None:
     kill_user_processes(cfg.user, graceful=False)
     absent(f"Remove {cfg.home}", cfg.home)
     user_absent(name=f"Remove user {cfg.user}", user=cfg.user, remove_home=True)
+    absent(f"Remove the {cfg.user} crontab", f"{CRONTABS}/{cfg.user}")
     server.group(name=f"Remove group {cfg.group}", group=cfg.group, present=False, _ignore_errors=True)
     # community.general.ufw (``delete: true``) with the role's arguments;
     # ignore_errors, also for a host without ufw. A rule that is not there

@@ -2,6 +2,12 @@
 
 Never dispatched without ``confirm``. Every destructive flag keeps the role's
 default; a caller opts in exactly as with ``-e unifi_remove_*=true``.
+
+Beyond the role, the removal also clears what the role's MongoDB purge leaves:
+the tool packages ``mongodb-org`` pulled in (``mongodb_tool_packages``, with
+``remove_packages``) and, with ``delete_data`` and ``remove_packages``,
+mongod's data and log directories (``mongodb_state_dirs``) once the packages
+are gone.
 """
 
 from __future__ import annotations
@@ -72,12 +78,20 @@ class UnifiRemoveConfig(RoleConfig):
         "mongodb-org-mongos",
         "mongodb-org-tools",
     )
+    # Beyond the role: mongodb-org's dependencies that its package list misses.
+    mongodb_tool_packages: tuple[Package, ...] = (
+        "mongodb-database-tools",
+        "mongodb-mongosh",
+        "mongodb-org-database-tools-extra",
+    )
     java_packages: tuple[Package, ...] = ("openjdk-17-jre-headless",)
     manage_firewall: StrictBool = True
     manage_traefik: StrictBool = True
     delete_cache: StrictBool = True
     delete_logs: StrictBool = False
     delete_data: StrictBool = False
+    # Beyond the role: what mongodb-org-server's purge leaves (with delete_data).
+    mongodb_state_dirs: tuple[AbsolutePath, ...] = ("/var/lib/mongodb", "/var/log/mongodb")
     delete_home: StrictBool = False
     delete_backup_dir: StrictBool = False
     remove_user: StrictBool = False
@@ -111,7 +125,7 @@ class UnifiRemoveConfig(RoleConfig):
 
     @model_validator(mode="after")
     def bounded(self) -> Self:
-        for value in self.model_dump().values():
+        for value in (*self.model_dump().values(), *self.mongodb_state_dirs):
             if isinstance(value, str) and value.startswith("/"):
                 path = PurePosixPath(value)
                 if len(path.parts) < 3 or ".." in path.parts:
@@ -222,9 +236,14 @@ def remove_unifi(cfg: UnifiRemoveConfig, secrets: SecretValues | None = None) ->
         for kind, packages in (
             ("UniFi", cfg.unifi_packages),
             ("MongoDB", cfg.mongodb_packages),
+            ("MongoDB tool", cfg.mongodb_tool_packages),
             ("Java runtime", cfg.java_packages),
         ):
             _purge(name=f"Purge the {kind} packages", packages=packages)
+        if cfg.delete_data:
+            # mongod is purged: its data (the UniFi database) and logs go too.
+            for path in cfg.mongodb_state_dirs:
+                absent(f"Remove {path}", path)
     for path, enabled in (
         (cfg.cache_dir, cfg.delete_cache),
         (cfg.logs_dir, cfg.delete_logs),

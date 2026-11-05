@@ -167,7 +167,12 @@ def test_the_unported_pre_removal_backup_is_refused() -> None:
         UnifiRemoveConfig(trigger_backup=True)
 
 
-def responses(*, debian: bool = True, ufw: bool = True, installed: bool = True) -> dict[str, Any]:
+TOOLS = ("mongodb-database-tools", "mongodb-mongosh", "mongodb-org-database-tools-extra")
+
+
+def responses(
+    *, debian: bool = True, ufw: bool = True, installed: bool = True, leftovers: bool = True
+) -> dict[str, Any]:
     cfg = UnifiRemoveConfig()
     service = json.dumps(dict(success=True, enabled=True, active="active", load="loaded"))
     result: dict[str, Any] = {
@@ -176,6 +181,7 @@ def responses(*, debian: bool = True, ufw: bool = True, installed: bool = True) 
         "command -v ufw": ["/usr/sbin/ufw"] if ufw else [],
         "packages unifi": [json.dumps(["unifi"] if installed else [])],
         "packages mongodb-org": [json.dumps(["mongodb-org", "mongodb-org-server"] if installed else [])],
+        "packages mongodb-database-tools": [json.dumps(list(TOOLS) if leftovers else [])],
         "packages openjdk-17-jre-headless": [json.dumps(["openjdk-17-jre-headless"] if installed else [])],
         **fakehost.LINUX,
         **fakehost.system_account(cfg.user, cfg.home_dir),
@@ -196,6 +202,9 @@ def responses(*, debian: bool = True, ufw: bool = True, installed: bool = True) 
         cfg.home_dir,
     ):
         result.update(fakehost.directory(path))
+    if leftovers:
+        for path in cfg.mongodb_state_dirs:
+            result.update(fakehost.directory(path, user="mongodb"))
     return result
 
 
@@ -241,7 +250,10 @@ def test_the_recipe_flags_follow_the_role_order() -> None:
         "systemctl stop mongod",
         purge("unifi"),
         purge("mongodb-org", "mongodb-org-server"),
+        purge(*TOOLS),
         purge("openjdk-17-jre-headless"),
+        "rm -rf /var/lib/mongodb",
+        "rm -rf /var/log/mongodb",
         "rm -rf /home/unifi/cache",
         "rm -rf /usr/lib/unifi/logs",
         "rm -rf /usr/lib/unifi/data/backup",
@@ -273,7 +285,7 @@ def test_role_defaults_keep_data_accounts_and_database() -> None:
     assert run.succeeded, run.error
     commands = "\n".join(run.executed_commands)
     assert "rm -rf /home/unifi/cache" in commands
-    for kept in ("/usr/lib/unifi\n", "/usr/lib/unifi/data", "/usr/lib/unifi/logs", "/home/unifi\n"):
+    for kept in ("/usr/lib/unifi\n", "/usr/lib/unifi/data", "/usr/lib/unifi/logs", "/home/unifi\n", "/var/lib/mongodb"):
         assert "rm -rf " + kept not in commands + "\n"
     assert "userdel" not in commands
     assert "groupdel" not in commands
@@ -301,8 +313,36 @@ def test_firewall_rules_need_debian_and_ufw(debian: bool, ufw: bool) -> None:
     assert not any("ufw delete" in command for command in run.executed_commands)
 
 
+def test_mongodb_leftovers_go_only_when_present_and_after_the_purge() -> None:
+    cfg = UnifiRemoveConfig(confirm=True, **RECIPE)
+    run = run_deploy_fake(remove_unifi, cfg, responses=responses(installed=False, leftovers=False))
+    assert run.succeeded, run.error
+    changes = [command for command in run.executed_commands if not command.startswith(("/usr/bin/python3", "import"))]
+    assert not any("apt-get" in command or "/var/" in command for command in changes)
+    run = run_deploy_fake(remove_unifi, cfg, responses=responses(installed=False))
+    assert run.succeeded, run.error
+    commands = [command for command in run.executed_commands if "import json, subprocess, sys" not in command]
+    assert commands[commands.index("systemctl stop mongod") + 1 :][:3] == [
+        purge(*TOOLS),
+        "rm -rf /var/lib/mongodb",
+        "rm -rf /var/log/mongodb",
+    ]
+    # The package removal off: mongod may still own its directories.
+    run = run_deploy_fake(remove_unifi, cfg.model_copy(update={"remove_packages": False}), responses=responses())
+    assert run.succeeded, run.error
+    assert not any(command.startswith("rm -rf /var/") for command in run.executed_commands)
+
+
+@pytest.mark.parametrize("dirs", [("/var",), ("/var/lib/../../etc",)])
+def test_unsafe_mongodb_state_dirs_are_refused(dirs: tuple[str, ...]) -> None:
+    with pytest.raises(ValueError, match="removal paths"):
+        UnifiRemoveConfig(mongodb_state_dirs=dirs)
+
+
 def test_absent_packages_are_not_purged_and_a_bad_probe_stops() -> None:
-    run = run_deploy_fake(remove_unifi, UnifiRemoveConfig(confirm=True), responses=responses(installed=False))
+    run = run_deploy_fake(
+        remove_unifi, UnifiRemoveConfig(confirm=True), responses=responses(installed=False, leftovers=False)
+    )
     assert run.succeeded, run.error
     assert not any("apt-get" in command for command in run.executed_commands)
     broken = {**responses(), "packages unifi": ['["other"]']}
@@ -364,7 +404,7 @@ def test_package_states_select_installed_and_residual_packages(tmp_path: Path, m
 
 
 def test_an_empty_package_list_is_a_noop() -> None:
-    cfg = UnifiRemoveConfig(confirm=True, mongodb_packages=(), java_packages=())
+    cfg = UnifiRemoveConfig(confirm=True, mongodb_packages=(), mongodb_tool_packages=(), java_packages=())
     run = run_deploy_fake(remove_unifi, cfg, responses=responses())
     assert run.succeeded, run.error
     assert purge("unifi") in run.executed_commands
