@@ -534,17 +534,26 @@ def _credentials(cfg: DeployRunnerRegistration, source: MediaSource, secret_key:
     )
 
 
+# ``regex_findall('[(]PostgreSQL[)] ([0-9]+)') | first`` of ``pg_restore --version``.
+_PG_RESTORE_MAJOR = "grep -o '(PostgreSQL) [0-9][0-9]*' | head -n 1 | cut -d ' ' -f 2"
+
+
 def _pg_restore(cfg: DeployRunnerRegistration) -> None:
     """The mastodon playbook's pg_restore check: refuse a pg_restore older than production's PostgreSQL.
 
-    A read-only step after the packages, as the playbook reads the version
-    after installing ``postgresql-client``.
+    While planning, a pg_restore that is already installed and too old
+    refuses (a dry run shows it, as the playbook's check mode does). The
+    check itself is a read-only step after the packages, as the playbook
+    reads the version after installing ``postgresql-client``.
     """
 
     major = cfg.min_pg_restore_major
     assert major is not None
-    found = "grep -o '(PostgreSQL) [0-9][0-9]*' | head -n 1 | cut -d ' ' -f 2"
+    found = _PG_RESTORE_MAJOR
     message = f"pg_restore on this host cannot read a PostgreSQL {major} dump; install postgresql-client-{major}"
+    planned = (probe(f"(pg_restore --version 2>/dev/null || true) | {found}", name="pg_restore version") or "").strip()
+    if planned.isdigit() and int(planned) < major:
+        raise DeployError(message)
     mark_read_only(
         server.shell(
             name=f"Require a pg_restore that reads PostgreSQL {major} dumps",
