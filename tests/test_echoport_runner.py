@@ -302,8 +302,13 @@ def alias_probe(alias: str) -> re.Pattern[str]:
     return re.compile(rf"alias list {alias} \)")
 
 
+MC_PRESENT = {"test -x /usr/local/bin/mc": ["present"]}
+
+
 def access_converged(cfg: MinioAccess, access_key: str, secret: str) -> dict[Any, Any]:
     return {
+        **MC_PRESENT,
+        re.compile(rf"mc ls {cfg.alias}/backups/{cfg.target}/ >/dev/null && echo ok"): ["ok"],
         ACCOUNT_PROBE: ["policy=ok user=attached"] if cfg.scoped else [],
         alias_probe(cfg.alias): [alias_digest(cfg.url, access_key, secret)],
         **{alias_probe(retired): ["none"] for retired in cfg.retired_aliases},
@@ -335,7 +340,8 @@ def test_scoped_account_is_created_and_the_alias_imported_from_stdin() -> None:
     def deploy() -> None:
         minio_access(cfg, access_key=user, secret_key=ACCOUNT_SECRET)
 
-    responses = {
+    responses: dict[Any, Any] = {
+        **MC_PRESENT,
         ACCOUNT_PROBE: ["policy=missing user=missing"],
         alias_probe(cfg.alias): ["none"],
         alias_probe("minio"): ["0" * 64],
@@ -378,7 +384,7 @@ def test_unscoped_target_keeps_the_shared_alias_with_the_root_credentials() -> N
     def deploy() -> None:
         minio_access(cfg, access_key=ROOT_ALIAS_KEY, secret_key=ROOT_SECRET)
 
-    run = run_deploy_fake(deploy, responses={alias_probe("minio"): ["none"]})
+    run = run_deploy_fake(deploy, responses={**MC_PRESENT, alias_probe("minio"): ["none"]})
 
     assert run.succeeded, run.error
     assert run.mutating_changed_ops == ["Configure mc alias minio of root"]
@@ -419,6 +425,31 @@ def test_rclone_runner_gets_no_alias() -> None:
     assert run.mutating_changed_ops == ["Create or update MinIO user of paperless"]
 
 
+def test_a_secret_the_server_rejects_is_upserted_again() -> None:
+    cfg = access()
+    user = cfg.account.user
+
+    def deploy() -> None:
+        minio_access(cfg, access_key=user, secret_key=ACCOUNT_SECRET)
+
+    responses = access_converged(cfg, user, ACCOUNT_SECRET)
+    responses[re.compile(r"mc ls backup-paperless/backups/paperless/ >/dev/null && echo ok")] = []
+    run = run_deploy_fake(deploy, responses=responses)
+
+    assert run.mutating_changed_ops == ["Create or update MinIO user of paperless"]
+
+
+def test_a_missing_mc_refuses_before_any_write() -> None:
+    cfg = access()
+
+    def deploy() -> None:
+        minio_access(cfg, access_key=cfg.account.user, secret_key=ACCOUNT_SECRET)
+
+    responses = {**access_converged(cfg, cfg.account.user, ACCOUNT_SECRET), "test -x /usr/local/bin/mc": ["missing"]}
+
+    assert "mc (MinIO client) not found" in refused(run_deploy_fake(deploy, responses=responses))
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -445,7 +476,7 @@ def test_bad_credentials_refuse_without_showing_them(key: str | None, secret: st
     def deploy() -> None:
         minio_access(cfg, access_key=cfg.account.user if key is None else key, secret_key=secret)
 
-    message = refused(run_deploy_fake(deploy, responses={ACCOUNT_PROBE: ["policy=ok user=attached"]}))
+    message = refused(run_deploy_fake(deploy, responses={**MC_PRESENT, ACCOUNT_PROBE: ["policy=ok user=attached"]}))
     if secret:
         assert secret not in message
 

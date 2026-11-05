@@ -64,7 +64,9 @@ name the template reads with `default(...)` may be left out.
 The port of `common/backup_minio_account.yml`. ops-control resolves the
 target from `playbooks/vars/backup_minio_accounts.yml` into a `MinioAccess`
 (target, OS user, alias, store URL, whether it is switched, store, retired
-aliases) and passes the access key and secret:
+aliases) and passes the access key and secret. When `mc` is needed and
+missing, the run refuses while planning, as the playbooks' "Ensure mc is
+installed" does (`register-echoport-backup.yml` installs it).
 
 - a switched target on MinIO gets its scoped account through root's MinIO
   admin alias (`minio_deploy`'s `backup_account`, as the echoport deploy ports
@@ -72,7 +74,8 @@ aliases) and passes the access key and secret:
   no delete), user `bk-<sha256(target)[:17]>`; the secret goes to
   `mc admin user add` on stdin. The policy and user are written only when the
   probe finds them missing or different, or when the runner's alias does not
-  hold the secret yet (for a runner without an alias, every run, as the role);
+  hold the secret yet or cannot list `backups/<prefix>/` with it (for a runner
+  without an alias, every run, as the role);
 - the runner user's `mc` alias is imported from a private file in a
   root-owned `0711` temporary directory when its stored URL, access key or
   secret differs (`mc alias import`; the credentials never reach argv), and
@@ -118,7 +121,7 @@ scope, owned fields, save behaviour and refusals. A port keeps that script
   transaction is rolled back. The answer is `unchanged` when no save would
   change a stored field (only `update_fields` when the script names them) and
   no token is due, `pending` otherwise, and `refused: <reason>` when the
-  script raises (for example "Refusing implicit reactivation");
+  script raises (for example "Refusing implicit reactivation") or exits;
 - **apply**: when a token is due and none arrives on stdin it answers
   `need-token` and runs nothing; otherwise it runs the script as the
   playbook does.
@@ -128,8 +131,9 @@ scope, owned fields, save behaviour and refusals. A port keeps that script
 check while planning: a refusal stops the deploy before any write and
 `unchanged` adds no operation. Otherwise the script runs once, after
 `issueservicetoken` when a token is due (only then; the token goes through a
-pipe on the host, the FastDeploy user name on stdin), and the check runs
-again and must say `unchanged`. A token is due when the first existing target
+pipe on the host, the FastDeploy user name on stdin, and it must be exactly
+one JWT line), and the check runs again and must say `unchanged` (without
+`force_rotate`, which a forced rotation has just satisfied). A token is due when the first existing target
 has none, or one that is undecodable, scoped to another service, without
 `jti`, without expiry or inside the renewal window, or when `force_rotate` is
 set (the decision of the shared upsert and of ops-control's

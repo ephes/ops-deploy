@@ -369,6 +369,16 @@ def test_a_paused_target_refuses_and_an_override_makes_it_pending(capsys: pytest
     assert DB.rows[1]["status"] == "paused"
 
 
+def test_a_script_that_exits_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
+    stored_row()
+    before = DB.snapshot()
+
+    answer = run(target(script="raise SystemExit(0)\n", token=None), "check", capsys=capsys)
+
+    assert answer == "refused: SystemExit: 0"
+    assert DB.rows == before
+
+
 def test_a_validation_error_refuses(capsys: pytest.CaptureFixture[str]) -> None:
     stored_row()
 
@@ -583,6 +593,20 @@ def test_the_token_user_travels_on_stdin_only() -> None:
     for word in ("issueservicetoken", "--days", "--origin"):
         assert word in command
     assert "runuser -u fastdeploy -- env HOME=/home/fastdeploy .venv/bin/python -c" in command
+
+
+def test_a_forced_rotation_probes_again_without_forcing() -> None:
+    forced = target(token=TOKEN.model_copy(update={"force_rotate": True}))
+
+    def deploy() -> None:
+        token_and_target(forced, "fixture-fastdeploy-user")
+
+    run_ = run_deploy_fake(deploy, responses={check_key(forced): ["pending"], TOKEN_CHECK: ["unchanged"]})
+
+    assert run_.succeeded, run_.error
+    verify = run_.executed_commands[-1]
+    assert TOKEN_CHECK in verify
+    assert check_key(forced) not in verify
 
 
 def test_the_token_step_is_skipped_when_unchanged() -> None:

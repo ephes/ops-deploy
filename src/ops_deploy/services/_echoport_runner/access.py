@@ -168,7 +168,7 @@ def _account(cfg: MinioAccess, secret_key: str) -> None:
 
     The policy is created and the user upserted only when the probe finds them
     missing or different; the secret counts as current when the runner's alias
-    already holds it. A runner without an alias (``os_user`` ``none``) gives no
+    already holds it and lists the target's prefix with it. A runner without an alias (``os_user`` ``none``) gives no
     such proof, so its user is upserted on every run, as the role does.
     """
 
@@ -180,12 +180,14 @@ def _account(cfg: MinioAccess, secret_key: str) -> None:
     document = render_account_policy(account)
     state = probe(admin.state("probe", account, document), name=f"MinIO account {account.name}")
     found = dict(part.partition("=")[::2] for part in (state or "").split())
-    stored = ""
+    stored = login = ""
     if cfg.os_user != "none":
         stored = (probe(alias_check(cfg, cfg.alias), name=f"mc alias {cfg.alias} of {cfg.os_user}") or "").strip()
-    current = found.get("user") in ("attached", "unattached") and stored == alias_digest(
-        cfg.url, account.user, secret_key
-    )
+        # The server must accept the secret too (a user re-added by hand or restored keeps another one).
+        listing = f"{_mc(cfg, 'ls', f'{cfg.alias}/{account.bucket}/{account.key_prefixes[0]}/')} >/dev/null && echo ok"
+        login = output(when_present([cfg.user_home], listing, otherwise="no")).strip()
+    exists = found.get("user") in ("attached", "unattached")
+    current = exists and stored == alias_digest(cfg.url, account.user, secret_key) and login == "ok"
 
     mark_read_only(server.shell(name=f"Require {admin.admin}", commands=[admin.require_admin()]))
     files.directory(
@@ -270,6 +272,12 @@ def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:
         raise DeployError(f"{cfg.target}: the MinIO access key and secret key are required (values withheld)")
     if cfg.scoped and access_key != cfg.account.user:
         raise DeployError(f"{cfg.target}: a scoped target's access key must be its account user {cfg.account.user}")
+    if cfg.os_user == "none" and not (cfg.scoped and cfg.store == "minio"):
+        return
+    # The playbooks' "Ensure mc is installed" (register-echoport-backup.yml installs it), before any write.
+    mc = shlex.quote(cfg.mc)
+    if (probe(f"test -x {mc} && echo present || echo missing", name=f"mc at {cfg.mc}") or "").strip() != "present":
+        raise DeployError(f"mc (MinIO client) not found at {cfg.mc}; register echoport-backup first to install it")
     if cfg.scoped and cfg.store == "minio":
         _account(cfg, secret_key)
     if cfg.os_user == "none":
