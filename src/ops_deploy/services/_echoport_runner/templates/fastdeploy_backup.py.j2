@@ -51,10 +51,12 @@ WORKSPACE_PATH = "{{ fastdeploy_echoport_backup_workspace_path }}"
 SYSTEMD_UNIT_PATH = "{{ fastdeploy_echoport_backup_systemd_unit_path }}"
 TRAEFIK_CONFIG_PATH = "{{ fastdeploy_echoport_backup_traefik_config_path }}"
 SUDOERS_GLOB = "{{ fastdeploy_echoport_backup_sudoers_glob }}"
-# Retired by the FastDeploy privilege reduction (stage 1). A restore of an older
-# archive must not bring them back: skipped top-level entries of services/ and
-# the deploy runner root, and sudoers files that are not copied back.
-RETIRED_ENTRIES = {{ fastdeploy_echoport_backup_retired_entries | default(['fastdeploy-self', 'fastdeploy-self-playbook.yml', 'apt_upgrade_local', 'apt_upgrade_staging']) | to_json }}
+# Retired by the FastDeploy privilege reduction (stage 1) and with the
+# fastdeploy_register_service deployment runners (fastdeploy, nyxmon,
+# test_dummy). A restore of an older archive must not bring them back: skipped
+# top-level entries of services/ and the deploy runner root, and sudoers files
+# that are not copied back.
+RETIRED_ENTRIES = {{ fastdeploy_echoport_backup_retired_entries | default(['fastdeploy-self', 'fastdeploy-self-playbook.yml', 'apt_upgrade_local', 'apt_upgrade_staging', 'fastdeploy', 'nyxmon', 'test_dummy']) | to_json }}
 # Archived sudoers files are restored only when every line is blank, a plain
 # comment or the narrow rule shape the registration roles write; anything else
 # (older fastdeploy_register_service files carried `deploy ALL=(root) NOPASSWD:
@@ -87,7 +89,7 @@ def sudoers_restorable(text: str) -> bool:
             return False
     return True
 
-RETIRED_SUDOERS = {{ fastdeploy_echoport_backup_retired_sudoers | default(['fastdeploy', 'fastdeploy_fastdeploy-self', 'fastdeploy_self_deploy_users']) | to_json }}
+RETIRED_SUDOERS = {{ fastdeploy_echoport_backup_retired_sudoers | default(['fastdeploy', 'fastdeploy_fastdeploy-self', 'fastdeploy_self_deploy_users', 'fastdeploy_fastdeploy', 'fastdeploy_nyxmon', 'fastdeploy_test_dummy']) | to_json }}
 
 DB_NAME = "{{ fastdeploy_echoport_backup_db_name }}"
 DB_USER = "{{ fastdeploy_echoport_backup_db_user }}"

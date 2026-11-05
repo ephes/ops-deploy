@@ -39,7 +39,9 @@
   rendered by `ansible-playbook`
   (`tests/parity/echoport_runner`); the drift manifest now records
   `fastdeploy_runner`, `echoport_backup` and `minio_backup` (ops-library
-  `44a532ba`) and checks the vendored templates.
+  `44a532ba`; `echoport_backup` at `89107b6c`, whose `fastdeploy_backup.py.j2`
+  also skips the retired FastDeploy deployment runners on restore) and checks
+  the vendored templates.
 
 - `services.paperless`: `PaperlessBackupConfig`/`deploy_paperless_backup` and
   `PaperlessRestoreConfig`/`deploy_paperless_restore`, the ports of the
