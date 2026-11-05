@@ -14,8 +14,12 @@ playbook passes) plus the parts its playbook uses:
   (``common/deploy_known_host_ed25519.yml``);
 - :mod:`.target`: a playbook's own Echoport target script with a check mode,
   and the FastDeploy service token piped into it.
+- :mod:`.nyxmon`: a playbook's own Nyxmon check script with a check mode
+  (graphyard's backup freshness check);
 - :mod:`.registration`: a same-host root runner's whole register playbook
-  (packages, access, runner), the entry point of ops-control's class A1 runners.
+  (packages, access, runner, and for class B the playbook's credential file,
+  target script and Nyxmon script), the entry point of ops-control's runner
+  entries.
 
 :func:`deploy_runner` does what the role does, in its order:
 

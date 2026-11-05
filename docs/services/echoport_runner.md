@@ -155,6 +155,71 @@ The Echoport target row is not written: the A1 rows are kept by hand
 (weeknotes-home's comes from the `weeknotes_home` deploy). On a converged
 host the deploy plans no mutating operation.
 
+### Class B: the playbook's own target, credential and Nyxmon steps
+
+The same-host root runners of class B (mail-db-backup, postfixadmin-backup,
+graphyard-backup) are the same registration with the playbook's own steps
+(all optional fields):
+
+- `template_markers`: texts the vendored template must contain (the
+  playbooks' "Require the ... runner in the ops-library checkout");
+- `credential_files` (`CredentialFile`): a file the playbook writes with
+  `copy: content:` from a secret. `template` is the task's content text
+  unchanged, `variables` the names it reads that hold no secret, `secrets`
+  the names whose values `install_registration(..., credentials=...)`
+  passes. The directory is made with the configured owner and mode (root
+  `0700`), the file is written with `ops.secret_file` (root `0600`), after
+  the object-store access as the playbook writes it. `render.render_text`
+  renders it as Ansible renders a module argument (the final newline kept,
+  `to_json` with ASCII escapes);
+- `target` (`RunnerTarget`, see below): after the runner, through
+  `upsert_runner_target`, or `token_and_target` with
+  `install_registration(..., token_user=...)` when it has a `ServiceToken`;
+- `nyxmon` (`nyxmon.NyxmonScript`): last, graphyard's own Nyxmon check
+  script (below).
+
+A target with a token but no `token_user`, and credentials that are not
+exactly the files' secrets, refuse while planning.
+
+The kept scripts are the playbooks' texts with their Jinja values read from
+`VALUES[...]` (the variable without the runner's prefix) and the issued
+token from `SERVICE_TOKEN`; nothing else differs, and ops-control's
+`tests/test_pyinfra_echoport_runners_classb.py` compares them byte for byte:
+
+| `files/targets/` | Playbooks |
+|---|---|
+| `service_owned.py` | register-mail-db-backup (the same text as django-chat-staging-db's and ggs-lennestrasse-staging-db's) |
+| `postfixadmin.py` | register-postfixadmin-backup (converges an existing row only) |
+| `graphyard.py` | register-graphyard-backup (no reactivation guard) |
+
+`target.target_script(name)` and `target.target_scripts()` read them.
+
+## Playbook Nyxmon scripts (`nyxmon`)
+
+graphyard's register playbook upserts its Nyxmon backup freshness check with
+a script of its own (`python3 -` as the `nyxmon` user, the database and
+service name in the environment). It differs from `nyxmon_site_checks` and
+`_nyxmon_json_metrics` (it re-enables a disabled check only when another
+field differs), so it is kept as `files/nyxmon/graphyard.py` and
+`files/runner_nyxmon.py` runs it with `python3 -I`:
+
+- while planning, the playbook's `stat` of the database: without it nothing
+  is planned and the deploy logs that it skips the step, as the playbook
+  does;
+- **check**: the script runs with `sqlite3.connect` opening the database read
+  only; `unchanged` when it ends with `changed=false`, `pending` when it
+  would write, `refused: <reason>` when it fails otherwise (the deploy then
+  stops before any write);
+- **apply**: only when the check did not say `unchanged`; the script runs as
+  the playbook runs it, then the check must say `unchanged`.
+
+The script and its values (the check data, which may carry a monitor login
+under a harmless name) travel on stdin, never in argv; only the playbook's
+environment (database path, service name) is in argv. `NyxmonScript` also
+refuses top-level value names that look like a secret. The read-only check replaces
+`sqlite3.connect`, so `NyxmonScript` requires a script that opens its
+database with `sqlite3.connect(...)`.
+
 ## Deploy-user runners (`registration`)
 
 `DeployRunnerRegistration` is one register playbook of classes A2 (the
@@ -250,12 +315,11 @@ look like a secret.
 Design note §3.1 also lists these parts; they come with the slices that use
 them:
 
-- `nyxmon_check`: graphyard's and vaultwarden's Nyxmon upserts differ from
-  `nyxmon_site_checks` (they re-enable a disabled check and skip without a
-  Nyxmon database), so they are ported with their runners (slices 6 and 9);
-- `credential_file` for unifi and postfixadmin: a plain `ops.secret_file`
-  call (`root 0600`), written by the runner slices that need them. The deploy
-  key and the media JSON are parts of `DeployRunnerRegistration`.
+- vaultwarden's Nyxmon upsert (slice 9); graphyard's is `nyxmon` above;
+- `credential_file` for unifi: a plain `ops.secret_file` call (`root 0600`),
+  written by the runner slice that needs it (postfixadmin's is a
+  `CredentialFile` above). The deploy key and the media JSON are parts of
+  `DeployRunnerRegistration`.
 
 ## Parity
 

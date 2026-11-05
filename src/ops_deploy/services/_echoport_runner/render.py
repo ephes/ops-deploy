@@ -26,6 +26,7 @@ from importlib.resources import files
 from typing import Any
 
 import jinja2
+from jinja2 import meta
 
 PACKAGE = "ops_deploy.services._echoport_runner"
 # The role's templates that are no runner of their own.
@@ -69,6 +70,33 @@ def _environment() -> jinja2.Environment:
     env.filters["bool"] = ansible_bool
     env.filters["regex_replace"] = regex_replace
     return env
+
+
+@cache
+def _text_environment() -> jinja2.Environment:
+    env = jinja2.Environment(
+        undefined=jinja2.StrictUndefined, trim_blocks=True, keep_trailing_newline=True, autoescape=False
+    )
+    env.filters["to_json"] = to_json
+    env.filters["bool"] = ansible_bool
+    env.filters["regex_replace"] = regex_replace
+    return env
+
+
+def text_names(text: str) -> frozenset[str]:
+    """The names a playbook's inline text (a task's ``content:``) reads."""
+
+    return frozenset(meta.find_undeclared_variables(_text_environment().parse(text)))
+
+
+def render_text(text: str, variables: Mapping[str, Any]) -> str:
+    """A playbook's inline text (a task's ``content:``) rendered as Ansible templates a module argument.
+
+    The trailing newline stays, as Ansible keeps it for module arguments; an
+    undefined name raises.
+    """
+
+    return _text_environment().from_string(text).render(**variables)
 
 
 def runner_templates() -> tuple[str, ...]:
