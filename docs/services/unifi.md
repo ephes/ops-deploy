@@ -127,13 +127,13 @@ install, home); `userdel` (`-r` with `delete_home`) and `groupdel`, both
 fatal on failure.
 
 Beyond the role, the removal also clears what the role's MongoDB purge
-leaves behind. With `remove_packages`, a fourth purge after the MongoDB list
-takes `mongodb_tool_packages` (`mongodb-database-tools`, `mongodb-mongosh`,
+leaves behind. With `remove_packages`, a further purge between the MongoDB
+and Java lists takes `mongodb_tool_packages` (`mongodb-database-tools`, `mongodb-mongosh`,
 `mongodb-org-database-tools-extra`: dependencies of `mongodb-org` that its
 list misses), with the same only-what-dpkg-knows semantics. With
 `delete_data` and `remove_packages`, once the packages are purged,
-`mongodb_state_dirs` (`/var/lib/mongodb`, mongod's data with the UniFi
-database, and `/var/log/mongodb`) are removed; the purge leaves both. On a
+`mongodb_state_dirs` (`/var/lib/mongodb`, mongod's data: every database of
+that instance, the UniFi one included, and `/var/log/mongodb`) are removed; the purge leaves both. On a
 host that has neither, both steps change nothing, so a rerun after an
 earlier removal plans only these leftovers. Root, top-level or traversing
 `mongodb_state_dirs` are refused like the other paths. The `mongodb` system

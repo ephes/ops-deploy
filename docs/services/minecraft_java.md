@@ -158,10 +158,10 @@ The role's order, with its ignored failures (marked *ignored*):
 4. `pkill -u <user>` when the user runs a process (`|| true`, as the role);
 5. remove `home` (file, directory or leaf link, not followed), then
    `userdel -r <user>` when the account exists (a failure stops the removal),
-   then, beyond the role, the user's crontab file
-   `/var/spool/cron/crontabs/<user>` when it is there (the `cron` module
-   leaves it empty and `userdel` keeps it), then the group when it still
-   exists (*ignored*);
+   then, beyond the role, the user's crontab file in Debian's spool
+   `/var/spool/cron/crontabs/<user>` when it is there, whatever it holds
+   (the `cron` module leaves it empty and `userdel` keeps it), then the
+   group when it still exists (*ignored*);
 6. with `ufw` installed: `ufw delete allow from <network> to any port <port>
    proto tcp` per network and `ufw delete deny from any to any port
    <rcon_port> proto tcp` (*ignored*; ufw reports a rule that is not there
