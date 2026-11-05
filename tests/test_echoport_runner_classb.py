@@ -1076,6 +1076,20 @@ def test_the_remote_target_step_is_last_and_the_token_user_on_stdin() -> None:
     assert [stdin for command, stdin in fake.stdin if "issueservicetoken" in command] == [f"{USER}\n"]
 
 
+def test_an_installed_pg_restore_that_is_too_old_refuses_while_planning() -> None:
+    from tests.test_echoport_runner_deploy_registration import converged as remote_converged
+
+    cfg = remote("mastodon-production-db-backup")
+    probe = "(pg_restore --version 2>/dev/null || true) | grep -o"
+    old = {**remote_converged(cfg), check_key(cfg.target): ["unchanged"], probe: ["15"]}
+    assert "cannot read a PostgreSQL 17 dump" in a1.refused(run_deploy_fake(remote_deploy(cfg), responses=old))
+    for found in (["17"], [""]):
+        fake = run_deploy_fake(
+            remote_deploy(cfg), responses={**remote_converged(cfg), check_key(cfg.target): ["unchanged"], probe: found}
+        )
+        assert fake.succeeded, fake.error
+
+
 def test_a_remote_class_b_registration_refuses_while_planning() -> None:
     from ops_deploy.services._echoport_runner.registration import DeployKey
     from tests.test_echoport_runner_deploy_registration import PRIVATE, PUBLIC

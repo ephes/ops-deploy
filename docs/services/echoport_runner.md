@@ -275,14 +275,23 @@ these fields as well:
 - `target` (task `target`, after `runner` in each playbook's order): the
   playbook's own target script as for the same-host class B runners, with
   `register_deploy_runner(..., token_user=...)` for the token step;
-- `ssh_key_public` false: those playbooks install the private key only
+- `ssh_key_public` false (django-chat, ggs-lennestrasse and mastodon; the
+  other two install no key): those playbooks install the private key only
   (`DeployKey(private=...)`, no `id_ed25519.pub`);
 - `template_markers`: as for `RunnerRegistration`;
 - `min_pg_restore_major` (task `pg_restore`, mastodon): the playbook's
   "Require a pg_restore that reads production's dumps", a read-only step
   after the packages (as the playbook reads the version after installing
   `postgresql-client`), failing when `pg_restore --version`'s PostgreSQL
-  major is lower.
+  major is lower; a pg_restore that is already installed and too old
+  refuses while planning, so a dry run shows it.
+
+These two steps are the exceptions to "every refusal comes while planning"
+and "no Echoport row is written" above: the pg_restore check runs after the
+packages, and the target step writes the row as the playbook does (only
+when its check is not `unchanged`). gotosocial's, django-chat's and
+ggs-lennestrasse's scripts save on every run in the playbook; the port saves
+only when a field differs.
 
 A target with a token but no `token_user`, or a public key given where the
 playbook installs none, refuses while planning; so does a target whose bucket
