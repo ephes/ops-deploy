@@ -10,6 +10,8 @@ which adds its config in ops-control and its own entry point (design note
 branch, §3 and §3.8). The same-host root runners (class A1) use
 `registration.register_runner` below. heis-production and
 villakunterbunt-staging stay on Ansible; their templates are not vendored.
+The deploy-user runners (classes A2 and A3) use
+`registration.register_deploy_runner`.
 
 ## Runner installation (`RunnerConfig`, `deploy_runner`)
 
@@ -104,9 +106,15 @@ entry `user:<owner>:--x`; the work dir itself is `<owner>:<owner> 0700`.
 The port of `common/deploy_known_host_ed25519.yml`: exactly one ed25519 key
 for the name, either the inventory host's pin (used only when that host's
 `ansible_host` is the name) or the controller's `ssh-keyscan -q -t ed25519`
-(trust on first use). Anything else refuses while planning. The line is
-written as `known_hosts` `state: present` writes it (an entry of the same type
-replaced in place, anything else appended); the file keeps its owner and mode.
+(trust on first use; a scan that gives no answer within 60 s, or an
+`ssh-keyscan` that cannot run, refuses cleanly). Anything else refuses while
+planning. The line is written as `known_hosts` `state: present` writes it (an
+entry of the same type replaced in place, anything else appended); the file
+keeps its owner and mode. `known_hosts_entries` takes several names for one
+file (the production-db playbooks include the task twice): every key is
+resolved first, then the names are applied in order, each to the file the
+previous one left (the host's `ssh-keygen -F` answers are read once and moved
+past a replaced line), and the result is written in one upload.
 
 ## Same-host root runners (`registration`)
 
@@ -143,6 +151,47 @@ against the fact; reading the fact keeps the playbook's behaviour).
 The Echoport target row is not written: the A1 rows are kept by hand
 (weeknotes-home's comes from the `weeknotes_home` deploy). On a converged
 host the deploy plans no mutating operation.
+
+## Deploy-user runners (`registration`)
+
+`DeployRunnerRegistration` is one register playbook of classes A2 (the
+remote runners homepage-staging, python-podcast-staging, marina-staging,
+homepage-production-db and python-podcast-production-db, which reach their
+hosts over SSH as the deploy user) and A3 (homepage-media and
+python-podcast-media, rclone from S3 to the backup store). The runner runs as
+the deploy user: its sudoers file has the `fastdeploy -> deploy` line only.
+`tasks` is the playbook's order of its parts, each exactly once:
+
+| Task | Playbook | Port |
+|---|---|---|
+| `ssh_key` | `/home/deploy/.ssh` (`deploy 0700`), `id_ed25519` (`0600`, `no_log`) and `id_ed25519.pub` (`0644`) from `deploy_ssh_keys.yml` | `files.directory` and `ops.secret_file` with the secret as it is (`copy` adds nothing) |
+| `known_hosts` | `deploy_known_host_ed25519.yml` per name, then "Ensure known_hosts ownership" (`deploy:deploy 0644`) | `access.known_hosts_entries`, then `files.file` |
+| `mc` | "Ensure mc is installed" | `access.require_mc`, while planning |
+| `packages` | `ansible.builtin.package` | `apt.packages`, no cache update |
+| `access` | `backup_minio_account.yml` | `access.minio_access`: the scoped account and the deploy user's alias; a media runner (`os_user` `none`) gets the account only, upserted on every run as the role does (no alias proves its secret current) |
+| `work_dir` | `backup_work_dir.yml` | `access.work_dir` |
+| `credentials` | the media credentials directory (`root:deploy 0750`) and file (`root:deploy 0640`, `no_log`) | `files.directory` and `ops.secret_file`; the content is the playbook's `copy` content (`media_credentials`: four `to_json` values, the block's final newline) |
+| `runner` | `fastdeploy_runner` | `install_runner` |
+
+`register_deploy_runner(cfg, secret_key=..., ssh_key=..., source=...)` takes
+the target's account secret, the deploy key pair (`DeployKey`) exactly when
+the playbook installs it, and a media runner's source (`MediaSource`: the
+bucket, which becomes the template's `<prefix>_source_bucket`, and the S3
+credentials); a missing or extra one refuses. The config refuses what the
+playbooks refuse or never do: a template that is no vendored runner or lacks
+`_work_dir.py.j2`, a media template without `--no-check-dest` (their
+"Require a media runner that works with a scoped MinIO account"), a `run_as`
+rule, an access or work dir of another user, a target without its scoped
+account (the media playbooks' fallback to the MinIO root credentials stays
+with the playbook), known hosts in another file, and template variables that
+differ from what the registration provisions (`echoport_backup_*` as for A1,
+and every `*_work_dir`, `*_work_mount`, `*_credentials_file`, `*_minio_url`
+and `*_default_bucket`). The source bucket must be an S3 bucket name (the
+template writes it into a Python string unescaped). Every refusal comes while
+planning, before any write; the playbooks fail at their task instead, after
+the earlier tasks wrote. On a converged host the plan has no mutating
+operation, apart from a media runner's MinIO user upsert. No Echoport row is
+written: the rows stay managed by hand.
 
 ## Playbook target scripts (`target`)
 
@@ -198,10 +247,9 @@ them:
 - `nyxmon_check`: graphyard's and vaultwarden's Nyxmon upserts differ from
   `nyxmon_site_checks` (they re-enable a disabled check and skip without a
   Nyxmon database), so they are ported with their runners (slices 6 and 9);
-- `deploy_ssh_key` and `credential_file`: plain `ops.secret_file` calls with
-  the role's owner and mode (the deploy key `deploy 0600`, the unifi and
-  postfixadmin JSON `root 0600`, the media JSON `root:deploy 0640`), written by
-  the runner slices that need them.
+- `credential_file` for unifi and postfixadmin: a plain `ops.secret_file`
+  call (`root 0600`), written by the runner slices that need them. The deploy
+  key and the media JSON are parts of `DeployRunnerRegistration`.
 
 ## Parity
 
@@ -218,6 +266,13 @@ them:
   fixtures' address), a host the playbook left plans no mutating operation
   (homeassistant's address read from the fake host's route), and the runner
   the deploy uploads carries the host's address or the fallback.
+- `tests/test_echoport_runner_deploy_registration.py`: the seven A2 and A3
+  runners render through `DeployRunnerRegistration` to the same sha256 (the
+  media source bucket from the fixtures' secret), a host the playbook left
+  plans no mutating operation (a media runner: only its MinIO user upsert),
+  the parts run in each playbook's order, two known hosts end as two
+  `known_hosts` tasks leave the file (checked against the real `ssh-keygen`),
+  and the credentials file is the playbooks' `copy` content.
 - `tests/test_ops_library_drift.py` records `fastdeploy_runner`,
   `echoport_backup` and `minio_backup` and fails when a vendored template
   differs from ops-library's or ops-library gains or loses one.

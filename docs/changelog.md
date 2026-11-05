@@ -54,6 +54,38 @@
   The role's own excludes are unchanged (`SOURCE_EXCLUDES`); the addition is
   `BUILD_METADATA`, as in `services.opsgate`.
 
+- `services._echoport_runner.registration`: `DeployRunnerRegistration` and
+  `register_deploy_runner`, the register playbook of a runner that runs as the
+  deploy user (design note classes A2 and A3: homepage-staging,
+  python-podcast-staging, marina-staging, homepage-production-db,
+  python-podcast-production-db, homepage-media, python-podcast-media). It runs
+  the playbook's parts in the playbook's own order (`tasks`): the deploy
+  user's SSH directory and key pair (`secret_file`, `deploy 0600` and
+  `0644`), the known hosts and their ownership (`deploy:deploy 0644`), the
+  `mc` check, the packages, the target's scoped MinIO account and the deploy
+  user's `mc` alias (the media runners: the account only, no alias), the work
+  dir (`access.work_dir`), the media runner's credentials file
+  (`root:deploy 0640` in a `root:deploy 0750` directory, the playbooks'
+  `copy` content byte for byte) and the runner with the `fastdeploy -> deploy`
+  rule only. The source bucket of a media runner comes with its credentials
+  (from the service's secrets) and must be an S3 bucket name. The config
+  refuses a `run_as` rule, an access or work dir of another user, a target
+  without its scoped account (the media playbooks' fallback to the MinIO root
+  credentials stays with the playbook), template variables (`*_work_dir`,
+  `*_work_mount`, `*_credentials_file`, `*_minio_url`, `*_default_bucket`)
+  that differ from what the registration provisions, a media template without
+  `--no-check-dest`, and a task list that names a part twice or leaves one out.
+  A converged host plans no mutating operation; a media runner plans the
+  MinIO user upsert on every run (no alias proves its secret current, as in
+  the role).
+- `services._echoport_runner.access`: `known_hosts_entries` applies several
+  names to one known_hosts file as consecutive `known_hosts` tasks do, each
+  to the file the previous one left (the host's `ssh-keygen -F` answers move
+  past a replaced line), in one upload; every key is resolved before the file
+  is touched. A controller `ssh-keyscan` that hangs past 60 s or cannot run
+  refuses cleanly (a `DeployError`, nothing written) instead of raising.
+  `require_mc` is the `mc` check on its own.
+
 - `services._echoport_runner.registration`: `RunnerRegistration` and
   `register_runner`, a same-host runner's register playbook as one deploy
   (design note class A1: the runner runs as root on macmini). It installs the
