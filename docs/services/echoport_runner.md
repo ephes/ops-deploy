@@ -114,7 +114,9 @@ keeps its owner and mode. `known_hosts_entries` takes several names for one
 file (the production-db playbooks include the task twice): every key is
 resolved first, then the names are applied in order, each to the file the
 previous one left (the host's `ssh-keygen -F` answers are read once and moved
-past a replaced line), and the result is written in one upload.
+past a replaced line), and the result is written in one upload. A file
+without a final newline refuses then (the module would append to its last
+line, so the answers read once would not describe the file).
 
 ## Same-host root runners (`registration`)
 
@@ -170,7 +172,7 @@ the deploy user: its sudoers file has the `fastdeploy -> deploy` line only.
 | `packages` | `ansible.builtin.package` | `apt.packages`, no cache update |
 | `access` | `backup_minio_account.yml` | `access.minio_access`: the scoped account and the deploy user's alias; a media runner (`os_user` `none`) gets the account only, upserted on every run as the role does (no alias proves its secret current) |
 | `work_dir` | `backup_work_dir.yml` | `access.work_dir` |
-| `credentials` | the media credentials directory (`root:deploy 0750`) and file (`root:deploy 0640`, `no_log`) | `files.directory` and `ops.secret_file`; the content is the playbook's `copy` content (`media_credentials`: four `to_json` values, the block's final newline) |
+| `credentials` | the media credentials directory (`root:deploy 0750`) and file (`root:deploy 0640`, `no_log`) | `files.directory` and `ops.secret_file`; the content is the playbook's `copy` content (`media_credentials`: four `to_json` values, the block's final newline); the directory must not be `/` or a top-level one |
 | `runner` | `fastdeploy_runner` | `install_runner` |
 
 `register_deploy_runner(cfg, secret_key=..., ssh_key=..., source=...)` takes

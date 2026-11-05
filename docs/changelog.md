@@ -65,8 +65,8 @@
   `mc` check, the packages, the target's scoped MinIO account and the deploy
   user's `mc` alias (the media runners: the account only, no alias), the work
   dir (`access.work_dir`), the media runner's credentials file
-  (`root:deploy 0640` in a `root:deploy 0750` directory, the playbooks'
-  `copy` content byte for byte) and the runner with the `fastdeploy -> deploy`
+  (`root:deploy 0640` in a `root:deploy 0750` directory that is not `/` or a
+  top-level one, the playbooks' `copy` content byte for byte) and the runner with the `fastdeploy -> deploy`
   rule only. The source bucket of a media runner comes with its credentials
   (from the service's secrets) and must be an S3 bucket name. The config
   refuses a `run_as` rule, an access or work dir of another user, a target
@@ -82,7 +82,7 @@
   names to one known_hosts file as consecutive `known_hosts` tasks do, each
   to the file the previous one left (the host's `ssh-keygen -F` answers move
   past a replaced line), in one upload; every key is resolved before the file
-  is touched. A controller `ssh-keyscan` that hangs past 60 s or cannot run
+  is touched, and a file without a final newline refuses. A controller `ssh-keyscan` that hangs past 60 s or cannot run
   refuses cleanly (a `DeployError`, nothing written) instead of raising.
   `require_mc` is the `mc` check on its own.
 

@@ -535,6 +535,10 @@ def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str]
         content = changed
     if content == current:
         return
+    if len(cfgs) > 1 and current and not current.endswith("\n"):
+        # known_hosts appends to the last line then; consecutive tasks leave a
+        # file the answers read once do not describe.
+        raise DeployError(f"{path} does not end with a newline; fix it by hand. Nothing was written.")
     found = host.get_fact(File, path=path)
     info: Mapping[str, Any] = found or {}
     names = ", ".join(cfg.name for cfg in cfgs)
