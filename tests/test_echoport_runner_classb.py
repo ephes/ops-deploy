@@ -1088,6 +1088,13 @@ def test_an_installed_pg_restore_that_is_too_old_refuses_while_planning() -> Non
             remote_deploy(cfg), responses={**remote_converged(cfg), check_key(cfg.target): ["unchanged"], probe: found}
         )
         assert fake.succeeded, fake.error
+    # Without the package installed, its install may bring a newer pg_restore: the runtime check decides.
+    missing = {**old, "dpkg -l": ["ii  sqlite3  1.0  all  sqlite3"]}
+    fake = run_deploy_fake(remote_deploy(cfg), responses=missing)
+    assert fake.succeeded, fake.error
+    assert "Require a pg_restore that reads PostgreSQL 17 dumps" in [op.name for op in fake.ops]
+    with pytest.raises(ValueError, match="the pg_restore task comes after the packages task"):
+        remote("mastodon-production-db-backup", tasks=("pg_restore", *[t for t in cfg.tasks if t != "pg_restore"]))
 
 
 def test_a_remote_class_b_registration_refuses_while_planning() -> None:

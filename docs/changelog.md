@@ -67,7 +67,8 @@
   `gotosocial.py`; django-chat's and ggs-lennestrasse's equal
   `service_owned.py`. A missing token user, a public key the playbook does
   not install, and a target bucket other than the access's refuse while
-  planning, as does an installed pg_restore that is too old. Where a
+  planning, as does an installed pg_restore that is too old while the
+  packages are already installed. Where a
   playbook's script saves on every run (gotosocial, django-chat,
   ggs-lennestrasse), a converged row now gets no save (`updated_at` stays).
 
