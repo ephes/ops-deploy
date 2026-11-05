@@ -5,8 +5,9 @@ script of their own on ``manage.py shell``'s stdin. The scripts differ from
 the shared upsert (:mod:`ops_deploy.services._echoport`) and from each other
 in scope, owned fields, save behaviour and refusals, so a port keeps its
 playbook's script text and does not map it onto ``upsert_target``.
-``files/runner_target.py`` runs such a script unchanged in a check mode (no
-write; ``unchanged``, ``pending`` or the refusal) and in apply mode, and
+``files/runner_target.py`` runs such a script unchanged in a check mode (in a
+rolled-back transaction; ``unchanged``, ``pending`` or the refusal) and in
+apply mode, and
 :func:`upsert_runner_target` / :func:`token_and_target` are the
 probe-then-apply steps around it:
 
