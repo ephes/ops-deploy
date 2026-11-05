@@ -6,19 +6,20 @@
 # The playbook's script (P["script"]) stays as it is, with two changes: it
 # reads its values from VALUES (P["values"], in place of the playbook's Jinja)
 # and a newly issued FastDeploy token from SERVICE_TOKEN (empty: keep the
-# stored one), in place of ``fd_service_token_value``. It must not exit: in
-# check mode an exit counts as a refusal.
+# stored one), in place of ``fd_service_token_value``. ``SystemExit`` with
+# status 0 (or none) ends the script normally, as it ends ``manage.py shell``.
 #
 # Modes (P["mode"]):
-#   check  runs the script without writing: every model save is recorded
-#          instead (after the model's own validation, so ``full_clean`` runs),
-#          other writes (``QuerySet.update``, deletes, bulk writes) are
-#          recorded and skipped, and the transaction is rolled back. Prints
-#          "unchanged" when no recorded save would change a stored field and
-#          no token is due, "pending" otherwise, and "refused: <reason>" when
-#          the script raises (a playbook refusal such as "Refusing implicit
-#          reactivation", or a validation error): the deploy stops before any
-#          write.
+#   check  runs the script in a transaction that is always rolled back, so
+#          nothing it writes stays. Before the script first writes to a model
+#          (a save, ``QuerySet.update``, a delete, a bulk write) that model's
+#          rows are read; after the script they are read again. Prints
+#          "unchanged" when they are the same apart from ``auto_now`` and
+#          ``auto_now_add`` fields (``updated_at``) and no token is due,
+#          "pending" otherwise, and "refused: <reason>" when the script raises
+#          or exits with another status (a playbook refusal such as "Refusing
+#          implicit reactivation", or Echoport's validation in ``save``): the
+#          deploy stops before any write.
 #   apply  with P["token"] set and a token due, reads it from stdin (one line)
 #          and prints "need-token" (running nothing) when none arrives; then
 #          runs the script as the playbook does and prints "applied".
@@ -92,74 +93,82 @@ def token_due(spec):
 def run_script(token):
     namespace = {"__name__": "__echoport_runner_target__", "VALUES": P["values"], "SERVICE_TOKEN": token}
     with contextlib.redirect_stdout(io.StringIO()):
-        exec(compile(P["script"], "<runner target script>", "exec"), namespace)
+        try:
+            exec(compile(P["script"], "<runner target script>", "exec"), namespace)
+        except SystemExit as exc:
+            if exc.code not in (0, None):
+                raise
 
 
-class Recorder:
-    """Stands in for the database writes while the check runs."""
+def rows(model):
+    fields = [
+        field
+        for field in model._meta.concrete_fields
+        if not (getattr(field, "auto_now", False) or getattr(field, "auto_now_add", False))
+    ]
+    return {obj.pk: tuple(field.value_from_object(obj) for field in fields) for obj in model._base_manager.all()}
+
+
+class Watcher:
+    """Reads a model's rows before the script first writes to it."""
+
+    WRITES = (
+        ("Model", "save_base"),
+        ("Model", "delete"),
+        ("QuerySet", "update"),
+        ("QuerySet", "delete"),
+        ("QuerySet", "bulk_create"),
+        ("QuerySet", "bulk_update"),
+    )
 
     def __init__(self):
-        self.saves = []
-        self.other_writes = 0
+        self.before = {}
 
-    def save_base(self, instance, *args, **kwargs):
-        self.saves.append((instance, kwargs.get("update_fields")))
+    def touch(self, model):
+        if model not in self.before:
+            self.before[model] = rows(model)
 
-    def write(self, *args, **kwargs):
-        self.other_writes += 1
-        return 0
+    def wrap(self, owner, original):
+        watcher = self
+
+        def write(obj, *args, **kwargs):
+            watcher.touch(obj.model if owner is models.QuerySet else type(obj))
+            return original(obj, *args, **kwargs)
+
+        return write
 
     @contextlib.contextmanager
     def installed(self):
-        patched = [
-            (models.Model, "save_base", lambda instance, *a, **k: self.save_base(instance, *a, **k)),
-            (models.Model, "delete", lambda *a, **k: self.write()),
-            (models.QuerySet, "update", lambda *a, **k: self.write()),
-            (models.QuerySet, "delete", lambda *a, **k: self.write()),
-            (models.QuerySet, "bulk_create", lambda *a, **k: self.write()),
-            (models.QuerySet, "bulk_update", lambda *a, **k: self.write()),
-        ]
-        originals = [(owner, name, getattr(owner, name)) for owner, name, _ in patched]
-        for owner, name, replacement in patched:
-            setattr(owner, name, replacement)
+        originals = []
+        for owner_name, name in self.WRITES:
+            owner = getattr(models, owner_name)
+            original = getattr(owner, name)
+            originals.append((owner, name, original))
+            setattr(owner, name, self.wrap(owner, original))
         try:
             yield self
         finally:
             for owner, name, original in originals:
                 setattr(owner, name, original)
 
-
-def changes(instance, update_fields):
-    if instance._state.adding or instance.pk is None:
-        return True
-    stored = type(instance)._base_manager.filter(pk=instance.pk).first()
-    if stored is None:
-        return True
-    names = set(update_fields) if update_fields is not None else None
-    for field in instance._meta.concrete_fields:
-        if getattr(field, "auto_now", False) or getattr(field, "auto_now_add", False):
-            continue
-        if names is not None and field.name not in names and field.attname not in names:
-            continue
-        if field.to_python(field.value_from_object(instance)) != field.value_from_object(stored):
-            return True
-    return False
+    def changed(self):
+        return any(rows(model) != before for model, before in self.before.items())
 
 
 def check():
     due = token_due(P["token"]) if P.get("token") else False
-    recorder = Recorder()
+    watcher = Watcher()
     with transaction.atomic():
         try:
-            with recorder.installed():
+            with watcher.installed():
                 # A token that is due counts as issued: the script sees one to store.
                 run_script("<new token>" if due else "")
-        except (Exception, SystemExit) as exc:  # noqa: BLE001 - any refusal (or an exit) stops the deploy
+            pending = due or watcher.changed()
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - any refusal stops the deploy
             transaction.set_rollback(True)
             reason = " ".join(f"{type(exc).__name__}: {exc}".split())[:500]
             print(f"refused: {reason}")
             return
-        pending = due or recorder.other_writes > 0 or any(changes(i, f) for i, f in recorder.saves)
         transaction.set_rollback(True)
     print("pending" if pending else "unchanged")
 

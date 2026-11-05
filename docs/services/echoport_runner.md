@@ -116,12 +116,13 @@ scope, owned fields, save behaviour and refusals. A port keeps that script
 `RunnerTarget`; `files/runner_target.py` runs it inside Echoport's
 `manage.py shell`:
 
-- **check**: the script runs without writing. Each model save is recorded
-  after the model's own validation, other writes are skipped, and the
-  transaction is rolled back. The answer is `unchanged` when no save would
-  change a stored field (only `update_fields` when the script names them) and
-  no token is due, `pending` otherwise, and `refused: <reason>` when the
-  script raises (for example "Refusing implicit reactivation") or exits;
+- **check**: the script runs in a transaction that is always rolled back, so
+  nothing it writes stays (its saves still run Echoport's validation). The
+  rows of every model it writes to are read before its first write and again
+  after the script. The answer is `unchanged` when they are the same apart
+  from `auto_now` fields such as `updated_at` and no token is due, `pending`
+  otherwise, and `refused: <reason>` when the script raises (for example
+  "Refusing implicit reactivation") or exits with a status other than 0;
 - **apply**: when a token is due and none arrives on stdin it answers
   `need-token` and runs nothing; otherwise it runs the script as the
   playbook does.

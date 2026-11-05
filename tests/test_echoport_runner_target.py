@@ -104,6 +104,9 @@ class Manager:
     def filter(self, **lookup: Any) -> QuerySet:
         return QuerySet(self.model, sorted(DB.rows)).filter(**lookup)
 
+    def all(self) -> list[Model]:
+        return [self.model.load(pk) for pk in sorted(DB.rows)]
+
 
 class Model:
     fields: ClassVar[list[Field]] = []
@@ -126,6 +129,12 @@ class Model:
     def full_clean(self) -> None:
         pass
 
+    def refresh_from_db(self) -> None:
+        if self.pk not in DB.rows:
+            raise LookupError("DoesNotExist")
+        for field in self.fields:
+            setattr(self, field.attname, copy.deepcopy(DB.rows[self.pk].get(field.name)))
+
     def save(self, *args: Any, update_fields: Any = None, **kwargs: Any) -> None:
         self.full_clean()
         self.save_base(update_fields=update_fields)
@@ -139,7 +148,8 @@ class Model:
         names = update_fields or [field.name for field in self.fields]
         for field in self.fields:
             if field.name in names:
-                DB.rows[self.pk][field.name] = copy.deepcopy(getattr(self, field.attname))
+                # Stored as the database stores it (an IntegerField keeps "30" as 30).
+                DB.rows[self.pk][field.name] = field.to_python(copy.deepcopy(getattr(self, field.attname)))
         DB.rows[self.pk]["updated_at"] = time.time()
 
     def delete(self) -> None:
@@ -369,14 +379,30 @@ def test_a_paused_target_refuses_and_an_override_makes_it_pending(capsys: pytest
     assert DB.rows[1]["status"] == "paused"
 
 
-def test_a_script_that_exits_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
+def test_an_exit_with_status_0_ends_the_script_and_another_refuses(capsys: pytest.CaptureFixture[str]) -> None:
     stored_row()
     before = DB.snapshot()
+    done = target(script="import sys\nsys.exit(0)\nraise RuntimeError('not reached')\n", token=None)
 
-    answer = run(target(script="raise SystemExit(0)\n", token=None), "check", capsys=capsys)
-
-    assert answer == "refused: SystemExit: 0"
+    assert run(done, "check", capsys=capsys) == "unchanged"
+    assert run(done, "apply", capsys=capsys) == "applied"
+    assert run(target(script="raise SystemExit(2)\n", token=None), "check", capsys=capsys) == "refused: SystemExit: 2"
     assert DB.rows == before
+
+
+@pytest.mark.parametrize("row", [True, False])
+def test_a_script_that_reads_its_row_back_is_checked_by_what_it_wrote(
+    row: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    if row:
+        stored_row(description="old")
+    before = DB.snapshot()
+    script = SCRIPT.replace("target.save()", "target.save()\ntarget.refresh_from_db()\ntarget.description = 'x'")
+
+    assert run(target(script=script), "check", capsys=capsys) == "pending"
+    assert DB.rows == before
+    assert run(target(script=script), "apply", stdin=f"{GOOD}\n", capsys=capsys) == "applied"
+    assert run(target(script=script), "check", capsys=capsys) == "unchanged"
 
 
 def test_a_validation_error_refuses(capsys: pytest.CaptureFixture[str]) -> None:
@@ -418,12 +444,18 @@ def test_a_converge_only_script_refuses_a_missing_row(capsys: pytest.CaptureFixt
     assert run(cfg, "check", capsys=capsys) == "unchanged"
 
 
-def test_other_writes_are_pending_and_skipped(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize(("status", "answer"), [("paused", "pending"), ("active", "unchanged")])
+def test_other_writes_count_by_their_effect_and_are_rolled_back(
+    status: str, answer: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     stored_row()
-    script = "from backups.models import BackupTarget\nBackupTarget.objects.filter(name='mail-db').update(status='x')\n"
+    script = (
+        "from backups.models import BackupTarget\n"
+        f"BackupTarget.objects.filter(name='mail-db').update(status={status!r})\n"
+    )
     before = DB.snapshot()
 
-    assert run(target(script=script, token=None), "check", capsys=capsys) == "pending"
+    assert run(target(script=script, token=None), "check", capsys=capsys) == answer
     assert DB.rows == before
 
 
@@ -679,6 +711,11 @@ def test_the_check_mode_against_echoports_own_models(tmp_path: Path) -> None:
     script = SCRIPT.replace("target.save()", "target.service_name = 'postgresql.service'\ntarget.save()")
     cfg = target(script=script, values={**VALUES, "description": "Mail database"})
     drift = target(script=script, values={**VALUES, "description": "Mail DB"})
+    # Reads its row back after the save, as vaultwarden's script does.
+    reread = target(
+        script=script.replace("target.save()", "target.save()\ntarget.refresh_from_db()"),
+        values={**VALUES, "description": "Mail DB again"},
+    )
     cases = [
         {"row": row, "code": target_code(cfg, "check")},
         {"code": target_code(drift, "check")},
@@ -686,6 +723,7 @@ def test_the_check_mode_against_echoports_own_models(tmp_path: Path) -> None:
         {"code": target_code(drift, "check")},
         {"row": {**row, "status": "paused"}, "code": target_code(cfg, "check")},
         {"row": row, "code": target_code(target(script=script, values={**VALUES, "schedule": "daily"}), "check")},
+        {"row": row, "code": target_code(reread, "check")},
     ]
     python = Path(ECHOPORT) / ".venv/bin/python"
     result = subprocess.run(
@@ -699,7 +737,9 @@ def test_the_check_mode_against_echoports_own_models(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr[-3000:]
     answers = json.loads(result.stdout.strip().splitlines()[-1])
-    (converged, first), (pending, unchanged_row), (applied, updated), (after, _), (paused, _), (bad, _) = answers
+    (converged, first), (pending, unchanged_row), (applied, updated), (after, _), (paused, _), (bad, _), reread_ = (
+        answers
+    )
     assert converged == "unchanged"
     assert pending == "pending"
     # The check wrote nothing: not even updated_at moved.
@@ -709,3 +749,5 @@ def test_the_check_mode_against_echoports_own_models(tmp_path: Path) -> None:
     assert after == "unchanged"
     assert paused == "refused: RuntimeError: Refusing implicit reactivation from status=paused"
     assert bad.startswith("refused: ValidationError:")
+    assert reread_[0] == "pending"
+    assert reread_[1]["description"] == "Mail database"
