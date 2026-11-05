@@ -34,7 +34,9 @@
   `deploy_known_host_ed25519.yml`; and `target`, a register playbook's own
   Echoport target script run with a check mode (`unchanged`, `pending` or the
   playbook's refusal, nothing written) and the FastDeploy service token piped
-  into it. Parity fixtures rendered by `ansible-playbook`
+  into it. The `nyxmon_check`, `deploy_ssh_key` and `credential_file` parts of
+  the design note come with the runner slices that use them. Parity fixtures
+  rendered by `ansible-playbook`
   (`tests/parity/echoport_runner`); the drift manifest now records
   `fastdeploy_runner`, `echoport_backup` and `minio_backup` (ops-library
   `44a532ba`) and checks the vendored templates.

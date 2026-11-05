@@ -140,11 +140,31 @@ has none, or one that is undecodable, scoped to another service, without
 set (the decision of the shared upsert and of ops-control's
 `files/fastdeploy/echoport_service_token_status.py`).
 
+A check that fails instead of answering (Echoport broken, a migration
+missing) follows the probe convention: the apply runs and refuses the way the
+script does; a due token is then issued before the script runs, as the
+playbook issues it before its upsert. Only
+ORM writes are watched; a script that writes through `connection.cursor()`
+is not supported.
+
 Where a playbook's script saves on every run, the port saves only when a
 field differs: a converged row keeps its `updated_at` and skips Echoport's
 `full_clean` on that run. The script and its values reach the host in
 `manage.py shell -c`'s argument, so `RunnerTarget` refuses value names that
 look like a secret.
+
+## Not here yet
+
+Design note §3.1 also lists these parts; they come with the slices that use
+them:
+
+- `nyxmon_check`: graphyard's and vaultwarden's Nyxmon upserts differ from
+  `nyxmon_site_checks` (they re-enable a disabled check and skip without a
+  Nyxmon database), so they are ported with their runners (slices 6 and 9);
+- `deploy_ssh_key` and `credential_file`: plain `ops.secret_file` calls with
+  the role's owner and mode (the deploy key `deploy 0600`, the unifi and
+  postfixadmin JSON `root 0600`, the media JSON `root:deploy 0640`), written by
+  the runner slices that need them.
 
 ## Parity
 

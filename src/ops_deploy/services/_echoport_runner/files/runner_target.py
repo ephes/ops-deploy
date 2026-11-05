@@ -19,7 +19,8 @@
 #          "pending" otherwise, and "refused: <reason>" when the script raises
 #          or exits with another status (a playbook refusal such as "Refusing
 #          implicit reactivation", or Echoport's validation in ``save``): the
-#          deploy stops before any write.
+#          deploy stops before any write. Only ORM writes are watched: a
+#          script that writes through ``connection.cursor()`` is not supported.
 #   apply  with P["token"] set and a token due, reads it from stdin (one line)
 #          and prints "need-token" (running nothing) when none arrives; then
 #          runs the script as the playbook does and prints "applied".
