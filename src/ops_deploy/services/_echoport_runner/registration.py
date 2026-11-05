@@ -32,7 +32,7 @@ from ops_deploy.base._common import RoleConfig
 from ops_deploy.helpers.probes import probe
 from ops_deploy.services._echoport_runner import RunnerConfig, install_runner
 from ops_deploy.services._echoport_runner.access import MinioAccess, minio_access
-from ops_deploy.services._echoport_runner.render import _environment
+from ops_deploy.services._echoport_runner.render import _environment, runner_templates
 
 Package = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9+.-]*$")]
 # Ansible's fallback when the host has no default IPv4 route (homeassistant's playbook).
@@ -41,7 +41,11 @@ DEFAULT_IPV4_FALLBACK = "192.168.0.1"
 _ROUTE_PROBE = "ip -4 route get 8.8.8.8 2>/dev/null | head -n 1 || true"
 _IPV4 = re.compile(r"^(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}$")
 # Template variables that name where the runner finds its object store; they must be the access's.
-_ACCESS_VARIABLES = {"echoport_backup_minio_alias": "alias", "echoport_backup_mc_install_path": "mc"}
+_ACCESS_VARIABLES = {
+    "echoport_backup_minio_alias": "alias",
+    "echoport_backup_mc_install_path": "mc",
+    "echoport_backup_default_bucket": "bucket",
+}
 
 
 def _template_source(template: str) -> str:
@@ -56,8 +60,10 @@ class RunnerRegistration(RoleConfig):
     ``variables`` are the template variables of the playbook, resolved (the
     ``echoport_backup_*`` ones included). ``default_ipv4_variables``: names
     the playbook sets to ``ansible_default_ipv4.address | default(...)``; they
-    get the host's address, read while planning, and the template sees
-    ``ansible_default_ipv4`` as Ansible's facts give it.
+    get the host's address, read while planning (the playbook reads the
+    gathered fact, so a changed default route changes the rendered runner
+    there too), and the template sees ``ansible_default_ipv4`` with that
+    ``address`` (the only key the templates read).
     """
 
     runner: RunnerConfig
@@ -69,8 +75,8 @@ class RunnerRegistration(RoleConfig):
     @model_validator(mode="after")
     def _playbook_asserts(self) -> RunnerRegistration:
         problems = []
-        if self.runner.template is None:
-            problems.append("the runner must come from a vendored template")
+        if self.runner.template is None or self.runner.template not in runner_templates():
+            problems.append("the runner must come from a vendored runner template")
         elif "_work_dir.py.j2" not in _template_source(self.runner.template):
             # The playbooks' "Require a runner that works on the external disk only".
             problems.append(f"{self.runner.template} does not include _work_dir.py.j2")

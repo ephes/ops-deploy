@@ -122,17 +122,23 @@ secret_key=...)` runs the playbook's tasks in its order:
    scoped account (`secret_key`, never in an argument);
 4. `fastdeploy_runner` (`install_runner`) with the rendered template.
 
-The config refuses what the playbooks refuse or never do: a template without
-`_work_dir.py.j2` (their "Require a runner that works on the external disk
-only"), a runner that does not run as root with root's alias, a target
-without its scoped account (root's shared `minio` alias is retired, so the
-playbook refuses that too), and template variables that name another alias
-or `mc` than the access. Variables named in `default_ipv4_variables`
+The config refuses what the playbooks refuse or never do: a template that is
+no vendored runner, or one without `_work_dir.py.j2` (their "Require a
+runner that works on the external disk only"), a runner that does not run
+as root with root's alias, a target without its scoped account (root's
+shared `minio` alias is retired, so the playbook refuses that too), and
+template variables that name another alias, `mc` or bucket than the access.
+The include's first task, the ops-library version assert, is not ported:
+the templates are vendored and `tests/test_ops_library_drift.py` pins
+ops-library. Variables named in `default_ipv4_variables`
 (homeassistant's `homeassistant_backup_health_forwarded_for`) get the host's
 `ansible_default_ipv4.address`, the source address of
 `ip -4 route get 8.8.8.8` read while planning, and `192.168.0.1` without a
-route, as the playbook's `default(...)`; the template then sees
-`ansible_default_ipv4` as Ansible's facts give it.
+route, as the playbook's `default(...)`; the template sees
+`ansible_default_ipv4` with that `address`, the only key it reads. Like the
+playbook's gathered fact, a changed default route renders a changed runner
+on the next run (design note §3.3 proposed a fixed config value checked
+against the fact; reading the fact keeps the playbook's behaviour).
 
 The Echoport target row is not written: the A1 rows are kept by hand
 (weeknotes-home's comes from the `weeknotes_home` deploy). On a converged
@@ -208,9 +214,10 @@ them:
   `ansible-playbook` and `community.general`, the oracle test renders all of
   it again.
 - `tests/test_echoport_runner_registration.py`: the seven A1 runners render
-  through `RunnerRegistration` to the same sha256 (homeassistant with its
-  address from the host's route), and a host the playbook left plans no
-  mutating operation.
+  through `RunnerRegistration` to the same sha256 (homeassistant with the
+  fixtures' address), a host the playbook left plans no mutating operation
+  (homeassistant's address read from the fake host's route), and the runner
+  the deploy uploads carries the host's address or the fallback.
 - `tests/test_ops_library_drift.py` records `fastdeploy_runner`,
   `echoport_backup` and `minio_backup` and fails when a vendored template
   differs from ops-library's or ops-library gains or loses one.

@@ -17,11 +17,16 @@
   playbook's packages (no cache update), refuses while planning when `mc` is
   missing, sets up the target's scoped MinIO account and root's `mc` alias
   (`access.minio_access`), and installs the runner (`install_runner`). The
-  config refuses a template without `_work_dir.py.j2`, a runner not running
-  as root and a target without its scoped account (root's shared alias is
-  retired). homeassistant's `health_forwarded_for` is the host's
+  config refuses a template that is no vendored runner or lacks
+  `_work_dir.py.j2`, a runner not running as root, a target without its
+  scoped account (root's shared alias is retired) and template variables that
+  name another alias, `mc` or bucket than the access. The playbooks' ops-library
+  version assert is not ported: the templates are vendored and the drift test
+  pins ops-library. homeassistant's `health_forwarded_for` is the host's
   `ansible_default_ipv4.address` (the source address of
-  `ip -4 route get 8.8.8.8`), else Ansible's fallback `192.168.0.1`. The
+  `ip -4 route get 8.8.8.8`, read while planning as the playbook reads the
+  gathered fact; design note §3.3 proposed a config value checked against the
+  fact instead), else Ansible's fallback `192.168.0.1`. The
   first callers are ops-control's runner entries.
 
 - `services.mastodon`: the restore refuses an archive whose `media/` holds no
@@ -44,7 +49,7 @@
   A restore of an older archive no longer brings them back.
 
 - `services._echoport_runner`, the generic parts of the Echoport backup
-  runners, with no callers yet: `RunnerConfig`/`deploy_runner`, the port of
+  runners: `RunnerConfig`/`deploy_runner`, the port of
   ops-library's `fastdeploy_runner` role (root-owned script chain refused
   while planning when unsafe, `config.json` byte for byte, sudoers through
   `visudo`, `syncservices` only when `config.json` or FastDeploy's stored
