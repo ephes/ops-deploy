@@ -8,9 +8,11 @@
   sets it from `MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true`). A backup taken
   with `include_media` off still contains an empty `media/`, and restoring it
   ran `rsync --delete` over the live media, emptied it and reported success
-  (only the pre-restore media snapshot kept the files); the role behaved the
-  same. A dry run reports `media=EMPTY` and that a restore would refuse it.
-  Archives without `media/` and non-local storage are unchanged.
+  (only the pre-restore media snapshot kept the files). Same guard as
+  ops-library's `mastodon_restore` (`mastodon_restore_empty_media_confirmed`,
+  recorded in the drift manifest). A dry run reports `media=EMPTY` and that a
+  restore would refuse it. Archives without `media/` and non-local storage are
+  unchanged.
 
 - `services.paperless`: `PaperlessBackupConfig`/`deploy_paperless_backup` and
   `PaperlessRestoreConfig`/`deploy_paperless_restore`, the ports of the

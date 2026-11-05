@@ -89,7 +89,7 @@ def test_defaults_are_the_shared_roles() -> None:
     assert r.staging_dir == shared["mastodon_restore_staging_dir"]
     for flag in ("cleanup", "restart", "stop_services", "run_migrations"):
         assert getattr(r, flag) is shared[f"mastodon_restore_{flag}"]
-    # Not in the role: the empty-media guard is on by default.
+    # The empty-media guard is on by default.
     assert r.empty_media_confirmed is False
     assert r.postgres_become_user == shared["mastodon_postgres_become_user"] == "postgres"
     assert (r.postgres_host, r.postgres_port) == (shared["mastodon_postgres_host"], shared["mastodon_postgres_port"])
@@ -112,6 +112,7 @@ def test_restore_defaults_are_the_role_file() -> None:
     assert defaults["mastodon_restore_media_safety_root"] == "{{ mastodon_home_path }}/media-pre-restore"
     assert defaults["mastodon_restore_postgres_dump_binary"] == r.postgres_dump_binary
     assert defaults["mastodon_restore_postgres_psql_binary"] == r.postgres_psql_binary
+    assert defaults["mastodon_restore_empty_media_confirmed"] is r.empty_media_confirmed
 
 
 def test_connection_flags_follow_the_role() -> None:
@@ -682,6 +683,42 @@ def test_restore_script_restores_a_confirmed_empty_media_archive(tmp_path: Path)
     (safety,) = safety_dirs(p)
     assert (p["msafety"] / safety.name / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
     assert (p["pgdata"] / "mastodon.db").read_text() == "rows original\n"
+
+
+@needs_tools
+@pytest.mark.parametrize("case", ["s3", "no-media-dir"])
+def test_restore_script_without_local_media_needs_no_confirmation(tmp_path: Path, case: str) -> None:
+    p = tree(tmp_path)
+    directory = empty_media_backup(p, tmp_path)
+    extra: dict[str, Any] = {}
+    if case == "s3":
+        extra["storage_driver"] = "s3"
+    else:
+        (directory / "media").rmdir()
+        repack(directory)
+
+    done = run_restore(p, tmp_path, **extra)
+
+    assert done.returncode == 0, done.stderr + done.stdout
+    assert "media=no" in done.stdout
+    assert "holds no files" not in done.stdout + done.stderr
+    assert (media(p) / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
+
+
+@needs_tools
+def test_restore_script_a_failing_media_check_changes_nothing(tmp_path: Path) -> None:
+    p = tree(tmp_path)
+    directory = empty_media_backup(p, tmp_path)
+    (directory / "media").rmdir()
+    (directory / "media").write_text("not a directory\n")
+    repack(directory)
+
+    done = run_restore(p, tmp_path, empty_media_confirmed=True)
+
+    assert done.returncode != 0
+    assert not any(line.startswith(("systemctl", "psql", "pg_dump", "dropdb", "createdb")) for line in events(tmp_path))
+    assert (media(p) / "accounts" / "avatars" / "me.png").read_text() == "changed\n"
+    assert not p["staging"].exists()
 
 
 @needs_tools

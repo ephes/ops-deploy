@@ -239,11 +239,13 @@ the archives, a live path or a safety root, one that is `/tmp`, `/var/tmp` or a
 top-level directory, and archives or safety copies inside the media directory
 (which the restore syncs with `--delete`).
 
+The empty-media refusal is the role's (`mastodon_restore_empty_media_confirmed`,
+ops-library's guard against the role's former behaviour of emptying the live
+media and reporting success).
+
 Deliberate differences: archive names only (no absolute paths), a symlinked
-archive is refused, `dry_run` is an addition, the empty-media refusal and
-`empty_media_confirmed` are additions (ops-library's role, which emptied the
-live media and reported success, gains the same guard with
-`mastodon_restore_empty_media_confirmed`), the route lock as above (a lock
+archive is refused, `dry_run` is an addition (it also reports an empty
+`media/`), the route lock as above (a lock
 taken during the restore leaves the route, the restore finishes and then
 fails; the rollback puts the route back only when the restore wrote it and
 only while no transaction holds the lock), "installed" units are those whose

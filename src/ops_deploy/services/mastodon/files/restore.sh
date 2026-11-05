@@ -4,7 +4,7 @@
 #   is validated (`pg_restore --list` with TABLE DATA, then a full read into
 #   /dev/null) before any service is stopped;
 # - an archive whose media/ holds no files is refused at that point unless
-#   EMPTY_MEDIA_CONFIRMED (not in the role, which empties the live media);
+#   EMPTY_MEDIA_CONFIRMED (the role's mastodon_restore_empty_media_confirmed);
 # - the services must stop, otherwise nothing is dropped;
 # - after the stop a safety `pg_dump -Fc` of the live database, a snapshot of
 #   the media directory and copies of the env, unit, Traefik and nginx files
@@ -244,11 +244,16 @@ fi
 yes_no() { if [ "$1" = 1 ]; then printf yes; else printf no; fi; }
 media_text=$(yes_no "$media_enabled")
 # A backup taken without media still has an empty media/; its rsync --delete
-# would empty the live media. Only directories (or nothing) count as empty.
+# would empty the live media. Only directories (or nothing) count as empty; a
+# failing find stops the restore here, as the role's task does.
 media_empty=0
-if [ "$media_enabled" = 1 ] && [ -z "$(find "$payload/media/" -mindepth 1 ! -type d -print -quit 2>/dev/null)" ]; then
-    media_empty=1
-    media_text="EMPTY"
+if [ "$media_enabled" = 1 ]; then
+    step="Look for media files in the archive"
+    media_files=$(find "$payload/media/" -mindepth 1 ! -type d -print -quit)
+    if [ -z "$media_files" ]; then
+        media_empty=1
+        media_text="EMPTY"
+    fi
 fi
 echo "Components: database=yes, media=$media_text, env=$(yes_no "$has_env")," \
     "systemd=${#unit_files[@]} unit(s), traefik=$(yes_no "$has_traefik"), nginx=$(yes_no "$has_nginx")"
