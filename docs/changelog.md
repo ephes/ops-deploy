@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- `services._echoport_runner`, the generic parts of the Echoport backup
+  runners, with no callers yet: `RunnerConfig`/`deploy_runner`, the port of
+  ops-library's `fastdeploy_runner` role (root-owned script chain refused
+  while planning when unsafe, `config.json` byte for byte, sudoers through
+  `visudo`, `syncservices` only when `config.json` or FastDeploy's stored
+  service differs, legacy copies removed after it); the role
+  `echoport_backup`'s runner templates, vendored and rendered as Ansible
+  renders them (without heis-production and villakunterbunt-staging);
+  `access.minio_access`, `access.work_dir` and `access.known_host`, the ports
+  of ops-control's `backup_minio_account.yml`, `backup_work_dir.yml` and
+  `deploy_known_host_ed25519.yml`; and `target`, a register playbook's own
+  Echoport target script run with a check mode (`unchanged`, `pending` or the
+  playbook's refusal, nothing written) and the FastDeploy service token piped
+  into it. Parity fixtures rendered by `ansible-playbook`
+  (`tests/parity/echoport_runner`); the drift manifest now records
+  `fastdeploy_runner`, `echoport_backup` and `minio_backup` (ops-library
+  `44a532ba`) and checks the vendored templates.
+
 - `services.paperless`: `PaperlessBackupConfig`/`deploy_paperless_backup` and
   `PaperlessRestoreConfig`/`deploy_paperless_restore`, the ports of the
   `paperless_backup` and `paperless_restore` roles (ops-library `44a532ba`,

@@ -1,0 +1,1213 @@
+#!/usr/bin/env python3
+"""
+Paperless backup/restore runner for Echoport.
+
+Service-owned same-host script for Paperless:
+- Backup: PostgreSQL dump + filesystem/config/system payload, checksum manifest,
+  tarball upload to MinIO.
+- Restore: Download + checksum verify, safe extract, validation, disk precheck,
+  safety snapshot, service stop/start, restore, health check, rollback.
+"""
+
+import hashlib
+import json
+import math
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+from urllib.error import URLError
+from urllib.request import Request, urlopen
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Common configuration from Ansible
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ paperless_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/paperless-backup') }}"
+WORK_MOUNT = "{{ paperless_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ paperless_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("paperless-backup-", "paperless-restore-")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
+
+# Paperless-specific configuration from Ansible
+SITE_ROOT = "{{ paperless_echoport_backup_site_root }}"
+EXTERNAL_ROOT = "{{ paperless_echoport_backup_external_root }}"
+MEDIA_PATH = "{{ paperless_echoport_backup_media_path }}"
+DATA_PATH = "{{ paperless_echoport_backup_data_path }}"
+CONSUME_PATH = "{{ paperless_echoport_backup_consume_path }}"
+EXPORT_PATH = "{{ paperless_echoport_backup_export_path }}"
+LOGS_PATH = "{{ paperless_echoport_backup_logs_path }}"
+ENV_FILE = "{{ paperless_echoport_backup_env_file }}"
+GUNICORN_CONFIG_PATH = "{{ paperless_echoport_backup_gunicorn_config_path }}"
+TRAEFIK_CONFIG_PATH = "{{ paperless_echoport_backup_traefik_config_path }}"
+SSH_CONFIG_PATH = "{{ paperless_echoport_backup_ssh_config_path }}"
+
+SYSTEMD_UNIT_PAPERLESS = "{{ paperless_echoport_backup_systemd_unit_paperless }}"
+SYSTEMD_UNIT_WORKER = "{{ paperless_echoport_backup_systemd_unit_worker }}"
+SYSTEMD_UNIT_SCHEDULER = "{{ paperless_echoport_backup_systemd_unit_scheduler }}"
+SYSTEMD_UNIT_CONSUMER = "{{ paperless_echoport_backup_systemd_unit_consumer }}"
+
+DB_NAME = "{{ paperless_echoport_backup_db_name }}"
+DB_OWNER = "{{ paperless_echoport_backup_db_owner }}"
+POSTGRES_BECOME_USER = "{{ paperless_echoport_backup_postgres_become_user }}"
+PG_DUMP_OPTIONS = "{{ paperless_echoport_backup_pg_dump_options }}"
+
+SERVICE_PAPERLESS = "{{ paperless_echoport_backup_service_paperless }}"
+SERVICE_WORKER = "{{ paperless_echoport_backup_service_worker }}"
+SERVICE_SCHEDULER = "{{ paperless_echoport_backup_service_scheduler }}"
+SERVICE_CONSUMER = "{{ paperless_echoport_backup_service_consumer }}"
+
+HEALTH_URL = "{{ paperless_echoport_backup_health_url }}"
+HEALTH_EXPECTED_STATUS_RAW = "{{ paperless_echoport_backup_health_expected_status }}"
+HEALTH_RETRIES_RAW = "{{ paperless_echoport_backup_health_retries }}"
+HEALTH_DELAY_RAW = "{{ paperless_echoport_backup_health_delay }}"
+HEALTH_HEADERS_RAW = '{{ paperless_echoport_backup_health_headers | to_json }}'
+HEALTH_FORWARDED_FOR = "{{ paperless_echoport_backup_health_forwarded_for }}"
+HEALTH_FORWARDED_PROTO = "{{ paperless_echoport_backup_health_forwarded_proto }}"
+
+INCLUDE_CONSUME_RAW = "{{ paperless_echoport_backup_include_consume }}"
+INCLUDE_EXPORT_RAW = "{{ paperless_echoport_backup_include_export }}"
+INCLUDE_LOGS_RAW = "{{ paperless_echoport_backup_include_logs }}"
+ENFORCE_HOST_MATCH_RAW = "{{ paperless_echoport_backup_enforce_host_match }}"
+CHECK_DISK_SPACE_RAW = "{{ paperless_echoport_backup_check_disk_space }}"
+DISK_SPACE_MULTIPLIER_RAW = "{{ paperless_echoport_backup_disk_space_multiplier }}"
+CREATE_SAFETY_SNAPSHOT_RAW = "{{ paperless_echoport_backup_create_safety_snapshot }}"
+ROLLBACK_ON_FAILURE_RAW = "{{ paperless_echoport_backup_rollback_on_failure }}"
+CLEANUP_SAFETY_SNAPSHOT_RAW = "{{ paperless_echoport_backup_cleanup_safety_snapshot }}"
+VERIFY_HTTP_RAW = "{{ paperless_echoport_backup_verify_http }}"
+
+RESTORE_OWNER = "{{ paperless_echoport_backup_restore_owner }}"
+
+ALLOWED_ROOTS_RAW = "{{ paperless_echoport_backup_allowed_roots | join(',') }}"
+STOP_SERVICES_RAW = "{{ paperless_echoport_backup_stop_services | join(',') }}"
+START_SERVICES_RAW = "{{ paperless_echoport_backup_start_services | join(',') }}"
+DB_CHECK_QUERY = "{{ paperless_echoport_backup_db_check_query }}"
+
+
+def parse_bool(value: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    v = str(value).strip().lower()
+    if v in {"1", "true", "yes", "on"}:
+        return True
+    if v in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def parse_int(value: str, default: int) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def parse_float(value: str, default: float) -> float:
+    try:
+        return float(str(value).strip())
+    except Exception:
+        return default
+
+
+INCLUDE_CONSUME = parse_bool(INCLUDE_CONSUME_RAW, False)
+INCLUDE_EXPORT = parse_bool(INCLUDE_EXPORT_RAW, False)
+INCLUDE_LOGS = parse_bool(INCLUDE_LOGS_RAW, False)
+ENFORCE_HOST_MATCH = parse_bool(ENFORCE_HOST_MATCH_RAW, True)
+CHECK_DISK_SPACE = parse_bool(CHECK_DISK_SPACE_RAW, True)
+DISK_SPACE_MULTIPLIER = parse_float(DISK_SPACE_MULTIPLIER_RAW, 2.0)
+CREATE_SAFETY_SNAPSHOT = parse_bool(CREATE_SAFETY_SNAPSHOT_RAW, True)
+ROLLBACK_ON_FAILURE = parse_bool(ROLLBACK_ON_FAILURE_RAW, True)
+CLEANUP_SAFETY_SNAPSHOT = parse_bool(CLEANUP_SAFETY_SNAPSHOT_RAW, True)
+VERIFY_HTTP = parse_bool(VERIFY_HTTP_RAW, True)
+
+HEALTH_EXPECTED_STATUS = parse_int(HEALTH_EXPECTED_STATUS_RAW, 200)
+HEALTH_RETRIES = max(1, parse_int(HEALTH_RETRIES_RAW, 20))
+HEALTH_DELAY = max(1, parse_int(HEALTH_DELAY_RAW, 5))
+
+STOP_SERVICES = [item.strip() for item in STOP_SERVICES_RAW.split(",") if item.strip()]
+START_SERVICES = [item.strip() for item in START_SERVICES_RAW.split(",") if item.strip()]
+ALLOWED_ROOTS = [item.strip() for item in ALLOWED_ROOTS_RAW.split(",") if item.strip()]
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, "r") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        print(f"Failed to read config file: {exc}", file=sys.stderr)
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    payload = {"name": name, "state": state}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str | None = None,
+) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{json.dumps(result)}")
+
+
+def finish_stdout(status: str, message: str = "") -> None:
+    payload = {"event": "finish", "status": status}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(args, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
+    return result
+
+
+def build_postgres_command(cmd_args: list[str]) -> list[str]:
+    """
+    Build command to execute PostgreSQL operations as the configured user.
+
+    On root, prefer runuser to avoid sudo policy/tty prompts.
+    On non-root, use non-interactive sudo and fail fast if privileges are missing.
+    """
+    if os.getuid() == 0:
+        runuser_bin = shutil.which("runuser")
+        if runuser_bin:
+            return [runuser_bin, "-u", POSTGRES_BECOME_USER, "--", *cmd_args]
+    return ["sudo", "-n", "-u", POSTGRES_BECOME_USER, *cmd_args]
+
+
+def build_db_owner_command(cmd_args: list[str]) -> list[str]:
+    """
+    Build command to execute psql as the application database owner role.
+
+    This validates application-role permissions after restore, not only superuser
+    connectivity.
+    """
+    db_owner = (DB_OWNER or "").strip() or POSTGRES_BECOME_USER
+    if os.getuid() == 0:
+        runuser_bin = shutil.which("runuser")
+        if runuser_bin:
+            return [runuser_bin, "-u", db_owner, "--", *cmd_args]
+    return ["sudo", "-n", "-u", db_owner, *cmd_args]
+
+
+def calculate_sha256(filepath: Path) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def normalize_root(root: str) -> str:
+    normalized = os.path.realpath(root)
+    if not normalized.endswith(os.sep):
+        normalized += os.sep
+    return normalized
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def path_in_allowed_roots(path: str) -> bool:
+    if not path:
+        return False
+    resolved = os.path.realpath(path)
+    for root in ALLOWED_ROOTS:
+        normalized_root = normalize_root(root)
+        if resolved.startswith(normalized_root) or resolved == normalized_root.rstrip(os.sep):
+            return True
+    return False
+
+
+def validate_config_paths() -> None:
+    configured_paths = [
+        SITE_ROOT,
+        EXTERNAL_ROOT,
+        MEDIA_PATH,
+        DATA_PATH,
+        CONSUME_PATH,
+        EXPORT_PATH,
+        LOGS_PATH,
+        ENV_FILE,
+        GUNICORN_CONFIG_PATH,
+        TRAEFIK_CONFIG_PATH,
+        SSH_CONFIG_PATH,
+        SYSTEMD_UNIT_PAPERLESS,
+        SYSTEMD_UNIT_WORKER,
+        SYSTEMD_UNIT_SCHEDULER,
+        SYSTEMD_UNIT_CONSUMER,
+    ]
+
+    for cfg_path in configured_paths:
+        if cfg_path and not path_in_allowed_roots(cfg_path):
+            raise ValueError(f"Configured path outside allowed roots: {cfg_path}")
+
+    required_paths = [SITE_ROOT, EXTERNAL_ROOT, MEDIA_PATH, DATA_PATH, ENV_FILE]
+    for req in required_paths:
+        if not Path(req).exists():
+            raise ValueError(f"Required path does not exist: {req}")
+
+
+def ensure_binaries() -> None:
+    needed = [MC_PATH, "pg_dump", "psql", "dropdb", "createdb", "rsync", "tar", "systemctl"]
+    for binary in needed:
+        if binary.startswith("/"):
+            if not Path(binary).exists():
+                raise FileNotFoundError(f"Required binary not found: {binary}")
+        else:
+            result = run_cmd(["which", binary], check=False)
+            if result.returncode != 0:
+                raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
+
+
+def rsync_dir(src_dir: Path, dst_dir: Path, delete: bool = True) -> None:
+    if not src_dir.exists():
+        return
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    args = ["rsync", "-a"]
+    if delete:
+        args.append("--delete")
+    args.extend([f"{src_dir}/", f"{dst_dir}/"])
+    run_cmd(args)
+
+
+def copy_file_optional(src: Path, dst: Path, mode: str | None = None) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    if mode:
+        run_cmd(["chmod", mode, str(dst)])
+    return True
+
+
+def run_pg_dump(out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["pg_dump", f"--dbname={DB_NAME}"]
+    for option in shlex.split(PG_DUMP_OPTIONS or ""):
+        cmd.append(option)
+    full_cmd = build_postgres_command(cmd)
+    with open(out_path, "wb") as dump_handle:
+        result = subprocess.run(full_cmd, stdout=dump_handle, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        error = result.stderr.decode(errors="replace").strip()
+        raise RuntimeError(f"pg_dump failed: {error or 'unknown error'}")
+    run_cmd(["chmod", "0644", str(out_path)])
+
+
+def restore_database_from_dump(dump_path: Path) -> None:
+    if not dump_path.exists():
+        raise FileNotFoundError(f"Database dump not found: {dump_path}")
+    # psql runs as the postgres user, which cannot traverse the root-only run
+    # dir on the work mount: the runner opens the dump and feeds it to psql on
+    # stdin (--file -). No copy of the dump is staged anywhere else. The dump
+    # is opened before the database is dropped, so an unreadable dump fails
+    # first.
+    with open(dump_path, "rb") as dump_handle:
+        run_cmd(build_postgres_command(["dropdb", "--if-exists", DB_NAME]))
+        create_cmd = ["createdb", DB_NAME]
+        if DB_OWNER:
+            create_cmd.extend(["--owner", DB_OWNER])
+        run_cmd(build_postgres_command(create_cmd))
+
+        restore_cmd = build_postgres_command(
+            [
+                "psql",
+                "--set",
+                "ON_ERROR_STOP=1",
+                "--dbname",
+                DB_NAME,
+                "--file",
+                "-",
+            ]
+        )
+        result = subprocess.run(restore_cmd, stdin=dump_handle, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"psql restore failed: {err or 'unknown error'}")
+
+
+def reconcile_database_ownership_and_privileges() -> None:
+    owner_literal = (DB_OWNER or "").replace("'", "''")
+    if not owner_literal:
+        raise RuntimeError("DB_OWNER must be set to reconcile restored database ownership")
+
+    sql = f"""
+DO $$
+DECLARE
+  _owner text := '{owner_literal}';
+  r record;
+BEGIN
+  EXECUTE format('ALTER SCHEMA public OWNER TO %I', _owner);
+
+  FOR r IN
+    SELECT schemaname, tablename
+    FROM pg_tables
+    WHERE schemaname='public'
+  LOOP
+    EXECUTE format('ALTER TABLE %I.%I OWNER TO %I', r.schemaname, r.tablename, _owner);
+  END LOOP;
+
+  FOR r IN
+    SELECT schemaname, viewname
+    FROM pg_views
+    WHERE schemaname='public'
+  LOOP
+    EXECUTE format('ALTER VIEW %I.%I OWNER TO %I', r.schemaname, r.viewname, _owner);
+  END LOOP;
+
+  FOR r IN
+    SELECT schemaname, matviewname
+    FROM pg_matviews
+    WHERE schemaname='public'
+  LOOP
+    EXECUTE format('ALTER MATERIALIZED VIEW %I.%I OWNER TO %I', r.schemaname, r.matviewname, _owner);
+  END LOOP;
+
+  FOR r IN
+    SELECT sequence_schema, sequence_name
+    FROM information_schema.sequences
+    WHERE sequence_schema='public'
+  LOOP
+    EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I', r.sequence_schema, r.sequence_name, _owner);
+  END LOOP;
+
+  EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', _owner);
+  EXECUTE format(
+    'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO %I',
+    _owner
+  );
+  EXECUTE format(
+    'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I',
+    _owner
+  );
+
+  EXECUTE format(
+    'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES TO %I',
+    _owner
+  );
+  EXECUTE format(
+    'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I',
+    _owner
+  );
+END $$;
+"""
+
+    run_cmd(
+        build_postgres_command(
+            [
+                "psql",
+                "--set",
+                "ON_ERROR_STOP=1",
+                "--dbname",
+                DB_NAME,
+                "--command",
+                sql,
+            ]
+        )
+    )
+
+
+def run_db_health_check() -> None:
+    cmd = build_db_owner_command(["psql", "--dbname", DB_NAME, "-tAc", DB_CHECK_QUERY])
+    result = run_cmd(cmd, check=False)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"Database health check failed: {err or 'unknown error'}")
+
+
+def detect_paperless_version() -> str:
+    candidates = [
+        Path(SITE_ROOT) / "paperless-ngx" / "src" / "manage.py",
+        Path(SITE_ROOT) / "src" / "manage.py",
+    ]
+    for manage_py in candidates:
+        if not manage_py.exists():
+            continue
+        cmd = ["python3", str(manage_py), "--version"]
+        result = run_cmd(cmd, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return ""
+
+
+def make_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    entries: list[Path] = []
+    for path in root_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.resolve() == manifest_path.resolve():
+            continue
+        entries.append(path)
+
+    entries.sort(key=lambda p: p.relative_to(root_dir).as_posix())
+    lines: list[str] = []
+    for item in entries:
+        rel = item.relative_to(root_dir).as_posix()
+        lines.append(f"{calculate_sha256(item)}  ./{rel}")
+
+    manifest_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+
+def verify_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    if not manifest_path.exists():
+        raise FileNotFoundError("manifest.sha256 missing from backup archive")
+
+    lines = [line.strip() for line in manifest_path.read_text().splitlines() if line.strip()]
+    for line in lines:
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid checksum manifest line: {line}")
+        expected, rel_path = parts
+        clean_rel = rel_path[2:] if rel_path.startswith("./") else rel_path
+        target = root_dir / clean_rel
+        if not target.exists() or not target.is_file():
+            raise FileNotFoundError(f"Checksum target missing: {clean_rel}")
+        actual = calculate_sha256(target)
+        if actual != expected:
+            raise ValueError(f"Checksum mismatch for {clean_rel}: expected {expected}, got {actual}")
+
+
+def _is_safe_tar_member(member: tarfile.TarInfo, extract_dir: Path) -> tuple[bool, str]:
+    if member.isdev() or member.ischr() or member.isblk():
+        return False, f"Tarball contains device node: {member.name}"
+    if member.isfifo():
+        return False, f"Tarball contains FIFO: {member.name}"
+    if member.name.startswith("/"):
+        return False, f"Tarball contains absolute path: {member.name}"
+    if ".." in member.name:
+        return False, f"Tarball contains path traversal: {member.name}"
+
+    target_path = (extract_dir / member.name).resolve()
+    try:
+        target_path.relative_to(extract_dir.resolve())
+    except ValueError:
+        return False, f"Tarball member escapes extraction root: {member.name}"
+
+    if member.issym():
+        link_target = Path(member.linkname)
+        if link_target.is_absolute():
+            return False, f"Tarball contains symlink with absolute target: {member.name} -> {member.linkname}"
+        link_resolved = (target_path.parent / link_target).resolve()
+        try:
+            link_resolved.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball symlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    if member.islnk():
+        link_target = (extract_dir / member.linkname).resolve()
+        try:
+            link_target.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball hardlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    return True, ""
+
+
+def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        safe_members = []
+        for member in tar.getmembers():
+            is_safe, err = _is_safe_tar_member(member, extract_dir)
+            if not is_safe:
+                raise ValueError(err)
+            safe_members.append(member)
+        tar.extractall(extract_dir, members=safe_members)
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> None:
+    with tarfile.open(tarball_path, "w:gz") as tar:
+        for item in sorted(source_dir.iterdir(), key=lambda p: p.name):
+            tar.add(item, arcname=item.name)
+
+
+def get_tree_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+
+    total = 0
+    for entry in path.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except Exception:
+            continue
+    return total
+
+
+def get_free_bytes_for_path(path: Path) -> int:
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    stat = os.statvfs(candidate)
+    return stat.f_bavail * stat.f_frsize
+
+
+def estimate_current_db_size() -> int:
+    result = run_cmd(
+        build_postgres_command(["psql", "-tAc", f"SELECT pg_database_size('{DB_NAME}');"]),
+        check=False,
+    )
+    if result.returncode != 0:
+        return 0
+    text = result.stdout.strip()
+    if not text:
+        return 0
+    try:
+        return int(text)
+    except Exception:
+        return 0
+
+
+def disk_space_precheck(tarball_path: Path) -> None:
+    if not CHECK_DISK_SPACE:
+        return
+
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        extracted_payload_bytes = sum(member.size for member in tar.getmembers())
+
+    safety_snapshot_bytes = (
+        get_tree_size(Path(MEDIA_PATH))
+        + get_tree_size(Path(DATA_PATH))
+        + (get_tree_size(Path(CONSUME_PATH)) if INCLUDE_CONSUME else 0)
+        + (get_tree_size(Path(EXPORT_PATH)) if INCLUDE_EXPORT else 0)
+        + (get_tree_size(Path(LOGS_PATH)) if INCLUDE_LOGS else 0)
+        + get_tree_size(Path(ENV_FILE))
+        + get_tree_size(Path(GUNICORN_CONFIG_PATH))
+        + get_tree_size(Path(SYSTEMD_UNIT_PAPERLESS))
+        + get_tree_size(Path(SYSTEMD_UNIT_WORKER))
+        + get_tree_size(Path(SYSTEMD_UNIT_SCHEDULER))
+        + get_tree_size(Path(SYSTEMD_UNIT_CONSUMER))
+        + get_tree_size(Path(TRAEFIK_CONFIG_PATH))
+        + get_tree_size(Path(SSH_CONFIG_PATH))
+        + estimate_current_db_size()
+    )
+
+    required_bytes = int(math.ceil(extracted_payload_bytes * DISK_SPACE_MULTIPLIER) + safety_snapshot_bytes)
+
+    filesystem_paths = [Path(SITE_ROOT), Path(EXTERNAL_ROOT), Path(WORK_DIR)]
+    free_bytes = min(get_free_bytes_for_path(p) for p in filesystem_paths)
+
+    if free_bytes < required_bytes:
+        raise RuntimeError(
+            f"Insufficient disk space for restore. Required={required_bytes} bytes, free={free_bytes} bytes "
+            f"(payload={extracted_payload_bytes}, safety_snapshot={safety_snapshot_bytes}, "
+            f"multiplier={DISK_SPACE_MULTIPLIER})"
+        )
+
+
+def stop_writers() -> None:
+    for service in STOP_SERVICES:
+        run_cmd(["systemctl", "stop", service])
+
+
+def start_writers() -> None:
+    for service in START_SERVICES:
+        run_cmd(["systemctl", "start", service])
+
+
+def assert_services_active() -> None:
+    for service in START_SERVICES:
+        result = run_cmd(["systemctl", "is-active", service], check=False)
+        if result.returncode != 0 or result.stdout.strip() != "active":
+            msg = (result.stdout or result.stderr or "").strip()
+            raise RuntimeError(f"Service {service} is not active: {msg}")
+
+
+def parse_health_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    try:
+        parsed = json.loads(HEALTH_HEADERS_RAW) if HEALTH_HEADERS_RAW else {}
+        if isinstance(parsed, dict):
+            for key, value in parsed.items():
+                headers[str(key)] = str(value)
+    except Exception:
+        headers = {}
+
+    if HEALTH_FORWARDED_FOR and "X-Forwarded-For" not in headers:
+        headers["X-Forwarded-For"] = HEALTH_FORWARDED_FOR
+    if HEALTH_FORWARDED_PROTO and "X-Forwarded-Proto" not in headers:
+        headers["X-Forwarded-Proto"] = HEALTH_FORWARDED_PROTO
+    return headers
+
+
+def run_health_check() -> None:
+    headers = parse_health_headers()
+    for attempt in range(1, HEALTH_RETRIES + 1):
+        try:
+            req = Request(HEALTH_URL, method="GET", headers=headers)
+            with urlopen(req, timeout=10) as resp:
+                if resp.status == HEALTH_EXPECTED_STATUS:
+                    return
+                if HEALTH_EXPECTED_STATUS == 200 and 300 <= resp.status < 400:
+                    # Paperless endpoints may redirect to a schema view while healthy.
+                    return
+        except URLError:
+            pass
+        except Exception:
+            pass
+        if attempt < HEALTH_RETRIES:
+            time.sleep(HEALTH_DELAY)
+
+    raise RuntimeError(
+        f"Health check failed after {HEALTH_RETRIES} attempts: {HEALTH_URL} expected {HEALTH_EXPECTED_STATUS}"
+    )
+
+
+def apply_permissions() -> None:
+    if not RESTORE_OWNER:
+        return
+
+    for path in [SITE_ROOT, MEDIA_PATH, DATA_PATH]:
+        if Path(path).exists():
+            run_cmd(["chown", "-R", RESTORE_OWNER, path])
+
+    if INCLUDE_CONSUME and Path(CONSUME_PATH).exists():
+        run_cmd(["chown", "-R", RESTORE_OWNER, CONSUME_PATH])
+    if INCLUDE_EXPORT and Path(EXPORT_PATH).exists():
+        run_cmd(["chown", "-R", RESTORE_OWNER, EXPORT_PATH])
+    if INCLUDE_LOGS and Path(LOGS_PATH).exists():
+        run_cmd(["chown", "-R", RESTORE_OWNER, LOGS_PATH])
+
+
+def create_safety_snapshot(snapshot_dir: Path) -> Path:
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    storage_dir = snapshot_dir / "storage"
+    rsync_dir(Path(MEDIA_PATH), storage_dir / "media", delete=True)
+    rsync_dir(Path(DATA_PATH), storage_dir / "data", delete=True)
+
+    if INCLUDE_CONSUME and Path(CONSUME_PATH).exists():
+        rsync_dir(Path(CONSUME_PATH), storage_dir / "consume", delete=True)
+    if INCLUDE_EXPORT and Path(EXPORT_PATH).exists():
+        rsync_dir(Path(EXPORT_PATH), storage_dir / "export", delete=True)
+    if INCLUDE_LOGS and Path(LOGS_PATH).exists():
+        rsync_dir(Path(LOGS_PATH), storage_dir / "logs", delete=True)
+
+    copy_file_optional(Path(ENV_FILE), snapshot_dir / "config" / "paperless.env")
+    copy_file_optional(Path(GUNICORN_CONFIG_PATH), snapshot_dir / "config" / "gunicorn.conf.py")
+
+    copy_file_optional(Path(SYSTEMD_UNIT_PAPERLESS), snapshot_dir / "systemd" / "paperless.service")
+    copy_file_optional(Path(SYSTEMD_UNIT_WORKER), snapshot_dir / "systemd" / "paperless-worker.service")
+    copy_file_optional(Path(SYSTEMD_UNIT_SCHEDULER), snapshot_dir / "systemd" / "paperless-scheduler.service")
+    copy_file_optional(Path(SYSTEMD_UNIT_CONSUMER), snapshot_dir / "systemd" / "paperless-consumer.service")
+
+    copy_file_optional(Path(TRAEFIK_CONFIG_PATH), snapshot_dir / "traefik" / "paperless.yml")
+    copy_file_optional(Path(SSH_CONFIG_PATH), snapshot_dir / "ssh" / "sftp-scanner.conf")
+
+    db_dir = snapshot_dir / "database"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    run_pg_dump(db_dir / "paperless.sql")
+
+    return snapshot_dir
+
+
+def restore_optional_dir(stage_dir: Path, component: str, dst_path: str, should_restore: bool) -> None:
+    if not should_restore:
+        return
+    src = stage_dir / "storage" / component
+    if not src.exists():
+        return
+    rsync_dir(src, Path(dst_path), delete=True)
+
+
+def restore_files_from_stage(stage_dir: Path, components: Dict[str, bool]) -> None:
+    rsync_dir(stage_dir / "storage" / "media", Path(MEDIA_PATH), delete=True)
+    rsync_dir(stage_dir / "storage" / "data", Path(DATA_PATH), delete=True)
+
+    restore_optional_dir(stage_dir, "consume", CONSUME_PATH, bool(components.get("consume", False)))
+    restore_optional_dir(stage_dir, "export", EXPORT_PATH, bool(components.get("export", False)))
+    restore_optional_dir(stage_dir, "logs", LOGS_PATH, bool(components.get("logs", False)))
+
+    env_src = stage_dir / "config" / "paperless.env"
+    if env_src.exists():
+        Path(ENV_FILE).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(env_src, ENV_FILE)
+        run_cmd(["chmod", "0640", ENV_FILE])
+
+    gunicorn_src = stage_dir / "config" / "gunicorn.conf.py"
+    if gunicorn_src.exists():
+        Path(GUNICORN_CONFIG_PATH).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(gunicorn_src, GUNICORN_CONFIG_PATH)
+        run_cmd(["chmod", "0644", GUNICORN_CONFIG_PATH])
+
+    unit_map = {
+        "paperless.service": SYSTEMD_UNIT_PAPERLESS,
+        "paperless-worker.service": SYSTEMD_UNIT_WORKER,
+        "paperless-scheduler.service": SYSTEMD_UNIT_SCHEDULER,
+        "paperless-consumer.service": SYSTEMD_UNIT_CONSUMER,
+    }
+    for src_name, dst_path in unit_map.items():
+        src = stage_dir / "systemd" / src_name
+        if src.exists():
+            Path(dst_path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst_path)
+            run_cmd(["chmod", "0644", dst_path])
+
+    traefik_src = stage_dir / "traefik" / "paperless.yml"
+    if traefik_src.exists():
+        Path(TRAEFIK_CONFIG_PATH).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(traefik_src, TRAEFIK_CONFIG_PATH)
+        run_cmd(["chmod", "0644", TRAEFIK_CONFIG_PATH])
+
+    ssh_src = stage_dir / "ssh" / "sftp-scanner.conf"
+    if ssh_src.exists():
+        Path(SSH_CONFIG_PATH).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ssh_src, SSH_CONFIG_PATH)
+        run_cmd(["chmod", "0644", SSH_CONFIG_PATH])
+
+    run_cmd(["systemctl", "daemon-reload"])
+
+
+def run_rollback(snapshot_dir: Path) -> str | None:
+    try:
+        stop_writers()
+    except Exception:
+        pass
+
+    try:
+        restore_files_from_stage(
+            snapshot_dir,
+            {
+                "consume": INCLUDE_CONSUME,
+                "export": INCLUDE_EXPORT,
+                "logs": INCLUDE_LOGS,
+            },
+        )
+        dump = snapshot_dir / "database" / "paperless.sql"
+        if dump.exists():
+            restore_database_from_dump(dump)
+            reconcile_database_ownership_and_privileges()
+        apply_permissions()
+        start_writers()
+        assert_services_active()
+        run_db_health_check()
+        return None
+    except Exception as exc:
+        return str(exc)
+
+
+def backup(cenv: Dict) -> int:
+    target = cenv.get("ECHOPORT_TARGET", "paperless")
+    timestamp = cenv.get("ECHOPORT_TIMESTAMP") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX") or f"{target}/{timestamp}"
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+
+    work_dir = create_run_dir("paperless-backup-")
+    stage_dir = work_dir / "backup"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        emit_step("init", "running", "Validating configuration")
+        validate_config_paths()
+        ensure_binaries()
+        emit_step("init", "success", "Configuration validated")
+
+        emit_step("dump_database", "running", "Creating PostgreSQL dump")
+        db_dir = stage_dir / "database"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_dump_path = db_dir / "paperless.sql"
+        run_pg_dump(db_dump_path)
+        emit_step("dump_database", "success", f"Database dump created ({db_dump_path.stat().st_size:,} bytes)")
+
+        emit_step("copy_storage", "running", "Copying storage paths")
+        storage_dir = stage_dir / "storage"
+        rsync_dir(Path(MEDIA_PATH), storage_dir / "media", delete=True)
+        rsync_dir(Path(DATA_PATH), storage_dir / "data", delete=True)
+
+        consume_present = False
+        if INCLUDE_CONSUME and Path(CONSUME_PATH).exists():
+            rsync_dir(Path(CONSUME_PATH), storage_dir / "consume", delete=True)
+            consume_present = True
+
+        export_present = False
+        if INCLUDE_EXPORT and Path(EXPORT_PATH).exists():
+            rsync_dir(Path(EXPORT_PATH), storage_dir / "export", delete=True)
+            export_present = True
+
+        logs_present = False
+        if INCLUDE_LOGS and Path(LOGS_PATH).exists():
+            rsync_dir(Path(LOGS_PATH), storage_dir / "logs", delete=True)
+            logs_present = True
+
+        emit_step("copy_storage", "success", "Storage paths copied")
+
+        emit_step("copy_config", "running", "Copying config files")
+        env_present = copy_file_optional(Path(ENV_FILE), stage_dir / "config" / "paperless.env")
+        gunicorn_present = copy_file_optional(Path(GUNICORN_CONFIG_PATH), stage_dir / "config" / "gunicorn.conf.py")
+        emit_step("copy_config", "success", "Config files copied")
+
+        emit_step("copy_system", "running", "Copying system files")
+        systemd_paperless_present = copy_file_optional(
+            Path(SYSTEMD_UNIT_PAPERLESS), stage_dir / "systemd" / "paperless.service"
+        )
+        systemd_worker_present = copy_file_optional(
+            Path(SYSTEMD_UNIT_WORKER), stage_dir / "systemd" / "paperless-worker.service"
+        )
+        systemd_scheduler_present = copy_file_optional(
+            Path(SYSTEMD_UNIT_SCHEDULER), stage_dir / "systemd" / "paperless-scheduler.service"
+        )
+        systemd_consumer_present = copy_file_optional(
+            Path(SYSTEMD_UNIT_CONSUMER), stage_dir / "systemd" / "paperless-consumer.service"
+        )
+        traefik_present = copy_file_optional(Path(TRAEFIK_CONFIG_PATH), stage_dir / "traefik" / "paperless.yml")
+        ssh_present = copy_file_optional(Path(SSH_CONFIG_PATH), stage_dir / "ssh" / "sftp-scanner.conf")
+        emit_step("copy_system", "success", "System files copied")
+
+        manifest = {
+            "target": target,
+            "timestamp": timestamp,
+            "host": os.uname().nodename,
+            "paperless_version": detect_paperless_version(),
+            "database": {
+                "type": "postgresql",
+                "name": DB_NAME,
+                "format": "sql",
+                "filename": "database/paperless.sql",
+                "size": db_dump_path.stat().st_size,
+                "checksum_sha256": calculate_sha256(db_dump_path),
+            },
+            "components": {
+                "media": True,
+                "data": True,
+                "consume": consume_present,
+                "export": export_present,
+                "logs": logs_present,
+                "env": env_present,
+                "gunicorn": gunicorn_present,
+                "systemd_paperless": systemd_paperless_present,
+                "systemd_worker": systemd_worker_present,
+                "systemd_scheduler": systemd_scheduler_present,
+                "systemd_consumer": systemd_consumer_present,
+                "traefik": traefik_present,
+                "ssh": ssh_present,
+            },
+            "paths": {
+                "site_root": SITE_ROOT,
+                "external_root": EXTERNAL_ROOT,
+            },
+        }
+        (stage_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        make_checksum_manifest(stage_dir, stage_dir / "manifest.sha256")
+
+        emit_step("upload", "running", "Creating archive and uploading to MinIO")
+        tarball_path = work_dir / f"{timestamp}.tar.gz"
+        create_tarball(stage_dir, tarball_path)
+
+        checksum = calculate_sha256(tarball_path)
+        size_bytes = tarball_path.stat().st_size
+        key = f"{key_prefix}.tar.gz"
+
+        if not key or key == ".tar.gz":
+            raise RuntimeError(f"Invalid backup key generated from prefix '{key_prefix}'")
+
+        run_cmd([MC_PATH, "cp", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{key}"])
+        emit_step("upload", "success", f"Uploaded {size_bytes:,} bytes")
+
+        emit_step("verify", "running", "Verifying uploaded object")
+        run_cmd([MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{key}"])
+        emit_step("verify", "success", "Backup verified in MinIO")
+
+        file_count = sum(1 for path in stage_dir.rglob("*") if path.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=key,
+            size_bytes=size_bytes,
+            checksum_sha256=checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", f"Backup completed: {bucket}/{key}")
+        return 0
+
+    except Exception as exc:
+        print(f"Backup failed: {exc}", file=sys.stderr)
+        emit_step("error", "failure", str(exc))
+        emit_result(success=False, error=str(exc))
+        finish_stdout("failure", f"Backup failed: {exc}")
+        return 1
+
+    finally:
+        emit_step("cleanup", "running", "Cleaning temporary files")
+        shutil.rmtree(work_dir, ignore_errors=True)
+        emit_step("cleanup", "success", "Cleanup completed")
+
+
+def restore(cenv: Dict) -> int:
+    target = cenv.get("ECHOPORT_TARGET", "paperless")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key = cenv.get("ECHOPORT_KEY", "")
+    expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+
+    if not key:
+        error = "No storage key provided for restore"
+        emit_step("init", "failure", error)
+        emit_result(success=False, error=error)
+        finish_stdout("failure", error)
+        return 1
+
+    if not expected_checksum:
+        error = "No checksum provided for restore - cannot verify backup integrity"
+        emit_step("init", "failure", error)
+        emit_result(success=False, error=error)
+        finish_stdout("failure", error)
+        return 1
+
+    work_dir = create_run_dir("paperless-restore-")
+    tarball_path = work_dir / "backup.tar.gz"
+    extract_dir = work_dir / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    safety_snapshot_dir = work_dir / "safety"
+    destructive_phase_started = False
+
+    try:
+        emit_step("init", "running", "Validating restore configuration")
+        validate_config_paths()
+        ensure_binaries()
+        emit_step("init", "success", "Configuration validated")
+
+        emit_step("download", "running", f"Downloading {bucket}/{key}")
+        run_cmd([MC_PATH, "cp", f"{MINIO_ALIAS}/{bucket}/{key}", str(tarball_path)])
+        emit_step("download", "success", f"Downloaded backup ({tarball_path.stat().st_size:,} bytes)")
+
+        emit_step("verify_checksum", "running", "Verifying backup checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            raise ValueError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
+        emit_step("verify_checksum", "success", "Checksum verified")
+
+        emit_step("extract", "running", "Extracting backup archive")
+        safe_extract_tarball(tarball_path, extract_dir)
+        emit_step("extract", "success", "Archive extracted")
+
+        emit_step("validate", "running", "Validating backup contents")
+        manifest_path = extract_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError("manifest.json missing from backup archive")
+
+        manifest = json.loads(manifest_path.read_text())
+        components = manifest.get("components", {}) if isinstance(manifest, dict) else {}
+
+        required_paths = [
+            extract_dir / "database" / "paperless.sql",
+            extract_dir / "storage" / "media",
+            extract_dir / "storage" / "data",
+            extract_dir / "manifest.sha256",
+        ]
+        for path in required_paths:
+            if not path.exists():
+                raise FileNotFoundError(f"Required backup content missing: {path.relative_to(extract_dir)}")
+
+        if components.get("consume") and not (extract_dir / "storage" / "consume").exists():
+            raise FileNotFoundError("Manifest indicates consume=true but storage/consume missing")
+        if components.get("export") and not (extract_dir / "storage" / "export").exists():
+            raise FileNotFoundError("Manifest indicates export=true but storage/export missing")
+        if components.get("logs") and not (extract_dir / "storage" / "logs").exists():
+            raise FileNotFoundError("Manifest indicates logs=true but storage/logs missing")
+
+        verify_checksum_manifest(extract_dir, extract_dir / "manifest.sha256")
+
+        if ENFORCE_HOST_MATCH:
+            backup_host = manifest.get("host", "")
+            current_host = os.uname().nodename
+            if backup_host and backup_host != current_host:
+                raise ValueError(f"Host mismatch: backup from '{backup_host}', current host '{current_host}'")
+
+        if not Path(EXTERNAL_ROOT).exists():
+            raise RuntimeError(f"External storage root missing: {EXTERNAL_ROOT}")
+
+        emit_step("validate", "success", "Backup archive validated")
+
+        emit_step("disk_precheck", "running", "Checking available disk space")
+        disk_space_precheck(tarball_path)
+        emit_step("disk_precheck", "success", "Disk space check passed")
+
+        emit_step("safety_snapshot", "running", "Creating pre-restore safety snapshot")
+        if CREATE_SAFETY_SNAPSHOT:
+            create_safety_snapshot(safety_snapshot_dir)
+            emit_step("safety_snapshot", "success", "Safety snapshot created")
+        else:
+            emit_step("safety_snapshot", "success", "Safety snapshot skipped")
+
+        emit_step("stop_services", "running", "Stopping paperless services")
+        stop_writers()
+        destructive_phase_started = True
+        emit_step("stop_services", "success", "Paperless services stopped")
+
+        emit_step("restore_files", "running", "Restoring filesystem data")
+        restore_files_from_stage(extract_dir, components)
+        emit_step("restore_files", "success", "Filesystem data restored")
+
+        emit_step("restore_database", "running", "Restoring PostgreSQL database")
+        restore_database_from_dump(extract_dir / "database" / "paperless.sql")
+        reconcile_database_ownership_and_privileges()
+        emit_step("restore_database", "success", "Database restored and ownership reconciled")
+
+        emit_step("set_permissions", "running", "Applying ownership and permissions")
+        apply_permissions()
+        emit_step("set_permissions", "success", "Ownership and permissions updated")
+
+        emit_step("start_services", "running", "Starting paperless services")
+        start_writers()
+        emit_step("start_services", "success", "Paperless services started")
+
+        emit_step("health_check", "running", "Running post-restore verification")
+        assert_services_active()
+        run_db_health_check()
+        if VERIFY_HTTP:
+            run_health_check()
+        emit_step("health_check", "success", "Post-restore verification passed")
+
+        emit_step("rollback", "success", "Rollback not required")
+
+        files_restored = sum(1 for path in extract_dir.rglob("*") if path.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=actual_checksum,
+            file_count=files_restored,
+        )
+        finish_stdout("success", "Restore completed successfully")
+        return 0
+
+    except Exception as exc:
+        print(f"Restore failed: {exc}", file=sys.stderr)
+        message = str(exc)
+
+        emit_step("error", "failure", message)
+
+        rollback_error = None
+        if destructive_phase_started and ROLLBACK_ON_FAILURE and CREATE_SAFETY_SNAPSHOT and safety_snapshot_dir.exists():
+            emit_step("rollback", "running", "Attempting rollback from safety snapshot")
+            rollback_error = run_rollback(safety_snapshot_dir)
+            if rollback_error:
+                emit_step("rollback", "failure", f"Rollback failed: {rollback_error}")
+            else:
+                emit_step("rollback", "success", "Rollback completed")
+        elif destructive_phase_started:
+            emit_step("rollback", "failure", "Rollback skipped: no safety snapshot available")
+        else:
+            emit_step("rollback", "success", "Rollback not required")
+
+        if rollback_error:
+            message = f"{message}; rollback failed: {rollback_error}"
+
+        emit_result(success=False, error=message)
+        finish_stdout("failure", f"Restore failed: {message}")
+        return 1
+
+    finally:
+        emit_step("cleanup", "running", "Cleaning temporary files")
+        if CREATE_SAFETY_SNAPSHOT and CLEANUP_SAFETY_SNAPSHOT:
+            shutil.rmtree(safety_snapshot_dir, ignore_errors=True)
+        shutil.rmtree(work_dir, ignore_errors=True)
+        emit_step("cleanup", "success", "Cleanup completed")
+
+
+def main() -> int:
+    try:
+        config = read_config_file() or {}
+        context = config.get("context", {}) if isinstance(config, dict) else {}
+        env_context = context.get("env", {}) if isinstance(context, dict) else {}
+        if not isinstance(env_context, dict):
+            env_context = {}
+        if not env_context and isinstance(context, dict):
+            env_context = context
+
+        def get_ctx(key: str, default: str = "") -> str:
+            if key in env_context:
+                return str(env_context[key])
+            return os.environ.get(key, default)
+
+        action = get_ctx("ECHOPORT_ACTION", "backup").strip().lower()
+        cenv = {
+            "ECHOPORT_ACTION": action,
+            "ECHOPORT_TARGET": get_ctx("ECHOPORT_TARGET", "paperless"),
+            "ECHOPORT_TIMESTAMP": get_ctx("ECHOPORT_TIMESTAMP", ""),
+            "ECHOPORT_BUCKET": get_ctx("ECHOPORT_BUCKET", DEFAULT_BUCKET),
+            "ECHOPORT_KEY_PREFIX": get_ctx("ECHOPORT_KEY_PREFIX", ""),
+            "ECHOPORT_KEY": get_ctx("ECHOPORT_KEY", ""),
+            "ECHOPORT_CHECKSUM": get_ctx("ECHOPORT_CHECKSUM", ""),
+        }
+
+        if action == "restore":
+            return restore(cenv)
+        if action != "backup":
+            raise ValueError(f"Unsupported ECHOPORT_ACTION: {action}")
+        return backup(cenv)
+
+    except Exception as exc:
+        print(f"Fatal error: {exc}", file=sys.stderr)
+        emit_step("error", "failure", str(exc))
+        emit_result(success=False, error=str(exc))
+        finish_stdout("failure", f"Unexpected error: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    # Same as other service-owned scripts: escalate to root via sudo chain.
+    # With two sudo rules configured, this naturally does:
+    # fastdeploy -> deploy -> root
+    if os.getuid() != 0:
+        script_path = os.path.abspath(__file__)
+        result = subprocess.run(["sudo", "-n", script_path] + sys.argv[1:], stdout=sys.stdout, stderr=sys.stderr)
+        sys.exit(result.returncode)
+
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        print(f"Backup/restore failed with error: {exc}", file=sys.stderr)
+        emit_step("error", "failure", str(exc))
+        emit_result(success=False, error=str(exc))
+        finish_stdout("failure", f"Unexpected error: {exc}")
+        sys.exit(1)

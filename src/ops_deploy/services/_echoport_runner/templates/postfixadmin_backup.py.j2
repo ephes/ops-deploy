@@ -1,0 +1,1024 @@
+#!/usr/bin/env python3
+"""
+PostfixAdmin backup/restore runner for Echoport.
+
+Service-owned same-host script:
+- Backup: capture PostfixAdmin config files + admin tables, create manifest +
+  checksum manifest, upload tarball to MinIO.
+- Restore: download + verify, safe extract, optional safety snapshot,
+  stop/start services, restore DB rows and configs, health verification.
+
+Fail-closed: the backup fails when a required part (admin with at least one
+row, domain_admins, config.local.php, the nginx site, the PHP pool, the schema
+version) cannot be written. Optional parts (the log table, the Traefik config)
+are left out of the manifest with a warning. The manifest lists exactly the
+tables and config files in the archive, and a restore refuses an archive that
+lacks a required part or a listed one before it changes anything.
+"""
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Shared configuration
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ postfixadmin_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/postfixadmin-backup') }}"
+WORK_MOUNT = "{{ postfixadmin_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ postfixadmin_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("postfixadmin_backup_", "postfixadmin_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
+
+# PostfixAdmin-specific configuration
+INSTALL_PATH = "{{ postfixadmin_echoport_backup_install_path }}"
+CONFIG_FILE = "{{ postfixadmin_echoport_backup_config_file }}"
+NGINX_SITE = "{{ postfixadmin_echoport_backup_nginx_site }}"
+TRAEFIK_CONFIG = "{{ postfixadmin_echoport_backup_traefik_config }}"
+PHP_ROOT = "{{ postfixadmin_echoport_backup_php_root }}"
+DB_CREDENTIALS_FILE = "{{ postfixadmin_echoport_backup_db_credentials_file }}"
+
+CONFIG_OWNER = "{{ postfixadmin_echoport_backup_config_owner }}"
+SYSTEM_OWNER = "{{ postfixadmin_echoport_backup_system_owner }}"
+HEALTH_URL = "{{ postfixadmin_echoport_backup_health_url }}"
+HEALTH_RETRIES_RAW = "{{ postfixadmin_echoport_backup_health_retries }}"
+HEALTH_DELAY_RAW = "{{ postfixadmin_echoport_backup_health_delay }}"
+START_TIMEOUT_RAW = "{{ postfixadmin_echoport_backup_start_timeout }}"
+CREATE_SAFETY_SNAPSHOT_RAW = "{{ postfixadmin_echoport_backup_create_safety_snapshot | default(true) }}"
+ROLLBACK_ON_FAILURE_RAW = "{{ postfixadmin_echoport_backup_rollback_on_failure | default(true) }}"
+
+ALLOWED_ROOTS_RAW = "{{ postfixadmin_echoport_backup_allowed_roots | join(',') }}"
+
+MANIFEST_FORMAT_VERSION = 2
+REQUIRED_TABLES = ("admin", "domain_admins")
+OPTIONAL_TABLES = ("log",)
+TABLE_QUERIES = {
+    "admin": "SELECT * FROM admin ORDER BY username",
+    "domain_admins": "SELECT * FROM domain_admins ORDER BY username, domain",
+    "log": "SELECT * FROM log ORDER BY timestamp DESC LIMIT 10000",
+}
+IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def parse_int(value: str, default: int) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def parse_bool(value: str, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+HEALTH_RETRIES = max(1, parse_int(HEALTH_RETRIES_RAW, 20))
+HEALTH_DELAY = max(1, parse_int(HEALTH_DELAY_RAW, 3))
+START_TIMEOUT = max(20, parse_int(START_TIMEOUT_RAW, 120))
+CREATE_SAFETY_SNAPSHOT = parse_bool(CREATE_SAFETY_SNAPSHOT_RAW, True)
+ROLLBACK_ON_FAILURE = parse_bool(ROLLBACK_ON_FAILURE_RAW, True)
+ALLOWED_ROOTS = [item.strip() for item in ALLOWED_ROOTS_RAW.split(",") if item.strip()]
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, "r") as handle:
+            return json.load(handle)
+    except Exception:
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    payload = {"name": name, "state": state}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def emit_result(
+    success: bool,
+    bucket: str = "",
+    key: str = "",
+    size_bytes: int = 0,
+    checksum_sha256: str = "",
+    file_count: int = 0,
+    error: str | None = None,
+) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+    emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{json.dumps(result)}")
+
+
+def finish_stdout(status: str, message: str = "") -> None:
+    payload = {"event": "finish", "status": status}
+    if message:
+        payload["message"] = message
+    _emit(payload)
+
+
+def safe_error(exc: Exception) -> str:
+    if isinstance(exc, subprocess.CalledProcessError):
+        stderr = (exc.stderr or "").strip()
+        stdout = (exc.stdout or "").strip()
+        if stderr:
+            return stderr
+        if stdout:
+            return stdout
+        return f"Command failed with exit code {exc.returncode}"
+    return str(exc)
+
+
+def run_cmd(args: list[str], check: bool = True, env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
+    result = subprocess.run(args, capture_output=True, text=True, env=env)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
+    return result
+
+
+def calculate_sha256(filepath: Path) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def normalize_root(root: str) -> str:
+    normalized = os.path.realpath(root)
+    if not normalized.endswith(os.sep):
+        normalized += os.sep
+    return normalized
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def path_in_allowed_roots(path: str) -> bool:
+    if not path:
+        return False
+    resolved = os.path.realpath(path)
+    for root in ALLOWED_ROOTS:
+        normalized_root = normalize_root(root)
+        if resolved.startswith(normalized_root) or resolved == normalized_root.rstrip(os.sep):
+            return True
+    return False
+
+
+def detect_php_service() -> str:
+    php_root = Path(PHP_ROOT)
+    if not php_root.exists():
+        return "php-fpm"
+    candidates = sorted(php_root.glob("*/fpm/pool.d/postfixadmin.conf"))
+    if not candidates:
+        return "php-fpm"
+    match = re.match(r"^(\d+\.\d+)$", candidates[0].parts[-4])
+    if match:
+        return f"php{match.group(1)}-fpm"
+    return "php-fpm"
+
+
+def pool_file_for_service(php_service: str) -> Path:
+    service_match = re.match(r"^php(\d+\.\d+)-fpm$", php_service)
+    if service_match:
+        return Path(PHP_ROOT) / service_match.group(1) / "fpm" / "pool.d" / "postfixadmin.conf"
+
+    candidates = sorted(Path(PHP_ROOT).glob("*/fpm/pool.d/postfixadmin.conf"))
+    if candidates:
+        return candidates[0]
+    return Path(PHP_ROOT) / "fpm" / "pool.d" / "postfixadmin.conf"
+
+
+def config_parts(php_service: str) -> list[tuple[str, Path, str, str, bool]]:
+    """(archive name, live path, owner, mode, required) of every config file."""
+    return [
+        ("config.local.php", Path(CONFIG_FILE), CONFIG_OWNER, "0640", True),
+        ("nginx-postfixadmin.conf", Path(NGINX_SITE), SYSTEM_OWNER, "0644", True),
+        ("traefik-postfixadmin.yml", Path(TRAEFIK_CONFIG), SYSTEM_OWNER, "0644", False),
+        ("php-postfixadmin.conf", pool_file_for_service(php_service), SYSTEM_OWNER, "0644", True),
+    ]
+
+
+REQUIRED_CONFIG_FILES = ("config.local.php", "nginx-postfixadmin.conf", "php-postfixadmin.conf")
+KNOWN_CONFIG_FILES = REQUIRED_CONFIG_FILES + ("traefik-postfixadmin.yml",)
+
+
+def validate_config_paths(action: str = "backup") -> None:
+    php_service = detect_php_service()
+    configured_paths = [
+        INSTALL_PATH,
+        CONFIG_FILE,
+        NGINX_SITE,
+        TRAEFIK_CONFIG,
+        str(pool_file_for_service(php_service)),
+        DB_CREDENTIALS_FILE,
+    ]
+    for cfg_path in configured_paths:
+        if cfg_path and not path_in_allowed_roots(cfg_path):
+            raise ValueError(f"Configured path outside allowed roots: {cfg_path}")
+
+    if action not in ("backup", "restore"):
+        raise ValueError(f"Unsupported action for path validation: {action}")
+
+    required_paths = [DB_CREDENTIALS_FILE]
+    if action == "backup":
+        required_paths.extend([INSTALL_PATH, NGINX_SITE])
+    for req in required_paths:
+        if not Path(req).exists():
+            raise ValueError(f"Required path does not exist: {req}")
+
+
+def ensure_binaries() -> None:
+    needed = [MC_PATH, "psql", "rsync", "tar", "systemctl", "chown", "chmod", "curl", "nginx"]
+    for binary in needed:
+        if binary.startswith("/"):
+            if not Path(binary).exists():
+                raise FileNotFoundError(f"Required binary not found: {binary}")
+        else:
+            result = run_cmd(["which", binary], check=False)
+            if result.returncode != 0:
+                raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
+
+
+def read_db_credentials() -> Dict[str, Any]:
+    path = Path(DB_CREDENTIALS_FILE)
+    if not path.exists() or not path.is_file():
+        raise FileNotFoundError(f"DB credentials file missing: {DB_CREDENTIALS_FILE}")
+    creds = json.loads(path.read_text())
+    required = ["host", "port", "database", "username", "password"]
+    for key in required:
+        if key not in creds or str(creds[key]).strip() == "":
+            raise ValueError(f"Missing DB credential field: {key}")
+    return creds
+
+
+def psql_env(creds: Dict[str, Any]) -> Dict[str, str]:
+    env = os.environ.copy()
+    env["PGHOST"] = str(creds["host"])
+    env["PGPORT"] = str(creds["port"])
+    env["PGDATABASE"] = str(creds["database"])
+    env["PGUSER"] = str(creds["username"])
+    env["PGPASSWORD"] = str(creds["password"])
+    return env
+
+
+def run_psql(sql: str, creds: Dict[str, Any], check: bool = True) -> subprocess.CompletedProcess:
+    return run_cmd(["psql", "-X", "-v", "ON_ERROR_STOP=1", "-qAt", "-c", sql], check=check, env=psql_env(creds))
+
+
+def table_exists(table_name: str, creds: Dict[str, Any]) -> bool:
+    sql = f"SELECT to_regclass('public.{table_name}');"
+    result = run_psql(sql, creds)
+    value = result.stdout.strip()
+    return value.endswith(table_name)
+
+
+def export_table_as_json(sql_select: str, creds: Dict[str, Any]) -> list[Dict[str, Any]]:
+    export_sql = f"SELECT row_to_json(t)::text FROM ({sql_select}) t;"
+    result = run_psql(export_sql, creds)
+    rows: list[Dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        rows.append(json.loads(line))
+    return rows
+
+
+def read_schema_version(creds: Dict[str, Any]) -> int:
+    result = run_psql("SELECT value FROM config WHERE name = 'version';", creds)
+    value = result.stdout.strip()
+    if not re.fullmatch(r"[0-9]+", value):
+        raise RuntimeError(f"PostfixAdmin schema version (config.version) missing or not numeric: {value!r}")
+    return int(value)
+
+
+def table_columns(table_name: str, creds: Dict[str, Any]) -> set[str]:
+    sql = (
+        "SELECT column_name FROM information_schema.columns "
+        f"WHERE table_schema = current_schema() AND table_name = {sql_literal(table_name)};"
+    )
+    return {line.strip() for line in run_psql(sql, creds).stdout.splitlines() if line.strip()}
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def copy_file_optional(src: Path, dst: Path) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> None:
+    with tarfile.open(tarball_path, "w:gz") as tar:
+        for item in sorted(source_dir.iterdir(), key=lambda p: p.name):
+            tar.add(item, arcname=item.name)
+
+
+def get_tree_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    total = 0
+    for entry in path.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except Exception:
+            continue
+    return total
+
+
+def get_free_bytes_for_path(path: Path) -> int:
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    stat = os.statvfs(candidate)
+    return stat.f_bavail * stat.f_frsize
+
+
+def disk_space_precheck(tarball_path: Path, temp_root: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        extracted_payload_size = sum(member.size for member in tar.getmembers())
+    required_temp = int(extracted_payload_size * 1.20)
+
+    config_restore_footprint = (
+        get_tree_size(Path(CONFIG_FILE))
+        + get_tree_size(Path(NGINX_SITE))
+        + get_tree_size(Path(TRAEFIK_CONFIG))
+        + get_tree_size(pool_file_for_service(detect_php_service()))
+    )
+    required_data = int(max(config_restore_footprint, extracted_payload_size) * 1.10)
+
+    free_temp = get_free_bytes_for_path(temp_root)
+    free_data = get_free_bytes_for_path(Path(INSTALL_PATH))
+    if free_temp < required_temp:
+        raise RuntimeError(f"Insufficient temp disk space: required={required_temp} free={free_temp}")
+    if free_data < required_data:
+        raise RuntimeError(f"Insufficient target disk space: required={required_data} free={free_data}")
+
+
+def _is_safe_tar_member(member: tarfile.TarInfo, extract_dir: Path) -> tuple[bool, str]:
+    if member.isdev() or member.ischr() or member.isblk():
+        return False, f"Tarball contains device node: {member.name}"
+    if member.isfifo():
+        return False, f"Tarball contains FIFO: {member.name}"
+    if member.name.startswith("/"):
+        return False, f"Tarball contains absolute path: {member.name}"
+    if ".." in member.name:
+        return False, f"Tarball contains path traversal: {member.name}"
+
+    target_path = (extract_dir / member.name).resolve()
+    try:
+        target_path.relative_to(extract_dir.resolve())
+    except ValueError:
+        return False, f"Tarball member escapes extraction root: {member.name}"
+
+    if member.issym():
+        link_target = Path(member.linkname)
+        if link_target.is_absolute():
+            return False, f"Tarball symlink with absolute target: {member.name} -> {member.linkname}"
+        link_resolved = (target_path.parent / link_target).resolve()
+        try:
+            link_resolved.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball symlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    if member.islnk():
+        link_target = (extract_dir / member.linkname).resolve()
+        try:
+            link_target.relative_to(extract_dir.resolve())
+        except ValueError:
+            return False, f"Tarball hardlink escapes extraction root: {member.name} -> {member.linkname}"
+
+    return True, ""
+
+
+def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        safe_members = []
+        for member in tar.getmembers():
+            is_safe, err = _is_safe_tar_member(member, extract_dir)
+            if not is_safe:
+                raise ValueError(err)
+            safe_members.append(member)
+        tar.extractall(extract_dir, members=safe_members)
+
+
+def make_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    entries: list[Path] = []
+    for path in root_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.resolve() == manifest_path.resolve():
+            continue
+        entries.append(path)
+    entries.sort(key=lambda p: p.relative_to(root_dir).as_posix())
+
+    lines: list[str] = []
+    for item in entries:
+        rel = item.relative_to(root_dir).as_posix()
+        lines.append(f"{calculate_sha256(item)}  ./{rel}")
+    manifest_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+
+def verify_checksum_manifest(root_dir: Path, manifest_path: Path) -> None:
+    if not manifest_path.exists():
+        raise FileNotFoundError("manifest.sha256 missing from backup archive")
+
+    lines = [line.strip() for line in manifest_path.read_text().splitlines() if line.strip()]
+    for line in lines:
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid checksum manifest line: {line}")
+        expected, rel_path = parts
+        clean_rel = rel_path[2:] if rel_path.startswith("./") else rel_path
+        target = root_dir / clean_rel
+        if not target.exists() or not target.is_file():
+            raise FileNotFoundError(f"Checksum target missing: {clean_rel}")
+        actual = calculate_sha256(target)
+        if actual != expected:
+            raise ValueError(f"Checksum mismatch for {clean_rel}: expected {expected}, got {actual}")
+
+
+def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> None:
+    run_cmd([MC_PATH, "cp", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{key}"])
+
+
+def download_from_minio(bucket: str, key: str, dest_path: Path) -> None:
+    run_cmd([MC_PATH, "cp", f"{MINIO_ALIAS}/{bucket}/{key}", str(dest_path)])
+    if not dest_path.exists():
+        raise RuntimeError(f"Download failed, file missing at {dest_path}")
+
+
+def service_is_active(service_name: str) -> bool:
+    result = run_cmd(["systemctl", "is-active", service_name], check=False)
+    return result.stdout.strip() == "active"
+
+
+def wait_service_active(service_name: str, timeout_seconds: int = START_TIMEOUT) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if service_is_active(service_name):
+            return
+        time.sleep(2)
+    raise RuntimeError(f"Service did not become active in {timeout_seconds}s: {service_name}")
+
+
+def run_health_check() -> None:
+    for attempt in range(1, HEALTH_RETRIES + 1):
+        result = run_cmd(["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", HEALTH_URL], check=False)
+        if result.returncode == 0 and result.stdout.strip() in ("200", "302"):
+            return
+        if attempt < HEALTH_RETRIES:
+            time.sleep(HEALTH_DELAY)
+    raise RuntimeError(f"Health check failed: {HEALTH_URL}")
+
+
+def sql_literal(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    escaped = str(value).replace("'", "''")
+    return f"'{escaped}'"
+
+
+def admin_upsert_sql(row: Dict[str, Any], target_columns: set[str]) -> str:
+    """Upsert one admin row with every column it has (TOTP secret, phone, ...).
+
+    Archives from before format 2 hold only username, password, superadmin and
+    active; their created/modified are set to NOW() as before.
+    """
+    if not isinstance(row, dict) or not row.get("username") or "password" not in row:
+        raise ValueError("admin row without username or password")
+    unknown = sorted(set(row) - target_columns)
+    if unknown:
+        raise ValueError(f"admin row has columns the target admin table lacks: {', '.join(unknown)}")
+    columns = sorted(row)
+    for column in columns:
+        if not IDENTIFIER_RE.fullmatch(column):
+            raise ValueError(f"Invalid admin column name: {column!r}")
+    values = [sql_literal(row[column]) for column in columns]
+    defaulted = [c for c in ("created", "modified") if c in target_columns and c not in row]
+    insert_columns = columns + defaulted
+    values += ["NOW()"] * len(defaulted)
+    updates = [
+        f"{column} = EXCLUDED.{column}"
+        for column in insert_columns
+        if column != "username" and not (column == "created" and column in defaulted)
+    ]
+    return (
+        f"INSERT INTO admin ({', '.join(insert_columns)}) VALUES ({', '.join(values)}) "
+        f"ON CONFLICT (username) DO UPDATE SET {', '.join(updates)};"
+    )
+
+
+def restore_admin_rows(rows: list[Dict[str, Any]], creds: Dict[str, Any]) -> None:
+    target_columns = table_columns("admin", creds)
+    statements = [admin_upsert_sql(row, target_columns) for row in rows]
+    for sql in statements:
+        run_psql(sql, creds)
+
+
+def restore_domain_admin_rows(rows: list[Dict[str, Any]], creds: Dict[str, Any]) -> None:
+    for row in rows:
+        sql = (
+            "INSERT INTO domain_admins (username, domain, active, created) "
+            f"SELECT {sql_literal(row.get('username'))}, {sql_literal(row.get('domain'))}, "
+            f"{sql_literal(row.get('active'))}, NOW() "
+            "WHERE NOT EXISTS ("
+            f"SELECT 1 FROM domain_admins WHERE username = {sql_literal(row.get('username'))} "
+            f"AND domain = {sql_literal(row.get('domain'))}"
+            ");"
+        )
+        run_psql(sql, creds)
+
+
+def db_smoke_check(creds: Dict[str, Any]) -> None:
+    run_psql("SELECT 1;", creds)
+    if not table_exists("admin", creds):
+        raise RuntimeError("PostfixAdmin admin table missing after restore")
+
+
+def admin_count_check(creds: Dict[str, Any], expected_count: int) -> None:
+    result = run_psql("SELECT COUNT(*) FROM admin;", creds)
+    try:
+        actual = int(result.stdout.strip())
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse admin row count after restore: {result.stdout.strip()}") from exc
+    if actual < expected_count:
+        raise RuntimeError(
+            f"Admin row count too low after restore: expected>={expected_count}, actual={actual}"
+        )
+
+
+def create_safety_snapshot(snapshot_dir: Path, creds: Dict[str, Any], php_service: str) -> None:
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    config_out = snapshot_dir / "config"
+    db_out = snapshot_dir / "db"
+    config_out.mkdir(parents=True, exist_ok=True)
+    db_out.mkdir(parents=True, exist_ok=True)
+
+    copy_file_optional(Path(CONFIG_FILE), config_out / "config.local.php")
+    copy_file_optional(Path(NGINX_SITE), config_out / "nginx-postfixadmin.conf")
+    copy_file_optional(Path(TRAEFIK_CONFIG), config_out / "traefik-postfixadmin.yml")
+    copy_file_optional(pool_file_for_service(php_service), config_out / "php-postfixadmin.conf")
+
+    write_json(db_out / "admin.json", export_table_as_json(TABLE_QUERIES["admin"], creds))
+
+    if table_exists("domain_admins", creds):
+        domain_rows = export_table_as_json(TABLE_QUERIES["domain_admins"], creds)
+    else:
+        domain_rows = []
+    write_json(db_out / "domain_admins.json", domain_rows)
+
+
+def restore_from_safety_snapshot(snapshot_dir: Path, creds: Dict[str, Any], php_service: str) -> None:
+    config_in = snapshot_dir / "config"
+    db_in = snapshot_dir / "db"
+
+    admin_path = db_in / "admin.json"
+    if not admin_path.exists():
+        raise RuntimeError("Safety snapshot missing admin.json")
+    admin_rows = json.loads(admin_path.read_text())
+    restore_admin_rows(admin_rows, creds)
+
+    domain_path = db_in / "domain_admins.json"
+    if domain_path.exists():
+        domain_rows = json.loads(domain_path.read_text())
+        restore_domain_admin_rows(domain_rows, creds)
+
+    if copy_file_optional(config_in / "config.local.php", Path(CONFIG_FILE)):
+        run_cmd(["chown", CONFIG_OWNER, CONFIG_FILE])
+        run_cmd(["chmod", "0640", CONFIG_FILE])
+    if copy_file_optional(config_in / "nginx-postfixadmin.conf", Path(NGINX_SITE)):
+        run_cmd(["chown", SYSTEM_OWNER, NGINX_SITE])
+        run_cmd(["chmod", "0644", NGINX_SITE])
+    if copy_file_optional(config_in / "traefik-postfixadmin.yml", Path(TRAEFIK_CONFIG)):
+        run_cmd(["chown", SYSTEM_OWNER, TRAEFIK_CONFIG])
+        run_cmd(["chmod", "0644", TRAEFIK_CONFIG])
+    pool_file = pool_file_for_service(php_service)
+    if copy_file_optional(config_in / "php-postfixadmin.conf", pool_file):
+        run_cmd(["chown", SYSTEM_OWNER, str(pool_file)])
+        run_cmd(["chmod", "0644", str(pool_file)])
+
+
+def validate_archive(extract_dir: Path, creds: Dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Refuse an archive with a missing required or listed part.
+
+    Returns the tables and config files to restore. Runs before anything is
+    changed. Archives from before format 2 list no config files; for them the
+    known config files present in the archive are used.
+    """
+    manifest_path = extract_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError("Backup archive missing manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    db = manifest.get("db") if isinstance(manifest, dict) else None
+    tables = db.get("tables") if isinstance(db, dict) else None
+    if not isinstance(tables, list) or not tables:
+        raise RuntimeError("manifest.json lists no tables")
+    unknown_tables = sorted(set(tables) - set(REQUIRED_TABLES + OPTIONAL_TABLES))
+    if unknown_tables:
+        raise RuntimeError(f"manifest.json lists unknown tables: {', '.join(unknown_tables)}")
+
+    config_files = manifest.get("config_files")
+    if config_files is None:
+        config_files = [name for name in KNOWN_CONFIG_FILES if (extract_dir / "config" / name).is_file()]
+    if not isinstance(config_files, list):
+        raise RuntimeError("manifest.json config_files is not a list")
+    unknown_files = sorted(set(config_files) - set(KNOWN_CONFIG_FILES))
+    if unknown_files:
+        raise RuntimeError(f"manifest.json lists unknown config files: {', '.join(unknown_files)}")
+
+    missing = [f"table {t}" for t in REQUIRED_TABLES if t not in tables]
+    missing += [f"config {c}" for c in REQUIRED_CONFIG_FILES if c not in config_files]
+    missing += [f"db/{t}.json" for t in tables if not (extract_dir / "db" / f"{t}.json").is_file()]
+    missing += [f"config/{c}" for c in config_files if not (extract_dir / "config" / c).is_file()]
+    if missing:
+        raise RuntimeError(f"Backup archive incomplete, missing: {', '.join(missing)}")
+
+    admin_rows = json.loads((extract_dir / "db" / "admin.json").read_text())
+    if not isinstance(admin_rows, list) or not admin_rows:
+        raise RuntimeError("Backup archive admin.json holds no admin rows")
+    target_columns = table_columns("admin", creds)
+    for row in admin_rows:
+        admin_upsert_sql(row, target_columns)
+    domain_rows = json.loads((extract_dir / "db" / "domain_admins.json").read_text())
+    if not isinstance(domain_rows, list):
+        raise RuntimeError("Backup archive domain_admins.json is not a list")
+
+    backup_schema = db.get("schema_version")
+    if backup_schema is not None:
+        target_schema = read_schema_version(creds)
+        if int(backup_schema) > target_schema:
+            raise RuntimeError(
+                f"Backup has PostfixAdmin schema version {backup_schema}, the target has {target_schema}; "
+                "upgrade PostfixAdmin on the target first"
+            )
+    return tables, config_files
+
+
+def backup_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating backup configuration")
+    target_name = cenv.get("ECHOPORT_TARGET", "postfixadmin")
+    run_id = cenv.get("ECHOPORT_RUN_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key_prefix = cenv.get(
+        "ECHOPORT_KEY_PREFIX",
+        f"{target_name}/{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}",
+    )
+
+    validate_config_paths("backup")
+    ensure_binaries()
+    creds = read_db_credentials()
+    php_service = detect_php_service()
+    emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
+
+    work_dir = create_run_dir("postfixadmin_backup_")
+
+    try:
+        payload = work_dir / "payload"
+        db_out = payload / "db"
+        config_out = payload / "config"
+        db_out.mkdir(parents=True, exist_ok=True)
+        config_out.mkdir(parents=True, exist_ok=True)
+
+        warnings: list[str] = []
+        emit_step("backup_db", "running", "Backing up PostfixAdmin admin tables")
+        # Required tables: a failing query fails the backup; admin needs a row.
+        tables: list[str] = []
+        for table in REQUIRED_TABLES:
+            rows = export_table_as_json(TABLE_QUERIES[table], creds)
+            if table == "admin" and not rows:
+                raise RuntimeError("admin table is empty; refusing to write a backup without an admin account")
+            write_json(db_out / f"{table}.json", rows)
+            tables.append(table)
+        for table in OPTIONAL_TABLES:
+            try:
+                write_json(db_out / f"{table}.json", export_table_as_json(TABLE_QUERIES[table], creds))
+                tables.append(table)
+            except Exception as exc:
+                (db_out / f"{table}.json").unlink(missing_ok=True)
+                warnings.append(f"table {table} skipped: {safe_error(exc)}")
+        schema_version = read_schema_version(creds)
+        emit_step("backup_db", "success", f"Tables exported: {', '.join(tables)} (schema {schema_version})")
+
+        emit_step("copy_config", "running", "Copying config files")
+        config_files: list[str] = []
+        for name, src, _owner, _mode, required in config_parts(php_service):
+            if required:
+                if not copy_file_optional(src, config_out / name):
+                    raise FileNotFoundError(f"Required config file missing: {src}")
+                config_files.append(name)
+                continue
+            try:
+                if copy_file_optional(src, config_out / name):
+                    config_files.append(name)
+                else:
+                    warnings.append(f"config {name} skipped: {src} missing")
+            except Exception as exc:
+                (config_out / name).unlink(missing_ok=True)
+                warnings.append(f"config {name} skipped: {safe_error(exc)}")
+        for warning in warnings:
+            emit_step("copy_config", "running", f"WARNING: {warning}")
+        emit_step("copy_config", "success", f"Config files copied: {', '.join(config_files)}")
+
+        manifest = {
+            "format_version": MANIFEST_FORMAT_VERSION,
+            "target": target_name,
+            "run_id": run_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "php_service": php_service,
+            "paths": {
+                "install_path": INSTALL_PATH,
+                "config_file": CONFIG_FILE,
+                "nginx_site": NGINX_SITE,
+                "traefik_config": TRAEFIK_CONFIG,
+            },
+            "db": {
+                "database": str(creds.get("database")),
+                "username": str(creds.get("username")),
+                "host": str(creds.get("host")),
+                "port": int(creds.get("port")),
+                "tables": tables,
+                "schema_version": schema_version,
+            },
+            "config_files": config_files,
+            "warnings": warnings,
+        }
+        (payload / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        make_checksum_manifest(payload, payload / "manifest.sha256")
+
+        emit_step("upload", "running", "Creating archive and uploading")
+        tarball_path = work_dir / "backup.tar.gz"
+        create_tarball(payload, tarball_path)
+        checksum = calculate_sha256(tarball_path)
+        storage_key = f"{key_prefix}.tar.gz"
+        upload_to_minio(tarball_path, bucket, storage_key)
+        emit_step("upload", "success", f"Uploaded {storage_key}")
+
+        emit_step("verify", "running", "Verifying object in MinIO")
+        run_cmd([MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{storage_key}"])
+        emit_step("verify", "success", "MinIO object verified")
+
+        file_count = sum(1 for p in payload.rglob("*") if p.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", f"Backup completed: {storage_key}")
+        return 0
+    except Exception as exc:
+        msg = safe_error(exc)
+        emit_step("error", "failure", msg)
+        emit_result(False, error=msg)
+        finish_stdout("failure", f"Backup failed: {msg}")
+        return 1
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def restore_flow(cenv: Dict) -> int:
+    emit_step("init", "running", "Validating restore configuration")
+    target_name = cenv.get("ECHOPORT_TARGET", "postfixadmin")
+    restore_id = cenv.get("ECHOPORT_RESTORE_ID", "0")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    storage_key = cenv.get("ECHOPORT_KEY", "")
+    expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+
+    if not storage_key:
+        raise RuntimeError("ECHOPORT_KEY missing for restore")
+    if not expected_checksum:
+        raise RuntimeError("ECHOPORT_CHECKSUM missing for restore")
+
+    validate_config_paths("restore")
+    ensure_binaries()
+    creds = read_db_credentials()
+    php_service = detect_php_service()
+    emit_step("init", "success", f"Configuration loaded for {target_name} restore {restore_id}")
+
+    work_dir = create_run_dir("postfixadmin_restore_")
+    safety_snapshot_dir = work_dir / "safety"
+
+    services_stopped = {"nginx": False, "php": False}
+    destructive_started = False
+
+    try:
+        tarball_path = work_dir / "backup.tar.gz"
+        extract_dir = work_dir / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        emit_step("download", "running", "Downloading archive from MinIO")
+        download_from_minio(bucket, storage_key, tarball_path)
+        emit_step("download", "success", f"Downloaded {storage_key}")
+
+        emit_step("verify_checksum", "running", "Verifying archive checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            raise RuntimeError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
+        emit_step("verify_checksum", "success", "Archive checksum verified")
+
+        emit_step("precheck", "running", "Validating available disk space")
+        disk_space_precheck(tarball_path, work_dir)
+        emit_step("precheck", "success", "Disk space precheck passed")
+
+        emit_step("extract", "running", "Extracting archive")
+        safe_extract_tarball(tarball_path, extract_dir)
+        verify_checksum_manifest(extract_dir, extract_dir / "manifest.sha256")
+        _tables, restore_config_files = validate_archive(extract_dir, creds)
+        emit_step("extract", "success", "Archive extracted and validated")
+
+        if CREATE_SAFETY_SNAPSHOT:
+            emit_step("safety_snapshot", "running", "Creating pre-restore safety snapshot")
+            create_safety_snapshot(safety_snapshot_dir, creds, php_service)
+            emit_step("safety_snapshot", "success", "Safety snapshot created")
+
+        emit_step("stop_service", "running", "Stopping nginx/php-fpm")
+        if service_is_active("nginx"):
+            run_cmd(["systemctl", "stop", "nginx"])
+            services_stopped["nginx"] = True
+        if service_is_active(php_service):
+            run_cmd(["systemctl", "stop", php_service])
+            services_stopped["php"] = True
+        destructive_started = True
+        emit_step("stop_service", "success", "Service stop phase completed")
+
+        emit_step("restore_db", "running", "Restoring PostfixAdmin admin tables")
+        admin_rows = json.loads((extract_dir / "db" / "admin.json").read_text())
+        expected_admin_count = len(admin_rows)
+        restore_admin_rows(admin_rows, creds)
+        domain_rows = json.loads((extract_dir / "db" / "domain_admins.json").read_text())
+        restore_domain_admin_rows(domain_rows, creds)
+        db_smoke_check(creds)
+        emit_step("restore_db", "success", "Database rows restored")
+
+        emit_step("restore_config", "running", "Restoring config files")
+        for name, dest, owner, mode, _required in config_parts(php_service):
+            if name not in restore_config_files:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(extract_dir / "config" / name, dest)
+            run_cmd(["chown", owner, str(dest)])
+            run_cmd(["chmod", mode, str(dest)])
+        emit_step("restore_config", "success", f"Config files restored: {', '.join(restore_config_files)}")
+
+        emit_step("start_service", "running", "Starting php-fpm + nginx")
+        run_cmd(["nginx", "-t"])
+        run_cmd(["systemctl", "start", php_service])
+        wait_service_active(php_service, START_TIMEOUT)
+        services_stopped["php"] = False
+        run_cmd(["systemctl", "start", "nginx"])
+        wait_service_active("nginx", START_TIMEOUT)
+        services_stopped["nginx"] = False
+        emit_step("start_service", "success", "Services started")
+
+        emit_step("health_check", "running", "Running HTTP health check")
+        run_health_check()
+        admin_count_check(creds, expected_admin_count)
+        emit_step("health_check", "success", "Health check passed")
+
+        file_count = sum(1 for p in extract_dir.rglob("*") if p.is_file())
+        emit_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=tarball_path.stat().st_size,
+            checksum_sha256=actual_checksum,
+            file_count=file_count,
+        )
+        finish_stdout("success", "Restore completed")
+        return 0
+    except Exception as exc:
+        msg = safe_error(exc)
+        rollback_error = ""
+
+        if destructive_started and ROLLBACK_ON_FAILURE and CREATE_SAFETY_SNAPSHOT and safety_snapshot_dir.exists():
+            emit_step("rollback", "running", "Restore failed; attempting rollback from safety snapshot")
+            try:
+                run_cmd(["systemctl", "stop", "nginx"], check=False)
+                run_cmd(["systemctl", "stop", php_service], check=False)
+                restore_from_safety_snapshot(safety_snapshot_dir, creds, php_service)
+                run_cmd(["nginx", "-t"])
+                run_cmd(["systemctl", "start", php_service])
+                wait_service_active(php_service, START_TIMEOUT)
+                run_cmd(["systemctl", "start", "nginx"])
+                wait_service_active("nginx", START_TIMEOUT)
+                run_health_check()
+                emit_step("rollback", "success", "Rollback completed")
+                services_stopped["nginx"] = False
+                services_stopped["php"] = False
+                msg = f"{msg} (rollback executed)"
+            except Exception as rollback_exc:
+                rollback_error = safe_error(rollback_exc)
+                emit_step("rollback", "failure", rollback_error)
+
+        for svc in ("php", "nginx"):
+            stopped = services_stopped[svc]
+            if not stopped:
+                continue
+            try:
+                run_cmd(["systemctl", "start", "nginx" if svc == "nginx" else php_service], check=False)
+            except Exception:
+                pass
+
+        if rollback_error:
+            msg = f"{msg}; rollback failed: {rollback_error}"
+
+        emit_step("error", "failure", msg)
+        emit_result(False, error=msg)
+        finish_stdout("failure", f"Restore failed: {msg}")
+        return 1
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def main() -> int:
+    config = read_config_file()
+    if config:
+        context = config.get("context", {})
+    else:
+        if os.getuid() == 0:
+            raise RuntimeError("No config file found while running as root")
+        context_raw = os.environ.get("CONTEXT", "{}")
+        context = json.loads(context_raw)
+
+    cenv = context.get("env", {})
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+    if action == "restore":
+        return restore_flow(cenv)
+    return backup_flow(cenv)
+
+
+if __name__ == "__main__":
+    if os.getuid() != 0:
+        script_path = os.path.abspath(__file__)
+        result = subprocess.run(
+            ["sudo", "-n", script_path] + sys.argv[1:],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        sys.exit(result.returncode)
+
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        msg = safe_error(exc)
+        emit_step("error", "failure", msg)
+        emit_result(False, error=msg)
+        finish_stdout("failure", f"Unexpected error: {msg}")
+        sys.exit(1)

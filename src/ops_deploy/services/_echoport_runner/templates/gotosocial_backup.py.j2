@@ -1,0 +1,582 @@
+#!/usr/bin/env python3
+"""
+GoToSocial backup/restore runner for FastDeploy (Echoport target `gotosocial`).
+
+Runs ON MACMINI and reaches the GoToSocial host over SSH (root, like the other
+remote runners). The GoToSocial host needs only `sqlite3`, which
+`gotosocial_deploy` installs; it has no MinIO access.
+
+Every remote step is one plain command (no shell script, classic `scp -O`,
+fixed rsync options): on a host where the deploy key is pinned to
+`echoport_remote_command_guard`, only those exact shapes are allowed.
+
+Backup (online, no downtime):
+  1. `sqlite3 .backup` of the live database into a private temp dir on the
+     host (SQLite's backup API, consistent with WAL), integrity check there
+  2. copy the snapshot (`cat`, opened by the guard without following
+     symlinks), rsync the media storage, copy config.yaml and the
+     domain-layout marker to macmini
+  3. integrity check again, manifest.json + manifest.sha256, tarball
+  4. upload with the runner's mc alias, compare the stored size
+
+Restore (attended, service stopped):
+  1. download, verify the checksum Echoport recorded, extract safely
+  2. verify manifest checksums, integrity check, and that the archive's
+     domain layout equals this host's layout (a backup of another layout
+     would break federation identity)
+  3. stop the service, move the current database and storage aside
+     (`*.pre-restore-<timestamp>`), put the archived ones in place, fix
+     ownership/modes, start the service, wait for /readyz
+  4. on any failure after the move: move the previous data back and start
+
+Paths, host and service are fixed by Ansible (ops-control
+register-gotosocial-backup.yml); Echoport's context cannot redirect them.
+The archive contains the database (accounts, private keys, OAuth tokens),
+media and config.yaml: treat it as secret.
+"""
+import hashlib
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ gotosocial_backup_work_dir | default('/mnt/cryptdata/backups/tmp/gotosocial-backup') }}"
+WORK_MOUNT = "{{ gotosocial_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ gotosocial_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("gotosocial-backup-", "gotosocial-restore-")
+# The runner runs as the deploy user (no sudo to root): WORK_DIR must belong
+# to that user. ops-control provisions it (register-gotosocial-backup.yml).
+WORK_OWNER_UID = os.geteuid()
+WORK_OWNER_LABEL = "the runner user"
+
+# Locked by Ansible.
+REMOTE_HOST = "{{ gotosocial_backup_remote_host }}"
+REMOTE_USER = "{{ gotosocial_backup_remote_user | default('root') }}"
+SERVICE_NAME = "{{ gotosocial_backup_service_name | default('gotosocial') }}"
+DATA_DIR = "{{ gotosocial_backup_data_dir | default('/var/lib/gotosocial') }}"
+DB_PATH = "{{ gotosocial_backup_db_path | default('/var/lib/gotosocial/sqlite.db') }}"
+STORAGE_DIR = "{{ gotosocial_backup_storage_dir | default('/var/lib/gotosocial/storage') }}"
+CONFIG_PATH = "{{ gotosocial_backup_config_path | default('/etc/gotosocial/config.yaml') }}"
+LAYOUT_MARKER = "{{ gotosocial_backup_layout_marker | default('/var/lib/gotosocial/.ops-domain-layout') }}"
+SERVICE_OWNER = "{{ gotosocial_backup_service_owner | default('gotosocial:gotosocial') }}"
+SERVICE_USER = SERVICE_OWNER.split(":", 1)[0]
+READY_URL = "{{ gotosocial_backup_ready_url | default('http://127.0.0.1:10070/readyz') }}"
+KEY_PREFIX_DEFAULT = "{{ gotosocial_backup_target_name | default('gotosocial') }}"
+REMOTE_TMP_PARENT = "{{ gotosocial_backup_remote_tmp_parent | default('/var/tmp') }}"
+
+SSH_OPTS = ["-o", "StrictHostKeyChecking=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=30"]
+
+ARCHIVE_DB = "sqlite.db"
+ARCHIVE_STORAGE = "storage"
+ARCHIVE_CONFIG = "config.yaml"
+ARCHIVE_LAYOUT = "domain-layout"
+
+
+class StepFailure(Exception):
+    def __init__(self, step: str, message: str):
+        super().__init__(message)
+        self.step = step
+
+
+# --- FastDeploy / Echoport output -------------------------------------------
+
+def _emit(obj: Dict) -> None:
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def emit_step(name: str, state: str, message: str = "") -> None:
+    step = {"name": name, "state": state}
+    if message:
+        step["message"] = message
+    _emit(step)
+
+
+def emit_result(success: bool, bucket: str = "", key: str = "", size_bytes: int = 0,
+                checksum_sha256: str = "", file_count: int = 0, error: Optional[str] = None) -> None:
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+    emit_step("result", "success" if success else "failure", "ECHOPORT_RESULT:" + json.dumps(result))
+
+
+def finish_stdout(status: str, message: Optional[str] = None) -> None:
+    finish = {"event": "finish", "status": status}
+    if message:
+        finish["message"] = message
+    _emit(finish)
+
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def open_run_dir(prefix: str, label: str) -> Optional[Path]:
+    """Return a fresh run dir, or report the refusal and return None."""
+    try:
+        return create_run_dir(prefix)
+    except Exception as exc:
+        error_msg = f"Work directory check failed: {exc}"
+        emit_step("init", "failure", error_msg)
+        emit_result(success=False, error=error_msg)
+        finish_stdout("failure", f"{label} refused: {error_msg}")
+        return None
+
+def fail(step: str, message: str) -> int:
+    emit_step(step, "failure", message)
+    emit_result(success=False, error=message)
+    finish_stdout("failure", message)
+    return 1
+
+
+def read_config_file() -> Optional[Dict]:
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+    if not config_file or not Path(config_file).exists():
+        return None
+    try:
+        with open(config_file) as f:
+            return json.load(f)
+    except Exception as e:  # noqa: BLE001
+        print(f"Failed to read config file: {e}", file=sys.stderr)
+        return None
+
+
+# --- remote helpers ----------------------------------------------------------
+
+def remote(args: list, check: bool = True, stdout_path: Optional[Path] = None) -> subprocess.CompletedProcess:
+    """Run one command on the host; its output goes to stdout_path when given.
+
+    One plain command per call, quoted with shlex (POSIX shells and fish read
+    it the same): the pinned key's guard runs single commands without a shell.
+    """
+    line = shlex.join(args)
+    cmd = ["ssh", *SSH_OPTS, f"{REMOTE_USER}@{REMOTE_HOST}", line]
+    print(f"[SSH] {line}", file=sys.stderr)
+    if stdout_path is None:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    else:
+        with open(stdout_path, "wb") as out:
+            raw = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE)
+        result = subprocess.CompletedProcess(cmd, raw.returncode, "", raw.stderr.decode("utf-8", "replace"))
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    return result
+
+
+def remote_exists(path: str) -> bool:
+    """`test -e` on the host: 0 exists, 1 absent; anything else (SSH, guard) raises."""
+    result = remote(["test", "-e", path], check=False)
+    if result.returncode not in (0, 1):
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+    return result.returncode == 0
+
+
+def scp_from(remote_path: str, local_path: Path) -> None:
+    subprocess.run(["scp", "-O", *SSH_OPTS, f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}", str(local_path)],
+                   check=True, capture_output=True, text=True)
+
+
+def scp_to(local_path: Path, remote_path: str) -> None:
+    subprocess.run(["scp", "-O", *SSH_OPTS, str(local_path), f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}"],
+                   check=True, capture_output=True, text=True)
+
+
+def rsync_from(remote_dir: str, local_dir: Path) -> None:
+    local_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["rsync", "-a", "--safe-links", "-e", "ssh " + " ".join(SSH_OPTS),
+                    f"{REMOTE_USER}@{REMOTE_HOST}:{remote_dir.rstrip('/')}/", f"{local_dir}/"],
+                   check=True, capture_output=True, text=True)
+
+
+def rsync_to(local_dir: Path, remote_dir: str) -> None:
+    # --no-D: no device or special files on the host (the guard refuses them).
+    subprocess.run(["rsync", "-a", "--no-D", "--delete", "-e", "ssh " + " ".join(SSH_OPTS),
+                    f"{local_dir}/", f"{REMOTE_USER}@{REMOTE_HOST}:{remote_dir.rstrip('/')}/"],
+                   check=True, capture_output=True, text=True)
+
+
+# --- local helpers -----------------------------------------------------------
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def sqlite_integrity(path: Path) -> None:
+    out = subprocess.run(["sqlite3", str(path), "PRAGMA integrity_check;"], capture_output=True, text=True)
+    if out.returncode != 0 or out.stdout.strip() != "ok":
+        raise ValueError(f"integrity_check failed: {out.stdout.strip()[:200]} {out.stderr.strip()[:200]}")
+
+
+def sqlite_scalar(path: Path, sql: str) -> int:
+    out = subprocess.run(["sqlite3", "-readonly", str(path), sql], capture_output=True, text=True, check=True)
+    return int(out.stdout.strip() or 0)
+
+
+def checksum_lines(root: Path) -> list:
+    lines = []
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and p.name != "manifest.sha256":
+            lines.append(f"{sha256_file(p)}  {p.relative_to(root).as_posix()}")
+    return lines
+
+
+def safe_extract(tarball: Path, dest: Path) -> None:
+    dest_resolved = dest.resolve()
+    with tarfile.open(tarball, "r:gz") as tar:
+        members = tar.getmembers()
+        for m in members:
+            if not (m.isfile() or m.isdir()):
+                raise ValueError(f"unsupported member type: {m.name}")
+            if m.name.startswith("/") or ".." in Path(m.name).parts:
+                raise ValueError(f"unsafe member path: {m.name}")
+            target = (dest / m.name).resolve()
+            if target != dest_resolved and dest_resolved not in target.parents:
+                raise ValueError(f"member escapes the extract dir: {m.name}")
+        tar.extractall(dest, members=members, filter="data")
+
+
+{% include '_sqlite_backup.py.j2' %}
+
+
+def take_remote_snapshot(as_owner: list, remote_tmp: str) -> str:
+    """Online `.backup` on the host, waiting for writers and retrying; returns the snapshot path.
+
+    Every attempt writes a new file in the private temp dir (the guard allows no
+    rm there), so a partial copy of a failed attempt is never reused.
+    """
+    taken = {}
+
+    def attempt(number: int) -> Optional[str]:
+        snap = f"{remote_tmp}/{ARCHIVE_DB}" if number == 1 else f"{remote_tmp}/retry{number}-{ARCHIVE_DB}"
+        result = remote([*as_owner, *sqlite_backup_argv(DB_PATH, snap)], check=False)
+        if result.returncode != 0:
+            return f"sqlite3 backup failed: {sqlite_process_error(result)}"
+        error = sqlite_integrity_result_error(
+            remote([*as_owner, "sqlite3", snap, "PRAGMA integrity_check;"], check=False))
+        if error:
+            return f"snapshot {error}"
+        taken["path"] = snap
+        return None
+
+    error = sqlite_retry(attempt)
+    if error:
+        raise StepFailure("snapshot", f"Snapshot of {DB_PATH} failed on the host: {error}")
+    return taken["path"]
+
+
+# --- backup ------------------------------------------------------------------
+
+def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
+    # Fail closed before any other work: the run dir must be on WORK_MOUNT.
+    work = open_run_dir("gotosocial-backup-", "Backup")
+    if work is None:
+        return 1
+    remote_tmp = ""
+    try:
+        emit_step("init", "running", f"Backup of {SERVICE_NAME} on {REMOTE_HOST}")
+        remote(["test", "-f", DB_PATH])
+        remote(["test", "-d", STORAGE_DIR])
+        emit_step("init", "success", "Host, database and storage present")
+
+        emit_step("snapshot", "running", "Online sqlite3 .backup on the host")
+        # mktemp -d creates the directory 0700 for root.
+        remote_tmp = remote(["mktemp", "-d", f"{REMOTE_TMP_PARENT}/gotosocial-echoport.XXXXXX"]).stdout.strip()
+        if not remote_tmp.startswith(f"{REMOTE_TMP_PARENT}/gotosocial-echoport."):
+            raise StepFailure("snapshot", f"unexpected remote temp dir: {remote_tmp!r}")
+        # As the service user: root opening the database could leave root-owned
+        # -wal/-shm files behind that GoToSocial then cannot write.
+        as_owner = ["runuser", "-u", SERVICE_USER, "--"]
+        remote(["chown", SERVICE_OWNER, remote_tmp])
+        snap = take_remote_snapshot(as_owner, remote_tmp)
+        emit_step("snapshot", "success", "Snapshot taken and checked on the host")
+
+        emit_step("copy", "running", "Copying snapshot, storage, config and layout")
+        payload = work / "payload"
+        payload.mkdir()
+        # The service user owns the temp dir; cat lets the guard open the file
+        # without following symlinks (scp would follow them as root).
+        remote(["cat", snap], stdout_path=payload / ARCHIVE_DB)
+        rsync_from(STORAGE_DIR, payload / ARCHIVE_STORAGE)
+        scp_from(CONFIG_PATH, payload / ARCHIVE_CONFIG)
+        scp_from(LAYOUT_MARKER, payload / ARCHIVE_LAYOUT)
+        emit_step("copy", "success", "Copied")
+
+        emit_step("verify_snapshot", "running", "Integrity check of the copied snapshot")
+        db = payload / ARCHIVE_DB
+        sqlite_integrity(db)
+        local_accounts = sqlite_scalar(db, "SELECT count(*) FROM accounts WHERE domain IS NULL;")
+        # GoToSocial has no statuses.local column; local = authored by a local account.
+        local_statuses = sqlite_scalar(
+            db, "SELECT count(*) FROM statuses WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL);"
+        )
+        if local_accounts < 1:
+            raise StepFailure("verify_snapshot", "snapshot has no local accounts")
+        emit_step("verify_snapshot", "success", f"ok: {local_accounts} local accounts, {local_statuses} local statuses")
+
+        media_files = sum(1 for p in (payload / ARCHIVE_STORAGE).rglob("*") if p.is_file())
+        manifest = {
+            "target": key_prefix.split("/")[0],
+            "timestamp": timestamp,
+            "host": REMOTE_HOST,
+            "service": SERVICE_NAME,
+            "domain_layout": (payload / ARCHIVE_LAYOUT).read_text().strip(),
+            "database": {"source": DB_PATH, "filename": ARCHIVE_DB, "size": db.stat().st_size,
+                         "local_accounts": local_accounts, "local_statuses": local_statuses},
+            "storage": {"source": STORAGE_DIR, "directory": ARCHIVE_STORAGE, "files": media_files},
+            "config": {"source": CONFIG_PATH, "filename": ARCHIVE_CONFIG},
+        }
+        (payload / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        (payload / "manifest.sha256").write_text("\n".join(checksum_lines(payload)) + "\n")
+
+        emit_step("upload", "running", "Creating archive and uploading")
+        tarball = work / "backup.tar.gz"
+        with tarfile.open(tarball, "w:gz") as tar:
+            for entry in sorted(payload.iterdir()):
+                tar.add(entry, arcname=entry.name)
+        checksum = sha256_file(tarball)
+        size = tarball.stat().st_size
+        key = f"{key_prefix}.tar.gz"
+        up = subprocess.run([MC_PATH, "cp", "--quiet", str(tarball), f"{MINIO_ALIAS}/{bucket}/{key}"],
+                            capture_output=True, text=True)
+        if up.returncode != 0:
+            raise StepFailure("upload", f"MinIO upload failed: {up.stderr.strip()}")
+        emit_step("upload", "success", f"Uploaded {size:,} bytes")
+
+        emit_step("verify", "running", "Comparing stored size")
+        st = subprocess.run([MC_PATH, "stat", "--json", f"{MINIO_ALIAS}/{bucket}/{key}"], capture_output=True, text=True)
+        stored = json.loads(st.stdout).get("size") if st.returncode == 0 else None
+        if stored != size:
+            raise StepFailure("verify", f"stored size {stored} != uploaded size {size}")
+        emit_step("verify", "success", "Backup stored in MinIO")
+
+        emit_result(True, bucket=bucket, key=key, size_bytes=size, checksum_sha256=checksum,
+                    file_count=1 + media_files + 2)
+        finish_stdout("success", f"Backup completed: {bucket}/{key}")
+        return 0
+    except StepFailure as e:
+        return fail(e.step, str(e))
+    except subprocess.CalledProcessError as e:
+        return fail("error", f"command failed ({e.returncode}): {(e.stderr or '').strip()[:500]}")
+    except Exception as e:  # noqa: BLE001
+        return fail("error", f"{type(e).__name__}: {e}")
+    finally:
+        if remote_tmp.startswith(f"{REMOTE_TMP_PARENT}/gotosocial-echoport."):
+            # The snapshot keeps WAL mode, so opening it may leave -wal/-shm next to it.
+            cleaned = remote(["rm", "-rf", "--", remote_tmp], check=False)
+            if cleaned.returncode != 0:
+                print(f"[WARN] could not remove {remote_tmp}: {cleaned.stderr.strip()}", file=sys.stderr)
+        shutil.rmtree(work, ignore_errors=True)
+
+
+# --- restore -----------------------------------------------------------------
+
+def restore(bucket: str, key: str, expected_checksum: str) -> int:
+    # Fail closed before any other work: the run dir must be on WORK_MOUNT.
+    work = open_run_dir("gotosocial-restore-", "Restore")
+    if work is None:
+        return 1
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    aside_db = f"{DB_PATH}.pre-restore-{stamp}"
+    aside_storage = f"{STORAGE_DIR}.pre-restore-{stamp}"
+    stopped = False
+    # (original path, saved path) for every file/dir actually moved aside.
+    moved: list = []
+    absent_sidecars: list = []
+    try:
+        emit_step("download", "running", f"Downloading {bucket}/{key}")
+        tarball = work / "backup.tar.gz"
+        dl = subprocess.run([MC_PATH, "cp", "--quiet", f"{MINIO_ALIAS}/{bucket}/{key}", str(tarball)],
+                            capture_output=True, text=True)
+        if dl.returncode != 0:
+            raise StepFailure("download", f"download failed: {dl.stderr.strip()}")
+        emit_step("download", "success", f"{tarball.stat().st_size:,} bytes")
+
+        emit_step("verify_checksum", "running", "Comparing with the recorded checksum")
+        actual = sha256_file(tarball)
+        if actual != expected_checksum:
+            raise StepFailure("verify_checksum", f"checksum mismatch: expected {expected_checksum}, got {actual}")
+        emit_step("verify_checksum", "success", "Checksum matches")
+
+        emit_step("extract", "running", "Extracting and verifying the archive")
+        payload = work / "payload"
+        payload.mkdir()
+        safe_extract(tarball, payload)
+        recorded = (payload / "manifest.sha256").read_text().splitlines()
+        if sorted(recorded) != sorted(checksum_lines(payload)):
+            raise StepFailure("extract", "manifest.sha256 does not match the extracted files")
+        manifest = json.loads((payload / "manifest.json").read_text())
+        sqlite_integrity(payload / ARCHIVE_DB)
+        scp_from(LAYOUT_MARKER, work / "host-layout")
+        host_layout = (work / "host-layout").read_text().strip()
+        if manifest.get("domain_layout") != host_layout:
+            raise StepFailure("extract", f"archive layout {manifest.get('domain_layout')!r} != host layout {host_layout!r}")
+        emit_step("extract", "success", f"Archive of {manifest.get('timestamp')} verified, layout {host_layout}")
+
+        emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
+        remote(["systemctl", "stop", SERVICE_NAME])
+        stopped = True
+        emit_step("stop_service", "success", "Stopped")
+
+        emit_step("move_aside", "running", "Moving current database and storage aside")
+        # One path at a time, recorded *before* its mv: an SSH failure can hide a
+        # completed rename, so the rollback decides per path by whether the saved
+        # copy exists (rename is atomic), never by what SSH reported.
+        for original, saved in ((DB_PATH, aside_db), (f"{DB_PATH}-wal", f"{aside_db}-wal"),
+                                (f"{DB_PATH}-shm", f"{aside_db}-shm"), (STORAGE_DIR, aside_storage)):
+            if not remote_exists(original):
+                if original in (DB_PATH, STORAGE_DIR):
+                    raise StepFailure("move_aside", f"{original} is missing")
+                absent_sidecars.append(original)
+                continue
+            moved.append((original, saved))
+            remote(["mv", original, saved])
+        emit_step("move_aside", "success", f"Kept as {aside_db} and {aside_storage}")
+
+        emit_step("restore_files", "running", "Copying archived database and storage")
+        tmp_db = f"{DB_PATH}.restore-tmp"
+        scp_to(payload / ARCHIVE_DB, tmp_db)
+        remote(["mv", tmp_db, DB_PATH])
+        remote(["mkdir", "-p", STORAGE_DIR])
+        remote(["chmod", "0700", STORAGE_DIR])
+        rsync_to(payload / ARCHIVE_STORAGE, STORAGE_DIR)
+        remote(["chown", SERVICE_OWNER, DB_PATH])
+        remote(["chown", "-R", SERVICE_OWNER, STORAGE_DIR])
+        remote(["chmod", "0600", DB_PATH])
+        remote(["chmod", "0700", STORAGE_DIR])
+        emit_step("restore_files", "success", "Database and storage in place")
+
+        emit_step("start_service", "running", f"Starting {SERVICE_NAME}")
+        remote(["systemctl", "start", SERVICE_NAME])
+        stopped = False
+        wait_ready()
+        emit_step("start_service", "success", "Ready")
+
+        emit_result(True, bucket=bucket, key=key, size_bytes=tarball.stat().st_size, checksum_sha256=actual,
+                    file_count=1 + manifest.get("storage", {}).get("files", 0))
+        finish_stdout("success", f"Restore completed; previous data kept as {aside_db}, {aside_storage}")
+        return 0
+    except Exception as e:  # noqa: BLE001
+        step = e.step if isinstance(e, StepFailure) else "error"
+        message = str(e) if not isinstance(e, subprocess.CalledProcessError) else (e.stderr or "").strip()[:500]
+        if moved:
+            emit_step("rollback", "running", "Putting the previous database and storage back")
+            rolled, detail = rollback(moved, absent_sidecars, f".failed-restore-{stamp}")
+            emit_step("rollback", "success" if rolled else "failure",
+                      "Previous data restored" if rolled else (detail or "data missing after rollback"))
+            stopped = True
+            if not rolled:
+                # Do not start GoToSocial without its data; leave it stopped for an operator.
+                return fail(step, message + "; rollback incomplete, service left stopped")
+        if stopped:
+            started = remote(["systemctl", "start", SERVICE_NAME], check=False)
+            emit_step("start_service", "success" if started.returncode == 0 else "failure", "Service start after failure")
+        return fail(step, message)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def rollback(moved: list, absent_sidecars: list, failed: str) -> tuple:
+    """Put the moved-aside data back; return (ok, detail). Stops at the first failure.
+
+    Nothing is deleted. Half-restored files at a moved path, and a leftover
+    restore temp file, are moved aside as *.failed-restore-*; paths that were
+    never moved are left alone.
+    """
+    remote(["systemctl", "stop", SERVICE_NAME], check=False)
+    try:
+        tmp_db = DB_PATH + ".restore-tmp"
+        if remote_exists(tmp_db):
+            remote(["mv", tmp_db, tmp_db + failed])
+        # A sidecar that did not exist before the move can only belong to the
+        # restored database (it ran briefly); it must not pair with the old one.
+        for sidecar in absent_sidecars:
+            if remote_exists(sidecar):
+                remote(["mv", sidecar, sidecar + failed])
+        for original, saved in reversed(moved):
+            # Only where the saved copy exists was the original moved away.
+            if remote_exists(saved):
+                if remote_exists(original):
+                    remote(["mv", original, original + failed])
+                remote(["mv", saved, original])
+        remote(["test", "-e", DB_PATH])
+        remote(["test", "-d", STORAGE_DIR])
+    except subprocess.CalledProcessError as e:
+        return False, (e.stderr or "").strip()[:300]
+    return True, ""
+
+
+def wait_ready(timeout: int = 180) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        r = remote(["curl", "-fsS", "-o", "/dev/null", READY_URL], check=False)
+        if r.returncode == 0:
+            return
+        time.sleep(3)
+    raise StepFailure("start_service", f"{READY_URL} not ready after {timeout}s")
+
+
+def main() -> int:
+    config = read_config_file()
+    if config:
+        context = config.get("context", {})
+    else:
+        print("Warning: no config file, reading CONTEXT from the environment (testing mode)", file=sys.stderr)
+        try:
+            context = json.loads(os.environ.get("CONTEXT", "{}"))
+        except json.JSONDecodeError:
+            context = {}
+    cenv = context.get("env", {})
+    action = cenv.get("ECHOPORT_ACTION", "backup")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+
+    if action == "restore":
+        key = cenv.get("ECHOPORT_KEY", "")
+        checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+        if not key:
+            return fail("init", "No storage key provided for restore")
+        if not checksum:
+            return fail("init", "No checksum provided for restore - cannot verify backup integrity")
+        if not key.startswith(KEY_PREFIX_DEFAULT + "/"):
+            return fail("init", f"Refusing a key outside {KEY_PREFIX_DEFAULT}/: {key}")
+        return restore(bucket, key, checksum)
+
+    timestamp = cenv.get("ECHOPORT_TIMESTAMP", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S"))
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", "") or f"{KEY_PREFIX_DEFAULT}/{timestamp}"
+    if not key_prefix.startswith(KEY_PREFIX_DEFAULT + "/"):
+        return fail("init", f"Refusing a key prefix outside {KEY_PREFIX_DEFAULT}/: {key_prefix}")
+    return backup(bucket, key_prefix, timestamp)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:  # noqa: BLE001
+        sys.exit(fail("error", f"Unexpected error: {e}"))

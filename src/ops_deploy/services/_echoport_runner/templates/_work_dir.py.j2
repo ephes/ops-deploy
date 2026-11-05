@@ -1,0 +1,136 @@
+# ── External work dir (shared: templates/_work_dir.py.j2) ───────────────────
+# Included by Echoport runners whose per-run temp dirs (dumps, archives,
+# staging copies, rclone configs) must live on the external encrypted disk.
+# The including template defines, before this include:
+#   WORK_DIR              absolute, normalized, strictly below WORK_MOUNT
+#   WORK_MOUNT            the external mount (macmini: /mnt/cryptdata)
+#   WORK_RETENTION_HOURS  run dirs older than this are pruned (>= 1)
+#   RUN_DIR_PREFIXES      tuple of mkdtemp prefixes the runner uses
+#   WORK_OWNER_UID        required owner of WORK_DIR and the run dirs
+#                         (0 for root runners, os.geteuid() for deploy runners)
+#   WORK_OWNER_LABEL      how errors name that owner ("root", "the runner user")
+# and emit_step(name, state, message). Fail closed: no fallback to /tmp, / or
+# the system temp dir; nothing is created when the mount check fails.
+import os
+import shutil
+import stat
+import tempfile
+import time
+from pathlib import Path
+from typing import Optional
+
+
+def _clean_absolute(path: str, label: str) -> str:
+    if not path or not os.path.isabs(path) or os.path.normpath(path) != (path.rstrip(os.sep) or os.sep):
+        raise ValueError(f"{label} must be a normalized absolute path: {path!r}")
+    return os.path.normpath(path)
+
+
+def work_mount_device() -> int:
+    """Return st_dev of WORK_MOUNT after checking it is a real, separate mount.
+
+    Fail closed: no fallback to /tmp or /. WORK_MOUNT must not be / itself,
+    must not be (or sit below) a symlink, must be a mount point and must be
+    on a different device than /.
+    """
+    mount = _clean_absolute(WORK_MOUNT, "Work mount")
+    if mount == os.sep:
+        raise RuntimeError("Work mount must not be the root filesystem")
+    if os.path.realpath(mount) != mount:
+        raise RuntimeError(f"Work mount path contains a symlink: {mount}")
+    try:
+        mount_stat = os.lstat(mount)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Work mount missing: {mount}") from exc
+    if not stat.S_ISDIR(mount_stat.st_mode):
+        raise RuntimeError(f"Work mount is not a directory: {mount}")
+    if not os.path.ismount(mount):
+        raise RuntimeError(f"Work mount is not mounted: {mount}")
+    if mount_stat.st_dev == os.lstat(os.sep).st_dev:
+        raise RuntimeError(f"Work mount is on the root filesystem device: {mount}")
+    return mount_stat.st_dev
+
+
+def prepare_work_dir() -> int:
+    """Create/verify WORK_DIR on WORK_MOUNT (0700); return the device.
+
+    Every component below the mount is checked with lstat (no symlinks, a
+    directory, same device as the mount). Missing components are created
+    0700 (owned by the running user). WORK_DIR itself must be owned by
+    WORK_OWNER_UID and is forced to 0700.
+    """
+    device = work_mount_device()
+    mount = os.path.normpath(WORK_MOUNT)
+    work = _clean_absolute(WORK_DIR, "Work directory")
+    if os.path.commonpath([mount, work]) != mount or work == mount:
+        raise RuntimeError(f"Work directory {work} is not below work mount {mount}")
+
+    current = mount
+    for part in Path(os.path.relpath(work, mount)).parts:
+        current = os.path.join(current, part)
+        try:
+            os.mkdir(current, 0o700)
+        except FileExistsError:
+            pass
+        info = os.lstat(current)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise RuntimeError(f"Work directory component is not a plain directory: {current}")
+        if info.st_dev != device:
+            raise RuntimeError(f"Work directory component is not on {mount}: {current}")
+
+    info = os.lstat(work)
+    if info.st_uid != WORK_OWNER_UID:
+        raise RuntimeError(f"Work directory is not owned by {WORK_OWNER_LABEL}: {work}")
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        fd = os.open(work, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fchmod(fd, 0o700)
+        finally:
+            os.close(fd)
+    if os.path.realpath(work) != work:
+        raise RuntimeError(f"Work directory path contains a symlink: {work}")
+    return device
+
+
+def prune_stale_run_dirs(device: int, now: Optional[float] = None) -> tuple[list[str], list[str]]:
+    """Remove run dirs in WORK_DIR older than WORK_RETENTION_HOURS.
+
+    Only direct children named like a run dir that are real directories on
+    the work mount are removed; symlinks and other entries are left alone.
+    shutil.rmtree does not follow symlinks inside the tree.
+    """
+    cutoff = (time.time() if now is None else now) - WORK_RETENTION_HOURS * 3600
+    removed: list[str] = []
+    failed: list[str] = []
+    with os.scandir(WORK_DIR) as entries:
+        for entry in entries:
+            if not entry.name.startswith(RUN_DIR_PREFIXES):
+                continue
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            info = entry.stat(follow_symlinks=False)
+            if info.st_dev != device or info.st_mtime >= cutoff:
+                continue
+            try:
+                shutil.rmtree(entry.path)
+            except OSError as exc:
+                failed.append(f"{entry.name}: {exc}")
+                continue
+            removed.append(entry.name)
+    return removed, failed
+
+
+def create_run_dir(prefix: str) -> Path:
+    """Check the mount, prune stale run dirs, create a fresh 0700 run dir."""
+    device = prepare_work_dir()
+    removed, failed = prune_stale_run_dirs(device)
+    if removed:
+        emit_step("init", "running", f"Removed {len(removed)} stale work dir(s) older than {WORK_RETENTION_HOURS}h")
+    if failed:
+        emit_step("init", "running", "Could not remove stale work dir(s): " + "; ".join(failed))
+    run_dir = Path(tempfile.mkdtemp(prefix=prefix, dir=WORK_DIR))
+    info = os.lstat(run_dir)
+    if info.st_dev != device or info.st_uid != WORK_OWNER_UID or os.path.realpath(run_dir) != str(run_dir):
+        shutil.rmtree(run_dir, ignore_errors=True)
+        raise RuntimeError(f"Run directory is not a {WORK_OWNER_LABEL}-owned directory on {WORK_MOUNT}: {run_dir}")
+    return run_dir
