@@ -161,8 +161,8 @@ absolute paths only).
 
 `ops_deploy.services.mastodon` ports `mastodon_backup` (ops-library `44a532ba`)
 and `mastodon_restore` (ops-library `d632a0e5`, with its empty-media guard),
-with the `mastodon_shared` defaults; recorded in the drift manifest. Both take the database password as `postgres_password` in
-their secrets (ops-control passes `mastodon_postgres_password`); it reaches the
+with the `mastodon_shared` defaults; recorded in the drift manifest. Both take
+the database password as `postgres_password` in their secrets (ops-control passes `mastodon_postgres_password`); it reaches the
 host script on stdin and the PostgreSQL tools through a private `0600`
 passfile in a fresh `0700` directory, removed after each command, as in the
 roles. A password with a line break is refused before anything runs.

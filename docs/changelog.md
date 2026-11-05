@@ -10,7 +10,7 @@
   ran `rsync --delete` over the live media, emptied it and reported success
   (only the pre-restore media snapshot kept the files). Same guard as
   ops-library's `mastodon_restore` (`mastodon_restore_empty_media_confirmed`,
-  recorded in the drift manifest). A dry run reports `media=EMPTY` and that a
+  ops-library `d632a0e5`, recorded in the drift manifest). A dry run reports `media=EMPTY` and that a
   restore would refuse it. Archives without `media/` and non-local storage are
   unchanged.
 
