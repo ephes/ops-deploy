@@ -187,7 +187,8 @@ class CredentialsFile(RoleConfig):
     @model_validator(mode="after")
     def _below_a_directory(self) -> CredentialsFile:
         # The directory is made root:<deploy group> 0750: never / or a top-level one such as /etc.
-        if posixpath.normpath(self.path) != self.path or posixpath.dirname(self.path).count("/") < 2:
+        normal = posixpath.normpath(self.path)
+        if normal != self.path or "//" in self.path or posixpath.dirname(normal).count("/") < 2:
             raise ValueError("the credentials file must be a normalized path in a directory of its own")
         return self
 
