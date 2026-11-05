@@ -124,6 +124,9 @@ LOADS_NO_HOST_SCRIPT: dict[str, str] = {
     "services/_echoport_runner/files/runner_target.py": (
         "a register playbook's Echoport target script from its PARAMS (exec in manage.py shell), no host script"
     ),
+    "services/_echoport_runner/files/runner_nyxmon.py": (
+        "a register playbook's Nyxmon check script from its PARAMS (exec in python3 -I), no host script"
+    ),
     "services/homeassistant/files/inspect_python_security.py": (
         "the selected environment's certifi, pip and pip._vendor.certifi packages; no ops-deploy host script"
     ),

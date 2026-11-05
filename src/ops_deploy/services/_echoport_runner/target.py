@@ -34,6 +34,7 @@ import json
 import re
 import shlex
 from collections.abc import Mapping
+from importlib.resources import files
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal
 
@@ -48,11 +49,31 @@ from ops_deploy.helpers.python import _as_user
 from ops_deploy.ops import secret_stdin
 
 PRELUDE = (Path(__file__).parent / "files" / "runner_target.py").read_text()
+PACKAGE = "ops_deploy.services._echoport_runner"
 ECHOPORT_USER = "echoport"
 ECHOPORT_SITE = PurePosixPath("/home/echoport/site")
 # Value names that look like a credential; they must not travel in argv.
 _SECRET_NAME = re.compile(r"(token|secret|password|passwd|credential|private)", re.IGNORECASE)
 _TargetName = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")]
+
+
+def target_scripts() -> tuple[str, ...]:
+    """The playbook target scripts kept here (``files/targets/<name>.py``), by name."""
+
+    folder = files(PACKAGE).joinpath("files", "targets")
+    return tuple(sorted(entry.name.removesuffix(".py") for entry in folder.iterdir() if entry.name.endswith(".py")))
+
+
+def target_script(name: str) -> str:
+    """The text of ``files/targets/<name>.py``: a playbook's script with its values from ``VALUES``.
+
+    ops-control's tests compare each with its playbook's text; several
+    playbooks whose scripts differ only in their values share one.
+    """
+
+    if name not in target_scripts():
+        raise ValueError(f"{name!r} is not a kept target script")
+    return files(PACKAGE).joinpath("files", "targets", f"{name}.py").read_text()
 
 
 class ServiceToken(RoleConfig):
@@ -224,6 +245,8 @@ __all__ = [
     "RunnerTarget",
     "ServiceToken",
     "target_code",
+    "target_script",
+    "target_scripts",
     "target_shell",
     "token_and_target",
     "upsert_runner_target",

@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- `services._echoport_runner`: the class B parts of a register playbook
+  (design note §3.4, decision D4), for ops-control's mail-db, postfixadmin
+  and graphyard runner entries. `RunnerRegistration` gains
+  `template_markers` (the playbooks' "Require the ... runner in the
+  ops-library checkout", checked against the vendored template),
+  `credential_files` (`CredentialFile`: a playbook's `copy: content:` text
+  rendered as Ansible renders a module argument, written with `secret_file`
+  after the object-store access; postfixadmin's database login), `target`
+  (the playbook's own target script through `target.upsert_runner_target` or
+  `target.token_and_target`, after the runner) and `nyxmon` (new
+  `nyxmon.NyxmonScript`: a playbook's own Nyxmon check script with a check
+  mode that opens the database read only, skipped without a Nyxmon database
+  as the playbook skips it). `install_registration`/`register_runner` take
+  `token_user` and `credentials` and refuse, while planning, a token target
+  without a user and missing or extra credentials. The kept scripts are in
+  `files/targets` (`service_owned`, shared by the playbooks whose scripts
+  differ only in their values; `postfixadmin`; `graphyard`) and
+  `files/nyxmon/graphyard.py`, each the playbook's text with its values read
+  from `VALUES` and the issued token from `SERVICE_TOKEN`; ops-control's
+  tests compare them with the playbooks. Where a playbook's script saves on
+  every run (mail-db, graphyard), the check makes a converged row get no
+  save, so its `updated_at` stays and Echoport's `full_clean` is skipped on
+  that run; graphyard's script has no reactivation guard, so a run still
+  reactivates a paused graphyard target, as the playbook does. No script
+  writes `storage_alias`. `render.render_text` and
+  `render.text_names` render and inspect such inline texts. Tests:
+  `tests/test_echoport_runner_classb.py` (with `ECHOPORT_PATH`, also against
+  Echoport's own models).
+
 - `services._echoport_runner.registration`: `DeployRunnerRegistration` and
   `register_deploy_runner`, the register playbook of a runner that runs as the
   deploy user (design note classes A2 and A3: homepage-staging,

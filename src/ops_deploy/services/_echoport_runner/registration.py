@@ -12,8 +12,21 @@ weeknotes-home-backup, paperless-backup) are the same tasks with other values:
 5. ``fastdeploy_runner`` with the playbook's settings (:func:`.install_runner`).
 
 :class:`RunnerRegistration` carries those values; ops-control builds it from
-its registry of runners and passes the target's account secret. The Echoport
-target row stays as it is (managed by hand, or by the service's own deploy).
+its registry of runners and passes the target's account secret. For class A1
+the Echoport target row stays as it is (managed by hand, or by the service's
+own deploy).
+
+The same-host root runners of class B (mail-db-backup, postfixadmin-backup,
+graphyard-backup) add their playbook's own steps around these:
+
+- "Require the <runner> in the ops-library checkout": a text the vendored
+  template must contain (``template_markers``), checked while planning;
+- a credential file the runner reads (postfixadmin's database login,
+  :class:`CredentialFile`), written after the object-store access as the
+  playbook writes it;
+- after the runner, the playbook's own Echoport target script
+  (:mod:`.target`, with the FastDeploy service token when it issues one)
+  and graphyard's own Nyxmon check script (:mod:`.nyxmon`).
 
 The runners of classes A2 and A3 run as the deploy user:
 :class:`DeployRunnerRegistration` is their playbook (homepage-staging,
@@ -35,6 +48,7 @@ import posixpath
 import re
 import shlex
 from collections.abc import Callable, Mapping
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
@@ -45,7 +59,7 @@ from ops_deploy.base._common import RoleConfig
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers.probes import probe
 from ops_deploy.ops import secret_file
-from ops_deploy.services._echoport_runner import RunnerConfig, install_runner
+from ops_deploy.services._echoport_runner import RunnerConfig, _plain_path, install_runner
 from ops_deploy.services._echoport_runner import access as _access
 from ops_deploy.services._echoport_runner.access import (
     KnownHost,
@@ -56,7 +70,9 @@ from ops_deploy.services._echoport_runner.access import (
     minio_access,
     require_mc,
 )
-from ops_deploy.services._echoport_runner.render import _environment, runner_templates
+from ops_deploy.services._echoport_runner.nyxmon import NyxmonScript, upsert_nyxmon_script
+from ops_deploy.services._echoport_runner.render import _environment, render_text, runner_templates, text_names
+from ops_deploy.services._echoport_runner.target import RunnerTarget, token_and_target, upsert_runner_target
 
 Package = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9+.-]*$")]
 # Ansible's fallback when the host has no default IPv4 route (homeassistant's playbook).
@@ -78,6 +94,57 @@ def _template_source(template: str) -> str:
     return env.loader.get_source(env, template)[0]
 
 
+_Owner = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]*$")]
+
+
+class CredentialFile(RoleConfig):
+    """A file the playbook writes with ``copy: content:`` from a secret (and its directory with ``file``).
+
+    ``template`` is the playbook's ``content`` text unchanged; ``variables``
+    are the names it reads that hold no secret, resolved, and ``secrets`` the
+    names whose values the deploy passes (from the controller's SOPS files).
+    The file is written with :func:`ops_deploy.ops.secret_file`, so its
+    content travels on stdin only.
+    """
+
+    path: str
+    owner: _Owner = "root"
+    group: _Owner = "root"
+    mode: Literal["0600", "0640"] = "0600"
+    directory_owner: _Owner = "root"
+    directory_group: _Owner = "root"
+    directory_mode: Literal["0700", "0750", "0755"] = "0700"
+    template: str = Field(min_length=1)
+    variables: Mapping[str, Any]
+    secrets: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _complete(self) -> CredentialFile:
+        problems = []
+        if not _plain_path(self.path) or self.path.count("/") < 2:
+            problems.append("the path must be a plain absolute path below a directory")
+        names = text_names(self.template)
+        given = set(self.variables) | set(self.secrets)
+        if names != given:
+            problems.append(f"the template reads {sorted(names)}, given {sorted(given)}")
+        if set(self.variables) & set(self.secrets):
+            problems.append("a name is both a variable and a secret")
+        if problems:
+            raise ValueError("credential file: " + "; ".join(problems))
+        return self
+
+    @property
+    def directory(self) -> str:
+        return str(PurePosixPath(self.path).parent)
+
+    def content(self, secrets: Mapping[str, str]) -> str:
+        """The file as Ansible's ``copy`` writes it, with the deploy's ``secrets``."""
+
+        if set(secrets) != set(self.secrets):
+            raise DeployError(f"{self.path} needs exactly the secrets {', '.join(self.secrets)} (values withheld)")
+        return render_text(self.template, {**self.variables, **secrets})
+
+
 class RunnerRegistration(RoleConfig):
     """A register playbook of a same-host root runner: packages, object-store access, the runner.
 
@@ -95,6 +162,11 @@ class RunnerRegistration(RoleConfig):
     packages: tuple[Package, ...]
     variables: Mapping[str, Any]
     default_ipv4_variables: tuple[str, ...] = ()
+    # Class B: the playbook's own checks of the template, files, target row and Nyxmon check.
+    template_markers: tuple[str, ...] = ()
+    credential_files: tuple[CredentialFile, ...] = ()
+    target: RunnerTarget | None = None
+    nyxmon: NyxmonScript | None = None
 
     @model_validator(mode="after")
     def _playbook_asserts(self) -> RunnerRegistration:
@@ -104,6 +176,11 @@ class RunnerRegistration(RoleConfig):
         elif "_work_dir.py.j2" not in _template_source(self.runner.template):
             # The playbooks' "Require a runner that works on the external disk only".
             problems.append(f"{self.runner.template} does not include _work_dir.py.j2")
+        else:
+            source = _template_source(self.runner.template)
+            # The class B playbooks' "Require the <runner> in the ops-library checkout".
+            missing = [marker for marker in self.template_markers if marker not in source]
+            problems += [f"{self.runner.template} lacks {marker!r}" for marker in missing]
         if self.runner.run_as != "root" or self.access.os_user != "root":
             problems.append("a same-host runner runs as root and reads root's mc alias")
         if not self.access.scoped:
@@ -115,6 +192,11 @@ class RunnerRegistration(RoleConfig):
         for name in self.default_ipv4_variables:
             if name in self.variables:
                 problems.append(f"{name} comes from the host's address, not from variables")
+        if self.target is not None:
+            # In the playbooks the target's bucket and the runner's are one variable.
+            for name in ("default_bucket", "echoport_backup_default_bucket"):
+                if name in self.target.values and self.target.values[name] != self.access.bucket:
+                    problems.append(f"the target's {name} must be the access's bucket")
         if problems:
             raise ValueError("runner registration: " + "; ".join(problems))
         return self
@@ -146,17 +228,57 @@ def template_variables(cfg: RunnerRegistration) -> dict[str, Any]:
     return variables
 
 
-def install_registration(cfg: RunnerRegistration, *, secret_key: str) -> None:
+def install_registration(
+    cfg: RunnerRegistration,
+    *,
+    secret_key: str,
+    token_user: str | None = None,
+    credentials: Mapping[str, str] | None = None,
+) -> None:
     """The playbook's tasks for ``cfg`` (call inside a deploy); ``secret_key``: the target's scoped account secret.
 
-    Every refusal (a missing ``mc``, an unsafe directory above the libexec
-    root, a bad secret) happens while planning, before any write.
+    ``token_user``: the FastDeploy user that issues the target's service token
+    (a target with a token needs it); ``credentials``: the values of the
+    credential files' ``secrets``. Every refusal (a missing ``mc``, an unsafe
+    directory above the libexec root, a bad secret, a target script's
+    refusal) happens while planning, before any write.
     """
 
+    given = dict(credentials or {})
+    wanted = {name for file in cfg.credential_files for name in file.secrets}
+    if set(given) != wanted:
+        raise DeployError(f"{cfg.runner.service} needs exactly the credentials {sorted(wanted)} (values withheld)")
+    if cfg.target is not None and cfg.target.token is not None and token_user is None:
+        raise DeployError(f"{cfg.runner.service} issues a FastDeploy token and needs the token user")
+    contents = [(file, file.content({name: given[name] for name in file.secrets})) for file in cfg.credential_files]
     variables = template_variables(cfg)
     apt.packages(name=f"Install the packages of {cfg.runner.service}", packages=list(cfg.packages), update=False)
     minio_access(cfg.access, access_key=cfg.access.account.user, secret_key=secret_key)
+    for file, content in contents:
+        files.directory(
+            name=f"Ensure directory {file.directory}",
+            path=file.directory,
+            user=file.directory_owner,
+            group=file.directory_group,
+            mode=file.directory_mode,
+        )
+        secret_file(
+            name=f"Write {file.path}",
+            path=file.path,
+            content=SecretContent(content),
+            user=file.owner,
+            group=file.group,
+            mode=file.mode,
+        )
     install_runner(cfg.runner, variables)
+    if cfg.target is not None:
+        if cfg.target.token is None:
+            upsert_runner_target(cfg.target)
+        else:
+            assert token_user is not None
+            token_and_target(cfg.target, token_user)
+    if cfg.nyxmon is not None:
+        upsert_nyxmon_script(cfg.nyxmon)
 
 
 register_runner = deploy("Echoport backup runner registration")(install_registration)
@@ -427,6 +549,7 @@ register_deploy_runner = deploy("Echoport backup runner registration")(install_d
 __all__ = [
     "DEFAULT_IPV4_FALLBACK",
     "NO_CHECK_DEST",
+    "CredentialFile",
     "CredentialsFile",
     "DeployKey",
     "DeployRunnerRegistration",
