@@ -32,8 +32,8 @@ from .render import render_config, render_route, render_unit
 SOURCE_EXCLUDES = (".git", ".venv*", ".env*", "__pycache__", "site", ".cache", "experiments")
 # Not in the role's list: the frozen ``uv sync`` installs the setuptools project
 # editable, which writes ``src/daybook.egg-info`` into the site. It is not
-# source, so ``--delete`` would remove it on every run and re-trigger the
-# dependency sync and both restarts (the role does exactly that).
+# source, so ``--delete`` would remove it on the next run after a build wrote
+# it and re-trigger the dependency sync and both restarts (the role does).
 BUILD_METADATA = ("*.egg-info",)
 
 

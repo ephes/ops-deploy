@@ -7,10 +7,9 @@
   project editable and writes `src/daybook.egg-info` into the site; the sync's
   `--delete` removed it whenever it was there, so a repeat after a `uv sync`
   that wrote it (seen right after an Ansible deploy) planned "Sync exact
-  Operations API source" and with it the dependency sync, unit reload and both
-  restarts. The role's own excludes
-  are unchanged (`SOURCE_EXCLUDES`); the addition is `BUILD_METADATA`, as in
-  `services.opsgate`.
+  Operations API source" and with it the dependency sync and both restarts.
+  The role's own excludes are unchanged (`SOURCE_EXCLUDES`); the addition is
+  `BUILD_METADATA`, as in `services.opsgate`.
 
 - `services.mastodon`: the restore refuses an archive whose `media/` holds no
   files (only directories or nothing) before anything stops, unless
