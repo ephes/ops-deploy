@@ -35,8 +35,10 @@ import posixpath
 import re
 import shlex
 from collections.abc import Callable, Mapping
+from functools import cache
 from typing import Annotated, Any, Literal
 
+from jinja2 import meta, nodes
 from pydantic import Field, model_validator
 from pyinfra.api import DeployError, deploy
 from pyinfra.operations import apt, files
@@ -76,6 +78,31 @@ def _template_source(template: str) -> str:
     env = _environment()
     assert env.loader is not None
     return env.loader.get_source(env, template)[0]
+
+
+# A template variable without a constant ``| default(...)``.
+_NO_DEFAULT = object()
+
+
+@cache
+def _template_variables(template: str) -> Mapping[str, Any]:
+    """Every variable ``template`` reads -> its constant ``| default(...)``, else :data:`_NO_DEFAULT`.
+
+    What the runner gets for a variable the registration leaves out. The
+    includes read no variable of their own.
+    """
+
+    tree = _environment().parse(_template_source(template))
+    found: dict[str, Any] = dict.fromkeys(meta.find_undeclared_variables(tree), _NO_DEFAULT)
+    for node in tree.find_all(nodes.Filter):
+        if (
+            node.name == "default"
+            and isinstance(node.node, nodes.Name)
+            and len(node.args) == 1
+            and isinstance(node.args[0], nodes.Const)
+        ):
+            found[node.node.name] = node.args[0].value
+    return found
 
 
 class RunnerRegistration(RoleConfig):
@@ -264,10 +291,12 @@ class DeployRunnerRegistration(RoleConfig):
     def _playbook_asserts(self) -> DeployRunnerRegistration:
         problems = []
         source = None
+        declared: Mapping[str, Any] = {}
         if self.runner.template is None or self.runner.template not in runner_templates():
             problems.append("the runner must come from a vendored runner template")
         else:
             source = _template_source(self.runner.template)
+            declared = _template_variables(self.runner.template)
             if "_work_dir.py.j2" not in source:
                 # The playbooks' "Require a runner that works on the external disk only".
                 problems.append(f"{self.runner.template} does not include _work_dir.py.j2")
@@ -290,6 +319,8 @@ class DeployRunnerRegistration(RoleConfig):
             name = self.source_bucket_variable
             if name is None or not name.endswith("_source_bucket") or name in self.variables:
                 problems.append("a media runner names its <prefix>_source_bucket variable (it comes from secrets)")
+            elif source is not None and name not in declared:
+                problems.append(f"{self.runner.template} does not read {name}")
             if source is not None and self.access.scoped and NO_CHECK_DEST not in source:
                 # The media playbooks' "Require a media runner that works with a scoped MinIO account".
                 problems.append(f"{self.runner.template} uploads the manifest without {NO_CHECK_DEST}")
@@ -303,9 +334,15 @@ class DeployRunnerRegistration(RoleConfig):
             "_minio_url": self.access.url,
             "_default_bucket": self.access.bucket,
         }
-        for name, value in self.variables.items():
+        # The values the runner gets: the given ones, else the template's defaults.
+        effective = {**declared, **self.variables}
+        for name, value in sorted(effective.items()):
             suffix = next((s for s in _BOUND_SUFFIXES if name.endswith(s)), None)
-            if suffix is not None and value != bound[suffix]:
+            if suffix is None:
+                continue
+            if value is _NO_DEFAULT:
+                problems.append(f"{self.runner.template} needs {name} (it has no default)")
+            elif value != bound[suffix]:
                 problems.append(f"{name} must be what the registration provisions ({suffix.lstrip('_')})")
         if any(cfg.path != self.known_hosts_path for cfg in self.known_hosts):
             problems.append(f"the known hosts go to {self.known_hosts_path}")

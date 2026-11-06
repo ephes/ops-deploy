@@ -74,7 +74,10 @@
   without its scoped account (the media playbooks' fallback to the MinIO root
   credentials stays with the playbook), template variables (`*_work_dir`,
   `*_work_mount`, `*_credentials_file`, `*_minio_url`, `*_default_bucket`)
-  that differ from what the registration provisions, a media template without
+  that differ from what the registration provisions (a left-out one with the
+  template's default, which the runner then gets; one without a default
+  refuses), a source bucket variable the template does not read, a media
+  template without
   `--no-check-dest`, and a task list that names a part twice or leaves one out.
   A converged host plans no mutating operation; a media runner plans the
   MinIO user upsert on every run (no alias proves its secret current, as in

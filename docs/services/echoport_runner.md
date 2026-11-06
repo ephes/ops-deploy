@@ -189,8 +189,11 @@ account (the media playbooks' fallback to the MinIO root credentials stays
 with the playbook), known hosts in another file, and template variables that
 differ from what the registration provisions (`echoport_backup_*` as for A1,
 and every `*_work_dir`, `*_work_mount`, `*_credentials_file`, `*_minio_url`
-and `*_default_bucket`). The source bucket must be an S3 bucket name (the
-template writes it into a Python string unescaped). Every refusal comes while
+and `*_default_bucket`). A variable the registration leaves out is checked
+with the template's `| default(...)`, which is what the runner then gets; one
+without a default refuses. The source bucket variable must be one the template
+reads, and the source bucket must be an S3 bucket name (the template writes it
+into a Python string unescaped). Every refusal comes while
 planning, before any write; the playbooks fail at their task instead, after
 the earlier tasks wrote. On a converged host the plan has no mutating
 operation, apart from a media runner's MinIO user upsert. No Echoport row is

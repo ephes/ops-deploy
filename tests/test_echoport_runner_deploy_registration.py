@@ -604,6 +604,74 @@ def test_what_the_playbook_never_does_is_refused(name: str, changes: dict[str, A
         registration(name, **changes)
 
 
+def _without(name: str, *names: str) -> dict[str, Any]:
+    variables = dict(registration(name).variables)
+    for variable in names:
+        del variables[variable]
+    return variables
+
+
+@pytest.mark.parametrize(
+    ("name", "left_out", "changes", "message"),
+    [
+        (
+            "homepage-media-backup",
+            "homepage_media_backup_credentials_file",
+            {"credentials": CredentialsFile(path="/etc/custom-media/keys.json")},
+            "homepage_media_backup_credentials_file must be what the registration provisions (credentials_file)",
+        ),
+        (
+            "homepage-staging-backup",
+            "homepage_staging_backup_work_dir",
+            {"work_dir": WorkDir(path="/mnt/cryptdata/backups/tmp/custom", owner="deploy")},
+            "homepage_staging_backup_work_dir must be what the registration provisions (work_dir)",
+        ),
+        (
+            "homepage-media-backup",
+            "homepage_media_backup_minio_url",
+            {"access": {"url": "http://127.0.0.1:9020"}},
+            "homepage_media_backup_minio_url must be what the registration provisions (minio_url)",
+        ),
+        (
+            "homepage-media-backup",
+            "homepage_media_backup_default_bucket",
+            {"access": {"bucket": "other-backups"}},
+            "homepage_media_backup_default_bucket must be what the registration provisions (default_bucket)",
+        ),
+    ],
+)
+def test_a_left_out_variable_is_checked_with_the_templates_default(
+    name: str, left_out: str, changes: dict[str, Any], message: str
+) -> None:
+    # The runner then gets the template's default, not what the registration provisions.
+    base = registration(name)
+    if isinstance(changes.get("access"), dict):
+        changes = {"access": base.access.model_copy(update=changes["access"])}
+    with pytest.raises(ValueError, match=re.escape(message)):
+        registration(name, variables=_without(name, left_out), **changes)
+
+
+@pytest.mark.parametrize("name", RUNNERS)
+def test_left_out_variables_whose_defaults_match_are_accepted(name: str) -> None:
+    # Every bound variable's template default is what the fixture provisions.
+    bound = ("_work_dir", "_work_mount", "_credentials_file", "_minio_url", "_default_bucket")
+    variables = registration(name).variables
+    left_out = [v for v in variables if v.endswith(bound) and not v.startswith("echoport_backup_")]
+    assert left_out
+    assert registration(name, variables=_without(name, *left_out)).variables.keys().isdisjoint(left_out)
+
+
+def test_a_left_out_variable_without_a_default_is_refused() -> None:
+    variables = _without("homepage-staging-backup", "echoport_backup_default_bucket")
+    with pytest.raises(ValueError, match=re.escape("needs echoport_backup_default_bucket (it has no default)")):
+        registration("homepage-staging-backup", variables=variables)
+
+
+def test_a_source_bucket_variable_the_template_does_not_read_is_refused() -> None:
+    with pytest.raises(ValueError, match=re.escape("does not read typo_source_bucket")):
+        registration("homepage-media-backup", source_bucket_variable="typo_source_bucket")
+
+
 def test_a_media_template_without_no_check_dest_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # The media playbooks' "Require a media runner that works with a scoped MinIO account".
     from ops_deploy.services._echoport_runner import registration as module
