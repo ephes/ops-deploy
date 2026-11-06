@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `services.delve`: the operator dashboard (`/admin`) only answers the LAN and
+  the tailnet. New `DelveConfig.traefik_admin_ip_allowlist` (default
+  `DEFAULT_INTERNAL_IP_RANGES`, each entry a CIDR network) adds a
+  `delve-admin` router for `Path(/admin) || PathPrefix(/admin/)` at priority
+  200 with an `ipAllowList` middleware, so other sources get `403` before the
+  admin login, and the public router excludes those paths (fail closed: a
+  dropped admin router leaves `/admin` a `404`). The app API stays public for
+  TestFlight testers. Every entry must parse as a CIDR network with a plain
+  prefix length (`192.168.1.0/33` or `10.0.0.0/08` are refused). The
+  route stays byte-identical to `delve_deploy`'s new
+  `delve_traefik_admin_ip_allowlist`; an empty tuple renders the previous
+  single-router file.
+
 - `services.mastodon`: the restore honours the archive's media excludes. It
   reads `media_rsync_excludes` from the archive's `manifest.yml` (the paths
   the backup left out, by default the remote-media cache `/cache/***`) and

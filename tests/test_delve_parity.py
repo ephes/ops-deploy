@@ -55,6 +55,7 @@ def role_vars(cfg: DelveConfig, secrets: SecretValues) -> dict[str, Any]:
         "delve_traefik_host": cfg.traefik_host,
         "delve_traefik_entrypoints": list(cfg.traefik_entrypoints),
         "delve_traefik_cert_resolver": cfg.traefik_cert_resolver,
+        "delve_traefik_admin_ip_allowlist": list(cfg.traefik_admin_ip_allowlist),
         "delve_session_secret": secrets["session_secret"],
         "delve_dogfood_token": secrets.get("dogfood_token", ""),
         "delve_admin_emails": cfg.admin_emails,
@@ -122,6 +123,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
         "env": "staging",
         "traefik_entrypoints": ("web-secure", "internal"),
         "traefik_cert_resolver": "letsencrypt",
+        "traefik_admin_ip_allowlist": ("100.64.0.0/10", "fd7a:115c:a1e0::/48"),
         "discovery_collector_concurrency": 8,
         "discovery_collector_calendar": "hourly",
         "systemd_nofile": 4096,
@@ -153,6 +155,8 @@ VARIANTS: dict[str, dict[str, Any]] = {
     },
     # Switched on with Delve's defaults: media inside the data dir, no stages.
     "analysis-minimal": {"smart_skip_analysis": True},
+    # The previous single-router Traefik file.
+    "admin-open": {"traefik_admin_ip_allowlist": ()},
     # Analysis settings without the switch render nothing.
     "analysis-off": {
         "analysis_media_dir": "/var/lib/delve-smart-skip-media",
@@ -167,6 +171,7 @@ SECRETS: dict[str, dict[str, str]] = {
     "everything": {"session_secret": "x$y`z(parens)&#'-0123456789", "dogfood_token": "t"},
     "analysis": {"session_secret": "s" * 16, "voxhelm_token": "v" * 64, "detector_api_key": "d" * 64},
     "analysis-minimal": {"session_secret": "s" * 16},
+    "admin-open": {"session_secret": "s" * 16},
     "analysis-off": {"session_secret": "s" * 16},
 }
 

@@ -3,7 +3,13 @@
 http:
   routers:
     delve:
+{% if delve_traefik_admin_ip_allowlist | length > 0 %}
+      # /admin never falls through to this public router: if Traefik drops the
+      # admin router or its allowlist, /admin answers 404 instead of the login.
+      rule: "Host(`{{ delve_traefik_host }}`) && !(Path(`/admin`) || PathPrefix(`/admin/`))"
+{% else %}
       rule: "Host(`{{ delve_traefik_host }}`)"
+{% endif %}
       service: delve
       entryPoints:
 {% for ep in delve_traefik_entrypoints %}
@@ -17,8 +23,38 @@ http:
 {% endif %}
       middlewares:
         - delve-headers
+{% if delve_traefik_admin_ip_allowlist | length > 0 %}
+
+    # The operator dashboard only answers the LAN and the tailnet; any other
+    # source gets 403 from Traefik before the admin login.
+    delve-admin:
+      rule: "Host(`{{ delve_traefik_host }}`) && (Path(`/admin`) || PathPrefix(`/admin/`))"
+      priority: 200
+      service: delve
+      entryPoints:
+{% for ep in delve_traefik_entrypoints %}
+        - "{{ ep }}"
+{% endfor %}
+{% if delve_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ delve_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+      middlewares:
+        - delve-admin-allowlist
+        - delve-headers
+{% endif %}
 
   middlewares:
+{% if delve_traefik_admin_ip_allowlist | length > 0 %}
+    delve-admin-allowlist:
+      ipAllowList:
+        sourceRange:
+{% for range in delve_traefik_admin_ip_allowlist %}
+          - "{{ range }}"
+{% endfor %}
+{% endif %}
     delve-headers:
       headers:
         stsSeconds: 31536000

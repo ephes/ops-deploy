@@ -3,8 +3,14 @@
 http:
   routers:
     {{ route.name }}:
-      rule: "Host(`{{ route.host }}`)"
-      service: {{ route.name }}
+{% if admin_ip_allowlist -%}
+{{ "      # /admin never falls through to this public router: if Traefik drops the" }}
+      # admin router or its allowlist, /admin answers 404 instead of the login.
+      rule: "Host(`{{ route.host }}`) && !(Path(`/admin`) || PathPrefix(`/admin/`))"
+{% else -%}
+{{ "      rule: \"Host(`" ~ route.host ~ "`)\"" }}
+{% endif -%}
+{{ "      service: " ~ route.name }}
       entryPoints:
 {% for ep in entrypoints -%}
 {{ "        - \"" ~ ep ~ "\"" }}
@@ -17,8 +23,38 @@ http:
 {% endif -%}
 {{ "      middlewares:" }}
         - {{ route.name }}-headers
+{%- if admin_ip_allowlist %}
+
+    # The operator dashboard only answers the LAN and the tailnet; any other
+    # source gets 403 from Traefik before the admin login.
+    {{ route.name }}-admin:
+      rule: "Host(`{{ route.host }}`) && (Path(`/admin`) || PathPrefix(`/admin/`))"
+      priority: 200
+      service: {{ route.name }}
+      entryPoints:
+{% for ep in entrypoints -%}
+{{ "        - \"" ~ ep ~ "\"" }}
+{% endfor -%}
+{% if route.cert_resolver -%}
+{{ "      tls:" }}
+        certResolver: {{ route.cert_resolver }}
+{% else -%}
+{{ "      tls: {}" }}
+{% endif -%}
+{{ "      middlewares:" }}
+        - {{ route.name }}-admin-allowlist
+        - {{ route.name }}-headers
+{%- endif %}
 
   middlewares:
+{%- if admin_ip_allowlist %}
+    {{ route.name }}-admin-allowlist:
+      ipAllowList:
+        sourceRange:
+{%- for range in admin_ip_allowlist %}
+          - "{{ range }}"
+{%- endfor %}
+{%- endif %}
     {{ route.name }}-headers:
       headers:
         stsSeconds: 31536000

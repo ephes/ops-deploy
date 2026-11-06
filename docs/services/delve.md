@@ -57,6 +57,7 @@ The role's variables without the `delve_` prefix; defaults follow its
 | `listen_address`, `port` | `127.0.0.1`, `10026` | |
 | `public_url`, `traefik_host` | `https://delve.example.com`, `delve.example.com` | |
 | `traefik_enabled`, `traefik_entrypoints`, `traefik_cert_resolver` | `true`, `("web-secure",)`, `""` | empty resolver: `tls: {}` |
+| `traefik_admin_ip_allowlist` | `DEFAULT_INTERNAL_IP_RANGES` (LAN + tailnet) | sources that may reach `/admin`; empty serves it to everyone |
 | `admin_emails`, `apple_client_id`, `env` | `""` | left out of the env file when empty |
 | `apple_server_notifications`, `profile_legacy_reregister`, `apple_signin_legacy_no_nonce` | `None` | `None` leaves the variable out (the role's empty string); notifications need `apple_client_id` |
 | `storekit_root_certs_path` | `None` | a host path enables StoreKit; then `storekit_bundle_id` and `storekit_product_ids` are required |
@@ -123,7 +124,13 @@ file changes with it). The media directory and the profile are never removed.
 7. The Traefik route `/etc/traefik/dynamic/delve.yml` from the role's own
    template. Traefik is not restarted: the role's `reload traefik` handler
    fails on a unit without `ExecReload` and is ignored, and the file
-   provider's watcher applies the route.
+   provider's watcher applies the route. The app API (`/v1/…`, `/health`) is
+   public. While `traefik_admin_ip_allowlist` is non-empty, a second router
+   `delve-admin` (`Path(/admin) || PathPrefix(/admin/)`, priority 200) puts an
+   `ipAllowList` in front of the operator dashboard, so other sources get
+   `403` before the admin login. The public router then excludes those paths,
+   so a dropped admin router leaves `/admin` a `404`, never the login. A LAN client that reaches the host over its
+   public IPv6 address is outside the list; use the tailnet.
 8. `delve` enabled and started; restarted when the binary, the PEM, the env
    file, the analysis profile or secret files, or the unit changed (not right
    after this run started it).

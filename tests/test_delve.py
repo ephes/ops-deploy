@@ -6,9 +6,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
+import yaml
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.templates import render
+from ops_deploy.helpers.traefik import DEFAULT_INTERNAL_IP_RANGES
 from ops_deploy.services.delve import DelveConfig, build_delved, deploy_delve
 from ops_deploy.services.delve.deploy import (
     DETECTOR_API_KEY_PATTERN,
@@ -591,3 +593,57 @@ def test_detector_key_pattern_is_the_roles() -> None:
 
 def test_route_sends_hsts_without_preload(cfg: DelveConfig) -> None:
     assert len(hsts_headers(render_route(cfg, traefik_config(cfg), None), seconds=31536000)) == 1
+
+
+def test_admin_route_only_answers_internal_ranges(cfg: DelveConfig) -> None:
+    http = yaml.safe_load(render_route(cfg, traefik_config(cfg), None))["http"]
+    admin = http["routers"]["delve-admin"]
+    assert admin["rule"] == f"Host(`{cfg.traefik_host}`) && (Path(`/admin`) || PathPrefix(`/admin/`))"
+    assert admin["priority"] == 200
+    assert admin["service"] == "delve"
+    assert admin["middlewares"] == ["delve-admin-allowlist", "delve-headers"]
+    allow = http["middlewares"]["delve-admin-allowlist"]["ipAllowList"]["sourceRange"]
+    assert tuple(allow) == DEFAULT_INTERNAL_IP_RANGES
+    # The app API stays public: no allowlist on the main router, which never
+    # serves /admin (a dropped admin router leaves /admin a 404).
+    public = http["routers"]["delve"]
+    assert public["middlewares"] == ["delve-headers"]
+    assert public["rule"] == f"Host(`{cfg.traefik_host}`) && !(Path(`/admin`) || PathPrefix(`/admin/`))"
+
+
+def test_empty_admin_allowlist_renders_one_router(cfg: DelveConfig) -> None:
+    open_cfg = cfg.model_copy(update={"traefik_admin_ip_allowlist": ()})
+    http = yaml.safe_load(render_route(open_cfg, traefik_config(open_cfg), None))["http"]
+    assert list(http["routers"]) == ["delve"]
+    assert http["routers"]["delve"]["rule"] == f"Host(`{cfg.traefik_host}`)"
+    assert list(http["middlewares"]) == ["delve-headers"]
+
+
+@pytest.mark.parametrize(
+    "network",
+    [
+        "evil",
+        "100.64.0.0",
+        "300.1.1.1/8",
+        "100.64.0.0/10 ",
+        "fd7a::/129",
+        "192.168.1.0/33",
+        "10.0.0.0/08",
+        "010.0.0.0/8",
+    ],
+)
+def test_admin_allowlist_needs_cidr_networks(tmp_path: Path, network: str) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    with pytest.raises(ConfigValidationError, match="traefik_admin_ip_allowlist"):
+        DelveConfig(binary_path=binary, secrets=REF, traefik_admin_ip_allowlist=(network,))
+
+
+@pytest.mark.parametrize("network", ["sentinel-7f3a/8", "203.0.113.77/33"])
+def test_admin_allowlist_errors_do_not_echo_the_entry(tmp_path: Path, network: str) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    with pytest.raises(ConfigValidationError) as excinfo:
+        DelveConfig(binary_path=binary, secrets=REF, traefik_admin_ip_allowlist=(network,))
+    assert network not in str(excinfo.value)
+    assert network not in repr(excinfo.value.errors)

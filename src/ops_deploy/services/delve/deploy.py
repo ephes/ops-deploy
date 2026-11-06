@@ -10,6 +10,7 @@ so Ansible and ops-deploy can take turns on one host without churn.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -40,7 +41,7 @@ from ops_deploy.helpers import (
     traefik_route,
     wait_port,
 )
-from ops_deploy.helpers.traefik import Hostname
+from ops_deploy.helpers.traefik import DEFAULT_INTERNAL_IP_RANGES, Hostname
 from ops_deploy.ops import secret_file
 
 TEMPLATE_PACKAGE = "ops_deploy.services.delve"
@@ -86,6 +87,11 @@ class DelveConfig(BaseServiceConfig):
     traefik_host: Hostname = "delve.example.com"
     traefik_entrypoints: tuple[EntryPoint, ...] = ("web-secure",)
     traefik_cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]*$")] = ""
+    # Source networks that may reach the operator dashboard (/admin) through
+    # Traefik (the role's delve_traefik_admin_ip_allowlist): a priority-200
+    # router with an ipAllowList answers everyone else with 403, while the app
+    # API stays public. Empty serves /admin to every client.
+    traefik_admin_ip_allowlist: tuple[str, ...] = DEFAULT_INTERNAL_IP_RANGES
 
     # Comma-separated operator emails seeded as admins; empty disables /admin.
     admin_emails: Plain = ""
@@ -179,6 +185,19 @@ class DelveConfig(BaseServiceConfig):
     def _binary_exists(cls, value: Path) -> Path:
         if not value.is_file():
             raise ValueError("binary_path must be the cross-compiled delved binary on the controller")
+        return value
+
+    @field_validator("traefik_admin_ip_allowlist")
+    @classmethod
+    def _admin_networks(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for network in value:
+            # The role's check (a CIDR written as address/prefix), then a real network.
+            if not re.fullmatch(r"[0-9A-Fa-f:.]+/(0|[1-9][0-9]{0,2})", network):
+                raise ValueError("traefik_admin_ip_allowlist entries must be CIDR networks (address/prefix)")
+            try:
+                ipaddress.ip_network(network, strict=False)
+            except ValueError:
+                raise ValueError("traefik_admin_ip_allowlist entries must be IP networks") from None
         return value
 
     @model_validator(mode="after")
@@ -357,7 +376,13 @@ def render_route(cfg: DelveConfig, route: TraefikRoute, auth_hash: str | None) -
 
     if auth_hash is not None:
         raise ValueError("the delve route has no basic auth")
-    return render(TEMPLATE_PACKAGE, "delve-traefik.yml.j2", route=route, entrypoints=cfg.traefik_entrypoints)
+    return render(
+        TEMPLATE_PACKAGE,
+        "delve-traefik.yml.j2",
+        route=route,
+        entrypoints=cfg.traefik_entrypoints,
+        admin_ip_allowlist=cfg.traefik_admin_ip_allowlist,
+    )
 
 
 def health_check(url: str, *, retries: int, timeout: int, name: str, resolve: str | None = None) -> OperationMeta:
