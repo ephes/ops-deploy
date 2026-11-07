@@ -195,12 +195,15 @@ account is store-specific. `_minio_account` runs it through an
   region from RustFS's root-only environment file on the host
   (`rustfs_env_file`, what `services/rustfs` writes); they never reach the
   controller or a command line, and `admin_alias` is not used. The steps,
-  their order and the stdin-only secret are the same as with `mc_admin`. Two
-  differences: the policy is compared after normalization (statement order,
-  one-element sets; the server stores its own spelling), and a disabled user
-  refuses instead of being upserted (like the RustFS deploy, which never
+  their order and the stdin-only secret are the same as with `mc_admin`. A disabled
+  user refuses instead of being upserted (like the RustFS deploy, which never
   enables a user). `attach` adds the policy and keeps others, as `mc admin
   policy attach` does, so verify then refuses the extra ones.
+
+Both provisioners compare policies after normalizing statement order,
+Action/Resource sets and Condition string values. Condition string-list order is
+ignored, and a scalar string equals a one-element list for every operator and key.
+Different Condition values still differ.
 
 With `rustfs_admin`, point `minio_url` at RustFS (macmini:
 `http://127.0.0.1:9020`); the alias keeps its name, so Echoport's

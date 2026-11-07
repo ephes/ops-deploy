@@ -719,7 +719,9 @@
   of values inside a policy's `Condition`, which the server varies between reads. A
   production run removed its user and then failed with "state outside the listed
   users changed" on such a read. A real `Condition` change still fails. The normal
-  deployment's shared `normalized()` is unchanged.
+  deployment's shared `normalized()` was unchanged by that retirement fix; it now
+  also ignores Condition string-list order and scalar/one-element-list spelling,
+  as described in the general policy comparison entry above.
 
 - Add `services.minio.user_retirement`, an explicit maintenance operation that
   removes listed MinIO users, proves them absent and changes nothing else. It

@@ -62,9 +62,11 @@ used), and prints only a pending count or a constant refusal.
 
 - Buckets are created when absent; `versioning=True` (default) enables
   versioning, `False` leaves the state alone and never suspends it.
-- Policies are created or updated when their document differs after ignoring
-  statement order and single-value spellings (the server stores a one-element
-  list as a string).
+- Policies are created or updated when their document differs after canonicalizing
+  statement order, the set-valued Action/Resource fields and Condition string
+  values. Condition string-list order is ignored, and a scalar string equals a
+  one-element list for every operator and key. Different Condition values still
+  differ. The server's single-value spellings do not cause drift.
 - Every identity is exact: its attached policies are set to the declared list,
   and group membership refuses. A disabled user refuses (the deploy never
   enables it). A recognized `SignatureDoesNotMatch`/`InvalidAccessKeyId` on a

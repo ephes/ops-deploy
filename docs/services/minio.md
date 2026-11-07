@@ -6,7 +6,7 @@ The port of `minio_deploy` preserves the pinned server/client, service, environm
 
 The client checks before writing. It compares the declared shared alias locally without returning credentials, and imports it through stdin only when different. IAM inspection and signed requests use a private temporary client config; credentials never appear in command arguments or probe output. Existing enabled users are rotated only after a recognized signature mismatch. A disabled managed user stops the run. Transport errors, malformed output and unrecognized server errors are failures, never evidence that a user or policy is absent.
 
-Each declared policy is compared after canonicalizing only statement order and the set-valued Action/Resource fields. Mutable policy drift is updated in place. The versioned weeknotes source policy is immutable: drift requires a new reviewed policy name. Its separate maintenance rollback now has an owned native-qualified typed operation; private routing remains tracked conversion work. The current deployed adapter still refuses the disabled setting with a legacy-play pointer until that private equivalent is adopted. This is not a permanent Ansible exception. Superseded policy detachment/removal happens only when present, after proving the replacement attachment. Superseded retirement requires an additive identity; the configuration rejects retirement on an exact identity. Exact-policy identities also require no group membership; additive identities retain their original weaker attachment contract.
+Each declared policy is compared after canonicalizing statement order, the set-valued Action/Resource fields and Condition string values. Condition string-list order is ignored, and a scalar string equals a one-element list for every operator and key. Different Condition values still differ. Mutable policy drift is updated in place. The versioned weeknotes source policy is immutable: drift requires a new reviewed policy name. Its separate maintenance rollback now has an owned native-qualified typed operation; private routing remains tracked conversion work. The current deployed adapter still refuses the disabled setting with a legacy-play pointer until that private equivalent is adopted. This is not a permanent Ansible exception. Superseded policy detachment/removal happens only when present, after proving the replacement attachment. Superseded retirement requires an additive identity; the configuration rejects retirement on an exact identity. Exact-policy identities also require no group membership; additive identities retain their original weaker attachment contract.
 
 Bucket creation, anonymous access and versioning are inspected first. `versioning=false` means leave the existing versioning state alone, not disable it. Data directory ownership/mode applies only to each top-level directory. A read-only foreign-owner search stops on the first descendant mismatch; it never chmods/chowns stored objects recursively. On a healthy store this admission walks every descendant metadata entry, so its cost grows with the object tree. It has no separate probe timeout and reads no object bodies.
 
@@ -242,8 +242,10 @@ users, attached policy names, policy documents, groups and bucket names outside 
 list are read before and after, and any difference fails the run after the removal
 with the removal already done. The server returns some lists in a varying order
 between reads with no write in between: action, resource and statement lists, and the
-values inside a statement's `Condition`. The comparison ignores that order, in this
-component only. A changed, added or removed value still fails. Service accounts of
+string values inside a statement's `Condition`. Policy comparisons generally ignore
+that order and treat a scalar Condition string as equal to a one-element list,
+including during normal IAM reconciliation. A changed, added or removed value still
+fails the retirement check. Service accounts of
 other users are not part of that comparison, since listing them would put each access
 key on a command line.
 Policy documents stay in place, including one only the retired user held.
