@@ -32,6 +32,17 @@ def as_list(value):
     return [value] if isinstance(value, str) else list(value or [])
 
 
+def normalized_condition(value):
+    """Condition maps keep their keys; string values compare as sorted lists."""
+    if isinstance(value, dict):
+        return {key: normalized_condition(item) for key, item in value.items()}
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return sorted(value)
+    return value
+
+
 def statements(doc):
     return sorted(
         json.dumps(
@@ -39,7 +50,7 @@ def statements(doc):
                 s.get("Effect"),
                 sorted(as_list(s.get("Action"))),
                 sorted(as_list(s.get("Resource"))),
-                s.get("Condition") or {},
+                normalized_condition(s.get("Condition") or {}),
             ],
             sort_keys=True,
         )
@@ -68,16 +79,22 @@ if mode == "probe":
     sys.exit(0)
 
 problems = []
-if policy_state != "ok":
-    problems.append(f"policy {policy} is {policy_state}")
+detach_hint = False
+if policy_state == "differs":
+    problems.append(f"policy {policy} differs from the installed document")
+elif policy_state == "missing":
+    problems.append(f"policy {policy} is missing")
 if account is None:
     problems.append(f"user {user} is missing")
 else:
     if names != [policy]:
         problems.append(f"user {user} holds policies {names}, not exactly {policy}")
+        detach_hint = True
     if account.get("memberOf"):
         problems.append(f"user {user} belongs to a group")
+        detach_hint = True
     if account.get("userStatus") != "enabled":
         problems.append(f"user {user} is not enabled")
 if problems:
-    sys.exit("MinIO account: " + "; ".join(problems) + ". Detach other policies or groups by hand, then run again.")
+    hint = " Detach other policies or groups by hand, then run again." if detach_hint else ""
+    sys.exit("MinIO account: " + "; ".join(problems) + "." + hint)

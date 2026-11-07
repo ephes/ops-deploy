@@ -89,19 +89,25 @@ def run(action, path, args):
             print(f"policy={policy_state} user={user_state}")
             return
         problems = []
-        if policy_state != "ok":
-            problems.append(f"policy {policy} is {policy_state}")
+        detach_hint = False
+        if policy_state == "differs":
+            problems.append(f"policy {policy} differs from the installed document")
+        elif policy_state == "missing":
+            problems.append(f"policy {policy} is missing")
         if account is None:
             problems.append(f"user {user} is missing")
         else:
             if attached != {policy}:
                 problems.append(f"user {user} holds policies {sorted(attached)}, not exactly {policy}")
+                detach_hint = True
             if account.get("memberOf"):
                 problems.append(f"user {user} belongs to a group")
+                detach_hint = True
             if account.get("status") != "enabled":
                 problems.append(f"user {user} is not enabled")
         if problems:
-            raise Refused("RustFS account: " + "; ".join(problems) + ". Detach other policies or groups by hand, then run again.")
+            hint = " Detach other policies or groups by hand, then run again." if detach_hint else ""
+            raise Refused("RustFS account: " + "; ".join(problems) + "." + hint)
         return
     if action == "create-policy" and len(args) == 2:
         policy, policy_file = args

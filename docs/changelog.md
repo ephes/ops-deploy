@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `services.echoport` and MinIO IAM: policy comparisons normalize condition
+  string values and lists, so server-side ordering (including `weeknotes_home`'s
+  two backup prefixes) and single-value spelling no longer report false drift.
+  RustFS uses the same comparison rules. Different condition values still
+  differ; generated policy documents and their installed bytes are unchanged.
+  Account verification now reports a policy that differs from the installed
+  document and only suggests detaching policies or groups for user attachment
+  or group problems.
+
 - `services.delve`: the operator dashboard (`/admin`) only answers the LAN and
   the tailnet. New `DelveConfig.traefik_admin_ip_allowlist` (default
   `DEFAULT_INTERNAL_IP_RANGES`, each entry a CIDR network) adds a

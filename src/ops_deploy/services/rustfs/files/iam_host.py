@@ -199,6 +199,17 @@ def string_set(value):
     return value
 
 
+def normalized_condition(value):
+    """Condition maps keep their keys; string values compare as sorted lists."""
+    if isinstance(value, dict):
+        return {key: normalized_condition(item) for key, item in value.items()}
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return sorted(value)
+    return value
+
+
 def normalized(policy):
     """Statement order and set-valued Action/Resource fields carry no meaning."""
     if not isinstance(policy, dict) or not isinstance(policy.get("Statement"), list):
@@ -210,13 +221,10 @@ def normalized(policy):
             for field in ("Action", "NotAction", "Resource", "NotResource"):
                 if field in statement:
                     statement[field] = string_set(statement[field])
-            # The server stores a one-element condition value as a bare string.
+            # The server reorders condition lists and may store one value as a string.
             condition = statement.get("Condition")
             if isinstance(condition, dict):
-                statement["Condition"] = {
-                    operator: {key: string_set(value) for key, value in keys.items()} if isinstance(keys, dict) else keys
-                    for operator, keys in condition.items()
-                }
+                statement["Condition"] = normalized_condition(condition)
         result.append(statement)
     result.sort(key=lambda value: json.dumps(value, sort_keys=True))
     return {**policy, "Statement": result}

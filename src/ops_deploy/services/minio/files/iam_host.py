@@ -111,8 +111,19 @@ def recovery_state(payload):
     return {"recover_client": recover_client, "recover_service": recover_service}
 
 
+def normalized_condition(value):
+    """Condition maps keep their keys; string values compare as sorted lists."""
+    if isinstance(value, dict):
+        return {key: normalized_condition(item) for key, item in value.items()}
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return sorted(value)
+    return value
+
+
 def normalized(policy):
-    """Same narrow canonicalization as the legacy minio_policy filter."""
+    """Canonicalize statement order, Action/Resource sets and Condition strings."""
     if not isinstance(policy, dict):
         return policy
     statements = policy.get("Statement")
@@ -128,6 +139,8 @@ def normalized(policy):
                     value = [value]
                 if isinstance(value, list) and all(isinstance(item, str) for item in value):
                     statement[field] = sorted(set(value))
+            if isinstance(statement.get("Condition"), dict):
+                statement["Condition"] = normalized_condition(statement["Condition"])
         result.append(statement)
     result.sort(key=lambda value: json.dumps(value, sort_keys=True))
     return {**policy, "Statement": result}
