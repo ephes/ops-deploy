@@ -54,6 +54,7 @@ Defaults follow `vaultwarden_deploy/defaults/main.yml`
 | `smtp_debug` | `None` | `None` is the role's undefined variable: no `SMTP_DEBUG` line, and config.json's `smtp_debug` is left alone |
 | `experimental_client_feature_flags`, `sends_allowed`, `emergency_access_allowed`, `icon_service`, `log_level` | role defaults | |
 | `traefik_enabled`, `traefik_entrypoint`, `traefik_certresolver` | `true`, `websecure`, `""` | an empty resolver renders `tls: {}` |
+| `traefik_ip_allowlist` | `()` | source networks (each `address/prefix`) that may reach Vaultwarden; non-empty puts a `vaultwarden-ipallowlist` `ipAllowList` on the router, so every other client gets `403` (web vault, API, live sync and `/admin` alike); empty serves everyone, as the role does |
 | `healthcheck_enabled`, `healthcheck_timeout` | `true`, `30` | `GET /alive`, `timeout / 5` tries 5 s apart |
 
 `service_name`, `user` and `site_path` are fixed by the packages
@@ -109,7 +110,12 @@ and the Molecule helpers (`vaultwarden_skip_*`) do not exist.
 8. `/etc/systemd/system/vaultwarden.service.d/override.conf` (`0644`) with
    the role's hardening.
 9. The Traefik route `/etc/traefik/dynamic/vaultwarden.yml` (`0644`), when
-   `traefik_enabled`.
+   `traefik_enabled`. With `traefik_ip_allowlist` the router carries the
+   `vaultwarden-ipallowlist` middleware; the HTTP router only redirects to
+   it. The maintenance freeze (`vaultwarden_maintenance`) writes its own file
+   with a priority-100000 router and is not affected. A client that reaches
+   the host over a public address (a LAN client using the public IPv6 address,
+   or hairpin NAT through the WAN address) is outside a LAN/tailnet list.
 10. `service_rollout` of `vaultwarden.service`: systemd reloaded when the
     drop-in changed; enabled and started; restarted when a package was
     installed or the env file, config.json or drop-in changed (not right
@@ -125,8 +131,13 @@ that fails the deploy unless it then answers `current`.
 `tests/test_vaultwarden_parity.py` renders the vendored role templates
 (`tests/parity/ansible/vaultwarden_deploy__*`, checked against ops-library
 main `540ede2b`, 2.56.0) the way Ansible does and requires **byte-identical**
-`/etc/vaultwarden.env`, drop-in and route; the templates the deploy ships are
-the same files. With `OPS_LIBRARY_PATH` it also compares the defaults, the
+`/etc/vaultwarden.env`, drop-in and route; the env and drop-in templates the
+deploy ships are the same files. The route template adds only the two
+`traefik_ip_allowlist` blocks, which the role does not have: with an empty
+allowlist the route is still the role's bytes, with one it differs, so an
+Ansible rollback run of `vaultwarden_deploy` would write the route without
+the allowlist (and a restore of an archive taken before the allowlist puts
+the old route back) until the next ops-deploy run. With `OPS_LIBRARY_PATH` it also compares the defaults, the
 paths, owners and modes, the packages, the repository line and the
 config.json settings with the role's tasks.
 `tests/test_vaultwarden_smtp_sync.py` runs the config.json script as the

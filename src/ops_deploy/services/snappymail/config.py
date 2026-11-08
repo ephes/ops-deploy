@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 from pathlib import PurePosixPath
 from typing import Annotated, Literal, Self
 
-from pydantic import Field, StrictBool, model_validator
+from pydantic import Field, StrictBool, field_validator, model_validator
 
 from ops_deploy.core.config import UnixUser
 from ops_deploy.services._mail_web.config import Domain, MailWebConfig, PathText
@@ -14,7 +15,7 @@ from ops_deploy.services._mail_web.config import Domain, MailWebConfig, PathText
 class SnappyMailConfig(MailWebConfig):
     service_name: Literal["snappymail"] = "snappymail"
     site_path: PurePosixPath = PurePosixPath("/opt/snappymail")
-    version: str = "2.38.2"
+    version: str = "3.0.0"
     install_dir: PathText = "/opt/snappymail"
     data_dir: PathText = "/mnt/cryptdata/snappymail"
     user: UnixUser = "snappymail"
@@ -50,6 +51,20 @@ class SnappyMailConfig(MailWebConfig):
     logging_enabled: StrictBool = False
     logging_level: Annotated[int, Field(ge=0, le=7)] = 4
     disable_default_nginx_site: StrictBool = True
+    # Source networks Traefik admits (PostfixAdmin's ipAllowList): every other
+    # client gets 403 before the login page or the admin panel.
+    traefik_ip_whitelist_enabled: StrictBool = True
+    traefik_ip_whitelist: tuple[str, ...] = ("100.64.0.0/10", "fd7a:115c:a1e0::/48")
+
+    @field_validator("traefik_ip_whitelist")
+    @classmethod
+    def networks(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for item in value:
+            try:
+                ipaddress.ip_network(item, strict=False)
+            except ValueError:
+                raise ValueError("mail web networks must be valid IP networks") from None
+        return value
 
     @model_validator(mode="after")
     def separate_persistent_data(self) -> Self:
@@ -58,4 +73,6 @@ class SnappyMailConfig(MailWebConfig):
             raise ValueError("SnappyMail persistent data and release roots must be disjoint")
         if set(self.domains) & set(self.remove_domains):
             raise ValueError("SnappyMail cannot manage and remove the same domain")
+        if self.traefik_ip_whitelist_enabled and not self.traefik_ip_whitelist:
+            raise ValueError("SnappyMail ipAllowList is enabled without source networks")
         return self

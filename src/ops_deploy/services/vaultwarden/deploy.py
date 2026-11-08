@@ -7,7 +7,9 @@ writes them) and own the binary, the unit and the ``vaultwarden`` user; this
 deploy writes ``/etc/vaultwarden.env``, the systemd drop-in and the Traefik
 route byte-identical to the role's (``tests/test_vaultwarden_parity.py``), so
 Ansible and ops-deploy can take turns on a host without rewriting a file or
-restarting anything.
+restarting anything. The one exception is ``traefik_ip_allowlist``, which the
+role does not have: a non-empty allowlist adds an ``ipAllowList`` middleware
+to the route.
 
 When ``data/config.json`` exists (the admin panel saved settings, which then
 override the environment file), the role's SMTP settings are merged into it on
@@ -140,6 +142,10 @@ class VaultwardenConfig(BaseServiceConfig):
     traefik_enabled: bool = True
     traefik_entrypoint: str = "websecure"
     traefik_certresolver: str = ""
+    # Source networks that may reach Vaultwarden through Traefik: a non-empty
+    # tuple puts an ipAllowList on the router, so everyone else gets 403.
+    # Empty (the role's behaviour) serves every client.
+    traefik_ip_allowlist: tuple[str, ...] = ()
     healthcheck_enabled: bool = True
     healthcheck_timeout: int = Field(default=30, ge=5, le=600)
 
@@ -176,6 +182,19 @@ class VaultwardenConfig(BaseServiceConfig):
     def _resolver(cls, value: str) -> str:
         if value and not _yaml_word(value):
             raise ValueError("traefik_certresolver must be a plain name")
+        return value
+
+    @field_validator("traefik_ip_allowlist")
+    @classmethod
+    def _allowlist(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for network in value:
+            # A CIDR written as address/prefix, then a real network; errors do not echo entries.
+            if not re.fullmatch(r"[0-9A-Fa-f:.]+/(0|[1-9][0-9]{0,2})", network):
+                raise ValueError("traefik_ip_allowlist entries must be CIDR networks (address/prefix)")
+            try:
+                ipaddress.ip_network(network, strict=False)
+            except ValueError:
+                raise ValueError("traefik_ip_allowlist entries must be IP networks") from None
         return value
 
     @model_validator(mode="after")
@@ -273,6 +292,7 @@ def role_vars(cfg: VaultwardenConfig, **extra: Any) -> dict[str, Any]:
         "vaultwarden_log_level": cfg.log_level,
         "vaultwarden_traefik_entrypoint": cfg.traefik_entrypoint,
         "vaultwarden_traefik_certresolver": cfg.traefik_certresolver,
+        "vaultwarden_traefik_ip_allowlist": list(cfg.traefik_ip_allowlist),
         **extra,
     }
     if cfg.smtp_debug is not None:

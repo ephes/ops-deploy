@@ -21,6 +21,20 @@ server {
         deny all;
     }
 
+    # Below snappymail/ only the selected release's static files and themes
+    # are served. Its PHP entry points (include.php, setup.php), app/ and
+    # every older release kept on disk (whose include.php would otherwise
+    # run that old, possibly vulnerable code) are refused.
+    location ^~ /snappymail/ {
+        deny all;
+        location ^~ /snappymail/v/{{ snappymail_version }}/static/ {
+            allow all;
+        }
+        location ^~ /snappymail/v/{{ snappymail_version }}/themes/ {
+            allow all;
+        }
+    }
+
     location / {
         try_files $uri $uri/ /index.php?$args;
     }

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `services.snappymail`: SnappyMail 3.0.0 (fixes the published 2.38.2
+  advisories, among them an unauthenticated SSRF). New verified release
+  manifest `snappymail-3.0.0.json.gz` (archive SHA-256 and detached signature
+  checked against the SnappyMail release key); 2.38.2 is now `previous_only`,
+  so an existing 2.38.2 tree updates in place. 3.0.0 needs PHP 8.2 or newer.
+  The nginx site now serves below `/snappymail/` only the selected release's
+  `static/` and `themes/`: older release trees kept on disk can no longer be
+  run through their `include.php`. New `traefik_ip_whitelist_enabled` (default
+  on) and `traefik_ip_whitelist` (default: the tailnet ranges, each a valid IP
+  network; an enabled empty list is refused) put PostfixAdmin's `ipAllowList`
+  on the SnappyMail router, so other sources get `403`. Both templates now
+  differ from the `snappymail_deploy` role.
+- `services.vaultwarden`: new `VaultwardenConfig.traefik_ip_allowlist`
+  (default empty, each entry an `address/prefix` network). A non-empty list
+  adds a `vaultwarden-ipallowlist` `ipAllowList` middleware to the router, so
+  only those sources reach Vaultwarden and every other client gets `403`. An
+  empty list renders the role's route bytes as before; the maintenance freeze
+  route is unaffected.
+
 - `services.echoport` and MinIO IAM: policy comparisons normalize condition
   string values and lists, so server-side ordering (including `weeknotes_home`'s
   two backup prefixes) and single-value spelling no longer report false drift.

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from pyinfra.api import DeployError
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
@@ -400,3 +401,24 @@ def test_domain_with_a_path_routes_its_host_name() -> None:
 
     assert cfg.hostname == "vault.example.com"
     assert "Host(`vault.example.com`)" in render_route(cfg)
+
+
+def test_ip_allowlist_limits_the_whole_router() -> None:
+    networks = ("192.168.0.0/16", "100.64.0.0/10", "fd7a:115c:a1e0::/48")
+    cfg = VaultwardenConfig(domain="https://vault.example.com", traefik_ip_allowlist=networks)
+
+    route = yaml.safe_load(render_route(cfg))["http"]
+
+    assert route["routers"]["vaultwarden"]["middlewares"] == ["vaultwarden-ipallowlist", "vaultwarden-headers"]
+    assert route["middlewares"]["vaultwarden-ipallowlist"] == {"ipAllowList": {"sourceRange": list(networks)}}
+    # The redirect router only answers with a redirect to the allowlisted router.
+    assert route["routers"]["vaultwarden-http"]["middlewares"] == ["vaultwarden-redirect"]
+    open_route = yaml.safe_load(render_route(VaultwardenConfig(domain="https://vault.example.com")))["http"]
+    assert "vaultwarden-ipallowlist" not in open_route["middlewares"]
+    assert open_route["routers"]["vaultwarden"]["middlewares"] == ["vaultwarden-headers"]
+
+
+@pytest.mark.parametrize("network", ["10.0.0.0", "10.0.0.0/33", "10.0.0.0/08", "example.com/8", "10.0.0.0/8 "])
+def test_ip_allowlist_entries_must_be_cidr_networks(network: str) -> None:
+    with pytest.raises(ConfigValidationError, match="traefik_ip_allowlist entries must be"):
+        VaultwardenConfig(domain="https://vault.example.com", traefik_ip_allowlist=(network,))

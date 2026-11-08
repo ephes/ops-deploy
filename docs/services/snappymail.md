@@ -1,6 +1,6 @@
 # SnappyMail ordinary deployment
 
-`deploy_snappymail(config, secrets)` manages selected SnappyMail 2.38.2 code,
+`deploy_snappymail(config, secrets)` manages selected SnappyMail 3.0.0 code,
 PHP-FPM pool, nginx loopback site, Traefik route and explicitly owned persistent
 configuration. Supply `admin_password` through `SecretValues`. Matching passwords
 retain the existing hash; a genuine credential change generates a new hash.
@@ -26,9 +26,35 @@ nonempty data without its marker is refused before seeding.
 
 Full archive-owned code bytes and internal link identity are checked against
 verified manifests. A matching version marker alone does not authorize replacing
-local vendor/trust repairs. Current 2.38.2 is the only selected release; a previous
-2.38.0 manifest admits an explicitly qualified update path. Unrelated old code
-files remain untouched. TLS verification and the system CA store remain enabled;
+local vendor/trust repairs. Current 3.0.0 is the only selected release; the
+previous 2.38.2 and 2.38.0 manifests admit an explicitly qualified update path.
+Unrelated old code files remain untouched, including older
+`snappymail/v/<version>/` trees; the nginx site serves below `/snappymail/`
+only the selected release's `static/` and `themes/` and refuses everything
+else there (`403`), so an old release's `include.php` cannot run its code.
+
+Release manifests (`_mail_web/releases/snappymail-<version>.json.gz`) record
+the upstream archive URL and SHA-256 and every regular file (mode, SHA-256)
+and link of the archive except `data/`, which only seeds an empty data root.
+The 3.0.0 manifest was built from `snappymail-3.0.0.tar.gz` (SHA-256
+`ac495fb8eb95a27c3f2bfab74db0d15b12079c35ef1c533dc70504865f21d000`) after its
+detached signature verified against the SnappyMail release key
+`1016 E470 7914 5542 F8BA  1335 4820 8BA1 3290 F3EB` (the same key in
+`build/SnappyMail.asc` at tag `v3.0.0` and on keys.openpgp.org); the same
+builder reproduces the 2.38.2 manifest byte for byte (only `previous_only`
+changed). The JSON is `json.dumps(record, sort_keys=True)`, gzip with mtime 0.
+
+SnappyMail 3.0.0 needs PHP 8.2 or newer and the same PHP extensions. Its
+owned `application.ini` keys, domain JSON format, admin bcrypt hash and
+`setup.php` (which writes the `INSTALLED` marker on the first request after
+the version change) are unchanged from 2.38.2. The data root's `VERSION`
+file is the seeding marker and keeps the version it was seeded with.
+
+The Traefik router carries an `ipAllowList` (`snappymail-ipwhitelist`) while
+`traefik_ip_whitelist_enabled` (default on, as for PostfixAdmin), so only
+`traefik_ip_whitelist` sources (default: the tailnet's two ranges) reach the
+login page and the admin panel; everyone else gets `403`. An enabled empty
+list is refused. TLS verification and the system CA store remain enabled;
 this API introduces no certificate bypass or private CA replacement.
 
 The shared mail-web helper validates the complete nginx/FPM candidate dependency

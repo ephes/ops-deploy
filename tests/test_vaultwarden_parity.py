@@ -14,6 +14,7 @@ the role itself.
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -162,9 +163,25 @@ def make(overrides: dict[str, Any], secrets: dict[str, str]) -> tuple[Vaultwarde
     return cfg, SecretValues(cfg.secrets, secrets)
 
 
-@pytest.mark.parametrize("name", TEMPLATES)
+# The route template adds the ``traefik_ip_allowlist`` blocks, which the role
+# does not have; with an empty allowlist (the default) the rendered route is
+# still the role's (test_route_matches_role).
+ROUTE_TEMPLATE = "traefik-vaultwarden.yml.j2"
+
+
+@pytest.mark.parametrize("name", [name for name in TEMPLATES if name != ROUTE_TEMPLATE])
 def test_shipped_templates_are_the_vendored_role_templates(name: str) -> None:
     assert (PACKAGE_TEMPLATES / name).read_bytes() == (VENDORED / f"vaultwarden_deploy__{name}").read_bytes()
+
+
+def test_shipped_route_template_is_the_role_template_plus_the_allowlist_blocks() -> None:
+    ours = (PACKAGE_TEMPLATES / ROUTE_TEMPLATE).read_text()
+    blocks = re.findall(r"\{% if vaultwarden_traefik_ip_allowlist .*?\{% endif %\}\n", ours, flags=re.S)
+
+    assert len(blocks) == 2
+    for block in blocks:
+        ours = ours.replace(block, "", 1)
+    assert ours == (VENDORED / f"vaultwarden_deploy__{ROUTE_TEMPLATE}").read_text()
 
 
 @pytest.mark.parametrize("secrets", SECRET_SETS)

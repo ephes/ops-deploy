@@ -13,6 +13,9 @@ http:
       entryPoints:
         - {{ vaultwarden_traefik_entrypoint }}
       middlewares:
+{% if vaultwarden_traefik_ip_allowlist | default([]) | length > 0 %}
+        - vaultwarden-ipallowlist
+{% endif %}
         - vaultwarden-headers
       service: vaultwarden
 {% if vaultwarden_traefik_certresolver | default('') | length > 0 %}
@@ -32,6 +35,17 @@ http:
       service: vaultwarden
 
   middlewares:
+{% if vaultwarden_traefik_ip_allowlist | default([]) | length > 0 %}
+    # Only these source networks reach Vaultwarden (web vault, API, /admin);
+    # every other client gets 403 from Traefik.
+    vaultwarden-ipallowlist:
+      ipAllowList:
+        sourceRange:
+{% for ip_range in vaultwarden_traefik_ip_allowlist %}
+          - "{{ ip_range }}"
+{% endfor %}
+
+{% endif %}
     vaultwarden-headers:
       headers:
         browserXssFilter: true

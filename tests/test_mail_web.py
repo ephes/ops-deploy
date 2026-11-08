@@ -63,7 +63,7 @@ def test_current_release_is_pinned_with_full_manifest(cfg: Any) -> None:
         assert "php84" in selected["url"]
 
 
-@pytest.mark.parametrize("cfg", [pfa(version="4.0.4"), snappy(version="2.38.0")])
+@pytest.mark.parametrize("cfg", [pfa(version="4.0.4"), snappy(version="2.38.0"), snappy(version="2.38.2")])
 def test_historical_bundle_is_admission_only_not_selected_install(cfg: Any) -> None:
     with pytest.raises(Exception, match="Unsupported selected"):
         release_records(cfg)
@@ -469,3 +469,45 @@ def test_recovery_attempts_all_owned_files_and_units_after_restore_error(
         m.main(q)
     assert restored == list(reversed(paths))
     assert units == ["php8.3-fpm", "nginx"]
+
+
+def test_snappy_selects_3_0_0_and_admits_2_38_2_as_previous() -> None:
+    selected, previous = release_records(snappy())
+    assert selected["version"] == "3.0.0"
+    assert selected["sha256"] == "ac495fb8eb95a27c3f2bfab74db0d15b12079c35ef1c533dc70504865f21d000"
+    assert selected["files"]["index.php"]["sha256"]
+    assert not any(name.startswith("data/") for name in selected["files"])
+    assert {r["version"] for r in previous} == {"2.38.0", "2.38.2"}
+    assert all(r["previous_only"] for r in previous)
+
+
+def test_snappy_route_allowlist_mirrors_postfixadmin() -> None:
+    import yaml
+
+    networks = ("192.168.0.0/16", "100.64.0.0/10", "fd7a:115c:a1e0::/48")
+    route = yaml.safe_load(render(snappy(traefik_ip_whitelist=networks), values())["route"])["http"]
+    assert "snappymail-ipwhitelist" in route["routers"]["snappymail-secure"]["middlewares"]
+    assert route["middlewares"]["snappymail-ipwhitelist"] == {"ipAllowList": {"sourceRange": list(networks)}}
+    default = yaml.safe_load(render(snappy(), values())["route"])["http"]
+    assert default["middlewares"]["snappymail-ipwhitelist"]["ipAllowList"]["sourceRange"] == [
+        "100.64.0.0/10",
+        "fd7a:115c:a1e0::/48",
+    ]
+    off = yaml.safe_load(render(snappy(traefik_ip_whitelist_enabled=False), values())["route"])["http"]
+    assert "snappymail-ipwhitelist" not in off["middlewares"]
+    assert off["routers"]["snappymail-secure"]["middlewares"] == ["snappymail-headers", "snappymail-compress"]
+
+
+@pytest.mark.parametrize("kwargs", [{"traefik_ip_whitelist": ()}, {"traefik_ip_whitelist": ("not-a-network",)}])
+def test_snappy_allowlist_refuses_empty_or_invalid_networks(kwargs: Any) -> None:
+    with pytest.raises(ConfigValidationError):
+        snappy(**kwargs)
+
+
+def test_snappy_nginx_serves_only_selected_release_assets() -> None:
+    files = render(snappy(), values())["files"]
+    site = files["/etc/nginx/sites-available/snappymail"]
+    assert "location ^~ /snappymail/ {\n        deny all;" in site
+    assert "location ^~ /snappymail/v/3.0.0/static/ {\n            allow all;" in site
+    assert "location ^~ /snappymail/v/3.0.0/themes/ {\n            allow all;" in site
+    assert site.count("allow all;") == 2

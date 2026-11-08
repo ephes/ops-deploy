@@ -11,6 +11,9 @@ http:
       middlewares:
         - snappymail-headers
         - snappymail-compress
+{% if snappymail_traefik_ip_whitelist_enabled %}
+        - snappymail-ipwhitelist
+{% endif %}
 {% for middleware in snappymail_traefik_middlewares %}
         - {{ middleware }}
 {% endfor %}
@@ -52,6 +55,15 @@ http:
 
     snappymail-compress:
       compress: {}
+
+{% if snappymail_traefik_ip_whitelist_enabled %}
+    snappymail-ipwhitelist:
+      ipAllowList:
+        sourceRange:
+{% for ip_range in snappymail_traefik_ip_whitelist %}
+          - "{{ ip_range }}"
+{% endfor %}
+{% endif %}
 
   services:
     snappymail:
