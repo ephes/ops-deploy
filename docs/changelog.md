@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pin Grafana to the recorded 12.4.0 image with its registry-verified SHA-256;
+  add a regression check requiring a release tag and digest.
+
 - Upgrade Paperless-ngx from 3.2.1 to 3.4.2 using the verified official
   release checksum; the ops-library rollback role is updated separately. Document
   database migrations,
