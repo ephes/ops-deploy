@@ -20,7 +20,7 @@ from tests import fakehost
 from tests.fakehost import LINUX
 
 CHECKSUM = "sha256:" + "a" * 64
-CFG = TraefikDeployConfig(checksum=CHECKSUM, letsencrypt_email="ops@example.org")
+CFG = TraefikDeployConfig(version="3.7.13", checksum=CHECKSUM, letsencrypt_email="ops@example.org")
 STATIC = "/etc/traefik/traefik.toml"
 UNIT = "/etc/systemd/system/traefik.service"
 LOGROTATE = "/etc/logrotate.d/traefik"
@@ -417,3 +417,14 @@ def test_certificates_match_the_role() -> None:
 @pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
 def test_logrotate_matches_the_role(cfg: TraefikDeployConfig) -> None:
     assert render_logrotate(cfg) == render_ansible("traefik_deploy__traefik.logrotate.j2", cfg)
+
+
+def test_default_release_upgrades_old_binary_with_verified_checksum() -> None:
+    checksum = "sha256:a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393"
+    cfg = TraefikDeployConfig(checksum=checksum, letsencrypt_email="ops@example.org", arch="amd64")
+    assert cfg.version == "3.7.17"
+    result = ok(converged(cfg), cfg)
+    install = next(command for command in result.executed_commands if "traefik_v3.7.17_linux_amd64.tar.gz" in command)
+    assert "traefik_v3.7.17_linux_amd64.tar.gz" in install
+    assert checksum.removeprefix("sha256:") in install
+    assert "Traefik | Check the installed Traefik is 3.7.17" in result.mutating_changed_ops
