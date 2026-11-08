@@ -1,7 +1,7 @@
 """Release-bound index expectations; no application/backend import or database I/O.
 
-The schema fingerprint is derived from unmodified 3.2.1 release source with its
-locked whoosh-compat types (tests/parity/paperless/index-schema-3.2.1.json).
+The schema fingerprint is derived from unmodified 3.4.2 release source with its
+locked whoosh-compat types (tests/parity/paperless/index-schema-3.4.2.json).
 Actual full-application/native validation remains part of the deployment fixture.
 """
 
@@ -10,12 +10,12 @@ from __future__ import annotations
 import re
 import shlex
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 SCHEMA_FINGERPRINT = (
-    "71d572bdddc3094b8e24cc2f456b5d57ef74133afa647d14f870109f433251120"
-    "f29d9f96645c492e3f5ec34ca8737c04116aba027ca062970653977a8556163"
+    "cac16f9170382fd53b4ac9d854878783811c87c772ee23363692a2e3bf639b0f"
+    "2959b4e978fae617830b43df24ca07dfee8d2f9f77eb7943e20c90b3a764a469"
 )
-# paperless.settings._get_search_language_setting, exact 3.2.1 mapping.
+# paperless.settings._get_search_language_setting, exact 3.4.2 mapping.
 OCR_TO_SEARCH = {
     "ara": "ar",
     "dan": "da",
@@ -42,7 +42,7 @@ OCR_TO_SEARCH = {
 # configured OCR language exactly as upstream does; do not silently consult the
 # controller's environment or import the installed application's index backend.
 def expected_index_sentinels(version: str, ocr_language: str) -> dict[str, str | int | None]:
-    if version != "3.2.1":
+    if version != "3.4.2":
         raise ValueError("Paperless index expectations require the supported release contract")
     if not ocr_language or not re.fullmatch(r"[A-Za-z_]+(?:\+[A-Za-z_]+)*", ocr_language):
         raise ValueError("invalid OCR language list")
@@ -79,7 +79,8 @@ def document_count_command(database: str, port: int) -> str:
         raise ValueError("invalid PostgreSQL port")
     sql = (
         "BEGIN READ ONLY; SET LOCAL statement_timeout = '30s'; "
-        "SELECT count(*) FROM public.documents_document WHERE deleted_at IS NULL; ROLLBACK;"
+        "SELECT count(*) FROM public.documents_document "
+        "WHERE deleted_at IS NULL AND root_document_id IS NULL; ROLLBACK;"
     )
     return shlex.join(
         [

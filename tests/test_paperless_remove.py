@@ -222,7 +222,7 @@ def host(
             "/srv/sftp-scanner",
         ):
             paths.update(fakehost.directory(path, user="paperless"))
-        paths.update(fakehost.symlink(f"{SITE}/paperless-ngx", f"{SITE}/paperless-ngx-3.2.1"))
+        paths.update(fakehost.symlink(f"{SITE}/paperless-ngx", f"{SITE}/paperless-ngx-3.4.2"))
         paths.update(fakehost.accounts({"paperless": "/home/paperless", "scanner": "/srv/sftp-scanner"}))
     probe = {"success": True, "enabled": present, "active": "active" if present else "inactive"}
     probe["load"] = "loaded" if present else "not-found"

@@ -414,7 +414,7 @@ def test_migration_root_control_detects_fixed_command_writes(
 def test_actual_static_observer_keeps_receipt_for_unsafe_or_missing_output(tmp_path: Path, kind: str) -> None:
     import sys
 
-    source = tmp_path / "paperless-ngx-v3.2.1/static/frontend"
+    source = tmp_path / "paperless-ngx-v3.4.2/static/frontend"
     source.mkdir(parents=True)
     (source / "owned.js").write_bytes(b"same")
     output = tmp_path / "staticfiles/frontend"
@@ -443,7 +443,7 @@ sys.modules['django.contrib.staticfiles.finders'].get_finders = lambda: []
 
     fixture = SimpleNamespace(
         OWNED_ADMITTED=True,
-        CFG=SimpleNamespace(site_root=str(tmp_path), version="3.2.1"),
+        CFG=SimpleNamespace(site_root=str(tmp_path), version="3.4.2"),
         app=app,
         write=lambda name, record: written.update({name: record}),
     )

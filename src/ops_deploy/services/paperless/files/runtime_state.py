@@ -26,7 +26,7 @@ def inspect_runtime(release_dir):
                 url = urlsplit(direct["url"])
                 editable = direct.get("dir_info")
                 application = (
-                    package.version == "3.2.1" and url.scheme == "file" and not url.netloc
+                    package.version == "3.4.2" and url.scheme == "file" and not url.netloc
                     and not url.query and not url.fragment and unquote(url.path) == release_dir
                     and isinstance(editable, dict) and editable.get("editable") is True
                     and (Path(release_dir) / "src/paperless/__init__.py").is_file()
@@ -36,7 +36,7 @@ def inspect_runtime(release_dir):
     # uv pip check does not select optional extras. The original editable
     # installation explicitly selects postgres, so inspect those distributions
     # too without importing a database driver or opening a connection.
-    for name, expected in (("psycopg", "3.3.4"), ("psycopg-c", "3.3.4"), ("psycopg-pool", "3.3.1")):
+    for name, expected in (("psycopg", "3.3.4"), ("psycopg-c", "3.3.4"), ("psycopg-pool", "3.3.3")):
         try:
             if importlib.metadata.version(name) != expected:
                 application = False

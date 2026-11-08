@@ -37,7 +37,7 @@ def test_original_install_commands_keep_all_constraints_and_fido_order() -> None
     for script in scripts:
         assert script.startswith("cd /home/paperless/site && ")
         assert "--constraint /home/paperless/site/.python-security-constraints.txt" in script
-    assert "-e '/home/paperless/site/paperless-ngx-v3.2.1[postgres]'" in scripts[0]
+    assert "-e '/home/paperless/site/paperless-ngx-v3.4.2[postgres]'" in scripts[0]
     assert scripts[1].endswith("gunicorn whitenoise setproctitle")
     assert scripts[2].endswith("--force-reinstall fido2==1.1.3")
 

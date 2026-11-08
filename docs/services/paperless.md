@@ -1,16 +1,88 @@
 # Paperless deployment and recovery
 
-The `PaperlessConfig`, `PaperlessCredentials` and `deploy_paperless`
-API composes the checksum-bound 3.2.1 release and current `paperless_deploy`
-role behavior. Owned current-release and 3.0.4-to-3.2.1 upgrade application
-matrices passed. Private inventory adoption remains a separate pending step.
+## Paperless-ngx 3.4.2 upgrade (from 3.2.1)
 
-The initial typed configuration renders all eight original role templates byte
-for byte in three synthetic Ansible oracle cases: defaults, authenticated Redis,
+Source review: official releases [3.3.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.0),
+[3.3.1](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.1),
+[3.3.2](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.2),
+[3.3.3](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.3),
+[3.3.4](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.4),
+[3.4.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.4.0),
+[3.4.1](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.4.1) and
+[3.4.2](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.4.2),
+plus the released source and dependency metadata. No host qualification or deployment
+has been performed for this upgrade.
+
+The official `paperless-ngx-v3.4.2.tar.xz` SHA-256 is
+`599be82cd8fc184436b757f9b193101fb71a90bf0facf5695dcda43152fffc85`.
+It was verified by downloading the release asset and hashing its bytes against
+GitHub's release asset `digest` (release API `/repos/paperless-ngx/paperless-ngx/releases/tags/v3.4.2`).
+
+- **Database:** run the existing `manage.py migrate` stage. New application
+  migrations since 3.2.1 are `paperless.0017_applicationconfiguration_llm_embedding_api_key`
+  (nullable embedding key), `paperless.0018_applicationconfiguration_barcode_store_values`
+  (nullable barcode storage toggle) and `documents.0027_documentbarcode`
+  (barcode table with document foreign key, page, value and format). There is no
+  database-engine version increase; the deployment keeps PostgreSQL 17.
+- **Search:** schema version changes from 2 to 4, adding stored barcode JSON and
+  indexing only live root documents with effective version content. Rebuild the
+  index after migration with all four Paperless units stopped. The typed deploy
+  counts only `deleted_at IS NULL AND root_document_id IS NULL`, validates the
+  new schema fingerprint, and retries indexes carrying `.rebuilding`. The
+  Ansible rollback role already rebuilds unconditionally with those units paused.
+  The new fingerprint was generated from unmodified released `_fields.py` and
+  `_schema.py` with whoosh-compat 0.3.0 and Tantivy 0.26.0, without starting Django.
+- **Runtime:** upstream still requires Python >=3.11; deployed Python 3.14 and
+  uv 0.13.5 remain suitable. The release ships compiled UI assets, so neither
+  deploy path requires Node/pnpm or a frontend build. No new Node floor is
+  declared by these release notes. Python dependencies change through the
+  release's editable `[postgres]` install, including Django 5.2.18+, allauth
+  65.20, guardian 3.5.2+, turbohtml replacing bleach, and psycopg-pool 3.3.3
+  (psycopg and psycopg-c remain 3.3.4). The runtime probe follows that pool pin.
+  3.3.4 includes dependency security fixes for certifi, Pillow and aiohttp;
+  3.4.0 and 3.4.2 include further dependency security fixes.
+- **System dependencies:** 3.4 switches PDF thumbnails to Poppler and drops
+  ImageMagick. Both deploy paths retain `poppler-utils` and stop requesting
+  `imagemagick`; existing host packages are not uninstalled. Ghostscript is
+  still required for OCRmyPDF; keep it and the existing OCR dependencies.
+- **Environment:** removed (without replacement aliases)
+  `PAPERLESS_CONVERT_BINARY`, `PAPERLESS_CONVERT_MEMORY_LIMIT`,
+  `PAPERLESS_CONVERT_TMPDIR`, `PAPERLESS_GS_BINARY`. Neither managed environment
+  emits these. New optional variables are `PAPERLESS_AI_LLM_EMBEDDING_API_KEY`,
+  `PAPERLESS_AI_LLM_EXTRA_PARAMS`, `PAPERLESS_CONSUMER_STORE_BARCODE_VALUES`,
+  and `PAPERLESS_SOCIAL_ACCOUNT_MFA_TRUSTED_AMR`; none is needed by this install.
+  Trusted OIDC `amr=mfa` can bypass local second-factor prompting in 3.4;
+  review the trusted-AMR setting before enabling OIDC. JSON settings now validate
+  expected types and invalid `PAPERLESS_URL` hostnames fail configuration.
+- **Rollback:** take and verify a full database/media/config backup before the
+  upgrade. Returning to the Ansible engine uses the same 3.4.2 release by default;
+  it is not a database downgrade. To return to 3.2.1, restore its pre-upgrade
+  database/media/config backup and matching code/dependencies, then rebuild the
+  old search index. Do not merely point the symlink at old code after migration.
+
+From ops-control, after the dependent pins are reviewed and merged, the owner
+runs these commands in order (not executed during this change):
+
+```bash
+just backup-now paperless macmini
+just deploy-one paperless macmini
+```
+
+`backup-now` is the synchronous, verified Echoport backup recipe. Confirm its
+success before starting the deployment; allow time for migration and reindexing.
+
+The `PaperlessConfig`, `PaperlessCredentials` and `deploy_paperless`
+API composes the checksum-bound 3.4.2 release and current `paperless_deploy`
+role behavior, with the obsolete ImageMagick environment settings removed.
+Historical native qualification below applies to 3.2.1 and the 3.0.4-to-3.2.1
+upgrade only. Neither it nor the original inventory adoption qualifies 3.4.2.
+
+The typed configuration retains the eight original role templates, with the
+removed ImageMagick settings deleted from the environment oracle cases: defaults, authenticated Redis,
 and a custom service account/storage root. Bash parsing of the resulting
 environment is also tested. These local checks do not qualify systemd, database,
 scanner or application behavior on Linux. The runtime remains pinned to the
-declared 3.2.1 release and Python 3.14.
+declared 3.4.2 release and Python 3.14.
 
 Paperless's uv dependency uses the original role's 0.13.5 checksums and defaults
 through `PaperlessUvConfig`; the independent shared `UvInstallConfig` default
@@ -39,13 +111,15 @@ remains separate.
 The approved search-index change replaces unconditional Ansible reindexing with
 explicit release/package/migration/force triggers and bounded checks of index
 metadata, schema/language sentinels and the live-document SQL count. The source
-manager in the release's locked `django-soft-delete` 1.0.23 filters
-`deleted_at IS NULL`; the owned application/schema and soft-delete cases passed. The schema fingerprint
+manager filters soft-deleted rows; 3.4.2 additionally indexes only root
+documents. The count uses `deleted_at IS NULL AND root_document_id IS NULL`.
+The earlier owned application/schema and soft-delete cases passed for 3.2.1;
+3.4.2 root/version/deleted-row behavior has local SQL regression coverage only. The schema fingerprint
 now matches the exact release field descriptors using its locked whoosh-compat
 0.3.0 types in an isolated local source oracle. That oracle loads only the two
 schema modules without the application/backend package initializer; it is not
-full application or Linux native qualification. The initial metadata helper reads only `meta.json` and
-`.index_settings.json`, each capped at 1 MiB, without opening the search backend
+full application or Linux native qualification. The metadata helper reads `meta.json` and `.index_settings.json`, each capped
+at 1 MiB, and checks for the `.rebuilding` interrupted-rebuild marker, without opening the search backend
 or reading document names, IDs or content. Invalid metadata requests repair;
 unsafe/unreadable paths refuse rather than starting it.
 
@@ -57,8 +131,8 @@ count mismatch and additional reindexing. The prepared managed helper stops all
 configured Paperless units and attempts to resume every previously running unit
 after success or an ordinary failure. A stop, reindex or resume failure remains
 nonzero. Local simulated command tests cover these failures and ordinary retry;
-actual owned systemd/application failure, prior-state resumption and ordinary
-retry also passed. Abrupt
+historical 3.2.1 owned systemd/application failure, prior-state resumption and
+ordinary retry also passed. Abrupt
 process or host loss cannot guarantee resumption. Application command output is
 discarded to avoid logging document metadata. The helper retains the original
 role's lack of a separate reindex timeout.
@@ -72,18 +146,18 @@ management command. This repairs a demonstrated upstream/original-role gap:
 `wipe_index()` iterates a missing directory and fails before rebuilding. The
 original role remains unchanged. The new owned case removes the entire index,
 checks the exact old helper's failure, then requires normal typed recovery and a
-strict healthy repeat. Both current and upgrade matrices passed that recovery;
+strict healthy repeat. Both 3.2.1 qualification matrices passed that recovery;
 the old helper's retained failure changes only its expected system-check root
 timestamps and is never called a zero-mutation phase.
 
 The prepared count command uses one fixed `COUNT(*)` with the release's
-soft-delete predicate, a read-only PostgreSQL transaction and a 30-second
-statement timeout. It returns only the aggregate and refuses query errors or
-unexpected output. Actual owned application schema/manager parity and soft-delete
-convergence passed in both matrices.
+soft-delete and root-document predicates, a read-only PostgreSQL transaction
+and a 30-second statement timeout. It returns only the aggregate and refuses query errors or
+unexpected output. Historical 3.2.1 owned application schema/manager parity and soft-delete
+convergence passed in both matrices. The changed 3.4.2 count is not host-qualified.
 
 This preparation does not change the original Ansible role, which still rebuilds
-on every deployment. Owned application, OCR/SFTP and recovery qualification
+on every deployment. Historical 3.2.1 application, OCR/SFTP and recovery qualification
 passed; inventory adoption remains pending. No production document or index
 contents were inspected.
 

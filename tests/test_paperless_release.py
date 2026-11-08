@@ -21,9 +21,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 def archive(root: Path, monkeypatch: pytest.MonkeyPatch, *, incomplete: bool = False) -> Path:
-    path = root / "paperless-ngx-v3.2.1.tar.xz"
+    path = root / "paperless-ngx-v3.4.2.tar.xz"
     entries = {
-        "paperless-ngx/pyproject.toml": '[project]\nname="paperless-ngx"\nversion="3.2.1"\n',
+        "paperless-ngx/pyproject.toml": '[project]\nname="paperless-ngx"\nversion="3.4.2"\n',
         "paperless-ngx/src/paperless/__init__.py": "# synthetic owned source\n",
     }
     if not incomplete:
@@ -44,18 +44,18 @@ def test_first_release_and_repeat_leave_existing_tree_unchanged(
     archive(tmp_path, monkeypatch)
     payload = {"site_root": str(tmp_path), "apply": True}
     assert MODULE.reconcile(payload) == {"release_changed": True, "current_changed": True}
-    paths = [tmp_path / "paperless-ngx", *sorted((tmp_path / "paperless-ngx-v3.2.1").rglob("*"))]
+    paths = [tmp_path / "paperless-ngx", *sorted((tmp_path / "paperless-ngx-v3.4.2").rglob("*"))]
     before = {str(p): (p.lstat().st_ino, p.lstat().st_mtime_ns, p.lstat().st_ctime_ns) for p in paths}
     assert MODULE.reconcile(payload) == {"release_changed": False, "current_changed": False}
     assert {str(p): (p.lstat().st_ino, p.lstat().st_mtime_ns, p.lstat().st_ctime_ns) for p in paths} == before
-    assert not (tmp_path / ".paperless-ngx-v3.2.1-extract").exists()
+    assert not (tmp_path / ".paperless-ngx-v3.4.2-extract").exists()
 
 
 def test_valid_staging_precedes_broken_release_and_legacy_current_removal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     archive(tmp_path, monkeypatch)
-    for name in ("paperless-ngx-v3.2.1", "paperless-ngx", ".paperless-ngx-v3.2.1-extract"):
+    for name in ("paperless-ngx-v3.4.2", "paperless-ngx", ".paperless-ngx-v3.4.2-extract"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "synthetic-interrupted-file").write_text("old")
     assert MODULE.reconcile({"site_root": str(tmp_path), "apply": True}) == {
@@ -63,7 +63,7 @@ def test_valid_staging_precedes_broken_release_and_legacy_current_removal(
         "current_changed": True,
     }
     assert (tmp_path / "paperless-ngx").is_symlink()
-    assert MODULE.complete(tmp_path / "paperless-ngx-v3.2.1")
+    assert MODULE.complete(tmp_path / "paperless-ngx-v3.4.2")
 
 
 @pytest.mark.parametrize("fault", ["checksum", "incomplete"])
@@ -79,11 +79,11 @@ def test_failed_archive_preserves_existing_legacy_path(
     with pytest.raises(MODULE.Refusal, match=r"checksum|incomplete"):
         MODULE.reconcile({"site_root": str(tmp_path), "apply": True})
     assert (current / "synthetic-old").read_text() == "preserved"
-    assert not (tmp_path / ".paperless-ngx-v3.2.1-extract").exists()
+    assert not (tmp_path / ".paperless-ngx-v3.4.2-extract").exists()
 
 
 def test_special_metadata_refuses_without_blocking(tmp_path: Path) -> None:
-    release = tmp_path / "paperless-ngx-v3.2.1"
+    release = tmp_path / "paperless-ngx-v3.4.2"
     release.mkdir()
     os.mkfifo(release / "pyproject.toml")
     with pytest.raises(MODULE.Refusal, match="regular"):
@@ -91,6 +91,6 @@ def test_special_metadata_refuses_without_blocking(tmp_path: Path) -> None:
 
 
 def test_foreign_version_symlink_is_not_overwritten(tmp_path: Path) -> None:
-    (tmp_path / "paperless-ngx-v3.2.1").symlink_to(tmp_path, target_is_directory=True)
+    (tmp_path / "paperless-ngx-v3.4.2").symlink_to(tmp_path, target_is_directory=True)
     with pytest.raises(MODULE.Refusal, match="symlink"):
         MODULE.reconcile({"site_root": str(tmp_path), "apply": True})
