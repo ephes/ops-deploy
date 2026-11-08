@@ -27,6 +27,9 @@
   renders `KbdInteractiveAuthentication` after `PasswordAuthentication` and
   is checked with `sshd -T` like the other directives.
 
+- `services.snappymail`: the loopback nginx site passes `fastcgi_param HTTPS
+  on`. SnappyMail 3.0.0 no longer trusts `X-Forwarded-Proto`, so with
+  `force_https` every request behind Traefik redirected to itself.
 - `services.snappymail`: SnappyMail 3.0.0 (fixes the published 2.38.2
   advisories, among them an unauthenticated SSRF). New verified release
   manifest `snappymail-3.0.0.json.gz` (archive SHA-256 and detached signature

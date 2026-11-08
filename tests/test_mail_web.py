@@ -511,3 +511,12 @@ def test_snappy_nginx_serves_only_selected_release_assets() -> None:
     assert "location ^~ /snappymail/v/3.0.0/static/ {\n            allow all;" in site
     assert "location ^~ /snappymail/v/3.0.0/themes/ {\n            allow all;" in site
     assert site.count("allow all;") == 2
+    # 3.0.0 trusts only HTTPS for force_https; the site is loopback-only behind TLS.
+    assert site.count("fastcgi_param HTTPS on;") == 1
+    assert "listen 127.0.0.1:8088;" in site
+
+
+def test_snappy_site_cannot_listen_beyond_loopback() -> None:
+    # fastcgi_param HTTPS on is only true behind Traefik's TLS router.
+    with pytest.raises(ConfigValidationError):
+        snappy(listen_address="0.0.0.0")

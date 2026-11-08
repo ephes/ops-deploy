@@ -47,7 +47,11 @@ changed). The JSON is `json.dumps(record, sort_keys=True)`, gzip with mtime 0.
 SnappyMail 3.0.0 needs PHP 8.2 or newer and the same PHP extensions. Its
 owned `application.ini` keys, domain JSON format, admin bcrypt hash and
 `setup.php` (which writes the `INSTALLED` marker on the first request after
-the version change) are unchanged from 2.38.2. The data root's `VERSION`
+the version change) are unchanged from 2.38.2. One breaking change:
+3.0.0 decides `force_https` from `HTTPS` alone and no longer trusts
+`X-Forwarded-Proto`, so the loopback nginx site (reached only through
+Traefik's TLS router) passes `fastcgi_param HTTPS on`; without it every
+request redirected to itself. The data root's `VERSION`
 file is the seeding marker and keeps the version it was seeded with.
 
 The Traefik router carries an `ipAllowList` (`snappymail-ipwhitelist`) while

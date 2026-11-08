@@ -41,6 +41,10 @@ server {
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
+        # This site listens on loopback only, behind Traefik's TLS router.
+        # SnappyMail 3.0.0 no longer trusts X-Forwarded-Proto, so without
+        # HTTPS force_https redirects every request to itself.
+        fastcgi_param HTTPS on;
         fastcgi_pass unix:{{ snappymail_php_fpm_socket }};
         fastcgi_read_timeout {{ snappymail_php_max_execution_time }};
     }
