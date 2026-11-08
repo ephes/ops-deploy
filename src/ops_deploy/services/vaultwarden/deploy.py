@@ -7,9 +7,9 @@ writes them) and own the binary, the unit and the ``vaultwarden`` user; this
 deploy writes ``/etc/vaultwarden.env``, the systemd drop-in and the Traefik
 route byte-identical to the role's (``tests/test_vaultwarden_parity.py``), so
 Ansible and ops-deploy can take turns on a host without rewriting a file or
-restarting anything. The one exception is ``traefik_ip_allowlist``, which the
-role does not have: a non-empty allowlist adds an ``ipAllowList`` middleware
-to the route.
+restarting anything. ``traefik_ip_allowlist`` is the role's
+``vaultwarden_traefik_ip_allowlist``: a non-empty allowlist adds an
+``ipAllowList`` middleware to the route, in both engines.
 
 When ``data/config.json`` exists (the admin panel saved settings, which then
 override the environment file), the role's SMTP settings are merged into it on

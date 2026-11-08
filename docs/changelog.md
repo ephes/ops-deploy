@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services.vaultwarden`/`services.snappymail` parity: ops-library da310974
+  gives `vaultwarden_deploy` the `vaultwarden_traefik_ip_allowlist` and
+  `snappymail_deploy`/`snappymail_shared` SnappyMail 3.0.0, the
+  `/snappymail/` restriction, `fastcgi_param HTTPS on` and the
+  `ipAllowList`, with the templates this package ships. The vendored
+  Vaultwarden route is the role's again (the parity test now requires every
+  shipped template to equal its vendored copy and renders an allowlisted
+  route against it), and `tests/parity/ops_library_roles.json` records the new
+  `snappymail_shared` and `vaultwarden_deploy` digests. No deploy behaviour
+  changes.
+
 - New `services.legacy_retirement` (`LegacyRetirementConfig`,
   `RetiredDatabase`, `retire_legacy`): explicit retirement of unmanaged
   legacy accounts, systemd units in `/etc/systemd/system`, extra paths (also an

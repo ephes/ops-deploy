@@ -2,7 +2,8 @@
 
 The role templates are vendored under ``tests/parity/ansible`` (checked against
 ops-library by ``test_traefik_parity.test_vendored_templates_match_ops_library``;
-last checked against ops-library main 540ede2b, 2.56.0) and rendered here the
+last checked against ops-library main 540ede2b, 2.56.0; the route template
+again with the ``vaultwarden_traefik_ip_allowlist`` role change, da310974) and rendered here the
 way Ansible's ``template`` module does. Identical bytes mean Ansible and
 ops-deploy take turns on a host without rewriting the environment file, the
 drop-in or the route, and so without restarting Vaultwarden.
@@ -14,7 +15,6 @@ the role itself.
 
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +109,7 @@ def ansible_vars(cfg: VaultwardenConfig, secrets: dict[str, str]) -> dict[str, A
     host = cfg.domain.split("://", 1)[1].split("/", 1)[0]
     variables.update(
         vaultwarden_hostname=host,
+        vaultwarden_traefik_ip_allowlist=list(cfg.traefik_ip_allowlist),
         vaultwarden_admin_enabled=secrets.get("admin_enabled", "true") == "true",
         vaultwarden_admin_token=secrets.get("admin_token", ""),
         vaultwarden_smtp_username=secrets.get("smtp_username", ""),
@@ -135,6 +136,7 @@ CONFIGS: list[dict[str, Any]] = [
     {"domain": "https://vault.example.org"},
     {**PLAYBOOK, "smtp_debug": True, "smtp_accept_invalid_certs": False, "traefik_certresolver": "letsencrypt"},
     {**PLAYBOOK, "smtp_debug": False, "experimental_client_feature_flags": "", "signups_allowed": True},
+    {**PLAYBOOK, "traefik_ip_allowlist": ("192.168.178.0/24", "100.64.0.0/10", "fd7a:115c:a1e0::/48")},
     {
         "domain": "http://vault.example.net/sub/path",
         "rocket_address": "0.0.0.0",
@@ -163,25 +165,9 @@ def make(overrides: dict[str, Any], secrets: dict[str, str]) -> tuple[Vaultwarde
     return cfg, SecretValues(cfg.secrets, secrets)
 
 
-# The route template adds the ``traefik_ip_allowlist`` blocks, which the role
-# does not have; with an empty allowlist (the default) the rendered route is
-# still the role's (test_route_matches_role).
-ROUTE_TEMPLATE = "traefik-vaultwarden.yml.j2"
-
-
-@pytest.mark.parametrize("name", [name for name in TEMPLATES if name != ROUTE_TEMPLATE])
+@pytest.mark.parametrize("name", TEMPLATES)
 def test_shipped_templates_are_the_vendored_role_templates(name: str) -> None:
     assert (PACKAGE_TEMPLATES / name).read_bytes() == (VENDORED / f"vaultwarden_deploy__{name}").read_bytes()
-
-
-def test_shipped_route_template_is_the_role_template_plus_the_allowlist_blocks() -> None:
-    ours = (PACKAGE_TEMPLATES / ROUTE_TEMPLATE).read_text()
-    blocks = re.findall(r"\{% if vaultwarden_traefik_ip_allowlist .*?\{% endif %\}\n", ours, flags=re.S)
-
-    assert len(blocks) == 2
-    for block in blocks:
-        ours = ours.replace(block, "", 1)
-    assert ours == (VENDORED / f"vaultwarden_deploy__{ROUTE_TEMPLATE}").read_text()
 
 
 @pytest.mark.parametrize("secrets", SECRET_SETS)
@@ -272,10 +258,13 @@ def test_config_defaults_are_the_roles() -> None:
         "vaultwarden_skip_install",
         "vaultwarden_skip_repo",
         "vaultwarden_skip_handlers",
+        # A list in YAML, a tuple here; compared below.
+        "vaultwarden_traefik_ip_allowlist",
     }
     ours = {key: getattr(cfg, key.removeprefix("vaultwarden_")) for key in defaults if key not in skipped}
 
     assert ours == {key: defaults[key] for key in ours}
+    assert defaults["vaultwarden_traefik_ip_allowlist"] == list(cfg.traefik_ip_allowlist) == []
     assert defaults["vaultwarden_admin_enabled"] is True
     assert (defaults["vaultwarden_service_enabled"], defaults["vaultwarden_service_state"]) == (True, "started")
     assert defaults["vaultwarden_packages_hold"] is None

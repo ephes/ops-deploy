@@ -54,7 +54,7 @@ Defaults follow `vaultwarden_deploy/defaults/main.yml`
 | `smtp_debug` | `None` | `None` is the role's undefined variable: no `SMTP_DEBUG` line, and config.json's `smtp_debug` is left alone |
 | `experimental_client_feature_flags`, `sends_allowed`, `emergency_access_allowed`, `icon_service`, `log_level` | role defaults | |
 | `traefik_enabled`, `traefik_entrypoint`, `traefik_certresolver` | `true`, `websecure`, `""` | an empty resolver renders `tls: {}` |
-| `traefik_ip_allowlist` | `()` | source networks (each `address/prefix`) that may reach Vaultwarden; non-empty puts a `vaultwarden-ipallowlist` `ipAllowList` on the router, so every other client gets `403` (web vault, API, live sync and `/admin` alike); empty serves everyone, as the role does |
+| `traefik_ip_allowlist` | `()` | source networks (each `address/prefix`) that may reach Vaultwarden; non-empty puts a `vaultwarden-ipallowlist` `ipAllowList` on the router, so every other client gets `403` (web vault, API, live sync and `/admin` alike); empty serves everyone; the role's `vaultwarden_traefik_ip_allowlist` (default `[]`) |
 | `healthcheck_enabled`, `healthcheck_timeout` | `true`, `30` | `GET /alive`, `timeout / 5` tries 5 s apart |
 
 `service_name`, `user` and `site_path` are fixed by the packages
@@ -131,13 +131,12 @@ that fails the deploy unless it then answers `current`.
 `tests/test_vaultwarden_parity.py` renders the vendored role templates
 (`tests/parity/ansible/vaultwarden_deploy__*`, checked against ops-library
 main `540ede2b`, 2.56.0) the way Ansible does and requires **byte-identical**
-`/etc/vaultwarden.env`, drop-in and route; the env and drop-in templates the
-deploy ships are the same files. The route template adds only the two
-`traefik_ip_allowlist` blocks, which the role does not have: with an empty
-allowlist the route is still the role's bytes, with one it differs, so an
-Ansible rollback run of `vaultwarden_deploy` would write the route without
-the allowlist (and a restore of an archive taken before the allowlist puts
-the old route back) until the next ops-deploy run. With `OPS_LIBRARY_PATH` it also compares the defaults, the
+`/etc/vaultwarden.env`, drop-in and route; the templates the deploy ships are
+the same files. The route's `traefik_ip_allowlist` blocks are the role's
+`vaultwarden_traefik_ip_allowlist` (ops-library da310974), so an Ansible
+rollback run with the same allowlist writes the same route; a run without it
+(or a restore of an archive taken before the allowlist) writes the route
+without it until the next ops-deploy run. With `OPS_LIBRARY_PATH` it also compares the defaults, the
 paths, owners and modes, the packages, the repository line and the
 config.json settings with the role's tasks.
 `tests/test_vaultwarden_smtp_sync.py` runs the config.json script as the

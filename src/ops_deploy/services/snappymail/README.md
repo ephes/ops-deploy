@@ -80,7 +80,9 @@ the configured peer's actual loopback listener with an independent bounded
 preservation check (10 seconds, three attempts).
 
 Role templates are vendored byte-for-byte from ops-library commit `cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641`
-(version 2.75.2), except `traefik-snappymail.yml.j2` (the `ipAllowList`) and
-`nginx-snappymail.conf.j2` (the `/snappymail/` restriction), which the
-`snappymail_deploy` role does not have yet; public defaults remain false for
-explicit HSTS preload.
+(version 2.75.2); `traefik-snappymail.yml.j2` (the `ipAllowList`) and
+`nginx-snappymail.conf.j2` (the `/snappymail/` restriction and
+`fastcgi_param HTTPS on`) are the `snappymail_deploy` templates of ops-library
+da310974, whose `snappymail_shared` also pins 3.0.0 with the same archive
+SHA-256, so an Ansible rollback no longer brings back 2.38.2 or a public
+route. Public defaults remain false for explicit HSTS preload.
