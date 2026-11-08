@@ -185,7 +185,8 @@ def refuse(cfg: LegacyRetirementConfig, state: dict[str, Any]) -> None:
         if unit["ActiveState"] not in INACTIVE:
             raise DeployError(f"{name} is {unit['ActiveState']}; nothing was changed (nothing is stopped)")
         fragment = unit["FragmentPath"]
-        if fragment and fragment != f"{SYSTEM_UNITS}/{name}":
+        # A linked unit (``systemctl link``): systemd may report the link's target.
+        if fragment and fragment not in (f"{SYSTEM_UNITS}/{name}", unit.get("link_target") or None):
             raise DeployError(f"{name} is not a unit file in {SYSTEM_UNITS}; nothing was changed")
         for dropin in unit["DropInPaths"].split():
             if not dropin.startswith(f"{SYSTEM_UNITS}/{name}.d/"):

@@ -73,6 +73,8 @@ def unit(name):
     values = dict(line.split("=", 1) for line in shown.stdout.splitlines() if "=" in line)
     state = {prop: values.get(prop, "") for prop in UNIT_PROPERTIES}
     state["file"] = os.path.lexists("/etc/systemd/system/" + name)
+    path = "/etc/systemd/system/" + name
+    state["link_target"] = os.path.realpath(path) if os.path.islink(path) else ""
     state["dropin_dir"] = os.path.lexists("/etc/systemd/system/" + name + ".d")
     return state
 

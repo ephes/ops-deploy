@@ -43,7 +43,8 @@ nothing) when
   uid below `min_uid` or a home other than `/home/<name>`, or `/home/<name>` is a symbolic
   link (also for an account already gone); nothing is killed;
 - a listed unit is not `inactive` or `failed`, or its unit file or a drop-in
-  lies outside `/etc/systemd/system`; nothing is stopped;
+  lies outside `/etc/systemd/system` (a linked unit, a symbolic link there, may
+  report its target); nothing is stopped;
 - a listed database has connections, or its owner role owns another database;
 - a listed group has a gid below `min_uid`, or an account that is not retired
   as a member or with it as primary group;

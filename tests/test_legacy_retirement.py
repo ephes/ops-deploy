@@ -416,3 +416,20 @@ def test_a_group_still_in_use_is_refused(value: dict[str, Any], message: str) ->
     assert not result.succeeded
     assert message in str(result.error)
     assert result.executed_commands == []
+
+
+def test_a_linked_unit_may_report_its_target_as_fragment() -> None:
+    linked = {
+        **unit("app.service"),
+        "UnitFileState": "linked",
+        "FragmentPath": "/opt/app/app.service",
+        "link_target": "/opt/app/app.service",
+    }
+    result = run(present(units={"app.service": linked, "app.web.service": unit("app.web.service")}))
+    assert result.succeeded, result.error
+    names = [op.name.removeprefix(PREFIX) for op in result.ops]
+    assert "Remove /etc/systemd/system/app.service" in names
+    elsewhere = {**linked, "link_target": "/opt/other/app.service"}
+    refused = run(present(units={"app.service": elsewhere, "app.web.service": unit("app.web.service")}))
+    assert not refused.succeeded
+    assert "not a unit file" in str(refused.error)
