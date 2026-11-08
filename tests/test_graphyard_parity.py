@@ -102,7 +102,9 @@ CORE_DEFAULTS: dict[str, Any] = {
     "graphyard_influx_init_username": "graphyard_admin",
     "graphyard_influx_init_password": SECRETS["influx_token"],
     "graphyard_influx_init_admin_token": SECRETS["influx_token"],
-    "graphyard_grafana_image": "grafana/grafana-oss",
+    "graphyard_grafana_image": (
+        "grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20"
+    ),
     "graphyard_grafana_container_name": "graphyard-grafana",
     "graphyard_grafana_host_bind_address": "127.0.0.1",
     "graphyard_grafana_host_port": 3300,

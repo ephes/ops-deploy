@@ -255,7 +255,9 @@ class Influx(Part):
 class Grafana(Part):
     """Grafana in the runtime (the role's ``graphyard_grafana_*``)."""
 
-    image: ImageRef = "grafana/grafana-oss"
+    image: ImageRef = (
+        "grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20"
+    )
     container_name: Word = "graphyard-grafana"
     host_bind_address: Annotated[str, Field(pattern=r"^[0-9.]+$")] = "127.0.0.1"
     host_port: Port = 3300

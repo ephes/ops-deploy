@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pin Grafana to the recorded 12.4.0 image with its registry-verified SHA-256;
+  add a regression check requiring a release tag and digest.
+
 - `services.vaultwarden`/`services.snappymail` parity: ops-library da310974
   gives `vaultwarden_deploy` the `vaultwarden_traefik_ip_allowlist` and
   `snappymail_deploy`/`snappymail_shared` SnappyMail 3.0.0, the
