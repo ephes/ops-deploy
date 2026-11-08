@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Upgrade Paperless-ngx from 3.2.1 to 3.4.2 using the verified official
+  release checksum; the ops-library rollback role is updated separately. Document
+  database migrations,
+  root-only search schema/rebuild, Poppler thumbnails and removed environment
+  settings. The typed runtime follows psycopg-pool 3.3.3 and retries interrupted
+  index rebuilds. No deployment or database downgrade is implied.
+
 - `services.vaultwarden`/`services.snappymail` parity: ops-library da310974
   gives `vaultwarden_deploy` the `vaultwarden_traefik_ip_allowlist` and
   `snappymail_deploy`/`snappymail_shared` SnappyMail 3.0.0, the

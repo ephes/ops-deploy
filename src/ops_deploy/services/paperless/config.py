@@ -13,7 +13,7 @@ from ops_deploy.base.uv_install import UvInstallConfig
 from ops_deploy.core.config import UnixUser
 from ops_deploy.helpers.traefik import Hostname
 
-RELEASE_SHA256 = "7391e75706d9dafe84dd2235df12c932c0034a4f453725437d07918eee7a35b8"
+RELEASE_SHA256 = "599be82cd8fc184436b757f9b193101fb71a90bf0facf5695dcda43152fffc85"
 
 
 def canonical_path(value: str) -> str:
@@ -63,7 +63,7 @@ class PaperlessConfig(RoleConfig):
     home_path: CanonicalPath = "/home/paperless"
     site_root: CanonicalPath = "/home/paperless/site"
     external_storage_root: CanonicalPath = "/mnt/cryptdata/paperless"
-    version: Literal["3.2.1"] = "3.2.1"
+    version: Literal["3.4.2"] = "3.4.2"
     python_version: Literal["3.14"] = "3.14"
     uv_install_dir: CanonicalPath = "/usr/local/bin"
     uv_binary: CanonicalPath = "/usr/local/bin/uv"

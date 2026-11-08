@@ -19,7 +19,7 @@ MODULE_SPEC.loader.exec_module(MODULE)
 
 
 class Package:
-    version = "3.2.1"
+    version = "3.4.2"
 
     def __init__(self: Any, body: Any) -> None:
         self.body = body
@@ -36,7 +36,7 @@ def installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
     (tmp_path / "src/manage.py").write_text("raise RuntimeError('application execution forbidden')\n")
     direct = {"url": tmp_path.as_uri(), "dir_info": {"editable": True}}
     monkeypatch.setattr(MODULE.importlib.metadata, "distribution", lambda name: Package(direct))
-    versions = {"fido2": "1.1.3", "psycopg": "3.3.4", "psycopg-c": "3.3.4", "psycopg-pool": "3.3.1"}
+    versions = {"fido2": "1.1.3", "psycopg": "3.3.4", "psycopg-c": "3.3.4", "psycopg-pool": "3.3.3"}
     monkeypatch.setattr(MODULE.importlib.metadata, "version", lambda name: versions.get(name, "synthetic"))
     monkeypatch.setattr(MODULE.sys, "version_info", (3, 14, 8))
     return direct

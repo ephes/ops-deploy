@@ -17,8 +17,8 @@ import sys
 import tarfile
 import tomllib
 
-VERSION = "3.2.1"
-ARCHIVE_SHA256 = "7391e75706d9dafe84dd2235df12c932c0034a4f453725437d07918eee7a35b8"
+VERSION = "3.4.2"
+ARCHIVE_SHA256 = "599be82cd8fc184436b757f9b193101fb71a90bf0facf5695dcda43152fffc85"
 
 
 class Refusal(ValueError):

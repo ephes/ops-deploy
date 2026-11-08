@@ -20,7 +20,7 @@ def credentials(**updates: str) -> PaperlessCredentials:
 def test_four_original_units_and_fixed_release() -> None:
     cfg = PaperlessConfig(traefik_domain="home.example.test")
     assert cfg.units == ("paperless", "paperless-worker", "paperless-scheduler", "paperless-consumer")
-    assert (cfg.version, cfg.python_version, cfg.app_port) == ("3.2.1", "3.14", 10030)
+    assert (cfg.version, cfg.python_version, cfg.app_port) == ("3.4.2", "3.14", 10030)
     assert cfg.external_storage_root == "/mnt/cryptdata/paperless"
     assert not cfg.force_reindex
 

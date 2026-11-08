@@ -115,3 +115,9 @@ def test_symlink_and_special_file_refuse_without_reading_destination(tmp_path: P
 def test_invalid_database_count_refuses_before_metadata_reads(tmp_path: Path, count: Any) -> None:
     with pytest.raises(ValueError, match="invalid index metadata count"):
         INDEX.inspect_index(tmp_path, count, EXPECTED)
+
+
+def test_interrupted_rebuild_is_not_mistaken_for_complete(tmp_path: Path) -> None:
+    metadata(tmp_path, [])
+    (tmp_path / ".rebuilding").touch()
+    assert INDEX.inspect_index(tmp_path, 0, EXPECTED)["reasons"] == ["interrupted-rebuild"]

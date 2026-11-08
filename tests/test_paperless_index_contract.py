@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from ops_deploy.services.paperless.config import RELEASE_SHA256
 from ops_deploy.services.paperless.index_contract import (
     document_count_command,
     expected_index_sentinels,
@@ -15,9 +16,10 @@ from ops_deploy.services.paperless.index_contract import (
 
 
 def test_actual_release_descriptors_bind_schema_fingerprint() -> None:
-    fixture = json.loads((Path(__file__).parent / "parity/paperless/index-schema-3.2.1.json").read_text())
+    fixture = json.loads((Path(__file__).parent / "parity/paperless/index-schema-3.4.2.json").read_text())
+    assert fixture["archive_sha256"] == RELEASE_SHA256
     expected = expected_index_sentinels(fixture["release"], "eng+deu")
-    assert expected["schema_version"] == fixture["schema_version"] == 2
+    assert expected["schema_version"] == fixture["schema_version"] == 4
     actual = hashlib.blake2b(json.dumps(fixture["field_descriptors"]).encode()).hexdigest()
     assert expected["schema_fingerprint"] == actual == fixture["schema_fingerprint"]
 
@@ -26,7 +28,7 @@ def test_actual_release_descriptors_bind_schema_fingerprint() -> None:
     ("ocr", "language"), [("eng+deu", "en"), ("DEU+eng", "de"), ("jpn", None), ("chi_sim+eng", None)]
 )
 def test_search_language_uses_primary_upstream_mapping(ocr: str, language: str | None) -> None:
-    assert expected_index_sentinels("3.2.1", ocr)["language"] == language
+    assert expected_index_sentinels("3.4.2", ocr)["language"] == language
 
 
 def test_unsupported_release_cannot_reuse_current_schema() -> None:
@@ -37,7 +39,7 @@ def test_unsupported_release_cannot_reuse_current_schema() -> None:
 @pytest.mark.parametrize("ocr", ["", "eng\nPAPERLESS_URL=bad", "eng+", "../deu"])
 def test_invalid_language_refuses(ocr: str) -> None:
     with pytest.raises(ValueError, match="OCR language"):
-        expected_index_sentinels("3.2.1", ocr)
+        expected_index_sentinels("3.4.2", ocr)
 
 
 @pytest.mark.parametrize(("text", "value"), [("0", 0), ("2\n", 2), ("9223372036854775807\n", 2**63 - 1)])
@@ -72,7 +74,8 @@ def test_aggregate_uses_only_readonly_bounded_transaction() -> None:
     ]
     assert argv[-1] == (
         "BEGIN READ ONLY; SET LOCAL statement_timeout = '30s'; "
-        "SELECT count(*) FROM public.documents_document WHERE deleted_at IS NULL; ROLLBACK;"
+        "SELECT count(*) FROM public.documents_document "
+        "WHERE deleted_at IS NULL AND root_document_id IS NULL; ROLLBACK;"
     )
 
 

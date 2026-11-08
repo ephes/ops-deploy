@@ -74,7 +74,7 @@ def integer(value, maximum=MAX_COUNT):
 def inspect_index(directory, document_count, expected, *, triggers=()):
     """Return whether the approved conditional reindex has a concrete trigger.
 
-    `document_count` must count Document.objects (deleted_at IS NULL), obtained
+    `document_count` must count live root Document.objects (deleted_at/root_document_id IS NULL), obtained
     through a separate read-only SQL transaction. Release/package/migration and
     explicit-force decisions are passed as named triggers by the deploy caller.
     No application import, Tantivy opener, traversal or database call occurs here.
@@ -94,6 +94,8 @@ def inspect_index(directory, document_count, expected, *, triggers=()):
     if directory.is_symlink():
         raise UnsafeIndexMetadata("index directory must not be a symlink")
     reasons = list(dict.fromkeys(triggers))
+    if (directory / ".rebuilding").exists() or (directory / ".rebuilding").is_symlink():
+        reasons.append("interrupted-rebuild")
     sentinels = read_metadata(directory, ".index_settings.json")
     if not isinstance(sentinels, dict):
         reasons.append("missing-or-invalid-sentinels")
