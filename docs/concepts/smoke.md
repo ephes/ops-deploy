@@ -39,7 +39,7 @@ of the test suite that touches a network or a host.
   service deploy expects to find, using its independently pinned fixture versions: rsync and
   python3, `build-essential` (some wheels, such as asyncpg for Python 3.14,
   do not exist for arm64 and are built from source, as macmini can), uv
-  0.13.4 in `/usr/local/bin`, Traefik 3.7.14 as `traefik.service` with the
+  0.13.4 in `/usr/local/bin`, Traefik 3.7.17 as `traefik.service` (verified official per-architecture SHA-256 before extraction) with the
   file provider on `/etc/traefik/dynamic` and the `web-secure` entry point on
   `:443` (Traefik's default certificate), and PostgreSQL 17 from the PGDG
   repository (in the repository file `postgres_install` writes). Root's login
@@ -149,8 +149,8 @@ the server started gets a restart and a stored key survives it. Redis is left
 without a password.
 
 `test_traefik_smoke.py` runs [Traefik](../traefik.md) on the VM. It saves the
-VM's own Traefik first and puts it back afterwards. Install of 3.7.13 over
-the VM's 3.7.14, upgrade to 3.7.14 (install, version check, restart), a third
+VM's own Traefik first and puts it back afterwards. Install of the historical 3.7.13 fixture over
+the VM's 3.7.17 baseline, upgrade to 3.7.14 (install, version check, restart), a third
 run without change or restart; the running binary, static config and unit
 match the rendered role output; HTTP redirects to HTTPS, metrics answer on
 the dashboard entrypoint, and a stand-in `lighttpd.service` ends up masked

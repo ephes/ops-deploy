@@ -6,7 +6,9 @@
   and the 3.7.14–3.7.17 migration review. Keep Ansible rollback and pyinfra
   defaults aligned; no template change is required. Historical routine fixtures
   explicitly retain 3.7.13 with their original checksums; the parity manifest
-  follows the companion ops-library role at ae4c6d46.
+  follows the companion ops-library role at ae4c6d46. The smoke VM bootstrap
+  also uses 3.7.17 and verifies the published per-architecture digest before
+  extracting the binary.
 
 - `services.vaultwarden`/`services.snappymail` parity: ops-library da310974
   gives `vaultwarden_deploy` the `vaultwarden_traefik_ip_allowlist` and

@@ -1,5 +1,6 @@
 """``deploy_traefik`` against the fake connector, and parity with the role's templates."""
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -428,3 +429,27 @@ def test_default_release_upgrades_old_binary_with_verified_checksum() -> None:
     assert "traefik_v3.7.17_linux_amd64.tar.gz" in install
     assert checksum.removeprefix("sha256:") in install
     assert "Traefik | Check the installed Traefik is 3.7.17" in result.mutating_changed_ops
+
+
+@pytest.mark.parametrize(
+    ("machine", "arch", "checksum"),
+    [
+        ("x86_64", "amd64", "a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393"),
+        ("aarch64", "arm64", "b06dad2f66ac3481c5695591b7cd3a3eed5e6dbec739889bb01e69cf8e45a0fc"),
+    ],
+)
+def test_smoke_bootstrap_selects_the_verified_patch(machine: str, arch: str, checksum: str) -> None:
+    source = (Path(__file__).parents[1] / "smoke/provision.sh").read_text()
+    # Execute only variable selection, stopping before any provisioning command.
+    selection, marker, _ = source.partition("install -d -m 700 /root/.ssh")
+    assert marker, "smoke bootstrap variable-selection boundary is missing"
+    result = subprocess.run(
+        ["bash", "-s", "--", "synthetic-key"],
+        input=f"uname() {{ echo {machine}; }}\n"
+        + selection
+        + '\nprintf "%s\\n" "$TRAEFIK_VERSION" "$ARCH" "$TRAEFIK_SHA256"\n',
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert result.stdout.splitlines() == ["3.7.17", arch, checksum]

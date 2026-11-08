@@ -11,12 +11,18 @@ set -euo pipefail
 
 PUBKEY="$1"
 UV_VERSION="0.13.4"
-TRAEFIK_VERSION="3.7.14"  # what macmini runs
+TRAEFIK_VERSION="3.7.17"  # current repository patch pin
 POSTGRES_VERSION="17"  # what macmini runs
 
 case "$(uname -m)" in
-    x86_64) ARCH=amd64 ;;
-    aarch64) ARCH=arm64 ;;
+    x86_64)
+        ARCH=amd64
+        TRAEFIK_SHA256=a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393
+        ;;
+    aarch64)
+        ARCH=arm64
+        TRAEFIK_SHA256=b06dad2f66ac3481c5695591b7cd3a3eed5e6dbec739889bb01e69cf8e45a0fc
+        ;;
     *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -70,6 +76,7 @@ if [[ "$(/usr/local/bin/traefik version 2>/dev/null | awk '/^Version:/ {print $2
     tmp="$(mktemp -d)"
     curl -LsSf -o "$tmp/traefik.tgz" \
         "https://github.com/traefik/traefik/releases/download/v$TRAEFIK_VERSION/traefik_v${TRAEFIK_VERSION}_linux_$ARCH.tar.gz"
+    printf '%s  %s\n' "$TRAEFIK_SHA256" "$tmp/traefik.tgz" | sha256sum --check --strict -
     tar -xzf "$tmp/traefik.tgz" -C "$tmp" traefik
     install -m 755 "$tmp/traefik" /usr/local/bin/traefik
     rm -rf "$tmp"
