@@ -4,8 +4,9 @@
 
 - New `services.legacy_retirement` (`LegacyRetirementConfig`,
   `RetiredDatabase`, `retire_legacy`): explicit retirement of unmanaged
-  legacy accounts, systemd units in `/etc/systemd/system`, extra paths and
-  PostgreSQL databases with their owner roles. Everything that still exists is
+  legacy accounts, systemd units in `/etc/systemd/system`, extra paths (also an
+  application directory directly in `/opt` or `/srv`), groups no remaining
+  account uses, and PostgreSQL databases with their owner roles. Everything that still exists is
   archived first into a root-only directory directly below `/var/backups`
   (`0700`; one archive per source, `0600`, tar with numeric owners, checked,
   then published with `ln` so an existing archive is never replaced); only then are units disabled and removed, paths removed

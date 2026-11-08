@@ -80,6 +80,7 @@ def present(**overrides: Any) -> dict[str, Any]:
             "app.service": unit("app.service", enabled="enabled"),
             "app.web.service": unit("app.web.service", dropin=True),
         },
+        "groups": {},
         "paths": {ROUTE: True},
         "archives": archives(False),
         "postgres": True,
@@ -130,6 +131,11 @@ def run(state: dict[str, Any], cfg: LegacyRetirementConfig | None = None) -> Any
         {"accounts": ("keeper",)},
         {"accounts": ("alice", "alice")},
         {"paths": ("/etc/x",)},
+        {"paths": ("/usr/lib",)},
+        {"paths": ("/opt",)},
+        {"groups": ("sudo",)},
+        {"groups": ("root",)},
+        {"groups": ("g", "g")},
         {"paths": ("/home/alice/site",)},
         {"paths": ("/etc/systemd/system/app.service",)},
         {"paths": (ROOT + "/home-alice.tar.gz",)},
@@ -371,3 +377,42 @@ def test_publication_never_replaces_an_archive_that_appeared(tmp_path: Path) -> 
     final.write_text("old")
     assert subprocess.run(["sh", "-c", _publish(str(partial), str(final))], timeout=10).returncode != 0
     assert final.read_text() == "old"
+
+
+def group(
+    *, exists: bool = True, gid: int = 1200, members: tuple[str, ...] = (), primary_of: tuple[str, ...] = ()
+) -> dict[str, Any]:
+    return {"exists": exists, "gid": gid if exists else None, "members": list(members), "primary_of": list(primary_of)}
+
+
+def test_opt_application_directories_are_allowed() -> None:
+    assert config(paths=("/opt/app",)).paths == ("/opt/app",)
+    assert config(paths=("/srv/app",)).paths == ("/srv/app",)
+
+
+def test_a_group_is_removed_after_its_retired_members() -> None:
+    cfg = config(groups=("courses",))
+    state = present(groups={"courses": group(members=("alice",))})
+    result = run(state, cfg)
+    assert result.succeeded, result.error
+    names = [op.name.removeprefix(PREFIX) for op in result.ops]
+    assert names[-1] == "Remove group courses"
+    assert names.index("Remove user alice, /home/alice and its mail spool") < names.index("Remove group courses")
+    gone_state = gone()
+    gone_state["groups"] = {"courses": group(exists=False)}
+    assert run(gone_state, cfg).ops == []
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (group(members=("alice", "keeper")), "still has accounts keeper"),
+        (group(primary_of=("bob",)), "still has accounts bob"),
+        (group(gid=100), "below 1000"),
+    ],
+)
+def test_a_group_still_in_use_is_refused(value: dict[str, Any], message: str) -> None:
+    result = run(present(groups={"courses": value}), config(groups=("courses",)))
+    assert not result.succeeded
+    assert message in str(result.error)
+    assert result.executed_commands == []

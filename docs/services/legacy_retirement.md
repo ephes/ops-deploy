@@ -26,7 +26,8 @@ retire_legacy(cfg)
 | `archive_dir` | required; a directory directly below `/var/backups`, created `root:root 0700` |
 | `accounts` | user names; each must have uid >= `min_uid` and the home `/home/<name>` |
 | `units` | unit names with a type suffix; only their files in `/etc/systemd/system` (unit file and `<unit>.d`) are removed |
-| `paths` | other files or directories, canonical and at least three levels deep; not below `/home`, `/etc/systemd/system`, kernel filesystems or `archive_dir` |
+| `groups` | groups removed after the accounts (gid >= `min_uid`; system groups such as `sudo` or `adm` are refused) |
+| `paths` | other files or directories, canonical and at least three levels deep (an application directory directly in `/opt` or `/srv` is allowed); not below `/home`, `/etc/systemd/system`, kernel filesystems or `archive_dir` |
 | `databases` | `RetiredDatabase(name, owner)`: the database and its owner role (lowercase SQL identifiers; `postgres`, `template0`, `template1` and the `postgres` role are refused) |
 | `protected_accounts` | names the config refuses to list; `root`, `postgres`, `nobody`, `www-data`, `daemon` and `sshd` are always refused |
 | `min_uid` | `1000` (it cannot be lower) |
@@ -44,6 +45,8 @@ nothing) when
 - a listed unit is not `inactive` or `failed`, or its unit file or a drop-in
   lies outside `/etc/systemd/system`; nothing is stopped;
 - a listed database has connections, or its owner role owns another database;
+- a listed group has a gid below `min_uid`, or an account that is not retired
+  as a member or with it as primary group;
 - databases are listed and the host has no PostgreSQL.
 
 Otherwise, in this order, for whatever still exists:
@@ -76,6 +79,7 @@ Otherwise, in this order, for whatever still exists:
    `userdel` resumes: the probe reports `/home/<user>`, `/var/mail/<user>` and
    the group also when the account is gone, and the next run archives (if
    needed) and removes them.
+6. Groups: `groupdel` for each listed group that still exists.
 
 A second run, and a run on a host where everything is gone, plans no
 operation. Files the accounts own outside their homes are not searched for

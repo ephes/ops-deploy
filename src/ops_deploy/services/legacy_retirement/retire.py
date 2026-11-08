@@ -36,6 +36,10 @@ RESOURCE = resources("ops_deploy.services.legacy_retirement")
 SYSTEM_UNITS = "/etc/systemd/system"
 # Never retired, whatever a config lists.
 ALWAYS_PROTECTED = frozenset({"root", "postgres", "nobody", "www-data", "daemon", "sshd"})
+# System groups never removed, whatever a config lists.
+PROTECTED_GROUPS = frozenset(
+    {"adm", "sudo", "wheel", "staff", "users", "shadow", "systemd-journal", "docker", "ssh", "ssl-cert", "postgres"}
+)
 RESERVED_DATABASES = frozenset({"postgres", "template0", "template1"})
 INACTIVE = frozenset({"inactive", "failed"})
 UnitFile = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.@-]+\.(service|timer|socket|path)$")]
@@ -58,6 +62,9 @@ class RetiredDatabase(RoleConfig):
 class LegacyRetirementConfig(RoleConfig):
     archive_dir: AbsolutePath
     accounts: tuple[UnixUser, ...] = ()
+    # Groups removed after the accounts; only while no remaining account has
+    # one as its primary group or is a member.
+    groups: tuple[UnixUser, ...] = ()
     units: tuple[UnitFile, ...] = ()
     paths: tuple[AbsolutePath, ...] = ()
     databases: tuple[RetiredDatabase, ...] = ()
@@ -82,13 +89,19 @@ class LegacyRetirementConfig(RoleConfig):
             raise ValueError("legacy retirement refuses a protected account")
         for path in self.paths:
             parts = PurePosixPath(path).parts
-            if str(PurePosixPath(path)) != path or ".." in parts or len(parts) < 4:
-                raise ValueError("paths must be canonical and at least three levels deep")
+            # Three levels deep, or an application directory directly in /opt or /srv.
+            deep_enough = len(parts) >= 4 or (len(parts) == 3 and parts[1] in ("opt", "srv"))
+            if str(PurePosixPath(path)) != path or ".." in parts or not deep_enough:
+                raise ValueError("paths must be canonical and three levels deep (two below /opt or /srv)")
             if parts[1] in ("home", "proc", "sys", "dev", "run") or PurePosixPath(path).is_relative_to(root):
                 raise ValueError("paths may not lie below /home (accounts), a kernel filesystem or the archive")
             if PurePosixPath(path).is_relative_to(SYSTEM_UNITS):
                 raise ValueError("unit files are retired through units, not paths")
-        if not (self.accounts or self.units or self.paths or self.databases):
+        if len(set(self.groups)) != len(self.groups):
+            raise ValueError("legacy retirement groups have duplicates")
+        if set(self.groups) & (ALWAYS_PROTECTED | PROTECTED_GROUPS | set(self.protected_accounts)):
+            raise ValueError("legacy retirement refuses a protected group")
+        if not (self.accounts or self.units or self.paths or self.databases or self.groups):
             raise ValueError("legacy retirement lists nothing")
         return self
 
@@ -122,6 +135,7 @@ def probe_command(cfg: LegacyRetirementConfig) -> str:
         "archive_dir": cfg.archive_dir,
         "accounts": list(cfg.accounts),
         "units": list(cfg.units),
+        "groups": list(cfg.groups),
         "paths": list(cfg.paths),
         "archives": cfg.archives(),
         "databases": [item.model_dump() for item in cfg.databases],
@@ -137,6 +151,7 @@ def host_state(cfg: LegacyRetirementConfig) -> dict[str, Any]:
         if not isinstance(state, dict) or set(state) != {
             "accounts",
             "units",
+            "groups",
             "paths",
             "archives",
             "postgres",
@@ -175,6 +190,15 @@ def refuse(cfg: LegacyRetirementConfig, state: dict[str, Any]) -> None:
         for dropin in unit["DropInPaths"].split():
             if not dropin.startswith(f"{SYSTEM_UNITS}/{name}.d/"):
                 raise DeployError(f"{name} has a drop-in outside {SYSTEM_UNITS}/{name}.d; nothing was changed")
+    retired = set(cfg.accounts)
+    for name, group in state["groups"].items():
+        if not group["exists"]:
+            continue
+        if group["gid"] < cfg.min_uid:
+            raise DeployError(f"group {name} has gid {group['gid']} below {cfg.min_uid}; nothing was changed")
+        others = (set(group["members"]) | set(group["primary_of"])) - retired
+        if others:
+            raise DeployError(f"group {name} still has accounts {', '.join(sorted(others))}; nothing was changed")
     if cfg.databases and not state["postgres"]:
         raise DeployError("legacy retirement lists databases but the host has no PostgreSQL; nothing was changed")
     for item in cfg.databases:
@@ -351,3 +375,10 @@ def retire_legacy(cfg: LegacyRetirementConfig) -> None:
             commands.append(f"if getent group {quoted} >/dev/null; then groupdel -- {quoted}; fi")
         if commands:
             server.shell(name=f"Remove user {user}, {account['home']} and its mail spool", commands=commands)
+    for name, group in state["groups"].items():
+        if group["exists"]:
+            quoted = shlex.quote(name)
+            server.shell(
+                name=f"Remove group {name}",
+                commands=[f"if getent group {quoted} >/dev/null; then groupdel -- {quoted}; fi"],
+            )

@@ -26,6 +26,19 @@ def exists_group(name):
     return True
 
 
+def group(name):
+    try:
+        entry = grp.getgrnam(name)
+    except KeyError:
+        return {"exists": False, "gid": None, "members": [], "primary_of": []}
+    return {
+        "exists": True,
+        "gid": entry.gr_gid,
+        "members": sorted(entry.gr_mem),
+        "primary_of": sorted(user.pw_name for user in pwd.getpwall() if user.pw_gid == entry.gr_gid),
+    }
+
+
 def account(name):
     """The account, or what an interrupted removal left of it (home, mail spool, group)."""
     try:
@@ -99,6 +112,7 @@ def main():
     state = {
         "accounts": {name: account(name) for name in request["accounts"]},
         "units": {name: unit(name) for name in request["units"]},
+        "groups": {name: group(name) for name in request["groups"]},
         "paths": {path: os.path.lexists(path) for path in request["paths"]},
         "archives": {name: os.path.isfile(os.path.join(root, name)) for name in request["archives"]},
         "postgres": postgres,
