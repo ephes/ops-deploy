@@ -101,6 +101,7 @@ nav:
       - jellyfin: services/jellyfin.md
       - open_webui: services/open_webui.md
       - minio: services/minio.md
+      - legacy_retirement: services/legacy_retirement.md
       - Home Assistant (in preparation): services/homeassistant.md
       - rustfs (prepared): services/rustfs.md
       - paperless (prepared): services/paperless.md

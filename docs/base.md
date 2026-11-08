@@ -322,6 +322,7 @@ keys, and checks of the running jail and of sshd's effective values.
 | `per_source_penalties` | `""` | not in the role: `no`, or `key:value` settings OpenSSH knows (`authfail:5m max:600`), each key once |
 | `per_source_penalty_exempt_list` | `""` | not in the role: comma-separated addresses/networks |
 | `password_authentication` | `None` | not in the role: `None` leaves the directive out; `"yes"` or `"no"` writes `PasswordAuthentication` |
+| `kbd_interactive_authentication` | `None` | not in the role: `None` leaves the directive out; `"yes"` or `"no"` writes `KbdInteractiveAuthentication` |
 | `permit_root_login` | `None` | not in the role: `None` leaves the directive out; `"yes"`, `"prohibit-password"`, `"forced-commands-only"` or `"no"` writes `PermitRootLogin` (the old spelling `without-password` is refused) |
 | `timed_revert_seconds` | `0` | not in the role: `0` off; 60..3600 runs every change under a timed revert (below) |
 
@@ -337,18 +338,22 @@ follow the role's lines in the order `banaction`, `journalmatch`, `action`;
 the extra directives follow `PerSourceMaxStartups`, `MaxAuthTries`,
 `LoginGraceTime` in the order `MaxStartups`, `PerSourceNetBlockSize`,
 `PerSourcePenalties`, `PerSourcePenaltyExemptList`, `PasswordAuthentication`,
-`PermitRootLogin`. All files are `root:root 0644`, their directories
+`KbdInteractiveAuthentication`, `PermitRootLogin`. All files are `root:root 0644`, their directories
 `root:root 0755`.
 
-`password_authentication` and `permit_root_login` default to `None`: no line,
+`password_authentication`, `kbd_interactive_authentication` and
+`permit_root_login` default to `None`: no line,
 so every existing configuration renders the same drop-in and the same checks
 byte for byte. They change who can log in, so set them only with
 `timed_revert_seconds` on a host whose only way back is SSH, and check a new
 key login (and that a password login is refused) before the confirm. They are
 plain directives in the drop-in: `PasswordAuthentication no` does not turn off
-`KbdInteractiveAuthentication` (a PAM password prompt), and a `Match` block in
-the main configuration can still set either for matching connections; neither
-is checked here.
+`KbdInteractiveAuthentication` (a PAM password prompt; set
+`kbd_interactive_authentication="no"` too), and a `Match` block in the main
+configuration can still set either for matching connections; neither is
+checked here. sshd takes the first value it reads, so an earlier drop-in that
+sets a directive wins; the `sshd -T` check fails the deploy (and removes the
+drop-in) when the effective value is not the rendered one.
 
 ### Planning
 

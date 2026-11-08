@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- New `services.legacy_retirement` (`LegacyRetirementConfig`,
+  `RetiredDatabase`, `retire_legacy`): explicit retirement of unmanaged
+  legacy accounts, systemd units in `/etc/systemd/system`, extra paths and
+  PostgreSQL databases with their owner roles. Everything that still exists is
+  archived first into a root-only directory directly below `/var/backups`
+  (`0700`; one archive per source, `0600`, tar with numeric owners, checked,
+  then published with `ln` so an existing archive is never replaced); only then are units disabled and removed, paths removed
+  (Traefik routes under the route lock), databases dropped after their
+  `pg_dump -Fc`, then their roles, then the accounts with their homes, mail
+  spools and private groups. Nothing running is stopped or killed: an account
+  with processes, a lingering user manager or a crontab, a unit that is not
+  inactive or not a file in `/etc/systemd/system`, and a database with
+  connections or an owner of other databases fail the deploy before any
+  change. Accounts below uid 1000 and `root`/`postgres` are refused. A
+  converged host gets no operation; a run interrupted after `userdel` resumes
+  with the leftover home, mail spool and group. The removal commands check
+  processes, linger, crontab, unit state and their archive again. See "Legacy
+  retirement" in the services docs.
+
+- `ssh_guard`: new optional `kbd_interactive_authentication` (`yes`/`no`,
+  default `None`: no line, every existing drop-in stays byte-identical)
+  renders `KbdInteractiveAuthentication` after `PasswordAuthentication` and
+  is checked with `sshd -T` like the other directives.
+
 - `services.snappymail`: SnappyMail 3.0.0 (fixes the published 2.38.2
   advisories, among them an unauthenticated SSRF). New verified release
   manifest `snappymail-3.0.0.json.gz` (archive SHA-256 and detached signature

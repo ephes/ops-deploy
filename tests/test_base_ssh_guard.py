@@ -939,10 +939,11 @@ OPENSSH_96 = "OpenSSH_9.6p1 Ubuntu-3ubuntu13.20, OpenSSL 3.0.13 30 Jan 2024"
 )
 def test_auth_directives_are_off_by_default_and_render_nothing(cfg: SshGuardConfig) -> None:
     assert cfg.password_authentication is None
+    assert cfg.kbd_interactive_authentication is None
     assert cfg.permit_root_login is None
     dropin = render_dropin(cfg)
     command = validate_command(cfg)
-    for word in ("passwordauthentication", "permitrootlogin"):
+    for word in ("passwordauthentication", "kbdinteractiveauthentication", "permitrootlogin"):
         assert word not in dropin.lower()
         assert word not in command.lower()
         assert all(word not in line for line in effective_lines(cfg))
@@ -961,6 +962,25 @@ def test_auth_directives_follow_the_other_directives() -> None:
     )
     assert render_dropin(SshGuardConfig(per_source_max_startups="", permit_root_login="no")) == (
         HEADER + "PermitRootLogin no\n"
+    )
+    assert render_dropin(
+        AUTH.model_copy(update={"per_source_net_block_size": "", "kbd_interactive_authentication": "no"})
+    ) == HEADER + (
+        "PerSourceMaxStartups 5\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"
+        "PermitRootLogin prohibit-password\n"
+    )
+
+
+def test_kbd_interactive_authentication_is_checked_with_sshd_capital_t() -> None:
+    cfg = SshGuardConfig(password_authentication="no", kbd_interactive_authentication="no")
+    assert effective_lines(cfg) == [
+        "persourcemaxstartups 5",
+        "passwordauthentication no",
+        "kbdinteractiveauthentication no",
+    ]
+    assert (
+        "for want in 'persourcemaxstartups 5' 'passwordauthentication no' 'kbdinteractiveauthentication no';"
+        in validate_command(cfg)
     )
 
 
@@ -1027,6 +1047,10 @@ def test_converged_auth_directives_change_nothing() -> None:
         ("password_authentication", ""),
         ("password_authentication", True),
         ("password_authentication", "no\nPermitRootLogin yes"),
+        ("kbd_interactive_authentication", "No"),
+        ("kbd_interactive_authentication", ""),
+        ("kbd_interactive_authentication", False),
+        ("kbd_interactive_authentication", "no\nPasswordAuthentication yes"),
         ("permit_root_login", "without-password"),
         ("permit_root_login", "Prohibit-Password"),
         ("permit_root_login", ""),

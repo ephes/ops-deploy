@@ -21,8 +21,9 @@ rewrites nothing. On top of the role the deploy
 - renders more sshd per-source directives, refused while planning when the
   host's OpenSSH is too old for them, and checks a changed drop-in with
   ``sshd -t`` and its effective values with ``sshd -T`` before the reload.
-- optionally renders ``PasswordAuthentication`` and ``PermitRootLogin`` into
-  the same drop-in (off by default: no line), checked the same way.
+- optionally renders ``PasswordAuthentication``, ``KbdInteractiveAuthentication``
+  and ``PermitRootLogin`` into the same drop-in (off by default: no line),
+  checked the same way.
 
 fail2ban is restarted only when its filter, jail or packages changed and ssh is
 reloaded only when the drop-in changed, so a converged host reports no change.
@@ -228,6 +229,7 @@ class SshGuardConfig(RoleConfig):
     # Not in the role; None (the default) leaves the directive out, so the
     # drop-in stays byte-identical for every existing configuration.
     password_authentication: Literal["yes", "no"] | None = None
+    kbd_interactive_authentication: Literal["yes", "no"] | None = None
     permit_root_login: PermitRootLogin | None = None
     # Not in the role. 0: off (the plain deploy). Otherwise the seconds after
     # which an unconfirmed change is reverted (docs/base.md, "Timed revert").
@@ -301,6 +303,7 @@ def dropin_directives(cfg: SshGuardConfig) -> list[tuple[str, str]]:
         ("PerSourcePenalties", cfg.per_source_penalties),
         ("PerSourcePenaltyExemptList", cfg.per_source_penalty_exempt_list),
         ("PasswordAuthentication", cfg.password_authentication or ""),
+        ("KbdInteractiveAuthentication", cfg.kbd_interactive_authentication or ""),
         ("PermitRootLogin", cfg.permit_root_login or ""),
     )
     return [(key, value) for key, value in directives if value]
