@@ -6,9 +6,10 @@
   removed (owner decision 2026-11-09). Removed `ops_deploy.services.open_webui`
   (`deploy_open_webui`, `deploy_open_webui_remove`, the shipped open-webui
   0.7.2 constraints and its templates), `docs/services/open_webui.md` and its
-  nav entry, `tests/test_open_webui*.py`, the `open_webui_venv_deploy`
-  template fixtures under `tests/parity/ansible/` and the
-  `open_webui_venv_deploy`/`open_webui_venv_remove` entries in
+  nav entry, `tests/test_open_webui*.py` (the `encrypted_volume_prepare`
+  defaults check moves to `tests/test_encrypted_volume_parity.py`), the
+  `open_webui_venv_deploy` template fixtures under `tests/parity/ansible/` and
+  the `open_webui_venv_deploy`/`open_webui_venv_remove` entries in
   `tests/parity/ops_library_roles.json` (ops-library keeps the roles). The
   owned Linux fixture (`tests/integration/linux_apps/`,
   `.github/workflows/linux-apps-integration.yml`) now qualifies
