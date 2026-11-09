@@ -216,13 +216,17 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     # Preserve original environment -> unit -> system-store admission order.
     security_preflight(runtime.model_copy(update={"uv_system_certs": False}))
     if runtime.uv_system_certs:
+        try:
+            expected_digest = (
+                cfg._trust_digest("preflight", bool(state.is_executing)) if cfg._trust_digest is not None else None
+            )
+        except Exception:
+            raise DeployError("Home Assistant original trust template failed") from None
         inspect_trust(
             runtime,
             "preflight",
             allow_missing_unit=True,
-            expected_digest=cfg._trust_digest("preflight", bool(state.is_executing))
-            if cfg._trust_digest is not None
-            else None,
+            expected_digest=expected_digest,
         )
         security_preflight(runtime.model_copy(update={"python_security_floor_enabled": False}))
     apt.packages(name="Install Home Assistant system packages", packages=list(cfg.additional_packages), update=True)

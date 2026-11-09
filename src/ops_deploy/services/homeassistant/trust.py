@@ -11,7 +11,7 @@ from functools import partial
 from importlib.resources import files
 from io import StringIO
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import SecretStr
 from pyinfra import host
@@ -164,13 +164,14 @@ def _verify_after_handlers(
     cfg: HomeAssistantRuntimeConfig,
     expected_digest: Callable[[str, bool], SecretStr] | None = None,
 ) -> None:
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     if expected_digest is not None:
         try:
             value = expected_digest("verify", True)
         except Exception:
             raise OperationError("Home Assistant original trust template failed") from None
         kwargs["_stdin"] = StdinLines(json.dumps({"expected_sha256": value.get_secret_value()}))
+        kwargs["_get_pty"] = False
     success, output = run_protected_command(
         host,
         StringCommand(trust_command(cfg, "verify", protected_digest=expected_digest is not None)),

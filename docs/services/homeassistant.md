@@ -1068,8 +1068,12 @@ includes are rendered afresh in execution rather than cached across those stages
 Original stat checksums and body-derived values remain in protected RAM only.
 
 Custom UV trust templates use the original command task's template lookup and
-mode-specific expected digest. Only this protected digest travels over stdin;
+mode-specific expected digest. Attaching task callbacks with managed UV trust
+requires the paired digest callback before operations are registered. Task
+callbacks supersede legacy include/ingress callbacks and cannot be combined with
+explicit rendered bodies. Both trust checks force non-PTY transport, and original
+preflight lookup failures expose a fixed error. Only the protected digest travels over stdin;
 the original host check program remains byte-identical, with its existing
 missing/mismatched-drop-in refusals. Stock callers continue using the stock digest.
-This callback preparation is not part of the frozen d825 owned HTTP-baseline
+This callback preparation is not part of the frozen compatibility native
 full-matrix run and is not yet independently reviewed or qualified for adoption.

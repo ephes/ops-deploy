@@ -179,3 +179,165 @@ def test_actual_render_failure_is_accounted_and_does_not_log_private_exception(
         assert "owned-private-exception-canary" not in caplog.text
     finally:
         disconnect_all(state)
+
+
+def test_actual_sdk_protected_trust_forces_no_pty_and_keeps_digest_private(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg, _ = fixture(tmp_path, monkeypatch)
+    body = "[Service]\nEnvironment=UV_SYSTEM_CERTS=1\n# selected original template\n"
+    Path(cfg.uv_system_certs_dropin_path).write_text(body)
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    original_command = trust.trust_command
+    monkeypatch.setattr(
+        trust,
+        "trust_command",
+        lambda *args, **kwargs: original_command(*args, **kwargs) + " --proc " + shlex.quote(str(tmp_path / "proc")),
+    )
+    monkeypatch.setenv("PATH", str(tmp_path / "commands") + os.pathsep + os.environ["PATH"])
+    state = State(Inventory(([("@local", {"_get_pty": True})], {})), Config(DIFF=True))
+    calls = []
+    results = []
+    modes = []
+    try:
+        connect_all(state)
+        target = state.inventory.get_host("@local")
+        actual = target.run_shell_command
+
+        def command(command: Any, **kwargs: Any) -> Any:
+            if "ha-unit-trust" in str(command):
+                calls.append(kwargs)
+                assert digest not in str(command)
+                assert kwargs["_get_pty"] is False
+                assert kwargs["print_input"] is kwargs["print_output"] is False
+            return actual(command, **kwargs)
+
+        monkeypatch.setattr(target, "run_shell_command", command)
+
+        def expected(mode: str, executing: bool) -> SecretStr:
+            modes.append((mode, executing))
+            return SecretStr(digest)
+
+        def deploy() -> None:
+            report = trust.inspect_trust(cfg, "preflight", expected_digest=SecretStr(digest))
+            assert report["managed_dropin"] is True
+            results.append(trust.verify_running_trust(cfg, expected_digest=expected))
+
+        add_deploy(state, deploy)
+        assert modes == []
+        run_ops(state)
+        assert modes == [("verify", True)]
+        assert len(calls) == 2
+        assert not state.failed_hosts
+        assert results[0] is not None
+        assert results[0].did_succeed()
+        assert digest not in caplog.text
+        assert body not in caplog.text
+    finally:
+        disconnect_all(state)
+
+
+def test_deploy_preflight_callback_exception_has_fixed_public_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    from pyinfra.api import DeployError
+
+    from ops_deploy.services.homeassistant.deploy_config import HomeAssistantDeployConfig
+
+    module = importlib.import_module("ops_deploy.services.homeassistant.deploy")
+    monkeypatch.setattr(module, "require_linux", lambda *_: None)
+    monkeypatch.setattr(module, "_selection", lambda *_: {"exists": True})
+    monkeypatch.setattr(module, "security_preflight", lambda *_: None)
+
+    def fail(*_: Any) -> SecretStr:
+        raise ValueError("owned-private-lookup-exception")
+
+    cfg = HomeAssistantDeployConfig().with_template_renderers(trust_digest=fail)
+    state = State(Inventory((["@local"], {})), Config())
+    try:
+        connect_all(state)
+        with pytest.raises(DeployError, match=r"^Home Assistant original trust template failed$") as error:
+            add_deploy(state, module.deploy_homeassistant, cfg=cfg)
+        assert error.value.__suppress_context__ is True
+    finally:
+        disconnect_all(state)
+
+
+def test_task_callback_contract_rejects_inconsistent_pairs_before_calls() -> None:
+    from ops_deploy.services.homeassistant.deploy_config import HomeAssistantDeployConfig
+
+    def unused(*_: Any) -> SecretStr:
+        raise AssertionError("callback must remain lazy")
+
+    with pytest.raises(ValueError, match="trust digest"):
+        HomeAssistantDeployConfig().with_template_renderers(task=unused)
+    for values in ({"include_rendered": {"owned": SecretStr("[]")}}, {"ingress_rendered": SecretStr("owned")}):
+        cfg = HomeAssistantDeployConfig.model_validate(values)
+        with pytest.raises(ValueError, match="explicit rendered"):
+            cfg.with_template_renderers(task=unused, trust_digest=unused)
+    cfg = HomeAssistantDeployConfig().with_template_renderers(task=unused, trust_digest=unused)
+    assert cfg._task_renderer is unused
+
+
+def test_selected_udev_dropin_ingress_callbacks_write_and_repeat_through_sdk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyinfra.operations import files, server
+
+    from ops_deploy.services.homeassistant import host_layout, ingress
+    from ops_deploy.services.homeassistant.ingress import HomeAssistantIngressConfig
+
+    cfg = config(tmp_path).model_copy(
+        update={
+            "enable_udev_rule": True,
+            "udev_rule_path": str(tmp_path / "owned.rules"),
+            "uv_system_certs": True,
+            "uv_system_certs_dropin_path": str(tmp_path / "owned.conf"),
+        }
+    )
+    route = HomeAssistantIngressConfig(enabled=True, dynamic_dir=str(tmp_path), domain="owned.invalid")
+    # Accounts/directories are existing owned prerequisites, not host mutation.
+    monkeypatch.setattr(server, "user", lambda **_: None)
+    monkeypatch.setattr(files, "directory", lambda **_: None)
+    for module in (host_layout, ingress, trust):
+        monkeypatch.setattr(
+            module,
+            "protected_template",
+            lambda cfg, **kwargs: protected_template(cfg, user=cfg.user, group=cfg.group, **kwargs),
+        )
+    calls = []
+
+    def render(kind: str, item: str | None, executing: bool) -> SecretStr:
+        assert item is None
+        calls.append((kind, executing))
+        return SecretStr("owned " + kind + "\n")
+
+    for changed in (True, False):
+        state = State(Inventory((["@local"], {})), Config(DIFF=True))
+        results: list[Any] = []
+
+        def deploy(results: list[Any] = results) -> None:
+            results.extend(
+                (
+                    host_layout.configure_layout(cfg, task_renderer=render),
+                    trust.write_managed_dropin(cfg, task_renderer=render),
+                    ingress.write_ingress(route, task_renderer=render, runtime=cfg),
+                )
+            )
+
+        try:
+            connect_all(state)
+            add_deploy(state, deploy)
+            run_ops(state)
+            assert not state.failed_hosts
+            assert all(
+                result is not None and result.did_succeed() and result.did_change() is changed for result in results
+            )
+        finally:
+            disconnect_all(state)
+    for kind, filename in (("udev", "owned.rules"), ("uv_certs", "owned.conf"), ("ingress", "homeassistant.yml")):
+        assert (kind, True) in calls
+        assert (kind, False) in calls
+        assert (tmp_path / filename).read_text() == "owned " + kind + "\n"

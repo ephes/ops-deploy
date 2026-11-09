@@ -77,7 +77,18 @@ class HomeAssistantDeployConfig(RoleConfig):
         capture: Callable[[str, bool], None] | None = None,
         trust_digest: Callable[[str, bool], SecretStr] | None = None,
     ) -> Self:
-        """Attach protected lazy controller callbacks without serializing context."""
+        """Attach protected lazy controller callbacks without serializing context.
+
+        Task callbacks supersede legacy include/ingress callbacks. Explicit
+        rendered bodies cannot be combined with task callbacks: their provenance
+        would otherwise be discarded. A selected custom trust template requires
+        its paired original expected-digest callback before any operation runs.
+        """
+        if task is not None:
+            if self.runtime.uv_system_certs and trust_digest is None:
+                raise ValueError("Original task renderer requires its trust digest callback")
+            if self.include_rendered or self.ingress_rendered is not None:
+                raise ValueError("Original task renderer cannot replace explicit rendered bodies")
         result = self.model_copy()
         result._include_renderer = include
         result._ingress_renderer = ingress
