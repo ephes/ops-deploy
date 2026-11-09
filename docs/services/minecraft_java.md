@@ -3,8 +3,9 @@
 Deploy-only port of the public `minecraft_java_deploy` role at ops-library
 `3110a0f1` (2.68.0): Debian/Ubuntu, OpenJDK, mcrcon 0.7.2, vanilla or Forge,
 mod JARs, server properties, whitelist/operators, UFW and a systemd service,
-and the port of the `minecraft_java_remove` role (see [Removal](#removal)).
-Backup and restore are outside this package. The deploy neither creates nor
+the port of the `minecraft_java_remove` role (see [Removal](#removal)) and
+the ports of `minecraft_java_backup` and `minecraft_java_restore` (see
+[Backup and restore](#backup-and-restore)). The deploy neither creates nor
 changes nor removes existing backup jobs, scripts, directories or archives.
 
 ```python
@@ -169,6 +170,114 @@ The role's order, with its ignored failures (marked *ignored*):
 7. the role's `reload systemd` handler, when the unit file was removed.
 
 `/opt/backups/minecraft-java`, the Echoport archives and UFW's own state stay.
+
+## Backup and restore
+
+`ops_deploy.services.minecraft_java` ports the `minecraft_java_backup` and
+`minecraft_java_restore` roles at ops-library `55a23d33`
+(`ops_deploy/services/minecraft_java/lifecycle.py`, host program
+`files/lifecycle_host.py`). Archives written by either tool restore with the
+other: the role restores the configured world of an archive written here, and
+the port restores the role's archives.
+
+| Function | Config | Role |
+|---|---|---|
+| `deploy_minecraft_java_backup(cfg, secrets)` | `MinecraftJavaBackupConfig(world_name=...)` | `minecraft_java_backup` |
+| `deploy_minecraft_java_restore(cfg)` | `MinecraftJavaRestoreConfig(world_name=..., confirm=True)` | `minecraft_java_restore` |
+
+The fields are the roles' variables without the `minecraft_java_backup_`,
+`minecraft_java_restore_` or `minecraft_java_` prefix, with the roles'
+defaults: `prefix` (`manual`), `root` (`/opt/backups/minecraft-java`),
+`server_dir` (`/home/minecraft/server`), `service_name` (`minecraft-java`),
+`port` (25565), `rcon_port` (25575), the restore's `archive` (`latest`),
+`user`/`group` (`minecraft`) and `dry_run`. New: `world_name` (required, no
+default), `save_wait`/`save_timeout` (the role's 2 and 30 seconds),
+`staging_dir` (`<root>/.restore-work`), `start_timeout` (300 seconds),
+`confirm`, `required_mount` and, for the backup, `retain_count`/`retain_days`
+([local backups](../concepts/local-backups.md)). The backup needs the
+`rcon_password` secret (validated as for the deploy); it reaches the host on
+stdin only and is used by a small RCON client inside the host program, so it
+is in no command line, environment, file or log.
+
+**Backup.** `<root>/<prefix>-<UTC timestamp>.tar.gz`, `root:root 0600` in a
+`root:root 0700` root, with every world of the server, `server.properties` and
+those of `ops.json`, `whitelist.json`, `banned-ips.json`,
+`banned-players.json` that exist, with paths relative to the server directory
+and a world's own directory entry left out (the layout of the role's
+`archive` task). The worlds are the configured world and each other top-level
+directory with a regular `level.dat`; hidden names, pre-restore copies
+(`*.pre-restore-*`) and links are not worlds, and a link or special file
+inside a world fails the backup before an archive exists. While the unit is
+`active` (or `reloading`) the archive is bracketed with RCON `save-off`, `save-all flush`
+(which must answer "Saved the game") and, always, `save-on`; a stopped server
+is never started, and a stopped unit while something answers on the game or
+RCON port, or a unit that is `activating`/`deactivating`, is refused. The
+archive is written to a private temporary name and linked into place, so a
+failed run never leaves a partial archive and never replaces one.
+
+**Restore.** `archive` is `latest` (the newest `*.tar.gz` directly in the
+root by mtime, the role's rule), a name in the root or an absolute path below
+it; links are refused. The check reads the whole archive (gzip and tar
+integrity), requires the configured world with its `level.dat` and, when the
+archive has a `server.properties`, its `level-name` to be that world; the live
+`server.properties` must select it too. The unit must be loaded or genuinely
+absent (the role's assertion); a stopped or absent unit while something
+answers on the game port (`port`; the restore has no RCON port setting) is
+refused before anything changes, as in the backup. The worlds of the archive (its top-level
+directories with a `level.dat`) are restored, each through its own
+pre-restore copy; other top-level entries are left out.
+
+- `dry_run=True` runs only these checks and prints the plan (archive, worlds
+  with entry counts and whether a live copy exists, files, the unit and
+  whether it would be stopped and started). It creates no work directory,
+  touches no unit and changes no file.
+- Without `dry_run`, `confirm=True` is required (the deploy fails before any
+  probe otherwise). The restore unpacks the selected members into
+  `staging_dir`, stops a running unit, keeps each live world of the archive
+  as `<world>.pre-restore-<utc>-<random>` (ops-library's `preserve.py`,
+  unchanged; a world that does not exist yet, as on a fresh installation, has
+  nothing to snapshot), copies the worlds in with the service account's
+  ownership, restores `server.properties` (`0640`; the previous one stays as
+  `server.properties.pre-restore-<utc>` when it differed) and the player files
+  in the archive (`0644`), and starts the unit only when it ran before,
+  waiting up to `start_timeout` for the game port.
+- When replacing fails, the restore rolls back while the unit is stopped:
+  renamed copies move back, copies taken across filesystems are copied back
+  (and kept), a world that did not exist before goes again, and the replaced
+  files are put back with their owner and mode. The unit stays stopped. A
+  failed start after a complete restore is not rolled back; the copies stay.
+  `staging_dir` is emptied whether the restore succeeds or fails; no path
+  removes a pre-restore copy.
+
+Deliberate differences from the roles:
+
+- Every world is backed up and restored, not only `minecraft_java_world_name`;
+  the server keeps several (macmini: six). The role restores only the
+  configured world of an archive written here.
+- `world_name` has no default and must be the `level-name` the live (and the
+  archived) `server.properties` selects. The playbooks never set it, so the
+  role archived its default `world`, not the world the server plays.
+- "Running" is the unit's state, not `pgrep -f server.jar` (which misses
+  Forge). `save-all flush` must answer "Saved the game" (the role accepted any
+  answer containing "save"), and a failed `save-on` fails the run (the role
+  only warned).
+- The backup timestamp is UTC (`YYYYmmddTHHMMSS`), the role's was host-local.
+- The role's retention (the 10 newest `*.tar.gz`, whoever wrote them) and its
+  `chmod 0600` of every archive in the root are not ported: nothing written by
+  another tool or by hand is touched. `retain_count`/`retain_days` prune only
+  the snapshots this port recorded.
+- The restore needs `confirm`, never enables the unit, starts it only when it
+  ran before (the role started and enabled any loaded unit), waits up to
+  `start_timeout` (the role 60 seconds), rolls back on failure (the role left
+  the copy for the operator), writes `server.properties` `0640` (the deploy's
+  mode; the role wrote `0644`) and unpacks into `staging_dir` instead of a
+  `/tmp` directory.
+- Archive members that are links, special files, absolute or parent paths are
+  refused, and so is an archive path outside `root`.
+
+Tests: `tests/test_minecraft_java_lifecycle.py` (configs, planned operations,
+and the host program end to end against temporary directories with a fake
+RCON server, stubbed `systemctl`/`findmnt` and the real `preserve.py`).
 
 ## Parity and limits
 

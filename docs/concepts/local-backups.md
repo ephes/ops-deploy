@@ -1,7 +1,8 @@
 # Local backups and restore work directories
 
 The backup ports (`nyxmon`, `fastdeploy`, `work_app`, `traefik`, `homelab`,
-`vaultwarden`, `unifi`; `snappymail` writes an archive only) write a
+`vaultwarden`, `unifi`; `snappymail` and `minecraft_java` write an archive
+without a directory) write a
 directory and an archive on the host, and their restores unpack an archive
 into a work directory. Where an off-host backup (Echoport) already holds the
 same data, those local archives are only rollback snapshots. Two settings,
@@ -16,12 +17,13 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 
 | Config | Guarded fields |
 |---|---|
-| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig`, `PaperlessBackupConfig`, `UnifiBackupConfig` | `root` |
+| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig`, `PaperlessBackupConfig`, `UnifiBackupConfig`, `MinecraftJavaBackupConfig` | `root` |
 | `SnappyMailRestoreConfig` | `data_dir` (the restore stages next to it) |
 | `MetubeBackupConfig`, `JellyfinBackupConfig`, `NavidromeBackupConfig`, `WagtailBackupConfig` | `root` (mount check only: these keep their roles' own `retain` pruning instead of `retain_count`/`retain_days`) |
 | `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig`, `VaultwardenRestoreConfig`, `PaperlessRestoreConfig` | `staging_dir` |
 | `FastdeployRestoreConfig` | `temp_dir`, `safety_backup_root` |
 | `UnifiRestoreConfig` | `root` (its safety backup's root), `work_dir` |
+| `MinecraftJavaRestoreConfig` | `root`, `staging_dir` (the dry run checks `root` only: it writes nothing) |
 
 The config refuses a guarded path that is not strictly below the mount
 point (or that contains `..`), and a mount point that is `/` or not

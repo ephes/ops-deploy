@@ -191,6 +191,9 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # MinIO uses the same encoded-source boundary, with secret payload on stdin.
     # Exercise its actual composed command through both shells below.
     encoded_minio = {"services/minio/files/iam_host.py"}
+    # The Minecraft backup/restore program (with the preserver) is base64-encoded
+    # by its command builder; its composed command runs through both shells below.
+    encoded_minecraft = {"services/minecraft_java/files/lifecycle_host.py"}
     # The UniFi backup and restore program is base64-encoded by its command
     # builder, its payload on stdin; exercised through both shells below.
     encoded_unifi = {"services/unifi/files/lifecycle_host.py"}
@@ -224,6 +227,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_daybook_runtime
         | encoded_daybook_sessions
         | encoded_minio
+        | encoded_minecraft
         | encoded_unifi
         | uploaded_backup
         | encoded_certbot
@@ -606,6 +610,32 @@ def test_minio_encoded_host_source_and_secret_stdin_through_real_login_shell(tmp
     assert json.loads(result.stdout) == {"pending": 0, "changed": False}
     assert result.stderr == ""
     assert alias_file.read_bytes() == before
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_minecraft_encoded_host_source_and_stdin_through_real_login_shell(tmp_path: Path, login_shell: str) -> None:
+    """The Minecraft host program, decoded and run by the login shell; its settings arrive on stdin."""
+
+    from ops_deploy.services.minecraft_java import lifecycle as minecraft_lifecycle
+
+    root = tmp_path / f"no root {TRICKY}"
+    command = minecraft_lifecycle._command("check")
+    assert (minecraft_lifecycle.FILES / "lifecycle_host.py").read_text() not in command
+    remote = make_unix_command(StringCommand(command)).get_raw_value()
+    assert not fish_unsafe(remote)
+    stdin = stdin_arguments(json.dumps({"root": str(root), "archive": "latest"}) + "\n")
+    result = subprocess.run(
+        [login_shell, "-c", remote],
+        input="".join(stdin["_stdin"]),
+        env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # The program ran: its first check names the (absent) root exactly as sent.
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == f"minecraft_java check: Backup root not found: {root}\n"
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
