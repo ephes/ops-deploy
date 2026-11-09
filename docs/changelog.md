@@ -55,7 +55,6 @@
   `tar.zst` or `manual-unf-prep`) are listed in
   [Backup and restore](services/unifi.md#backup-and-restore).
 
-||||||| parent of 3ad2891 (GoToSocial: release 0.22.3)
 - Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
   the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
   no release assets or checksum manifest for this Git-based installation.
