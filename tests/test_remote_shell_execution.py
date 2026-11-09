@@ -194,6 +194,9 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # The Minecraft backup/restore program (with the preserver) is base64-encoded
     # by its command builder; its composed command runs through both shells below.
     encoded_minecraft = {"services/minecraft_java/files/lifecycle_host.py"}
+    # The UniFi backup and restore program is base64-encoded by its command
+    # builder, its payload on stdin; exercised through both shells below.
+    encoded_unifi = {"services/unifi/files/lifecycle_host.py"}
     # The unchanged backup attestation program is uploaded with files.put,
     # never interpolated into shell source; its actual file CLI is tested below.
     uploaded_backup = {"infra/files/zfs_snapshot_file_attestation.py"}
@@ -225,6 +228,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_daybook_sessions
         | encoded_minio
         | encoded_minecraft
+        | encoded_unifi
         | uploaded_backup
         | encoded_certbot
         | encoded_wagtail
@@ -632,6 +636,45 @@ def test_minecraft_encoded_host_source_and_stdin_through_real_login_shell(tmp_pa
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr == f"minecraft_java check: Backup root not found: {root}\n"
+
+
+@pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
+def test_unifi_encoded_lifecycle_source_and_secret_stdin_through_real_login_shell(
+    tmp_path: Path, login_shell: str
+) -> None:
+    from ops_deploy.services.unifi import lifecycle as unifi_lifecycle
+
+    root = tmp_path / "no backups"
+    payload = json.dumps(
+        {
+            "dry_run": True,
+            "root": str(root),
+            "archive": "latest",
+            "mongodb": {"host": "127.0.0.1", "port": 27017, "database": "unifi"},
+            "credentials": {"username": "unifi", "password": TRICKY, "auth_db": "admin"},
+            "credentials_dir": str(tmp_path),
+        }
+    )
+    command = unifi_lifecycle._command("restore")
+    assert (SRC / "services/unifi/files/lifecycle_host.py").read_text() not in command
+    assert TRICKY not in command
+    remote = make_unix_command(StringCommand(command)).get_raw_value()
+    assert not fish_unsafe(remote)
+    stdin = stdin_arguments(payload + "\n")
+    assert repr(stdin["_stdin"]) == "<stdin redacted>"
+    result = subprocess.run(
+        [login_shell, "-c", remote],
+        input="".join(stdin["_stdin"]),
+        env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # The decoded program ran: its own refusal, no Python error, no secret.
+    assert result.returncode == 1, result.stderr
+    assert result.stderr == f"unifi restore: No UniFi archives found under {root} (it does not exist)\n"
+    assert TRICKY not in result.stdout + result.stderr
+    assert not root.exists()
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)

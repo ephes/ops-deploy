@@ -1,8 +1,8 @@
 # Local backups and restore work directories
 
 The backup ports (`nyxmon`, `fastdeploy`, `work_app`, `traefik`, `homelab`,
-`vaultwarden`; `snappymail` and `minecraft_java` write an archive without a
-directory) write a
+`vaultwarden`, `unifi`; `snappymail` and `minecraft_java` write an archive
+without a directory) write a
 directory and an archive on the host, and their restores unpack an archive
 into a work directory. Where an off-host backup (Echoport) already holds the
 same data, those local archives are only rollback snapshots. Two settings,
@@ -17,11 +17,12 @@ directory, for FastDeploy also the safety backup's root) must lie below:
 
 | Config | Guarded fields |
 |---|---|
-| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig`, `PaperlessBackupConfig`, `MinecraftJavaBackupConfig` | `root` |
+| `NyxmonBackupConfig`, `WorkAppBackupConfig`, `TraefikBackupConfig`, `FastdeployBackupConfig`, `HomelabBackupConfig`, `SnappyMailBackupConfig`, `VaultwardenBackupConfig`, `PostfixAdminBackupConfig`, `PaperlessBackupConfig`, `UnifiBackupConfig`, `MinecraftJavaBackupConfig` | `root` |
 | `SnappyMailRestoreConfig` | `data_dir` (the restore stages next to it) |
 | `MetubeBackupConfig`, `JellyfinBackupConfig`, `NavidromeBackupConfig`, `WagtailBackupConfig` | `root` (mount check only: these keep their roles' own `retain` pruning instead of `retain_count`/`retain_days`) |
 | `NyxmonRestoreConfig`, `WorkAppRestoreConfig`, `TraefikRestoreConfig`, `HomelabRestoreConfig`, `VaultwardenRestoreConfig`, `PaperlessRestoreConfig` | `staging_dir` |
 | `FastdeployRestoreConfig` | `temp_dir`, `safety_backup_root` |
+| `UnifiRestoreConfig` | `root` (its safety backup's root), `work_dir` |
 | `MinecraftJavaRestoreConfig` | `root`, `staging_dir` (the dry run checks `root` only: it writes nothing) |
 
 The config refuses a guarded path that is not strictly below the mount
@@ -86,7 +87,12 @@ fresh `mktemp` directory `.snappymail-restore-*` next to the data directory
 and removes it in its `EXIT` trap; one left by an interrupted run (a copy of
 the SnappyMail data) is not reused and must be removed by hand. The Mastodon
 restore is one bash script whose `EXIT` trap removes `staging_dir` (with
-`cleanup`) after its rollback ran. For the
+`cleanup`) after its rollback ran. The UniFi restore (a Python program on
+the host) unpacks each archive into its own fresh `mkdtemp` directory below
+`work_dir`, removes it in a `finally` block whatever the restore did, then
+removes `work_dir` itself when it is empty; a snapshot directory is restored
+in place without one. Its `pre-restore-*` safety backup stays after a failed
+restore and is never recorded for retention. For the
 other restores, an interrupted connection can still leave one behind; the
 next restore resets it.
 
