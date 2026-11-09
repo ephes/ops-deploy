@@ -213,6 +213,47 @@ def test_restore_skips_retired_entries_and_blanket_sudoers(tmp_path: Path) -> No
     assert f"root root {host / 'services'}" in owners.read_text().splitlines()
 
 
+@pytest.mark.skipif(not _bash_44(), reason="needs bash 4.4+ and /usr/bin/python3")
+@pytest.mark.parametrize(
+    ("dry_run", "phases"), [(True, ["validate"]), (False, ["validate", "safety", "restore", "verify"])]
+)
+def test_restore_dry_run_stops_after_validation(tmp_path: Path, dry_run: bool, phases: list[str]) -> None:
+    # ops-control's validated dry run (`--dry-run`, which takes no deploy lock)
+    # relies on this: it validates the snapshot and takes no safety backup,
+    # restore or verify step.
+    result = run_deploy_fake(
+        deploy_fastdeploy_restore,
+        FastdeployRestoreConfig(host_name="macmini", dry_run=dry_run),
+        SECRETS,
+        responses=TIME,
+    )
+    script, _ = body(result)
+    assert settings(script)["R_DRY_RUN"] == ("1" if dry_run else "0")
+    # The Traefik route guard belongs to the real restore only.
+    assert (route_guard_command() in script) is not dry_run
+    calls = tmp_path / "phases"
+    stubs = [
+        f"{phase}_phase() {{ echo {phase} >> {shlex.quote(str(calls))}; }}"
+        for phase in ("validate", "safety", "restore", "verify")
+    ]
+    run = "\n".join(
+        [
+            # Without the guard: it reads this machine's Traefik lock.
+            script.rstrip().removesuffix("fd_restore").replace(route_guard_command(), ""),
+            *stubs,
+            "require_mount() { :; }",
+            f"R_TEMP={shlex.quote(str(tmp_path / 'temp'))}",
+            "fd_restore",
+        ]
+    )
+
+    done = subprocess.run(["bash", "-c", run], input="\n", capture_output=True, text=True)
+
+    assert done.returncode == 0, done.stderr
+    assert calls.read_text().split() == phases
+    assert "FastDeploy restore completed successfully. Rollback executed: False" in done.stdout
+
+
 def test_restore_ships_the_retired_lists_and_the_roles_check() -> None:
     result = run_deploy_fake(
         deploy_fastdeploy_restore, FastdeployRestoreConfig(host_name="macmini"), SECRETS, responses=TIME

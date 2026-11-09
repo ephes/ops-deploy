@@ -11,19 +11,23 @@ the roles do, so either tool restores the other's archives.
   ``archive``). The path is printed; nothing is fetched or pruned, as with the
   role.
 - Restore: refused unless ``confirmed`` and ``clients_quiesced`` are set and the
-  archive is an absolute path. ``lifecycle.py validate`` runs before either unit
-  is touched; then both units are stopped and disabled and ``lifecycle.py
-  restore --clients-quiesced`` runs (it writes its own safety backup and rolls
-  back on failure). Both units stay stopped, as with the role.
+  archive is an absolute path (``validate_only`` needs the path only, see
+  below). ``lifecycle.py validate`` runs before either unit is touched; then
+  both units are stopped and disabled and ``lifecycle.py restore
+  --clients-quiesced`` runs (it writes its own safety backup and rolls back on
+  failure). Both units stay stopped, as with the role.
 - Remove: refused unless ``confirmed`` and ``clients_quiesced`` are set. Stops
   and disables the units that exist, removes the two unit files and the Traefik
   route, and keeps the database, account, site, configuration and every backup.
 
 Deliberate differences from the roles:
 
-- ``validate_only`` (``just pyinfra-restore ... DRY_RUN=true``) runs the role's
-  guards and the validation and stops before the units; the role has no such
-  mode.
+- ``validate_only`` (``just pyinfra-restore ... DRY_RUN=true``, ops-control's
+  ``just restore-check``) runs only ``lifecycle.py validate`` (it unpacks the
+  archive into a temporary directory below the backup root, checks the
+  manifest and removes the directory) and stops before the units; the role has
+  no such mode. It needs the archive's absolute path but neither
+  confirmation: those guard the stop and the restore it never reaches.
 - ``required_mount`` (ops-control sets macmini's ``/opt/backups``) stops a
   backup before its first write when the backup root is not on that mount.
 - The removal reloads systemd only when it removed a unit file, so a second
@@ -148,11 +152,16 @@ def deploy_daybook_operations_api_backup(cfg: OperationsApiBackupConfig) -> None
 
 @deploy("Daybook Operations API restore")
 def deploy_daybook_operations_api_restore(cfg: OperationsApiRestoreConfig) -> None:
+    if cfg.validate_only:
+        # Validation reads the archive only; the confirmations guard the stop
+        # and the restore below, which a validation never reaches.
+        if not cfg.archive.startswith("/"):
+            raise DeployError("Name the archive by its absolute path to validate it (there is no 'latest').")
+        server.shell(name="Validate the archive (no service change)", commands=[cfg.command("validate", cfg.archive)])
+        return
     if not (cfg.confirmed and cfg.clients_quiesced and cfg.archive.startswith("/")):
         raise DeployError("Quiesce every client and explicitly confirm this archive before restoring.")
     server.shell(name="Validate before stopping services", commands=[cfg.command("validate", cfg.archive)])
-    if cfg.validate_only:
-        return
     _stop_disable(UNITS, "before the unprivileged restore")
     server.shell(
         name="Restore with safety backup and leave both services stopped",

@@ -137,11 +137,26 @@ def test_restore_leaves_stopped_disabled_units_alone() -> None:
     assert not any(c.startswith(("systemctl stop", "systemctl disable")) for c in run.executed_commands)
 
 
-def test_restore_validate_only_touches_no_unit() -> None:
-    cfg = OperationsApiRestoreConfig(archive=ARCHIVE, confirmed=True, clients_quiesced=True, validate_only=True)
+@pytest.mark.parametrize(
+    "flags",
+    [{}, {"confirmed": True}, {"clients_quiesced": True}, {"confirmed": True, "clients_quiesced": True}],
+)
+def test_restore_validate_only_touches_no_unit(flags: dict[str, bool]) -> None:
+    # The confirmations guard the stop and the restore; validation needs neither.
+    cfg = OperationsApiRestoreConfig(archive=ARCHIVE, validate_only=True, **flags)
     run = run_deploy_fake(deploy_daybook_operations_api_restore, cfg, responses=ACTIVE)
     assert run.succeeded, run.error
     assert run.executed_commands == [f"{TOOL} validate {CONFIG} --archive {ARCHIVE}"]
+    assert run.changed_ops == ["Daybook Operations API restore | Validate the archive (no service change)"]
+
+
+@pytest.mark.parametrize("archive", ["latest", "", "20261103T101500123456Z.tar"])
+def test_restore_validate_only_needs_the_absolute_archive(archive: str) -> None:
+    cfg = OperationsApiRestoreConfig(archive=archive, confirmed=True, clients_quiesced=True, validate_only=True)
+    run = run_deploy_fake(deploy_daybook_operations_api_restore, cfg, responses=ACTIVE)
+    assert not run.succeeded
+    assert "absolute path to validate it" in str(run.error)
+    assert run.executed_commands == []
 
 
 def test_remove_refuses_without_both_confirmations() -> None:

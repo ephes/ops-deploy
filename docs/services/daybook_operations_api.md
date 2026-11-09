@@ -164,7 +164,7 @@ deploy_daybook_operations_api_remove(OperationsApiRemoveConfig(confirmed=True, c
 | restore: `lifecycle.py validate` before any unit change | same |
 | restore: stop and disable both units | disable, then stop, read from `ActiveState` (a unit waiting in `auto-restart` is stopped too); a unit already stopped and disabled is left alone |
 | restore: `lifecycle.py restore --clients-quiesced`; units stay stopped | same |
-| — | `validate_only`: guards and validation only, no unit change (`just pyinfra-restore … DRY_RUN=true`) |
+| — | `validate_only`: `lifecycle.py validate` only (a temporary directory below the backup root, removed again), no unit change (`just pyinfra-restore … DRY_RUN=true`, ops-control `just restore-check`); it needs the archive's absolute path but neither confirmation, which guard only the stop and the restore |
 | remove: assert confirmed and clients quiesced | same |
 | remove: stop and disable the units that exist | same |
 | remove: delete both unit files and the Traefik route | same; the route only while no Traefik transaction holds its lock |
