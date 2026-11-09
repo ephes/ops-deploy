@@ -77,7 +77,7 @@ connection.
 | `python_version`, `uv_sync_args`, `uv` | `3.12`, `--no-default-groups --no-dev`, `None` | `uv=UvInstallConfig()` runs `uv_install` as the role does; by default uv must be at `/usr/local/bin/uv` |
 | `django` | `Django()` | settings module, allowed hosts, CSRF origins, admin/login URLs, cookie age |
 | `influx` | `Influx()` | image `influxdb:2.7`, container, ports, data and config dirs with their numeric owners, org, bucket, measurement, `retention_apply`/`bucket_retention` |
-| `grafana` | `Grafana()` | image `grafana/grafana-oss`, container, ports, data dir (`472:472`), provisioning and dashboards paths, admin user, InfluxDB login name, `base_url` |
+| `grafana` | `Grafana()` | image `grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20`, container, ports, data dir (`472:472`), provisioning and dashboards paths, admin user, InfluxDB login name, `base_url` |
 | `runtime` | `Runtime()` | unit `graphyard-runtime`, Compose project, compose path, Docker network, `migrate_unmanaged_containers`, `docker`; `None` = no runtime |
 | interval, heartbeat and SQLite fields | the role's | the env file's `GRAPHYARD_*` values |
 | `require_bound_ingest_tokens` | `False` | the role's `graphyard_require_bound_ingest_tokens`: `True` appends `GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true` to the env file, and Graphyard answers every ingest token without a subject binding with `403`; `False` writes no line, so the env file stays byte-identical and nothing restarts. Switching restarts `graphyard-web` and `graphyard-agent` once |
@@ -505,3 +505,12 @@ This qualifies zero managed changes with stable connection lifetime, not global
 zero I/O on an idle database. No connection keeper is installed by the deploy.
 The native proof uses a local pyinfra connector and fish command transport;
 actual inventory SSH and live service behavior remain a separate rollout gate.
+
+### Grafana image pin
+
+The default preserves the repository-recorded Grafana OSS 12.4.0 image. On
+2026-11-08, Docker Hub's registry manifest for `grafana/grafana-oss:12.4.0`
+returned `sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20`;
+the manifest body's SHA-256 matched. No host inspection was performed.
+Keep a stable release tag plus the verified registry digest when updating this
+default, and update the ops-control inventory and rollback fallbacks together.
