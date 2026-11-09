@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Upgrade Paperless-ngx from 3.2.1 to 3.4.2 using the verified official
+  release checksum; the ops-library rollback role is updated separately. Document
+  database migrations,
+  root-only search schema/rebuild, Poppler thumbnails and removed environment
+  settings. The typed runtime follows psycopg-pool 3.3.3 and retries interrupted
+  index rebuilds. No deployment or database downgrade is implied.
+
 - Default Traefik to 3.7.17; document verified official Linux archive checksums
   and the 3.7.14–3.7.17 migration review. Keep Ansible rollback and pyinfra
   defaults aligned; no template change is required. Historical routine fixtures

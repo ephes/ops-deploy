@@ -80,8 +80,8 @@ def test_backup_metadata_matches_the_role_template() -> None:
 
     text = backup_metadata(cfg, stamp=STAMP, backup_dir="/b/manual-x", exporter_target="/b/manual-x/exporter")
 
-    data = yaml.safe_load(text.replace("@VERSION@", "3.2.1"))
-    assert data["paperless_version"] == "3.2.1"
+    data = yaml.safe_load(text.replace("@VERSION@", "3.4.2"))
+    assert data["paperless_version"] == "3.4.2"
     assert data["storage"]["include_consume"] is False
     assert data["exporter"]["flags"] == "-z --delete"
     assert data["extra"] == {"backup_prefix": "manual"}
@@ -159,7 +159,7 @@ args = sys.argv[2:]
 with open(log, "a") as out:
     out.write(json.dumps({"args": args, "passphrase": os.environ.get("PAPERLESS_PASSPHRASE")}) + "\n")
 if args == ["--version"]:
-    print("3.2.1")
+    print("3.4.2")
 elif args and args[0] == "document_exporter":
     os.makedirs(args[-1], exist_ok=True)
     open(os.path.join(args[-1], "manifest.json"), "w").write("[]")
@@ -291,7 +291,7 @@ def test_backup_script_writes_the_role_snapshot_and_archive(tmp_path: Path) -> N
     assert (directory / "systemd" / "paperless.service").exists()
     assert (directory / "traefik" / "paperless.yml").exists()
     metadata = yaml.safe_load((directory / "metadata.yml").read_text())
-    assert metadata["paperless_version"] == "3.2.1"
+    assert metadata["paperless_version"] == "3.4.2"
     assert "./metadata.yml" in (directory / "manifest.sha256").read_text()
     with tarfile.open(archive) as tar:
         assert {name.split("/")[0] for name in tar.getnames()} == {f"manual-{STAMP}"}

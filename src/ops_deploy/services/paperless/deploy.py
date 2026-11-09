@@ -1,4 +1,4 @@
-"""Paperless 3.2.1 composition, prepared for owned native qualification."""
+"""Paperless 3.4.2 composition, prepared for owned native qualification."""
 
 from __future__ import annotations
 
@@ -36,7 +36,6 @@ PACKAGES = (
     "python3-passlib",
     "build-essential",
     "pkg-config",
-    "imagemagick",
     "unpaper",
     "ghostscript",
     "icc-profiles-free",

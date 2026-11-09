@@ -22,7 +22,7 @@ def test_actual_metadata_command_and_stdin(shell: str, tmp_path: Path) -> None:
         pytest.skip(f"{shell} is unavailable; caller/native qualification must record actual shell coverage")
     index = tmp_path / "data/index"
     index.mkdir(parents=True)
-    (index / ".index_settings.json").write_text(json.dumps(expected_index_sentinels("3.2.1", "eng+deu")))
+    (index / ".index_settings.json").write_text(json.dumps(expected_index_sentinels("3.4.2", "eng+deu")))
     (index / "meta.json").write_text(json.dumps({"segments": []}))
     cfg = PaperlessConfig(traefik_domain="home.example.test", external_storage_root=str(tmp_path))
     before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in index.iterdir()}
