@@ -38,7 +38,14 @@ from pyinfra.api.operations import run_ops
 from pyinfra.connectors.docker import DockerConnector
 
 from ops_deploy.base import StaleExeRestartConfig, deploy_stale_exe_restart
-from ops_deploy.base.stale_exe_restart import APT_HOOK, CONFIG_PATH, SCRIPT_PATH, STATE_PATH
+from ops_deploy.base.stale_exe_restart import (
+    APT_HOOK,
+    CONFIG_PATH,
+    NEEDRESTART_DIR,
+    NEEDRESTART_DROPIN,
+    SCRIPT_PATH,
+    STATE_PATH,
+)
 from ops_deploy.testing.harness import DeployRun, collect_ops
 
 pytestmark = pytest.mark.skipif(
@@ -55,6 +62,8 @@ FRESH = [
     P + "Install systemd unit stale-exe-restart.timer",
     P + "Reload systemd for the stale-exe-restart units",
     P + "Enable and start stale-exe-restart.timer",
+    P + f"Ensure {NEEDRESTART_DIR}",
+    P + f"Write {NEEDRESTART_DROPIN}",
     P + f"Write {APT_HOOK}",
 ]
 NGINX = "webapp-nginx.service"
@@ -131,6 +140,7 @@ SETUP = f"""\
 set -e
 systemctl disable --now stale-exe-restart.timer 2>/dev/null || true
 rm -f /etc/systemd/system/stale-exe-restart.service /etc/systemd/system/stale-exe-restart.timer {APT_HOOK}
+rm -rf {NEEDRESTART_DIR}
 rm -rf /usr/local/libexec/ops-deploy /etc/ops-deploy /var/lib/ops-deploy
 id webapp >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin webapp
 install -d -o webapp -g webapp -m 0750 /var/log/webapp-nginx /var/lib/webapp-nginx
@@ -275,8 +285,9 @@ def test_stale_exe_restart_in_a_real_container(tmp_path: Path, monkeypatch: pyte
     assert box.out("systemctl show -p InvocationID --value stale-exe-restart.service") == ""
     assert box.out("systemctl is-active stale-exe-restart.timer") == "active"
     assert box.out("systemctl is-enabled stale-exe-restart.timer") == "enabled"
-    assert box.out(f"stat -c '%U:%G %a' {SCRIPT_PATH} {CONFIG_PATH} {APT_HOOK}").split("\n") == [
+    assert box.out(f"stat -c '%U:%G %a' {SCRIPT_PATH} {CONFIG_PATH} {APT_HOOK} {NEEDRESTART_DROPIN}").split("\n") == [
         "root:root 755",
+        "root:root 644",
         "root:root 644",
         "root:root 644",
     ]

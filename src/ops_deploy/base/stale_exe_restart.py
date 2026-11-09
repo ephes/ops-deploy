@@ -7,7 +7,8 @@ until something restarts it. This deploy installs the host program
 ``files/stale_exe_restart.py`` as ``/usr/local/libexec/ops-deploy/stale-exe-restart``,
 its allowlist ``/etc/ops-deploy/stale-exe-restart.json``, a oneshot
 ``stale-exe-restart.service`` with an hourly timer, and an apt
-``DPkg::Post-Invoke`` hook that only queues the oneshot after each dpkg run.
+``DPkg::Post-Invoke`` hook that only queues the oneshot after each dpkg run,
+and a needrestart drop-in that keeps needrestart from restarting the oneshot.
 The oneshot restarts an allowlisted unit at most once per installed binary and
 only after its checks pass (see the program's docstring and ``docs/base.md``);
 every other unit is only reported.
@@ -51,6 +52,8 @@ STATE_PATH = "/var/lib/ops-deploy/stale-exe-restart/state.json"
 SERVICE = "stale-exe-restart.service"
 TIMER = "stale-exe-restart.timer"
 APT_HOOK = "/etc/apt/apt.conf.d/80ops-deploy-stale-exe-restart"
+NEEDRESTART_DIR = "/etc/needrestart/conf.d"
+NEEDRESTART_DROPIN = f"{NEEDRESTART_DIR}/61-ops-deploy-stale-exe-restart.conf"
 SCHEMA = 1
 HEADER = "Managed by ops-deploy (base.stale_exe_restart). Do not edit."
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
@@ -194,6 +197,23 @@ def render_apt_hook() -> str:
     )
 
 
+def render_needrestart_dropin() -> str:
+    """needrestart never restarts the oneshot (Perl, evaluated by needrestart.conf).
+
+    needrestart runs inside apt's ``DPkg::Post-Invoke`` and restarts services
+    synchronously. A running oneshot it restarted would start again and wait
+    for dpkg to be idle, while apt waits for that restart: apt and the dpkg
+    lock stay blocked for up to 30 minutes (staging, 2026-11-08).
+    """
+
+    literal = SERVICE.replace(".", "\\.")
+    return (
+        f"# {HEADER}\n"
+        f"# {SERVICE} waits for dpkg to be idle; a restart from inside apt would block apt.\n"
+        f"$nrconf{{override_rc}}{{qr(^{literal}$)}} = 0;\n"
+    )
+
+
 def report_command(cfg: StaleExeRestartConfig) -> str:
     """The packaged program, read from stdin, in read-only ``report`` mode with the rendered allowlist."""
 
@@ -283,6 +303,16 @@ def deploy_stale_exe_restart(cfg: StaleExeRestartConfig) -> None:
     systemd.daemon_reload(name="Reload systemd for the stale-exe-restart units", _if=any_changed(*units))
     # The timer only; the oneshot runs from the timer and the apt hook, never from the deploy.
     systemd.service(name=f"Enable and start {TIMER}", service=TIMER, running=True, enabled=True)
+    # Whoever installs needrestart (base.unattended_upgrades, a package), it must not restart the oneshot.
+    files.directory(name=f"Ensure {NEEDRESTART_DIR}", path=NEEDRESTART_DIR, user="root", group="root", mode="0755")
+    files.put(
+        name=f"Write {NEEDRESTART_DROPIN}",
+        src=StringIO(render_needrestart_dropin()),
+        dest=NEEDRESTART_DROPIN,
+        user="root",
+        group="root",
+        mode="0644",
+    )
     # Last: the hook may queue the oneshot only once everything it runs is in place.
     files.put(
         name=f"Write {APT_HOOK}",

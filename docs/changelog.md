@@ -22,6 +22,21 @@
   also uses 3.7.17 and verifies the published per-architecture digest before
   extracting the binary.
 
+- `base.stale_exe_restart`: two fixes for hosts with `unattended-upgrades`.
+  The host program no longer counts unattended-upgrades' waiting
+  `unattended-upgrade-shutdown --wait-for-signal` helper as a running
+  package manager (both show as `unattended-upgr` in `/proc/PID/comm`; the
+  command line now tells them apart, and an unreadable one still counts). On
+  staging every run since the package was installed on 2026-11-02 waited the
+  full 30 minutes and deferred, so no allowlisted unit was ever restarted.
+  The deploy also writes `/etc/needrestart/conf.d/61-ops-deploy-stale-exe-restart.conf`,
+  which keeps needrestart from restarting `stale-exe-restart.service`:
+  needrestart restarts synchronously from apt's `DPkg::Post-Invoke`, and the
+  restarted oneshot waited for dpkg to be idle while apt waited for the
+  restart. On staging on 2026-11-08 that held unattended-upgrades and the
+  dpkg lock for 30 minutes, and the weekly `os-apt-maintenance` run gave up
+  after its 300 s lock timeout (exit 100).
+
 - `services.vaultwarden`/`services.snappymail` parity: ops-library da310974
   gives `vaultwarden_deploy` the `vaultwarden_traefik_ip_allowlist` and
   `snappymail_deploy`/`snappymail_shared` SnappyMail 3.0.0, the

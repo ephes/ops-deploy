@@ -638,11 +638,12 @@ The deploy installs, all `root:root`:
 | `/etc/ops-deploy/stale-exe-restart.json` (0644) | the allowlist (`{"schema": 1, "units": [...]}`) |
 | `stale-exe-restart.service` | oneshot running the program's `run` mode; `StartLimitIntervalSec=0` (the apt hook may start it after every dpkg run), no `Restart=`, `TimeoutStartSec=50min`, `StateDirectory=ops-deploy/stale-exe-restart` |
 | `stale-exe-restart.timer` | hourly, `RandomizedDelaySec=5min`, `Persistent=true`; enabled and started |
+| `/etc/needrestart/conf.d/61-ops-deploy-stale-exe-restart.conf` (0644) | `$nrconf{override_rc}{qr(^stale-exe-restart\.service$)} = 0;`: needrestart never restarts the oneshot. needrestart restarts synchronously from apt's `DPkg::Post-Invoke`; a restarted oneshot would wait for dpkg to be idle while apt waits for the restart, blocking apt and the dpkg lock for up to 30 minutes. Written whether or not needrestart is installed (the directory is created), so a later needrestart install by `unattended_upgrades` or a package is covered |
 | `/etc/apt/apt.conf.d/80ops-deploy-stale-exe-restart` (0644) | `DPkg::Post-Invoke` that only queues the oneshot (`systemctl --no-block start`, only with `/run/systemd/system` and the unit file present, failures ignored): no restart happens inside dpkg and the hook never fails apt |
 
 The deploy itself never restarts, reloads or starts a consumer unit and never
 starts the oneshot: it writes the files, reloads systemd when a unit file
-changed, starts the timer and writes the hook last. While planning, the
+changed, starts the timer, writes the needrestart drop-in and writes the hook last. While planning, the
 packaged program runs read-only in `report` mode with the rendered allowlist
 (sent on stdin, the allowlist as base64), so `--dry` logs what the next timer
 run would do; a host that cannot run it fails the deploy before any change. The
@@ -654,7 +655,10 @@ host gets no mutating operation. Debian-family hosts with systemd only.
 1. **dpkg is idle**: no process holds `/var/lib/dpkg/lock-frontend` or
    `/var/lib/dpkg/lock` (`/proc/locks`, read-only), no `apt`, `apt-get`,
    `aptitude`, `dpkg` or `unattended-upgrade` process runs (a process whose name
-   cannot be read counts as one), and no package is
+   cannot be read counts as one; unattended-upgrades' `unattended-upgrade-shutdown`
+   helper, which waits under the same process name for the whole uptime, does not,
+   unless its command line cannot be read; when it installs on shutdown, it holds
+   the dpkg lock), and no package is
    half-installed, unpacked, half-configured, awaiting or pending triggers or
    marked reinst-required. It waits up to 30 minutes (10 s polls), then records
    `deferred` and exits 0; the next timer run tries again.

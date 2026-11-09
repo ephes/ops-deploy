@@ -15,9 +15,10 @@ only when it is on the allowlist (``/etc/ops-deploy/stale-exe-restart.json``)
 and every check passes, in this order:
 
 1. dpkg is idle: no process holds ``/var/lib/dpkg/lock-frontend`` or
-   ``/var/lib/dpkg/lock``, no apt/dpkg process runs and no package is
-   half-installed, unpacked, half-configured or waiting for triggers (waits up
-   to 30 minutes, then defers to the next timer run);
+   ``/var/lib/dpkg/lock``, no apt/dpkg process runs (unattended-upgrades'
+   waiting ``unattended-upgrade-shutdown`` helper does not count) and no
+   package is half-installed, unpacked, half-configured or waiting for
+   triggers (waits up to 30 minutes, then defers to the next timer run);
 2. the unit is loaded and active (a unit that is activating, reloading, ... is
    left for the next run), and every process in its cgroup runs the
    configured binary in the host's mount namespace and root directory; it is
@@ -80,6 +81,10 @@ LOCK_PATH = "/run/ops-deploy-stale-exe-restart.lock"
 DPKG_LOCKS = ("/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock")
 # Process names (``/proc/PID/comm``, at most 15 characters) of package managers.
 PACKAGE_MANAGERS = frozenset({"apt", "apt-get", "aptitude", "dpkg", "unattended-upgr"})
+# unattended-upgrades' shutdown helper (``unattended-upgrade-shutdown --wait-for-signal``)
+# runs for the whole uptime under the same truncated name ``unattended-upgr``. It is no
+# package manager while it waits; when it installs on shutdown, it holds the dpkg lock.
+IDLE_HELPERS = frozenset({"unattended-upgrade-shutdown"})
 SCHEMA = 1
 DELETED = " (deleted)"
 DPKG_WAIT_S = 1800
@@ -463,8 +468,20 @@ def package_managers(host: Host) -> list[str]:
         except OSError:
             found.append(f"{pid} (unreadable)")
             continue
-        if name in PACKAGE_MANAGERS:
-            found.append(str(pid))
+        if name not in PACKAGE_MANAGERS:
+            continue
+        if name == "unattended-upgr":
+            try:
+                argv = host.read(f"/proc/{pid}/cmdline").split("\0")
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            except OSError:
+                found.append(f"{pid} (unreadable)")
+                continue
+            # ``python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown ...``
+            if any(arg.rsplit("/", 1)[-1] in IDLE_HELPERS for arg in argv[:2]):
+                continue
+        found.append(str(pid))
     return found
 
 

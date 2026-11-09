@@ -18,9 +18,12 @@ from ops_deploy.base.stale_exe_restart import (
     APT_HOOK,
     CONFIG_PATH,
     HOST_SCRIPT,
+    NEEDRESTART_DIR,
+    NEEDRESTART_DROPIN,
     SCRIPT_PATH,
     render_apt_hook,
     render_config,
+    render_needrestart_dropin,
     render_service,
     render_timer,
     report_command,
@@ -56,6 +59,8 @@ FRESH = [
     P + "Install systemd unit stale-exe-restart.timer",
     P + "Reload systemd for the stale-exe-restart units",
     P + "Enable and start stale-exe-restart.timer",
+    P + f"Ensure {NEEDRESTART_DIR}",
+    P + f"Write {NEEDRESTART_DROPIN}",
     P + f"Write {APT_HOOK}",
 ]
 CHECK = P + "Check the installed stale-exe-restart"
@@ -93,6 +98,8 @@ def converged(cfg: StaleExeRestartConfig = CFG, **extra: Any) -> dict[str, Any]:
         **fakehost.file(SERVICE_PATH, render_service()),
         **fakehost.file(TIMER_PATH, render_timer()),
         **fakehost.service("stale-exe-restart.timer"),
+        **fakehost.directory(NEEDRESTART_DIR),
+        **fakehost.file(NEEDRESTART_DROPIN, render_needrestart_dropin()),
         **fakehost.directory("/etc/apt/apt.conf.d"),
         **fakehost.file(APT_HOOK, render_apt_hook()),
     }
@@ -124,10 +131,19 @@ def test_fresh_host_installs_everything_and_restarts_nothing() -> None:
     assert "systemctl enable stale-exe-restart.timer" in commands
     assert commands[-1] == CHECK_COMMAND
     never_touches_consumers(result)
-    assert set(result.uploaded_paths) == {SCRIPT_PATH, CONFIG_PATH, SERVICE_PATH, TIMER_PATH, APT_HOOK}
+    assert set(result.uploaded_paths) == {
+        SCRIPT_PATH,
+        CONFIG_PATH,
+        SERVICE_PATH,
+        TIMER_PATH,
+        NEEDRESTART_DROPIN,
+        APT_HOOK,
+    }
     assert result.upload(SCRIPT_PATH).decode() == HOST_SCRIPT
     assert result.upload(CONFIG_PATH).decode() == render_config(CFG)
     assert result.upload(APT_HOOK).decode() == render_apt_hook()
+    assert result.upload(NEEDRESTART_DROPIN).decode() == render_needrestart_dropin()
+    assert any("chmod 644" in c and NEEDRESTART_DROPIN in c for c in commands)
     assert any("chmod 755" in c and SCRIPT_PATH in c for c in commands)
     assert any("chmod 644" in c and CONFIG_PATH in c for c in commands)
     assert any("chown root:root" in c and APT_HOOK in c for c in commands)
@@ -342,6 +358,24 @@ def test_apt_hook_only_queues_the_oneshot_and_never_fails_apt() -> None:
         'DPkg::Post-Invoke { "if [ -d /run/systemd/system ] && [ -e /etc/systemd/system/stale-exe-restart.service ]; '
         'then systemctl --no-block start stale-exe-restart.service || true; fi"; };'
     )
+
+
+def test_needrestart_never_restarts_the_oneshot() -> None:
+    # needrestart restarts synchronously from apt's Post-Invoke; the restarted oneshot would wait
+    # for dpkg while apt waits for it (staging, 2026-11-08: 30 minutes, a failed apt run).
+    rule = "$nrconf{override_rc}{qr(^stale-exe-restart\\.service$)} = 0;"
+    assert render_needrestart_dropin().splitlines()[-1] == rule
+    assert NEEDRESTART_DROPIN.startswith("/etc/needrestart/conf.d/")
+    assert NEEDRESTART_DROPIN.endswith(".conf")
+
+
+def test_a_needrestart_drop_in_change_rewrites_only_the_drop_in() -> None:
+    responses = converged()
+    responses.update(fakehost.file(NEEDRESTART_DROPIN, "# edited\n"))
+    result = run(responses)
+
+    assert result.mutating_changed_ops == [P + f"Write {NEEDRESTART_DROPIN}"]
+    never_touches_consumers(result)
 
 
 # -- config validation ----------------------------------------------------------------------------
