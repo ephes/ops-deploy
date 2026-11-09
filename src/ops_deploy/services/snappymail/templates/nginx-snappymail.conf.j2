@@ -1,0 +1,33 @@
+server {
+    listen {{ snappymail_listen_address }}:{{ snappymail_listen_port }};
+    server_name {{ snappymail_nginx_server_name }};
+
+    root {{ snappymail_install_dir }};
+    index index.php;
+
+    access_log /var/log/nginx/snappymail_access.log;
+    error_log /var/log/nginx/snappymail_error.log;
+
+    client_max_body_size {{ snappymail_nginx_client_max_body_size }};
+
+    add_header X-Frame-Options "DENY";
+    add_header X-Content-Type-Options "nosniff";
+    add_header Referrer-Policy "same-origin";
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt { return 404; }
+
+    location ^~ /data/ {
+        deny all;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:{{ snappymail_php_fpm_socket }};
+        fastcgi_read_timeout {{ snappymail_php_max_execution_time }};
+    }
+}

@@ -1,0 +1,29 @@
+; PostfixAdmin PHP-FPM pool configuration
+; Managed by Ansible - do not edit manually
+
+[postfixadmin]
+user = {{ postfixadmin_web_user }}
+group = {{ postfixadmin_web_group }}
+listen = {{ postfixadmin_php_fpm_socket }}
+listen.owner = {{ postfixadmin_web_user }}
+listen.group = {{ postfixadmin_web_group }}
+listen.mode = 0660
+
+pm = {{ postfixadmin_php_pm }}
+pm.max_children = {{ postfixadmin_php_pm_max_children }}
+pm.max_requests = {{ postfixadmin_php_pm_max_requests }}
+pm.process_idle_timeout = {{ postfixadmin_php_pm_process_idle_timeout }}
+request_terminate_timeout = {{ postfixadmin_php_max_execution_time }}
+
+; PHP settings
+php_admin_value[memory_limit] = {{ postfixadmin_php_memory_limit }}
+php_admin_value[max_execution_time] = {{ postfixadmin_php_max_execution_time }}
+php_admin_value[session.cookie_secure] = 1
+php_admin_value[session.cookie_httponly] = 1
+php_admin_value[session.cookie_samesite] = Strict
+php_admin_value[date.timezone] = UTC
+
+; Error handling (log errors, don't display)
+php_admin_flag[display_errors] = off
+php_admin_flag[log_errors] = on
+php_admin_value[error_log] = /var/log/php/postfixadmin-error.log

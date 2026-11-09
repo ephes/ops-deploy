@@ -1,0 +1,60 @@
+# Managed by Ansible - Traefik configuration for SnappyMail
+
+http:
+  routers:
+    snappymail-secure:
+      rule: "Host(`{{ snappymail_traefik_host }}`)"
+      entryPoints:
+{% for ep in snappymail_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - snappymail-headers
+        - snappymail-compress
+{% for middleware in snappymail_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: snappymail
+{% if snappymail_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ snappymail_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    snappymail-http:
+      rule: "Host(`{{ snappymail_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - snappymail-redirect
+      service: snappymail
+
+  middlewares:
+    snappymail-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    snappymail-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+{% if snappymail_traefik_sts_preload | default(false) | bool %}
+        stsPreload: true
+{% endif %}
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ snappymail_traefik_host }}"
+
+    snappymail-compress:
+      compress: {}
+
+  services:
+    snappymail:
+      loadBalancer:
+        servers:
+          - url: "http://{{ snappymail_listen_address }}:{{ snappymail_listen_port }}"

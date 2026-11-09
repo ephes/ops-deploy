@@ -1,0 +1,20 @@
+[snappymail]
+user = {{ snappymail_user }}
+group = {{ snappymail_group }}
+listen = {{ snappymail_php_fpm_socket }}
+listen.owner = {{ snappymail_web_user }}
+listen.group = {{ snappymail_web_group }}
+listen.mode = 0660
+pm = {{ snappymail_php_pm }}
+pm.max_children = {{ snappymail_php_pm_max_children }}
+pm.max_requests = {{ snappymail_php_pm_max_requests }}
+pm.process_idle_timeout = {{ snappymail_php_pm_process_idle_timeout }}
+request_terminate_timeout = {{ snappymail_php_max_execution_time }}
+
+php_admin_value[upload_max_filesize] = {{ snappymail_php_upload_limit }}
+php_admin_value[post_max_size] = {{ snappymail_php_upload_limit }}
+php_admin_value[memory_limit] = {{ snappymail_php_memory_limit }}
+php_admin_value[max_execution_time] = {{ snappymail_php_max_execution_time }}
+php_admin_value[session.cookie_secure] = {{ snappymail_force_https | ternary(1, 0) }}
+php_admin_value[session.cookie_httponly] = 1
+php_admin_value[date.timezone] = UTC

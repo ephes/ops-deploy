@@ -1,0 +1,142 @@
+<?php
+/**
+ * PostfixAdmin Local Configuration
+ * Managed by Ansible - do not edit manually
+ * Role: postfixadmin_deploy
+ */
+
+$CONF['configured'] = true;
+
+// =============================================================================
+// Database Configuration
+// =============================================================================
+
+$CONF['database_type'] = '{{ postfixadmin_db_type }}';
+$CONF['database_host'] = '{{ postfixadmin_db_host }}';
+$CONF['database_port'] = '{{ postfixadmin_db_port }}';
+$CONF['database_user'] = '{{ postfixadmin_db_user }}';
+$CONF['database_password'] = '{{ postfixadmin_db_password }}';
+$CONF['database_name'] = '{{ postfixadmin_db_name }}';
+
+// =============================================================================
+// Password Encryption
+// =============================================================================
+
+// Must match Dovecot's password scheme
+$CONF['encrypt'] = '{{ postfixadmin_encrypt_method }}';
+$CONF['dovecotpw'] = '{{ postfixadmin_dovecotpw_path }}';
+
+// =============================================================================
+// Maildir Configuration
+// =============================================================================
+
+// Path: /mnt/cryptdata/vmail/<domain>/<localpart>/
+$CONF['domain_path'] = '{{ postfixadmin_domain_path }}';
+$CONF['domain_in_mailbox'] = '{{ postfixadmin_domain_in_mailbox }}';
+
+// =============================================================================
+// Virtual Transport
+// =============================================================================
+
+$CONF['transport'] = 'YES';
+$CONF['transport_default'] = 'virtual:';
+
+// =============================================================================
+// Feature Configuration
+// =============================================================================
+
+// Quotas
+{% if postfixadmin_quota_enabled %}
+$CONF['quota'] = 'YES';
+$CONF['used_quotas'] = 'YES';
+{% else %}
+$CONF['quota'] = 'NO';
+$CONF['used_quotas'] = 'NO';
+{% endif %}
+
+// Vacation auto-responder
+{% if postfixadmin_vacation_enabled %}
+$CONF['vacation'] = 'YES';
+{% else %}
+$CONF['vacation'] = 'NO';
+{% endif %}
+
+// Fetchmail
+{% if postfixadmin_fetchmail_enabled %}
+$CONF['fetchmail'] = 'YES';
+{% else %}
+$CONF['fetchmail'] = 'NO';
+{% endif %}
+
+// =============================================================================
+// Default Limits (0 = unlimited)
+// =============================================================================
+
+$CONF['aliases'] = {{ postfixadmin_default_aliases }};
+$CONF['mailboxes'] = {{ postfixadmin_default_mailboxes }};
+$CONF['maxquota'] = 0;
+
+// =============================================================================
+// User Self-Service
+// =============================================================================
+
+// Users can only change their password, not aliases or forwarding
+$CONF['user_footer_link'] = '';
+$CONF['user_page_alias'] = '{{ "YES" if postfixadmin_user_can_edit_alias else "NO" }}';
+$CONF['user_page_forward'] = '{{ "YES" if postfixadmin_user_can_edit_forward else "NO" }}';
+$CONF['user_page_vacation'] = 'NO';
+
+// =============================================================================
+// Default Aliases for New Domains
+// =============================================================================
+
+$CONF['default_aliases'] = array(
+{% for alias, target in postfixadmin_default_domain_aliases.items() %}
+    '{{ alias }}' => '{{ target }}',
+{% endfor %}
+);
+
+// =============================================================================
+// Security
+// =============================================================================
+
+// Admin email for notifications
+$CONF['admin_email'] = '{{ postfixadmin_admin_email }}';
+
+// Setup password (for initial setup only - setup.php should be removed after)
+$CONF['setup_password'] = '{{ postfixadmin_setup_password_hash }}';
+
+// TOTP Two-Factor Authentication
+{% if postfixadmin_totp_enabled %}
+$CONF['totp'] = 'YES';
+$CONF['totp_exceptions'] = array(
+{% for ip_range in postfixadmin_totp_exceptions %}
+    '{{ ip_range }}',
+{% endfor %}
+);
+{% else %}
+$CONF['totp'] = 'NO';
+{% endif %}
+
+// =============================================================================
+// IDN Support
+// =============================================================================
+
+// Don't DNS-check IDN domains (they may not resolve via standard lookups)
+$CONF['emailcheck_resolve_domain'] = '{{ "YES" if postfixadmin_emailcheck_resolve_domain else "NO" }}';
+
+// =============================================================================
+// UI Customization
+// =============================================================================
+
+$CONF['footer_text'] = '';
+$CONF['footer_link'] = '';
+
+// =============================================================================
+// Logging
+// =============================================================================
+
+// All admin actions are logged to the 'log' table
+$CONF['logging'] = 'YES';
+
+?>
