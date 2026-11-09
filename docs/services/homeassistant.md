@@ -1050,3 +1050,26 @@ b430 role passed owned original00→01 with enabled live engines, unchanged HA P
 no restart and successful cleanup. That bounded result ran no typed phases and
 does not resolve the previous upgrade34 PID/readiness failure. Final shared
 artifact/native and ordinary private wrapper qualification remain required.
+
+
+### Prepared selected original task callbacks
+
+The separate normal-context source preparation extends protected rendering to
+configuration, secrets, includes, HA/Matter units, udev, the UV trust drop-in and
+Traefik. Direct stock callers retain their existing branches. Selected custom
+templates use the protected file operation and its actual changed result, so
+reload/restart notifications continue to depend on completed writes. Existing
+include/configuration guards still precede template evaluation.
+
+The normal controller receives the actual SDK planning/execution stage. Original
+UniFi/stat/include task inputs are captured at their declared prewrite boundaries;
+a later execution or early udev render cannot reuse planning facts. Custom
+includes are rendered afresh in execution rather than cached across those stages.
+Original stat checksums and body-derived values remain in protected RAM only.
+
+Custom UV trust templates use the original command task's template lookup and
+mode-specific expected digest. Only this protected digest travels over stdin;
+the original host check program remains byte-identical, with its existing
+missing/mismatched-drop-in refusals. Stock callers continue using the stock digest.
+This callback preparation is not part of the frozen d825 owned HTTP-baseline
+full-matrix run and is not yet independently reviewed or qualified for adoption.

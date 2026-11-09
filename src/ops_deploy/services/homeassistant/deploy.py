@@ -16,7 +16,7 @@ from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from paramiko import SSHException
-from pyinfra import host, logger
+from pyinfra import host, logger, state
 from pyinfra.api import DeployError, FunctionCommand, OperationError, State, StringCommand, deploy, operation
 from pyinfra.api.host import Host
 from pyinfra.api.operation import OperationMeta
@@ -216,10 +216,17 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     # Preserve original environment -> unit -> system-store admission order.
     security_preflight(runtime.model_copy(update={"uv_system_certs": False}))
     if runtime.uv_system_certs:
-        inspect_trust(runtime, "preflight", allow_missing_unit=True)
+        inspect_trust(
+            runtime,
+            "preflight",
+            allow_missing_unit=True,
+            expected_digest=cfg._trust_digest("preflight", bool(state.is_executing))
+            if cfg._trust_digest is not None
+            else None,
+        )
         security_preflight(runtime.model_copy(update={"python_security_floor_enabled": False}))
     apt.packages(name="Install Home Assistant system packages", packages=list(cfg.additional_packages), update=True)
-    pending = _PendingHandlers(udev=configure_layout(runtime))
+    pending = _PendingHandlers(udev=configure_layout(runtime, task_renderer=cfg._task_renderer))
     install_uv(runtime.uv, manage=runtime.manage_uv)
     write_constraints(runtime)
     readiness = ApiReadiness()
@@ -255,6 +262,8 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         include_files=cfg.include_files,
         include_rendered=cfg.include_rendered,
         include_renderer=cfg._include_renderer,
+        task_renderer=cfg._task_renderer,
+        task_capture=cfg._task_capture,
         deferred=True,
     )
     pending.homeassistant.append(configuration.homeassistant_changed)
@@ -265,17 +274,19 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
             "Validate upgraded Home Assistant configuration",
             trust=True,
         )
-    units = write_units(runtime)
+    units = write_units(runtime, task_renderer=cfg._task_renderer)
     pending.reload.append(units.reload_required)
     pending.homeassistant.append(units.homeassistant_changed)
     pending.matter.append(units.matter_changed)
-    dropin = write_managed_dropin(runtime)
+    dropin = write_managed_dropin(runtime, task_renderer=cfg._task_renderer)
     if dropin is not None:
         pending.reload.append(dropin.did_change)
         pending.homeassistant.append(dropin.did_change)
     pending.notify_ingress(
         write_ingress(
             cfg.ingress,
+            task_renderer=cfg._task_renderer,
+            runtime=runtime,
             rendered=cfg.ingress_rendered if cfg.ingress_rendered is not None else cfg._ingress_renderer,
         ),
         cfg.ingress.reload_handler,
@@ -372,4 +383,4 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
             "Validate Matter server imports",
         )
     pending.flush(runtime)
-    verify_running_trust(runtime)
+    verify_running_trust(runtime, expected_digest=cfg._trust_digest)

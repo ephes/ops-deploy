@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from importlib.resources import files as resources
 from io import StringIO
 
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations import files, server
 
+from .configuration_deploy import TaskRenderer, protected_template, render_task
 from .runtime_config import HomeAssistantRuntimeConfig
 
 
@@ -26,7 +28,9 @@ def directories(cfg: HomeAssistantRuntimeConfig) -> tuple[str, ...]:
     )
 
 
-def configure_layout(cfg: HomeAssistantRuntimeConfig) -> OperationMeta | None:
+def configure_layout(
+    cfg: HomeAssistantRuntimeConfig, *, task_renderer: TaskRenderer | None = None
+) -> OperationMeta | None:
     """Caller must complete original validation/trust/package prerequisites first.
 
     Return the changed-rule dependency for the original deferred udev handlers;
@@ -47,6 +51,13 @@ def configure_layout(cfg: HomeAssistantRuntimeConfig) -> OperationMeta | None:
         )
     if not cfg.enable_udev_rule:
         return None
+    if task_renderer is not None:
+        return protected_template(
+            cfg,
+            label="Write Home Assistant udev rule",
+            path=cfg.udev_rule_path,
+            content=partial(render_task, task_renderer, "udev"),
+        )
     body = (
         resources("ops_deploy.services.homeassistant").joinpath("templates/99-homeassistant-zbt1.rules.j2").read_text()
     )

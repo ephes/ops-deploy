@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Prepare protected original Home Assistant task callbacks and stage-specific custom UV trust lookup; qualification remains separate.
+
 - Preserve original OTBR ternary/template truthiness for eight explicitly
   retained raw flags while keeping original boolean task conditions separate.
   Native boolean/default inputs retain identical build, record and template

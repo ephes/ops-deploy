@@ -64,17 +64,26 @@ class AssistSelection(RoleConfig):
 class HomeAssistantDeployConfig(RoleConfig):
     _include_renderer: Callable[[str], SecretStr] | None = PrivateAttr(default=None)
     _ingress_renderer: Callable[[], SecretStr] | None = PrivateAttr(default=None)
+    _task_renderer: Callable[[str, str | None, bool], SecretStr] | None = PrivateAttr(default=None)
+    _task_capture: Callable[[str, bool], None] | None = PrivateAttr(default=None)
+    _trust_digest: Callable[[str, bool], SecretStr] | None = PrivateAttr(default=None)
 
     def with_template_renderers(
         self,
         *,
         include: Callable[[str], SecretStr] | None = None,
         ingress: Callable[[], SecretStr] | None = None,
+        task: Callable[[str, str | None, bool], SecretStr] | None = None,
+        capture: Callable[[str, bool], None] | None = None,
+        trust_digest: Callable[[str, bool], SecretStr] | None = None,
     ) -> Self:
         """Attach protected lazy controller callbacks without serializing context."""
         result = self.model_copy()
         result._include_renderer = include
         result._ingress_renderer = ingress
+        result._task_renderer = task
+        result._task_capture = capture
+        result._trust_digest = trust_digest
         return result
 
     runtime: HomeAssistantRuntimeConfig = Field(default_factory=HomeAssistantRuntimeConfig)
