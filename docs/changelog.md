@@ -4,6 +4,8 @@
 
 - Pin Grafana to the recorded 12.4.0 image with its registry-verified SHA-256;
   add a regression check requiring a release tag and digest.
+  `tests/parity/ops_library_roles.json` records the `graphyard_deploy` digest
+  of ops-library 56a344a9, which pins the same image.
 
 - Upgrade Paperless-ngx from 3.2.1 to 3.4.2 using the verified official
   release checksum; the ops-library rollback role is updated separately. Document
