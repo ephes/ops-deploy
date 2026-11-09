@@ -196,20 +196,20 @@ def fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fixture:
 def test_fresh_install_runs_and_a_second_run_changes_nothing(fixture: Fixture) -> None:
     first = fixture.deploy(CFG)
 
-    assert "Install GoToSocial 0.22.2" in short(mutating(first))
+    assert "Install GoToSocial 0.22.3" in short(mutating(first))
     assert "Start gotosocial.service" in short(mutating(first))
     assert "Restart gotosocial.service" not in short(mutating(first))
     assert fixture.sh("curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10070/readyz") == "200"
     assert fixture.sh(f"cat {MARKER}") == "social.example.test example.test"
-    assert fixture.sh("readlink /opt/gotosocial/current") == "/opt/gotosocial/releases/0.22.2"
+    assert fixture.sh("readlink /opt/gotosocial/current") == "/opt/gotosocial/releases/0.22.3"
     modes = fixture.sh(
-        f"stat -c '%n %U:%G %a' /opt/gotosocial/releases/0.22.2 /opt/gotosocial/releases/0.22.2/gotosocial "
+        f"stat -c '%n %U:%G %a' /opt/gotosocial/releases/0.22.3 /opt/gotosocial/releases/0.22.3/gotosocial "
         f"/etc/gotosocial {CONFIG} /var/lib/gotosocial /var/lib/gotosocial/storage /var/lib/gotosocial/.cache "
         f"/usr/local/sbin/gotosocial-admin {MARKER} /etc/traefik/dynamic/gotosocial.yml"
     )
     assert modes.splitlines() == [
-        "/opt/gotosocial/releases/0.22.2 root:root 755",
-        "/opt/gotosocial/releases/0.22.2/gotosocial root:root 755",
+        "/opt/gotosocial/releases/0.22.3 root:root 755",
+        "/opt/gotosocial/releases/0.22.3/gotosocial root:root 755",
         "/etc/gotosocial root:gotosocial 750",
         f"{CONFIG} root:gotosocial 640",
         "/var/lib/gotosocial gotosocial:gotosocial 700",
@@ -225,7 +225,7 @@ def test_fresh_install_runs_and_a_second_run_changes_nothing(fixture: Fixture) -
     assert listeners
     assert all(re.fullmatch(r"(127\.0\.0\.1|\[::1\]):10070", item) for item in listeners)
     # No staging leftovers next to the release.
-    assert fixture.sh("ls -A /opt/gotosocial/releases") == "0.22.2"
+    assert fixture.sh("ls -A /opt/gotosocial/releases") == "0.22.3"
 
     # The admin wrapper creates an account the account domain resolves.
     fixture.sh(

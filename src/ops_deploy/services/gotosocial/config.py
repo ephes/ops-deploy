@@ -54,10 +54,10 @@ Text = Annotated[str, Field(pattern=r"^[^\x00-\x1f\x7f]*$", max_length=256)]
 Checksum = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 Package = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9+.-]*$")]
 Arch = Literal["amd64", "arm64"]
-# The role's pinned 0.22.2 checksums (the release's checksums.txt on Codeberg).
+# The role's pinned 0.22.3 checksums (the release's checksums.txt on Codeberg).
 RELEASE_CHECKSUMS: dict[Arch, str] = {
-    "amd64": "sha256:b8e7406c7eae73a50b7990affb5b1151fe81cfdb1c12951630bb08b0d77f7337",
-    "arm64": "sha256:274ddb425444ea06f9f02bbd5abbce0bddc6f0a0d7c359ba8d8f0936ab8f3da5",
+    "amd64": "sha256:10ae814b5389aaaf6d1e2520fd2c61767a26b1a2c000a5c02f693d2f79ca448a",
+    "arm64": "sha256:535b297e4b763d66616e6ee32e2895d86013ce99208f7f7353078bdeeb10ec17",
 }
 # JSON-like data for extra_config (what YAML host_vars can hold).
 ExtraValue = str | int | float | bool | None | list[Any] | dict[str, Any]
@@ -73,7 +73,7 @@ class GotosocialConfig(RoleConfig):
     """The ``gotosocial_*`` variables the deploy reads (role defaults)."""
 
     # Pinned upstream release; bump version and both checksums together.
-    version: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")] = "0.22.2"
+    version: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")] = "0.22.3"
     release_checksums: dict[Arch, Checksum] = Field(default_factory=lambda: dict(RELEASE_CHECKSUMS), min_length=1)
     download_base_url: str = "https://codeberg.org/superseriousbusiness/gotosocial/releases/download"
 

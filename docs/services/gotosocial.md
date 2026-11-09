@@ -34,7 +34,7 @@ role's defaults (`tests/test_gotosocial_parity.py` compares them with
 | `host` | required | lower-case DNS name (the role's pattern); the role's `CHANGEME` fails it |
 | `account_domain` | `""` | handle domain; empty means `host`. `host` must equal it or be a subdomain of it |
 | `allow_domain_layout_change` | `false` | only for a wiped data directory (see below) |
-| `version`, `release_checksums` | `0.22.2`, amd64 + arm64 | `X.Y.Z` and `sha256:<64 hex>`; bump together |
+| `version`, `release_checksums` | `0.22.3`, amd64 + arm64 | `X.Y.Z` and `sha256:<64 hex>`; bump together |
 | `download_base_url` | Codeberg releases | http(s), no credentials, query or trailing slash; the archive is always checksum-verified |
 | `user`, `group`, `service_name` | `gotosocial` | |
 | `install_root`, `config_dir`, `data_dir` | `/opt/gotosocial`, `/etc/gotosocial`, `/var/lib/gotosocial` | the role's derived paths (`releases/<version>`, `current`, `config.yaml`, `sqlite.db`, `storage`, `.cache`, `.ops-domain-layout`) follow from them |

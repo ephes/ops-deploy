@@ -15,7 +15,7 @@
     "fastdeploy_remove": "c4815175ddc201058bd30f10c47010fcd88647ac81b37482d1ab109a4a210e79",
     "fastdeploy_restore": "103b4d5462e1705d45b425de3b949f362c0b930664b7f86cd2820c7efa4b78db",
     "fastdeploy_runner": "dcbe4578335f8fabc98f691b24ecc4d410731e0d6c3ed9f6eb21f028866bb769",
-    "gotosocial_deploy": "c6e0a3e5d74259f172d2e3810619c26ca83c033f1885f95a032cd333937984e1",
+    "gotosocial_deploy": "73d5ea579eee7d46008b0f13640ac17a2651387275488b80c81a59ff7f5711b8",
     "graphyard_auth_bootstrap_deploy": "0d0dee3640465600daf1fc2ac33eade07e9a9b85fcd231ee5857af21ae840c92",
     "graphyard_deploy": "7428d3233df5a0ad9140e8f2423fd968277ab13d42e4955efd8cc4fc46622b0a",
     "graphyard_ingress_deploy": "d854e5654cd625189f01a214a4056eb371283af29c04b8593a403eed4e4db47b",
@@ -164,6 +164,7 @@
     "echoport_backup": "89107b6ca1c24eecc67891e4703c60161f836a1c",
     "fastdeploy_runner": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "minio_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
-    "mastodon_shared": "70e309c8b77c37787fd54b9350ad909758fbde09"
+    "mastodon_shared": "70e309c8b77c37787fd54b9350ad909758fbde09",
+    "gotosocial_deploy": "6e847f659fe9d5995b5ab51a980ecc3202c752bc"
   }
 }
