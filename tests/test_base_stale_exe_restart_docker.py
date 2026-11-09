@@ -140,7 +140,7 @@ SETUP = f"""\
 set -e
 systemctl disable --now stale-exe-restart.timer 2>/dev/null || true
 rm -f /etc/systemd/system/stale-exe-restart.service /etc/systemd/system/stale-exe-restart.timer {APT_HOOK}
-rm -f {NEEDRESTART_DROPIN}
+rm -rf {NEEDRESTART_DIR}
 rm -rf /usr/local/libexec/ops-deploy /etc/ops-deploy /var/lib/ops-deploy
 id webapp >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin webapp
 install -d -o webapp -g webapp -m 0750 /var/log/webapp-nginx /var/lib/webapp-nginx
