@@ -7,6 +7,7 @@
     "daybook_operations_api_deploy": "4bb7051087b573053bb04d2c0f77dc99fdcea808a827d17641a100a3cf083006",
     "daybook_operations_api_remove": "79151b98fdf5aa9da95da41d38373a97e75b6d1a68d19863406664630f1230b8",
     "daybook_operations_api_restore": "8840973665955394c95d8b9038d2e29d6b227891a7bf93a31280bcc263cc85f8",
+    "daybook_voice_memo_work_deploy": "a22b83560c5949e4bb994378797a003fc8096a5fc2dd31a0e4dbe60770b3b835",
     "dns_deploy": "8598d0732b568d2a0b1dbacf857c939465b263a619e3164da5c96793302426fc",
     "echoport_backup": "ec8caf2f9644ae80abfc3b3de09b2667ea69fcb5c9ad20c898cdf7ccb37f1db0",
     "encrypted_volume_prepare": "775afde941a276c88202dc91502e00ac4edc08758ddf404fc71ab843af71ff7d",
@@ -165,6 +166,7 @@
     "fastdeploy_runner": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "minio_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "mastodon_shared": "70e309c8b77c37787fd54b9350ad909758fbde09",
-    "gotosocial_deploy": "6e847f659fe9d5995b5ab51a980ecc3202c752bc"
+    "gotosocial_deploy": "6e847f659fe9d5995b5ab51a980ecc3202c752bc",
+    "daybook_voice_memo_work_deploy": "e3f6a71b654a1ae655fd4075ba766e171fa0d829"
   }
 }
