@@ -123,10 +123,15 @@ homeassistant_llama_cpp_helper_path: "{{ homeassistant_bin_path }}/llama_cpp_pro
 # (e.g. the OpenClaw gateway) via the michelle-avery/custom-conversation component.
 # Feature is fully off unless homeassistant_custom_conversation_enabled is true.
 homeassistant_custom_conversation_enabled: false
-homeassistant_custom_conversation_version: "1.6.1"
+homeassistant_custom_conversation_version: "1.7.0"
 # sha256 of the pinned GitHub release tarball
 # https://github.com/michelle-avery/custom-conversation/archive/refs/tags/<version>.tar.gz
-homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"  # pragma: allowlist secret
+# Preserve the previously supported version-only 1.6.1 override. Other custom
+# releases still require their explicit checksum.
+homeassistant_custom_conversation_sha256: >-  # pragma: allowlist secret (public archive digests)
+  {{ '6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382'
+      if homeassistant_custom_conversation_version == '1.6.1'
+      else 'a81433682ab0da8439dddb3eb549ca57c4e5b20d64b6797b2568b524903a0d52' }}
 homeassistant_custom_conversation_download_url: >-
   https://github.com/michelle-avery/custom-conversation/archive/refs/tags/{{ homeassistant_custom_conversation_version }}.tar.gz
 # LiteLLM provider key the component routes through. "openai" selects the
@@ -137,7 +142,7 @@ homeassistant_custom_conversation_base_url: ""
 homeassistant_custom_conversation_api_key: ""
 homeassistant_custom_conversation_model: ""
 homeassistant_custom_conversation_instructions: ""
-# Reserved: custom-conversation 1.6.1 exposes no per-request timeout field
+# Reserved: custom-conversation 1.7.0 exposes no per-request timeout field
 # (it delegates to LiteLLM's default, which already exceeds 60s). Kept for
 # forward-compatibility; currently not wired to any component setting.
 homeassistant_custom_conversation_request_timeout: 60

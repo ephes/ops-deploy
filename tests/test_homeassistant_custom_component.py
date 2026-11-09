@@ -370,6 +370,19 @@ def test_original_task_source_binding() -> None:
     root = Path(__file__).parent / "parity/homeassistant/custom-component"
     source = json.loads((root / "source.json").read_text())
     assert hashlib.sha256((root / "component.yml").read_bytes()).hexdigest() == source["task_sha256"]
+    captured_patch = (root / source["patch_file"]).read_bytes()
+    assert hashlib.sha256(captured_patch).hexdigest() == source["patch_sha256"]
+    actual_patch = files("ops_deploy.services.homeassistant").joinpath("custom_conversation_patch.py").read_bytes()
+    assert actual_patch == captured_patch
+
+
+@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="paired original collection not configured")
+def test_original_component_and_patch_capture_match_paired_source() -> None:
+    root = Path(__file__).parent / "parity/homeassistant/custom-component"
+    source = json.loads((root / "source.json").read_text())
+    library = Path(os.environ["OPS_LIBRARY_PATH"])
+    assert (root / "component.yml").read_bytes() == (library / source["source"]).read_bytes()
+    assert (root / source["patch_file"]).read_bytes() == (library / source["patch_source"]).read_bytes()
 
 
 @pytest.mark.skipif(
