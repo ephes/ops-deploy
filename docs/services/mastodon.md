@@ -1,5 +1,9 @@
 # Mastodon: selected-release deployment of an existing installation
 
+The default nvm Git tag is [v0.41.0](https://github.com/nvm-sh/nvm/releases/tag/v0.41.0).
+The pyinfra release path and Ansible rollback use the same tag. nvm is checked
+out from Git; this release has no uploaded assets or checksum manifest.
+
 `deploy_mastodon(cfg=MastodonReleaseConfig(...), secrets=...)` updates an existing
 Git installation. It resolves a selected release, installs its Ruby/Node and
 locked dependencies when needed, converges the secret environment, applies
