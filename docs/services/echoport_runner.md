@@ -55,7 +55,12 @@ mutating operation.
 ## Runner templates (`render`)
 
 `templates/` holds the role's `templates/*.py.j2` unchanged, with the
-includes `_work_dir.py.j2` and `_sqlite_backup.py.j2`.
+includes `_work_dir.py.j2` and `_sqlite_backup.py.j2`, except the ones in
+`render.FORKED`: `unifi_backup.py.j2` and `minecraft_java_backup.py.j2`
+moved on here after their registration moved to pyinfra (2026-11-09,
+restores onto a fresh install, below). ops-deploy is their source;
+ops-library's copies stay as they were and serve only the Ansible rollback
+of the register playbooks.
 `render.render_runner(template, variables)` renders one as Ansible's
 `template` module does (`trim_blocks`, the final newline restored,
 `StrictUndefined`) with ansible-core's `to_json`, `bool` and
@@ -154,6 +159,52 @@ against the fact; reading the fact keeps the playbook's behaviour).
 The Echoport target row is not written: the A1 rows are kept by hand
 (weeknotes-home's comes from the `weeknotes_home` deploy). On a converged
 host the deploy plans no mutating operation.
+
+unifi-backup and minecraft-java-backup are A1 with their playbooks' own
+steps:
+
+- unifi's MongoDB login (`/etc/echoport-backups/unifi-mongodb.json`, a
+  `CredentialFile` as below) with `check="mongodump"`, the playbook's
+  "Validate MongoDB backup credentials and auth DB": `mongodump
+  --archive=/dev/null --gzip` of the database with that login. The check
+  (`credential_check_command`) gets the file's text on stdin and hands the
+  password to mongodump on its stdin (mongodump asks for one when it gets
+  `--username` without `--password`); the password is on no command line,
+  where the playbook had it under `no_log`. It runs while planning when
+  `python3` and `mongodump` are installed, so a refused login stops the run
+  before any write, and as a read-only step right after the file, as the
+  playbook runs it;
+- minecraft's "Ensure mcrcon is installed": `required_files`
+  (`RequiredFile`), a missing `/usr/local/bin/mcrcon` refuses while
+  planning with the playbook's message (the `minecraft_java` deploy
+  installs it).
+
+### Restores onto a fresh install (unifi, minecraft-java)
+
+Both runners take a safety snapshot before a restore changes anything. On a
+fresh install there was nothing to snapshot and the restore failed before any
+change (Echoport restore runs 306 and 307 on 2026-11-09): `mongodump --db=unifi`
+writes no dump directory for a database without collections, and the
+Minecraft world directory does not exist. Now:
+
+- unifi asks `mongosh` for the database's collection count first; with none
+  the `safety_snapshot` step logs "Database unifi has no collections:
+  nothing to snapshot (fresh install)" and the restore goes on, and a
+  restore that fails after the database changed drops the database again
+  (the empty state) instead of restoring a snapshot. A count that cannot be
+  read, or a snapshot of a database with collections that fails, still
+  fails the restore before any change;
+- minecraft-java logs "World <name> not present: nothing to snapshot (fresh
+  install, or a world this server does not have yet); runtime directories
+  and config snapshotted" and goes on (the target is the archive's world, so
+  this also covers restoring a world under a new name next to a live one); a
+  restore that fails later removes the restored world and puts the
+  snapshotted runtime directories and config back, then starts the server
+  as the rollback with a world does. Any rollback now also removes the
+  runtime directories and optional server files (`mods`, `ops.json`, ...)
+  that did not exist before the restore (`absent.json` in the snapshot). A
+  world target that exists but is no directory still fails before any
+  change.
 
 ### Class B: the playbook's own target, credential and Nyxmon steps
 
@@ -351,10 +402,8 @@ Design note §3.1 also lists these parts; they come with the slices that use
 them:
 
 - vaultwarden's Nyxmon upsert (slice 9); graphyard's is `nyxmon` above;
-- `credential_file` for unifi: a plain `ops.secret_file` call (`root 0600`),
-  written by the runner slice that needs it (postfixadmin's is a
-  `CredentialFile` above). The deploy key and the media JSON are parts of
-  `DeployRunnerRegistration`.
+- the deploy key and the media JSON are parts of `DeployRunnerRegistration`;
+  unifi's and postfixadmin's logins are `CredentialFile`s above.
 
 ## Parity
 
@@ -380,4 +429,14 @@ them:
   and the credentials file is the playbooks' `copy` content.
 - `tests/test_ops_library_drift.py` records `fastdeploy_runner`,
   `echoport_backup` and `minio_backup` and fails when a vendored template
-  differs from ops-library's or ops-library gains or loses one.
+  differs from ops-library's or ops-library gains or loses one. For a
+  template in `render.FORKED` the runners' recorded sha256 is ops-deploy's
+  own rendering, and the drift and oracle tests check instead that
+  ops-library's copy is still the one recorded in `expected.json`'s
+  `forked_from`.
+- `tests/test_echoport_runner_unifi_minecraft.py`: unifi's login file and
+  its mongodump check (run against a stand-in `mongodump` to show the
+  password reaches only its stdin), minecraft's mcrcon refusal.
+- `tests/test_echoport_runner_fresh_install.py`: the two runners' restores
+  onto a fresh install, rendered from the fixtures and run with the host's
+  commands replaced.

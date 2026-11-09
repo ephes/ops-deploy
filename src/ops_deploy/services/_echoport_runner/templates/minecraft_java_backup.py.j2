@@ -6,7 +6,12 @@ Service-owned same-host script:
 - Backup: RCON quiesce (save-off/save-all), copy world/config/runtime files,
   generate manifests, archive, upload to MinIO.
 - Restore: download + checksum verify, safe extract, stop service, restore files,
-  ownership fix, start service, health verification.
+  ownership fix, start service, health verification. On a fresh install (the
+  archive's world directory is not present) there is no world to snapshot;
+  the safety snapshot then holds the runtime directories and config only, and
+  a failed restore removes the restored world again (the empty state) and
+  restores those. A rollback removes the runtime directories and optional
+  server files that did not exist before the restore.
 """
 
 import hashlib
@@ -515,9 +520,16 @@ def wait_rcon_ready(port: int, password: str, timeout_seconds: int = START_TIMEO
     raise RuntimeError(f"RCON did not become ready on port {port} in {timeout_seconds}s")
 
 
-def create_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Path) -> None:
-    if not world_target.exists() or not world_target.is_dir():
-        raise RuntimeError(f"World target missing for safety snapshot: {world_target}")
+def create_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Path) -> bool:
+    """Snapshot the world, runtime dirs and config; False: no world (a fresh install).
+
+    A missing world is not an error: there is nothing of it to snapshot, and
+    the runtime dirs and config are snapshotted all the same. A world target
+    that exists but is not a directory is an error.
+    """
+    world_present = world_target.exists() or world_target.is_symlink()
+    if world_present and not world_target.is_dir():
+        raise RuntimeError(f"World target is not a directory for safety snapshot: {world_target}")
 
     world_out = snapshot_dir / "world"
     config_out = snapshot_dir / "config"
@@ -526,7 +538,8 @@ def create_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Pa
     config_out.mkdir(parents=True, exist_ok=True)
     system_out.mkdir(parents=True, exist_ok=True)
 
-    rsync_dir(world_target, world_out / world_name, delete=True)
+    if world_present:
+        rsync_dir(world_target, world_out / world_name, delete=True)
     for dirname in OPTIONAL_DIRS:
         rsync_dir(Path(SERVER_DIR) / dirname, world_out / dirname, delete=True)
 
@@ -535,23 +548,61 @@ def create_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Pa
     for filename in OPTIONAL_FILES:
         copy_file_optional(Path(SERVER_DIR) / filename, config_out / filename)
     copy_file_optional(Path(SYSTEMD_UNIT), system_out / "minecraft-java.service")
+    # What did not exist before the restore: a rollback removes the restore's copy.
+    absent = [
+        name
+        for name in (*OPTIONAL_DIRS, *OPTIONAL_FILES)
+        if not (Path(SERVER_DIR) / name).exists() and not (Path(SERVER_DIR) / name).is_symlink()
+    ]
+    (snapshot_dir / "absent.json").write_text(json.dumps(absent))
+    return world_present
 
 
-def restore_from_safety_snapshot(snapshot_dir: Path, world_name: str, world_target: Path) -> None:
+def remove_restored_entry(path: Path) -> None:
+    """Remove what the restore created where the snapshot holds nothing (no symlink followed)."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def remove_restored_world(world_target: Path) -> None:
+    """The world part of a fresh install's rollback: remove the world the restore created."""
+    remove_restored_entry(world_target)
+
+
+def restore_from_safety_snapshot(
+    snapshot_dir: Path, world_name: str, world_target: Path, world_present: bool = True
+) -> None:
+    """Put the snapshot back; without a world in it (a fresh install) remove the restored world.
+
+    A runtime directory or optional server file that did not exist before the
+    restore (``absent.json``) is removed again.
+    """
     world_in = snapshot_dir / "world"
-    if not (world_in / world_name).exists():
-        raise RuntimeError("Safety snapshot missing world directory")
-
-    rsync_dir(world_in / world_name, world_target, delete=True)
+    absent_file = snapshot_dir / "absent.json"
+    absent = set(json.loads(absent_file.read_text())) if absent_file.is_file() else set()
+    if world_present:
+        if not (world_in / world_name).exists():
+            raise RuntimeError("Safety snapshot missing world directory")
+        rsync_dir(world_in / world_name, world_target, delete=True)
+    else:
+        remove_restored_world(world_target)
     for dirname in OPTIONAL_DIRS:
-        rsync_dir(world_in / dirname, Path(SERVER_DIR) / dirname, delete=True)
+        if dirname in absent:
+            remove_restored_entry(Path(SERVER_DIR) / dirname)
+        else:
+            rsync_dir(world_in / dirname, Path(SERVER_DIR) / dirname, delete=True)
 
     if not copy_file_optional(snapshot_dir / "config" / "server.properties", Path(SERVER_PROPERTIES)):
         raise RuntimeError("Safety snapshot missing config/server.properties")
 
     copy_file_optional(snapshot_dir / "config" / "minecraft.env", Path(ENV_FILE))
     for filename in OPTIONAL_FILES:
-        copy_file_optional(snapshot_dir / "config" / filename, Path(SERVER_DIR) / filename)
+        if filename in absent:
+            remove_restored_entry(Path(SERVER_DIR) / filename)
+        else:
+            copy_file_optional(snapshot_dir / "config" / filename, Path(SERVER_DIR) / filename)
     if copy_file_optional(snapshot_dir / "system" / "minecraft-java.service", Path(SYSTEMD_UNIT)):
         run_cmd(["chmod", "0644", SYSTEMD_UNIT])
 
@@ -706,6 +757,8 @@ def restore_flow(cenv: Dict) -> int:
     service_stopped = False
     destructive_started = False
     safety_snapshot_dir = work_dir / "safety"
+    # False on a fresh install: no world to snapshot, the rollback removes the restored one.
+    world_present = True
 
     try:
         tarball_path = work_dir / "backup.tar.gz"
@@ -750,8 +803,16 @@ def restore_flow(cenv: Dict) -> int:
 
         if CREATE_SAFETY_SNAPSHOT:
             emit_step("safety_snapshot", "running", "Creating pre-restore safety snapshot")
-            create_safety_snapshot(safety_snapshot_dir, world_name, world_target)
-            emit_step("safety_snapshot", "success", "Safety snapshot created")
+            world_present = create_safety_snapshot(safety_snapshot_dir, world_name, world_target)
+            if world_present:
+                emit_step("safety_snapshot", "success", "Safety snapshot created")
+            else:
+                emit_step(
+                    "safety_snapshot",
+                    "success",
+                    f"World {world_name} not present: nothing to snapshot (fresh install, or a world"
+                    " this server does not have yet); runtime directories and config snapshotted",
+                )
 
         emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
         if service_is_active():
@@ -819,10 +880,18 @@ def restore_flow(cenv: Dict) -> int:
             and ROLLBACK_ON_FAILURE
             and safety_snapshot_dir.exists()
         ):
-            emit_step("rollback", "running", "Restore failed; attempting rollback from safety snapshot")
+            if world_present:
+                emit_step("rollback", "running", "Restore failed; attempting rollback from safety snapshot")
+            else:
+                emit_step(
+                    "rollback",
+                    "running",
+                    f"Restore failed; removing the restored world {world_name} (fresh install, no world snapshot)"
+                    " and restoring the snapshotted config",
+                )
             try:
                 run_cmd(["systemctl", "stop", SERVICE_NAME], check=False)
-                restore_from_safety_snapshot(safety_snapshot_dir, world_name, world_target)
+                restore_from_safety_snapshot(safety_snapshot_dir, world_name, world_target, world_present)
                 run_cmd(["systemctl", "start", SERVICE_NAME])
                 wait_service_active(START_TIMEOUT)
                 wait_tcp_port(SERVER_PORT, START_TIMEOUT)
@@ -832,7 +901,10 @@ def restore_flow(cenv: Dict) -> int:
                     rcon_port = parse_int(props.get("rcon.port", str(DEFAULT_RCON_PORT)), DEFAULT_RCON_PORT)
                     rcon_password = read_rcon_password()
                     wait_rcon_ready(rcon_port, rcon_password, START_TIMEOUT)
-                emit_step("rollback", "success", "Rollback completed")
+                if world_present:
+                    emit_step("rollback", "success", "Rollback completed")
+                else:
+                    emit_step("rollback", "success", f"Rollback completed: restored world {world_name} removed")
                 service_stopped = False
                 exc = RuntimeError(f"{exc} (rollback executed)")
             except Exception as rollback_exc:

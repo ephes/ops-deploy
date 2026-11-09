@@ -6,6 +6,11 @@ playbooks render (from ``inputs.json``), and ``config.json`` and the sudoers
 rule of the ``fastdeploy_runner`` role for a few settings. The tests here
 need no Ansible. With ``OPS_LIBRARY_PATH`` and ``ansible-playbook`` (plus
 ``community.general``) the oracle test renders everything again and compares.
+
+The templates in ``render.FORKED`` moved on from ops-library's: their
+runners' recorded sha256 is ops-deploy's own rendering, and the oracle test
+checks only that ops-library's copy (the Ansible rollback's) is still the one
+recorded in ``forked_from``.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from typing import Any
 import pytest
 
 from ops_deploy.services._echoport_runner import RunnerConfig, service_config, sudoers_rule
-from ops_deploy.services._echoport_runner.render import INCLUDES, PACKAGE, render_runner, runner_templates
+from ops_deploy.services._echoport_runner.render import FORKED, INCLUDES, PACKAGE, render_runner, runner_templates
 
 HERE = Path(__file__).parent / "parity" / "echoport_runner"
 INPUTS: dict[str, Any] = json.loads((HERE / "inputs.json").read_text())["runners"]
@@ -52,6 +57,13 @@ def test_every_runner_template_is_rendered_by_a_fixture() -> None:
     assert {spec["template"] for spec in INPUTS.values()} == set(runner_templates())
     assert not {"heis_production_backup.py.j2", "villakunterbunt_staging_backup.py.j2"} & set(EXPECTED["source_sha256"])
     assert set(EXPECTED["source_sha256"]) >= INCLUDES
+
+
+def test_the_forked_templates_record_ops_librarys_copy() -> None:
+    assert set(EXPECTED["forked_from"]) == FORKED
+    assert set(runner_templates()) >= FORKED
+    for name in FORKED:
+        assert EXPECTED["forked_from"][name] != EXPECTED["source_sha256"][name], name
 
 
 def test_includes_are_not_runner_templates() -> None:
@@ -97,11 +109,12 @@ def test_ansible_renders_the_recorded_expectations(tmp_path: Path) -> None:
         sys.path.remove(str(HERE))
     assert OPS_LIBRARY is not None
     library = Path(OPS_LIBRARY).resolve()
-    rendered = generate.render_templates(library, INPUTS, tmp_path)
-    for runner, spec in INPUTS.items():
+    own = {runner: spec for runner, spec in INPUTS.items() if spec["template"] not in FORKED}
+    rendered = generate.render_templates(library, own, tmp_path)
+    for runner, spec in own.items():
         assert render_runner(spec["template"], spec["inputs"]) == rendered[runner], runner
     role = generate.render_role(library, tmp_path)
     assert role == EXPECTED["role"]
-    for name, digest in EXPECTED["source_sha256"].items():
+    for name, digest in {**EXPECTED["source_sha256"], **EXPECTED["forked_from"]}.items():
         source = library / "roles/echoport_backup/templates" / name
         assert hashlib.sha256(source.read_bytes()).hexdigest() == digest, name

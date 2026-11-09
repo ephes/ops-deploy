@@ -41,6 +41,28 @@
   the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
   no release assets or checksum manifest for this Git-based installation.
 
+- `services._echoport_runner`: restores onto a fresh install no longer fail
+  before any change. The unifi runner asks `mongosh` for the database's
+  collection count before its safety snapshot: with none it logs "nothing to
+  snapshot (fresh install)", goes on, and a failed restore drops the database
+  again (Echoport restore run 306 failed on `mongodump --db=unifi` writing no
+  dump directory). The minecraft-java runner snapshots the runtime
+  directories and config when the world is missing, logs the same, and a
+  failed restore removes the restored world and puts those back (run 307:
+  "World target missing for safety snapshot"); any rollback also removes
+  the runtime directories and optional server files that did not exist
+  before the restore. The two templates now live
+  here (`render.FORKED`); ops-library's copies serve only the Ansible
+  rollback, and the parity and drift tests check that copy against
+  `forked_from` in `tests/parity/echoport_runner/expected.json`. For
+  ops-control's pyinfra registration of unifi-backup and
+  minecraft-java-backup, `RunnerRegistration` gains `required_files`
+  (`RequiredFile`, refused while planning when missing: minecraft's mcrcon)
+  and `CredentialFile.check="mongodump"` (unifi's login check, the password on
+  mongodump's stdin, while planning when mongodump is installed and as a
+  read-only step after the file). See
+  [Echoport backup runners](services/echoport_runner.md#restores-onto-a-fresh-install-unifi-minecraft-java).
+
 - `services.unifi`: the tightening of existing log entries runs from `/`
   (`cd / && runuser -u unifi -- find ...`). From pyinfra's working directory
   `/root`, which `unifi` cannot enter, GNU find failed to return to its

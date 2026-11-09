@@ -4,8 +4,11 @@
 includes ``_work_dir.py.j2`` and ``_sqlite_backup.py.j2``), except the two
 legacy-layout runners ``heis_production_backup`` and
 ``villakunterbunt_staging_backup``, which stay on Ansible. The ops-library
-templates remain the only source of runner code; ``tests/test_ops_library_drift.py``
-fails when one of them changes.
+templates remain the source of runner code; ``tests/test_ops_library_drift.py``
+fails when one of them changes. The templates in :data:`FORKED` are the
+exception: they have moved on from ops-library's, ops-deploy is their source,
+and ops-library's copy serves only the Ansible rollback of their register
+playbook (the drift test then notices a change of that copy instead).
 
 Ansible renders with ``trim_blocks``, strips the template's final newline as
 Jinja2 does by default and restores one when the template ended in a newline
@@ -31,6 +34,10 @@ from jinja2 import meta
 PACKAGE = "ops_deploy.services._echoport_runner"
 # The role's templates that are no runner of their own.
 INCLUDES = frozenset({"_work_dir.py.j2", "_sqlite_backup.py.j2"})
+# Runner templates changed here after the registration moved to pyinfra
+# (2026-11-09: restores onto a fresh install); ops-library's copies are the
+# Ansible rollback's and stay as they were.
+FORKED = frozenset({"minecraft_java_backup.py.j2", "unifi_backup.py.j2"})
 
 _TRUE = {"yes", "on", "true", "1"}
 
