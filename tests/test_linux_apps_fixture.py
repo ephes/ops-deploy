@@ -1,4 +1,4 @@
-"""The owned encrypted_volume/open_webui fixture: runner admission, trace classifier, workflow guard."""
+"""The owned encrypted_volume fixture: runner admission, trace classifier, workflow guard."""
 
 from __future__ import annotations
 

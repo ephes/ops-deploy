@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Retire Open WebUI: it was removed from macmini on 2026-11-05 and stays
+  removed (owner decision 2026-11-09). Removed `ops_deploy.services.open_webui`
+  (`deploy_open_webui`, `deploy_open_webui_remove`, the shipped open-webui
+  0.7.2 constraints and its templates), `docs/services/open_webui.md` and its
+  nav entry, `tests/test_open_webui*.py` (the `encrypted_volume_prepare`
+  defaults check moves to `tests/test_encrypted_volume_parity.py`), the
+  `open_webui_venv_deploy` template fixtures under `tests/parity/ansible/` and
+  the `open_webui_venv_deploy`/`open_webui_venv_remove` entries in
+  `tests/parity/ops_library_roles.json` (ops-library keeps the roles). The
+  owned Linux fixture (`tests/integration/linux_apps/`,
+  `.github/workflows/linux-apps-integration.yml`) now qualifies
+  `encrypted_volume` alone. `services.native_app` (`ollama_proxy`) is
+  unchanged. The pins `open_webui_version` and `open_webui_python_version` go
+  with the module, so ops-control's `software-inventory` no longer reports
+  them once its ops-deploy pin moves past this change.
+
 - Pin Grafana to the recorded 12.4.0 image with its registry-verified SHA-256;
   add a regression check requiring a release tag and digest.
   `tests/parity/ops_library_roles.json` records the `graphyard_deploy` digest
@@ -550,7 +566,8 @@
   (role default `/var/lib/open-webui`), log directory, user (`userdel
   --remove`) and group, each only with its flag (all default false). systemd is
   reloaded only after a removed unit; the role's ignored failing Traefik
-  reload is not run. See [open_webui](services/open_webui.md#removal).
+  reload is not run. (Its service page went with the 2026-11-09
+  retirement.)
 - Both roles are recorded in the ops-library drift manifest (ops-library
   `44a532b`).
 

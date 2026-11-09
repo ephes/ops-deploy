@@ -1,4 +1,4 @@
-name: Linux apps integration (encrypted_volume, open_webui)
+name: Linux apps integration (encrypted_volume)
 
 # Owned native fixture: a disposable GitHub-hosted Ubuntu 24.04 x86 VM with its
 # own LUKS loop file and synthetic credentials. Never an inventory host.
@@ -11,7 +11,6 @@ on:
       - 'tests/integration/linux_apps/**'
       - 'src/ops_deploy/infra/encrypted_volume.py'
       - 'src/ops_deploy/infra/files/encrypted_volume_host.py'
-      - 'src/ops_deploy/services/open_webui/**'
   workflow_dispatch:
     inputs:
       implementation_sha:
@@ -53,7 +52,7 @@ jobs:
           unset OPS_DEPLOY_PATH OPS_LIBRARY_PATH VIRTUAL_ENV
           uv sync --locked --no-dev
           uv pip install --python .venv/bin/python --no-deps --reinstall "ops-deploy @ git+https://github.com/ephes/ops-deploy.git@$IMPLEMENTATION_SHA"
-      - name: Owned encrypted volume and Open WebUI qualification
+      - name: Owned encrypted volume qualification
         run: |
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" \
             IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$GITHUB_SHA" UV_BIN="$(command -v uv)" \
@@ -64,8 +63,8 @@ jobs:
         run: |
           sudo mkdir -p /var/tmp/linuxev-evidence
           trap 'sudo chmod -R a+rX /var/tmp/linuxev-evidence' EXIT
-          if ! sudo journalctl -u open-webui --no-pager -n 300 > /tmp/linuxev-journal.txt 2>&1; then
-            echo 'Service journal unavailable; primary failure remains in job log.'
+          if ! sudo journalctl -b --no-pager -n 300 > /tmp/linuxev-journal.txt 2>&1; then
+            echo 'Journal unavailable; primary failure remains in job log.'
           fi
           sudo cp /tmp/linuxev-journal.txt /var/tmp/linuxev-evidence/journal.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
