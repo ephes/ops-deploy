@@ -957,6 +957,7 @@ def test_run_defers_while_dpkg_stays_busy(tmp_path: Path) -> None:
     fake = BusyHost()
     fake.all_pids = [99]
     fake.files["/proc/99/comm"] = "unattended-upgr\n"
+    fake.files["/proc/99/cmdline"] = "/usr/bin/python3\0/usr/bin/unattended-upgrade\0"
 
     assert host_script.run(fake, str(path), str(state)) == 0
     written = json.loads(state.read_text())
@@ -964,6 +965,32 @@ def test_run_defers_while_dpkg_stays_busy(tmp_path: Path) -> None:
     assert written["reason"] == "apt/dpkg running (PID 99)"
     assert fake.clock >= host_script.DPKG_WAIT_S
     assert not restarts(fake)
+
+
+def test_the_waiting_unattended_upgrades_shutdown_helper_is_no_package_manager() -> None:
+    # It runs for the whole uptime under the same truncated name; counting it kept every run
+    # waiting 30 minutes and deferring (staging, 2026-11-02 to 2026-11-09).
+    class DeniedHost(FakeHost):
+        def read(self, path: str) -> str:
+            if path in self.denied:
+                raise PermissionError(path)
+            return super().read(path)
+
+    fake = DeniedHost()
+    fake.all_pids = [98, 99, 1226]
+    fake.files["/proc/1226/comm"] = "unattended-upgr\n"
+    fake.files["/proc/1226/cmdline"] = (
+        "/usr/bin/python3\0/usr/share/unattended-upgrades/unattended-upgrade-shutdown\0--wait-for-signal\0"
+    )
+    assert host_script.package_managers(fake) == []
+    assert host_script.dpkg_busy(fake) is None
+
+    # A real unattended-upgrade run still counts, and so does one whose command line is not readable.
+    fake.files["/proc/99/comm"] = "unattended-upgr\n"
+    fake.files["/proc/99/cmdline"] = "/usr/bin/python3\0/usr/bin/unattended-upgrade\0"
+    fake.files["/proc/98/comm"] = "unattended-upgr\n"
+    fake.denied.add("/proc/98/cmdline")
+    assert host_script.package_managers(fake) == ["98 (unreadable)", "99"]
 
 
 def test_summary_lines() -> None:
