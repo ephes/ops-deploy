@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add `services.daybook_voice_memo_work` (`VoiceMemoWorkConfig`,
+  `apply_voice_memo_work_state`): the disabled branch of ops-library's
+  `daybook_voice_memo_work_deploy` on Studio's root connection. It disables
+  `de.wersdoerfer.daybook.voice-memo-work`, boots it out when loaded, proves it
+  absent from the owner's Aqua domain and, when retired, deletes its plist;
+  with the owner logged out only the disable override is persisted, as in the
+  role. `enabled: true` is refused (the role's enabled branch is not ported;
+  memo work runs as the operations supervisor's `memo-work` source). A
+  directory at the plist path fails closed instead of being deleted
+  recursively. `tests/parity/ops_library_roles.json` records the role's digest.
+  See [Voice Memo work](services/daybook_voice_memo_work.md).
+
 - GoToSocial: release 0.22.2 -> 0.22.3 (2026-10-21; Go 1.26.10 for
   CVE-2026-111943 and a fix for remote accounts masquerading as other remote
   accounts in the dereferencer). No migrations and no config changes; both
@@ -43,7 +55,6 @@
   `tar.zst` or `manual-unf-prep`) are listed in
   [Backup and restore](services/unifi.md#backup-and-restore).
 
-||||||| parent of 3ad2891 (GoToSocial: release 0.22.3)
 - Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
   the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
   no release assets or checksum manifest for this Git-based installation.
