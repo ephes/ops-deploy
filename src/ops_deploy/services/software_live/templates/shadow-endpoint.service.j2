@@ -1,0 +1,26 @@
+[Unit]
+Description=Authenticated software health JSON endpoint (Rust shadow, loopback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ software_live_user }}
+Group={{ software_live_group }}
+ExecStart={{ _software_live_rust_binary }} serve --config {{ software_live_config_dir }}/shadow-endpoint.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

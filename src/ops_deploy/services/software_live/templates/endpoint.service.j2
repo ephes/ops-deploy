@@ -1,0 +1,27 @@
+[Unit]
+Description=Authenticated software health JSON endpoint
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ software_live_user }}
+Group={{ software_live_group }}
+ExecStart=/usr/bin/python3 {{ software_live_install_dir }}/software_live.py serve --config {{ software_live_config_dir }}/endpoint.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+[Install]
+WantedBy=multi-user.target

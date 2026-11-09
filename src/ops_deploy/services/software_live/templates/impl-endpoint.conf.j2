@@ -1,0 +1,6 @@
+# Managed by ops-library software_live (software_live_impl: rust).
+# Runs the pinned Rust release instead of the base unit's Python program;
+# removing this file (and daemon-reload, restart) switches back to Python.
+[Service]
+ExecStart=
+ExecStart={{ _software_live_rust_binary }} serve --config {{ software_live_config_dir }}/endpoint.json

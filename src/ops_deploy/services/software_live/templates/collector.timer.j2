@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh read-only software observations
+
+[Timer]
+OnBootSec=30s
+OnCalendar={{ software_live_on_calendar }}
+RandomizedDelaySec=30s
+AccuracySec=10s
+Persistent=true
+Unit=software-live-collector.service
+
+[Install]
+WantedBy=timers.target

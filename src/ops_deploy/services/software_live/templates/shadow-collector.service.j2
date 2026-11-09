@@ -1,0 +1,23 @@
+[Unit]
+Description=Read-only software health observation (Rust shadow)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart={{ _software_live_rust_binary }} collect --report-usage --config {{ software_live_config_dir }}/policy.json --output {{ software_live_data_dir }}/shadow/state.json --cache {{ software_live_data_dir }}/shadow/upstream.json --group {{ software_live_group }}
+{% if software_live_inventory_export %}
+ExecStartPost=-{{ _software_live_rust_binary }} export-inventory --config {{ software_live_data_dir }}/shadow/state.json --output {{ software_live_data_dir }}/shadow/software-health.json --group {{ software_live_inventory_group }}
+{% endif %}
+TimeoutStartSec=90
+Nice=10
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths={{ software_live_data_dir }}/shadow

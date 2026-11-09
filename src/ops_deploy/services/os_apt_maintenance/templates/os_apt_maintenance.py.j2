@@ -1,0 +1,509 @@
+#!/usr/bin/env python3
+"""Run host-local apt maintenance and record durable JSON state."""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import grp
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+HOST_ID = {{ os_apt_maintenance_host_id | to_json }}
+STATE_DIR = Path({{ os_apt_maintenance_state_dir | to_json }})
+STATE_FILE = Path({{ os_apt_maintenance_state_file | to_json }})
+LOCK_FILE = Path({{ os_apt_maintenance_lock_file | to_json }})
+APT_GET = {{ os_apt_maintenance_apt_get_path | to_json }}
+SYSTEMCTL = {{ os_apt_maintenance_systemctl_path | to_json }}
+COMMAND_TIMEOUT = {{ os_apt_maintenance_command_timeout | int }}
+REFRESH_COMMAND_TIMEOUT = {{ os_apt_maintenance_refresh_command_timeout | int }}
+FRESHNESS_MAX_AGE_SECONDS = {{ os_apt_maintenance_freshness_max_age_seconds | int }}
+AUTO_REBOOT = {{ 'True' if os_apt_maintenance_auto_reboot | bool else 'False' }}
+
+# The monitoring endpoint runs as an unprivileged user and only ever reads this
+# file.  systemd skips ExecStartPost= when ExecStart= exits non-zero, so the
+# unit alone cannot guarantee the state file stays readable after a failed apt
+# run - and an unreadable state file makes the endpoint answer 503, which hides
+# the very failure the run just recorded.  The writer therefore stamps the
+# final group and mode itself, on every write, success or failure.
+STATE_FILE_GROUP = {{ (os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root') | to_json }}
+STATE_FILE_MODE = {{ '0o640' if os_apt_maintenance_endpoint_enabled | bool else '0o644' }}
+
+
+REBOOT_REQUIRED_FLAG = Path("/var/run/reboot-required")
+
+
+def _installed_kernel_versions() -> list[str]:
+    """Versions of every installed linux-image package, newest last.
+
+    This deliberately does not go through run_command(): that helper is for
+    the recorded apt steps and keeps only a 4000-character *tail* of stdout
+    under ``stdout_tail``. A host that has been upgraded across several
+    releases lists dozens of removed-but-not-purged kernels, so the lines that
+    matter can fall outside such a tail - and reading a key the helper never
+    sets silently yields no kernels at all, which is exactly the "confident no
+    signal" this function exists to prevent.
+    """
+    try:
+        completed = subprocess.run(
+            ["dpkg-query", "-W", "-f", "${Package} ${Status}\n", "linux-image-*"],
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    return _parse_installed_kernel_versions(completed.stdout or "")
+
+
+def _parse_installed_kernel_versions(dpkg_output: str) -> list[str]:
+    """Parse ``dpkg-query -W -f '${Package} ${Status}\n'`` output."""
+    versions = []
+    for line in dpkg_output.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[-1] != "installed":
+            continue
+        match = re.search(r"(\d+\.\d+\.\d+-\d+)", parts[0])
+        if match:
+            versions.append(match.group(1))
+    return sorted(set(versions), key=_version_key)
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) for part in re.split(r"[.-]", version) if part.isdigit())
+
+
+def stale_kernel() -> dict[str, Any] | None:
+    """Report a kernel newer than the running one being installed.
+
+    The /var/run/reboot-required flag is created by Ubuntu's
+    update-notifier-common. Debian never creates it, and Ubuntu hosts without
+    that package do not either - so relying on it alone reports a confident
+    "no reboot needed" on hosts that are running a kernel several releases
+    behind the installed one. That is a false negative indistinguishable from
+    healthy, which is worse than no check at all.
+
+    Comparing the running kernel with the newest installed one needs no extra
+    package and behaves the same on Debian and Ubuntu.
+    """
+    try:
+        running_release = os.uname().release
+    except Exception:
+        return None
+    match = re.search(r"(\d+\.\d+\.\d+-\d+)", running_release)
+    if not match:
+        return None
+    running = match.group(1)
+    installed = _installed_kernel_versions()
+    if not installed:
+        return None
+    newest = installed[-1]
+    if _version_key(newest) <= _version_key(running):
+        return None
+    return {
+        "running_kernel": running_release,
+        "running_kernel_version": running,
+        "newest_installed_kernel": newest,
+    }
+
+
+def reboot_required_details() -> dict[str, Any]:
+    """Reboot state with the reason, from all available signals."""
+    flag = REBOOT_REQUIRED_FLAG.exists()
+    kernel = stale_kernel()
+    reasons = []
+    if flag:
+        reasons.append("reboot_required_flag")
+    if kernel is not None:
+        reasons.append("stale_kernel")
+    details: dict[str, Any] = {
+        "required": bool(flag or kernel),
+        "reasons": reasons,
+        "flag_present": flag,
+    }
+    if kernel is not None:
+        details.update(kernel)
+    return details
+
+STEPS = [
+    {
+        "id": "update_cache",
+        "enabled": {{ 'True' if os_apt_maintenance_update_cache | bool else 'False' }},
+        "argv": [APT_GET, "-o", "Dpkg::Lock::Timeout=300", "update"],
+    },
+    {
+        "id": "dist_upgrade",
+        "enabled": {{ 'True' if os_apt_maintenance_dist_upgrade | bool else 'False' }},
+        "argv": [
+            APT_GET,
+            "-o",
+            "Dpkg::Lock::Timeout=300",
+            "-o",
+            "Dpkg::Options::=--force-confold",
+            "-y",
+            "dist-upgrade",
+        ],
+    },
+    {
+        "id": "autoremove",
+        "enabled": {{ 'True' if os_apt_maintenance_autoremove | bool else 'False' }},
+        "argv": [APT_GET, "-o", "Dpkg::Lock::Timeout=300", "-y", "autoremove"],
+    },
+    {
+        "id": "autoclean",
+        "enabled": {{ 'True' if os_apt_maintenance_autoclean | bool else 'False' }},
+        "argv": [APT_GET, "-o", "Dpkg::Lock::Timeout=300", "-y", "autoclean"],
+    },
+]
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso_now() -> str:
+    return utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def epoch_now() -> int:
+    return int(utc_now().timestamp())
+
+
+def read_previous_state() -> dict[str, Any]:
+    try:
+        with STATE_FILE.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            return data
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
+def apply_state_file_permissions(fileno: int) -> None:
+    """Stamp the monitoring-readable group and mode onto an open state fd.
+
+    Best effort: a permission problem here must never abort an apt run, but it
+    must also never be silently skipped the way ExecStartPost= is after a
+    failed ExecStart=.
+    """
+    try:
+        os.fchmod(fileno, STATE_FILE_MODE)
+    except OSError:
+        pass
+    try:
+        gid = grp.getgrnam(STATE_FILE_GROUP).gr_gid
+    except KeyError:
+        return
+    try:
+        os.fchown(fileno, -1, gid)
+    except OSError:
+        pass
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+            apply_state_file_permissions(handle.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+
+
+def base_state(previous: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "host_id": HOST_ID,
+        "hostname": socket.gethostname(),
+        "generated_at": iso_now(),
+        "generated_epoch": epoch_now(),
+        "freshness_max_age_seconds": FRESHNESS_MAX_AGE_SECONDS,
+        "last_run_started_at": previous.get("last_run_started_at"),
+        "last_run_started_epoch": previous.get("last_run_started_epoch"),
+        "last_run_finished_at": previous.get("last_run_finished_at"),
+        "last_run_finished_epoch": previous.get("last_run_finished_epoch"),
+        "last_success_at": previous.get("last_success_at"),
+        "last_success_epoch": previous.get("last_success_epoch"),
+        "last_exit_code": previous.get("last_exit_code"),
+        "last_status": previous.get("last_status", "never_run"),
+        "last_error": previous.get("last_error"),
+        "last_skipped_at": previous.get("last_skipped_at"),
+        "last_skipped_epoch": previous.get("last_skipped_epoch"),
+        "last_skipped_reason": previous.get("last_skipped_reason"),
+        "reboot_required": reboot_required_details()["required"],
+        "reboot_required_details": reboot_required_details(),
+        "auto_reboot_enabled": AUTO_REBOOT,
+        "auto_reboot_attempted": False,
+        "auto_reboot_result": None,
+        "steps": previous.get("steps", {}),
+        "summary": {
+            "last_run_ok": previous.get("last_status") == "success",
+            "reboot_required": reboot_required_details()["required"],
+        },
+    }
+
+
+def init_state() -> int:
+    previous = read_previous_state()
+    if STATE_FILE.exists():
+        return 0
+    state = base_state(previous)
+    state["last_status"] = "never_run"
+    state["last_error"] = "apt maintenance has not run yet"
+    state["steps"] = {step["id"]: {"enabled": step["enabled"], "attempted": False} for step in STEPS}
+    atomic_write_json(STATE_FILE, state)
+    return 0
+
+
+def run_command(argv: list[str], timeout: int | None = None) -> dict[str, Any]:
+    """Run one recorded apt step.
+
+    ``timeout`` defaults to the full maintenance budget. The index-only refresh
+    passes a much shorter one: an `apt-get update` that has not finished in
+    minutes is a network or mirror problem, and inheriting the two-hour upgrade
+    budget would let a daily timer sit blocked well into the next day's run.
+    """
+    if timeout is None:
+        timeout = COMMAND_TIMEOUT
+    started = time.monotonic()
+    started_at = iso_now()
+    result: dict[str, Any] = {
+        "attempted": True,
+        "started_at": started_at,
+        "finished_at": None,
+        "duration_seconds": None,
+        "exit_code": None,
+        "status": "failed",
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "error": None,
+    }
+    env = os.environ.copy()
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    try:
+        completed = subprocess.run(
+            argv,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+        result["exit_code"] = completed.returncode
+        result["status"] = "success" if completed.returncode == 0 else "failed"
+        result["stdout_tail"] = completed.stdout[-4000:]
+        result["stderr_tail"] = completed.stderr[-4000:]
+    except subprocess.TimeoutExpired as exc:
+        result["exit_code"] = 124
+        result["status"] = "failed"
+        result["error"] = f"command timed out after {timeout} seconds"
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        result["stdout_tail"] = stdout[-4000:] if isinstance(stdout, str) else ""
+        result["stderr_tail"] = stderr[-4000:] if isinstance(stderr, str) else ""
+    except OSError as exc:
+        result["exit_code"] = 127
+        result["status"] = "failed"
+        result["error"] = str(exc)
+    finally:
+        result["finished_at"] = iso_now()
+        result["duration_seconds"] = round(time.monotonic() - started, 3)
+    return result
+
+
+def acquire_lock() -> Any:
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handle = LOCK_FILE.open("w", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def run_maintenance() -> int:
+    previous = read_previous_state()
+    lock_handle = acquire_lock()
+    if lock_handle is None:
+        state = base_state(previous)
+        now = iso_now()
+        now_epoch = epoch_now()
+        state.update(
+            {
+                "generated_at": now,
+                "generated_epoch": now_epoch,
+                "last_skipped_at": now,
+                "last_skipped_epoch": now_epoch,
+                "last_skipped_reason": "another os apt maintenance run is already active",
+            }
+        )
+        atomic_write_json(STATE_FILE, state)
+        return 75
+
+    try:
+        run_started_at = iso_now()
+        run_started_epoch = epoch_now()
+        state = base_state(previous)
+        state.update(
+            {
+                "last_run_started_at": run_started_at,
+                "last_run_started_epoch": run_started_epoch,
+                "last_run_finished_at": None,
+                "last_run_finished_epoch": None,
+                "last_exit_code": None,
+                "last_status": "running",
+                "last_error": None,
+                "steps": {},
+            }
+        )
+        atomic_write_json(STATE_FILE, state)
+
+        first_error = None
+        exit_code = 0
+        for step in STEPS:
+            step_id = step["id"]
+            if not step["enabled"]:
+                state["steps"][step_id] = {"enabled": False, "attempted": False, "status": "skipped"}
+                atomic_write_json(STATE_FILE, state)
+                continue
+            result = run_command(step["argv"])
+            result["enabled"] = True
+            state["steps"][step_id] = result
+            atomic_write_json(STATE_FILE, state)
+            if result["status"] != "success":
+                exit_code = int(result["exit_code"] or 1)
+                first_error = result.get("error") or f"{step_id} failed with exit code {exit_code}"
+                break
+
+        reboot_details = reboot_required_details()
+        reboot_required = reboot_details["required"]
+        finished_at = iso_now()
+        finished_epoch = epoch_now()
+        status = "success" if exit_code == 0 else "failed"
+
+        state.update(
+            {
+                "generated_at": finished_at,
+                "generated_epoch": finished_epoch,
+                "last_run_finished_at": finished_at,
+                "last_run_finished_epoch": finished_epoch,
+                "last_exit_code": exit_code,
+                "last_status": status,
+                "last_error": first_error,
+                "reboot_required": reboot_required,
+                "reboot_required_details": reboot_details,
+                "summary": {
+                    "last_run_ok": status == "success",
+                    "reboot_required": reboot_required,
+                },
+            }
+        )
+        if status == "success":
+            state["last_success_at"] = finished_at
+            state["last_success_epoch"] = finished_epoch
+
+        if status == "success" and reboot_required and AUTO_REBOOT:
+            state["auto_reboot_attempted"] = True
+            reboot_result = run_command([SYSTEMCTL, "reboot"])
+            state["auto_reboot_result"] = reboot_result
+            if reboot_result["status"] != "success":
+                state["last_status"] = "failed"
+                state["last_exit_code"] = int(reboot_result["exit_code"] or 1)
+                state["last_error"] = reboot_result.get("error") or "automatic reboot command failed"
+                exit_code = int(state["last_exit_code"])
+
+        atomic_write_json(STATE_FILE, state)
+        return exit_code
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+
+def run_refresh() -> int:
+    """Refresh apt indexes only, without changing a single installed package.
+
+    This deliberately does not write STATE_FILE. ``last_success_at`` there means
+    "a full maintenance run succeeded" and feeds the 14-day freshness check; if
+    index refreshes stamped it too, that check would stay green on a host whose
+    weekly upgrade run had been failing for a month. Refresh health is observed
+    through the apt index age that software_live already reports, and through
+    this unit's own systemd result.
+    """
+    lock_handle = acquire_lock()
+    if lock_handle is None:
+        # A maintenance run holds the lock and refreshes the indexes itself as
+        # its first step, so stepping aside is the correct outcome here, not a
+        # failure worth waking anyone for.
+        print(
+            "os-apt-maintenance holds the lock; skipping index refresh",
+            file=sys.stderr,
+        )
+        return 0
+    try:
+        result = run_command([APT_GET, "update"], timeout=REFRESH_COMMAND_TIMEOUT)
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+    if result["status"] == "success":
+        print(f"apt-get update succeeded in {result['duration_seconds']}s")
+        return 0
+
+    detail = (result.get("error") or result["stderr_tail"] or result["stdout_tail"]).strip()
+    print(
+        f"apt-get update failed (exit {result['exit_code']}): {detail}",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run apt maintenance and write state JSON")
+    parser.add_argument("--init-state", action="store_true", help="Create placeholder state and exit")
+    parser.add_argument(
+        "--refresh-only",
+        action="store_true",
+        help="Run apt-get update only; do not upgrade, remove or write state",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.init_state:
+        return init_state()
+    if args.refresh_only:
+        return run_refresh()
+    return run_maintenance()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run host-local apt maintenance on schedule
+
+[Timer]
+OnCalendar={{ os_apt_maintenance_timer_on_calendar }}
+AccuracySec={{ os_apt_maintenance_timer_accuracy_sec }}
+RandomizedDelaySec={{ os_apt_maintenance_timer_randomized_delay_sec }}
+Persistent={{ 'true' if os_apt_maintenance_timer_persistent | bool else 'false' }}
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,34 @@
+[Unit]
+Description=Serve os apt maintenance state for monitoring
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ os_apt_maintenance_endpoint_user }}
+Group={{ os_apt_maintenance_endpoint_group }}
+ExecStart=/usr/bin/python3 {{ os_apt_maintenance_endpoint_server_path }}
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec={{ os_apt_maintenance_endpoint_timeout }}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+ReadOnlyPaths={{ os_apt_maintenance_state_file }}
+ReadOnlyPaths={{ os_apt_maintenance_endpoint_htpasswd_path }}
+IPAddressDeny=any
+IPAddressAllow=localhost
+{% for cidr in os_apt_maintenance_endpoint_ip_allow %}
+IPAddressAllow={{ cidr }}
+{% endfor %}
+
+[Install]
+WantedBy=multi-user.target
