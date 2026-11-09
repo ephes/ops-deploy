@@ -46,12 +46,18 @@ VENDORED_FILES = {
 }
 # ``<package dir>/templates``: ``roles/<role>/templates``, byte for byte, every
 # template but the ones named (the Echoport runners; heis and villakunterbunt
-# stay on Ansible).
+# stay on Ansible) and the forked ones, whose ops-library copy must stay the
+# one recorded (the parity fixture's ``forked_from``).
 VENDORED_TEMPLATE_DIRS = {
     "services/_echoport_runner/templates": (
         "echoport_backup",
         frozenset({"heis_production_backup.py.j2", "villakunterbunt_staging_backup.py.j2"}),
     ),
+}
+FORKED_TEMPLATES = {
+    "services/_echoport_runner/templates": json.loads(
+        (Path(__file__).parent / "parity" / "echoport_runner" / "expected.json").read_text()
+    )["forked_from"],
 }
 # ``<package path>``: a file of ops-library outside the roles, byte for byte.
 VENDORED_LIBRARY_FILES = {
@@ -111,8 +117,13 @@ def test_vendored_template_dirs_match_ops_library(vendored: str) -> None:
     theirs = {path.name: path.read_bytes() for path in source.iterdir() if path.is_file() and path.name not in excluded}
 
     assert sorted(ours) == sorted(theirs), f"{source} gained or lost templates; vendor or exclude them"
-    changed = sorted(name for name in ours if ours[name] != theirs[name])
+    forked = FORKED_TEMPLATES.get(vendored, {})
+    changed = sorted(name for name in ours if name not in forked and ours[name] != theirs[name])
     assert not changed, f"{changed} changed in {source}; re-vendor and re-check"
+    moved = sorted(name for name, digest in forked.items() if hashlib.sha256(theirs[name]).hexdigest() != digest)
+    assert not moved, (
+        f"{moved} changed in {source} (the Ansible rollback's copy of a forked template); port or re-record"
+    )
 
 
 @needs_ops_library
