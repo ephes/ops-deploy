@@ -15,6 +15,11 @@ destination moved into a temporary directory and without owner, group and
 ``visudo``). ``expected.json`` records the sha256 of every rendering, the full
 ``config.json`` and sudoers texts, the sha256 of each source template and the
 ops-library commit.
+
+A runner whose template is in ``render.FORKED`` is rendered from ops-deploy's
+own template instead (ops-deploy is its source now): its ``source_sha256`` is
+ops-deploy's, and ``forked_from`` records the sha256 of ops-library's copy,
+which only the Ansible rollback renders.
 """
 
 from __future__ import annotations
@@ -30,7 +35,10 @@ from typing import Any
 
 import yaml
 
+from ops_deploy.services._echoport_runner.render import FORKED, PACKAGE, render_runner
+
 HERE = Path(__file__).parent
+OWN_TEMPLATES = HERE.parents[2] / "src" / PACKAGE.replace(".", "/") / "templates"
 ROLE_TASKS = (
     "fastdeploy_runner | Define the FastDeploy service configuration",
     "fastdeploy_runner | Write config.json with the fixed script path",
@@ -153,10 +161,15 @@ def main() -> None:
     version = subprocess.run(["ansible", "--version"], capture_output=True, text=True, check=True).stdout.splitlines()[
         0
     ]
+    library_runners = {name: runner for name, runner in runners.items() if runner["template"] not in FORKED}
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
-        rendered = render_templates(library, runners, base)
+        rendered = render_templates(library, library_runners, base)
         role = render_role(library, base)
+    for name, runner in runners.items():
+        if runner["template"] in FORKED:
+            rendered[name] = render_runner(runner["template"], runner["inputs"])
+    rendered = {name: rendered[name] for name in runners}
     templates = library / "roles/echoport_backup/templates"
     expected = {
         "provenance": (
@@ -166,10 +179,13 @@ def main() -> None:
         "source_ref": head.stdout.strip(),
         "runners": {name: hashlib.sha256(text.encode()).hexdigest() for name, text in rendered.items()},
         "source_sha256": {
-            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            path.name: hashlib.sha256(
+                (OWN_TEMPLATES / path.name if path.name in FORKED else path).read_bytes()
+            ).hexdigest()
             for path in sorted(templates.glob("*.j2"))
             if not path.name.startswith(("heis_", "villakunterbunt_"))
         },
+        "forked_from": {name: hashlib.sha256((templates / name).read_bytes()).hexdigest() for name in sorted(FORKED)},
         "role_cases": ROLE_CASES,
         "role": role,
     }

@@ -28,6 +28,12 @@ graphyard-backup) add their playbook's own steps around these:
   (:mod:`.target`, with the FastDeploy service token when it issues one)
   and graphyard's own Nyxmon check script (:mod:`.nyxmon`).
 
+unifi-backup and minecraft-java-backup are class A1 with their playbook's own
+steps: unifi's MongoDB login file (a :class:`CredentialFile`) and the
+playbook's check that the login works (``CredentialFile.check``, mongodump
+with the password on stdin), minecraft's refusal when ``mcrcon`` is missing
+(:class:`RequiredFile`).
+
 The runners of classes A2 and A3 run as the deploy user:
 :class:`DeployRunnerRegistration` is their playbook (homepage-staging,
 python-podcast-staging, marina-staging, homepage-production-db and
@@ -63,7 +69,7 @@ from ops_deploy.base._common import RoleConfig
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe
-from ops_deploy.ops import secret_file
+from ops_deploy.ops import secret_file, secret_stdin
 from ops_deploy.services._echoport_runner import RunnerConfig, _plain_path, install_runner
 from ops_deploy.services._echoport_runner import access as _access
 from ops_deploy.services._echoport_runner.access import (
@@ -126,6 +132,46 @@ def _template_variables(template: str) -> Mapping[str, Any]:
 
 _Owner = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]*$")]
 
+# unifi's "Validate MongoDB backup credentials and auth DB": mongodump of the
+# database into /dev/null with the login of the credential file, whose JSON
+# text comes on stdin. The password goes to mongodump on its stdin (it asks
+# for one when it gets --username without --password), never on a command line.
+_MONGODUMP_CHECK = """\
+import json, subprocess, sys
+login = json.load(sys.stdin)
+argv = [
+    "mongodump",
+    "--host=%s" % login["host"],
+    "--port=%d" % int(login["port"]),
+    "--db=%s" % login["database"],
+    "--username=%s" % login["username"],
+    "--authenticationDatabase=%s" % login["auth_db"],
+    "--archive=/dev/null",
+    "--gzip",
+]
+run = subprocess.run(
+    argv, input=login["password"] + "\\n", stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+)
+if run.returncode:
+    sys.stderr.write(run.stderr[-2000:])
+    sys.exit(1)
+"""
+# A credential check: the script that reads the file's text on stdin, and the commands it needs.
+_CHECKS: dict[str, tuple[str, tuple[str, ...], frozenset[str]]] = {
+    "mongodump": (
+        _MONGODUMP_CHECK,
+        ("mongodump",),
+        frozenset({"host", "port", "database", "username", "password", "auth_db"}),
+    ),
+}
+CredentialCheck = Literal["mongodump"]
+
+
+def credential_check_command(check: CredentialCheck) -> str:
+    """The shell command of ``check``: the credential file's text on its stdin, non-zero exit when refused."""
+
+    return f"python3 -c {shlex.quote(_CHECKS[check][0])}"
+
 
 class CredentialFile(RoleConfig):
     """A file the playbook writes with ``copy: content:`` from a secret (and its directory with ``file``).
@@ -135,6 +181,12 @@ class CredentialFile(RoleConfig):
     names whose values the deploy passes (from the controller's SOPS files).
     The file is written with :func:`ops_deploy.ops.secret_file`, so its
     content travels on stdin only.
+
+    ``check``: the playbook's task that proves the login works after writing
+    the file (unifi's mongodump). It runs with the file's text on stdin while
+    planning, when the commands it needs are installed already, and refuses
+    before any write; and again as a read-only step right after the file, as
+    the playbook runs it (on a host that gets the tools from this run).
     """
 
     path: str
@@ -147,6 +199,7 @@ class CredentialFile(RoleConfig):
     template: str = Field(min_length=1)
     variables: Mapping[str, Any]
     secrets: tuple[str, ...] = Field(min_length=1)
+    check: CredentialCheck | None = None
 
     @model_validator(mode="after")
     def _complete(self) -> CredentialFile:
@@ -159,6 +212,14 @@ class CredentialFile(RoleConfig):
             problems.append(f"the template reads {sorted(names)}, given {sorted(given)}")
         if set(self.variables) & set(self.secrets):
             problems.append("a name is both a variable and a secret")
+        if self.check is not None and not problems:
+            keys = _CHECKS[self.check][2]
+            try:
+                login = json.loads(self.content(dict.fromkeys(self.secrets, "placeholder")))
+            except (ValueError, TypeError):
+                login = None
+            if not isinstance(login, dict) or not keys <= set(login):
+                problems.append(f"the {self.check} check reads a JSON object with {', '.join(sorted(keys))}")
         if problems:
             raise ValueError("credential file: " + "; ".join(problems))
         return self
@@ -173,6 +234,54 @@ class CredentialFile(RoleConfig):
         if set(secrets) != set(self.secrets):
             raise DeployError(f"{self.path} needs exactly the secrets {', '.join(self.secrets)} (values withheld)")
         return render_text(self.template, {**self.variables, **secrets})
+
+
+class RequiredFile(RoleConfig):
+    """A file the playbook requires and does not install (minecraft's "Ensure mcrcon is installed").
+
+    Refused while planning when missing (``stat``'s ``exists``), with the
+    playbook's ``message``.
+    """
+
+    path: PlainPath
+    message: str = Field(min_length=1)
+
+
+def _require_file(required: RequiredFile) -> None:
+    path = shlex.quote(required.path)
+    if (probe(f"test -e {path} && echo present || echo missing", name=required.path) or "").strip() != "present":
+        raise DeployError(required.message)
+
+
+# A plan-time credential check's answer: valid, refused (after the command's last error lines) or absent.
+_VALID, _REFUSED, _ABSENT = "credentials-valid", "credentials-refused", "credentials-unchecked"
+
+
+def _plan_credential_check(file: CredentialFile, content: str) -> None:
+    """Refuse while planning when ``file``'s check refuses ``content`` (skipped while its commands are missing)."""
+
+    assert file.check is not None
+    _, commands, _ = _CHECKS[file.check]
+    present = " && ".join(f"command -v {shlex.quote(c)} >/dev/null 2>&1" for c in ("python3", *commands))
+    script = (
+        f"if {present}; then out=$( {credential_check_command(file.check)} 2>&1 ) && echo {_VALID} "
+        f"|| {{ printf '%s\\n' \"$out\" | tail -n 3; echo {_REFUSED}; }}; else echo {_ABSENT}; fi"
+    )
+    answer = (probe(script, name=f"{file.check} check of {file.path}", stdin=content) or "").strip().splitlines()
+    if answer[-1:] == [_REFUSED]:
+        detail = "; ".join(line for line in answer[:-1] if line.strip())
+        raise DeployError(f"{file.path}: the {file.check} check refused the login ({detail or 'no output'})")
+
+
+def _credential_check(file: CredentialFile, content: str) -> None:
+    assert file.check is not None
+    mark_read_only(
+        secret_stdin(
+            name=f"Validate the login of {file.path} ({file.check})",
+            command=credential_check_command(file.check),
+            content=SecretContent(content),
+        )
+    )
 
 
 class RunnerRegistration(RoleConfig):
@@ -197,6 +306,8 @@ class RunnerRegistration(RoleConfig):
     credential_files: tuple[CredentialFile, ...] = ()
     target: RunnerTarget | None = None
     nyxmon: NyxmonScript | None = None
+    # minecraft-java-backup: files the playbook requires and does not install.
+    required_files: tuple[RequiredFile, ...] = ()
 
     @model_validator(mode="after")
     def _playbook_asserts(self) -> RunnerRegistration:
@@ -269,9 +380,11 @@ def install_registration(
 
     ``token_user``: the FastDeploy user that issues the target's service token
     (a target with a token needs it); ``credentials``: the values of the
-    credential files' ``secrets``. Every refusal (a missing ``mc``, an unsafe
-    directory above the libexec root, a bad secret, a target script's
-    refusal) happens while planning, before any write.
+    credential files' ``secrets``. Every refusal (a missing ``mc`` or required
+    file, an unsafe directory above the libexec root, a bad secret, a
+    credential check that refuses the login, a target script's refusal)
+    happens while planning, before any write. A credential check whose
+    commands are not installed yet runs only as its step after the file.
     """
 
     given = dict(credentials or {})
@@ -282,6 +395,11 @@ def install_registration(
         raise DeployError(f"{cfg.runner.service} issues a FastDeploy token and needs the token user")
     contents = [(file, file.content({name: given[name] for name in file.secrets})) for file in cfg.credential_files]
     variables = template_variables(cfg)
+    for required in cfg.required_files:
+        _require_file(required)
+    for file, content in contents:
+        if file.check is not None:
+            _plan_credential_check(file, content)
     apt.packages(name=f"Install the packages of {cfg.runner.service}", packages=list(cfg.packages), update=False)
     minio_access(cfg.access, access_key=cfg.access.account.user, secret_key=secret_key)
     for file, content in contents:
@@ -300,6 +418,8 @@ def install_registration(
             group=file.group,
             mode=file.mode,
         )
+        if file.check is not None:
+            _credential_check(file, content)
     install_runner(cfg.runner, variables)
     if cfg.target is not None:
         if cfg.target.token is None:
@@ -685,12 +805,15 @@ register_deploy_runner = deploy("Echoport backup runner registration")(install_d
 __all__ = [
     "DEFAULT_IPV4_FALLBACK",
     "NO_CHECK_DEST",
+    "CredentialCheck",
     "CredentialFile",
     "CredentialsFile",
     "DeployKey",
     "DeployRunnerRegistration",
     "MediaSource",
+    "RequiredFile",
     "RunnerRegistration",
+    "credential_check_command",
     "default_ipv4",
     "install_deploy_registration",
     "install_registration",

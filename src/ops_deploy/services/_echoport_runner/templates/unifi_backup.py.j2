@@ -6,7 +6,9 @@ Service-owned same-host script:
 - Backup: MongoDB dump (while service runs), stop service, copy data/config/system,
   archive upload to MinIO.
 - Restore: download + checksum verify, stop service, MongoDB restore + file restore,
-  service restart and health checks.
+  service restart and health checks. On a fresh install (the database has no
+  collections) there is nothing to snapshot; a failed restore then drops the
+  restored database again (the empty state) instead of restoring a snapshot.
 """
 
 import grp
@@ -463,6 +465,30 @@ def mongo_drop_database(creds: Dict[str, str]) -> None:
     run_cmd(args)
 
 
+def mongo_collection_count(creds: Dict[str, str]) -> int:
+    """Collections in the database (0: missing or empty, as on a fresh install).
+
+    mongodump of a database without collections writes no dump directory, so
+    the safety snapshot asks first. Any failure or unreadable answer raises:
+    a database that cannot be inspected is not taken for an empty one.
+    """
+    args = [
+        "mongosh",
+        f"--host={creds['host']}",
+        f"--port={creds['port']}",
+        "--quiet",
+        f"--username={creds['username']}",
+        f"--password={creds['password']}",
+        f"--authenticationDatabase={creds['auth_db']}",
+        creds["database"],
+        "--eval=db.getCollectionNames().length",
+    ]
+    lines = [line.strip() for line in run_cmd(args).stdout.splitlines() if line.strip()]
+    if not lines or not lines[-1].isdigit():
+        raise RuntimeError("Could not read the MongoDB collection count for the safety snapshot")
+    return int(lines[-1])
+
+
 def mongo_restore(creds: Dict[str, str], dump_dir: Path) -> None:
     args = [
         "mongorestore",
@@ -690,6 +716,8 @@ def restore_flow(cenv: Dict) -> int:
     service_stopped = False
     destructive_started = False
     safety_snapshot_dir = work_dir / "safety_db"
+    # Fresh install: the database had no collections, so the rollback drops it.
+    snapshot_empty = False
 
     try:
         tarball_path = work_dir / "backup.tar.gz"
@@ -725,8 +753,16 @@ def restore_flow(cenv: Dict) -> int:
             emit_step("stop_service", "success", "Service not active, stop skipped")
 
         emit_step("safety_snapshot", "running", "Creating pre-restore MongoDB safety snapshot")
-        mongo_dump(creds, safety_snapshot_dir)
-        emit_step("safety_snapshot", "success", "MongoDB safety snapshot created")
+        if mongo_collection_count(creds) == 0:
+            snapshot_empty = True
+            emit_step(
+                "safety_snapshot",
+                "success",
+                f"Database {creds['database']} has no collections: nothing to snapshot (fresh install)",
+            )
+        else:
+            mongo_dump(creds, safety_snapshot_dir)
+            emit_step("safety_snapshot", "success", "MongoDB safety snapshot created")
 
         emit_step("restore_db", "running", "Restoring MongoDB")
         dump_dir = extract_dir / "database" / creds["database"]
@@ -784,7 +820,16 @@ def restore_flow(cenv: Dict) -> int:
         msg = safe_error(exc)
         rollback_error = ""
         rollback_executed = False
-        if destructive_started and safety_snapshot_dir.exists():
+        if destructive_started and snapshot_empty:
+            emit_step("rollback", "running", "Restore failed; dropping the restored database (fresh install, no snapshot)")
+            try:
+                mongo_drop_database(creds)
+                rollback_executed = True
+                emit_step("rollback", "success", "MongoDB rollback completed: empty database restored")
+            except Exception as rollback_exc:
+                rollback_error = safe_error(rollback_exc)
+                emit_step("rollback", "failure", f"MongoDB rollback failed: {rollback_error}")
+        elif destructive_started and safety_snapshot_dir.exists():
             emit_step("rollback", "running", "Restore failed; attempting MongoDB rollback from safety snapshot")
             try:
                 snapshot_dump_dir = safety_snapshot_dir / creds["database"]
