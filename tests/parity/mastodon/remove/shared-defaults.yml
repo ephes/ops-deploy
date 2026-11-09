@@ -37,7 +37,7 @@ mastodon_ruby_configure_opts: "-with-jemalloc"
 
 mastodon_nvm_dir: "{{ mastodon_home_path }}/.nvm"
 mastodon_nvm_repo: "https://github.com/nvm-sh/nvm.git"
-mastodon_nvm_version: "v0.40.8"
+mastodon_nvm_version: "v0.41.0"
 mastodon_node_version: ""  # use repo .nvmrc when empty
 mastodon_node_env: production
 mastodon_rails_env: production
