@@ -161,8 +161,8 @@ setting: new files get the process umask. The shared unit therefore sets
 before the rollout. After the rollout, if a plan-time probe found an entry
 that is too open (or the probe failed), it removes group write and other
 access from existing entries: directories at most 0750, files at most 0640.
-That `find`/`chmod` runs as `unifi` (`runuser`), which owns the directory and
-its files, so a symlink swapped in after `find` cannot redirect a root
+That `find`/`chmod` runs from `/` as `unifi` (`runuser`), which owns the
+directory and its files, so a symlink swapped in after `find` cannot redirect a root
 `chmod`; symlinks are never followed and ownership is not changed. A
 root-owned entry that is too open fails that step. A final read-only probe
 requires `750 unifi:unifi` and no entry readable by others. Adding the
