@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- GoToSocial: release 0.22.2 -> 0.22.3 (2026-10-21; Go 1.26.10 for
+  CVE-2026-111943 and a fix for remote accounts masquerading as other remote
+  accounts in the dereferencer). No migrations and no config changes; both
+  linux checksums come from the release's `checksums.txt`, matching the
+  ops-library `gotosocial_deploy` defaults.
+
 - `services.minecraft_java`: port the `minecraft_java_backup` and
   `minecraft_java_restore` roles (ops-library `55a23d33`):
   `MinecraftJavaBackupConfig`/`deploy_minecraft_java_backup` and
@@ -37,6 +43,7 @@
   `tar.zst` or `manual-unf-prep`) are listed in
   [Backup and restore](services/unifi.md#backup-and-restore).
 
+||||||| parent of 3ad2891 (GoToSocial: release 0.22.3)
 - Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
   the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
   no release assets or checksum manifest for this Git-based installation.

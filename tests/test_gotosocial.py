@@ -35,7 +35,7 @@ CONFIG = "/etc/gotosocial/config.yaml"
 UNIT = "/etc/systemd/system/gotosocial.service"
 WRAPPER = "/usr/local/sbin/gotosocial-admin"
 ROUTE = "/etc/traefik/dynamic/gotosocial.yml"
-RELEASE = "/opt/gotosocial/releases/0.22.2"
+RELEASE = "/opt/gotosocial/releases/0.22.3"
 CURRENT = "/opt/gotosocial/current"
 LAYOUT = "fedi.example.org example.org"
 PASSWORD = "gotosocial-fixture-smtp-password-0123"
@@ -142,8 +142,8 @@ def test_first_run_installs_everything_in_the_roles_order(cfg: GotosocialConfig)
         f"Ensure {DATA}",
         f"Ensure {DATA}/storage",
         f"Ensure {DATA}/.cache",
-        "Install GoToSocial 0.22.2",
-        f"Point {CURRENT} at 0.22.2",
+        "Install GoToSocial 0.22.3",
+        f"Point {CURRENT} at 0.22.3",
         "Install admin wrapper",
         f"Write {CONFIG}",
         "Install systemd unit gotosocial.service",
@@ -188,12 +188,12 @@ def test_first_run_with_every_package_present_skips_apt(cfg: GotosocialConfig) -
 def test_release_install_command_carries_url_checksum_and_release_dir(cfg: GotosocialConfig) -> None:
     run = deploy(cfg, base_host())
 
-    install = next(c for c in run.executed_commands if c.startswith("python3 -I -c") and "gotosocial_0.22.2" in c)
+    install = next(c for c in run.executed_commands if c.startswith("python3 -I -c") and "gotosocial_0.22.3" in c)
     payload = {
         "release_dir": RELEASE,
-        "sha256": "b8e7406c7eae73a50b7990affb5b1151fe81cfdb1c12951630bb08b0d77f7337",
-        "url": "https://codeberg.org/superseriousbusiness/gotosocial/releases/download/v0.22.2/"
-        "gotosocial_0.22.2_linux_amd64.tar.gz",
+        "sha256": "10ae814b5389aaaf6d1e2520fd2c61767a26b1a2c000a5c02f693d2f79ca448a",
+        "url": "https://codeberg.org/superseriousbusiness/gotosocial/releases/download/v0.22.3/"
+        "gotosocial_0.22.3_linux_amd64.tar.gz",
     }
     assert json.dumps(payload, sort_keys=True) in install
     assert install == install_command(cfg, "amd64")
@@ -202,9 +202,9 @@ def test_release_install_command_carries_url_checksum_and_release_dir(cfg: Gotos
 def test_arm64_host_gets_the_arm64_archive(cfg: GotosocialConfig) -> None:
     run = deploy(cfg, base_host(**{"uname -m": ["aarch64"]}))
 
-    install = next(c for c in run.executed_commands if "gotosocial_0.22.2" in c)
+    install = next(c for c in run.executed_commands if "gotosocial_0.22.3" in c)
     assert "linux_arm64.tar.gz" in install
-    assert "274ddb425444ea06f9f02bbd5abbce0bddc6f0a0d7c359ba8d8f0936ab8f3da5" in install
+    assert "535b297e4b763d66616e6ee32e2895d86013ce99208f7f7353078bdeeb10ec17" in install
 
 
 def test_unsupported_architecture_fails_before_any_change(cfg: GotosocialConfig) -> None:
@@ -426,7 +426,7 @@ def test_layout_probe_reads_raw_bytes_like_slurp(cfg: GotosocialConfig) -> None:
 def test_present_release_is_never_downloaded_again(cfg: GotosocialConfig) -> None:
     run = deploy(cfg, converged(cfg))
 
-    assert not any("gotosocial_0.22.2" in c for c in run.executed_commands)
+    assert not any("gotosocial_0.22.3" in c for c in run.executed_commands)
 
 
 def test_failing_release_probe_fails_the_deploy(cfg: GotosocialConfig) -> None:
@@ -504,7 +504,7 @@ def test_existing_user_gets_the_roles_shell_and_home(cfg: GotosocialConfig) -> N
         {"host": "badexample.org", "account_domain": "example.org"},
         {"host": "example.org", "account_domain": "Example.org"},
         {"host": "example.org", "version": "0.22"},
-        {"host": "example.org", "version": "v0.22.2"},
+        {"host": "example.org", "version": "v0.22.3"},
         {"host": "example.org", "release_checksums": {"amd64": "b8e7"}},
         {"host": "example.org", "bind_address": "0.0.0.0"},
         {"host": "example.org", "port": 1024},
@@ -580,14 +580,14 @@ def releases(tmp_path: Path) -> Path:
 
 def test_installer_unpacks_into_place(tmp_path: Path, releases: Path) -> None:
     url, digest = _archive(tmp_path, {"gotosocial": b"#!/bin/sh\n", "web/assets/a.css": b"a{}"})
-    release = releases / "0.22.2"
+    release = releases / "0.22.3"
 
     _installer().main({"url": url, "sha256": digest, "release_dir": str(release)})
 
     assert (release / "gotosocial").read_bytes() == b"#!/bin/sh\n"
     assert (release / "web/assets/a.css").read_bytes() == b"a{}"
     assert oct(release.stat().st_mode & 0o777) == "0o755"
-    assert [p.name for p in releases.iterdir()] == ["0.22.2"]
+    assert [p.name for p in releases.iterdir()] == ["0.22.3"]
 
 
 def test_installer_refuses_a_bad_checksum_and_leaves_nothing(tmp_path: Path, releases: Path) -> None:
@@ -595,7 +595,7 @@ def test_installer_refuses_a_bad_checksum_and_leaves_nothing(tmp_path: Path, rel
     module = _installer()
 
     with pytest.raises(module.InstallError, match="checksum"):
-        module.main({"url": url, "sha256": "0" * 64, "release_dir": str(releases / "0.22.2")})
+        module.main({"url": url, "sha256": "0" * 64, "release_dir": str(releases / "0.22.3")})
     assert list(releases.iterdir()) == []
 
 
@@ -604,13 +604,13 @@ def test_installer_refuses_an_archive_without_the_binary(tmp_path: Path, release
     module = _installer()
 
     with pytest.raises(module.InstallError, match="no gotosocial binary"):
-        module.main({"url": url, "sha256": digest, "release_dir": str(releases / "0.22.2")})
+        module.main({"url": url, "sha256": digest, "release_dir": str(releases / "0.22.3")})
     assert list(releases.iterdir()) == []
 
 
 def test_installer_never_overwrites_a_partial_release_dir(tmp_path: Path, releases: Path) -> None:
     url, digest = _archive(tmp_path, {"gotosocial": b"x"})
-    partial = releases / "0.22.2"
+    partial = releases / "0.22.3"
     (partial / "web").mkdir(parents=True)
     module = _installer()
 
@@ -621,7 +621,7 @@ def test_installer_never_overwrites_a_partial_release_dir(tmp_path: Path, releas
 
 def test_installer_fills_an_empty_release_dir_and_skips_an_installed_one(tmp_path: Path, releases: Path) -> None:
     url, digest = _archive(tmp_path, {"gotosocial": b"new"})
-    release = releases / "0.22.2"
+    release = releases / "0.22.3"
     release.mkdir()
     module = _installer()
 
@@ -638,7 +638,7 @@ def test_installer_refuses_a_group_writable_releases_dir(tmp_path: Path, release
     module = _installer()
 
     with pytest.raises(module.InstallError, match="not writable by others"):
-        module.main({"url": url, "sha256": digest, "release_dir": str(releases / "0.22.2")})
+        module.main({"url": url, "sha256": digest, "release_dir": str(releases / "0.22.3")})
 
 
 def test_installer_failure_prints_a_fixed_message(tmp_path: Path, releases: Path) -> None:

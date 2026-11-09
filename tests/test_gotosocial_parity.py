@@ -108,7 +108,7 @@ def test_the_ipv6_case_derives_paths_from_the_roots() -> None:
 
     assert config["db-address"] == "/srv/gts-data/sqlite.db"
     assert config["web-asset-base-dir"] == "/srv/gts/current/web/assets/"
-    assert cfg.release_dir == "/srv/gts/releases/0.22.2"
+    assert cfg.release_dir == "/srv/gts/releases/0.22.3"
     assert cfg.layout_marker_path == "/srv/gts-data/.ops-domain-layout"
 
 
