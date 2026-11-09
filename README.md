@@ -23,6 +23,9 @@ Echoport backup, a mount guard and local rollback snapshots with retention).
 - [uv](https://docs.astral.sh/uv/) and [just](https://just.systems)
 - pyinfra is pinned to `3.10.*`
 
+Selected SSH keys can be reconciled with `deploy_ssh_authorized_key_entries`
+without replacing foreign entries; see [base deploys](docs/base.md#ssh_authorized_key_entries).
+
 ## Development
 
 ```bash

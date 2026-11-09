@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add non-exclusive SSH authorized key reconciliation with explicit account paths,
+  byte-preserved foreign lines, duplicate handling and atomic permissioned writes.
+  The caller supplies the host lock and surviving-login proof before removals.
+
 - `services.minio.user_retirement`: the before/after comparison ignores the order
   of values inside a policy's `Condition`, which the server varies between reads. A
   production run removed its user and then failed with "state outside the listed

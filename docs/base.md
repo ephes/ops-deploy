@@ -134,6 +134,27 @@ so is a control character in `dropin_path`. Extra values are written literally
 (Ansible would first expand Jinja in them). An extra key that a field already
 covers (`SystemMaxUse`) is refused, as in the role.
 
+## ssh_authorized_key_entries
+
+`SshAuthorizedKeyEntriesConfig(user=..., home=..., group=..., present=(...),
+absent=(...))` and `deploy_ssh_authorized_key_entries` reconcile selected
+`AuthorizedKey` entries. All three account fields are required: for atlas use
+`jochen`, `/Users/jochen`, `staff`. Linux root uses `root`, `/root`, `root`.
+
+Present keys are added or updated by type and base64 material (comments do not
+identify a key); duplicate managed lines collapse to one. Absent keys remove
+all matching lines. Foreign forced commands, comments, blank lines and line
+endings retain their original bytes. An unterminated final foreign line gains
+a newline only if a new key must be appended. The file is atomically replaced
+through `secret_file` with mode 0600; `.ssh` is 0700 with the supplied owner and
+group. Remote Python 3 is required on Linux and macOS. Empty present sets,
+duplicate inputs and present/absent overlap are refused.
+
+This primitive has no reachability proof: controller orchestration must hold
+the shared host lock before facts are read, prove a surviving explicit identity
+can log in before removals, and never remove its connection key. That integration
+belongs to controller slice 4. The existing whole-file deploy remains unchanged.
+
 ## ssh_authorized_keys
 
 | Field | Default | |
