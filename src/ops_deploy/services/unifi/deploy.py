@@ -31,6 +31,33 @@ FIREWALL_RULES = (
     (10001, "udp", "UniFi discovery"),
     (6789, "tcp", "UniFi speed test"),
 )
+# The controller writes its MongoDB URI, password included, to server.log on
+# every start. The directory is the vendor's LOGDIR (``/usr/lib/unifi/logs``
+# links to it); the unit's UMask=0027 keeps new files at 0640.
+LOG_DIR = "/var/log/unifi"
+# Entries wider than 0750 (directories) or 0640 (files). ``find`` does not
+# follow symlinks; the probe prints the first such entry or nothing.
+_LOOSE = ["(", "-type", "d", "-perm", "/0027", "-o", "-type", "f", "-perm", "/0137", ")"]
+LOOSE_LOGS_PROBE = f"test ! -d {LOG_DIR} || " + shlex.join(
+    ["find", LOG_DIR, "-xdev", "-mindepth", "1", *_LOOSE, "-print", "-quit"]
+)
+# As unifi, the owner of the directory and its files: a root chmod could be
+# redirected by a symlink swapped in after find saw a regular file.
+TIGHTEN_LOGS = shlex.join(
+    [
+        "runuser", "-u", "unifi", "--",
+        "find", LOG_DIR, "-xdev", "-mindepth", "1",
+        "(", "-type", "d", "-perm", "/0027", "-exec", "chmod", "g-w,o-rwx", "{}", "+", ")",
+        "-o",
+        "(", "-type", "f", "-perm", "/0137", "-exec", "chmod", "u-x,g-wx,o-rwx", "{}", "+", ")",
+    ]
+)  # fmt: skip
+# A failing find fails the check: its status must not vanish in ``[ -z "$(...)" ]``.
+PRIVATE_LOGS_CHECK = (
+    f'[ "$(stat -c %a:%U:%G {LOG_DIR})" = 750:unifi:unifi ] || exit 1; '
+    f"loose=$({LOOSE_LOGS_PROBE}) || exit 1; "
+    '[ -z "$loose" ] && echo private'
+)
 
 
 def payload(cfg: UnifiConfig, secrets: SecretValues) -> str:
@@ -148,6 +175,9 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
         # first controller installation over an existing authenticated MongoDB.
         systemd.daemon_reload(name="Load UniFi unit before package installation", _if=lambda: needs_package)
         package = install_selected(cfg, needs_package, missing_controller, secrets)
+    loose_logs = probe(LOOSE_LOGS_PROBE, name="UniFi log entries readable by others")
+    # After a first package installation too: the package creates the directory.
+    files.directory(name="Lock UniFi log directory", path=LOG_DIR, user="unifi", group="unifi", mode="0750")
     if cfg.mongodb_logrotate_enabled:
         _put(cfg, "mongodb-logrotate.j2", "/etc/logrotate.d/mongodb")
     if cfg.mongodb_monitor_script_enabled:
@@ -180,6 +210,11 @@ def deploy_unifi(cfg: UnifiConfig, secrets: SecretValues) -> None:
         restart_when=(args,) if package is None else (args, package),
         always_restart=restart.strip() == "owed",
     )
+    # After the rollout: also catches files the previous process (without the
+    # unit's UMask) wrote before it stopped.
+    if loose_logs is None or loose_logs.strip():
+        server.shell(name="Remove group write and other access from existing UniFi logs", commands=[TIGHTEN_LOGS])
+    verify_probe(PRIVATE_LOGS_CHECK, name="UniFi logs private", expect="private")
     # The controller's own certificate is self-signed (the role uses
     # validate_certs:false). Never weaken verification for external downloads.
     command = shlex.join(["python3", "-I", "-c", HEALTH, str(cfg.healthcheck_timeout)])

@@ -8,6 +8,8 @@ Requires=mongod.service
 Type=simple
 User={{ unifi_user }}
 Group={{ unifi_group }}
+# server.log carries the MongoDB URI with its password: new logs 0640, dirs 0750.
+UMask=0027
 WorkingDirectory={{ unifi_install_dir }}
 
 Environment="JAVA_HOME={{ unifi_java_home }}"

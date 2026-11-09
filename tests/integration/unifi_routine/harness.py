@@ -6,9 +6,11 @@ import hashlib
 import http.cookiejar
 import json
 import os
+import pwd
 import re
 import shlex
 import ssl
+import stat
 import subprocess
 import sys
 import time
@@ -192,6 +194,21 @@ def deploy(
         if label.endswith("repeat"):
             assert not mutations, result
     return mutations
+
+
+def assert_private_logs() -> None:
+    """server.log carries the MongoDB URI: no log entry is readable by others."""
+
+    root = Path("/var/log/unifi")
+    info = root.lstat()
+    assert stat.S_ISDIR(info.st_mode)
+    assert (pwd.getpwuid(info.st_uid).pw_name, stat.S_IMODE(info.st_mode)) == ("unifi", 0o750)
+    assert (root / "server.log").is_file()
+    for path in root.rglob("*"):
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            continue
+        assert stat.S_IMODE(mode) & (0o027 if stat.S_ISDIR(mode) else 0o137) == 0, path
 
 
 def protection() -> str:
@@ -378,6 +395,7 @@ def main(evidence: Path) -> None:
     deploy(previous, evidence, "install-first")
     assert json.loads(run("curl", "-kfsS", "https://127.0.0.1:8443/status"))["meta"]["server_version"] == "9.4.19"
     deploy(previous, evidence, "install-repeat")
+    assert_private_logs()
     (evidence / "runtime-before-wizard.json").write_text(json.dumps(runtime(), indent=2))
     wizard = complete_controller_setup(evidence)
     (evidence / "wizard-completion.json").write_text(json.dumps(wizard, indent=2))
@@ -397,6 +415,7 @@ def main(evidence: Path) -> None:
     assert runtime_before["executable"] == runtime_after["executable"]
     assert runtime_before["version"] == runtime_after["version"]
     deploy(config, evidence, "update-repeat")
+    assert_private_logs()
     database_proof = application_database_proof(evidence, "after-update")
     (evidence / "application-database.json").write_text(json.dumps(database_proof, indent=2))
     assert protection() == before
@@ -426,6 +445,7 @@ def main(evidence: Path) -> None:
             time.sleep(2)
     deploy(config, evidence, "repair-first")
     deploy(config, evidence, "repair-repeat")
+    assert_private_logs()
     assert application_database_proof(evidence, "after-repair") == database_proof
     assert mongo('print(db.getSiblingDB("unifi").admin.findOne({name:"homeassistant"})._id.toString());') == identity
     assert protection() == before
