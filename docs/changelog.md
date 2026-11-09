@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `services.unifi`: port the `unifi_backup` and `unifi_restore` roles
+  (`UnifiBackupConfig`/`deploy_unifi_backup`, `UnifiRestoreConfig`/
+  `deploy_unifi_restore`). The backup and restore run on the host as one
+  Python program with their settings and the MongoDB credentials on stdin
+  (tools read a private `--config` file, `mongosh` its script on stdin);
+  the archive layout and `metadata.yml` are the role's, so either tool
+  restores the other's archives. A restore needs `confirm`; its dry run
+  needs no password and changes nothing. A confirmed restore takes a
+  safety backup (on a fresh installation: nothing to snapshot), rolls back
+  from it when restoring or verifying fails and removes it after a success.
+  `required_mount` and snapshot retention as for the other local backups.
+  Deliberate differences (a failing dump fails the backup, the live
+  `data/db/` is kept, tools are required instead of installed, no
+  `tar.zst` or `manual-unf-prep`) are listed in
+  [Backup and restore](services/unifi.md#backup-and-restore).
+
 - Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
   the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
   no release assets or checksum manifest for this Git-based installation.
