@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `services.minecraft_java`: port the `minecraft_java_backup` and
+  `minecraft_java_restore` roles (ops-library `55a23d33`):
+  `MinecraftJavaBackupConfig`/`deploy_minecraft_java_backup` and
+  `MinecraftJavaRestoreConfig`/`deploy_minecraft_java_restore`, one host
+  program with the settings (and the RCON password) on stdin. The archive
+  keeps the role's layout, so either tool restores the other's archives, but
+  holds every world of the server, not only the configured one. The backup
+  brackets the archive with RCON `save-off`/`save-all flush`/`save-on` while
+  the unit runs and never starts a stopped server. The restore's dry run only
+  checks and prints the plan; a real restore needs `confirm`, keeps a
+  pre-restore copy of each live world (nothing to snapshot on a fresh
+  installation), rolls back from the copies when replacing fails and starts
+  the unit only when it ran before. `world_name` is required and must be the
+  live `level-name`. Deliberate differences from the roles (UTC timestamp,
+  no blanket retention or `chmod` of other archives, `server.properties`
+  `0640`, links refused) in
+  [Backup and restore](services/minecraft_java.md#backup-and-restore). Role
+  digests recorded in `tests/parity/ops_library_roles.json`.
+
 - Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
   the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
   no release assets or checksum manifest for this Git-based installation.
