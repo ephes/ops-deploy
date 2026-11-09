@@ -137,7 +137,8 @@ def test_log_commands_never_follow_links_or_widen_modes() -> None:
     # Directories wider than 0750, files wider than 0640.
     assert probe[probe.index("d") + 2] == "/0027"
     assert probe[probe.index("f") + 2] == "/0137"
-    tighten = shlex.split(TIGHTEN_LOGS)
+    assert TIGHTEN_LOGS.startswith("cd / && ")
+    tighten = shlex.split(TIGHTEN_LOGS.removeprefix("cd / && "))
     assert tighten[:4] == ["runuser", "-u", "unifi", "--"]
     assert "-L" not in tighten
     assert "-follow" not in tighten
@@ -172,8 +173,21 @@ def test_log_commands_on_a_real_tree(tmp_path: Path) -> None:
     probe.remove("-quit")
     found = {Path(line).relative_to(root).as_posix() for line in subprocess.check_output(probe, text=True).split()}
     assert found == {"server.log", "group-writable.log", "executable.log", "remote", "remote/device.log"}
-    tighten = shlex.split(TIGHTEN_LOGS.replace(LOG_DIR, str(root)))[4:]
-    subprocess.run(tighten, check=True)
+    tighten = shlex.join(shlex.split(TIGHTEN_LOGS.removeprefix("cd / && ").replace(LOG_DIR, str(root)))[4:])
+    # Start where the user cannot enter, like pyinfra's /root for unifi; the
+    # command's own ``cd /`` must make find work anyway.
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    enter_and_close = f"cd {shlex.quote(str(closed))} && chmod 000 . && "
+    try:
+        if os.geteuid() != 0:
+            # Without the ``cd /``, find fails there (root could enter anyway).
+            failing = subprocess.run(["sh", "-c", enter_and_close + tighten], capture_output=True, text=True)
+            assert failing.returncode != 0, failing
+            closed.chmod(0o755)
+        subprocess.run(["sh", "-c", enter_and_close + "cd / && " + tighten], check=True)
+    finally:
+        closed.chmod(0o755)
     assert subprocess.check_output(probe, text=True) == ""
     modes = {name: (root / name).stat().st_mode & 0o777 for name in [*entries, "remote"]}
     assert modes == {

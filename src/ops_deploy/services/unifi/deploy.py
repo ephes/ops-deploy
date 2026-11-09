@@ -42,8 +42,10 @@ LOOSE_LOGS_PROBE = f"test ! -d {LOG_DIR} || " + shlex.join(
     ["find", LOG_DIR, "-xdev", "-mindepth", "1", *_LOOSE, "-print", "-quit"]
 )
 # As unifi, the owner of the directory and its files: a root chmod could be
-# redirected by a symlink swapped in after find saw a regular file.
-TIGHTEN_LOGS = shlex.join(
+# redirected by a symlink swapped in after find saw a regular file. From /:
+# GNU find needs to return to its starting directory, and pyinfra's (/root)
+# is closed to unifi.
+TIGHTEN_LOGS = "cd / && " + shlex.join(
     [
         "runuser", "-u", "unifi", "--",
         "find", LOG_DIR, "-xdev", "-mindepth", "1",

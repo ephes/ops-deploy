@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `services.unifi`: the tightening of existing log entries runs from `/`
+  (`cd / && runuser -u unifi -- find ...`). From pyinfra's working directory
+  `/root`, which `unifi` cannot enter, GNU find failed to return to its
+  starting directory and the first macmini deploy with the log change stopped
+  at that step (the directory lock, unit and restart had applied). The
+  real-tree test now starts in a directory the user cannot enter.
+
 - `services.unifi`: keep the controller logs private. UniFi 9.5 writes its
   MongoDB connection URI with the password to `/var/log/unifi/server.log` on
   every start, and the directory and its files were world-readable. The unit
