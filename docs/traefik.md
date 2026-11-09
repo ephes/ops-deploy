@@ -33,6 +33,43 @@ deploy_traefik(
 deploy_traefik_remove(TraefikRemoveConfig(confirm=True))
 ```
 
+## Traefik 3.7.17 pin (upgrade-traefik-3717)
+
+The default release is 3.7.17. Linux archives were downloaded on 2026-11-08
+and matched the exact filenames in the official
+[checksum manifest](https://github.com/traefik/traefik/releases/download/v3.7.17/traefik_v3.7.17_checksums.txt):
+
+| Archive | SHA-256 |
+| --- | --- |
+| linux_amd64 | `a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393` |
+| linux_arm64 | `b06dad2f66ac3481c5695591b7cd3a3eed5e6dbec739889bb01e69cf8e45a0fc` |
+
+The release asset listing advertised no signature or attestation asset. Verification
+is HTTPS plus the published checksum, not a signature verification claim. Supply
+the digest for the selected version and architecture; a version-only override must
+not reuse an older digest.
+
+Reviewed upstream [3.7.14](https://github.com/traefik/traefik/releases/tag/v3.7.14),
+[3.7.15](https://github.com/traefik/traefik/releases/tag/v3.7.15),
+[3.7.16](https://github.com/traefik/traefik/releases/tag/v3.7.16) and
+[3.7.17](https://github.com/traefik/traefik/releases/tag/v3.7.17), plus the
+[migration guide](https://doc.traefik.io/traefik/v3.7/migrate/v3/#v3717).
+The file-provider/Prometheus templates require no configuration edits:
+
+- 3.7.14 changes Kubernetes naming/route precedence and OTLP histogram output;
+  these templates use neither Kubernetes providers nor OTLP metrics.
+- 3.7.15 rejects CONNECT for every HTTP version (501 before routing); ordinary
+  reverse-proxy HTTP/WebSocket routes remain applicable.
+- 3.7.16 changes Kubernetes middleware Secret representations; not used here.
+- 3.7.17 uses Go 1.27: requests over 500 header values get 431 before routing
+  unless `maxHeaderValueCount` is configured. Keep the secure upstream default.
+  Legacy TLS `GODEBUG` switches (`tlsrsakex`, `tls10server`, `tls3des`) no longer
+  work; the shipped systemd unit uses none. Keep the existing explicit
+  per-entrypoint `aliasHeadersStrategy = "delete"` policy where selected;
+  the new global default option does not require a template rewrite.
+
+This is a repository pin change; it supplies no live-host rollout evidence.
+
 ## Legacy full deploy and lifecycle guards
 
 Hosts enrolled in the guarded Traefik transaction workflow
@@ -592,7 +629,7 @@ That historical smoke does not establish dynamic-route recovery.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `"3.7.13"` | the role's default |
+| `version` | `"3.7.17"` | the role's default |
 | `checksum` | required | `sha256:<hex>` of the release archive; the role allows none |
 | `arch` | `None` | `None`: from `uname -m` (`x86_64`, `aarch64`, `armv7l`, `armv6l`) |
 | `letsencrypt_email` | required | the role refuses its `CHANGEME@` placeholder; here a plain address is required |

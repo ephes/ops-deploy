@@ -178,6 +178,7 @@ def test_converged_enrolled_caller_does_not_stage_upload_or_write_journal(tmp_pa
     from tests.test_infra_traefik import converged
 
     cfg = routine.TraefikRoutineConfig(
+        version="3.7.13",
         checksum="sha256:" + "a" * 64,
         letsencrypt_email="fixture@example.com",
         canonical_host="fixture",

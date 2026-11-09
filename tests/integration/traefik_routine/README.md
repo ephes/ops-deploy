@@ -8,8 +8,8 @@ location because the hosted runner's `/usr/local/bin` is writable by its tool us
 The launcher refuses an existing binary; engine path and parent-ownership checks
 remain unchanged. Never run this harness on inventory machines.
 
-The production ordinary API installs3.7.13 and repeats without changes; an owned
-fixture enrollment then exercises3.7.14 update, static configuration change, unit
+The production ordinary API installs 3.7.13 and repeats without changes; an owned
+fixture enrollment then exercises 3.7.14 update, static configuration change, unit
 and owned certificate-list repair, missing-record refusal and full filesystem
 zero repeats. A fixture-only trust anchor and TLS certificate avoid ACME issuance.
 The real loopback nginx backend returns200 and stays enabled with the same PID;

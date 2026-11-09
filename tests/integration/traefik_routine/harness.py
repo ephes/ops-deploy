@@ -313,6 +313,7 @@ def main() -> None:
     journal.mkdir(mode=0o700)
     cfg = import_module("ops_deploy.infra.traefik_routine").TraefikRoutineConfig(
         binary_path=FIXTURE_BINARY,
+        version="3.7.13",
         checksum="sha256:" + OLD_SHA,
         letsencrypt_email="fixture@example.com",
         canonical_host="fixture",

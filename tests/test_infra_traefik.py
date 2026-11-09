@@ -1,5 +1,6 @@
 """``deploy_traefik`` against the fake connector, and parity with the role's templates."""
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ from tests import fakehost
 from tests.fakehost import LINUX
 
 CHECKSUM = "sha256:" + "a" * 64
-CFG = TraefikDeployConfig(checksum=CHECKSUM, letsencrypt_email="ops@example.org")
+CFG = TraefikDeployConfig(version="3.7.13", checksum=CHECKSUM, letsencrypt_email="ops@example.org")
 STATIC = "/etc/traefik/traefik.toml"
 UNIT = "/etc/systemd/system/traefik.service"
 LOGROTATE = "/etc/logrotate.d/traefik"
@@ -417,3 +418,38 @@ def test_certificates_match_the_role() -> None:
 @pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
 def test_logrotate_matches_the_role(cfg: TraefikDeployConfig) -> None:
     assert render_logrotate(cfg) == render_ansible("traefik_deploy__traefik.logrotate.j2", cfg)
+
+
+def test_default_release_upgrades_old_binary_with_verified_checksum() -> None:
+    checksum = "sha256:a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393"
+    cfg = TraefikDeployConfig(checksum=checksum, letsencrypt_email="ops@example.org", arch="amd64")
+    assert cfg.version == "3.7.17"
+    result = ok(converged(cfg), cfg)
+    install = next(command for command in result.executed_commands if "traefik_v3.7.17_linux_amd64.tar.gz" in command)
+    assert "traefik_v3.7.17_linux_amd64.tar.gz" in install
+    assert checksum.removeprefix("sha256:") in install
+    assert "Traefik | Check the installed Traefik is 3.7.17" in result.mutating_changed_ops
+
+
+@pytest.mark.parametrize(
+    ("machine", "arch", "checksum"),
+    [
+        ("x86_64", "amd64", "a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393"),
+        ("aarch64", "arm64", "b06dad2f66ac3481c5695591b7cd3a3eed5e6dbec739889bb01e69cf8e45a0fc"),
+    ],
+)
+def test_smoke_bootstrap_selects_the_verified_patch(machine: str, arch: str, checksum: str) -> None:
+    source = (Path(__file__).parents[1] / "smoke/provision.sh").read_text()
+    # Execute only variable selection, stopping before any provisioning command.
+    selection, marker, _ = source.partition("install -d -m 700 /root/.ssh")
+    assert marker, "smoke bootstrap variable-selection boundary is missing"
+    result = subprocess.run(
+        ["bash", "-s", "--", "synthetic-key"],
+        input=f"uname() {{ echo {machine}; }}\n"
+        + selection
+        + '\nprintf "%s\\n" "$TRAEFIK_VERSION" "$ARCH" "$TRAEFIK_SHA256"\n',
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert result.stdout.splitlines() == ["3.7.17", arch, checksum]
