@@ -30,6 +30,40 @@ RBENV = "07e9b1e297a5977298c6aadc9971ae0e9eb7f0dc"
 NVM = "8db529c5350353f165e1e7f6abb6eb6909f7fd37"
 
 
+def fixture_failure_output(stdout: str, stderr: str) -> str:
+    """Keep bounded tool errors, excluding fixture values and environment dumps."""
+    values = {"a" * 64, "fixture-database-only"}
+    vapid = HOME / "vapid.json"
+    key_metadata_present = vapid.is_file()
+    if key_metadata_present:
+        try:
+            values.update(json.loads(vapid.read_text()).values())
+        except (OSError, ValueError, TypeError, AttributeError):
+            return "tool output withheld: fixture key metadata unavailable"
+    sections = []
+    for label, text in (("stdout", stdout), ("stderr", stderr)):
+        for value in values:
+            if isinstance(value, str) and value:
+                text = text.replace(value, "[redacted fixture value]")
+        safe = []
+        for line in text.splitlines():
+            line = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
+            if not key_metadata_present and not re.match(
+                r"(?:Usage Error:|Syntax Error:|fatal:|error:|(?:➤ )?YN[0-9]{4}:|BUILD FAILED|ruby-build:)", line
+            ):
+                continue
+            if re.search(r"(?:^|\s)(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=", line):
+                continue
+            if re.search(
+                r"authorization|cookie|password|secret|token|private[_-]?key|vapid|otp|encryption", line, re.I
+            ):
+                continue
+            line = re.sub(r"(https?://)[^/@\s]+@", r"\1[redacted]@", line)
+            safe.append(line)
+        sections.append(label + ":\n" + "\n".join(safe)[-2000:])
+    return "\n".join(sections)
+
+
 def command(*args: str, user: bool = False) -> str:
     argv = [
         "runuser",
@@ -47,7 +81,9 @@ def command(*args: str, user: bool = False) -> str:
     result = subprocess.run(argv, text=True, capture_output=True, check=False)
     if result.returncode:
         # Only fixture data; generated key output is never logged on success.
-        raise RuntimeError(f"{args[0]} failed ({result.returncode}): {result.stderr[-3000:]}")
+        raise RuntimeError(
+            f"{args[0]} failed ({result.returncode}):\n" + fixture_failure_output(result.stdout, result.stderr)
+        )
     return result.stdout.strip()
 
 
@@ -610,7 +646,9 @@ def main() -> None:
     command(
         "bash",
         "-c",
-        "cd " + shlex.quote(str(minimal)) + " && npx --yes corepack@0.34.0 yarn install --mode=skip-build",
+        "cd "
+        + shlex.quote(str(minimal))
+        + " && YARN_ENABLE_IMMUTABLE_INSTALLS=false npx --yes corepack@0.34.0 yarn install --mode=skip-build",
         user=True,
     )
     shutil.rmtree(minimal / "node_modules", ignore_errors=True)

@@ -172,3 +172,59 @@ def test_diagnostic_upload_permissions_survive_missing_journal(tmp_path: Path) -
     assert result.returncode == 0, result.stderr
     assert "No service journal" in (evidence / "journal.log").read_text()
     assert stat.S_IMODE(evidence.stat().st_mode) & 0o005 == 0o005
+
+
+def test_tool_failure_retains_usage_stdout_without_environment_or_fixture_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    harness = load_harness()
+    monkeypatch.setattr(harness, "HOME", tmp_path)
+    private_value = "generated-vapid-value-for-test"
+    (tmp_path / "vapid.json").write_text(json.dumps({"vapid_private_key": private_value}))
+    output = harness.fixture_failure_output(
+        "Usage Error: invalid --mode skip-builds\nDB_PASS=fixture-database-only\n" + private_value,
+        "compiler: fatal: build failed\nAuthorization: Bearer ignored\n" + "a" * 64,
+    )
+    assert "Usage Error: invalid --mode skip-builds" in output
+    assert "compiler: fatal: build failed" in output
+    assert "DB_PASS=" not in output
+    assert "Authorization" not in output
+    assert "fixture-database-only" not in output
+    assert private_value not in output
+    assert "a" * 64 not in output
+
+
+def test_tool_failure_output_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    harness = load_harness()
+    monkeypatch.setattr(harness, "HOME", tmp_path)
+    output = harness.fixture_failure_output("Usage Error: " + "x" * 10000, "error: " + "y" * 10000)
+    assert len(output) <= 4020
+
+
+def test_tool_failure_missing_or_bad_key_metadata_preserves_original_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    harness = load_harness()
+    monkeypatch.setattr(harness, "HOME", tmp_path)
+    monkeypatch.setattr(
+        harness.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=17,
+            stdout="Usage Error: public CLI diagnostic\nunknown payload withheld",
+            stderr="DB_PASS=fixture-database-only",
+        ),
+    )
+    with pytest.raises(RuntimeError, match=r"fixture-tool failed \(17\)") as missing:
+        harness.command("fixture-tool")
+    assert "public CLI diagnostic" in str(missing.value)
+    assert "unknown payload" not in str(missing.value)
+    assert "DB_PASS=" not in str(missing.value)
+    (tmp_path / "vapid.json").write_text("malformed key metadata")
+    with pytest.raises(RuntimeError, match=r"fixture-tool failed \(17\)") as malformed:
+        harness.command("fixture-tool")
+    assert "withheld" in str(malformed.value)
