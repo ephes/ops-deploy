@@ -139,6 +139,149 @@ earlier removal plans only these leftovers. Root, top-level or traversing
 `mongodb_state_dirs` are refused like the other paths. The `mongodb` system
 account and the MongoDB apt repository stay, as with the role.
 
+## Backup and restore
+
+`deploy_unifi_backup(UnifiBackupConfig(host_name=...), secrets)` and
+`deploy_unifi_restore(UnifiRestoreConfig(host_name=..., ...), secrets)` port
+the `unifi_backup` and `unifi_restore` roles (automated method). Every field
+is the roles' variable with its default (`root` `/opt/backups/unifi`,
+`prefix` `manual`, `data_path` `/usr/lib/unifi/data` with `db`,
+`autobackup`, `system.properties` and `keystore` below it, unit, JVM argument
+file and route at the deploy's paths, `stop_pause` 10 s, the roles' retries).
+`secrets` is the playbooks' service secret: `mongodb_password` (required for
+a backup and a confirmed restore), `mongodb_username` (default `unifi`),
+`mongodb_auth_db` (`admin`) and `mongodb_database` (`unifi`).
+
+```python
+from ops_deploy.services.unifi import (
+    UnifiBackupConfig,
+    UnifiRestoreConfig,
+    deploy_unifi_backup,
+    deploy_unifi_restore,
+)
+
+deploy_unifi_backup(
+    UnifiBackupConfig(host_name="macmini", required_mount="/opt/backups", retain_count=3, retain_days=14), secrets
+)
+deploy_unifi_restore(UnifiRestoreConfig(host_name="macmini", dry_run=True, archive="manual-20261109T120000"), secrets)
+deploy_unifi_restore(UnifiRestoreConfig(host_name="macmini", confirm=True, archive="manual-20261109T120000"), secrets)
+```
+
+**Layout.** A backup is `<root>/<prefix>-<YYYYmmddTHHMMSS>/` (the host's local
+time, the role's `iso8601_basic_short`) with `database/<db>/` (the
+`mongodump`), `data/` (the data directory without `db/*`), `autobackups/`
+(`*.unf` younger than seven days), `logs/` (only with `include_logs`),
+`config/` (`system.properties`, `keystore`, `unifi.env` with `include_env`),
+`systemd/` (`unifi.service`, `mongodb.jvmargs`), `traefik/unifi.yml`,
+`metadata.yml` (the role's keys, `to_nice_yaml` form) and `manifest.sha256`
+(`sha256sum` format over every file), packed as `<dir>.tar.gz` with the
+directory as its only top-level entry. The root and the backup's directories
+are `root 0700`, the files it writes and the archive `0600`; `data/` keeps
+its modes (`rsync -a`). Either tool restores the other's archives and
+snapshot directories (`tests/test_unifi_lifecycle.py` checks both
+directions). With `fetch_local` the archive is copied to
+`~/backups/unifi` on the controller (`0700` directory, `0600` file).
+
+**Backup order.** The roles' checks (data and `db` directories present, the
+included optional files present), the tools present, every archive in the
+root tightened to `0600`, the disk check (data size times
+`disk_overhead_ratio`), the `mongodump` while UniFi runs, then UniFi stopped
+for the file copy (only when it was running) and started again whatever the
+copy did, `metadata.yml`, `manifest.sha256` and the archive (written aside
+and renamed, so a failed run never leaves a partial archive for `latest`).
+`required_mount` keeps the root on a mounted disk and `retain_count` /
+`retain_days` prune the snapshots this port wrote
+([local backups](../concepts/local-backups.md)).
+
+**Restore.** Without `confirm` (and without `dry_run`) the restore fails
+before any host probe: it replaces a protected service's database and data.
+`archive` is `latest` (the newest `*.tar.gz` directly in the root), a name
+directly below the root (a snapshot directory, an archive, or an archive
+without `.tar.gz`) or an absolute path below the root; links and hidden
+names are refused. An archive is unpacked into a fresh scratch directory
+below `work_dir` after its members are checked (no absolute or `..` names,
+no links leaving the archive, no devices, exactly one top-level directory)
+and removed afterwards. Validation is the role's: `metadata.yml` present,
+`manifest.sha256` checked, the UniFi major version equal to the installed
+one.
+
+A **dry run** (`dry_run=True`) needs neither `confirm` nor the password: it
+resolves, unpacks and validates the artifact, checks that the tools a
+restore needs are present, prints the plan (artifact, backup and installed
+version, checksums, the service state, what happens to the database, data,
+unit, JVM argument file and route, the safety backup) and removes the
+scratch directory. UniFi, MongoDB, the data directory, unit and route are
+not touched; it only reads `systemctl show`, `dpkg-query` and the MongoDB
+port.
+
+A **confirmed restore** refuses before any change when the unit is not
+installed, the backup has no `data/`, or MongoDB is unreachable while the
+backup holds a dump. It then takes the safety backup
+(`<root>/pre-restore-<stamp>/`, no archive), stops UniFi, drops the database
+and `mongorestore`s the dump (when the backup has one), syncs `data/` into
+the data directory (`rsync -a --delete`, the files in `db/` directories kept), sets the data owner to
+`unifi:unifi`, restores the unit (`root 0644`), the JVM argument file
+(`root:unifi 0640`, its default directory `root:unifi 0750`) and the route
+(behind the Traefik transaction guard), reloads systemd, starts UniFi and
+verifies it (active, a `mongodump` of the database to `/dev/null`, the web
+interface answering 200/302/303). When restoring or verifying fails it rolls
+back from the safety backup (database, data, system files, start, verify)
+and keeps the safety backup; after a success the safety backup is removed.
+
+**Fresh installation.** On a controller deployed without data (no data
+directory, no database yet) the safety backup reports each missing part as
+"nothing to snapshot" instead of failing, and a rollback leaves those parts
+as restored. MongoDB must still be reachable for the safety backup.
+
+**Secrets.** The MongoDB credentials travel in the program's stdin payload
+and never reach a command line, an environment or a log. `mongodump` and
+`mongorestore` read them from a `--config` file (`0600` in a private `0700`
+directory below `credentials_dir`, `/run`, removed afterwards); `mongosh`
+reads its drop script, password included, on stdin with a private `HOME`
+(logging and telemetry off). Tool output is shown with the password replaced
+by `********`.
+
+**Deliberate differences from the roles.**
+
+- Credentials: the roles pass `--username`/`--password` on the tools'
+  command lines (hidden from Ansible's log only); the port uses the config
+  file and stdin above.
+- A failing `mongodump`, or MongoDB unreachable while UniFi runs, fails the
+  backup before UniFi is stopped; the roles warn and write a file-only
+  backup. A stopped controller is backed up without a dump in both, with a
+  warning.
+- The roles install their packages (MongoDB tools, rsync, tar); the port
+  installs nothing and refuses, before any change, when `systemctl`,
+  `rsync`, `tar`, `mongodump`, `mongorestore`, `mongosh` or `curl` is
+  missing where the run needs it (also in a dry run).
+- Archives are `tar.gz` only (`archive_format: tar.zst` is not ported); a
+  backup never writes into an existing snapshot directory.
+- The restore's and the rollback's data sync keep the files of the live
+  `db/` directories (`--exclude=db/*`, the backup's own exclude); the role's
+  `rsync --delete` would delete those files, which a backup never contains.
+- A failed backup removes its half-written snapshot directory (it can hold
+  the dump and the JVM argument file); the role leaves it behind.
+- The pre-restore safety backup works on a fresh installation (above); the
+  role's backup fails there on the missing data or `db` directory. The port
+  names its safety backup directly instead of finding the newest
+  `pre-restore-*`.
+- The restore needs `confirm`; its dry run needs no password and changes
+  nothing (the role's dry run still installs packages and resets its
+  staging directory). Artifacts must lie below the root; archive members are
+  checked before extraction; each run unpacks into its own scratch directory
+  below `work_dir` instead of resetting `/tmp/unifi-restore`.
+- The `manual-unf-prep` method (copy a `.unf` for the web UI) is not ported;
+  extract it from `autobackups/` by hand.
+- Unit, JVM argument file and route go to the configured paths (the role
+  hardcodes the unit and route paths), written aside and renamed; the route
+  waits for the Traefik transaction guard. An archived unit that still
+  carries an inline MongoDB URI (the layout before the argument file) is not
+  restored: `just deploy-one unifi` manages the unit.
+- Preconditions (unit installed, `data/` in the backup, MongoDB reachable)
+  are checked before the safety backup instead of failing midway.
+- The health check uses `https://127.0.0.1:8443/` (the role's `localhost`)
+  and the MongoDB check dumps to `/dev/null` instead of a file in `/tmp`.
+
 ## Shared configuration
 
 Role templates remain byte-identical to ops-library: custom systemd unit,
