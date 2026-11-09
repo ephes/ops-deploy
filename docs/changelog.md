@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
+  the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
+  no release assets or checksum manifest for this Git-based installation.
+
 - `services.vaultwarden`/`services.snappymail` parity: ops-library da310974
   gives `vaultwarden_deploy` the `vaultwarden_traefik_ip_allowlist` and
   `snappymail_deploy`/`snappymail_shared` SnappyMail 3.0.0, the
