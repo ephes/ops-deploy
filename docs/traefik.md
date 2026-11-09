@@ -732,7 +732,11 @@ and reload systemd when present; remove the binary and static configuration;
 remove dynamic/ACME directories unless preserved; remove a configuration root
 with only hidden entries (never `/etc`); remove logs/logrotate, the selected UFW
 allow rules, and non-hidden `/tmp/traefik*` entries. Custom paths and ports remain
-literal. Unknown required metadata refuses before mutation. A converged removal
+literal. `service_name` follows the role's literal `<service_name>.service`
+unit-file path while systemctl normalizes control; use a bare name, as the
+original defaults do, to avoid a doubled suffix. Relative archive names cannot
+traverse above their root; explicit absolute archive paths remain supported.
+Unknown required metadata refuses before mutation. A converged removal
 performs no managed commands. The private ordinary wrapper has the original
 **different** defaults: force complete and preserve neither; keep flags require
 `--standard` to clear force. This distinction does not change the public defaults.

@@ -107,6 +107,13 @@ class TraefikRestoreConfig(MountGuard):
     # Transaction-managed hosts are refused, as by the role.
     transaction_required: bool = False
 
+    @field_validator("archive")
+    @classmethod
+    def bounded_archive(cls, value: str) -> str:
+        if not value.startswith("/") and ".." in PurePosixPath(value).parts:
+            raise ValueError("Relative archive names must stay below the backup root")
+        return value
+
     @field_validator("root", "staging_dir", "acme_path", "acme_dir")
     @classmethod
     def canonical_path(cls, value: str | None) -> str | None:
@@ -303,7 +310,11 @@ def deploy_traefik_restore(cfg: TraefikRestoreConfig) -> None:
     refuse_managed(cfg.transaction_required, "traefik_restore")
     if (
         cfg.required_mount
-        and probe(mount_check(cfg.required_mount, cfg.staging_dir), name="Traefik restore required mount") is None
+        and probe(
+            shlex.join(["bash", "-c", mount_check(cfg.required_mount, cfg.staging_dir)]),
+            name="Traefik restore required mount",
+        )
+        is None
     ):
         raise DeployError("traefik_restore: required restore mount is unavailable")
 

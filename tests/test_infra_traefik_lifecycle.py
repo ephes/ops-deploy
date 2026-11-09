@@ -292,3 +292,58 @@ def test_removal_refuses_transaction_managed_hosts(enrolled: bool) -> None:
 
     assert "guarded Traefik transaction workflow" in str(result.error)
     assert result.executed_commands == []
+
+
+def test_optional_restore_mount_is_checked_with_bash_before_archive_validation() -> None:
+    from ops_deploy.services._lifecycle.local_backup import mount_check
+
+    cfg = TraefikRestoreConfig(required_mount="/owned-mount", staging_dir="/owned-mount/stage", dry_run=True)
+    assert cfg.required_mount is not None
+    command = shlex.join(["bash", "-c", mount_check(cfg.required_mount, cfg.staging_dir)])
+    result = restore(cfg, {**LATEST, command: ["mounted"]})
+    assert result.succeeded, result.error
+    assert not result.uploads
+    assert all(op.read_only for op in result.ops)
+    assert any(command in event.value for event in result.events if event.kind == "fact")
+    refused = restore(cfg, {**LATEST, command: ["ops-deploy-probe-failed"]})
+    assert not refused.succeeded
+    assert "required restore mount is unavailable" in str(refused.error)
+    assert not refused.executed_commands
+    assert not refused.uploads
+
+
+@pytest.mark.parametrize("archive", ["../elsewhere.tar.gz", "child/../../elsewhere.zip"])
+def test_relative_restore_archive_must_stay_below_root(archive: str) -> None:
+    with pytest.raises(ValueError, match="below the backup root"):
+        TraefikRestoreConfig(archive=archive)
+
+
+@pytest.mark.parametrize(
+    "path", ["/usr/local/bin", "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/etc/systemd", "/etc/systemd/system"]
+)
+def test_traefik_remove_refuses_shared_executable_and_unit_roots(path: str) -> None:
+    with pytest.raises(ValueError, match="declared Traefik resource"):
+        TraefikRemoveConfig(confirm=True, binary_path=path)
+
+
+def test_service_name_keeps_original_literal_unit_file_suffix_contract() -> None:
+    # Original role writes {{ traefik_service_name }}.service literally even
+    # when an operator supplied an existing suffix; systemctl normalizes control.
+    cfg = TraefikRemoveConfig(confirm=True, service_name="custom.service")
+    result = remove(
+        cfg,
+        {
+            "cat /proc/1/comm": ["systemd"],
+            "for unit in custom.service": [
+                "Id=custom.service",
+                "LoadState=loaded",
+                "ActiveState=active",
+                "UnitFileState=enabled",
+                "---",
+            ],
+            **fakehost.file("/etc/systemd/system/custom.service.service", "owned unit"),
+        },
+    )
+    assert result.succeeded, result.error
+    assert "systemctl stop custom.service || true" in result.executed_commands
+    assert "rm -f /etc/systemd/system/custom.service.service" in result.executed_commands

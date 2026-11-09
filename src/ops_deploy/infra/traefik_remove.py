@@ -56,7 +56,22 @@ class TraefikRemoveConfig(RoleConfig):
             value = getattr(self, name)
             if value is not None:
                 path = PurePosixPath(value)
-                roots = {"/", "/usr", "/var", "/tmp", "/var/log", "/var/lib", "/usr/local"}
+                roots = {
+                    "/",
+                    "/usr",
+                    "/var",
+                    "/tmp",
+                    "/var/log",
+                    "/var/lib",
+                    "/usr/local",
+                    "/usr/local/bin",
+                    "/usr/bin",
+                    "/bin",
+                    "/sbin",
+                    "/usr/sbin",
+                    "/etc/systemd",
+                    "/etc/systemd/system",
+                }
                 if name != "config_dir":
                     roots.add("/etc")
                 if ".." in path.parts or path.as_posix() in roots:
