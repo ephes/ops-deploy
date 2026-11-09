@@ -29,6 +29,18 @@
   at that step (the directory lock, unit and restart had applied). The
   real-tree test now starts in a directory the user cannot enter.
 
+- `services.daybook_operations_api`: a `validate_only` restore no longer needs
+  `confirmed` and `clients_quiesced`. It runs only Daybook's `lifecycle.py
+  validate` (the archive is unpacked into a temporary directory below the
+  backup root, its manifest checked, the directory removed) and changes no unit,
+  so the confirmations, which guard the stop and the restore, do not apply. It
+  still needs the archive's absolute path and refuses anything else before any
+  command (new message: "Name the archive by its absolute path to validate
+  it"); the step is now "Validate the archive (no service change)". A real
+  restore keeps all three guards. ops-control's `just restore-check
+  daybook_operations_api ABSOLUTE_ARCHIVE` uses this once its pin moves past
+  this change.
+
 - `services.unifi`: keep the controller logs private. UniFi 9.5 writes its
   MongoDB connection URI with the password to `/var/log/unifi/server.log` on
   every start, and the directory and its files were world-readable. The unit
