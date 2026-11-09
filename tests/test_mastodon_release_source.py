@@ -255,3 +255,7 @@ def test_propshaft_legacy_string_and_malformed_object_entries(tmp_path: Path, en
     (assets / "app-hash.css").write_text("body {}")
     (assets / ".manifest.json").write_text(json.dumps({"app.css": entry}))
     assert module.assets_output({"site_path": str(site)}) is expected
+
+
+def test_nvm_default_uses_security_release() -> None:
+    assert release_config().nvm_version == "v0.41.0"

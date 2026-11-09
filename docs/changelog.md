@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
+  the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
+  no release assets or checksum manifest for this Git-based installation.
+
 - `services.unifi`: the tightening of existing log entries runs from `/`
   (`cd / && runuser -u unifi -- find ...`). From pyinfra's working directory
   `/root`, which `unifi` cannot enter, GNU find failed to return to its

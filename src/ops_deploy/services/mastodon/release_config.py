@@ -32,7 +32,7 @@ class MastodonReleaseConfig(MastodonConfig):
     ruby_configure_opts: str = "-with-jemalloc"
     nvm_dir: Path_ = "/home/mastodon/.nvm"
     nvm_repo: str = "https://github.com/nvm-sh/nvm.git"
-    nvm_version: str = "v0.40.8"
+    nvm_version: str = "v0.41.0"
     bundle_install: bool = True
     bundle_path: Path_ = "/home/mastodon/live/vendor/bundle"
     bundle_without: str = "development test"
