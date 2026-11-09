@@ -21,7 +21,15 @@ from pyinfra.api import Config
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.unifi import UnifiConfig, deploy_unifi
-from ops_deploy.services.unifi.deploy import FIREWALL_RULES, PREFLIGHT_COMMAND, payload
+from ops_deploy.services.unifi.deploy import (
+    FIREWALL_RULES,
+    LOG_DIR,
+    LOOSE_LOGS_PROBE,
+    PREFLIGHT_COMMAND,
+    PRIVATE_LOGS_CHECK,
+    TIGHTEN_LOGS,
+    payload,
+)
 from ops_deploy.services.unifi.render import render_template, role_vars
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
@@ -38,6 +46,9 @@ SECRETS = SecretValues(SecretRef("secrets/test.yml"), {"mongodb_password": SENTI
 ARGS = "/etc/unifi-secrets/mongodb.jvmargs"
 UNIT = "/etc/systemd/system/unifi.service"
 ROUTE = "/etc/traefik/dynamic/unifi.yml"
+# Fact matching uses substrings: this one is only in the loose-log probe.
+LOOSE_PROBE_KEY = "-print -quit ) ||"
+TIGHTEN_NAME = "Converge existing UniFi | Remove group write and other access from existing UniFi logs"
 
 
 def host_module() -> ModuleType:
@@ -75,8 +86,10 @@ def converged(**overrides: Any) -> dict[str, Any]:
             "/etc/cron.daily/mongodb-log-check", render_template(CFG, "mongodb-log-check.sh.j2"), mode="-rwxr-xr-x"
         ),
         **fakehost.service("unifi.service"),
+        LOOSE_PROBE_KEY: [],
     }
     facts.update(fakehost.stat("/etc/unifi-secrets", group="unifi", mode="drwxr-x---"))
+    facts.update(fakehost.stat(LOG_DIR, user="unifi", group="unifi", mode="drwxr-x---"))
     return {**overrides, **{key: value for key, value in facts.items() if key not in overrides}}
 
 
@@ -86,6 +99,124 @@ def test_converged_controller_has_zero_mutating_operations() -> None:
     assert run.mutating_changed_ops == []
     assert run.uploads == []
     assert not any(command.startswith("systemctl") and "mongod" in command for command in run.executed_commands)
+
+
+def test_open_log_directory_is_locked_without_restart() -> None:
+    run = run_deploy_fake(
+        deploy_unifi,
+        CFG,
+        SECRETS,
+        responses=converged(**fakehost.stat(LOG_DIR, user="unifi", group="unifi", mode="drwxr-xr-x")),
+    )
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == ["Converge existing UniFi | Lock UniFi log directory"]
+    assert f"chmod 750 {LOG_DIR}" in run.executed_commands
+    assert not any(command.startswith("systemctl restart") for command in run.executed_commands)
+    assert TIGHTEN_LOGS not in run.executed_commands
+
+
+@pytest.mark.parametrize("probe_answer", [[f"{LOG_DIR}/server.log"], ["ops-deploy-probe-failed"]])
+def test_existing_open_log_files_are_tightened_as_the_service_user(probe_answer: list[str]) -> None:
+    run = run_deploy_fake(deploy_unifi, CFG, SECRETS, responses=converged(**{LOOSE_PROBE_KEY: probe_answer}))
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == [TIGHTEN_NAME]
+    assert TIGHTEN_LOGS in run.executed_commands
+    assert not any(command.startswith("systemctl restart") for command in run.executed_commands)
+    # After the rollout (files the previous process wrote), before the final check.
+    names = [op.name.split(" | ", 1)[1] for op in run.ops]
+    tighten = names.index(TIGHTEN_NAME.split(" | ", 1)[1])
+    assert names.index("Restart unifi.service") < tighten < names.index("Probe again: UniFi logs private")
+
+
+def test_log_commands_never_follow_links_or_widen_modes() -> None:
+    probe = shlex.split(LOOSE_LOGS_PROBE.split("|| ", 1)[1])
+    assert LOOSE_LOGS_PROBE.startswith(f"test ! -d {LOG_DIR} || ")
+    assert probe[:5] == ["find", LOG_DIR, "-xdev", "-mindepth", "1"]
+    assert "-L" not in probe
+    assert "-follow" not in probe
+    # Directories wider than 0750, files wider than 0640.
+    assert probe[probe.index("d") + 2] == "/0027"
+    assert probe[probe.index("f") + 2] == "/0137"
+    tighten = shlex.split(TIGHTEN_LOGS)
+    assert tighten[:4] == ["runuser", "-u", "unifi", "--"]
+    assert "-L" not in tighten
+    assert "-follow" not in tighten
+    modes = [tighten[i + 1] for i, word in enumerate(tighten) if word == "chmod"]
+    assert modes == ["g-w,o-rwx", "u-x,g-wx,o-rwx"]
+    assert all("+" not in mode for mode in modes)
+    assert PRIVATE_LOGS_CHECK.startswith(f'[ "$(stat -c %a:%U:%G {LOG_DIR})" = 750:unifi:unifi ]')
+    assert LOOSE_LOGS_PROBE in PRIVATE_LOGS_CHECK
+
+
+def test_log_commands_on_a_real_tree(tmp_path: Path) -> None:
+    """The probe's ``find`` selects exactly the entries that are too open."""
+
+    if shutil.which("find") is None or subprocess.run(["find", "--version"], capture_output=True).returncode:
+        pytest.skip("GNU find required")
+    root = tmp_path / "logs"
+    (root / "remote").mkdir(parents=True)
+    entries = {
+        "server.log": 0o644,
+        "mongod.log": 0o600,
+        "private.log": 0o640,
+        "group-writable.log": 0o660,
+        "executable.log": 0o740,
+        "remote/device.log": 0o644,
+    }
+    for name, mode in entries.items():
+        (root / name).write_text("x")
+        (root / name).chmod(mode)
+    (root / "remote").chmod(0o755)
+    (root / "link").symlink_to(tmp_path / "outside")
+    probe = shlex.split(LOOSE_LOGS_PROBE.split("|| ", 1)[1].replace(LOG_DIR, str(root)))
+    probe.remove("-quit")
+    found = {Path(line).relative_to(root).as_posix() for line in subprocess.check_output(probe, text=True).split()}
+    assert found == {"server.log", "group-writable.log", "executable.log", "remote", "remote/device.log"}
+    tighten = shlex.split(TIGHTEN_LOGS.replace(LOG_DIR, str(root)))[4:]
+    subprocess.run(tighten, check=True)
+    assert subprocess.check_output(probe, text=True) == ""
+    modes = {name: (root / name).stat().st_mode & 0o777 for name in [*entries, "remote"]}
+    assert modes == {
+        "server.log": 0o640,
+        "mongod.log": 0o600,
+        "private.log": 0o640,
+        "group-writable.log": 0o640,
+        "executable.log": 0o640,
+        "remote/device.log": 0o640,
+        "remote": 0o750,
+    }
+
+
+@pytest.mark.parametrize(
+    ("stat_answer", "find_status", "find_output", "expected"),
+    [
+        ("750:unifi:unifi", 0, "", ("private", 0)),
+        ("750:unifi:unifi", 0, f"{LOG_DIR}/server.log", ("", 1)),
+        ("750:unifi:unifi", 1, "", ("", 1)),
+        ("755:unifi:unifi", 0, "", ("", 1)),
+    ],
+)
+def test_final_log_check_fails_closed(
+    tmp_path: Path, stat_answer: str, find_status: int, find_output: str, expected: tuple[str, int]
+) -> None:
+    """The final check prints ``private`` only for a 0750 directory and a find that succeeded with no output."""
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "stat").write_text(f"#!/bin/sh\necho {stat_answer}\n")
+    (bin_dir / "find").write_text(f"#!/bin/sh\nprintf '%s' '{find_output}'\nexit {find_status}\n")
+    for tool in ("stat", "find"):
+        (bin_dir / tool).chmod(0o755)
+    script = PRIVATE_LOGS_CHECK.replace(f"test ! -d {LOG_DIR} || ", "")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    result = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env)
+    assert (result.stdout.strip(), result.returncode) == expected
+
+
+def test_unit_creates_private_logs() -> None:
+    unit = render_template(CFG, "unifi.service.j2")
+    service = unit.split("[Service]\n", 1)[1].split("\n[", 1)[0]
+    assert "UMask=0027" in service.splitlines()
 
 
 def test_route_drift_only_writes_route_and_does_not_restart() -> None:

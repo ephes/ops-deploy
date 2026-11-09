@@ -149,6 +149,26 @@ unit environment variables or logs. MongoDB passwords must be nonempty,
 non-placeholder URI-unreserved text (`A-Z a-z 0-9 . _ ~ -`); HA passwords
 must be nonempty and non-placeholder.
 
+### Private logs
+
+UniFi 9.5 writes its MongoDB connection URI, password included, to
+`server.log` on every start, so its logs must not be readable by other
+users. The controller logs through logback, which has no file-permission
+setting: new files get the process umask. The shared unit therefore sets
+`UMask=0027` (new files 0640, new directories 0750; the vendor's own
+`postinst` uses the same umask). The deploy locks the vendor log directory
+`/var/log/unifi` (`/usr/lib/unifi/logs` links to it) to `unifi:unifi 0750`
+before the rollout. After the rollout, if a plan-time probe found an entry
+that is too open (or the probe failed), it removes group write and other
+access from existing entries: directories at most 0750, files at most 0640.
+That `find`/`chmod` runs as `unifi` (`runuser`), which owns the directory and
+its files, so a symlink swapped in after `find` cannot redirect a root
+`chmod`; symlinks are never followed and ownership is not changed. A
+root-owned entry that is too open fails that step. A final read-only probe
+requires `750 unifi:unifi` and no entry readable by others. Adding the
+`UMask` changes the unit, so the first deploy with it restarts the
+controller.
+
 The unit/argfile and package changes trigger controller rollout. Pending unit
 reload/restart state is recovered after an interrupted run. The local
 self-signed HTTPS `/status` endpoint must return 200 with JSON `meta.rc=ok` and
@@ -183,7 +203,7 @@ HA identity/privilege reconciliation and secret-safe failures. The manual
 `UniFi routine integration` workflow selects an immutable implementation SHA
 on a disposable GitHub Ubuntu x86 VM. Its harness provisions authenticated MongoDB 8, then uses the production API to install
 Java 17 and UniFi 9.4.19 with a zero-mutation repeat, before exercising the selected 9.5.21 package update,
-startup, true zero-mutation repeats, Mongo/HA drift repair and refusal paths.
+startup, true zero-mutation repeats, private logs (`/var/log/unifi` 0750, no entry readable by others) after each repeat, Mongo/HA drift repair and refusal paths.
 The workflow result, not merely the presence of the harness, is qualification
 evidence. Live host qualification and dispatcher routing are recorded by the
 private control plane.

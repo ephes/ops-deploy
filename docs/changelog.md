@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services.unifi`: keep the controller logs private. UniFi 9.5 writes its
+  MongoDB connection URI with the password to `/var/log/unifi/server.log` on
+  every start, and the directory and its files were world-readable. The unit
+  template (byte-identical to ops-library's `unifi_deploy`) sets
+  `UMask=0027`; the deploy locks `/var/log/unifi` to `unifi:unifi 0750` and,
+  when a probe finds entries readable by others, tightens existing
+  directories to at most 0750 and files to at most 0640 as the `unifi` user
+  (no symlinks followed), then verifies the result. The first deploy with
+  the new unit restarts the controller. See
+  [Private logs](services/unifi.md#private-logs).
+
 - Retire Open WebUI: it was removed from macmini on 2026-11-05 and stays
   removed (owner decision 2026-11-09). Removed `ops_deploy.services.open_webui`
   (`deploy_open_webui`, `deploy_open_webui_remove`, the shipped open-webui
