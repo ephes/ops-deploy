@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Owns one disposable GitHub-hosted Ubuntu 24.04 x86 VM. Never run against inventory.
-# Everything is synthetic: a LUKS loop file, its passphrase, the Open WebUI admin
-# and the basic auth password are generated here and never leave the VM.
+# Everything is synthetic: the LUKS loop files and their passphrase are generated
+# here and never leave the VM.
 set -euo pipefail
 [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]]
 [[ $(id -u) == 0 && $(ps -p 1 -o comm=) == systemd && $(uname -m) == x86_64 ]]
@@ -9,18 +9,10 @@ set -euo pipefail
 [[ $ID == ubuntu && $VERSION_ID == 24.04 ]]
 [[ ${IMPLEMENTATION_SHA:?} =~ ^[0-9a-f]{40}$ && ${HARNESS_SHA:?} =~ ^[0-9a-f]{40}$ ]]
 [[ ${GITHUB_RUN_ID:?} =~ ^[0-9]+$ ]]
-if id openwebui >/dev/null 2>&1; then
-  echo "Refusing an existing openwebui account" >&2
-  exit 1
-fi
-[[ ! -e /mnt/cryptdata && ! -e /opt/open-webui && ! -e /dev/mapper/cryptdata && ! -e /root/.luks-key-cryptdata ]]
-[[ ! -e /etc/systemd/system/open-webui.service && ! -e /etc/traefik && ! -e /var/tmp/linuxev-owned-vm.json ]]
+[[ ! -e /mnt/cryptdata && ! -e /dev/mapper/cryptdata && ! -e /root/.luks-key-cryptdata ]]
+[[ ! -e /var/tmp/linuxev-owned-vm.json ]]
 if grep -q cryptdata /etc/crypttab /etc/fstab 2>/dev/null; then
   echo "Refusing a VM that already records cryptdata" >&2
-  exit 1
-fi
-if ss -Hltn 'sport = :3000' | grep -q .; then
-  echo "Refusing a VM with a listener on port 3000" >&2
   exit 1
 fi
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -74,11 +66,6 @@ apt-get update
 apt-get install -y --no-install-recommends strace fish e2fsprogs util-linux curl ca-certificates cryptsetup-bin
 fish -c true
 modprobe dm_crypt || true
-# Room for the Open WebUI wheels (torch and the CUDA libraries) on the root filesystem.
-avail=$(df --output=avail -B1G / | tail -n 1 | tr -d ' ')
-if (( avail < 30 )); then
-  rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-fi
 df -h / > "$EVIDENCE/disk.txt"
 {
   echo "kernel=$(uname -r)"

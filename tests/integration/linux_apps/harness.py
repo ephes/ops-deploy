@@ -1,13 +1,12 @@
-"""Owned native qualification of encrypted_volume and open_webui, never inventory traffic.
+"""Owned native qualification of encrypted_volume, never inventory traffic.
 
 Runs as root on a disposable GitHub-hosted Ubuntu 24.04 x86 VM (see run.sh) with
 the immutable installed ops-deploy package. Every secret is generated here.
 Phases: encrypted_volume fresh / repeat / closed->open / restored lines / option
 change (remount) / keyfile drift / eight refusals / recovery / Ansible role after
-pyinfra; open_webui fresh / repeat / environment and route updates / Ansible
-route rotation / foreign port, unmounted volume, broken venv, other Python and
-missing package faults with recovery / final repeats. Repeats and refusals run
-every command under strace and fail on any write.
+pyinfra. Repeats and refusals run every command under strace and fail on any
+write. (The open_webui phases went with ops_deploy.services.open_webui when
+Open WebUI was retired on 2026-11-09.)
 """
 
 from __future__ import annotations
@@ -23,8 +22,6 @@ import sys
 import tarfile
 import time
 import traceback
-import urllib.error
-import urllib.request
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -35,16 +32,9 @@ WORK = Path("/var/tmp/linuxev")
 MOUNT = "/mnt/cryptdata"
 KEYFILE = "/root/.luks-key-cryptdata"
 PASSPHRASE = secrets.token_hex(24)
-BASIC = [secrets.token_hex(16), secrets.token_hex(16)]
-ADMIN = {"name": "Fixture Admin", "email": "admin@fixture.test", "password": secrets.token_urlsafe(18)}
 UNRELATED_CRYPTTAB = "fixture-unrelated UUID=00000000-0000-4000-8000-000000000000 none luks,noauto\n"
 OPS_LIBRARY_SHA = "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641"
 ANSIBLE_PACKAGE = "ansible==14.5.0"
-SITE = "/opt/open-webui"
-VENV = f"{SITE}/.venv"
-SECRET_KEY = f"{SITE}/.webui_secret_key"
-DATA = f"{MOUNT}/open-webui/data"
-ROUTE = "/etc/traefik/dynamic/open-webui.yml"
 SUMMARY: dict[str, Any] = {"phases": []}
 
 
@@ -89,40 +79,6 @@ def ev_snapshot() -> dict[str, Any]:
         "mountinfo": mountinfo(),
         "mapper": os.path.exists("/dev/mapper/cryptdata"),
     }
-
-
-def ow_snapshot() -> dict[str, Any]:
-    dist = next(iter(sorted(Path(VENV).glob("lib/python3.11/site-packages/open_webui-*.dist-info"))), None)
-    paths = [
-        f"{SITE}/open-webui.env",
-        "/etc/systemd/system/open-webui.service",
-        ROUTE,
-        f"{SITE}/.python-security-constraints.txt",
-        SECRET_KEY,
-        f"{VENV}/pyvenv.cfg",
-        f"{VENV}/bin/python",
-        str(dist) if dist else f"{VENV}/missing-dist-info",
-        "/home/openwebui",
-        SITE,
-        DATA,
-        "/var/log/open-webui",
-        "/usr/local/bin/uv",
-    ]
-    db = Path(DATA) / "webui.db"
-    states = {path: file_state(path) for path in paths}
-    data = states[DATA]
-    if data is not None:
-        # The running service creates entries below its data directory at any time.
-        data[5] = None
-    return {
-        **states,
-        "webui.db inode": db.stat().st_ino if db.exists() else None,
-        **ev_snapshot(),
-    }
-
-
-def main_pid() -> str:
-    return sh("systemctl", "show", "open-webui.service", "-p", "MainPID", "--value", check=False)
 
 
 WRITE_SYSCALL = re.compile(
@@ -174,7 +130,7 @@ def run_deploy(
     zero: bool = False,
     trace: bool = False,
     error: str | None = None,
-    snapshot: Any = ow_snapshot,
+    snapshot: Any = ev_snapshot,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run one deploy on @local. ``zero``: every command traced, no write, no mutation, nothing changed."""
@@ -189,7 +145,6 @@ def run_deploy(
     from ops_deploy.testing.harness import collect_ops
 
     before = snapshot()
-    pid = main_pid()
     original = LocalConnector.run_shell_command
     counter = 0
     traces: list[str] = []
@@ -240,14 +195,11 @@ def run_deploy(
         "mutations": [o.name for o in ops if o.changed and not o.read_only],
         "failed": [o.name for o in ops if not o.succeeded],
         "state_unchanged": before == snapshot(),
-        "pid_unchanged": pid == main_pid(),
         "traced_commands": len(traces),
         "trace_writes": writes if (zero or trace) else None,
     }
     record(f"{label}.json", entry)
-    SUMMARY["phases"].append(
-        {k: entry[k] for k in ("label", "seconds", "mutations", "state_unchanged", "pid_unchanged")}
-    )
+    SUMMARY["phases"].append({k: entry[k] for k in ("label", "seconds", "mutations", "state_unchanged")})
     entry["traces"] = traces
     if error is None:
         assert failure is None, entry
@@ -258,7 +210,6 @@ def run_deploy(
     if zero:
         assert not entry["mutations"], entry
         assert entry["state_unchanged"], entry
-        assert entry["pid_unchanged"], entry
         assert not writes, writes
     return entry
 
@@ -558,244 +509,6 @@ def ansible_after_pyinfra(dev: dict[str, str]) -> None:
     ev("ev-pyinfra-after-ansible-repeat", ev_config(dev), zero=True)
 
 
-# -- Open WebUI -------------------------------------------------------------------------------
-
-
-def ow_config(**fields: Any) -> Any:
-    from ops_deploy.services.open_webui import OpenWebUIConfig
-
-    base = {
-        "version": "0.7.2",
-        "python_version": "3.11.14",
-        "ollama_base_url": "http://127.0.0.1:11434",
-        "traefik_host": "open-webui.fixture.test",
-        "data_dir": DATA,
-        "extra_env": {"OFFLINE_MODE": "true", "ENABLE_VERSION_UPDATE_CHECK": "false"},
-        "mounts_required": (MOUNT,),
-    }
-    return OpenWebUIConfig(**{**base, **fields})
-
-
-def ow(label: str, cfg: Any, password: str = BASIC[0], **options: Any) -> dict[str, Any]:
-    from pydantic import SecretStr
-
-    from ops_deploy.helpers import BasicAuth
-    from ops_deploy.services.open_webui import deploy_open_webui
-
-    auth = BasicAuth(user="admin", password=SecretStr(password))
-    return run_deploy(label, deploy_open_webui, cfg=cfg, basic_auth=auth, **options)
-
-
-def api(path: str, payload: dict[str, Any] | None = None, token: str | None = None) -> tuple[int, Any]:
-    request = urllib.request.Request(
-        "http://127.0.0.1:3000" + path,
-        data=json.dumps(payload).encode() if payload is not None else None,
-        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})},
-        method="POST" if payload is not None else "GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status, json.loads(response.read() or b"null")
-    except urllib.error.HTTPError as exc:
-        return exc.code, None
-
-
-def session_valid(token: str) -> bool:
-    status, body = api("/api/v1/auths/", token=token)
-    return status == 200 and isinstance(body, dict) and body.get("email") == ADMIN["email"]
-
-
-def normalised(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()
-
-
-def installed_versus_freeze(cfg: Any) -> dict[str, Any]:
-    from ops_deploy.services.open_webui.deploy import shipped_constraints
-
-    freeze = {}
-    for line in shipped_constraints()[cfg.version].splitlines():
-        if line and not line.startswith("#"):
-            name, _, version = line.partition("==")
-            freeze[normalised(name)] = version
-    code = (
-        "import importlib.metadata as m, json; "
-        "print(json.dumps({d.metadata['Name']: d.version for d in m.distributions()}))"
-    )
-    listing = sh(f"{VENV}/bin/python", "-I", "-B", "-c", code)
-    installed = {normalised(k): v for k, v in json.loads(listing).items()}
-    report = {
-        "installed": len(installed),
-        "freeze": len(freeze),
-        "not_in_freeze": sorted(set(installed) - set(freeze)),
-        "other_version": sorted(k for k in installed if k in freeze and installed[k] != freeze[k]),
-        "freeze_not_installed": sorted(set(freeze) - set(installed)),
-        "python": sh(f"{VENV}/bin/python", "-c", "import platform; print(platform.python_version())"),
-    }
-    record("ow-installed-versus-freeze.json", report)
-    assert not report["not_in_freeze"], report
-    assert not report["other_version"], report
-    assert installed["open-webui"] == "0.7.2"
-    assert report["python"] == "3.11.14"
-    return report
-
-
-def as_openwebui(*argv: str) -> str:
-    return sh("runuser", "-u", "openwebui", "--", "env", "HOME=/home/openwebui", *argv, cwd=SITE)
-
-
-def break_interpreter() -> None:
-    """Point the venv's interpreter link at nothing (a removed managed Python)."""
-
-    os.symlink("/nonexistent/python3.11", f"{VENV}/bin/python.new")
-    os.replace(f"{VENV}/bin/python.new", f"{VENV}/bin/python")
-
-
-def preserved(before: dict[str, Any]) -> None:
-    """The generated secret key and the database survive whatever the deploy did."""
-
-    after = ow_snapshot()
-    assert after[SECRET_KEY] == before[SECRET_KEY], (before[SECRET_KEY], after[SECRET_KEY])
-    assert after["webui.db inode"] == before["webui.db inode"]
-
-
-def open_webui_phases() -> None:
-    from ops_deploy.services.open_webui.deploy import installed_probe, venv_probe
-
-    cfg = ow_config()
-    fresh = ow("ow-fresh", cfg)
-    for name in ("Ensure user openwebui", "Install Python 3.11.14", "Install Open WebUI 0.7.2", "Start open-webui"):
-        assert any(name in m for m in fresh["mutations"]), (name, fresh["mutations"])
-    assert not any("Restart" in m for m in fresh["mutations"])
-    installed_versus_freeze(cfg)
-    assert Path(SECRET_KEY).is_file()
-    status, body = api("/api/v1/auths/signup", ADMIN)
-    assert status == 200, status
-    assert body.get("token"), sorted(body)
-    token = body["token"]
-    assert body.get("role") == "admin"
-    assert session_valid(token)
-    assert sh("stat", "-c", "%a %U", "/home/openwebui") == "750 openwebui"
-    ow("ow-repeat", cfg, zero=True)
-    shell_transport("ow-venv-probe", venv_probe(cfg))
-    shell_transport("ow-installed-probe", installed_probe(cfg))
-
-    # Intended updates: environment (one restart) and basic auth rotation (route only).
-    before = ow_snapshot()
-    updated = ow_config(extra_env={**cfg.extra_env, "WEBUI_NAME": "Fixture WebUI"})
-    env_update = ow("ow-update-env", updated)
-    assert env_update["mutations"] == [
-        "Deploy Open WebUI | Write /opt/open-webui/open-webui.env",
-        "Deploy Open WebUI | Restart open-webui.service",
-    ], env_update["mutations"]
-    assert not env_update["pid_unchanged"]
-    preserved(before)
-    assert session_valid(token)
-    ow("ow-update-env-repeat", updated, zero=True)
-    rotate = ow("ow-rotate-route", updated, password=BASIC[1])
-    assert rotate["mutations"] == ["Deploy Open WebUI | Write Traefik route open-webui"], rotate["mutations"]
-    assert rotate["pid_unchanged"]
-    ow("ow-rotate-route-repeat", updated, password=BASIC[1], zero=True)
-
-    # The role's rotation task (rotate-traefik-basic-auth.yml) keeps the pyinfra route byte for byte.
-    route = file_state(ROUTE)
-    play = [
-        {
-            "hosts": "localhost",
-            "gather_facts": True,
-            "tasks": [
-                {
-                    "name": "Rotate the Open WebUI route like rotate-traefik-basic-auth.yml",
-                    "ansible.builtin.include_role": {
-                        "name": "local.ops_library.open_webui_venv_deploy",
-                        "tasks_from": "traefik",
-                    },
-                }
-            ],
-        }
-    ]
-    rotation = ansible(
-        "ow-ansible-rotation",
-        play,
-        {
-            "open_webui_traefik_host": updated.traefik_host,
-            "open_webui_basic_auth_user": "admin",
-            "open_webui_basic_auth_password": BASIC[1],
-        },
-    )
-    assert file_state(ROUTE) == route, rotation
-    assert all("Traefik configuration" not in task for task in rotation["changed_tasks"]), rotation
-    ow("ow-after-ansible-repeat", updated, password=BASIC[1], zero=True)
-
-    # Faults. A foreign listener on the port: refused before any change.
-    sh("systemctl", "stop", "open-webui.service")
-    sh(
-        "systemd-run",
-        "--unit=linuxev-foreign",
-        "--",
-        "/usr/bin/python3",
-        "-m",
-        "http.server",
-        "3000",
-        "--bind",
-        "127.0.0.1",
-    )
-    for _ in range(50):
-        if sh("ss", "-Hltn", "sport = :3000", check=False):
-            break
-        time.sleep(0.2)
-    ow("ow-refuse-foreign-port", updated, password=BASIC[1], zero=True, error="Port preflight tcp/3000")
-    sh("systemctl", "stop", "linuxev-foreign.service")
-    recovered = ow("ow-recover-port", updated, password=BASIC[1])
-    assert recovered["mutations"] == ["Deploy Open WebUI | Start open-webui.service"], recovered["mutations"]
-    assert session_valid(token)
-
-    # The encrypted volume is not mounted: refused before any change; mounting it recovers.
-    sh("systemctl", "stop", "open-webui.service")
-    sh("umount", MOUNT)
-    ow("ow-refuse-unmounted", updated, password=BASIC[1], zero=True, error=f"Require the mount {MOUNT}")
-    assert not Path(DATA).exists()
-    remount = ev("ev-recover-for-open-webui", ev_config(DEV))
-    assert len(apply_name(remount)) == 1
-    recovered = ow("ow-recover-unmounted", updated, password=BASIC[1])
-    assert recovered["mutations"] == ["Deploy Open WebUI | Start open-webui.service"], recovered["mutations"]
-    assert session_valid(token)
-
-    # A broken interpreter link, another Python, a missing package: recreated or reinstalled, key and data kept.
-    recreate = [
-        "Install Python 3.11.14 via uv",
-        f"Create virtual environment {VENV}",
-        "Install Open WebUI 0.7.2 via uv pip",
-        "Restart open-webui.service",
-    ]
-    uv = "/usr/local/bin/uv"
-    faults: list[tuple[str, Any, list[str]]] = [
-        ("ow-broken-venv", break_interpreter, recreate),
-        (
-            "ow-other-python",
-            lambda: as_openwebui(uv, "venv", "--clear", "--python", "/usr/bin/python3", VENV),
-            recreate,
-        ),
-        (
-            "ow-missing-package",
-            lambda: as_openwebui(uv, "pip", "uninstall", "--python", VENV, "open-webui"),
-            ["Install Open WebUI 0.7.2 via uv pip", "Restart open-webui.service"],
-        ),
-    ]
-    for label, damage, expected in faults:
-        before = ow_snapshot()
-        damage()
-        repaired = ow(label, updated, password=BASIC[1])
-        assert repaired["mutations"] == [f"Deploy Open WebUI | {name}" for name in expected], repaired["mutations"]
-        preserved(before)
-        assert session_valid(token)
-        installed_versus_freeze(updated)
-        ow(f"{label}-repeat", updated, password=BASIC[1], zero=True)
-
-    ev("ev-final-repeat-with-open-webui", ev_config(DEV), zero=True, snapshot=ow_snapshot)
-    ow("ow-final-repeat", updated, password=BASIC[1], zero=True)
-    SUMMARY["open_webui"] = {"session_survived": True, "secret_key_sha256": ow_snapshot()[SECRET_KEY][0]}
-
-
 DEV: dict[str, str] = {}
 
 
@@ -808,7 +521,6 @@ def main() -> None:
         encrypted_volume_phases(DEV)
         SUMMARY["ansible"] = ansible_setup()
         ansible_after_pyinfra(DEV)
-        open_webui_phases()
         SUMMARY["result"] = "passed"
     except BaseException:
         SUMMARY["result"] = "failed"

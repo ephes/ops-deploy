@@ -99,7 +99,6 @@ nav:
       - Voice Memo Inbox components: services/daybook_voice_memo_inbox.md
       - os_lifecycle: services/os_lifecycle.md
       - jellyfin: services/jellyfin.md
-      - open_webui: services/open_webui.md
       - minio: services/minio.md
       - legacy_retirement: services/legacy_retirement.md
       - Home Assistant (in preparation): services/homeassistant.md
