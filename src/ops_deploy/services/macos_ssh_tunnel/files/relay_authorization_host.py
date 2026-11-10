@@ -1,4 +1,8 @@
-"""Original unprivileged restricted-key line management; no credential provisioning."""
+"""Original unprivileged restricted-key line management; no credential provisioning.
+
+``revoke`` removes every line that ends with the managed comment instead
+(the original removal play's ``lineinfile state=absent``).
+"""
 
 import hashlib
 import json
@@ -12,6 +16,10 @@ from pathlib import Path
 
 def main():
     data = json.load(sys.stdin)
+    comment = data["comment"]
+    revoke = data.get("revoke", False) is True
+    if not isinstance(comment, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}", comment):
+        raise RuntimeError("relay authorization requires a single managed public line")
     home = Path(data["home"])
     if not home.is_absolute() or home.resolve(strict=True) != home:
         raise RuntimeError("relay home must be an existing canonical directory")
@@ -20,7 +28,14 @@ def main():
     if own == 0 or info.st_uid != own or stat.S_IMODE(info.st_mode) & 0o022:
         raise RuntimeError("relay authorization requires its original unprivileged home owner")
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-    parent = os.open(home / ".ssh", flags)
+    try:
+        parent = os.open(home / ".ssh", flags)
+    except FileNotFoundError:
+        if not revoke:
+            raise
+        # Nothing can be authorized without ~/.ssh: already revoked.
+        print(json.dumps({"current": True, "changed": False, "revoked_lines": 0}))
+        return
     temporary = None
     try:
         info = os.fstat(parent)
@@ -42,21 +57,27 @@ def main():
                 again = os.fstat(stream.fileno())
                 if (old.st_ino, old.st_size, old.st_mtime_ns, old.st_ctime_ns) != (again.st_ino, again.st_size, again.st_mtime_ns, again.st_ctime_ns):
                     raise RuntimeError("relay authorization changed during inspection")
-        line = data["line"]
-        comment = data["comment"]
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}", comment) or "\n" in line or "\r" in line:
-            raise RuntimeError("relay authorization requires a single managed public line")
-        desired = line.encode() + b"\n"
         lines = raw.splitlines(keepends=True)
         matches = [i for i, value in enumerate(lines) if value.rstrip(b"\r\n").endswith(b" " + comment.encode())]
-        if matches:
-            lines[matches[-1]] = desired
+        if revoke:
+            desired = None
+            result = b"".join(value for i, value in enumerate(lines) if i not in matches)
+            changed = result != raw
+            mode = 0o600 if old is None else stat.S_IMODE(old.st_mode)
         else:
-            if lines and not lines[-1].endswith(b"\n"):
-                lines[-1] += b"\n"
-            lines.append(desired)
-        result = b"".join(lines)
-        changed = result != raw or old is None or stat.S_IMODE(old.st_mode) != 0o600
+            line = data["line"]
+            if "\n" in line or "\r" in line:
+                raise RuntimeError("relay authorization requires a single managed public line")
+            desired = line.encode() + b"\n"
+            if matches:
+                lines[matches[-1]] = desired
+            else:
+                if lines and not lines[-1].endswith(b"\n"):
+                    lines[-1] += b"\n"
+                lines.append(desired)
+            result = b"".join(lines)
+            changed = result != raw or old is None or stat.S_IMODE(old.st_mode) != 0o600
+            mode = 0o600
         if changed and not data["check"]:
             temporary = ".forwarding-authorization-" + uuid.uuid4().hex
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
@@ -64,7 +85,7 @@ def main():
                 stream.write(result)
                 stream.flush()
                 os.fsync(stream.fileno())
-                os.fchmod(stream.fileno(), 0o600)
+                os.fchmod(stream.fileno(), mode)
                 if old is not None and old.st_gid != os.getgid():
                     os.fchown(stream.fileno(), -1, old.st_gid)
             current = None
@@ -79,7 +100,12 @@ def main():
             os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
             temporary = None
             os.fsync(parent)
-        print(json.dumps({"current": not changed, "changed": changed, "managed_line_sha256": hashlib.sha256(desired).hexdigest()}))
+        report = {"current": not changed, "changed": changed}
+        if desired is None:
+            report["revoked_lines"] = len(matches)
+        else:
+            report["managed_line_sha256"] = hashlib.sha256(desired).hexdigest()
+        print(json.dumps(report))
     finally:
         if temporary is not None:
             os.unlink(temporary, dir_fd=parent)
