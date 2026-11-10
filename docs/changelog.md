@@ -19,6 +19,23 @@
   a credential the owner cannot read (for example mode 000) is `pending` and
   fails verification instead of passing the metadata checks.
 
+- `services._echoport_runner`: vaultwarden-backup's own scripts.
+  `files/targets/vaultwarden.py` is the register playbook's converge task
+  with its token task under `if SERVICE_TOKEN:` (refuses an Echoport without
+  `schedule_required` and a paused or disabled target; a retired declaration
+  disables the target and clears its schedule and token; `RunnerTarget`
+  refuses a service token with a declaration other than `present`, as the
+  playbook issues one only then).
+  `files/nyxmon/vaultwarden.py` is its Nyxmon upsert (checks Nyxmon's
+  columns, refuses a disabled check of a present target, disables it when
+  retired). `NyxmonScript` gains `extra_environment` (the playbook task's
+  `DECLARATION_STATE` and `ALLOW_REENABLE`, in argv like the database path;
+  names that look like a secret or shadow the others are refused) and
+  `require_database` (a missing Nyxmon database stops the deploy while
+  planning instead of skipping the step). The stand-in Echoport manager in
+  the tests gains `get`. See
+  [Echoport runners](services/echoport_runner.md#playbook-nyxmon-scripts-nyxmon).
+
 - `services.software_estate_publisher`: the macOS status and verification
   now require a usable credential (private regular file of the owner, single
   link, at most 4096 bytes, in a private directory) for every present

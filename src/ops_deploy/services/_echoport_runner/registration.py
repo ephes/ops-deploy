@@ -17,7 +17,8 @@ the Echoport target row stays as it is (managed by hand, or by the service's
 own deploy).
 
 The same-host root runners of class B (mail-db-backup, postfixadmin-backup,
-graphyard-backup) add their playbook's own steps around these:
+graphyard-backup, vaultwarden-backup) add their playbook's own steps around
+these:
 
 - "Require the <runner> in the ops-library checkout": a text the vendored
   template must contain (``template_markers``), checked while planning;
@@ -26,7 +27,7 @@ graphyard-backup) add their playbook's own steps around these:
   playbook writes it;
 - after the runner, the playbook's own Echoport target script
   (:mod:`.target`, with the FastDeploy service token when it issues one)
-  and graphyard's own Nyxmon check script (:mod:`.nyxmon`).
+  and graphyard's or vaultwarden's own Nyxmon check script (:mod:`.nyxmon`).
 
 unifi-backup and minecraft-java-backup are class A1 with their playbook's own
 steps: unifi's MongoDB login file (a :class:`CredentialFile`) and the

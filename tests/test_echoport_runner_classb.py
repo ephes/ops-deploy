@@ -247,6 +247,7 @@ def test_the_kept_scripts() -> None:
         "postfixadmin",
         "remote_sqlite_site",
         "service_owned",
+        "vaultwarden",
     )
     for name in target_scripts():
         text = target_script(name)
@@ -470,8 +471,9 @@ def table(db: Path) -> list[Any]:
 
 
 def test_nyxmon_scripts() -> None:
-    assert nyxmon_scripts() == ("graphyard",)
-    assert "{{" not in nyxmon_script("graphyard")
+    assert nyxmon_scripts() == ("graphyard", "vaultwarden")
+    for name in nyxmon_scripts():
+        assert "{{" not in nyxmon_script(name)
 
 
 def test_the_nyxmon_check_writes_nothing_and_apply_converges(nyxmon_db: Path) -> None:

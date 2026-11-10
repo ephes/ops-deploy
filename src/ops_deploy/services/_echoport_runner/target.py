@@ -123,6 +123,15 @@ class RunnerTarget(RoleConfig):
         json.dumps(values)  # JSON only
         return values
 
+    @model_validator(mode="after")
+    def _token_only_while_present(self) -> RunnerTarget:
+        # vaultwarden's playbook issues a token only for ``declaration_state: present``;
+        # a retired target clears its token, so a token would be issued and never kept.
+        state = self.values.get("declaration_state", "present")
+        if self.token is not None and state != "present":
+            raise ValueError(f"a target declared {state!r} gets no service token")
+        return self
+
 
 def target_code(target: RunnerTarget, mode: Literal["check", "apply"]) -> str:
     """The prelude with ``PARAMS`` (mode, script, values, token settings) in front, for ``manage.py shell -c``."""

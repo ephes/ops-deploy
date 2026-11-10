@@ -107,6 +107,12 @@ class Manager:
     def all(self) -> list[Model]:
         return [self.model.load(pk) for pk in sorted(DB.rows)]
 
+    def get(self, **lookup: Any) -> Model:
+        found = self.filter(**lookup).first()
+        if found is None:
+            raise LookupError("DoesNotExist")
+        return found
+
 
 class Model:
     fields: ClassVar[list[Field]] = []
