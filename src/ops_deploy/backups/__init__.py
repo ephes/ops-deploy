@@ -1,7 +1,8 @@
 """Backup steps a deploy runs before it changes anything.
 
 - :func:`run_echoport_backup`: trigger a registered Echoport target, wait,
-  check the run and its MinIO object, return the run ID (the default way to
+  check the run and its MinIO object (or, for a manifest artifact, its run
+  record, manifest and object listing), return the run ID (the default way to
   take a pre-deploy or manual backup);
 - :func:`require_mount`: refuse to go on unless a path is a mounted
   filesystem (never falls back to ``/``);
@@ -18,6 +19,7 @@ from ops_deploy.backups.echoport_sync import (
     EchoportBackupError,
     EchoportBackupResult,
     EchoportSite,
+    ManifestEvidence,
     run_echoport_backup,
 )
 from ops_deploy.backups.local_snapshot import (
@@ -42,6 +44,7 @@ __all__ = [
     "EchoportBackupError",
     "EchoportBackupResult",
     "EchoportSite",
+    "ManifestEvidence",
     "MountMissingError",
     "RemoteCommandError",
     "Runner",

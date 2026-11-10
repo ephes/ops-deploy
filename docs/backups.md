@@ -5,7 +5,7 @@ runs **before** it changes anything:
 
 | Step | What it does | Fails when |
 |---|---|---|
-| `run_echoport_backup` | runs a registered Echoport target now, waits, checks the run and its MinIO object, returns the run ID | Echoport exits non-zero (unknown or inactive target, a run of it already active, timeout, failed run), the output lacks run ID, object or size, the object is missing or has another size, the checksum differs |
+| `run_echoport_backup` | runs a registered Echoport target now, waits, checks the run and its MinIO object (a manifest artifact: its run record, manifest and object listing), returns the run ID | Echoport exits non-zero (unknown or inactive target, a run of it already active, timeout, failed run), the output lacks run ID, object or size, the object is missing or has another size, the checksum differs; for a manifest artifact any [manifest gate](#manifest-artifacts) check |
 | `require_mount` | checks with `findmnt` that a path is a mounted filesystem (optionally of a given type and source, read-write) | not mounted, other filesystem, read-only, no `findmnt` |
 | `local_snapshot` | writes one rollback archive under an explicitly configured directory on a mounted disk, then applies the retention | the disk is not mounted, the directory leaves the disk, a source is missing, `tar` fails |
 
@@ -74,6 +74,51 @@ print(result.run_id, result.object, result.restore_hint)
    it was verified), the object's size and last-modified time, start and end
    times, and `restore_hint` (`manage.py restore <target> <run_id>`).
    `as_record()` gives a JSON-ready dict for the caller's evidence log.
+
+### Manifest artifacts
+
+`artifact="file"` (the default) is the single-object check above. Some
+targets store no single object: the rclone media runners copy their objects to
+a shared `<objects_prefix>/objects` and write a few hundred bytes of
+`manifest.json` under the run's own prefix (`<target>/<timestamp>`). Echoport
+reports that prefix as the run's key, the objects' total bytes as its size,
+the manifest's SHA-256 as its checksum and the object count as its file count.
+`mc stat` finds no file at the prefix, so the file check fails such a run
+although it succeeded. `artifact="manifest"` replaces step 3 with the manifest
+gate:
+
+1. **Run record.** `manage.py shell` as the Echoport user prints Echoport's
+   record of the reported run ID. It must exist and match the report: target,
+   status `success`, the caller's `triggered_by` label, bucket, key and size.
+   It must carry a SHA-256 and a positive file count.
+2. **Manifest.** `mc stat` of `<alias>/<bucket>/<key>/manifest.json` must
+   report one file of at most 64 KiB; only then `mc cat` reads it, sent
+   base64-encoded so the controller hashes exactly the stored bytes, which
+   must be as many as `mc stat` reported. Its SHA-256 must equal the run
+   record's checksum, which binds the file to this run. It must be a JSON object with this `target`,
+   `storage_bucket` and `storage_prefix` (the run's key), `bytes` equal to the
+   reported size and `count` equal to the run record's file count (integers,
+   not `1.0` or `true`). A `run_id` field, if present, must equal the run ID.
+   Its `objects_prefix` must lie under `<target>/`, without `..`.
+3. **Listing.** `mc du --json <alias>/<bucket>/<objects_prefix>/objects/`
+   (`listing_timeout`, default 15 min) must report exactly that prefix,
+   without versions, with the manifest's object count (not zero) and bytes.
+
+Any mismatch, a missing manifest, an unknown run or a failed command raises
+`EchoportBackupError` as `<target>: run <id>: manifest gate: <run
+record|manifest|listing>: <reason>`. When ssh itself fails or a timeout
+stops a step, the message keeps the shape of the other steps,
+`<target>: <run record|manifest|listing>: <error>`. The result has
+`artifact="manifest"`, `object_size` the listed bytes and `manifest` a
+`ManifestEvidence` (manifest object, its SHA-256, objects prefix, count,
+bytes). `checksum_sha256` stays `None` and `checksum_verified` `False`: the
+SHA-256 covers the manifest file only. The objects are checked by count and
+total size, their contents are not hashed. `as_record()` adds a `manifest`
+entry with `sha256_scope: "manifest file only"`.
+
+The objects prefix is shared between runs (the runner copies into it), so the
+listing is a check right after the run, not a snapshot: an object changed in
+place with the same size would pass, one added or removed fails the count.
 
 The `target` must match `[A-Za-z0-9][A-Za-z0-9._-]*` and the `triggered_by`
 label `[A-Za-z0-9][A-Za-z0-9._:@/+=-]*` (at most 100 characters, Echoport's
