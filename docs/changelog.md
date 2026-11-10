@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `services.graphyard` core: the deploy removes the stale
+  `site/src/django/.env` (macmini, 2026-03, world-readable, with the secret key,
+  the Influx token and unused `HOME_ASSISTANT_*` values). Every key the code
+  reads comes from `/etc/graphyard/graphyard.env`; nothing restarts. See
+  [Graphyard](services/graphyard.md).
+
 - `infra.tailscale`: `TailscaleConfig.repo_legacy_deb822_files` removes the
   exact Tailscale stanza from consolidated deb822 files (with a `~` backup)
   after the managed `tailscale.sources` is configured, so staging's

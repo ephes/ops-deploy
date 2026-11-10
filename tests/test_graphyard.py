@@ -340,6 +340,18 @@ def test_env_change_rewrites_it_migrates_and_restarts_web_and_agent(source: Path
     ]
 
 
+def test_a_stale_django_env_is_removed_without_a_restart(cfg: GraphyardConfig) -> None:
+    # The 2026-03 .env (0644, secrets, unused HOME_ASSISTANT_*); the env file in /etc/graphyard is the source.
+    responses = converged(cfg)
+    responses.update(fakehost.stat(f"{SITE}/src/django/.env", user="graphyard", mode="-rw-r--r--"))
+
+    run = deploy(cfg, responses)
+
+    assert mutating(run) == ["Remove the stale Django .env"]
+    assert f"rm -f {SITE}/src/django/.env" in run.executed_commands
+    assert mutating(deploy(cfg, converged(cfg))) == []
+
+
 def test_bound_ingest_tokens_switch_appends_the_line_and_restarts_web_and_agent(source: Path) -> None:
     cfg = macmini_core_config(source)
     bound = macmini_core_config(source, require_bound_ingest_tokens=True)
