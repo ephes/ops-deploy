@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `services.torrent_vpn_metrics_endpoint`: the collector timer now adds
+  `OnActiveSec` and an `OnCalendar=*:0/5` backstop (new config fields
+  `timer_on_boot_sec`, `timer_on_calendar`, `timer_accuracy_sec`; defaults keep
+  the old 30 s / 10 s values). With only `OnBootSec`/`OnUnitActiveSec` the
+  timer stalled at `NEXT n/a` after the 2026-11-09 macmini reboot and the VPN
+  egress payload went stale until a manual collector start. See
+  [Metrics endpoints](services/metrics_endpoints.md).
+
 - Add `services.daybook_voice_memo_work` (`VoiceMemoWorkConfig`,
   `apply_voice_memo_work_state`): the disabled branch of ops-library's
   `daybook_voice_memo_work_deploy` on Studio's root connection. It disables

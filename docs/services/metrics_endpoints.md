@@ -92,6 +92,16 @@ keep `torrent-vpn-metrics-collector` identities and the 300-second interval.
 Container names, provider checks, tunnel interface, public-IP URL, collector
 request timeout and interval remain configurable with the role defaults.
 
+The timer combines `OnBootSec`/`OnActiveSec` (`timer_on_boot_sec`, default
+`30`), `OnUnitActiveSec` (`timer_interval`), an `OnCalendar` wall-clock
+backstop (`timer_on_calendar`, default `*:0/5`) and `Persistent=true`, with
+`AccuracySec=timer_accuracy_sec` (default `10`). Purely monotonic
+`OnBootSec`/`OnUnitActiveSec` timers stall with `NEXT n/a` when the timer
+starts after `OnBootSec` has passed and the last collector run predates the
+boot, which left the payload 20 hours stale after the 2026-11-09 macmini
+reboot; `OnActiveSec` and `OnCalendar` keep it firing after reboots and timer
+restarts without a deploy.
+
 Unlike Ansible's unconditional oneshot start marked `changed_when:false`, this
 deploy collects initially when the payload is missing, malformed, stale (older
 than twice its interval), when collector inputs change, or when the timer has

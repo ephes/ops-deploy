@@ -136,6 +136,21 @@ def test_invalid_or_stale_torrent_payload_runs_collector_without_restarting_http
     assert "Initialize torrent VPN metrics" in result.mutating_changed_ops[0]
 
 
+def test_torrent_timer_survives_reboot_and_timer_restart() -> None:
+    cfg = config("torrent")
+    unit = torrent.render_role("torrent-vpn-metrics-collector.timer.j2", cfg, BIND)
+    assert "OnBootSec=30\n" in unit
+    assert "OnActiveSec=30\n" in unit
+    assert "OnUnitActiveSec=300\n" in unit
+    assert "OnCalendar=*:0/5\n" in unit
+    assert "Persistent=true\n" in unit
+    custom = config("torrent", timer_on_boot_sec=45, timer_on_calendar="*:0/10", timer_accuracy_sec=5)
+    unit = torrent.render_role("torrent-vpn-metrics-collector.timer.j2", custom, BIND)
+    assert "OnActiveSec=45\n" in unit
+    assert "OnCalendar=*:0/10\n" in unit
+    assert "AccuracySec=5\n" in unit
+
+
 def test_elapsed_timer_with_valid_payload_seeds_collector_and_rearms() -> None:
     cfg, responses = converged("torrent")
     responses[f"systemctl show {cfg.timer_name}.timer"] = ["NextElapseUSecMonotonic=infinity"]
