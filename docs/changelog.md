@@ -19,6 +19,17 @@
   a credential the owner cannot read (for example mode 000) is `pending` and
   fails verification instead of passing the metadata checks.
 
+- `services._echoport_runner.generic`: the registration of the generic runner
+  `echoport-backup` (ops-control `register-echoport-backup.yml`): ops-library
+  `echoport_backup`'s `sqlite3` package, pinned `mc` and runner, then one
+  scoped MinIO account and root `mc` alias per target, in the playbook's
+  order. The runner, `config.json` and the sudoers rule are what the role
+  wrote on macmini (read 2026-11-10, sixteen targets), and a host the
+  playbook left plans no mutating operation. A host without `mc` is refused
+  while planning; the retired shared alias is removed once, not per target.
+  The parity record gains `echoport-backup-macmini`. See
+  [Echoport runners](services/echoport_runner.md#the-generic-runner-generic).
+
 - `services.software_estate_publisher`: the macOS status and verification
   now require a usable credential (private regular file of the owner, single
   link, at most 4096 bytes, in a private directory) for every present

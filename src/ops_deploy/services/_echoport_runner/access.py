@@ -262,11 +262,13 @@ def _alias(cfg: MinioAccess, access_key: str, secret_key: str) -> None:
 
 
 def require_mc(cfg: MinioAccess) -> None:
-    """The playbooks' "Ensure mc is installed" (register-echoport-backup.yml installs it): refuse while planning."""
+    """The playbooks' "Ensure mc is installed": refuse while planning (the MinIO deploy installs the pinned mc)."""
 
     mc = shlex.quote(cfg.mc)
     if (probe(f"test -x {mc} && echo present || echo missing", name=f"mc at {cfg.mc}") or "").strip() != "present":
-        raise DeployError(f"mc (MinIO client) not found at {cfg.mc}; register echoport-backup first to install it")
+        raise DeployError(
+            f"mc (MinIO client) not found at {cfg.mc}; `just deploy-one minio` installs the pinned client"
+        )
 
 
 def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:

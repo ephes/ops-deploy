@@ -1,5 +1,5 @@
 {
-  "provenance": "Template variables of the ops-control register playbooks (ops-control c0ce95ce), resolved by ansible-core 2.21.5 on localhost; public synthetic values for hosts, buckets and stubs of the MinIO account registry; echoport-backup-switched-fixture is synthetic (per-target aliases, string flags)",
+  "provenance": "Template variables of the ops-control register playbooks (ops-control c0ce95ce), resolved by ansible-core 2.21.5 on localhost; public synthetic values for hosts, buckets and stubs of the MinIO account registry; echoport-backup-switched-fixture is synthetic (per-target aliases, string flags); echoport-backup-macmini is register-echoport-backup.yml's rendering for macmini's sixteen targets (ops-control 51631be6, every target switched)",
   "runners": {
     "delve-backup": {
       "inputs": {
@@ -80,6 +80,42 @@
         "echoport_backup_mc_install_path": "/usr/local/bin/mc",
         "echoport_backup_minio_alias": "minio",
         "echoport_backup_minio_prefix_aliases": {},
+        "echoport_backup_minio_require_prefix_alias": true,
+        "echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/echoport-backup",
+        "echoport_backup_work_mount": "/mnt/cryptdata",
+        "echoport_backup_work_retention_hours": 24
+      },
+      "template": "backup.py.j2"
+    },
+    "echoport-backup-macmini": {
+      "inputs": {
+        "echoport_backup_allowed_roots": [
+          "/home/",
+          "/opt/",
+          "/var/lib/",
+          "/mnt/cryptdata/"
+        ],
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "minio",
+        "echoport_backup_minio_prefix_aliases": {
+          "archive": "backup-archive",
+          "chesslab": "backup-chesslab",
+          "homelab": "backup-homelab",
+          "nyxmon": "backup-nyxmon",
+          "opaq_app": "backup-opaq_app",
+          "openclaw": "backup-openclaw",
+          "work_app": "backup-work_app",
+          "recorder": "backup-recorder",
+          "jellyfin": "backup-jellyfin",
+          "haushalt": "backup-haushalt",
+          "fallakte-backup": "backup-fallakte-backup",
+          "radarr": "backup-radarr",
+          "sonarr": "backup-sonarr",
+          "prowlarr": "backup-prowlarr",
+          "torrent": "backup-torrent",
+          "echoport": "backup-echoport"
+        },
         "echoport_backup_minio_require_prefix_alias": true,
         "echoport_backup_work_dir": "/mnt/cryptdata/backups/tmp/echoport-backup",
         "echoport_backup_work_mount": "/mnt/cryptdata",
