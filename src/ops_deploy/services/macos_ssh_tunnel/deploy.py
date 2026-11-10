@@ -83,13 +83,16 @@ def host_command(cfg: MacosSshTunnelConfig, action: str) -> str:
 
 @deploy("Deploy owner-session macOS SSH tunnel stopped")
 def deploy_macos_ssh_tunnel(cfg: MacosSshTunnelConfig) -> None:
+    if cfg.state == "absent":
+        names = (
+            "Remove stopped tunnel" + (", revoke relay authorization and identity" if cfg.retire_identity else ""),
+            "Verify owner-session tunnel is removed",
+        )
+    else:
+        names = (
+            "Converge forwarding identity, original relay authorization and stopped tunnel",
+            "Verify owner-session tunnel remains installed stopped",
+        )
     if host.get_fact(Command, command=host_command(cfg, "status")) != "current":
-        server.shell(
-            name="Converge forwarding identity, original relay authorization and stopped tunnel",
-            commands=[host_command(cfg, "apply")],
-        )
-    mark_read_only(
-        server.shell(
-            name="Verify owner-session tunnel remains installed stopped", commands=[host_command(cfg, "verify")]
-        )
-    )
+        server.shell(name=names[0], commands=[host_command(cfg, "apply")])
+    mark_read_only(server.shell(name=names[1], commands=[host_command(cfg, "verify")]))

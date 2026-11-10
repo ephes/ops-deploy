@@ -45,6 +45,18 @@
   installed or started; plists, configuration, data and releases stay. See
   [OpsGate](services/opsgate.md#retirement-switch).
 
+- `services.macos_ssh_tunnel`: new `retire_identity` field for
+  `state="absent"` (requires `manage_identity`). The removal then follows the
+  original Emerge removal play: stop and remove the tunnel, revoke every relay
+  `authorized_keys` line that ends with `identity_comment` (when `relay_home`
+  is set), and only then remove the forwarding identity with the unchanged
+  ops-library mutator. A relay failure keeps the identity for a retry. The
+  relay program gains a `revoke` request (a missing `~/.ssh` or
+  `authorized_keys` counts as revoked); authorization is unchanged. A
+  retirement with `relay_home` refuses the default `identity_comment`. Without
+  `retire_identity`, `state="absent"` still keeps identity and relay line.
+  See [macOS owner-session SSH tunnel](services/macos_ssh_tunnel.md).
+
 - `services.torrent_vpn_metrics_endpoint`: the collector timer now adds
   `OnActiveSec` and an `OnCalendar=*:0/5` backstop (new config fields
   `timer_on_boot_sec`, `timer_on_calendar`, `timer_accuracy_sec`; defaults keep

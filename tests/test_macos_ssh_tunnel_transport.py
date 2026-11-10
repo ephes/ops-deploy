@@ -345,3 +345,295 @@ def test_untrusted_existing_cache_object_is_untouched_and_not_reused(
     assert ns["authorize"](data, "ssh-ed25519 synthetic-public", True)
     assert options(calls[0])["controlmaster"] == "no"
     assert options(calls[0])["controlpath"] == "none"
+
+
+def retirement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **overrides: Any
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The helper for a state="absent" retirement with the original relay step."""
+    ns, data = helper(tmp_path, monkeypatch)
+    data.update({"state": "absent", "retire_identity": True, **overrides})
+    for path in data["contents"]:
+        Path(path).unlink()
+    return ns, data
+
+
+def test_retirement_stops_removes_revokes_then_removes_identity_last(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns, data = retirement(tmp_path, monkeypatch)
+    for path in data["contents"]:
+        Path(path).write_text("installed")
+    events: list[str] = []
+    identity_state = {"state": "current", "public_key": "ssh-ed25519 synthetic-public"}
+
+    def stop(_: Any) -> None:
+        assert all(Path(path).exists() for path in data["contents"])
+        events.append("stop")
+
+    def revoke(_: Any, check: bool) -> bool:
+        assert not any(Path(path).exists() for path in data["contents"])
+        events.append(f"revoke check={check}")
+        return True
+
+    def manage(args: Any) -> dict[str, Any]:
+        assert args.state == "absent"
+        assert args.check is False
+        assert args.path == data["identity"]
+        assert args.comment == data["identity_comment"]
+        events.append("identity removed")
+        identity_state.clear()
+        identity_state["state"] = "missing"
+        return {"status": "removed", "changed": True}
+
+    monkeypatch.setitem(ns, "stop", stop)
+    monkeypatch.setitem(ns, "revoke", revoke)
+    monkeypatch.setitem(ns, "identity", lambda _: dict(identity_state))
+    monkeypatch.setitem(ns["ns"], "manage", manage)
+    monkeypatch.setitem(ns, "authorize", lambda *args: pytest.fail("a retirement never authorizes"))
+    invoke(ns, data, "apply", monkeypatch)
+    assert events == ["stop", "revoke check=False", "identity removed"]
+    invoke(ns, data, "verify", monkeypatch)
+    assert "Tunnel removal is converged." in capsys.readouterr().out
+    assert events[-1] == "identity removed"
+
+
+def test_failed_revocation_keeps_the_identity_for_a_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ns, data = retirement(tmp_path, monkeypatch)
+    events: list[str] = []
+
+    def revoke(*args: Any) -> bool:
+        events.append("revoke")
+        raise RuntimeError("owned relay fault")
+
+    monkeypatch.setitem(ns, "stop", lambda _: events.append("stop"))
+    monkeypatch.setitem(ns, "revoke", revoke)
+    monkeypatch.setitem(ns["ns"], "manage", lambda args: events.append("identity removed"))
+    with pytest.raises(RuntimeError, match="owned relay fault"):
+        invoke(ns, data, "apply", monkeypatch)
+    assert events == ["stop", "revoke"]
+
+
+@pytest.mark.parametrize(
+    ("identity_state", "relay_current", "expected"),
+    [
+        ("missing", True, "current"),
+        ("missing", False, "drift"),
+        ("current", True, "drift"),
+        ("drift", True, "drift"),
+        ("unsafe", True, "drift"),
+    ],
+)
+def test_retirement_status_requires_missing_identity_and_revoked_relay_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    identity_state: str,
+    relay_current: bool,
+    expected: str,
+) -> None:
+    ns, data = retirement(tmp_path, monkeypatch)
+    checks: list[bool] = []
+
+    def identity(_: Any) -> dict[str, Any]:
+        if identity_state == "unsafe":
+            raise ns["probe_ns"]["IdentityProbeError"]("owned unsafe identity")
+        return {"state": identity_state}
+
+    def revoke(_: Any, check: bool) -> bool:
+        checks.append(check)
+        return relay_current
+
+    monkeypatch.setitem(ns, "identity", identity)
+    monkeypatch.setitem(ns, "revoke", revoke)
+    invoke(ns, data, "status", monkeypatch)
+    assert capsys.readouterr().out.strip() == expected
+    assert checks == ([True] if identity_state == "missing" else [])
+
+
+def test_absent_without_retirement_keeps_identity_and_relay_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ns, data = retirement(tmp_path, monkeypatch, retire_identity=False)
+    events: list[str] = []
+    monkeypatch.setitem(ns, "stop", lambda _: events.append("stop"))
+    monkeypatch.setitem(ns, "revoke", lambda *args: events.append("revoke"))
+    monkeypatch.setitem(ns["ns"], "manage", lambda args: events.append("identity removed"))
+    invoke(ns, data, "apply", monkeypatch)
+    assert events == ["stop"]
+
+
+def test_revocation_uses_the_original_session_and_sends_no_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ns, data = retirement(tmp_path, monkeypatch)
+    calls: list[Any] = []
+
+    def run(argv: list[str], **kwargs: Any) -> Any:
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout='{"current":false,"changed":true}')
+
+    monkeypatch.setitem(ns, "run", run)
+    assert ns["revoke"](data, True) is False
+    argv, kwargs = calls[0]
+    assert options(argv)["controlmaster"] == "auto"
+    assert options(argv)["stricthostkeychecking"] == "yes"
+    assert kwargs["timeout"] is None
+    request = json.loads(kwargs["input"])
+    assert request == {
+        "home": "/Users/operator",
+        "comment": data["identity_comment"],
+        "check": True,
+        "revoke": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"state": "present"}, "identity retirement requires"),
+        ({"manage_identity": False, "relay_home": None}, "identity retirement requires"),
+        ({"identity_comment": "restricted-forwarding"}, "unique, non-default identity_comment"),
+    ],
+)
+def test_retirement_requires_absent_state_managed_identity_and_unique_comment(
+    change: dict[str, Any], message: str
+) -> None:
+    values: dict[str, Any] = {
+        "owner": "operator",
+        "home": "/Users/operator",
+        "host": "relay.example.test",
+        "user": "operator",
+        "target": "backend.example.test",
+        "state": "absent",
+        "manage_identity": True,
+        "relay_home": "/Users/operator",
+        "identity_comment": "uat-forwarding-workstation",
+        "retire_identity": True,
+    }
+    MacosSshTunnelConfig(**values)
+    with pytest.raises(ValidationError, match=message):
+        MacosSshTunnelConfig(**{**values, **change})
+
+
+def relay_script(tmp_path: Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Run the packaged relay program as the remote side does: stdin JSON, own home."""
+    import subprocess
+
+    script = ROOT / "src/ops_deploy/services/macos_ssh_tunnel/files/relay_authorization_host.py"
+    completed = subprocess.run(
+        [sys.executable, "-B", "-c", script.read_text()],
+        input=json.dumps({"home": str(tmp_path), **request}) + "\n",
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    result: dict[str, Any] = json.loads(completed.stdout)
+    return result
+
+
+def test_relay_program_revokes_only_lines_with_the_managed_comment(tmp_path: Path) -> None:
+    home = tmp_path.resolve()
+    home.chmod(0o700)
+    ssh = home / ".ssh"
+    ssh.mkdir(mode=0o700)
+    keys = ssh / "authorized_keys"
+    original = (
+        b"ssh-ed25519 AAAAother operator@laptop\n"
+        b"restrict,port-forwarding ssh-ed25519 AAAAone emerge-uat-forwarding-studio\n"
+        b"ssh-ed25519 AAAAkeep emerge-uat-forwarding-studio-old\n"
+        b"ssh-ed25519 AAAAtwo emerge-uat-forwarding-studio\r\n"
+    )
+    keys.write_bytes(original)
+    keys.chmod(0o644)
+    request = {"comment": "emerge-uat-forwarding-studio", "revoke": True}
+    assert relay_script(home, {**request, "check": True}) == {"current": False, "changed": True, "revoked_lines": 2}
+    assert keys.read_bytes() == original
+    assert relay_script(home, {**request, "check": False})["changed"] is True
+    assert keys.read_bytes() == (
+        b"ssh-ed25519 AAAAother operator@laptop\nssh-ed25519 AAAAkeep emerge-uat-forwarding-studio-old\n"
+    )
+    assert keys.stat().st_mode & 0o777 == 0o644
+    assert relay_script(home, {**request, "check": True}) == {"current": True, "changed": False, "revoked_lines": 0}
+    keys.unlink()
+    assert relay_script(home, {**request, "check": False}) == {"current": True, "changed": False, "revoked_lines": 0}
+    assert not keys.exists()
+
+
+def test_relay_program_authorization_is_unchanged_by_revocation_support(tmp_path: Path) -> None:
+    home = tmp_path.resolve()
+    home.chmod(0o700)
+    (home / ".ssh").mkdir(mode=0o700)
+    line = "restrict,port-forwarding ssh-ed25519 AAAAone emerge-uat-forwarding-studio"
+    request = {"comment": "emerge-uat-forwarding-studio", "line": line}
+    assert relay_script(home, {**request, "check": False})["changed"] is True
+    keys = home / ".ssh/authorized_keys"
+    assert keys.read_text() == line + "\n"
+    assert keys.stat().st_mode & 0o777 == 0o600
+    assert relay_script(home, {**request, "check": True})["current"] is True
+
+
+def test_relay_program_revocation_without_ssh_directory_is_current(tmp_path: Path) -> None:
+    home = tmp_path.resolve()
+    home.chmod(0o700)
+    request = {"comment": "emerge-uat-forwarding-studio", "revoke": True}
+    for check in (True, False):
+        result = relay_script(home, {**request, "check": check})
+        assert result == {"current": True, "changed": False, "revoked_lines": 0}
+    assert not (home / ".ssh").exists()
+
+
+@pytest.mark.parametrize(
+    ("retire", "apply_name"),
+    [
+        (False, "Remove stopped tunnel"),
+        (True, "Remove stopped tunnel, revoke relay authorization and identity"),
+    ],
+)
+def test_absent_deploy_names_and_status_apply_verify_flow(retire: bool, apply_name: str) -> None:
+    from ops_deploy.services.macos_ssh_tunnel import deploy_macos_ssh_tunnel
+    from ops_deploy.testing import run_deploy_fake
+
+    cfg = MacosSshTunnelConfig(
+        owner="operator",
+        home="/Users/operator",
+        host="relay.example.test",
+        user="operator",
+        target="backend.example.test",
+        state="absent",
+        manage_identity=True,
+        relay_home="/Users/operator",
+        identity_comment="uat-forwarding-workstation",
+        retire_identity=retire,
+    )
+    drift = run_deploy_fake(deploy_macos_ssh_tunnel, cfg, responses={" status ": ["drift"]})
+    assert drift.succeeded
+    assert [" apply " in c for c in drift.executed_commands] == [True, False]
+    assert " verify " in drift.executed_commands[1]
+    prefix = "Deploy owner-session macOS SSH tunnel stopped | "
+    assert drift.mutating_changed_ops == [prefix + apply_name]
+    assert drift.changed_ops == [prefix + apply_name, prefix + "Verify owner-session tunnel is removed"]
+    current = run_deploy_fake(deploy_macos_ssh_tunnel, cfg, responses={" status ": ["current"]})
+    assert current.succeeded
+    assert len(current.executed_commands) == 1
+    assert " verify " in current.executed_commands[0]
+
+
+@pytest.mark.parametrize("ssh_directory", [False, True])
+def test_relay_program_rejects_a_malformed_comment_before_the_filesystem(tmp_path: Path, ssh_directory: bool) -> None:
+    import subprocess
+
+    home = tmp_path.resolve()
+    home.chmod(0o700)
+    if ssh_directory:
+        (home / ".ssh").mkdir(mode=0o700)
+    with pytest.raises(subprocess.CalledProcessError):
+        relay_script(home, {"comment": "bad comment", "revoke": True, "check": True})
