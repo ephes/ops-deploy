@@ -1,9 +1,7 @@
 """The runner templates of ops-library's ``echoport_backup`` role, rendered as Ansible's ``template`` renders them.
 
 ``templates/`` holds the role's ``templates/*.py.j2`` unchanged (with the
-includes ``_work_dir.py.j2`` and ``_sqlite_backup.py.j2``), except the two
-legacy-layout runners ``heis_production_backup`` and
-``villakunterbunt_staging_backup``, which stay on Ansible. The ops-library
+includes ``_work_dir.py.j2`` and ``_sqlite_backup.py.j2``). The ops-library
 templates remain the source of runner code; ``tests/test_ops_library_drift.py``
 fails when one of them changes. The templates in :data:`FORKED` are the
 exception: they have moved on from ops-library's, ops-deploy is their source,
@@ -16,13 +14,15 @@ and the result does not. The filters the templates use beyond plain Jinja2
 (``to_json``, ``bool``, ``regex_replace``) behave as ansible-core's for the
 values a runner config holds: strings, numbers, booleans, lists and mappings
 of them. ``tests/test_echoport_runner_parity.py`` compares the renderings with
-files rendered by ``ansible-playbook`` itself.
+files rendered by ``ansible-playbook`` itself. A playbook's inline text
+(:func:`render_text`) may also use ``quote`` (ansible-core's, ``shlex.quote``).
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shlex
 from collections.abc import Mapping
 from functools import cache
 from importlib.resources import files
@@ -58,6 +58,12 @@ def ansible_bool(value: Any) -> bool:
     return bool(value == 1)
 
 
+def quote(value: Any = "") -> str:
+    """ansible-core's ``quote``: ``shlex.quote`` of the value as text (``None`` is the empty text)."""
+
+    return shlex.quote("" if value is None else str(value))
+
+
 def regex_replace(value: Any = "", pattern: str = "", replacement: str = "") -> str:
     """ansible-core's ``regex_replace`` without flags: ``re.sub`` over the value as text."""
 
@@ -87,6 +93,7 @@ def _text_environment() -> jinja2.Environment:
     env.filters["to_json"] = to_json
     env.filters["bool"] = ansible_bool
     env.filters["regex_replace"] = regex_replace
+    env.filters["quote"] = quote
     return env
 
 

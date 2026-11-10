@@ -8,9 +8,8 @@ and the pieces the ops-control register playbooks share
 which adds its config in ops-control and its own entry point (design note
 `ECHOPORT-FASTDEPLOY-REGISTRATIONS-20261105` on ops-meta's `pyinfra-port`
 branch, §3 and §3.8). The same-host root runners (class A1) use
-`registration.register_runner` below. heis-production and
-villakunterbunt-staging stay on Ansible; their templates are not vendored.
-The deploy-user runners (classes A2 and A3) use
+`registration.register_runner` below. The deploy-user runners (classes A2
+and A3, and heis-production and villakunterbunt-staging) use
 `registration.register_deploy_runner`.
 
 ## Runner installation (`RunnerConfig`, `deploy_runner`)
@@ -66,6 +65,8 @@ of the register playbooks.
 `StrictUndefined`) with ansible-core's `to_json`, `bool` and
 `regex_replace`. `variables` are the playbook's values, already resolved; a
 name the template reads with `default(...)` may be left out.
+`render.render_text` renders a playbook's inline text (a task's `content:`)
+the same way, with ansible-core's `quote` (`shlex.quote`) as well.
 
 ## Object-store access (`access.minio_access`)
 
@@ -382,6 +383,34 @@ playbook installs none, refuses while planning; so does a target whose bucket
 is not the access's. The config refuses a `pg_restore` task before
 `packages` and a `target` task before `runner` (the playbooks' order).
 
+heis-production and villakunterbunt-staging are class B deploy-user runners
+whose templates predate the work dir on the external disk (no
+`_work_dir.py.j2`). Their playbooks wrote the runner into FastDeploy's
+services root (`services/<service>/backup.py`, `"deploy_script":
+"backup.py"`, a sudoers rule for that path); the port installs it as every
+other runner (`install_runner`: the libexec layout, then the old copy is
+removed). Their registration has, in place of `work_dir`:
+
+- `temp_dir` (task `temp_dir`, `TempDir`): the playbooks' temp dir
+  (`/tmp/<service>`, `deploy:deploy 0755`), which the template reads as
+  `echoport_backup_temp_dir` and uses when it exists (the system temp dir
+  otherwise). A template that includes `_work_dir.py.j2` gets no temp dir.
+
+Both write their target with the kept `remote_sqlite_site` script (the two
+playbooks' scripts differ only in their values; it reactivates a paused
+target and clears `service_name` and `restore_owner`, as they do).
+heis-production also has
+
+- `token_rotation` (task `token_rotation`, after `target`,
+  `rotation.TokenRotation`): the playbook's monthly rotation of the
+  target's token. `files/token_rotation/heis_production_backup/` keeps the
+  playbook's three `copy` contents unchanged: the helper
+  (`/usr/local/sbin/rotate-heis-production-backup-token`, root `0700`,
+  written with `ops.secret_file` because it names the FastDeploy token
+  user, the deploy's `token_user`), the oneshot service and the monthly
+  timer (`root:root 0644`). systemd is reloaded only when a unit changed
+  (the playbook reloads on every run); the timer is enabled and started.
+
 ## Playbook target scripts (`target`)
 
 Several register playbooks upsert their Echoport target with a script of
@@ -439,7 +468,7 @@ them:
 
 ## Parity
 
-- `tests/test_echoport_runner_parity.py`: every runner script of the 26
+- `tests/test_echoport_runner_parity.py`: every runner script of the 28
   register playbooks that use these templates (plus one synthetic variant)
   renders to the sha256 `ansible-playbook` produced
   (`tests/parity/echoport_runner/expected.json`, written by `generate.py`
@@ -459,6 +488,12 @@ them:
   the parts run in each playbook's order, two known hosts end as two
   `known_hosts` tasks leave the file (checked against the real `ssh-keygen`),
   and the credentials file is the playbooks' `copy` content.
+- `tests/test_echoport_runner_temp_dir.py`: heis-production and
+  villakunterbunt-staging render to the same sha256, a host the port left
+  plans no mutating operation, the old copy in the services root is removed
+  and the parts run in the playbooks' order, and heis's rotation helper is
+  the playbook's `copy` content (`quote`, `to_json`) with systemd reloaded
+  only when a unit changed.
 - `tests/test_ops_library_drift.py` records `fastdeploy_runner`,
   `echoport_backup` and `minio_backup` and fails when a vendored template
   differs from ops-library's or ops-library gains or loses one. For a

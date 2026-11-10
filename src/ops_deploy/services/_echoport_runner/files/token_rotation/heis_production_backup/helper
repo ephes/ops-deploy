@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+# Issue a recorded, revocable token (FastDeploy issueservicetoken);
+# only the token is on stdout, its id and expiry go to the journal.
+token=$(
+  cd {{ heis_production_backup_fastdeploy_root | quote }} &&
+  sudo -u {{ heis_production_backup_fastdeploy_user | quote }} \
+    {{ (heis_production_backup_fastdeploy_root ~ '/.venv/bin/python') | quote }} \
+    commands.py issueservicetoken \
+    --service {{ heis_production_backup_service_name_fd | quote }} \
+    --user {{ heis_production_backup_service_token_user | quote }} \
+    --days {{ heis_production_backup_service_token_expiration_days | int }} \
+    --origin systemd-token-rotation
+)
+if [[ ! "$token" =~ ^[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$ ]]; then
+  echo "issueservicetoken did not return one JWT; token not rotated" >&2
+  exit 1
+fi
+export HEIS_BACKUP_SERVICE_TOKEN="$token"
+sudo -u echoport -E /home/echoport/site/.venv/bin/python \
+  /home/echoport/site/manage.py shell <<'PY'
+import os
+from backups.models import BackupTarget
+
+target = BackupTarget.objects.get(
+    name={{ heis_production_backup_target_name | to_json }}
+)
+target.service_token = os.environ["HEIS_BACKUP_SERVICE_TOKEN"]
+target.save(update_fields=["service_token"])
+print("Heis production backup token rotated.")
+PY
+unset HEIS_BACKUP_SERVICE_TOKEN token

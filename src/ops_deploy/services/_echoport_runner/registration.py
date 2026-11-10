@@ -44,6 +44,15 @@ stores). Their playbooks add the runner's work dir on the external disk
 (``common/deploy_known_host_ed25519.yml``), the deploy user's SSH key, or
 the media runner's credentials file, each in its own order, which
 :attr:`DeployRunnerRegistration.tasks` records.
+
+heis-production-backup and villakunterbunt-staging-backup are deploy-user
+runners whose templates predate the work dir on the external disk: their
+playbooks create a temp dir (:class:`TempDir`, ``/tmp/<service>``), which the
+runner uses when it exists, in place of the work dir. Their playbooks wrote
+the runner into FastDeploy's services root; the port installs it as every
+other runner (:func:`.install_runner`, which removes that old copy).
+heis-production-backup also installs its own monthly token rotation timer
+(:mod:`.rotation`).
 """
 
 from __future__ import annotations
@@ -83,6 +92,7 @@ from ops_deploy.services._echoport_runner.access import (
 )
 from ops_deploy.services._echoport_runner.nyxmon import NyxmonScript, upsert_nyxmon_script
 from ops_deploy.services._echoport_runner.render import _environment, render_text, runner_templates, text_names
+from ops_deploy.services._echoport_runner.rotation import Binding, TokenRotation, install_token_rotation
 from ops_deploy.services._echoport_runner.target import RunnerTarget, token_and_target, upsert_runner_target
 
 Package = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9+.-]*$")]
@@ -443,9 +453,22 @@ register_runner = deploy("Echoport backup runner registration")(install_registra
 # "access": backup_minio_account.yml; "work_dir": backup_work_dir.yml;
 # "credentials": the media runner's credentials directory and file; "runner": fastdeploy_runner;
 # class B: "pg_restore": the mastodon playbook's pg_restore version check (after the packages);
-# "target": the token include and the playbook's own Echoport target script.
+# "target": the token include and the playbook's own Echoport target script;
+# "temp_dir": the temp dir of a runner without the work dir (heis, villakunterbunt);
+# "token_rotation": heis's own monthly token rotation timer (after the target).
 Task = Literal[
-    "ssh_key", "known_hosts", "mc", "packages", "pg_restore", "access", "work_dir", "credentials", "runner", "target"
+    "ssh_key",
+    "known_hosts",
+    "mc",
+    "packages",
+    "pg_restore",
+    "access",
+    "work_dir",
+    "temp_dir",
+    "credentials",
+    "runner",
+    "target",
+    "token_rotation",
 ]
 # Template variables named ``<prefix><suffix>`` must say what the registration provisions.
 _BOUND_SUFFIXES = ("_work_dir", "_work_mount", "_credentials_file", "_minio_url", "_default_bucket")
@@ -453,6 +476,23 @@ _BOUND_SUFFIXES = ("_work_dir", "_work_mount", "_credentials_file", "_minio_url"
 _BUCKET = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 # What the media playbooks require of their template while the target has its scoped account.
 NO_CHECK_DEST = "--no-check-dest"
+
+
+class TempDir(RoleConfig):
+    """The temp dir of a runner without ``_work_dir.py.j2``: ``<owner>:<owner> 0755``, as its playbook makes it.
+
+    The template reads it as ``echoport_backup_temp_dir`` and works in the
+    system temp dir when it is missing.
+    """
+
+    path: PlainPath
+    owner: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}$")]
+
+    @model_validator(mode="after")
+    def _plain(self) -> TempDir:
+        if not _plain_path(self.path) or self.path.count("/") < 2 or self.owner == "root":
+            raise ValueError("the temp dir must be a plain path below a directory, owned by a non-root user")
+        return self
 
 
 class CredentialsFile(RoleConfig):
@@ -526,14 +566,21 @@ class DeployRunnerRegistration(RoleConfig):
     that reads production's dumps" (task ``pg_restore``); ``target``: the
     playbook's own target script (task ``target``, with the token step when
     it has a :class:`~.target.ServiceToken`).
+
+    A runner whose template does not include ``_work_dir.py.j2`` (heis,
+    villakunterbunt) has a ``temp_dir`` (task ``temp_dir``) in place of the
+    ``work_dir``; heis also has its ``token_rotation`` (task
+    ``token_rotation``, after the target, with the target's token user).
     """
 
     runner: RunnerConfig
     access: MinioAccess
     packages: tuple[Package, ...]
     variables: Mapping[str, Any]
-    work_dir: WorkDir
     tasks: tuple[Task, ...]
+    work_dir: WorkDir | None = None
+    temp_dir: TempDir | None = None
+    token_rotation: TokenRotation | None = None
     known_hosts: tuple[KnownHost, ...] = ()
     ssh_key: bool = False
     credentials: CredentialsFile | None = None
@@ -561,9 +608,14 @@ class DeployRunnerRegistration(RoleConfig):
         else:
             source = _template_source(self.runner.template)
             declared = _template_variables(self.runner.template)
-            if "_work_dir.py.j2" not in source:
+            if self.temp_dir is None and "_work_dir.py.j2" not in source:
                 # The playbooks' "Require a runner that works on the external disk only".
                 problems.append(f"{self.runner.template} does not include _work_dir.py.j2")
+            if self.temp_dir is not None:
+                if "_work_dir.py.j2" in source:
+                    problems.append(f"{self.runner.template} works on the external disk: give it the work dir")
+                if self.variables.get("echoport_backup_temp_dir") != self.temp_dir.path:
+                    problems.append("echoport_backup_temp_dir must be the temp dir")
             # The class B playbooks' "Require the <runner> in the ops-library checkout".
             missing = [marker for marker in self.template_markers if marker not in source]
             problems += [f"{self.runner.template} lacks {marker!r}" for marker in missing]
@@ -577,8 +629,31 @@ class DeployRunnerRegistration(RoleConfig):
         deploy_user = self.runner.deploy_user
         if self.runner.run_as:
             problems.append("a deploy-user runner has no run_as rule (only fastdeploy -> deploy)")
-        if self.work_dir.owner != deploy_user:
-            problems.append(f"the work dir belongs to the runner's user {deploy_user}")
+        if (self.work_dir is None) == (self.temp_dir is None):
+            problems.append("a runner has exactly one of the work dir and the temp dir")
+        for folder in (self.work_dir, self.temp_dir):
+            if folder is not None and folder.owner != deploy_user:
+                problems.append(f"the work dir belongs to the runner's user {deploy_user}")
+        rotation = self.token_rotation
+        if rotation is not None and (self.target is None or self.target.token is None):
+            problems.append("a token rotation timer rotates the token of the target the playbook writes")
+        elif rotation is not None:
+            assert self.target is not None
+            token = self.target.token
+            assert token is not None
+            # In the playbook the helper and the token include read the same variables.
+            ties: dict[Binding, Any] = {
+                "target": self.target.name,
+                "service": token.service,
+                "fastdeploy_root": str(token.fastdeploy_root),
+                "fastdeploy_user": token.fastdeploy_user,
+                "days": token.days,
+            }
+            if self.target.name not in token.targets:
+                problems.append("the token is not scoped to the target the rotation stores it on")
+            for binding, value in ties.items():
+                if rotation.bound(binding) != value:
+                    problems.append(f"the token rotation's {binding} must be the target's and its token's")
         if not self.access.scoped:
             # The shared alias is retired for deploy; the media fallback to root's credentials stays with the playbook.
             problems.append("the target needs its scoped account (a secret in minio-backup-accounts.yml)")
@@ -602,8 +677,8 @@ class DeployRunnerRegistration(RoleConfig):
             if name in self.variables and self.variables[name] != getattr(self.access, field):
                 problems.append(f"{name} must be the access's {field}")
         bound = {
-            "_work_dir": self.work_dir.path,
-            "_work_mount": self.work_dir.mount,
+            "_work_dir": None if self.work_dir is None else self.work_dir.path,
+            "_work_mount": None if self.work_dir is None else self.work_dir.mount,
             "_credentials_file": None if self.credentials is None else self.credentials.path,
             "_minio_url": self.access.url,
             "_default_bucket": self.access.bucket,
@@ -627,10 +702,14 @@ class DeployRunnerRegistration(RoleConfig):
             "credentials": self.credentials is not None,
             "pg_restore": self.min_pg_restore_major is not None,
             "target": self.target is not None,
+            "work_dir": self.work_dir is not None,
+            "temp_dir": self.temp_dir is not None,
+            "token_rotation": self.token_rotation is not None,
         }
-        required = {"access", "work_dir", "runner"} | {task for task, present in wanted.items() if present}
-        # The playbooks read pg_restore after its package, and write the target after the runner.
-        for before, after in (("packages", "pg_restore"), ("runner", "target")):
+        required = {"access", "runner"} | {task for task, present in wanted.items() if present}
+        # The playbooks read pg_restore after its package, write the target after the runner
+        # and install heis's rotation timer after the target.
+        for before, after in (("packages", "pg_restore"), ("runner", "target"), ("target", "token_rotation")):
             if before in self.tasks and after in self.tasks and self.tasks.index(after) < self.tasks.index(before):
                 problems.append(f"the {after} task comes after the {before} task")
         if len(set(self.tasks)) != len(self.tasks) or not required <= set(self.tasks) <= required | {"mc"}:
@@ -783,7 +862,17 @@ def install_deploy_registration(
         elif task == "access":
             minio_access(cfg.access, access_key=cfg.access.account.user, secret_key=secret_key)
         elif task == "work_dir":
+            assert cfg.work_dir is not None
             _access.work_dir(cfg.work_dir)
+        elif task == "temp_dir":
+            assert cfg.temp_dir is not None
+            files.directory(
+                name=f"Ensure the temp dir {cfg.temp_dir.path}",
+                path=cfg.temp_dir.path,
+                user=cfg.temp_dir.owner,
+                group=cfg.temp_dir.owner,
+                mode="0755",
+            )
         elif task == "credentials":
             assert source is not None
             _credentials(cfg, source, secret_key)
@@ -796,6 +885,10 @@ def install_deploy_registration(
             else:
                 assert token_user is not None
                 token_and_target(cfg.target, token_user)
+        elif task == "token_rotation":
+            assert cfg.token_rotation is not None
+            assert token_user is not None
+            install_token_rotation(cfg.token_rotation, token_user)
         else:
             install_runner(cfg.runner, variables)
 
@@ -813,6 +906,7 @@ __all__ = [
     "MediaSource",
     "RequiredFile",
     "RunnerRegistration",
+    "TempDir",
     "credential_check_command",
     "default_ipv4",
     "install_deploy_registration",

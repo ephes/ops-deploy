@@ -1,0 +1,7 @@
+[Unit]
+Description=Rotate Heis production backup FastDeploy token
+After=fastdeploy.service echoport.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rotate-heis-production-backup-token
