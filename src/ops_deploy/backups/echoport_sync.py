@@ -16,6 +16,11 @@ anything:
    through Echoport's mc alias must find a file of exactly that size. With a
    checksum it is also streamed through ``sha256sum`` (``verify_checksum``).
 
+A target whose run stores a prefix of objects plus a ``manifest.json``
+(``artifact="manifest"``, the rclone media runners) has no single object to
+``mc stat``; its gate replaces step 3, see :func:`run_echoport_backup` and
+"Manifest artifacts" in the Backups documentation page.
+
 Any failure raises :class:`EchoportBackupError` naming the step; the caller
 stops before its first change. On success :class:`EchoportBackupResult` holds
 the run ID and object for the deploy's evidence and a restore hint.
@@ -26,6 +31,9 @@ sent on stdin through a :data:`~ops_deploy.backups.remote.Runner`.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -36,6 +44,7 @@ from typing import Any, Literal
 from ops_deploy.backups.remote import CommandResult, RemoteCommandError, Runner
 
 Become = Literal["runuser", "sudo", "none"]
+Artifact = Literal["file", "manifest"]
 
 TARGET_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 LABEL_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@/+=-]{0,99}")
@@ -44,6 +53,7 @@ ALIAS_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,63}")
 _PATH_PATTERN = re.compile(r"/[A-Za-z0-9._/+@-]*")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_OBJECTS_PREFIX = re.compile(r"[A-Za-z0-9._/-]{1,512}")
 
 # Runs a command as the Echoport user. root uses runuser (no PAM prompt, no
 # sudoers entry); a non-root SSH user needs passwordless sudo (-n: never asks).
@@ -89,8 +99,72 @@ as_user "$mc" cat "$object" | sha256sum
 )
 
 
+# A manifest artifact's run: Echoport's own record of it, read as the Echoport
+# user through ``manage.py shell``. The run ID comes in the environment; the
+# script prints one marked JSON line (``null`` when there is no such run).
+RUN_RECORD_MARKER = "ECHOPORT_RUN_RECORD "
+_RUN_RECORD_CODE = """import json, os
+from backups.models import BackupRun
+run = BackupRun.objects.select_related("target").filter(pk=int(os.environ["ECHOPORT_VERIFY_RUN_ID"])).first()
+record = None if run is None else {
+    "id": run.pk,
+    "target": run.target.name,
+    "status": run.status,
+    "triggered_by": run.triggered_by,
+    "storage_bucket": run.storage_bucket,
+    "storage_key": run.storage_key,
+    "size_bytes": run.size_bytes,
+    "checksum_sha256": run.checksum_sha256,
+    "file_count": run.file_count,
+}
+print("ECHOPORT_RUN_RECORD " + json.dumps(record))
+"""
+assert RUN_RECORD_MARKER in _RUN_RECORD_CODE
+
+RUN_RECORD_SCRIPT = (
+    _PRELUDE
+    + """site=$1
+python=$2
+run_id=$3
+code=$(cat <<"PY"
+"""
+    + _RUN_RECORD_CODE
+    + """PY
+)
+cd "$site"
+as_user env "ECHOPORT_VERIFY_RUN_ID=$run_id" "$python" manage.py shell -c "$code" </dev/null
+"""
+)
+
+# The manifest is a few hundred bytes; anything above this is not one (its
+# size is checked with ``mc stat`` before it is read).
+MANIFEST_MAX_BYTES = 65536
+MANIFEST_NAME = "manifest.json"
+# base64, so the controller hashes the stored bytes, not decoded text.
+MANIFEST_SCRIPT = (
+    _PRELUDE
+    + """mc=$1
+object=$2
+as_user "$mc" cat "$object" </dev/null | base64
+"""
+)
+
+# ``mc du`` of the run's objects: one JSON record with their count and bytes.
+LISTING_SCRIPT = (
+    _PRELUDE
+    + """mc=$1
+prefix=$2
+as_user "$mc" du --json "$prefix" </dev/null
+"""
+)
+
+
 class EchoportBackupError(RuntimeError):
     """The backup or its verification failed; nothing after it may run."""
+
+
+class ManifestCheckError(EchoportBackupError):
+    """A check of the manifest gate failed (message: ``<check>: <reason>``)."""
 
 
 def _require(pattern: re.Pattern[str], value: str, what: str) -> str:
@@ -150,8 +224,29 @@ class ReportedRun:
 
 
 @dataclass(frozen=True)
+class ManifestEvidence:
+    """What the manifest gate checked for a manifest artifact.
+
+    ``manifest_sha256`` is the hash of the manifest file only (Echoport's
+    stored checksum of the run); the objects are checked by count and total
+    bytes, their contents are not hashed.
+    """
+
+    manifest: str
+    manifest_sha256: str
+    objects_prefix: str
+    object_count: int
+    object_bytes: int
+
+
+@dataclass(frozen=True)
 class EchoportBackupResult:
-    """A verified backup run: the evidence a deploy records."""
+    """A verified backup run: the evidence a deploy records.
+
+    For a manifest artifact ``key`` is the run's prefix, ``object_size`` the
+    listed bytes of its objects and ``manifest`` what the gate checked;
+    ``checksum_sha256`` stays ``None`` (no checksum covers the objects).
+    """
 
     target: str
     triggered_by: str
@@ -165,6 +260,8 @@ class EchoportBackupResult:
     object_last_modified: str | None
     started_at: str
     finished_at: str
+    artifact: Artifact = "file"
+    manifest: ManifestEvidence | None = None
 
     @property
     def object(self) -> str:
@@ -175,8 +272,9 @@ class EchoportBackupResult:
         return f"manage.py restore {self.target} {self.run_id}"
 
     def as_record(self) -> dict[str, Any]:
-        return {
+        record = {
             "target": self.target,
+            "artifact": self.artifact,
             "triggered_by": self.triggered_by,
             "run_id": self.run_id,
             "object": self.object,
@@ -189,6 +287,16 @@ class EchoportBackupResult:
             "finished_at": self.finished_at,
             "restore": self.restore_hint,
         }
+        if self.manifest is not None:
+            record["manifest"] = {
+                "object": self.manifest.manifest,
+                "sha256": self.manifest.manifest_sha256,
+                "sha256_scope": "manifest file only",
+                "objects_prefix": self.manifest.objects_prefix,
+                "object_count": self.manifest.object_count,
+                "object_bytes": self.manifest.object_bytes,
+            }
+        return record
 
 
 def _field(lines: list[str], name: str) -> str | None:
@@ -253,6 +361,215 @@ def parse_stat_output(stdout: str) -> tuple[int, str | None]:
     return size, modified if isinstance(modified, str) else None
 
 
+def _marked_json(stdout: str, marker: str) -> Any:
+    lines = [line[len(marker) :] for line in stdout.splitlines() if line.startswith(marker)]
+    if len(lines) != 1:
+        raise ValueError(f"{len(lines)} marked lines, expected exactly one")
+    return json.loads(lines[0])
+
+
+def _int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _same(actual: object, expected: object) -> bool:
+    """Equal, and an int only as an int (not ``1.0`` or ``True``)."""
+
+    if isinstance(expected, int):
+        return _int(actual) == expected
+    return actual == expected
+
+
+def check_run_record(target: str, triggered_by: str, run: ReportedRun, stdout: str) -> tuple[str, int]:
+    """Echoport's record of ``run``: its checksum and file count, or an error.
+
+    The record must be the reported run (ID, target, label, bucket, key and
+    size), successful, with a SHA-256 and a positive file count.
+    """
+
+    try:
+        record = _marked_json(stdout, RUN_RECORD_MARKER)
+    except ValueError as exc:
+        raise ManifestCheckError(f"run record: unreadable ({exc})") from None
+    if not isinstance(record, dict):
+        raise ManifestCheckError(f"run record: Echoport has no run {run.run_id}")
+    expected: dict[str, object] = {
+        "id": run.run_id,
+        "target": target,
+        "status": "success",
+        "triggered_by": triggered_by,
+        "storage_bucket": run.bucket,
+        "storage_key": run.key,
+        "size_bytes": run.size_bytes,
+    }
+    for name, value in expected.items():
+        if not _same(record.get(name), value):
+            raise ManifestCheckError(f"run record: {name} is {record.get(name)!r}, expected {value!r}")
+    checksum = record.get("checksum_sha256")
+    if not isinstance(checksum, str) or not _SHA256.fullmatch(checksum):
+        raise ManifestCheckError("run record: no SHA-256 of the manifest")
+    count = _int(record.get("file_count"))
+    if count is None or count <= 0:
+        raise ManifestCheckError(f"run record: no positive file count (got {record.get('file_count')!r})")
+    return checksum, count
+
+
+def decode_manifest(stdout: str, size: int) -> bytes:
+    """The manifest's stored bytes from ``MANIFEST_SCRIPT``'s base64 output."""
+
+    try:
+        content = base64.b64decode("".join(stdout.split()), validate=True)
+    except binascii.Error:
+        raise ManifestCheckError("manifest: unreadable output of mc cat") from None
+    if len(content) != size:
+        raise ManifestCheckError(f"manifest: read {len(content)} bytes, mc stat reported {size}")
+    return content
+
+
+def check_manifest(target: str, run: ReportedRun, content: bytes, checksum: str, count: int) -> str:
+    """The manifest's objects prefix, after checking it against the run.
+
+    Its SHA-256 must be Echoport's checksum of the run; it must name the
+    target, the run's bucket and prefix, Echoport's byte total and file count,
+    and an objects prefix under ``<target>/``.
+    """
+
+    if len(content) > MANIFEST_MAX_BYTES:
+        raise ManifestCheckError(f"manifest: larger than {MANIFEST_MAX_BYTES} bytes")
+    if hashlib.sha256(content).hexdigest() != checksum:
+        raise ManifestCheckError("manifest: its SHA-256 differs from Echoport's checksum of the run")
+    try:
+        manifest = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ManifestCheckError("manifest: not JSON") from None
+    if not isinstance(manifest, dict):
+        raise ManifestCheckError("manifest: not a JSON object")
+    expected: dict[str, object] = {
+        "target": target,
+        "storage_bucket": run.bucket,
+        "storage_prefix": run.key,
+        "bytes": run.size_bytes,
+        "count": count,
+    }
+    for name, value in expected.items():
+        if not _same(manifest.get(name), value):
+            raise ManifestCheckError(f"manifest: {name} is {manifest.get(name)!r}, expected {value!r}")
+    if "run_id" in manifest and not _same(manifest["run_id"], run.run_id):
+        raise ManifestCheckError(f"manifest: run_id is {manifest['run_id']!r}, expected {run.run_id}")
+    prefix = manifest.get("objects_prefix")
+    parts = prefix.split("/") if isinstance(prefix, str) else []
+    if (
+        not isinstance(prefix, str)
+        or not _OBJECTS_PREFIX.fullmatch(prefix)
+        or parts[0] != target
+        or len(parts) < 2
+        or any(part in ("", ".", "..") for part in parts)
+    ):
+        raise ManifestCheckError(f"manifest: objects_prefix {prefix!r} is not under {target}/")
+    return prefix
+
+
+def parse_listing_output(stdout: str, expected_prefix: str) -> tuple[int, int]:
+    """Object count and bytes ``mc du --json`` reported for ``expected_prefix``."""
+
+    records: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+    if len(records) != 1:
+        raise ManifestCheckError(f"listing: mc du returned {len(records)} records, expected exactly one")
+    record = records[0]
+    count, size = _int(record.get("objects")), _int(record.get("size"))
+    if (
+        record.get("status") != "success"
+        or record.get("isVersions") is True
+        or str(record.get("prefix", "")).rstrip("/") != expected_prefix
+        or count is None
+        or size is None
+    ):
+        raise ManifestCheckError("listing: mc du did not report the objects prefix with a count and size")
+    return count, size
+
+
+def _gate_step(
+    runner: Runner, script: str, args: list[str], timeout: float, *, target: str, where: str, name: str
+) -> CommandResult:
+    result = _run(runner, script, args, timeout, f"{target}: {name}")
+    if not result.ok:
+        raise EchoportBackupError(f"{where}: {name}: failed (exit {result.returncode}): {_tail(result)}")
+    return result
+
+
+def _verify_manifest(
+    runner: Runner,
+    site: EchoportSite,
+    target: str,
+    triggered_by: str,
+    run: ReportedRun,
+    become: list[str],
+    check_timeout: float,
+    listing_timeout: float,
+) -> ManifestEvidence:
+    """The manifest gate: run record, manifest, listing; any mismatch raises.
+
+    A failed check or command raises ``<target>: run <id>: manifest gate:
+    <check>: ...``; ssh trouble (no result, timeout) keeps the shape of the
+    other steps, ``<target>: <check>: ...``.
+    """
+
+    where = f"{target}: run {run.run_id}: manifest gate"
+    manifest_key = f"{run.key}/{MANIFEST_NAME}"
+    manifest_path = site.object_path(run.bucket, manifest_key)
+
+    def command(script: str, args: list[str], timeout: float, name: str) -> CommandResult:
+        return _gate_step(runner, script, [*become, *args], timeout, target=target, where=where, name=name)
+
+    try:
+        record = command(
+            RUN_RECORD_SCRIPT, [site.site_path, site.python_path, str(run.run_id)], check_timeout, "run record"
+        )
+        checksum, count = check_run_record(target, triggered_by, run, record.stdout)
+
+        stat = command(STAT_SCRIPT, [site.mc_path, manifest_path], check_timeout, "manifest")
+        try:
+            size, _ = parse_stat_output(stat.stdout)
+        except EchoportBackupError as exc:
+            raise ManifestCheckError(f"manifest: {exc}") from None
+        if size > MANIFEST_MAX_BYTES:
+            raise ManifestCheckError(f"manifest: larger than {MANIFEST_MAX_BYTES} bytes")
+        fetched = command(MANIFEST_SCRIPT, [site.mc_path, manifest_path], check_timeout, "manifest")
+        content = decode_manifest(fetched.stdout, size)
+        objects_prefix = check_manifest(target, run, content, checksum, count)
+
+        listed_prefix = f"{run.bucket}/{objects_prefix}/objects"
+        listing = command(
+            LISTING_SCRIPT, [site.mc_path, f"{site.minio_alias}/{listed_prefix}/"], listing_timeout, "listing"
+        )
+        listed_count, listed_bytes = parse_listing_output(listing.stdout, listed_prefix)
+        if listed_count <= 0:
+            raise ManifestCheckError(f"listing: no objects under {listed_prefix}/")
+        if listed_count != count:
+            raise ManifestCheckError(f"listing: {listed_count} objects, the manifest names {count}")
+        if listed_bytes != run.size_bytes:
+            raise ManifestCheckError(f"listing: {listed_bytes} bytes, the manifest names {run.size_bytes}")
+    except ManifestCheckError as exc:
+        raise EchoportBackupError(f"{where}: {exc}") from None
+    return ManifestEvidence(
+        manifest=f"{run.bucket}/{manifest_key}",
+        manifest_sha256=checksum,
+        objects_prefix=f"{run.bucket}/{objects_prefix}/objects",
+        object_count=listed_count,
+        object_bytes=listed_bytes,
+    )
+
+
 def _run(runner: Runner, script: str, args: list[str], timeout: float, step: str) -> CommandResult:
     try:
         return runner(script, args, timeout)
@@ -279,18 +596,32 @@ def run_echoport_backup(
     check_timeout: float = 120,
     checksum_timeout: float = 3600,
     verify_checksum: bool = True,
+    artifact: Artifact = "file",
+    listing_timeout: float = 900,
     clock: Callable[[], datetime] = _now,
 ) -> EchoportBackupResult:
     """Run ``target``'s backup now, wait for it and verify the artifact.
 
     ``runner`` reaches the Echoport host. ``timeout`` bounds the whole backup
     (Echoport has its own per-target timeout below it); ``check_timeout`` the
-    ``mc stat``. Raises :class:`EchoportBackupError` on any failure and
-    :class:`ValueError` on a malformed target or label.
+    ``mc stat``, the run record and the manifest fetch. Raises
+    :class:`EchoportBackupError` on any failure and :class:`ValueError` on a
+    malformed target, label or artifact type.
+
+    ``artifact`` says what the run stores. ``"file"`` (default): one object at
+    the reported key, checked with ``mc stat`` (and its checksum when
+    reported). ``"manifest"``: a prefix with ``manifest.json`` and the
+    objects under the manifest's ``objects_prefix``/``objects``; checked
+    against Echoport's run record (ID, target, label, key, size, the
+    manifest's SHA-256, file count), the manifest itself and an ``mc du`` of
+    the objects (count and bytes; ``listing_timeout``). Object contents are
+    not hashed.
     """
 
     _require(TARGET_PATTERN, target, "Echoport target")
     _require(LABEL_PATTERN, triggered_by, "triggered-by label")
+    if artifact not in ("file", "manifest"):
+        raise ValueError(f"invalid artifact type: {artifact!r}")
     become = [site.become, site.user]
     started = clock()
 
@@ -304,6 +635,25 @@ def run_echoport_backup(
     if not backup.ok:
         raise EchoportBackupError(f"{target}: backup failed (exit {backup.returncode}): {_tail(backup)}")
     run = parse_backup_output(target, backup.stdout)
+
+    if artifact == "manifest":
+        evidence = _verify_manifest(runner, site, target, triggered_by, run, become, check_timeout, listing_timeout)
+        return EchoportBackupResult(
+            target=target,
+            triggered_by=triggered_by,
+            run_id=run.run_id,
+            bucket=run.bucket,
+            key=run.key,
+            size_bytes=run.size_bytes,
+            checksum_sha256=None,
+            checksum_verified=False,
+            object_size=evidence.object_bytes,
+            object_last_modified=None,
+            started_at=started.isoformat(timespec="seconds"),
+            finished_at=clock().isoformat(timespec="seconds"),
+            artifact="manifest",
+            manifest=evidence,
+        )
 
     object_path = site.object_path(run.bucket, run.key)
     stat = _run(runner, STAT_SCRIPT, [*become, site.mc_path, object_path], check_timeout, f"{target}: mc stat")

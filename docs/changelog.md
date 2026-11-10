@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `backups.run_echoport_backup` takes `artifact="manifest"` for targets that
+  store a prefix with a `manifest.json` instead of one object (the rclone media
+  runners). Before, only the single-object `mc stat` check existed, so every
+  successful run of such a target was reported as a failed verification. The
+  manifest gate checks Echoport's run record of the reported run, the
+  manifest (its SHA-256 against the run's checksum, target, bucket, prefix,
+  bytes, count) and an `mc du` of the objects (count and bytes, not empty).
+  No checksum over the objects is claimed: the result's `checksum_sha256`
+  stays `None` and `manifest.manifest_sha256` covers the manifest file only.
+  The default `artifact="file"` is unchanged. See
+  [Manifest artifacts](backups.md#manifest-artifacts).
+
 - `services.software_estate_publisher`: the macOS status and verification
   now require a usable credential (private regular file of the owner, single
   link, at most 4096 bytes, in a private directory) for every present
