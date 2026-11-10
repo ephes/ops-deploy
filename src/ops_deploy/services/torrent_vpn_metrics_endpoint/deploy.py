@@ -35,7 +35,7 @@ from ops_deploy.services.metrics_endpoint.common import (
     password,
     port_preflight,
 )
-from ops_deploy.services.thermal_monitoring.deploy import armed_check, timer_armed
+from ops_deploy.services.thermal_monitoring.deploy import Calendar, Seconds, armed_check, timer_armed
 
 SafeUrl = Annotated[str, Field(pattern=r"""^https?://[^\s"'\\]+$""")]
 JsonPath = Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_.]*$")]
@@ -61,6 +61,9 @@ class TorrentVpnMetricsEndpointConfig(EndpointConfig):
     collector_path: PlainPath = PurePosixPath("/usr/local/bin/torrent_vpn_metrics_collect")
     timer_name: Word = "torrent-vpn-metrics-collector"
     timer_interval: Annotated[StrictInt, Field(ge=1)] = 300
+    timer_on_boot_sec: Seconds = 30
+    timer_on_calendar: Calendar = "*:0/5"
+    timer_accuracy_sec: Seconds = 10
     script_timeout: Annotated[StrictInt, Field(ge=1)] = 10
     gluetun_container: Word = "torrent-gluetun-1"
     attached_containers: tuple[Word, ...] = ("torrent-qbittorrent-1", "torrent-jackett-1")
@@ -91,6 +94,9 @@ def role_vars(cfg: TorrentVpnMetricsEndpointConfig, bind: str) -> dict[str, Any]
         "htpasswd_path": str(cfg.htpasswd_path),
         "collector_path": str(cfg.collector_path),
         "timer_interval": cfg.timer_interval,
+        "timer_on_boot_sec": cfg.timer_on_boot_sec,
+        "timer_on_calendar": cfg.timer_on_calendar,
+        "timer_accuracy_sec": cfg.timer_accuracy_sec,
         "gluetun_container": cfg.gluetun_container,
         "attached_containers": list(cfg.attached_containers),
         "host_ip_url": cfg.host_ip_url,

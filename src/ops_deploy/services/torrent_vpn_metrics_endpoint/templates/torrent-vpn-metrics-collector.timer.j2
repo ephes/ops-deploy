@@ -2,9 +2,15 @@
 Description=Collect torrent VPN metrics every {{ torrent_vpn_metrics_endpoint_timer_interval }} seconds
 
 [Timer]
-OnBootSec=30
+# OnBootSec=/OnUnitActiveSec= alone stop firing when the timer starts after
+# OnBootSec has passed and the last collector run belongs to an earlier boot.
+# OnActiveSec= re-anchors on every timer (re)start; OnCalendar= is the
+# Persistent= wall-clock backstop.
+OnBootSec={{ torrent_vpn_metrics_endpoint_timer_on_boot_sec }}
+OnActiveSec={{ torrent_vpn_metrics_endpoint_timer_on_boot_sec }}
 OnUnitActiveSec={{ torrent_vpn_metrics_endpoint_timer_interval }}
-AccuracySec=10
+OnCalendar={{ torrent_vpn_metrics_endpoint_timer_on_calendar }}
+AccuracySec={{ torrent_vpn_metrics_endpoint_timer_accuracy_sec }}
 Persistent=true
 
 [Install]
