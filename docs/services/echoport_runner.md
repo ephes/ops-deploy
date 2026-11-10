@@ -179,6 +179,27 @@ steps:
   planning with the playbook's message (the `minecraft_java` deploy
   installs it).
 
+### The unifi runner's MongoDB password (never on argv)
+
+The rendered unifi runner reads the login from
+`/etc/echoport-backups/unifi-mongodb.json` and never puts the password on a
+command line (`ps`) or in a tool's environment. For every MongoDB call it
+creates a private `0700` directory below its work dir (prefix
+`unifi_backup_mongo_auth_`, so one left by a killed run is pruned with the
+run dirs) and removes it when the call returns:
+
+- `mongodump` (backup, safety snapshot, the restore's health check) and
+  `mongorestore` read the password from a `0600` `--config` file there
+  (`password: "<...>"`); host, port, user and authentication database stay
+  on argv;
+- `mongosh` (the collection count and `dropDatabase`) gets a script on stdin
+  (`--file /dev/stdin`) that authenticates against the authentication
+  database first; it runs with a private `HOME` whose mongosh config disables
+  logging and telemetry, and the script quits before authenticating when
+  that config is not in effect. The drop must print a confirmation marker.
+
+Tool output in an error is reported with the password replaced by `********`.
+
 ### Restores onto a fresh install (unifi, minecraft-java)
 
 Both runners take a safety snapshot before a restore changes anything. On a

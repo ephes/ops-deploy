@@ -434,35 +434,94 @@ def download_from_minio(bucket: str, key: str, dest_path: Path) -> None:
         raise RuntimeError(f"Download failed, file missing at {dest_path}")
 
 
+# The MongoDB password never reaches argv (visible in ps) or the environment:
+# mongodump/mongorestore read it from a private --config file, mongosh gets
+# it in its script on stdin. Both live in a 0700 directory below WORK_DIR
+# (prefix unifi_backup_, so a directory left by a killed run is pruned with
+# the run dirs) that is removed after every call.
+MONGO_AUTH_PREFIX = "unifi_backup_mongo_auth_"
+MONGO_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def write_private(path: Path, text: str) -> None:
+    """A new file (never an existing one or a link), 0600 from its first byte."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as handle:
+        handle.write(text)
+
+
+def redact(text: str, creds: Dict[str, str]) -> str:
+    """The password as given, as YAML/JSON-escaped in the config file and the mongosh script."""
+    password = creds.get("password", "")
+    for secret in sorted({password, json.dumps(password)[1:-1]}, key=len, reverse=True):
+        if len(secret) >= 4:
+            text = text.replace(secret, "********")
+    return text
+
+
+def mongo_tool(creds: Dict[str, str], binary: str, args: list[str], script: Optional[str] = None) -> subprocess.CompletedProcess:
+    """``binary`` with the credentials from a private directory; ``script`` goes to mongosh on stdin."""
+    auth_dir = Path(tempfile.mkdtemp(prefix=MONGO_AUTH_PREFIX, dir=WORK_DIR))
+    try:
+        home = auth_dir / "home"
+        settings = home / ".mongodb" / "mongosh"
+        settings.mkdir(mode=0o700, parents=True)
+        write_private(
+            settings / "config",
+            json.dumps({"disableLogging": True, "enableTelemetry": False, "updateURL": ""}),
+        )
+        env = {"HOME": str(home), "PATH": os.environ.get("PATH") or MONGO_PATH, "LC_ALL": "C"}
+        common = [f"--host={creds['host']}", f"--port={creds['port']}"]
+        if script is None:
+            config = auth_dir / "tools.yml"
+            # JSON strings are YAML double-quoted strings.
+            write_private(config, "password: " + json.dumps(creds["password"]) + "\n")
+            argv = [
+                binary,
+                f"--config={config}",
+                *common,
+                f"--username={creds['username']}",
+                f"--authenticationDatabase={creds['auth_db']}",
+                *args,
+            ]
+            result = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
+        else:
+            argv = [binary, "--quiet", "--norc", *common, *args, "--file", "/dev/stdin"]
+            result = subprocess.run(argv, input=script, capture_output=True, text=True, env=env)
+    finally:
+        shutil.rmtree(auth_dir, ignore_errors=True)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, argv, redact(result.stdout or "", creds), redact(result.stderr or "", creds)
+        )
+    return result
+
+
+def mongosh_script(creds: Dict[str, str], body: str) -> str:
+    """Refuse to run with mongosh logging on, authenticate, then ``body``."""
+    return (
+        'if (config.get("disableLogging") !== true || config.get("enableTelemetry") !== false) quit(19);\n'
+        f"const authDb = db.getSiblingDB({json.dumps(creds['auth_db'])});\n"
+        f"if (!authDb.auth({json.dumps(creds['username'])}, {json.dumps(creds['password'])})) quit(20);\n"
+        f"const target = db.getSiblingDB({json.dumps(creds['database'])});\n"
+        f"{body}\n"
+    )
+
+
 def mongo_dump(creds: Dict[str, str], output_dir: Path) -> None:
-    args = [
-        "mongodump",
-        f"--host={creds['host']}",
-        f"--port={creds['port']}",
-        f"--db={creds['database']}",
-        f"--out={output_dir}",
-        f"--username={creds['username']}",
-        f"--password={creds['password']}",
-        f"--authenticationDatabase={creds['auth_db']}",
-    ]
-    run_cmd(args)
+    mongo_tool(creds, "mongodump", [f"--db={creds['database']}", f"--out={output_dir}"])
     if not (output_dir / creds["database"]).is_dir():
         raise RuntimeError("mongodump completed but dump directory missing")
 
 
 def mongo_drop_database(creds: Dict[str, str]) -> None:
-    args = [
-        "mongosh",
-        f"--host={creds['host']}",
-        f"--port={creds['port']}",
-        "--quiet",
-        f"--username={creds['username']}",
-        f"--password={creds['password']}",
-        f"--authenticationDatabase={creds['auth_db']}",
-        creds["database"],
-        "--eval=db.dropDatabase()",
-    ]
-    run_cmd(args)
+    script = mongosh_script(
+        creds,
+        'const r = target.dropDatabase();\nif (!r || r.ok !== 1) quit(21);\nprint("OPS_UNIFI_DROPPED");',
+    )
+    result = mongo_tool(creds, "mongosh", [], script)
+    if "OPS_UNIFI_DROPPED" not in [line.strip() for line in result.stdout.splitlines()]:
+        raise RuntimeError(f"mongosh did not confirm dropping the {creds['database']} database")
 
 
 def mongo_collection_count(creds: Dict[str, str]) -> int:
@@ -472,50 +531,19 @@ def mongo_collection_count(creds: Dict[str, str]) -> int:
     the safety snapshot asks first. Any failure or unreadable answer raises:
     a database that cannot be inspected is not taken for an empty one.
     """
-    args = [
-        "mongosh",
-        f"--host={creds['host']}",
-        f"--port={creds['port']}",
-        "--quiet",
-        f"--username={creds['username']}",
-        f"--password={creds['password']}",
-        f"--authenticationDatabase={creds['auth_db']}",
-        creds["database"],
-        "--eval=db.getCollectionNames().length",
-    ]
-    lines = [line.strip() for line in run_cmd(args).stdout.splitlines() if line.strip()]
+    script = mongosh_script(creds, "print(target.getCollectionNames().length);")
+    lines = [line.strip() for line in mongo_tool(creds, "mongosh", [], script).stdout.splitlines() if line.strip()]
     if not lines or not lines[-1].isdigit():
         raise RuntimeError("Could not read the MongoDB collection count for the safety snapshot")
     return int(lines[-1])
 
 
 def mongo_restore(creds: Dict[str, str], dump_dir: Path) -> None:
-    args = [
-        "mongorestore",
-        f"--host={creds['host']}",
-        f"--port={creds['port']}",
-        f"--db={creds['database']}",
-        f"--dir={dump_dir}",
-        f"--username={creds['username']}",
-        f"--password={creds['password']}",
-        f"--authenticationDatabase={creds['auth_db']}",
-    ]
-    run_cmd(args)
+    mongo_tool(creds, "mongorestore", [f"--db={creds['database']}", f"--dir={dump_dir}"])
 
 
 def mongo_dump_check(creds: Dict[str, str]) -> None:
-    args = [
-        "mongodump",
-        f"--host={creds['host']}",
-        f"--port={creds['port']}",
-        f"--db={creds['database']}",
-        "--archive=/dev/null",
-        "--gzip",
-        f"--username={creds['username']}",
-        f"--password={creds['password']}",
-        f"--authenticationDatabase={creds['auth_db']}",
-    ]
-    run_cmd(args)
+    mongo_tool(creds, "mongodump", [f"--db={creds['database']}", "--archive=/dev/null", "--gzip"])
 
 
 def wait_service_active(timeout_seconds: int = START_TIMEOUT) -> None:

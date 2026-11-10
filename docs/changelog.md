@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Echoport unifi runner: the MongoDB password no longer reaches argv, where
+  `ps` showed it during every backup and restore. `mongodump`/`mongorestore`
+  read it from a private `0600` `--config` file in a `0700` directory below
+  the work dir, removed after each call; `mongosh` gets it in its script on
+  stdin, with a private `HOME` that disables mongosh logging. Tool errors are
+  reported with the password redacted. Re-register the runner with ops-control's
+  `just register-one unifi-backup`. See
+  [Echoport runners](services/echoport_runner.md#the-unifi-runners-mongodb-password-never-on-argv).
+
 - `services.opsgate`: `OpsGateConfig.opsgate_retired` (default `false`, not a
   role variable) turns `deploy_opsgate` into a stop-and-keep-stopped route for
   the retired OpsGate: it disables and boots out the runner and API
