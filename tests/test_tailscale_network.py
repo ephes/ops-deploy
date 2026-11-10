@@ -333,3 +333,16 @@ def test_a_file_without_the_stanza_or_no_file_changes_nothing(current: str | Non
 
     assert run.succeeded, run.error
     assert run.changed_ops == []
+
+
+def test_a_legacy_file_that_is_not_utf8_refuses_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    import base64
+
+    from pyinfra.api import DeployError
+
+    from ops_deploy.infra.tailscale import deploy as module
+
+    answer = "present\n" + base64.b64encode(b"\xff\xfe").decode()
+    monkeypatch.setattr(module, "probe", lambda *args, **kwargs: answer)
+    with pytest.raises(DeployError, match="as UTF-8 text; nothing was changed"):
+        module._read(LEGACY)

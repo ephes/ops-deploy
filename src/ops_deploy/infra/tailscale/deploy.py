@@ -142,7 +142,10 @@ def _read(path: str) -> str | None:
         return None
     if status != "present":
         raise DeployError(f"could not read {path}")
-    return base64.b64decode(data.strip()).decode()
+    try:
+        return base64.b64decode(data.strip()).decode()
+    except (ValueError, UnicodeDecodeError):
+        raise DeployError(f"could not read {path} as UTF-8 text; nothing was changed") from None
 
 
 def remove_legacy_stanzas(cfg: TailscaleConfig, uris: str, release: str) -> list[Any]:
