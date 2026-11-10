@@ -239,6 +239,7 @@ def token_for(service: str) -> str:
 
 def test_the_kept_scripts() -> None:
     assert target_scripts() == (
+        "daybook_operations",
         "gotosocial",
         "graphyard",
         "marina_production",

@@ -460,6 +460,44 @@ field differs: a converged row keeps its `updated_at` and skips Echoport's
 `manage.py shell -c`'s argument, so `RunnerTarget` refuses value names that
 look like a secret.
 
+## The Daybook operations backup bridge (`daybook_operations`)
+
+ops-library's `daybook_operations_api_backup` role (`tasks_from:
+register_echoport`) registers a fixed-source bridge, not a
+`fastdeploy_runner` script. `DaybookOperationsBackup` holds the role
+variables ops-control's playbook passes (with the target's `MinioAccess`)
+and copies the role's asserts (fixed runner and policy paths, the access
+must be the target's, renewal window below the token lifetime).
+`install_daybook_operations_backup` (`register_daybook_operations_backup`
+as a deploy) runs, in the role's order after the playbook's
+`backup_minio_account.yml` (`access.minio_access`):
+
+- `/usr/local/libexec` (`0755`), the upload dir (`0700`) and FastDeploy's
+  service dir (`0755`), all `root:root`;
+- the bridge `/usr/local/libexec/daybook-operations-backup` (`root:root
+  0755`): `files/daybook_operations/echoport_runner.py`, the role's file
+  byte for byte;
+- the policy `/etc/daybook-operations-backup.json` (`0600`) and
+  `config.json` (`0644`) as `to_nice_json` writes them through `copy:
+  content:` (no final newline);
+- the sudoers rule (`fastdeploy` to `deploy` and `deploy` to `root`, only
+  `--config *`), validated with `visudo` first;
+- FastDeploy's `service` row, with the role's query, only when the stored
+  data differs (read while planning). Like the role it does not run
+  `syncservices`;
+- the token and the Echoport target with the role's script
+  (`files/targets/daybook_operations.py`, `token_and_target`). A new target
+  gets `schedule` and status `active`; an existing one keeps its schedule
+  and status unless `update_schedule` is set. The token user reaches
+  `issueservicetoken` on stdin (the role passes it in argv).
+
+`registered_schedule` reads, while planning, the schedule the target will
+have after the run (the role's `daybook_operations_api_backup_registered_schedule`);
+ops-control upserts its Nyxmon checks with it.
+`tests/test_echoport_runner_daybook_operations.py` compares the files with
+what the role wrote on macmini (2026-11-10), plans no mutating operation on
+that host, and runs the target script against the stand-in model.
+
 ## Not here yet
 
 Design note §3.1 also lists these parts; they come with the slices that use

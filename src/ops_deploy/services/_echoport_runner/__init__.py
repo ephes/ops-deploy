@@ -20,6 +20,10 @@ playbook passes) plus the parts its playbook uses:
   (packages, access, runner, and for class B the playbook's credential file,
   target script and Nyxmon script), the entry point of ops-control's runner
   entries.
+- :mod:`.daybook_operations`: the Daybook operations backup bridge (ops-library
+  ``daybook_operations_api_backup``), a fixed-source bridge rather than a
+  ``fastdeploy_runner`` script, whose FastDeploy row is written directly
+  (no ``syncservices``).
 
 :func:`deploy_runner` does what the role does, in its order:
 
