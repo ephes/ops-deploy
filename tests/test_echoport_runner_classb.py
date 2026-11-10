@@ -180,6 +180,16 @@ GRAPHYARD = {
     "target_timeout_seconds": 3600,
     "default_bucket": "backups",
 }
+# heis-production's (villakunterbunt-staging's script is the same text).
+REMOTE_SQLITE_SITE = {
+    "target_name": "heis-production",
+    "target_description": "Heis production backup via service-owned remote FastDeploy runner",
+    "service_name_fd": "heis-production-backup",
+    "target_schedule": "35 3 * * *",
+    "target_retention_days": 30,
+    "target_timeout_seconds": 1800,
+    "default_bucket": "backups",
+}
 GOOD = jwt(type="service", service="mail-db-backup", jti="abc", exp=int(time.time()) + 60 * 86400)
 
 
@@ -234,6 +244,7 @@ def test_the_kept_scripts() -> None:
         "marina_production",
         "mastodon_production_db",
         "postfixadmin",
+        "remote_sqlite_site",
         "service_owned",
     )
     for name in target_scripts():
@@ -244,7 +255,10 @@ def test_the_kept_scripts() -> None:
         target_script("../runner_target")
 
 
-@pytest.mark.parametrize(("script", "values"), [("service_owned", SERVICE_OWNED), ("graphyard", GRAPHYARD)])
+@pytest.mark.parametrize(
+    ("script", "values"),
+    [("service_owned", SERVICE_OWNED), ("graphyard", GRAPHYARD), ("remote_sqlite_site", REMOTE_SQLITE_SITE)],
+)
 def test_a_new_row_is_created_by_apply_and_then_unchanged(script: str, values: dict[str, Any]) -> None:
     cfg = kept(script, values)
     fresh = token_for(str(values["service_name_fd"]))
@@ -334,6 +348,18 @@ def test_graphyard_has_no_reactivation_guard_and_reactivates_as_today() -> None:
     assert row("graphyard")["status"] == "active"
     # It never sets schedule_required.
     assert row("graphyard")["schedule_required"] is False
+
+
+def test_heis_and_villakunterbunt_reactivate_and_clear_the_service_fields_as_today() -> None:
+    cfg = kept("remote_sqlite_site", REMOTE_SQLITE_SITE)
+    assert run(cfg, "apply", f"{token_for('heis-production-backup')}\n") == "applied"
+    row("heis-production").update(status="paused", service_name="heis", restore_owner="heis:heis")
+
+    assert run(cfg, "check") == "pending"
+    assert run(cfg, "apply") == "applied"
+    stored = row("heis-production")
+    assert (stored["status"], stored["service_name"], stored["restore_owner"]) == ("active", "", "")
+    assert stored["schedule_required"] is False
 
 
 def test_postfixadmin_converges_an_existing_row_only() -> None:
