@@ -1,0 +1,3 @@
+#!/bin/sh
+# Administrative entry point; collection and delivery always run unprivileged.
+exec /usr/sbin/runuser -u software-estate-publisher -- {{ software_estate_publisher_linux_python | quote }} {{ (software_estate_publisher_linux_release + '/publish.py') | quote }} --config /etc/software-estate-publisher/config.json "$@"

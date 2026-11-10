@@ -1,0 +1,31 @@
+[Unit]
+Description=Publish this host's software inventory
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=software-estate-publisher
+Group=software-estate-publisher
+ExecStart={{ software_estate_publisher_linux_python }} {{ software_estate_publisher_linux_release }}/publish.py --config /etc/software-estate-publisher/config.json
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=300
+TimeoutStopSec=15
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/software-estate-publisher
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+StandardOutput=journal
+StandardError=journal
