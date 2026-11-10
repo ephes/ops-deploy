@@ -50,6 +50,9 @@ class MacosSshTunnelConfig(RoleConfig):
     # When set, preserve the original Emerge unprivileged authorization step.
     # No root SSH, new authentication or privilege workaround is involved.
     relay_home: PurePosixPath | None = None
+    # With state="absent": also revoke the relay line (when relay_home is set)
+    # and then remove the managed identity, in the original removal order.
+    retire_identity: bool = False
 
     @field_validator(
         "home",
@@ -101,6 +104,12 @@ class MacosSshTunnelConfig(RoleConfig):
                 raise ValueError("managed tunnel paths must remain below the configured owner's home")
         if self.relay_home is not None and not self.manage_identity:
             raise ValueError("relay authorization requires the managed forwarding identity")
+        if self.retire_identity and (self.state != "absent" or not self.manage_identity):
+            raise ValueError("identity retirement requires state absent and the managed forwarding identity")
+        if self.retire_identity and self.relay_home is not None and self.identity_comment == "restricted-forwarding":
+            # Revocation removes every relay line with the comment: the generic
+            # default could be shared by other identities on the same account.
+            raise ValueError("identity retirement on a relay requires a unique, non-default identity_comment")
         assert self.directory is not None
         assert self.plist is not None
         managed = [

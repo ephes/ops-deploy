@@ -84,10 +84,7 @@ def trusted_control_path(cfg):
     return path
 
 
-def authorize(cfg, public, check):
-    if cfg.get("relay_home") is None:
-        return True
-    line = 'restrict,port-forwarding,permitopen="' + cfg["target"] + ':' + str(cfg["target_port"]) + '",command="/usr/bin/false" ' + public + " " + cfg["identity_comment"]
+def relay(cfg, request):
     remote = shlex.join(["/usr/bin/python3", "-B", "-c", cfg["relay_script"]])
     # Match the original delegated Ansible SSH session. Connection setup keeps
     # its explicit deadline; the original task had no extra whole-command cap.
@@ -103,10 +100,32 @@ def authorize(cfg, public, check):
         "-o", "UserKnownHostsFile=" + cfg["known_hosts"],
     ]
     argv += ["-p", str(cfg["ssh_port"]), cfg["user"] + "@" + cfg["host"], remote]
-    result = run(argv, timeout=None,
-        input=json.dumps({"home": cfg["relay_home"], "line": line, "comment": cfg["identity_comment"], "check": check}) + "\n")
-    data = json.loads(result.stdout)
+    result = run(argv, timeout=None, input=json.dumps(request) + "\n")
+    return json.loads(result.stdout)
+
+
+def authorize(cfg, public, check):
+    if cfg.get("relay_home") is None:
+        return True
+    line = 'restrict,port-forwarding,permitopen="' + cfg["target"] + ':' + str(cfg["target_port"]) + '",command="/usr/bin/false" ' + public + " " + cfg["identity_comment"]
+    data = relay(cfg, {"home": cfg["relay_home"], "line": line, "comment": cfg["identity_comment"], "check": check})
     return data["current"] if check else True
+
+
+def revoke(cfg, check):
+    """Remove every relay line carrying the managed comment (the original removal)."""
+    if cfg.get("relay_home") is None:
+        return True
+    data = relay(cfg, {"home": cfg["relay_home"], "comment": cfg["identity_comment"], "check": check, "revoke": True})
+    return data["current"] if check else True
+
+
+def identity_retired(cfg):
+    """No managed identity remains; an unsafe or partial one is left to the mutator."""
+    try:
+        return identity(cfg)["state"] == "missing"
+    except probe_ns["IdentityProbeError"]:
+        return False
 
 
 def file_metadata(path, mode):
@@ -136,7 +155,14 @@ def mode_for(cfg, path):
 def current(cfg, *, check_authorization=True):
     if cfg["state"] == "absent":
         paths = list(cfg["contents"]) + [str(Path(cfg["directory"]) / "config.lock")]
-        return disabled(cfg) and not loaded(cfg) and all(not os.path.lexists(p) for p in paths)
+        if not (disabled(cfg) and not loaded(cfg) and all(not os.path.lexists(p) for p in paths)):
+            return False
+        if cfg.get("retire_identity"):
+            if not identity_retired(cfg):
+                return False
+            if check_authorization and not revoke(cfg, True):
+                return False
+        return True
     if cfg["manage_identity"]:
         found = identity(cfg)
         if found["state"] != "current":
@@ -222,6 +248,17 @@ def apply(cfg):
             if os.path.lexists(path):
                 file_metadata(path, mode_for(cfg, path))
                 Path(path).unlink()
+        if cfg.get("retire_identity"):
+            # The original removal order: tunnel stopped and removed, relay
+            # authorization revoked, and only then the private identity removed.
+            # A relay failure keeps the identity for a retry.
+            revoke(cfg, False)
+            if not identity_retired(cfg):
+                ns["manage"](argparse.Namespace(
+                    state="absent", home=cfg["home"], path=cfg["identity"], user=cfg["owner"],
+                    group=cfg["identity_group"], comment=cfg["identity_comment"], keygen=cfg["identity_keygen"],
+                    check=False,
+                ))
         return
     for path in [cfg["directory"], cfg["log_directory"]]:
         if not directory_current(path, 0o700):
@@ -244,9 +281,13 @@ def main():
     elif action == "verify":
         # Authorization was actually checked/converged before local mutation.
         # The original role's post-install checks concern local stopped state.
+        # A retirement checks the removed identity; its revocation ran in apply.
         if not current(cfg, check_authorization=False):
             raise RuntimeError("owner-session stopped tunnel verification failed")
-        print("Tunnel deployment is converged; automatic start remains disabled.")
+        if cfg["state"] == "absent":
+            print("Tunnel removal is converged.")
+        else:
+            print("Tunnel deployment is converged; automatic start remains disabled.")
     else:
         raise RuntimeError("unknown tunnel operation")
 
