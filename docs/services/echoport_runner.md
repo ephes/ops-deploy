@@ -10,7 +10,8 @@ which adds its config in ops-control and its own entry point (design note
 branch, §3 and §3.8). The same-host root runners (class A1) use
 `registration.register_runner` below. The deploy-user runners (classes A2
 and A3, and heis-production and villakunterbunt-staging) use
-`registration.register_deploy_runner`.
+`registration.register_deploy_runner`. The generic runner `echoport-backup`,
+which serves many Echoport targets, uses `generic.register_generic_runner`.
 
 ## Runner installation (`RunnerConfig`, `deploy_runner`)
 
@@ -78,7 +79,9 @@ target from `playbooks/vars/backup_minio_accounts.yml` into a `MinioAccess`
 (target, OS user, alias, store URL, whether it is switched, store, retired
 aliases) and passes the access key and secret. When `mc` is needed and
 missing, the run refuses while planning, as the playbooks' "Ensure mc is
-installed" does (`register-echoport-backup.yml` installs it).
+installed" does. The MinIO deploy (`bootstrap_with_mc`) installs the
+pinned `mc`. `register-echoport-backup.yml` installs it too, but its port
+(`generic`) refuses without it, like the other runners.
 
 - a switched target on MinIO gets its scoped account through root's MinIO
   admin alias (`minio_deploy`'s `backup_account`, as the echoport deploy ports
@@ -498,6 +501,41 @@ ops-control upserts its Nyxmon checks with it.
 what the role wrote on macmini (2026-11-10), plans no mutating operation on
 that host, and runs the target script against the stand-in model.
 
+## The generic runner (`generic`)
+
+ops-control's `register-echoport-backup.yml` runs ops-library's
+`echoport_backup` role and then `common/backup_minio_account.yml` once for
+every target the generic runner `echoport-backup` serves. The runner picks
+the `mc` alias by the first segment of the object key
+(`MINIO_PREFIX_ALIASES`), so each target has its own scoped MinIO account
+and root alias. `GenericRunnerRegistration` holds the role's
+`fastdeploy_runner` settings (`backup.py.j2`, run as root, sudoers file
+`/etc/sudoers.d/echoport_backup`), one `MinioAccess` per target in the
+playbook's loop order, and the template variables. It refuses a prefix alias
+map that is not exactly the targets and their aliases in that order, a target
+without its scoped account, and an `mc` path or bucket other than the
+accesses'. `install_generic_registration` (`register_generic_runner` as a
+deploy) runs, in the playbook's order:
+
+- the role's `sqlite3` package (no cache update);
+- the role's pinned `mc` through the MinIO deploy's `binary` helper: kept
+  when its sha256 is the pinned one, else downloaded and verified before it
+  replaces the file (`root:root 0755`, as `get_url` with the checksum);
+- the runner (`install_runner`);
+- per target, `access.minio_access`: the scoped MinIO account (or, for a
+  target with `store: rustfs`, only the proof through its alias) and root's
+  alias.
+
+Two differences from the playbook: the accesses read the accounts and
+aliases through `mc` while planning, so a host without `mc` is refused
+before any write (`just deploy-one minio` installs the same pinned client);
+and the retired shared alias is looked up and removed once, with the first
+target, not once per target. The role's own `minio_alias` include is not
+ported: the playbook passes it no credentials, so it never runs.
+`tests/test_echoport_runner_generic.py` compares the runner, `config.json`
+and the sudoers rule with what the role wrote on macmini (2026-11-10, sixteen
+targets) and plans no mutating operation on that host.
+
 ## Not here yet
 
 Design note §3.1 also lists these parts; they come with the slices that use
@@ -510,7 +548,9 @@ them:
 ## Parity
 
 - `tests/test_echoport_runner_parity.py`: every runner script of the 28
-  register playbooks that use these templates (plus one synthetic variant)
+  register playbooks that use these templates (plus one synthetic variant
+  and the generic runner as it is rendered for macmini's sixteen targets,
+  `echoport-backup-macmini`)
   renders to the sha256 `ansible-playbook` produced
   (`tests/parity/echoport_runner/expected.json`, written by `generate.py`
   from `inputs.json`), and `config.json` and the sudoers rule equal the
