@@ -62,6 +62,9 @@ FORKED_TEMPLATES = {
 VENDORED_LIBRARY_FILES = {
     "helpers/templates/rust_release.py.txt": "plugins/filter/rust_release.py",
     "services/_metrics_httpd/rules.py": "plugins/filter/metrics_httpd.py",
+    "base/files/echoport_remote_command_guard.py.txt": (
+        "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py"
+    ),
     **{
         f"services/software_estate_publisher/files/{name}.txt": f"roles/software_estate/files/{name}"
         for name in ("publish.py", "collect.py", "emit.py", "outbox.py", "send.py")

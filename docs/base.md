@@ -2,7 +2,7 @@
 
 `ops_deploy.base` ports the base/bootstrap roles of ops-library. Each is a
 typed config plus a `@deploy` function. Some are run on their own against a
-host (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
+host (hostname, unit masks, headless mode, the Echoport remote command guard, journald, shell basics, authorized keys,
 SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4
 options drop, remote LUKS unlock, boot-visible i915, external bind storage), the others
 are steps a service deploy calls (uv, Node.js):
@@ -29,6 +29,7 @@ change.
 | `journald_config` | `journald_config` | `JournaldConfig` | `deploy_journald_config` |
 | `ssh_authorized_keys` | `ssh_authorized_keys_manage` | `SshAuthorizedKeysConfig`, `AuthorizedKey` | `deploy_ssh_authorized_keys` |
 | `ssh_authorized_key_entries` | none (pyinfra only) | `SshAuthorizedKeyEntriesConfig`, `AuthorizedKey` | `deploy_ssh_authorized_key_entries` |
+| `echoport_command_guard` | `echoport_remote_command_guard` (impl `python`) | `EchoportCommandGuardConfig` | `deploy_echoport_command_guard` |
 | `uv_install` | `uv_install` | `UvInstallConfig` | `deploy_uv_install` |
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
@@ -202,6 +203,47 @@ remove the key of the connection in use) and serialising concurrent runs
 (take the shared deploy lock before the file is read). Callers own both; in
 ops-control that is the `controller_keys` service (deploy-controllers plan,
 slice 4).
+
+## echoport_command_guard
+
+| Field | Default | |
+|---|---|---|
+| `path` | `/usr/local/sbin/echoport-remote-command-guard` | the guard program |
+| `policy_path` | `/etc/echoport/remote-command-guard.json` | its policy |
+| `python` | `/usr/bin/python3` | must exist on the host |
+| `impl` | `python` | the only value |
+| `rust_version` | `""` | the only value |
+| `policy` | `{}` | what the Echoport remote runners may do (role README) |
+
+The forced-command guard of the deploy@macmini backup key, as the role installs
+it with `echoport_remote_command_guard_impl: python`: the guard program (a
+verbatim copy of the role's `files/echoport-remote-command-guard.py`, shipped as
+`base/files/echoport_remote_command_guard.py.txt` and checked by the drift test)
+at `path`, root:root 0755; the policy directory root:root 0755; the policy,
+rendered like Ansible's `to_nice_json` (sorted keys, four spaces, ASCII escapes)
+plus a final newline, root:root 0644. On the live hosts the rendering is byte
+for byte the file the role wrote.
+
+The policy is checked twice before it replaces the live one: while the config
+is built, by the same guard code on the controller (unknown keys, wrong types
+and anything the guard's `Policy.from_dict` refuses fail before any host is
+touched), and on the host, where it is uploaded next to the live file
+(`<policy_path>.ops-deploy-new`) and moved over it only when the installed
+guard's `--check-policy` accepts it (the role's `validate:`); a refused copy is
+deleted and the deploy fails. A converged host reports no change.
+
+`EchoportCommandGuardConfig.forced_command()` is the `command="…"` value of the
+key's line (`<python> -I <path> <policy_path>`, the role's
+`echoport_remote_command_guard_forced_command`), and
+`forced_commands_for_key(content, public_key)` reads a live `authorized_keys`
+back like the role's `confirm_live.yml`: the key is live when it returns
+`[[forced_command]]` (exactly one line, exactly that command).
+
+Not ported: the Rust guard (`impl` `shadow` or `rust`, a pinned release, and
+`confirm_live.yml`'s pin and prune after the live check). No host has a Rust
+release pinned, so the config refuses those settings instead of ignoring them.
+Writing the key's line (`ssh_authorized_key_entries`), the tailnet route on
+macmini and the probes through the new line belong to the caller (ops-control).
 
 ## uv_install
 
