@@ -502,6 +502,38 @@ def _replaced_line(before: str, after: str) -> int | None:
     return None
 
 
+_BANNER = re.compile(r"^# (?P<host>\S+):\d+ SSH-")
+
+
+def _deduplicated(content: str, wanted: Sequence[str]) -> str:
+    """``content`` with one copy of each ``wanted`` key line and none of those hosts' keyscan banners.
+
+    Until 2026-10-22 every register run appended the controller's
+    ``ssh-keyscan`` output again: a ``# <host>:22 SSH-2.0-...`` banner
+    comment and another copy of the same key line. Later identical copies
+    of a wanted ``<host> <key>`` line (whitespace-normalized) and the
+    banner comments of those hosts are dropped; the first copy keeps its
+    place and every other line (other hosts, hashed or multi-host entries,
+    other keys of the same host) is left as it is.
+    """
+
+    lines = set(wanted)
+    hosts = {line.split(" ", 1)[0] for line in wanted}
+    seen: set[str] = set()
+    kept: list[str] = []
+    for line in content.splitlines(True):
+        banner = _BANNER.match(line)
+        if banner and banner["host"] in hosts:
+            continue
+        normalized = " ".join(line.split())
+        if normalized in lines:
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+        kept.append(line)
+    return "".join(kept)
+
+
 def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str] = controller_keyscan) -> None:
     """The include, once per name in ``cfgs`` and in that order, on one known_hosts file.
 
@@ -511,6 +543,10 @@ def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str]
     applies them, each to the file the previous one left (the host's
     ``ssh-keygen -F`` answers are read once and moved past a replaced line),
     and the result is written in one upload. The file keeps its owner and mode.
+    Beyond the include, the result keeps a single copy of each name's key
+    line and none of the names' ``ssh-keyscan`` banner comments, which the
+    register playbooks appended on every run until 2026-10-22
+    (:func:`_deduplicated`); a converged file stays unchanged.
     """
 
     if not cfgs:
@@ -533,6 +569,8 @@ def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str]
         if removed is not None:
             lookups[index + 1 :] = [_without_line(lookup, removed) for lookup in lookups[index + 1 :]]
         content = changed
+    if content is not None:
+        content = _deduplicated(content, [f"{cfg.name} {key}" for cfg, key in zip(cfgs, keys, strict=True)])
     if content == current:
         return
     if len(cfgs) > 1 and current and not current.endswith("\n"):

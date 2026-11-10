@@ -124,6 +124,17 @@ several names, a file without a final newline that would change refuses (the
 module would append to its last line, so the answers read once would not
 describe the file); an unchanged one is left alone.
 
+Unlike the include, the result keeps one copy of each name's key line and
+drops those names' `# <name>:22 SSH-...` banner comments. Until 2026-10-22
+every register run appended the controller's `ssh-keyscan` output again
+(on 2026-11-10 deploy's known_hosts on macmini held 51 copies of staging's
+line, 21 of production's and 70 banners), so the next `just register-one` of
+a runner with these names removes the leftovers in the same upload. Only exact
+(whitespace-normalized) copies of the wanted line go: hashed and multi-host
+entries, other hosts and a different key of the same type stay; a file
+without duplicates is unchanged. The Ansible playbook (the rollback) still
+leaves duplicates alone.
+
 ## Same-host root runners (`registration`)
 
 `RunnerRegistration` is one register playbook of class A1 (snappymail,

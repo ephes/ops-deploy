@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Echoport runner known hosts (`access.known_hosts_entries`): a register run
+  now also removes later identical copies of each name's key line and those
+  names' `ssh-keyscan` banner comments, which the register playbooks appended
+  on every run until 2026-10-22 (51 + 21 key lines and 70 banners on macmini).
+  Other entries are untouched and a clean file stays unchanged. See
+  [Echoport runners](services/echoport_runner.md#known-host-accessknown_host).
+
 - UniFi routine integration fixture (`tests/integration/unifi_routine`): the
   MongoDB readiness wait no longer gives up silently after 30 pings; it waits
   up to 180 s for `ok: 1` and otherwise fails with mongod's state and log
