@@ -533,6 +533,14 @@ component qualification binds Tailscale1.104.2. Running nodes retain identity;
 only selected CorpDNS/RouteAll drift invokes `set`. Public repository key refresh
 still checks upstream on every ordinary run and compares validated bytes before
 replacement. `latest` retains the original package-present semantics.
+`TailscaleConfig.repo_legacy_deb822_files` names deb822 files that still carry
+the Tailscale stanza from before the deploy owned `<repo_name>.sources`
+(staging's consolidated Debian 13 `staging-trixie.sources`). After the managed
+file is configured, the exact five-field stanza (`Types`, `URIs`, `Suites`,
+`Components`, `Signed-By` of the configured repository) is removed from each of
+them with its separating blank line, a `<file>.pre-tailscale-<timestamp>~`
+backup is written first and the apt index is refreshed; other paragraphs and a
+file without the stanza are left alone.
 
 Cached metrics retain their original Python/pinned-Rust policy, timer and
 cgroup-BPF controls. Fresh compatible error telemetry stays visible; missing,

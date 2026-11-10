@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `infra.tailscale`: `TailscaleConfig.repo_legacy_deb822_files` removes the
+  exact Tailscale stanza from consolidated deb822 files (with a `~` backup)
+  after the managed `tailscale.sources` is configured, so staging's
+  `staging-trixie.sources` no longer duplicates it (apt's "configured multiple
+  times" warnings since the 2026-10-28 deploy). See
+  [Infrastructure](infra.md#persistent-network-and-tailscale).
+
 - Echoport runner known hosts (`access.known_hosts_entries`): a register run
   now also removes later identical copies of each name's key line and those
   names' `ssh-keyscan` banner comments, which the register playbooks appended

@@ -217,3 +217,119 @@ def test_missing_binary_defers_preferences_until_native_prerequisites(monkeypatc
     monkeypatch.setattr(module, "probe", lambda *args, **kwargs: None)
     with pytest.raises(DeployError, match="unavailable"):
         list(cast(Any, module.preferences).__wrapped__(TailscaleConfig(hostname="owned").model_dump_json()))
+
+
+# -- legacy deb822 stanza (staging's consolidated Debian 13 sources) ---------------------------
+
+CONSOLIDATED = """Types: deb
+URIs: https://deb.debian.org/debian
+Suites: trixie trixie-updates
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://packages.redis.io/deb
+Suites: trixie
+Components: main
+Signed-By: /etc/apt/keyrings/redis.gpg
+
+Types: deb
+URIs: https://pkgs.tailscale.com/stable/debian
+Suites: trixie
+Components: main
+Signed-By: /usr/share/keyrings/tailscale-archive-keyring.gpg
+"""
+WITHOUT_TAILSCALE = CONSOLIDATED.split("\n\nTypes: deb\nURIs: https://pkgs.tailscale.com")[0] + "\n"
+LEGACY = "/etc/apt/sources.list.d/staging-trixie.sources"
+REPO_URL = "https://pkgs.tailscale.com/stable/debian"
+
+
+def _stanza() -> str:
+    from ops_deploy.infra.tailscale.deploy import legacy_stanza
+
+    cfg = TailscaleConfig(hostname="owned")
+    return legacy_stanza(REPO_URL, "trixie", cfg.repo_component, cfg.repo_keyring)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (CONSOLIDATED, WITHOUT_TAILSCALE),
+        # the stanza first, last without a final newline, alone
+        (
+            "Types: deb\nURIs: https://pkgs.tailscale.com/stable/debian\nSuites: trixie\nComponents: main\n"
+            "Signed-By: /usr/share/keyrings/tailscale-archive-keyring.gpg\n\nTypes: deb\nURIs: x\n",
+            "Types: deb\nURIs: x\n",
+        ),
+        (CONSOLIDATED.rstrip("\n"), WITHOUT_TAILSCALE),
+        (
+            "Types: deb\nURIs: https://pkgs.tailscale.com/stable/debian\nSuites: trixie\nComponents: main\n"
+            "Signed-By: /usr/share/keyrings/tailscale-archive-keyring.gpg\n",
+            "",
+        ),
+        # another suite, an extra field or another key stays
+        (
+            CONSOLIDATED.replace(
+                "Suites: trixie\nComponents: main\nSigned-By: /usr/share/keyrings/t",
+                "Suites: bookworm\nComponents: main\nSigned-By: /usr/share/keyrings/t",
+            ),
+            None,
+        ),
+        (CONSOLIDATED.replace("tailscale-archive-keyring.gpg\n", "tailscale-archive-keyring.gpg\nEnabled: no\n"), None),
+        (CONSOLIDATED.replace("tailscale-archive-keyring.gpg", "other.gpg"), None),
+        (WITHOUT_TAILSCALE, None),
+    ],
+)
+def test_only_the_exact_legacy_stanza_is_removed(text: str, expected: str | None) -> None:
+    from ops_deploy.infra.tailscale.deploy import without_legacy_stanza
+
+    assert without_legacy_stanza(text, _stanza()) == (text if expected is None else expected)
+
+
+@pytest.mark.parametrize(
+    "paths",
+    [
+        ("/etc/apt/sources.list.d/tailscale.sources",),
+        ("/etc/apt/sources.list.d/staging-trixie.list",),
+        ("relative.sources",),
+        ("/etc/apt/../x.sources",),
+    ],
+)
+def test_legacy_files_must_be_other_absolute_sources_files(paths: tuple[str, ...]) -> None:
+    with pytest.raises(ValidationError):
+        TailscaleConfig(hostname="owned", repo_legacy_deb822_files=paths)
+
+
+def _cleanup_run(current: str | None) -> Any:
+    import base64
+
+    from ops_deploy.infra.tailscale.deploy import remove_legacy_stanzas
+    from ops_deploy.testing import run_deploy_fake
+    from tests import fakehost
+
+    cfg = TailscaleConfig(hostname="owned", repo_legacy_deb822_files=(LEGACY,))
+    answer = ["absent"] if current is None else ["present", base64.b64encode(current.encode()).decode()]
+    responses: dict[Any, Any] = {"base64 -w0": answer, **fakehost.stat(LEGACY, user="root", mode="-rw-r--r--")}
+
+    def deploy() -> None:
+        remove_legacy_stanzas(cfg, REPO_URL, "trixie")
+
+    return run_deploy_fake(deploy, responses=responses)
+
+
+def test_the_stanza_is_removed_from_the_consolidated_file_with_a_backup() -> None:
+    run = _cleanup_run(CONSOLIDATED)
+
+    assert run.succeeded, run.error
+    assert run.upload(LEGACY) == WITHOUT_TAILSCALE.encode()
+    (backup,) = [path for path, _ in run.uploads if path.startswith(LEGACY + ".pre-tailscale-")]
+    assert backup.endswith("~")
+    assert run.upload(backup) == CONSOLIDATED.encode()
+
+
+@pytest.mark.parametrize("current", [WITHOUT_TAILSCALE, None])
+def test_a_file_without_the_stanza_or_no_file_changes_nothing(current: str | None) -> None:
+    run = _cleanup_run(current)
+
+    assert run.succeeded, run.error
+    assert run.changed_ops == []

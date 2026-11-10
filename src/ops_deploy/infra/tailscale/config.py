@@ -33,6 +33,10 @@ class TailscaleConfig(RoleConfig):
     repo_keyring: AbsolutePath = "/usr/share/keyrings/tailscale-archive-keyring.gpg"
     repo_distro: RepoWord | None = None
     repo_release: RepoWord | None = None
+    # deb822 files that still carry the Tailscale stanza from before the
+    # role owned ``<repo_name>.sources`` (staging's consolidated Debian 13
+    # ``staging-trixie.sources``); the exact stanza is removed from them.
+    repo_legacy_deb822_files: tuple[AbsolutePath, ...] = ()
 
     @model_validator(mode="after")
     def _safe(self) -> TailscaleConfig:
@@ -60,7 +64,10 @@ class TailscaleConfig(RoleConfig):
                 or value.lstrip("-").split("=", 1)[0].lower() in {"auth-key", "authkey"}
             ):
                 raise ValueError("extra join arguments must be nonsecret tokens; auth comes from private stdin")
-        for path in (self.binary, self.socket, self.repo_keyring):
+        for path in (self.binary, self.socket, self.repo_keyring, *self.repo_legacy_deb822_files):
             if path == "/" or ".." in path.split("/"):
                 raise ValueError("native Tailscale paths must be absolute without traversal")
+        for path in self.repo_legacy_deb822_files:
+            if not path.endswith(".sources") or path == f"/etc/apt/sources.list.d/{self.repo_name}.sources":
+                raise ValueError("legacy sources must be .sources files other than the managed repository file")
         return self

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import json
 import shlex
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,8 @@ from typing import Any
 from pydantic import SecretStr
 from pyinfra import host
 from pyinfra.api import DeployError, StringCommand, deploy, operation
-from pyinfra.facts.server import LinuxDistribution, Which
+from pyinfra.facts.files import File
+from pyinfra.facts.server import Date, LinuxDistribution, Which
 from pyinfra.operations import apt, files, systemd
 from pyinfra.operations.util import any_changed
 
@@ -110,6 +112,80 @@ def tailscale_ipv4(cfg: TailscaleConfig) -> str:
         raise DeployError("Native own Tailscale IPv4 address is unavailable") from None
 
 
+def legacy_stanza(uris: str, suite: str, component: str, signed_by: str) -> str:
+    """The five-field stanza the Debian 13 upgrade wrote for Tailscale into a consolidated file."""
+
+    return f"Types: deb\nURIs: {uris}\nSuites: {suite}\nComponents: {component}\nSigned-By: {signed_by}"
+
+
+def without_legacy_stanza(text: str, stanza: str) -> str:
+    """``text`` without any paragraph that is exactly ``stanza``, and without its separating blank line.
+
+    As ops-library's ``repo_cleanup.yml`` only a whole paragraph equal to the
+    stanza goes; other suites, keys, components, extra fields and every other
+    repository stay. A file without the stanza is returned unchanged.
+    """
+
+    body = text.rstrip("\n")
+    paragraphs = body.split("\n\n")
+    kept = [paragraph for paragraph in paragraphs if paragraph != stanza]
+    if len(kept) == len(paragraphs):
+        return text
+    return "\n\n".join(kept) + "\n" if kept else ""
+
+
+def _read(path: str) -> str | None:
+    quoted = shlex.quote(path)
+    answer = probe(f"if [ -e {quoted} ]; then echo present; base64 -w0 {quoted}; else echo absent; fi", name=path)
+    status, _, data = (answer or "").partition("\n")
+    if status == "absent":
+        return None
+    if status != "present":
+        raise DeployError(f"could not read {path}")
+    return base64.b64decode(data.strip()).decode()
+
+
+def remove_legacy_stanzas(cfg: TailscaleConfig, uris: str, release: str) -> list[Any]:
+    """Drop the Tailscale stanza from ``cfg.repo_legacy_deb822_files``, keeping a ``~`` backup of each changed file.
+
+    Runs after the managed ``<repo_name>.sources`` is configured, so apt never
+    loses the repository; a file without the stanza (or missing) is left alone.
+    """
+
+    stanza = legacy_stanza(uris, release, cfg.repo_component, cfg.repo_keyring)
+    changed: list[Any] = []
+    for path in cfg.repo_legacy_deb822_files:
+        current = _read(path)
+        if current is None:
+            continue
+        cleaned = without_legacy_stanza(current, stanza)
+        if cleaned == current:
+            continue
+        found = host.get_fact(File, path=path)
+        info: Mapping[str, Any] = found or {}
+        user, group = str(info.get("user", "root")), str(info.get("group", "root"))
+        mode = str(info.get("mode", 644))
+        files.put(
+            name=f"Back up {path} before removing its Tailscale stanza",
+            src=StringIO(current),
+            dest=f"{path}.pre-tailscale-{host.get_fact(Date).strftime('%Y%m%dT%H%M%S')}~",
+            user=user,
+            group=group,
+            mode=mode,
+        )
+        changed.append(
+            files.put(
+                name=f"Remove the legacy Tailscale stanza from {path}",
+                src=StringIO(cleaned),
+                dest=path,
+                user=user,
+                group=group,
+                mode=mode,
+            )
+        )
+    return changed
+
+
 @deploy("Deploy Tailscale native core")
 def deploy_tailscale(cfg: TailscaleConfig, secrets: SecretValues) -> None:
     require_linux("tailscale")
@@ -167,7 +243,11 @@ def deploy_tailscale(cfg: TailscaleConfig, secrets: SecretValues) -> None:
         group="root",
         mode="0644",
     )
-    apt.update(name="Refresh apt only after actual Tailscale repository changes", _if=any_changed(key, repo, old_repo))
+    legacy = remove_legacy_stanzas(cfg, repo_url, str(bound.repo_release))
+    apt.update(
+        name="Refresh apt only after actual Tailscale repository changes",
+        _if=any_changed(key, repo, old_repo, *legacy),
+    )
     package = cfg.package_name if cfg.package_version == "latest" else f"{cfg.package_name}={cfg.package_version}"
     apt.packages(name="Ensure original Tailscale package present (latest does not upgrade)", packages=[package])
     systemd.service(
