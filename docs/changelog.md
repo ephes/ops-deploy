@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services._echoport_runner.daybook_operations`: the registration of the
+  Daybook operations backup bridge (ops-library `daybook_operations_api_backup`,
+  `tasks_from: register_echoport`): the bridge (vendored byte for byte), its
+  policy, FastDeploy's `config.json` and service row, the sudoers rule, and
+  the token and Echoport target through `token_and_target` with the role's
+  own target script (`files/targets/daybook_operations.py`). An existing
+  target keeps its schedule and status unless `update_schedule` is set;
+  `registered_schedule` reads the resulting schedule while planning. A host
+  the role left (macmini, read 2026-11-10) plans no mutating operation. See
+  [Echoport runners](services/echoport_runner.md#the-daybook-operations-backup-bridge-daybook_operations).
+
 - `services._echoport_runner`: the villakunterbunt-staging runner template is
   forked from ops-library's (`render.FORKED`). Backup and restore now arm the
   service restart before the first `systemctl stop`: before, a failed Django
