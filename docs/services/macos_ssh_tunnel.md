@@ -34,6 +34,25 @@ step. Authorization failure occurs before stopping a previously loaded tunnel.
 `state="absent"` unloads and removes only the tunnel's named files, preserving
 the caller-owned identity and relay authorization.
 
+`retire_identity=True` (only with `state="absent"` and `manage_identity`) also
+retires the credentials, in the original removal play's order: the tunnel is
+stopped and its files removed, then every relay `authorized_keys` line ending
+with ` <identity_comment>` is removed over the same delegated SSH session (when
+`relay_home` is set), and only then the private and public identity are
+retired by the unchanged ops-library mutator, which renames both files to
+`.<name>.remove-<hex>.tmp` quarantines in the same directory instead of
+unlinking them (the original removal left the same files). A relay failure stops the run with
+the identity in place, so a rerun can revoke it. The revocation keeps the
+file's mode and treats a missing `authorized_keys` or `~/.ssh` as already
+revoked. Because every line with the comment goes, a retirement with
+`relay_home` refuses the generic default `identity_comment`
+(`restricted-forwarding`): the comment must be unique to this identity on the
+relay account. Status reports
+`current` only when the tunnel is absent, no identity (or pending creation
+intent) remains and the relay holds no line with the comment; an unsafe or
+partial identity is drift and is left to the mutator, which refuses unsafe
+entries itself. Verification after the removal does not repeat the relay call.
+
 `ssh_port` defaults to `22`, retaining the original SSH template bytes. An
 explicit nondefault port appends a `Port` directive inside the sole managed
 `Host` block; values must be in `1..65535`. This supports an owned high-port
