@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+- `services.graphyard` core: the deploy removes the stale
+  `site/src/django/.env` (macmini, 2026-03, world-readable, with the secret key,
+  the Influx token and unused `HOME_ASSISTANT_*` values). Every key the code
+  reads comes from `/etc/graphyard/graphyard.env`; nothing restarts. See
+  [Graphyard](services/graphyard.md).
+
+- `infra.tailscale`: `TailscaleConfig.repo_legacy_deb822_files` removes the
+  exact Tailscale stanza from consolidated deb822 files (with a `~` backup)
+  after the managed `tailscale.sources` is configured, so staging's
+  `staging-trixie.sources` no longer duplicates it (apt's "configured multiple
+  times" warnings since the 2026-10-28 deploy). See
+  [Infrastructure](infra.md#persistent-network-and-tailscale).
+
+- Echoport runner known hosts (`access.known_hosts_entries`): a register run
+  now also removes later identical copies of each name's key line and those
+  names' `ssh-keyscan` banner comments, which the register playbooks appended
+  on every run until 2026-10-22 (51 + 21 key lines and 70 banners on macmini).
+  Other entries are untouched and a clean file stays unchanged. See
+  [Echoport runners](services/echoport_runner.md#known-host-accessknown_host).
+
+- UniFi routine integration fixture (`tests/integration/unifi_routine`): the
+  MongoDB readiness wait no longer gives up silently after 30 pings; it waits
+  up to 180 s for `ok: 1` and otherwise fails with mongod's state and log
+  tail. Failing fixture commands report their output tail with the fixture
+  passwords redacted instead of a bare `mongosh failed: 1`.
+
+- Echoport unifi runner: the MongoDB password no longer reaches argv, where
+  `ps` showed it during every backup and restore. `mongodump`/`mongorestore`
+  read it from a private `0600` `--config` file in a `0700` directory below
+  the work dir, removed after each call; `mongosh` gets it in its script on
+  stdin, with a private `HOME` that disables mongosh logging. Tool errors are
+  reported with the password redacted. Re-register the runner with ops-control's
+  `just register-one unifi-backup`. See
+  [Echoport runners](services/echoport_runner.md#the-unifi-runners-mongodb-password-never-on-argv).
+
 - `services.opsgate`: `OpsGateConfig.opsgate_retired` (default `false`, not a
   role variable) turns `deploy_opsgate` into a stop-and-keep-stopped route for
   the retired OpsGate: it disables and boots out the runner and API

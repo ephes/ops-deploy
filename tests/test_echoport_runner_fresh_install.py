@@ -42,12 +42,13 @@ RESTORE_ENV = {
     "ECHOPORT_CHECKSUM": CHECKSUM,
     "ECHOPORT_RESTORE_ID": "306",
 }
-CREDS = {
+PASSWORD = "fixture-value"  # pragma: allowlist secret
+CREDS: dict[str, Any] = {
     "host": "127.0.0.1",
     "port": 27017,
     "database": "unifi",
     "username": "unifi",
-    "password": "fixture-value",  # pragma: allowlist secret
+    "password": PASSWORD,
     "auth_db": "admin",
 }
 FRESH = "nothing to snapshot (fresh install)"
@@ -214,43 +215,166 @@ def test_unifi_an_unreadable_collection_count_fails_before_any_change(unifi: Uni
     assert "collection count" in unifi.error()
 
 
-def _counting(stdout: str, returncode: int = 0) -> tuple[Any, list[list[str]]]:
+class Call:
+    """One host command: argv, stdin, environment and the private files it could read while it ran."""
+
+    def __init__(self, args: list[str], kwargs: dict[str, Any]) -> None:
+        self.args = args
+        self.input: str = kwargs.get("input") or ""
+        self.env: dict[str, str] = kwargs.get("env") or {}
+        self.config = ""
+        self.config_mode = 0
+        self.dir_mode = 0
+        for arg in args:
+            if arg.startswith("--config="):
+                path = Path(arg.removeprefix("--config="))
+                self.config = path.read_text()
+                self.config_mode = path.stat().st_mode & 0o777
+                self.dir_mode = path.parent.stat().st_mode & 0o777
+        settings = Path(self.env["HOME"]) / ".mongodb" / "mongosh" / "config"
+        self.mongosh_config = json.loads(settings.read_text())
+        self.home_dir_mode = Path(self.env["HOME"]).parent.stat().st_mode & 0o777
+
+
+def _counting(work: Path, stdout: str, returncode: int = 0, stderr: str = "") -> tuple[Any, list[Call]]:
     runner = load_runner("unifi-backup")
-    calls: list[list[str]] = []
+    (work / "work").mkdir(exist_ok=True)
+    runner.WORK_DIR = str(work / "work")
+    calls: list[Call] = []
 
-    def run(args: list[str], capture_output: bool, text: bool) -> subprocess.CompletedProcess[str]:
-        calls.append(args)
-        return subprocess.CompletedProcess(args, returncode, stdout, "auth failed" if returncode else "")
+    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(Call(list(args), kwargs))
+        return subprocess.CompletedProcess(args, returncode, stdout, stderr or ("auth failed" if returncode else ""))
 
-    runner.subprocess = types.SimpleNamespace(run=run, CalledProcessError=subprocess.CalledProcessError)
+    runner.subprocess = types.SimpleNamespace(
+        run=run, CalledProcessError=subprocess.CalledProcessError, DEVNULL=subprocess.DEVNULL
+    )
     return runner, calls
 
 
-def test_unifi_the_collection_count_comes_from_mongosh_for_the_database() -> None:
-    runner, calls = _counting("0\n")
+def test_unifi_the_collection_count_comes_from_mongosh_for_the_database(tmp_path: Path) -> None:
+    runner, calls = _counting(tmp_path, "0\n")
 
     assert runner.mongo_collection_count(dict(CREDS)) == 0
-    (args,) = calls
-    assert args[0] == "mongosh"
-    assert args[-2:] == ["unifi", "--eval=db.getCollectionNames().length"]
-    assert "--authenticationDatabase=admin" in args
-    runner, _ = _counting("Some notice\n42\n")
+    (call,) = calls
+    assert call.args[0] == "mongosh"
+    assert call.args[-2:] == ["--file", "/dev/stdin"]
+    assert 'db.getSiblingDB("admin")' in call.input
+    assert 'db.getSiblingDB("unifi")' in call.input
+    assert "getCollectionNames().length" in call.input
+    runner, _ = _counting(tmp_path, "Some notice\n42\n")
     assert runner.mongo_collection_count(dict(CREDS)) == 42
 
 
 @pytest.mark.parametrize("stdout", ["", "MongoServerError: not authorized\n", "-1\n"])
-def test_unifi_an_unreadable_answer_is_not_an_empty_database(stdout: str) -> None:
-    runner, _ = _counting(stdout)
+def test_unifi_an_unreadable_answer_is_not_an_empty_database(stdout: str, tmp_path: Path) -> None:
+    runner, _ = _counting(tmp_path, stdout)
 
     with pytest.raises(RuntimeError, match="collection count"):
         runner.mongo_collection_count(dict(CREDS))
 
 
-def test_unifi_a_failing_mongosh_is_not_an_empty_database() -> None:
-    runner, _ = _counting("", returncode=1)
+def test_unifi_a_failing_mongosh_is_not_an_empty_database(tmp_path: Path) -> None:
+    runner, _ = _counting(tmp_path, "", returncode=1)
 
     with pytest.raises(subprocess.CalledProcessError):
         runner.mongo_collection_count(dict(CREDS))
+
+
+# -- UniFi: the MongoDB password stays off argv and the environment ----------------------------------
+
+
+def _all_mongo_calls(runner: Any, base: Path) -> None:
+    dump = base / "dump"
+    (dump / "unifi").mkdir(parents=True)
+    runner.mongo_dump(dict(CREDS), dump)
+    runner.mongo_restore(dict(CREDS), dump / "unifi")
+    runner.mongo_dump_check(dict(CREDS))
+    runner.mongo_collection_count(dict(CREDS))
+    runner.mongo_drop_database(dict(CREDS))
+
+
+def test_unifi_the_mongo_password_is_never_on_argv_or_in_the_environment(tmp_path: Path) -> None:
+    runner, calls = _counting(tmp_path, "OPS_UNIFI_DROPPED\n3\n")
+
+    _all_mongo_calls(runner, tmp_path / "calls")
+
+    assert [c.args[0] for c in calls] == ["mongodump", "mongorestore", "mongodump", "mongosh", "mongosh"]
+    for call in calls:
+        assert not any(PASSWORD in arg for arg in call.args), call.args
+        assert not any(arg.startswith("--password") for arg in call.args), call.args
+        assert not any(PASSWORD in value for value in call.env.values())
+        assert set(call.env) == {"HOME", "PATH", "LC_ALL"}
+        assert call.mongosh_config == {"disableLogging": True, "enableTelemetry": False, "updateURL": ""}
+        assert call.home_dir_mode == 0o700
+
+
+def test_unifi_mongodump_and_mongorestore_read_the_password_from_a_private_config_file(tmp_path: Path) -> None:
+    runner, calls = _counting(tmp_path, "OPS_UNIFI_DROPPED\n3\n")
+
+    _all_mongo_calls(runner, tmp_path / "calls")
+
+    tools = [c for c in calls if c.args[0] != "mongosh"]
+    assert len(tools) == 3
+    for call in tools:
+        assert call.config == f'password: "{PASSWORD}"\n'
+        assert call.config_mode == 0o600
+        assert call.dir_mode == 0o700
+        assert "--username=unifi" in call.args
+        assert "--authenticationDatabase=admin" in call.args
+        assert call.input == ""
+
+
+def test_unifi_mongosh_gets_the_password_in_its_script_on_stdin(tmp_path: Path) -> None:
+    runner, calls = _counting(tmp_path, "OPS_UNIFI_DROPPED\n3\n")
+
+    _all_mongo_calls(runner, tmp_path / "calls")
+
+    shells = [c for c in calls if c.args[0] == "mongosh"]
+    assert len(shells) == 2
+    for call in shells:
+        assert call.config == ""
+        assert call.input.startswith('if (config.get("disableLogging") !== true')
+        assert f'.auth("unifi", "{PASSWORD}")' in call.input
+    assert "dropDatabase()" in shells[1].input
+
+
+def test_unifi_the_private_auth_directories_are_removed_after_each_call(tmp_path: Path) -> None:
+    runner, calls = _counting(tmp_path, "OPS_UNIFI_DROPPED\n3\n")
+
+    _all_mongo_calls(runner, tmp_path / "calls")
+
+    assert len(calls) == 5
+    assert list(Path(runner.WORK_DIR).iterdir()) == []
+    assert runner.MONGO_AUTH_PREFIX.startswith(runner.RUN_DIR_PREFIXES)
+
+
+def test_unifi_a_failing_tool_reports_without_the_password(tmp_path: Path) -> None:
+    runner, _ = _counting(tmp_path, "", returncode=1, stderr=f"Failed: bad login {PASSWORD}")
+
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        runner.mongo_dump_check(dict(CREDS))
+
+    assert PASSWORD not in runner.safe_error(raised.value)
+    assert not any(PASSWORD in arg for arg in raised.value.cmd)
+    assert list(Path(runner.WORK_DIR).iterdir()) == []
+
+
+def test_unifi_a_drop_without_confirmation_fails(tmp_path: Path) -> None:
+    runner, _ = _counting(tmp_path, "")
+
+    with pytest.raises(RuntimeError, match="did not confirm dropping"):
+        runner.mongo_drop_database(dict(CREDS))
+
+
+def test_unifi_the_escaped_password_is_redacted_too(tmp_path: Path) -> None:
+    runner, _ = _counting(tmp_path, "")
+    creds = dict(CREDS, password='fixture"pass\\word')  # pragma: allowlist secret
+    escaped = json.dumps(creds["password"])[1:-1]
+
+    text = runner.redact(f"raw {creds['password']} script {escaped}", creds)
+
+    assert text == "raw ******** script ********"
 
 
 # -- Minecraft Java: a missing world ---------------------------------------------------------------

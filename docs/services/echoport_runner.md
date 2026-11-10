@@ -124,6 +124,17 @@ several names, a file without a final newline that would change refuses (the
 module would append to its last line, so the answers read once would not
 describe the file); an unchanged one is left alone.
 
+Unlike the include, the result keeps one copy of each name's key line and
+drops those names' `# <name>:22 SSH-...` banner comments. Until 2026-10-22
+every register run appended the controller's `ssh-keyscan` output again
+(on 2026-11-10 deploy's known_hosts on macmini held 51 copies of staging's
+line, 21 of production's and 70 banners), so the next `just register-one` of
+a runner with these names removes the leftovers in the same upload. Only exact
+(whitespace-normalized) copies of the wanted line go: hashed and multi-host
+entries, other hosts and a different key of the same type stay; a file
+without duplicates is unchanged. The Ansible playbook (the rollback) still
+leaves duplicates alone.
+
 ## Same-host root runners (`registration`)
 
 `RunnerRegistration` is one register playbook of class A1 (snappymail,
@@ -178,6 +189,27 @@ steps:
   (`RequiredFile`), a missing `/usr/local/bin/mcrcon` refuses while
   planning with the playbook's message (the `minecraft_java` deploy
   installs it).
+
+### The unifi runner's MongoDB password (never on argv)
+
+The rendered unifi runner reads the login from
+`/etc/echoport-backups/unifi-mongodb.json` and never puts the password on a
+command line (`ps`) or in a tool's environment. For every MongoDB call it
+creates a private `0700` directory below its work dir (prefix
+`unifi_backup_mongo_auth_`, so one left by a killed run is pruned with the
+run dirs) and removes it when the call returns:
+
+- `mongodump` (backup, safety snapshot, the restore's health check) and
+  `mongorestore` read the password from a `0600` `--config` file there
+  (`password: "<...>"`); host, port, user and authentication database stay
+  on argv;
+- `mongosh` (the collection count and `dropDatabase`) gets a script on stdin
+  (`--file /dev/stdin`) that authenticates against the authentication
+  database first; it runs with a private `HOME` whose mongosh config disables
+  logging and telemetry, and the script quits before authenticating when
+  that config is not in effect. The drop must print a confirmation marker.
+
+Tool output in an error is reported with the password replaced by `********`.
 
 ### Restores onto a fresh install (unifi, minecraft-java)
 

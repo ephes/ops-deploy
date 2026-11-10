@@ -110,3 +110,14 @@ after fault tests. HA API/external-site identity, authenticated sole system
 Mongo, version markers and preserved application/audit records all passed.
 All preceding failed runs remain retained; the audit CRUD proof is explicitly
 fixture-generated, not a claim about controller-generated audit events.
+
+Runs 42638811575 and 42640611440 (2026-11-09, runner image
+`ubuntu24/20261101.360`) failed in fixture setup with only `mongosh failed: 1`:
+the readiness loop gave up silently after 30 refused pings (about 40 s) and the
+following localhost-exception `createUser` then failed. The same MongoDB 8.0.34
+and mongosh 2.14.1 answer and bootstrap normally on a local Ubuntu 24.04
+container and on macmini, so the fixture now waits up to 180 s for an
+unauthenticated ping that returns `ok: 1` and otherwise fails with mongod's
+`systemctl status` and the tail of `mongod.log`. Every failing fixture command
+reports the last lines of its output with the fixture passwords and any
+`mongodb://` URI redacted.

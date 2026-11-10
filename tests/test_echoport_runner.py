@@ -25,6 +25,7 @@ from ops_deploy.services._echoport_runner.access import (
     alias_digest,
     host_keys,
     known_host,
+    known_hosts_entries,
     minio_access,
     render_account_policy,
     work_dir,
@@ -625,6 +626,81 @@ def test_a_missing_entry_is_appended_keeping_the_file() -> None:
     assert run.succeeded, run.error
     assert run.upload(KNOWN) == (current + f"staging.example.invalid {KEY}\n").encode()
     assert f"chown deploy:deploy {KNOWN}" in run.executed_commands
+
+
+PRODUCTION_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICcccccccccccccccccccccccccccccccccccccccccc"
+HASHED = "|1|qn0Q8LqHG80/WEnfQft0MlKwpXM=|ztmfDHyV48mtFj6IFeMmQNf3Dao= ssh-rsa AAAAB3NzaC1yc2E"
+
+
+def _entries(cfgs: list[KnownHost], current: str, lookups: dict[str, list[str]]) -> Any:
+    encoded = __import__("base64").b64encode(current.encode()).decode()
+    responses: dict[Any, Any] = {
+        "base64 -w0": ["present", encoded],
+        **{f"ssh-keygen -F {name} ": answer for name, answer in lookups.items()},
+        **fakehost.stat(KNOWN, user="deploy", mode="-rw-r--r--"),
+    }
+
+    def deploy() -> None:
+        known_hosts_entries(cfgs, _no_scan)
+
+    return run_deploy_fake(deploy, responses=responses)
+
+
+def test_repeated_key_lines_and_keyscan_banners_collapse_to_one_line() -> None:
+    # What the register playbooks left on macmini until 2026-10-22: every run
+    # appended a banner comment and another copy of the same key line.
+    staging, production = "staging.example.invalid", "production.example.invalid"
+    cfgs = [
+        KnownHost(name=production, pin=PRODUCTION_KEY, pin_address=production),
+        KnownHost(name=staging, pin=KEY, pin_address=staging),
+    ]
+    current = (
+        f"{HASHED}\n"
+        f"# {production}:22 SSH-2.0-OpenSSH_9.8\n"
+        f"{production} {PRODUCTION_KEY}\n"
+        f"# {staging}:22 SSH-2.0-OpenSSH_10.0\n"
+        f"{staging} {KEY}\n"
+        f"other.example.invalid {OTHER}\n"
+        f"# other.example.invalid:22 SSH-2.0-OpenSSH_9.8\n"
+        f"# {staging}:22 SSH-2.0-OpenSSH_10.0\n"
+        f"{staging}  {KEY}\n"
+        f"# {production}:22 SSH-2.0-OpenSSH_9.8\n"
+        f"{production} {PRODUCTION_KEY}\n"
+        f"{staging} {OTHER}\n"
+        f"# {staging}:22 SSH-2.0-OpenSSH_10.0\n"
+        f"{staging} {KEY}\n"
+    )
+    lookups = {
+        production: [f"# Host {production} found: line 3", f"{production} {PRODUCTION_KEY}"],
+        staging: [f"# Host {staging} found: line 5", f"{staging} {KEY}"],
+    }
+
+    run = _entries(cfgs, current, lookups)
+
+    assert run.succeeded, run.error
+    assert run.upload(KNOWN).decode() == (
+        f"{HASHED}\n"
+        f"{production} {PRODUCTION_KEY}\n"
+        f"{staging} {KEY}\n"
+        f"other.example.invalid {OTHER}\n"
+        f"# other.example.invalid:22 SSH-2.0-OpenSSH_9.8\n"
+        f"{staging} {OTHER}\n"
+    )
+    assert f"chown deploy:deploy {KNOWN}" in run.executed_commands
+    assert [op for op in run.changed_ops if "known_hosts" in op or KNOWN in op] == [
+        f"Remove duplicate known_hosts lines of {production}, {staging} from {KNOWN}"
+    ]
+
+
+def test_a_deduplicated_file_stays_unchanged() -> None:
+    staging = "staging.example.invalid"
+    cfgs = [KnownHost(name=staging, pin=KEY, pin_address=staging)]
+    current = f"{HASHED}\n{staging} {KEY}\nother.example.invalid {OTHER}\n"
+
+    run = _entries(cfgs, current, {staging: [f"# Host {staging} found: line 2", f"{staging} {KEY}"]})
+
+    assert run.succeeded, run.error
+    assert run.changed_ops == []
 
 
 def test_a_present_key_changes_nothing() -> None:

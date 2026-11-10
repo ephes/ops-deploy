@@ -950,6 +950,11 @@ def _django(
         group=cfg.group,
         mode="0640",
     )
+    # A Django .env from before the managed env file (2026-03, 0644 with the
+    # secret key, the Influx token and unused HOME_ASSISTANT_* values). The
+    # settings still read_env() it, but every key the code uses comes from
+    # the env file above (systemd and _manage), which read_env never overrides.
+    files.file(name="Remove the stale Django .env", path=str(cfg.django_path / ".env"), present=False)
     db = shlex.quote(str(cfg.db_path))
     db_missing = probe(f"test -e {db} && echo present").strip() != "present"
     migrate: OperationMeta | None = None

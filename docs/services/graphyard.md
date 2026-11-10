@@ -66,6 +66,15 @@ bash sources (the role's `manage.py` commands), so values with whitespace,
 quotes, backslashes or `` $ ` ; & | < > ( ) ~ `` are refused before any
 connection.
 
+The core deploy also removes `src/django/.env` from the site when it exists:
+a Django `.env` from before the managed env file (macmini, 2026-03: `0644`,
+with the secret key, the Influx token and unused `HOME_ASSISTANT_*` values).
+The settings still `read_env()` that path, but it never overrides a variable
+that is already set, and every key the code reads comes from the env file
+(systemd and the `manage.py` commands); the Home Assistant collectors take
+their URL and token from the metric collection specs. Nothing restarts. The
+source sync still excludes `src/django/.env`, so a local one is never shipped.
+
 ## Core (`GraphyardConfig`)
 
 | Field | Default | |

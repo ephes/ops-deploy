@@ -3,7 +3,7 @@
     "minecraft_java_backup.py.j2": "5f7b7b2769cb38c15d30c195d9356e872fe0b8152027689ffa091c8e9b20a4af",
     "unifi_backup.py.j2": "95bb03ce739f300a1bc72feb70d0a3dc8a616f2953695d1dedd981fd52672bfa"
   },
-  "provenance": "Rendered by ansible-playbook locally (ansible [core 2.21.5]) from inputs.json; tests/parity/echoport_runner/generate.py",
+  "provenance": "Rendered by ansible-playbook locally (ansible [core 2.21.6]) from inputs.json; tests/parity/echoport_runner/generate.py",
   "role": {
     "deploy-runner": {
       "config.json": "{\n    \"deploy_script\": \"/usr/local/libexec/fastdeploy/homepage-staging-backup/backup.py\",\n    \"description\": \"homepage-staging-backup\",\n    \"name\": \"homepage-staging-backup\",\n    \"steps\": [\n        {\n            \"name\": \"init\"\n        },\n        {\n            \"name\": \"error\"\n        },\n        {\n            \"name\": \"result\"\n        }\n    ]\n}\n",
@@ -81,11 +81,11 @@
     "python-podcast-production-db-backup": "63cbc153d7e4a002133ba9e6e02a652d8f2c09298c2ddf6d5bcb26d7eda4c2cf",
     "python-podcast-staging-backup": "ad8b99b24a95c5558d3cdd10c01f3d64853b57b7150fe246718ed05996310e36",
     "snappymail-backup": "8f3c57255662c43b43059fe8a12f8d70097edfe0dfc7e3363290f43fe463dea6",
-    "unifi-backup": "fa50bf90c2ce599e3849d634c06e1e6b47af4a53f83c9e1590feeb9da0f735c9",
+    "unifi-backup": "de48e16276608408323a231d169dfdd11ab5add723bdd61f0f8476ffa5e4075c",
     "vaultwarden-backup": "dac14ddd61066b1896c140870e085f2f0e3189986354fdc4256eb9e6d010f27b",
     "weeknotes-home-backup": "ab1953ae4f20ed588c9069c9d413fab1779d12b6ddae83c5b94c6c0cb493d264"
   },
-  "source_ref": "6ac7b36159126ac637a055494b1ac0bed0d42c60",
+  "source_ref": "b279302e9a101764074b2ccbc23c4c9be939c4c5",
   "source_sha256": {
     "_sqlite_backup.py.j2": "34bc3ff1c22cc4b7d71f10d9b8b95c06662323bb14bc3b64012b2a196b067222",
     "_work_dir.py.j2": "a1d590a77c4a5b8f0f38cd255f799874b6de4c035e55c1ef385a3b7b93145e7a",
@@ -109,7 +109,7 @@
     "python_podcast_production_db_backup.py.j2": "7b2d89fa8cd7128247b0e24df41134fd763d0ac4a38a4050b649226d231e10fc",
     "python_podcast_staging_backup.py.j2": "722088973c22eb0bb6f5cb0111c808d4ef1040d6157cce56c0e323427b8c115c",
     "snappymail_backup.py.j2": "a573d3fe20a4d89cc8e8ced3b59c709ee731bb7448a54c49a1b151c2a7a65e92",
-    "unifi_backup.py.j2": "f29297f392fb33953cc5433f34d497ba42648c69ae7f00195a545cdce838f195",
+    "unifi_backup.py.j2": "e6010bedbf673027bb03fbc4cdab4410b074d41892a5c0d214380c31a3b58238",
     "vaultwarden_backup.py.j2": "fe2d357a5c15d1757d0ebdac8431446baf5dacecbfc287b1ed04b0852255cd9e"
   }
 }
