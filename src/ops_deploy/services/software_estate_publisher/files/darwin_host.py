@@ -14,7 +14,10 @@ the connecting user against the owner's ``gui/<uid>`` domain.
 Files, modes and order are the role's: private 0700 directories, programs,
 configuration and plist 0600, ``run`` 0700, ``~/Library/LaunchAgents`` 0755;
 a missing writer is provisioned only when the request carries one and an
-existing one is never replaced; the installed configuration is validated
+existing one is never replaced; without one (Studio) the credential must
+already exist, and ``status`` and ``verify`` check it as ``publish.py --check``
+reads it (private regular file of the owner, single link, at most 4096 bytes,
+in a private directory of the owner); the installed configuration is validated
 with ``publish.py --check`` (retried while it exits 75, the publisher's busy
 lock) before the job is touched. A change of programs, configuration or plist,
 or an unloaded job, disables, boots out, enables and bootstraps the job.
@@ -43,6 +46,9 @@ LAUNCHER = (
     "import base64;S=base64.b64decode('%s').decode();"
     "exec(compile(S,'<software-estate-publisher>','exec'),{'__name__':'__main__','SOURCE':S})"
 )
+
+
+CREDENTIAL_UNUSABLE = "the credential %s is missing or not a private regular file of at most 4096 bytes"
 
 
 class Refused(Exception):
@@ -124,9 +130,31 @@ def estate_files_current(data):
             return False
         if estate_digest(path) != spec["sha256"]:
             return False
-    if data["provision_writer"] and estate_file_mode(data["credential_file"]) is None:
-        return False
-    return True
+    return estate_credential_ready(data)
+
+
+def estate_credential_ready(data):
+    """What ``publish.py --check`` reads: a private credential in a private parent.
+
+    The writer is provisioned only when the request carries one; otherwise
+    (Studio) the credential must already exist, so a missing one is never
+    reported as current.
+    """
+
+    parent = estate_file_mode(str(Path(data["credential_file"]).parent))
+    info = estate_file_mode(data["credential_file"])
+    return (
+        parent is not None
+        and stat.S_ISDIR(parent.st_mode)
+        and parent.st_uid == os.geteuid()
+        and not parent.st_mode & 0o077
+        and info is not None
+        and stat.S_ISREG(info.st_mode)
+        and info.st_uid == os.geteuid()
+        and not info.st_mode & 0o077
+        and info.st_nlink == 1
+        and info.st_size <= 4096
+    )
 
 
 def estate_ensure_directory(path, mode):
@@ -213,6 +241,8 @@ def estate_files_apply(data):
                 handle.write(writer + "\n")
             changed["other"] = True
     changed["config"] = estate_write(data["config"], contents[data["config"]], 0o600)
+    if not estate_credential_ready(data):
+        raise Refused(CREDENTIAL_UNUSABLE % data["credential_file"])
     estate_validate(data)
     run_path = data["program"] + "/run"
     changed["other"] = estate_write(run_path, contents[run_path], 0o700) or changed["other"]
@@ -231,7 +261,8 @@ def estate_remove_plist(data):
 
 def estate_file_part(action, data):
     if action == "status":
-        return {"current": estate_files_current(data)}
+        current = estate_files_current(data)
+        return {"current": current, "credential": data["state"] == "absent" or estate_credential_ready(data)}
     if action == "apply":
         return estate_files_apply(data)
     if action == "remove-plist":
@@ -349,9 +380,12 @@ def estate_main(action):
 
     estate_require_domain(data)
     if action in ("status", "verify"):
-        current = estate_files("status")["current"] and estate_launchd_current(data)
+        files = estate_files("status")
+        current = files["current"] and estate_launchd_current(data)
         print("current" if current else "pending")
         if action == "verify" and not current:
+            if not files["credential"]:
+                raise Refused(CREDENTIAL_UNUSABLE % data["credential_file"])
             raise Refused("the publisher is not in its configured state")
         return
     if action != "apply":
