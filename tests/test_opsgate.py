@@ -180,3 +180,194 @@ def test_fresh_native_deploy_preserves_preparation_source_runtime_order(tmp_path
     assert len(result.stdin) == 1
     for value in credentials().values():
         assert value not in "\n".join(result.executed_commands)
+
+
+def retire_data(cfg: OpsGateConfig) -> dict[str, Any]:
+    from ops_deploy.services.opsgate.deploy import RETIRE_KEYS
+
+    return {key: getattr(cfg, key) for key in RETIRE_KEYS} | {"contents": {}}
+
+
+def test_retired_flag_defaults_off_and_is_strict(tmp_path: Path) -> None:
+    assert configuration(tmp_path).opsgate_retired is False
+    assert configuration(tmp_path, opsgate_retired=True).opsgate_retired is True
+    with pytest.raises(ValidationError):
+        configuration(tmp_path, opsgate_retired="yes")
+    # The switch is not a role variable, so the role-default parity stays exact.
+    assert "opsgate_retired" not in DEFAULTS
+
+
+@pytest.mark.parametrize("state", ["drift", "current"])
+def test_retired_deploy_only_stops_and_verifies(tmp_path: Path, state: str) -> None:
+    cfg = configuration(tmp_path, opsgate_retired=True, opsgate_launchd_manage_state=True)
+    data = retire_data(cfg)
+    rsync = RecordingRsyncRunner()
+    result = run_deploy_fake(
+        deploy_opsgate,
+        cfg,
+        credentials(),
+        responses={command(data, "retire-status"): [state]},
+        rsync=rsync,
+    )
+    assert result.succeeded, result.error
+    changed = [op.rsplit(" | ", 1)[-1] for op in result.mutating_changed_ops]
+    assert changed == (["Boot out and disable the retired OpsGate launchd units"] if state == "drift" else [])
+    assert command(data, "retire-verify") in result.executed_commands
+    # Nothing is synced, rendered, installed, bootstrapped or sent on stdin.
+    assert rsync.calls == []
+    assert result.stdin == []
+    # Every host-helper call is one of the three retire actions.
+    retire = [command(data, action) for action in ("retire-status", "retire-apply", "retire-verify")]
+    helper = [cmd for cmd in result.executed_commands if "<opsgate-host>" in cmd]
+    assert helper
+    assert all(any(expected in cmd for expected in retire) for cmd in helper)
+    executed = "\n".join(result.executed_commands)
+    for value in credentials().values():
+        assert value not in executed
+
+
+def test_retired_config_needs_no_source_checkout_or_release_pin() -> None:
+    cfg = OpsGateConfig(opsgate_retired=True, opsgate_api_impl="rust", opsgate_source_path="")
+    assert cfg.opsgate_retired is True
+    with pytest.raises(ValidationError):
+        OpsGateConfig(opsgate_retired=True, opsgate_api_launchd_label="bad label")
+
+
+def test_retired_route_payload_carries_no_secret_or_resource(tmp_path: Path) -> None:
+    cfg = configuration(tmp_path, opsgate_retired=True)
+    data = retire_data(cfg)
+    assert data["contents"] == {}
+    assert set(data) == {
+        "opsgate_api_launchd_label",
+        "opsgate_runner_launchd_label",
+        "opsgate_api_bind_host",
+        "opsgate_api_bind_port",
+        "opsgate_launchd_verify_retries",
+        "opsgate_launchd_verify_delay",
+        "contents",
+    }
+
+
+class FakeLaunchd:
+    """launchctl for the two OpsGate units; bootout unloads unless told to stick."""
+
+    def __init__(self, loaded: set[str], disabled: set[str], *, stuck: set[str] | None = None) -> None:
+        self.loaded, self.disabled, self.stuck = set(loaded), set(disabled), set(stuck or ())
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv: list[str], user: Any = None, cwd: str = "/", extra: Any = None, check: bool = True) -> Any:
+        from types import SimpleNamespace
+
+        self.calls.append(list(argv))
+        verb = argv[1]
+        if verb == "print":
+            label = argv[2].removeprefix("system/")
+            if label in self.loaded:
+                # A pid of a process that may already be gone: retirement must
+                # not need ps for it.
+                return SimpleNamespace(returncode=0, stdout="\tstate = running\n\tpid = 4242\n")
+            return SimpleNamespace(returncode=113, stdout="")
+        if verb == "print-disabled":
+            rows = "".join(
+                f'\t\t"{label}" => {"disabled" if label in self.disabled else "enabled"}\n'
+                for label in sorted(self.loaded | self.disabled | {"de.example.other"})
+            )
+            return SimpleNamespace(returncode=0, stdout="\tdisabled services = {\n" + rows + "\t}\n")
+        label = argv[2].removeprefix("system/")
+        if verb == "disable":
+            self.disabled.add(label)
+        elif verb == "bootout":
+            if label not in self.stuck:
+                self.loaded.discard(label)
+        else:
+            raise AssertionError(f"retirement must not run launchctl {verb}")
+        return SimpleNamespace(returncode=0, stdout="")
+
+
+def opsgate_host(monkeypatch: pytest.MonkeyPatch, launchd: FakeLaunchd, *, port_open: bool = False) -> Any:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "opsgate_host_under_test", str(files("ops_deploy.services.opsgate").joinpath("files/opsgate_host.py"))
+    )
+    assert spec
+    assert spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "run", launchd)
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+
+    def connect(address: Any, timeout: float) -> Any:
+        assert address == ("127.0.0.1", 8711)
+        if port_open:
+            import contextlib
+
+            return contextlib.nullcontext()
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(module.socket, "create_connection", connect)
+    return module
+
+
+def host_config(tmp_path: Path) -> dict[str, Any]:
+    data = retire_data(configuration(tmp_path, opsgate_retired=True))
+    return {key.removeprefix("opsgate_"): value for key, value in data.items()}
+
+
+API = "de.wersdoerfer.opsgate.api"
+RUNNER = "de.wersdoerfer.opsgate.runner"
+
+
+def test_retire_apply_boots_out_and_disables_runner_then_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launchd = FakeLaunchd(loaded={API, RUNNER}, disabled=set())
+    module = opsgate_host(monkeypatch, launchd)
+    c = host_config(tmp_path)
+    assert c["api_launchd_label"] == API
+    assert c["runner_launchd_label"] == RUNNER
+    assert module.retired(c) is False
+    module.retire_apply(c)
+    mutations = [call[1:] for call in launchd.calls if call[1] in {"disable", "bootout"}]
+    assert mutations == [
+        ["disable", "system/" + RUNNER],
+        ["bootout", "system/" + RUNNER],
+        ["disable", "system/" + API],
+        ["bootout", "system/" + API],
+    ]
+    assert launchd.loaded == set()
+    assert launchd.disabled == {API, RUNNER}
+    assert module.retired(c) is True
+
+
+def test_retire_apply_is_a_no_op_when_already_retired(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launchd = FakeLaunchd(loaded=set(), disabled={API, RUNNER})
+    module = opsgate_host(monkeypatch, launchd)
+    module.retire_apply(host_config(tmp_path))
+    assert not [call for call in launchd.calls if call[1] in {"disable", "bootout"}]
+
+
+def test_retire_apply_fails_when_a_unit_stays_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launchd = FakeLaunchd(loaded={API, RUNNER}, disabled=set(), stuck={API})
+    module = opsgate_host(monkeypatch, launchd)
+    with pytest.raises(RuntimeError, match="still loaded"):
+        module.retire_apply(host_config(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("loaded", "disabled", "port_open"),
+    [
+        ({API}, {API, RUNNER}, False),
+        (set(), {API}, False),
+        (set(), {API, RUNNER}, True),
+    ],
+)
+def test_retire_verify_requires_unloaded_disabled_and_closed_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loaded: set[str], disabled: set[str], port_open: bool
+) -> None:
+    module = opsgate_host(monkeypatch, FakeLaunchd(loaded=loaded, disabled=disabled), port_open=port_open)
+    with pytest.raises(RuntimeError, match="retired OpsGate"):
+        module.retire_verify(host_config(tmp_path))
+
+
+def test_retire_verify_passes_on_a_stopped_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = opsgate_host(monkeypatch, FakeLaunchd(loaded=set(), disabled={API, RUNNER}))
+    module.retire_verify(host_config(tmp_path))

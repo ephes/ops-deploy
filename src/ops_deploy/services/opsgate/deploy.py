@@ -100,10 +100,42 @@ def _runtime_needed(source: OperationMeta, needed: bool) -> Callable[[], bool]:
     return lambda: needed or source.did_change()
 
 
+# The only inputs the retired route sends to the host: no secret, no resource.
+RETIRE_KEYS = (
+    "opsgate_api_launchd_label",
+    "opsgate_runner_launchd_label",
+    "opsgate_api_bind_host",
+    "opsgate_api_bind_port",
+    "opsgate_launchd_verify_retries",
+    "opsgate_launchd_verify_delay",
+)
+
+
+def _retire(cfg: OpsGateConfig) -> None:
+    """Boot out and disable both units; keep plists, config, data and releases."""
+    data: dict[str, Any] = {key: getattr(cfg, key) for key in RETIRE_KEYS} | {"contents": {}}
+    retired = host.get_fact(Command, command=opsgate_host_command(data, "retire-status")) == "current"
+    server.shell(
+        name="Boot out and disable the retired OpsGate launchd units",
+        commands=[opsgate_host_command(data, "retire-apply")],
+        _if=lambda: not retired,
+    )
+    mark_read_only(
+        server.shell(
+            name="Verify retired OpsGate units are unloaded, disabled and the API port is closed",
+            commands=[opsgate_host_command(data, "retire-verify")],
+        )
+    )
+
+
 @deploy("Deploy native OpsGate API and runner")
 def deploy_opsgate(
     cfg: OpsGateConfig, secrets: Mapping[str, Any], *, rsync: RsyncRunner = subprocess_rsync_runner
 ) -> None:
+    if cfg.opsgate_retired:
+        # Retired: nothing is synced, rendered, installed or started.
+        _retire(cfg)
+        return
     data = payload(cfg, secrets)
     try:
         data["project_version"] = tomllib.loads((Path(cfg.opsgate_source_path) / "pyproject.toml").read_text())[
