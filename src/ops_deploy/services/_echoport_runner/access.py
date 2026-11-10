@@ -569,6 +569,7 @@ def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str]
         if removed is not None:
             lookups[index + 1 :] = [_without_line(lookup, removed) for lookup in lookups[index + 1 :]]
         content = changed
+    added = content != current
     if content is not None:
         content = _deduplicated(content, [f"{cfg.name} {key}" for cfg, key in zip(cfgs, keys, strict=True)])
     if content == current:
@@ -580,8 +581,13 @@ def known_hosts_entries(cfgs: Sequence[KnownHost], keyscan: Callable[[str], str]
     found = host.get_fact(File, path=path)
     info: Mapping[str, Any] = found or {}
     names = ", ".join(cfg.name for cfg in cfgs)
+    action = (
+        f"Add the ed25519 host key{'s' if len(cfgs) > 1 else ''} of {names} to {path}"
+        if added
+        else f"Remove duplicate known_hosts lines of {names} from {path}"
+    )
     files.put(
-        name=f"Add the ed25519 host key{'s' if len(cfgs) > 1 else ''} of {names} to {path}",
+        name=action,
         src=StringIO(content or ""),
         dest=path,
         user=str(info.get("user", "root")),

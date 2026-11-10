@@ -687,6 +687,9 @@ def test_repeated_key_lines_and_keyscan_banners_collapse_to_one_line() -> None:
         f"{staging} {OTHER}\n"
     )
     assert f"chown deploy:deploy {KNOWN}" in run.executed_commands
+    assert [op for op in run.changed_ops if "known_hosts" in op or KNOWN in op] == [
+        f"Remove duplicate known_hosts lines of {production}, {staging} from {KNOWN}"
+    ]
 
 
 def test_a_deduplicated_file_stays_unchanged() -> None:
