@@ -8,7 +8,7 @@
     "daybook_operations_api_remove": "79151b98fdf5aa9da95da41d38373a97e75b6d1a68d19863406664630f1230b8",
     "daybook_operations_api_restore": "8840973665955394c95d8b9038d2e29d6b227891a7bf93a31280bcc263cc85f8",
     "daybook_voice_memo_work_deploy": "a22b83560c5949e4bb994378797a003fc8096a5fc2dd31a0e4dbe60770b3b835",
-    "dns_deploy": "8598d0732b568d2a0b1dbacf857c939465b263a619e3164da5c96793302426fc",
+    "dns_deploy": "199e37b870d2bcaf11f2b071d94dc465f7b2c4739ddf321a6a1bae08301f541b",
     "echoport_backup": "ec8caf2f9644ae80abfc3b3de09b2667ea69fcb5c9ad20c898cdf7ccb37f1db0",
     "encrypted_volume_prepare": "775afde941a276c88202dc91502e00ac4edc08758ddf404fc71ab843af71ff7d",
     "fastdeploy_backup": "45132a474942319bda78884f1e6ef3c8616440ca7fd5cbedb9a84881dd849b0e",
@@ -171,6 +171,7 @@
     "gotosocial_deploy": "6e847f659fe9d5995b5ab51a980ecc3202c752bc",
     "daybook_voice_memo_work_deploy": "e3f6a71b654a1ae655fd4075ba766e171fa0d829",
     "software_estate_publisher": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
-    "software_estate_publisher_linux": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2"
+    "software_estate_publisher_linux": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
+    "dns_deploy": "94163d3faefa2849fb2e01797897162f656c4989"
   }
 }
