@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `services._echoport_runner`: the villakunterbunt-staging runner template is
+  forked from ops-library's (`render.FORKED`). Backup and restore now arm the
+  service restart before the first `systemctl stop`: before, a failed Django
+  stop after a successful Next.js stop skipped the restart in `finally` and
+  left Next.js down. The parity record keeps ops-library's sha256 under
+  `forked_from`.
+
 - `services.graphyard` core: the deploy removes the stale
   `site/src/django/.env` (macmini, 2026-03, world-readable, with the secret key,
   the Influx token and unused `HOME_ASSISTANT_*` values). Every key the code

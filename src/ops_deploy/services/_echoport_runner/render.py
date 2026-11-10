@@ -37,7 +37,7 @@ INCLUDES = frozenset({"_work_dir.py.j2", "_sqlite_backup.py.j2"})
 # Runner templates changed here after the registration moved to pyinfra
 # (2026-11-09: restores onto a fresh install); ops-library's copies are the
 # Ansible rollback's and stay as they were.
-FORKED = frozenset({"minecraft_java_backup.py.j2", "unifi_backup.py.j2"})
+FORKED = frozenset({"minecraft_java_backup.py.j2", "unifi_backup.py.j2", "villakunterbunt_staging_backup.py.j2"})
 
 _TRUE = {"yes", "on", "true", "1"}
 
