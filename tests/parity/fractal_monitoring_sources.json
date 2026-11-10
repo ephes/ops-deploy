@@ -18,7 +18,7 @@
     "services/fractal_monitoring/files/backup_metrics_usb_health.py": "3320248c1c74befa7ab9747cf4437d7bb7766c1383701401506a62ed41c11fbf",
     "services/fractal_monitoring/files/minio_replication_lag_probe.py": "a83cec6f0768601fb10ebad2f72edc18c04004d24d5232da73c7c36ca802ebf2",
     "services/fractal_monitoring/templates/minio-replication-lag-check.service.j2": "b1dd6934606bc12d6e71d9e9d65f37bdef7c9e9bff9f44a5c0d6f56989741221",
-    "services/fractal_monitoring/templates/minio-replication-lag-check.timer.j2": "dba0300f1ef2a445da2fb9da6a38ae84603d51bcb7981f11b350adfeb942d3f5"
+    "services/fractal_monitoring/templates/minio-replication-lag-check.timer.j2": "6e423098b68517d9d519d13e3dfefacb9d9d16c95cd6885b1727a00add39c960"
   },
   "role_behavior_sha256": {
     "mail_relay_client": "67cc87f83942b7949c4fa9de5c2ee90c782b43ae49a96b361830a89d2a2754b4",

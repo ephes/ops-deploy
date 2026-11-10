@@ -106,6 +106,9 @@ class DnsConfig(BaseServiceConfig):
     ddns_update_wildcard: StrictBool = True
     ddns_ttl: Annotated[StrictInt, Field(ge=1)] = 300
     ddns_interval: Annotated[str, Field(pattern=r"^[1-9][0-9]*(s|min|h)$")] = "5min"
+    # OnCalendar= backstop: keeps the timer firing when OnUnitActiveSec has no
+    # activation in this boot (timer started after OnBootSec elapsed).
+    ddns_on_calendar: Annotated[str, Field(pattern=r"^[A-Za-z0-9*:/,.~-][A-Za-z0-9*:/,.~ -]*$")] = "*:0/5"
     ddns_ipv4_enabled: StrictBool = True
     ddns_ipv6_enabled: StrictBool = True
     ddns_ipv4_source_url: str = "https://ipv4.icanhazip.com"

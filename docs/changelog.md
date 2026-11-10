@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Reboot-safe periodic timers: `ddns-update.timer` (`services.dns`),
+  `minio-replication-lag-check.timer` (`services.fractal_monitoring`) and the
+  RustFS replication monitor timer (`services.rustfs`) add `OnActiveSec` and an
+  `OnCalendar` backstop (new fields `ddns_on_calendar`,
+  `ReplicationLagConfig.timer_on_calendar`, `RustfsReplicationMonitor`'s
+  `timer_on_calendar`; default `*:0/5`) plus `Persistent=true`, like the
+  torrent VPN collector timer. With only `OnBootSec`/`OnUnitActiveSec` a timer
+  started after `OnBootSec` whose last run predates the boot stalls at
+  `NEXT n/a`. The recorded template digests in `tests/parity` follow.
+
 - `services.software_estate_publisher` (Linux removal): disabling a unit
   passes `running=False`. pyinfra's `systemd.service` defaults to
   `running=True`, so the removal started an idle publisher service or an

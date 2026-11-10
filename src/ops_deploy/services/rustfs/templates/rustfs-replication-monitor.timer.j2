@@ -2,10 +2,15 @@
 Description=Run {{ cfg.monitor.unit }} every {{ cfg.monitor.timer_interval_sec }} seconds
 
 [Timer]
+# OnActiveSec= re-anchors on every timer (re)start and OnCalendar= is the
+# Persistent= wall-clock backstop, so a reboot cannot leave NEXT at n/a.
 OnBootSec={{ cfg.monitor.timer_on_boot_sec }}
+OnActiveSec={{ cfg.monitor.timer_on_boot_sec }}
 OnUnitActiveSec={{ cfg.monitor.timer_interval_sec }}
+OnCalendar={{ cfg.monitor.timer_on_calendar }}
 AccuracySec=10
 RandomizedDelaySec={{ cfg.monitor.timer_randomized_delay_sec }}
+Persistent=true
 
 [Install]
 WantedBy=timers.target

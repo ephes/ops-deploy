@@ -2,10 +2,15 @@
 Description=Run MinIO replication lag/parity monitor every {{ fractal_minio_replication_monitor_timer_interval_sec | default(300) }} seconds
 
 [Timer]
+# OnActiveSec= re-anchors on every timer (re)start and OnCalendar= is the
+# Persistent= wall-clock backstop, so a reboot cannot leave NEXT at n/a.
 OnBootSec={{ fractal_minio_replication_monitor_timer_on_boot_sec | default(120) }}
+OnActiveSec={{ fractal_minio_replication_monitor_timer_on_boot_sec | default(120) }}
 OnUnitActiveSec={{ fractal_minio_replication_monitor_timer_interval_sec | default(300) }}
+OnCalendar={{ fractal_minio_replication_monitor_timer_on_calendar | default('*:0/5') }}
 AccuracySec=10
 RandomizedDelaySec={{ fractal_minio_replication_monitor_timer_randomized_delay_sec | default(20) }}
+Persistent=true
 
 [Install]
 WantedBy=timers.target

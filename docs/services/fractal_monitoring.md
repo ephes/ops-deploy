@@ -75,7 +75,10 @@ Small component-specific restart debt preserves failed rollouts for a retry.
 `FractalMonitoringConfig` holds `relay`, `smartd`, `zed`, `exporter`, `storage`,
 `backup`, `replication`, declared Tailscale identities and explicit schema rules.
 `StorageExporterConfig`, `StorageEndpointConfig`, `BackupEndpointConfig` and
-`ReplicationLagConfig` retain the original templates/programs and defaults.
+`ReplicationLagConfig` retain the original templates/programs and defaults,
+except that `minio-replication-lag-check.timer` adds `OnActiveSec`
+(`timer_on_boot_sec`), an `OnCalendar` backstop (`timer_on_calendar`, default
+`*:0/5`) and `Persistent=true`, so it cannot stall at `NEXT n/a` after a reboot.
 Collector paths, endpoints, data-directory permissions, no-login accounts without
 home creation, timer policies and source version/SHA are typed inputs. Existing
 endpoint account group/shell policy is enforced without creating its home.

@@ -26,6 +26,12 @@ are never rollback targets. A real configuration change restarts Unbound, which
 can disrupt in-flight queries and lose cache; a no-op preserves the process and
 cache. No cache/query content is exported as proof.
 
+`ddns-update.timer` runs one minute after boot and after every timer (re)start
+(`OnBootSec`/`OnActiveSec`), then every `ddns_interval` (`OnUnitActiveSec`), with
+an `OnCalendar` backstop `ddns_on_calendar` (default `*:0/5`) and
+`Persistent=true`. Without the backstop a timer started after `OnBootSec` whose
+last run predates the boot stalls at `NEXT n/a`.
+
 Periodic jobs are not deployment hooks on a converged host. Initial empty
 blocklist state is populated once; existing lists are retained. A changed DDNS
 updater/configuration is run once, accounting for the timer’s `Requires=` start,
