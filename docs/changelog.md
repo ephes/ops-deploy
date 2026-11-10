@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `base.echoport_command_guard`: port of ops-library's
+  `echoport_remote_command_guard` role with `impl: python` (the forced-command
+  guard of the deploy@macmini backup key). It installs the role's guard program
+  byte for byte, renders the policy like `to_nice_json` (identical to the live
+  files on staging, production and marina), checks the policy on the controller
+  with the same guard code and on the host with `--check-policy` before it
+  replaces the live one, and exposes the forced command and a parser for the
+  key's live line (`confirm_live.yml`). The Rust guard (`shadow`/`rust`) is not
+  ported; those settings are refused. The drift manifest records the role and
+  the vendored program. See [echoport_command_guard](base.md#echoport_command_guard).
+
 - Reboot-safe periodic timers: `ddns-update.timer` (`services.dns`),
   `minio-replication-lag-check.timer` (`services.fractal_monitoring`) and the
   RustFS replication monitor timer (`services.rustfs`) add `OnActiveSec` and an
