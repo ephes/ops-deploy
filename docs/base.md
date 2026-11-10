@@ -4,7 +4,8 @@
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, journald, shell basics, authorized keys,
 SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4
-options drop), the others are steps a service deploy calls (uv, Node.js):
+options drop, remote LUKS unlock, boot-visible i915, external bind storage), the others
+are steps a service deploy calls (uv, Node.js):
 
 ```python
 from ops_deploy.base import HostnameConfig, deploy_hostname
@@ -36,6 +37,9 @@ change.
 | `stale_exe_restart` | none (pyinfra only) | `StaleExeRestartConfig`, `StaleExeUnit`, `StaleExeHttpProbe` | `deploy_stale_exe_restart` |
 | `unattended_upgrades` | none (new) | `UnattendedUpgradesConfig` | `deploy_unattended_upgrades` |
 | `ip_options_drop` | none (pyinfra only) | `IpOptionsDropConfig` | `deploy_ip_options_drop` |
+| `remote_luks_unlock` | `remote_luks_unlock` | `RemoteLuksUnlockConfig` | `deploy_remote_luks_unlock` |
+| `boot_visible_i915` | `boot_visible_i915` | `BootVisibleI915Config` | `deploy_boot_visible_i915` |
+| `external_bind_storage` | none (result of `host_storage_migrate`) | `ExternalBindStorageConfig`, `BindSource`, `EngineBinds` | `deploy_external_bind_storage` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -915,6 +919,99 @@ nft list table ip ip_options_drop
 
 What it does not do: IPv6 (IPv6 has no IHL; extension headers are a different
 matter), protocols other than TCP, or a periodic re-assertion between deploys.
+
+## remote_luks_unlock
+
+Dropbear in the initramfs, so a host with an encrypted root can be unlocked
+over SSH at boot. Ported: the role's enabled path with its `grub_ip_param`
+network method. Not ported: the `initramfs_conf` method, the force mode and
+the cleanup when disabled (`remote_luks_unlock_enable: false`).
+
+```python
+from ops_deploy.base import RemoteLuksUnlockConfig, deploy_remote_luks_unlock
+
+deploy_remote_luks_unlock(
+    RemoteLuksUnlockConfig(
+        interface="eno1",
+        ip_mode="static",
+        static_ip="192.0.2.10",
+        static_gateway="192.0.2.1",
+        static_hostname="node",
+        authorized_keys=("ssh-ed25519 AAAA... operator@example",),
+    )
+)
+```
+
+| Field | Default | |
+|---|---|---|
+| `interface` | required | network interface in the initramfs |
+| `ip_mode` | `dhcp` | or `static` (then `static_ip`, `static_gateway`, `static_netmask` as IPv4 and `static_hostname` are required) |
+| `port`, `idle_timeout` | `2222`, `600` | Dropbear `-p` and `-I` |
+| `no_password_auth`, `disable_forwarding` | `true`, `true` | Dropbear `-s` and `-j -k` |
+| `extra_dropbear_options` | empty | appended to the options |
+| `authorized_keys` | required, at least one | the keys that may unlock |
+| `edit_grub` | `true` | `false` when another step renders `/etc/default/grub` with `ip_param(cfg)` in it (see `boot_visible_i915`) |
+
+The deploy installs `dropbear-initramfs` when it is missing (the apt cache is
+refreshed only then), sets `DROPBEAR=y` in `/etc/initramfs-tools/initramfs.conf`,
+writes `/etc/dropbear/initramfs/authorized_keys` (0600, the role's template with
+its header) and the `DROPBEAR_OPTIONS=` line of `dropbear.conf`. Lines are
+replaced in place or appended, so the package's comments stay. `DEVICE=` and
+`IP=` are removed from `initramfs.conf` only when `DEVICE` names this
+interface. On `GRUB_CMDLINE_LINUX_DEFAULT` it removes `ip=` parameters for this
+interface, keeps every other token and appends `ip=<ip>::<gateway>:<netmask>:<hostname>:<interface>:none`
+(static) or `ip=:::::<interface>:dhcp`; a missing `/etc/default/grub` fails the
+deploy before any change. A changed GRUB file is copied to
+`/etc/default/grub.<date>~` first, as the role's `backup: yes` does.
+`update-initramfs -u -k all` runs when the package, `initramfs.conf`, the keys
+or the options changed, `update-grub` when the GRUB file changed. Nothing
+reboots.
+
+## boot_visible_i915
+
+Visible boot on Intel graphics with full disk encryption: the i915 driver in
+the initramfs and a text GRUB menu, so GRUB, kernel messages and the LUKS
+prompt show on the console.
+
+| Field | Default | |
+|---|---|---|
+| `enable_i915`, `remove_i915_blacklist` | `true`, `true` | `blacklist i915` lines in `/etc/modprobe.d/*.conf` removed, `i915` (and no `1915` typo) in `/etc/initramfs-tools/modules` (0644) |
+| `modify_grub_cmdline` | `true` | render `/etc/default/grub` |
+| `grub_default_entry` | none | none renders the role's `GRUB_DEFAULT=0`; a menu entry path renders it quoted |
+| `grub_base_cmdline` | `quiet`, `splash` | tokens before removal |
+| `grub_remove_splash`, `grub_remove_quiet`, `grub_remove_nomodeset` | `true` | |
+| `grub_extra_params` | none | appended, duplicates dropped (first kept) |
+| `show_grub_menu`, `grub_timeout` | `true`, `5` | hidden menu: style `grub_timeout_style_hidden`, timeout 0 |
+| `grub_terminal`, `grub_gfxpayload` | `console`, `text` | empty leaves the line out |
+| `grub_backup` | `true` | copy a GRUB file that changes to `/etc/default/grub.<date>~` first |
+
+`/etc/default/grub` (0644) is the role's `grub.j2` as Ansible renders it,
+header included, so a host the role set up shows no change. `grub_default_entry`
+replaces the separate `lineinfile` an Ansible caller needed for a pinned
+kernel, and `grub_extra_params` takes `remote_luks_unlock.ip_param(cfg)`; then
+the whole file comes from one step. `update-initramfs -u -k all` runs when the
+blacklist or the modules file changed, `update-grub` when the GRUB file
+changed.
+
+## external_bind_storage
+
+No ops-library role: the persistent result of ops-library's attended
+`host_storage_migrate` tool after its cutover, declared so a rebuilt host gets
+it back. Byte for byte what the tool writes:
+
+| Path (0600, directories 0700: the modes the tool left under root's umask 077) | |
+|---|---|
+| `/etc/systemd/system/<path>.mount` per source | binds `<root><path>` to `<path>`; `RequiresMountsFor=`, `BindsTo=` and `After=` the external mount's unit; `WantedBy=local-fs.target` |
+| `/etc/systemd/system/<path>.automount` per source with `automount` | `TimeoutIdleSec=0`: the path stays an autofs mount, so a root-run backup fails when the storage is gone instead of writing underneath |
+| `/etc/systemd/system/<engine>.d/90-host-storage.conf` per `engines` entry | `Requires=`, `After=`, `BindsTo=` the listed bind mounts: the engine does not start without them |
+| `/etc/docker/daemon.json` with `docker_builder_gc_bytes` | the tool's builder GC policy (`maxUsedSpace`); the deploy owns the whole file, so keep `infra.docker_install`'s `configure_daemon` off on that host |
+
+Unit names are `systemd-escape --path` names (`/var/backups/a-b` is
+`var-backups-a\x2db.mount`). As in the tool, every path must be normalized and
+not `/`, sources unique, every engine path a source and `root` below `mount`. systemd is reloaded when a unit file changed; the
+automount (where there is one) or the mount is enabled. Nothing is copied,
+mounted, started or restarted: a new `daemon.json` takes effect at Docker's
+next start, the units at the next boot or an attended `systemctl start`.
 
 ## Tests
 
