@@ -6,7 +6,9 @@
   forked from ops-library's (`render.FORKED`). Backup and restore now arm the
   service restart before the first `systemctl stop`: before, a failed Django
   stop after a successful Next.js stop skipped the restart in `finally` and
-  left Next.js down. The parity record keeps ops-library's sha256 under
+  left Next.js down. The restart also tries every service and raises the
+  first failure afterwards, so a Django unit that refuses to start no longer
+  keeps Next.js from starting. The parity record keeps ops-library's sha256 under
   `forked_from`.
 
 - `services.graphyard` core: the deploy removes the stale

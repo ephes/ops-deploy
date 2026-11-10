@@ -59,8 +59,8 @@ includes `_work_dir.py.j2` and `_sqlite_backup.py.j2`, except the ones in
 moved on here after their registration moved to pyinfra (2026-11-09,
 restores onto a fresh install, below), and
 `villakunterbunt_staging_backup.py.j2` (2026-11-10: the restart of the
-staging services is armed before the first stop, so a failed Django stop
-after a successful Next.js stop still starts Next.js again). ops-deploy is their source;
+staging services is armed before the first stop and tries every service,
+so a failed Django stop or start no longer leaves Next.js down). ops-deploy is their source;
 ops-library's copies stay as they were and serve only the Ansible rollback
 of the register playbooks.
 `render.render_runner(template, variables)` renders one as Ansible's

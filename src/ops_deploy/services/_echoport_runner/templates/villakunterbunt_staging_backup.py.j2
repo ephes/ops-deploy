@@ -378,9 +378,19 @@ def stop_services(remote_host: str, remote_user: str, service_names: list[str]) 
 
 
 def start_services(remote_host: str, remote_user: str, service_names: list[str]) -> None:
-    """Start remote systemd services in reverse stop order."""
+    """Start remote systemd services in reverse stop order.
+
+    Tries every service even when one fails to start (a unit whose stop
+    failed may refuse to start), then raises the first failure.
+    """
+    failures: list[subprocess.CalledProcessError] = []
     for service_name in reversed(service_names):
-        ssh(remote_host, remote_user, f"systemctl start {shlex.quote(service_name)}")
+        try:
+            ssh(remote_host, remote_user, f"systemctl start {shlex.quote(service_name)}")
+        except subprocess.CalledProcessError as error:
+            failures.append(error)
+    if failures:
+        raise failures[0]
 
 
 def validate_db_path(remote_host: str, remote_user: str, db_path: str) -> str:
