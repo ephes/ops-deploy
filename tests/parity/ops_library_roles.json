@@ -78,6 +78,8 @@
     "snappymail_remove": "3c65c865bfeea125a311c4775c90ebd0b291850d352ad4d346d8bb3f7f3390c6",
     "snappymail_restore": "7909263d16baab49ca9129fa58bd52a7dd7378bfa8b1772d8e9ec7cf22960612",
     "snappymail_shared": "5c862ffdb0d14ce564c1b113f3edce51edbd14093c6758d70eecf6ad61a5882d",
+    "software_estate_publisher": "03b6f4c68d984bc04f3dc30e7d1a4a74bbd6e71127a30d679ddc6ceed1be8838",
+    "software_estate_publisher_linux": "4c4b9b9061d2e4853963b2346a2315504baf011c5edcb7d1245faf2472ecca0b",
     "thermal_metrics_endpoint": "78ceba6a7b41dc18aa60522f8dd1ead157fa53763c857eb0220132066480ab28",
     "thermal_metrics_exporter": "8a7a282a4049495e6b68488a8c3d55b6d2349caa229dd45a0b0368b8dcdf68cd",
     "traefik_deploy": "06bcb50bb36c8954f8943c2e2d759d01ab833d7f5e86ed500b97f0d9ea527c9c",
@@ -167,6 +169,8 @@
     "minio_backup": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
     "mastodon_shared": "70e309c8b77c37787fd54b9350ad909758fbde09",
     "gotosocial_deploy": "6e847f659fe9d5995b5ab51a980ecc3202c752bc",
-    "daybook_voice_memo_work_deploy": "e3f6a71b654a1ae655fd4075ba766e171fa0d829"
+    "daybook_voice_memo_work_deploy": "e3f6a71b654a1ae655fd4075ba766e171fa0d829",
+    "software_estate_publisher": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
+    "software_estate_publisher_linux": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2"
   }
 }

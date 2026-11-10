@@ -1,0 +1,2 @@
+#!/bin/sh
+exec {{ software_estate_publisher_python | quote }} {{ (software_estate_publisher_release ~ '/publish.py') | quote }} --config {{ software_estate_publisher_config | quote }} "$@"

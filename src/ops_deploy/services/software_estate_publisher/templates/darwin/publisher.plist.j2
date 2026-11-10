@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{{ software_estate_publisher_label | e }}</string>
+<key>ProgramArguments</key><array>
+<string>{{ software_estate_publisher_python | e }}</string>
+<string>{{ software_estate_publisher_release | e }}/publish.py</string>
+<string>--config</string><string>{{ software_estate_publisher_config | e }}</string>
+</array>
+<key>RunAtLoad</key><true/>
+<key>StartCalendarInterval</key><dict><key>Minute</key><integer>{{ software_estate_publisher_minute | int }}</integer></dict>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string><key>PYTHONUNBUFFERED</key><string>1</string></dict>
+<key>Umask</key><integer>63</integer>
+<key>ProcessType</key><string>Background</string>
+<key>ExitTimeOut</key><integer>15</integer>
+<key>StandardOutPath</key><string>/dev/null</string>
+<key>StandardErrorPath</key><string>/dev/null</string>
+</dict></plist>

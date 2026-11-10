@@ -46,6 +46,20 @@
   `just register-one unifi-backup`. See
   [Echoport runners](services/echoport_runner.md#the-unifi-runners-mongodb-password-never-on-argv).
 
+- Add `services.software_estate_publisher` (`SoftwareEstatePublisherConfig`,
+  `deploy_software_estate_publisher`): the port of ops-library's
+  `software_estate_publisher` (macOS user LaunchAgent, owner or root
+  connection) and `software_estate_publisher_linux` (systemd timer) roles,
+  including `state="absent"`, which removes only the schedule. The five
+  `software_estate` programs and both roles' templates are vendored unchanged
+  (`tests/test_ops_library_drift.py`), and the release directory is the roles'
+  content hash, so a host the playbook deployed keeps its paths.
+  `tests/parity/ops_library_roles.json` records both roles' digests.
+  `services.software_live` gains `deploy_nyxmon_checks` (and `upsert_checks`)
+  for checks a caller supplies, through the same helper and digest probe; the
+  software-live checks are unchanged. See
+  [software_estate_publisher](services/software_estate_publisher.md).
+
 - `services._echoport_runner`: the heis-production-backup and
   villakunterbunt-staging-backup runners can be registered with
   `DeployRunnerRegistration`. Their templates are vendored unchanged (the

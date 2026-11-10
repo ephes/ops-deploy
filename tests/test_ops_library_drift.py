@@ -50,6 +50,8 @@ VENDORED_FILES = {
 # fixture's ``forked_from``).
 VENDORED_TEMPLATE_DIRS: dict[str, tuple[str, frozenset[str]]] = {
     "services/_echoport_runner/templates": ("echoport_backup", frozenset()),
+    "services/software_estate_publisher/templates/darwin": ("software_estate_publisher", frozenset()),
+    "services/software_estate_publisher/templates/linux": ("software_estate_publisher_linux", frozenset()),
 }
 FORKED_TEMPLATES = {
     "services/_echoport_runner/templates": json.loads(
@@ -60,6 +62,10 @@ FORKED_TEMPLATES = {
 VENDORED_LIBRARY_FILES = {
     "helpers/templates/rust_release.py.txt": "plugins/filter/rust_release.py",
     "services/_metrics_httpd/rules.py": "plugins/filter/metrics_httpd.py",
+    **{
+        f"services/software_estate_publisher/files/{name}.txt": f"roles/software_estate/files/{name}"
+        for name in ("publish.py", "collect.py", "emit.py", "outbox.py", "send.py")
+    },
 }
 
 needs_ops_library = pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")

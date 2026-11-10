@@ -111,26 +111,43 @@ def command(cfg: SoftwareLiveNyxmonConfig, *args: str) -> str:
     )
 
 
+def upsert_checks(cfg: SoftwareLiveNyxmonConfig, desired: list[dict[str, Any]], *, label: str) -> None:
+    """Upsert ``desired`` (the role helper's check format) with the deployed helper when they differ.
+
+    The probe reads one digest per check, so a current database is told
+    without sending the credentials the checks carry; ``label`` names the
+    operations (``software-live`` for the software-live rows).
+    """
+
+    names = [item for check in desired for item in (check["service"], check["name"])]
+    query = command(cfg, "upsert", str(cfg.db_path), *names)
+    found = probe(query, name=f"Read {label} owned checks")
+    if not current(found, desired):
+        # The existing deployed helper is also used by inventory/estate callers.
+        secret_stdin(
+            name=f"Update {label} Nyxmon checks",
+            command=shlex.join(
+                ["runuser", "-u", cfg.user, "--", "/usr/bin/python3", str(cfg.install_dir / "nyxmon_checks.py")]
+            )
+            + " >/dev/null",
+            content=SecretContent(json.dumps({"db": str(cfg.db_path), "checks": desired})),
+        )
+    if found is None:
+        mark_read_only(verify_probe(query, name=f"Verify {label} check access"))
+
+
 @deploy("Provision software live Nyxmon checks")
 def deploy_software_live_nyxmon(cfg: SoftwareLiveNyxmonConfig, secrets: SecretValues | None) -> None:
-    payload: dict[str, Any]
-    if cfg.disable_names:
-        query = command(cfg, "disable", str(cfg.db_path), *cfg.disable_names)
-        found = probe(query, name="Read software-live disabled checks")
-        change = found != "enabled 0"
-        payload = {"db": str(cfg.db_path), "disable_names": list(cfg.disable_names)}
-    else:
+    if not cfg.disable_names:
         if not cfg.targets:
             return
         if secrets is None:
             raise ValueError("software-live Nyxmon needs credentials")
-        desired = checks(cfg, password(secrets))
-        names = [item for check in desired for item in (check["service"], check["name"])]
-        query = command(cfg, "upsert", str(cfg.db_path), *names)
-        found = probe(query, name="Read software-live owned checks")
-        change = not current(found, desired)
-        payload = {"db": str(cfg.db_path), "checks": desired}
-    if change:
+        upsert_checks(cfg, checks(cfg, password(secrets)), label="software-live")
+        return
+    query = command(cfg, "disable", str(cfg.db_path), *cfg.disable_names)
+    found = probe(query, name="Read software-live disabled checks")
+    if found != "enabled 0":
         # The existing deployed helper is also used by inventory/estate callers.
         secret_stdin(
             name="Update software-live Nyxmon checks",
@@ -138,7 +155,16 @@ def deploy_software_live_nyxmon(cfg: SoftwareLiveNyxmonConfig, secrets: SecretVa
                 ["runuser", "-u", cfg.user, "--", "/usr/bin/python3", str(cfg.install_dir / "nyxmon_checks.py")]
             )
             + " >/dev/null",
-            content=SecretContent(json.dumps(payload)),
+            content=SecretContent(json.dumps({"db": str(cfg.db_path), "disable_names": list(cfg.disable_names)})),
         )
     if found is None:
         mark_read_only(verify_probe(query, name="Verify software-live check access"))
+
+
+@deploy("Provision supplied Nyxmon checks")
+def deploy_nyxmon_checks(cfg: SoftwareLiveNyxmonConfig, desired: list[dict[str, Any]], label: str) -> None:
+    """The role's ``tasks_from: nyxmon`` with checks the caller supplies (``software-estate-monitor``)."""
+
+    if not desired:
+        raise ValueError("no Nyxmon checks supplied")
+    upsert_checks(cfg, desired, label=label)

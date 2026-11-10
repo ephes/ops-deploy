@@ -17,6 +17,7 @@ from ops_deploy.services.software_live.nyxmon import (
     SoftwareLiveTarget,
     checks,
     current,
+    deploy_nyxmon_checks,
     deploy_software_live_nyxmon,
 )
 from ops_deploy.testing import run_deploy_fake
@@ -158,3 +159,32 @@ def test_missing_database_is_not_created(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert not missing.exists()
+
+
+def test_supplied_checks_use_the_same_helper_and_probe(database: Path) -> None:
+    cfg = SoftwareLiveNyxmonConfig(db_path=str(database))
+    desired = [
+        {
+            "service": "Software inventory",
+            "name": "Inventory delivery",
+            "url": "https://receiver.example.invalid/v1/inventory/status",
+            "interval": 900,
+            "data": {"url": "https://receiver.example.invalid/v1/inventory/status", "auth": {"password": VALUE}},
+        }
+    ]
+    names = ["Software inventory", "Inventory delivery"]
+    found = probe(database, names=names)
+    result = run_deploy_fake(deploy_nyxmon_checks, cfg, desired, "software inventory", responses={" upsert ": [found]})
+    assert result.succeeded, result.error
+    assert result.mutating_changed_ops == ["Provision supplied Nyxmon checks | Update software inventory Nyxmon checks"]
+    assert VALUE not in result.all_text()
+    (payload,) = [json.loads(text) for _command, text in result.stdin]
+    assert payload == {"db": str(database), "checks": desired}
+    assert helper(database, checks=desired) == "changed=true"
+    converged = run_deploy_fake(
+        deploy_nyxmon_checks, cfg, desired, "software inventory", responses={" upsert ": [probe(database, names=names)]}
+    )
+    assert converged.succeeded
+    assert converged.mutating_changed_ops == []
+    with pytest.raises(ValueError, match="no Nyxmon checks"):
+        run_deploy_fake(deploy_nyxmon_checks, cfg, [], "software inventory")

@@ -1,0 +1,13 @@
+[Unit]
+Description=Check local software inventory cadence and pending delivery
+
+[Timer]
+OnBootSec=2min
+OnCalendar=*-*-* *:{{ '%02d' | format(software_estate_publisher_linux_minute) }}:00
+RandomizedDelaySec=90
+Persistent=true
+WakeSystem=false
+Unit=software-estate-publisher.service
+
+[Install]
+WantedBy=timers.target
