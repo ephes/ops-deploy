@@ -183,7 +183,6 @@ def main() -> None:
                 (OWN_TEMPLATES / path.name if path.name in FORKED else path).read_bytes()
             ).hexdigest()
             for path in sorted(templates.glob("*.j2"))
-            if not path.name.startswith(("heis_", "villakunterbunt_"))
         },
         "forked_from": {name: hashlib.sha256((templates / name).read_bytes()).hexdigest() for name in sorted(FORKED)},
         "role_cases": ROLE_CASES,

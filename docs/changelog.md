@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `services._echoport_runner`: the heis-production-backup and
+  villakunterbunt-staging-backup runners can be registered with
+  `DeployRunnerRegistration`. Their templates are vendored unchanged (the
+  parity fixture records their Ansible rendering; the drift test no longer
+  skips them). New: `TempDir` (task `temp_dir`), the playbooks' `/tmp/<service>`
+  temp dir in place of the work dir for a template without `_work_dir.py.j2`;
+  the kept target script `remote_sqlite_site` (both playbooks' upsert);
+  `rotation.TokenRotation` (task `token_rotation`), heis's monthly token
+  rotation helper, service and timer, with the playbook's texts kept in
+  `files/token_rotation/heis_production_backup/`; and ansible-core's `quote`
+  filter in `render.render_text`. Unlike the playbooks, the runner goes to the
+  libexec layout (the old copy in the services root is removed) and systemd is
+  reloaded only when a unit changed. See
+  [Echoport backup runners](services/echoport_runner.md).
+
 - `services.opsgate`: `OpsGateConfig.opsgate_retired` (default `false`, not a
   role variable) turns `deploy_opsgate` into a stop-and-keep-stopped route for
   the retired OpsGate: it disables and boots out the runner and API

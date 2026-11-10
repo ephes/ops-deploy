@@ -268,7 +268,7 @@ def test_a_runner_as_deploy_or_from_content_or_unscoped_is_refused() -> None:
 
 def test_a_template_that_is_not_a_vendored_runner_is_refused() -> None:
     base = registration()
-    for template in ("heis_production_backup.py.j2", "_work_dir.py.j2"):
+    for template in ("no_such_backup.py.j2", "_work_dir.py.j2"):
         with pytest.raises(ValueError, match="vendored runner template"):
             registration(runner=base.runner.model_copy(update={"template": template}))
 
