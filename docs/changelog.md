@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- UniFi routine integration fixture (`tests/integration/unifi_routine`): the
+  MongoDB readiness wait no longer gives up silently after 30 pings; it waits
+  up to 180 s for `ok: 1` and otherwise fails with mongod's state and log
+  tail. Failing fixture commands report their output tail with the fixture
+  passwords redacted instead of a bare `mongosh failed: 1`.
+
 - Echoport unifi runner: the MongoDB password no longer reaches argv, where
   `ps` showed it during every backup and restore. `mongodump`/`mongorestore`
   read it from a private `0600` `--config` file in a `0700` directory below

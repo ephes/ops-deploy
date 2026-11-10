@@ -29,11 +29,23 @@ BOOTSTRAP_PASSWORD = "fixture-bootstrap-admin-20261026"
 CONTROLLER_ADMIN_PASSWORD = "fixture-controller-admin-20261026"
 
 
+FIXTURE_SECRETS = (PASSWORD, HA_PASSWORD, BOOTSTRAP_PASSWORD, CONTROLLER_ADMIN_PASSWORD)
+
+
+def redact(text: str) -> str:
+    """Dummy fixture only, but never publish even its database URI/passwords."""
+
+    text = re.sub(r"mongodb://[^\s\"']*", "mongodb://<redacted>", text)
+    for secret in FIXTURE_SECRETS:
+        text = text.replace(secret, "<redacted>")
+    return text
+
+
 def run(*args: str, stdin: str | None = None) -> str:
     result = subprocess.run(args, input=stdin, text=True, capture_output=True)
     if result.returncode:
-        # Dummy fixture only, but never publish even its database URI/password.
-        raise RuntimeError(f"{args[0]} failed: {result.returncode}")
+        tail = " | ".join((result.stderr or result.stdout or "").strip().splitlines()[-5:])
+        raise RuntimeError(f"{args[0]} failed: {result.returncode}: {redact(tail)}")
     return result.stdout.strip()
 
 
@@ -71,6 +83,41 @@ def cfg() -> Any:
     )
 
 
+def wait_for_mongod(timeout: float = 180) -> None:
+    """Until an unauthenticated ping answers; fail with mongod's state instead of going on blind.
+
+    A fixed number of attempts that silently fell through left the next step
+    (``createUser``) to fail with nothing but ``mongosh failed: 1``.
+    """
+
+    deadline = time.monotonic() + timeout
+    error = ""
+    while time.monotonic() < deadline:
+        try:
+            ping = mongo('print(JSON.stringify(db.getSiblingDB("admin").runCommand({ping:1})));', authenticate=False)
+        except RuntimeError as exc:
+            error = str(exc)
+        else:
+            try:
+                if json.loads(ping.splitlines()[-1]).get("ok") == 1:
+                    return
+            except (IndexError, ValueError, AttributeError):
+                pass
+            error = f"unexpected ping answer: {redact(ping)}"
+        time.sleep(2)
+    try:
+        state = subprocess.run(
+            ["systemctl", "status", "mongod", "--no-pager", "-n", "20"], text=True, capture_output=True
+        ).stdout
+    except OSError as exc:
+        state = f"(systemctl status unavailable: {exc})"
+    log = Path("/var/log/mongodb/mongod.log")
+    log_tail = "\n".join(log.read_text(errors="replace").splitlines()[-20:]) if log.exists() else "(no mongod.log)"
+    raise RuntimeError(
+        f"mongod did not answer a ping within {timeout:.0f}s; last error: {error}\n{redact(state)}\n{redact(log_tail)}"
+    )
+
+
 def setup(config: Any) -> None:
     write(
         "/etc/mongod.conf",
@@ -93,12 +140,7 @@ setParameter:
 """,
     )
     run("systemctl", "enable", "--now", "mongod")
-    for _ in range(30):
-        try:
-            mongo('db.getSiblingDB("admin").runCommand({ping:1})', authenticate=False)
-            break
-        except RuntimeError:
-            time.sleep(1)
+    wait_for_mongod()
     # Bootstrap belongs to the owned fixture, not the deployment's supported
     # existing-install contract. MongoDB authorization remains enabled throughout.
     mongo(
