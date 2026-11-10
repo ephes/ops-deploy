@@ -52,9 +52,15 @@ every 5 s up to 60 times; read-only), `/usr/local/bin/software-estate-publisher`
 the service and timer units. A unit change reloads systemd, restarts the timer
 and starts one run (`--no-block`).
 
-`state="absent"` stops and disables the timer and service (when their unit
-files exist), deletes the two unit files and reloads systemd. The account,
-programs, configuration, writer, state and outbox stay.
+`state="absent"` reads each unit's `LoadState` and `ActiveState` from
+`systemctl show`, independent of its file: systemd keeps a unit loaded, and a
+timer scheduled, after the file is deleted. It stops the timer and service
+while they are active, disables those whose unit file exists, removes the
+timer's `timers.target.wants` link directly when its file is already gone,
+deletes the two unit files and reloads systemd when a file or link was removed
+or a unit is loaded without its file. A read-only check then fails the
+deploy if either unit is still loaded or active (`failed` counts as stopped).
+The account, programs, configuration, writer, state and outbox stay.
 
 ## macOS (`platform="darwin"`)
 
@@ -71,6 +77,19 @@ replaced), `config.json`, the `publish.py --check` validation, `run` (0700),
 `~/Library/LaunchAgents` (0755) and the plist (0600, `plutil -lint`). A changed
 program set, configuration or plist, or an unloaded job, disables, boots out,
 enables and bootstraps the job; `launchctl enable` runs on every apply.
+
+The credential must be usable whether or not this deploy supplies a writer
+(Studio supplies none; its credential is
+`~/.config/software-estate/graphyard-studio.writer`). Status and verification
+check it as `publish.py --check` reads it: a regular file of the owner, no
+group or world bits, a single link, at most 4096 bytes, in a directory of the
+owner without group or world bits. An existing credential or parent with
+group or world bits, another owner, a symlink or a hard link fails the role's
+path check, so status, apply and verification refuse it. A missing credential
+or parent, or one over 4096 bytes, makes the status `pending`, so the apply
+runs; unless it provisions a missing credential from a supplied writer, the
+apply then refuses before the job is touched, and the verification fails and
+names the credential.
 
 `state="absent"` disables and boots out the job and deletes the plist only.
 Programs, configuration, `run`, state, outbox and credentials stay.

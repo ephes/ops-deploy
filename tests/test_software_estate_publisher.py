@@ -183,18 +183,39 @@ def test_converged_linux_host_changes_nothing() -> None:
     assert result.written_paths == []
 
 
+TIMER_UNIT, SERVICE_UNIT = "software-estate-publisher.timer", "software-estate-publisher.service"
+WANTS_LINK = f"/etc/systemd/system/timers.target.wants/{TIMER_UNIT}"
+
+
+def unit_state(unit: str, load: str, active: str) -> dict[str, Any]:
+    """The removal's ``systemctl show -p LoadState -p ActiveState UNIT`` fact."""
+
+    return {f"systemctl show -p LoadState -p ActiveState {unit}": [f"LoadState={load}", f"ActiveState={active}"]}
+
+
+def _remove(responses: dict[Any, Any]) -> Any:
+    return run_deploy_fake(
+        deploy_software_estate_publisher, linux(state="absent", policy=None), None, responses=responses
+    )
+
+
+def _verification(result: Any) -> Any:
+    return next(op for op in result.ops if op.name.endswith("Verify the publisher units are unloaded"))
+
+
 def test_linux_removal_keeps_programs_configuration_and_state() -> None:
     responses = _fresh_linux()
     for unit in ("service", "timer"):
         responses.update(fakehost.file(f"/etc/systemd/system/software-estate-publisher.{unit}", "unit\n"))
-    responses.update(fakehost.service("software-estate-publisher.timer"))
-    responses.update(fakehost.service("software-estate-publisher.service", running=False))
-    result = run_deploy_fake(
-        deploy_software_estate_publisher, linux(state="absent", policy=None), None, responses=responses
-    )
+    responses.update(fakehost.service(TIMER_UNIT))
+    responses.update(fakehost.service(SERVICE_UNIT, running=False))
+    responses.update(unit_state(TIMER_UNIT, "loaded", "active"))
+    responses.update(unit_state(SERVICE_UNIT, "loaded", "inactive"))
+    result = _remove(responses)
     assert result.succeeded, result.error
     commands = result.executed_commands
-    assert any("systemctl stop software-estate-publisher.timer" in command for command in commands)
+    assert "systemctl stop software-estate-publisher.timer" in commands
+    assert "systemctl stop software-estate-publisher.service" not in commands
     assert any("systemctl disable software-estate-publisher.timer" in command for command in commands)
     removed = [command for command in commands if command.startswith("rm ")]
     assert removed == [
@@ -202,10 +223,94 @@ def test_linux_removal_keeps_programs_configuration_and_state() -> None:
         "rm -f /etc/systemd/system/software-estate-publisher.service",
     ]
     assert "systemctl daemon-reload" in commands
+    assert _verification(result).read_only
     text = "\n".join(commands)
     for kept in ("/etc/software-estate-publisher", "/var/lib/software-estate-publisher", RELEASE):
         assert kept not in text
     assert result.written_paths == []
+
+
+def test_linux_removal_stops_units_whose_files_are_already_gone() -> None:
+    # The unit files were deleted by hand; systemd still has both units loaded
+    # and the timer scheduled.
+    responses = _fresh_linux()
+    responses.update(fakehost.symlink(WANTS_LINK, f"/etc/systemd/system/{TIMER_UNIT}"))
+    responses.update(unit_state(TIMER_UNIT, "loaded", "active"))
+    responses.update(unit_state(SERVICE_UNIT, "loaded", "activating"))
+    result = _remove(responses)
+    assert result.succeeded, result.error
+    commands = result.executed_commands
+    assert commands.index("systemctl stop software-estate-publisher.timer") < commands.index(
+        "systemctl stop software-estate-publisher.service"
+    )
+    # `systemctl disable` needs the unit file; the enablement link goes directly.
+    assert not any("systemctl disable" in command for command in commands)
+    assert [command for command in commands if command.startswith("rm ")] == [f"rm -f {WANTS_LINK}"]
+    assert commands.index("systemctl daemon-reload") > commands.index(f"rm -f {WANTS_LINK}")
+    assert _verification(result).read_only
+
+
+def test_linux_removal_reloads_systemd_for_a_loaded_unit_without_a_file() -> None:
+    responses = _fresh_linux()
+    responses.update(unit_state(TIMER_UNIT, "loaded", "inactive"))
+    responses.update(unit_state(SERVICE_UNIT, "not-found", "inactive"))
+    result = _remove(responses)
+    assert result.succeeded, result.error
+    assert "systemctl daemon-reload" in result.executed_commands
+    assert not any("systemctl stop" in command for command in result.executed_commands)
+
+
+def test_removed_linux_publisher_changes_nothing() -> None:
+    responses = _fresh_linux()
+    responses.update(unit_state(TIMER_UNIT, "not-found", "inactive"))
+    responses.update(unit_state(SERVICE_UNIT, "not-found", "failed"))
+    result = _remove(responses)
+    assert result.succeeded, result.error
+    assert result.mutating_changed_ops == []
+    assert "systemctl daemon-reload" not in result.executed_commands
+    verification = _verification(result)
+    assert verification.read_only
+    [script] = [command for command in result.executed_commands if "is still loaded or active" in command]
+    for unit in (TIMER_UNIT, SERVICE_UNIT):
+        assert f"s=$(systemctl show -p LoadState -p ActiveState {unit}) || exit 1" in script
+
+
+@pytest.mark.parametrize(
+    ("load", "active", "passes"),
+    [
+        ("not-found", "inactive", True),
+        ("not-found", "failed", True),
+        ("loaded", "inactive", False),
+        ("not-found", "active", False),
+        ("not-found", "activating", False),
+        ("not-found", "deactivating", False),
+    ],
+)
+def test_linux_removal_verification_reads_systemd(tmp_path: Path, load: str, active: str, passes: bool) -> None:
+    responses = _fresh_linux()
+    responses.update(unit_state(TIMER_UNIT, "not-found", "inactive"))
+    [script] = [command for command in _remove(responses).executed_commands if "is still loaded" in command]
+    # A systemctl stand-in: the service answers with this state, the timer is gone.
+    stub = tmp_path / "systemctl"
+    stub.write_text(
+        '#!/bin/sh\ncase "$6" in *.service) printf "LoadState=%s\\nActiveState=%s\\n" '
+        f"{load} {active};; *) printf 'LoadState=not-found\\nActiveState=inactive\\n';; esac\n"
+    )
+    stub.chmod(0o755)
+    env = {"PATH": f"{tmp_path}:/usr/bin:/bin"}
+    result = subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True, env=env, check=False)
+    assert (result.returncode == 0) is passes, result.stderr
+    if not passes:
+        assert f"{SERVICE_UNIT} is still loaded or active" in result.stderr
+
+
+def test_linux_removal_fails_while_a_unit_stays_loaded() -> None:
+    responses: dict[Any, Any] = {"is still loaded or active": {"success": False, "stderr": "still loaded"}}
+    responses.update(_fresh_linux())
+    responses.update(unit_state(TIMER_UNIT, "loaded", "active"))
+    result = _remove(responses)
+    assert not result.succeeded
+    assert not _verification(result).succeeded
 
 
 def test_unsafe_linux_paths_stop_before_any_change() -> None:
@@ -371,6 +476,71 @@ def test_darwin_install_status_and_removal(mac: dict[str, Any], tmp_path: Path) 
         assert Path(kept).exists()
     final = _host_program("verify", darwin.darwin_request(absent), mac, owner_home=home)
     assert (final.returncode, final.stdout.strip()) == (0, "current"), final.stderr
+
+
+def test_darwin_credential_is_required_without_a_writer(mac: dict[str, Any], tmp_path: Path) -> None:
+    # Studio: the deploy supplies no writer; the credential must already exist.
+    home = mac["home"]
+    cfg = darwin_config(home, python=_fake_python(tmp_path))
+    status = _host_program("status", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert (status.returncode, status.stdout.strip()) == (0, "pending"), status.stderr
+    applied = _host_program("apply", darwin.darwin_request(cfg, apply=True), mac, owner_home=home)
+    assert applied.returncode != 0
+    assert "is missing or not a private regular file" in applied.stderr
+    assert not Path(cfg.plist).exists()
+    verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert verify.returncode != 0
+    assert "credential" in verify.stderr
+
+    writer = Path(str(cfg.credential_file))
+    writer.parent.mkdir(mode=0o700, parents=True)
+    writer.parent.chmod(0o700)
+    writer.write_text(WRITER + "\n")
+    writer.chmod(0o600)
+    applied = _host_program("apply", darwin.darwin_request(cfg, apply=True), mac, owner_home=home)
+    assert (applied.returncode, applied.stdout.strip()) == (0, "changed"), applied.stderr
+    verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert (verify.returncode, verify.stdout.strip()) == (0, "current"), verify.stderr
+
+    # A deleted credential is no longer reported as current.
+    writer.unlink()
+    status = _host_program("status", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert (status.returncode, status.stdout.strip()) == (0, "pending"), status.stderr
+    verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert verify.returncode != 0
+    assert "credential" in verify.stderr
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        (lambda writer: writer.chmod(0o644), "not private"),
+        (lambda writer: writer.parent.chmod(0o755), "not private"),
+        (lambda writer: os.link(writer, writer.with_name("copy")), "hard links"),
+    ],
+)
+def test_darwin_verify_refuses_an_unsafe_credential(
+    mac: dict[str, Any], tmp_path: Path, damage: Any, reason: str
+) -> None:
+    home = mac["home"]
+    cfg = darwin_config(home, python=_fake_python(tmp_path))
+    applied = _host_program("apply", darwin.darwin_request(cfg, writer=WRITER, apply=True), mac, owner_home=home)
+    assert applied.returncode == 0, applied.stderr
+    damage(Path(str(cfg.credential_file)))
+    verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert verify.returncode != 0
+    assert reason in verify.stderr
+
+
+def test_darwin_verify_refuses_an_oversized_credential(mac: dict[str, Any], tmp_path: Path) -> None:
+    home = mac["home"]
+    cfg = darwin_config(home, python=_fake_python(tmp_path))
+    applied = _host_program("apply", darwin.darwin_request(cfg, writer=WRITER, apply=True), mac, owner_home=home)
+    assert applied.returncode == 0, applied.stderr
+    Path(str(cfg.credential_file)).write_text("x" * 4097)
+    verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
+    assert verify.returncode != 0
+    assert "at most 4096 bytes" in verify.stderr
 
 
 def test_darwin_unsafe_path_is_refused(mac: dict[str, Any], tmp_path: Path) -> None:

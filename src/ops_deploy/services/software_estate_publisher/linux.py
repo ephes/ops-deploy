@@ -30,6 +30,8 @@ from .render import PROGRAMS, config_json, program, release_path, render
 
 TIMER, SERVICE = LINUX_UNITS
 PATH_CHECK = program("linux_paths.py")
+# systemd ActiveState values of a unit that still runs or is scheduled.
+ACTIVE_STATES = ("active", "activating", "deactivating", "reloading", "refreshing")
 
 
 def _paths_ok(mode: str, *arguments: str) -> None:
@@ -54,16 +56,64 @@ def _put(path: str, content: str, *, user: str = "root", mode: str = "0644", nam
     return files.put(name=name or f"Install {path}", src=StringIO(content), dest=path, user=user, group=user, mode=mode)
 
 
+def _show(unit: str) -> str:
+    return shlex.join(["systemctl", "show", "-p", "LoadState", "-p", "ActiveState", unit])
+
+
+def _unit_state(unit: str) -> dict[str, str]:
+    """systemd's ``LoadState`` and ``ActiveState`` of ``unit``, whether or not its file exists."""
+
+    output = str(host.get_fact(Command, command=_show(unit)) or "")
+    state = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    return {"LoadState": state.get("LoadState", ""), "ActiveState": state.get("ActiveState", "")}
+
+
+def _verify_removed() -> None:
+    """Fail unless neither unit is loaded or active any more (read-only)."""
+
+    active = "|".join(f"*ActiveState={value}*" for value in ACTIVE_STATES)
+    checks = [
+        f's=$({_show(unit)}) || exit 1; case "$s" in *LoadState=loaded*|{active}) '
+        f'echo "{unit} is still loaded or active" >&2; exit 1;; esac'
+        for unit in (TIMER, SERVICE)
+    ]
+    mark_read_only(server.shell(name="Verify the publisher units are unloaded", commands=["; ".join(checks)]))
+
+
 def _remove() -> None:
+    # systemd keeps a unit loaded, and a running timer scheduled, after its
+    # file is deleted, so the units' state is read independently of the files.
+    reload_needed = False
+    timer_file = True
     for unit in LINUX_UNITS:
-        if host.get_fact(File, path=str(LINUX_UNIT_DIR / unit)):
-            systemd.service(name=f"Stop and disable {unit}", service=unit, running=False, enabled=False)
-    removed = [
+        exists = bool(host.get_fact(File, path=str(LINUX_UNIT_DIR / unit)))
+        state = _unit_state(unit)
+        if state["ActiveState"] in ACTIVE_STATES:
+            server.shell(name=f"Stop {unit}", commands=[shlex.join(["systemctl", "stop", unit])])
+        if exists:
+            systemd.service(name=f"Disable {unit}", service=unit, enabled=False)
+        elif state["LoadState"] == "loaded":
+            reload_needed = True
+        if unit == TIMER:
+            timer_file = exists
+    changes = [
         files.file(name=f"Remove {unit}", path=str(LINUX_UNIT_DIR / unit), present=False) for unit in (TIMER, SERVICE)
     ]
+    if not timer_file:
+        # Without its file, `systemctl disable` cannot read the timer's
+        # [Install] section: remove its timers.target enablement link directly.
+        changes.append(
+            files.link(
+                name=f"Remove the enablement link of {TIMER}",
+                path=str(LINUX_UNIT_DIR / "timers.target.wants" / TIMER),
+                present=False,
+            )
+        )
     systemd.daemon_reload(
-        name="Reload systemd after removing the publisher units", _if=lambda: any(op.did_change() for op in removed)
+        name="Reload systemd after removing the publisher units",
+        _if=lambda: reload_needed or any(op.did_change() for op in changes),
     )
+    _verify_removed()
 
 
 def _account() -> None:

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- `services.software_estate_publisher`: the macOS status and verification
+  now require a usable credential (private regular file of the owner, single
+  link, at most 4096 bytes, in a private directory) for every present
+  publisher, not only when the deploy provisions the writer. Before, a deleted
+  credential on Studio, which gets no writer, left the publisher `current`:
+  the deploy skipped the apply and `publish.py --check`, and the verification
+  passed although publishing was broken. Without a writer the apply now
+  refuses with the credential's path. See
+  [software_estate_publisher](services/software_estate_publisher.md#macos-platformdarwin).
+
+- `services.software_estate_publisher`: Linux removal reads the timer's and
+  service's `LoadState` and `ActiveState` from systemd instead of only
+  checking for their unit files. Before, units whose files were already
+  deleted stayed loaded and scheduled, and the removal succeeded without
+  stopping them or reloading systemd. It now stops active units, removes the
+  timer's enablement link when its file is gone, reloads systemd for loaded
+  units without a file, and fails unless neither unit is loaded or active
+  afterwards. See
+  [software_estate_publisher](services/software_estate_publisher.md#linux-platformlinux).
+
 - `services._echoport_runner`: the villakunterbunt-staging runner template is
   forked from ops-library's (`render.FORKED`). Backup and restore now arm the
   service restart before the first `systemctl stop`: before, a failed Django
