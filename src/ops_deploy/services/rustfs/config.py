@@ -151,6 +151,7 @@ class RustfsReplicationMonitor(RoleConfig):
     timer_interval_sec: Annotated[StrictInt, Field(ge=60)] = 300
     timer_on_boot_sec: Annotated[StrictInt, Field(ge=0)] = 120
     timer_randomized_delay_sec: Annotated[StrictInt, Field(ge=0)] = 20
+    timer_on_calendar: Annotated[str, Field(pattern=r"^[A-Za-z0-9*:/,.~-][A-Za-z0-9*:/,.~ -]*$")] = "*:0/5"
 
     @model_validator(mode="after")
     def coherent(self) -> Self:

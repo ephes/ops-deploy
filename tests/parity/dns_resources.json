@@ -4,7 +4,7 @@
   "templates/ddns-config.json.j2": "9b8a7ff24574b9d3b29d99c47bd3367b857f4d9bed55d59e66f680f28d793348",
   "templates/ddns-status-endpoint.service.j2": "b868e410bf3ebaa08f984394946c8e8c997c700d7bc566bb162345fd1d500e0a",
   "templates/ddns-update.service.j2": "91ccd6f04cecbcb54706b496f2c4360b1a41ada03fcacf4baf2363949781cb24",
-  "templates/ddns-update.timer.j2": "5736d8e1080474dff1cbac5cd60e238adcc3d647c65f3b4d3c3a8f6a403d9dfa",
+  "templates/ddns-update.timer.j2": "b0781faf6aa6a9fad2117c0082d6af573b6e282d7575d7bd7cc3609b1c3f9e5b",
   "templates/ddns.env.j2": "da10ae0c7c79c58169f8799ef1b61c63fd3774bc14c6717f108ba321f77eb481",
   "templates/resolv.conf.j2": "82b999a9395da9d7b13c1bd9f4180129318aecd5c6f9233cfe0a08e212044f51",
   "templates/unbound-allowlist.conf.j2": "721abdb7cc7fa8b7d535ab140611caffabc9fbd75f7cc35fafc3d13a0a3bb01e",

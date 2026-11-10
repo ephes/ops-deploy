@@ -148,6 +148,11 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
   a required job is critical. File-age checks on the markers are the
   operator's alerting hook.
 
+Both monitor timers use `OnBootSec` and `OnActiveSec` (`timer_on_boot_sec`),
+`OnUnitActiveSec` (`timer_interval_sec`), an `OnCalendar` backstop
+(`timer_on_calendar`, default `*:0/5`) and `Persistent=true`, so a reboot or
+late timer restart cannot leave them at `NEXT n/a`.
+
 Errors in the status file and journal carry only the helper's constant
 diagnostics and HTTP status codes, never a credential, a server error code or
 a response body.

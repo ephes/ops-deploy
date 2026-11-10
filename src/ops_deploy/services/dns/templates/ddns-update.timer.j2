@@ -3,10 +3,14 @@ Description=Run DDNS update every {{ dns_ddns_interval }}
 Requires=ddns-update.service
 
 [Timer]
-# Run 1 minute after boot
+# Run 1 minute after boot and 1 minute after every timer (re)start
 OnBootSec=1min
+OnActiveSec=1min
 # Then at configured interval
 OnUnitActiveSec={{ dns_ddns_interval }}
+# Wall-clock backstop: OnBootSec/OnUnitActiveSec alone stall at NEXT n/a when
+# the timer starts after OnBootSec and the last run predates the boot
+OnCalendar={{ dns_ddns_on_calendar }}
 # Run even if the system was powered down when it should have run
 Persistent=true
 

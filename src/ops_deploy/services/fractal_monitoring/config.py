@@ -9,7 +9,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, StrictBool, StrictInt, model_validator
@@ -284,6 +284,7 @@ class ReplicationLagConfig(RoleConfig):
     timer_interval_sec: StrictInt = 300
     timer_on_boot_sec: StrictInt = 120
     timer_randomized_delay_sec: StrictInt = 20
+    timer_on_calendar: Annotated[str, Field(pattern=r"^[A-Za-z0-9*:/,.~-][A-Za-z0-9*:/,.~ -]*$")] = "*:0/5"
     mc_version: Literal["RELEASE.2025-08-13T08-35-41Z"] = "RELEASE.2025-08-13T08-35-41Z"
     mc_sha256: Literal["01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"] = (
         "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
