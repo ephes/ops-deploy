@@ -180,7 +180,7 @@ def converged(cfg: DeployRunnerRegistration) -> dict[Any, Any]:
     access, runner = cfg.access, cfg.runner
     responses: dict[Any, Any] = {**ANCESTORS, **MC_PRESENT, **fakehost.deb_installed(*cfg.packages)}
     if cfg.known_hosts:
-        lines = [f"{known.name} {KEYS[known.name]}\n" for known in cfg.known_hosts]
+        lines = [f"{known.name} {known.pin or KEYS[known.name]}\n" for known in cfg.known_hosts]
         for number, known in enumerate(cfg.known_hosts, start=1):
             responses[f"ssh-keygen -F {known.name} "] = [
                 f"# Host {known.name} found: line {number} ",
@@ -213,14 +213,15 @@ def converged(cfg: DeployRunnerRegistration) -> dict[Any, Any]:
             alias_digest(access.url, access.account.user, SECRET)
         ]
         responses[re.compile(r"alias list minio \)")] = ["none"]
-    responses.update(
-        {
-            "mountpoint -q": ["mounted"],
-            KINDS: ["dir"] * (len(cfg.work_dir.parents) + 1),
-            "getfacl": ["ok"],
-            **fakehost.stat(cfg.work_dir.path, user="deploy", mode="drwx------"),
-        }
-    )
+    if cfg.work_dir is not None:
+        responses.update(
+            {
+                "mountpoint -q": ["mounted"],
+                KINDS: ["dir"] * (len(cfg.work_dir.parents) + 1),
+                "getfacl": ["ok"],
+                **fakehost.stat(cfg.work_dir.path, user="deploy", mode="drwx------"),
+            }
+        )
     if cfg.credentials is not None:
         found = source(runner.service)
         assert found is not None
