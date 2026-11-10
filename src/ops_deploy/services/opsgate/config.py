@@ -10,7 +10,7 @@ from typing import Any, Literal, Self
 
 from jinja2 import StrictUndefined, UndefinedError
 from jinja2.nativetypes import NativeEnvironment
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from ops_deploy.base import RoleConfig
 
@@ -185,6 +185,11 @@ class OpsGateConfig(RoleConfig):
     opsgate_runner_stdout_log: str = Field(default=DEFAULTS["opsgate_runner_stdout_log"])
     opsgate_runner_stderr_log: str = Field(default=DEFAULTS["opsgate_runner_stderr_log"])
     opsgate_runner_environment: dict[str, str] = Field(default=DEFAULTS["opsgate_runner_environment"])
+    # Not a role variable: the retirement switch (OpsGate retired 2026-11-10).
+    # When set, deploy_opsgate only boots out and disables both launchd units
+    # and verifies they stay unloaded; plists, configuration, credentials,
+    # data, accounts and releases are left exactly as they are.
+    opsgate_retired: StrictBool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -219,6 +224,11 @@ class OpsGateConfig(RoleConfig):
             or self.opsgate_launchd_verify_delay < 0
         ):
             raise ValueError("Rust retention and verification retries must be positive; verification delay nonnegative")
+        if self.opsgate_retired:
+            # The retired route uses only the labels, the API address and the
+            # verify settings checked above. No source checkout, release pin or
+            # workspace is read, so removing them later must not block the stop.
+            return self
         if "rust" in (self.opsgate_api_impl, self.opsgate_runner_impl) and not self.opsgate_rust_version:
             raise ValueError("Rust implementation requires a pinned release")
         if self.opsgate_rust_version:

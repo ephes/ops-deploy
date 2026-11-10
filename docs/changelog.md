@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `services.opsgate`: `OpsGateConfig.opsgate_retired` (default `false`, not a
+  role variable) turns `deploy_opsgate` into a stop-and-keep-stopped route for
+  the retired OpsGate: it disables and boots out the runner and API
+  LaunchDaemons and verifies on every run that both are unloaded and disabled
+  and that the API port refuses connections. Nothing is synced, rendered,
+  installed or started; plists, configuration, data and releases stay. See
+  [OpsGate](services/opsgate.md#retirement-switch).
+
 - `services.torrent_vpn_metrics_endpoint`: the collector timer now adds
   `OnActiveSec` and an `OnCalendar=*:0/5` backstop (new config fields
   `timer_on_boot_sec`, `timer_on_calendar`, `timer_accuracy_sec`; defaults keep

@@ -136,6 +136,39 @@ Configuration retains the original public variable names. Computed defaults belo
 | `opsgate_runner_stderr_log` | `"{{ opsgate_log_dir }}/opsgate-runner.err.log"` |
 | `opsgate_runner_environment` | `{"HOME": "{{ ops_home_dir }}", "PATH": "{{ opsgate_launchd_path }}", "TMUX_TMPDIR": "{{ opsgate_tmux_tmpdir }}", "OPSGATE_TMUX_SOCKET_LABEL": "{{ opsgate_tmux_socket_label }}", "OPSGATE_ENV_FILE": "{{ opsgate_config_dir }}/opsgate-runner.env"}` |
 
+## Retirement switch
+
+`opsgate_retired` (default `false`) is not a role variable; it is the stop
+switch added when OpsGate was retired on 2026-11-10. With it,
+`deploy_opsgate` does nothing but keep the service down:
+
+1. `retire-status` reads both units' launchd state (`launchctl print`,
+   `launchctl print-disabled system`) and whether the API port still accepts
+   a connection.
+2. Unless that is already "stopped", `retire-apply` disables and boots out
+   the runner, then the API (`launchctl disable` + `bootout system/<label>`),
+   and waits until each is unloaded. The bootout exit code is not trusted;
+   the loaded state is polled.
+3. `retire-verify` (read-only, every run) fails unless both units are
+   unloaded and disabled and the API port refuses connections (a timeout is
+   not accepted as a stop).
+
+Nothing is synced, rendered, installed, bootstrapped or kickstarted, and only
+the two labels, the API bind address and the verify retry settings travel to
+the host; secrets are not read. Validation skips the controller source
+directory, the release pin and the workspace checks, so a later removal of the
+checkout or the pins does not block the stop route. The plists, `/etc/opsgate`, the database,
+accounts, homes, workspaces and releases are left exactly as they are, and a
+later run with the switch keeps them so. Turning it off does not start the
+units by itself: the normal route bootstraps a unit before it enables it, and a
+disabled unit does not bootstrap, so run `launchctl enable system/<label>` for
+both first (the order of the normal route is unchanged on purpose).
+
+Not covered: remediation sessions the runner started in its own tmux server
+(`tmux -L <opsgate_tmux_socket_label>` as the `ops` user) leave launchd's job
+and are not stopped by a bootout. None was running at the retirement
+(2026-11-10); check with that `tmux ... ls` before relying on a stop.
+
 ## Private HTTPS ingress
 
 `OpsGateIngressConfig` and `deploy_opsgate_ingress` preserve the original

@@ -11,6 +11,7 @@ import pwd
 import re
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -492,6 +493,76 @@ def config_apply(c):
             marker(c, unit).unlink()
 
 
+def disabled(c, unit):
+    result = run(["/bin/launchctl", "print-disabled", "system"], check=False)
+    if result.returncode:
+        raise RuntimeError("OpsGate launchd disabled state could not be read")
+    rows = re.findall(r'"' + re.escape(c[unit + "_launchd_label"]) + r'"\s*=>\s*(true|false|disabled|enabled)\b',
+                      result.stdout)
+    if len(rows) > 1:
+        raise RuntimeError("OpsGate launchd disabled state is ambiguous")
+    return rows in (["true"], ["disabled"])
+
+
+def loaded(c, unit):
+    # Only launchctl's answer: a ps lookup of a process that is exiting right
+    # after a bootout would race and fail the run.
+    result = run(["/bin/launchctl", "print", "system/" + c[unit + "_launchd_label"]], check=False)
+    if result.returncode not in (0, 113):
+        raise RuntimeError("OpsGate launchd state could not be read")
+    return result.returncode == 0
+
+
+def api_port_closed(c):
+    address = {"": "127.0.0.1", "0.0.0.0": "127.0.0.1", "::": "::1"}.get(c["api_bind_host"], c["api_bind_host"])
+    try:
+        with socket.create_connection((address, c["api_bind_port"]), timeout=3):
+            return False
+    except ConnectionRefusedError:
+        return True
+    except OSError:
+        # Anything but a refusal (timeout, unreachable) is not proof of a stop.
+        return False
+
+
+def retired(c):
+    for unit in ["runner", "api"]:
+        if loaded(c, unit) or not disabled(c, unit):
+            return False
+    return api_port_closed(c)
+
+
+def retire_verify(c):
+    for attempt in range(c["launchd_verify_retries"]):
+        if retired(c):
+            return
+        time.sleep(c["launchd_verify_delay"])
+    raise RuntimeError("retired OpsGate units are loaded, enabled or the API port still answers")
+
+
+def retire_apply(c):
+    # Runner first, so it claims nothing while the API goes away. The plists,
+    # configuration, credentials, data and releases are not touched; disable
+    # keeps launchd from loading the plists again at boot. unit_apply
+    # bootstraps before it enables, so un-retiring needs a manual enable first
+    # (docs/services/opsgate.md, "Retirement switch").
+    for unit in ["runner", "api"]:
+        service = "system/" + c[unit + "_launchd_label"]
+        if not disabled(c, unit):
+            run(["/bin/launchctl", "disable", service])
+        if loaded(c, unit):
+            # A KeepAlive unit stays down only once it is unloaded; the result
+            # is checked by polling the loaded state below, not by the exit code.
+            run(["/bin/launchctl", "bootout", service], check=False)
+        for attempt in range(c["launchd_verify_retries"]):
+            if not loaded(c, unit):
+                break
+            time.sleep(c["launchd_verify_delay"])
+        else:
+            raise RuntimeError("OpsGate launchd unit is still loaded after bootout")
+    retire_verify(c)
+
+
 def main():
     if platform.system() != "Darwin" or os.geteuid() != 0:
         raise RuntimeError("OpsGate deployment requires its existing root Darwin management connection")
@@ -514,6 +585,12 @@ def main():
         config_apply(c)
     elif action == "verify":
         verify(c)
+    elif action == "retire-status":
+        print("current" if retired(c) else "drift")
+    elif action == "retire-apply":
+        retire_apply(c)
+    elif action == "retire-verify":
+        retire_verify(c)
     else:
         raise RuntimeError("unknown OpsGate operation")
 
