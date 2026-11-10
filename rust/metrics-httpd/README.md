@@ -5,9 +5,10 @@ One Rust binary for the small authenticated HTTP endpoint daemons that the
 (DDNS status), `openclaw_deploy`, `logyard_deploy` and `static_site_deploy`
 roles (and ops-control's `torrent_vpn_metrics_endpoint`) run as Python
 scripts today. The contract is [PLAN.md](PLAN.md), the test map
-[TESTMAP.md](TESTMAP.md). Version 0.1.0 is released (tag
-`metrics-httpd-v0.1.0`, see "Release" below); nothing is deployed yet, the
-hosts run the Python scripts.
+[TESTMAP.md](TESTMAP.md). The current release is 0.1.1 (tag
+`metrics-httpd-v0.1.1`, 0.1.0's code rebuilt with tokio 1.54.1 for
+RUSTSEC-2026-0384; see "Release" below). The hosts run the Python scripts
+except the canary units that ops-control switches.
 
 Status: **S1** (core), **S2a** (`json-file` mode), **S2b** (`script`
 mode), **S2c** (`apt-state` mode), **S2d** (`logyard-health` mode),
@@ -129,6 +130,7 @@ The roles pin a version and that sha256 (`metrics_httpd_rust_version`,
 | Version | Tag (commit) | Archive sha256 | Stripped binary |
 |---|---|---|---|
 | 0.1.0 (S4, all five modes) | `metrics-httpd-v0.1.0` (`20d566c4`) | `7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27` | 2,249,216 bytes (2.14 MiB), highest `GLIBC_2.34` |
+| 0.1.1 (0.1.0's code with tokio 1.54.1, RUSTSEC-2026-0384) | `metrics-httpd-v0.1.1` (`e317ef13`) | `d04ac44bb349ae667cca069f325525e630fa188bbbe4d9c7cd4341fa570dfb2e` | 2,250,264 bytes (2.15 MiB), highest `GLIBC_2.34` |
 
 ## Build and test
 
