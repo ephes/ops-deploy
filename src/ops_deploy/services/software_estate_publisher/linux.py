@@ -91,7 +91,8 @@ def _remove() -> None:
         if state["ActiveState"] in ACTIVE_STATES:
             server.shell(name=f"Stop {unit}", commands=[shlex.join(["systemctl", "stop", unit])])
         if exists:
-            systemd.service(name=f"Disable {unit}", service=unit, enabled=False)
+            # running=False: pyinfra defaults to running=True, which would start an idle unit.
+            systemd.service(name=f"Disable {unit}", service=unit, running=False, enabled=False)
         elif state["LoadState"] == "loaded":
             reload_needed = True
         if unit == TIMER:

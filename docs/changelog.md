@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `services.software_estate_publisher` (Linux removal): disabling a unit
+  passes `running=False`. pyinfra's `systemd.service` defaults to
+  `running=True`, so the removal started an idle publisher service or an
+  inactive timer before deleting it, and the final unload check could fail.
+
 - `backups.run_echoport_backup` takes `artifact="manifest"` for targets that
   store a prefix with a `manifest.json` instead of one object (the rclone media
   runners). Before, only the single-object `mc stat` check existed, so every
