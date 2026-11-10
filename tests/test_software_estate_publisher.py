@@ -216,6 +216,7 @@ def test_linux_removal_keeps_programs_configuration_and_state() -> None:
     commands = result.executed_commands
     assert "systemctl stop software-estate-publisher.timer" in commands
     assert "systemctl stop software-estate-publisher.service" not in commands
+    assert not any("systemctl start" in command for command in commands)
     assert any("systemctl disable software-estate-publisher.timer" in command for command in commands)
     removed = [command for command in commands if command.startswith("rm ")]
     assert removed == [
@@ -228,6 +229,24 @@ def test_linux_removal_keeps_programs_configuration_and_state() -> None:
     for kept in ("/etc/software-estate-publisher", "/var/lib/software-estate-publisher", RELEASE):
         assert kept not in text
     assert result.written_paths == []
+
+
+def test_linux_removal_never_starts_an_inactive_unit() -> None:
+    # pyinfra's systemd.service defaults to running=True; the removal must not
+    # start an idle service or an inactive timer while it disables them.
+    responses = _fresh_linux()
+    for unit in ("service", "timer"):
+        responses.update(fakehost.file(f"/etc/systemd/system/software-estate-publisher.{unit}", "unit\n"))
+    responses.update(fakehost.service(TIMER_UNIT, running=False))
+    responses.update(fakehost.service(SERVICE_UNIT, running=False))
+    responses.update(unit_state(TIMER_UNIT, "loaded", "inactive"))
+    responses.update(unit_state(SERVICE_UNIT, "loaded", "inactive"))
+    result = _remove(responses)
+    assert result.succeeded, result.error
+    commands = result.executed_commands
+    assert not any("systemctl start" in command for command in commands)
+    assert not any("systemctl stop" in command for command in commands)
+    assert any("systemctl disable software-estate-publisher.timer" in command for command in commands)
 
 
 def test_linux_removal_stops_units_whose_files_are_already_gone() -> None:
