@@ -248,7 +248,7 @@ Minecraft world directory does not exist. Now:
 ### Class B: the playbook's own target, credential and Nyxmon steps
 
 The same-host root runners of class B (mail-db-backup, postfixadmin-backup,
-graphyard-backup) are the same registration with the playbook's own steps
+graphyard-backup, vaultwarden-backup) are the same registration with the playbook's own steps
 (all optional fields):
 
 - `template_markers`: texts the vendored template must contain (the
@@ -265,8 +265,8 @@ graphyard-backup) are the same registration with the playbook's own steps
 - `target` (`RunnerTarget`, see below): after the runner, through
   `upsert_runner_target`, or `token_and_target` with
   `install_registration(..., token_user=...)` when it has a `ServiceToken`;
-- `nyxmon` (`nyxmon.NyxmonScript`): last, graphyard's own Nyxmon check
-  script (below).
+- `nyxmon` (`nyxmon.NyxmonScript`): last, graphyard's or vaultwarden's own
+  Nyxmon check script (below).
 
 A target with a token but no `token_user`, and credentials that are not
 exactly the files' secrets, refuse while planning.
@@ -274,7 +274,9 @@ exactly the files' secrets, refuse while planning.
 The kept scripts are the playbooks' texts with their Jinja values read from
 `VALUES[...]` (the variable without the runner's prefix) and the issued
 token from `SERVICE_TOKEN`; nothing else differs, and ops-control's
-`tests/test_pyinfra_echoport_runners_classb.py` compares them byte for byte:
+`tests/test_pyinfra_echoport_runners_classb.py` (vaultwarden's:
+`tests/test_pyinfra_echoport_runners_vaultwarden.py`) compares them byte for
+byte:
 
 | `files/targets/` | Playbooks |
 |---|---|
@@ -284,21 +286,26 @@ token from `SERVICE_TOKEN`; nothing else differs, and ops-control's
 | `mastodon_production_db.py` | register-mastodon-production-db-backup (saves only when a field differs) |
 | `marina_production.py` | register-marina-production-backup (saves only when a field differs; database path, files and owner) |
 | `gotosocial.py` | register-gotosocial-backup (refuses a schedule that is not plain daily or within 10 minutes of another active daily target, and a row wired to another FastDeploy service) |
+| `vaultwarden.py` | register-vaultwarden-backup: its converge task, then its token task under `if SERVICE_TOKEN:` (refuses an Echoport without `schedule_required` and a paused or disabled target; saves only when a field differs; `declaration_state: retired` disables the target and clears its schedule and token; `RunnerTarget` refuses a token with a declaration other than `present`) |
 
 `target.target_script(name)` and `target.target_scripts()` read them.
 
 ## Playbook Nyxmon scripts (`nyxmon`)
 
-graphyard's register playbook upserts its Nyxmon backup freshness check with
-a script of its own (`python3 -` as the `nyxmon` user, the database and
-service name in the environment). It differs from `nyxmon_site_checks` and
-`_nyxmon_json_metrics` (it re-enables a disabled check only when another
-field differs), so it is kept as `files/nyxmon/graphyard.py` and
-`files/runner_nyxmon.py` runs it with `python3 -I`:
+graphyard's and vaultwarden's register playbooks upsert their Nyxmon backup
+freshness check with a script of their own (`python3 -` as the `nyxmon`
+user, the database and service name in the environment). They differ from
+`nyxmon_site_checks` and `_nyxmon_json_metrics`: graphyard's re-enables a
+disabled check only when another field differs; vaultwarden's checks
+Nyxmon's columns first, refuses a disabled check while the target is present
+(`ALLOW_REENABLE` lifts that) and disables it for `DECLARATION_STATE=retired`.
+They are kept as `files/nyxmon/graphyard.py` and `files/nyxmon/vaultwarden.py`
+and `files/runner_nyxmon.py` runs them with `python3 -I`:
 
 - while planning, the playbook's `stat` of the database: without it nothing
-  is planned and the deploy logs that it skips the step, as the playbook
-  does;
+  is planned and the deploy logs that it skips the step, as graphyard's
+  playbook does; with `require_database` (vaultwarden's playbook asserts the
+  database) the deploy stops before any write;
 - **check**: the script runs with `sqlite3.connect` opening the database read
   only; `unchanged` when it ends with `changed=false`, `pending` when it
   would write, `refused: <reason>` when it fails otherwise (the deploy then
@@ -308,7 +315,10 @@ field differs), so it is kept as `files/nyxmon/graphyard.py` and
 
 The script and its values (the check data, which may carry a monitor login
 under a harmless name) travel on stdin, never in argv; only the playbook's
-environment (database path, service name) is in argv. `NyxmonScript` also
+environment (database path, service name and `extra_environment`,
+vaultwarden's `DECLARATION_STATE` and `ALLOW_REENABLE`) is in argv;
+`extra_environment` refuses names that look like a secret or shadow the
+others, and values with a newline. `NyxmonScript` also
 refuses top-level value names that look like a secret. The read-only check replaces
 `sqlite3.connect`, so `NyxmonScript` requires a script that opens its
 database with `sqlite3.connect(...)`.
@@ -535,15 +545,6 @@ ported: the playbook passes it no credentials, so it never runs.
 `tests/test_echoport_runner_generic.py` compares the runner, `config.json`
 and the sudoers rule with what the role wrote on macmini (2026-11-10, sixteen
 targets) and plans no mutating operation on that host.
-
-## Not here yet
-
-Design note §3.1 also lists these parts; they come with the slices that use
-them:
-
-- vaultwarden's Nyxmon upsert (slice 9); graphyard's is `nyxmon` above;
-- the deploy key and the media JSON are parts of `DeployRunnerRegistration`;
-  unifi's and postfixadmin's logins are `CredentialFile`s above.
 
 ## Parity
 

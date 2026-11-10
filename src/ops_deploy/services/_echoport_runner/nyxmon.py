@@ -1,17 +1,21 @@
-"""A register playbook's own Nyxmon check script, with a check mode (graphyard's backup freshness check).
+"""A register playbook's own Nyxmon check script, with a check mode (graphyard's and vaultwarden's backup checks).
 
-graphyard's register playbook upserts its Nyxmon check with a script of its
-own (run as the Nyxmon user with ``python3 -`` and the database and service in
-the environment). It differs from ``nyxmon_site_checks`` and from
-``_nyxmon_json_metrics``: it re-enables a disabled check only when another
-field differs, and the playbook skips it when the Nyxmon database is missing.
-So the port keeps the script (``files/nyxmon/<name>.py``, its values from
-``VALUES``) and ``files/runner_nyxmon.py`` runs it in a check mode (the
-database opened read only; ``unchanged``, ``pending`` or the refusal) and in
-apply mode:
+graphyard's and vaultwarden's register playbooks upsert their Nyxmon check
+with a script of their own (run as the Nyxmon user with ``python3 -`` and the
+database and service in the environment). They differ from
+``nyxmon_site_checks``, from ``_nyxmon_json_metrics`` and from each other:
+graphyard's re-enables a disabled check only when another field differs and
+its playbook skips it when the Nyxmon database is missing; vaultwarden's
+refuses a disabled check of a present target, can retire its check, and its
+playbook requires the database. So the port keeps each script
+(``files/nyxmon/<name>.py``, its values from ``VALUES``) and
+``files/runner_nyxmon.py`` runs it in a check mode (the database opened read
+only; ``unchanged``, ``pending`` or the refusal) and in apply mode:
 
 - while planning, the database is looked for as the playbook's ``stat`` does:
-  without it nothing is planned (the playbook's "skipping" message);
+  without it nothing is planned (graphyard's "skipping" message), or, with
+  :attr:`NyxmonScript.require_database` (vaultwarden's assert), the deploy
+  stops before any write;
 - otherwise the check runs; a refusal stops the deploy before any write and
   ``unchanged`` adds no operation;
 - otherwise the script runs once and the check runs again, which must then say
@@ -19,8 +23,10 @@ apply mode:
 
 The script and its values (the check data, which may carry a monitor login
 under a harmless name) reach the host on stdin, never in argv; the
-environment the playbook sets (the database path and the service name) is in
-argv, as the playbook's task sets it. :class:`NyxmonScript` still refuses
+environment the playbook sets (the database path, the service name and
+vaultwarden's ``DECLARATION_STATE`` and ``ALLOW_REENABLE``,
+:attr:`NyxmonScript.extra_environment`) is in argv, as the playbook's task
+sets it. :class:`NyxmonScript` still refuses
 top-level value names that look like a secret. The check works only for a
 script that opens its database with ``sqlite3.connect(...)``, which
 :class:`NyxmonScript` requires.
@@ -30,6 +36,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import shlex
 from collections.abc import Mapping
 from importlib.resources import files
@@ -76,6 +83,10 @@ class NyxmonScript(RoleConfig):
     service_name: Annotated[str, Field(min_length=1, max_length=255, pattern=r"^[^\n]+$")]
     db_path: PurePosixPath = PurePosixPath("/home/nyxmon/site/db.sqlite3")
     user: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}$")] = "nyxmon"
+    # The playbook task's other environment variables (vaultwarden's declaration controls).
+    extra_environment: Mapping[str, str] = Field(default_factory=dict)
+    # The playbook asserts the database exists (vaultwarden) instead of skipping the step.
+    require_database: bool = False
 
     @field_validator("values")
     @classmethod
@@ -86,6 +97,18 @@ class NyxmonScript(RoleConfig):
                 raise ValueError("Nyxmon script values must not hold a secret (names that look like one are refused)")
         json.dumps(values)  # JSON only
         return values
+
+    @field_validator("extra_environment")
+    @classmethod
+    def _plain_environment(cls, environment: Mapping[str, str]) -> Mapping[str, str]:
+        for key, value in environment.items():
+            if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key in {"HOME", "NYXMON_DB_PATH", "NYXMON_SERVICE_NAME"}:
+                raise ValueError(f"{key!r} is not an extra environment variable of a Nyxmon script")
+            if _SECRET_NAME.search(key):
+                raise ValueError("Nyxmon script environment travels in argv and must not hold a secret")
+            if "\n" in value:
+                raise ValueError(f"the Nyxmon script environment variable {key} must be one line")
+        return environment
 
     @field_validator("script")
     @classmethod
@@ -100,7 +123,11 @@ class NyxmonScript(RoleConfig):
     def environment(self) -> dict[str, str]:
         """The playbook task's ``environment``."""
 
-        return {"NYXMON_DB_PATH": str(self.db_path), "NYXMON_SERVICE_NAME": self.service_name}
+        return {
+            "NYXMON_DB_PATH": str(self.db_path),
+            "NYXMON_SERVICE_NAME": self.service_name,
+            **self.extra_environment,
+        }
 
 
 # The prelude reads ``PARAMS`` from its first stdin line (base64 JSON), so the check data stays off argv.
@@ -127,12 +154,18 @@ def _check_command(script: NyxmonScript) -> str:
 
 
 def upsert_nyxmon_script(script: NyxmonScript) -> None:
-    """The playbook's Nyxmon steps: skip without a database, else check, apply when not ``unchanged``, check again."""
+    """The playbook's Nyxmon steps: skip (or refuse) without a database, else check, apply, check again."""
 
     label = f"Nyxmon check {script.name}"
     check = _check_command(script)
     payload = nyxmon_stdin(script, "check")
     answer = (probe(check, name=label, stdin=payload) or "").strip()
+    if answer == NO_DATABASE and script.require_database:
+        # vaultwarden's "Require Nyxmon database for Tier 1 backup check".
+        raise DeployError(
+            f"{label}: Nyxmon DB is missing at {script.db_path}; refusing to converge the target without its"
+            " fail-closed named monitor"
+        )
     if answer == NO_DATABASE:
         # The playbook: "Nyxmon DB not found ..., skipping ... provisioning."
         logger.info(f"{host.print_prefix}Nyxmon database not found at {script.db_path}; skipping {label}")
