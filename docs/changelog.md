@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `base.remote_luks_unlock`, `base.boot_visible_i915`: ports of the ops-library
+  roles of the same names (enabled path, `grub_ip_param` network method), with
+  the role templates' bytes, so hosts they set up show no change.
+  `boot_visible_i915.grub_default_entry` and `grub_extra_params` render a
+  pinned GRUB default and the unlock `ip=` parameter in the same file. The
+  apt cache is refreshed only when `dropbear-initramfs` is missing. See
+  [Base deploys](base.md#remote_luks_unlock).
+
+- `base.external_bind_storage`: the bind mount and automount units, engine
+  drop-ins and Docker builder cache limit that ops-library's
+  `host_storage_migrate` tool leaves after its cutover, byte for byte. It writes,
+  reloads and enables; it never moves data or starts anything. See
+  [Base deploys](base.md#external_bind_storage).
+
 - `services._echoport_runner`: the villakunterbunt-staging runner template is
   forked from ops-library's (`render.FORKED`). Backup and restore now arm the
   service restart before the first `systemctl stop`: before, a failed Django

@@ -2,18 +2,27 @@
 
 Each module holds one role: a typed config and a ``@deploy`` function, used on
 their own (hostname, unit masks, headless mode, journald, shell basics, authorized keys (whole file or single entries),
-SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4 options drop) or as a
+SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4 options drop, remote LUKS
+unlock, boot-visible i915, external bind storage) or as a
 step of a service deploy (uv, Node.js). They are deploys, not shared helpers, so they sit outside the
 size-capped helpers/ops/core layer.
 """
 
 from ops_deploy.base._common import RoleConfig
+from ops_deploy.base.boot_visible_i915 import BootVisibleI915Config, deploy_boot_visible_i915
 from ops_deploy.base.dpkg_arch_remove import DpkgArchRemoveConfig, deploy_dpkg_arch_remove
+from ops_deploy.base.external_bind_storage import (
+    BindSource,
+    EngineBinds,
+    ExternalBindStorageConfig,
+    deploy_external_bind_storage,
+)
 from ops_deploy.base.headless_mode import HeadlessModeConfig, deploy_headless_mode
 from ops_deploy.base.hostname import HostnameConfig, deploy_hostname
 from ops_deploy.base.ip_options_drop import IpOptionsDropConfig, deploy_ip_options_drop
 from ops_deploy.base.journald_config import JournaldConfig, deploy_journald_config
 from ops_deploy.base.nodejs_install import NodejsInstallConfig, deploy_nodejs_install
+from ops_deploy.base.remote_luks_unlock import RemoteLuksUnlockConfig, deploy_remote_luks_unlock
 from ops_deploy.base.shell_basics import ShellBasicsConfig, deploy_shell_basics
 from ops_deploy.base.ssh_authorized_key_entries import (
     SshAuthorizedKeyEntriesConfig,
@@ -33,12 +42,17 @@ from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
 
 __all__ = [
     "AuthorizedKey",
+    "BindSource",
+    "BootVisibleI915Config",
     "DpkgArchRemoveConfig",
+    "EngineBinds",
+    "ExternalBindStorageConfig",
     "HeadlessModeConfig",
     "HostnameConfig",
     "IpOptionsDropConfig",
     "JournaldConfig",
     "NodejsInstallConfig",
+    "RemoteLuksUnlockConfig",
     "RoleConfig",
     "ShellBasicsConfig",
     "SshAuthorizedKeyEntriesConfig",
@@ -51,12 +65,15 @@ __all__ = [
     "UnattendedUpgradesConfig",
     "UnitMask",
     "UvInstallConfig",
+    "deploy_boot_visible_i915",
     "deploy_dpkg_arch_remove",
+    "deploy_external_bind_storage",
     "deploy_headless_mode",
     "deploy_hostname",
     "deploy_ip_options_drop",
     "deploy_journald_config",
     "deploy_nodejs_install",
+    "deploy_remote_luks_unlock",
     "deploy_shell_basics",
     "deploy_ssh_authorized_key_entries",
     "deploy_ssh_authorized_keys",
