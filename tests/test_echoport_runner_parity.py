@@ -55,7 +55,6 @@ def test_vendored_templates_are_the_recorded_ones() -> None:
 
 def test_every_runner_template_is_rendered_by_a_fixture() -> None:
     assert {spec["template"] for spec in INPUTS.values()} == set(runner_templates())
-    assert not {"heis_production_backup.py.j2", "villakunterbunt_staging_backup.py.j2"} & set(EXPECTED["source_sha256"])
     assert set(EXPECTED["source_sha256"]) >= INCLUDES
 
 

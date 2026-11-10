@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly Heis production backup token rotation
+
+[Timer]
+OnCalendar=monthly
+RandomizedDelaySec=6h
+Persistent=true
+Unit=heis-production-backup-token-rotate.service
+
+[Install]
+WantedBy=timers.target
