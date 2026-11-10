@@ -558,9 +558,11 @@ def backup(
         # start_services reverses that order after backup/restore.
         services_text = ", ".join(service_names)
         emit_step("stop_service", "running", f"Stopping {services_text}")
+        # Armed before the first stop: a failure after Next.js stopped but
+        # before Django stopped must still start the stopped service again.
+        services_stopped = True
         try:
             stop_services(remote_host, remote_user, service_names)
-            services_stopped = True
             emit_step("stop_service", "success", f"Stopped {services_text}")
         except subprocess.CalledProcessError as e:
             emit_step("stop_service", "failure", f"Failed to stop services: {e.stderr}")
@@ -857,9 +859,11 @@ def restore(
         # Stop services
         services_text = ", ".join(service_names)
         emit_step("stop_service", "running", f"Stopping {services_text}")
+        # Armed before the first stop: a failure after Next.js stopped but
+        # before Django stopped must still start the stopped service again.
+        services_stopped = True
         try:
             stop_services(remote_host, remote_user, service_names)
-            services_stopped = True
             emit_step("stop_service", "success", f"Stopped {services_text}")
         except subprocess.CalledProcessError as e:
             emit_step("stop_service", "failure", f"Failed to stop services: {e.stderr}")
