@@ -14,6 +14,11 @@
   The default `artifact="file"` is unchanged. See
   [Manifest artifacts](backups.md#manifest-artifacts).
 
+- `services.software_estate_publisher` (macOS): status and verification now
+  open and read the credential as the owner, as `publish.py --check` does, so
+  a credential the owner cannot read (for example mode 000) is `pending` and
+  fails verification instead of passing the metadata checks.
+
 - `services.software_estate_publisher`: the macOS status and verification
   now require a usable credential (private regular file of the owner, single
   link, at most 4096 bytes, in a private directory) for every present

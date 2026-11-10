@@ -17,6 +17,7 @@ a missing writer is provisioned only when the request carries one and an
 existing one is never replaced; without one (Studio) the credential must
 already exist, and ``status`` and ``verify`` check it as ``publish.py --check``
 reads it (private regular file of the owner, single link, at most 4096 bytes,
+readable by the owner,
 in a private directory of the owner); the installed configuration is validated
 with ``publish.py --check`` (retried while it exits 75, the publisher's busy
 lock) before the job is touched. A change of programs, configuration or plist,
@@ -48,7 +49,7 @@ LAUNCHER = (
 )
 
 
-CREDENTIAL_UNUSABLE = "the credential %s is missing or not a private regular file of at most 4096 bytes"
+CREDENTIAL_UNUSABLE = "the credential %s is missing, unreadable or not a private regular file of at most 4096 bytes"
 
 
 class Refused(Exception):
@@ -154,7 +155,23 @@ def estate_credential_ready(data):
         and not info.st_mode & 0o077
         and info.st_nlink == 1
         and info.st_size <= 4096
+        and estate_credential_readable(data["credential_file"])
     )
+
+
+def estate_credential_readable(path):
+    """Open and read it as ``outbox.private_read`` does: a mode-000 file is not ready."""
+
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return False
+    try:
+        return len(os.read(fd, 4097)) <= 4096
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
 
 
 def estate_ensure_directory(path, mode):
@@ -180,7 +197,11 @@ def estate_write(path, content, mode):
 
     body = content.encode()
     info = estate_file_mode(path)
-    if info is not None and stat.S_IMODE(info.st_mode) == mode and estate_digest(path) == hashlib.sha256(body).hexdigest():
+    if (
+        info is not None
+        and stat.S_IMODE(info.st_mode) == mode
+        and estate_digest(path) == hashlib.sha256(body).hexdigest()
+    ):
         return False
     descriptor, temporary = tempfile.mkstemp(dir=str(Path(path).parent), prefix=".estate-")
     try:

@@ -486,7 +486,7 @@ def test_darwin_credential_is_required_without_a_writer(mac: dict[str, Any], tmp
     assert (status.returncode, status.stdout.strip()) == (0, "pending"), status.stderr
     applied = _host_program("apply", darwin.darwin_request(cfg, apply=True), mac, owner_home=home)
     assert applied.returncode != 0
-    assert "is missing or not a private regular file" in applied.stderr
+    assert "is missing, unreadable or not a private regular file" in applied.stderr
     assert not Path(cfg.plist).exists()
     verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
     assert verify.returncode != 0
@@ -541,6 +541,24 @@ def test_darwin_verify_refuses_an_oversized_credential(mac: dict[str, Any], tmp_
     verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
     assert verify.returncode != 0
     assert "at most 4096 bytes" in verify.stderr
+
+
+def test_darwin_unreadable_credential_is_not_current(mac: dict[str, Any], tmp_path: Path) -> None:
+    # A mode-000 credential passes the metadata checks but publish.py cannot read it.
+    home = mac["home"]
+    cfg = darwin_config(home, python=_fake_python(tmp_path))
+    applied = _host_program("apply", darwin.darwin_request(cfg, writer=WRITER, apply=True), mac, owner_home=home)
+    assert applied.returncode == 0, applied.stderr
+    writer = Path(str(cfg.credential_file))
+    writer.chmod(0o000)
+    try:
+        status = _host_program("status", darwin.darwin_request(cfg), mac, owner_home=home)
+        assert (status.returncode, status.stdout.strip()) == (0, "pending"), status.stderr
+        verify = _host_program("verify", darwin.darwin_request(cfg), mac, owner_home=home)
+        assert verify.returncode != 0
+        assert "unreadable" in verify.stderr
+    finally:
+        writer.chmod(0o600)
 
 
 def test_darwin_unsafe_path_is_refused(mac: dict[str, Any], tmp_path: Path) -> None:

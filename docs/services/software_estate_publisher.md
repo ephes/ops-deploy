@@ -82,11 +82,12 @@ The credential must be usable whether or not this deploy supplies a writer
 (Studio supplies none; its credential is
 `~/.config/software-estate/graphyard-studio.writer`). Status and verification
 check it as `publish.py --check` reads it: a regular file of the owner, no
-group or world bits, a single link, at most 4096 bytes, in a directory of the
-owner without group or world bits. An existing credential or parent with
+group or world bits, a single link, at most 4096 bytes, readable by the owner
+(it is opened and read, so a mode-000 file is not usable), in a directory of
+the owner without group or world bits. An existing credential or parent with
 group or world bits, another owner, a symlink or a hard link fails the role's
-path check, so status, apply and verification refuse it. A missing credential
-or parent, or one over 4096 bytes, makes the status `pending`, so the apply
+path check, so status, apply and verification refuse it. A missing, unreadable
+or oversized credential, or a missing parent, makes the status `pending`, so the apply
 runs; unless it provisions a missing credential from a supplied writer, the
 apply then refuses before the job is touched, and the verification fails and
 names the credential.
