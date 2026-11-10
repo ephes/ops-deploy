@@ -87,6 +87,7 @@ dns_ddns_subdomain: "home"                       # Subdomain to update
 dns_ddns_update_wildcard: true                   # Also update *.subdomain
 dns_ddns_ttl: 300                                # DNS TTL in seconds
 dns_ddns_interval: "5min"                        # Update interval
+dns_ddns_on_calendar: "*:0/5"                    # OnCalendar= backstop so the timer cannot stall at NEXT n/a after a reboot
 dns_ddns_log_dir: "/var/log/ddns"                # Log directory
 dns_ddns_config_dir: "/etc/ddns"                 # Config directory (config.json, credentials.env)
 dns_ddns_script_path: "/usr/local/bin/ddns-update"  # Updater (Python, stdlib only)
