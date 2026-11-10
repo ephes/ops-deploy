@@ -2,7 +2,7 @@
 name = "metrics-httpd"
 # Own version (not the workspace's): the binary is released by the tag
 # `metrics-httpd-v<version>` (PLAN-foundation.md section 4).
-version = "0.1.0"
+version = "0.1.1"
 description = "Small authenticated HTTP endpoints for homelab metrics (Rust port of the Python endpoint daemons)"
 edition.workspace = true
 rust-version.workspace = true
@@ -28,7 +28,7 @@ hyper-util = { version = "0.1.21", features = ["tokio", "server", "server-gracef
 rustix = { version = "1.1.5", default-features = false, features = ["std", "fs", "process", "system"] }
 serde = { version = "1.0.229", default-features = false, features = ["std"] }
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
-tokio = { version = "1.54.0", features = ["rt", "net", "time", "signal", "sync", "macros", "io-util", "process"] }
+tokio = { version = "1.54.1", features = ["rt", "net", "time", "signal", "sync", "macros", "io-util", "process"] }
 tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
 
 [dev-dependencies]
