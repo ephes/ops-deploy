@@ -295,6 +295,30 @@
       },
       "template": "graphyard_backup.py.j2"
     },
+    "heis-production-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-heis-production",
+        "echoport_backup_temp_dir": "/tmp/heis-production-backup",
+        "heis_production_backup_allowed_roots": [
+          "/home/heis/site/"
+        ],
+        "heis_production_backup_default_db_path": "/home/heis/site/db.sqlite3",
+        "heis_production_backup_default_host": "192.0.2.10",
+        "heis_production_backup_files": [
+          "/home/heis/site/media"
+        ],
+        "heis_production_backup_health_host": "heis.example.invalid",
+        "heis_production_backup_health_url": "http://127.0.0.1:10020/",
+        "heis_production_backup_remote_user": "root",
+        "heis_production_backup_restore_owner": "heis:heis",
+        "heis_production_backup_service_names": [
+          "heis.service"
+        ]
+      },
+      "template": "heis_production_backup.py.j2"
+    },
     "homeassistant-backup": {
       "inputs": {
         "ansible_default_ipv4": {
@@ -760,6 +784,30 @@
         "vaultwarden_echoport_backup_work_mount": "/mnt/cryptdata"
       },
       "template": "vaultwarden_backup.py.j2"
+    },
+    "villakunterbunt-staging-backup": {
+      "inputs": {
+        "echoport_backup_default_bucket": "backups",
+        "echoport_backup_mc_install_path": "/usr/local/bin/mc",
+        "echoport_backup_minio_alias": "backup-villakunterbunt-staging",
+        "echoport_backup_temp_dir": "/tmp/villakunterbunt-staging-backup",
+        "villakunterbunt_staging_backup_allowed_roots": [
+          "/home/villakunterbunt/data/"
+        ],
+        "villakunterbunt_staging_backup_default_db_path": "/home/villakunterbunt/data/db.sqlite3",
+        "villakunterbunt_staging_backup_default_host": "staging.example.invalid",
+        "villakunterbunt_staging_backup_files": [
+          "/home/villakunterbunt/data/media",
+          "/home/villakunterbunt/data/private_media"
+        ],
+        "villakunterbunt_staging_backup_remote_user": "root",
+        "villakunterbunt_staging_backup_restore_owner": "villakunterbunt:villakunterbunt",
+        "villakunterbunt_staging_backup_service_names": [
+          "villakunterbunt-next.service",
+          "villakunterbunt-django.service"
+        ]
+      },
+      "template": "villakunterbunt_staging_backup.py.j2"
     },
     "weeknotes-home-backup": {
       "inputs": {

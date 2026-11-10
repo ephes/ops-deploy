@@ -45,14 +45,11 @@ VENDORED_FILES = {
     "services/_lifecycle/files/preserve.py": "restore_preserve_internal",
 }
 # ``<package dir>/templates``: ``roles/<role>/templates``, byte for byte, every
-# template but the ones named (the Echoport runners; heis and villakunterbunt
-# stay on Ansible) and the forked ones, whose ops-library copy must stay the
-# one recorded (the parity fixture's ``forked_from``).
-VENDORED_TEMPLATE_DIRS = {
-    "services/_echoport_runner/templates": (
-        "echoport_backup",
-        frozenset({"heis_production_backup.py.j2", "villakunterbunt_staging_backup.py.j2"}),
-    ),
+# template but the ones named (none for the Echoport runners) and the forked
+# ones, whose ops-library copy must stay the one recorded (the parity
+# fixture's ``forked_from``).
+VENDORED_TEMPLATE_DIRS: dict[str, tuple[str, frozenset[str]]] = {
+    "services/_echoport_runner/templates": ("echoport_backup", frozenset()),
 }
 FORKED_TEMPLATES = {
     "services/_echoport_runner/templates": json.loads(
