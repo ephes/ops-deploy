@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `infra.ipv6_stale_socket_reaper` (new): a small daemon that closes TCP
+  connections stuck on a withdrawn global IPv6 address (`ss -K`) as soon as the
+  router announces a new prefix, instead of letting them hang until
+  `tcp_retries2` gives up (about 16 minutes). It fixes the nightly 16-minute
+  `Self.Online = false` of tailscaled on fractal and macmini after the
+  FRITZ!Box reconnect. LAN peers, deprecated privacy addresses and a prefix
+  without a replacement are left alone. See
+  [IPv6 stale socket reaper](ipv6-stale-socket-reaper.md).
+
 - `services.homeassistant`: with `manage_matter_server`, install the pinned
   `chip-ota-provider-app` 2025.9.0 (`home-assistant-libs/matter-linux-ota-provider`,
   the release python-matter-server's Dockerfile pins) to `/usr/local/bin`,
