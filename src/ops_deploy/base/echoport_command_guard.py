@@ -35,7 +35,10 @@ logs its decision and execs the Python guard, which decides) or ``rust``. With
 ``python`` every Rust step only warns (rollback independence: a broken release
 never blocks a switch back); with ``shadow`` or ``rust`` a Rust failure stops the
 deploy before the policy and, in the caller, the key's line are written.
-:meth:`EchoportCommandGuardConfig.forced_command` is the line's command.
+:meth:`EchoportCommandGuardConfig.forced_command` is the line's command;
+:meth:`EchoportCommandGuardConfig.scratch_forced_command` the line of the
+optional restore scratch key (``--restore-scratch`` before the policy, impl
+``python`` only).
 
 :func:`deploy_echoport_command_guard_confirm` is ``confirm_live.yml``: run it
 only after the caller wrote the key's line and its probe went through it. It
@@ -255,6 +258,17 @@ class EchoportCommandGuardConfig(RoleConfig):
         if self.impl == "shadow":
             return f"{self.rust_binary} --shadow {self.policy_path} {self.python_command()}"
         return f"{self.rust_binary} {self.policy_path}"
+
+    def scratch_forced_command(self) -> str:
+        """The ``command="…"`` value of the restore scratch key's line (the role's
+        ``echoport_remote_command_guard_scratch_forced_command``): the same guard
+        and policy in ``--restore-scratch`` mode, which allows only a scratch
+        restore's commands inside ``<root>/.restore-scratch-*``. Only the
+        Python guard has that mode (the role's fact is undefined otherwise)."""
+
+        if self.impl != "python":
+            raise ValueError(f"the restore scratch mode needs impl python, not {self.impl!r}")
+        return f"{self.python} -I {self.path} --restore-scratch {self.policy_path}"
 
 
 def live_state(content: str | None, public_key: str, roots: list[str] | None = None) -> dict[str, Any]:

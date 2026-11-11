@@ -22,6 +22,14 @@ which a local user who can write inside a root could redirect with a symlink
 after the check. The guard makes them itself (``perform``): it walks each
 path from ``/`` one directory at a time without following symlinks, and
 changes, renames or removes the entry relative to the directory it opened.
+
+A second key (the restore scratch key) runs the guard with
+``--restore-scratch``: then only the commands of a scratch restore are allowed,
+and only on paths inside a scratch directory
+``<root>/.restore-scratch-<YYYYMMDDTHHMMSSZ>[-<id>]`` of a policy root, as
+written and as resolved (``check_scratch``). No service stop, no live path, no
+``--delete``; ``rm -rf -- <scratch dir>`` removes a scratch directory on file
+descriptors as the root's owner (``rmtree``).
 """
 
 from __future__ import annotations
@@ -81,6 +89,18 @@ _SQLITE_TIMEOUT_RE = re.compile(r"^\.timeout [1-9][0-9]{0,5}$")
 _SQLITE_INTEGRITY = "PRAGMA integrity_check;"
 _CHMOD_MODES = ("0600", "0700")
 _UPLOAD_SUFFIXES = (".tmp", ".restore-tmp")
+
+# Restore scratch mode (``--restore-scratch``, the scratch key's forced command).
+SCRATCH_MODE = "restore-scratch"
+# The runner's first command: only the guard in scratch mode answers it, so a
+# scratch restore never runs under the live key's guard.
+SCRATCH_MODE_PROBE = "echoport-guard-mode"
+_SCRATCH_NAME_RE = re.compile(r"^\.restore-scratch-[0-9]{8}T[0-9]{6}Z(?:-[0-9]{1,12})?$")
+# rsync -a --no-D <local>/ <host>:<dir>/ (upload, never --delete) and
+# rsync -a <host>:<scratch dir>/ <local>/ (verify download: symlinks come back
+# as symlinks, nothing is filtered), both as the root's owner.
+RSYNC_SCRATCH_RECEIVER = ("--server", "-logtpre.iLsfxCIvu")
+RSYNC_SCRATCH_SENDER = ("--server", "--sender", "-logDtpre.iLsfxCIvu")
 
 
 class Refused(Exception):
@@ -205,8 +225,9 @@ class Mutation:
     `op` is the tool it replaces: ``chmod`` (`mode`), ``chown`` (`owner`,
     `recursive`; `private`: the path must still be a directory of the guard's
     own user with no group/other access), ``mv`` (`paths` is source and
-    target; `replace`: the target may exist) or ``rm`` (``-f``: missing paths
-    are fine). Every path is walked from / without following symlinks.
+    target; `replace`: the target may exist), ``rm`` (``-f``: missing paths
+    are fine) or ``rmtree`` (a scratch directory and everything below it; a
+    missing one is fine). Every path is walked from / without following symlinks.
     `user`: main() drops to this user (the root's owner) before perform(), so
     chmod, mv and rm only ever do what that user could do itself; chown keeps
     root (`user` None).
@@ -229,6 +250,7 @@ class Decision:
     stdin: Redirect | None = None
     stdout: Redirect | None = None  # created exclusively, mode 0600
     mutation: Mutation | None = None
+    output: str | None = None  # printed by the guard itself; nothing is executed
 
 
 def _require(condition: object, message: str) -> None:
@@ -684,6 +706,113 @@ def check(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lsta
     raise Refused(f"command not allowed: {tool!r}")
 
 
+def _scratch_for(policy: Policy, path: str, realpath=os.path.realpath) -> tuple[str, str]:
+    """(scratch dir, the root's owner) for a path inside a scratch directory.
+
+    As written: ``<root>/<scratch name>`` or below it, for a policy root, with
+    safe characters only. As resolved: the path itself (no symlink anywhere on
+    it, so a symlink inside the scratch dir to a live file is refused).
+    """
+    _require(_is_safe_path(path) and not path.endswith("/"), f"unsafe path: {path!r}")
+    for root, owner in policy.path_roots:
+        if not path.startswith(root + "/"):
+            continue
+        name = path[len(root) + 1:].split("/", 1)[0]
+        if not _SCRATCH_NAME_RE.match(name):
+            continue
+        _require(realpath(path) == path, f"path not inside its scratch dir as resolved: {path!r}")
+        return f"{root}/{name}", owner
+    raise Refused(f"path outside a scratch dir: {path!r}")
+
+
+def check_scratch(command: str, policy: Policy, realpath=os.path.realpath, lstat=os.lstat) -> Decision:
+    """check() for the restore scratch key (``--restore-scratch``).
+
+    Only the commands a scratch restore sends, every path inside a scratch dir
+    (``_scratch_for``); writes, uploads and the verify download as the root's
+    owner, the changes on file descriptors as in check(). Everything else,
+    including every live path, systemctl and ``rsync --delete``, is refused.
+    """
+    _require(command and len(command) <= MAX_COMMAND_LENGTH, "empty or oversized command")
+    _require("\n" not in command and "\0" not in command and "\r" not in command, "control characters in command")
+    if command == SCRATCH_MODE_PROBE:
+        return Decision(argv=[], output=SCRATCH_MODE)
+    try:
+        args = shlex.split(command)
+    except ValueError as exc:
+        raise Refused(f"unparsable command: {exc}") from exc
+    _require(args, "empty command")
+    tool = args[0]
+
+    def as_owner(owner: str) -> str:
+        return owner.split(":", 1)[0]
+
+    if tool in ("readlink", "test"):
+        flags = ("-f",) if tool == "readlink" else ("-e", "-d", "-f")
+        _require(len(args) == 3 and args[1] in flags, f"unexpected {tool} arguments")
+        _scratch_for(policy, args[2], realpath)
+        return Decision(argv=args)
+
+    if tool == "mkdir":
+        if len(args) == 2:
+            # The scratch dir itself, exclusively: fails when the name exists.
+            scratch, owner = _scratch_for(policy, args[1], realpath)
+            _require(args[1] == scratch, f"plain mkdir creates only a scratch dir: {args[1]!r}")
+            return Decision(argv=["runuser", "-u", as_owner(owner), "--", *args])
+        _require(len(args) == 3 and args[1] == "-p", "unexpected mkdir arguments")
+        _scratch, owner = _scratch_for(policy, args[2], realpath)
+        return Decision(argv=["runuser", "-u", as_owner(owner), "--", *args])
+
+    if tool == "chmod":
+        _require(len(args) == 3 and args[1] in _CHMOD_MODES, "unexpected chmod arguments")
+        _scratch, owner = _scratch_for(policy, args[2], realpath)
+        return Decision(argv=[], mutation=Mutation("chmod", [args[2]], mode=int(args[1], 8), user=as_owner(owner)))
+
+    if tool == "chown":
+        recursive = len(args) == 4 and args[1] == "-R"
+        _require(recursive or len(args) == 3, "unexpected chown arguments")
+        owner, path = args[-2], args[-1]
+        _scratch, root_owner = _scratch_for(policy, path, realpath)
+        _require(owner == root_owner, f"owner {owner!r} not allowed for {path!r}")
+        return Decision(argv=[], mutation=Mutation("chown", [path], owner=owner, recursive=recursive))
+
+    if tool == "mv":
+        # Only putting an uploaded <path>.tmp in place, inside one scratch dir.
+        _require(len(args) == 3 and args[1] == args[2] + ".tmp", "unexpected mv arguments")
+        source_scratch = _scratch_for(policy, args[1], realpath)
+        target_scratch = _scratch_for(policy, args[2], realpath)
+        _require(source_scratch == target_scratch, "mv across scratch dirs not allowed")
+        return Decision(argv=[], mutation=Mutation("mv", [args[1], args[2]], replace=True,
+                                                   user=as_owner(target_scratch[1])))
+
+    if tool == "scp":
+        _require(len(args) == 3 and args[1] == "-t", "unexpected scp arguments")
+        path = args[2]
+        _require(path.endswith(_UPLOAD_SUFFIXES), f"scp upload target not allowed: {path!r}")
+        _scratch, owner = _scratch_for(policy, path, realpath)
+        _require_plain_file_or_absent(path, lstat, "scp target")
+        return Decision(argv=["runuser", "-u", as_owner(owner), "--", *args])
+
+    if tool == "rsync":
+        _require(len(args) >= 5 and args[-2] == ".", "unexpected rsync arguments")
+        options, path = tuple(args[1:-2]), args[-1]
+        _require(path.endswith("/") and not path.endswith("//"), "rsync path must be a directory with a trailing slash")
+        scratch, owner = _scratch_for(policy, path[:-1], realpath)
+        if options == RSYNC_SCRATCH_SENDER:
+            _require(path[:-1] == scratch, "the verify download reads only a whole scratch dir")
+        else:
+            _require(options == RSYNC_SCRATCH_RECEIVER, "rsync options not allowed in restore-scratch mode")
+        return Decision(argv=["runuser", "-u", as_owner(owner), "--", *args])
+
+    if tool == "rm":
+        _require(len(args) == 4 and args[1:3] == ["-rf", "--"], "unexpected rm arguments")
+        scratch, owner = _scratch_for(policy, args[3], realpath)
+        _require(args[3] == scratch, f"rm -rf removes only a whole scratch dir: {args[3]!r}")
+        return Decision(argv=[], mutation=Mutation("rmtree", [scratch], user=as_owner(owner)))
+
+    raise Refused(f"command not allowed in restore-scratch mode: {tool!r}")
+
+
 def _user_uids(users: tuple[str, ...], include_self: bool = True) -> set[int]:
     uids = {os.geteuid()} if include_self else set()
     for user in users:
@@ -966,6 +1095,128 @@ def _remove(mutation: Mutation, hook) -> None:
             os.close(dir_fd)
 
 
+def _remove_tree(mutation: Mutation, hook) -> None:
+    """rm -rf of one scratch dir: walked on directory descriptors from /, no
+    symlink followed (a symlink inside is unlinked, never entered), no other
+    file system entered; a missing dir is fine. Runs as the root's owner, so
+    it removes only what that user could remove itself. A directory without
+    owner rwx is given it first (fchmod as its owner), as rm -rf would need."""
+    _require(len(mutation.paths) == 1, "unusable mutation: 'rmtree'")
+    path = mutation.paths[0]
+    try:
+        dir_fd, name = _open_parent(path, hook)
+    except _OsRefused as exc:
+        if exc.errno == errno.ENOENT:
+            return
+        raise
+    try:
+        try:
+            seen = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise _OsRefused("cannot stat", path, exc) from exc
+        _require(stat.S_ISDIR(seen.st_mode), f"rm -rf target is not a directory: {path!a}")
+        device = os.fstat(dir_fd).st_dev
+        _require(seen.st_dev == device, f"rm -rf target is on another file system: {path!a}")
+        top_fd = _open_tree_dir(dir_fd, name, path, seen, hook)
+        try:
+            _empty_tree(top_fd, path, device, hook)
+        finally:
+            os.close(top_fd)
+        if hook is not None:
+            hook("rmdir", path)
+        try:
+            os.rmdir(name, dir_fd=dir_fd)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise _OsRefused("rm failed", path, exc) from exc
+    finally:
+        os.close(dir_fd)
+
+
+def _open_tree_dir(parent_fd: int, name: str, path: str, seen: os.stat_result, hook) -> int:
+    """Open the directory `name` that lstat saw as `seen`, without following it."""
+    try:
+        fd = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
+    except OSError as exc:
+        if _is_link(parent_fd, name):
+            raise Refused(f"rm -rf target is a symbolic link: {path!a}") from exc
+        raise _OsRefused("cannot open", path, exc) from exc
+    try:
+        st = os.fstat(fd)
+        _require((st.st_dev, st.st_ino) == (seen.st_dev, seen.st_ino), f"rm -rf target was replaced: {path!a}")
+        if st.st_mode & 0o700 != 0o700:
+            os.fchmod(fd, stat.S_IMODE(st.st_mode) | 0o700)
+    except OSError as exc:
+        os.close(fd)
+        raise _OsRefused("cannot open", path, exc) from exc
+    except BaseException:
+        os.close(fd)
+        raise
+    if hook is not None:
+        hook("dir", path)
+    return fd
+
+
+def _empty_tree(top_fd: int, top: str, device: int, hook) -> None:
+    """Remove everything below the directory `top_fd`; one open directory per level."""
+
+    def entries(fd: int, path: str):
+        try:
+            return iter(sorted(os.listdir(fd), key=os.fsencode))
+        except OSError as exc:
+            raise _OsRefused("cannot list", path, exc) from exc
+
+    # (dir fd, its path, its remaining names, parent fd, its name in the parent)
+    stack = [(top_fd, top, entries(top_fd, top), -1, "")]
+    try:
+        while stack:
+            dir_fd, dir_path, names, parent_fd, dir_name = stack[-1]
+            name = next(names, None)
+            if name is None:
+                stack.pop()
+                if dir_fd != top_fd:
+                    os.close(dir_fd)
+                    try:
+                        os.rmdir(dir_name, dir_fd=parent_fd)
+                    except FileNotFoundError:
+                        pass
+                    except OSError as exc:
+                        raise _OsRefused("rm failed", dir_path, exc) from exc
+                continue
+            path = f"{dir_path}/{name}"
+            try:
+                st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise _OsRefused("cannot stat", path, exc) from exc
+            if stat.S_ISDIR(st.st_mode):
+                _require(st.st_dev == device, f"rm -rf would leave the file system: {path!a}")
+                fd = _open_tree_dir(dir_fd, name, path, st, hook)
+                try:
+                    names_below = entries(fd, path)
+                except BaseException:
+                    os.close(fd)
+                    raise
+                stack.append((fd, path, names_below, dir_fd, name))
+                continue
+            if hook is not None:
+                hook("unlink", path)
+            try:
+                os.unlink(name, dir_fd=dir_fd)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise _OsRefused("rm failed", path, exc) from exc
+    finally:
+        for dir_fd, _path, _names, _parent, _name in stack:
+            if dir_fd != top_fd:
+                os.close(dir_fd)
+
+
 def become(user: str) -> None:
     """Drop to `user` for good (supplementary groups, gid, uid), when running as
     root: chmod, mv and rm then only do what the root's owner could do itself,
@@ -991,6 +1242,8 @@ def perform(mutation: Mutation, hook=None) -> None:
         _rename(mutation, hook)
     elif mutation.op == "rm":
         _remove(mutation, hook)
+    elif mutation.op == "rmtree":
+        _remove_tree(mutation, hook)
     else:
         raise Refused(f"unknown mutation: {mutation.op!a}")
 
@@ -1022,23 +1275,31 @@ def main(argv: list[str]) -> int:
             print(f"{PROGRAM}: invalid policy: {exc}", file=sys.stderr)
             return 1
         return 0
+    scratch = len(argv) == 3 and argv[1] == f"--{SCRATCH_MODE}"
+    if scratch:
+        argv = [argv[0], argv[2]]
     if len(argv) != 2:
-        print(f"{PROGRAM}: usage: {PROGRAM} <policy.json> | --check-policy <policy.json>", file=sys.stderr)
+        print(
+            f"{PROGRAM}: usage: {PROGRAM} [--{SCRATCH_MODE}] <policy.json> | --check-policy <policy.json>",
+            file=sys.stderr,
+        )
         return 2
+    # Log lines of the scratch key say so; the live key's lines are unchanged.
+    via = f" in {SCRATCH_MODE} mode" if scratch else ""
     command = os.environ.get("SSH_ORIGINAL_COMMAND")
     client = os.environ.get("SSH_CLIENT", "-").split(" ")[0]
     if command is None:
-        _log(syslog.LOG_WARNING, f"refused interactive session from {client}")
+        _log(syslog.LOG_WARNING, f"refused interactive session from {client}{via}")
         print(f"{PROGRAM}: interactive sessions are not allowed", file=sys.stderr)
         return 1
     try:
         policy = load_policy(argv[1])
     except _POLICY_ERRORS as exc:
-        _log(syslog.LOG_ERR, f"policy error ({type(exc).__name__}): refusing {command!r}")
+        _log(syslog.LOG_ERR, f"policy error ({type(exc).__name__}){via}: refusing {command!r}")
         print(f"{PROGRAM}: policy error", file=sys.stderr)
         return 1
     try:
-        decision = check(command, policy)
+        decision = check_scratch(command, policy) if scratch else check(command, policy)
         if decision.mutation is not None:
             # Made here, on file descriptors; nothing is executed. chmod, mv and
             # rm as the root's owner, chown as root.
@@ -1053,11 +1314,14 @@ def main(argv: list[str]) -> int:
                 os.dup2(fd, target)
                 os.close(fd)
     except (Refused, OSError) as exc:
-        _log(syslog.LOG_WARNING, f"refused from {client}: {exc}: {command!r}")
+        _log(syslog.LOG_WARNING, f"refused from {client}{via}: {exc}: {command!r}")
         print(f"{PROGRAM}: command not allowed", file=sys.stderr)
         return 1
 
-    _log(syslog.LOG_INFO, f"allowed from {client}: {command!r}")
+    _log(syslog.LOG_INFO, f"allowed from {client}{via}: {command!r}")
+    if decision.output is not None:
+        print(decision.output)
+        return 0
     if decision.mutation is not None:
         return 0
     os.environ["PATH"] = SAFE_PATH

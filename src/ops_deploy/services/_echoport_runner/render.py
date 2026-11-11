@@ -1,7 +1,7 @@
 """The runner templates of ops-library's ``echoport_backup`` role, rendered as Ansible's ``template`` renders them.
 
 ``templates/`` holds the role's ``templates/*.py.j2`` unchanged (with the
-includes ``_work_dir.py.j2`` and ``_sqlite_backup.py.j2``). The ops-library
+includes ``_work_dir.py.j2``, ``_sqlite_backup.py.j2`` and ``_restore_scratch.py.j2``). The ops-library
 templates remain the source of runner code; ``tests/test_ops_library_drift.py``
 fails when one of them changes. The templates in :data:`FORKED` are the
 exception: they have moved on from ops-library's, ops-deploy is their source,
@@ -33,7 +33,7 @@ from jinja2 import meta
 
 PACKAGE = "ops_deploy.services._echoport_runner"
 # The role's templates that are no runner of their own.
-INCLUDES = frozenset({"_work_dir.py.j2", "_sqlite_backup.py.j2"})
+INCLUDES = frozenset({"_work_dir.py.j2", "_sqlite_backup.py.j2", "_restore_scratch.py.j2"})
 # Runner templates changed here after the registration moved to pyinfra
 # (2026-11-09: restores onto a fresh install); ops-library's copies are the
 # Ansible rollback's and stay as they were.

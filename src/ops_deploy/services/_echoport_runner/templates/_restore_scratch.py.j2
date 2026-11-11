@@ -1,0 +1,467 @@
+# --- Restore into a scratch destination (ECHOPORT_ACTION=restore-scratch) ----
+#
+# Shared by the SQLite site runners that restore over SSH (marina,
+# villakunterbunt). The archive is restored next to the live data, into
+# <root>/.restore-scratch-<UTC stamp>[-<restore id>], with the restore scratch
+# key, whose forced command runs echoport-remote-command-guard
+# --restore-scratch: only paths inside a scratch dir, no service stop, no live
+# path, no --delete. The copy is downloaded back and compared with the archive,
+# then removed (unless kept for inspection). Live paths are never sent to the
+# host. See the role README, "Restore into a scratch destination".
+#
+# The including template defines SSH_OPTS, ALLOWED_ROOTS, MC_PATH,
+# MINIO_ALIAS, SCRATCH_SSH_CONFIG, SCRATCH_SSH_KEY and LIVE_SSH_KEY, the
+# helpers emit_step, finish_stdout, calculate_sha256, safe_extract_tarball and
+# _validate_ssh_identifier, and includes _sqlite_backup.py.j2 (its integrity
+# check verifies the restored copy).
+import hashlib
+import re as _scratch_re
+import sqlite3 as _scratch_sqlite3
+import stat
+
+SCRATCH_ACTION = "restore-scratch"
+# Reported in every successful backup's ECHOPORT_RESULT: Echoport sends a
+# scratch restore only to a target whose newest backup came from such a runner.
+RUNNER_CAPABILITIES = [SCRATCH_ACTION]
+SCRATCH_MODE_PROBE = "echoport-guard-mode"
+_SCRATCH_SAFE_PATH_RE = _scratch_re.compile(r"^/[A-Za-z0-9._/-]+$")
+_SCRATCH_ID_RE = _scratch_re.compile(r"^[0-9]{1,12}$")
+
+
+class ScratchError(Exception):
+    """A scratch restore step failed."""
+
+
+def _scratch_clean(path: str, label: str) -> str:
+    """An absolute path with safe characters, no empty, '.' or '..' part."""
+    parts = path.split("/")[1:]
+    if not _SCRATCH_SAFE_PATH_RE.match(path) or not parts or any(p in ("", ".", "..") for p in parts):
+        raise ScratchError(f"{label} is not a plain absolute path: {path!r}")
+    return path
+
+
+def scratch_layout(db_path: str, files: list, restore_id: str, now: Optional[datetime] = None) -> dict:
+    """Where the scratch restore puts everything, from the live paths alone.
+
+    The live paths are only compared as text against ALLOWED_ROOTS (never
+    resolved on the host): the database and every files dir must lie below the
+    same root, and each maps to the same relative path below the scratch dir.
+    """
+    db_path = _scratch_clean(db_path, "database path")
+    roots = [root.rstrip("/") for root in ALLOWED_ROOTS]
+    root = next((r for r in roots if db_path.startswith(r + "/")), None)
+    if root is None:
+        raise ScratchError(f"database path is not below an allowed root: {db_path}")
+    _scratch_clean(root, "allowed root")
+    rels = []
+    for label, path in [("database", db_path)] + [("files", _scratch_clean(p, "files path")) for p in files]:
+        if not path.startswith(root + "/"):
+            raise ScratchError(f"{label} path {path} is not below the database's root {root}")
+        rel = path[len(root) + 1:]
+        if rel.split("/", 1)[0].startswith(".restore-scratch-"):
+            raise ScratchError(f"{label} path {path} lies inside a scratch dir")
+        rels.append(rel)
+    ordered = sorted(rels)
+    for a, b in zip(ordered, ordered[1:]):
+        if a == b or b.startswith(a + "/"):
+            raise ScratchError(f"restore paths overlap: {a} and {b}")
+    now = now or datetime.now(timezone.utc)
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    if restore_id:
+        if not _SCRATCH_ID_RE.match(restore_id):
+            raise ScratchError(f"invalid restore id: {restore_id!r}")
+        stamp += f"-{restore_id}"
+    scratch = f"{root}/.restore-scratch-{stamp}"
+    return {
+        "root": root,
+        "scratch": scratch,
+        "db_rel": rels[0],
+        "files": list(zip(files, rels[1:])),
+    }
+
+
+def scratch_ssh_options() -> list:
+    """Options of every scratch connection: only the scratch key, never the
+    live configuration, agent or a shared connection."""
+    return [
+        "-F", SCRATCH_SSH_CONFIG,
+        "-o", f"IdentityFile={SCRATCH_SSH_KEY}",
+        "-o", "IdentitiesOnly=yes",
+        "-o", "IdentityAgent=none",
+        "-o", "ControlMaster=no",
+        "-o", "ControlPath=none",
+        *shlex.split(SSH_OPTS),
+    ]
+
+
+def _scratch_private_file(path: str, label: str) -> bytes:
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        raise ScratchError(f"{label} {path} is missing") from None
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid() or st.st_mode & 0o077:
+        raise ScratchError(f"{label} {path} must be a regular file of the runner user with mode 0600")
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def check_scratch_identity() -> None:
+    """The scratch SSH config and key exist (so ssh cannot fall back to a
+    default identity) and the key is not the live one."""
+    _scratch_private_file(SCRATCH_SSH_CONFIG, "scratch SSH config")
+    key = _scratch_private_file(SCRATCH_SSH_KEY, "scratch SSH key")
+    try:
+        with open(LIVE_SSH_KEY, "rb") as handle:
+            live = handle.read()
+    except FileNotFoundError:
+        live = b""
+    if live and hashlib.sha256(live).digest() == hashlib.sha256(key).digest():
+        raise ScratchError(f"scratch SSH key {SCRATCH_SSH_KEY} is the live key {LIVE_SSH_KEY}")
+
+
+def check_scratch_ssh_config(host: str, user: str) -> None:
+    """What ssh would really use (``ssh -G`` with the scratch options): exactly
+    the scratch key, no certificate, no agent, no shared connection. IdentityFile
+    entries add up, so a config naming another key must refuse here."""
+    _validate_ssh_identifier(host, "remote_host")
+    _validate_ssh_identifier(user, "remote_user")
+    result = subprocess.run(
+        ["ssh", "-G", *scratch_ssh_options(), f"{user}@{host}"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise ScratchError(f"ssh -G with the scratch config failed: {(result.stderr or '').strip()}")
+    seen: dict = {}
+    for line in result.stdout.splitlines():
+        name, _, value = line.strip().partition(" ")
+        seen.setdefault(name.lower(), []).append(value.strip())
+    problems = []
+    if seen.get("identityfile") != [SCRATCH_SSH_KEY]:
+        problems.append(f"identity files {seen.get('identityfile')}")
+    if seen.get("certificatefile"):
+        problems.append(f"certificate files {seen.get('certificatefile')}")
+    if seen.get("identitiesonly") != ["yes"]:
+        problems.append("IdentitiesOnly is not yes")
+    if seen.get("identityagent") != ["none"]:
+        problems.append(f"identity agent {seen.get('identityagent')}")
+    if seen.get("controlmaster", ["false"]) not in (["false"], ["no"]):
+        problems.append(f"ControlMaster {seen.get('controlmaster')}")
+    if seen.get("controlpath", ["none"]) != ["none"]:
+        problems.append(f"ControlPath {seen.get('controlpath')}")
+    if problems:
+        raise ScratchError(f"the scratch SSH config does not use the scratch key alone: {'; '.join(problems)}")
+
+
+def _scratch_run(argv: list, label: str, ok=(0,)) -> subprocess.CompletedProcess:
+    result = subprocess.run(argv, capture_output=True, text=True)
+    if result.returncode not in ok:
+        raise ScratchError(f"{label} failed (exit {result.returncode}): {(result.stderr or '').strip()}")
+    return result
+
+
+def scratch_ssh(host: str, user: str, cmd: str, ok=(0,)) -> subprocess.CompletedProcess:
+    _validate_ssh_identifier(host, "remote_host")
+    _validate_ssh_identifier(user, "remote_user")
+    print(f"[SSH scratch] {cmd}", file=sys.stderr)
+    return _scratch_run(["ssh", *scratch_ssh_options(), f"{user}@{host}", cmd], cmd, ok)
+
+
+def scratch_scp_upload(host: str, user: str, local: str, remote: str) -> None:
+    _validate_ssh_identifier(host, "remote_host")
+    _validate_ssh_identifier(user, "remote_user")
+    print(f"[SCP scratch] {local} -> {remote}", file=sys.stderr)
+    _scratch_run(["scp", "-O", *scratch_ssh_options(), local, f"{user}@{host}:{remote}"], f"scp -t {remote}")
+
+
+def scratch_rsync(host: str, user: str, local: str, remote: str, upload: bool) -> None:
+    """rsync -a --no-D <local>/ <remote>/ (upload, never --delete), or
+    rsync -a <remote>/ <local>/ (verify download, symlinks kept as symlinks)."""
+    _validate_ssh_identifier(host, "remote_host")
+    _validate_ssh_identifier(user, "remote_user")
+    shell = "ssh " + " ".join(shlex.quote(option) for option in scratch_ssh_options())
+    remote_spec = f"{user}@{host}:{remote}/"
+    if upload:
+        argv = ["rsync", "-a", "--no-D", "-e", shell, f"{local}/", remote_spec]
+    else:
+        argv = ["rsync", "-a", "-e", shell, remote_spec, f"{local}/"]
+    print(f"[RSYNC scratch] {argv[-2]} -> {argv[-1]}", file=sys.stderr)
+    _scratch_run(argv, f"rsync {'to' if upload else 'from'} {remote}/")
+
+
+def scratch_inventory(base: Path) -> dict:
+    """Every entry below base: relative path -> (type, size, sha256) for a file,
+    ("dir",) for a directory, ("link", target) for a symlink. Nothing is followed."""
+    entries = {}
+    for directory, dirnames, filenames in os.walk(base, followlinks=False):
+        for name in sorted(dirnames + filenames):
+            path = Path(directory) / name
+            rel = path.relative_to(base).as_posix()
+            st = os.lstat(path)
+            if stat.S_ISLNK(st.st_mode):
+                entries[rel] = ("link", os.readlink(path))
+            elif stat.S_ISDIR(st.st_mode):
+                entries[rel] = ("dir",)
+            elif stat.S_ISREG(st.st_mode):
+                entries[rel] = ("file", st.st_size, calculate_sha256(path))
+            else:
+                entries[rel] = ("special", stat.S_IFMT(st.st_mode))
+    return entries
+
+
+def expected_scratch_inventory(extract_dir: Path, db_filename: str, layout: dict) -> dict:
+    """The inventory the scratch dir must have: the archive's database at its
+    relative path, each files dir at its own, and the dirs on the way."""
+    expected = {}
+
+    def parents(rel: str) -> None:
+        parts = rel.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            expected["/".join(parts[:i])] = ("dir",)
+
+    db_rel = layout["db_rel"]
+    parents(db_rel)
+    db_file = extract_dir / db_filename
+    expected[db_rel] = ("file", db_file.stat().st_size, calculate_sha256(db_file))
+    for live, rel in layout["files"]:
+        parents(rel)
+        expected[rel] = ("dir",)
+        for sub, entry in scratch_inventory(extract_dir / Path(live).name).items():
+            expected[f"{rel}/{sub}"] = entry
+    return expected
+
+
+def _scratch_inventory_digest(entries: dict) -> str:
+    return hashlib.sha256(json.dumps(sorted(entries.items()), separators=(",", ":")).encode()).hexdigest()
+
+
+def scratch_sqlite_check(path: Path) -> tuple:
+    """The shared integrity check (_sqlite_backup.py.j2, exactly `ok`) on the
+    downloaded copy, and its table count (read-only)."""
+    error = sqlite_integrity_error(path)
+    connection = _scratch_sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+    try:
+        tables = connection.execute("SELECT count(*) FROM sqlite_master WHERE type = 'table';").fetchone()[0]
+    finally:
+        connection.close()
+    return ("ok" if error is None else error), tables
+
+
+def _emit_scratch_result(payload: dict) -> None:
+    emit_step("result", "success" if payload.get("success") else "failure", f"ECHOPORT_RESULT:{json.dumps(payload)}")
+
+
+def restore_scratch(
+    remote_host: str,
+    remote_user: str,
+    db_path: str,
+    restore_owner: str,
+    bucket: str,
+    key: str,
+    expected_checksum: str,
+    restore_id: str,
+    keep: bool,
+    work_dir: Path,
+) -> int:
+    """Restore the archive into a scratch dir under the live root, verify it,
+    remove it again (unless `keep`). Never sends a live path or a systemctl."""
+    payload = {
+        "success": False, "destination": "scratch", "scratch_path": "", "kept": keep, "cleaned": False,
+        "bucket": bucket, "key": key, "verification": {"ok": False},
+    }
+    host, user = remote_host, remote_user
+    scratch = ""
+    created = False
+    error = ""
+    try:
+        emit_step("init", "running", "Starting scratch restore (live data and services untouched)")
+        if not restore_owner or not _scratch_re.fullmatch(r"[a-z_][a-z0-9_-]*:[a-z_][a-z0-9_-]*", restore_owner):
+            raise ScratchError(f"restore owner must be user:group, got {restore_owner!r}")
+        check_scratch_identity()
+        check_scratch_ssh_config(host, user)
+        mode = scratch_ssh(host, user, SCRATCH_MODE_PROBE).stdout.strip()
+        if mode != SCRATCH_ACTION:
+            raise ScratchError(f"the host's guard did not answer as the scratch guard (got {mode!r})")
+        emit_step("init", "success", "Scratch key and guard mode confirmed")
+
+        emit_step("download", "running", "Downloading backup from MinIO")
+        tarball_path = work_dir / "backup.tar.gz"
+        _scratch_run([MC_PATH, "cp", f"{MINIO_ALIAS}/{bucket}/{key}", str(tarball_path)], "download")
+        emit_step("download", "success", f"Downloaded backup ({tarball_path.stat().st_size:,} bytes)")
+
+        emit_step("verify_checksum", "running", "Verifying checksum")
+        actual_checksum = calculate_sha256(tarball_path)
+        if actual_checksum != expected_checksum:
+            raise ScratchError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
+        payload.update(size_bytes=tarball_path.stat().st_size, checksum_sha256=actual_checksum)
+        emit_step("verify_checksum", "success", "Archive matches the run record")
+
+        emit_step("extract", "running", "Extracting backup")
+        extract_dir = work_dir / "extracted"
+        extract_dir.mkdir()
+        try:
+            safe_extract_tarball(tarball_path, extract_dir)
+        except ValueError as e:
+            raise ScratchError(str(e)) from e
+        manifest_path = extract_dir / "manifest.json"
+        if not manifest_path.is_file():
+            raise ScratchError("Missing manifest.json in backup")
+        manifest = json.loads(manifest_path.read_text())
+        db_filename = manifest.get("database", {}).get("filename", "db_backup.sqlite3")
+        if "/" in db_filename or db_filename.startswith(".") or not (extract_dir / db_filename).is_file():
+            raise ScratchError(f"Missing database file: {db_filename}")
+        files = list(manifest.get("files", []))
+        for live in files:
+            if not (extract_dir / Path(live).name).is_dir():
+                raise ScratchError(f"Backup file missing: {Path(live).name}")
+        layout = scratch_layout(db_path, files, restore_id)
+        scratch = layout["scratch"]
+        payload["scratch_path"] = scratch
+        emit_step("extract", "success", f"Backup extracted; scratch dir {scratch}")
+
+        emit_step("prepare_scratch", "running", f"Creating {scratch}")
+        # Exclusive: plain mkdir fails when the name exists, so a run never
+        # shares (or later removes) a directory it did not create.
+        scratch_ssh(host, user, f"mkdir {shlex.quote(scratch)}")
+        created = True
+        scratch_ssh(host, user, f"chmod 0700 {shlex.quote(scratch)}")
+        emit_step("prepare_scratch", "success", f"Created {scratch}")
+
+        emit_step("copy_database", "running", "Copying database into the scratch dir")
+        db_target = f"{scratch}/{layout['db_rel']}"
+        db_parent = db_target.rsplit("/", 1)[0]
+        if db_parent != scratch:
+            scratch_ssh(host, user, f"mkdir -p {shlex.quote(db_parent)}")
+        scratch_scp_upload(host, user, str(extract_dir / db_filename), f"{db_target}.tmp")
+        scratch_ssh(host, user, f"mv {shlex.quote(db_target + '.tmp')} {shlex.quote(db_target)}")
+        emit_step("copy_database", "success", f"Database restored to {db_target}")
+
+        file_targets = []
+        for live, rel in layout["files"]:
+            target = f"{scratch}/{rel}"
+            emit_step("restore_files", "running", f"Restoring {live} to {target}")
+            scratch_ssh(host, user, f"mkdir -p {shlex.quote(target)}")
+            scratch_rsync(host, user, str(extract_dir / Path(live).name), target, upload=True)
+            file_targets.append(target)
+            emit_step("restore_files", "success", f"Restored {target}")
+
+        emit_step("set_ownership", "running", f"Setting ownership to {restore_owner}")
+        scratch_ssh(host, user, f"chown {shlex.quote(restore_owner)} {shlex.quote(db_target)}")
+        for target in file_targets:
+            scratch_ssh(host, user, f"chown -R {shlex.quote(restore_owner)} {shlex.quote(target)}")
+        emit_step("set_ownership", "success", f"Ownership set to {restore_owner}")
+
+        emit_step("verify", "running", "Downloading the scratch dir and comparing it with the archive")
+        verify_dir = work_dir / "verify"
+        verify_dir.mkdir()
+        scratch_rsync(host, user, str(verify_dir), scratch, upload=False)
+        actual = scratch_inventory(verify_dir)
+        expected = expected_scratch_inventory(extract_dir, db_filename, layout)
+        differences = sorted(
+            rel for rel in set(actual) | set(expected) if actual.get(rel) != expected.get(rel)
+        )
+        db_sha256 = calculate_sha256(extract_dir / db_filename)
+        restored_db = verify_dir / layout["db_rel"]
+        integrity, tables = (
+            scratch_sqlite_check(restored_db) if restored_db.is_file() and not restored_db.is_symlink()
+            else ("missing", 0)
+        )
+        verification = {
+            "ok": not differences and integrity == "ok" and actual.get(layout["db_rel"], ("",))[-1] == db_sha256,
+            "archive_sha256": actual_checksum,
+            "db_sha256": db_sha256,
+            "integrity": integrity,
+            "tables": tables,
+            "entries": len(actual),
+            "inventory_sha256": _scratch_inventory_digest(actual),
+            "differences": [rel[:120] for rel in differences[:5]],
+        }
+        payload["verification"] = verification
+        if not verification["ok"]:
+            raise ScratchError(
+                f"verification failed: integrity {integrity}, "
+                f"{len(differences)} difference(s): {', '.join(differences[:5])}"
+            )
+        emit_step(
+            "verify", "success",
+            f"Scratch copy matches the archive: {len(actual)} entries, database sha256 {db_sha256}, "
+            f"integrity ok, {tables} tables",
+        )
+        payload["file_count"] = 1 + len(file_targets)
+        payload["success"] = True
+    except (ScratchError, subprocess.SubprocessError, OSError, ValueError, _scratch_sqlite3.Error) as e:
+        error = str(e)
+        emit_step("error", "failure", error)
+    except Exception as e:  # a malformed manifest, ...: still a structured result
+        error = f"unexpected error: {type(e).__name__}: {e}"
+        emit_step("error", "failure", error)
+    finally:
+        if created and not keep:
+            emit_step("cleanup", "running", f"Removing {scratch}")
+            try:
+                scratch_ssh(host, user, f"rm -rf -- {shlex.quote(scratch)}")
+                if scratch_ssh(host, user, f"test -e {shlex.quote(scratch)}", ok=(0, 1)).returncode != 1:
+                    raise ScratchError(f"{scratch} still exists after rm -rf")
+                payload["cleaned"] = True
+                emit_step("cleanup", "success", f"Removed {scratch}")
+            except Exception as e:
+                cleanup_error = f"cleanup of {scratch} failed: {e}"
+                emit_step("cleanup", "failure", cleanup_error)
+                payload["success"] = False
+                error = f"{error}; {cleanup_error}" if error else cleanup_error
+        shutil.rmtree(work_dir, ignore_errors=True)
+    if error:
+        payload["success"] = False
+        payload["error"] = error
+    _emit_scratch_result(payload)
+    if payload["success"]:
+        kept = f"; kept at {scratch}" if keep else "; removed again"
+        finish_stdout("success", f"Scratch restore verified: {payload['file_count']} item(s){kept}")
+        return 0
+    finish_stdout("failure", f"Scratch restore failed: {error}")
+    return 1
+
+
+def scratch_restore_from_context(cenv: dict, remote_host: str, remote_user: str, default_restore_owner: str,
+                                 default_bucket: str, open_work_dir, default_db_path: str = "") -> int:
+    """The restore-scratch action: read its context, refuse anything unclear.
+
+    The live database path comes from ECHOPORT_RESTORE_SCRATCH_DB_PATH, or, for
+    a target that leaves its paths to the runner (empty db_path), from the
+    runner's own default, as its live restore does."""
+    def refuse(message: str) -> int:
+        emit_step("init", "failure", message)
+        _emit_scratch_result({"success": False, "destination": "scratch", "error": message})
+        finish_stdout("failure", message)
+        return 1
+
+    if cenv.get("ECHOPORT_RESTORE_DESTINATION", "") != "scratch":
+        return refuse("restore-scratch needs ECHOPORT_RESTORE_DESTINATION=scratch")
+    keep_raw = cenv.get("ECHOPORT_RESTORE_KEEP_SCRATCH", "0")
+    if keep_raw not in ("0", "1"):
+        return refuse(f"ECHOPORT_RESTORE_KEEP_SCRATCH must be 0 or 1, got {keep_raw!r}")
+    db_path = cenv.get("ECHOPORT_RESTORE_SCRATCH_DB_PATH", "") or default_db_path
+    key = cenv.get("ECHOPORT_KEY", "")
+    checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+    restore_id = cenv.get("ECHOPORT_RESTORE_ID", "")
+    if not db_path or not key or not checksum:
+        return refuse("restore-scratch needs ECHOPORT_RESTORE_SCRATCH_DB_PATH, ECHOPORT_KEY and ECHOPORT_CHECKSUM")
+    if not _SCRATCH_ID_RE.match(restore_id):
+        return refuse(f"restore-scratch needs a numeric ECHOPORT_RESTORE_ID, got {restore_id!r}")
+    try:
+        work_dir = open_work_dir()
+    except Exception as e:  # e.g. mkdtemp failing: still a scratch-shaped result
+        return refuse(f"cannot create the work directory: {e}")
+    if work_dir is None:
+        return 1
+    print(f"  Scratch restore of {key} (database {db_path}), keep={keep_raw}", file=sys.stderr)
+    return restore_scratch(
+        remote_host=remote_host,
+        remote_user=remote_user,
+        db_path=db_path,
+        restore_owner=cenv.get("ECHOPORT_RESTORE_OWNER", "") or default_restore_owner,
+        bucket=cenv.get("ECHOPORT_BUCKET", "") or default_bucket,
+        key=key,
+        expected_checksum=checksum,
+        restore_id=restore_id,
+        keep=keep_raw == "1",
+        work_dir=work_dir,
+    )
