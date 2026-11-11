@@ -74,8 +74,8 @@
     "homepage-production-db-backup": "2092ec1d9f84ad6cdb6add4f43c4223a9e02aba147349d26e5273dbc4672e315",
     "homepage-staging-backup": "8adb45fa060d8213a943f21c1471ed1ad8a056b413cd0dcae70bbf3a2d393ea2",
     "mail-db-backup": "0b70dce27e25729120d6fec776c97475affd4ce954ee4e4dfd4d6be84b56a48c",
-    "marina-production-backup": "3f33ba575e95fb9acd2d514246de6f559e6bd9e935c39149f8602ee93da37712",
-    "marina-staging-backup": "a6506635c9883d6ec1d82f54180b617f9ac6b13f994724449e6fc0da5fa07baf",
+    "marina-production-backup": "4eb3d6e4ad59a3f0475c6056add25f3f8feea3f693cfc34efcc803338449138b",
+    "marina-staging-backup": "451d4a6916ffe59568f9f0777abee93d13ba690f01edcdb5f7ed781fab37b2b7",
     "mastodon-production-db-backup": "e505189ae00875f89f2b18f67a861a48e91e404a8ad3dfc3a6cb40924d632270",
     "minecraft-java-backup": "6cc969c51d9f039ded774329a25454daa88b09eb1841749ee719577d1a74ea83",
     "paperless-backup": "eedcbcc36f8e3081ea6d0f8dd54d2e8cb204accbd03687ae08ea7e55dd434218",
@@ -86,11 +86,12 @@
     "snappymail-backup": "8f3c57255662c43b43059fe8a12f8d70097edfe0dfc7e3363290f43fe463dea6",
     "unifi-backup": "de48e16276608408323a231d169dfdd11ab5add723bdd61f0f8476ffa5e4075c",
     "vaultwarden-backup": "dac14ddd61066b1896c140870e085f2f0e3189986354fdc4256eb9e6d010f27b",
-    "villakunterbunt-staging-backup": "70713948d7c3e1c10b96cba09b9dbb0a176fef6debb848642b3973d48fac6bb7",
+    "villakunterbunt-staging-backup": "6bad79d6dc7dd94a266a329042776066a83c7b9b2fd0d08d28ee5a6f7479d5e5",
     "weeknotes-home-backup": "ab1953ae4f20ed588c9069c9d413fab1779d12b6ddae83c5b94c6c0cb493d264"
   },
-  "source_ref": "3acc13d30b2160c01008ab59e18e589d28cc67be",
+  "source_ref": "9b5d1bbe6c05cdb0aec6a97af6a4e9c39b81cbb8",
   "source_sha256": {
+    "_restore_scratch.py.j2": "93155d0095764c186c05e5bf410733358aa268a070c22de00f03a1f1ccf68961",
     "_sqlite_backup.py.j2": "34bc3ff1c22cc4b7d71f10d9b8b95c06662323bb14bc3b64012b2a196b067222",
     "_work_dir.py.j2": "a1d590a77c4a5b8f0f38cd255f799874b6de4c035e55c1ef385a3b7b93145e7a",
     "backup.py.j2": "99ac670cd3150c020435a9b76cd238bc79ceebc2b1a759e70d8ea6a47d8f2610",
@@ -106,7 +107,7 @@
     "homepage_production_db_backup.py.j2": "41c3d6478c99e19d4d4f8a8eaa7ee26afda4ceddc5e93e46c5b041cd4c6115b8",
     "homepage_staging_backup.py.j2": "8b9be772280c22964764a0f9e6d41cef0d7cddc6826268e64777f28d445c5f2e",
     "mail_db_backup.py.j2": "76401b39998ef73bbbfafb98607548545b9845a48b0cbed26faffe3856f1c9dd",
-    "marina_staging_backup.py.j2": "bc677efac907b9f2a1523150a60ba1502e5b4aaa156217436c33a8f7909d3769",
+    "marina_staging_backup.py.j2": "c325ddf71ec988eeebe1bdabbb4e66260967e97250121c59874cabcce761ea89",
     "minecraft_java_backup.py.j2": "7a7b703df58fd698b94d1c643545b8b21abd33216955394e14fe9819dfa6b067",
     "paperless_backup.py.j2": "192c53eb82f05625b82afb3776e91ddd877ebaff1aadb5f041661dda9017540a",
     "postfixadmin_backup.py.j2": "03892b3709c8c4c5eea5ebaaebc2252c94b9798fdada5dc7e982dd693f8178cb",
@@ -116,6 +117,6 @@
     "snappymail_backup.py.j2": "a573d3fe20a4d89cc8e8ced3b59c709ee731bb7448a54c49a1b151c2a7a65e92",
     "unifi_backup.py.j2": "e6010bedbf673027bb03fbc4cdab4410b074d41892a5c0d214380c31a3b58238",
     "vaultwarden_backup.py.j2": "fe2d357a5c15d1757d0ebdac8431446baf5dacecbfc287b1ed04b0852255cd9e",
-    "villakunterbunt_staging_backup.py.j2": "6abfa9ddc9e4f086f98da1559a8b3a4c53fcd40f2ff077ac82de93b2aeee45cb"
+    "villakunterbunt_staging_backup.py.j2": "25edf09bcd149cc76e595c5fd049f5f8292a21343f92e9a8f9588e834c3b01b5"
   }
 }
