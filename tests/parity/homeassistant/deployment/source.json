@@ -1,5 +1,5 @@
 {
-  "library_head": "44a532ba078adc5289d81a06cffe9ddbe416cbf8",
+  "library_head": "9eeade3d6600a0549a182523a9277d01fc4dc205",
   "files": {
     "main.yml": {
       "source": "roles/homeassistant_deploy/tasks/main.yml",
@@ -23,7 +23,7 @@
     },
     "defaults.yml": {
       "source": "roles/homeassistant_deploy/defaults/main.yml",
-      "sha256": "fc156be05dae85b6d74f4ff7cd46923bb7735fd3cc30154eb1127673411cf25e"
+      "sha256": "d778d16f9b6a3dc05ad7c28acdebc295e8ca1e54ca79c8e4910be0dc205c0c77"
     },
     "matter-postcheck.yml": {
       "source": "roles/homeassistant_deploy/tasks/matter_server_postcheck.yml",

@@ -8,9 +8,17 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, StrictBool, StrictInt, model_validator
 
-from ops_deploy.base._common import AbsolutePath, RoleConfig, Version
+from ops_deploy.base._common import AbsolutePath, RoleConfig, Sha256, Version
 from ops_deploy.core.config import ServiceName, UnixUser
 
+from .ota_provider_config import (
+    OTA_PROVIDER_CHECKSUMS,
+    OTA_PROVIDER_URL_TEMPLATE,
+    OTA_PROVIDER_VERSION,
+    OtaArch,
+    OtaProviderPath,
+    OtaUrlTemplate,
+)
 from .security_config import HomeAssistantSecurityConfig, SecurityEnvironment
 from .uv import HomeAssistantUvConfig
 
@@ -74,6 +82,15 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     matter_server_log_file: AbsolutePath | Literal[""] = "/home/homeassistant/site/logs/matter-server.log"
     matter_server_restart_on_change: StrictBool = True
     matter_server_chip_factory_dir: AbsolutePath = "/data"
+    # chip-ota-provider-app: python-matter-server starts it from PATH for
+    # device firmware updates (ota_provider.py). Version, URL and checksums
+    # change together; {version} and {arch} fill the URL template.
+    matter_server_ota_provider_version: Version = OTA_PROVIDER_VERSION
+    matter_server_ota_provider_url_template: OtaUrlTemplate = OTA_PROVIDER_URL_TEMPLATE
+    matter_server_ota_provider_checksums: dict[OtaArch, Sha256] = Field(
+        default_factory=lambda: dict(OTA_PROVIDER_CHECKSUMS)
+    )
+    matter_server_ota_provider_path: OtaProviderPath = "/usr/local/bin/chip-ota-provider-app"
 
     @model_validator(mode="before")
     @classmethod
@@ -152,4 +169,10 @@ class HomeAssistantRuntimeConfig(RoleConfig):
                 raise ValueError("Matter package must include python-matter-server and server extras")
             if tuple(int(part) for part in self.python_version.split(".")) < (3, 12):
                 raise ValueError("Matter requires Python 3.12 or newer")
+        # A checksum belongs to one release: another version needs its own.
+        if (
+            self.matter_server_ota_provider_version != OTA_PROVIDER_VERSION
+            and self.matter_server_ota_provider_checksums == OTA_PROVIDER_CHECKSUMS
+        ):
+            raise ValueError("set matter_server_ota_provider_checksums together with a non-default version")
         return self

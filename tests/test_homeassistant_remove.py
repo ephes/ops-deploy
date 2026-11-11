@@ -211,6 +211,7 @@ def test_each_original_flag_selects_only_its_declared_resources(flag: str) -> No
         # The route is removed only while no Traefik transaction holds its lock.
         "remove_traefik": [route_guard_command(), "rm -rf " + cfg.traefik_config_path],
         "remove_udev_rule": ["rm -rf " + cfg.udev_rule_path],
+        "remove_matter_ota_provider": ["rm -rf " + cfg.matter_server_ota_provider_path],
         "remove_virtualenv": ["rm -rf " + cfg.virtualenv_path, "rm -rf " + cfg.virtualenv_link],
         "remove_site_dir": ["rm -rf " + cfg.site_path],
         "remove_config_dir": ["rm -rf " + cfg.config_path],

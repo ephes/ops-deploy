@@ -956,8 +956,9 @@ and native qualification remain separate work.
 
 `services.homeassistant.remove.remove_homeassistant` accepts
 `HomeAssistantRemoveConfig`. It requires `confirm_removal=True` before any target
-probe and a Linux target. All eleven original selection flags default to true:
-`remove_service`, `remove_traefik`, `remove_udev_rule`, `remove_virtualenv`,
+probe and a Linux target. All twelve selection flags default to true:
+`remove_service`, `remove_traefik`, `remove_udev_rule`,
+`remove_matter_ota_provider`, `remove_virtualenv`,
 `remove_config_dir`, `remove_data_dir`, `remove_logs_dir`, `remove_bin_dir`,
 `remove_site_dir`, `remove_user` and `remove_group`.
 
@@ -978,12 +979,14 @@ runtime/indirect/alias cases. SysV fallback and systemd bus-error recovery are n
 qualified by this prepared entry point.
 
 Paths are removed in the original order: unit and daemon reload, route, udev rule,
-virtualenv and compatibility link, then config/data/logs/bin/site. A selected leaf
+`chip-ota-provider-app` (`matter_server_ota_provider_path`), virtualenv and
+compatibility link, then config/data/logs/bin/site. A selected leaf
 file, directory or symlink is removed without following the leaf symlink or
 creating a renamed backup. Removing site also removes its contents, even if an
 individual child flag is false. User removal invokes `userdel -r` when
 `remove_site_dir` is true, otherwise `userdel`; failures are fatal and stop group
-removal. The group is last. Matter and OTBR are outside this removal role.
+removal. The group is last. Apart from the OTA provider binary, Matter and OTBR
+are outside this removal role.
 
 The route file below `/etc/traefik/dynamic` is removed only while no Traefik
 transaction holds its host lock, like every other route writer there.
@@ -997,6 +1000,39 @@ run. Private registration, installed CLI binding and disposable native lifecycle
 qualification remain outstanding; this source does not authorize inventory
 removal.
 
+
+## Matter OTA provider (`chip-ota-provider-app`)
+
+With `manage_matter_server`, the deployment installs `chip-ota-provider-app`
+(`ota_provider.py`). python-matter-server starts it without a path, from the
+`matter-server` unit's `PATH` (which includes `/usr/local/bin`), when Home
+Assistant installs a Matter device firmware update. The official container image
+ships it; a native install did not, and updates failed with
+`FileNotFoundError: 'chip-ota-provider-app'`.
+
+| Field | Default |
+| --- | --- |
+| `matter_server_ota_provider_version` | `2025.9.0`, the release python-matter-server's Dockerfile pins |
+| `matter_server_ota_provider_url_template` | `https://github.com/home-assistant-libs/matter-linux-ota-provider/releases/download/{version}/chip-ota-provider-app-{arch}` |
+| `matter_server_ota_provider_checksums` | `x86-64`: `4550df7a…0144e`, `aarch64`: `e068ab6c…aa7e` (sha256) |
+| `matter_server_ota_provider_path` | `/usr/local/bin/chip-ota-provider-app` (root:root 0755); only that name in `/usr/local/bin`, `/usr/bin` or `/bin` (the unit's `PATH`) is accepted |
+
+`uname -m` selects the asset (`x86_64`/`amd64` -> `x86-64`, `aarch64`/`arm64` ->
+`aarch64`); a host without a pinned checksum fails before any change. A file
+with the pinned checksum is kept (only owner and mode are reconciled), so a repeat
+run and a dry run change nothing. Otherwise the asset is downloaded into a
+private temporary directory, checked with `sha256sum -c`, installed next to the
+destination and renamed over it (`mv -T`, so a symlink is replaced, not
+followed): a failed download or wrong checksum leaves the old file in place. A
+directory at the path is refused. Nothing restarts: the server starts the program per update.
+
+A non-default version needs its own checksums (the model refuses the default
+ones). To raise it, take the sha256 of both release assets, set version and
+checksums together, and update the role defaults in ops-library
+(`homeassistant_matter_server_ota_provider_*`) in the same change. The Ansible
+fallback (`tasks/matter_server.yml`) installs the same file with `get_url`, with
+the same guards (architecture, version/checksums, path); a symlink is replaced
+by a verified staged file (`mv -fT`), never removed first.
 
 ## GPS Timeline and Location Timeline Card
 
