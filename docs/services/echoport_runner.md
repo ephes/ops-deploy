@@ -427,6 +427,34 @@ heis-production also has
   timer (`root:root 0644`). systemd is reloaded only when a unit changed
   (the playbook reloads on every run); the timer is enabled and started.
 
+## Restore into a scratch destination (`_restore_scratch.py.j2`)
+
+The vendored include `_restore_scratch.py.j2` (ops-library `echoport_backup`,
+README "Restore into a scratch destination") gives `marina_staging_backup.py.j2`
+(vendored) and the villakunterbunt fork the action
+`ECHOPORT_ACTION=restore-scratch` (Echoport `manage.py restore <target> <run>
+--destination scratch [--keep-scratch]`). It restores the archive into
+`<root>/.restore-scratch-<UTC stamp>-<restore id>` next to the live data, with
+the restore scratch key only (`-F <prefix>_scratch_ssh_config`,
+`IdentityFile=<prefix>_scratch_ssh_key`, no agent, no connection sharing;
+defaults `/home/deploy/.ssh/restore-scratch.config` and
+`/home/deploy/.ssh/id_ed25519_restore_scratch`, which ops-control's
+`just pin-deploy-backup-key` installs), after the guard has answered
+`echoport-guard-mode` with `restore-scratch`. No `systemctl`, no live path, no
+`--delete`. It downloads the whole scratch dir back, compares it with the
+archive (every entry's path, type, size, SHA-256, link target; the database's
+SHA-256; `PRAGMA integrity_check`) and removes it again (`rm -rf --` through the
+guard) unless kept. Both runners' backups report `"capabilities":
+["restore-scratch"]`; the villakunterbunt fork dispatches the action before it
+parses the (then poisoned) service names. The live restore is unchanged.
+
+The registrations need no new variables: the defaults name the scratch files.
+`tests/test_echoport_runner_restore_scratch.py` drives the villakunterbunt
+fork through the vendored guard's `--restore-scratch` mode on a temporary root
+(live files byte for byte unchanged, every command inside the scratch dir, the
+scratch dir gone); ops-library's `tests/test_echoport_restore_scratch.py` does
+the same for the marina template.
+
 ## Playbook target scripts (`target`)
 
 Several register playbooks upsert their Echoport target with a script of

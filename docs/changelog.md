@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `services._echoport_runner` and `base.echoport_command_guard`: restores into
+  a scratch destination. The vendored guard follows ops-library: a
+  `--restore-scratch` mode for a second key that allows only a scratch
+  restore's commands inside `<root>/.restore-scratch-*` (no `systemctl`, no live
+  path, no `rsync --delete`; `rm -rf --` of a scratch dir on descriptors as the
+  root's owner); the live key's decisions are unchanged.
+  `EchoportCommandGuardConfig.scratch_forced_command()` is that key's forced
+  command. The vendored `marina_staging_backup.py.j2` and the new include
+  `_restore_scratch.py.j2` follow ops-library, and the villakunterbunt fork
+  includes it too: `ECHOPORT_ACTION=restore-scratch` restores with the scratch
+  key into the scratch dir, verifies the copy against the archive and removes
+  it; both runners' backups report `"capabilities": ["restore-scratch"]`. See
+  [Restore into a scratch destination](services/echoport_runner.md#restore-into-a-scratch-destination-_restore_scratchpyj2).
+
 - `base.echoport_command_guard`: the Rust guard of ops-library's
   `echoport_remote_command_guard` role is ported. `impl` takes `python`,
   `shadow` or `rust`; `rust_version`, `rust_sha256`, `rust_local_archive`,

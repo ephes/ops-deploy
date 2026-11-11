@@ -50,6 +50,12 @@ ALLOWED_ROOTS = [
 {% endfor %}
 ]
 
+# Restore into a scratch destination (_restore_scratch.py.j2): its own SSH
+# config and key, pinned on the host to the guard's --restore-scratch mode.
+SCRATCH_SSH_CONFIG = "{{ villakunterbunt_staging_backup_scratch_ssh_config | default('/home/deploy/.ssh/restore-scratch.config') }}"
+SCRATCH_SSH_KEY = "{{ villakunterbunt_staging_backup_scratch_ssh_key | default('/home/deploy/.ssh/id_ed25519_restore_scratch') }}"
+LIVE_SSH_KEY = "{{ villakunterbunt_staging_backup_live_ssh_key | default('/home/deploy/.ssh/id_ed25519') }}"
+
 
 def read_config_file() -> Optional[Dict]:
     """Read deployment configuration from secure file if available."""
@@ -92,6 +98,7 @@ def emit_result(
     checksum_sha256: str = "",
     file_count: int = 0,
     error: str = None,
+    capabilities: Optional[list] = None,
 ) -> None:
     """
     Output ECHOPORT_RESULT as a step message for Echoport to parse.
@@ -109,6 +116,8 @@ def emit_result(
     }
     if error:
         result["error"] = error
+    if capabilities:
+        result["capabilities"] = capabilities
 
     result_json = json.dumps(result)
     emit_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
@@ -714,6 +723,7 @@ def backup(
             "size_bytes": size_bytes,
             "checksum_sha256": checksum,
             "file_count": file_count,
+            "capabilities": RUNNER_CAPABILITIES,
         }
 
     except Exception as e:
@@ -1006,6 +1016,12 @@ def restore(
     return 1  # Should not reach here, but return failure as safety
 
 
+{% include '_sqlite_backup.py.j2' %}
+
+
+{% include '_restore_scratch.py.j2' %}
+
+
 def main() -> int:
     """Main entry point - dispatch to backup or restore."""
     # Read configuration to determine action
@@ -1030,6 +1046,19 @@ def main() -> int:
     # to prevent config compromise from redirecting backups to arbitrary hosts
     remote_host = "{{ villakunterbunt_staging_backup_default_host | default('staging') }}"
     remote_user = "{{ villakunterbunt_staging_backup_remote_user | default('root') }}"
+    if action == SCRATCH_ACTION:
+        # Before the live fields: a scratch request carries poisoned
+        # ECHOPORT_DB_PATH/ECHOPORT_SERVICE_NAME, which only older runners read
+        # (parse_service_names refuses the poisoned unit name).
+        return scratch_restore_from_context(
+            cenv, remote_host, remote_user,
+            "{{ villakunterbunt_staging_backup_restore_owner | default('villakunterbunt:villakunterbunt') }}",
+            DEFAULT_BUCKET,
+            lambda: Path(tempfile.mkdtemp(prefix="villa-kunterbunt-restore-",
+                                          dir=TEMP_DIR if Path(TEMP_DIR).exists() else None)),
+            # The target is service-owned (empty db_path): the runner's default.
+            "{{ villakunterbunt_staging_backup_default_db_path | default('/home/villakunterbunt/data/db.sqlite3') }}",
+        )
     default_db_path = "{{ villakunterbunt_staging_backup_default_db_path | default('/home/villakunterbunt/data/db.sqlite3') }}"
     db_path = cenv.get("ECHOPORT_DB_PATH", "") or default_db_path
     default_backup_files = "{{ villakunterbunt_staging_backup_files | default(['/home/villakunterbunt/data/media', '/home/villakunterbunt/data/private_media']) | join(',') }}"

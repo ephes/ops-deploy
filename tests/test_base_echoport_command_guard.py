@@ -72,7 +72,7 @@ def converged(cfg: EchoportCommandGuardConfig) -> dict[str, Any]:
 def test_vendored_guard_is_the_roles_program_byte_for_byte() -> None:
     # The drift manifest records the role; this pins what ops-deploy ships.
     digest = hashlib.sha256(GUARD_SOURCE.read_bytes()).hexdigest()
-    assert digest.startswith("229340ece8847626")
+    assert digest.startswith("14d13eb135edd0e3")
 
 
 def test_policy_renders_like_to_nice_json() -> None:
@@ -135,6 +135,11 @@ def test_incomplete_or_unsafe_settings_are_refused(overrides: dict[str, Any]) ->
 
 def test_forced_command_is_the_roles_python_command() -> None:
     assert config().forced_command() == FORCED
+
+
+def test_scratch_forced_command_is_the_roles_scratch_fact() -> None:
+    # ops-library forced_command.yml: echoport_remote_command_guard_scratch_forced_command.
+    assert config().scratch_forced_command() == f"{PYTHON} -I {GUARD} --restore-scratch {POLICY}"
 
 
 # --- reading the live line back (confirm_live) --------------------------------

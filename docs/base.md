@@ -293,6 +293,13 @@ With `python` steps 3 and 4 only warn. Without the install root nothing is pinne
 or pruned. `forced_commands_for_key(content, public_key)` is the `commands` part
 of `live_state` for callers that only check the line.
 
+`EchoportCommandGuardConfig.scratch_forced_command()` is the line of the
+optional restore scratch key (`<python> -I <path> --restore-scratch
+<policy_path>`, the role's `echoport_remote_command_guard_scratch_forced_command`):
+the same guard and policy, allowing only a scratch restore's commands inside
+`<root>/.restore-scratch-*` (ops-library role README, "Restore scratch mode").
+Only the Python guard has that mode: with `shadow` or `rust` it raises.
+
 Writing the key's line (`ssh_authorized_key_entries`), the tailnet route on
 macmini and the probes through the new line belong to the caller (ops-control).
 
