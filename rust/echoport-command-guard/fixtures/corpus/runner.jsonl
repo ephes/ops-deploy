@@ -18,9 +18,10 @@
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"runuser -u gotosocial -- sqlite3 /var/lib/gotosocial/sqlite.db '.timeout 30000' '.backup '\"'\"'/var/tmp/gotosocial-echoport.Ab12Cd/sqlite.db'\"'\"''"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"runuser -u gotosocial -- sqlite3 /var/tmp/gotosocial-echoport.Ab12Cd/sqlite.db 'PRAGMA integrity_check;'"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"cat /var/tmp/gotosocial-echoport.Ab12Cd/sqlite.db"}
-{"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"rsync --server --sender -logDtpre.iLsfxCIvu --safe-links . /var/lib/gotosocial/storage/"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"scp -f /etc/gotosocial/config.yaml"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"scp -f /var/lib/gotosocial/.ops-domain-layout"}
+{"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"test -e /var/lib/gotosocial/storage/01J16HJ2BVC12KV65D4GMEW7TX"}
+{"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"rsync --server --sender -logDtpre.iLsfxCIvu --safe-links . /var/lib/gotosocial/storage/01J16HJ2BVC12KV65D4GMEW7TX/"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"rm -rf -- /var/tmp/gotosocial-echoport.Ab12Cd"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"systemctl stop gotosocial"}
 {"test":"test_gotosocial_runner","host":"wersdoerfer.de","policy":"production","command":"test -e /var/lib/gotosocial/sqlite.db"}

@@ -22,41 +22,41 @@
   "cases": {
     "fs.jsonl": 762,
     "journal.jsonl": 72,
-    "mutation/append.jsonl": 2044,
-    "mutation/characters.jsonl": 2429,
+    "mutation/append.jsonl": 2072,
+    "mutation/characters.jsonl": 2463,
     "mutation/edges.jsonl": 84,
-    "mutation/paths.jsonl": 1006,
-    "mutation/requote.jsonl": 2070,
-    "mutation/tokens.jsonl": 2008,
+    "mutation/paths.jsonl": 1022,
+    "mutation/requote.jsonl": 2100,
+    "mutation/tokens.jsonl": 2034,
     "mutation/tools.jsonl": 357,
-    "mutation/vocabulary.jsonl": 1608,
-    "mutation/whitespace.jsonl": 1020,
+    "mutation/vocabulary.jsonl": 1648,
+    "mutation/whitespace.jsonl": 1034,
     "policy.jsonl": 244,
-    "runner.jsonl": 132,
-    "unit.jsonl": 322
+    "runner.jsonl": 133,
+    "unit.jsonl": 324
   },
-  "total": 14158,
+  "total": 14349,
   "accepted": {
     "fs.jsonl": 196,
     "journal.jsonl": 71,
     "mutation/append.jsonl": 0,
     "mutation/characters.jsonl": 0,
     "mutation/edges.jsonl": 12,
-    "mutation/paths.jsonl": 39,
-    "mutation/requote.jsonl": 1985,
+    "mutation/paths.jsonl": 41,
+    "mutation/requote.jsonl": 2015,
     "mutation/tokens.jsonl": 18,
     "mutation/tools.jsonl": 8,
-    "mutation/vocabulary.jsonl": 146,
-    "mutation/whitespace.jsonl": 961,
-    "runner.jsonl": 132,
-    "unit.jsonl": 59
+    "mutation/vocabulary.jsonl": 148,
+    "mutation/whitespace.jsonl": 975,
+    "runner.jsonl": 133,
+    "unit.jsonl": 61
   },
   "p3": {
-    "prefilter": 3027,
+    "prefilter": 3069,
     "invalid-utf8": 32,
     "python-error": 5,
     "policy-type": 33,
     "policy-trailing-newline": 12
   },
-  "decisions": 13914
+  "decisions": 14105
 }
