@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services._echoport_runner` (`gotosocial-backup`): the vendored
+  `gotosocial_backup.py.j2` follows ops-library: the archive carries only the
+  media of the local accounts (`storage/<account id>/` of every account
+  without a domain, read from the snapshot and checked as ULIDs), not
+  GoToSocial's remote media cache, which it re-fetches on demand. On
+  production that cache was 1.5 of the 1.6 GB in every nightly archive. The
+  manifest records the copied accounts and `remote_media_cache: excluded`.
+  After a restore, `gotosocial-admin media prune all --dry-run=false`
+  (service stopped) fixes the cache states of the remote media the archive no
+  longer carries; see [gotosocial](services/gotosocial.md).
+
 - `base.echoport_command_guard`: port of ops-library's
   `echoport_remote_command_guard` role with `impl: python` (the forced-command
   guard of the deploy@macmini backup key). It installs the role's guard program

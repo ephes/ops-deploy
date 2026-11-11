@@ -7,6 +7,16 @@ from a pinned upstream release, SQLite and local media storage under
 the `gotosocial-admin` wrapper and a public Traefik route. Backup, restore and
 removal stay with the Ansible roles.
 
+The Echoport backup (`services._echoport_runner`, runner `gotosocial-backup`,
+template `gotosocial_backup.py.j2`) archives the SQLite snapshot, config and
+the media of the local accounts only (`storage/<account id>/` of every account
+without a domain; the instance account's directory holds the custom emoji).
+The rest of `storage/` is the remote media cache, which GoToSocial prunes after
+`media_remote_cache_duration` and fetches again on demand. After restoring
+such an archive, run `gotosocial-admin media prune all --dry-run=false` with
+the service stopped, so the remote media the database still marks as cached
+are marked uncached and re-fetched.
+
 ```python
 from pydantic import SecretStr
 from ops_deploy.services.gotosocial import GotosocialConfig, deploy_gotosocial

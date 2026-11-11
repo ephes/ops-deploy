@@ -14,10 +14,15 @@ Backup (online, no downtime):
   1. `sqlite3 .backup` of the live database into a private temp dir on the
      host (SQLite's backup API, consistent with WAL), integrity check there
   2. copy the snapshot (`cat`, opened by the guard without following
-     symlinks), rsync the media storage, copy config.yaml and the
-     domain-layout marker to macmini
-  3. integrity check again, manifest.json + manifest.sha256, tarball
-  4. upload with the runner's mc alias, compare the stored size
+     symlinks), config.yaml and the domain-layout marker to macmini
+  3. integrity check again; read the local account IDs from the snapshot
+  4. rsync the media of the local accounts only: `storage/<account id>/` for
+     every account without a domain (the instance account holds the custom
+     emoji). The rest of the storage is GoToSocial's cache of remote media
+     (`media-remote-cache-duration`), which it fetches again on demand; it was
+     ~99% of every archive.
+  5. manifest.json + manifest.sha256, tarball
+  6. upload with the runner's mc alias, compare the stored size
 
 Restore (attended, service stopped):
   1. download, verify the checksum Echoport recorded, extract safely
@@ -32,11 +37,16 @@ Restore (attended, service stopped):
 Paths, host and service are fixed by Ansible (ops-control
 register-gotosocial-backup.yml); Echoport's context cannot redirect them.
 The archive contains the database (accounts, private keys, OAuth tokens),
-media and config.yaml: treat it as secret.
+the local media and config.yaml: treat it as secret. After a restore the
+database still lists the remote media cached at backup time, without their
+files. The restore starts the service again; stop it, run
+`gotosocial-admin media prune all --dry-run=false` to fix those cache states,
+and start it: GoToSocial then fetches the media again on demand.
 """
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -84,6 +94,9 @@ ARCHIVE_DB = "sqlite.db"
 ARCHIVE_STORAGE = "storage"
 ARCHIVE_CONFIG = "config.yaml"
 ARCHIVE_LAYOUT = "domain-layout"
+# GoToSocial IDs are ULIDs (Crockford base32, 26 characters). An account ID
+# names a directory below STORAGE_DIR, so anything else is refused.
+ACCOUNT_ID_RE = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 
 
 class StepFailure(Exception):
@@ -240,6 +253,18 @@ def sqlite_scalar(path: Path, sql: str) -> int:
     return int(out.stdout.strip() or 0)
 
 
+def local_account_ids(db: Path) -> list:
+    """IDs of the local accounts (no domain) in the snapshot, checked as ULIDs."""
+    out = subprocess.run(["sqlite3", "-readonly", str(db),
+                          "SELECT id FROM accounts WHERE domain IS NULL ORDER BY id;"],
+                         capture_output=True, text=True, check=True)
+    ids = [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    bad = [i for i in ids if not ACCOUNT_ID_RE.fullmatch(i)]
+    if bad:
+        raise StepFailure("verify_snapshot", f"unexpected local account id(s): {bad[:3]!r}")
+    return ids
+
+
 def checksum_lines(root: Path) -> list:
     lines = []
     for p in sorted(root.rglob("*")):
@@ -318,13 +343,12 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
         snap = take_remote_snapshot(as_owner, remote_tmp)
         emit_step("snapshot", "success", "Snapshot taken and checked on the host")
 
-        emit_step("copy", "running", "Copying snapshot, storage, config and layout")
+        emit_step("copy", "running", "Copying snapshot, config and layout")
         payload = work / "payload"
         payload.mkdir()
         # The service user owns the temp dir; cat lets the guard open the file
         # without following symlinks (scp would follow them as root).
         remote(["cat", snap], stdout_path=payload / ARCHIVE_DB)
-        rsync_from(STORAGE_DIR, payload / ARCHIVE_STORAGE)
         scp_from(CONFIG_PATH, payload / ARCHIVE_CONFIG)
         scp_from(LAYOUT_MARKER, payload / ARCHIVE_LAYOUT)
         emit_step("copy", "success", "Copied")
@@ -339,9 +363,22 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
         )
         if local_accounts < 1:
             raise StepFailure("verify_snapshot", "snapshot has no local accounts")
+        account_ids = local_account_ids(db)
         emit_step("verify_snapshot", "success", f"ok: {local_accounts} local accounts, {local_statuses} local statuses")
 
-        media_files = sum(1 for p in (payload / ARCHIVE_STORAGE).rglob("*") if p.is_file())
+        emit_step("copy_media", "running", f"Copying the media of {len(account_ids)} local accounts")
+        storage = payload / ARCHIVE_STORAGE
+        storage.mkdir()
+        copied = []
+        for account_id in account_ids:
+            source = f"{STORAGE_DIR}/{account_id}"
+            # A local account that never uploaded anything has no directory.
+            if remote_exists(source):
+                rsync_from(source, storage / account_id)
+                copied.append(account_id)
+        media_files = sum(1 for p in storage.rglob("*") if p.is_file())
+        emit_step("copy_media", "success",
+                  f"{media_files} files from {len(copied)} account directories; remote media cache left out")
         manifest = {
             "target": key_prefix.split("/")[0],
             "timestamp": timestamp,
@@ -350,7 +387,8 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
             "domain_layout": (payload / ARCHIVE_LAYOUT).read_text().strip(),
             "database": {"source": DB_PATH, "filename": ARCHIVE_DB, "size": db.stat().st_size,
                          "local_accounts": local_accounts, "local_statuses": local_statuses},
-            "storage": {"source": STORAGE_DIR, "directory": ARCHIVE_STORAGE, "files": media_files},
+            "storage": {"source": STORAGE_DIR, "directory": ARCHIVE_STORAGE, "files": media_files,
+                        "scope": "local-accounts", "accounts": copied, "remote_media_cache": "excluded"},
             "config": {"source": CONFIG_PATH, "filename": ARCHIVE_CONFIG},
         }
         (payload / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -481,7 +519,11 @@ def restore(bucket: str, key: str, expected_checksum: str) -> int:
 
         emit_result(True, bucket=bucket, key=key, size_bytes=tarball.stat().st_size, checksum_sha256=actual,
                     file_count=1 + manifest.get("storage", {}).get("files", 0))
-        finish_stdout("success", f"Restore completed; previous data kept as {aside_db}, {aside_storage}")
+        hint = ""
+        if manifest.get("storage", {}).get("remote_media_cache") == "excluded":
+            hint = ("; the archive has no remote media cache: stop the service, run "
+                    "`gotosocial-admin media prune all --dry-run=false`, start it")
+        finish_stdout("success", f"Restore completed; previous data kept as {aside_db}, {aside_storage}{hint}")
         return 0
     except Exception as e:  # noqa: BLE001
         step = e.step if isinstance(e, StepFailure) else "error"
