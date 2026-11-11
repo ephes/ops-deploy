@@ -29,7 +29,7 @@ change.
 | `journald_config` | `journald_config` | `JournaldConfig` | `deploy_journald_config` |
 | `ssh_authorized_keys` | `ssh_authorized_keys_manage` | `SshAuthorizedKeysConfig`, `AuthorizedKey` | `deploy_ssh_authorized_keys` |
 | `ssh_authorized_key_entries` | none (pyinfra only) | `SshAuthorizedKeyEntriesConfig`, `AuthorizedKey` | `deploy_ssh_authorized_key_entries` |
-| `echoport_command_guard` | `echoport_remote_command_guard` (impl `python`) | `EchoportCommandGuardConfig` | `deploy_echoport_command_guard` |
+| `echoport_command_guard` | `echoport_remote_command_guard` (impl `python`, `shadow`, `rust`; `confirm_live.yml`) | `EchoportCommandGuardConfig`, `EchoportGuardConfirmConfig` | `deploy_echoport_command_guard`, `deploy_echoport_command_guard_confirm` |
 | `uv_install` | `uv_install` | `UvInstallConfig` | `deploy_uv_install` |
 | `nodejs_install` | `nodejs_install` | `NodejsInstallConfig` | `deploy_nodejs_install` |
 | `shell_basics` | `shell_basics_deploy` | `ShellBasicsConfig` | `deploy_shell_basics` |
@@ -208,42 +208,98 @@ slice 4).
 
 | Field | Default | |
 |---|---|---|
-| `path` | `/usr/local/sbin/echoport-remote-command-guard` | the guard program |
+| `path` | `/usr/local/sbin/echoport-remote-command-guard` | the Python guard |
 | `policy_path` | `/etc/echoport/remote-command-guard.json` | its policy |
 | `python` | `/usr/bin/python3` | must exist on the host |
-| `impl` | `python` | the only value |
-| `rust_version` | `""` | the only value |
+| `impl` | `python` | who decides: `python`, `shadow` or `rust` |
+| `rust_version` | `""` | the Rust guard release to install (empty: none) |
+| `rust_sha256` | `""` | sha256 of its archive (required unless `rust_local_archive`) |
+| `rust_local_archive` | `None` | an archive on the controller (dev and tests) |
+| `rust_install_root` | `/usr/local/lib/echoport-command-guard` | `<root>/<version>/echoport-command-guard` |
+| `rust_keep_versions` | `3` | newest versions the confirm step's prune keeps |
 | `policy` | `{}` | what the Echoport remote runners may do (role README) |
 
 The forced-command guard of the deploy@macmini backup key, as the role installs
-it with `echoport_remote_command_guard_impl: python`: the guard program (a
-verbatim copy of the role's `files/echoport-remote-command-guard.py`, shipped as
-`base/files/echoport_remote_command_guard.py.txt` and checked by the drift test)
-at `path`, root:root 0755; the policy directory root:root 0755; the policy,
-rendered like Ansible's `to_nice_json` (sorted keys, four spaces, ASCII escapes)
-plus a final newline, root:root 0644. On the live hosts the rendering is byte
-for byte the file the role wrote.
+it. `deploy_echoport_command_guard` is the role's main tasks, in their order:
 
-The policy is checked twice before it replaces the live one: while the config
-is built, by the same guard code on the controller (unknown keys, wrong types
-and anything the guard's `Policy.from_dict` refuses fail before any host is
-touched), and on the host, where it is uploaded next to the live file
-(`<policy_path>.ops-deploy-new`) and moved over it only when the installed
-guard's `--check-policy` accepts it (the role's `validate:`); a refused copy is
-deleted and the deploy fails. A converged host reports no change.
+1. The Python guard (a verbatim copy of the role's
+   `files/echoport-remote-command-guard.py`, shipped as
+   `base/files/echoport_remote_command_guard.py.txt` and checked by the drift
+   test) at `path`, root:root 0755, with every `impl`: it is the rollback target
+   and what `shadow` execs. Then the policy directory, root:root 0755.
+2. With `rust_version` set, the role's `rust.yml`: the release through
+   `ops_deploy.helpers.rust_release.install_release` (verified download or the
+   local archive, exact members, root:root, `--version` as nobody), then a host
+   check (`base/files/echoport_rust_guard_check.py`): every component of the
+   binary's path exists, is no symlink, belongs to root and is neither group- nor
+   world-writable; the binary, its version directory and the install root are
+   root:root 0755; and the Rust guard's `--check-policy` accepts the policy about
+   to be installed (a root-only scratch copy, removed afterwards). A set version
+   is installed even with `impl: python`, so a switch is quick. No pin moves and
+   no version is deleted here.
+3. The policy, rendered like Ansible's `to_nice_json` (sorted keys, four
+   spaces, ASCII escapes) plus a final newline, root:root 0644. It is checked
+   twice before it replaces the live one: while the config is built, by the same
+   guard code on the controller (unknown keys, wrong types and anything the
+   guard's `Policy.from_dict` refuses fail before any host is touched), and on the
+   host, where it is uploaded next to the live file
+   (`<policy_path>.ops-deploy-new`) and moved over it only when the installed
+   Python guard's `--check-policy` accepts it (the role's `validate:`); a refused
+   copy is deleted and the deploy fails. A converged host reports no change.
+
+Rollback independence (ops-library `rust/echoport-command-guard/PLAN.md` 6.2):
+with `impl: python` every Rust step only warns. Unusable Rust inputs (a version
+that is no release version, an install root that is not a plain normalised
+path, `rust_keep_versions` below 1) skip the Rust steps with a warning; a
+rejected release or a failed check is an ignored error and the deploy goes on.
+With `shadow` or `rust` the config refuses those inputs (and a missing version or
+checksum), and a rejected release or a failed check stops the deploy before the
+policy and, in the caller, the key's line are written.
 
 `EchoportCommandGuardConfig.forced_command()` is the `command="…"` value of the
-key's line (`<python> -I <path> <policy_path>`, the role's
-`echoport_remote_command_guard_forced_command`), and
-`forced_commands_for_key(content, public_key)` reads a live `authorized_keys`
-back like the role's `confirm_live.yml`: the key is live when it returns
-`[[forced_command]]` (exactly one line, exactly that command).
+key's line (the role's `echoport_remote_command_guard_forced_command`):
 
-Not ported: the Rust guard (`impl` `shadow` or `rust`, a pinned release, and
-`confirm_live.yml`'s pin and prune after the live check). No host has a Rust
-release pinned, so the config refuses those settings instead of ignoring them.
+- `python`: `<python> -I <path> <policy_path>`;
+- `shadow`: `<bin> --shadow <policy_path> <python> -I <path> <policy_path>` (the
+  Rust guard logs its decision, then execs the Python guard, which decides);
+- `rust`: `<bin> <policy_path>`,
+
+with `<bin>` = `<rust_install_root>/<rust_version>/echoport-command-guard`.
+
+`deploy_echoport_command_guard_confirm(EchoportGuardConfirmConfig(guard=…,
+public_key=…))` is `confirm_live.yml`. Run it only after the key's line was
+written and a probe went through it, for every `impl` (the rollback to `python`
+included). It reads root's `authorized_keys` while planning (never printed) with
+`live_state`, the role's `echoport_guard_live_state` filter (ops-library
+`plugins/filter/echoport_guard.py`, vendored as
+`base/files/echoport_guard_live_state.py.txt` and checked by the drift test):
+
+1. The pinned key must have exactly one line, carrying exactly the forced
+   command, and with `shadow` or `rust` the binary it names must report
+   `echoport-command-guard <rust_version> (`; otherwise the deploy fails before
+   any pin moves.
+2. Protected from the prune: every version any line names as
+   `<root>/<version>/echoport-command-guard` (the configured and the resolved
+   root), plus `rust_version`. Another mention of the root, an unreadable file
+   or a root `realpath` cannot resolve make the live state unknown, and the
+   prune deletes nothing.
+3. The pin of the consumer `echoport_remote_command_guard` moves:
+   `shadow`/`rust` pin `rust_version` (the old pin becomes the `.previous` pin);
+   `python` removes the current pin and keeps it as the rollback pin.
+4. The prune keeps `rust_keep_versions` newest versions, every pinned version and
+   the protect list; it never runs after a pin that failed.
+
+With `python` steps 3 and 4 only warn. Without the install root nothing is pinned
+or pruned. `forced_commands_for_key(content, public_key)` is the `commands` part
+of `live_state` for callers that only check the line.
+
 Writing the key's line (`ssh_authorized_key_entries`), the tailnet route on
 macmini and the probes through the new line belong to the caller (ops-control).
+
+`ops_deploy.helpers.rust_release`: `pin_release` and `prune_releases` take
+`soft=True` (a failure is reported, the deploy goes on, no second probe);
+`pin_release` returns its planning probe's output and its operation, and a step
+in `after` that did not succeed (such as a failed soft pin) skips the prune.
 
 ## uv_install
 

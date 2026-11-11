@@ -38,7 +38,13 @@ from pyinfra.api.deploy import add_deploy
 from pyinfra.api.operations import run_ops
 
 from ops_deploy.helpers.probes import FAILED
-from ops_deploy.helpers.rust_release import HOST_SCRIPT, Install, install_release, pin_release, prune_releases
+from ops_deploy.helpers.rust_release import (
+    HOST_SCRIPT,
+    Install,
+    install_release,
+    pin_release,
+    prune_releases,
+)
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -726,6 +732,33 @@ def test_prune_passes_protect_and_reruns_after_a_change() -> None:
         *("--name", "metrics-httpd", "--root", ROOT, "--keep-versions", "2"),
         *("--protect", f"{ROOT}/0.1.0/metrics-httpd (deleted)", "--protect", "0.0.9"),
     ]
+
+
+def test_soft_steps_report_failures_and_a_failed_pin_skips_the_prune() -> None:
+    def body() -> None:
+        _, pin = pin_release("metrics-httpd", "svc", None, soft=True)
+        prune_releases("metrics-httpd", after=[pin], soft=True)
+
+    pin_key = f"pin --name metrics-httpd --root {ROOT} --consumer svc --absent"
+    prune_key = f"prune --name metrics-httpd --root {ROOT} --keep-versions 3"
+    responses = {
+        f"{pin_key} --check": [f"change {ROOT}/.pins/svc"],
+        f"{prune_key} --check": [f"remove {ROOT}/0.0.1"],
+    }
+    converged = run(body, responses)
+    assert converged.succeeded, converged.error
+    assert [c.split()[3] for c in converged.executed_commands] == ["pin", "prune"]
+
+    failed = run(body, {**responses, f"{PY} {pin_key}": {"stderr": ["cannot write"], "success": False}})
+    # Reported (an ignored error), the deploy goes on, and nothing is pruned.
+    assert failed.error is None
+    assert [c.split()[3] for c in failed.executed_commands] == ["pin"]
+
+    hard = run(
+        lambda: pin_release("metrics-httpd", "svc", None),
+        {**responses, f"{PY} {pin_key}": {"stderr": ["cannot write"], "success": False}},
+    )
+    assert not hard.succeeded
 
 
 def test_prune_is_skipped_after_a_failed_soft_install() -> None:

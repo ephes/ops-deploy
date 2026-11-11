@@ -65,6 +65,7 @@ VENDORED_LIBRARY_FILES = {
     "base/files/echoport_remote_command_guard.py.txt": (
         "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py"
     ),
+    "base/files/echoport_guard_live_state.py.txt": "plugins/filter/echoport_guard.py",
     **{
         f"services/software_estate_publisher/files/{name}.txt": f"roles/software_estate/files/{name}"
         for name in ("publish.py", "collect.py", "emit.py", "outbox.py", "send.py")
