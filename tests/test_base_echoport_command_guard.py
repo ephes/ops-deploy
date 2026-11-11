@@ -140,6 +140,10 @@ def test_forced_command_is_the_roles_python_command() -> None:
 def test_scratch_forced_command_is_the_roles_scratch_fact() -> None:
     # ops-library forced_command.yml: echoport_remote_command_guard_scratch_forced_command.
     assert config().scratch_forced_command() == f"{PYTHON} -I {GUARD} --restore-scratch {POLICY}"
+    for impl in ("shadow", "rust"):
+        cfg = config(impl=impl, rust_version="0.3.0", rust_sha256="a" * 64)
+        with pytest.raises(ValueError, match="needs impl python"):
+            cfg.scratch_forced_command()
 
 
 # --- reading the live line back (confirm_live) --------------------------------
