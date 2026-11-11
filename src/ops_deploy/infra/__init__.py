@@ -38,6 +38,7 @@ from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_i
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
 from ops_deploy.infra.hd_idle import HdIdleConfig, HdIdleDisk, deploy_hd_idle
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
+from ops_deploy.infra.ipv6_stale_socket_reaper import Ipv6StaleSocketReaperConfig, deploy_ipv6_stale_socket_reaper
 from ops_deploy.infra.mail_relay_client import MailRelayClientConfig, deploy_mail_relay_client
 from ops_deploy.infra.netplan import NetplanConfig, deploy_netplan
 from ops_deploy.infra.otbr import OtbrConfig, deploy_otbr
@@ -94,6 +95,7 @@ __all__ = [
     "HdIdleDisk",
     "HdparmDevice",
     "HdparmTuneConfig",
+    "Ipv6StaleSocketReaperConfig",
     "MailRelayClientConfig",
     "MailReplicationConfig",
     "MinioArchiveConfig",
@@ -141,6 +143,7 @@ __all__ = [
     "deploy_encrypted_volume",
     "deploy_hd_idle",
     "deploy_hdparm_tune",
+    "deploy_ipv6_stale_socket_reaper",
     "deploy_mail_relay_client",
     "deploy_mail_replication",
     "deploy_minio_archive",
