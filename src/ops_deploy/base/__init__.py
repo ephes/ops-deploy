@@ -12,7 +12,12 @@ size-capped helpers/ops/core layer.
 from ops_deploy.base._common import RoleConfig
 from ops_deploy.base.boot_visible_i915 import BootVisibleI915Config, deploy_boot_visible_i915
 from ops_deploy.base.dpkg_arch_remove import DpkgArchRemoveConfig, deploy_dpkg_arch_remove
-from ops_deploy.base.echoport_command_guard import EchoportCommandGuardConfig, deploy_echoport_command_guard
+from ops_deploy.base.echoport_command_guard import (
+    EchoportCommandGuardConfig,
+    EchoportGuardConfirmConfig,
+    deploy_echoport_command_guard,
+    deploy_echoport_command_guard_confirm,
+)
 from ops_deploy.base.external_bind_storage import (
     BindSource,
     EngineBinds,
@@ -48,6 +53,7 @@ __all__ = [
     "BootVisibleI915Config",
     "DpkgArchRemoveConfig",
     "EchoportCommandGuardConfig",
+    "EchoportGuardConfirmConfig",
     "EngineBinds",
     "ExternalBindStorageConfig",
     "HeadlessModeConfig",
@@ -71,6 +77,7 @@ __all__ = [
     "deploy_boot_visible_i915",
     "deploy_dpkg_arch_remove",
     "deploy_echoport_command_guard",
+    "deploy_echoport_command_guard_confirm",
     "deploy_external_bind_storage",
     "deploy_headless_mode",
     "deploy_hostname",

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `base.echoport_command_guard`: the Rust guard of ops-library's
+  `echoport_remote_command_guard` role is ported. `impl` takes `python`,
+  `shadow` or `rust`; `rust_version`, `rust_sha256`, `rust_local_archive`,
+  `rust_install_root` and `rust_keep_versions` install a release
+  (`helpers.rust_release.install_release`) and check it on the host (root owns
+  the whole path, root:root 0755, the Rust `--check-policy` accepts the policy)
+  before the policy is written. `forced_command()` returns the shadow and rust
+  commands. The new `deploy_echoport_command_guard_confirm` is the role's
+  `confirm_live.yml`: verify the written line (and the binary's version), then
+  move the pin and prune old releases, protecting every version a line names.
+  With `impl: python` every Rust step only warns. ops-library's
+  `plugins/filter/echoport_guard.py` is vendored for the live-state parsing
+  (drift-checked). No host pins a release yet. See
+  [base: echoport_command_guard](base.md#echoport_command_guard).
+- `helpers.rust_release`: `pin_release`/`prune_releases` take `soft` (a
+  failure is reported and the deploy goes on); `pin_release` returns its probe
+  output and its operation; a step in a prune's `after` that did not succeed
+  skips the prune.
+
 - `infra.ipv6_stale_socket_reaper` (new): a small daemon that closes TCP
   connections stuck on a withdrawn global IPv6 address (`ss -K`) as soon as the
   router announces a new prefix, instead of letting them hang until

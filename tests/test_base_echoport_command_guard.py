@@ -123,13 +123,12 @@ def test_controller_check_matches_the_guards_own_check(tmp_path: Path) -> None:
     [
         {"impl": "shadow"},
         {"impl": "rust"},
-        {"rust_version": "0.1.1"},
         {"path": "/usr/local/sbin/guard with space"},
         {"policy_path": "relative.json"},
         {"python": '/usr/bin/python3"'},
     ],
 )
-def test_unported_or_unsafe_settings_are_refused(overrides: dict[str, Any]) -> None:
+def test_incomplete_or_unsafe_settings_are_refused(overrides: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         config(**overrides)
 

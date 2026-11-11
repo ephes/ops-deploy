@@ -145,18 +145,25 @@ def install_release(
     return Install(mark_read_only(op) if current else op, f"{root}/{version}/{name}", validated=installed)
 
 
-def _gated(name: str, command: str, after: Iterable[OperationMeta | Install] = ()) -> tuple[str, OperationMeta]:
+def _failed(step: OperationMeta | Install) -> bool:
+    return step.failed() if isinstance(step, Install) else not step.did_succeed()
+
+
+def _gated(
+    name: str, command: str, after: Iterable[OperationMeta | Install] = (), soft: bool = False
+) -> tuple[str, OperationMeta]:
     """Run ``command`` if its ``--check`` probe asks for a change, failed, or a step in ``after`` changed.
 
-    Never after a failed ``Install`` in ``after``; a validated one (an installed version) is no change.
-    Returns the probe's output and the operation.
+    Never after a failed ``Install`` or another step in ``after`` that did not succeed (such as
+    a soft pin); a validated ``Install`` (an installed version) is no change. ``soft``: a failure
+    is reported, but the deploy goes on (no probe again). Returns the probe's output and the operation.
     """
 
     check = f"{command} --check"
     pending = probe(check, name=name, stdin=HOST_SCRIPT)
     lines = (pending or "").splitlines()
-    ops = [a.op if isinstance(a, Install) else a for a in after if not (isinstance(a, Install) and a.validated)]
-    installs = [a for a in after if isinstance(a, Install)]
+    steps = list(after)
+    ops = [a.op if isinstance(a, Install) else a for a in steps if not (isinstance(a, Install) and a.validated)]
     for line in lines:
         if line.startswith("blocked "):
             logger.warning(f"{host.print_prefix}{name}: {line}")
@@ -164,10 +171,11 @@ def _gated(name: str, command: str, after: Iterable[OperationMeta | Install] = (
     op = server.shell(
         name=name,
         commands=[command],
-        _if=lambda: not any(i.failed() for i in installs) and (needed or any(o.did_change() for o in ops)),
+        _if=lambda: not any(_failed(a) for a in steps) and (needed or any(o.did_change() for o in ops)),
+        _ignore_errors=soft,
         **stdin_arguments(HOST_SCRIPT),
     )
-    if pending is None:
+    if pending is None and not soft:
         verify_probe(check, name=name, stdin=HOST_SCRIPT)
     return pending or "", op
 
@@ -180,7 +188,8 @@ def pin_release(
     install_root: str = "",
     previous: str = "",
     keep_previous: bool = True,
-) -> str:
+    soft: bool = False,
+) -> tuple[str, OperationMeta]:
     """Pin ``version`` for ``consumer`` (``None``: remove its pin), moving the rollback pin.
 
     The role's ``tasks_from: pin``: pinning ``V`` over a current pin ``C ≠ V``
@@ -189,7 +198,9 @@ def pin_release(
     replaces the automatic choice. Call it only after the consumer verified
     that it runs ``version``. An earlier pin of the same consumer in this
     deploy that changed makes it run even if the planning probe found nothing.
-    Returns the planning probe's output.
+    ``soft``: a failed pin is reported and the deploy goes on (no probe again).
+    Returns the planning probe's output and the pin operation (for
+    ``prune_releases(after=...)``).
     """
 
     options = ["--absent"] if version is None else ["--version", version]
@@ -201,9 +212,9 @@ def pin_release(
         raise RuntimeError("pin_release must be called inside a deploy")
     # Per host: the deploy state holds every host's operations.
     earlier = _PINS.setdefault(state, {}).setdefault(f"{host.name}:{root}/.pins/{consumer}", [])
-    pending, op = _gated(f"Pin {name} for {consumer}", command, list(earlier))
+    pending, op = _gated(f"Pin {name} for {consumer}", command, list(earlier), soft=soft)
     earlier.append(op)
-    return pending
+    return pending, op
 
 
 def prune_releases(
@@ -214,6 +225,7 @@ def prune_releases(
     protect: Iterable[str] = (),
     live_state_unknown: bool = False,
     after: Iterable[OperationMeta | Install] = (),
+    soft: bool = False,
 ) -> str:
     """Remove the version directories of ``name`` that nobody keeps (the role's ``tasks_from: prune``).
 
@@ -226,8 +238,10 @@ def prune_releases(
     remembers failed installs by itself: pass every ``Install`` of this crate
     from this deploy in ``after``. An operation in ``after``
     that changed makes it run again even if the planning probe found nothing;
-    an ``Install`` that only validated an installed version is no change.
-    Returns the planning probe's output.
+    an ``Install`` that only validated an installed version is no change; a
+    step in ``after`` that did not succeed (such as a failed soft pin) skips
+    it. ``soft``: a failed prune is reported and the deploy goes on. Returns
+    the planning probe's output.
     """
 
     options: list[object] = ["--keep-versions", keep_versions]
@@ -235,7 +249,7 @@ def prune_releases(
         options += ["--protect", entry]
     options += ["--live-state-unknown"] if live_state_unknown else []
     command = _command("prune", name, install_root or f"/opt/{name}", *options)
-    return _gated(f"Prune old {name} versions", command, list(after))[0]
+    return _gated(f"Prune old {name} versions", command, list(after), soft=soft)[0]
 
 
 __all__ = ["HOST_SCRIPT", "Install", "install_release", "pin_release", "prune_releases"]
