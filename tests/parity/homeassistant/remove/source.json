@@ -1,13 +1,13 @@
 {
-  "revision": "9d88de8f9d04498bbb6d71174792534e87db4a88",
+  "revision": "9eeade3d6600a0549a182523a9277d01fc4dc205",
   "files": {
     "tasks.yml": {
       "source": "roles/homeassistant_remove/tasks/main.yml",
-      "sha256": "123b100b81b5e1c28dc06fd3c2d254061e0ed307bac42a74586762feb9d98ab9"
+      "sha256": "6c6ceb51f7b74d5e3bbf6f8ac91adee994e4f4330998d907953b7f0d26ea78ab"
     },
     "defaults.yml": {
       "source": "roles/homeassistant_remove/defaults/main.yml",
-      "sha256": "c2e51c27c75860535b6c4164a950592cb0b20b3a75d4ee28b8f97cad2b47824f"
+      "sha256": "be22f1d6fb63b585cbbba552363d229504b634cf1554e718011cc694c3d879dd"
     }
   }
 }

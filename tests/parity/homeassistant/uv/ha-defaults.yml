@@ -85,6 +85,15 @@ homeassistant_matter_server_log_level: info
 homeassistant_matter_server_log_file: "{{ homeassistant_logs_path }}/matter-server.log"
 homeassistant_matter_server_restart_on_change: true
 homeassistant_matter_server_chip_factory_dir: /data
+# chip-ota-provider-app: python-matter-server starts it from PATH for device
+# firmware updates. Installed with the Matter server; version, URL template and
+# checksums change together. {version} and {arch} (x86-64, aarch64) fill the URL.
+homeassistant_matter_server_ota_provider_version: "2025.9.0"
+homeassistant_matter_server_ota_provider_url_template: "https://github.com/home-assistant-libs/matter-linux-ota-provider/releases/download/{version}/chip-ota-provider-app-{arch}"
+homeassistant_matter_server_ota_provider_checksums:
+  x86-64: "4550df7af6529e4620463d1c0127f830ec2404c817ad4c6343b29e32cec0144e"
+  aarch64: "e068ab6c4050e23eaa6ccda9bf7eccdc4b792a2514e1098cbc12b414cd64aa7e"
+homeassistant_matter_server_ota_provider_path: /usr/local/bin/chip-ota-provider-app
 
 # Home Assistant API (integration provisioning)
 homeassistant_api_url: "http://localhost:{{ homeassistant_app_port }}"

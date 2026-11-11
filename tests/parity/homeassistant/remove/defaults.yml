@@ -19,11 +19,13 @@ homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
 homeassistant_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service"
 homeassistant_traefik_config_path: /etc/traefik/dynamic/homeassistant.yml
 homeassistant_udev_rule_path: /etc/udev/rules.d/99-homeassistant-zbt1.rules
+homeassistant_matter_server_ota_provider_path: /usr/local/bin/chip-ota-provider-app
 
 # Removal toggles
 homeassistant_remove_service: true
 homeassistant_remove_traefik: true
 homeassistant_remove_udev_rule: true
+homeassistant_remove_matter_ota_provider: true
 homeassistant_remove_virtualenv: true
 homeassistant_remove_site_dir: true
 homeassistant_remove_config_dir: true

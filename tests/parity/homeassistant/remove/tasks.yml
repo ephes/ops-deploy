@@ -48,6 +48,12 @@
     state: absent
   when: homeassistant_remove_udev_rule | bool
 
+- name: "Remove chip-ota-provider-app"
+  ansible.builtin.file:
+    path: "{{ homeassistant_matter_server_ota_provider_path }}"
+    state: absent
+  when: homeassistant_remove_matter_ota_provider | bool
+
 - name: "Remove virtualenv directories"
   ansible.builtin.file:
     path: "{{ item }}"

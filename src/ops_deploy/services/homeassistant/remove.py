@@ -30,9 +30,11 @@ class HomeAssistantRemoveConfig(RoleConfig):
     systemd_unit_path: AbsolutePath = "/etc/systemd/system/homeassistant.service"
     traefik_config_path: AbsolutePath = "/etc/traefik/dynamic/homeassistant.yml"
     udev_rule_path: AbsolutePath = "/etc/udev/rules.d/99-homeassistant-zbt1.rules"
+    matter_server_ota_provider_path: AbsolutePath = "/usr/local/bin/chip-ota-provider-app"
     remove_service: StrictBool = True
     remove_traefik: StrictBool = True
     remove_udev_rule: StrictBool = True
+    remove_matter_ota_provider: StrictBool = True
     remove_virtualenv: StrictBool = True
     remove_site_dir: StrictBool = True
     remove_config_dir: StrictBool = True
@@ -96,6 +98,8 @@ def remove_homeassistant(cfg: HomeAssistantRemoveConfig) -> None:
         _absent(cfg.traefik_config_path)
     if cfg.remove_udev_rule:
         _absent(cfg.udev_rule_path)
+    if cfg.remove_matter_ota_provider:
+        _absent(cfg.matter_server_ota_provider_path)
     if cfg.remove_virtualenv:
         _absent(cfg.virtualenv_path)
         _absent(cfg.virtualenv_link)

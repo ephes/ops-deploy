@@ -38,6 +38,7 @@ from .host_layout import configure_layout, run_udev_handlers
 from .ingress import write_ingress
 from .integration_flows import ApiReadiness, ensure_api_readiness, integrate, reset_api_readiness
 from .legacy_conversation import inspect_legacy_conversation, remove_legacy_component
+from .ota_provider import install_ota_provider
 from .pinned_assets import install_pinned_assets
 from .pipelines import PipelineResult, manage_pipelines
 from .planning import changed, executing, plan_probes, resolved_at_execution
@@ -276,6 +277,9 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
     )
     pending.homeassistant.append(python.homeassistant_changed)
     pending.matter.append(python.matter_changed)
+    if runtime.manage_matter_server:
+        # Started per firmware update from PATH: no Matter restart needed.
+        install_ota_provider(runtime)
     verify_security(runtime)
     values = cfg.values
     if not values.internal_url and cfg.api.default_ipv4 is not None:

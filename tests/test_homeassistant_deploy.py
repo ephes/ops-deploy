@@ -125,6 +125,7 @@ def stub_composition(monkeypatch: pytest.MonkeyPatch, *, count: int = 0, uv: boo
     monkeypatch.setattr(module, "run_builtin_conversation", lambda **kw: trace.append("builtin-" + kw["action"]))
     monkeypatch.setattr(module, "remove_legacy_component", call("legacy-remove"))
     monkeypatch.setattr(module, "configure_python_runtime", call("python", changes))
+    monkeypatch.setattr(module, "install_ota_provider", call("ota-provider"))
     monkeypatch.setattr(module, "verify_security", call("verify-floor"))
     monkeypatch.setattr(module, "configure_files", call("configuration", changes))
     monkeypatch.setattr(module, "application_check", lambda cfg, argv, label, **kw: trace.append(label))
@@ -167,6 +168,7 @@ def test_original_full_builtin_order_and_consumed_handlers(monkeypatch: pytest.M
         "builtin-retire",
         "legacy-remove",
         "python",
+        "ota-provider",
         "verify-floor",
         "configuration",
         "Validate upgraded Home Assistant configuration",
@@ -214,6 +216,13 @@ def test_custom_then_disabled_builtin_nested_flush_does_not_replay_handlers(monk
         "Validate Matter server imports",
         "verify-running",
     ]
+
+
+@pytest.mark.parametrize("matter", [False, True])
+def test_ota_provider_only_with_the_managed_matter_server(monkeypatch: pytest.MonkeyPatch, matter: bool) -> None:
+    trace = stub_composition(monkeypatch)
+    module.deploy_homeassistant.__wrapped__(cfg=selected(matter=matter))
+    assert ("ota-provider" in trace) is matter
 
 
 @pytest.mark.parametrize("count", [0, 1, 2])

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `services.homeassistant`: with `manage_matter_server`, install the pinned
+  `chip-ota-provider-app` 2025.9.0 (`home-assistant-libs/matter-linux-ota-provider`,
+  the release python-matter-server's Dockerfile pins) to `/usr/local/bin`,
+  root:root 0755. python-matter-server starts it from `PATH` for device firmware
+  updates; native installs failed with `FileNotFoundError`. The download is
+  checked against a sha256 per architecture before it replaces anything; a
+  file with the pinned checksum is kept and nothing restarts. New runtime fields
+  `matter_server_ota_provider_{version,url_template,checksums,path}`; the removal
+  deletes it (`remove_matter_ota_provider`). The parity copies of the
+  `homeassistant_deploy` defaults and `matter_server.yml` and of the
+  `homeassistant_remove` role follow ops-library. See
+  [Matter OTA provider](services/homeassistant.md#matter-ota-provider-chip-ota-provider-app).
+
 - `services._echoport_runner` (`gotosocial-backup`): the vendored
   `gotosocial_backup.py.j2` follows ops-library: the archive carries only the
   media of the local accounts (`storage/<account id>/` of every account
