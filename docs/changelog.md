@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `base.uv_install` (Linux): converge `uv` and `uvx` independently (a
+  current `uv` with a missing or other-version `uvx` reinstalls the pair, and
+  the install step now fails unless both report the pinned version); repair
+  owner and mode of a kept pair on every run; never run a canonical binary
+  that is foreign-owned, group/other-writable or not executable, but replace
+  it with verified bytes; refuse a directory at the canonical path; never
+  downgrade: a consistent newer pair is kept (before, a deploy pinning an
+  older uv, such as metube's 0.13.4, replaced the host's newer one), and a
+  newer pair that needs a reinstall fails the deploy. Home Assistant's
+  `install_uv` pre-check uses the same trust test and keeps a newer uv. New
+  `aliases` (`UvAliasConfig`): explicitly approved compatibility paths become
+  root-owned links to the canonical pair; an
+  existing file there is replaced only when its owner and sha256 are the
+  approved ones and is moved aside, not deleted. Darwin is unchanged.
+
 - `services._echoport_runner` (`daybook_operations`): the vendored Daybook
   operations backup bridge follows ops-library: the upload and the verify
   download get 300 seconds per attempt, up to three attempts 30 seconds apart,

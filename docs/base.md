@@ -319,11 +319,35 @@ in `after` that did not succeed (such as a failed soft pin) skips the prune.
 | `update_existing` | `True` | replace another installed version |
 | `force_reinstall` | `False` | |
 | `darwin` | `False` | explicitly select the native Darwin branch |
+| `aliases` | `()` | Linux only: approved compatibility paths (`UvAliasConfig`: `path`, `binary` `uv`/`uvx`, optional `replace_sha256`, `replace_owner` default `root`) |
 
-Installs when `uv` or `uvx` is missing, `uv` is a symlink, is another version (with
-`update_existing`) or `force_reinstall` is set. One shell step downloads the
-release archive into a private temp directory with `curl`, checks the sha256,
-unpacks it and renames `uv`/`uvx` into place, then runs `uv --version`. `curl` is installed with apt first when missing.
+On Linux, `uv` and `uvx` are checked independently. The pair is installed
+when either is missing, a symlink, another version (with `update_existing`)
+or `force_reinstall` is set, and also when either is owned by someone other
+than root/`owner`, writable by group or others, or not executable. Such a
+file is never run, not even for `--version`: fresh bytes are renamed over it.
+A directory or other non-regular file at `uv`/`uvx` fails the deploy. Nothing
+is ever downgraded: a consistent installed pair newer than `version` (a stale
+controller pin, or a service such as metube pinning an older uv than the
+host's shared one) is kept as it is, and a newer pair that would need a
+reinstall (one half missing, untrusted or another version, or
+`force_reinstall`) fails the deploy instead. Home Assistant's own
+`install_uv` pre-check follows the same trust and no-downgrade rules. One shell step downloads the release archive into a private
+temp directory with `curl`, checks the sha256, unpacks it, renames `uv`/`uvx`
+into place, and fails unless both report `version`. `curl` is installed with
+apt first when missing. A kept pair still gets `owner`/`group` and mode
+`0755` back on every run, without a download.
+
+`aliases` turns explicitly named legacy paths into root-owned links to the
+canonical `uv`/`uvx`, after the pair is current. It is not a discovery
+pattern. The directory holding an alias must exist, be root-owned and not
+group/other-writable. A link there that already points to the canonical
+binary and is owned by root is left alone; any other link fails the deploy.
+A regular file there is replaced only when its owner is `replace_owner` and
+its sha256 is `replace_sha256`, and it is moved aside to `<path>.<timestamp>`
+(pyinfra's `force_backup`), not deleted. Every other file, and a directory,
+fails the deploy before any change. Aliases cannot be combined with `darwin`,
+and must differ from each other and from the canonical and staging paths.
 The default path and commands remain Linux-only. `darwin=True` explicitly
 selects the native Darwin installer; callers must supply the selected native
 version, matching `aarch64-apple-darwin`/`x86_64-apple-darwin` checksums, and the

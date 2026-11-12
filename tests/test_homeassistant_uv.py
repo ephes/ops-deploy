@@ -158,3 +158,49 @@ def test_symlink_replacement_and_effective_owner_path_reach_actual_script() -> N
     assert "/srv/owned/bin/.uv.ops-deploy-new /srv/owned/bin/uv" in command
     assert "/srv/owned/bin/.uvx.ops-deploy-new /srv/owned/bin/uvx" in command
     assert run.executed_commands[-1] == "/srv/owned/bin/uv --version && /srv/owned/bin/uv --help >/dev/null"
+
+
+def test_foreign_owned_uv_is_never_run_and_gets_fresh_bytes() -> None:
+    responses = {
+        **fakehost.LINUX,
+        "uname -m": ["x86_64"],
+        **fakehost.directory("/usr/local/bin"),
+        **fakehost.file("/usr/local/bin/uv", "binary", user="cast", mode="-rwxr-xr-x"),
+        "/usr/local/bin/uv --version": ["uv 0.13.5 (x86_64-unknown-linux-gnu)"],
+    }
+
+    run = run_deploy_fake(lambda: install_uv(HomeAssistantUvConfig(), manage=True), responses=responses)
+
+    assert any("release.tar.gz" in c for c in run.executed_commands)
+    assert not any(e.value.startswith("/usr/local/bin/uv --version") for e in run.events if e.kind == "fact")
+
+
+def test_broken_trusted_uv_is_reinstalled_when_updates_are_on() -> None:
+    responses = {
+        **fakehost.LINUX,
+        "uname -m": ["x86_64"],
+        **fakehost.directory("/usr/local/bin"),
+        **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
+        "/usr/local/bin/uv --version": [],
+    }
+
+    run = run_deploy_fake(lambda: install_uv(HomeAssistantUvConfig(), manage=True), responses=responses)
+
+    assert any("release.tar.gz" in c for c in run.executed_commands)
+
+
+def test_newer_uv_is_kept() -> None:
+    responses = {
+        **fakehost.LINUX,
+        "uname -m": ["x86_64"],
+        "/usr/local/bin/uv --version &&": {"success": True},
+        **fakehost.directory("/usr/local/bin"),
+        **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
+        "/usr/local/bin/uv --version": ["uv 9.0.0 (x86_64-unknown-linux-gnu)"],
+    }
+
+    run = run_deploy_fake(lambda: install_uv(HomeAssistantUvConfig(), manage=True), responses=responses)
+
+    assert run.succeeded, run.error
+    assert not any("release.tar.gz" in c for c in run.executed_commands)
+    assert run.mutating_changed_ops == []
