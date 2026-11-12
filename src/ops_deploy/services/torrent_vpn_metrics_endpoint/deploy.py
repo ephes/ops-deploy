@@ -68,6 +68,10 @@ class TorrentVpnMetricsEndpointConfig(EndpointConfig):
     gluetun_container: Word = "torrent-gluetun-1"
     attached_containers: tuple[Word, ...] = ("torrent-qbittorrent-1", "torrent-jackett-1")
     host_ip_url: SafeUrl = "https://api.ipify.org?format=json"
+    # Asked in order when host_ip_url gives no IPv4; each returns {"ip": ...}.
+    ip_fallback_urls: tuple[SafeUrl, ...] = ("https://ipinfo.io/json",)
+    # Pause before the one retry of a failed IP or provider probe.
+    probe_retry_delay: Annotated[StrictInt, Field(ge=0, le=60)] = 5
     vpn_interface: Word = "tun0"
     provider_checks: dict[Word, ProviderCheck] = Field(
         default_factory=lambda: {
@@ -79,6 +83,10 @@ class TorrentVpnMetricsEndpointConfig(EndpointConfig):
     @property
     def json_path(self) -> PurePosixPath:
         return self.json_file or self.site_path / "vpn.json"
+
+    @property
+    def probe_state_path(self) -> PurePosixPath:
+        return self.site_path / "probe-state.json"
 
 
 def role_vars(cfg: TorrentVpnMetricsEndpointConfig, bind: str) -> dict[str, Any]:
@@ -100,6 +108,9 @@ def role_vars(cfg: TorrentVpnMetricsEndpointConfig, bind: str) -> dict[str, Any]
         "gluetun_container": cfg.gluetun_container,
         "attached_containers": list(cfg.attached_containers),
         "host_ip_url": cfg.host_ip_url,
+        "ip_fallback_urls": list(cfg.ip_fallback_urls),
+        "probe_retry_delay": cfg.probe_retry_delay,
+        "probe_state_path": str(cfg.probe_state_path),
         "vpn_interface": cfg.vpn_interface,
         "script_timeout": cfg.script_timeout,
         "provider_checks": {name: part.model_dump() for name, part in cfg.provider_checks.items()},

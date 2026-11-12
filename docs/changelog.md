@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `services.torrent_vpn_metrics_endpoint`: the collector tells a leak from a
+  failed probe. `vpn.egress_ok`/`vpn.provider_exit` are `0` only when the exit
+  IPv4 equals the host's or the provider denies the exit, and `null` when a
+  probe got no answer; new `vpn.probe_failed`, `vpn.probe_errors` and
+  `vpn.probe_failures` (consecutive failed runs, in
+  `site_path/probe-state.json`; `null` while that file cannot be written,
+  flagged by `vpn.probe_state_ok`). Public-IP lookups fall back to
+  `ip_fallback_urls` (default `https://ipinfo.io/json`) and every failed probe
+  is retried once after `probe_retry_delay` seconds (default `5`). Before, any
+  failed curl reported `0` and paged as a leak. See
+  [Leak versus failed probe](services/metrics_endpoints.md#leak-versus-failed-probe).
+
 - `services._echoport_runner` and `base.echoport_command_guard`: restores into
   a scratch destination. The vendored guard follows ops-library: a
   `--restore-scratch` mode for a second key that allows only a scratch
