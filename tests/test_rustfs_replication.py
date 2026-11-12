@@ -569,3 +569,258 @@ def test_evaluation_matches_the_minio_probe(
 ) -> None:
     payload = {**json.loads(heartbeat_object("backups")), **values}
     assert monitor.evaluate(rows()[0], payload, int(lag_hours * 3600)) == (level, reasons)
+
+
+# -- the replica's status endpoint and the retired role's units ---------------------------------------------------
+
+RETIRE_PROBE = 'do [ ! -e "$p" ] || echo "$p"; done'
+STATUS = REPLICA.model_copy(update={"monitor": RustfsReplicationMonitor(role="replica", jobs=JOBS, status_port=9021)})
+
+
+def status_facts(cfg: RustfsConfig) -> dict[str, Any]:
+    monitor = cfg.monitor
+    assert monitor is not None
+    return {
+        **monitor_facts(cfg, REPLICA_CREDS),
+        **fakehost.file(monitor.status_script_path, (FILES / "replication_status.py").read_text(), mode="-rwxr-xr-x"),
+        **fakehost.file(
+            "/etc/systemd/system/rustfs-replication-status.service",
+            render("rustfs-replication-status.service.j2", cfg),
+        ),
+        **fakehost.service("rustfs-replication-status.service"),
+    }
+
+
+def test_converged_status_endpoint_has_zero_managed_operations() -> None:
+    run = execute(STATUS, {RETIRE_PROBE: [], **status_facts(STATUS)}, REPLICA_CREDS)
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == []
+    # Its port is checked before any change, right after the RustFS API port.
+    commands = run.executed_commands
+    status_check = next(i for i, command in enumerate(commands) if "sport = :9021" in command)
+    api_check = next(i for i, command in enumerate(commands) if "sport = :9020" in command)
+    assert status_check == api_check + 1
+    assert "0::/system.slice/rustfs-replication-status.service" in commands[status_check]
+
+
+def test_fresh_status_endpoint_is_installed_enabled_and_started() -> None:
+    run = execute(STATUS, {RETIRE_PROBE: [], **monitor_facts(STATUS, REPLICA_CREDS)}, REPLICA_CREDS)
+    assert run.succeeded, run.error
+    names = [name.removeprefix(PREFIX) for name in run.mutating_changed_ops]
+    for expected in (
+        "Install /usr/local/bin/rustfs-replication-status",
+        "Install systemd unit rustfs-replication-status.service",
+        "Enable rustfs-replication-status.service",
+        "Start rustfs-replication-status.service",
+    ):
+        assert expected in names
+    assert not any("Remove retired" in name for name in names)
+
+
+@pytest.mark.parametrize(
+    ("cfg", "facts_", "retired"),
+    [
+        (
+            STATUS,
+            lambda: status_facts(STATUS),
+            ["rustfs-replication-heartbeat.timer", "rustfs-replication-heartbeat.service"],
+        ),
+        (
+            REPLICA,
+            lambda: monitor_facts(REPLICA, REPLICA_CREDS),
+            [
+                "rustfs-replication-heartbeat.timer",
+                "rustfs-replication-heartbeat.service",
+                "rustfs-replication-status.service",
+            ],
+        ),
+        (
+            SOURCE,
+            lambda: monitor_facts(SOURCE, SOURCE_CREDS),
+            [
+                "rustfs-replication-lag-check.timer",
+                "rustfs-replication-lag-check.service",
+                "rustfs-replication-status.service",
+            ],
+        ),
+    ],
+)
+def test_the_other_roles_units_are_removed_when_present(cfg: RustfsConfig, facts_: Any, retired: list[str]) -> None:
+    creds = SOURCE_CREDS if cfg is SOURCE else REPLICA_CREDS
+    paths = [f"/etc/systemd/system/{unit}" for unit in retired]
+    run = execute(cfg, {RETIRE_PROBE: paths[:1], **facts_()}, creds)
+    assert run.succeeded, run.error
+    assert [name.removeprefix(PREFIX) for name in run.mutating_changed_ops] == ["Remove retired RustFS monitor units"]
+    probe_command = next(command for command in run.fact_commands if RETIRE_PROBE in command)
+    assert all(path in probe_command for path in paths)
+    removal = " ".join(run.executed_commands)
+    # Every unit is stopped and disabled on its own (also when only one file exists).
+    for unit in retired:
+        assert f"systemctl stop {unit} " in removal
+        assert f"systemctl disable {unit} " in removal
+    assert "disable --now" not in removal
+    assert f"rm -f {' '.join(paths)}" in removal
+    assert "systemctl daemon-reload" in removal
+    # Only unit files: the state root, the scripts and the environment stay.
+    assert "/var/lib/rustfs-replication-monitor" not in removal
+    assert cfg.monitor is not None
+    assert cfg.monitor.unit not in removal
+
+
+def test_status_unit_is_loopback_only_and_read_only() -> None:
+    unit = render("rustfs-replication-status.service.j2", STATUS)
+    assert (
+        "ExecStart=/usr/bin/python3 -I -B /usr/local/bin/rustfs-replication-status 127.0.0.1 9021 "
+        "/var/lib/rustfs-replication-monitor /etc/rustfs-replication-monitor.json 960\n"
+    ) in unit
+    for line in (
+        "DynamicUser=yes",
+        "ProtectSystem=strict",
+        "ReadOnlyPaths=/var/lib/rustfs-replication-monitor",
+        "IPAddressDeny=any",
+        "IPAddressAllow=localhost",
+        "CapabilityBoundingSet=",
+    ):
+        assert line + "\n" in unit
+    assert "EnvironmentFile" not in unit
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"role": "source", "replica_endpoint": "http://replica.example:9020", "status_port": 9021},
+    ],
+)
+def test_status_endpoint_belongs_to_the_replica(change: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError, match="replica role"):
+        RustfsReplicationMonitor(jobs=JOBS, **change)
+
+
+@pytest.mark.parametrize("port", [9020, 9001, 9002])
+def test_status_port_must_not_collide(port: int) -> None:
+    with pytest.raises(ValidationError, match="status port"):
+        REPLICA.model_validate(
+            {
+                **REPLICA.model_dump(),
+                "monitor": RustfsReplicationMonitor(role="replica", jobs=JOBS, status_port=port).model_dump(),
+            }
+        )
+
+
+def test_traefik_route_can_point_at_a_remote_primary() -> None:
+    remote = RustfsConfig(
+        expose_via_traefik=True, traefik_api_host="objects.example.test", traefik_upstream="100.64.0.20:9020"
+    )
+    route = render("traefik-rustfs.yml.j2", remote)
+    assert '- url: "http://100.64.0.20:9020"' in route
+    assert "127.0.0.1" not in route
+    local = render("traefik-rustfs.yml.j2", remote.model_copy(update={"traefik_upstream": None}))
+    assert '- url: "http://127.0.0.1:9020"' in local
+    with pytest.raises(ValidationError, match="expose_via_traefik"):
+        RustfsConfig(traefik_upstream="100.64.0.20:9020")
+
+
+@pytest.fixture
+def status() -> types.ModuleType:
+    module = types.ModuleType("replication_status")
+    exec(compile((FILES / "replication_status.py").read_text(), "replication_status", "exec"), module.__dict__)
+    return module
+
+
+def write_state(
+    root: Path, name: str, *, level: str = "ok", age: float = 60, lag: float = 300, parity: float = 60
+) -> None:
+    import os
+    import time
+
+    state = root / name
+    state.mkdir(parents=True, exist_ok=True)
+    now = time.time()
+    for file, value, seconds in (
+        ("status.json", json.dumps({"level": level, "lag_seconds": int(lag), "parity_ok": True}), age),
+        ("lag.marker", "", lag),
+        ("parity.marker", "", parity),
+    ):
+        (state / file).write_text(value)
+        os.utime(state / file, (now - seconds, now - seconds))
+
+
+def status_jobs(tmp_path: Path) -> Path:
+    path = tmp_path / "jobs.json"
+    path.write_text(monitor_jobs(STATUS))
+    return path
+
+
+def test_status_summary_is_ok_while_every_job_is_fresh(status: types.ModuleType, tmp_path: Path) -> None:
+    for job in JOBS:
+        write_state(tmp_path / "state", job.name)
+    result = status.summary(str(tmp_path / "state"), str(status_jobs(tmp_path)), 960)
+    assert result["ok"] is True
+    assert result["warning"] is False
+    assert result["critical_jobs"] == []
+    assert result["job_count"] == 2
+    backups = result["jobs"]["backups"]
+    assert backups["level"] == "ok"
+    assert backups["reasons"] == []
+    assert 50 <= backups["status_age_seconds"] <= 70
+    assert 290 <= backups["lag_marker_age_seconds"] <= 310
+
+
+@pytest.mark.parametrize(
+    ("state", "reason"),
+    [
+        ({"level": "critical"}, "probe_critical"),
+        ({"age": 2000}, "status_stale"),
+        ({"lag": 7 * 3600}, "lag_marker_stale"),
+        ({"parity": 2 * 3600}, "parity_marker_stale"),
+        ({"level": "bogus"}, "status_unreadable"),
+    ],
+)
+def test_status_summary_pages_on_the_replicas_verdict(
+    status: types.ModuleType, tmp_path: Path, state: dict[str, Any], reason: str
+) -> None:
+    write_state(tmp_path / "state", "backups", **state)
+    write_state(tmp_path / "state", "obsidian")
+    result = status.summary(str(tmp_path / "state"), str(status_jobs(tmp_path)), 960)
+    assert result["ok"] is False
+    assert result["warning"] is True
+    assert result["critical_jobs"] == ["backups"]
+    assert reason in result["jobs"]["backups"]["reasons"]
+    assert result["jobs"]["obsidian"]["critical"] is False
+
+
+def test_status_summary_counts_a_missing_job_and_a_lag_warning(status: types.ModuleType, tmp_path: Path) -> None:
+    write_state(tmp_path / "state", "backups", lag=3 * 3600)
+    result = status.summary(str(tmp_path / "state"), str(status_jobs(tmp_path)), 960)
+    assert result["critical_jobs"] == ["obsidian"]
+    assert result["jobs"]["obsidian"]["reasons"][:1] == ["status_missing"]
+    assert result["jobs"]["backups"]["critical"] is False
+    assert result["jobs"]["backups"]["warning"] is True
+
+
+def test_status_endpoint_serves_only_its_path(status: types.ModuleType, tmp_path: Path) -> None:
+    import threading
+    import urllib.error
+    import urllib.request
+
+    for job in JOBS:
+        write_state(tmp_path / "state", job.name)
+    server = status.HTTPServer(("127.0.0.1", 0), status.Handler)
+    server.settings = (str(tmp_path / "state"), str(status_jobs(tmp_path)), 960)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        with urllib.request.urlopen(base + "/.well-known/rustfs-replication", timeout=5) as response:
+            assert response.status == 200
+            assert json.loads(response.read())["ok"] is True
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(base + "/", timeout=5)
+        assert missing.value.code == 404
+        server.settings = (str(tmp_path / "state"), str(tmp_path / "absent.json"), 960)
+        with pytest.raises(urllib.error.HTTPError) as broken:
+            urllib.request.urlopen(base + "/.well-known/rustfs-replication", timeout=5)
+        assert broken.value.code == 500
+    finally:
+        server.shutdown()
+        server.server_close()

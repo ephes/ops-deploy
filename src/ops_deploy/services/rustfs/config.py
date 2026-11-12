@@ -85,6 +85,12 @@ def _object_key(value: str) -> str:
     return value
 
 
+# The monitor's unit per role and the replica's status endpoint.
+MONITOR_UNITS = {"source": "rustfs-replication-heartbeat", "replica": "rustfs-replication-lag-check"}
+STATUS_UNIT = "rustfs-replication-status"
+STATUS_PATH = "/.well-known/rustfs-replication"
+
+
 class RustfsMonitorJob(RoleConfig):
     """One replicated bucket watched by heartbeat objects (MinIO replica semantics).
 
@@ -152,6 +158,11 @@ class RustfsReplicationMonitor(RoleConfig):
     timer_on_boot_sec: Annotated[StrictInt, Field(ge=0)] = 120
     timer_randomized_delay_sec: Annotated[StrictInt, Field(ge=0)] = 20
     timer_on_calendar: Annotated[str, Field(pattern=r"^[A-Za-z0-9*:/,.~-][A-Za-z0-9*:/,.~ -]*$")] = "*:0/5"
+    # Replica only: a loopback HTTP endpoint (``rustfs-replication-status``)
+    # that summarizes the state root per request for a Nyxmon json-metrics
+    # check on the same host (``STATUS_PATH``). None: no endpoint.
+    status_port: Port | None = None
+    status_script_path: AbsolutePath = "/usr/local/bin/rustfs-replication-status"
 
     @model_validator(mode="after")
     def coherent(self) -> Self:
@@ -171,11 +182,23 @@ class RustfsReplicationMonitor(RoleConfig):
             raise ValueError("replica_endpoint is required for, and only for, the source role")
         if any(job.parity_critical_hours * 3600 < 2 * self.timer_interval_sec for job in self.jobs):
             raise ValueError("parity_critical_hours must cover at least two monitor intervals")
+        if self.status_port is not None and self.role != "replica":
+            raise ValueError("the status endpoint belongs to the replica role")
         return self
 
     @property
     def unit(self) -> str:
-        return "rustfs-replication-heartbeat" if self.role == "source" else "rustfs-replication-lag-check"
+        return MONITOR_UNITS[self.role]
+
+    @property
+    def retired_unit(self) -> str:
+        """The other role's unit, left behind when a host changed its role."""
+        return MONITOR_UNITS["replica" if self.role == "source" else "source"]
+
+    @property
+    def status_stale_seconds(self) -> int:
+        """A job's status file older than three monitor runs counts as stale."""
+        return 3 * (self.timer_interval_sec + self.timer_randomized_delay_sec)
 
 
 class RustfsPolicy(RoleConfig):
@@ -232,6 +255,9 @@ class RustfsConfig(RoleConfig):
     expose_via_traefik: StrictBool = False
     traefik_api_host: Hostname = "s3.rustfs.home.example.com"
     traefik_cert_resolver: Name | Literal[""] = ""
+    # The route's backend as host:port when RustFS runs elsewhere (the primary
+    # on another host); None: this server (bind_host:api_port).
+    traefik_upstream: HostPort | None = None
     internal_ip_ranges: tuple[str, ...] = DEFAULT_INTERNAL_IP_RANGES
     buckets: tuple[RustfsBucket, ...] = ()
     policies: tuple[RustfsPolicy, ...] = ()
@@ -295,6 +321,10 @@ class RustfsConfig(RoleConfig):
             same_name = {item.bucket for item in self.replications if item.target_bucket == item.bucket}
             if self.monitor.role == "source" and {job.bucket for job in self.monitor.jobs} - same_name:
                 raise ValueError("a source monitor watches only buckets replicated under the same name")
+            if self.monitor.status_port in (self.api_port, *MINIO_PORTS):
+                raise ValueError("the status port must differ from the API port and MinIO's ports")
+        if self.traefik_upstream is not None and not self.expose_via_traefik:
+            raise ValueError("traefik_upstream needs expose_via_traefik")
         return self
 
     @property

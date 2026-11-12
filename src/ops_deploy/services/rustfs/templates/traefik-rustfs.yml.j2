@@ -51,4 +51,8 @@ http:
     rustfs-api:
       loadBalancer:
         servers:
+{% if cfg.traefik_upstream %}
+          - url: "http://{{ cfg.traefik_upstream }}"
+{% else %}
           - url: "http://{{ cfg.bind_host }}:{{ cfg.api_port }}"
+{% endif %}
