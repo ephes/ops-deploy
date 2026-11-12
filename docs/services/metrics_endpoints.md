@@ -89,8 +89,9 @@ when its inputs change; a converged repeat performs no mutating operations.
 below it unless `json_file` overrides it. `collector_path` defaults to
 `/usr/local/bin/torrent_vpn_metrics_collect`. The root oneshot and enabled timer
 keep `torrent-vpn-metrics-collector` identities and the 300-second interval.
-Container names, provider checks, tunnel interface, public-IP URL, collector
-request timeout and interval remain configurable with the role defaults.
+Container names, provider checks, tunnel interface, public-IP URL and its
+fallbacks, probe retry delay, collector request timeout and interval remain
+configurable with the role defaults.
 
 The timer combines `OnBootSec`/`OnActiveSec` (`timer_on_boot_sec`, default
 `30`), `OnUnitActiveSec` (`timer_interval`), an `OnCalendar` wall-clock
@@ -111,6 +112,31 @@ checks the enabled, armed timer. Timer-driven timestamp changes remain normal
 live activity; they are not reported as deploy mutations. A converged repeat
 neither rewrites the payload nor restarts the endpoint. A collector change
 refreshes the payload and timer without restarting an unchanged HTTP wrapper.
+
+### Leak versus failed probe
+
+`vpn.egress_ok` and `vpn.provider_exit` are `0` only on evidence of a leak:
+the gluetun namespace's public IPv4 equals the host's, or the provider's API
+explicitly says the exit is not one of its own. When a probe gets no usable
+answer the value is `null` (unknown), not `0`. The public IPv4 is asked from
+`host_ip_url` and then each of `ip_fallback_urls` (default
+`https://ipinfo.io/json`; every service must answer `{"ip": "<IPv4>"}`); if all
+fail, or the provider probe fails, the collector waits `probe_retry_delay`
+seconds (default `5`) and tries once more.
+
+Each payload adds `vpn.probe_failed` (`1` when `egress_ok` or `provider_exit`
+is unknown), `vpn.probe_errors` (for example `["egress_ip_failed",
+"provider_failed"]`, or `namespace_unavailable` when gluetun has no PID) and
+`vpn.probe_failures`, the number of consecutive runs with a failed probe, kept
+in `site_path/probe-state.json` and reset by the first complete run.
+`vpn.probe_state_ok` is `0` when that file cannot be written; during a failed
+run `probe_failures` is then `null`, so a `probe_failures < N` rule fails
+instead of staying green on a count that can no longer climb. A monitor
+should alert on `egress_ok != 0` and `provider_exit != 0` (critical, `null`
+passes) and on a probe outage only when `probe_failures` keeps climbing: a
+leaking namespace still reaches the IP services, so a failed probe means the
+tunnel or its DNS is down, not that traffic leaves outside it. Before
+2026-11-12 a failed probe reported `0`, so a short tunnel blip paged as a leak.
 
 ## Linux fixture verification
 

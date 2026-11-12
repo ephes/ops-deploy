@@ -5,8 +5,18 @@ Provider-neutral: the VPN provider and the forwarded port are read from the
 gluetun container's environment, so the checks follow the torrent deploy
 without a second copy of its settings. Only those keys are read; no other
 container environment (it holds the WireGuard key) is ever written out.
+
+A leak and a failed probe are reported apart. egress_ok and provider_exit are
+0 only on evidence of a leak (the namespace's public IPv4 equals the host's, or
+the provider says the exit is not one of its own). When a probe gets no usable
+answer, after the fallback IP services and one retry, the value is null,
+probe_failed is 1 and probe_failures counts the consecutive runs with a failed
+probe (kept in PROBE_STATE_PATH), so a monitor can alert on a persistent
+outage without treating one blip as a leak.
 """
+import ipaddress
 import json
+import os
 import subprocess
 import sys
 import time
@@ -16,6 +26,10 @@ GLUETUN_CONTAINER = "{{ torrent_vpn_metrics_endpoint_gluetun_container }}"
 ATTACHED_CONTAINERS = {{ torrent_vpn_metrics_endpoint_attached_containers | to_json }}
 SCRIPT_TIMEOUT = {{ torrent_vpn_metrics_endpoint_script_timeout }}
 HOST_IP_URL = "{{ torrent_vpn_metrics_endpoint_host_ip_url }}"
+# Tried in order after HOST_IP_URL; each must return {"ip": "<IPv4>"}.
+IP_FALLBACK_URLS = {{ torrent_vpn_metrics_endpoint_ip_fallback_urls | to_json }}
+PROBE_RETRY_DELAY = {{ torrent_vpn_metrics_endpoint_probe_retry_delay }}
+PROBE_STATE_PATH = "{{ torrent_vpn_metrics_endpoint_probe_state_path }}"
 VPN_INTERFACE = "{{ torrent_vpn_metrics_endpoint_vpn_interface }}"
 # provider -> {"url": ..., "flag": dotted path to a bool, "country": dotted path}
 PROVIDER_CHECKS = {{ torrent_vpn_metrics_endpoint_provider_checks | to_json }}
@@ -107,6 +121,55 @@ def as_bool(value: object) -> Optional[bool]:
     return None
 
 
+def parse_ipv4_value(value: object) -> Optional[str]:
+    """`value` as a normalised IPv4 string, or None if it is not one."""
+    try:
+        return str(ipaddress.IPv4Address(str(value).strip()))
+    except (ipaddress.AddressValueError, ValueError):
+        return None
+
+
+def egress_verdict(host_ip: Optional[str], exit_ip: Optional[str]) -> Optional[int]:
+    """1 when the exit differs from the host, 0 when equal (leak), None when unknown."""
+    if host_ip is None or exit_ip is None:
+        return None
+    return 1 if host_ip != exit_ip else 0
+
+
+def provider_verdict(flag: Optional[bool]) -> Optional[int]:
+    """1/0 for an explicit provider answer, None when it gave none."""
+    if flag is None:
+        return None
+    return 1 if flag else 0
+
+
+def read_probe_failures(path: str) -> int:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = json.load(handle).get("probe_failures")
+    except (OSError, ValueError, AttributeError):
+        return 0
+    return value if type(value) is int and value >= 0 else 0
+
+
+def record_probe_result(path: str, failed: bool) -> Tuple[Optional[int], Optional[str]]:
+    """Consecutive failed runs including this one, and a write error if any.
+
+    When the count cannot be persisted during a failed run it would never
+    climb past the stale stored value, so it is reported as None (unknown):
+    `probe_failures < N` then fails instead of silently staying green.
+    """
+    count = read_probe_failures(path) + 1 if failed else 0
+    tmp = f"{path}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump({"probe_failures": count, "ts": int(time.time())}, handle)
+        os.replace(tmp, path)
+    except OSError as exc:
+        return (None if failed else count), f"probe state not written: {exc}"
+    return count, None
+
+
 def container_attached(mode: Optional[str], gluetun_name: str, gluetun_id: Optional[str]) -> bool:
     if not mode:
         return False
@@ -120,27 +183,65 @@ class Collector:
     def __init__(self) -> None:
         self.error_type: Optional[str] = None
         self.message: Optional[str] = None
+        self.probe_errors: List[str] = []
 
     def fail(self, error_type: str, message: str) -> None:
         if self.error_type is None:
             self.error_type = error_type
             self.message = message
 
-    def fetch_json(self, cmd: List[str], label: str) -> Optional[dict]:
+    def probe_failed(self, error_type: str, message: str) -> None:
+        self.probe_errors.append(error_type)
+        self.fail(error_type, message)
+
+    @staticmethod
+    def fetch_json(cmd: List[str], label: str) -> Tuple[Optional[dict], str]:
+        """One request; the parsed object, or None and why it failed."""
         try:
             result = _run(cmd, timeout=SCRIPT_TIMEOUT + 2)
         except subprocess.TimeoutExpired:
-            self.fail(f"{label}_failed", f"{label} request timed out")
-            return None
+            return None, f"{label} request timed out"
         if result.returncode != 0:
-            self.fail(f"{label}_failed", result.stderr.strip() or f"{label} request failed")
-            return None
+            return None, result.stderr.strip() or f"{label} request failed"
         try:
             data = json.loads(result.stdout)
         except json.JSONDecodeError:
-            self.fail(f"{label}_failed", f"{label} response was not valid JSON")
-            return None
-        return data if isinstance(data, dict) else None
+            return None, f"{label} response was not valid JSON"
+        if not isinstance(data, dict):
+            return None, f"{label} response was not a JSON object"
+        return data, ""
+
+    def public_ipv4(self, prefix: List[str], curl: List[str], label: str) -> Optional[str]:
+        """Public IPv4 through the IP services in order, then once more after a pause."""
+        reason = f"{label} request failed"
+        for attempt in range(2):
+            if attempt:
+                time.sleep(PROBE_RETRY_DELAY)
+            for url in [HOST_IP_URL, *IP_FALLBACK_URLS]:
+                data, why = self.fetch_json([*prefix, *curl, "-4", url], label)
+                ip = parse_ipv4_value((data or {}).get("ip")) if data is not None else None
+                if ip is not None:
+                    return ip
+                reason = why or f"{label} response from {url} had no IPv4 ip"
+        self.probe_failed(f"{label}_failed", reason)
+        return None
+
+    def provider_flag(self, prefix: List[str], curl: List[str], check: Dict[str, str]) -> Tuple[Optional[bool], object]:
+        """The provider's explicit yes/no and the exit country; None when it gave no answer."""
+        reason = "provider request failed"
+        for attempt in range(2):
+            if attempt:
+                time.sleep(PROBE_RETRY_DELAY)
+            data, why = self.fetch_json([*prefix, *curl, check["url"]], "provider")
+            if data is None:
+                reason = why
+                continue
+            flag = as_bool(json_path(data, check["flag"]))
+            if flag is not None:
+                return flag, json_path(data, check["country"])
+            reason = f"provider response missing {check['flag']}"
+        self.probe_failed("provider_failed", reason)
+        return None, None
 
     def collect(self) -> dict:
         topology: Dict[str, object] = {
@@ -152,8 +253,8 @@ class Collector:
         }
         vpn: Dict[str, object] = {
             "provider": None,
-            "egress_ok": 0,
-            "provider_exit": 0,
+            "egress_ok": None,
+            "provider_exit": None,
             "exit_ip_v4": None,
             "exit_country": None,
             "forwarded_port": None,
@@ -187,31 +288,26 @@ class Collector:
             vpn["forwarded_port"] = ports[0] if ports else None
 
         if pid is None:
+            self.probe_errors.append("namespace_unavailable")
             return self.payload(topology, vpn)
 
         curl = ["curl", "-fsS", "--max-time", str(SCRIPT_TIMEOUT)]
+        netns = ["nsenter", "-t", str(pid), "-n"]
 
         # Egress: the namespace's public IPv4 must differ from the host's.
-        host = self.fetch_json(curl + ["-4", HOST_IP_URL], "host_ip")
-        netns = self.fetch_json(["nsenter", "-t", str(pid), "-n", *curl, "-4", HOST_IP_URL], "egress_ip")
-        host_ip = (host or {}).get("ip")
-        exit_ip = (netns or {}).get("ip")
+        host_ip = self.public_ipv4([], curl, "host_ip")
+        exit_ip = self.public_ipv4(netns, curl, "egress_ip")
         vpn["exit_ip_v4"] = exit_ip
-        if host_ip and exit_ip:
-            vpn["egress_ok"] = 1 if host_ip != exit_ip else 0
+        vpn["egress_ok"] = egress_verdict(host_ip, exit_ip)
 
         # Provider: its own "am I connected through us" API, from the namespace.
         check = PROVIDER_CHECKS.get(str(vpn["provider"] or ""))
         if check is None:
-            self.fail("provider_unknown", f"no provider check for {vpn['provider']!r}")
+            self.probe_failed("provider_unknown", f"no provider check for {vpn['provider']!r}")
         else:
-            data = self.fetch_json(["nsenter", "-t", str(pid), "-n", *curl, check["url"]], "provider")
-            if data is not None:
-                flag = as_bool(json_path(data, check["flag"]))
-                if flag is None:
-                    self.fail("provider_failed", f"provider response missing {check['flag']}")
-                vpn["provider_exit"] = 1 if flag else 0
-                vpn["exit_country"] = json_path(data, check["country"])
+            flag, country = self.provider_flag(netns, curl, check)
+            vpn["provider_exit"] = provider_verdict(flag)
+            vpn["exit_country"] = country
 
         # qBittorrent listens on the tunnel address (and on the forwarded port).
         try:
@@ -229,6 +325,13 @@ class Collector:
         return self.payload(topology, vpn)
 
     def payload(self, topology: dict, vpn: dict) -> dict:
+        failed = vpn["egress_ok"] is None or vpn["provider_exit"] is None
+        vpn["probe_failed"] = 1 if failed else 0
+        vpn["probe_errors"] = self.probe_errors
+        vpn["probe_failures"], state_error = record_probe_result(PROBE_STATE_PATH, failed)
+        vpn["probe_state_ok"] = 0 if state_error else 1
+        if state_error:
+            self.fail("probe_state_failed", state_error)
         return {
             "ts": int(time.time()),
             "topology": topology,
@@ -243,10 +346,20 @@ def main() -> int:
     try:
         payload = Collector().collect()
     except Exception as exc:  # pragma: no cover - defensive fallback
+        failures, state_error = record_probe_result(PROBE_STATE_PATH, True)
         payload = {
             "ts": int(time.time()),
             "topology": {"containers_ok": 0},
-            "vpn": {"egress_ok": 0, "provider_exit": 0, "listen_tun_ok": 0},
+            # Unknown, not a leak; the failure count still climbs.
+            "vpn": {
+                "egress_ok": None,
+                "provider_exit": None,
+                "listen_tun_ok": 0,
+                "probe_failed": 1,
+                "probe_errors": ["collector_failed"],
+                "probe_failures": failures,
+                "probe_state_ok": 0 if state_error else 1,
+            },
             "error": True,
             "error_type": "collector_failed",
             "message": str(exc),
