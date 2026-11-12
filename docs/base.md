@@ -4,7 +4,7 @@
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, the Echoport remote command guard, journald, shell basics, authorized keys,
 SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4
-options drop, remote LUKS unlock, boot-visible i915, external bind storage), the others
+options drop, remote LUKS unlock, boot-visible i915, external bind storage, NFS client mounts, tlshd), the others
 are steps a service deploy calls (uv, Node.js):
 
 ```python
@@ -16,7 +16,9 @@ deploy_hostname(HostnameConfig(hostname="web-1"))
 They are deploys, not shared helpers, so they live outside the size-capped
 helpers/ops/core layer ([development](development.md#size-cap-on-the-shared-layer)).
 The configs reject unknown keys and are frozen, like service configs, but they
-carry no secrets and do not derive from `BaseServiceConfig`. Everything they
+do not derive from `BaseServiceConfig` and carry no secrets, with one
+exception: `TlshdConfig.private_key`, a `SecretStr` that is only ever written
+with `secret_file`. Everything they
 check (OS, architecture, installed versions, unit states) is read while
 planning, so `--dry` shows the real plan and a converged host reports no
 change.
@@ -41,6 +43,8 @@ change.
 | `remote_luks_unlock` | `remote_luks_unlock` | `RemoteLuksUnlockConfig` | `deploy_remote_luks_unlock` |
 | `boot_visible_i915` | `boot_visible_i915` | `BootVisibleI915Config` | `deploy_boot_visible_i915` |
 | `external_bind_storage` | none (result of `host_storage_migrate`) | `ExternalBindStorageConfig`, `BindSource`, `EngineBinds` | `deploy_external_bind_storage` |
+| `tlshd` | none (new) | `TlshdConfig` | `deploy_tlshd` (`tlshd_operations` inside another deploy) |
+| `nfs_client_mount` | none (new) | `NfsClientConfig`, `NfsClientMount`, `NfsHostsEntry` | `deploy_nfs_client_mount` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -1145,12 +1149,161 @@ automount (where there is one) or the mount is enabled. Nothing is copied,
 mounted, started or restarted: a new `daemon.json` takes effect at Docker's
 next start, the units at the next boot or an attended `systemctl start`.
 
+## tlshd
+
+No ops-library role. `tlshd` (package `ktls-utils`) performs the TLS
+handshake for NFS over RPC-with-TLS (RFC 9289) and hands the session to kernel
+TLS; [`infra.nfs_export`](services/nfs_export.md) (server) and
+`nfs_client_mount` (client) call `tlshd_operations(cfg)` when their `tls` is
+set, `deploy_tlshd(cfg)` runs it on its own.
+
+```python
+from ops_deploy.base import TlshdConfig
+
+TlshdConfig(role="client", ca_certificate=ca_pem, certificate=client_pem, private_key=SecretStr(client_key_pem))
+```
+
+`ca_certificate` and `certificate` must each be exactly one PEM certificate
+(and differ), `private_key` exactly one unencrypted PEM private key (PKCS#8,
+EC or RSA). Validation errors never show the key.
+
+| Path | |
+|---|---|
+| `/etc/tlshd/nfs-ca.pem` (root, 0644) | the private CA: the only trust anchor |
+| `/etc/tlshd/<role>.pem`, `/etc/tlshd/<role>.key` (root, 0600) | the leaf certificate and key |
+| `/etc/tlshd.conf` (0644) | `[authenticate.<role>]` with `x509.certificate=` and `x509.private_key=`; no debug logging |
+| `/etc/systemd/system/tlshd.service.d/trust.conf` (0644) | `[Service]` `BindReadOnlyPaths=/etc/tlshd/nfs-ca.pem:/etc/ssl/certs/ca-certificates.crt` |
+
+The three PEM files are written with `secret_file` (atomic, refuses a symlink
+or other non-regular file in place: `tlshd` refuses symlinked key files);
+their content is in no operation name, argument or diff. `ktls-utils` is
+installed like the NFS packages (needrestart suspended, list mode,
+`--no-install-recommends`, `zfs-share`/`remote-fs-pre.target` enabled again
+if they were).
+
+**Trust isolation.** `tlshd` 0.9 (the only noble version) has no trust-store
+option and verifies peers against the system CA bundle; it also ignores the
+names and key usages of client certificates. Stock, an NFS server would accept
+a client certificate from any public CA. The drop-in binds the private CA file
+over the bundle in `tlshd`'s own mount namespace, so `tlshd` alone trusts only
+that CA and the system bundle stays untouched. The deploy's last step checks
+exactly that, read-only: inside the running `tlshd`'s mount namespace
+(`nsenter -m`), `/etc/ssl/certs/ca-certificates.crt` equals
+`/etc/tlshd/nfs-ca.pem`.
+
+`tlshd.service` is enabled and running. It is restarted whenever one of the
+five files changed, also right after the install (the package starts `tlshd`
+before its configuration exists); a drop-in change reloads systemd first.
+Running NFS connections do not need `tlshd`, new connections (a reconnect
+after a server restart) do; a restart changed nothing for a mounted client in
+the lab.
+
+## nfs_client_mount
+
+No ops-library role. An NFSv4 mount as a rendered `.mount` unit over a sealed
+mount point, with a switch flag, written for the macmini media tree on
+Fractal (ops-control `docs/MACMINI_MEDIA_ON_FRACTAL.md`; the server side is
+[`infra.nfs_export`](services/nfs_export.md)).
+
+```python
+from ops_deploy.base import NfsClientConfig, NfsClientMount, NfsHostsEntry, deploy_nfs_client_mount
+
+deploy_nfs_client_mount(
+    NfsClientConfig(
+        enabled=False,
+        mounts=(
+            NfsClientMount(
+                where=PurePosixPath("/mnt/cryptdata/media"),
+                what="192.168.178.116:/fast/media",
+                options=("vers=4.2", "hard", "noatime", "nconnect=4", "xprtsec=mtls"),
+                requires_mounts_for=(PurePosixPath("/mnt/cryptdata"),),
+                order_docker_after=True,
+            ),
+        ),
+        hosts_entries=(NfsHostsEntry(address="192.168.178.116", name="fractal-nfs"),),
+        tls=TlshdConfig(role="client", ...),
+    )
+)
+```
+
+| Field | |
+|---|---|
+| `enabled` | required; the switch: the mount units exist and run only while it is on |
+| `mounts[].where` | absolute, normalized, not `/`, and a path whose unit name needs no escaping (no `-`, no leading `.`): `/mnt/cryptdata/media` is `mnt-cryptdata-media.mount` |
+| `mounts[].what` | `<ipv4>:<absolute path>`: the static address, so the mount needs no DNS |
+| `mounts[].options` | mount options (`key` or `key=value`, each once); `_netdev` is appended by the deploy and refused here |
+| `mounts[].requires_mounts_for` | `RequiresMountsFor=` paths (the filesystem holding the mount point) |
+| `mounts[].timeout_sec` | `TimeoutSec=`, default 90: a boot with the server away fails the mount instead of hanging |
+| `mounts[].order_docker_after` | a `docker.service` ordering drop-in for mounts that carry container binds |
+| `hosts_entries` | `<address> <name>` lines for `/etc/hosts`; addresses and names unique |
+| `tls` | `TlshdConfig` with `role="client"`; required for `xprtsec=tls`/`mtls` |
+
+**Whatever `enabled` says** (so a staging mount by hand works before the
+switch): `nfs-common` is installed (needrestart suspended, as for
+[`nfs_export`](services/nfs_export.md#what-the-deploy-does); on macmini
+`remote-fs-pre.target` is `static` and `zfs-share` does not exist, so nothing
+is re-enabled), the hosts lines are added, and with `tls` the client side of
+[`tlshd`](#tlshd) is deployed. `tlshd` checks the server certificate against
+the **reverse lookup** of the server address, not the mount source; without a
+PTR record the name is `unknown` and every handshake fails, hence the hosts
+line (a dedicated name such as `fractal-nfs`, in the server certificate's
+SANs). A missing line is appended (after a newline if the file lacks a final
+one); a line with exactly that address and name (comments ignored) is kept;
+a line that gives the address other names, or the name to another address,
+refuses the whole deploy: foreign lines are never rewritten.
+
+**With `enabled`**, per mount:
+
+- `/etc/systemd/system/<unit>.mount` (root, 0644): `[Unit]` `Description`,
+  `Wants=`/`After=network-online.target` (and `tlshd.service` with `tls`),
+  `RequiresMountsFor=`; `[Mount]` `What=`, `Where=`, `Type=nfs4`,
+  `Options=<options>,_netdev`, `TimeoutSec=`; `[Install]`
+  `WantedBy=remote-fs.target`.
+- With `order_docker_after`:
+  `/etc/systemd/system/docker.service.d/<unit stem>.conf` with `[Unit]`
+  `After=<unit>`: ordering only, so Docker still starts when the mount fails,
+  and containers it auto-starts at boot (`restart: unless-stopped`) bind the
+  mounted tree. Without it, that drop-in is removed if present.
+- `systemctl daemon-reload` when the unit or the drop-in changed.
+  `docker.service` is **never** restarted or reloaded; the drop-in applies at
+  its next start.
+- The unit is enabled and, unless it is already mounted, started.
+
+**The sealed mount point.** While planning, the deploy probes `where`
+(read-only: `findmnt`, `stat`, `lsattr`, `ls`, `mountpoint`):
+
+| State | Result |
+|---|---|
+| an `nfs4` mount of exactly `what` | idempotent: nothing is started |
+| mounted from another source or with another type | refused |
+| a symlink, missing or not a directory | refused |
+| a mount point of anything else | refused |
+| not `root:root`, mode not `0000` (setgid/sticky bits count), no immutable attribute (`lsattr -d` shows no `i`), or not empty | refused |
+| otherwise | sealed: the unit is started |
+
+A refusal stops the whole deploy before anything runs. Right before
+`systemctl start` the same probe runs again on the host (a read-only check;
+the state may change after planning) and fails the deploy unless the mount
+point is still sealed or already correctly mounted. The deploy never creates,
+changes or removes the mount point itself: sealing it (`mkdir`, `chmod 0000`,
+`chattr +i`) is an attended step. A changed unit while mounted is reloaded,
+never remounted: new options apply at the next mount.
+
+**With `enabled` off**, per mount: the unit is stopped (if active) and
+disabled (if enabled), the unit file and the docker drop-in are removed, and
+systemd reloads if one was removed. On a host that never had them this is a
+no-op; the mount point is not probed.
+
 ## Tests
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
 converged run (no change), drift and refusal cases, config validation, and the
 authorized_keys and journald drop-in rendering against the vendored role
-templates.
+templates. `tests/test_base_tlshd.py` and `tests/test_base_nfs_client_mount.py`
+also check that the private key appears in no operation name, argument or
+upload record, that `docker.service` is never started, stopped, restarted or
+reloaded, the order install, hosts line, tlshd, daemon-reload, enable, seal
+check, start, and every refusal of the sealed-mount-point probe.
 `tests/test_base_stale_exe_restart_host.py` runs the host program's decision
 table against an in-memory host (every refusal, test failure, deferral, one
 restart per binary, post checks, the report), and

@@ -23,7 +23,9 @@ class RoleConfig(BaseModel):
 
     These configs carry no secrets (public keys at most), so they do not need
     the placeholder and secret handling of
-    :class:`~ops_deploy.core.config.BaseServiceConfig`.
+    :class:`~ops_deploy.core.config.BaseServiceConfig`. The one exception is
+    ``TlshdConfig.private_key``, a ``SecretStr`` written only with
+    ``secret_file``.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True, hide_input_in_errors=True)

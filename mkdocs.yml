@@ -26,6 +26,7 @@ nav:
   - Base deploys: base.md
   - PostgreSQL and Redis: infra.md
   - Storage policy and Samba: services/fractal_storage_services.md
+  - NFS export: services/nfs_export.md
   - IPv6 stale socket reaper: ipv6-stale-socket-reaper.md
   - Traefik: traefik.md
   - Certbot backup and restore: certbot-lifecycle.md

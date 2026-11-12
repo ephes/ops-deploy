@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- New NFS deploys for moving macmini's media tree onto Fractal over NFSv4.2
+  with RPC-with-TLS and client certificates (ops-control
+  `docs/MACMINI_MEDIA_ON_FRACTAL.md`, slices 2 and 3):
+  `infra.nfs_export` (`NfsExportConfig`, `NfsExport`, `NfsExportClient`,
+  `deploy_nfs_export`) renders `/etc/exports.d/<name>.exports`
+  (`<path> <host>(<options>,fsid=<n>)`), installs `nfs-kernel-server`, writes
+  `/etc/nfs.conf.d/ops-deploy.conf` with `[mountd] manage-gids=n` (Ubuntu's
+  `y` breaks group writes; mountd and nfs-server restart only when that file
+  changed), runs `exportfs -ra` only when an exports file changed and checks
+  `exportfs -v` read-only; ZFS `sharenfs` is not used.
+  `base.nfs_client_mount` (`NfsClientConfig`, `NfsClientMount`,
+  `NfsHostsEntry`, `deploy_nfs_client_mount`) installs `nfs-common` and adds
+  `/etc/hosts` lines whatever its `enabled` flag (refusing a foreign line for
+  the address or name), and with the flag on renders, enables and starts one
+  `.mount` unit per mount (`Type=nfs4`, `_netdev`, `TimeoutSec`,
+  `WantedBy=remote-fs.target`) plus an optional ordering-only
+  `docker.service.d` drop-in (daemon-reload only, Docker is never restarted),
+  after asserting the sealed mount point (empty, `root:root`, `0000`,
+  immutable, not a mount point; an `nfs4` mount of exactly `what` is the
+  idempotent case, anything else refuses); with the flag off the units and
+  drop-ins are stopped, disabled and removed. `base.tlshd` (`TlshdConfig`,
+  `tlshd_operations`, `deploy_tlshd`) installs `ktls-utils`, the private CA,
+  the leaf certificate and key (`secret_file`, regular files), `tlshd.conf`
+  and a drop-in that binds the CA over the system bundle for `tlshd` alone
+  (tlshd 0.9 has no trust-store option), restarts `tlshd` when one changed and
+  checks the binding read-only in its mount namespace. All apt installs run
+  with needrestart suspended in list mode and re-enable `zfs-share.service`
+  and `remote-fs-pre.target` if they were enabled before.
+
 - `base.echoport_command_guard`: `scratch_forced_command()` no longer refuses
   impl `shadow` or `rust`. The restore scratch key's line always runs the
   Python guard in `--restore-scratch` mode (the Rust guard has no such mode,

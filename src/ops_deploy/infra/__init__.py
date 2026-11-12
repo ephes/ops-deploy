@@ -41,6 +41,7 @@ from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_
 from ops_deploy.infra.ipv6_stale_socket_reaper import Ipv6StaleSocketReaperConfig, deploy_ipv6_stale_socket_reaper
 from ops_deploy.infra.mail_relay_client import MailRelayClientConfig, deploy_mail_relay_client
 from ops_deploy.infra.netplan import NetplanConfig, deploy_netplan
+from ops_deploy.infra.nfs_export import NfsExport, NfsExportClient, NfsExportConfig, deploy_nfs_export
 from ops_deploy.infra.otbr import OtbrConfig, deploy_otbr
 from ops_deploy.infra.postgres_install import (
     DatabaseSpec,
@@ -100,6 +101,9 @@ __all__ = [
     "MailReplicationConfig",
     "MinioArchiveConfig",
     "NetplanConfig",
+    "NfsExport",
+    "NfsExportClient",
+    "NfsExportConfig",
     "OtbrConfig",
     "PgHbaRule",
     "PostgresInstallConfig",
@@ -148,6 +152,7 @@ __all__ = [
     "deploy_mail_replication",
     "deploy_minio_archive",
     "deploy_netplan",
+    "deploy_nfs_export",
     "deploy_otbr",
     "deploy_postgres_install",
     "deploy_redis_install",
