@@ -1,0 +1,31 @@
+{% set monitor = cfg.monitor %}
+[Unit]
+Description=RustFS replica lag/parity status endpoint (loopback)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I -B {{ monitor.status_script_path }} 127.0.0.1 {{ monitor.status_port }} {{ monitor.state_root }} {{ monitor.jobs_path }} {{ monitor.status_stale_seconds }}
+Restart=on-failure
+RestartSec=5
+
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths={{ monitor.state_root }}
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

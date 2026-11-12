@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `services.rustfs`: `RustfsConfig.traefik_upstream` (`host:port`) points the
+  Traefik route at a RustFS on another host (the default stays this server's
+  `bind_host:api_port`); `RustfsReplicationMonitor.status_port` (replica role
+  only) adds `rustfs-replication-status.service`, a loopback endpoint
+  `GET /.well-known/rustfs-replication` that summarizes the lag/parity probe's
+  state per request (`ok`, `warning`, `critical_jobs`, per-job reasons and
+  ages) for a Nyxmon json-metrics check; the monitor deploy now removes the
+  other role's monitor units (and an undeclared status unit) after a host
+  changed its role. `port_preflight` takes the owning unit.
+
 - `base.echoport_command_guard`: `scratch_forced_command()` no longer refuses
   impl `shadow` or `rust`. The restore scratch key's line always runs the
   Python guard in `--restore-scratch` mode (the Rust guard has no such mode,
