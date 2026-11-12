@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- UniFi routine integration workflow: runs on the `ubuntu-22.04` image inside a
+  disposable systemd `ubuntu:24.04` container. MongoDB 8.0 refuses the
+  `ubuntu-24.04` image's 7.0.0 kernel (SERVER-121912); the container keeps the
+  routine's noble userland on the older image's 6.8 kernel. See
+  `tests/integration/unifi_routine/README.md`.
+
 - `services._echoport_runner` and `base.echoport_command_guard`: restores into
   a scratch destination. The vendored guard follows ops-library: a
   `--restore-scratch` mode for a second key that allows only a scratch

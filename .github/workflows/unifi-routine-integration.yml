@@ -17,8 +17,19 @@ concurrency:
 
 jobs:
   real-linux:
-    runs-on: ubuntu-24.04
+    # MongoDB 8.0 refuses to start on Linux kernels from 6.19 up to 7.0.13
+    # (SERVER-121912); the ubuntu-24.04 and ubuntu-26.04 images run 7.0.0-azure.
+    # The ubuntu-22.04 image's 6.8 kernel is unaffected, and the routine
+    # (which requires Ubuntu noble) runs in a disposable systemd Ubuntu 24.04
+    # container on it. A container shares the host kernel, so only the
+    # runner image decides this.
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
+    env:
+      # ubuntu:24.04 (multi-arch index), resolved 2026-11-12.
+      NOBLE_IMAGE: ubuntu@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5
+      CONTAINER: unifi-routine-noble
+      EVIDENCE: /var/tmp/unifi-routine-evidence
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -35,27 +46,58 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
-          python-version: '3.13'
           enable-cache: false
+      - name: Record the runner kernel
+        run: uname -r
+      - name: Start the disposable Ubuntu 24.04 systemd container
+        run: |
+          # The image's policy-rc.d would keep services from starting, and
+          # run.sh refuses it; procps and iproute2 back run.sh's and the
+          # harness's ps and ip calls.
+          docker build -t unifi-routine-noble - <<DOCKERFILE
+          FROM ${NOBLE_IMAGE}
+          RUN rm -f /usr/sbin/policy-rc.d \
+           && apt-get update \
+           && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv dbus procps iproute2 \
+           && rm -rf /var/lib/apt/lists/* \
+           && systemd-machine-id-setup
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/usr/lib/systemd/systemd"]
+          DOCKERFILE
+          sudo install -d -m 0700 "$EVIDENCE"
+          docker run -d --name "$CONTAINER" --privileged --cgroupns=private \
+            --tmpfs /run --tmpfs /run/lock \
+            -v "$GITHUB_WORKSPACE:/work" -v "$EVIDENCE:$EVIDENCE" \
+            unifi-routine-noble
+          for _ in $(seq 60); do
+            state=$(docker exec "$CONTAINER" systemctl is-system-running 2>/dev/null || true)
+            [[ $state == running || $state == degraded ]] && break
+            sleep 2
+          done
+          echo "container systemd: $state"
+          [[ $state == running || $state == degraded ]]
+          docker exec "$CONTAINER" bash -c '. /etc/os-release && echo "$PRETTY_NAME" && [[ $VERSION_CODENAME == noble ]] && [[ $(cat /proc/1/comm) == systemd ]]'
+          docker cp "$(command -v uv)" "$CONTAINER:/usr/local/bin/uv"
       - name: Install locked controller
-        working-directory: .implementation
-        run: uv sync --locked
-      - name: Real ephemeral VM provisioning and deployment chain
+        run: |
+          docker exec -w /work/.implementation -e UV_PYTHON=3.13 "$CONTAINER" uv sync --locked
+      - name: Real ephemeral provisioning and deployment chain
         env:
           IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
         run: |
-          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$GITHUB_SHA" \
-            CONTROLLER_PYTHON="$PWD/.implementation/.venv/bin/python" \
-            bash tests/integration/unifi_routine/run.sh
+          docker exec -e GITHUB_ACTIONS=true -e RUNNER_ENVIRONMENT=github-hosted -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" -e HARNESS_SHA="$GITHUB_SHA" \
+            -e CONTROLLER_PYTHON=/work/.implementation/.venv/bin/python \
+            "$CONTAINER" bash /work/tests/integration/unifi_routine/run.sh
       - name: Capture diagnostic service state
         if: always()
         run: |
-          sudo mkdir -p /var/tmp/unifi-routine-evidence
-          trap 'sudo chmod -R a+rX /var/tmp/unifi-routine-evidence' EXIT
-          if ! sudo journalctl -u unifi -u mongod --no-pager -n 150 > /tmp/unifi-journal.txt 2>&1; then
+          sudo mkdir -p "$EVIDENCE"
+          trap 'sudo chmod -R a+rX "$EVIDENCE"' EXIT
+          if ! docker exec "$CONTAINER" journalctl -u unifi -u mongod --no-pager -n 150 > /tmp/unifi-journal.txt 2>&1; then
             echo 'Service journal unavailable; primary failure remains in job log.'
           fi
-          sudo cp /tmp/unifi-journal.txt /var/tmp/unifi-routine-evidence/journal.log
+          sudo cp /tmp/unifi-journal.txt "$EVIDENCE/journal.log"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
