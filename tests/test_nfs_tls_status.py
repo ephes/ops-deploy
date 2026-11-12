@@ -543,10 +543,13 @@ def test_a_converged_host_plans_only_read_only_checks() -> None:
 def test_a_fresh_host_installs_everything_once() -> None:
     cfg = server_cfg()
 
-    result = run({**fakehost.UBUNTU, "tailscale ip --4": [TAILSCALE_IP]}, cfg)
+    units = "for unit in zfs-share.service remote-fs-pre.target"
+    shown = ["Id=zfs-share.service", "LoadState=not-found", "ActiveState=inactive", "UnitFileState=", "---"]
+    shown += ["Id=remote-fs-pre.target", "LoadState=loaded", "ActiveState=inactive", "UnitFileState=static", "---"]
+    result = run({**fakehost.UBUNTU, "tailscale ip --4": [TAILSCALE_IP], units: shown}, cfg)
 
     assert result.mutating_changed_ops == [
-        f"{P}Install the NFS-over-TLS status packages",
+        f"{P}Install python3 apache2-utils openssl",
         f"{P}Ensure group metrics",
         f"{P}Ensure endpoint user metrics",
         f"{P}Ensure /etc/nfs-tls-status",

@@ -346,3 +346,23 @@ def test_hosts_append_keeps_a_missing_final_newline_apart() -> None:
         '{ [ -z "$(tail -c 1 /etc/hosts)" ] || echo >> /etc/hosts; '
         "echo '192.168.178.116 fractal-nfs' >> /etc/hosts; }"
     )
+
+
+def test_flag_off_never_stops_a_mount_it_did_not_render() -> None:
+    """A hand-made mount at ``where`` shows as an active unit without our unit file."""
+
+    responses = macmini(hosts=WITH_LINE, verdict="mounted-ok")
+    responses.update(unit_state("active", "", "loaded"))
+    run = run_deploy_fake(deploy_nfs_client_mount, OFF, responses=responses)
+
+    assert run.succeeded, run.error
+    assert not [c for c in run.executed_commands if f"systemctl stop -- {UNIT}" in c]
+    assert not [c for c in run.executed_commands if f"systemctl disable -- {UNIT}" in c]
+
+
+def test_probe_requires_the_configured_transport_security() -> None:
+    from ops_deploy.base.nfs_client_mount import seal_probe
+
+    probe = seal_probe(MEDIA)
+    assert "*,xprtsec=mtls,*" in probe
+    assert "refuse mounted" in probe

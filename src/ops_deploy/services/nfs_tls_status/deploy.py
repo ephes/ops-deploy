@@ -31,10 +31,11 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import Field, StrictInt, model_validator
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
-from pyinfra.operations import apt, files, server, systemd
+from pyinfra.operations import files, server, systemd
 from pyinfra.operations.util import any_changed
 
 from ops_deploy.base import RoleConfig
+from ops_deploy.base._packages import install_packages
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretValues
 from ops_deploy.helpers import service_rollout, systemd_unit
@@ -347,7 +348,9 @@ def deploy_nfs_tls_status(cfg: NfsTlsStatusConfig, secrets: SecretValues) -> Non
     value = password(secrets)
     bind = bind_address(cfg)
     port_preflight(cfg, bind)
-    apt.packages(name="Install the NFS-over-TLS status packages", packages=list(cfg.packages))
+    # needrestart suspended and in list mode, as for the NFS packages: it must not
+    # restart services (Samba, Docker) for libraries upgraded earlier.
+    install_packages(cfg.packages, what="nfs_tls_status")
     account(cfg)  # also htpasswd_dir (root:<group> 0750), which holds config.json
     files.directory(
         name=f"Ensure {cfg.site_path}", path=str(cfg.site_path), user="root", group=cfg.group_name, mode="0750"

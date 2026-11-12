@@ -28,7 +28,7 @@ from pydantic import Field, StrictInt, field_validator, model_validator
 from pyinfra import host
 from pyinfra.api import DeployError, deploy
 from pyinfra.api.operation import OperationMeta
-from pyinfra.facts.files import FileContents
+from pyinfra.facts.files import File, FileContents
 from pyinfra.operations import files, server, systemd
 from pyinfra.operations.util import any_changed
 
@@ -196,9 +196,18 @@ def seal_probe(mount: NfsClientMount) -> str:
     """
 
     where, what = shlex.quote(str(mount.where)), shlex.quote(f"nfs4 {mount.what}")
+    # A mount of the right export without the configured transport security
+    # (a hand-made plain mount) is refused, not taken as converged.
+    xprtsec = next((o for o in mount.options if o.startswith("xprtsec=")), None)
+    opts_ok = (
+        "true"
+        if xprtsec is None
+        else f'case ",$(findmnt -rn -o OPTIONS --mountpoint "$p")," in *,{xprtsec},*) true;; *) false;; esac'
+    )
     return (
         f'p={where}; m=$(findmnt -rn -o FSTYPE,SOURCE --mountpoint "$p" 2>/dev/null); '
-        f'if [ -n "$m" ]; then if [ "$m" = {what} ]; then echo {MOUNTED}; else echo "refuse mounted: $m"; fi; '
+        f'if [ -n "$m" ]; then if [ "$m" = {what} ] && {opts_ok}; then echo {MOUNTED}; '
+        'else echo "refuse mounted: $m $(findmnt -rn -o OPTIONS --mountpoint "$p")"; fi; '
         'elif [ -L "$p" ]; then echo "refuse symlink"; '
         'elif [ ! -d "$p" ]; then echo "refuse not a directory"; '
         'elif mountpoint -q "$p"; then echo "refuse mount point"; '
@@ -298,6 +307,15 @@ def mount_on(mount: NfsClientMount, *, tls: bool) -> None:
 
 
 def mount_off(mount: NfsClientMount) -> list[OperationMeta]:
+    """Stop, disable and remove the unit this deploy rendered, and only that.
+
+    systemd shows every mount in mountinfo as a unit; without our unit file
+    at ``unit_path`` a mount at ``where`` was made by hand (a staging or
+    recovery mount) and is never stopped here.
+    """
+
+    if host.get_fact(File, path=mount.unit_path) is None:
+        return [files.file(name=f"Remove {mount.docker_dropin}", path=mount.docker_dropin, present=False)]
     unit = unit_states([mount.unit])[mount.unit]
     quoted = shlex.quote(mount.unit)
     if unit.get("ActiveState") in ACTIVE:
