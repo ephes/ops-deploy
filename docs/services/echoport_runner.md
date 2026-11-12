@@ -517,7 +517,8 @@ as a deploy) runs, in the role's order after the playbook's
   service dir (`0755`), all `root:root`;
 - the bridge `/usr/local/libexec/daybook-operations-backup` (`root:root
   0755`): `files/daybook_operations/echoport_runner.py`, the role's file
-  byte for byte;
+  byte for byte (its own limit and up to three attempts for the upload and
+  the verify download, see the role's README);
 - the policy `/etc/daybook-operations-backup.json` (`0600`) and
   `config.json` (`0644`) as `to_nice_json` writes them through `copy:
   content:` (no final newline);

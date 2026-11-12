@@ -11,19 +11,32 @@ import signal
 import stat
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 POLICY = Path("/etc/daybook-operations-backup.json")
 LIMIT = 6 * 1024**3
 ENV = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/root", "LANG": "C.UTF-8"}
+COMMAND_TIMEOUT = 240
+# Object-store transfers (the upload and the verify download) get their own
+# limit and bounded retries. The store can stall a request while it waits for
+# its replication target (a HEAD of a new key is proxied there; one dial to an
+# unreachable Tailscale peer took about 135 s on 2026-11-05). Both transfers
+# share one budget, so the run stays below Echoport's 1800-second limit:
+# three 240-second commands plus 900 seconds.
+TRANSFER_TIMEOUT = 300
+TRANSFER_ATTEMPTS = 3
+TRANSFER_RETRY_DELAY = 30
+TRANSFER_BUDGET = 900
+TRANSFER_MIN_ATTEMPT = 60
 
 
 def emit(name, state, message=""):
     print(json.dumps({"name": name, "state": state, "message": message}), flush=True)
 
 
-def command(args, *, account=None, output=None):
+def command(args, *, account=None, output=None, timeout=COMMAND_TIMEOUT):
     options = {}
     if account:
         options = {"user": account.pw_uid, "group": account.pw_gid, "extra_groups": []}
@@ -37,7 +50,7 @@ def command(args, *, account=None, output=None):
         **options,
     ) as child:
         try:
-            stdout, _ = child.communicate(timeout=240)
+            stdout, _ = child.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             os.killpg(child.pid, signal.SIGKILL)
             child.communicate()
@@ -49,6 +62,35 @@ def command(args, *, account=None, output=None):
         if child.returncode:
             raise ValueError("backup_command_failed")
         return stdout
+
+
+def transfer(args, deadline, step):
+    """One object-store transfer with a per-attempt limit and bounded retries.
+
+    Only a timeout or a failed exit is retried; an interrupt stops the run. A
+    retry writes the same new key with the same bytes, so an attempt whose
+    request completed before it was stopped leaves an identical version.
+    """
+    error = "transfer_budget_exhausted"
+    for attempt in range(1, TRANSFER_ATTEMPTS + 1):
+        remaining = deadline - time.monotonic()
+        if remaining < TRANSFER_MIN_ATTEMPT:
+            break
+        try:
+            return command(args, timeout=min(TRANSFER_TIMEOUT, remaining))
+        except ValueError as exc:
+            if str(exc) == "backup_command_timeout":
+                error = f"{step}_timeout"
+            elif str(exc) == "backup_command_failed":
+                error = f"{step}_failed"
+            else:
+                raise
+        left = deadline - time.monotonic() - TRANSFER_RETRY_DELAY
+        if attempt == TRANSFER_ATTEMPTS or left < TRANSFER_MIN_ATTEMPT:
+            break
+        emit(step, "running", f"attempt {attempt + 1} of {TRANSFER_ATTEMPTS}")
+        time.sleep(TRANSFER_RETRY_DELAY)
+    raise ValueError(error)
 
 
 def read_json(path, *, root_owned=False):
@@ -114,9 +156,18 @@ def backup(policy):
             key = f"{policy['target']}/{datetime.datetime.now(datetime.UTC):%Y-%m-%dT%H-%M-%S}-{uuid.uuid4().hex}.tar"
             destination = f"{policy['alias']}/{policy['bucket']}/{key}"
             emit("upload", "running")
-            command([policy["mc"], "cp", "--quiet", str(archive), destination])
+            deadline = time.monotonic() + TRANSFER_BUDGET
+            transfer(
+                [policy["mc"], "cp", "--quiet", str(archive), destination],
+                deadline,
+                "upload",
+            )
             downloaded = Path(stage) / "verify.tar"
-            command([policy["mc"], "cp", "--quiet", destination, str(downloaded)])
+            transfer(
+                [policy["mc"], "cp", "--quiet", destination, str(downloaded)],
+                deadline,
+                "verify",
+            )
             with downloaded.open("rb") as stream:
                 received = hashlib.file_digest(stream, "sha256").hexdigest()
             if downloaded.stat().st_size != size or received != checksum:
@@ -178,6 +229,11 @@ def main():
             "archive_capacity",
             "upload_verification_failed",
             "backup_already_running",
+            "upload_timeout",
+            "upload_failed",
+            "verify_timeout",
+            "verify_failed",
+            "transfer_budget_exhausted",
         }
         error = (
             str(exc)
