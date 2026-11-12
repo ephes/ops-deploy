@@ -2,7 +2,7 @@
 
 Dispatch `.github/workflows/unifi-routine-integration.yml` with an exact reviewed
 `implementation_sha`. The harness checks disposable GitHub-hosted Ubuntu
-x86/systemd and absence of existing UniFi/MongoDB state before provisioning,
+x86/systemd (a systemd container on the runner, see below) and absence of existing UniFi/MongoDB state before provisioning,
 then records run/machine ownership. Never run it on an inventory host.
 
 Real fixture: MongoDB 8.0.34 with authorization enabled from startup, then production routine API installs Java17 and vendor UniFi9.4.19
@@ -121,3 +121,26 @@ unauthenticated ping that returns `ok: 1` and otherwise fails with mongod's
 `systemctl status` and the tail of `mongod.log`. Every failing fixture command
 reports the last lines of its output with the fixture passwords and any
 `mongodb://` URI redacted.
+
+Since 2026-11-12 the job runs on the `ubuntu-22.04` image inside a disposable,
+privileged systemd container of `ubuntu:24.04` (pinned by digest in the
+workflow). MongoDB 8.0.34 refuses to start on Linux kernels 6.19 up to 7.0.13
+(SERVER-121912: "Linux kernel versions 6.19 and newer has a known
+incompatibility"); the `ubuntu-24.04` and `ubuntu-26.04` images run
+`7.0.0-azure` kernels, and no 8.0 release fixes it (run 42782177367 failed
+with that reason). A container shares the runner's kernel, so the runner image
+provides the 6.8 kernel while the container keeps the routine's Ubuntu noble
+userland, MongoDB noble repository and systemd PID 1. `run.sh` and the harness
+are unchanged and run inside the container through `docker exec`; the
+evidence directory is bind-mounted, and the service journal is read from the
+container. The container image removes the base image's `policy-rc.d` and adds
+`systemd`, `procps` and `iproute2`. Move back to a plain Ubuntu 24.04 runner
+once its kernel is outside the affected range (7.0.14 or newer) or a fixed
+MongoDB 8.0 release exists.
+
+The complete chain passed in this setup in
+[run 43165904965](https://github.com/ephes/ops-deploy/actions/runs/43165904965)
+(runner kernel `6.8.0-1070-azure`; the job now fails fast on a kernel in the refused range): implementation
+`f8f7bd5ed09ea8393bf96413b2c6b995632c0adb`, harness
+`465aa6c356f2c5a793b7272200a31ef8565c4d86`; install 9.4.19, update to
+9.5.21, repair, fault tests and every repeat as before.
