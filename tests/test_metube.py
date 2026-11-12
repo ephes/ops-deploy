@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -42,6 +43,39 @@ def test_env_and_unit_exact_role_parity(port: int) -> None:
     cfg = MetubeConfig(port=port)
     assert render_env(cfg) == role("metube.env.j2", cfg)
     assert render_unit(cfg) == role("metube.service.j2", cfg)
+
+
+# sha256 of the default unit before ``mounts_required`` was rendered: an empty
+# list must leave the deployed unit byte-identical.
+DEFAULT_UNIT_SHA256 = "4a63b61a5b869688aaf3e074f2f10ea1f9f426a0356c53ff58467695cc347f4e"
+
+
+@pytest.mark.parametrize("mounts", [(), ("/mnt/cryptdata/media",), ("/mnt/cryptdata/media", "/srv/extra")])
+def test_unit_mounts_exact_role_parity(mounts: tuple[str, ...]) -> None:
+    cfg = MetubeConfig(mounts_required=mounts)
+    assert render_unit(cfg) == role("metube.service.j2", cfg)
+
+
+def test_unit_without_mounts_is_unchanged() -> None:
+    unit = render_unit(MetubeConfig())
+    assert "RequiresMountsFor" not in unit
+    assert hashlib.sha256(unit.encode()).hexdigest() == DEFAULT_UNIT_SHA256
+
+
+def test_unit_requires_every_mount_in_its_unit_section() -> None:
+    unit = render_unit(MetubeConfig(mounts_required=("/mnt/cryptdata/media", "/srv/extra")))
+    assert unit.split("\n\n", 1)[0].splitlines() == [
+        "[Unit]",
+        "Description=MeTube (yt-dlp web UI)",
+        "After=network.target",
+        "RequiresMountsFor=/mnt/cryptdata/media /srv/extra",
+    ]
+
+
+@pytest.mark.parametrize("mount", ["relative/path", "/mnt/with space", "/mnt/a\nExecStartPre=/bin/x", "/mnt/%i", "/"])
+def test_refuses_mounts_that_are_not_plain_paths(mount: str) -> None:
+    with pytest.raises((ConfigValidationError, ValueError)):
+        MetubeConfig(mounts_required=(mount,))
 
 
 @pytest.mark.parametrize("auth", [None, AUTH])
@@ -155,18 +189,24 @@ def test_pipeline_failure_stops_live_configuration_and_rollout(tmp_path: Path) -
     assert not any(path == "/etc/traefik/dynamic/metube.yml" for path, _data in run.uploads)
 
 
-@pytest.mark.parametrize("drift", ["none", "env-content", "env-mode"])
+@pytest.mark.parametrize("drift", ["none", "env-content", "env-mode", "mounts-added"])
 def test_rollout_guard_only_queries_busy_queue_for_actual_live_drift(drift: str) -> None:
     from pyinfra.api import deploy
 
     from ops_deploy.services.metube.deploy import _rollout_guard, pipeline_config
 
-    cfg = MetubeConfig(extra_groups=())
+    deployed = MetubeConfig(extra_groups=())
+    # Adding a required mount changes the unit: a rollout, guarded like any other.
+    cfg = (
+        deployed.model_copy(update={"mounts_required": ("/mnt/cryptdata/media",)})
+        if drift == "mounts-added"
+        else deployed
+    )
     env = render_env(cfg) if drift != "env-content" else "owned changed environment\n"
     responses = {
         "status live": ["current"],
         **fakehost.file(str(cfg.env_file), env, mode="-rw-------" if drift == "env-mode" else "-rw-r--r--"),
-        **fakehost.file("/etc/systemd/system/metube.service", render_unit(cfg)),
+        **fakehost.file("/etc/systemd/system/metube.service", render_unit(deployed)),
     }
 
     @deploy("Guard fixture")

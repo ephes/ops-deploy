@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- New `base.default_qdisc` (`DefaultQdiscConfig`, `deploy_default_qdisc`):
+  `fq_codel` as `net.core.default_qdisc` (`/etc/sysctl.d/60-default-qdisc.conf`,
+  applied with `sysctl -w` only when the running value differs) and as the
+  root qdisc of each listed interface (`tc qdisc replace dev <iface> root
+  fq_codel` only when `tc qdisc show` does not already show it), plus an
+  enabled oneshot `default-qdisc.service` that sets the root qdiscs again at
+  boot: an interface the initramfs brings up (remote LUKS unlock with `ip=`)
+  keeps the kernel's `pfifo_fast` under `mq`, whatever the sysctl says. A
+  converged host plans no change. See [Base deploys](base.md#default_qdisc).
+
+- `services.jellyfin`: with `mounts_required`, the packaged unit gets the
+  drop-in `/etc/systemd/system/jellyfin.service.d/mounts-required.conf`
+  (`[Unit]`, `RequiresMountsFor=<paths>`); with an empty list a leftover
+  drop-in is removed. A change runs `systemctl daemon-reload` only; Jellyfin
+  is not restarted for it.
+
+- `services.metube`: a non-empty `mounts_required` renders
+  `RequiresMountsFor=<paths>` in the unit's `[Unit]` section (the same line
+  as ops-library's new `metube_mounts_required`; the vendored role template
+  is updated). An empty list renders no line, so the unit is byte-identical.
+  `mounts_required` now accepts only plain absolute paths (letters, digits,
+  `_ . -`), as Jellyfin's does. Adding mounts changes the unit and is a
+  guarded rollout with a restart.
+
 - `base.echoport_command_guard`: `scratch_forced_command()` no longer refuses
   impl `shadow` or `rust`. The restore scratch key's line always runs the
   Python guard in `--restore-scratch` mode (the Rust guard has no such mode,

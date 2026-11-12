@@ -38,6 +38,18 @@ recovered without querying an unavailable HTTP endpoint. This check never enqueu
 prevent a new user request arriving after the check; coordinate the actual live
 window with the operator.
 
+`mounts_required` (default empty) lists mount points MeTube needs, such as
+the media mount that holds the downloads. Each is checked with `mountpoint -q`
+(read-only) before any change, and a non-empty list renders
+`RequiresMountsFor=<the paths, space-separated>` in the unit's `[Unit]`
+section: systemd orders MeTube after those mounts, does not start it while
+one is missing and stops it when one is unmounted. The paths must be absolute
+paths of letters, digits and `_ . -`. An empty list renders no line, so
+today's unit stays byte-identical. Adding the list changes the unit, which is
+a rollout like any other unit change: the busy-queue check, a daemon-reload
+and a restart. ops-library's `metube_deploy` renders the same line from
+`metube_mounts_required`.
+
 The environment/unit/route preserve the deployed role defaults. The public
 config intentionally exposes the qualified native path rather than every role
 option. Confirmed [removal](media-removal.md) is available separately through

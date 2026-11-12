@@ -12,7 +12,14 @@ from ops_deploy.core import ConfigValidationError
 from ops_deploy.helpers import BasicAuth
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.services.jellyfin import JellyfinConfig, deploy_jellyfin
-from ops_deploy.services.jellyfin.deploy import render_route, repository_line, traefik_config
+from ops_deploy.services.jellyfin.deploy import (
+    DROPIN_DIR,
+    DROPIN_PATH,
+    render_mounts_dropin,
+    render_route,
+    repository_line,
+    traefik_config,
+)
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -101,6 +108,8 @@ def converged(cfg: JellyfinConfig, **drift: Any) -> dict[str, Any]:
         **fakehost.file(ROUTE, render_route(cfg, traefik_config(cfg, AUTH), _HASH)),
         **fakehost.service("jellyfin.service"),
     }
+    if cfg.mounts_required:
+        responses |= {**fakehost.directory(DROPIN_DIR), **fakehost.file(DROPIN_PATH, render_mounts_dropin(cfg))}
     for path in OWN_DIRS:
         responses.update(fakehost.stat(path, user="jellyfin", mode="drwxr-x---"))
     for path in MEDIA:
@@ -136,8 +145,14 @@ def test_first_run_installs_everything(cfg: JellyfinConfig) -> None:
     assert run.upload(LIST).decode() == repository_line(cfg)
     assert f"{P}Install Jellyfin repository key" in run.mutating_changed_ops
     assert "systemctl enable jellyfin.service" in commands
-    # Nothing restarts or reloads Traefik or Jellyfin.
-    assert not any("restart" in c or "reload" in c for c in commands)
+    # The mounts drop-in is in place before the start; systemd reloads for it,
+    # but nothing restarts or reloads Traefik or Jellyfin.
+    assert run.upload(DROPIN_PATH).decode() == (
+        "# Managed by ops-deploy services.jellyfin; local changes are overwritten.\n"
+        "[Unit]\nRequiresMountsFor=/mnt/cryptdata\n"
+    )
+    assert commands.index("systemctl daemon-reload") < commands.index(start)
+    assert [c for c in commands if "restart" in c or "reload" in c] == ["systemctl daemon-reload"]
     assert [op.name for op in run.ops if op.read_only] == READ_ONLY
 
 
@@ -379,6 +394,49 @@ def test_stopped_service_is_started(cfg: JellyfinConfig) -> None:
 
     assert run.mutating_changed_ops == changed("Enable and start jellyfin.service")
     assert "systemctl start jellyfin.service" in run.executed_commands
+
+
+def test_mounts_dropin_lists_every_required_mount(cfg: JellyfinConfig) -> None:
+    two = cfg.model_copy(update={"mounts_required": ("/mnt/cryptdata/media", "/srv/extra")})
+
+    assert render_mounts_dropin(two).splitlines()[1:] == [
+        "[Unit]",
+        "RequiresMountsFor=/mnt/cryptdata/media /srv/extra",
+    ]
+
+
+def test_mounts_dropin_drift_reloads_systemd_without_a_restart(cfg: JellyfinConfig) -> None:
+    run = deploy(cfg, converged(cfg, **fakehost.file(DROPIN_PATH, "[Unit]\nRequiresMountsFor=/srv/old\n")))
+
+    assert run.mutating_changed_ops == changed(
+        "Install jellyfin.service mounts drop-in", "Reload systemd for the jellyfin.service drop-in"
+    )
+    assert run.upload(DROPIN_PATH).decode() == render_mounts_dropin(cfg)
+    assert [c for c in run.executed_commands if "systemctl" in c] == ["systemctl daemon-reload"]
+
+
+def test_without_mounts_a_leftover_dropin_is_removed(cfg: JellyfinConfig) -> None:
+    plain = cfg.model_copy(update={"mounts_required": ()})
+    leftover = fakehost.file(DROPIN_PATH, render_mounts_dropin(cfg))
+
+    run = deploy(plain, converged(plain, **leftover))
+
+    assert run.mutating_changed_ops == changed(
+        "Remove jellyfin.service mounts drop-in", "Reload systemd for the jellyfin.service drop-in"
+    )
+    assert f"rm -f {DROPIN_PATH}" in run.executed_commands
+    assert [c for c in run.executed_commands if "systemctl" in c] == ["systemctl daemon-reload"]
+    assert not any("findmnt" in c for c in run.executed_commands)
+
+
+def test_without_mounts_and_without_dropin_nothing_changes(cfg: JellyfinConfig) -> None:
+    plain = cfg.model_copy(update={"mounts_required": ()})
+
+    run = deploy(plain, converged(plain))
+
+    assert run.mutating_changed_ops == []
+    assert DROPIN_PATH not in run.uploaded_paths
+    assert not any(DROPIN_DIR in c for c in run.executed_commands)
 
 
 def test_missing_mount_stops_before_any_change(cfg: JellyfinConfig) -> None:

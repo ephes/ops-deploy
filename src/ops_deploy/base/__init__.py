@@ -4,13 +4,14 @@ Each module holds one role: a typed config and a ``@deploy`` function, used on
 their own (hostname, unit masks, headless mode, journald, shell basics, authorized keys (whole file or single entries),
 the Echoport remote command guard,
 SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4 options drop, remote LUKS
-unlock, boot-visible i915, external bind storage) or as a
+unlock, boot-visible i915, external bind storage, default qdisc) or as a
 step of a service deploy (uv, Node.js). They are deploys, not shared helpers, so they sit outside the
 size-capped helpers/ops/core layer.
 """
 
 from ops_deploy.base._common import RoleConfig
 from ops_deploy.base.boot_visible_i915 import BootVisibleI915Config, deploy_boot_visible_i915
+from ops_deploy.base.default_qdisc import DefaultQdiscConfig, deploy_default_qdisc
 from ops_deploy.base.dpkg_arch_remove import DpkgArchRemoveConfig, deploy_dpkg_arch_remove
 from ops_deploy.base.echoport_command_guard import (
     EchoportCommandGuardConfig,
@@ -51,6 +52,7 @@ __all__ = [
     "AuthorizedKey",
     "BindSource",
     "BootVisibleI915Config",
+    "DefaultQdiscConfig",
     "DpkgArchRemoveConfig",
     "EchoportCommandGuardConfig",
     "EchoportGuardConfirmConfig",
@@ -76,6 +78,7 @@ __all__ = [
     "UvAliasConfig",
     "UvInstallConfig",
     "deploy_boot_visible_i915",
+    "deploy_default_qdisc",
     "deploy_dpkg_arch_remove",
     "deploy_echoport_command_guard",
     "deploy_echoport_command_guard_confirm",
