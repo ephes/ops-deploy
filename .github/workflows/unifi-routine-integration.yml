@@ -47,8 +47,16 @@ jobs:
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           enable-cache: false
-      - name: Record the runner kernel
-        run: uname -r
+      - name: Check the runner kernel against SERVER-121912
+        run: |
+          kernel=$(uname -r)
+          echo "runner kernel: $kernel"
+          IFS=. read -r major minor patch _ <<< "${kernel%%-*}.0.0"
+          version=$(( major * 1000000 + minor * 1000 + patch ))
+          if (( version >= 6019000 && version < 7000014 )); then
+            echo "::error::Runner kernel $kernel is in the range MongoDB 8.0 refuses (6.19 to 7.0.13, SERVER-121912); pick another runner image"
+            exit 1
+          fi
       - name: Start the disposable Ubuntu 24.04 systemd container
         run: |
           # The image's policy-rc.d would keep services from starting, and

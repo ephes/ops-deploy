@@ -140,7 +140,7 @@ MongoDB 8.0 release exists.
 
 The complete chain passed in this setup in
 [run 43165904965](https://github.com/ephes/ops-deploy/actions/runs/43165904965)
-(runner kernel `6.8.0-1070-azure`): implementation
+(runner kernel `6.8.0-1070-azure`; the job now fails fast on a kernel in the refused range): implementation
 `f8f7bd5ed09ea8393bf96413b2c6b995632c0adb`, harness
 `465aa6c356f2c5a793b7272200a31ef8565c4d86`; install 9.4.19, update to
 9.5.21, repair, fault tests and every repeat as before.
