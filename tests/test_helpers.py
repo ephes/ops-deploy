@@ -283,12 +283,26 @@ def test_existing_user_is_only_added_to_a_missing_group() -> None:
 def test_uv_sync_without_gate_always_runs_as_service_user() -> None:
     venv = fakehost.venv("/home/app/site/.venv")
 
-    result = run(lambda: uv_sync(SITE, user="app", home=HOME), venv)
+    result = run(lambda: uv_sync(SITE, user="app", home=HOME, security_floor=False), venv)
 
     assert result.executed_commands == [
         "cd /home/app/site && runuser -u app -- env HOME=/home/app UV_PROJECT_ENVIRONMENT=/home/app/site/.venv "
         "/usr/local/bin/uv sync --frozen --no-dev --no-default-groups"
     ]
+
+
+def test_uv_sync_checks_the_lock_before_and_the_environment_after_the_sync() -> None:
+    result = run(lambda: uv_sync(SITE, user="app", home=HOME), fakehost.venv("/home/app/site/.venv"))
+
+    lock, sync, trust = result.executed_commands
+    assert lock.startswith("cd /home/app/site && runuser -u app -- env HOME=/home/app /usr/bin/python3 -I -c ")
+    assert "nearest_lock" in lock
+    assert "FLOORS" in lock
+    assert sync.endswith("/usr/local/bin/uv sync --frozen --no-dev --no-default-groups")
+    assert trust.startswith(
+        "cd /home/app/site && runuser -u app -- env HOME=/home/app /home/app/site/.venv/bin/python -I -c "
+    )
+    assert "DISTRUSTED" in trust
 
 
 def test_uv_sync_gated_on_unchanged_ops_is_skipped_when_venv_exists() -> None:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Callable, Sequence
+from importlib.resources import files
 from pathlib import PurePosixPath
 
 from pyinfra import host
@@ -21,6 +22,12 @@ from pyinfra.operations import server
 DEFAULT_UV = PurePosixPath("/usr/local/bin/uv")
 # What the Ansible roles run: locked, runtime dependencies only.
 DEFAULT_UV_SYNC_ARGS = ("--frozen", "--no-dev", "--no-default-groups")
+# Runs the lock check before a sync; needs tomllib (Python 3.11+).
+SYSTEM_PYTHON = PurePosixPath("/usr/bin/python3")
+
+
+def _template(name: str) -> str:
+    return files("ops_deploy.helpers").joinpath(f"templates/{name}").read_text()
 
 
 def _as_user(user: str, home: PurePosixPath, env: dict[str, str], argv: Sequence[str]) -> str:
@@ -47,6 +54,8 @@ def uv_sync(
     args: Sequence[str] = DEFAULT_UV_SYNC_ARGS,
     uv: PurePosixPath = DEFAULT_UV,
     when_changed: Sequence[OperationMeta] | None = None,
+    security_floor: bool = True,
+    system_python: PurePosixPath = SYSTEM_PYTHON,
 ) -> OperationMeta:
     """Run ``uv sync`` in ``project_dir`` as ``user``.
 
@@ -55,6 +64,15 @@ def uv_sync(
     changed, or if ``<venv>/bin/python`` is not executable (first deploy, a
     venv removed by hand, or a dangling interpreter symlink). Without it, the
     sync runs on every deploy.
+
+    With ``security_floor`` (the default) the same step guards the
+    certifi/pip floors of :mod:`ops_deploy.helpers.python_security` whenever
+    it builds or rebuilds the environment (first deploy, a restore onto a
+    fresh host, a changed source): ``system_python`` first refuses the
+    nearest ``uv.lock`` when it locks either below its floor, so nothing is
+    synced, and after the sync the environment's own interpreter runs the
+    trust check of ``verify_trust``. Both run as ``user`` and never add,
+    upgrade or rewrite anything.
     """
 
     environment = venv or project_dir / ".venv"
@@ -65,10 +83,16 @@ def uv_sync(
     if python is not None:
         argv += ["--python", python]
     env = {"UV_PROJECT_ENVIRONMENT": str(environment)}
-    command = f"cd {shlex.quote(str(project_dir))} && {_as_user(user, home, env, argv)}"
+    cd = f"cd {shlex.quote(str(project_dir))} && "
+    commands = [cd + _as_user(user, home, env, argv)]
+    if security_floor:
+        # One operation, run in order and stopped by the first failure.
+        lock_check = [str(system_python), "-I", "-c", _template("python_lock_floor_check.py.txt")]
+        trust_check = [str(environment / "bin" / "python"), "-I", "-c", _template("python_security_check.py.txt")]
+        commands = [cd + _as_user(user, home, {}, lock_check), *commands, cd + _as_user(user, home, {}, trust_check)]
     return server.shell(
         name=f"uv sync {project_dir}",
-        commands=[command],
+        commands=commands,
         _if=_gate(when_changed, force=venv_missing),
     )
 

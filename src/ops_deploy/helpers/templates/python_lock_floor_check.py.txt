@@ -1,0 +1,58 @@
+# Read-only check of the uv.lock that ``uv sync`` is about to install (ops-deploy).
+# Run as ``python3 -I -c <this text>`` in the project directory, as the service user, right before
+# the sync. The lock is the nearest ``uv.lock`` from there upwards (a workspace member installs its
+# workspace root's lock). Exits 1 with one line per problem when it locks certifi or pip below the
+# floor; exits 0 silently otherwise, and when there is no lock (a frozen sync then fails by itself).
+import os
+import re
+import sys
+import tomllib
+
+FLOORS = {"certifi": (2026, 10, 19), "pip": (26, 2, 2)}
+
+
+def release(text):
+    if not re.fullmatch(r"\d+(\.\d+)*", text):
+        return None
+    parts = tuple(int(part) for part in text.split("."))
+    return parts + (0,) * (3 - len(parts))
+
+
+def nearest_lock(directory):
+    while True:
+        lock = os.path.join(directory, "uv.lock")
+        if os.path.isfile(lock):
+            return lock
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            return None
+        directory = parent
+
+
+lock = nearest_lock(os.getcwd())
+if lock is None:
+    sys.exit(0)
+with open(lock, "rb") as handle:
+    packages = tomllib.load(handle).get("package", [])
+if not isinstance(packages, list):
+    print(f"{lock}: [[package]] entries are malformed", file=sys.stderr)
+    sys.exit(1)
+problems = []
+for package in packages:
+    name = re.sub(r"[-_.]+", "-", str(package.get("name", ""))).lower()
+    if name not in FLOORS:
+        continue
+    floor = ".".join(map(str, FLOORS[name]))
+    version = str(package.get("version"))
+    locked = release(version)
+    if locked is None:
+        problems.append(f"{name} {version}: version not recognised")
+    elif locked < FLOORS[name]:
+        problems.append(f"{name} {version} is locked; {floor} or later is required")
+if problems:
+    print(
+        f"{lock} is below the certifi/pip security floor ({'; '.join(problems)}); nothing was synced. "
+        "Update the stale lock in the source, or deploy a source revision whose lock meets the floor.",
+        file=sys.stderr,
+    )
+    sys.exit(1)

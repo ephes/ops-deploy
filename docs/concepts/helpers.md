@@ -113,7 +113,7 @@ Returns a `Rollout` with the operation metas:
 The roles enable, start and then restart via handlers, so a first Ansible run
 starts the service and then restarts it. Here it is started once.
 
-## `uv_sync(project_dir, *, user, home, venv=None, python=None, args=..., uv=/usr/local/bin/uv, when_changed=None)`
+## `uv_sync(project_dir, *, user, home, venv=None, python=None, args=..., uv=/usr/local/bin/uv, when_changed=None, security_floor=True, system_python=/usr/bin/python3)`
 
 Runs, as root dropping to the service user:
 
@@ -132,6 +132,19 @@ cd <project_dir> && runuser -u <user> -- env HOME=<home> UV_PROJECT_ENVIRONMENT=
   `Installed`/`Uninstalled`/`Updated` in uv's output instead. Here the
   `when_changed` gate is what keeps a no-op deploy quiet.
 - `HOME` is set so that uv's cache belongs to the service user, not root.
+- With `security_floor` (the default) the same operation runs three
+  commands, each `cd <project_dir> && runuser -u <user> -- env HOME=<home> ...`,
+  stopping at the first failure. First, `<system_python> -I -c
+  templates/python_lock_floor_check.py.txt` refuses the nearest `uv.lock`
+  from `project_dir` upwards (a workspace member's is its root's) when it
+  locks certifi or pip below the floors of `python_security`, so nothing is
+  synced; it needs Python 3.11+ (`tomllib`). Then comes the sync. Last,
+  `<venv>/bin/python -I -c templates/python_security_check.py.txt`, the
+  check of `verify_trust`, inspects the synced environment. The guard runs
+  whenever the environment is built or rebuilt: the first deploy, a restore
+  onto a fresh host, a changed source or a missing interpreter. It never
+  adds, upgrades or rewrites a package. `security_floor=False` turns it off
+  for a caller that guards the floors itself.
 
 Why `runuser` rather than `_sudo_user`: the `_sudo` global arguments are
 banned in this package (see `tests/test_policy.py`), because pyinfra stages
@@ -169,7 +182,8 @@ anything:
   several fail closed). Explicit trust settings such as
   `SSL_CERT_FILE` are not changed or inspected.
 
-`django_site` uses both. The same floors are enforced by ops-library's
+`django_site` uses both. Every deploy that syncs through `uv_sync` gets the
+same two checks on the host (see above). The same floors are enforced by ops-library's
 `python_security_floor` role for the Ansible deploys.
 
 ## `django_manage(project_dir, *command, user, home, venv, env_file=None, when_changed=None, name=None)`

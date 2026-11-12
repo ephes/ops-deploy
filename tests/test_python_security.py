@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import shlex
 import shutil
 import subprocess
@@ -268,3 +269,67 @@ def test_django_site_refuses_a_stale_workspace_root_lock_above_the_app_dir(tmp_p
     with pytest.raises(ValueError, match=r"source: uv\.lock, a uv\.lock about to be installed"):
         run_deploy_fake(deploy_django_site, cfg, split.values(cfg), rsync=rsync, responses={**fakehost.LINUX})
     assert rsync.calls == []
+
+
+# The host-side lock check that ``helpers.python.uv_sync`` runs before every sync.
+LOCK_SCRIPT = files("ops_deploy.helpers").joinpath("templates/python_lock_floor_check.py.txt").read_text()
+
+
+def lock_check(cwd: Path) -> subprocess.CompletedProcess[str]:
+    import sys
+
+    return subprocess.run([sys.executable, "-I", "-c", LOCK_SCRIPT], cwd=cwd, capture_output=True, text=True)
+
+
+def test_host_lock_check_floors_are_the_module_floors() -> None:
+    from ops_deploy.helpers.python_security import SECURITY_FLOORS
+
+    for script in (LOCK_SCRIPT, SCRIPT):
+        (line,) = [line for line in script.splitlines() if line.startswith("FLOORS = ")]
+        assert ast.literal_eval(line.removeprefix("FLOORS = ")) == SECURITY_FLOORS
+
+
+def test_host_lock_check_refuses_a_stale_lock(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text(STALE)
+
+    result = lock_check(tmp_path)
+
+    assert result.returncode == 1
+    assert "certifi 2026.7.22 is locked; 2026.10.19 or later is required" in result.stderr
+    assert "pip 26.2.1 is locked; 26.2.2 or later is required" in result.stderr
+    assert "nothing was synced" in result.stderr
+
+
+def test_host_lock_check_passes_a_current_lock_and_no_lock(tmp_path: Path) -> None:
+    project = tmp_path / "current"
+    project.mkdir()
+    (project / "uv.lock").write_text(CURRENT)
+    empty = tmp_path / "none"
+    empty.mkdir()
+
+    for cwd in (project, empty):
+        result = lock_check(cwd)
+        assert (result.returncode, result.stderr) == (0, "")
+
+
+def test_host_lock_check_uses_the_nearest_lock_upwards(tmp_path: Path) -> None:
+    # A workspace member has no lock of its own: its workspace root's counts.
+    member = tmp_path / "packages" / "app"
+    member.mkdir(parents=True)
+    (tmp_path / "uv.lock").write_text(STALE)
+    assert lock_check(member).returncode == 1
+    # The member's own (current) lock is the nearest one.
+    (member / "uv.lock").write_text(CURRENT)
+    assert lock_check(member).returncode == 0
+
+
+def test_host_lock_check_fails_unrecognised_versions_and_malformed_locks(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text('[[package]]\nname = "Certifi"\nversion = "2026.10.19rc1"\n')
+    result = lock_check(tmp_path)
+    assert result.returncode == 1
+    assert "certifi 2026.10.19rc1: version not recognised" in result.stderr
+
+    (tmp_path / "uv.lock").write_text('package = "x"\n')
+    assert lock_check(tmp_path).returncode == 1
+    (tmp_path / "uv.lock").write_text("not = [toml")
+    assert lock_check(tmp_path).returncode != 0

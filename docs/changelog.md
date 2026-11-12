@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `helpers.python.uv_sync` guards the certifi/pip security floors of
+  `python_security` whenever it builds or rebuilds an environment (first
+  deploy, restore onto a fresh host, changed source): in the same operation,
+  before the sync, `/usr/bin/python3` refuses the nearest `uv.lock` when it
+  locks certifi below 2026.10.19 or pip below 26.2.2 (new
+  `templates/python_lock_floor_check.py.txt`, so nothing is synced), and after
+  the sync the environment's interpreter runs the `verify_trust` check. This
+  covers archive, chesslab, echoport, fastdeploy, mailgun_relay, nyxmon,
+  toyweb, weeknotes_home and work_app. Deploys with their own sync step
+  (homelab, graphyard, opaq_app, the daybook services, opsgate, voxhelm) are
+  not covered yet; django_site, metube, paperless and homeassistant keep their
+  own floor checks. It never adds or upgrades a package; `security_floor=False`
+  opts out. The sync command itself is unchanged.
+
 - `services._echoport_runner` (`daybook_operations`): the vendored Daybook
   operations backup bridge follows ops-library: the upload and the verify
   download get 300 seconds per attempt, up to three attempts 30 seconds apart,
