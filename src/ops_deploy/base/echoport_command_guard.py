@@ -37,8 +37,9 @@ never blocks a switch back); with ``shadow`` or ``rust`` a Rust failure stops th
 deploy before the policy and, in the caller, the key's line are written.
 :meth:`EchoportCommandGuardConfig.forced_command` is the line's command;
 :meth:`EchoportCommandGuardConfig.scratch_forced_command` the line of the
-optional restore scratch key (``--restore-scratch`` before the policy, impl
-``python`` only).
+optional restore scratch key (``--restore-scratch`` before the policy): always
+the Python guard, whatever ``impl`` the pinned key's line uses, because only the
+Python guard has that mode (it is installed with every ``impl``).
 
 :func:`deploy_echoport_command_guard_confirm` is ``confirm_live.yml``: run it
 only after the caller wrote the key's line and its probe went through it. It
@@ -264,10 +265,12 @@ class EchoportCommandGuardConfig(RoleConfig):
         ``echoport_remote_command_guard_scratch_forced_command``): the same guard
         and policy in ``--restore-scratch`` mode, which allows only a scratch
         restore's commands inside ``<root>/.restore-scratch-*``. Only the
-        Python guard has that mode (the role's fact is undefined otherwise)."""
+        Python guard has that mode, and it is installed with every ``impl``
+        (until the hosts retire it, PLAN.md S12), so this line runs the Python
+        guard with ``shadow`` and ``rust`` too: the deploy key's impl selects
+        who decides for that key only. The Rust guard has no scratch mode;
+        S12 needs that port first."""
 
-        if self.impl != "python":
-            raise ValueError(f"the restore scratch mode needs impl python, not {self.impl!r}")
         return f"{self.python} -I {self.path} --restore-scratch {self.policy_path}"
 
 

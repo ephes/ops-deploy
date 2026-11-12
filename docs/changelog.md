@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `base.echoport_command_guard`: `scratch_forced_command()` no longer refuses
+  impl `shadow` or `rust`. The restore scratch key's line always runs the
+  Python guard in `--restore-scratch` mode (the Rust guard has no such mode,
+  and the Python guard is installed with every impl), so a host with the
+  scratch key can run the deploy key's line in shadow or Rust mode. Retiring
+  the Python guard on such a host (PLAN.md S12) needs the scratch port first.
+
 - certifi/pip security floors for the services that sync through `uv_sync`:
   archive, chesslab, echoport, fastdeploy, nyxmon, weeknotes_home and
   work_app call `require_lock_floors` on the source they sync, while

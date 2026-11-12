@@ -298,7 +298,10 @@ optional restore scratch key (`<python> -I <path> --restore-scratch
 <policy_path>`, the role's `echoport_remote_command_guard_scratch_forced_command`):
 the same guard and policy, allowing only a scratch restore's commands inside
 `<root>/.restore-scratch-*` (ops-library role README, "Restore scratch mode").
-Only the Python guard has that mode: with `shadow` or `rust` it raises.
+Only the Python guard has that mode, so the scratch line runs the Python guard
+with every `impl` (it is installed with every `impl` until the hosts retire it,
+PLAN.md S12): `shadow` and `rust` change only the pinned deploy key's line. The
+Rust guard has no scratch mode; retiring the Python guard needs that port first.
 
 Writing the key's line (`ssh_authorized_key_entries`), the tailnet route on
 macmini and the probes through the new line belong to the caller (ops-control).
