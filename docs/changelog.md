@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `services._echoport_runner` (`daybook_operations`): the vendored Daybook
+  operations backup bridge follows ops-library: the upload and the verify
+  download get 300 seconds per attempt, up to three attempts 30 seconds apart,
+  in one shared 900-second budget (the other commands keep 240 seconds), and
+  report `upload_timeout`, `upload_failed`, `verify_timeout`, `verify_failed`
+  or `transfer_budget_exhausted` when every attempt failed. The object store
+  proxies the HEAD of a new key to its replication target; with the replica
+  unreachable that took about 135 seconds on MinIO (2026-11-05) and 10 to 81
+  seconds on RustFS 1.0.4 in a lab run. The parity test pins the new bridge
+  hash.
+
 - `services.torrent_vpn_metrics_endpoint`: the collector tells a leak from a
   failed probe. `vpn.egress_ok`/`vpn.provider_exit` are `0` only when the exit
   IPv4 equals the host's or the provider denies the exit, and `null` when a

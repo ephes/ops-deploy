@@ -1,8 +1,10 @@
 """``_echoport_runner.daybook_operations``: the Daybook operations backup bridge registration.
 
 The files are compared with what ops-library's ``daybook_operations_api_backup``
-role wrote on macmini (read 2026-11-10: the bridge's SHA-256, the policy,
-``config.json``, the sudoers rule and FastDeploy's stored service data); the
+role wrote on macmini (read 2026-11-10: the policy,
+``config.json``, the sudoers rule and FastDeploy's stored service data; the
+bridge's SHA-256 is the one with the transfer timeout and retries of
+2026-11-12); the
 kept target script runs through the check-mode wrapper against the stand-in
 Echoport model of ``test_echoport_runner_classb``. ops-control's tests compare
 the kept script with the role's text.
@@ -44,7 +46,9 @@ STORED = "select data::text from service where name"
 SCHEDULE_PROBE = "t = BackupTarget.objects.filter(name="
 
 # What the role wrote on macmini (no final newline: ``copy: content:`` of ``to_nice_json``).
-LIVE_BRIDGE_SHA256 = "cdf20bff2e4dc62be0536f0fd6b03b78f255cb84c0e262954b1c3f915dfbc224"
+# The bridge with its own transfer limit and retries (2026-11-12; before:
+# cdf20bff2e4dc62be0536f0fd6b03b78f255cb84c0e262954b1c3f915dfbc224).
+LIVE_BRIDGE_SHA256 = "9080717d0cb6e6e8a8ba4bfe859722ef1b0326e453fb7d5da657adff88628d29"
 LIVE_POLICY = """{
     "alias": "backup-daybook_operations_api",
     "backup_root": "/opt/backups/daybook_operations",
