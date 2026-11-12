@@ -55,6 +55,21 @@
   `_ . -`), as Jellyfin's does. Adding mounts changes the unit and is a
   guarded rollout with a restart.
 
+- New `services.nfs_tls_status`: a per-host NFS-over-TLS status report for
+  Nyxmon. A root exporter (Python stdlib, `ProtectSystem=strict`, on a timer)
+  writes `/var/lib/nfs-tls-status/status.json`: whether the configured units
+  are active (`systemctl show`), whether each configured mount is present
+  with the expected type, source and options (`/proc/1/mountinfo`, e.g.
+  `xprtsec=mtls`) and its mount unit active, and the days left on each
+  certificate (`openssl x509 -enddate`). An endpoint serves it in
+  metrics-httpd's `json-file` mode (Python or the pinned Rust server, basic
+  auth, Tailscale bind; `port` has no default).
+  `NfsTlsStatusConfig.check_conditions()` gives the json-metrics rules (units
+  and mounts critical, certificates a warning below `warn_days`, default 60,
+  and critical once expired, the report's age a warning);
+  `deploy_nfs_tls_status_check` upserts the check into the Nyxmon of another
+  host, like `deploy_thermal_check`.
+
 - `base.echoport_command_guard`: `scratch_forced_command()` no longer refuses
   impl `shadow` or `rust`. The restore scratch key's line always runs the
   Python guard in `--restore-scratch` mode (the Rust guard has no such mode,

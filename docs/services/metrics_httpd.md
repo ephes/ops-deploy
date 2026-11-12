@@ -13,6 +13,7 @@ shared by the deploys that render a metrics-httpd endpoint role:
 | [`static_site`](static_site.md) | `<service_name>` | `static_site_deploy` | `static` |
 | [`metrics_endpoint`](metrics_endpoints.md) | `metrics-endpoint` | `metrics_endpoint` | `script` |
 | [`torrent_vpn_metrics_endpoint`](metrics_endpoints.md) | `torrent-vpn-metrics-endpoint` | existing torrent endpoint role | `json-file` |
+| [`nfs_tls_status`](nfs_tls_status.md) | `nfs-tls-status-endpoint` | none (native) | `json-file` |
 
 Each unit keeps its unit file and Python script exactly as before. Rust is
 selected by one systemd drop-in, the role's template rendered byte for byte:
