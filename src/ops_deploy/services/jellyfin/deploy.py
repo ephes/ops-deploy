@@ -8,7 +8,9 @@ the role's (``tests/test_jellyfin_parity.py``), and the deployed bcrypt hash
 is kept while it still matches the password, as the role does since
 ops-library 2.49.1. Jellyfin itself is never restarted (the role has no task
 that notifies its restart handler) and Traefik neither (its file provider
-watches the directory).
+watches the directory). Not in the role: with ``mounts_required`` the packaged
+unit gets a ``RequiresMountsFor=`` drop-in (removed again when the list is
+empty); a changed drop-in reloads systemd but does not restart Jellyfin.
 
 Unlike the role, nothing runs that would change nothing: the repository key
 is downloaded only while the keyring is missing or ASCII-armored (the role
@@ -51,6 +53,10 @@ TEMPLATE_PACKAGE = "ops_deploy.services.jellyfin"
 TEMPLATE = "jellyfin-traefik.yml.j2"
 ROUTE_NAME = "jellyfin"
 PLACEHOLDER = "CHANGEME"
+SERVICE = "jellyfin.service"
+DROPIN_DIR = f"/etc/systemd/system/{SERVICE}.d"
+DROPIN_PATH = f"{DROPIN_DIR}/mounts-required.conf"
+DROPIN_HEADER = "# Managed by ops-deploy services.jellyfin; local changes are overwritten.\n"
 
 # jellyfin_shared/defaults/main.yml
 ROLE_MEDIA_DIRECTORIES = (
@@ -115,7 +121,8 @@ class JellyfinConfig(RoleConfig):
     media_dir_mode: Mode = "0755"
     create_media_dirs: bool = True
     # Not in the role: mount points the media directories must live on. The
-    # deploy stops before any change when one is not mounted.
+    # deploy stops before any change when one is not mounted, and the unit
+    # gets them as ``RequiresMountsFor=`` (a drop-in, removed when empty).
     mounts_required: tuple[PlainPath, ...] = ()
     http_port: int = Field(default=8096, ge=1, le=65535)
 
@@ -279,6 +286,13 @@ def render_route(cfg: JellyfinConfig, route: TraefikRoute, auth_hash: str | None
 
     user = route.basic_auth.user if route.basic_auth else ""
     return _templates().get_template(TEMPLATE).render(**role_vars(cfg, user=user, auth_hash=auth_hash or ""))
+
+
+def render_mounts_dropin(cfg: JellyfinConfig) -> str:
+    """``jellyfin.service.d/mounts-required.conf``: start only with, and stop with, the required mounts."""
+
+    paths = " ".join(str(path) for path in cfg.mounts_required)
+    return f"{DROPIN_HEADER}[Unit]\nRequiresMountsFor={paths}\n"
 
 
 def repository_line(cfg: JellyfinConfig) -> str:
@@ -483,6 +497,28 @@ def _directories(cfg: JellyfinConfig) -> None:
             _directory(path, user=cfg.media_dir_owner, group=cfg.media_dir_group, mode=cfg.media_dir_mode)
 
 
+def _mounts_dropin(cfg: JellyfinConfig) -> None:
+    """The packaged unit's ``RequiresMountsFor=`` drop-in, or its removal (a no-op when absent).
+
+    A change reloads systemd only: the running service picks up the new
+    dependency without a restart (the mounts were checked above).
+    """
+
+    if cfg.mounts_required:
+        files.directory(name=f"Ensure {DROPIN_DIR}", path=DROPIN_DIR, user="root", group="root", mode="0755")
+        dropin = files.put(
+            name=f"Install {SERVICE} mounts drop-in",
+            src=StringIO(render_mounts_dropin(cfg)),
+            dest=DROPIN_PATH,
+            user="root",
+            group="root",
+            mode="0644",
+        )
+    else:
+        dropin = files.file(name=f"Remove {SERVICE} mounts drop-in", path=DROPIN_PATH, present=False)
+    systemd.daemon_reload(name=f"Reload systemd for the {SERVICE} drop-in", _if=dropin.did_change)
+
+
 def check_basic_auth(cfg: JellyfinConfig, basic_auth: BasicAuth | None) -> None:
     """validate.yml's basic auth assertion; errors never quote the password."""
 
@@ -525,9 +561,10 @@ def deploy_jellyfin(cfg: JellyfinConfig, basic_auth: BasicAuth | None = None) ->
 
         traefik_route(traefik_config(cfg, basic_auth), renderer=renderer, restart="none")
 
+    _mounts_dropin(cfg)
     systemd.service(
         name="Enable and start jellyfin.service",
-        service="jellyfin.service",
+        service=SERVICE,
         running=True,
         enabled=cfg.service_enabled,
     )

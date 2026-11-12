@@ -57,7 +57,7 @@ compares them with the roles when `OPS_LIBRARY_PATH` is set).
 | `data_dir`, `config_dir`, `log_dir` | `/var/lib/jellyfin`, `/etc/jellyfin`, `/var/log/jellyfin` | |
 | `media_directories` | the role's three `/mnt/cryptdata/media/video/...` roots | at least one; created when `create_media_dirs` |
 | `media_dir_owner`, `media_dir_group`, `media_dir_mode` | `root`, `root`, `0755` | set exactly, special bits included (`02775` keeps setgid; `0755` clears it), as Ansible's `file` does |
-| `mounts_required` | `()` | not in the role: mount points checked (read-only) before any change |
+| `mounts_required` | `()` | not in the role: mount points checked (read-only) before any change and required by the unit (`RequiresMountsFor=` drop-in, below) |
 | `http_port` | `8096` | the route's backend and the health checks |
 | `service_enabled` | `true` | the unit is always started (the role's `jellyfin_service_state` default) |
 | `traefik_enabled`, `traefik_host` | `true`, `media.example.com` | |
@@ -125,9 +125,23 @@ repository.
    from `internal_ip_ranges`, basic auth for everyone else; the HTTP router
    on `web` redirects). Traefik is never reloaded or restarted: its file
    provider watches the directory.
-7. **Service**: `jellyfin.service` enabled (or disabled) and started. It is
-   never restarted: the role has a restart handler, but no task notifies it.
-8. **Health** (read-only): the port accepts connections (one try per second
+7. **Mounts drop-in** (not in the role): with `mounts_required`,
+   `/etc/systemd/system/jellyfin.service.d/mounts-required.conf`
+   (`root:root 0644`, the directory `0755`) holds a managed header,
+   `[Unit]` and `RequiresMountsFor=<the paths, space-separated>`. systemd
+   then orders Jellyfin after those mounts, does not start it while one is
+   missing and stops it when one is unmounted. With an empty
+   `mounts_required` the file is removed (nothing happens when it is not
+   there; the directory and any other drop-in stay). A written or removed
+   drop-in runs `systemctl daemon-reload` and nothing else: the running
+   service takes the new dependency on the reload, without a restart (the
+   mounts were checked in step 1, so the dependency is already met). The
+   drop-in comes before the start below, so a stopped service starts with
+   it.
+8. **Service**: `jellyfin.service` enabled (or disabled) and started (only
+   when it is not running). It is never restarted: the role has a restart
+   handler, but no task notifies it.
+9. **Health** (read-only): the port accepts connections (one try per second
    for `healthcheck_timeout` seconds), then the URL answers one of the
    expected statuses (`healthcheck_retries` tries, 3 s apart, redirects not
    followed).
@@ -177,7 +191,8 @@ Differences:
   matches and the role always reports "No jellyfin-ffmpeg package
   available" (seen on an Ubuntu 24.04 VM with ansible-core 2.21.5). Both
   therefore leave the `jellyfin-ffmpeg` that `jellyfin` depends on.
-- `mounts_required` is an addition (empty by default).
+- `mounts_required` is an addition (empty by default), with its
+  `RequiresMountsFor=` drop-in for the packaged unit.
 - The bcrypt hash is computed on the controller; `apache2-utils` is still
   installed (it is one of the role's base packages).
 

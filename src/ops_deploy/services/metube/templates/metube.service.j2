@@ -1,6 +1,9 @@
 [Unit]
 Description=MeTube (yt-dlp web UI)
 After={{ metube_systemd_after }}
+{% if metube_mounts_required %}
+RequiresMountsFor={{ metube_mounts_required | join(' ') }}
+{% endif %}
 
 [Service]
 User={{ metube_user }}

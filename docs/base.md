@@ -4,7 +4,7 @@
 typed config plus a `@deploy` function. Some are run on their own against a
 host (hostname, unit masks, headless mode, the Echoport remote command guard, journald, shell basics, authorized keys,
 SSH guard, dpkg foreign architectures, stale binary restart, unattended upgrades, IPv4
-options drop, remote LUKS unlock, boot-visible i915, external bind storage, NFS client mounts, tlshd), the others
+options drop, remote LUKS unlock, boot-visible i915, external bind storage, NFS client mounts, tlshd, default qdisc), the others
 are steps a service deploy calls (uv, Node.js):
 
 ```python
@@ -45,6 +45,7 @@ change.
 | `external_bind_storage` | none (result of `host_storage_migrate`) | `ExternalBindStorageConfig`, `BindSource`, `EngineBinds` | `deploy_external_bind_storage` |
 | `tlshd` | none (new) | `TlshdConfig` | `deploy_tlshd` (`tlshd_operations` inside another deploy) |
 | `nfs_client_mount` | none (new) | `NfsClientConfig`, `NfsClientMount`, `NfsHostsEntry` | `deploy_nfs_client_mount` |
+| `default_qdisc` | none (pyinfra only) | `DefaultQdiscConfig` | `deploy_default_qdisc` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -1293,6 +1294,68 @@ never remounted: new options apply at the next mount.
 disabled (if enabled), the unit file and the docker drop-in are removed, and
 systemd reloads if one was removed. On a host that never had them this is a
 no-op; the mount point is not probed.
+
+## default_qdisc
+
+No ops-library role: a pyinfra-only base deploy. It makes `fq_codel` the
+default qdisc and the root qdisc of the listed interfaces, so a saturated
+uplink (a large upload) no longer queues every other flow behind it: the RTT
+under load stays at a few milliseconds instead of tens, and nothing is rate
+limited.
+
+```python
+from ops_deploy.base import DefaultQdiscConfig, deploy_default_qdisc
+
+deploy_default_qdisc(DefaultQdiscConfig(interfaces=("enp4s0",)))
+```
+
+| Field | Default | |
+|---|---|---|
+| `qdisc` | `fq_codel` | the only accepted value |
+| `interfaces` | required | one or more kernel interface names (at most 15 characters of letters, digits, `_ . -`, not starting with `.`, `_` or `-`), each listed once |
+
+It installs:
+
+| Path | |
+|---|---|
+| `/etc/sysctl.d/60-default-qdisc.conf` (0644) | `net.core.default_qdisc = fq_codel` below a managed header |
+| `/etc/systemd/system/default-qdisc.service` (0644) | oneshot, `RemainAfterExit`, enabled (`WantedBy=multi-user.target`): one `ExecStart=/usr/sbin/tc qdisc replace dev <iface> root fq_codel` per interface, after each interface's `sys-subsystem-net-devices-<iface>.device` |
+
+Why both: `net.core.default_qdisc` only decides the qdisc of a qdisc created
+later. An interface keeps the root qdisc it got when it first came up, also
+across a link down and up. An interface the initramfs brings up (a host with
+[remote LUKS unlock](#remote_luks_unlock) and `ip=` on the kernel command
+line) gets the kernel's `pfifo_fast` (under `mq` on a NIC with several
+transmit queues) before any sysctl file applies, and keeps it. The unit sets
+the root qdisc again at every boot; the sysctl covers every qdisc created
+later (new interfaces, Docker veths, a NIC that is re-registered).
+
+While planning, the deploy reads `/proc/sys/net/core/default_qdisc` and
+`tc qdisc show dev <iface> root` for every interface and logs one line, which
+also shows in `--dry`:
+
+```text
+[host] default_qdisc: net.core.default_qdisc = fq_codel; root qdisc enp4s0 mq
+```
+
+Then it:
+
+- writes the sysctl file and runs `sysctl -w net.core.default_qdisc=fq_codel`
+  only when the running value differs;
+- writes the unit (daemon-reload only when it changed) and enables it when it
+  is not enabled; the deploy never starts it, since it sets the running
+  qdiscs itself;
+- runs `tc qdisc replace dev <iface> root fq_codel` for each interface whose
+  root qdisc is not already `fq_codel`. A root `mq` is replaced by a single
+  `fq_codel` (on a NIC with one transmit queue nothing is lost; on a NIC with
+  several, all of them then share one fq_codel instance).
+
+A converged host plans no change. The deploy refuses, before any change, a
+host that is not Linux with systemd as PID 1, has no `/usr/sbin/tc`
+(iproute2), has no listed interface (`/sys/class/net/<iface>`), or whose
+default qdisc or root qdisc it cannot read. It has no `absent` mode: remove
+the two files, `systemctl disable default-qdisc.service` and set the qdisc
+back by hand if it is ever not wanted.
 
 ## Tests
 

@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.git_source import GitSource
 from ops_deploy.helpers.traefik import Hostname
+from ops_deploy.services.compose_app.config import PlainPath
 
 SafeLine = Annotated[str, Field(pattern=r"^[^\r\n\x00]*$")]
 
@@ -57,7 +58,9 @@ class MetubeConfig(BaseServiceConfig):
     )
     traefik_enabled: bool = True
     protect_queue: bool = True
-    mounts_required: tuple[PurePosixPath, ...] = ()
+    # Checked with ``mountpoint -q`` before any change and rendered as the
+    # unit's ``RequiresMountsFor=`` (no line when empty).
+    mounts_required: tuple[PlainPath, ...] = ()
 
     @field_validator(
         "site_path", "home", "state_dir", "download_dir", "audio_download_dir", "temp_dir", "build_root", "env_dir"
