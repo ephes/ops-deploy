@@ -23,6 +23,7 @@ from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import mark_read_only, service_rollout, system_user, systemd_unit, wait_port
 from ops_deploy.helpers.probes import stdin_arguments
 from ops_deploy.helpers.python import uv_sync
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.rust_release import HOST_SCRIPT, Install, install_release
 from ops_deploy.ops import secret_file, sync_tree
 from ops_deploy.services._traefik_routes import route_put
@@ -197,6 +198,9 @@ def _python(cfg: MailgunRelayConfig) -> list[OperationMeta]:
         return []
     if cfg.python_deploy == "rsync":
         assert cfg.source_path is not None
+        # A stale certifi/pip lock fails here, before any operation. A Git
+        # source is checked out on the host; only verify_trust below covers it.
+        require_lock_floors(cfg.source_path, "mailgun-relay Python source")
         source = sync_tree(
             name="Sync explicitly selected mailgun-relay Python source",
             src=cfg.source_path,
@@ -226,6 +230,8 @@ def _python(cfg: MailgunRelayConfig) -> list[OperationMeta]:
                 args=cfg.uv_sync_args,
             )
         )
+    # Read-only and on every run; not a restart input.
+    verify_trust(cfg.venv / "bin/python", user=cfg.user, home=cfg.home, name="mailgun-relay Python")
     return result
 
 

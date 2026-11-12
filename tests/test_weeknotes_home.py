@@ -47,6 +47,7 @@ ITEMIZED_CHANGE = [">f.st...... src/daybook/views.py"]
 _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 READ_ONLY = [
     "Deploy weeknotes-home | Port preflight tcp/10062",
+    "Deploy weeknotes-home | Verify weeknotes_home certifi/pip trust",
     "Deploy weeknotes-home | Check http://127.0.0.1:10062/healthz",
 ]
 WIRING_READ_ONLY = [
@@ -542,3 +543,10 @@ def test_a_failing_wiring_probe_applies_and_probes_again(cfg: WeeknotesHomeConfi
         "Deploy weeknotes-home | Issue or reuse the FastDeploy token and upsert the Echoport backup target"
     ]
     assert run.op("Deploy weeknotes-home | Probe again: Echoport backup target").read_only
+
+
+def test_stale_lock_fails_before_any_operation(cfg: WeeknotesHomeConfig, secrets: SecretValues) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

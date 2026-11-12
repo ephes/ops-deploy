@@ -169,8 +169,14 @@ anything:
   several fail closed). Explicit trust settings such as
   `SSL_CERT_FILE` are not changed or inspected.
 
-`django_site` uses both. The same floors are enforced by ops-library's
-`python_security_floor` role for the Ansible deploys.
+`django_site` and metube use both, and so do archive, chesslab, echoport,
+fastdeploy, nyxmon, weeknotes_home and work_app (the lock check with the
+synced source checkout, `verify_trust` right after their `uv_sync` on every
+run, so a run after a failed check checks again). mailgun_relay does the same
+for its rsync Python source and runs `verify_trust` for both methods;
+paperless uses `verify_trust`, and homeassistant has its own checks. toyweb renders its own
+`pyproject.toml` without a lock and is not covered. The same floors are
+enforced by ops-library's `python_security_floor` role for the Ansible deploys.
 
 ## `django_manage(project_dir, *command, user, home, venv, env_file=None, when_changed=None, name=None)`
 

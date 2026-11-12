@@ -217,6 +217,7 @@ def test_converged_host_changes_nothing(tmp_path: Path) -> None:
 
     assert run.mutating_changed_ops == []
     assert read_only(run) == [
+        "Deploy nyxmon | Verify nyxmon certifi/pip trust",
         VALIDATE,
         "Deploy nyxmon | Wait for port 127.0.0.1:10017",
         "Deploy nyxmon | Check http://127.0.0.1:10017/",

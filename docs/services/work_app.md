@@ -70,6 +70,10 @@ only use `A-Za-z0-9._:/@%+~*-`.
 6. `uv sync --frozen --no-dev --no-install-project --python 3.14` if a source
    changed, the venv is missing, or a read-only `uv sync --check` says the
    venv does not match `uv.lock` (a sync that failed in an earlier run).
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 7. `.env` through `secret_file`, `0600`.
 8. `manage.py migrate --noinput` if the source, dependencies or `.env` changed
    (it may name another database) or a

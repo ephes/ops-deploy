@@ -75,6 +75,7 @@ CRONS = {
 READ_ONLY = [
     "Deploy echoport | Require the MinIO admin alias local of root",
     "Deploy echoport | Verify MinIO account echoport-retention",
+    "Deploy echoport | Verify echoport certifi/pip trust",
     "Deploy echoport | Verify the cleanup user can reach the MinIO bucket",
     "Deploy echoport | Check Echoport listens only on 127.0.0.1:10018",
 ]
@@ -498,7 +499,7 @@ def test_unreachable_bucket_fails_the_deploy(cfg: EchoportConfig) -> None:
     run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
-    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[2]
+    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[3]
 
 
 def test_pending_migration_runs_without_a_code_change(cfg: EchoportConfig) -> None:
@@ -596,7 +597,7 @@ def test_a_listener_check_failure_fails_the_deploy(cfg: EchoportConfig) -> None:
     run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
-    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[3]
+    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[4]
 
 
 def test_secrets_never_recorded(cfg: EchoportConfig) -> None:
@@ -962,8 +963,9 @@ def test_each_store_gets_its_account_and_alias(tmp_path: Path) -> None:
         "Deploy echoport | Require RustFS admin access through /etc/default/rustfs (rustfs)",
         "Deploy echoport | Verify MinIO account echoport-retention (rustfs)",
         READ_ONLY[2],
-        "Deploy echoport | Verify the cleanup user can reach the MinIO bucket (rustfs)",
         READ_ONLY[3],
+        "Deploy echoport | Verify the cleanup user can reach the MinIO bucket (rustfs)",
+        READ_ONLY[4],
     ]
     assert any(c.endswith("/usr/local/bin/mc ls rustfs/backups >/dev/null") for c in commands)
 
@@ -1021,3 +1023,10 @@ def test_store_aliases_are_refused_when_ambiguous(tmp_path: Path) -> None:
         make_cfg(tmp_path / "z", store_aliases=(RUSTFS_STORE.model_copy(update={"account": writer}),))
     with pytest.raises(ValueError, match="pattern"):
         StoreAlias(alias="rustfs", url="file:///x", account=RUSTFS_ACCOUNT)
+
+
+def test_stale_lock_fails_before_any_operation(cfg: EchoportConfig) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, values(cfg), rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

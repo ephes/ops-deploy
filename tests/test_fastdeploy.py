@@ -46,6 +46,7 @@ SALT = b"fixture-salt-16b"
 _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 
 READ_ONLY = [
+    "Deploy fastdeploy | Verify FastDeploy certifi/pip trust",
     "Deploy fastdeploy | Wait for port 127.0.0.1:9999",
     "Deploy fastdeploy | Check FastDeploy auth with a minted token",
 ]
@@ -177,7 +178,8 @@ def test_second_run_only_restarts(cfg: FastdeployConfig, secrets: SecretValues) 
     run = deploy(cfg, secrets, converged(cfg, secrets))
 
     assert run.mutating_changed_ops == ALWAYS
-    assert run.changed_ops == [*ALWAYS, *READ_ONLY]
+    # The trust check follows the dependency step, before the restart.
+    assert run.changed_ops == [READ_ONLY[0], *ALWAYS, *READ_ONLY[1:]]
     assert run.uploads == []
     # Only the read-only auth check reads stdin.
     assert [command for command, _ in run.stdin] == [run.executed_commands[-1]]
@@ -555,3 +557,10 @@ def test_admins_and_restore_policies_are_not_rendered_by_default(cfg: Fastdeploy
 
 def test_route_sends_hsts_without_preload(cfg: FastdeployConfig, secrets: SecretValues) -> None:
     assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1
+
+
+def test_stale_lock_fails_before_any_operation(cfg: FastdeployConfig, secrets: SecretValues) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

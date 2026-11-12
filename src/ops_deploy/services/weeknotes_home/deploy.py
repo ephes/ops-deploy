@@ -52,6 +52,7 @@ from ops_deploy.helpers import (
 )
 from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import target_shell
@@ -683,6 +684,8 @@ def deploy_weeknotes_home(
         port=cfg.postgres_port,
     )
     system_user(cfg.user, group=cfg.group, home=cfg.home, shell="/bin/bash", directories=[cfg.site_path])
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source_path, "weeknotes_home source")
     code = sync_tree(
         name="Sync daybook source",
         src=cfg.source_path,
@@ -703,6 +706,7 @@ def deploy_weeknotes_home(
         args=("--frozen", "--group", "weeknotes-home"),
         when_changed=[code],
     )
+    verify_trust(cfg.venv_path / "bin/python", user=cfg.user, home=cfg.home, name="weeknotes_home")
     env = secret_file(
         name="Write .env.weeknotes-home",
         path=cfg.env_path,

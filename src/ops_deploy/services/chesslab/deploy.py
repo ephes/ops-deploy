@@ -43,6 +43,7 @@ from ops_deploy.helpers import (
 )
 from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import TARGET_SCRIPT
@@ -532,6 +533,8 @@ def deploy_chesslab(cfg: ChesslabConfig, secrets: SecretValues, rsync: RsyncRunn
         directories=[cfg.site_path, cfg.data_path],
     )
     _database_check(cfg)
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source_path, "chesslab source")
     code = sync_tree(
         name="Sync chesslab source",
         src=cfg.source_path,
@@ -551,6 +554,7 @@ def deploy_chesslab(cfg: ChesslabConfig, secrets: SecretValues, rsync: RsyncRunn
         args=("--frozen", "--no-dev"),
         when_changed=[code],
     )
+    verify_trust(cfg.venv_path / "bin/python", user=cfg.user, home=cfg.home, name="chesslab")
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.group
     )

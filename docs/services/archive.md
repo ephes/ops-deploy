@@ -101,6 +101,10 @@ Defaults follow the role's `defaults/main.yml`.
    service user).
 7. `uv sync --no-dev --python 3.12` if the source changed, the venv is missing
    or runs another Python version.
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 8. `python manage.py migrate` and `collectstatic` (in `src/django`, env from
    `.env.shell`, as the service user) if source, dependencies or env changed.
 9. Admin account: a read-only probe (`manage.py shell`) prints, per staff or

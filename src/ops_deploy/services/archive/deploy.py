@@ -49,6 +49,7 @@ from ops_deploy.helpers import (
 )
 from ops_deploy.helpers.probes import last_line, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import target_shell
@@ -588,6 +589,8 @@ def deploy_archive(cfg: ArchiveConfig, secrets: SecretValues, rsync: RsyncRunner
     if media.is_relative_to(cfg.site_path) and media != cfg.site_path:
         # Media kept inside the site under another name must survive --delete too.
         excludes = (*excludes, f"/{media.relative_to(cfg.site_path)}/")
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source_path, "archive source")
     code = sync_tree(
         name="Sync archive source",
         src=cfg.source_path,
@@ -605,6 +608,7 @@ def deploy_archive(cfg: ArchiveConfig, secrets: SecretValues, rsync: RsyncRunner
         args=("--no-dev",),
         when_changed=[code, _python_changed(cfg)],
     )
+    verify_trust(cfg.venv_path / "bin/python", user=cfg.user, home=cfg.home, name="archive")
     changed = [code, deps, env, shell_env_op]
     for args in ("migrate --noinput", "collectstatic --noinput"):
         server.shell(
