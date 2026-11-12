@@ -31,6 +31,7 @@ from ops_deploy.ops.secret_file import secret_file
 from ops_deploy.services.rustfs.config import (
     BINARY_SHA256,
     RUSTFS_ARTIFACTS,
+    STATUS_UNIT,
     RustfsArtifact,
     RustfsConfig,
     RustfsCredentials,
@@ -217,6 +218,56 @@ def deploy_monitor(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
     unit = systemd_unit(monitor.unit, render("rustfs-replication-monitor.service.j2", cfg))
     timer = systemd_unit(f"{monitor.unit}.timer", render("rustfs-replication-monitor.timer.j2", cfg))
     service_rollout(f"{monitor.unit}.timer", units=[unit, timer])
+    retired = [f"{monitor.retired_unit}.timer", f"{monitor.retired_unit}.service"]
+    if monitor.status_port is None:
+        retired.append(f"{STATUS_UNIT}.service")
+    else:
+        deploy_status_endpoint(cfg)
+    retire_units(retired)
+
+
+def deploy_status_endpoint(cfg: RustfsConfig) -> None:
+    """The replica's loopback status endpoint; restarted when its script or unit changes."""
+    monitor = cfg.monitor
+    assert monitor is not None
+    assert monitor.status_port is not None
+    script = files.put(
+        name=f"Install {monitor.status_script_path}",
+        src=StringIO(RESOURCE.joinpath("files/replication_status.py").read_text()),
+        dest=monitor.status_script_path,
+        user="root",
+        group="root",
+        mode="0755",
+    )
+    unit = systemd_unit(STATUS_UNIT, render("rustfs-replication-status.service.j2", cfg))
+    service_rollout(STATUS_UNIT, units=[unit], restart_when=[script])
+    wait_port(monitor.status_port, host="127.0.0.1", retries=10, delay=1, name="Wait for the RustFS status endpoint")
+
+
+def retire_units(units: list[str]) -> None:
+    """Stop, disable and remove unit files this host's role no longer runs.
+
+    A host that changed its role (primary and replica swap) keeps the other
+    role's monitor units, disabled, until a deploy removes them here; nothing
+    else (state, scripts, environment) is touched.
+    """
+    paths = [f"/etc/systemd/system/{unit}" for unit in units]
+    listing = shlex.join(["sh", "-c", 'for p in "$@"; do [ ! -e "$p" ] || echo "$p"; done', "sh", *paths])
+    present = probe(listing, name="Retired RustFS monitor unit files")
+    names = shlex.join(units)
+    server.shell(
+        name="Remove retired RustFS monitor units",
+        # Stop and disable each unit on its own: one ``disable --now`` over a
+        # list skips the stop when any listed unit has no file.
+        commands=[
+            *(f"systemctl stop {shlex.quote(unit)} >/dev/null 2>&1 || true" for unit in units),
+            *(f"systemctl disable {shlex.quote(unit)} >/dev/null 2>&1 || true" for unit in units),
+            f"rm -f {shlex.join(paths)}",
+            "systemctl daemon-reload",
+            "systemctl reset-failed " + names + " >/dev/null 2>&1 || true",
+        ],
+        _if=lambda: present is None or bool(present.strip()),
+    )
 
 
 def artifact_for_host() -> RustfsArtifact:
@@ -272,8 +323,8 @@ def binary(cfg: RustfsConfig, artifact: RustfsArtifact) -> OperationMeta:
     return server.shell(name="Download pinned RustFS", commands=[binary_install_command(cfg.bin_path, artifact)])
 
 
-def port_preflight(port: int) -> OperationMeta:
-    """The loopback API port is free or held only by rustfs.service."""
+def port_preflight(port: int, unit: str = "rustfs.service") -> OperationMeta:
+    """The port is free or held only by ``unit``."""
     script = (
         f"out=$(ss -Hltnp 'sport = :{port}') || exit 1; "
         "printf '%s\\n' \"$out\" | { bad=0; "
@@ -282,11 +333,11 @@ def port_preflight(port: int) -> OperationMeta:
         "pids=$(printf '%s' \"$users\" | grep -o 'pid=[0-9]*' | cut -d= -f2); "
         '[ -n "$pids" ] || bad=1; '
         "for pid in $pids; do "
-        "grep -qx '0::/system.slice/rustfs.service' /proc/$pid/cgroup 2>/dev/null || bad=1; done; "
+        f"grep -qx '0::/system.slice/{unit}' /proc/$pid/cgroup 2>/dev/null || bad=1; done; "
         'done; [ "$bad" = 0 ]; }'
     )
     return mark_read_only(
-        server.shell(name=f"RustFS port preflight tcp/{port}", commands=[shlex.join(["sh", "-c", script])])
+        server.shell(name=f"RustFS port preflight tcp/{port} ({unit})", commands=[shlex.join(["sh", "-c", script])])
     )
 
 
@@ -308,6 +359,8 @@ def deploy_rustfs(cfg: RustfsConfig, credentials: RustfsCredentials) -> None:
         raise DeployError("RustFS data root admission failed (mount absent or foreign data); nothing changed")
     fresh = host.get_fact(File, path=cfg.service_unit) is None
     port_preflight(cfg.api_port)
+    if cfg.monitor is not None and cfg.monitor.status_port is not None:
+        port_preflight(cfg.monitor.status_port, unit=f"{STATUS_UNIT}.service")
 
     server.group(name="Ensure RustFS group", group=cfg.group, system=True)
     server.user(

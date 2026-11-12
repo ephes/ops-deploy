@@ -50,7 +50,10 @@ so a running server never has its executable overwritten.
 - With `expose_via_traefik`, `/etc/traefik/dynamic/rustfs.yml` routes
   `traefik_api_host` to the API for `internal_ip_ranges` only (no router for any
   other client, no basic auth, no compression middleware, HTTPS redirect).
-  Traefik watches the file; it is not restarted.
+  Traefik watches the file; it is not restarted. Its backend is this server
+  (`bind_host:api_port`), or with `traefik_upstream` (`host:port`) a RustFS on
+  another host, so the route can stay on the host that runs Traefik when the
+  primary moves elsewhere.
 
 ## Buckets and IAM as code
 
@@ -147,6 +150,22 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
   delta or size delta beyond the job's tolerances). The service exits 2 when
   a required job is critical. File-age checks on the markers are the
   operator's alerting hook.
+- `replica` with `status_port`: `rustfs-replication-status.service` serves
+  `GET /.well-known/rustfs-replication` on `127.0.0.1:<status_port>` for a
+  Nyxmon json-metrics check on the same host. It computes per request, from
+  the state root only, each job's `level`, `reasons`, status and marker ages,
+  and the totals `ok` (false while a required job is critical: status file
+  missing, unreadable or older than three monitor runs, probe level critical,
+  `lag.marker` at `critical_hours` or `parity.marker` at
+  `parity_critical_hours`), `warning` and `critical_jobs`. It runs as a
+  dynamic user with the state root read-only, no credentials and loopback
+  only; a preflight refuses when anything else holds the port.
+
+The monitor deploy removes the other role's units
+(`rustfs-replication-heartbeat.*` on a replica, `rustfs-replication-lag-check.*`
+on a source) and an undeclared status endpoint unit: it stops and disables each, deletes
+the unit files and reloads systemd. Scripts, environment, jobs file and state
+stay (both roles share them).
 
 Both monitor timers use `OnBootSec` and `OnActiveSec` (`timer_on_boot_sec`),
 `OnUnitActiveSec` (`timer_interval_sec`), an `OnCalendar` backstop
