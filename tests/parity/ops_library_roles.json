@@ -10,7 +10,7 @@
     "daybook_voice_memo_work_deploy": "a22b83560c5949e4bb994378797a003fc8096a5fc2dd31a0e4dbe60770b3b835",
     "dns_deploy": "199e37b870d2bcaf11f2b071d94dc465f7b2c4739ddf321a6a1bae08301f541b",
     "echoport_backup": "41ae143b397276f45824216c9fbe1d4d20abd8f1d22564d8e9e73d657c95f0d5",
-    "echoport_remote_command_guard": "bb417cb071241ed2dadc3cf18f79a02c68ba289a81ad779c78ef89699366eecf",
+    "echoport_remote_command_guard": "87d7c687210d4b9d9f74293a1ad478a783fa068e01eb738661a2f4d0fd12e7a1",
     "encrypted_volume_prepare": "775afde941a276c88202dc91502e00ac4edc08758ddf404fc71ab843af71ff7d",
     "fastdeploy_backup": "45132a474942319bda78884f1e6ef3c8616440ca7fd5cbedb9a84881dd849b0e",
     "fastdeploy_deploy": "fc618e4e508a8d6e1f4cf0927b99fc373b807668b6c712b862e235a7d3db996e",
@@ -174,6 +174,6 @@
     "software_estate_publisher": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
     "software_estate_publisher_linux": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
     "dns_deploy": "94163d3faefa2849fb2e01797897162f656c4989",
-    "echoport_remote_command_guard": "9b5d1bbe6c05cdb0aec6a97af6a4e9c39b81cbb8"
+    "echoport_remote_command_guard": "bc3acab2210b799dbe32266cbb58aba7aa5d4b1e"
   }
 }
