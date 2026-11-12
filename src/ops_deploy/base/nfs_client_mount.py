@@ -198,7 +198,8 @@ def seal_probe(mount: NfsClientMount) -> str:
     where, what = shlex.quote(str(mount.where)), shlex.quote(f"nfs4 {mount.what}")
     # A mount of the right export without the configured transport security
     # (a hand-made plain mount) is refused, not taken as converged.
-    xprtsec = next((o for o in mount.options if o.startswith("xprtsec=")), None)
+    # (The kernel shows xprtsec= only for tls and mtls, never for none.)
+    xprtsec = next((o for o in mount.options if o in ("xprtsec=tls", "xprtsec=mtls")), None)
     opts_ok = (
         "true"
         if xprtsec is None
