@@ -138,8 +138,10 @@ def test_pipeline_failure_stops_live_configuration_and_rollout(tmp_path: Path) -
     responses = {
         "apply stage": {"success": False, "stderr": "owned staged build failure"},
         "/usr/local/bin/uv --version": ["uv 0.13.4 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uvx --version": ["uvx 0.13.4 (x86_64-unknown-linux-gnu)"],
         "node --version": ["v24.22.1"],
-        **fakehost.stat("/usr/local/bin/uvx"),
+        **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
+        **fakehost.file("/usr/local/bin/uvx", "binary", mode="-rwxr-xr-x"),
         **fakehost.LINUX,
     }
     with patch("ops_deploy.services.metube.deploy.fetch_source", return_value=SourceTree(tmp_path, "a" * 40)):

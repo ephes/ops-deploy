@@ -45,7 +45,7 @@ from ops_deploy.base.stale_exe_restart import (
 )
 from ops_deploy.base.systemd_unit_masks import SystemdUnitMasksConfig, UnitMask, deploy_systemd_unit_masks
 from ops_deploy.base.unattended_upgrades import UnattendedUpgradesConfig, deploy_unattended_upgrades
-from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
+from ops_deploy.base.uv_install import UvAliasConfig, UvInstallConfig, deploy_uv_install
 
 __all__ = [
     "AuthorizedKey",
@@ -73,6 +73,7 @@ __all__ = [
     "SystemdUnitMasksConfig",
     "UnattendedUpgradesConfig",
     "UnitMask",
+    "UvAliasConfig",
     "UvInstallConfig",
     "deploy_boot_visible_i915",
     "deploy_dpkg_arch_remove",

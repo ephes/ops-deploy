@@ -13,7 +13,7 @@ from pyinfra.facts.files import File, Link
 from pyinfra.operations import files, server
 
 from ops_deploy.base._common import Sha256, Version
-from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install, installed_version
+from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install, installed_version, release, trusted_file
 from ops_deploy.helpers.checks import mark_read_only
 
 from .planning import executing
@@ -62,11 +62,16 @@ def install_uv(cfg: HomeAssistantUvConfig, *, manage: bool) -> bool:
     binary_path = cfg.install_dir + "/uv"
     is_link = bool(host.get_fact(Link, path=binary_path))
     exists = is_link or bool(host.get_fact(File, path=binary_path))
+    # Never run a foreign-owned, writable or non-executable uv; such a file counts as missing.
+    exists = exists and (is_link or trusted_file(binary_path, cfg.owner))
     current = installed_version(binary_path) if exists and not is_link else ""
     # Match the original role before delegating installation. The shared helper
     # additionally repairs a missing uvx/broken uv even with updates disabled;
     # those repairs were not part of this role's include contract.
-    needed = not exists or is_link or cfg.force_reinstall or (cfg.update_existing and current != cfg.version)
+    # A newer uv is kept, never downgraded (as deploy_uv_install does).
+    # A broken uv (no parseable version) still counts as needing the update.
+    older = not current or release(current) < release(cfg.version)
+    needed = not exists or is_link or cfg.force_reinstall or (cfg.update_existing and older)
     if needed:
         deploy_uv_install(cfg=cfg)
     else:
