@@ -66,6 +66,10 @@ Defaults follow the role's `defaults/main.yml`.
 6. Runtime packages (`python3`, `python3-venv`, `sqlite3`, `rsync`).
 7. `uv sync --frozen --no-dev --python 3.14` if the source changed or the venv
    is missing.
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 8. `.env` through `secret_file`, `0600`.
 9. `python -m django migrate` if the source or dependencies changed or a
    read-only `migrate --check` (debug key, no secret) finds unapplied

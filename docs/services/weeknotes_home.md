@@ -73,6 +73,10 @@ Defaults follow the role's `defaults/main.yml`.
 6. Cache and static directories.
 7. `uv sync --frozen --group weeknotes-home --python 3.14` if the source
    changed or the venv is missing.
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 8. The env file through `secret_file`, `0600`, and the env loader
    `files/env_exec.py` as `/home/weeknotes-home/env-exec.py` (`root:root`,
    `0644`). Every `manage.py` call runs

@@ -49,6 +49,7 @@ _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 READ_ONLY = [
     "Deploy chesslab | Port preflight tcp/10019",
     "Deploy chesslab | Check chesslab database",
+    "Deploy chesslab | Verify chesslab certifi/pip trust",
     "Deploy chesslab | Check http://127.0.0.1:10019/healthz",
 ]
 ECHOPORT_PROBE = "if test -e /home/echoport/site/manage.py; then"
@@ -391,3 +392,10 @@ def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: ChesslabC
 
 def test_route_sends_hsts_without_preload(cfg: ChesslabConfig, secrets: SecretValues) -> None:
     assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1
+
+
+def test_stale_lock_fails_before_any_operation(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

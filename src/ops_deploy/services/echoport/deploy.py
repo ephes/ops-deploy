@@ -54,6 +54,7 @@ from ops_deploy.helpers import (
 )
 from ops_deploy.helpers.probes import migrations_state, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services.rustfs.deploy import iam_client_command
@@ -1075,6 +1076,8 @@ def deploy_echoport(cfg: EchoportConfig, secrets: SecretValues, rsync: RsyncRunn
 
     system_user(cfg.user, group=cfg.group, home=cfg.home, directories=[cfg.site_path, cfg.cache_dir, cfg.logs_dir])
 
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source_path, "echoport source")
     code = sync_tree(
         name="Sync echoport source",
         src=cfg.source_path / "src/django",
@@ -1123,6 +1126,7 @@ def deploy_echoport(cfg: EchoportConfig, secrets: SecretValues, rsync: RsyncRunn
         python=cfg.python_version,
         when_changed=[*synced, stale],
     )
+    verify_trust(cfg.venv_path / "bin/python", user=cfg.user, home=cfg.home, name="echoport")
     files.link(
         name="Link venv to .venv",
         path=str(cfg.site_path / "venv"),

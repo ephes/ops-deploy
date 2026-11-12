@@ -31,6 +31,7 @@ ITEMIZED_CHANGE = [">f.st...... src/config/views.py"]
 _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 READ_ONLY = [
     "Deploy work_app | Port preflight tcp/10011",
+    "Deploy work_app | Verify work_app certifi/pip trust",
     "Deploy work_app | Check http://127.0.0.1:10011/accounts/login/",
 ]
 ECHOPORT_PROBE = "if test -e /home/echoport/site/manage.py; then"
@@ -434,3 +435,10 @@ def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: WorkAppCo
 
 def test_route_sends_hsts_without_preload(cfg: WorkAppConfig, secrets: SecretValues) -> None:
     assert len(hsts_headers(render_route(traefik_config(cfg, secrets), _HASH))) == 1
+
+
+def test_stale_lock_fails_before_any_operation(cfg: WorkAppConfig, secrets: SecretValues) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

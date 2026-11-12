@@ -116,6 +116,10 @@ credentials never leave the controller) and its ops-library version assert.
 5. A venv whose Python does not run, or is not `python_version`, is removed.
    `uv sync --frozen --no-dev --no-default-groups --python <version>` runs if
    a source file changed or the venv is missing; `site/venv` links to `.venv`.
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 6. `.env` (`0600`) through `secret_file`.
 7. `manage.py migrate --noinput` when anything above changed or a probe
    (`migrate --check`, read-only) finds pending migrations (also after an

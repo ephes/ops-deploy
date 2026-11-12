@@ -110,6 +110,10 @@ are removed from the host.
    `secret_file`, `0600`.
 6. `uv sync --frozen --python 3.14` if the source changed, the venv is missing,
    or its interpreter is another Python version (probed as the service user).
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 7. Node.js from NodeSource if `node` is missing or too old; then `npm ci` (or
    `npm install` without a lockfile) and `npm run build` with `NODE_ENV` and
    the `VITE_*` URLs if the build inputs changed (see below).

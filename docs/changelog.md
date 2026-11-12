@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- certifi/pip security floors for the services that sync through `uv_sync`:
+  archive, chesslab, echoport, fastdeploy, nyxmon, weeknotes_home and
+  work_app call `require_lock_floors` on the source they sync, while
+  planning, so a `uv.lock` that locks certifi below 2026.10.19 or pip below
+  26.2.2 fails the deploy before any operation; right after `uv_sync`,
+  `verify_trust` checks the venv read-only on every run, so a run after a
+  failed check checks again and a venv synced in an earlier run is covered
+  too. mailgun_relay does the lock check for its rsync source and runs
+  `verify_trust` for both Python methods (not a restart input). This is the
+  pattern django_site and metube already use; `uv_sync` and the shared layer
+  are unchanged. toyweb (no lock) and the deploys with their own sync step
+  (homelab, graphyard, opaq_app, the daybook services, voxhelm) are not
+  covered yet.
+
 - `base.uv_install` (Linux): converge `uv` and `uvx` independently (a
   current `uv` with a missing or other-version `uvx` reinstalls the pair, and
   the install step now fails unless both report the pinned version); repair

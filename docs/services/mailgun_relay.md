@@ -22,7 +22,12 @@ env files, caches, build output and the root `/rust/` tree. Source content chang
 (not checkout timestamps) trigger uv sync and a restart. uv sync uses the role's
 runtime-only arguments and requested Python major/minor; it only runs after a
 source change or when the interpreter is absent. Keep its inputs pinned when an
-explicit Python update must reproduce a particular runtime.
+explicit Python update must reproduce a particular runtime. With rsync, a
+`uv.lock` in `source_path` that locks certifi or pip below the
+[security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+fails the deploy before any operation (a Git source is checked out on the host,
+so only the next check covers it); with either method `verify_trust` checks the
+venv read-only on every run. It is no restart input.
 
 `impl="python"` removes the Rust drop-in before attempting any pinned Rust
 release. A failed release emits a warning and allows the Python switch to finish;

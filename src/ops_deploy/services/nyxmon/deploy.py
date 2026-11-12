@@ -41,6 +41,7 @@ from ops_deploy.helpers import (
     wait_port,
 )
 from ops_deploy.helpers.probes import probe, when_present
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, DEFAULT_INTERNAL_IP_RANGES, Hostname
 from ops_deploy.ops import secret_file, sync_tree
 from ops_deploy.services.nyxmon.agent import check_agent, install_agent, prune_agents, retire_dropin
@@ -351,6 +352,8 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
     system_user(cfg.user, home=cfg.home, directories=[cfg.site_path, cfg.cache_dir, cfg.home / "logs", *site_dirs])
 
     excludes = (*cfg.source_excludes, *cfg.persistent_excludes)
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source_path, "nyxmon source")
     code = [
         sync_tree(
             name="Sync Django source",
@@ -400,6 +403,7 @@ def deploy_nyxmon(cfg: NyxmonConfig, secrets: SecretValues, rsync: RsyncRunner =
     deps = uv_sync(
         cfg.site_path, user=cfg.user, home=cfg.home, venv=cfg.venv_path, python=cfg.python_version, when_changed=code
     )
+    verify_trust(cfg.venv_path / "bin/python", user=cfg.user, home=cfg.home, name="nyxmon")
     files.link(
         name="Link venv to .venv",
         path=str(cfg.site_path / "venv"),

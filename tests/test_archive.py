@@ -54,6 +54,7 @@ MEDIA_PROBE = f"{SITE}/archive-media probe"
 ECHOPORT_PROBE = '"mode": "check"'
 RETIRED_PROBE = "ls /etc/systemd/system/archive-quote-classifier.timer"
 READ_ONLY = [
+    "Deploy archive | Verify archive certifi/pip trust",
     "Deploy archive | Wait for port 127.0.0.1:10041",
     "Deploy archive | Check http://127.0.0.1:10041/",
 ]
@@ -500,3 +501,10 @@ def test_route_sends_hsts_without_preload(cfg: ArchiveConfig) -> None:
     secrets = values(cfg)
 
     assert len(hsts_headers(render_role("archive.traefik.yml.j2", resolve(cfg, secrets), secrets))) == 1
+
+
+def test_stale_lock_fails_before_any_operation(cfg: ArchiveConfig) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, values(cfg), rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

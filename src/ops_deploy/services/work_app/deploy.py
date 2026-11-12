@@ -42,6 +42,7 @@ from ops_deploy.helpers import (
 )
 from ops_deploy.helpers.probes import last_line, migrations_state, probe, uv_sync_state, verify_probe, when_present
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
+from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, sync_tree
 from ops_deploy.services._echoport import TARGET_SCRIPT
@@ -417,6 +418,8 @@ def deploy_work_app(cfg: WorkAppConfig, secrets: SecretValues, rsync: RsyncRunne
         directories=[cfg.site_path, cfg.static_root],
         mode="0750",
     )
+    # A stale certifi/pip lock fails here, before any operation.
+    require_lock_floors(cfg.source_path, "work_app source")
     # The role's synchronize per directory (--delete inside it) and copy of the top-level files.
     synced: list[OperationMeta] = [
         sync_tree(
@@ -456,6 +459,7 @@ def deploy_work_app(cfg: WorkAppConfig, secrets: SecretValues, rsync: RsyncRunne
         # Also while the venv is out of step with the lock file (a failed earlier run).
         when_changed=None if deps_stale else [*synced, *([stale] if stale else [])],
     )
+    verify_trust(cfg.venv_path / "bin/python", user=cfg.user, home=cfg.home, name="work_app")
     if deps_state is None:
         verify_probe(deps_check, name="work_app dependencies", expect="current")
     env = secret_file(

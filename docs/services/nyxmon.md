@@ -81,6 +81,10 @@ root-anchored excludes, so the database survives `--delete`.
    `secret_file`, `0600`.
 5. `uv sync --frozen --no-dev --no-default-groups --python 3.13` if the source
    changed or the venv is missing; `site/venv` symlink to `.venv`.
+   Before any operation, a `uv.lock` in the source that locks certifi or pip
+   below the [security floors](../concepts/helpers.md#certifipip-security-floors-ops_deployhelperspython_security)
+   fails the deploy; after this step `verify_trust` checks the venv read-only
+   on every run, also when nothing was synced.
 6. `migrate` and `collectstatic` if the sync ran or the source changed.
 7. The pinned Rust agent release is installed
    and validated, or validated read-only when it is installed already (see

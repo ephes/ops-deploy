@@ -134,14 +134,16 @@ def deploy(
     return run
 
 
+TRUST = "Deploy nyxmon | Verify nyxmon certifi/pip trust"
 READ_ONLY = [
+    TRUST,
     "Deploy nyxmon | Wait for port 127.0.0.1:10017",
     "Deploy nyxmon | Check http://127.0.0.1:10017/",
     "Deploy nyxmon | Check nyxmon-monitor runs the Rust agent",
     "Deploy nyxmon | Check nyxmon-monitor OpsGate settings",
 ]
 # A converged host validates the installed release read-only first.
-CONVERGED_READ_ONLY = ["Deploy nyxmon | Validate nyxmon-agent 0.1.0", *READ_ONLY]
+CONVERGED_READ_ONLY = [TRUST, "Deploy nyxmon | Validate nyxmon-agent 0.1.0", *READ_ONLY[1:]]
 AGENT_DROPIN = "/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf"
 
 
@@ -496,3 +498,10 @@ def test_sqlite_privacy_only_tolerates_vanishing_transient_sidecars(
     )
     assert marker.exists(), "The injected disappearance must execute"
     assert (result.returncode == 0) == (filename == "db.sqlite3-journal"), result.stderr
+
+
+def test_stale_lock_fails_before_any_operation(cfg: NyxmonConfig, secrets: SecretValues) -> None:
+    # certifi/pip below the security floor: refused on the controller, nothing planned or run.
+    (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
+    with pytest.raises(ValueError, match="security floor"):
+        deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))

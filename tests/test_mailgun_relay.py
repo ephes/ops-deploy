@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import importlib.util
 import io
@@ -18,9 +19,10 @@ from pyinfra.api import deploy
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.helpers.traefik import route_guard_command
+from ops_deploy.ops import sync_tree
 from ops_deploy.services.mailgun_relay import MailgunRelayConfig
-from ops_deploy.services.mailgun_relay.deploy import _ingress, render_role, validate_secrets
-from ops_deploy.testing import run_deploy_fake
+from ops_deploy.services.mailgun_relay.deploy import _ingress, _python, render_role, validate_secrets
+from ops_deploy.testing import RecordingRsyncRunner, run_deploy_fake
 from tests import fakehost
 
 REF = SecretRef("fixture.yml")
@@ -348,3 +350,37 @@ def test_pruning_projection_accounts_for_new_install_before_repeat(
     monkeypatch.setattr(release_module.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="0"))
     cfg = {"root": str(root), "version": "0.2.3", "unit": "fixture", "keep": 2, "dropin": str(dropin), "impl": "rust"}
     assert {p.name for p in release_module.prunable(cfg, projected=True)} == {"0.2.0", "0.2.1"}
+
+
+def rsync_source(root: Path, certifi: str) -> Path:
+    (root / "src/mailgun_relay").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname = 'mailgun-relay'\n")
+    (root / "uv.lock").write_text(f'[[package]]\nname = "certifi"\nversion = "{certifi}"\n')
+    return root
+
+
+def test_python_rsync_refuses_a_stale_lock_before_any_operation(tmp_path: Path) -> None:
+    cfg = config(python_deploy="rsync", source_path=rsync_source(tmp_path, "2026.7.22"))
+    with pytest.raises(ValueError, match="security floor"):
+        run_deploy_fake(_python, cfg, responses=fakehost.LINUX)
+
+
+def test_python_trust_check_runs_every_time_and_is_no_restart_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "ops_deploy.services.mailgun_relay.deploy.sync_tree",
+        functools.partial(sync_tree, runner=RecordingRsyncRunner()),
+    )
+    cfg = config(python_deploy="rsync", source_path=rsync_source(tmp_path, "2026.10.19"))
+    trust = "Verify mailgun-relay Python certifi/pip trust"
+    # The venv exists and the rsync plans no change: no uv sync, but the trust check still runs.
+    responses = {**fakehost.LINUX, "if test -x": {"stdout": ["present", "__mailgun_ok__"]}}
+    returned: list[list[Any]] = []
+    run = run_deploy_fake(lambda c: returned.append(_python(c)), cfg, responses=responses)
+
+    assert run.succeeded
+    assert trust in [op.name for op in run.ops if op.read_only]
+    assert not any("uv sync" in c for c in run.executed_commands)
+    # Only the source sync is a restart input; the check is not.
+    assert len(returned[0]) == 1
