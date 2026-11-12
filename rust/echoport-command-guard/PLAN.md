@@ -1255,7 +1255,10 @@ GoToSocial restore and snapshot.
    freshness alert that the guard causes. On any of these, roll back first
    and investigate afterwards.
 6. **Retirement on the hosts** (S12): at least 14 days after S11b with no
-   incident.
+   incident. Blocked on a host with the restore scratch key (staging since
+   2026-11-12) until the Rust guard has a `--restore-scratch` mode or that
+   key is removed: the scratch key's line runs the Python guard file with
+   every impl (role README, "Restore scratch mode").
 7. **Retirement in the repo** (S13, Q5): 30 days after S11b with no
    incident, or at the first runner change after that.
 
@@ -1725,7 +1728,7 @@ Rules, as in the precedents:
 | S10b | Shadow, production | 6.5 step 3. | S10a (≥ 24 h clean), coordinator go | overlaps S10a's soak | **yes** | 1.5 + 72 h soak |
 | S11a | Cutover, staging, and rollback drills | 6.5 step 4, drills (a)–(c). | S10a (gate), S10b running | no | **yes** | 2 + 72 h soak |
 | S11b | Cutover, production | 6.5 step 5. | S11a (soak clean), S10b (gate), coordinator go | no | **yes** | 1.5 |
-| S12 | Retire Python on the hosts | Role: with impl `rust` the Python guard file is removed from the host and the `shadow` impl is removed; the default stays `python` for other consumers until S13. ops-control: host_vars cleanup, runbooks (rollback then means re-installing Python by a role run with `impl: python`, still one command). Deploy both hosts. | S11b + 14 days | no | **yes** | 2 |
+| S12 | Retire Python on the hosts | Role: with impl `rust` the Python guard file is removed from the host and the `shadow` impl is removed; the default stays `python` for other consumers until S13. ops-control: host_vars cleanup, runbooks (rollback then means re-installing Python by a role run with `impl: python`, still one command). Deploy both hosts. | S11b + 14 days; on a host with the restore scratch key also a Rust `--restore-scratch` mode (or the key removed), because the scratch line runs the Python guard file with every impl | no | **yes** | 2 |
 | S13 | Retire Python in the repo | Q5 (30 days after S11b with no incident, or the first runner change after that): delete `guard.py`, make the Rust binary the source for the runner-shape tests (`--decide`) and for ops-control's policy test (`--check-policy`), make the role default `rust`, remove the impl selector's Python branch. | S12, S11b + 30 days (Q5) | no | no | 3 |
 
 **Parallel waves:**
