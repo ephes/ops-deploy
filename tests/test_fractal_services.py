@@ -247,7 +247,21 @@ def test_actual_ansible_template_oracle() -> None:
     tm = SambaTimeMachineConfig.model_validate(inputs["tm"])
     for resource in ("smb.conf", "smb-timemachine.conf"):
         assert tm_render(tm, resource) == expected["tm/" + resource]
-    assert fruit_block(tm) == expected["fruit"]
+    # The oracle's single global fruit block is split (docs/services/
+    # fractal_storage_services.md, "Global section repair"): the global-only
+    # options stay in [global], the share options join the Time Machine
+    # snippet. Together they carry exactly the oracle's settings.
+    from ops_deploy.services.samba_timemachine.render import snippet
+
+    def settings(text: str) -> set[str]:
+        return {" ".join(line.split()) for line in text.splitlines() if line.strip() and line.strip()[0] not in "#;"}
+
+    template = tm_render(tm, "smb-timemachine.conf")
+    assert snippet(tm).startswith(template)
+    global_part, share_part = settings(fruit_block(tm)), settings(snippet(tm)) - settings(template)
+    assert global_part == {"fruit:model = MacSamba", "fruit:nfs_aces = no"}
+    assert global_part | share_part | {"vfs objects = fruit streams_xattr"} == settings(expected["fruit"])
+    assert "vfs objects = fruit streams_xattr" in settings(template)
     shares = SambaSharesConfig.model_validate(inputs["shares"])
     for index, row in enumerate(shares.shares):
         assert share_render(shares, row, "smb-share.conf") == expected["share" + str(index)]
@@ -273,21 +287,37 @@ def test_tm_primary_group_membership_does_not_reassert_usermod() -> None:
     assert not any("/owned" in command and "chown" in command for command in result.fact_commands)
 
 
-def test_new_samba_include_follows_later_globals_but_existing_include_is_never_moved() -> None:
+def test_snippet_includes_move_to_the_end_of_global_but_other_includes_stay() -> None:
     module = script("samba_config")
     original = (
-        "[global]\n include = /etc/samba/old.conf\n workgroup = OWNED\n"
-        " server min protocol = SMB3\n\n[unowned]\n path = /owned\n"
+        "[global]\n include = /etc/samba/smb.conf.d/old.conf\n include = /etc/samba/unowned.conf\n"
+        " workgroup = OWNED\n server min protocol = SMB3\n\n[unowned]\n path = /owned\n"
     )
-    request = {"base": "UNUSED", "fragments": [{"path": "/etc/samba/new.conf"}], "fruit": None}
+    request = {
+        "base": "UNUSED",
+        "snippet_dir": "/etc/samba/smb.conf.d",
+        "fragments": [{"path": "/etc/samba/smb.conf.d/new.conf"}],
+        "fruit": None,
+    }
     updated = module.candidate(original, request)
-    assert updated.index("include = /etc/samba/old.conf") < updated.index("workgroup = OWNED")
-    assert updated.index("server min protocol = SMB3") < updated.index("include = /etc/samba/new.conf")
-    assert updated.index("include = /etc/samba/new.conf") < updated.index("[unowned]")
+    # The unowned include outside the snippet directory keeps its place.
+    assert updated.index("include = /etc/samba/unowned.conf") < updated.index("workgroup = OWNED")
+    # A snippet-directory include (owned by another deploy) moves after the
+    # later globals; the new owned include follows it, both before [unowned].
+    assert updated.index("server min protocol = SMB3") < updated.index("include = /etc/samba/smb.conf.d/old.conf")
+    assert updated.index("smb.conf.d/old.conf") < updated.index("smb.conf.d/new.conf") < updated.index("[unowned]")
+    assert updated.count("include = /etc/samba/smb.conf.d/old.conf") == 1
     assert module.candidate(updated, request) == updated
 
 
-def test_only_generated_include_relocated_for_a_missing_base() -> None:
+def test_owned_include_outside_global_is_neither_moved_nor_duplicated() -> None:
+    module = script("samba_config")
+    original = "[global]\n workgroup = OWNED\n[unowned]\n path = /owned\n include = /etc/samba/smb.conf.d/a.conf\n"
+    request = {"base": "UNUSED", "fragments": [{"path": "/etc/samba/smb.conf.d/a.conf"}], "fruit": None}
+    assert module.candidate(original, request) == original
+
+
+def test_generated_include_relocated_for_a_missing_base_and_an_existing_one() -> None:
     module = script("samba_config")
     base = "[global]\n include = /etc/samba/generated.conf\n workgroup = OWNED\n server min protocol = SMB3\n"
     request = {"base": base, "fragments": [{"path": "/etc/samba/generated.conf"}], "fruit": None}
@@ -295,8 +325,29 @@ def test_only_generated_include_relocated_for_a_missing_base() -> None:
     assert result.index("server min protocol = SMB3") < result.index("include = /etc/samba/generated.conf")
     assert result.count("include = /etc/samba/generated.conf") == 1
     assert module.candidate(result, request) == result
-    # Existing source with the original buggy ordering remains byte-current.
-    assert module.candidate(base, request) == base
+    # An installed file with the original (too early) order is repaired too.
+    assert module.candidate(base, request) == result
+
+
+@pytest.mark.parametrize(
+    ("line", "disabled"),
+    [
+        ("   map to guest = bad user", True),
+        ("\tMapToGuest=Bad Password", True),
+        ("   map to guest = never", False),
+        ("   map to guest = Never", False),
+        ("   usershare allow guests = yes", True),
+        ("   usershare allow guests = no", False),
+    ],
+)
+def test_global_guest_settings_are_commented_out(line: str, disabled: bool) -> None:
+    module = script("samba_config")
+    original = f"[global]\n{line}\n[owned]\n{line}\n"
+    request: dict[str, Any] = {"base": "UNUSED", "fragments": [], "fruit": None}
+    updated = module.candidate(original, request)
+    expected_global = module.GUEST_OFF + line.strip() if disabled else line
+    assert updated == f"[global]\n{expected_global}\n[owned]\n{line}\n"
+    assert module.candidate(updated, request) == updated
 
 
 def test_samba_ambiguous_global_or_fruit_marker_refuses() -> None:
@@ -306,6 +357,137 @@ def test_samba_ambiguous_global_or_fruit_marker_refuses() -> None:
         module.candidate("[global]\n[global]\n", request)
     with pytest.raises(ValueError, match="ambiguous managed fruit"):
         module.candidate("[global]\n" + module.BEGIN + "\n", request)
+
+
+UBUNTU_SMB_CONF = """#======================= Global Settings =======================
+
+[global]
+   include = /etc/samba/smb.conf.d/owned.conf
+   include = /etc/samba/smb.conf.d/tm.conf
+# BEGIN ANSIBLE MANAGED - vfs_fruit global settings
+# macOS/Time Machine compatibility (vfs_fruit)
+   vfs objects = fruit streams_xattr
+   fruit:metadata = stream
+   fruit:model = MacSamba
+   fruit:posix_rename = yes
+   fruit:veto_appledouble = no
+   fruit:nfs_aces = no
+   fruit:wipe_intentionally_left_blank_rfork = yes
+   fruit:delete_empty_adfiles = yes
+# END ANSIBLE MANAGED - vfs_fruit global settings
+   include = /etc/samba/smb.conf.d/*.conf
+
+   workgroup = WORKGROUP
+;   interfaces = 127.0.0.0/8 eth0
+   log file = /var/log/samba/log.%m
+   server role = standalone server
+   passwd chat = *Enter\\snew\\s*\\spassword:* %n\\n
+   map to guest = bad user
+   usershare allow guests = yes
+
+#======================= Share Definitions =======================
+
+;[homes]
+;   browseable = no
+
+[printers]
+   path = /var/tmp
+"""
+
+
+def samba_sections(text: str, snippets: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Samba's section assignment: an include continues in the included file's last section."""
+    sections: dict[str, dict[str, str]] = {}
+    current = ""
+
+    def parse(source: str) -> None:
+        nonlocal current
+        for raw in source.splitlines():
+            line = raw.strip()
+            if not line or line[0] in "#;":
+                continue
+            if line.startswith("["):
+                current = line.strip("[]").casefold()
+                sections.setdefault(current, {})
+                continue
+            key, value = (part.strip() for part in line.split("=", 1))
+            if key.casefold() == "include":
+                parse(snippets.get(value, ""))
+                continue
+            sections.setdefault(current, {})[" ".join(key.casefold().split())] = value
+
+    parse(text)
+    return sections
+
+
+def test_live_shaped_config_puts_every_global_into_global_and_keeps_share_options() -> None:
+    from ops_deploy.services.samba_timemachine.render import fruit_block, snippet
+
+    module = script("samba_config")
+    tm = SambaTimeMachineConfig(users=("owned_tm",), snippet_path="/etc/samba/smb.conf.d/tm.conf")
+    snippets = {
+        "/etc/samba/smb.conf.d/owned.conf": "[owned]\n path = /owned\n",
+        "/etc/samba/smb.conf.d/tm.conf": snippet(tm),
+    }
+    directory = "/etc/samba/smb.conf.d"
+    tm_request = {
+        "base": "UNUSED",
+        "snippet_dir": directory,
+        "fruit": fruit_block(tm),
+        "fragments": [{"path": tm.snippet_path}],
+    }
+    share_request = {
+        "base": "UNUSED",
+        "snippet_dir": directory,
+        "fruit": None,
+        "fragments": [{"path": directory + "/owned.conf"}],
+    }
+    before = samba_sections(UBUNTU_SMB_CONF, snippets)
+    assert "server role" in before["timemachine"]
+    assert "server role" not in before["global"]
+
+    updated = module.candidate(module.candidate(UBUNTU_SMB_CONF, tm_request), share_request)
+    # The share deploy alone would turn the old block's share options into
+    # defaults for every share: it refuses until Time Machine has deployed.
+    with pytest.raises(ValueError, match="deploy samba_timemachine first"):
+        module.candidate(UBUNTU_SMB_CONF, share_request)
+    # The Time Machine deploy alone already repairs the whole file; afterwards
+    # both deploys are current.
+    tm_only = module.candidate(UBUNTU_SMB_CONF, tm_request)
+    assert tm_only == updated
+    assert "vfs objects" not in samba_sections(tm_only, snippets)["global"]
+    assert module.candidate(updated, tm_request) == updated
+    assert module.candidate(updated, share_request) == updated
+
+    after = samba_sections(updated, snippets)
+    assert after["global"] == {
+        "fruit:model": "MacSamba",
+        "fruit:nfs_aces": "no",
+        "workgroup": "WORKGROUP",
+        "log file": "/var/log/samba/log.%m",
+        "server role": "standalone server",
+        "passwd chat": "*Enter\\snew\\s*\\spassword:* %n\\n",
+    }
+    assert after["owned"] == {"path": "/owned"}
+    assert after["printers"] == {"path": "/var/tmp"}
+
+    # Time Machine keeps every share option it had through the misplaced block.
+    def fruit(options: dict[str, str]) -> dict[str, str]:
+        return {key: value for key, value in options.items() if key.startswith(("fruit:", "vfs"))}
+
+    share_options = fruit(before["timemachine"])
+    for key in ("fruit:model", "fruit:nfs_aces"):
+        share_options.pop(key)
+    assert fruit(after["timemachine"]) == share_options
+    assert "map to guest" not in after["global"]
+    assert "usershare allow guests" not in after["global"]
+    # The snippet includes now sit directly before the first share section.
+    tail = updated[: updated.index("[printers]")].splitlines()[-3:]
+    assert tail == [
+        "   include = /etc/samba/smb.conf.d/owned.conf",
+        "   include = /etc/samba/smb.conf.d/tm.conf",
+        "   include = /etc/samba/smb.conf.d/*.conf",
+    ]
 
 
 def samba_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[ModuleType, list[list[str]]]:
@@ -373,7 +555,7 @@ def test_samba_snippet_only_change_reloads_instead_of_restarting(
 def test_samba_base_change_still_restarts_both_daemons(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     module, commands = samba_host(monkeypatch, tmp_path)
     request = samba_request(tmp_path, "[owned]\n    path = /owned\n")
-    request["fruit"] = "   vfs objects = fruit streams_xattr\n"
+    request["fruit"] = "   fruit:nfs_aces = no\n"
     assert samba_apply_and_rollout(module, request) == "restart"
     assert [argv for argv in commands if argv[0] == "systemctl"] == [
         ["systemctl", "restart", "smbd"],
@@ -399,7 +581,7 @@ def test_samba_recorded_reload_debt_upgrades_to_restart_on_a_base_change(
     (tmp_path / "state").mkdir()
     (tmp_path / "state/restart-owed.json").write_text(json.dumps(module.RELOAD_DEBT))
     request = samba_request(tmp_path, "[owned]\n    path = /owned\n")
-    request["fruit"] = "   vfs objects = fruit streams_xattr\n"
+    request["fruit"] = "   fruit:nfs_aces = no\n"
     assert samba_apply_and_rollout(module, request) == "restart"
     assert ["systemctl", "restart", "smbd"] in commands
     assert ["systemctl", "restart", "nmbd"] in commands

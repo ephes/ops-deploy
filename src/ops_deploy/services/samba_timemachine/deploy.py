@@ -12,7 +12,7 @@ from ops_deploy.helpers.probes import probe
 from ops_deploy.services._samba import deploy as common
 
 from .config import SambaTimeMachineConfig
-from .render import fruit_block, render
+from .render import fruit_block, render, snippet
 
 
 def validate_secrets(cfg: SambaTimeMachineConfig, secrets: SecretValues) -> None:
@@ -58,7 +58,7 @@ def deploy_samba_timemachine(cfg: SambaTimeMachineConfig, secrets: SecretValues)
         cfg,
         base=render(cfg, "smb.conf"),
         fruit=fruit_block(cfg),
-        fragments=[{"path": cfg.snippet_path, "content": render(cfg, "smb-timemachine.conf")}],
+        fragments=[{"path": cfg.snippet_path, "content": snippet(cfg)}],
     )
     common.configure(name="Reconcile Time Machine config with native candidate validation", payload=payload)
     common.accounts(

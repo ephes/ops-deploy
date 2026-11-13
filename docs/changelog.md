@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- `samba_share` / `samba_timemachine` smb.conf repair: global settings now
+  stay in `[global]`. Before, the snippet `include` lines sat at the top of
+  `[global]`, and Samba parsed every later global line (the vfs_fruit block,
+  the distro's log, `server role`, PAM and guest settings) into the last
+  included share. The config helper now moves owned includes and every
+  include of `snippet_dir` (the request carries it) to the end of `[global]`,
+  directly before the next section, in their existing order; other includes
+  stay. It comments out the distro's `map to guest` (unless `never`) and
+  `usershare allow guests = yes` in `[global]` (`# ops-deploy: no guest
+  access: ...`), so no guest access starts to apply. The managed vfs_fruit
+  block in `[global]` keeps only the global-only options (`fruit:model`,
+  `fruit:nfs_aces = no`); the share options (`vfs objects`, `fruit:metadata`,
+  `fruit:posix_rename`, `fruit:veto_appledouble`,
+  `fruit:wipe_intentionally_left_blank_rfork`, `fruit:delete_empty_adfiles`)
+  move into the Time Machine snippet, so other shares do not start loading
+  vfs_fruit. While the managed block still holds share options (a host from
+  before this change), every deploy except `samba_timemachine` refuses
+  ("deploy samba_timemachine first"); the Time Machine deploy repairs the
+  whole file alone, rewriting smb.conf and restarting smbd and nmbd once
+  (ops-control: Fractal). The helper's failure message now names the reason
+  for its own refusals.
 - `infra.dsstore_cleanup` (new; `DsStoreCleanupConfig`,
   `deploy_dsstore_cleanup`): a nightly systemd timer that removes macOS
   `.DS_Store` files below the configured directories

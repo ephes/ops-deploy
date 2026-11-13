@@ -16,14 +16,28 @@ def render(cfg: SambaTimeMachineConfig, resource: str) -> str:
 
 
 def fruit_block(cfg: SambaTimeMachineConfig) -> str:
+    """The managed block in [global]: only vfs_fruit's global-only options.
+
+    The share options (vfs objects, metadata, POSIX rename, AppleDouble
+    handling) are in the Time Machine snippet (:func:`snippet`), so they do not
+    become defaults for every other share on the host.
+    """
     return (
-        "# macOS/Time Machine compatibility (vfs_fruit)\n"
-        "   vfs objects = fruit streams_xattr\n"
-        f"   fruit:metadata = {cfg.fruit_metadata}\n"
+        "# macOS/Time Machine compatibility (vfs_fruit global-only options;\n"
+        "# the share options are in the Time Machine snippet)\n"
         f"   fruit:model = {cfg.fruit_model}\n"
-        f"   fruit:posix_rename = {'yes' if cfg.fruit_posix_rename else 'no'}\n"
-        "   fruit:veto_appledouble = no\n"
         "   fruit:nfs_aces = no\n"
-        "   fruit:wipe_intentionally_left_blank_rfork = yes\n"
-        "   fruit:delete_empty_adfiles = yes\n"
+    )
+
+
+def snippet(cfg: SambaTimeMachineConfig) -> str:
+    """The Time Machine share snippet: the role template plus the fruit share options."""
+    return render(cfg, "smb-timemachine.conf") + (
+        "\n"
+        "    # macOS compatibility (vfs_fruit share options)\n"
+        f"    fruit:metadata = {cfg.fruit_metadata}\n"
+        f"    fruit:posix_rename = {'yes' if cfg.fruit_posix_rename else 'no'}\n"
+        "    fruit:veto_appledouble = no\n"
+        "    fruit:wipe_intentionally_left_blank_rfork = yes\n"
+        "    fruit:delete_empty_adfiles = yes\n"
     )

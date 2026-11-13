@@ -263,7 +263,8 @@ is replaced or relabeled as owned to make advertised defaults appear enforced. `
 `service_state="started"` manage both smbd/nmbd. Stopped/restarted are explicit
 caller choices. The running path waits for loopback445 without a data operation.
 
-Existing smb.conf globals/unowned includes and shares are preserved. A minimal
+Existing smb.conf globals/unowned includes and shares are preserved, except for
+the global section repair below. A minimal
 base is created only if missing. Candidate fragments and the complete candidate
 are checked by native `testparm` before installation. Known config writes record
 restart debt first; a failed/interrupted rollout keeps it for an exact retry at
@@ -288,15 +289,40 @@ record; replace it with the plain restart record (which only makes the next
 rollout restart) rather than deleting it.
 A current config/account/service deployment issues no managed command.
 
-**Fresh include placement exception:** the original cf3 role inserts includes
-immediately after `[global]`, and its base template also places one before
-later globals. Samba can keep parsing in the last included share section;
-later globals then produce warnings or lose their intended scope. New includes
-are placed at the end of the textual global body before its next explicit
-section. Only the generated include in a newly created base is relocated.
-Already-existing includes and their byte order are never rearranged, including
-on a current installation. Vendored templates retain original source bytes;
-this documented refinement happens during candidate reconciliation.
+**Global section repair (include placement, guest settings):** the original
+cf3 role inserts includes immediately after `[global]`, and its base template
+also places one before later globals. Samba then parses every later global
+line into the last included share section: global-only settings are ignored
+(with a "Global parameter ... found in service section" warning) and share
+settings become options of that share only. The config helper therefore moves
+owned include lines, and every include whose operand lies directly in
+`snippet_dir` (snippets of the other Samba deploy on the same host, the
+distro-era `smb.conf.d/*.conf`), to the end of the textual `[global]` body,
+directly before the next section header, in their existing order; new owned
+includes follow them. Other includes and all other unowned lines keep their
+place and bytes, with one exception: in `[global]`, `map to guest` with a value
+other than `never` and `usershare allow guests = yes` are commented out
+(`# ops-deploy: no guest access: <original line>`), because the managed shares
+refuse guests and the distro defaults would otherwise start to apply once
+`[global]` is parsed whole. An owned include that already sits in a later
+section is left there and not duplicated. The managed vfs_fruit block in
+`[global]` holds only fruit's global-only options (`fruit:model`,
+`fruit:nfs_aces = no`); the share options (`vfs objects = fruit
+streams_xattr`, `fruit:metadata`, `fruit:posix_rename`,
+`fruit:veto_appledouble = no`, `fruit:wipe_intentionally_left_blank_rfork`,
+`fruit:delete_empty_adfiles`) are appended to the Time Machine snippet, so a
+host's other shares do not start loading vfs_fruit (which would also convert
+their existing `._*` AppleDouble files). The block in `[global]` may only
+hold those global-only options (`fruit:aapl`, `fruit:copyfile`,
+`fruit:model`, `fruit:nfs_aces`): on a host from before this change the old
+block still carries the share options, so every deploy other than
+`samba_timemachine` (which rewrites the block) refuses with "managed fruit
+block holds share options; deploy samba_timemachine first" instead of
+promoting them to defaults for every share. Deploy `samba_timemachine` first
+there; it repairs the whole file alone. Vendored templates retain original
+source bytes; both refinements happen in the helper and in
+`samba_timemachine.render.snippet`. On an installed file with the old order
+the first deploy rewrites smb.conf and restarts smbd and nmbd once.
 
 ### Existing credentials and native creation limits
 

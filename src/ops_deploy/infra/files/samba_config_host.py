@@ -1,6 +1,10 @@
 """Preserving Samba configuration and a small durable restart-owed record.
 
-Candidate testparm runs before managed writes; unrelated includes/globals stay.
+Candidate testparm runs before managed writes; unrelated includes/globals stay,
+except that owned and snippet-directory includes move to the end of [global]
+(so later globals are not parsed into the last included share) and distro
+guest settings (map to guest other than never, usershare allow guests) are
+commented out.
 No share data is opened. Restart only consumes known config debt, deduplicated
 for a whole share batch. Runtime state is never inferred from a config hash.
 A batch that changes only share snippets (smb.conf itself current) owes a
@@ -12,6 +16,7 @@ import fcntl
 import json
 import os
 import pathlib
+import posixpath
 import re
 import socket
 import stat
@@ -52,40 +57,86 @@ def matches(path, text):
     return (st.st_uid, st.st_gid, stat.S_IMODE(st.st_mode)) == (0, 0, 0o644)
 
 
+FRUIT_GLOBAL = {'fruit:aapl', 'fruit:nfs_aces', 'fruit:copyfile', 'fruit:model'}
+SECTION = re.compile(r'^\s*\[')
+INCLUDE = re.compile(r'^\s*include\s*=\s*(.*?)\s*$', re.I)
+# Guest settings the distro smb.conf ships that must never take effect: the
+# managed shares refuse guests (owner decision 2026-11-13). Lines are kept as
+# a marked comment so the change stays visible and is applied only once.
+GUEST_OFF = '# ops-deploy: no guest access: '
+GUEST = {'maptoguest': lambda value: value != 'never',
+         'usershareallowguests': lambda value: value in ('yes', 'true', '1', 'on')}
+
+
+def directive(line):
+    text = line.strip()
+    return bool(text) and not text.startswith(('#', ';'))
+
+
+def global_body(lines):
+    """Return (header, end): [global]'s line index and its first line after."""
+    headers = [i for i, line in enumerate(lines) if re.fullmatch(r'\s*\[global\]\s*', line, re.I)]
+    if len(headers) != 1:
+        raise ValueError('expected one global Samba section')
+    end = next((i for i in range(headers[0]+1, len(lines)) if SECTION.match(lines[i])), len(lines))
+    return headers[0], end
+
+
 def candidate(original, request):
     text = request['base'] if original is None else original
     lines = text.splitlines(keepends=True)
-    global_lines = [i for i, line in enumerate(lines) if re.fullmatch(r'\s*\[global\]\s*', line, re.I)]
-    if len(global_lines) != 1:
-        raise ValueError('expected one global Samba section')
-    # An include can leave Samba's parser inside its final share section.
-    # New includes therefore belong after all textual global directives. Never
-    # move an existing include: deployed configurations retain their exact order.
-    paths = {fragment['path'] for fragment in request['fragments']}
-    include = re.compile(r'^\s*include\s*=\s*(.*?)\s*$', re.I)
-    if original is None:
-        # The vendored cf3 base template put its generated include too early.
-        # Relocate only that generated operand, preserving the original resource.
-        lines = [line for line in lines if not ((match := include.fullmatch(line.rstrip('\r\n')))
-                                               and match[1] in paths)]
-    global_index = next(i for i, line in enumerate(lines) if re.fullmatch(r'\s*\[global\]\s*', line, re.I))
-    for fragment in request['fragments']:
-        path = fragment['path']
-        if not any((match := include.fullmatch(line.rstrip('\r\n'))) and match[1] == path for line in lines):
-            end = next((i for i in range(global_index+1, len(lines)) if re.match(r'^\s*\[', lines[i])), len(lines))
-            if end and not lines[end-1].endswith('\n'):
-                lines[end-1] += '\n'
-            lines.insert(end, '   include = '+path+'\n')
+    if lines and not lines[-1].endswith('\n'):
+        lines[-1] += '\n'
+    header, end = global_body(lines)
+    for i in range(header+1, end):
+        if directive(lines[i]) and '=' in lines[i]:
+            key, value = lines[i].split('=', 1)
+            check = GUEST.get(''.join(key.split()).casefold())
+            if check and check(value.strip().casefold()):
+                lines[i] = GUEST_OFF+lines[i].strip()+'\n'
     if request.get('fruit') is not None:
         starts = [i for i, line in enumerate(lines) if line.rstrip('\r\n') == BEGIN]
         ends = [i for i, line in enumerate(lines) if line.rstrip('\r\n') == END]
         block = BEGIN+'\n'+request['fruit']+END+'\n'
         if not starts and not ends:
-            lines.insert(global_lines[0]+1, block)
+            lines.insert(header+1, block)
         elif len(starts) == len(ends) == 1 and starts[0] < ends[0]:
             lines[starts[0]:ends[0]+1] = [block]
         else:
             raise ValueError('ambiguous managed fruit block')
+        lines = ''.join(lines).splitlines(keepends=True)
+    # Once the includes below move, the managed block really is [global]: it
+    # may then only hold fruit's global-only options, or every share would
+    # start loading vfs_fruit. An older block (share options from before the
+    # Time Machine snippet carried them) is replaced only by the Time Machine
+    # deploy; any other deploy refuses until that has run.
+    starts = [i for i, line in enumerate(lines) if line.rstrip('\r\n') == BEGIN]
+    ends = [i for i, line in enumerate(lines) if line.rstrip('\r\n') == END]
+    for start, stop in zip(starts, ends):
+        for line in lines[start+1:stop]:
+            if directive(line) and ''.join(line.split('=', 1)[0].split()).casefold() not in FRUIT_GLOBAL:
+                raise ValueError('managed fruit block holds share options; deploy samba_timemachine first')
+    # An include leaves Samba's parser inside the last section of the included
+    # file, so every global line after it belongs to that share. Owned includes
+    # and every include of the managed snippet directory therefore move to the
+    # end of [global] (directly before the next section header), in their
+    # existing order; new owned includes follow them. Other includes and all
+    # other lines stay where they are.
+    paths = [fragment['path'] for fragment in request['fragments']]
+    snippets = request.get('snippet_dir')
+    header, end = global_body(lines)
+
+    def movable(operand):
+        return operand in paths or (snippets is not None and posixpath.dirname(operand) == snippets.rstrip('/'))
+
+    moved = [match[1] for i in range(header+1, end)
+             if (match := INCLUDE.fullmatch(lines[i].rstrip('\r\n'))) and movable(match[1])]
+    lines = [line for i, line in enumerate(lines)
+             if not (header < i < end and (match := INCLUDE.fullmatch(line.rstrip('\r\n'))) and movable(match[1]))]
+    present = {match[1] for line in lines if (match := INCLUDE.fullmatch(line.rstrip('\r\n')))}
+    moved += [path for path in paths if path not in present and path not in moved]
+    header, end = global_body(lines)
+    lines[end:end] = ['   include = '+path+'\n' for path in moved]
     return ''.join(lines)
 
 
@@ -257,6 +308,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
-        print('Samba configuration validation/reconciliation failed; restart debt is retained after managed writes', file=sys.stderr)
+    except Exception as error:
+        # The ValueErrors here carry no config or secret content.
+        reason = ': '+str(error) if isinstance(error, ValueError) else ''
+        print('Samba configuration validation/reconciliation failed'+reason+'; restart debt is retained after managed writes', file=sys.stderr)
         sys.exit(1)
