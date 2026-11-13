@@ -393,3 +393,106 @@ def test_reserved_share_section_names_refuse(name: str) -> None:
         SambaShare(name=name, path="/owned")
     with pytest.raises(ValidationError):
         SambaTimeMachineConfig(share_name=name, users=("owned",))
+
+
+def share_group_run(group_lines: list[str], *, by_name: list[str], by_gid: list[str]) -> Any:
+    from pyinfra.api import deploy
+
+    from ops_deploy.services.samba_share import SambaShareGroup
+    from ops_deploy.services.samba_share.deploy import ensure_group
+    from ops_deploy.testing import run_deploy_fake
+    from tests import fakehost
+
+    @deploy("Share group")
+    def owned() -> None:
+        ensure_group(SambaShareGroup(name="media", gid=965))
+
+    return run_deploy_fake(
+        owned,
+        responses={
+            **fakehost.LINUX,
+            "getent group media;": by_name,
+            "getent group 965;": by_gid,
+            "cat /etc/group": ["root:x:0:", *group_lines],
+        },
+    )
+
+
+def test_share_group_is_created_with_its_gid_when_missing() -> None:
+    result = share_group_run([], by_name=[], by_gid=[])
+    assert result.succeeded, result.error
+    assert any("groupadd" in c and "-r" in c and "media" in c and "--gid 965" in c for c in result.executed_commands)
+
+
+def test_existing_share_group_with_its_gid_is_left_alone() -> None:
+    line = "media:x:965:"
+    result = share_group_run([line], by_name=[line], by_gid=[line])
+    assert result.succeeded, result.error
+    assert result.executed_commands == []
+
+
+@pytest.mark.parametrize(
+    ("by_name", "by_gid"),
+    [(["media:x:1001:"], []), ([], ["other:x:965:"]), (["media:x:1001:"], ["other:x:965:"])],
+)
+def test_share_group_refuses_a_taken_name_or_gid(by_name: list[str], by_gid: list[str]) -> None:
+    result = share_group_run([*by_name, *by_gid], by_name=by_name, by_gid=by_gid)
+    assert not result.succeeded
+    assert "exists with another gid or name" in str(result.error)
+    assert not any("groupadd" in c or "groupmod" in c for c in result.executed_commands)
+
+
+def test_share_group_probe_failure_refuses() -> None:
+    result = share_group_run([], by_name=["", "ops-deploy-probe-failed"], by_gid=[])
+    assert not result.succeeded
+    assert "Cannot read the Unix group media" in str(result.error)
+
+
+def test_share_groups_refuse_duplicate_names_or_gids() -> None:
+    from ops_deploy.services.samba_share import SambaShareGroup
+
+    share = (SambaShare(name="owned", path="/owned"),)
+    for groups in (
+        (SambaShareGroup(name="media", gid=965), SambaShareGroup(name="media", gid=966)),
+        (SambaShareGroup(name="media", gid=965), SambaShareGroup(name="other", gid=965)),
+    ):
+        with pytest.raises(ValidationError, match="duplicate Samba share group"):
+            SambaSharesConfig(shares=share, groups=groups)
+    with pytest.raises(ValidationError):
+        SambaShareGroup(name="media", gid=0)
+
+
+def test_share_batch_creates_groups_before_any_share_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pyinfra.operations import files
+
+    from ops_deploy.services._samba import deploy as common
+    from ops_deploy.services.samba_share import SambaShareGroup
+    from ops_deploy.services.samba_share import deploy as share_deploy
+    from ops_deploy.testing import run_deploy_fake
+
+    calls: list[str] = []
+    monkeypatch.setattr(common, "prerequisites", lambda cfg: calls.append("prerequisites"))
+    monkeypatch.setattr(common, "unix_users", lambda names, group: calls.append("users"))
+    monkeypatch.setattr(share_deploy, "ensure_group", lambda group: calls.append(f"group {group.name}"))
+    monkeypatch.setattr(files, "directory", lambda **kwargs: calls.append(f"root {kwargs['group']}"))
+    monkeypatch.setattr(common, "configure", lambda **kwargs: calls.append("configure"))
+    monkeypatch.setattr(common, "accounts", lambda **kwargs: calls.append("accounts"))
+    monkeypatch.setattr(common, "rollout", lambda **kwargs: calls.append("rollout"))
+    cfg = SambaSharesConfig(
+        shares=(SambaShare(name="owned", path="/owned", path_group="media", force_group="media"),),
+        groups=(SambaShareGroup(name="media", gid=965), SambaShareGroup(name="other", gid=966)),
+    )
+
+    result = run_deploy_fake(share_deploy.deploy_samba_shares, cfg)
+
+    assert result.succeeded, result.error
+    assert calls == [
+        "prerequisites",
+        "users",
+        "group media",
+        "group other",
+        "root media",
+        "configure",
+        "accounts",
+        "rollout",
+    ]

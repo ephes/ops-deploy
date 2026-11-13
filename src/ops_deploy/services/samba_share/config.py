@@ -8,6 +8,17 @@ from ops_deploy.base._common import AbsolutePath, RoleConfig
 from ops_deploy.services._samba.config import RESERVED_SECTIONS, Mode, Name, SambaBaseConfig, single
 
 
+class SambaShareGroup(RoleConfig):
+    """A Unix group the shares need (for ``force_group``), with a fixed gid.
+
+    The deploy creates it as a system group when it is missing and refuses
+    when the name exists with another gid or the gid belongs to another group.
+    """
+
+    name: Name
+    gid: Annotated[int, Field(ge=1, le=59999)]
+
+
 class SambaShare(RoleConfig):
     name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]+$")]
     path: AbsolutePath
@@ -45,6 +56,7 @@ class SambaShare(RoleConfig):
 class SambaSharesConfig(SambaBaseConfig):
     shares: tuple[SambaShare, ...]
     users: tuple[Name, ...] = ()
+    groups: tuple[SambaShareGroup, ...] = ()
     manage_system_users: StrictBool = True
     system_group: Name = "sambashare"
 
@@ -54,4 +66,8 @@ class SambaSharesConfig(SambaBaseConfig):
             raise ValueError("a batch needs distinct Samba shares")
         if len(set(self.users)) != len(self.users):
             raise ValueError("duplicate Samba users")
+        if len({g.name for g in self.groups}) != len(self.groups) or len({g.gid for g in self.groups}) != len(
+            self.groups
+        ):
+            raise ValueError("duplicate Samba share group name or gid")
         return self

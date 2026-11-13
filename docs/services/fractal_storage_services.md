@@ -230,7 +230,12 @@ The generic API accepts a nonempty batch of distinct `SambaShare` rows. Each row
 requires `name` and `path`; defaults are browseable, writable, nonguest, no
 `valid_users`, masks0660/0770, no forced user/group, no root metadata override and
 no extra options. `path_owner`, `path_group`, `path_mode` affect only that root,
-never descendants or ACL policy. Extra options must be single lines and cannot
+never descendants or ACL policy. `SambaSharesConfig.groups` (default none) lists
+`SambaShareGroup(name=..., gid=...)` rows for groups the shares need, typically
+for `force_group`: the deploy creates a missing one as a system group with that
+gid (before any share is configured) and refuses, before any change, when the
+name exists with another gid or the gid belongs to another group; an existing
+group with that gid is left alone. Names and gids must be distinct. Extra options must be single lines and cannot
 inject sections/includes, including whitespace aliases of include/copy/config
 backend. Reserved global/globals/homes/printers section names are refused. Account management defaults to true with group
 `sambashare`; Time Machine uses its dedicated group. Unix accounts always use

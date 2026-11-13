@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `samba_share`: `SambaSharesConfig.groups` (`SambaShareGroup(name, gid)`)
+  creates the Unix groups the shares need (for `force_group`) as system groups
+  with a fixed gid, and refuses when the name or the gid is already taken
+  otherwise (ops-control: the writable Samba share `media` on Fractal with
+  group `media`, gid 965, matching macmini's media group over NFS).
 - New NFS deploys for moving macmini's media tree onto Fractal over NFSv4.2
   with RPC-with-TLS and client certificates (ops-control
   `docs/MACMINI_MEDIA_ON_FRACTAL.md`, slices 2 and 3):
