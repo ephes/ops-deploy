@@ -53,7 +53,11 @@ so a running server never has its executable overwritten.
   Traefik watches the file; it is not restarted. Its backend is this server
   (`bind_host:api_port`), or with `traefik_upstream` (`host:port`) a RustFS on
   another host, so the route can stay on the host that runs Traefik when the
-  primary moves elsewhere.
+  primary moves elsewhere. `traefik_api_aliases` adds further names to the
+  same two routers (rule `(Host(api) || Host(alias) …) && (ClientIP …)`), so
+  a neutral API name and an implementation-specific one reach the same
+  backend under the same restriction; aliases must differ from the API host
+  and from each other.
 
 ## Buckets and IAM as code
 

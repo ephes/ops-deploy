@@ -75,10 +75,12 @@ The original private play's loopback API/console port checks run before managed
 operations and accept only listeners owned by `minio.service`.
 
 Traefik exposure defaults off. When enabled, configure `traefik_host` and
-`traefik_api_host`; the unchanged dual-console/API route lives at the fixed
-`/etc/traefik/dynamic/minio.yml`. Console basic authentication defaults on and
-requires `console_basic_auth_password`; an existing matching bcrypt hash is
-reused. `internal_ip_ranges`, `traefik_cert_resolver`, service restart/resource
+`traefik_api_host`; the role's dual-console/API route (unchanged by default)
+lives at the fixed `/etc/traefik/dynamic/minio.yml`. Console basic
+authentication defaults on and requires `console_basic_auth_password`; an
+existing matching bcrypt hash is reused. `traefik_api_internal_only` (default
+off) restricts both S3 API routers to `internal_ip_ranges`, like the
+console's internal router, e.g. for a read-only archive behind its own name. `internal_ip_ranges`, `traefik_cert_resolver`, service restart/resource
 limits, paths and optional TLS/SSE settings retain the role's defaults. TLS
 uses `tls_cert_content` mode0644 and `tls_key_content` mode0600; SSE takes
 `sse_master_key`. Secret values are separate `SecretStr` inputs, never config

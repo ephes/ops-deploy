@@ -1,4 +1,4 @@
-"""Actual Ansible2.21 renders against library d88 (MinIO source unchanged from cf3)."""
+"""Actual Ansible 2.21 renders against library acdb3e48 (api-internal-only rendered by 2.21.6)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ FIXTURES = Path(__file__).parent / "parity/minio"
 SOURCE = json.loads((FIXTURES / "source.json").read_text())
 
 
-@pytest.mark.parametrize("case", ["defaults", "custom-tls", "console-auth-off"])
+@pytest.mark.parametrize("case", ["defaults", "custom-tls", "console-auth-off", "api-internal-only"])
 @pytest.mark.parametrize("template", sorted(SOURCE["templates"]))
 def test_actual_role_template_render(case: str, template: str) -> None:
     directory = FIXTURES / case

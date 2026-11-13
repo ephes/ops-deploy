@@ -9,6 +9,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+import yaml
 from pydantic import SecretStr, ValidationError
 
 from ops_deploy.services.rustfs import (
@@ -210,6 +211,43 @@ def test_traefik_route_is_internal_only_without_compression() -> None:
     assert "basicAuth" not in route
     assert route.count("rule:") == 2
     assert all("ClientIP" in line for line in route.splitlines() if "rule:" in line)
+
+
+def test_traefik_route_aliases_share_the_routers() -> None:
+    cfg = RustfsConfig(
+        expose_via_traefik=True,
+        traefik_api_host="objects.example.test",
+        traefik_api_aliases=("impl.example.test",),
+        internal_ip_ranges=("10.0.0.0/8", "100.64.0.0/10"),
+    )
+    route = yaml.safe_load(render("traefik-rustfs.yml.j2", cfg))["http"]["routers"]
+    expected = (
+        "(Host(`objects.example.test`) || Host(`impl.example.test`))"
+        " && (ClientIP(`10.0.0.0/8`) || ClientIP(`100.64.0.0/10`))"
+    )
+    assert set(route) == {"rustfs-api-int", "rustfs-api-http"}
+    assert all(router["rule"] == expected for router in route.values())
+    plain = yaml.safe_load(render("traefik-rustfs.yml.j2", cfg.model_copy(update={"traefik_api_aliases": ()})))
+    assert plain["http"]["routers"]["rustfs-api-int"]["rule"] == (
+        "Host(`objects.example.test`) && (ClientIP(`10.0.0.0/8`) || ClientIP(`100.64.0.0/10`))"
+    )
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"traefik_api_aliases": ("impl.example.test",)},
+        {"expose_via_traefik": True, "traefik_api_host": "a.example.test", "traefik_api_aliases": ("a.example.test",)},
+        {
+            "expose_via_traefik": True,
+            "traefik_api_host": "a.example.test",
+            "traefik_api_aliases": ("b.example.test", "b.example.test"),
+        },
+    ],
+)
+def test_traefik_route_aliases_are_validated(fields: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="traefik_api_aliases"):
+        RustfsConfig.model_validate(fields)
 
 
 def test_download_command_verifies_archive_and_member_before_replacing() -> None:

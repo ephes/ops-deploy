@@ -122,6 +122,32 @@ def test_existing_console_bcrypt_hash_and_role_route_are_preserved() -> None:
     assert run.uploads == []
 
 
+def test_api_routes_can_be_internal_only() -> None:
+    import yaml
+
+    creds = MinioCredentials.model_validate(
+        {**CREDS.model_dump(), "console_basic_auth_password": SecretStr("synthetic-console-value")}
+    )
+    cfg = MinioConfig(
+        expose_via_traefik=True,
+        traefik_host="minio.example.test",
+        traefik_api_host="objects.example.test",
+        traefik_api_internal_only=True,
+        internal_ip_ranges=("10.0.0.0/8", "100.64.0.0/10"),
+    )
+    routers = yaml.safe_load(render("traefik-minio.yml.j2", cfg, creds, "fixture-hash"))["http"]["routers"]
+    expected = "Host(`objects.example.test`) && (ClientIP(`10.0.0.0/8`) || ClientIP(`100.64.0.0/10`))"
+    assert routers["minio-api-secure"]["rule"] == expected
+    assert routers["minio-api-http"]["rule"] == expected
+    assert routers["minio-console-ext"]["rule"] == "Host(`minio.example.test`)"
+    public = yaml.safe_load(
+        render("traefik-minio.yml.j2", cfg.model_copy(update={"traefik_api_internal_only": False}), creds, "x")
+    )["http"]["routers"]
+    assert public["minio-api-secure"]["rule"] == "Host(`objects.example.test`)"
+    with pytest.raises(ValidationError, match="internal_ip_ranges"):
+        MinioConfig(traefik_api_internal_only=True, internal_ip_ranges=())
+
+
 def test_fresh_server_starts_before_bootstrap_and_does_not_restart_again() -> None:
     cfg = MinioConfig(bootstrap_with_mc=True)
     run = execute(

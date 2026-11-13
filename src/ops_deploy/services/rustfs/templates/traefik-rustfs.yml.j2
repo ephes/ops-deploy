@@ -4,7 +4,7 @@
 # carry their own signatures, so there is no basic auth, and no compression
 # middleware that could alter signed or ranged responses.
 {% set internal_rule -%}
-Host(`{{ cfg.traefik_api_host }}`) && ({% for range in cfg.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})
+{% if cfg.traefik_api_aliases %}({% for host in [cfg.traefik_api_host] + cfg.traefik_api_aliases | list %}Host(`{{ host }}`){{ ' || ' if not loop.last else '' }}{% endfor %}){% else %}Host(`{{ cfg.traefik_api_host }}`){% endif %} && ({% for range in cfg.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})
 {%- endset %}
 
 http:

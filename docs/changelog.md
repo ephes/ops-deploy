@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `rustfs`: new `traefik_api_aliases` (default empty, route unchanged). Each
+  alias joins `traefik_api_host` on the same two routers, with the same
+  backend, middlewares and `internal_ip_ranges`; Traefik 3 takes one domain
+  per `Host()`, so the rule becomes `(Host(api) || Host(alias) …) && (ClientIP
+  …)`. Aliases need `expose_via_traefik` and must differ from the API host
+  and from each other. ops-control uses it to serve the neutral
+  `s3.home…` name with `rustfs.home…` as alias.
+- `minio`: new `traefik_api_internal_only` (default off, route unchanged),
+  mirroring ops-library's `minio_traefik_api_internal_only`: both S3 API
+  routers answer only `internal_ip_ranges`. The vendored template and its
+  parity hash follow the library.
+
 - `samba_share` / `samba_timemachine`: new `restrict_anonymous` (`0`, `1` or
   `2`, default `2`) on `SambaBaseConfig`. The config helper writes `restrict
   anonymous = <value>` directly after the `[global]` header, before every

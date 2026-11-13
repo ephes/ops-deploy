@@ -93,6 +93,8 @@ class MinioConfig(RoleConfig):
     traefik_host: Hostname = "minio.home.example.com"
     traefik_api_host: Hostname = "s3.minio.home.example.com"
     traefik_cert_resolver: Name | Literal[""] = ""
+    # True: the S3 API routers answer only internal_ip_ranges (LAN/Tailscale).
+    traefik_api_internal_only: StrictBool = False
     traefik_config_path: Literal["/etc/traefik/dynamic/minio.yml"] = "/etc/traefik/dynamic/minio.yml"
     console_basic_auth_enabled: StrictBool = True
     console_basic_auth_user: Name = "admin"
@@ -143,6 +145,8 @@ class MinioConfig(RoleConfig):
             raise ValueError("data roots must be nonempty and unique")
         if self.api_port == self.console_port:
             raise ValueError("API and console ports must differ")
+        if self.traefik_api_internal_only and not self.internal_ip_ranges:
+            raise ValueError("traefik_api_internal_only needs internal_ip_ranges")
         if not self.bootstrap_with_mc and (self.buckets or self.policies or self.identities or self.superseded):
             raise ValueError("IAM/bucket declarations require bootstrap_with_mc")
         for items in (self.buckets, self.policies, self.identities, self.superseded):

@@ -8,7 +8,7 @@ http:
     # ===== API ENDPOINT (S3 operations) =====
     # No authentication - S3 credentials in requests
     minio-api-secure:
-      rule: "Host(`{{ minio_traefik_api_host }}`)"
+      rule: "Host(`{{ minio_traefik_api_host }}`){% if minio_traefik_api_internal_only %} && ({% for range in minio_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %}){% endif %}"
       entryPoints:
         - web-secure
       middlewares:
@@ -23,7 +23,7 @@ http:
 
     # HTTP redirect for API
     minio-api-http:
-      rule: "Host(`{{ minio_traefik_api_host }}`)"
+      rule: "Host(`{{ minio_traefik_api_host }}`){% if minio_traefik_api_internal_only %} && ({% for range in minio_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %}){% endif %}"
       entryPoints:
         - web
       middlewares:

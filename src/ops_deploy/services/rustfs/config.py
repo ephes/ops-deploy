@@ -254,6 +254,10 @@ class RustfsConfig(RoleConfig):
     region: Annotated[str, Field(pattern=r"^[a-z0-9-]{1,32}$")] = "us-east-1"
     expose_via_traefik: StrictBool = False
     traefik_api_host: Hostname = "s3.rustfs.home.example.com"
+    # Further names on the same routers (same backend, middlewares and
+    # internal_ip_ranges), e.g. an implementation-specific name kept as an
+    # alias of a neutral API host.
+    traefik_api_aliases: tuple[Hostname, ...] = ()
     traefik_cert_resolver: Name | Literal[""] = ""
     # The route's backend as host:port when RustFS runs elsewhere (the primary
     # on another host); None: this server (bind_host:api_port).
@@ -325,6 +329,12 @@ class RustfsConfig(RoleConfig):
                 raise ValueError("the status port must differ from the API port and MinIO's ports")
         if self.traefik_upstream is not None and not self.expose_via_traefik:
             raise ValueError("traefik_upstream needs expose_via_traefik")
+        if self.traefik_api_aliases:
+            if not self.expose_via_traefik:
+                raise ValueError("traefik_api_aliases needs expose_via_traefik")
+            hosts = [self.traefik_api_host, *self.traefik_api_aliases]
+            if len(hosts) != len(set(hosts)):
+                raise ValueError("traefik_api_aliases must differ from the API host and from each other")
         return self
 
     @property
