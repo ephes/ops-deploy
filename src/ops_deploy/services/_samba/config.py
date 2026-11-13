@@ -28,6 +28,10 @@ class SambaBaseConfig(RoleConfig):
     disable_printing: StrictBool = True
     service_enabled: StrictBool = True
     service_state: Literal["started", "stopped", "restarted"] = "started"
+    # Written as "restrict anonymous" near the top of [global] (a reload, not a
+    # restart, applies a change). 2 refuses anonymous (null session) access,
+    # including the anonymous share list; 0 is Samba's own default.
+    restrict_anonymous: Literal[0, 1, 2] = 2
 
     @field_validator("workgroup", "server_string", "min_protocol")
     @classmethod

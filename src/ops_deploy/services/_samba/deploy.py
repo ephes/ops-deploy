@@ -153,6 +153,7 @@ def request(cfg: SambaBaseConfig, *, base: str, fragments: list[dict[str, str]],
         "fragments": fragments,
         "snippet_dir": cfg.snippet_dir,
         "fruit": fruit,
+        "globals": {"restrict anonymous": str(cfg.restrict_anonymous)},
         "service_enabled": cfg.service_enabled,
         "service_state": cfg.service_state,
     }

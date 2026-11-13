@@ -626,6 +626,165 @@ def test_samba_unknown_debt_refuses(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert "browseable" not in (tmp_path / "owned.conf").read_text()
 
 
+RESTRICT = {"restrict anonymous": "2"}
+
+
+def test_restrict_anonymous_lands_in_global_and_changes_only_by_reload() -> None:
+    from ops_deploy.services.samba_timemachine.render import fruit_block, snippet
+
+    module = script("samba_config")
+    tm = SambaTimeMachineConfig(users=("owned_tm",), snippet_path="/etc/samba/smb.conf.d/tm.conf")
+    snippets = {
+        "/etc/samba/smb.conf.d/owned.conf": "[owned]\n path = /owned\n",
+        "/etc/samba/smb.conf.d/tm.conf": snippet(tm),
+    }
+    directory = "/etc/samba/smb.conf.d"
+    tm_request = {
+        "base": "UNUSED",
+        "snippet_dir": directory,
+        "fruit": fruit_block(tm),
+        "fragments": [{"path": tm.snippet_path}],
+    }
+    share_request = {
+        "base": "UNUSED",
+        "snippet_dir": directory,
+        "fruit": None,
+        "fragments": [{"path": directory + "/owned.conf"}],
+    }
+    # The installed state after the earlier fix: no managed global yet.
+    installed = module.candidate(UBUNTU_SMB_CONF, tm_request)
+    updated = module.candidate(installed, {**tm_request, "globals": RESTRICT})
+    assert updated.splitlines()[updated.splitlines().index("[global]") + 1] == "   restrict anonymous = 2"
+    assert module.candidate(updated, {**share_request, "globals": RESTRICT}) == updated
+    assert module.candidate(updated, {**tm_request, "globals": RESTRICT}) == updated
+    sections = samba_sections(updated, snippets)
+    assert sections["global"]["restrict anonymous"] == "2"
+    assert all("restrict anonymous" not in options for name, options in sections.items() if name != "global")
+    # Only the managed line differs: a reload applies it, a restart is not owed.
+    assert module.reload_suffices(installed, updated)
+    assert not module.reload_suffices(None, updated)
+    assert not module.reload_suffices(installed, updated.replace("workgroup = WORKGROUP", "workgroup = OTHER"))
+
+
+@pytest.mark.parametrize(
+    ("body", "outcome"),
+    [
+        ("\tRestrictAnonymous=2\n   workgroup = W\n", "kept"),
+        ("   workgroup = W\n\tRestrictAnonymous = 0\n", "rewritten"),
+        ("   restrict anonymous = 2\n   restrict anonymous = 2\n", "replaced"),
+        ("   include = /etc/samba/unowned.conf\n   restrict anonymous = 2\n", "replaced"),
+    ],
+)
+def test_existing_restrict_anonymous_lines_are_used_only_when_effective(body: str, outcome: str) -> None:
+    module = script("samba_config")
+    original = "[global]\n" + body + "[share]\n   restrict anonymous = 0\n"
+    request: dict[str, Any] = {"base": "UNUSED", "fragments": [], "fruit": None, "globals": RESTRICT}
+    updated = module.candidate(original, request)
+    assert module.candidate(updated, request) == updated
+    # Share sections are not touched; the share's line is Samba's own business.
+    assert updated.endswith("[share]\n   restrict anonymous = 0\n")
+    if outcome == "kept":
+        assert updated == original
+        return
+    assert module.reload_suffices(original, updated)
+    if outcome == "rewritten":
+        # The single well-placed line changes in place: no comment, no new line.
+        assert updated == "[global]\n   workgroup = W\n   restrict anonymous = 2\n[share]\n   restrict anonymous = 0\n"
+        return
+    lines = updated.splitlines()
+    assert lines[:2] == ["[global]", "   restrict anonymous = 2"]
+    global_lines = lines[1 : lines.index("[share]")]
+    assert [line for line in global_lines if module.directive(line) and module.key(line) == "restrictanonymous"] == [
+        "   restrict anonymous = 2"
+    ]
+    assert all(
+        module.MANAGED_OFF + old.strip() in global_lines for old in body.splitlines() if "restrict" in old.casefold()
+    )
+
+
+def test_changing_the_managed_value_rewrites_the_line_in_place() -> None:
+    module = script("samba_config")
+    request: dict[str, Any] = {"base": "UNUSED", "fragments": [], "fruit": None}
+    first = module.candidate("[global]\n   workgroup = W\n", {**request, "globals": RESTRICT})
+    texts = [first]
+    for value in ("0", "2", "1", "2"):
+        texts.append(module.candidate(texts[-1], {**request, "globals": {"restrict anonymous": value}}))
+    assert all(len(text.splitlines()) == len(first.splitlines()) for text in texts)
+    assert texts[1] == "[global]\n   restrict anonymous = 0\n   workgroup = W\n"
+    assert texts[-1] == first
+    assert module.MANAGED_OFF not in "".join(texts)
+
+
+@pytest.mark.parametrize(
+    "wanted",
+    [
+        {"map to guest": "never"},
+        {"restrictanonymous": "2"},
+        {"restrict anonymous": ""},
+        {"restrict anonymous": "2\n[x]"},
+    ],
+)
+def test_unsupported_managed_globals_refuse(wanted: dict[str, str]) -> None:
+    module = script("samba_config")
+    with pytest.raises(ValueError, match="unsupported managed Samba global"):
+        module.candidate("[global]\n", {"base": "UNUSED", "fragments": [], "fruit": None, "globals": wanted})
+
+
+def test_samba_managed_global_change_reloads_and_a_base_change_still_restarts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n")
+    (tmp_path / "owned.conf").write_text("[owned]\n    path = /owned\n")
+    request["globals"] = RESTRICT
+    assert samba_apply_and_rollout(module, request) == "reload"
+    assert ["smbcontrol", "all", "reload-config"] in commands
+    assert not any(argv[:2] == ["systemctl", "restart"] for argv in commands)
+    assert (tmp_path / "smb.conf").read_text().splitlines()[1] == "   restrict anonymous = 2"
+    # Current afterwards: nothing pending, no further command.
+    commands.clear()
+    assert module.config_pending(request, module.rows(request)) is False
+    # A managed change together with any other smb.conf change restarts.
+    request["globals"] = {"restrict anonymous": "1"}
+    request["fruit"] = "   fruit:nfs_aces = no\n"
+    assert samba_apply_and_rollout(module, request) == "restart"
+    assert ["systemctl", "restart", "smbd"] in commands
+    assert not any(argv[0] == "smbcontrol" for argv in commands)
+
+
+def test_samba_current_text_with_wrong_owner_or_mode_owes_only_a_reload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, _commands = samba_host(monkeypatch, tmp_path)
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n")
+    (tmp_path / "owned.conf").write_text("[owned]\n    path = /owned\n")
+    config = tmp_path / "smb.conf"
+    # smb.conf text is already current, only its metadata is wrong (as matches() sees it).
+    monkeypatch.setattr(module, "matches", lambda path, text: path != config and module.read(path) == text)
+    assert module.read(config) == module.rows(request)[0][1]
+    module.configure(request, module.rows(request))
+    assert module.owed() == "reload"
+
+
+def test_samba_roles_send_restrict_anonymous_and_refuse_guest_shares_with_it() -> None:
+    from ops_deploy.services._samba.deploy import request
+
+    tm = SambaTimeMachineConfig(users=("owned_tm",))
+    assert json.loads(request(tm, base="", fragments=[]))["globals"] == RESTRICT
+    relaxed = SambaTimeMachineConfig(users=("owned_tm",), restrict_anonymous=0)
+    assert json.loads(request(relaxed, base="", fragments=[]))["globals"] == {"restrict anonymous": "0"}
+    guest = SambaShare(name="owned", path="/owned", guest_ok=True)
+    with pytest.raises(ValidationError, match="guest share needs restrict_anonymous below 2"):
+        SambaSharesConfig(shares=(guest,))
+    assert SambaSharesConfig(shares=(guest,), restrict_anonymous=1).restrict_anonymous == 1
+    for option in ({"guest ok": "yes"}, {"Public": "Yes"}, {"guest only": "true"}):
+        with pytest.raises(ValidationError, match="guest share needs restrict_anonymous below 2"):
+            SambaSharesConfig(shares=(SambaShare(name="owned", path="/owned", extra_options=option),))
+    assert SambaSharesConfig(shares=(SambaShare(name="owned", path="/owned", extra_options={"public": "no"}),))
+    with pytest.raises(ValidationError):
+        SambaSharesConfig.model_validate({"shares": [{"name": "owned", "path": "/owned"}], "restrict_anonymous": 3})
+
+
 @pytest.mark.parametrize("options", [{"unknown_hook": "ignored"}, {"hourly": -1}, {"autosnap": "maybe"}])
 def test_unsupported_or_invalid_sanoid_native_policy_refuses(options: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):

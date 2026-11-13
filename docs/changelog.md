@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `samba_share` / `samba_timemachine`: new `restrict_anonymous` (`0`, `1` or
+  `2`, default `2`) on `SambaBaseConfig`. The config helper writes `restrict
+  anonymous = <value>` directly after the `[global]` header, before every
+  include. A single well-placed line with another value is rewritten in
+  place; duplicate lines or one after an include are commented out (`#
+  ops-deploy: managed global replaces: ...`). With `2`, anonymous users
+  can no longer list the shares (`smbclient -L <host> -N`). An smb.conf change
+  that touches only this managed line records the reload debt, so the rollout
+  runs `smbcontrol all reload-config` instead of restarting smbd and nmbd;
+  combined with any other smb.conf change it still restarts. An smb.conf whose
+  text is current but whose owner or mode is not is now also fixed with a
+  reload instead of a restart. `SambaSharesConfig` refuses a guest share
+  (`guest_ok`, or `guest ok`, `public` or `guest only` in `extra_options`)
+  while `restrict_anonymous` is `2`. The value is per host but enforced by
+  both roles: on a host with both, give them the same value (a difference is
+  not detected) (ops-control: Fractal).
 - `samba_share` / `samba_timemachine` smb.conf repair: global settings now
   stay in `[global]`. Before, the snippet `include` lines sat at the top of
   `[global]`, and Samba parsed every later global line (the vfs_fruit block,

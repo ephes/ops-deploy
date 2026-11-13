@@ -53,6 +53,15 @@ class SambaShare(RoleConfig):
         return value
 
 
+def _guest(share: SambaShare) -> bool:
+    """guest_ok, or a guest option (guest ok, its alias public, guest only) in extra_options."""
+    keys = {"guestok", "public", "guestonly"}
+    return share.guest_ok or any(
+        "".join(key.split()).casefold() in keys and value.strip().casefold() in {"yes", "true", "1", "on"}
+        for key, value in share.extra_options.items()
+    )
+
+
 class SambaSharesConfig(SambaBaseConfig):
     shares: tuple[SambaShare, ...]
     users: tuple[Name, ...] = ()
@@ -70,4 +79,6 @@ class SambaSharesConfig(SambaBaseConfig):
             self.groups
         ):
             raise ValueError("duplicate Samba share group name or gid")
+        if self.restrict_anonymous == 2 and any(_guest(row) for row in self.shares):
+            raise ValueError("a guest share needs restrict_anonymous below 2")
         return self

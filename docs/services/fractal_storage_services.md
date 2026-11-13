@@ -275,7 +275,8 @@ rollout, so each daemon restarts at most once. Installed config is also checked
 after writes and before consuming restart debt.
 **Reload for snippet-only changes:** when a batch changes only share snippets
 and smb.conf itself is already current (no new include, global or fruit block
-change), the debt record is `{"units": ["smbd", "nmbd"], "action":
+change; a change of only the managed `restrict anonymous` line counts as
+current, see below), the debt record is `{"units": ["smbd", "nmbd"], "action":
 "reload-config"}` and the rollout runs `smbcontrol all reload-config` instead
 of restarting smbd/nmbd. Open sessions (a running Time Machine backup, mounted
 shares) survive; new tree connects get the new share options, while a client
@@ -323,6 +324,30 @@ there; it repairs the whole file alone. Vendored templates retain original
 source bytes; both refinements happen in the helper and in
 `samba_timemachine.render.snippet`. On an installed file with the old order
 the first deploy rewrites smb.conf and restarts smbd and nmbd once.
+
+**Anonymous access (`restrict anonymous`):** `SambaBaseConfig.restrict_anonymous`
+(both APIs; `0`, `1` or `2`, default `2`) is written as `restrict anonymous =
+<value>` directly after the `[global]` header, before every include, so it is
+always parsed as a global. `2` refuses anonymous (null session) access,
+including the anonymous share list (`smbclient -L <host> -N`); authenticated
+listing and access are unchanged. An existing line is used only when it is
+the single `restrict anonymous` line in `[global]` and no include precedes it:
+it is kept, or rewritten in place when its value differs (so value changes add
+no lines). Otherwise every such line in `[global]` is commented out (`#
+ops-deploy: managed global replaces: <original line>`) and the managed line is
+inserted. Lines in share sections are left alone. Samba applies the
+setting on `smbcontrol all reload-config`, so an smb.conf change that touches
+only managed global lines records the reload debt, not a restart (open
+sessions such as a running Time Machine backup survive); together with any
+other smb.conf change it still restarts. `SambaSharesConfig` refuses a
+guest share (`guest_ok`, or `guest ok`, `public` or `guest only` set to yes
+in `extra_options`) while `restrict_anonymous` is `2`. The setting applies to the
+whole host, but both APIs enforce it on every deploy: on a host with both
+`samba_timemachine` and `samba_share`, give both the same value. Different
+values are not detected; each deploy would rewrite the line (and owe a reload)
+to its own value, and a `samba_share` guest share admitted with a lower value
+would be refused anonymous access again by the next Time Machine deploy at the
+default `2`.
 
 ### Existing credentials and native creation limits
 

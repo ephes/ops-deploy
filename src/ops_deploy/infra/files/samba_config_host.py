@@ -4,13 +4,16 @@ Candidate testparm runs before managed writes; unrelated includes/globals stay,
 except that owned and snippet-directory includes move to the end of [global]
 (so later globals are not parsed into the last included share) and distro
 guest settings (map to guest other than never, usershare allow guests) are
-commented out.
+commented out. Managed global settings (restrict anonymous) are enforced as
+one line near the top of [global]; a conflicting line is kept as a marked
+comment.
 No share data is opened. Restart only consumes known config debt, deduplicated
 for a whole share batch. Runtime state is never inferred from a config hash.
 A batch that changes only share snippets (smb.conf itself current) owes a
 config reload (smbcontrol all reload-config) instead of a restart, so open
-sessions such as a running Time Machine backup survive; a recorded restart
-debt is never downgraded to a reload.
+sessions such as a running Time Machine backup survive. So does a change of
+smb.conf that touches only managed global lines (Samba re-reads them on a
+reload); a recorded restart debt is never downgraded to a reload.
 """
 import fcntl
 import json
@@ -66,6 +69,16 @@ INCLUDE = re.compile(r'^\s*include\s*=\s*(.*?)\s*$', re.I)
 GUEST_OFF = '# ops-deploy: no guest access: '
 GUEST = {'maptoguest': lambda value: value != 'never',
          'usershareallowguests': lambda value: value in ('yes', 'true', '1', 'on')}
+# Global settings the role owns in [global], by normalized key (the request's
+# 'globals' maps the written key to its value). Samba applies each of them on
+# smbcontrol reload-config, so an smb.conf change limited to these lines owes
+# a reload, not a restart. A conflicting line stays as a marked comment.
+MANAGED = {'restrictanonymous': 'restrict anonymous'}
+MANAGED_OFF = '# ops-deploy: managed global replaces: '
+
+
+def key(line):
+    return ''.join(line.split('=', 1)[0].split()).casefold()
 
 
 def directive(line):
@@ -137,7 +150,45 @@ def candidate(original, request):
     moved += [path for path in paths if path not in present and path not in moved]
     header, end = global_body(lines)
     lines[end:end] = ['   include = '+path+'\n' for path in moved]
+    return managed_globals(lines, request.get('globals') or {})
+
+
+def managed_globals(lines, wanted):
+    """Enforce each managed global as one line before every include in [global].
+
+    A remaining include (an unowned one) would swallow a later line into its
+    share, so an existing line is used only when it is the single one for its
+    key and no include precedes it: it is kept, or rewritten in place when its
+    value differs (no comment, so value changes do not pile up lines).
+    Otherwise every line for that key in [global] is commented out and the
+    managed line is inserted directly after the [global] header.
+    """
+    for name, value in wanted.items():
+        normalized = key(name)
+        if MANAGED.get(normalized) != name or not isinstance(value, str) or not value or any(c in value for c in '\r\n\0'):
+            raise ValueError('unsupported managed Samba global')
+        header, end = global_body(lines)
+        found = [i for i in range(header+1, end) if directive(lines[i]) and '=' in lines[i] and key(lines[i]) == normalized]
+        first_include = next((i for i in range(header+1, end) if INCLUDE.fullmatch(lines[i].rstrip('\r\n'))), end)
+        if len(found) == 1 and found[0] < first_include:
+            if ' '.join(lines[found[0]].split('=', 1)[1].split()).casefold() != value.casefold():
+                lines[found[0]] = '   '+name+' = '+value+'\n'
+            continue
+        for i in found:
+            lines[i] = MANAGED_OFF+lines[i].strip()+'\n'
+        lines.insert(header+1, '   '+name+' = '+value+'\n')
     return ''.join(lines)
+
+
+def reload_suffices(original, text):
+    """True when original and text differ only in managed global lines."""
+    if original is None:
+        return False
+
+    def rest(config):
+        return [line for line in config.splitlines()
+                if not line.startswith(MANAGED_OFF) and not (directive(line) and '=' in line and key(line) in MANAGED)]
+    return rest(original) == rest(text)
 
 
 def rows(request):
@@ -234,9 +285,10 @@ def configure(request, desired):
         return
     validate(desired)
     # smb.conf itself (globals, includes, the fruit block) needs a restart;
-    # share snippets alone are applied by a reload. Never downgrade a debt.
+    # share snippets and managed global lines alone are applied by a reload.
+    # Never downgrade a debt.
     path, text = desired[0]
-    restart = owed() == 'restart' or not matches(path, text)
+    restart = owed() == 'restart' or not (matches(path, text) or reload_suffices(read(path), text))
     write(STATE / 'restart-owed.json', json.dumps(RESTART_DEBT if restart else RELOAD_DEBT), mode=0o600)
     for path, text in desired:
         if not matches(path, text):
