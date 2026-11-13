@@ -5,9 +5,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+from contextlib import nullcontext
 from io import StringIO
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -305,6 +306,142 @@ def test_samba_ambiguous_global_or_fruit_marker_refuses() -> None:
         module.candidate("[global]\n[global]\n", request)
     with pytest.raises(ValueError, match="ambiguous managed fruit"):
         module.candidate("[global]\n" + module.BEGIN + "\n", request)
+
+
+def samba_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[ModuleType, list[list[str]]]:
+    """The config helper against tmp_path: root ownership, testparm, systemd and port 445 faked."""
+    module = script("samba_config")
+    commands: list[list[str]] = []
+
+    def write(path: Path, text: str, mode: int = 0o644) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def run(argv: list[str]) -> str:
+        commands.append(argv)
+        return ""
+
+    monkeypatch.setattr(module, "STATE", tmp_path / "state")
+    monkeypatch.setattr(module, "write", write)
+    monkeypatch.setattr(module, "matches", lambda path, text: module.read(path) == text)
+    monkeypatch.setattr(module, "validate", lambda desired: None)
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(
+        module, "unit", lambda name: {"LoadState": "loaded", "ActiveState": "active", "UnitFileState": "enabled"}
+    )
+    monkeypatch.setattr(module, "socket", SimpleNamespace(create_connection=lambda *args, **kwargs: nullcontext()))
+    return module, commands
+
+
+def samba_request(tmp_path: Path, share: str, *, base: str = "[global]\n") -> dict[str, Any]:
+    config, snippet = tmp_path / "smb.conf", tmp_path / "owned.conf"
+    if not config.exists():
+        config.write_text(f"[global]\n   include = {snippet}\n")
+        snippet.write_text("[owned]\n    path = /owned\n")
+    return {
+        "config": str(config),
+        "base": base,
+        "fragments": [{"path": str(snippet), "content": share}],
+        "fruit": None,
+        "service_enabled": True,
+        "service_state": "started",
+    }
+
+
+def samba_apply_and_rollout(module: ModuleType, request: dict[str, Any]) -> str | None:
+    module.configure(request, module.rows(request))
+    debt: str | None = module.owed()
+    assert module.rollout_pending(request)
+    module.rollout(request)
+    assert module.owed() is None
+    # "restarted" is an explicit per-run choice and always pending.
+    assert module.rollout_pending(request) == (request["service_state"] == "restarted")
+    return debt
+
+
+def test_samba_snippet_only_change_reloads_instead_of_restarting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n    veto files = /._*/.DS_Store/\n")
+    assert samba_apply_and_rollout(module, request) == "reload"
+    assert ["smbcontrol", "all", "reload-config"] in commands
+    assert not any(argv[:2] == ["systemctl", "restart"] for argv in commands)
+    assert "veto files" in (tmp_path / "owned.conf").read_text()
+
+
+def test_samba_base_change_still_restarts_both_daemons(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n")
+    request["fruit"] = "   vfs objects = fruit streams_xattr\n"
+    assert samba_apply_and_rollout(module, request) == "restart"
+    assert [argv for argv in commands if argv[0] == "systemctl"] == [
+        ["systemctl", "restart", "smbd"],
+        ["systemctl", "restart", "nmbd"],
+    ]
+    assert not any(argv[0] == "smbcontrol" for argv in commands)
+
+
+def test_samba_recorded_restart_debt_is_never_downgraded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state/restart-owed.json").write_text(json.dumps(module.RESTART_DEBT))
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n    browseable = no\n")
+    assert samba_apply_and_rollout(module, request) == "restart"
+    assert ["systemctl", "restart", "smbd"] in commands
+    assert not any(argv[0] == "smbcontrol" for argv in commands)
+
+
+def test_samba_recorded_reload_debt_upgrades_to_restart_on_a_base_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state/restart-owed.json").write_text(json.dumps(module.RELOAD_DEBT))
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n")
+    request["fruit"] = "   vfs objects = fruit streams_xattr\n"
+    assert samba_apply_and_rollout(module, request) == "restart"
+    assert ["systemctl", "restart", "smbd"] in commands
+    assert ["systemctl", "restart", "nmbd"] in commands
+    assert not any(argv[0] == "smbcontrol" for argv in commands)
+
+
+def test_samba_reload_debt_with_stopped_service_sends_no_reload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n    browseable = no\n")
+    request["service_state"] = "stopped"
+    module.configure(request, module.rows(request))
+    assert module.owed() == "reload"
+    module.rollout(request)
+    assert module.owed() is None
+    assert ["systemctl", "stop", "smbd"] in commands
+    assert not any(argv[0] == "smbcontrol" for argv in commands)
+
+
+def test_samba_explicit_restarted_state_wins_over_a_reload_debt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n    browseable = no\n")
+    request["service_state"] = "restarted"
+    assert samba_apply_and_rollout(module, request) == "reload"
+    assert ["systemctl", "restart", "nmbd"] in commands
+    assert not any(argv[0] == "smbcontrol" for argv in commands)
+
+
+def test_samba_unknown_debt_refuses(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module, commands = samba_host(monkeypatch, tmp_path)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state/restart-owed.json").write_text(json.dumps({"units": ["smbd"], "action": "reload-config"}))
+    request = samba_request(tmp_path, "[owned]\n    path = /owned\n    browseable = no\n")
+    with pytest.raises(ValueError, match="unknown Samba restart debt"):
+        module.configure(request, module.rows(request))
+    with pytest.raises(ValueError, match="unknown Samba restart debt"):
+        module.rollout_pending(request)
+    assert commands == []
+    assert "browseable" not in (tmp_path / "owned.conf").read_text()
 
 
 @pytest.mark.parametrize("options", [{"unknown_hook": "ignored"}, {"hourly": -1}, {"autosnap": "maybe"}])

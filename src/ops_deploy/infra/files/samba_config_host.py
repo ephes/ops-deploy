@@ -3,6 +3,10 @@
 Candidate testparm runs before managed writes; unrelated includes/globals stay.
 No share data is opened. Restart only consumes known config debt, deduplicated
 for a whole share batch. Runtime state is never inferred from a config hash.
+A batch that changes only share snippets (smb.conf itself current) owes a
+config reload (smbcontrol all reload-config) instead of a restart, so open
+sessions such as a running Time Machine backup survive; a recorded restart
+debt is never downgraded to a reload.
 """
 import fcntl
 import json
@@ -18,6 +22,8 @@ import time
 
 STATE = pathlib.Path('/var/lib/ops-deploy/samba')
 BEGIN = '# BEGIN ANSIBLE MANAGED - vfs_fruit global settings'
+RESTART_DEBT = {'units': ['smbd', 'nmbd']}
+RELOAD_DEBT = {'units': ['smbd', 'nmbd'], 'action': 'reload-config'}
 END = '# END ANSIBLE MANAGED - vfs_fruit global settings'
 
 
@@ -104,12 +110,21 @@ def config_pending(request, desired):
     return any(not matches(path, text) for path, text in desired)
 
 
+def owed():
+    """Return None, 'restart' or 'reload' from the durable debt record."""
+    raw = read(STATE / 'restart-owed.json')
+    if raw is None:
+        return None
+    parsed = json.loads(raw)
+    if parsed == RESTART_DEBT:
+        return 'restart'
+    if parsed == RELOAD_DEBT:
+        return 'reload'
+    raise ValueError('unknown Samba restart debt')
+
+
 def rollout_pending(request):
-    debt = read(STATE / 'restart-owed.json')
-    if debt is not None:
-        parsed = json.loads(debt)
-        if parsed != {'units': ['smbd', 'nmbd']}:
-            raise ValueError('unknown Samba restart debt')
+    debt = owed()
     pending = debt is not None or request['service_state'] == 'restarted'
     for name in ('smbd', 'nmbd'):
         values = unit(name)
@@ -167,7 +182,11 @@ def configure(request, desired):
     if not config_pending(request, desired):
         return
     validate(desired)
-    write(STATE / 'restart-owed.json', json.dumps({'units': ['smbd', 'nmbd']}), mode=0o600)
+    # smb.conf itself (globals, includes, the fruit block) needs a restart;
+    # share snippets alone are applied by a reload. Never downgrade a debt.
+    path, text = desired[0]
+    restart = owed() == 'restart' or not matches(path, text)
+    write(STATE / 'restart-owed.json', json.dumps(RESTART_DEBT if restart else RELOAD_DEBT), mode=0o600)
     for path, text in desired:
         if not matches(path, text):
             write(path, text)
@@ -178,7 +197,7 @@ def configure(request, desired):
 
 def rollout(request):
     run(['testparm', '-s', request['config']])
-    debt = read(STATE / 'restart-owed.json') is not None
+    debt = owed()
     for name in ('smbd', 'nmbd'):
         values = unit(name)
         wanted_enabled = request['service_enabled']
@@ -187,10 +206,14 @@ def rollout(request):
         if request['service_state'] == 'stopped':
             if values.get('ActiveState') != 'inactive':
                 run(['systemctl', 'stop', name])
-        elif debt or request['service_state'] == 'restarted':
+        elif debt == 'restart' or request['service_state'] == 'restarted':
             run(['systemctl', 'restart', name])
         elif values.get('ActiveState') != 'active':
             run(['systemctl', 'start', name])
+    if debt == 'reload' and request['service_state'] == 'started':
+        # Running daemons re-read smb.conf; new tree connects use the new share
+        # options, existing sessions are kept (they keep theirs until reconnect).
+        run(['smbcontrol', 'all', 'reload-config'])
     if request['service_state'] != 'stopped':
         for attempt in range(30):
             try:

@@ -272,6 +272,20 @@ to manufacture a current result.
 The whole batch gets one staged candidate-validation phase and one deduplicated
 rollout, so each daemon restarts at most once. Installed config is also checked
 after writes and before consuming restart debt.
+**Reload for snippet-only changes:** when a batch changes only share snippets
+and smb.conf itself is already current (no new include, global or fruit block
+change), the debt record is `{"units": ["smbd", "nmbd"], "action":
+"reload-config"}` and the rollout runs `smbcontrol all reload-config` instead
+of restarting smbd/nmbd. Open sessions (a running Time Machine backup, mounted
+shares) survive; new tree connects get the new share options, while a client
+that is already connected to the changed share keeps the old ones until it
+reconnects. A change to smb.conf records the plain restart debt (`{"units":
+["smbd", "nmbd"]}`), a recorded restart debt is never downgraded to a reload,
+an explicit `service_state="restarted"` still restarts, and any other record
+is refused. Rolling the pin back to an ops-deploy before this change while a
+reload record is still owed (a failed rollout): the older helper refuses that
+record; replace it with the plain restart record (which only makes the next
+rollout restart) rather than deleting it.
 A current config/account/service deployment issues no managed command.
 
 **Fresh include placement exception:** the original cf3 role inserts includes

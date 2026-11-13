@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `samba_share` / `samba_timemachine` rollout: a batch that changes only share
+  snippets (smb.conf current) now reloads the running daemons with
+  `smbcontrol all reload-config` instead of restarting smbd/nmbd, so open
+  sessions such as a running Time Machine backup survive; the durable debt
+  record carries `"action": "reload-config"` for that case. Changes to
+  smb.conf still restart, a recorded restart debt is never downgraded, and an
+  unknown record is refused (ops-control: the `media` share on Fractal vetoes
+  macOS `._*` and `.DS_Store` files).
 - `samba_share`: `SambaSharesConfig.groups` (`SambaShareGroup(name, gid)`)
   creates the Unix groups the shares need (for `force_group`) as system groups
   with a fixed gid, and refuses when the name or the gid is already taken
