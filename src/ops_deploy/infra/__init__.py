@@ -35,6 +35,7 @@ from ops_deploy.infra.certbot_lifecycle import (
     deploy_certbot_dns_restore,
 )
 from ops_deploy.infra.docker_install import DockerInstallConfig, deploy_docker_install, docker_steps
+from ops_deploy.infra.dsstore_cleanup import DsStoreCleanupConfig, deploy_dsstore_cleanup
 from ops_deploy.infra.encrypted_volume import EncryptedVolumeConfig, deploy_encrypted_volume
 from ops_deploy.infra.hd_idle import HdIdleConfig, HdIdleDisk, deploy_hd_idle
 from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_hdparm_tune
@@ -89,6 +90,7 @@ __all__ = [
     "CertbotDnsRestoreConfig",
     "DatabaseSpec",
     "DockerInstallConfig",
+    "DsStoreCleanupConfig",
     "EncryptedVolumeConfig",
     "ExtensionSpec",
     "FileCertificate",
@@ -144,6 +146,7 @@ __all__ = [
     "deploy_certbot_dns_backup",
     "deploy_certbot_dns_restore",
     "deploy_docker_install",
+    "deploy_dsstore_cleanup",
     "deploy_encrypted_volume",
     "deploy_hd_idle",
     "deploy_hdparm_tune",

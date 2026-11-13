@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `infra.dsstore_cleanup` (new; `DsStoreCleanupConfig`,
+  `deploy_dsstore_cleanup`): a nightly systemd timer that removes macOS
+  `.DS_Store` files below the configured directories
+  (`find <dir> -xdev -type f -name .DS_Store -delete`, the count logged to
+  the journal), for Samba shares where a `.DS_Store` veto would break Finder
+  copies. The oneshot service is confined to the directories
+  (`ProtectSystem=strict`, `ReadWritePaths=`); the deploy only enables and
+  starts the timer (default `*-*-* 22:30:00`) and never runs the cleanup;
+  `state="absent"` removes it (`docs/dsstore-cleanup.md`; ops-control: the
+  share `media` on Fractal).
 - `samba_share` / `samba_timemachine` rollout: a batch that changes only share
   snippets (smb.conf current) now reloads the running daemons with
   `smbcontrol all reload-config` instead of restarting smbd/nmbd, so open

@@ -28,6 +28,7 @@ nav:
   - Storage policy and Samba: services/fractal_storage_services.md
   - NFS export: services/nfs_export.md
   - IPv6 stale socket reaper: ipv6-stale-socket-reaper.md
+  - .DS_Store cleanup: dsstore-cleanup.md
   - Traefik: traefik.md
   - Certbot backup and restore: certbot-lifecycle.md
   - BIND: bind.md
