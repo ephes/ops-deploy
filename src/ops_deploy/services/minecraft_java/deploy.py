@@ -66,6 +66,9 @@ class MinecraftJavaConfig(BaseServiceConfig):
     allow_mode_switch_same_world: bool = False
     eula_agreed: Literal[True]
     java_version: Annotated[str, Field(pattern=r"^[0-9]+$")] = "21"
+    # Debian/Ubuntu JVM directory suffix; the unit, the Forge wrapper and the
+    # Forge installer run this JDK's binary, never the /usr/bin/java alternative.
+    java_arch: Literal["amd64", "arm64"] = "amd64"
     memory_min: Annotated[str, Field(pattern=r"^[1-9][0-9]*[MG]$")] = "2G"
     memory_max: Annotated[str, Field(pattern=r"^[1-9][0-9]*[MG]$")] = "4G"
     extra_args: Annotated[str, Field(pattern=r"^[A-Za-z0-9=:+.,_ -]*$")] = (
@@ -173,6 +176,11 @@ class MinecraftJavaConfig(BaseServiceConfig):
             raise ValueError("site_path must be below a non-root home directory")
         return self
 
+    @property
+    def java_bin(self) -> str:
+        """The configured JDK's binary; installing another JDK cannot change it."""
+        return f"/usr/lib/jvm/java-{self.java_version}-openjdk-{self.java_arch}/bin/java"
+
     def context(self, secrets: SecretValues) -> dict[str, Any]:
         values = {"minecraft_java_" + key: value for key, value in self.model_dump().items()}
         values.update(
@@ -181,6 +189,7 @@ class MinecraftJavaConfig(BaseServiceConfig):
             minecraft_java_home=self.home,
             minecraft_java_server_dir=str(self.site_path),
             minecraft_java_forge_wrapper_script_path=str(self.site_path / "start-forge.sh"),
+            minecraft_java_bin=self.java_bin,
         )
         values["minecraft_java_rcon_password"] = secrets["rcon_password"]
         return values
@@ -333,6 +342,11 @@ def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> No
         ],
         update=True,
         cache_time=3600,
+    )
+    # Several JDKs may be installed (Forge 1.20.1 needs 21, current vanilla 25);
+    # the selected one must exist before any runtime file names it.
+    mark_read_only(
+        server.shell(name="Verify Minecraft Java runtime", commands=[f"test -x {shlex.quote(cfg.java_bin)}"])
     )
     server.group(group=cfg.group)
     server.user(user=cfg.user, group=cfg.group, home=cfg.home, shell="/bin/bash", ensure_home=True)
@@ -592,7 +606,11 @@ def _forge(cfg: MinecraftJavaConfig) -> list[OperationMeta]:
                     "--",
                     "/bin/sh",
                     "-c",
-                    "cd " + shlex.quote(str(root)) + " && exec /usr/bin/java -jar forge-installer.jar --installServer",
+                    "cd "
+                    + shlex.quote(str(root))
+                    + " && exec "
+                    + shlex.quote(cfg.java_bin)
+                    + " -jar forge-installer.jar --installServer",
                 ]
             )
         ],

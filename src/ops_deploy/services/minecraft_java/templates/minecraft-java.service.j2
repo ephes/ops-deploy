@@ -15,7 +15,7 @@ EnvironmentFile={{ minecraft_java_home }}/.env
 ExecStart={{ minecraft_java_forge_wrapper_script_path }}
 {% else %}
 # Vanilla start command with optimized JVM settings
-ExecStart=/usr/bin/java \
+ExecStart={{ minecraft_java_bin }} \
     -Xms{{ minecraft_java_memory_min }} \
     -Xmx{{ minecraft_java_memory_max }} \
     {{ minecraft_java_extra_args }} \

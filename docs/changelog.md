@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `minecraft_java`: the unit's vanilla `ExecStart`, the Forge wrapper
+  `start-forge.sh` and the Forge installer run the configured JDK,
+  `/usr/lib/jvm/java-<java_version>-openjdk-<java_arch>/bin/java`, instead of
+  `/usr/bin/java`. New `java_arch` (`amd64` default, or `arm64`). After the
+  package install the deploy checks that this binary exists. Background:
+  Minecraft 26.x needs Java 25, and installing `openjdk-25` moves the
+  `/usr/bin/java` alternative away from the Java 21 that Forge 1.20.1 needs, so
+  a later switch back to Forge would have started on the wrong Java. Existing
+  hosts get a changed unit (and in Forge mode a changed wrapper), so the next
+  started deploy restarts the server once.
+
 - `rustfs`: new `traefik_api_aliases` (default empty, route unchanged). Each
   alias joins `traefik_api_host` on the same two routers, with the same
   backend, middlewares and `internal_ip_ranges`; Traefik 3 takes one domain

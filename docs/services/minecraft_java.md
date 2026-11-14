@@ -40,6 +40,7 @@ The environment retains `RCON_PASSWORD` for existing backup scripts.
 | `server_jar_url`, `server_jar_sha256` | required in vanilla mode |
 | `forge_version`, `forge_installer_url`, `forge_installer_sha256` / `forge_installer_sha1` | required in Forge mode; SHA256 preferred; installer reruns if version/checksum markers or runtime artifacts differ |
 | `java_version`, `memory_min`, `memory_max`, `extra_args` | `21`, `2G`, `4G`, the role's optimized G1 flags |
+| `java_arch` | `amd64` (or `arm64`); the unit, the Forge wrapper and the Forge installer run `/usr/lib/jvm/java-<java_version>-openjdk-<java_arch>/bin/java`, verified after the package install, never the `/usr/bin/java` alternative |
 | `startup_timeout` | 60 seconds for vanilla, 300 for Forge |
 | `world_name`, `allow_mode_switch_same_world` | `world`, false; an absent loader marker means vanilla; same-world loader changes fail before mutations unless acknowledged |
 | `mods_enabled`, `mods_prune_unmanaged`, `mods` | false, false, empty; Forge only. Entries require `name`, HTTPS `url`, SHA256; optional `filename`, `version`, `enabled` (true). A missing filename uses the URL basename. Disabled entries are removed; pruning removes unmanaged regular `*.jar` files only when explicitly enabled |
@@ -65,6 +66,13 @@ succeed before runtime files are installed. Missing server, Forge installer and
 mod JARs are downloaded without first trying to hash their absent destinations.
 No world data is
 removed. Forge artifacts remain when changing back to vanilla.
+
+Several JDKs can be installed side by side; the deploy installs
+`openjdk-<java_version>-jre-headless` and removes none. Installing a newer JDK
+moves Debian's `/usr/bin/java` alternative to it, which is why the runtime
+names its JDK explicitly: Minecraft 26.x needs Java 25, Forge 1.20.1 runs on
+Java 21, and switching `loader_mode` back to Forge with `java_version="21"`
+starts Forge on Java 21 even though Java 25 stays installed.
 
 For `service_state="started"`, UFW must already be active; this is checked
 before any package, file or service mutation. A stopped deployment maintains
@@ -285,7 +293,8 @@ Selected templates from the current source live separately in
 `tests/parity/minecraft_java_3110a0f1`; older frozen parity inputs are unchanged.
 All selected templates render byte-identically except the deliberate env/unit
 change that keeps the RCON password out of process arguments and accepts
-Forge's successful RCON shutdown status. The public path
+Forge's successful RCON shutdown status, and the explicit JDK binary in place
+of `/usr/bin/java` (unit and Forge wrapper). The public path
 and network defaults are generic, and RCON/firewall disabling and custom Forge
 artifact paths are refused instead of being silently ignored. The role's local
 cron backup path is intentionally excluded: use an independently approved

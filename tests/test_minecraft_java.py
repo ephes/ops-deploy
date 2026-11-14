@@ -254,6 +254,8 @@ def test_templates_against_current_role_snapshot(template: str, mode: str) -> No
     source = Path(__file__).parent / "parity/minecraft_java_3110a0f1" / template
     env = jinja2.Environment(undefined=jinja2.StrictUndefined, keep_trailing_newline=True)
     original = env.from_string(source.read_text()).render(**cfg.context(secrets))
+    # Deliberate: run the configured JDK, not the /usr/bin/java alternative.
+    original = original.replace("/usr/bin/java", cfg.java_bin)
     if template == "minecraft-java.service.j2":
         original = original.replace('-p "${RCON_PASSWORD}" "stop"', '"stop"')
         original = original.replace(
@@ -726,3 +728,35 @@ def test_stopped_running_service_stops_before_any_runtime_write() -> None:
     assert writes
     assert stop < min(writes)
     assert not any(re.search(r"systemctl (start|restart) ", c) for c in commands)
+
+
+@pytest.mark.parametrize(
+    ("mode", "java", "template"),
+    [("vanilla", "25", "minecraft-java.service.j2"), ("forge", "21", "start-forge.sh.j2")],
+)
+def test_runtime_uses_the_configured_jdk_not_the_java_alternative(mode: str, java: str, template: str) -> None:
+    # Installing Java 25 for vanilla moves /usr/bin/java; Forge 1.20.1 must keep 21.
+    cfg = config(
+        loader_mode=mode,
+        java_version=java,
+        forge_version="1.20.1-47.4.0",
+        forge_installer_url="https://example.org/forge.jar",
+        forge_installer_sha256="b" * 64,
+    )
+    text = rendered(cfg, template, values(cfg))
+    assert f"/usr/lib/jvm/java-{java}-openjdk-amd64/bin/java " in text
+    assert "/usr/bin/java" not in text
+
+
+def test_java_arch_is_restricted() -> None:
+    assert config(java_arch="arm64").java_bin == "/usr/lib/jvm/java-21-openjdk-arm64/bin/java"
+    with pytest.raises(ConfigValidationError):
+        config(java_arch="x86_64")
+
+
+def test_deploy_verifies_the_configured_jdk_before_runtime_files() -> None:
+    cfg = config(java_version="25")
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=converged(cfg))
+    assert run.succeeded, run.error
+    check = "test -x /usr/lib/jvm/java-25-openjdk-amd64/bin/java"
+    assert any(check in command for command in run.executed_commands), run.executed_commands
