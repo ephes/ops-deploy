@@ -298,3 +298,12 @@ def test_missing_or_invalid_monitor_access_is_sanitized_before_transport(values:
     with patch("urllib.request.build_opener") as build, pytest.raises(StatusError, match="monitor_invalid_access"):
         fetch_status("https://example.test", SecretValues(SecretRef("fixture.yml"), values), ["regular"])
     build.assert_not_called()
+
+
+def test_every_daybook_adapter_the_controller_runs_is_admitted() -> None:
+    """The Atlas kinds include the reMarkable notes lane (Daybook
+    remarkable.notes.v1, on Daybook main since a3d7c63)."""
+    for adapter in ("catalog.work.v1", "paperless.intake.v1", "remarkable.notes.v1"):
+        assert (
+            config(kinds=[{"adapter": adapter, "deadline": 600, "lease": 900, "run": {}}]).kinds[0].adapter == adapter
+        )
