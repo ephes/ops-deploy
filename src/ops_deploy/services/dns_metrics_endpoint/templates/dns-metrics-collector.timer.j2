@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect authoritative DNS health metrics every {{ dns_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+OnActiveSec={{ dns_metrics_endpoint_timer_on_boot_sec }}
+OnUnitInactiveSec={{ dns_metrics_endpoint_timer_interval }}
+AccuracySec={{ dns_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ dns_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

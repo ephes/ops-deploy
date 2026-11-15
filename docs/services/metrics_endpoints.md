@@ -138,6 +138,53 @@ leaking namespace still reaches the IP services, so a failed probe means the
 tunnel or its DNS is down, not that traffic leaves outside it. Before
 2026-11-12 a failed probe reported `0`, so a short tunnel blip paged as a leak.
 
+## DNS metrics endpoint
+
+`services.dns_metrics_endpoint` ports the `dns_metrics_endpoint` role: a root
+oneshot collector (`dns-metrics-collector.service`, run every
+`timer_interval` seconds by `dns-metrics-collector.timer`) probes every
+advertised authoritative endpoint (each nameserver, address family and
+transport) for an authoritative SOA with recursion disabled, compares the
+serials of `zones` across nameservers and asserts that `foreign_name` is
+REFUSED; it writes `site_path/dns.json` (default `/var/lib/dns-metrics`). The
+authenticated endpoint `dns-metrics-endpoint.service` serves it on port
+**9107** at `/.well-known/dns` (`/usr/local/bin/dns_metrics_httpd.py`,
+`/etc/dns-metrics-endpoint/htpasswd`, `IPAddressAllow` localhost and the
+tailnet's IPv4 and IPv6 ranges). The role's five templates are shipped byte
+for byte (`tests/test_ops_library_drift.py`) and rendered as Ansible renders
+them.
+
+```python
+from ops_deploy.services.dns_metrics_endpoint import DnsMetricsEndpointConfig, deploy_dns_metrics_endpoint
+
+dns = DnsMetricsEndpointConfig(
+    auth_user="monitor",
+    secrets="secrets/metrics.yml",  # endpoint_password
+    bind="tailscale",
+    port=9108,
+    nameservers=[
+        {"id": "ns1", "label": "ns1.example.com", "role": "primary", "ipv4": "192.0.2.53", "ipv6": "2001:db8:1::53"},
+        {"id": "ns2", "label": "ns2.example.com", "role": "secondary", "ipv4": "198.51.100.53"},
+    ],
+    zones=["example.com"],
+    foreign_name="example.net",
+)
+deploy_dns_metrics_endpoint(cfg=dns, secrets=secrets)
+```
+
+The role's `validate.yml` is the config's validation, so nothing invalid
+reaches a host: unique dot-free nameserver ids, at least one literal address
+of the declared family per nameserver (no IPv4-mapped IPv6, at least one in its
+effective families), per-nameserver `families`/`transports` only narrowing the
+global lists, `open_resolver_transport` among the probed transports,
+`dig_subprocess_timeout` above `dig_timeout * dig_tries`, every
+`vantage_point_limitations` id (`<ns>-<family>-<transport>`) in the matrix
+with a reason, and a `foreign_name` outside every monitored zone (compared
+case-folded, without the trailing dot, descendants included). The collector
+runs once when its JSON file is missing or the collector changed; a timer unit
+change restarts the timer, a script, credential, unit or drop-in change the
+endpoint. A converged repeat performs no mutating operations.
+
 ## Linux fixture verification
 
 Run `METRICS_ENDPOINT_SMOKE=1 just smoke tests/smoke/test_metrics_endpoints_smoke.py` against an isolated worker-owned VM.

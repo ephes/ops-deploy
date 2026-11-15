@@ -1,0 +1,855 @@
+#!/usr/bin/env python3
+"""Collect authoritative-DNS health for every advertised nameserver endpoint.
+
+Emits a single JSON document on stdout. Written by a systemd timer to a file
+that the (unprivileged) HTTP endpoint serves; the endpoint adds staleness
+metadata at request time.
+
+What is checked, and why:
+
+- Every advertised endpoint individually: each nameserver, each address family,
+  each transport. One aggregate "DNS is up" boolean hides a half-dead
+  nameserver, and a v6-or-TCP-only failure is invisible to a v4/UDP probe while
+  still breaking real resolvers. TCP is mandatory for authoritative servers
+  (RFC 7766), not an optimisation.
+- SOA queried with recursion DISABLED, and the `aa` flag required. A bare serial
+  comparison can pass against a server that is not authoritative at all: a
+  misconfigured or recursive named can fetch the SOA from elsewhere and report a
+  matching serial while serving nothing of its own.
+- Per-zone serial agreement across all nameservers.
+- Open-resolver regression: a foreign name must be REFUSED.
+
+Honest IPv6 handling: if the *collector* has no usable IPv6, the v6 results are
+reported `skipped` (not `failed`) and excluded from the verdict, while
+`summary.ipv6_tested` stays false so untested v6 cannot silently rot.
+
+Coverage flags come in two flavours because they answer different questions.
+`*_tested` means "at least one cell of this dimension ran"; with two nameservers
+it stays true when only one is excluded. `*_fully_tested` and `coverage_complete`
+are false as soon as ANY matching cell was skipped, which is what makes a partial
+gap -- one nameserver's v6 TCP unreachable from here -- visible as a boolean.
+
+No AXFR is attempted and no TSIG key is used or needed - SOA queries suffice.
+Parsing dig output (rather than a DNS library) keeps this check byte-identical
+to what a human debugging it types by hand.
+"""
+from __future__ import annotations
+
+import json
+import re
+import socket
+import subprocess
+import sys
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from typing import Any
+
+NAMESERVERS = json.loads(r'''{{ dns_metrics_endpoint_nameservers | to_json }}''')
+ZONES = json.loads(r'''{{ dns_metrics_endpoint_zones | to_json }}''')
+FAMILIES = json.loads(r'''{{ dns_metrics_endpoint_families | to_json }}''')
+TRANSPORTS = json.loads(r'''{{ dns_metrics_endpoint_transports | to_json }}''')
+# Cells this vantage point provably cannot reach even though the nameserver is
+# healthy elsewhere. Excluded from the verdict, but named in the summary.
+LIMITATIONS = json.loads(r'''{{ dns_metrics_endpoint_vantage_point_limitations | default([]) | to_json }}''')
+FOREIGN_NAME = {{ dns_metrics_endpoint_foreign_name | to_json }}
+FOREIGN_QTYPE = {{ dns_metrics_endpoint_foreign_qtype | to_json }}
+OPEN_RESOLVER_TRANSPORT = {{ dns_metrics_endpoint_open_resolver_transport | to_json }}
+DIG_TIMEOUT = {{ dns_metrics_endpoint_dig_timeout | int }}
+DIG_TRIES = {{ dns_metrics_endpoint_dig_tries | int }}
+DIG_SUBPROCESS_TIMEOUT = {{ dns_metrics_endpoint_dig_subprocess_timeout | int }}
+MAX_WORKERS = {{ dns_metrics_endpoint_max_workers | int }}
+IPV6_PROBE_ADDRESS = {{ dns_metrics_endpoint_ipv6_probe_address | to_json }}
+
+FAMILY_KEYS = {"ipv4": "ipv4", "ipv6": "ipv6"}
+STATUS_RE = re.compile(r"status:\s*([A-Z]+)")
+FLAGS_RE = re.compile(r";;\s*flags:([a-z ]*);")
+
+
+def _now_epoch() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
+
+def _epoch_to_iso(epoch: int | None) -> str | None:
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+
+def _run(argv: list[str], timeout: int) -> tuple[int, str, str]:
+    try:
+        result = subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timeout after {timeout}s"
+    except FileNotFoundError:
+        return 127, "", f"command not found: {argv[0] if argv else 'unknown'}"
+    except OSError as exc:
+        return 125, "", f"{type(exc).__name__}: {exc}"
+
+
+def _is_global_unicast_v6(address: str | None) -> bool:
+    """True for 2000::/3 - excludes loopback, link-local, ULA and multicast.
+
+    Tailscale addresses are ULA (fd7a:115c:a1e0::/48) and are deliberately not
+    accepted: they prove nothing about reaching a nameserver on the internet.
+    """
+    if not address:
+        return False
+    try:
+        packed = socket.inet_pton(socket.AF_INET6, address.split("%")[0])
+    except OSError:
+        return False
+    return (packed[0] & 0xE0) == 0x20
+
+
+def detect_collector_ipv6() -> dict[str, Any]:
+    """Ask the kernel whether this host has usable off-link IPv6.
+
+    A connect() on an unconnected UDP socket transmits nothing; it only makes
+    the kernel perform route and source-address selection. So this reports the
+    collector's own capability without depending on any remote host answering,
+    which is exactly the distinction we need: "ns2 v6 is broken" must not look
+    the same as "I could not test v6".
+    """
+    result: dict[str, Any] = {
+        "collector_ipv6_capable": False,
+        "collector_ipv6_source": None,
+        "collector_ipv6_detect_error": None,
+    }
+    try:
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        try:
+            sock.connect((IPV6_PROBE_ADDRESS, 53))
+            source = sock.getsockname()[0]
+        finally:
+            sock.close()
+    except OSError as exc:
+        result["collector_ipv6_detect_error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    result["collector_ipv6_source"] = source
+    if not _is_global_unicast_v6(source):
+        result["collector_ipv6_detect_error"] = (
+            f"source address {source} is not global unicast (2000::/3)"
+        )
+        return result
+
+    result["collector_ipv6_capable"] = True
+    return result
+
+
+def _dig(address: str, transport: str, qname: str, qtype: str, recurse: bool) -> dict[str, Any]:
+    """Run one dig query and return the parsed header/answer, never raising."""
+    argv = [
+        "dig",
+        "+recurse" if recurse else "+norecurse",
+        "+tcp" if transport == "tcp" else "+notcp",
+        f"+time={DIG_TIMEOUT}",
+        f"+tries={DIG_TRIES}",
+        "+noall",
+        "+comments",
+        "+answer",
+        f"@{address}",
+        qname,
+        qtype,
+    ]
+    started = time.monotonic()
+    rc, stdout, stderr = _run(argv, DIG_SUBPROCESS_TIMEOUT)
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+
+    status_match = STATUS_RE.search(stdout)
+    flags_match = FLAGS_RE.search(stdout)
+    flags = flags_match.group(1).split() if flags_match else []
+    answers = [
+        line.split()
+        for line in stdout.splitlines()
+        if line and not line.startswith(";")
+    ]
+    return {
+        "command": " ".join(argv),
+        "dig_rc": rc,
+        "responded": status_match is not None,
+        "status": status_match.group(1) if status_match else None,
+        "flags": flags,
+        "aa": "aa" in flags,
+        "ra": "ra" in flags,
+        "answers": answers,
+        "rtt_ms": elapsed_ms,
+        "stderr": stderr or None,
+    }
+
+
+def _parse_soa_serial(answers: list[list[str]]) -> tuple[int | None, str | None]:
+    """Return (serial, owner) from the first SOA record in the answer section."""
+    for fields in answers:
+        if "SOA" not in fields:
+            continue
+        index = fields.index("SOA")
+        # SOA rdata: MNAME RNAME SERIAL REFRESH RETRY EXPIRE MINIMUM
+        if len(fields) <= index + 3:
+            continue
+        try:
+            return int(fields[index + 3]), fields[0]
+        except ValueError:
+            return None, fields[0]
+    return None, None
+
+
+def probe_zone_soa(address: str, transport: str, zone: str) -> dict[str, Any]:
+    """SOA probe for one zone at one address over one transport.
+
+    A single unreachable endpoint degrades only this result; it never raises.
+    """
+    probe: dict[str, Any] = {
+        "zone": zone,
+        "ok": False,
+        "error": None,
+        "serial": None,
+        "owner": None,
+    }
+    try:
+        raw = _dig(address, transport, zone, "SOA", recurse=False)
+    except Exception as exc:  # defensive: never let one probe kill the run
+        probe["error"] = f"probe_exception:{type(exc).__name__}: {exc}"
+        return probe
+
+    probe.update(
+        {
+            "status": raw["status"],
+            "flags": raw["flags"],
+            "aa": raw["aa"],
+            "ra": raw["ra"],
+            "rtt_ms": raw["rtt_ms"],
+            "dig_rc": raw["dig_rc"],
+            "responded": raw["responded"],
+            "stderr": raw["stderr"],
+        }
+    )
+
+    if not raw["responded"]:
+        probe["error"] = "no_response"
+        return probe
+    if raw["status"] != "NOERROR":
+        probe["error"] = f"status_{raw['status']}"
+        return probe
+    if not raw["aa"]:
+        # The check exists for exactly this case: an answer that is not
+        # authoritative tells us nothing about what this server serves.
+        probe["error"] = "not_authoritative"
+        return probe
+
+    serial, owner = _parse_soa_serial(raw["answers"])
+    probe["owner"] = owner
+    probe["serial"] = serial
+    if serial is None:
+        probe["error"] = "no_soa_serial_in_answer"
+        return probe
+    if owner is not None and owner.rstrip(".").lower() != zone.rstrip(".").lower():
+        probe["error"] = f"owner_mismatch:{owner}"
+        return probe
+
+    probe["ok"] = True
+    return probe
+
+
+def probe_foreign_name(address: str, transport: str) -> dict[str, Any]:
+    """Recursion-desired query for a foreign name; the answer must be REFUSED.
+
+    An unreachable server is reported `unknown`, not `failed`: it has not been
+    observed recursing, and its reachability is already covered by the endpoint
+    probes. This keeps one outage from also raising a bogus security alert.
+    """
+    result: dict[str, Any] = {
+        "qname": FOREIGN_NAME,
+        "qtype": FOREIGN_QTYPE,
+        "transport": transport,
+        "state": "unknown",
+        "ok": None,
+        "refused": None,
+        "error": None,
+    }
+    try:
+        raw = _dig(address, transport, FOREIGN_NAME, FOREIGN_QTYPE, recurse=True)
+    except Exception as exc:  # defensive
+        result["error"] = f"probe_exception:{type(exc).__name__}: {exc}"
+        return result
+
+    result.update(
+        {
+            "status": raw["status"],
+            "flags": raw["flags"],
+            "ra": raw["ra"],
+            "answer_count": len(raw["answers"]),
+            "rtt_ms": raw["rtt_ms"],
+            "dig_rc": raw["dig_rc"],
+            "responded": raw["responded"],
+            "stderr": raw["stderr"],
+        }
+    )
+
+    if not raw["responded"]:
+        result["error"] = "no_response"
+        return result
+
+    result["refused"] = raw["status"] == "REFUSED"
+    if result["refused"]:
+        result["state"] = "ok"
+        result["ok"] = True
+    else:
+        result["state"] = "failed"
+        result["ok"] = False
+        result["error"] = f"not_refused:{raw['status']}"
+    return result
+
+
+def _vantage_point_limitation(endpoint_id: str) -> str | None:
+    """Reason this collector cannot reach a cell that is otherwise healthy.
+
+    Some paths are broken between *this* vantage point and a nameserver while the
+    nameserver itself is fine from the rest of the internet. Reporting those as
+    failures would leave the check permanently red on a non-problem, and a check
+    that is always red gets ignored -- which costs more than the blind spot.
+
+    These are excluded from the verdict but counted and named in the summary, so
+    the blind spot is visible rather than silently rotting. Each one must be
+    re-verified from an independent host periodically; the runbook says how.
+    """
+    for item in LIMITATIONS:
+        if item.get("id") == endpoint_id:
+            return "vantage_point:" + str(item.get("reason") or "unspecified")
+    return None
+
+
+def _skip_reason(entry: dict[str, Any], family: str, transport: str | None, ipv6_capable: bool) -> str | None:
+    """Why this cell of the matrix is not probed, or None to probe it."""
+    if not (entry.get(FAMILY_KEYS[family]) or None):
+        return "address_not_configured"
+    if family not in (entry.get("families") or FAMILIES):
+        return "family_excluded_for_nameserver"
+    if transport is not None and transport not in (entry.get("transports") or TRANSPORTS):
+        return "transport_excluded_for_nameserver"
+    if family == "ipv6" and not ipv6_capable:
+        # Not a nameserver fault: we could not test, which is a different claim
+        # from "it is down". Excluded from the verdict, still counted as skipped.
+        return "collector_no_ipv6"
+    if transport is not None:
+        limitation = _vantage_point_limitation(f"{entry['id']}-{family}-{transport}")
+        if limitation is not None:
+            return limitation
+    return None
+
+
+def build_endpoints(ipv6_capable: bool) -> list[dict[str, Any]]:
+    """Enumerate the (nameserver x family x transport) matrix in stable order."""
+    endpoints: list[dict[str, Any]] = []
+    for entry in NAMESERVERS:
+        ns_id = str(entry.get("id"))
+        for family in FAMILIES:
+            address = entry.get(FAMILY_KEYS[family]) or None
+            for transport in TRANSPORTS:
+                endpoint: dict[str, Any] = {
+                    "id": f"{ns_id}-{family}-{transport}",
+                    "nameserver": ns_id,
+                    "label": entry.get("label"),
+                    "role": entry.get("role"),
+                    "family": family,
+                    "transport": transport,
+                    "address": address,
+                    "state": "ok",
+                    "ok": True,
+                    "skip_reason": None,
+                    "zones": [],
+                    "zones_ok": 0,
+                    "zones_failed": 0,
+                    "errors": [],
+                    "recursion_available_flag": None,
+                    "rtt_ms_max": None,
+                }
+                reason = _skip_reason(entry, family, transport, ipv6_capable)
+                if reason is not None:
+                    endpoint.update({"state": "skipped", "ok": None, "skip_reason": reason})
+                endpoints.append(endpoint)
+    return endpoints
+
+
+def run_probes(endpoints: list[dict[str, Any]], ipv6_capable: bool) -> list[dict[str, Any]]:
+    """Execute every SOA and open-resolver probe concurrently."""
+    soa_jobs: list[tuple[dict[str, Any], str]] = []
+    for endpoint in endpoints:
+        if endpoint["state"] == "skipped":
+            continue
+        for zone in ZONES:
+            soa_jobs.append((endpoint, zone))
+
+    foreign_jobs: list[dict[str, Any]] = []
+    for entry in NAMESERVERS:
+        ns_id = str(entry.get("id"))
+        for family in FAMILIES:
+            address = entry.get(FAMILY_KEYS[family]) or None
+            job: dict[str, Any] = {
+                "nameserver": ns_id,
+                "family": family,
+                "address": address,
+                "skip_reason": _skip_reason(
+                    entry, family, OPEN_RESOLVER_TRANSPORT, ipv6_capable
+                ),
+            }
+            foreign_jobs.append(job)
+
+    with ThreadPoolExecutor(max_workers=max(1, MAX_WORKERS)) as pool:
+        soa_futures = [
+            pool.submit(probe_zone_soa, endpoint["address"], endpoint["transport"], zone)
+            for endpoint, zone in soa_jobs
+        ]
+        foreign_futures = {
+            index: pool.submit(probe_foreign_name, job["address"], OPEN_RESOLVER_TRANSPORT)
+            for index, job in enumerate(foreign_jobs)
+            if job["skip_reason"] is None
+        }
+        for (endpoint, _zone), future in zip(soa_jobs, soa_futures):
+            endpoint["zones"].append(future.result())
+        for index, future in foreign_futures.items():
+            foreign_jobs[index].update(future.result())
+
+    for index, job in enumerate(foreign_jobs):
+        if job["skip_reason"] is not None:
+            foreign_jobs[index].update(
+                {
+                    "qname": FOREIGN_NAME,
+                    "qtype": FOREIGN_QTYPE,
+                    "transport": OPEN_RESOLVER_TRANSPORT,
+                    "state": "skipped",
+                    "ok": None,
+                    "refused": None,
+                    "error": None,
+                }
+            )
+    return foreign_jobs
+
+
+def summarize_endpoints(endpoints: list[dict[str, Any]]) -> None:
+    """Fold per-zone probe results into each endpoint's verdict."""
+    for endpoint in endpoints:
+        if endpoint["state"] == "skipped":
+            continue
+        probes = endpoint["zones"]
+        endpoint["zones_ok"] = sum(1 for probe in probes if probe["ok"])
+        endpoint["zones_failed"] = sum(1 for probe in probes if not probe["ok"])
+        errors = sorted({probe["error"] for probe in probes if probe.get("error")})
+        endpoint["errors"] = errors
+        rtts = [probe.get("rtt_ms") for probe in probes if probe.get("rtt_ms") is not None]
+        endpoint["rtt_ms_max"] = max(rtts) if rtts else None
+        endpoint["recursion_available_flag"] = any(probe.get("ra") for probe in probes)
+        healthy = bool(probes) and endpoint["zones_failed"] == 0
+        endpoint["ok"] = healthy
+        endpoint["state"] = "ok" if healthy else "failed"
+
+
+def summarize_zones(
+    endpoints: list[dict[str, Any]], tested_nameservers: set[str]
+) -> list[dict[str, Any]]:
+    """Per-zone serial agreement across nameservers.
+
+    Returned as a LIST, not a dict keyed by zone: zone names contain dots and
+    Nyxmon's JSON path resolver splits on dots with no escaping, so a
+    zone-keyed dict would be unaddressable. Rules should use the counters in
+    `summary`; the list is for debugging.
+    """
+    zones: list[dict[str, Any]] = []
+    for zone in ZONES:
+        per_ns: dict[str, dict[str, Any]] = {}
+        for endpoint in endpoints:
+            if endpoint["state"] == "skipped":
+                continue
+            ns_state = per_ns.setdefault(
+                endpoint["nameserver"],
+                {
+                    "nameserver": endpoint["nameserver"],
+                    "serials": [],
+                    "serial": None,
+                    "lag": None,
+                    "probes_ok": 0,
+                    "probes_failed": 0,
+                },
+            )
+            for probe in endpoint["zones"]:
+                if probe["zone"] != zone:
+                    continue
+                if probe["ok"] and probe["serial"] is not None:
+                    ns_state["probes_ok"] += 1
+                    if probe["serial"] not in ns_state["serials"]:
+                        ns_state["serials"].append(probe["serial"])
+                else:
+                    ns_state["probes_failed"] += 1
+
+        observed: list[int] = []
+        for ns_state in per_ns.values():
+            ns_state["serials"].sort()
+            if ns_state["serials"]:
+                ns_state["serial"] = ns_state["serials"][-1]
+                observed.extend(ns_state["serials"])
+
+        distinct = sorted(set(observed))
+        reporting = {
+            ns_id for ns_id, state in per_ns.items() if state["serial"] is not None
+        }
+        missing = sorted(tested_nameservers - reporting)
+        all_reported = not missing and bool(tested_nameservers)
+        serials_agree = len(distinct) == 1
+        max_serial = distinct[-1] if distinct else None
+        for ns_state in per_ns.values():
+            if ns_state["serial"] is not None and max_serial is not None:
+                ns_state["lag"] = max_serial - ns_state["serials"][0]
+
+        lag = 0
+        if distinct:
+            lag = distinct[-1] - distinct[0]
+
+        reasons = []
+        if not distinct:
+            reasons.append("no_serial_observed")
+        if missing:
+            reasons.append("missing_serial_from:" + ",".join(missing))
+        if not serials_agree and distinct:
+            reasons.append("serials_disagree")
+
+        zones.append(
+            {
+                "zone": zone,
+                "in_sync": bool(serials_agree and all_reported),
+                "serials_agree": serials_agree,
+                "all_nameservers_reported": all_reported,
+                "serial": max_serial if serials_agree else None,
+                "max_serial": max_serial,
+                "distinct_serials": distinct,
+                "max_serial_lag": lag,
+                "missing_from": missing,
+                "reasons": reasons,
+                "nameservers": [per_ns[ns_id] for ns_id in sorted(per_ns)],
+            }
+        )
+    return zones
+
+
+def summarize_nameservers(
+    endpoints: list[dict[str, Any]],
+    zones: list[dict[str, Any]],
+    foreign_probes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Per-nameserver rollup.
+
+    Keyed by the configured (dot-free, asserted by the role) id so a rule can
+    address `$.nameservers.<id>.ok` without a wildcard.
+    """
+    nameservers: dict[str, Any] = {}
+    for entry in NAMESERVERS:
+        ns_id = str(entry.get("id"))
+        own = [endpoint for endpoint in endpoints if endpoint["nameserver"] == ns_id]
+        tested = [endpoint for endpoint in own if endpoint["state"] != "skipped"]
+        failed = [endpoint for endpoint in tested if not endpoint["ok"]]
+        by_family = {
+            family: [endpoint for endpoint in tested if endpoint["family"] == family]
+            for family in ("ipv4", "ipv6")
+        }
+        by_transport = {
+            transport: [endpoint for endpoint in tested if endpoint["transport"] == transport]
+            for transport in ("udp", "tcp")
+        }
+        own_foreign = [
+            probe for probe in foreign_probes if probe["nameserver"] == ns_id
+        ]
+        foreign_tested = [probe for probe in own_foreign if probe["state"] != "skipped"]
+        foreign_failed = [probe for probe in foreign_tested if probe["state"] == "failed"]
+        zones_out_of_sync = 0
+        max_lag = 0
+        for zone in zones:
+            state = next(
+                (item for item in zone["nameservers"] if item["nameserver"] == ns_id),
+                None,
+            )
+            if state is None:
+                continue
+            if state["serial"] is None or (zone["max_serial"] is not None and state["serial"] != zone["max_serial"]):
+                zones_out_of_sync += 1
+            if state["lag"]:
+                max_lag = max(max_lag, state["lag"])
+
+        nameservers[ns_id] = {
+            "id": ns_id,
+            "label": entry.get("label"),
+            "role": entry.get("role"),
+            "ipv4": entry.get("ipv4") or None,
+            "ipv6": entry.get("ipv6") or None,
+            "ok": bool(tested) and not failed,
+            "endpoints_total": len(own),
+            "endpoints_ok": sum(1 for endpoint in tested if endpoint["ok"]),
+            "endpoints_failed": len(failed),
+            "endpoints_skipped": len(own) - len(tested),
+            "failed_endpoints": ",".join(endpoint["id"] for endpoint in failed),
+            "ipv4_tested": bool(by_family["ipv4"]),
+            "ipv4_ok": all(endpoint["ok"] for endpoint in by_family["ipv4"]),
+            "ipv6_tested": bool(by_family["ipv6"]),
+            "ipv6_ok": all(endpoint["ok"] for endpoint in by_family["ipv6"]),
+            "udp_tested": bool(by_transport["udp"]),
+            "udp_ok": all(endpoint["ok"] for endpoint in by_transport["udp"]),
+            "tcp_tested": bool(by_transport["tcp"]),
+            "tcp_ok": all(endpoint["ok"] for endpoint in by_transport["tcp"]),
+            "recursion_advertised": any(
+                endpoint["recursion_available_flag"] for endpoint in tested
+            ),
+            "open_resolver": bool(foreign_failed),
+            "foreign_probes_tested": len(foreign_tested),
+            "foreign_probes_failed": len(foreign_failed),
+            "zones_out_of_sync": zones_out_of_sync,
+            "max_serial_lag": max_lag,
+        }
+    return nameservers
+
+
+def _fully_tested(endpoints: list[dict[str, Any]], key: str, value: str) -> bool:
+    """True only if every cell matching key==value actually ran.
+
+    Distinct from the *_tested flags, which a single cell satisfies. A partial
+    exclusion (one nameserver's v6 TCP unreachable from here) leaves *_tested
+    true, so without this a real coverage gap has no boolean of its own.
+    """
+    matching = [endpoint for endpoint in endpoints if endpoint.get(key) == value]
+    return bool(matching) and all(
+        endpoint["state"] != "skipped" for endpoint in matching
+    )
+
+
+def build_summary(
+    endpoints: list[dict[str, Any]],
+    zones: list[dict[str, Any]],
+    nameservers: dict[str, Any],
+    foreign_probes: list[dict[str, Any]],
+    ipv6_capable: bool,
+    collector_error: str | None,
+) -> dict[str, Any]:
+    """Flat booleans/counters at fixed, wildcard-free paths for Nyxmon rules.
+
+    Convention: every `*_ok` means "nothing that was tested failed", so it is
+    vacuously true when nothing was tested. Always pair it with the matching
+    `*_tested` to detect coverage that quietly disappeared. `overall_ok`
+    additionally requires that something actually was tested, so an all-skipped
+    run can never look healthy.
+    """
+    tested = [endpoint for endpoint in endpoints if endpoint["state"] != "skipped"]
+    vantage_limited = [
+        endpoint for endpoint in endpoints
+        if str(endpoint.get("skip_reason") or "").startswith("vantage_point:")
+    ]
+    failed = [endpoint for endpoint in tested if not endpoint["ok"]]
+    ok_endpoints = [endpoint for endpoint in tested if endpoint["ok"]]
+    by_family = {
+        family: [endpoint for endpoint in tested if endpoint["family"] == family]
+        for family in ("ipv4", "ipv6")
+    }
+    by_transport = {
+        transport: [endpoint for endpoint in tested if endpoint["transport"] == transport]
+        for transport in ("udp", "tcp")
+    }
+    ipv6_skipped = [
+        endpoint
+        for endpoint in endpoints
+        if endpoint["family"] == "ipv6" and endpoint["state"] == "skipped"
+    ]
+    foreign_tested = [probe for probe in foreign_probes if probe["state"] != "skipped"]
+    foreign_failed = [probe for probe in foreign_tested if probe["state"] == "failed"]
+    foreign_unknown = [probe for probe in foreign_tested if probe["state"] == "unknown"]
+    out_of_sync = [zone for zone in zones if not zone["in_sync"]]
+
+    all_endpoints_ok = not failed and bool(ok_endpoints)
+    all_zones_in_sync = not out_of_sync and bool(zones)
+    no_open_resolver = not foreign_failed
+
+    return {
+        "all_endpoints_ok": all_endpoints_ok,
+        "all_zones_in_sync": all_zones_in_sync,
+        "no_open_resolver": no_open_resolver,
+        # A timed-out foreign probe is deliberately NOT a security failure, but
+        # it is not evidence of safety either, so it must not pass the master
+        # gate. A wholly dead nameserver already fails all_endpoints_ok, so this
+        # adds no new false-positive path -- it only catches the odd case where
+        # SOA queries succeed while the recursion probe returns no verdict.
+        # Verified means the assertion was actually OBSERVED to hold: at least one
+        # probe ran and none came back without a verdict. Zero probes is not a
+        # pass -- if the open-resolver transport is excluded globally or by a
+        # per-nameserver override, the check never runs, and reporting that as
+        # verified would leave the security assertion silently untested forever.
+        "open_resolver_verified": bool(foreign_tested) and not foreign_unknown,
+        "overall_ok": bool(
+            all_endpoints_ok
+            and all_zones_in_sync
+            and no_open_resolver
+            and foreign_tested
+            and not foreign_unknown
+            and collector_error is None
+        ),
+        "collector_ok": collector_error is None,
+        "endpoints_total": len(endpoints),
+        "endpoints_tested": len(tested),
+        "endpoints_ok": len(ok_endpoints),
+        "endpoints_failed": len(failed),
+        "endpoints_skipped": len(endpoints) - len(tested),
+        # Named, not just counted: a blind spot must be greppable in the JSON.
+        "vantage_point_limitations": len(vantage_limited),
+        "vantage_point_limited_endpoints": ",".join(
+            endpoint["id"] for endpoint in vantage_limited
+        ),
+        "failed_endpoints": ",".join(endpoint["id"] for endpoint in failed),
+        # *_tested is "at least one cell of this dimension ran". With two
+        # nameservers that stays true when only one is excluded, so it cannot by
+        # itself reveal a partial gap -- hence the *_fully_tested companions,
+        # which are false as soon as ANY matching cell was skipped.
+        "ipv4_tested": bool(by_family["ipv4"]),
+        "ipv4_fully_tested": _fully_tested(endpoints, "family", "ipv4"),
+        "ipv6_fully_tested": _fully_tested(endpoints, "family", "ipv6"),
+        "udp_fully_tested": _fully_tested(endpoints, "transport", "udp"),
+        "tcp_fully_tested": _fully_tested(endpoints, "transport", "tcp"),
+        "coverage_complete": len(endpoints) == len(tested),
+        "ipv4_endpoints_ok": all(endpoint["ok"] for endpoint in by_family["ipv4"]),
+        "ipv6_tested": bool(by_family["ipv6"]),
+        "ipv6_endpoints_ok": all(endpoint["ok"] for endpoint in by_family["ipv6"]),
+        "ipv6_endpoints_skipped": len(ipv6_skipped),
+        "udp_tested": bool(by_transport["udp"]),
+        "udp_endpoints_ok": all(endpoint["ok"] for endpoint in by_transport["udp"]),
+        "tcp_tested": bool(by_transport["tcp"]),
+        "tcp_endpoints_ok": all(endpoint["ok"] for endpoint in by_transport["tcp"]),
+        # A server that answered but without `aa` is the silent failure this
+        # check exists for, so it gets its own flat boolean.
+        "authoritative_ok": not any(
+            probe.get("responded") and not probe.get("aa")
+            for endpoint in tested
+            for probe in endpoint["zones"]
+        ),
+        "no_recursion_advertised": not any(
+            state["recursion_advertised"] for state in nameservers.values()
+        ),
+        "nameservers_total": len(nameservers),
+        "nameservers_ok": sum(1 for state in nameservers.values() if state["ok"]),
+        "nameservers_failed": sum(1 for state in nameservers.values() if not state["ok"]),
+        "zones_total": len(zones),
+        "zones_in_sync": len(zones) - len(out_of_sync),
+        "zones_out_of_sync": len(out_of_sync),
+        "out_of_sync_zones": ",".join(zone["zone"] for zone in out_of_sync),
+        "max_serial_lag": max((zone["max_serial_lag"] for zone in zones), default=0),
+        "open_resolver_tested": len(foreign_tested),
+        "open_resolver_failed": len(foreign_failed),
+        "open_resolver_unknown": len(foreign_unknown),
+        "open_resolver_skipped": len(foreign_probes) - len(foreign_tested),
+        "collector_ipv6_capable": ipv6_capable,
+    }
+
+
+def collect() -> dict[str, Any]:
+    now_epoch = _now_epoch()
+    started = time.monotonic()
+    ipv6 = detect_collector_ipv6()
+    ipv6_capable = bool(ipv6["collector_ipv6_capable"])
+
+    endpoints = build_endpoints(ipv6_capable)
+    foreign_probes = run_probes(endpoints, ipv6_capable)
+    summarize_endpoints(endpoints)
+
+    tested_nameservers = {
+        endpoint["nameserver"] for endpoint in endpoints if endpoint["state"] != "skipped"
+    }
+    zones = summarize_zones(endpoints, tested_nameservers)
+    nameservers = summarize_nameservers(endpoints, zones, foreign_probes)
+
+    payload: dict[str, Any] = {
+        "ts": now_epoch,
+        "generated_at": _epoch_to_iso(now_epoch),
+        "meta": {
+            "collector_ipv6_capable": ipv6_capable,
+            "collector_ipv6_source": ipv6["collector_ipv6_source"],
+            "collector_ipv6_detect_error": ipv6["collector_ipv6_detect_error"],
+            "collector_ipv6_probe_address": IPV6_PROBE_ADDRESS,
+            "collector_hostname": socket.gethostname(),
+            "collector_error": None,
+        },
+        "config": {
+            "zones": ZONES,
+            "families": FAMILIES,
+            "transports": TRANSPORTS,
+            "foreign_name": FOREIGN_NAME,
+            "foreign_qtype": FOREIGN_QTYPE,
+            "open_resolver_transport": OPEN_RESOLVER_TRANSPORT,
+            "dig_timeout": DIG_TIMEOUT,
+            "dig_tries": DIG_TRIES,
+        },
+        "endpoints": endpoints,
+        "nameservers": nameservers,
+        "zones": zones,
+        "open_resolver": {
+            "qname": FOREIGN_NAME,
+            "qtype": FOREIGN_QTYPE,
+            "transport": OPEN_RESOLVER_TRANSPORT,
+            "probes": foreign_probes,
+        },
+    }
+    payload["summary"] = build_summary(
+        endpoints, zones, nameservers, foreign_probes, ipv6_capable, None
+    )
+    payload["duration_seconds"] = round(time.monotonic() - started, 3)
+    return payload
+
+
+def main() -> int:
+    try:
+        payload = collect()
+    except Exception as exc:  # never emit a truncated or missing document
+        traceback.print_exc(file=sys.stderr)
+        now_epoch = _now_epoch()
+        message = f"{type(exc).__name__}: {exc}"
+        payload = {
+            "ts": now_epoch,
+            "generated_at": _epoch_to_iso(now_epoch),
+            "meta": {
+                "collector_ipv6_capable": False,
+                "collector_ipv6_source": None,
+                "collector_ipv6_detect_error": None,
+                "collector_ipv6_probe_address": IPV6_PROBE_ADDRESS,
+                "collector_hostname": socket.gethostname(),
+                "collector_error": message,
+            },
+            "config": {
+                "zones": ZONES,
+                "families": FAMILIES,
+                "transports": TRANSPORTS,
+                "foreign_name": FOREIGN_NAME,
+                "foreign_qtype": FOREIGN_QTYPE,
+                "open_resolver_transport": OPEN_RESOLVER_TRANSPORT,
+                "dig_timeout": DIG_TIMEOUT,
+                "dig_tries": DIG_TRIES,
+            },
+            "endpoints": [],
+            "nameservers": {},
+            "zones": [],
+            "open_resolver": {
+                "qname": FOREIGN_NAME,
+                "qtype": FOREIGN_QTYPE,
+                "transport": OPEN_RESOLVER_TRANSPORT,
+                "probes": [],
+            },
+        }
+        payload["summary"] = build_summary([], [], {}, [], False, message)
+    # Always exit 0 with a valid document: writing a fresh "not ok" payload
+    # alerts immediately, whereas failing here would leave the previous file in
+    # place and only surface later as staleness.
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

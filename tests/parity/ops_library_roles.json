@@ -9,6 +9,7 @@
     "daybook_operations_api_restore": "8840973665955394c95d8b9038d2e29d6b227891a7bf93a31280bcc263cc85f8",
     "daybook_voice_memo_work_deploy": "a22b83560c5949e4bb994378797a003fc8096a5fc2dd31a0e4dbe60770b3b835",
     "dns_deploy": "199e37b870d2bcaf11f2b071d94dc465f7b2c4739ddf321a6a1bae08301f541b",
+    "dns_metrics_endpoint": "68e7611bf26faba078e8fcdbdcce8a068a055d11fdd8a84bf82e363d4a8c937e",
     "echoport_backup": "41ae143b397276f45824216c9fbe1d4d20abd8f1d22564d8e9e73d657c95f0d5",
     "echoport_remote_command_guard": "87d7c687210d4b9d9f74293a1ad478a783fa068e01eb738661a2f4d0fd12e7a1",
     "encrypted_volume_prepare": "775afde941a276c88202dc91502e00ac4edc08758ddf404fc71ab843af71ff7d",
@@ -174,6 +175,7 @@
     "software_estate_publisher": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
     "software_estate_publisher_linux": "55a53fbcf19c7be6cb438aff950f6ecf366e5dd2",
     "dns_deploy": "94163d3faefa2849fb2e01797897162f656c4989",
-    "echoport_remote_command_guard": "bc3acab2210b799dbe32266cbb58aba7aa5d4b1e"
+    "echoport_remote_command_guard": "bc3acab2210b799dbe32266cbb58aba7aa5d4b1e",
+    "dns_metrics_endpoint": "7e94e551528bd3bb134236614afe43f625352927"
   }
 }

@@ -7,6 +7,16 @@
   lane, so a profile declaring that kind validates. A contract test checks
   the session-starting work adapters (`catalog.work.v1`,
   `paperless.intake.v1`, `remarkable.notes.v1`).
+- `services.dns_metrics_endpoint`: port of ops-library's
+  `dns_metrics_endpoint` role (authoritative-DNS collector, timer and
+  authenticated endpoint, with the metrics-httpd switch). The role's
+  templates are vendored byte for byte and checked by
+  `tests/test_ops_library_drift.py` (role recorded at ops-library
+  `7e94e551`); its `validate.yml` checks are the config's validation. New
+  `tests/test_dns_metrics_endpoint.py` (template parity in three variants,
+  every validation, first, converged and changed deploys on the fake host).
+  ops-control's `dns_monitoring` service (the former
+  `deploy-dns-monitoring.yml`) needs an ops-deploy pin that includes it.
 - Traefik transactions: the engine (`infra/traefik_tx/engine.py`) ports the
   rest of ops-library's reference engine (3110a0f1): `enroll`, `alias`,
   `metrics_bind` and `acme_storage` (with `validate_alias`,

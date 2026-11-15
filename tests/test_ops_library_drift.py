@@ -50,6 +50,7 @@ VENDORED_FILES = {
 # fixture's ``forked_from``).
 VENDORED_TEMPLATE_DIRS: dict[str, tuple[str, frozenset[str]]] = {
     "services/_echoport_runner/templates": ("echoport_backup", frozenset()),
+    "services/dns_metrics_endpoint/templates": ("dns_metrics_endpoint", frozenset()),
     "services/software_estate_publisher/templates/darwin": ("software_estate_publisher", frozenset()),
     "services/software_estate_publisher/templates/linux": ("software_estate_publisher_linux", frozenset()),
 }
