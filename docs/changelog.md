@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Tests: faster again without testing less. `just test` uses
+  `--dist worksteal` (tests, not files, are handed out, so
+  `tests/test_drive_fan_control.py` no longer bounds the wall time) and keeps
+  bytecode in `~/.cache/ops-deploy/pycache` (`PYTHONPYCACHEPREFIX`, with
+  `PYTHONDONTWRITEBYTECODE` unset), so collection and the Python children the
+  tests start no longer recompile the package. New `tests/stubs.py`: on macOS
+  the first exec of a newly written file costs 0.2-0.6 s (more under load;
+  also in a plain login shell), so `stubs.install()` writes each distinct stub
+  executable once per run and hard-links it where a test wants it; 22 test
+  files and fixture modules use it (`tests/traefik_tx_fixtures.py`, Mastodon, UniFi, MinIO,
+  drive fan control, ...), some with a stub that now finds its state or log
+  next to itself instead of having a test's path written into it.
+  `test_backups_mount_snapshot`'s timeout test runs its fresh stubs once
+  before the 1 s timeout (it failed on a loaded machine and always alone).
+- Tests: new `just test-changed`, the test files `scripts/affected_tests.py`
+  selects for the working-tree change (import closure, files named by
+  modules, package and path rules, always-run sweeps; the whole suite for
+  core packages, `conftest.py`, widely used helpers, project files and
+  anything it cannot map). Checked against a full run with coverage contexts
+  and a trace of the files each test file opened, ran and imported. An inner
+  loop only: `just test` or `just check` before each commit stays mandatory.
+
 - Daybook runtime: the `Adapter` list of `daybook_operations_runtime`
   admits `remarkable.notes.v1`, Daybook's adapter for its reMarkable notes
   lane, so a profile declaring that kind validates. A contract test checks
@@ -17,6 +39,7 @@
   every validation, first, converged and changed deploys on the fake host).
   ops-control's `dns_monitoring` service (the former
   `deploy-dns-monitoring.yml`) needs an ops-deploy pin that includes it.
+||||||| parent of 7a91cfc (# docs: stub cache, worksteal, bytecode cache and just test-changed)
 - Traefik transactions: the engine (`infra/traefik_tx/engine.py`) ports the
   rest of ops-library's reference engine (3110a0f1): `enroll`, `alias`,
   `metrics_bind` and `acme_storage` (with `validate_alias`,
